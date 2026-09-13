@@ -1,6 +1,7 @@
 "use strict";
 
 const express = require("express");
+const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame}=require("./veyon-transport");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
@@ -2546,13 +2547,7 @@ function veyonPrivateKey(){
   return fs.readFileSync(VEYON_PRIVATE_KEY_FILE,"utf8")
 }
 async function veyonFetch(pathname,options={}){
-  const ctrl=new AbortController();
-  const timeout=setTimeout(()=>ctrl.abort(),Number(options.timeoutMs||7000));
-  try{
-    return await fetch(`${VEYON_WEBAPI_URL}${pathname}`,{
-      method:options.method||"GET",headers:options.headers||{},body:options.body,signal:ctrl.signal
-    });
-  }finally{clearTimeout(timeout)}
+  return bufferedVeyonFetch(`${VEYON_WEBAPI_URL}${pathname}`,options);
 }
 async function veyonJson(pathname,options={}){
   const started=Date.now();
@@ -2572,26 +2567,27 @@ async function veyonJson(pathname,options={}){
   }
 }
 async function veyonCloseConnection(host,rec=veyonConnectionCache.get(host)){
-  if(!rec?.uid){veyonConnectionCache.delete(host);return}
+  if(!rec?.uid)return;
+  // An old request must never remove a newer authenticated session.
+  if(veyonConnectionCache.get(host)===rec)veyonConnectionCache.delete(host);
   try{
     await veyonJson(`/api/v1/authentication/${encodeURIComponent(host)}`,{
       method:"DELETE",headers:{"Connection-Uid":rec.uid},timeoutMs:3000
     });
   }catch{}
-  veyonConnectionCache.delete(host);
 }
 async function veyonTrimPool(reserve=1){
   const max=Math.max(1,VEYON_POOL_MAX-reserve);
   if(veyonConnectionCache.size<=max)return;
-  const victims=[...veyonConnectionCache.entries()]
+  const victims=[...veyonConnectionCache.entries()].filter(([,rec])=>!rec.active)
     .sort((a,b)=>Number(a[1].lastUsed||0)-Number(b[1].lastUsed||0))
     .slice(0,Math.max(0,veyonConnectionCache.size-max));
-  for(const [host,rec] of victims)await veyonCloseConnection(host,rec);
+  for(const [host,rec] of victims)if(!rec.active)await veyonCloseConnection(host,rec);
 }
 async function veyonCloseIdleConnections(){
   const now=Date.now();
   for(const [host,rec] of [...veyonConnectionCache.entries()]){
-    if(now-Number(rec.lastUsed||0)>45000)await veyonCloseConnection(host,rec);
+    if(!rec.active&&now-Number(rec.lastUsed||0)>45000)await veyonCloseConnection(host,rec);
   }
 }
 const veyonPoolTimer=setInterval(()=>veyonCloseIdleConnections().catch(()=>{}),15000);
@@ -2613,10 +2609,10 @@ async function veyonAuthenticateInternal(host){
     }catch(err){
       lastErr=err;
       if(err.status===429||err.veyonCode===7){
-        const victims=[...veyonConnectionCache.entries()]
+        const victims=[...veyonConnectionCache.entries()].filter(([,rec])=>!rec.active)
           .sort((a,b)=>Number(a[1].lastUsed||0)-Number(b[1].lastUsed||0))
           .slice(0,Math.max(2,Math.ceil(veyonConnectionCache.size/4)));
-        for(const [victim,rec] of victims)await veyonCloseConnection(victim,rec);
+        for(const [victim,rec] of victims)if(!rec.active)await veyonCloseConnection(victim,rec);
         await new Promise(r=>setTimeout(r,200*(attempt+1)));
         continue;
       }
@@ -2627,29 +2623,37 @@ async function veyonAuthenticateInternal(host){
 }
 async function veyonAuthenticate(host,force=false){
   host=String(host||"").trim();if(!host)throw new Error("Veyon host required");
+  if(veyonAuthInFlight.has(host))return veyonAuthInFlight.get(host);
   const now=Math.floor(Date.now()/1000),cached=veyonConnectionCache.get(host);
   if(!force&&cached?.uid&&Number(cached.validUntil||0)>now+30&&Date.now()-Number(cached.lastUsed||0)<45000){
     cached.lastUsed=Date.now();return cached.uid;
   }
-  if(force&&cached)await veyonCloseConnection(host,cached);
-  if(veyonAuthInFlight.has(host))return veyonAuthInFlight.get(host);
-  const task=veyonAuthenticateInternal(host).finally(()=>veyonAuthInFlight.delete(host));
+  // Install single-flight before closing the expired session. Parallel info and
+  // preview requests must not create orphaned connections for the same host.
+  const task=Promise.resolve().then(async()=>{
+    if(cached)await veyonCloseConnection(host,cached);
+    return veyonAuthenticateInternal(host);
+  }).finally(()=>veyonAuthInFlight.delete(host));
   veyonAuthInFlight.set(host,task);return task;
 }
-async function veyonConnectedJson(host,pathname,options={},retry=true){
+async function veyonConnectedRequest(host,pathname,options={},reader=veyonJson,retry=true){
   const uid=await veyonAuthenticate(host,false),rec=veyonConnectionCache.get(host);
-  if(rec)rec.lastUsed=Date.now();
+  if(rec){rec.lastUsed=Date.now();rec.active=(rec.active||0)+1}
+  let failure;
   try{
-    return await veyonJson(pathname,{...options,headers:{...(options.headers||{}),"Connection-Uid":uid}});
-  }catch(err){
-    if(retry&&(err.status===401||err.status===408||err.status===429||[2,7,8].includes(err.veyonCode))){
-      await veyonCloseConnection(host);
-      if(err.status===429||err.veyonCode===7){await veyonTrimPool(4);await new Promise(r=>setTimeout(r,250))}
-      await veyonAuthenticate(host,true);
-      return veyonConnectedJson(host,pathname,options,false);
-    }
-    throw err;
+    return await reader(pathname,{...options,headers:{...(options.headers||{}),"Connection-Uid":uid}});
+  }catch(err){failure=err}
+  finally{if(rec){rec.active=Math.max(0,(rec.active||1)-1);rec.lastUsed=Date.now()}}
+  if(retry&&[2,7,8].includes(Number(failure.veyonCode))){
+    // Only discard the failing UID: other requests may already have renewed it.
+    if(veyonConnectionCache.get(host)===rec)await veyonCloseConnection(host,rec);
+    if(failure.veyonCode===7){await veyonTrimPool(4);await new Promise(r=>setTimeout(r,250))}
+    return veyonConnectedRequest(host,pathname,options,reader,false);
   }
+  throw failure;
+}
+async function veyonConnectedJson(host,pathname,options={}){
+  return veyonConnectedRequest(host,pathname,options);
 }
 async function veyonAvailableFeatures(host){return veyonConnectedJson(host,"/api/v1/feature")}
 async function veyonFeatureStatus(host,feature){
@@ -2678,8 +2682,8 @@ function veyonTcpProbe(host,port=11100,timeout=450){
   });
 }
 async function veyonComputerInfo(host){
-  const [user,session,screenLock,inputLock]=await Promise.all([
-    veyonConnectedJson(host,"/api/v1/user").catch(()=>({login:"",fullName:""})),
+  const user=await veyonConnectedJson(host,"/api/v1/user");
+  const [session,screenLock,inputLock]=await Promise.all([
     veyonConnectedJson(host,"/api/v1/session").catch(()=>({})),
     veyonFeatureStatus(host,"screenLock").catch(()=>({active:false})),
     veyonFeatureStatus(host,"inputLock").catch(()=>({active:false}))
@@ -2704,7 +2708,7 @@ async function veyonStatusFor(rec,{includeInfo=true}={}){
   if(hostname&&hostname!==rec.hostname){
     rec=upsertVeyonComputer(rec.ip,{hostname,name:rec.name===rec.ip?hostname:rec.name});
   }
-  return {...rec,online,authenticated:online&&!error,user:info?.user||null,session:info?.session||null,
+  return {...rec,online,authenticated:online&&(includeInfo?!!info:veyonConnectionCache.has(rec.ip))&&!error,user:info?.user||null,session:info?.session||null,
     featureState:info?.featureState||{screenLock:false,inputLock:false},error};
 }
 async function mapLimit(items,limit,fn){
@@ -6166,7 +6170,7 @@ app.post("/api/v1/veyon/computers/role",requireCapability("lab.control"),(req,re
 app.delete("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)=>{
   const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
   if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-  delete veyonComputerStore.computers[id];veyonConnectionCache.delete(rec.ip);persistVeyonComputers();
+  delete veyonComputerStore.computers[id];veyonCloseConnection(rec.ip).catch(()=>{});persistVeyonComputers();
   res.json({ok:true,id});
 });
 app.get("/api/v1/veyon/computers/:id/info",requireCapability("lab.read"),async(req,res)=>{
@@ -6180,24 +6184,23 @@ app.get("/api/v1/veyon/computers/:id/framebuffer",requireCapability("lab.sensiti
   try{
     const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
     if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-    if(rec.online===false)return res.status(409).json({ok:false,error:"Computer is offline"});
-    if(rec.authenticated===false)return res.status(409).json({ok:false,error:"Computer is not authenticated"});
-    const uid=await veyonAuthenticate(rec.ip);
     const qs=new URLSearchParams();
     qs.set("format",String(req.query.format||"jpeg")==="png"?"png":"jpeg");
     if(req.query.width)qs.set("width",String(Math.max(160,Math.min(3840,Number(req.query.width)||480))));
     if(req.query.height)qs.set("height",String(Math.max(90,Math.min(2160,Number(req.query.height)||270))));
     if(qs.get("format")==="jpeg")qs.set("quality",String(Math.max(20,Math.min(95,Number(req.query.quality)||60))));
-    const response=await veyonFetch(`/api/v1/framebuffer?${qs.toString()}`,{headers:{"Connection-Uid":uid},timeoutMs:10000});
-    if(!response.ok){
-      if(response.status===401)veyonConnectionCache.delete(rec.ip);
-      const body=await response.text();return res.status(response.status).send(body);
-    }
+    const frame=await readVeyonFrame(qs,pathname=>veyonConnectedRequest(rec.ip,pathname,{timeoutMs:10000},async(pathname,options)=>{
+      const response=await veyonFetch(pathname,options);
+      if(!response.ok)throw await veyonResponseError(response);
+      return response;
+    }));
     res.setHeader("Cache-Control","no-store");
-    res.type(qs.get("format")==="png"?"image/png":"image/jpeg");
-    const buf=Buffer.from(await response.arrayBuffer());
-    res.send(buf);
-  }catch(err){res.status(502).json({ok:false,error:err.message})}
+    res.type(frame.contentType).send(frame.buffer);
+  }catch(err){
+    const status=[400,408,429,503].includes(err.status)?err.status:502;
+    res.setHeader("Cache-Control","no-store");
+    res.status(status).json({ok:false,error:err.message,code:Number.isFinite(err.veyonCode)?err.veyonCode:undefined});
+  }
 });
 
 app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),async(req,res)=>{

@@ -45,7 +45,9 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 
 The controller groups daily room controls, content, planning and administration
 into searchable workspaces. Advanced options expand when needed, with responsive
-layouts for smaller screens. See [Operator workspaces](docs/GUI-WORKSPACES.md) for
+layouts for smaller screens. Desktop focus mode gives embedded tools more room;
+Veyon and Windows inventories support compact views and filters, and Veyon previews
+show explicit retry and last-frame states. See [Operator workspaces](docs/GUI-WORKSPACES.md) for
 navigation, styling boundaries and the unreleased redesign scope.
 
 ## Architecture

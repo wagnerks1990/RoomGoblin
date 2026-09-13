@@ -10,6 +10,21 @@ function deviceStateHtml(d){if(d.uiRecovering)return '<span class="pill warn">Re
 function bridgeMessage(message){const text=String(message||'ADB command failed').trim();if(/\.android/i.test(text)&&/permission denied|cannot mkdir/i.test(text))return 'ADB key storage is not writable. Recreate the maintenance service after updating so the dedicated classroom-control-hub-android-adb volume is mounted.';return text}
 function setBridge(available,{error='',policyIntervalMs=60000}={}){state.adbAvailable=!!available;const bridge=$("bridge"),detail=$("bridgeDetail");if(available){bridge.className='pill ok';bridge.textContent=`ADB bridge ready · policy ${Math.round((policyIntervalMs||60000)/1000)}s`;if(detail){detail.hidden=true;detail.textContent=''}}else{bridge.className='pill bad';bridge.textContent='ADB unavailable';if(detail){detail.hidden=false;detail.textContent=bridgeMessage(error)}}}
 function applyBridgeAvailability(){const disabled=!state.adbAvailable;const enrollButton=$("enroll")?.querySelector('button[type="submit"]');if(enrollButton){enrollButton.disabled=disabled;enrollButton.title=disabled?'ADB bridge unavailable':''}if($("runShell"))$("runShell").disabled=disabled;if(disabled)$("devices")?.querySelectorAll('.controls button:not([data-op="edit"])').forEach(button=>{button.disabled=true;button.title='ADB bridge unavailable'})}
+function filterDisplayInventory(){
+  const query=String($("deviceSearch")?.value||"").trim().toLowerCase();
+  const connection=$("deviceFilter")?.value||"all";
+  let visible=0;
+  for(const card of $("devices").querySelectorAll(".card[data-id]")){
+    const device=deviceById(card.dataset.id);
+    const matchesText=device&&[device.name,device.host,device.serial,device.school,device.building,device.room,device.profileId].some(value=>String(value||"").toLowerCase().includes(query));
+    const online=device?.lastStatus?.online===true&&!device.uiRecovering;
+    card.hidden=!matchesText||(connection==="online"&&!online)||(connection==="offline"&&online);
+    if(!card.hidden)visible++;
+  }
+  $("summary").textContent=`${visible} of ${state.devices.length} displays`;
+  if($("deviceFilterEmpty"))$("deviceFilterEmpty").hidden=visible>0||state.devices.length===0;
+  $("devices").dataset.density=$("deviceDensity")?.value==="compact"?"compact":"comfortable";
+}
 function render(){
   const openDetails=new Set([...$("devices").querySelectorAll("details[open]")].map(el=>`${el.closest("[data-id]")?.dataset.id}:${el.dataset.disclosure}`));
   const selectedShell=$("shellDevice").value;
@@ -20,6 +35,7 @@ function render(){
   for(const detail of $("devices").querySelectorAll("details"))detail.open=openDetails.has(`${detail.closest("[data-id]")?.dataset.id}:${detail.dataset.disclosure}`);
   for(const card of $("devices").querySelectorAll(".card[data-id]"))card.dataset.agentExpanded=String(openDetails.has(`${card.dataset.id}:agent-v2`));
   applyBridgeAvailability();
+  filterDisplayInventory();
 }
 function parseAgentProbe(text){const installed=/^INSTALLED=1$/m.test(text),running=/^RUNNING=1$/m.test(text),version=(String(text).match(/^VERSION=(.+)$/m)?.[1]||'').trim();return {installed,running:installed&&running,version}}
 async function runShell(id,script,timeoutMs=12000){return api(`/android/devices/${encodeURIComponent(id)}/shell`,{method:'POST',body:JSON.stringify({command:String(script),timeoutMs})})}
@@ -57,6 +73,7 @@ async function restoreApps(id){if(!window.confirm('Re-enable disabled third-part
 function openEdit(id){const d=deviceById(id);if(!d)return;$("editId").value=d.id;$("editName").value=d.name||'';$("editSchool").value=d.school||'';$("editBuilding").value=d.building||'';$("editRoom").value=d.room||'';$("editDisplayUrl").value=d.displayUrl||'';$("editProfile").innerHTML=state.profiles.map(p=>`<option value="${esc(p.id)}" ${p.id===d.profileId?'selected':''}>${esc(p.name)}</option>`).join('');$("editEndpoint").textContent=d.serial||`${d.host||''}:${d.port||''}`;$("editMsg").textContent='';$("editDialog").showModal()}
 function closeEdit(){$("editDialog").close();$("editMsg").textContent=''}
 $("refresh").onclick=()=>load();
+for(const id of ["deviceSearch","deviceFilter","deviceDensity"]){$(id)?.addEventListener(id==="deviceSearch"?"input":"change",filterDisplayInventory);}
 $("enroll").addEventListener('submit',async e=>{e.preventDefault();const msg=$("enrollMsg"),body=Object.fromEntries(new FormData(e.currentTarget));for(const k of ['pairingPort','connectPort'])if(body[k])body[k]=Number(body[k]);msg.textContent='Pairing, connecting and probing…';try{const j=await api('/android/enroll',{method:'POST',body:JSON.stringify(body)});msg.textContent=`Enrolled ${j.device.name}. Use Edit to assign school, room, profile and display content.`;e.currentTarget.reset();e.currentTarget.elements.connectPort.value='5555';await load();openEdit(j.device.id)}catch(err){msg.textContent=err.message}});
 $("editForm").addEventListener('submit',async e=>{e.preventDefault();const id=$("editId").value,msg=$("editMsg"),body=Object.fromEntries(new FormData(e.currentTarget));delete body.id;for(const k of ['name','school','building','room','displayUrl'])body[k]=String(body[k]||'').trim();msg.textContent='Saving…';try{await api(`/android/devices/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(body)});msg.textContent='Saved.';await load();setTimeout(closeEdit,250)}catch(err){msg.textContent=err.message}});
 $("closeEdit").onclick=closeEdit;$("cancelEdit").onclick=closeEdit;

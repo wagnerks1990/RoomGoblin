@@ -4,77 +4,16 @@
 <link rel="stylesheet" href="/shared/attribution.css">
 <script src="/shared/branding.js" defer></script>
 <script src="/shared/attribution.js" defer></script>
-<style>
-:root{color-scheme:dark;--bg:var(--brand-background,#0b1015);--panel:var(--brand-surface,#121a22);--card:color-mix(in srgb,var(--brand-surface,#18232d) 88%,white);--line:#2c3b47;--text:var(--brand-text,#edf5f0);--muted:#9eb0a8;--green:var(--brand-primary,#58df91);--red:#ff7070;--amber:#f0c45c}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Arial,Helvetica,sans-serif}
-header{position:sticky;top:0;z-index:10;background:#0b1015ee;border-bottom:1px solid var(--line);padding:14px 16px;backdrop-filter:blur(8px)}
-h1{margin:0;font-size:22px}.muted{color:var(--muted)}.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-button,input,select{font:inherit;color:var(--text);background:#18232d;border:1px solid #3a4a56;border-radius:9px;padding:9px 11px}
-button{cursor:pointer}button:hover{border-color:#698075}.primary{background:#1c6038;border-color:#2b8952}.danger{background:#622727;border-color:#8f3a3a}.warn{background:#594716;border-color:#7d6722}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--green);outline-offset:2px}
-dialog{width:min(440px,94vw);background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:16px}dialog::backdrop{background:#000c}dialog form{display:grid;gap:12px}dialog label{display:grid;gap:5px}dialog input{width:100%}
-main{padding:14px}.status{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.pill{padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.thumb{aspect-ratio:16/9;background:#06090c;display:flex;align-items:center;justify-content:center;position:relative}.thumb img{width:100%;height:100%;object-fit:contain}.badge{position:absolute;top:8px;left:8px;padding:4px 7px;border-radius:999px;background:#000b;font-size:12px}.online{color:var(--green)}.offline{color:var(--red)}.roleTeacher{color:#8ec5ff}.roleStudent{color:#a6e3b4}
-.tabs{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.tabs button.active{background:#254f6b;border-color:#4b8bb6}
-.body{padding:12px}.name{font-weight:800;font-size:17px}.meta{margin-top:3px;color:var(--muted);font-size:12px}.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.actions button{padding:7px 8px;font-size:12px}
-.check{position:absolute;right:9px;top:9px;z-index:2;width:20px;height:20px}.modal{display:none;position:fixed;inset:0;z-index:50;background:#000c;padding:3vw;align-items:center;justify-content:center}.modal.open{display:flex}.modalBox{width:min(1200px,96vw);max-height:94vh;background:#10171e;border:1px solid var(--line);border-radius:16px;padding:12px;overflow:auto}.liveImg{width:100%;height:100%;object-fit:contain;background:#000;display:block}
-#modal{padding:1.5vw}
-#modal .modalBox{
-  width:min(1600px,97vw);
-  height:min(900px,94vh);
-  max-width:98vw;
-  max-height:96vh;
-  min-width:640px;
-  min-height:420px;
-  resize:both;
-  overflow:hidden;
-  display:flex;
-  flex-direction:column
-}
-#modal .liveStage{
-  flex:1;
-  min-height:0;
-  background:#000;
-  border-radius:10px;
-  overflow:hidden;
-  display:flex;
-  align-items:center;
-  justify-content:center
-}
-#modal .liveToolbar{margin-bottom:8px}
-#modal.fullscreen{padding:0;background:#000}
-#modal.fullscreen .modalBox{
-  width:100vw!important;
-  height:100vh!important;
-  max-width:100vw!important;
-  max-height:100vh!important;
-  min-width:0;
-  min-height:0;
-  resize:none;
-  border-radius:0;
-  border:0
-}
-@media(max-width:760px){
-  #modal .modalBox{min-width:0;min-height:0;width:97vw;height:88vh;resize:none}
-}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1;min-width:180px}
-@media(max-width:600px){.grid{grid-template-columns:1fr}header{position:static}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
-
-.featureOn{color:var(--green);font-weight:700}.featureOff{color:var(--muted)}
-.notice{padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#101820;margin-top:8px}
-.featureList{max-height:55vh;overflow:auto}.featureRow{padding:7px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
-</style><link rel="stylesheet" href="/controller/lab-workspaces.css"><link rel="stylesheet" href="/shared/workspace.css"></head><body class="rg-workspace rg-veyon">
+<link rel="stylesheet" href="/controller/lab-workspaces.css"><link rel="stylesheet" href="/shared/workspace.css"><link rel="stylesheet" href="/controller/veyon.css"></head><body class="rg-workspace rg-veyon">
 <header>
-  <nav class="lab-nav" aria-label="Lab navigation"><a href="/controller/" target="_top">RoomGoblin</a><a href="/controller/lab.html">Agent computers</a><a href="/controller/veyon.html" aria-current="page">Veyon computers</a></nav>
+  <nav class="lab-nav" aria-label="Lab navigation"><a href="/controller/" target="_top" aria-label="RoomGoblin home"><span data-brand-lockup></span></a><a href="/controller/lab.html">Agent computers</a><a href="/controller/veyon.html" aria-current="page">Veyon computers</a></nav>
   <div class="lab-title-row"><div><h1>Veyon computers</h1><div class="muted">See student screens and manage the room.</div></div><div class="toolbar"><button id="refresh">Refresh</button><button id="discover">Discover computers</button></div></div>
 </header>
 
 <main>
-  <div class="status"><span class="pill" id="apiStatus">Veyon API: checking…</span><span class="pill" id="summary">0 computers</span></div>
-  <section class="panel lab-selection" aria-labelledby="veyonActionsTitle">
-    <div class="lab-title-row"><h2 id="veyonActionsTitle">Classroom actions</h2><span id="selectionCount" class="pill" role="status">0 selected</span></div>
+  <div class="status" aria-live="polite"><span class="pill" id="apiStatus">Veyon API: checking…</span><span class="pill" id="summary">0 computers</span></div>
+  <details id="selectionCommands" class="panel lab-selection" open>
+    <summary class="lab-title-row"><h2 id="veyonActionsTitle">Selection commands</h2><span id="selectionCount" class="pill" role="status">0 selected</span></summary>
     <div class="toolbar">
       <button class="primary" id="message">Send message</button><button id="lock">Lock screens</button><button id="unlock">Unlock screens</button><button id="openSite">Open website</button><button id="startApp">Start app</button>
     </div>
@@ -84,9 +23,17 @@ main{padding:14px}.status{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12p
     <details class="lab-disclosure"><summary>Power, access and maintenance</summary><div class="toolbar">
       <button id="login">Log in user</button><button class="warn" id="logoff">Log off</button><button class="warn" id="reboot">Reboot</button><button class="danger" id="shutdown">Shut down</button><button id="markStudent">Mark selected student</button><button id="markTeacher">Mark selected teacher</button><button id="features">Available features</button><button id="pool">Connection pool</button>
     </div><p class="muted">Power and login actions target online computers. Session actions require a logged-in user. Unlock and stop actions stay available for online computers.</p></details>
-  </section>
+  </details>
   <div class="lab-title-row lab-inventory-heading"><div class="tabs" aria-label="Computer filters"><button id="showStudents" class="active">Students</button><button id="showTeachers">Teachers</button><button id="showAll">All devices</button></div><div class="toolbar"><button id="selectAll">Select visible online</button><button id="clearSel">Clear selection</button></div></div>
-  <div id="grid" class="grid"></div>
+  <div class="inventory-tools">
+    <label class="device-search">Find a computer<input id="deviceSearch" type="search" placeholder="Name, address or signed-in user" autocomplete="off"></label>
+    <label>Connection<select id="connectionFilter"><option value="all">All connections</option><option value="online">Online</option><option value="offline">Offline</option><option value="attention">Needs attention</option></select></label>
+    <label>Layout<select id="deviceLayout"><option value="compact">Compact wall</option><option value="comfortable">Large previews</option><option value="list">Device list</option></select></label>
+    <button id="pausePreviews" aria-pressed="false">Pause previews</button>
+  </div>
+  <div class="inventory-caption"><span id="visibleCount" role="status"></span><span class="muted">Select computers to use classroom commands</span></div>
+  <div id="inventoryStatus" role="status" class="muted"></div>
+  <div id="grid" class="grid" data-layout="compact" aria-label="Computer inventory"></div>
 </main>
 <div id="modal" class="modal" role="dialog" aria-modal="true" aria-label="Live computer view"><div id="liveModalBox" class="modalBox">
   <div class="row liveToolbar">
@@ -105,9 +52,9 @@ main{padding:14px}.status{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12p
     <button id="liveActual">1:1</button>
     <button id="liveFullscreen">Full Screen</button>
     <button id="liveResetSize">Reset Size</button>
-    <button id="closeLive">Close</button>
+    <button id="liveRetry">Retry frame</button><button id="closeLive">Close</button>
   </div>
-  <div id="liveStage" class="liveStage">
+  <div id="liveStatus" class="muted" role="status">Connecting…</div><div id="liveStage" class="liveStage">
     <img id="liveImg" class="liveImg" alt="Live computer screen">
   </div>
 </div></div>
@@ -123,366 +70,5 @@ main{padding:14px}.status{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12p
     <div class="toolbar"><button type="button" id="cancelLogin">Cancel</button><button type="submit" class="primary">Log In</button></div>
   </form>
 </dialog>
-<script>
-const $=id=>document.getElementById(id);
-let computers=[],selected=new Set(),liveId=null,liveTimer=null,roleFilter='student';
-const THUMB_CONCURRENCY=4;
-const THUMB_REFRESH_MS=10000;
-const thumbState=new Map();
-let thumbTimer=null;
-const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{j={error:t}}if(!r.ok)throw new Error(j.error||j?.error?.message||`${r.status}`);return j}
-function updateSelectionCount(){$('selectionCount').textContent=`${selected.size} selected`}
-function targetIds(){return [...selected]}
-function visibleComputers(){
-  return computers.filter(c=>roleFilter==='all'||(roleFilter==='teacher'?c.role==='teacher':c.role!=='teacher'));
-}
-function render(){
-  updateSelectionCount();
-  const students=computers.filter(x=>x.role!=='teacher').length,teachers=computers.filter(x=>x.role==='teacher').length;
-  $('summary').textContent=`${students} students • ${teachers} teachers • ${computers.filter(x=>x.online).length} online • ${computers.filter(x=>x.authenticated).length} authenticated`;
-  $('grid').innerHTML=visibleComputers().map(c=>`
-    <article class="card">
-      <div class="thumb">
-        <input class="check" type="checkbox" data-select="${esc(c.id)}" aria-label="Select ${esc(c.name||c.hostname||c.ip)}" ${selected.has(c.id)?'checked':''}>
-        <span class="badge ${c.online?'online':'offline'}">${c.online?'ONLINE':'OFFLINE'}</span>
-        ${c.online&&c.authenticated
-          ?`<img data-thumb="${esc(c.id)}" alt="Live thumbnail" style="opacity:.35"><span class="muted thumbStatus" data-thumb-status="${esc(c.id)}">Loading screen…</span>`
-          :`<span class="muted">${c.online?'Veyon not authenticated':'No Veyon connection'}</span>`}
-      </div>
-      <div class="body">
-        <div class="name">${esc(c.name||c.hostname||c.ip)}</div>
-        <div class="meta"><span class="${c.role==='teacher'?'roleTeacher':'roleStudent'}">${c.role==='teacher'?'TEACHER':'STUDENT'}</span> • ${esc(c.hostname||'')} ${c.hostname?'• ':''}${esc(c.ip)}</div>
-        <div class="meta">User: ${esc(c.user?.fullName||c.user?.login||'No user logged in')}</div>
-        <div class="meta">Screen lock: <span class="${c.featureState?.screenLock?'featureOn':'featureOff'}">${c.featureState?.screenLock?'ACTIVE':'off'}</span> • Input lock: <span class="${c.featureState?.inputLock?'featureOn':'featureOff'}">${c.featureState?.inputLock?'ACTIVE':'off'}</span></div>
-        ${c.featureState?.screenLock&&!c.user?.login?`<div class="notice">Lock is active. No lock graphic can be shown until a user is logged in; input remains locked.</div>`:''}
-        ${c.error?`<div class="meta offline">${esc(c.error)}</div>`:''}
-        <div class="actions">
-          <button data-live="${esc(c.id)}">Live View</button>
-          <button data-msg="${esc(c.id)}">Message</button>
-          <button data-lock="${esc(c.id)}">Lock</button>
-          <button data-unlock="${esc(c.id)}">Unlock</button>
-          <button data-role="${esc(c.id)}">${c.role==='teacher'?'Make Student':'Make Teacher'}</button>
-          <button data-devicefeatures="${esc(c.id)}">Features</button>
-          <button data-rename="${esc(c.id)}">Rename</button>
-        </div>
-      </div>
-    </article>`).join('');
-  document.querySelectorAll('[data-select]').forEach(x=>x.onchange=()=>{x.checked?selected.add(x.dataset.select):selected.delete(x.dataset.select);updateSelectionCount()});
-  queueVisibleThumbnails();
-  document.querySelectorAll('[data-live]').forEach(x=>x.onclick=()=>openLive(x.dataset.live));
-  document.querySelectorAll('[data-msg]').forEach(x=>x.onclick=()=>messageTargets([x.dataset.msg]));
-  document.querySelectorAll('[data-lock]').forEach(x=>x.onclick=()=>feature([x.dataset.lock],'screenLock',true));
-  document.querySelectorAll('[data-unlock]').forEach(x=>x.onclick=()=>feature([x.dataset.unlock],'screenLock',false));
-  document.querySelectorAll('[data-role]').forEach(x=>x.onclick=()=>toggleRole(x.dataset.role));
-  document.querySelectorAll('[data-devicefeatures]').forEach(x=>x.onclick=()=>showDeviceFeatures(x.dataset.devicefeatures));
-  document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>renameComputer(x.dataset.rename));
-}
-async function status(){
-  try{const x=await api('/api/v1/veyon/status');$('apiStatus').innerHTML=`Veyon API: <span class="online">CONNECTED</span> • ${esc(x.keyName)} • ${esc(x.scanSubnet)}.0/24`}
-  catch(e){$('apiStatus').innerHTML=`Veyon API: <span class="offline">OFFLINE</span> • ${esc(e.message)}`}
-}
-async function load(){
-  await status();
-  try{const x=await api('/api/v1/veyon/computers');computers=x.computers||[];render()}catch(e){$('grid').innerHTML=`<div class="offline">${esc(e.message)}</div>`}
-}
-async function discover(){
-  $('discover').disabled=true;$('discover').textContent='Scanning…';
-  try{await api('/api/v1/veyon/discover',{method:'POST',body:'{}'});await load()}
-  catch(e){alert(e.message)}finally{$('discover').disabled=false;$('discover').textContent='Discover Veyon PCs'}
-}
-async function feature(targets,name,active=true,args={}){
-  if(!targets.length)return alert('Select at least one computer.');
-  try{
-    const x=await api('/api/v1/veyon/feature',{method:'POST',body:JSON.stringify({targets,feature:name,active,arguments:args})});
-    const s=x.summary||{},failed=(x.results||[]).filter(r=>!r.ok&&!r.skipped),skipped=(x.results||[]).filter(r=>r.skipped);
-    if(failed.length||skipped.length){
-      const lines=[`Succeeded: ${s.succeeded??0}`,`Skipped: ${s.skipped??0}`,`Failed: ${s.failed??failed.length}`];
-      if(s.skippedOffline)lines.push(`Offline: ${s.skippedOffline}`);
-      if(s.skippedNoUser)lines.push(`No logged-in user: ${s.skippedNoUser}`);
-      if(failed.length)lines.push('\nFailures:\n'+failed.map(r=>`${r.name||r.ip}: ${r.error||'command failed'}`).join('\n'));
-      alert(lines.join('\n'));
-    }
-    setTimeout(load,500);
-  }catch(e){alert(e.message)}
-}
-async function messageTargets(targets){
-  const text=prompt('Message to display:');if(!text)return;
-  await feature(targets,'textMessage',true,{text});
-}
-function needSel(){const ids=targetIds();if(!ids.length)alert('Select at least one computer.');return ids}
-
-function setRoleFilter(role){
-  roleFilter=role;
-  $('showStudents').classList.toggle('active',role==='student');
-  $('showTeachers').classList.toggle('active',role==='teacher');
-  $('showAll').classList.toggle('active',role==='all');
-  render();
-}
-async function setRole(ids,role){
-  if(!ids.length)return alert('Select at least one computer.');
-  try{
-    await api('/api/v1/veyon/computers/role',{method:'POST',body:JSON.stringify({ids,role})});
-    ids.forEach(id=>{
-      const c=computers.find(x=>x.id===id);
-      if(c)c.role=role;
-    });
-    render();
-  }catch(e){alert(e.message)}
-}
-async function toggleRole(id){
-  const c=computers.find(x=>x.id===id);
-  if(!c)return;
-  await setRole([id],c.role==='teacher'?'student':'teacher');
-}
-
-function openInfo(title,html){$('infoTitle').textContent=title;$('infoBody').innerHTML=html;$('infoModal').classList.add('open')}
-function closeInfo(){$('infoModal').classList.remove('open');$('infoBody').innerHTML=''}
-$('closeInfo').onclick=closeInfo;$('infoModal').onclick=e=>{if(e.target===$('infoModal'))closeInfo()};
-
-async function showDeviceFeatures(id){
-  const c=computers.find(x=>x.id===id);if(!c)return;
-  openInfo(`Features — ${c.name||c.ip}`,'Loading…');
-  try{
-    const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/features`);
-    const rows=(x.features||[]).map(f=>{
-      const name=f.name||f.Name||f.description||f.Description||'Feature';
-      const uid=f.uid||f.UID||f.id||f.Id||'';
-      return `<div class="featureRow"><span>${esc(name)}</span><code>${esc(uid)}</code></div>`;
-    }).join('');
-    $('infoBody').innerHTML=`<div class="featureList">${rows||'<span class="muted">No feature list returned.</span>'}</div>`;
-  }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
-}
-async function showFeatures(){
-  const c=visibleComputers().find(x=>x.online)||computers.find(x=>x.online);
-  if(!c)return alert('No online Veyon computer available.');
-  await showDeviceFeatures(c.id);
-}
-async function showPool(){
-  openInfo('Veyon Connection Pool','Loading…');
-  try{
-    const x=await api('/api/v1/veyon/connections');
-    $('infoBody').innerHTML=`<div class="notice">${x.size} / ${x.max} cached connections</div><div class="featureList">${(x.connections||[]).map(r=>`<div class="featureRow"><span>${esc(r.host)}</span><span>idle ${r.idleSeconds}s • lifetime ${r.secondsRemaining}s</span></div>`).join('')}</div><div class="toolbar"><button id="closePool">Close All Cached Connections</button></div>`;
-    $('closePool').onclick=async()=>{await api('/api/v1/veyon/connections/close',{method:'POST',body:JSON.stringify({ids:['all']})});closeInfo();await load()};
-  }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
-}
-let veyonLoginTargets=[];
-function clearVeyonLogin(){veyonLoginTargets=[];$('veyonLoginPassword').value=''}
-function closeVeyonLogin(){$('loginDialog').close();clearVeyonLogin()}
-function loginSelected(){
-  const ids=needSel();if(!ids.length)return;
-  veyonLoginTargets=[...ids];$('loginDialogTargets').textContent=`${ids.length} selected computer${ids.length===1?'':'s'}`;
-  $('veyonLoginPassword').value='';$('loginDialog').showModal();$('veyonLoginUsername').focus();
-}
-async function submitVeyonLogin(event){
-  event.preventDefault();const ids=[...veyonLoginTargets],username=$('veyonLoginUsername').value.trim(),password=$('veyonLoginPassword').value;
-  if(!ids.length||!username||!password)return;
-  $('veyonLoginPassword').value='';$('loginDialog').close();veyonLoginTargets=[];
-  try{await feature(ids,'userLogin',true,{username,password})}finally{$('veyonLoginPassword').value=''}
-}
-$('loginForm').addEventListener('submit',submitVeyonLogin);
-$('cancelLogin').onclick=closeVeyonLogin;
-$('loginDialog').addEventListener('close',clearVeyonLogin);
-function downloadScreenshots(){
-  const ids=needSel();if(!ids.length)return;
-  ids.forEach((id,i)=>setTimeout(()=>{
-    const c=computers.find(x=>x.id===id),a=document.createElement('a');
-    a.href=`/api/v1/veyon/computers/${encodeURIComponent(id)}/framebuffer?format=png&t=${Date.now()}`;
-    a.download=`${(c?.name||c?.ip||id).replace(/[^a-z0-9._-]/gi,'_')}-${new Date().toISOString().replace(/[:.]/g,'-')}.png`;
-    document.body.appendChild(a);a.click();a.remove();
-  },i*250));
-}
-async function pickTeacherAndBroadcast(mode){
-  const students=needSel().filter(id=>computers.find(c=>c.id===id)?.role!=='teacher');
-  if(!students.length)return alert('Select at least one student device.');
-  const teachers=computers.filter(c=>c.role==='teacher'&&c.online);
-  if(!teachers.length)return alert('No online device is marked Teacher.');
-  const choices=teachers.map((c,i)=>`${i+1}. ${c.name||c.ip} (${c.ip})`).join('\n');
-  const n=Number(prompt(`Teacher source:\n${choices}\n\nEnter number:`,'1')),teacher=teachers[n-1];
-  if(!teacher)return;
-  try{
-    const x=await api('/api/v1/veyon/demo/start',{method:'POST',body:JSON.stringify({teacherId:teacher.id,studentIds:students,mode})});
-    const bad=(x.results||[]).filter(r=>!r.ok);
-    if(bad.length)alert(`${bad.length} demo client(s) failed:\n`+bad.map(x=>`${x.ip}: ${x.error}`).join('\n'));
-  }catch(e){alert(e.message)}
-}
-async function stopBroadcast(){
-  const students=computers.filter(c=>c.role!=='teacher'&&c.online).map(c=>c.id);
-  const teachers=computers.filter(c=>c.role==='teacher'&&c.online);
-  for(const teacher of teachers){
-    try{await api('/api/v1/veyon/demo/stop',{method:'POST',body:JSON.stringify({teacherId:teacher.id,studentIds:students})})}catch{}
-  }
-}
-async function renameComputer(id){
-  const c=computers.find(x=>x.id===id);const name=prompt('Display name:',c?.name||'');if(!name)return;
-  try{await api('/api/v1/veyon/computers/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({name})});await load()}catch(e){alert(e.message)}
-}
-
-function thumbnailUrl(id){
-  return `/api/v1/veyon/computers/${encodeURIComponent(id)}/framebuffer?format=jpeg&width=480&quality=55&t=${Date.now()}`;
-}
-function setThumbStatus(id,text){
-  const el=document.querySelector(`[data-thumb-status="${CSS.escape(id)}"]`);
-  if(el)el.textContent=text||'';
-}
-async function fetchThumbnail(id){
-  const img=document.querySelector(`[data-thumb="${CSS.escape(id)}"]`);
-  const computer=computers.find(x=>x.id===id);
-  if(!img||!computer?.online||!computer?.authenticated)return;
-
-  const state=thumbState.get(id)||{failures:0,nextTry:0,busy:false};
-  if(state.busy||Date.now()<Number(state.nextTry||0))return;
-  state.busy=true;thumbState.set(id,state);
-  setThumbStatus(id,state.failures?'Retrying…':'Loading screen…');
-
-  try{
-    const response=await fetch(thumbnailUrl(id),{cache:'no-store'});
-    if(!response.ok)throw new Error(`HTTP ${response.status}`);
-    const blob=await response.blob();
-    const url=URL.createObjectURL(blob);
-    const oldUrl=img.dataset.objectUrl;
-    img.onload=()=>{
-      img.style.opacity='1';
-      setThumbStatus(id,'');
-      if(oldUrl)URL.revokeObjectURL(oldUrl);
-    };
-    img.dataset.objectUrl=url;
-    img.src=url;
-    state.failures=0;
-    state.nextTry=Date.now()+THUMB_REFRESH_MS;
-  }catch(err){
-    state.failures=Number(state.failures||0)+1;
-    // Exponential backoff: 10s, 20s, 40s, max 2 min.
-    const delay=Math.min(120000,THUMB_REFRESH_MS*Math.pow(2,Math.min(3,state.failures-1)));
-    state.nextTry=Date.now()+delay;
-    img.style.opacity='.2';
-    setThumbStatus(id,`Screen unavailable • retry ${Math.round(delay/1000)}s`);
-  }finally{
-    state.busy=false;
-    thumbState.set(id,state);
-  }
-}
-async function mapThumbLimit(ids,limit,worker){
-  const queue=[...ids];
-  const runners=Array.from({length:Math.min(limit,queue.length)},async()=>{
-    while(queue.length){
-      const id=queue.shift();
-      await worker(id);
-    }
-  });
-  await Promise.all(runners);
-}
-function visibleAuthenticatedThumbnailIds(){
-  return [...document.querySelectorAll('[data-thumb]')]
-    .map(x=>x.dataset.thumb)
-    .filter(id=>{
-      const c=computers.find(x=>x.id===id);
-      return c?.online&&c?.authenticated;
-    });
-}
-function queueVisibleThumbnails(){
-  const ids=visibleAuthenticatedThumbnailIds();
-  mapThumbLimit(ids,THUMB_CONCURRENCY,fetchThumbnail).catch(()=>{});
-}
-function startThumbnailTimer(){
-  clearInterval(thumbTimer);
-  thumbTimer=setInterval(queueVisibleThumbnails,THUMB_REFRESH_MS);
-}
-
-function liveInterval(){
-  return Math.max(250,Number($('liveRefreshMs')?.value||1000));
-}
-function startLiveTimer(){
-  clearInterval(liveTimer);
-  liveTimer=setInterval(refreshLive,liveInterval());
-}
-function openLive(id){
-  const c=computers.find(x=>x.id===id);
-  liveId=id;
-  $('liveTitle').textContent=`Live View — ${c?.name||c?.ip||id}`;
-  $('modal').classList.add('open');
-  $('liveImg').style.width='100%';
-  $('liveImg').style.height='100%';
-  $('liveImg').style.maxWidth='none';
-  $('liveImg').style.maxHeight='none';
-  refreshLive();
-  startLiveTimer();
-}
-function refreshLive(){
-  if(!liveId)return;
-  const box=$('liveModalBox');
-  const width=Math.max(1280,Math.min(2560,Math.round((box?.clientWidth||1280)*1.25)));
-  $('liveImg').src=`/api/v1/veyon/computers/${encodeURIComponent(liveId)}/framebuffer?format=jpeg&width=${width}&quality=78&t=${Date.now()}`;
-}
-function closeLive(){
-  liveId=null;
-  clearInterval(liveTimer);liveTimer=null;
-  $('modal').classList.remove('open','fullscreen');
-  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
-  $('liveImg').removeAttribute('src');
-}
-function fitLive(){
-  const img=$('liveImg');
-  img.style.width='100%';img.style.height='100%';img.style.objectFit='contain';
-}
-function actualLive(){
-  const img=$('liveImg');
-  img.style.width='auto';img.style.height='auto';img.style.objectFit='none';
-  img.style.maxWidth='none';img.style.maxHeight='none';
-}
-function resetLiveSize(){
-  const box=$('liveModalBox');
-  box.style.width='min(1600px,97vw)';
-  box.style.height='min(900px,94vh)';
-  fitLive();
-}
-async function toggleLiveFullscreen(){
-  const modal=$('modal');
-  if(!document.fullscreenElement){
-    modal.classList.add('fullscreen');
-    try{await modal.requestFullscreen()}catch{}
-  }else{
-    try{await document.exitFullscreen()}catch{}
-    modal.classList.remove('fullscreen');
-  }
-  setTimeout(refreshLive,150);
-}
-$('closeLive').onclick=closeLive;
-$('modal').onclick=e=>{if(e.target===$('modal'))closeLive()};
-$('liveRefreshMs').onchange=()=>{if(liveId)startLiveTimer()};
-$('liveFit').onclick=fitLive;
-$('liveActual').onclick=actualLive;
-$('liveResetSize').onclick=resetLiveSize;
-$('liveFullscreen').onclick=toggleLiveFullscreen;
-document.addEventListener('fullscreenchange',()=>{
-  if(!document.fullscreenElement)$('modal').classList.remove('fullscreen');
-  if(liveId)setTimeout(refreshLive,100);
-});
-$('showStudents').onclick=()=>setRoleFilter('student');
-$('showTeachers').onclick=()=>setRoleFilter('teacher');
-$('showAll').onclick=()=>setRoleFilter('all');
-$('markStudent').onclick=()=>setRole(needSel(),'student');
-$('markTeacher').onclick=()=>setRole(needSel(),'teacher');
-$('discover').onclick=discover;$('refresh').onclick=load;
-$('selectAll').onclick=()=>{visibleComputers().filter(x=>x.online).forEach(x=>selected.add(x.id));render()};
-$('clearSel').onclick=()=>{selected.clear();render()};
-$('message').onclick=()=>messageTargets(needSel());
-$('lock').onclick=()=>feature(needSel(),'screenLock',true);
-$('unlock').onclick=()=>feature(needSel(),'screenLock',false);
-$('inputLock').onclick=()=>feature(needSel(),'inputLock',true);
-$('inputUnlock').onclick=()=>feature(needSel(),'inputLock',false);
-$('login').onclick=loginSelected;
-$('screenshot').onclick=downloadScreenshots;
-$('broadcastFull').onclick=()=>pickTeacherAndBroadcast('fullscreen');
-$('broadcastWindow').onclick=()=>pickTeacherAndBroadcast('window');
-$('stopBroadcast').onclick=stopBroadcast;
-$('features').onclick=showFeatures;
-$('pool').onclick=showPool;
-$('openSite').onclick=()=>{const ids=needSel();if(!ids.length)return;const u=prompt('Website URL:','https://');if(u)feature(ids,'openWebsite',true,{websiteUrls:[u]})};
-$('startApp').onclick=()=>{const ids=needSel();if(!ids.length)return;const a=prompt('Application path / command:','notepad.exe');if(a)feature(ids,'startApp',true,{applications:[a]})};
-$('logoff').onclick=()=>{const ids=needSel();if(ids.length&&confirm(`Log off ${ids.length} computer(s)?`))feature(ids,'userLogoff',true)};
-$('reboot').onclick=()=>{const ids=needSel();if(ids.length&&confirm(`Reboot ${ids.length} computer(s)?`))feature(ids,'reboot',true)};
-$('shutdown').onclick=()=>{const ids=needSel();if(ids.length&&confirm(`POWER DOWN ${ids.length} computer(s)?`))feature(ids,'powerDown',true)};
-load();startThumbnailTimer();setInterval(load,30000);
-</script><script src="/controller/lab-accessibility.js" defer></script>
+<script src="/controller/veyon.js"></script><script src="/controller/lab-accessibility.js" defer></script>
 </body></html>

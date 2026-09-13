@@ -24,9 +24,9 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
 </head>
 <body class="rg-workspace rg-lab">
 <main id="main-content">
-  <nav class="lab-nav" aria-label="Lab navigation"><a href="/controller/" target="_top">RoomGoblin</a><a href="/controller/lab.html" aria-current="page">Agent computers</a><a href="/controller/veyon.html">Veyon computers</a></nav>
+  <nav class="lab-nav" aria-label="Lab navigation"><a href="/controller/" target="_top" data-brand-lockup></a><a href="/controller/lab.html" aria-current="page">Agent computers</a><a href="/controller/veyon.html">Veyon computers</a></nav>
   <div class="top">
-    <div><h1>Lab Computers</h1><div class="muted">Manage computers, help students, and keep the class focused. <span id="hubVersion">loading version…</span></div></div>
+    <div><div data-brand-lockup></div><h1>Lab Computers</h1><div class="muted">Manage computers, help students, and keep the class focused. <span id="hubVersion">loading version…</span></div></div>
     <div class="toolbar"><button onclick="loadAll()">Refresh</button><span id="configState" class="pill">Loading…</span></div>
   </div>
 
@@ -35,7 +35,7 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
     <div><div class="muted">Online</div><div id="online" class="kpi good">0</div></div>
     <div><div class="muted">Offline</div><div id="offline" class="kpi bad">0</div></div>
     <div style="flex:1"></div>
-    <button onclick="selectAll(true)">Select All</button><button onclick="selectOnline()">Select Online</button><button onclick="selectAll(false)">Clear</button>
+    <button onclick="selectAll(true)">Select visible</button><button onclick="selectOnline()">Select online</button><button onclick="selectAll(false)">Clear selection</button>
   </div></div>
 
   <details class="panel lab-disclosure" id="aiAlertPanel"><summary>AI usage monitor <span class="muted">Review browser activity alerts</span></summary>
@@ -74,9 +74,9 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
     </div></details>
     <div id="actionResult" class="muted" role="status" aria-live="polite"></div>
   </section>
-  <div class="top lab-inventory-heading"><h2>Computers</h2><span class="muted">Select computers to apply an action.</span></div>
+  <div class="top lab-inventory-heading"><h2>Computers <span id="inventoryCount" class="muted" role="status"></span></h2><div class="lab-filters"><label>Find a computer<input id="computerSearch" type="search" placeholder="Name, user or address" oninput="render()"></label><label>Status<select id="computerStatus" onchange="render()"><option value="all">All computers</option><option value="online">Online</option><option value="offline">Offline</option><option value="selected">Selected</option></select></label><label>View<select id="computerDensity" onchange="setComputerDensity(this.value)"><option value="compact">Compact</option><option value="comfortable">Comfortable</option></select></label></div></div>
 
-  <div id="computerGrid" class="grid"><div class="muted">Loading…</div></div>
+  <div id="computerGrid" class="grid" data-density="compact"><div class="muted">Loading…</div></div>
 
   <dialog id="aiAlertDialog" aria-label="AI usage alerts">
     <div class="top">
@@ -287,25 +287,32 @@ function fmtUptime(s){s=Number(s)||0;const d=Math.floor(s/86400),h=Math.floor((s
 function fmtTime(v){const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleString()}
 function cacheBustUrl(value){return `${String(value||'')}\u0026t=${Date.now()}`}
 async function loadAll(){try{inventory=await api('/api/v1/lab/computers');render();refreshAiSummary()}catch(e){computerGrid.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
+function visibleComputers(){
+ const query=computerSearch.value.trim().toLowerCase(),status=computerStatus.value;
+ return inventory.computers.filter(c=>(status==='all'||(status==='online'&&c.online)||(status==='offline'&&!c.online)||(status==='selected'&&selected.has(c.id)))&&[c.name,c.hostname,c.id,c.ip,c.user].some(v=>String(v||'').toLowerCase().includes(query)));
+}
+function setComputerDensity(value){computerGrid.dataset.density=value==='comfortable'?'comfortable':'compact'}
 function render(){
  total.textContent=inventory.summary.total;online.textContent=inventory.summary.online;offline.textContent=inventory.summary.offline;
  configState.textContent=inventory.configured?'Agent enrollment enabled':'LAB_AGENT_TOKEN NOT SET';configState.className='pill '+(inventory.configured?'good':'bad');
  const valid=new Set(inventory.computers.map(x=>x.id));for(const id of [...selected])if(!valid.has(id))selected.delete(id);
  selectionCount.textContent=`${selected.size} selected`;
- computerGrid.innerHTML=inventory.computers.map(c=>{const site=c.latestWebsite,arg=jsArg(c.id);return `<div class="card ${c.online?'online':'offline'} ${selected.has(c.id)?'selected':''}">
+ const expanded=new Set([...computerGrid.querySelectorAll('[data-computer-id] details[open]')].map(d=>d.closest('[data-computer-id]').dataset.computerId));
+ const visible=visibleComputers();const hiddenSelected=selected.size-visible.filter(c=>selected.has(c.id)).length;selectionCount.textContent=`${selected.size} selected${hiddenSelected?` · ${hiddenSelected} hidden by filters`:""}`;inventoryCount.textContent=`${visible.length} / ${inventory.computers.length}`;
+ computerGrid.innerHTML=visible.map(c=>{const site=c.latestWebsite,arg=jsArg(c.id);return `<div data-computer-id="${esc(c.id)}" class="card ${c.online?'online':'offline'} ${selected.has(c.id)?'selected':''}">
  <div class="computerHead"><label><input type="checkbox" ${selected.has(c.id)?'checked':''} onchange="toggle(${arg},this.checked)"> <b>${esc(c.name||c.hostname||c.id)}</b></label><span class="pill ${c.online?'good':'bad'}">${c.online?'ONLINE':'OFFLINE'}</span></div>
  <div class="muted">${esc(c.hostname||c.id)} • ${esc(c.ip||'No IP')}</div>
  <div class="row"><b>User:</b><span>${esc(c.user||'No interactive user')}</span></div>
- <div class="row"><b>OS:</b><span class="muted">${esc(c.os||'—')}</span></div>
+ <details class="computer-details" ${expanded.has(String(c.id))?'open':''}><summary>Device &amp; activity details</summary><div class="row"><b>OS:</b><span class="muted">${esc(c.os||'—')}</span></div>
  <div class="row"><b>Uptime:</b><span>${fmtUptime(c.uptimeSeconds)}</span></div>
  <div style="margin-top:9px;border-top:1px solid var(--border);padding-top:8px"><div class="muted">Latest browser activity</div>
  ${site?`<b>${esc(site.title||site.domain||'Website')}</b><br><span class="url">${esc(site.domain||site.url)}</span><br><span class="muted">${fmtTime(site.visitTime)} • ${esc(site.browser||'Browser')}</span>`:'<span class="muted">No recent history reported.</span>'}</div>
- <div class="toolbar" style="margin-top:10px"><button onclick="showHistory(${arg})">History</button><button onclick="showScreen(${arg})">Screen</button><button onclick="quickMessage(${arg})">Message</button><button onclick="showLastCommand(${arg})">Last Command</button><button onclick="editComputer(${arg})">Edit</button></div>
+ </details><div class="toolbar" style="margin-top:10px"><button onclick="showHistory(${arg})">History</button><button onclick="showScreen(${arg})">Screen</button><button onclick="quickMessage(${arg})">Message</button><button onclick="showLastCommand(${arg})">Last Command</button><button onclick="editComputer(${arg})">Edit</button></div>
  ${c.lastCommand?`<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px"><div class="muted">Last command</div><b>${esc(c.lastCommand.action||'')}</b> • <span class="${c.lastCommand.status==='failed'?'bad':(c.lastCommand.status==='completed'?'good':'')}">${esc(c.lastCommand.status||'')}</span>${c.lastCommand.message?`<br><span class="muted">${esc(c.lastCommand.message)}</span>`:''}</div>`:''}
- </div>`}).join('')||'<div class="muted">No lab agents enrolled yet.</div>';
+ </div>`}).join('')||(inventory.computers.length?'<div class="muted">No computers match these filters. Clear the search or change status.</div>':'<div class="muted">No lab agents enrolled yet.</div>');
 }
-function toggle(id,on){if(on)selected.add(id);else selected.delete(id);render()}function selectAll(on){selected.clear();if(on)inventory.computers.forEach(x=>selected.add(x.id));render()}
-function selectOnline(){selected.clear();inventory.computers.filter(x=>x.online).forEach(x=>selected.add(x.id));render()}function targets(){const a=[...selected];if(!a.length)throw Error('Select at least one computer.');return a}
+function toggle(id,on){if(on)selected.add(id);else selected.delete(id);render()}function selectAll(on){const visible=visibleComputers();selected.clear();if(on)visible.forEach(x=>selected.add(x.id));render()}
+function selectOnline(){const visible=visibleComputers();selected.clear();visible.filter(x=>x.online).forEach(x=>selected.add(x.id));render()}function targets(){const a=[...selected];if(!a.length)throw Error('Select at least one computer.');return a}
 async function command(action,payload={}){const j=await api('/api/v1/lab/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets:targets(),action,payload})});actionResult.textContent=`${action}: ${j.deliveries.filter(x=>x.delivered).length}/${j.deliveries.length} delivered`;setTimeout(loadAll,500);return j}
 async function sendAction(action){if(['restart','shutdown','logoff'].includes(action)&&!confirm(`${action.toUpperCase()} ${selected.size} selected computer(s)?`))return;try{await command(action)}catch(e){alert(e.message)}}
 async function sendMessage(){const text=prompt('Message to selected computers:');if(!text)return;try{await command('message',{title:'Message from Instructor',text})}catch(e){alert(e.message)}}

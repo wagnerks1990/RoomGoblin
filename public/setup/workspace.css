@@ -1,1 +1,19 @@
 .rg-workspace .wrap{max-width:960px;margin:0 auto;padding:36px 24px 64px}.setup-nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}.setup-nav a{color:var(--rg-text);padding:10px 14px;border:1px solid var(--rg-line);border-radius:10px;text-decoration:none}.rg-workspace .card{padding:24px;margin:20px 0;scroll-margin-top:24px}.rg-workspace .step{color:var(--rg-text);margin-bottom:8px}.rg-workspace h1{font-size:clamp(26px,4vw,36px);letter-spacing:-.04em;margin-bottom:12px}.rg-workspace h2{font-size:21px;margin-bottom:16px}.rg-workspace .muted{line-height:1.65}.setup-advanced{border-top:1px solid var(--rg-line);padding-top:16px;margin-top:20px!important}.rg-workspace summary{padding:10px 0;min-height:44px}.setup-services .top{margin-top:16px}.rg-workspace input[type=color]{height:44px;padding:5px}.rg-workspace #msg,.rg-workspace #adminMsg{display:block;margin-top:14px}.rg-workspace #save-setup button{margin:4px 6px 4px 0}@media(max-width:600px){.rg-workspace .wrap{padding:24px 14px 48px}.rg-workspace .card{padding:18px}.setup-nav{gap:6px}.setup-nav a{font-size:13px}.rg-workspace .grid{grid-template-columns:minmax(0,1fr)}}
+/* Clear numbered steps and a quieter setup form. */
+.rg-workspace .wrap{max-width:1000px;margin-block:0;padding-top:28px}
+.rg-workspace .wrap>.top{align-items:flex-start;gap:28px}
+.rg-workspace .wrap>.top p{max-width:620px;margin-bottom:0}
+.setup-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;padding:5px;background:var(--rg-surface);border:1px solid var(--rg-line);border-radius:12px}
+.setup-nav a{text-align:center;border:0;font-size:13px}
+.setup-nav a:hover,.setup-nav a:focus-visible{background:var(--rg-bg)}
+.rg-workspace .card{padding:22px 26px;margin-block:16px}
+.rg-workspace .card:target{border-color:var(--brand-primary,#0f766e)}
+.rg-workspace .step{font-size:11px;letter-spacing:.1em;color:var(--rg-muted)}
+.rg-workspace h2{font-size:19px;letter-spacing:-.02em;margin-bottom:12px}
+.rg-workspace .row{gap:8px 24px}
+.rg-workspace .card>p{max-width:760px;font-size:13px}
+.rg-workspace .setup-services{padding-block:12px}
+.rg-workspace .setup-services details{margin-top:0}
+.rg-workspace #save-setup>button{width:auto;min-width:220px}
+.rg-workspace #save-setup .setup-advanced{font-size:13px}
+@media(max-width:600px){.rg-workspace .wrap{padding-top:20px}.rg-workspace .card{padding:18px}.setup-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.setup-nav a{padding:10px 6px}.rg-workspace #save-setup>button{width:100%;min-width:0}}

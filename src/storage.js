@@ -385,7 +385,7 @@ class ClassroomHubStorage{
 
   getAdminConfig(){
     const devices=this.readNormalized("devices",{}),hardware=this.readNormalized("hardware",{}),calendar=this.readNormalized("scheduler-calendar",{});
-    const site=this.getSetting("site.profile",{school:"Your School",room:devices.room||"Classroom",timezone:"America/New_York",productName:"RoomGoblin",logoUrl:"/brand/roomgoblin_primary_400w.png",faviconUrl:"/brand/roomgoblin_app_32x32.png",displayPrefix:"TV",theme:{mode:"dark",primary:"#0F766E",accent:"#22C55E",background:"#040705",surface:"#1E293B",text:"#eef4f8"},revision:0});
+    const site=this.getSetting("site.profile",{school:"Your School",room:devices.room||"Classroom",timezone:"America/New_York",productName:"RoomGoblin",logoUrl:"/brand/roomgoblin_app_192x192.png",faviconUrl:"/brand/roomgoblin_app_32x32.png",displayPrefix:"TV",theme:{mode:"dark",primary:"#0F766E",accent:"#22C55E",background:"#0B1320",surface:"#1E293B",text:"#F8FAFC"},revision:0});
     const preferences={};for(const r of this.db.prepare("SELECT key,value_json FROM system_preferences ORDER BY key").all())preferences[r.key]=parseJson(r.value_json,null);
     return {site,devices,hardware,calendar,preferences,accessProfiles:this.listAccessProfiles()};
   }

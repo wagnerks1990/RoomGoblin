@@ -34,6 +34,14 @@ for styling ownership, responsive behavior and review requirements.
 page activation and authorization remain in `app.js`. Shared operator CSS is
 opt-in and must not enter physical display, document or video playback layouts.
 
+Veyon UI code is split into HTML/CSS/JS and uses bounded visible-preview workers,
+decode-before-swap and labeled stale/error states. Backend transport is in
+`src/veyon-transport.js`; session retries must preserve sensitive-read permissions,
+backend-only keys and UID-specific cleanup. See the Veyon integration contract.
+Desktop focus mode changes shell layout without reloading embedded tools.
+Inventory filters retain hidden selections with explicit counts. Canonical product
+marks use the supplied valid192 mascot; old400w/512 URLs are compatibility aliases.
+
 ## Runtime architecture
 
 ```text

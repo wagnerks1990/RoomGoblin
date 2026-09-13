@@ -356,11 +356,11 @@ test("public display-test cards use current RoomGoblin branding",()=>{
 
 test("standalone administration surfaces preserve keyboard focus and reduced motion",()=>{
   for(const file of ["public/controller/lab.html","public/controller/veyon.html","public/setup/index.html"]){
-    const source=fs.readFileSync(path.join(projectRoot,file),"utf8");
+    const source=fs.readFileSync(path.join(projectRoot,file),"utf8")+(file.endsWith("veyon.html")?fs.readFileSync(path.join(projectRoot,"public/controller/veyon.css"),"utf8"):"");
     assert.match(source,/:focus-visible/,`${file} needs a visible keyboard-focus treatment`);
     assert.match(source,/@media\(prefers-reduced-motion:reduce\)/,`${file} needs a reduced-motion treatment`);
   }
-  const veyon=fs.readFileSync(path.join(projectRoot,"public/controller/veyon.html"),"utf8");
+  const veyon=fs.readFileSync(path.join(projectRoot,"public/controller/veyon.html"),"utf8")+fs.readFileSync(path.join(projectRoot,"public/controller/veyon.js"),"utf8");
   assert.match(veyon,/class="check"[^>]+aria-label="Select /);
 });
 

@@ -113,6 +113,7 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
   <div class="top">
     <div>
       <a class="studio-back" href="/controller/">← RoomGoblin</a>
+      <div data-brand-lockup></div>
       <h1>Display studio</h1>
       <div class="muted">Choose screens, create content, and send it to the room. • v1.0.0-alpha.82</div>
     </div>
@@ -120,7 +121,7 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
   </div>
 
   <div class="shell">
-    <aside class="left">
+    <aside class="left" aria-label="Screens and classroom controls">
       <div class="panel">
         <h2>1. Choose screens</h2>
         <div class="toolbar">
@@ -142,14 +143,14 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
         <div id="quickScenes" class="sceneList" style="margin-top:8px"></div>
       </div>
 
-      <div class="panel">
-        <h2>Classroom Session</h2>
+      <details class="panel studio-session">
+        <summary>Classroom session controls</summary>
         <div class="toolbar">
           <button class="danger" style="font-weight:800" onclick="clearClassroom()">Clear classroom</button>
           <button onclick="resumeClassroom()">Resume Sessions</button>
         </div>
         <div class="muted" style="margin-top:7px">Clear Classroom stops lesson queues, pauses spotlight rotation, and blanks every enabled RoomGoblin display immediately.</div>
-      </div>
+      </details>
 
       <div class="panel">
         <h2>Activity</h2>

@@ -31,3 +31,33 @@
  .rg-lab dialog .toolbar label{width:100%}.rg-lab dialog .top{align-items:flex-start}
  .rg-veyon #modal .modalBox{height:94dvh;max-height:94dvh;padding:10px}.rg-veyon #modal .liveToolbar{gap:6px}.rg-veyon #modal .liveToolbar button{padding:8px;font-size:12px}
 }
+/* Agent inventory: compact scan-first cards with details available on demand. */
+.rg-lab main{width:min(1680px,100%);padding-block:20px}
+.rg-lab .lab-nav{margin-bottom:16px}
+.rg-lab .lab-summary{padding:12px 18px}
+.rg-lab .lab-summary .toolbar{margin:0;gap:18px}
+.rg-lab .lab-summary .kpi{font-size:22px}
+.rg-lab .lab-selection{padding:16px 18px}
+.rg-lab .lab-selection .lab-disclosure{margin-top:8px}
+.rg-lab .lab-selection .lab-disclosure summary{padding-block:10px}
+.rg-lab .lab-inventory-heading{align-items:end;gap:16px;margin-block:22px 12px}
+.rg-lab .lab-inventory-heading h2{white-space:nowrap}
+.rg-lab #inventoryCount{font-size:13px;font-weight:400;margin-left:8px}
+.rg-lab .lab-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.rg-lab .lab-filters label{display:grid;gap:5px;font-size:12px;color:var(--muted)}
+.rg-lab .lab-filters input{width:240px;max-width:100%}
+.rg-lab #computerGrid{grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px;align-items:start}
+.rg-lab #computerGrid[data-density=comfortable]{grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:18px}
+.rg-lab #computerGrid .card{padding:14px;min-width:0}
+.rg-lab #computerGrid[data-density=comfortable] .card{padding:22px}
+.rg-lab #computerGrid .computerHead{gap:6px;align-items:start}
+.rg-lab #computerGrid .computerHead label{font-size:14px;min-width:0;min-height:32px}
+.rg-lab #computerGrid .computerHead .pill{font-size:10px;flex-shrink:0;margin-top:5px}
+.rg-lab #computerGrid .card>.muted{font-size:12px;overflow-wrap:anywhere}
+.rg-lab #computerGrid .card .toolbar{gap:6px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.rg-lab #computerGrid .card .toolbar button{padding:8px 5px;font-size:12px;white-space:normal}
+.rg-lab .computer-details{margin-top:10px;border-block:1px solid var(--border)}
+.rg-lab .computer-details summary{padding:10px 0;min-height:44px;cursor:pointer;font-size:12px;color:var(--muted)}
+.rg-lab .computer-details[open]{padding-bottom:12px}
+.rg-lab .computer-details .row{font-size:13px}
+@media(max-width:680px){.rg-lab .lab-inventory-heading{align-items:stretch}.rg-lab .lab-filters{display:grid;grid-template-columns:1fr 1fr;width:100%}.rg-lab .lab-filters label:first-child{grid-column:1/-1}.rg-lab .lab-filters input{width:100%}.rg-lab .lab-summary .toolbar>button{flex:1 1 auto}.rg-lab #computerGrid .card .toolbar button{font-size:13px}}

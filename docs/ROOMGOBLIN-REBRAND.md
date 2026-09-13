@@ -101,3 +101,26 @@ Do not optimize for a zero-result grep. Optimize for a correctly branded product
 AI assistants and contributors must read `docs/brand/AI-BRAND-CONTEXT.md` before branding work. They must not rename compatibility-sensitive identifiers unless the change includes an explicit migration, rollback path, and tests proving installed systems and managed devices survive the transition.
 
 When behavior or branding rules change, update this document, the relevant `docs/` page, its `wiki/` mirror when one exists, and AI context in the same pull request.
+
+## Permanent operator artwork
+
+Operator headers use the supplied 192 × 192 app mark at 30–48 CSS pixels,
+paired with live product text. The optional `data-brand-lockup` hook creates
+this treatment; existing shell images opt in with `data-brand-logo`.
+Do not squeeze a wordmark into a square icon slot. The runtime applies built-in
+artwork immediately, then loads the saved site profile. Custom school logos,
+favicons, names and colors remain supported; an image that fails to load falls
+back once to the bundled mark without a retry loop. Visible text remains readable
+if even that request fails. Default browser favicons use the supplied 32px icon.
+
+The originally committed `roomgoblin_primary_400w.png` had a broken PNG stream,
+and `roomgoblin_app_512x512.png` was truncated. Neither was recoverable as a
+complete original. Both old URLs now serve byte-identical copies of the valid
+192px supplied mark for compatibility. Their filenames do **not** describe their
+current dimensions. New UI must reference `roomgoblin_app_192x192.png` directly;
+use live text for the wordmark. This repair does not introduce a replacement
+mascot, upscale artwork, or migrate saved site identity.
+
+`test/branding.test.js` validates complete decoded image streams, default loading,
+legacy runtime aliases, custom identity preservation, and bounded logo fallback.
+Browser workspace checks also cover visible artwork and responsive headers.

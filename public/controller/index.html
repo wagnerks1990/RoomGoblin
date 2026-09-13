@@ -272,8 +272,8 @@ nav button{min-width:135px}
 <div class="app">
 <aside id="workspaceSidebar" aria-label="Workspace navigation">
   <div class="brandWrap">
-      <div class="logo" id="brandLogoWrap" title="RoomGoblin" style="display:none">
-        <img id="brandLogo" src="" alt="School logo">
+      <div class="logo" id="brandLogoWrap" title="RoomGoblin">
+        <img id="brandLogo" data-brand-logo src="/brand/roomgoblin_app_192x192.png" alt="RoomGoblin">
       </div>
       <div>
         <div class="brand" id="brandProductName">Room<span class="green">Goblin</span></div>
@@ -315,65 +315,61 @@ nav button{min-width:135px}
   </div>
 </aside>
 <main id="workspaceMain" tabindex="-1">
+<div class="rg-workspace-bar"><div><span class="rg-workspace-eyebrow">Classroom workspace</span><span id="workspaceContext">Today</span></div><button id="workspaceFocus" type="button" aria-pressed="false" title="Hide navigation to give this workspace more room">Focus workspace</button></div>
 <section id="overview" class="page active">
   <div class="top">
-    <div>
-      <h1>Today</h1>
-      <div class="muted">Your room at a glance.</div>
-    </div>
-    <div class="toolbar">
-      <button onclick="refreshOverview()">Refresh</button>
-      <button onclick="showPage('display')">Display Controls</button>
-      <button class="danger" onclick="clearClassroom()">Clear classroom…</button>
-    </div>
+    <div><h1>Today</h1><div class="muted">Everything you need to run the room.</div></div>
+    <div class="toolbar"><button onclick="refreshOverview()">Refresh status</button></div>
   </div>
 
-  <div class="grid">
-    <div class="card"><div class="muted">RoomGoblin</div><div class="kpi" id="hubState">…</div></div>
-    <div class="card"><div class="muted">MQTT / Govee</div><div class="kpi" id="mqttState">…</div></div>
-    <div class="card"><div class="muted">Pluto Mark I</div><div class="kpi" id="plutoState">…</div></div>
-  </div>
-
-  <div class="grid2">
+  <div class="grid2 rg-day-summary">
     <div class="panel">
-      <h2 class="sectionTitle">Today</h2>
-      <div id="overviewSchoolDay" class="kpi" style="font-size:24px">Loading…</div>
-      <div id="overviewClassStatus" class="muted" style="margin-top:8px">Loading class status…</div>
+      <h2 class="sectionTitle">Your school day</h2>
+      <div id="overviewSchoolDay" class="kpi">Loading…</div>
+      <div id="overviewClassStatus" class="muted">Loading class status…</div>
     </div>
     <div class="panel">
-      <h2 class="sectionTitle">Display Summary</h2>
-      <div id="overviewDisplaySummary" class="kpi" style="font-size:24px">Loading…</div>
-      <div id="overviewDisplayDetail" class="muted" style="margin-top:8px"></div>
+      <h2 class="sectionTitle">Room displays</h2>
+      <div id="overviewDisplaySummary" class="kpi">Loading…</div>
+      <div id="overviewDisplayDetail" class="muted"></div>
     </div>
   </div>
 
-  <div class="panel">
-    <h2 class="sectionTitle">Quick Actions</h2>
-    <div class="toolbar">
-      <button class="on" onclick="goveeCmd('all','on')">All Lights On</button>
-      <button class="off" onclick="goveeCmd('all','off')">All Lights Off</button>
-      <button class="on" onclick="plutoAction({action:'cecAllOutputs',index:0})">All TVs On</button>
-      <button class="off" onclick="plutoAction({action:'cecAllOutputs',index:1})">All TVs Off</button>
-      <button onclick="showPage('display')">Manage Display Content</button>
+  <div class="rg-health-strip" aria-label="Integration health">
+    <div><span>RoomGoblin</span><strong id="hubState">…</strong></div>
+    <div><span>MQTT / Govee</span><strong id="mqttState">…</strong></div>
+    <div><span>Pluto Mark I</span><strong id="plutoState">…</strong></div>
+  </div>
+
+  <div class="rg-task-grid" aria-label="Daily workspaces">
+    <button type="button" data-workspace-link="display" hidden><span class="rg-task-icon" aria-hidden="true">▣</span><span><b>Display content</b><small>Present, announce, or share</small></span><span aria-hidden="true">→</span></button>
+    <button type="button" data-workspace-link="lab" hidden><span class="rg-task-icon" aria-hidden="true">▦</span><span><b>Lab computers</b><small>Monitor and manage the class</small></span><span aria-hidden="true">→</span></button>
+    <button type="button" data-workspace-link="music" hidden><span class="rg-task-icon" aria-hidden="true">♫</span><span><b>Background music</b><small>Choose what plays next</small></span><span aria-hidden="true">→</span></button>
+  </div>
+
+  <div class="panel rg-room-actions">
+    <h2 class="sectionTitle">Room controls</h2>
+    <div class="rg-control-groups">
+      <div><span>All lights</span><div class="toolbar"><button onclick="goveeCmd('all','on')">Turn on</button><button onclick="goveeCmd('all','off')">Turn off</button></div></div>
+      <div><span>All TVs</span><div class="toolbar"><button onclick="plutoAction({action:'cecAllOutputs',index:0})">Turn on</button><button onclick="plutoAction({action:'cecAllOutputs',index:1})">Turn off</button></div></div>
     </div>
   </div>
 
-  <div class="panel">
-    <div class="top" style="position:static;margin:0 0 10px;padding:0;border:0;background:none;box-shadow:none">
-      <div>
-        <h2 class="sectionTitle">Displays</h2>
-        <div class="muted">Live preview, connection state, last heartbeat, and current content for each RoomGoblin display.</div>
-      </div>
-      <div class="toolbar"><button onclick="refreshOverviewDisplayPreviews()">Reload Previews</button><button class="primary" onclick="reloadAllDisplays()">Reload All Displays</button></div>
+  <div class="panel rg-display-inventory">
+    <div class="top">
+      <div><h2 class="sectionTitle">Live displays</h2><div class="muted">Current content and connection status.</div></div>
+      <div class="toolbar"><button onclick="refreshOverviewDisplayPreviews()">Refresh previews</button></div>
     </div>
-    <div id="overviewDisplays" class="overviewDisplays">
-      <div class="muted">Loading displays…</div>
-    </div>
+    <div id="overviewDisplays" class="overviewDisplays"><div class="muted">Loading displays…</div></div>
   </div>
+  <details class="panel workspaceDisclosure rg-room-maintenance">
+    <summary>Classroom reset &amp; display maintenance</summary>
+    <div class="disclosureBody"><p class="muted">These actions affect the whole classroom.</p><div class="toolbar"><button onclick="reloadAllDisplays()">Reload all displays</button><button class="danger" onclick="clearClassroom()">Clear classroom…</button></div></div>
+  </details>
 </section>
 
 <section id="display" class="page">
-  <div class="top"><h1>Display Content</h1><span class="muted">Existing RoomGoblin display/session controller</span></div>
+  <div class="top"><div><h1>Display content</h1><div class="muted">Create content and choose where it appears.</div></div><a class="buttonLink" href="/controller/display.html" target="_blank" rel="noopener">Open full workspace ↗</a></div>
   <iframe data-lazy-src="/controller/display.html" title="Classroom display controls"></iframe>
 </section>
 
@@ -541,15 +537,8 @@ nav button{min-width:135px}
 </section>
 
 <section id="lab" class="page">
-  <div class="top"><h1>Lab Computers</h1><span class="muted">Choose Veyon monitoring or the enrolled Windows classroom agent.</span></div>
-  <details class="panel advanced">
-    <summary><b>Windows Agent Enrollment</b> <span class="muted">individual, revocable computer credentials</span></summary>
-    <div class="toolbar" style="margin-top:12px"><input id="labEnrollmentId" aria-label="Lab computer ID" placeholder="computer-id"><input id="labEnrollmentTtl" aria-label="Lab enrollment lifetime in minutes" type="number" min="5" max="60" value="15" title="Enrollment lifetime in minutes"><button class="primary" onclick="createLabAgentEnrollment()">Create One-Time Installer</button><button onclick="loadLabAgentCredentials()">Refresh</button></div>
-    <label class="pill" style="margin:10px 0"><input id="labLegacySharedToken" type="checkbox"> Temporarily allow legacy shared agent token</label><button onclick="saveLabAgentPolicy()">Save Agent Security Policy</button>
-    <div id="labEnrollmentResult" class="card" style="display:none;box-shadow:none;margin-top:10px"></div>
-    <div id="labAgentCredentials" class="scroll" style="margin-top:10px">Loading agent security…</div>
-  </details>
-  <div class="panel">
+  <div class="top"><div><h1>Lab computers</h1><div class="muted">Keep the class in view and help students from one place.</div></div><a id="workspaceLabLink" class="buttonLink" href="/controller/veyon.html" target="_blank" rel="noopener">Open full workspace ↗</a></div>
+  <div class="rg-console-switcher">
     <div class="toolbar" role="tablist" aria-label="Lab computer control method">
       <button id="labVeyonTab" type="button" role="tab" aria-selected="true" aria-controls="labVeyonFrame" class="primary" onclick="showLabConsole('veyon')">Veyon</button>
       <button id="labWindowsTab" type="button" role="tab" aria-selected="false" aria-controls="labWindowsFrame" onclick="showLabConsole('windows')">Windows Agent</button>
@@ -558,6 +547,13 @@ nav button{min-width:135px}
   </div>
   <iframe id="labVeyonFrame" data-lazy-src="/controller/veyon.html" title="Veyon classroom computer controls"></iframe>
   <iframe id="labWindowsFrame" data-lazy-src="/controller/lab.html" title="Windows classroom agent controls" hidden></iframe>
+  <details class="panel advanced">
+    <summary><b>Windows Agent Enrollment</b> <span class="muted">individual, revocable computer credentials</span></summary>
+    <div class="toolbar" style="margin-top:12px"><input id="labEnrollmentId" aria-label="Lab computer ID" placeholder="computer-id"><input id="labEnrollmentTtl" aria-label="Lab enrollment lifetime in minutes" type="number" min="5" max="60" value="15" title="Enrollment lifetime in minutes"><button class="primary" onclick="createLabAgentEnrollment()">Create One-Time Installer</button><button onclick="loadLabAgentCredentials()">Refresh</button></div>
+    <label class="pill" style="margin:10px 0"><input id="labLegacySharedToken" type="checkbox"> Temporarily allow legacy shared agent token</label><button onclick="saveLabAgentPolicy()">Save Agent Security Policy</button>
+    <div id="labEnrollmentResult" class="card" style="display:none;box-shadow:none;margin-top:10px"></div>
+    <div id="labAgentCredentials" class="scroll" style="margin-top:10px">Loading agent security…</div>
+  </details>
 </section>
 
 <section id="media" class="page">
