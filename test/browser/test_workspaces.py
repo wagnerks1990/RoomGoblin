@@ -24,11 +24,11 @@ FIXTURES = {
     '/api/v1/admin/config': {'site': {}, 'devices': {'devices': {}, 'displayGroups': {}}, 'hardware': {}},
     '/api/v1/devices': {'devices': {}, 'status': {}, 'groups': {}},
     '/api/v1/class-schedules': {'classes': []},
-    '/api/v1/media': {'items': [], 'media': []},
-    '/api/v1/scenes': {'scenes': []},
+    '/api/v1/media': {'files': []},
+    '/api/v1/scenes': {'scenes': {}},
     '/api/v1/govee': {'devices': {}, 'groups': {}},
-    '/api/v1/lab/computers': {'computers': [], 'groups': [], 'summary': {'total': 0, 'online': 0, 'offline': 0}},
-    '/api/v1/lab/ai-monitor': {'events': [], 'summary': {}},
+    '/api/v1/lab/computers': {'configured': True, 'retentionHours': 168, 'computers': [], 'groups': [], 'summary': {'total': 0, 'online': 0, 'offline': 0}},
+    '/api/v1/lab/ai-monitor': {'enabled': True, 'alerts': [], 'summary': {'new': 0, 'total': 0}},
     '/api/v1/veyon/computers': {'computers': []},
     '/api/v1/maintenance/modules': {'modules': []},
     '/api/v1/maintenance/android/status': {'ok': True, 'adbAvailable': False, 'devices': [DEVICE], 'profiles': []},
@@ -52,7 +52,11 @@ class WorkspaceBrowserTests(unittest.TestCase):
         cls.browser.close()
         cls.pw.stop()
 
-    def page(self, path, width=1440, role='admin'):
+    def page(self, path, width=1440, role='admin', overrides=None, theme=None, devices=None):
+        fixtures = {**FIXTURES, **(overrides or {})}
+        if theme:
+            fixtures['/api/v1/branding'] = {'branding': {'theme': theme}}
+            fixtures['/api/v1/admin/config'] = {**fixtures['/api/v1/admin/config'], 'site': {'theme': theme}}
         context = self.browser.new_context(viewport={'width': width, 'height': 1000})
         self.addCleanup(context.close)
         page = context.new_page()
@@ -65,8 +69,8 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 user = None if role is None else {'username': 'fixture', 'displayName': 'Test operator',
                        'role': role, 'capabilities': ['*'] if role == 'admin' else ['classroom.read']}
                 return req.fulfill(json={'authEnabled': True, 'userCount': 1, 'user': user})
-            if target in FIXTURES:
-                return req.fulfill(json=FIXTURES[target])
+            if target in fixtures:
+                return req.fulfill(json=fixtures[target])
             if target.startswith('/api/'):
                 return req.fulfill(status=503, json={'error': 'Optional integration unavailable in browser fixture'})
             if target.endswith('/'):
@@ -82,7 +86,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
             def receive(message):
                 value = json.loads(message)
                 if value.get('type') == 'hello':
-                    ws.send(json.dumps({'type': 'hello.ack', 'devices': {}, 'groups': {}, 'runtime': {'displays': {}}}))
+                    ws.send(json.dumps({'type': 'hello.ack', 'devices': devices or {}, 'groups': {}, 'runtime': {'displays': {}}}))
             ws.on_message(receive)
         context.route_web_socket('**/*', socket)
         page.goto('http://127.0.0.1:31337' + path)
@@ -170,3 +174,45 @@ class WorkspaceBrowserTests(unittest.TestCase):
         detail.locator('summary').click()
         self.assertEqual(page.locator('#school').input_value(), 'Example School')
         self.assertFalse(errors, errors)
+
+    def test_populated_mobile_cards_and_display_targets(self):
+        computers = [{'id': 'fixture-computer', 'name': 'Networking and cybersecurity laboratory workstation 21',
+                      'hostname': 'networking-laboratory-workstation-21', 'ip': '192.0.2.121', 'online': False,
+                      'user': 'Example Student', 'os': 'Windows 11 Education', 'uptimeSeconds': 7200,
+                      'latestWebsite': {'title': 'Routing and switching laboratory reference materials',
+                                        'domain': 'learning-resources.example.edu', 'browser': 'Edge',
+                                        'visitTime': '2026-09-13T12:00:00Z'},
+                      'lastCommand': {'action': 'message', 'status': 'completed',
+                                      'message': 'Prepare your network topology and save your laboratory notes.'}}]
+        page, errors = self.page('/controller/lab.html', 390, overrides={
+            '/api/v1/lab/computers': {'configured': True, 'retentionHours': 168, 'computers': computers,
+                                     'summary': {'total': 1, 'online': 0, 'offline': 1}}})
+        page.locator('#computerGrid .card').wait_for()
+        self.assertEqual(page.locator('#computerGrid .card').count(), 1)
+        self.assertIn('OFFLINE', page.locator('#computerGrid').inner_text())
+        self.evidence(page, errors, 'lab-populated-390')
+        devices = {'fixture-display': {'name': 'Networking laboratory collaborative project display', 'enabled': True}}
+        files = [{'name': 'Network topology and classroom laboratory instructions - September.pdf',
+                  'type': 'pdf', 'url': '/fixture/network-laboratory.pdf', 'size': 1200000},
+                 {'name': 'Classroom network security and equipment care reminders.pdf',
+                  'type': 'pdf', 'url': '/fixture/security-reminders.pdf', 'size': 240000}]
+        page, errors = self.page('/controller/display.html', 390, devices=devices, overrides={
+            '/api/v1/media': {'files': files},
+            '/api/v1/devices': {'devices': devices, 'groups': {}, 'status': {}}})
+        page.locator('#targets .target').wait_for()
+        page.locator('button[data-work="media"]').click()
+        page.locator('#mediaGrid .mediaCard').first.wait_for()
+        self.assertEqual(page.locator('#mediaGrid .mediaCard').count(), 2)
+        self.assertIn('Networking laboratory', page.locator('#targets').inner_text())
+        self.evidence(page, errors, 'studio-populated-media-390')
+
+    def test_light_branding_operator_pages(self):
+        theme = {'mode': 'light', 'primary': '#0F766E', 'accent': '#15803D',
+                 'background': '#F8FAFC', 'surface': '#FFFFFF', 'text': '#1E293B'}
+        for path in ('/controller/', '/controller/display.html', '/controller/lab.html',
+                     '/controller/veyon.html', '/setup/', '/managed-displays/'):
+            with self.subTest(path=path):
+                page, errors = self.page(path, 390, theme=theme)
+                page.wait_for_function("document.documentElement.dataset.brandMode === 'light'")
+                self.assertEqual(page.evaluate("getComputedStyle(document.body).color"), 'rgb(30, 41, 59)')
+                self.evidence(page, errors, 'light-' + path.strip('/').replace('/', '-') + '-390')
