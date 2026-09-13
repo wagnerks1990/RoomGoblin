@@ -31,3 +31,5 @@ The live alpha.81 system and export succeeded only after manual workarounds.
 Alpha.82 adds regression coverage for pre-rebrand identity migration/conflicts
 and database reopen/WAL recreation. Physical hardware acceptance and an
 operator-owned complete restore drill are not implied by CI results.
+
+The updater also accepts an empty ADB volume on installations that have never paired a device. It preserves complete key pairs and rejects partial pairs or symlinked keys before changing key permissions.

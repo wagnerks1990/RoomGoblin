@@ -108,19 +108,30 @@ activate_image_id(){
   docker image tag "$id" "$ref"
 }
 
-ensure_runtime_layout(){
-  local value
-  install -d -m 0750 -o root -g root /var/lib/classroom-hub
-  local adb_mount
+ensure_adb_runtime_layout(){
+  local value adb_mount
   adb_mount="$(docker volume inspect classroom-control-hub-android-adb --format '{{.Mountpoint}}')"
   [[ "$adb_mount" == "${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}/classroom-control-hub-android-adb/_data" && -d "$adb_mount" && ! -L "$adb_mount" ]] || return 1
   chmod 0750 "$adb_mount"
   chown 10001:10001 "$adb_mount"
+  # Devices may never have been paired. Preserve an empty identity store.
+  if [[ ! -e "$adb_mount/adbkey" && ! -L "$adb_mount/adbkey" && ! -e "$adb_mount/adbkey.pub" && ! -L "$adb_mount/adbkey.pub" ]]; then
+    return 0
+  fi
+  # Validate the whole pair before changing either key.
   for value in adbkey adbkey.pub; do
     [[ -f "$adb_mount/$value" && ! -L "$adb_mount/$value" ]] || return 1
+  done
+  for value in adbkey adbkey.pub; do
     chown 10001:10001 "$adb_mount/$value"
     chmod 0640 "$adb_mount/$value"
   done
+}
+
+ensure_runtime_layout(){
+  local value
+  install -d -m 0750 -o root -g root /var/lib/classroom-hub
+  ensure_adb_runtime_layout || return 1
   install -d -m 0770 -o root -g 10001 "$HUB_ROOT/data"
   install -d -m 0700 -o root -g 10001 "$HUB_ROOT/data/backups"
   install -d -m 2770 -o root -g 10001 "$HUB_ROOT/data/android-tv"
