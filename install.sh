@@ -213,7 +213,13 @@ else
   done
 fi
 chown 10001:10001 "$ADB_VOLUME_MOUNT"
-chmod 0700 "$ADB_VOLUME_MOUNT"
+chmod 0750 "$ADB_VOLUME_MOUNT"
+for adb_identity in adbkey adbkey.pub; do
+  if [[ -f "$ADB_VOLUME_MOUNT/$adb_identity" && ! -L "$ADB_VOLUME_MOUNT/$adb_identity" ]]; then
+    chown 10001:10001 "$ADB_VOLUME_MOUNT/$adb_identity"
+    chmod 0640 "$ADB_VOLUME_MOUNT/$adb_identity"
+  fi
+done
 sed -i '/^HUB_TLS_HOST=/d;/^HUB_HTTPS_PORT=/d;/^HUB_HTTP_PORT=/d' "$TARGET/.env"
 CURRENT_BIND="$(sed -n 's/^HUB_BIND_ADDRESS=//p' "$TARGET/.env" | tail -n 1)"
 if [[ -z "$CURRENT_BIND" ]]; then set_env_path HUB_BIND_ADDRESS "0.0.0.0"; fi
@@ -277,6 +283,10 @@ if [[ -d /etc/classroom-control-hub/veyon/private.pem ]]; then
   rmdir /etc/classroom-control-hub/veyon/private.pem 2>/dev/null || fail "Veyon key path is unexpectedly a non-empty directory"
 fi
 if [[ ! -e /etc/classroom-control-hub/veyon/private.pem ]]; then install -m 0640 -o root -g "$HUB_INSTALL_GROUP" /dev/null /etc/classroom-control-hub/veyon/private.pem; fi
+
+# systemd requires every ReadWritePaths entry to exist before it can create the
+# Host Agent mount namespace. This state root is also used by updates/recovery.
+install -d -m 0750 -o root -g root /var/lib/classroom-hub
 
 command -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
 install -D -m 0644 "$TARGET/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service

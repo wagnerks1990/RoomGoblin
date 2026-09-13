@@ -12,9 +12,14 @@ AI coding assistants and contributors should treat the GitHub repository `main` 
 4. the relevant `docs/` topic page
 5. implementation source
 
+## Live upgrade corrections
+
+See [Alpha.82 upgrade recovery](Alpha82-Upgrade-Recovery). Preserve GID 10001
+access to SQLite and ADB trust while keeping other-user access disabled.
+
 ## Current baseline
 
-The current production-readiness review baseline is `1.0.0-alpha.81`.
+The current production-readiness review baseline is `1.0.0-alpha.82`.
 
 Critical invariants:
 

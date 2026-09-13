@@ -640,12 +640,24 @@ class FullRecoveryManager:
             if path.exists():
                 os.chown(path, entry["uid"], entry["gid"], follow_symlinks=False)
                 os.chmod(path, int(str(entry["mode"]), 8), follow_symlinks=False)
+                if kind == "signing":
+                    # Historical manifests describe app-owned signing files,
+                    # but the protected mount is consumed by maintenance UID 0.
+                    os.chown(path, 0, 0, follow_symlinks=False)
+                    os.chmod(path, 0o700 if path.is_dir() else 0o600, follow_symlinks=False)
 
     def _active_target(self, kind):
         journal = json.loads(self.journal_file.read_text())
         return Path(next(item["target"] for item in journal["targets"] if item["kind"] == kind))
 
     def _restart_and_validate(self, manifest, prior=None):
+        # Old bundles retain their authenticated topology; normalize the active
+        # ADB mount for the capability-dropped maintenance reader after restore.
+        if any(entry.get("role") == "adb-trust" for entry in manifest.get("files", [])):
+            adb_root = self._active_target("adb")
+            os.chmod(adb_root, 0o750)
+            for name in ("adbkey", "adbkey.pub"):
+                os.chmod(adb_root / name, 0o640)
         result = self.run(["docker", "compose", "-f", str(self.hub_root / "docker-compose.yml"), "up", "-d", "--force-recreate", "--remove-orphans", "maintenance-agent", "classroom-hub"], 600, False)
         if result.returncode != 0: raise RuntimeError("Core services failed force-recreation")
         body = {"services": [{"id": s["id"], "enabled": s["enabled"], "running": s["running"]} for s in manifest["managedServices"]]}

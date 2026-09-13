@@ -1,5 +1,8 @@
 # Release and Upgrade Process
 
+See [Alpha.82 upgrade recovery](Alpha82-Upgrade-Recovery) for fixes to the live
+alpha.76 upgrade path, shared database/ADB permissions, and signing migration.
+
 ## Versioning
 
 RoomGoblin uses semantic-style prerelease versions during development:

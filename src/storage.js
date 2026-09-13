@@ -30,6 +30,11 @@ class ClassroomHubStorage{
     // undoing the installer's 0770 ownership contract on every application boot.
     try{fs.chmodSync(path.dirname(this.dbFile),0o770)}catch{}
     this.db=new DatabaseSync(this.dbFile);
+    // SQLite derives recreated WAL/SHM modes from the database. Repair the
+    // database before enabling WAL, and existing sidecars from older releases.
+    for(const file of [this.dbFile,`${this.dbFile}-wal`,`${this.dbFile}-shm`]){
+      try{fs.chmodSync(file,0o660)}catch(error){if(error.code!=="ENOENT")throw error}
+    }
     this.db.exec(`
       PRAGMA journal_mode=WAL;
       PRAGMA synchronous=NORMAL;
@@ -156,7 +161,9 @@ class ClassroomHubStorage{
     this.migrateNormalizedObjects();
     const integrity=this.db.prepare("PRAGMA quick_check(1)").get();
     if(String(integrity?.quick_check||"").toLowerCase()!=="ok")throw Error(`SQLite integrity check failed: ${integrity?.quick_check||"unknown error"}`);
-    try{fs.chmodSync(this.dbFile,0o600)}catch{}
+    for(const file of [this.dbFile,`${this.dbFile}-wal`,`${this.dbFile}-shm`]){
+      try{fs.chmodSync(file,0o660)}catch(error){if(error.code!=="ENOENT")throw error}
+    }
     this.validateSchemaMigrations();
   }
 

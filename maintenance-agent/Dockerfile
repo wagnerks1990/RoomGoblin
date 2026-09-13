@@ -45,6 +45,7 @@ FROM node:22-bookworm-slim
 
 ARG TARGETARCH
 RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
       bash ca-certificates curl zip unzip procps iproute2 dnsutils \
       iputils-ping jq coreutils util-linux sqlite3 adb openssl openjdk-17-jre-headless && \

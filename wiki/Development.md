@@ -127,7 +127,7 @@ docker build -t classroom-control-hub-maintenance:test maintenance-agent
 
 ## Current known-good baseline
 
-`1.0.0-alpha.81` is the production-readiness review baseline. A newer `VERSION` supersedes the version number but not these invariants unless deliberately changed and documented. Alpha.81 freezes and drains writers for a point-in-time encrypted export, snapshots recovery identities consistently, and preserves durable all-state rollback.
+`1.0.0-alpha.82` is the production-readiness review baseline. A newer `VERSION` supersedes the version number but not these invariants unless deliberately changed and documented. Alpha.81 freezes and drains writers for a point-in-time encrypted export, snapshots recovery identities consistently, and preserves durable all-state rollback.
 
 Installers copy executable host runners into `/usr/local/libexec` and must not change tracked source modes in `/opt/classroom-hub`. A supported update that starts from a clean checkout must leave `git status --short` empty.
 

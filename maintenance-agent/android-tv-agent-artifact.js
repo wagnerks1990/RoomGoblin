@@ -40,6 +40,20 @@ function sha256(file){const h=crypto.createHash("sha256");h.update(fs.readFileSy
 function json(file,label){try{return JSON.parse(fs.readFileSync(file,"utf8"))}catch(error){throw Error(`${label} metadata is invalid: ${error.message}`)}}
 function safeWriteSecret(file,value){fs.writeFileSync(file,value,{encoding:"utf8",mode:0o600,flag:"wx"});fs.chmodSync(file,0o600)}
 function migrateLegacySigningIdentity(){
+  // Pre-rebrand appliances used this filename with the same password/alias.
+  // Keep the old file as a recovery copy; never generate a replacement key.
+  const oldKey=path.join(SIGNING_MOUNT_ROOT,"ClassroomHub-Display-Agent.keystore");
+  const renamedKey=path.join(SIGNING_MOUNT_ROOT,"RoomGoblin-Display-Agent.keystore");
+  if(fs.existsSync(oldKey)){
+    if(!fs.lstatSync(oldKey).isFile())throw Error("Unsafe legacy Android signing key");
+    const existing=fs.existsSync(renamedKey)?renamedKey:fs.existsSync(KEYSTORE)?KEYSTORE:null;
+    if(existing&&sha256(oldKey)!==sha256(existing))throw Error("Conflicting Android signing identities exist; preserve both for recovery");
+    if(!existing){
+      if(!fs.existsSync(path.join(SIGNING_MOUNT_ROOT,"password")))throw Error("Legacy Android signing identity is incomplete; restore its password");
+      fs.copyFileSync(oldKey,renamedKey,fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(renamedKey,0o600);
+    }
+  }
   const legacyKey=path.join(SIGNING_MOUNT_ROOT,"RoomGoblin-Display-Agent.keystore"),legacyPassword=path.join(SIGNING_MOUNT_ROOT,"password");
   const legacyPresent=fs.existsSync(legacyKey)||fs.existsSync(legacyPassword),currentPresent=fs.existsSync(KEYSTORE)||fs.existsSync(PASSWORD_FILE);
   if(fs.existsSync(legacyKey)!==fs.existsSync(legacyPassword))throw Error("Legacy Android signing identity is incomplete; restore both files before continuing");
