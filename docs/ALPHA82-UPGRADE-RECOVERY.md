@@ -10,6 +10,8 @@ The live alpha.76-to-alpha.81 upgrade exposed gaps that startup-only CI missed.
 | SQLite export denied | Backend sets database and WAL/SHM to `0660` before initialization and after migration. Recreated sidecars inherit database permissions. Unrelated secrets retain the `0077` process umask. |
 
 GID 10001 is the trusted application/maintenance group; do not add host users.
+Restored signing files remain root-owned and private to maintenance (0700/0600),
+including when older authenticated manifests recorded application ownership.
 Do not grant world access, disable container hardening, delete volumes, or
 regenerate signing/ADB keys to repair these failures.
 

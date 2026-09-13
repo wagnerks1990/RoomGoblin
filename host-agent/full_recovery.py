@@ -640,6 +640,11 @@ class FullRecoveryManager:
             if path.exists():
                 os.chown(path, entry["uid"], entry["gid"], follow_symlinks=False)
                 os.chmod(path, int(str(entry["mode"]), 8), follow_symlinks=False)
+                if kind == "signing":
+                    # Historical manifests describe app-owned signing files,
+                    # but the protected mount is consumed by maintenance UID 0.
+                    os.chown(path, 0, 0, follow_symlinks=False)
+                    os.chmod(path, 0o700 if path.is_dir() else 0o600, follow_symlinks=False)
 
     def _active_target(self, kind):
         journal = json.loads(self.journal_file.read_text())

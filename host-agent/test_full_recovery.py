@@ -40,6 +40,16 @@ class FakeRun:
 
 
 class FullRecoveryTests(unittest.TestCase):
+    def test_restored_signing_identity_remains_private_to_maintenance(self):
+        self.signing.mkdir(parents=True)
+        key = self.signing / "password"
+        key.write_text("preserved-secret")
+        with patch("full_recovery.os.chown") as chown:
+            self.manager._apply_permissions({"topology": [{"path": "recovery-secrets/android-agent-signing/password", "uid": 10001, "gid": 10001, "mode": "0600"}]})
+            chown.assert_called_with(key, 0, 0, follow_symlinks=False)
+        self.assertEqual(key.read_text(), "preserved-secret")
+        self.assertEqual(key.stat().st_mode & 0o777, 0o600)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
