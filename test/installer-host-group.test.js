@@ -89,12 +89,11 @@ test("installer resolves host group before backups, data and key operations", ()
   assert.match(installer, /install -m 0640 -o root -g "\$HUB_INSTALL_GROUP"/);
 });
 
-
 test("installer creates the Host Agent state root before restarting systemd service", () => {
   const installer = fs.readFileSync(path.join(root, "install.sh"), "utf8");
   const provision = installer.indexOf("install -d -m 0750 -o root -g root /var/lib/classroom-hub");
   const restart = installer.indexOf("systemctl restart classroom-hub-host-agent.service");
-  assert.ok(provision >= 0, "Host Agent state root is not provisioned");
+  assert.match(installer, /^install -d -m 0750 -o root -g root \/var\/lib\/classroom-hub$/m);\n  assert.ok(provision >= 0, "Host Agent state root is not provisioned");
   assert.ok(restart > provision, "Host Agent starts before its protected writable path exists");
 
   const unit = fs.readFileSync(path.join(root, "host-agent/classroom-control-hub-host-agent.service"), "utf8");
