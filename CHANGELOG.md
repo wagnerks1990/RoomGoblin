@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Operator refinement and Veyon reliability
+
+- Rebuild Veyon's device wall with compact/comfortable/list views, search and
+  connection filters, retained selection/tool state, and all existing commands.
+- Decode previews before display, retain labeled last-good frames on failure,
+  bound visible polling, and release live-view requests/object URLs on close.
+- Repair frame readiness/codec/session recovery, bound upstream body reads, and
+  stop reporting authentication success after failed authenticated requests.
+- Refine Today, desktop focus mode, mobile navigation, Windows lab inventory,
+  setup sequence, display studio and managed-display filters/density.
+- Repair two corrupt bundled logo assets using the supplied valid mascot and
+  apply consistent permanent product marks while retaining custom site branding.
+- Add transport, selection, branding and browser regressions; preserve physical
+  display rendering, priority scheduling and compatibility identifiers.
+
 ### Image publication recovery
 
 - Restore the stable browser-workflow name consumed by both image publishers.

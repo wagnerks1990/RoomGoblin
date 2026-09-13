@@ -105,6 +105,46 @@ Health should distinguish:
 
 The managed-integration save path performs a real computer/status probe after applying Veyon settings and reports total, online, and authenticated counts. A zero-sized connection cache by itself is not a failure; cached Veyon connections are opened on demand and expire when idle.
 
+## Screen previews and connection recovery
+
+The Veyon workspace uses the existing capability-protected same-Hub framebuffer
+endpoint; credentials and connection UIDs remain on the backend. Wall previews
+are bounded to four concurrent visible requests. Compact, comfortable and list
+views share the same inventory and commands. Textual failure/retry and last-frame
+states distinguish preview availability from TCP connectivity and authentication.
+
+`src/veyon-transport.js` keeps each upstream request deadline active through body
+consumption and caps a response at 16 MiB. Image responses are checked for PNG or
+JPEG signatures and served using the detected type. Non-image responses fail with
+a controlled error rather than being mislabeled as JPEG. The client also decodes
+images before swapping the displayed frame.
+
+Connection/session errors (documented WebAPI codes 2, 7 and 8) permit one renewal
+and replay; invalid credentials or denied authentication are not blindly retried.
+A new connection may authenticate before its first frame is ready: framebuffer
+code 10 permits two short retries (200 and 400 ms). Unsupported JPEG (code 9)
+falls back to PNG. The outer framebuffer loop has at most three attempts. Each
+upstream frame request remains separately bounded; UI timeout/cancellation may
+precede a slow backend recovery, which will itself finish within those bounds.
+
+Expired sessions are closed before replacement under a per-host single-flight
+operation. Cleanup of an old UID cannot delete a newer cached session, and pool
+trimming avoids active readers. Stale saved `online`/`authenticated` flags no
+longer permanently block a fresh framebuffer attempt. An authenticated user-info
+request must succeed before inventory reports authenticated status.
+
+Regression coverage exercises delayed bodies, response limits, image types,
+first-frame readiness, codec fallback, bounded retries, connection races and false
+authentication. Browser fixtures cover UI recovery; these tests do not prove a
+specific endpoint's Veyon key, firewall, display session or codec configuration.
+
+After upgrading, verify a real student preview, a live-view session, a teacher
+broadcast, and one reversible command on a selected test endpoint. Confirm list
+and compact views show connection state and hidden selections clearly. If a
+preview fails, retain its displayed error and the endpoint's connection/auth state
+for diagnosis; do not rotate the classroom key or re-enroll computers as a cosmetic
+repair. Official protocol reference: https://docs.veyon.io/en/latest/developer/webapi.html.
+
 ## Music Assistant setup flow
 
 Music Assistant uses a two-phase setup when the server is not already installed:

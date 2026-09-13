@@ -44,6 +44,50 @@ confirmations remain in place. Veyon's custom live and information modal contain
 receive focus containment, Escape-to-close and return-focus handling through
 `public/controller/lab-accessibility.js`; native dialogs retain browser behavior.
 
+## Refined operator workflow
+
+Today puts the school-day and display summaries first, with integration health in
+one compact strip. Permission-aware shortcuts open display content, lab computers
+and Background Music. Everyday room power controls stay visible; classroom reset
+and display reload operations remain in the maintenance disclosure.
+
+On desktop, **Focus workspace** hides the navigation and widens the current tool
+without replacing or reloading its iframe. **Show navigation** restores it.
+The lab's **Open full workspace** link follows the selected Veyon/Windows console.
+The mobile drawer makes background content inert until it closes, and its backdrop
+is visible and clickable. New shortcuts obey the existing authorization state.
+
+| Inventory | Find and filter | Density and selection |
+| --- | --- | --- |
+| Veyon computers | Name, hostname, address or user; student/teacher; online/offline/needs attention | Compact, comfortable or list; select visible online computers; hidden selections remain explicitly counted |
+| Windows agent computers | Name, hostname, ID, user or address; online/offline/selected | Compact or comfortable; select visible or visible online; clear selection removes hidden selections too |
+| Managed displays | Name, assignment, profile or address; online/offline or unknown | Comfortable or compact; filter remains applied after inventory redraws |
+
+Inventory filters change presentation only. A selection hidden by a Veyon or
+Windows filter still participates in an explicitly issued bulk command; the
+selection count warns about those targets. Destructive confirmations and all
+existing commands remain available. Expanded device tools survive inventory
+refreshes. Managed-display enrollment and trust are unaffected by filtering.
+
+Setup uses a static sequence: room, displays, administrator access, optional
+services, and save. It no longer rearranges cards by matching their displayed
+headings. Display content uses a compact target rail; classroom-wide session
+controls expand separately from normal content editing.
+
+Veyon's implementation is split into `veyon.html`, `veyon.css` and `veyon.js`.
+Its preview queue limits concurrency to four visible-screen requests, decodes each
+frame before replacing the last valid image, and backs off on errors. List view,
+paused previews, a hidden document and an open live view suspend wall polling.
+Failures show text and a Retry action, not an unexplained broken-image icon.
+Live view has one request at a time, keeps the last good frame with an error label,
+and releases object URLs when replaced or closed. A valid frame's update time is
+shown; a cached image is not evidence of a currently connected computer.
+
+The canonical supplied 192px mascot and readable product text are the permanent
+operator lockup. Corrupt legacy asset paths are retained as valid compatibility
+copies. Custom school names, artwork and colors remain supported; see
+[Brand and compatibility](ROOMGOBLIN-REBRAND.md) for the asset contract.
+
 ## Styling ownership
 
 `public/shared/workspace.css` is the operator-only design layer. It is opt-in via

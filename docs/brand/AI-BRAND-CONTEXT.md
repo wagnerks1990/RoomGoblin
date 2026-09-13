@@ -33,3 +33,15 @@ apply the operator design layer to physical display or playback renderers.
 
 ## Prompt seed
 Design for RoomGoblin, a Classroom & Lab Management Hub. Use the canonical RoomGoblin assets and tokens. Make it clean, modern, accessible, teacher-first, technically credible, and fast to scan during class. Use the friendly goblin identity without generic childish ed-tech styling or visual clutter.
+
+## Asset integrity and header contract
+
+Use `/brand/roomgoblin_app_192x192.png` with live product text for operator
+headers, and `/brand/roomgoblin_app_32x32.png` for the default favicon.
+`data-brand-lockup` opts a page header into the shared compact treatment;
+`data-brand-logo` marks an existing image. Preserve custom site logos and names.
+The legacy 400w/512px filenames are compatibility aliases of the valid 192px
+artwork after truncated originals were found; never infer dimensions from those
+filenames. New art must not silently replace the supplied mascot.
+Branding regressions must decode bundled PNG streams, not merely check file
+extensions or PNG signatures.

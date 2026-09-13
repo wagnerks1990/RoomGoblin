@@ -4,6 +4,7 @@ Run with the existing Playwright requirements and DISPLAY_TEST_BROWSER setting.
 Optional integrations deliberately return 503: their unavailable presentation is
 part of the layout contract. JavaScript exceptions are never filtered out.
 """
+import base64
 import json
 import mimetypes
 import os
@@ -52,7 +53,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
         cls.browser.close()
         cls.pw.stop()
 
-    def page(self, path, width=1440, role='admin', overrides=None, theme=None, devices=None):
+    def page(self, path, width=1440, role='admin', overrides=None, theme=None, devices=None, transport=None):
         fixtures = {**FIXTURES, **(overrides or {})}
         if theme:
             fixtures['/api/v1/branding'] = {'branding': {'theme': theme}}
@@ -62,9 +63,12 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        page.on('dialog', lambda dialog: dialog.dismiss())
+        page._fixture_dialog_handler = lambda dialog: dialog.dismiss()
+        page.on('dialog', page._fixture_dialog_handler)
         def route(req):
             target = urlparse(req.request.url).path
+            if transport and transport(req, target):
+                return
             if target == '/api/v1/auth/status':
                 user = None if role is None else {'username': 'fixture', 'displayName': 'Test operator',
                        'role': role, 'capabilities': ['*'] if role == 'admin' else ['classroom.read']}
@@ -141,6 +145,8 @@ class WorkspaceBrowserTests(unittest.TestCase):
             page.locator('#workspaceSearch').fill(query)
             self.assertFalse(page.locator('nav button[data-page="settings"]').is_visible())
             self.assertFalse(page.locator('nav button[data-page="system"]').is_visible())
+            for link in page.locator('[data-workspace-link="settings"], [data-workspace-link="system"]').all():
+                self.assertFalse(link.is_visible())
             for link in page.locator('#workspaceSidebar [data-managed-displays-link]').all():
                 self.assertFalse(link.is_visible())
         self.assertFalse(errors, errors)
@@ -167,7 +173,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
     def test_setup_optional_fields_expand_without_losing_inputs(self):
         page, errors = self.page('/setup/', width=390)
         page.locator('#school').fill('Example School')
-        detail = page.locator('.setup-advanced')
+        detail = page.locator('.setup-advanced').first
         self.assertFalse(detail.evaluate('(el) => el.open'))
         detail.locator('summary').click()
         self.assertTrue(page.locator('#themeMode').is_visible())
@@ -216,3 +222,195 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page.wait_for_function("document.documentElement.dataset.brandMode === 'light'")
                 self.assertEqual(page.evaluate("getComputedStyle(document.body).color"), 'rgb(30, 41, 59)')
                 self.evidence(page, errors, 'light-' + path.strip('/').replace('/', '-') + '-390')
+
+    def veyon_page(self, width=1440, broken=False):
+        # Real browser image decoding, with only the upstream transport simulated.
+        png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7WQAAAAASUVORK5CYII=')
+        computers = [
+            {'id': 'student-a', 'name': 'Workstation A', 'ip': '192.0.2.21', 'role': 'student',
+             'online': True, 'authenticated': True, 'user': {'login': 'student'}, 'featureState': {}},
+            {'id': 'student-b', 'name': 'Workstation B', 'ip': '192.0.2.22', 'role': 'student',
+             'online': False, 'authenticated': False, 'user': {}, 'featureState': {}},
+            {'id': 'teacher', 'name': 'Teacher computer', 'ip': '192.0.2.23', 'role': 'teacher',
+             'online': True, 'authenticated': True, 'user': {}, 'featureState': {}}]
+        state = {'broken': broken, 'requests': 0, 'commands': [], 'computers': computers}
+        def transport(route, path):
+            if path.endswith('/framebuffer'):
+                state['requests'] += 1
+                if state['broken'] == 'malformed':
+                    route.fulfill(content_type='image/png', body=b'not a decoded image')
+                elif state['broken'] == 'json':
+                    route.fulfill(json={'error': 'Unexpected JSON in image response'})
+                elif state['broken']:
+                    route.fulfill(status=502, json={'error': 'Fixture screen capture unavailable'})
+                else:
+                    route.fulfill(content_type='image/png', body=png)
+                return True
+            if path == '/api/v1/veyon/computers':
+                route.fulfill(json={'computers': state['computers']})
+                return True
+            if path == '/api/v1/veyon/feature':
+                state['commands'].append(route.request.post_data_json)
+                route.fulfill(json={'results': [], 'summary': {'succeeded': 1, 'failed': 0}})
+                return True
+            return False
+        page, errors = self.page('/controller/veyon.html', width, transport=transport, overrides={
+            '/api/v1/veyon/status': {'keyName': 'fixture', 'scanSubnet': '192.0.2'}})
+        page.locator('[data-select="student-a"]').wait_for()
+        return page, errors, state
+
+    def test_veyon_decoded_preview_survives_refresh_and_filter(self):
+        page, errors, state = self.veyon_page()
+        page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
+        page.locator('[data-select="student-a"]').check()
+        original = page.locator('[data-thumb="student-a"]').get_attribute('src')
+        page.locator('#refresh').click()
+        page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
+        self.assertTrue(page.locator('[data-select="student-a"]').is_checked())
+        self.assertEqual(page.locator('[data-thumb="student-a"]').get_attribute('src'), original)
+        page.locator('#deviceSearch').fill('Workstation B')
+        self.assertEqual(page.locator('[data-select="student-a"]').count(), 0)
+        page.locator('#deviceSearch').fill('')
+        self.assertTrue(page.locator('[data-select="student-a"]').is_checked())
+        page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
+        self.assertIn('1 selected', page.locator('#selectionCount').inner_text())
+        self.evidence(page, errors, 'veyon-decoded-refresh')
+
+    def test_veyon_failed_preview_retries_and_live_modal_recovers(self):
+        page, errors, state = self.veyon_page(broken=True)
+        page.locator('[data-retry="student-a"]').wait_for(state='visible')
+        self.assertFalse(page.locator('[data-thumb="student-a"]').is_visible())
+        state['broken'] = False
+        page.locator('[data-retry="student-a"]').click()
+        page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
+        page.locator('[data-live="student-a"]').click()
+        page.wait_for_function("document.querySelector('#liveImg').naturalWidth > 0")
+        state['broken'] = True
+        page.locator('#liveRetry').click()
+        page.wait_for_function("/unavailable|failed|error|retry/i.test(document.querySelector('#liveStatus').textContent)")
+        # The most recent valid frame remains visible, explicitly marked stale/error.
+        self.assertGreater(page.locator('#liveImg').evaluate('(image) => image.naturalWidth'), 0)
+        state['broken'] = False
+        page.locator('#liveRetry').click()
+        page.wait_for_function("!/unavailable|failed|error|retrying/i.test(document.querySelector('#liveStatus').textContent)")
+        self.evidence(page, errors, 'veyon-live-recovered')
+        page.keyboard.press('Escape')
+        self.assertNotIn('open', page.locator('#modal').get_attribute('class'))
+        self.assertEqual(page.locator(':focus').get_attribute('data-live'), 'student-a')
+
+    def test_veyon_mobile_density_filters_and_all_commands_reachable(self):
+        page, errors, state = self.veyon_page(width=390)
+        page.locator('#showAll').click()
+        self.assertEqual(page.locator('[data-select]').count(), 3)
+        page.locator('#connectionFilter').select_option('offline')
+        self.assertEqual(page.locator('[data-select]').count(), 1)
+        self.assertEqual(page.locator('[data-select]').get_attribute('data-select'), 'student-b')
+        page.locator('#connectionFilter').select_option('all')
+        for layout in ('compact', 'comfortable', 'list'):
+            page.locator('#deviceLayout').select_option(layout)
+            self.assertEqual(page.locator('#grid').get_attribute('data-layout'), layout)
+            self.evidence(page, errors, 'veyon-' + layout + '-390')
+        page.locator('#pausePreviews').click()
+        self.assertEqual(page.locator('#pausePreviews').get_attribute('aria-pressed'), 'true')
+        for detail in page.locator('details').all():
+            if not detail.evaluate('(el) => el.open'):
+                detail.locator(':scope > summary').click()
+        for command in ('message', 'lock', 'unlock', 'openSite', 'startApp', 'broadcastFull',
+                        'broadcastWindow', 'stopBroadcast', 'screenshot', 'inputLock', 'inputUnlock',
+                        'login', 'logoff', 'reboot', 'shutdown', 'markStudent', 'markTeacher', 'features', 'pool'):
+            self.assertTrue(page.locator('#' + command).is_visible(), command)
+        self.evidence(page, errors, 'veyon-all-commands-390')
+
+    def test_veyon_commands_preserve_targets_and_power_confirmation(self):
+        page, errors, state = self.veyon_page()
+        page.locator('[data-select="student-a"]').check()
+        with page.expect_response('**/api/v1/veyon/feature'):
+            page.locator('#lock').click()
+        self.assertEqual(state['commands'][-1]['targets'], ['student-a'])
+        self.assertEqual(state['commands'][-1]['feature'], 'screenLock')
+        for detail in page.locator('details').all():
+            if not detail.evaluate('(el) => el.open'):
+                detail.locator(':scope > summary').click()
+        count = len(state['commands'])
+        page.locator('#shutdown').click()  # Harness dismisses the native confirmation.
+        self.assertEqual(len(state['commands']), count)
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.once('dialog', lambda dialog: dialog.accept())
+        with page.expect_response('**/api/v1/veyon/feature'):
+            page.locator('#shutdown').click()
+        self.assertEqual(state['commands'][-1]['feature'], 'powerDown')
+        self.assertEqual(state['commands'][-1]['targets'], ['student-a'])
+        self.assertFalse(errors, errors)
+
+    def test_managed_inventory_filter_retained_after_refresh(self):
+        online = {**DEVICE, 'id': 'second-tv', 'name': 'Second display', 'lastStatus': {'online': True}}
+        page, errors = self.page('/managed-displays/', width=390, overrides={
+            '/api/v1/maintenance/android/status': {'ok': True, 'adbAvailable': False,
+                                                   'devices': [DEVICE, online], 'profiles': []}})
+        page.locator('#devices .card').first.wait_for()
+        page.locator('#deviceSearch').fill('Second')
+        self.assertEqual(page.locator('#devices .card:visible').count(), 1)
+        page.locator('#deviceDensity').select_option('compact')
+        page.locator('#refresh').click()
+        self.assertEqual(page.locator('#deviceSearch').input_value(), 'Second')
+        self.assertEqual(page.locator('#devices .card:visible').count(), 1)
+        page.locator('#deviceSearch').fill('')
+        page.locator('#deviceFilter').select_option('offline')
+        self.assertEqual(page.locator('#devices .card:visible').count(), 1)
+        self.assertIn('Classroom display', page.locator('#devices .card:visible').inner_text())
+        self.evidence(page, errors, 'managed-filter-390')
+
+    def test_default_brand_logo_decodes_and_custom_error_falls_back(self):
+        for branding in ({}, {'logoUrl': '/missing-custom-school-logo.png'}):
+            page, errors = self.page('/controller/veyon.html', overrides={
+                '/api/v1/branding': {'branding': branding}})
+            page.wait_for_function("[...document.querySelectorAll('[data-brand-logo]')].some(img => img.complete && img.naturalWidth > 0)")
+            self.assertIn('RoomGoblin', page.locator('[data-brand-lockup]').inner_text())
+            self.assertFalse(errors, errors)
+
+    def test_lab_selection_respects_visible_inventory(self):
+        computers = [{'id': 'lab-a', 'name': 'Alpha workstation', 'online': True},
+                     {'id': 'lab-b', 'name': 'Beta workstation', 'online': True},
+                     {'id': 'lab-c', 'name': 'Offline workstation', 'online': False}]
+        page, errors = self.page('/controller/lab.html', 390, overrides={
+            '/api/v1/lab/computers': {'configured': True, 'retentionHours': 168,
+                                     'computers': computers, 'summary': {'total': 3, 'online': 2, 'offline': 1}}})
+        page.locator('[data-computer-id="lab-a"]').wait_for()
+        page.locator('#computerSearch').fill('Alpha')
+        page.locator('button[onclick="selectOnline()"]').click()
+        self.assertIn('1 selected', page.locator('#selectionCount').inner_text())
+        page.locator('#computerSearch').fill('')
+        page.locator('#computerStatus').select_option('selected')
+        self.assertEqual(page.locator('#computerGrid .card').count(), 1)
+        self.assertEqual(page.locator('#computerGrid .card').get_attribute('data-computer-id'), 'lab-a')
+        page.locator('#computerDensity').select_option('compact')
+        self.evidence(page, errors, 'lab-filtered-selection-390')
+
+    def test_focus_workspace_keeps_embedded_session_and_mobile_menu_is_modal(self):
+        page, errors = self.page('/controller/')
+        page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+        page.evaluate("window.fixtureLabFrame = document.getElementById('labWindowsFrame')")
+        page.locator('#workspaceFocus').click()
+        self.assertEqual(page.locator('#workspaceFocus').get_attribute('aria-pressed'), 'true')
+        self.assertTrue(page.evaluate("window.fixtureLabFrame === document.getElementById('labWindowsFrame')"))
+        page.locator('#workspaceFocus').click()
+        self.assertEqual(page.locator('#workspaceFocus').get_attribute('aria-pressed'), 'false')
+        self.assertFalse(errors, errors)
+        mobile, errors = self.page('/controller/', 390)
+        mobile.locator('#workspaceMenu').click()
+        self.assertTrue(mobile.locator('#workspaceMain').evaluate('(el) => el.inert'))
+        mobile.locator('#workspaceBackdrop').click(position={'x': 385, 'y': 500})
+        self.assertFalse(mobile.locator('#workspaceMain').evaluate('(el) => el.inert'))
+        self.assertEqual(mobile.locator('#workspaceMenu').get_attribute('aria-expanded'), 'false')
+        self.assertFalse(errors, errors)
+
+    def test_veyon_rejects_malformed_image_and_json_success_payload(self):
+        for failure in ('malformed', 'json'):
+            with self.subTest(payload=failure):
+                page, errors, state = self.veyon_page(broken=failure)
+                page.locator('[data-retry="student-a"]').wait_for(state='visible')
+                self.assertFalse(page.locator('[data-thumb="student-a"]').is_visible())
+                state['broken'] = False
+                page.locator('[data-retry="student-a"]').click()
+                page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
+                self.assertFalse(errors, errors)

@@ -9,10 +9,11 @@
     tagline:"Run the room. Manage the lab.",
     school:"Your School",
     room:"Classroom",
-    logoUrl:"/brand/roomgoblin_primary_400w.png",
+    logoUrl:"/brand/roomgoblin_app_192x192.png",
     faviconUrl:"/brand/roomgoblin_app_32x32.png",
     theme:{mode:"dark",primary:"#0F766E",accent:"#22C55E",background:"#0B1320",surface:"#1E293B",text:"#F8FAFC"}
   };
+  const LEGACY_LOGOS=new Set(["/brand/roomgoblin_primary_400w.png","/brand/roomgoblin_app_512x512.png"]);
   const LEGACY_PRODUCT_NAMES=new Set(["Classroom Control Hub","Classroom Hub"]);
   const renderer=/\/(display|document-viewer|antmedia-player)(\/|$)/.test(location.pathname);
   document.documentElement.dataset.brandSurface=renderer?"renderer":"operator";
@@ -20,7 +21,7 @@
   function normalize(branding={}){
     const incoming={...branding};
     if(!incoming.productName||LEGACY_PRODUCT_NAMES.has(incoming.productName))incoming.productName=ROOMGOBLIN.productName;
-    if(!incoming.logoUrl)incoming.logoUrl=ROOMGOBLIN.logoUrl;
+    if(!incoming.logoUrl||LEGACY_LOGOS.has(incoming.logoUrl))incoming.logoUrl=ROOMGOBLIN.logoUrl;
     if(!incoming.faviconUrl)incoming.faviconUrl=ROOMGOBLIN.faviconUrl;
     if(!incoming.descriptor)incoming.descriptor=ROOMGOBLIN.descriptor;
     if(!incoming.tagline)incoming.tagline=ROOMGOBLIN.tagline;
@@ -50,6 +51,32 @@
     for(const node of nodes)node.nodeValue=node.nodeValue.replace(/Classroom Control Hub|Classroom Hub/g,productName);
   }
 
+  function applyArtwork(profile){
+    // Opt-in product marks keep page layout under each workspace's ownership.
+    document.querySelectorAll("[data-brand-lockup]").forEach(lockup=>{
+      if(!lockup.querySelector("[data-brand-logo]")){
+        const mark=document.createElement("img");mark.dataset.brandLogo="";
+        mark.width=32;mark.height=32;mark.decoding="async";
+        const name=document.createElement("span");name.dataset.brandProduct="";
+        lockup.append(mark,name);
+      }
+      lockup.querySelector("[data-brand-product]").textContent=profile.productName;
+    });
+    document.querySelectorAll("[data-brand-logo], .brandWrap .logo img").forEach(mark=>{
+      mark.src=profile.logoUrl;
+      mark.alt=profile.logoUrl===ROOMGOBLIN.logoUrl?`${profile.productName} logo`:`${profile.school||profile.productName} logo`;
+      mark.onerror=()=>{
+        if(mark.getAttribute("src")!==ROOMGOBLIN.logoUrl){
+          mark.src=ROOMGOBLIN.logoUrl;mark.alt=`${ROOMGOBLIN.productName} logo`;
+        }else{mark.onerror=null;mark.hidden=true;}
+      };
+      mark.hidden=false;
+    });
+    let icons=[...document.querySelectorAll("link[rel~='icon']")];
+    if(!icons.length){const icon=document.createElement("link");icon.rel="icon";document.head.append(icon);icons=[icon];}
+    for(const icon of icons){icon.href=profile.faviconUrl;if(profile.faviconUrl===ROOMGOBLIN.faviconUrl){icon.type="image/png";icon.sizes="32x32";}else{icon.removeAttribute("type");icon.removeAttribute("sizes");}}
+  }
+
   function apply(branding={}){
     ensureBrandStyles();
     const profile=normalize(branding),root=document.documentElement,theme=profile.theme;
@@ -66,8 +93,6 @@
     if(document.title.includes("Classroom Control Hub"))document.title=document.title.replace("Classroom Control Hub",profile.productName);
     else if(document.title.includes("Classroom Hub"))document.title=document.title.replace("Classroom Hub",profile.productName);
 
-    let icon=document.querySelector("link[rel~='icon']");if(!icon){icon=document.createElement("link");icon.rel="icon";document.head.append(icon)}if(profile.faviconUrl)icon.href=profile.faviconUrl;
-    const shellLogo=document.querySelector(".brandWrap .logo img");if(shellLogo&&profile.logoUrl)shellLogo.src=profile.logoUrl;
 
     const productInput=document.getElementById("productName");if(productInput&&(!productInput.value||LEGACY_PRODUCT_NAMES.has(productInput.value)))productInput.value=profile.productName;
     for(const button of document.querySelectorAll("button")){if(/Open Classroom Control Hub|Open Classroom Hub/i.test(button.textContent||""))button.textContent=`Open ${profile.productName}`;}
@@ -78,6 +103,7 @@
     window.ROOMGOBLIN_BRANDING=profile;
     window.dispatchEvent(new CustomEvent("controlhub:branding",{detail:profile}));
     window.dispatchEvent(new CustomEvent("roomgoblin:branding",{detail:profile}));
+    applyArtwork(profile);
     return profile;
   }
 
@@ -90,8 +116,9 @@
 
   window.RoomGoblinBranding={apply,normalize,load:async()=>{try{const response=await fetch("/api/v1/branding",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw Error(`HTTP ${response.status}`);const value=await response.json();return apply(value.branding||{})}catch{return apply(ROOMGOBLIN)}}};
   window.ControlHubBranding=window.RoomGoblinBranding;
+  apply(ROOMGOBLIN);
   window.RoomGoblinBranding.load();
-  window.addEventListener("load",()=>{const p=window.ROOMGOBLIN_BRANDING||ROOMGOBLIN;replaceLegacyPresentationText(document.body,p.productName);const logo=document.querySelector(".brandWrap .logo img");if(logo&&p.logoUrl)logo.src=p.logoUrl;});
+  window.addEventListener("load",()=>{const p=window.ROOMGOBLIN_BRANDING||ROOMGOBLIN;replaceLegacyPresentationText(document.body,p.productName);applyArtwork(p);});
 
   if(!renderer&&location.pathname.startsWith("/controller"))managedDisplaysOverviewLink();
   if(!renderer&&!document.querySelector('script[data-controlhub-integration-setup]')){const script=document.createElement("script");script.src="/shared/integration-setup.js";script.defer=true;script.dataset.controlhubIntegrationSetup="1";document.head.append(script);}

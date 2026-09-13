@@ -197,6 +197,21 @@ Scope shared workspace styles to `body.rg-workspace`; never load them into the
 physical display renderer. Preserve capability-hidden navigation, stable control
 IDs/handlers and the single display-layout engine when reorganizing controls.
 
+### Veyon previews and condensed inventories
+
+Veyon page code lives in `public/controller/veyon.{html,css,js}`; bounded image
+transport is in `src/veyon-transport.js`. Preserve `lab.sensitive.read` on previews,
+backend-only keys/UIDs, per-host authentication single-flight, active-reader pool
+protection, bounded frame retries and decode-before-swap. Never infer authenticated
+status from TCP reachability or swallowed errors. Read
+`docs/VEYON-MUSIC-INTEGRATIONS.md` before changing this contract.
+
+Filtered-out selections remain command targets and must be visibly counted.
+Retain all commands, confirmations, modal password clearing and keyboard focus
+when redrawing inventory. Focus workspace must not recreate iframe sessions.
+Keep the supplied valid192 brand image as the default; legacy400w/512 URLs are
+compatibility aliases with actual192 dimensions, not new high-resolution artwork.
+
 ## Critical behavior invariants
 
 ### Access profiles and authentication

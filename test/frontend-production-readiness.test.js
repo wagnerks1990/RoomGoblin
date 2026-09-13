@@ -32,7 +32,7 @@ test("Morning Announcements telemetry strips URL queries, fragments, and the pri
 });
 
 test("Veyon login collects passwords in a clearing password dialog",()=>{
-  const source=read("public/controller/veyon.html");
+  const source=read("public/controller/veyon.html")+read("public/controller/veyon.js");
   assert.match(source,/<dialog id="loginDialog"/);
   assert.match(source,/id="veyonLoginPassword" type="password"/);
   assert.match(source,/\$\('veyonLoginPassword'\)\.value=''/);
