@@ -54,3 +54,7 @@ html[data-brand-mode="light"] body.rg-workspace{--rg-good:#166534;--rg-bad:#b91c
 .rg-workspace :is(button.danger,button.off){color:var(--rg-danger-text)!important;background:var(--rg-danger-bg)!important;border-color:var(--rg-danger-line)!important}
 html[data-product="roomgoblin"] .rg-workspace a{color:var(--rg-link)}
 .rg-workspace .footerBrand{background:transparent}.rg-workspace .footerBrand b{color:var(--rg-text)}
+.rg-workspace .pill{background:var(--rg-surface);color:var(--rg-text);border-color:var(--rg-line)}
+.rg-workspace .pill:is(.ok,.good){color:var(--rg-good);background:var(--rg-surface)}
+.rg-workspace .pill.bad{color:var(--rg-danger-text);background:var(--rg-danger-bg);border-color:var(--rg-danger-line)}
+.rg-workspace .pill.warn{color:var(--rg-text);background:var(--rg-surface);border-color:#b7791f}
