@@ -110,10 +110,10 @@ activate_image_id(){
 
 ensure_adb_runtime_layout(){
   local value adb_mount
-  adb_mount="$(docker volume inspect classroom-control-hub-android-adb --format '{{.Mountpoint}}')"
+  adb_mount="$(docker volume inspect classroom-control-hub-android-adb --format '{{.Mountpoint}}')" || return 1
   [[ "$adb_mount" == "${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}/classroom-control-hub-android-adb/_data" && -d "$adb_mount" && ! -L "$adb_mount" ]] || return 1
-  chmod 0750 "$adb_mount"
-  chown 10001:10001 "$adb_mount"
+  chmod 0750 "$adb_mount" || return 1
+  chown 10001:10001 "$adb_mount" || return 1
   # Devices may never have been paired. Preserve an empty identity store.
   if [[ ! -e "$adb_mount/adbkey" && ! -L "$adb_mount/adbkey" && ! -e "$adb_mount/adbkey.pub" && ! -L "$adb_mount/adbkey.pub" ]]; then
     return 0
@@ -123,8 +123,8 @@ ensure_adb_runtime_layout(){
     [[ -f "$adb_mount/$value" && ! -L "$adb_mount/$value" ]] || return 1
   done
   for value in adbkey adbkey.pub; do
-    chown 10001:10001 "$adb_mount/$value"
-    chmod 0640 "$adb_mount/$value"
+    chown 10001:10001 "$adb_mount/$value" || return 1
+    chmod 0640 "$adb_mount/$value" || return 1
   done
 }
 

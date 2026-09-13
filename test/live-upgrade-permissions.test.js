@@ -46,10 +46,11 @@ test("ADB upgrade accepts empty or complete stores and rejects partial or linked
   fs.mkdirSync(mount,{recursive:true,mode:0o700});
   const source=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
   const fn=source.slice(source.indexOf("ensure_adb_runtime_layout(){"),source.indexOf("ensure_runtime_layout(){"));
-  const run=()=>spawnSync("bash",["-c",'set -eu\ndocker(){ printf "%s\\n" "$TEST_MOUNT"; }\nchown(){ :; }\n'+fn+'\nensure_adb_runtime_layout'],{env:{...process.env,DOCKER_VOLUMES_ROOT:dir,TEST_MOUNT:mount},encoding:"utf8"});
+  const run=(fail="")=>spawnSync("bash",["-c",'set -eu\ndocker(){ printf "%s\\n" "$TEST_MOUNT"; }\nchown(){ test "$TEST_FAIL" != chown; }\nchmod(){ test "$TEST_FAIL" != chmod && command chmod "$@"; }\n'+fn+'\nensure_adb_runtime_layout || exit 1'],{env:{...process.env,DOCKER_VOLUMES_ROOT:dir,TEST_MOUNT:mount,TEST_FAIL:fail},encoding:"utf8"});
   assert.equal(run().status,0);
   assert.equal(fs.statSync(mount).mode&0o777,0o750);
   assert.deepEqual(fs.readdirSync(mount),[]);
+  for(const operation of ["chmod","chown"])assert.notEqual(run(operation).status,0);
   const key=path.join(mount,"adbkey"),pub=key+".pub";
   fs.writeFileSync(key,"private",{mode:0o600});
   assert.notEqual(run().status,0);
