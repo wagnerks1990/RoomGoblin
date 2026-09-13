@@ -19,15 +19,18 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:12px}dialog::backdrop{background:#000a}#historyWrap{max-height:65vh;overflow:auto} select{background:#0d1317;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 </style>
+<link rel="stylesheet" href="/controller/lab-workspaces.css">
+<link rel="stylesheet" href="/shared/workspace.css">
 </head>
-<body>
-<main>
+<body class="rg-workspace rg-lab">
+<main id="main-content">
+  <nav class="lab-nav" aria-label="Lab navigation"><a href="/controller/" target="_top">RoomGoblin</a><a href="/controller/lab.html" aria-current="page">Agent computers</a><a href="/controller/veyon.html">Veyon computers</a></nav>
   <div class="top">
-    <div><h1>Lab Computers</h1><div class="muted">RoomGoblin <span id="hubVersion">loading version…</span> • outbound Windows agents • no inbound management ports</div></div>
+    <div><h1>Lab Computers</h1><div class="muted">Manage computers, help students, and keep the class focused. <span id="hubVersion">loading version…</span></div></div>
     <div class="toolbar"><button onclick="loadAll()">Refresh</button><span id="configState" class="pill">Loading…</span></div>
   </div>
 
-  <div class="panel"><div class="toolbar">
+  <div class="panel lab-summary"><div class="toolbar">
     <div><div class="muted">Total</div><div id="total" class="kpi">0</div></div>
     <div><div class="muted">Online</div><div id="online" class="kpi good">0</div></div>
     <div><div class="muted">Offline</div><div id="offline" class="kpi bad">0</div></div>
@@ -35,7 +38,7 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
     <button onclick="selectAll(true)">Select All</button><button onclick="selectOnline()">Select Online</button><button onclick="selectAll(false)">Clear</button>
   </div></div>
 
-  <div class="panel" id="aiAlertPanel">
+  <details class="panel lab-disclosure" id="aiAlertPanel"><summary>AI usage monitor <span class="muted">Review browser activity alerts</span></summary>
     <div class="top">
       <div><h2>AI Usage Monitor</h2><div class="muted">Browser history checks automatically every 60 seconds; screenshots are manual.</div></div>
       <div class="toolbar"><span id="aiMonitorState" class="pill">Loading…</span><button onclick="openAiAlerts()">View Alerts</button></div>
@@ -47,28 +50,31 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
       <div><div class="muted">History Poll</div><div class="pill good">60 sec</div></div>
       <div id="aiLatestSummary" class="muted">No AI alerts.</div>
     </div>
-  </div>
+  </details>
 
-  <div class="panel">
-    <h2>Selected Computer Actions</h2>
-    <div class="toolbar" style="margin-top:10px">
-      <button class="primary" onclick="sendMessage()">Send Message</button>
-      <button onclick="sendAction('lock')">Windows Lock</button>
-      <button class="primary" onclick="openInstructorLock()">Instructor Lock</button>
-      <button onclick="sendAction('instructor-unlock')">Instructor Unlock</button>
-      <button class="primary" onclick="openAppLock()">App / Site Lock</button>
-      <button onclick="sendAction('app-unlock')">Exit App Lock</button>
-      <button onclick="sendAction('logoff')">Log Off</button>
-      <button class="warn" onclick="sendAction('restart')">Restart</button>
-      <button class="danger" onclick="sendAction('shutdown')">Shutdown</button>
-      <button onclick="sendAction('cancel-shutdown')">Cancel Shutdown</button>
-      <button onclick="sendAction('refresh-history')">Refresh Browser History</button>
-      <button class="primary" onclick="saveSelectedScreenshots()">Take Screenshot</button>
-      <button onclick="openPresetDialog()">PowerShell Presets</button>
-      <button onclick="sendAction('update-agent')">Update Agent</button>
+  <section class="panel lab-selection" aria-labelledby="selectionTitle">
+    <div class="top"><h2 id="selectionTitle">Computer actions</h2><span id="selectionCount" class="pill" role="status">0 selected</span></div>
+    <div class="toolbar">
+      <button class="primary" onclick="sendMessage()">Send message</button>
+      <button onclick="openInstructorLock()">Instructor lock</button>
+      <button onclick="sendAction('instructor-unlock')">Unlock</button>
+      <button onclick="openAppLock()">App / site lock</button>
+      <button onclick="sendAction('app-unlock')">Exit app lock</button>
+      <button onclick="saveSelectedScreenshots()">Take screenshot</button>
     </div>
-    <div id="actionResult" class="muted" style="margin-top:8px"></div>
-  </div>
+    <details class="lab-disclosure"><summary>Power and maintenance</summary><div class="toolbar">
+      <button onclick="sendAction('lock')">Windows lock</button>
+      <button onclick="sendAction('logoff')">Log off</button>
+      <button class="warn" onclick="sendAction('restart')">Restart</button>
+      <button class="danger" onclick="sendAction('shutdown')">Shut down</button>
+      <button onclick="sendAction('cancel-shutdown')">Cancel shutdown</button>
+      <button onclick="sendAction('refresh-history')">Refresh browser history</button>
+      <button onclick="openPresetDialog()">PowerShell presets</button>
+      <button onclick="sendAction('update-agent')">Update agent</button>
+    </div></details>
+    <div id="actionResult" class="muted" role="status" aria-live="polite"></div>
+  </section>
+  <div class="top lab-inventory-heading"><h2>Computers</h2><span class="muted">Select computers to apply an action.</span></div>
 
   <div id="computerGrid" class="grid"><div class="muted">Loading…</div></div>
 
@@ -285,6 +291,7 @@ function render(){
  total.textContent=inventory.summary.total;online.textContent=inventory.summary.online;offline.textContent=inventory.summary.offline;
  configState.textContent=inventory.configured?'Agent enrollment enabled':'LAB_AGENT_TOKEN NOT SET';configState.className='pill '+(inventory.configured?'good':'bad');
  const valid=new Set(inventory.computers.map(x=>x.id));for(const id of [...selected])if(!valid.has(id))selected.delete(id);
+ selectionCount.textContent=`${selected.size} selected`;
  computerGrid.innerHTML=inventory.computers.map(c=>{const site=c.latestWebsite,arg=jsArg(c.id);return `<div class="card ${c.online?'online':'offline'} ${selected.has(c.id)?'selected':''}">
  <div class="computerHead"><label><input type="checkbox" ${selected.has(c.id)?'checked':''} onchange="toggle(${arg},this.checked)"> <b>${esc(c.name||c.hostname||c.id)}</b></label><span class="pill ${c.online?'good':'bad'}">${c.online?'ONLINE':'OFFLINE'}</span></div>
  <div class="muted">${esc(c.hostname||c.id)} • ${esc(c.ip||'No IP')}</div>

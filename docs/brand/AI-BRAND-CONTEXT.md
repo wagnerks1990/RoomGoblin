@@ -24,5 +24,12 @@ Devices; Students; Announcements; Schedules; Digital Signage; Room Controls; Rep
 ## Compatibility rule
 The RoomGoblin rebrand must not casually rename persistent storage, environment variables, Android package IDs, service/socket names, container identities, database fields, enrollment identifiers, API contracts, or deployment paths. Legacy internal identifiers such as `classroom-hub`, `CLASSROOM_HUB_*`, `/opt/classroom-hub`, and `org.roomgoblin.display` remain compatibility identifiers until an explicit migration is designed, tested, documented, and reversible.
 
+## Operator workspace styling
+
+Use the scoped `public/shared/workspace.css` operator layer and existing runtime
+brand tokens for GUI changes. Read `docs/GUI-WORKSPACES.md` for page-specific
+layout ownership, navigation authorization and accessibility requirements. Do not
+apply the operator design layer to physical display or playback renderers.
+
 ## Prompt seed
 Design for RoomGoblin, a Classroom & Lab Management Hub. Use the canonical RoomGoblin assets and tokens. Make it clean, modern, accessible, teacher-first, technically credible, and fast to scan during class. Use the friendly goblin identity without generic childish ed-tech styling or visual clutter.

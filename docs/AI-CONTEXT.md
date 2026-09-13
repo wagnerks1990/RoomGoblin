@@ -25,6 +25,15 @@ Dependabot covers npm, GitHub Actions, and the Android Agent Gradle build. The
 tracked integration catalog is documentation/discovery metadata; its managed
 image set must stay aligned with the executable maintenance/Host Agent allowlist.
 
+## Operator workspaces
+
+The GUI uses grouped navigation and native expandable sections to separate daily
+controls from configuration and maintenance. See [Operator workspaces](GUI-WORKSPACES.md)
+for styling ownership, responsive behavior and review requirements.
+`public/controller/workspace.js` changes navigation presentation only; existing
+page activation and authorization remain in `app.js`. Shared operator CSS is
+opt-in and must not enter physical display, document or video playback layouts.
+
 ## Runtime architecture
 
 ```text

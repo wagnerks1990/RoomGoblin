@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Operator GUI
+
+- Reorganize the controller into searchable room, content, planning and
+  administration workspaces, with a keyboard-accessible mobile navigation drawer.
+- Apply a shared operator design layer and responsive layouts to the controller,
+  display content editor, lab consoles, setup and managed displays.
+- Keep daily actions visible and group advanced options in native expandable
+  sections; retain managed-device disclosure state during inventory refreshes.
+- Add lab selection counts and keyboard handling for Veyon custom dialogs while
+  preserving existing action bindings and confirmations.
+- Document styling ownership, authorization boundaries and the unchanged physical
+  display layout contract in `docs/GUI-WORKSPACES.md` and the Wiki mirror.
+
+
 ## 1.0.0-alpha.82 - 2026-09-13
 
 ### Deployment reliability

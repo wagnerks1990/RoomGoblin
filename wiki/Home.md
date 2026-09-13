@@ -9,6 +9,7 @@
 ## Start here
 
 - [RoomGoblin Brand and Compatibility](RoomGoblin-Brand-and-Compatibility)
+- [Operator Workspaces](GUI-Workspaces)
 - [Architecture](Architecture)
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)

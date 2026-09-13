@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RoomGoblin Controller</title>
+<title>Display studio · RoomGoblin</title>
 <link rel="stylesheet" href="/shared/attribution.css">
 <script src="/shared/attribution.js" defer></script>
 <style>
@@ -103,59 +103,26 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
 @media(max-width:800px){.mediaGrid{grid-template-columns:1fr 1fr}.statGrid{grid-template-columns:1fr 1fr}}
 </style>
 
-<style id="live-announcements-controller-theme">
-:root{
-  --herd-green:#2aa866;
-  --herd-green2:#1b7a49;
-  --herd-border:rgba(255,255,255,.10);
-  --herd-border2:rgba(255,255,255,.16);
-  --herd-text:rgba(255,255,255,.92);
-  --herd-muted:rgba(255,255,255,.64);
-  color-scheme:dark;
-}
-html,body{
-  color:var(--herd-text)!important;
-  background:
-    radial-gradient(1100px 700px at 70% -20%,rgba(42,168,102,.22),transparent 55%),
-    radial-gradient(800px 620px at -10% 10%,rgba(27,122,73,.20),transparent 50%),
-    linear-gradient(180deg,#040705,#020403 35%,#040705)!important;
-}
-.panel,.previewPanel,.workspace,.stat,.target{
-  border-color:var(--herd-border)!important;
-  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02))!important;
-  color:var(--herd-text)!important;
-}
-.panel,.previewPanel{border-radius:18px!important;box-shadow:0 14px 50px rgba(0,0,0,.32)!important}
-button,input,select,textarea{
-  color:var(--herd-text)!important;background:rgba(0,0,0,.28)!important;
-  border-color:var(--herd-border)!important;border-radius:12px!important;
-}
-button:hover{border-color:var(--herd-border2)!important;background:rgba(255,255,255,.07)!important}
-button.active,.nav button.active,.primary{
-  border-color:rgba(42,168,102,.52)!important;
-  background:linear-gradient(180deg,rgba(42,168,102,.25),rgba(27,122,73,.12))!important;
-}
-.dot.ok{background:var(--herd-green)!important;box-shadow:0 0 12px rgba(42,168,102,.55)!important}
-.targetMeta,.muted{color:var(--herd-muted)!important}
-.previewPanel iframe,.previewViewport{background:#020403!important;border-color:var(--herd-border)!important}
-input[type=range],input[type=checkbox]{accent-color:var(--herd-green)!important}
-pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:var(--herd-border)!important}
-</style>
+<link rel="stylesheet" href="/shared/workspace.css">
+<link id="live-announcements-controller-theme" rel="stylesheet" href="/controller/display-workspace.css">
 </head>
-<body>
+<body class="rg-workspace">
+<script>if(window.self!==window.top)document.body.classList.add("studio-embedded");</script>
+<a class="studio-skip" href="#displayStudio">Skip to display controls</a>
 <div class="wrap">
   <div class="top">
     <div>
-      <h1>RoomGoblin Controller</h1>
-      <div class="muted">RoomGoblin • v1.0.0-alpha.82 • multi-display controller</div>
+      <a class="studio-back" href="/controller/">← RoomGoblin</a>
+      <h1>Display studio</h1>
+      <div class="muted">Choose screens, create content, and send it to the room. • v1.0.0-alpha.82</div>
     </div>
-    <div id="conn" class="muted">Connecting…</div>
+    <div id="conn" class="muted" role="status">Connecting…</div>
   </div>
 
   <div class="shell">
     <aside class="left">
       <div class="panel">
-        <h2>Targets</h2>
+        <h2>1. Choose screens</h2>
         <div class="toolbar">
           <button onclick="selectGroup('all')">All</button>
           <button onclick="selectGroup('front')">Front</button>
@@ -178,7 +145,7 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
       <div class="panel">
         <h2>Classroom Session</h2>
         <div class="toolbar">
-          <button class="danger" style="font-weight:800" onclick="clearClassroom()">CLEAR CLASSROOM</button>
+          <button class="danger" style="font-weight:800" onclick="clearClassroom()">Clear classroom</button>
           <button onclick="resumeClassroom()">Resume Sessions</button>
         </div>
         <div class="muted" style="margin-top:7px">Clear Classroom stops lesson queues, pauses spotlight rotation, and blanks every enabled RoomGoblin display immediately.</div>
@@ -186,18 +153,19 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
 
       <div class="panel">
         <h2>Activity</h2>
-        <div id="resultSummary" class="resultSummary">Ready.</div>
+        <div id="resultSummary" class="resultSummary" role="status" aria-live="polite">Ready.</div>
         <div class="toolbar"><button onclick="toggleRaw()">Advanced / JSON</button></div>
         <pre id="rawResult" class="hidden">No result yet.</pre>
       </div>
     </aside>
 
-    <main class="main">
-      <div class="panel previewPanel">
+    <main class="main" id="displayStudio" tabindex="-1">
+      <details class="panel previewPanel">
+        <summary>Live preview <span class="muted">Check a screen before sending</span></summary>
         <div class="previewHead">
           <div>
             <h2 style="margin:0">Live Preview</h2>
-            <div class="muted">Exact 16:9 TV render. The receiver runs at its full logical resolution and is only scaled visually inside the dashboard.</div>
+            <div class="muted">See the selected display at its actual aspect ratio.</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <select id="previewSelect" aria-label="Preview display" style="max-width:260px"></select>
@@ -217,22 +185,25 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
         <div id="previewViewport" class="previewViewport">
           <iframe id="previewFrame" title="Exact TV live preview"></iframe>
         </div>
-      </div>
+      </details>
 
-      <div class="panel">
-        <div class="nav">
-          <button class="active" data-work="display" onclick="showWorkspace('display')">Display</button>
-          <button data-work="timer" onclick="showWorkspace('timer')">Timer</button>
-          <button data-work="media" onclick="showWorkspace('media')">Media</button>
-          <button data-work="lighting" onclick="showWorkspace('lighting')">Lighting</button>
-          <button data-work="av" onclick="showWorkspace('av')">AV</button>
-          <button data-work="scenes" onclick="showWorkspace('scenes')">Scenes</button>
-          <button data-work="settings" onclick="showWorkspace('settings')">Settings</button>
-          <button data-work="diagnostics" onclick="showWorkspace('diagnostics')">Diagnostics</button>
-        </div>
+      <div class="panel studio-editor">
+        <h2>2. Create &amp; control</h2>
+        <nav class="nav" aria-label="Display studio workspaces">
+          <button class="active" data-work="display" onclick="showWorkspace('display')" aria-controls="display" aria-pressed="true">Display</button>
+          <button data-work="timer" onclick="showWorkspace('timer')" aria-controls="timer" aria-pressed="false">Timer</button>
+          <button data-work="media" onclick="showWorkspace('media')" aria-controls="media" aria-pressed="false">Media</button>
+          <button data-work="lighting" onclick="showWorkspace('lighting')" aria-controls="lighting" aria-pressed="false">Lighting</button>
+          <button data-work="av" onclick="showWorkspace('av')" aria-controls="av" aria-pressed="false">AV</button>
+          <button data-work="scenes" onclick="showWorkspace('scenes')" aria-controls="scenes" aria-pressed="false">Scenes</button>
+          <button data-work="settings" onclick="showWorkspace('settings')" aria-controls="settings" aria-pressed="false">Settings</button>
+          <button data-work="diagnostics" onclick="showWorkspace('diagnostics')" aria-controls="diagnostics" aria-pressed="false">Diagnostics</button>
+        </nav>
 
         <section id="display" class="workspace active">
-          <h2>Display Layers</h2>
+          <h2>Message</h2>
+          <p class="muted">Send content to the screens selected on the left.</p>
+          <details class="studio-disclosure"><summary>Title &amp; subtitle</summary>
           <div class="grid2">
             <div>
               <label>Title</label>
@@ -252,10 +223,11 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
             <button onclick="sendSubtitle()">Send Subtitle</button>
           </div>
 
-          <hr>
+          </details>
 
           <label>Body Message</label>
           <textarea id="text" aria-label="Body message">RoomGoblin Online</textarea>
+          <details class="studio-disclosure"><summary>Message appearance</summary>
           <div class="grid2">
             <div><label>Text color</label><input id="textColor" aria-label="Text color" type="color" value="#ffffff"></div>
             <div><label>Screen background</label><input id="bgColor" aria-label="Screen background color" type="color" value="#101318"></div>
@@ -264,8 +236,9 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
             <div><label>Font size</label><input id="fontSize" aria-label="Body font size" type="number" min="12" max="220" value="64"></div>
             <div><label>Position</label><select id="position" aria-label="Body position"><option>top</option><option selected>center</option><option>bottom</option></select></div>
           </div>
+          </details>
           <div class="toolbar">
-            <button class="primary" onclick="sendText()">Send Body</button>
+            <button class="primary" onclick="sendText()">Send message</button>
             <button onclick="sendBackground()">Background</button>
             <button onclick="identifySelected()">Identify</button>
             <button class="danger" onclick="clearSelectedDisplays()">Clear Selected</button>
@@ -310,6 +283,9 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
                 <option value="bottom" selected>Bottom</option>
               </select>
             </div>
+          </div>
+          <details class="studio-disclosure"><summary>Timer appearance</summary>
+          <div class="grid2">
             <div>
               <label>Font size</label>
               <input id="timerFontSize" aria-label="Timer font size" type="number" min="20" max="220" value="64">
@@ -340,6 +316,7 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
             </div>
           </div>
 
+          </details>
           <div style="margin:14px 0;padding:18px;border:1px solid var(--herd-border);border-radius:16px;text-align:center;background:rgba(0,0,0,.25)">
             <div id="timerControllerLabel" class="muted">Preview</div>
             <div id="timerControllerPreview" style="display:inline-block;margin-top:8px;padding:10px 22px;border:4px solid #fff;border-radius:18px;color:#fff;background:rgba(0,0,0,.35);font-size:44px;font-weight:800;font-variant-numeric:tabular-nums">05:00</div>
@@ -361,7 +338,7 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
             <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
               <div>
                 <h2 style="margin:0">Morning Announcements</h2>
-                <div class="muted" style="margin-top:4px">Live Announcements • Ant Media Server • autoplay + audio-on redundancy</div>
+                <div class="muted" style="margin-top:4px">Priority broadcast • pauses conflicting display content and music</div>
               </div>
               <span style="font-size:11px;border:1px solid rgba(42,168,102,.52);border-radius:999px;padding:5px 9px;color:#a9f0c7">AUDIO ON</span>
             </div>
@@ -382,7 +359,7 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
               <button onclick="retryMorningAnnouncementsAudio(true)">Reload + Unmute</button>
               <button class="danger" onclick="stopMorningAnnouncements()">Stop / Clear</button>
             </div>
-            <div class="muted" style="margin-top:8px">RoomGoblin forces <code>autoplay=true</code> and <code>mute=false</code>, grants the embedded player autoplay permission, then retries unmute/play at multiple intervals. Browser/kiosk autoplay policy can still override audible autoplay.</div>
+            <div class="muted" style="margin-top:8px">If audio does not start, use Retry / Unmute Audio and check the display’s browser sound permissions.</div>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
             <div><h2 style="margin:0">Media Library</h2><div class="muted">Local files stored on the RoomGoblin.</div></div>
@@ -396,7 +373,7 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
 
           <hr>
 
-          <h3>Manual / Selected Media</h3>
+          <details class="studio-disclosure"><summary>Media URL &amp; playback options</summary>
           <label>URL</label><input id="mediaUrl" aria-label="Manual media URL" type="url" placeholder="http://... or /media/...">
           <label style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">
             <input id="mediaLocalDirect" type="checkbox" checked style="margin-top:3px">
@@ -415,6 +392,7 @@ pre{background:rgba(0,0,0,.42)!important;color:#d8eee2!important;border-color:va
             <button onclick="sendMedia('display.video')">Play Video</button>
             <button onclick="sendMedia('display.web')">Show Web</button>
           </div>
+          </details>
         </section>
 
         <section id="lighting" class="workspace">
@@ -639,7 +617,10 @@ window.resumeClassroom=async()=>{
 
 window.showWorkspace=id=>{
   document.querySelectorAll('.workspace').forEach(x=>x.classList.remove('active'));
-  document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.work===id));
+  document.querySelectorAll('.nav button').forEach(x=>{
+    x.classList.toggle('active',x.dataset.work===id);
+    x.setAttribute('aria-pressed',String(x.dataset.work===id));
+  });
   el(id).classList.add('active');
   if(id==='diagnostics')loadDiagnostics();
 };

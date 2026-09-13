@@ -41,6 +41,13 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - optional managed integration deployment/adoption
 - diagnostics, backup/recovery, and host-management tooling
 
+## Operator interface
+
+The controller groups daily room controls, content, planning and administration
+into searchable workspaces. Advanced options expand when needed, with responsive
+layouts for smaller screens. See [Operator workspaces](docs/GUI-WORKSPACES.md) for
+navigation, styling boundaries and the unreleased redesign scope.
+
 ## Architecture
 
 ```text
