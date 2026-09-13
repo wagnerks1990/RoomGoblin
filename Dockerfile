@@ -13,6 +13,7 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 
 RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       libreoffice-core \
       libreoffice-writer \
