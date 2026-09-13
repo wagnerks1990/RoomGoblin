@@ -213,7 +213,13 @@ else
   done
 fi
 chown 10001:10001 "$ADB_VOLUME_MOUNT"
-chmod 0700 "$ADB_VOLUME_MOUNT"
+chmod 0750 "$ADB_VOLUME_MOUNT"
+for adb_identity in adbkey adbkey.pub; do
+  if [[ -f "$ADB_VOLUME_MOUNT/$adb_identity" && ! -L "$ADB_VOLUME_MOUNT/$adb_identity" ]]; then
+    chown 10001:10001 "$ADB_VOLUME_MOUNT/$adb_identity"
+    chmod 0640 "$ADB_VOLUME_MOUNT/$adb_identity"
+  fi
+done
 sed -i '/^HUB_TLS_HOST=/d;/^HUB_HTTPS_PORT=/d;/^HUB_HTTP_PORT=/d' "$TARGET/.env"
 CURRENT_BIND="$(sed -n 's/^HUB_BIND_ADDRESS=//p' "$TARGET/.env" | tail -n 1)"
 if [[ -z "$CURRENT_BIND" ]]; then set_env_path HUB_BIND_ADDRESS "0.0.0.0"; fi

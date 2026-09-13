@@ -1,5 +1,9 @@
 # AI Project Context
 
+Alpha.82 live-upgrade corrections and acceptance limits are documented in
+`ALPHA82-UPGRADE-RECOVERY.md`. Preserve shared SQLite/ADB access under GID 10001
+and the pre-rebrand Android signing identity during every install and restore.
+
 ## Host-network deployment contract
 
 The Linux Hub and maintenance containers, plus reviewed managed add-on templates, now use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.

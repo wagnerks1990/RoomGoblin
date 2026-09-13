@@ -1,5 +1,9 @@
 # AI and Contributor Operating Contract
 
+For alpha.82 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
+Keep SQLite database/WAL/SHM access shared with maintenance (0660), ADB trust
+group-readable (0750 directory/0640 keys), and legacy signing keys unchanged.
+
 ## RoomGoblin identity and rebrand contract
 
 The current product is **RoomGoblin — Classroom & Lab Management Hub**. The canonical tagline is **Run the room. Manage the lab.** Read `docs/brand/AI-BRAND-CONTEXT.md` and `docs/ROOMGOBLIN-REBRAND.md` before changing product naming, logos, colors, setup copy, installer copy, managed-device presentation, or documentation.

@@ -110,6 +110,17 @@ activate_image_id(){
 
 ensure_runtime_layout(){
   local value
+  install -d -m 0750 -o root -g root /var/lib/classroom-hub
+  local adb_mount
+  adb_mount="$(docker volume inspect classroom-control-hub-android-adb --format '{{.Mountpoint}}')"
+  [[ "$adb_mount" == "${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}/classroom-control-hub-android-adb/_data" && -d "$adb_mount" && ! -L "$adb_mount" ]] || return 1
+  chmod 0750 "$adb_mount"
+  chown 10001:10001 "$adb_mount"
+  for value in adbkey adbkey.pub; do
+    [[ -f "$adb_mount/$value" && ! -L "$adb_mount/$value" ]] || return 1
+    chown 10001:10001 "$adb_mount/$value"
+    chmod 0640 "$adb_mount/$value"
+  done
   install -d -m 0770 -o root -g 10001 "$HUB_ROOT/data"
   install -d -m 0700 -o root -g 10001 "$HUB_ROOT/data/backups"
   install -d -m 2770 -o root -g 10001 "$HUB_ROOT/data/android-tv"

@@ -13,9 +13,9 @@ function withStore(fn){
   try{return fn(store,dir)}finally{store.db.close();fs.rmSync(dir,{recursive:true,force:true})}
 }
 
-test("database storage is group-shared, database files are private, and migration history is ordered",()=>withStore((store,dir)=>{
+test("database storage is group-shared, database files exclude other users, and migration history is ordered",()=>withStore((store,dir)=>{
   assert.equal(fs.statSync(dir).mode&0o777,0o770);
-  assert.equal(fs.statSync(store.dbFile).mode&0o777,0o600);
+  assert.equal(fs.statSync(store.dbFile).mode&0o777,0o660);
   assert.deepEqual(store.validateSchemaMigrations(),{ok:true,version:10,count:10});
   store.db.prepare("UPDATE schema_migrations SET name='tampered' WHERE version=3").run();
   assert.throws(()=>store.validateSchemaMigrations(),/Invalid or incomplete/);

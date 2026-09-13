@@ -646,6 +646,13 @@ class FullRecoveryManager:
         return Path(next(item["target"] for item in journal["targets"] if item["kind"] == kind))
 
     def _restart_and_validate(self, manifest, prior=None):
+        # Old bundles retain their authenticated topology; normalize the active
+        # ADB mount for the capability-dropped maintenance reader after restore.
+        if any(entry.get("role") == "adb-trust" for entry in manifest.get("files", [])):
+            adb_root = self._active_target("adb")
+            os.chmod(adb_root, 0o750)
+            for name in ("adbkey", "adbkey.pub"):
+                os.chmod(adb_root / name, 0o640)
         result = self.run(["docker", "compose", "-f", str(self.hub_root / "docker-compose.yml"), "up", "-d", "--force-recreate", "--remove-orphans", "maintenance-agent", "classroom-hub"], 600, False)
         if result.returncode != 0: raise RuntimeError("Core services failed force-recreation")
         body = {"services": [{"id": s["id"], "enabled": s["enabled"], "running": s["running"]} for s in manifest["managedServices"]]}

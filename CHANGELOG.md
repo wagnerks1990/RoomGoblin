@@ -4,6 +4,12 @@
 
 ### Deployment reliability
 
+- Preserve pre-rebrand Android signing identities, normalize shared ADB access
+  during installation/update/restore, and preserve SQLite maintenance access
+  across restarts and WAL recreation. Added executable migration regressions.
+- Documented live upgrade findings and acceptance limits in
+  `docs/ALPHA82-UPGRADE-RECOVERY.md`.
+
 - Create `/var/lib/classroom-hub` before starting the sandboxed Host Agent. This prevents systemd `226/NAMESPACE` restart loops on clean or upgraded hosts where the declared `ReadWritePaths` state root does not yet exist.
 - Added an installer ordering regression test so every release provisions the protected Host Agent state root before restarting the service.
 - Apply current Debian security updates during the Hub image build so newly disclosed base-layer vulnerabilities cannot survive into a promoted runtime image.
