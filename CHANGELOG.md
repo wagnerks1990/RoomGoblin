@@ -6,6 +6,7 @@
 
 - Create `/var/lib/classroom-hub` before starting the sandboxed Host Agent. This prevents systemd `226/NAMESPACE` restart loops on clean or upgraded hosts where the declared `ReadWritePaths` state root does not yet exist.
 - Added an installer ordering regression test so every release provisions the protected Host Agent state root before restarting the service.
+- Apply current Debian security updates during the Hub image build so newly disclosed base-layer vulnerabilities cannot survive into a promoted runtime image.
 
 ## 1.0.0-alpha.81 - 2026-09-12
 
