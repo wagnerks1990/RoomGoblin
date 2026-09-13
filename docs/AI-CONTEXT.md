@@ -87,7 +87,7 @@ The current master key path is `/etc/classroom-control-hub/master.key`. Upgrades
 
 ## Current known-good baseline
 
-`1.0.0-alpha.81` is the current production-readiness review baseline.
+`1.0.0-alpha.82` is the current production-readiness review baseline.
 
 Production deployment is currently validated only on `amd64` Ubuntu Server
 24.04 LTS. Treat `arm64` as unsupported until both container images and the

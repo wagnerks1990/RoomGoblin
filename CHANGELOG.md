@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0-alpha.82 - 2026-09-13
+
+### Deployment reliability
+
+- Create `/var/lib/classroom-hub` before starting the sandboxed Host Agent. This prevents systemd `226/NAMESPACE` restart loops on clean or upgraded hosts where the declared `ReadWritePaths` state root does not yet exist.
+- Added an installer ordering regression test so every release provisions the protected Host Agent state root before restarting the service.
+
 ## 1.0.0-alpha.81 - 2026-09-12
 
 ### Production hardening

@@ -14,7 +14,7 @@ AI coding assistants and contributors should treat the GitHub repository `main` 
 
 ## Current baseline
 
-The current production-readiness review baseline is `1.0.0-alpha.81`.
+The current production-readiness review baseline is `1.0.0-alpha.82`.
 
 Critical invariants:
 

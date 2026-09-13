@@ -118,7 +118,7 @@ Tests must verify the stamping/wrapper contracts so releases do not rely on manu
 
 ## Current known-good baseline
 
-At the time this document was updated, `1.0.0-alpha.81` is the production-readiness review baseline. It retains stable URL display access as the default, keeps individual credentials optional, prevents supported installs from modifying tracked source modes, binds immutable images to their trusted revision, and makes encrypted single-export recovery a writer-frozen point-in-time transaction with stable identity snapshots and all-state rollback.
+At the time this document was updated, `1.0.0-alpha.82` is the production-readiness review baseline. It retains stable URL display access as the default, keeps individual credentials optional, prevents supported installs from modifying tracked source modes, binds immutable images to their trusted revision, and makes encrypted single-export recovery a writer-frozen point-in-time transaction with stable identity snapshots and all-state rollback.
 
 A newer `VERSION` supersedes the version number, but existing behavioral invariants remain unless deliberately changed and documented.
 

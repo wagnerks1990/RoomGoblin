@@ -278,7 +278,7 @@ if [[ -d /etc/classroom-control-hub/veyon/private.pem ]]; then
 fi
 if [[ ! -e /etc/classroom-control-hub/veyon/private.pem ]]; then install -m 0640 -o root -g "$HUB_INSTALL_GROUP" /dev/null /etc/classroom-control-hub/veyon/private.pem; fi
 
-command -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
+# systemd requires every ReadWritePaths entry to exist before it can create the\n# Host Agent mount namespace. This state root is also used by updates/recovery.\ninstall -d -m 0750 -o root -g root /var/lib/classroom-hub\n\ncommand -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
 install -D -m 0644 "$TARGET/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service
 if [[ "$TARGET" != "/opt/classroom-hub" ]]; then sed -i "s#/opt/classroom-hub#$TARGET#g" /etc/systemd/system/classroom-hub-host-agent.service; fi
 sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=$SERVICES#" /etc/systemd/system/classroom-hub-host-agent.service
