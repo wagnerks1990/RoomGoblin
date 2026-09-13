@@ -93,7 +93,8 @@ test("installer creates the Host Agent state root before restarting systemd serv
   const installer = fs.readFileSync(path.join(root, "install.sh"), "utf8");
   const provision = installer.indexOf("install -d -m 0750 -o root -g root /var/lib/classroom-hub");
   const restart = installer.indexOf("systemctl restart classroom-hub-host-agent.service");
-  assert.match(installer, /^install -d -m 0750 -o root -g root \/var\/lib\/classroom-hub$/m);\n  assert.ok(provision >= 0, "Host Agent state root is not provisioned");
+  assert.match(installer, /^install -d -m 0750 -o root -g root \/var\/lib\/classroom-hub$/m);
+  assert.ok(provision >= 0, "Host Agent state root is not provisioned");
   assert.ok(restart > provision, "Host Agent starts before its protected writable path exists");
 
   const unit = fs.readFileSync(path.join(root, "host-agent/classroom-control-hub-host-agent.service"), "utf8");
