@@ -221,11 +221,26 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page, errors = self.page(path, 390, theme=theme)
                 page.wait_for_function("document.documentElement.dataset.brandMode === 'light'")
                 self.assertEqual(page.evaluate("getComputedStyle(document.body).color"), 'rgb(30, 41, 59)')
+                if path == '/controller/veyon.html':
+                    contrast = page.locator('#showStudents').evaluate(r"""(button) => {
+                      const css = getComputedStyle(button);
+                      const luminance = color => {
+                        const rgb = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(x => {
+                          x /= 255; return x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4;
+                        });
+                        return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+                      };
+                      const values = [luminance(css.color), luminance(css.backgroundColor)].sort((a,b) => b-a);
+                      return {ratio: (values[0] + .05) / (values[1] + .05),
+                              foreground: css.color, background: css.backgroundColor};
+                    }""")
+                    self.assertGreaterEqual(contrast['ratio'], 4.5, contrast)
                 self.evidence(page, errors, 'light-' + path.strip('/').replace('/', '-') + '-390')
 
     def veyon_page(self, width=1440, broken=False):
         # Real browser image decoding, with only the upstream transport simulated.
-        png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7WQAAAAASUVORK5CYII=')
+        # Valid IDAT CRC is required: Firefox rejects a corrupt PNG that Chromium accepts.
+        png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=')
         computers = [
             {'id': 'student-a', 'name': 'Workstation A', 'ip': '192.0.2.21', 'role': 'student',
              'online': True, 'authenticated': True, 'user': {'login': 'student'}, 'featureState': {}},
