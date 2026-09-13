@@ -37,3 +37,30 @@ test("pre-rebrand signing pair migrates without changing bytes and repeats safel
   assert.throws(()=>vm.runInContext("migrateLegacySigningIdentity()",context),/Conflicting/);
   assert.equal(fs.readFileSync(key,"utf8"),"existing-keystore");
 });
+
+test("ADB upgrade accepts empty or complete stores and rejects partial or linked keys",t=>{
+  const {spawnSync}=require("node:child_process");
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),"rgb-adb-"));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const mount=path.join(dir,"classroom-control-hub-android-adb","_data");
+  fs.mkdirSync(mount,{recursive:true,mode:0o700});
+  const source=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
+  const fn=source.slice(source.indexOf("ensure_adb_runtime_layout(){"),source.indexOf("ensure_runtime_layout(){"));
+  const run=(fail="")=>spawnSync("bash",["-c",'set -eu\ndocker(){ printf "%s\\n" "$TEST_MOUNT"; }\nchown(){ test "$TEST_FAIL" != chown; }\nchmod(){ test "$TEST_FAIL" != chmod && command chmod "$@"; }\n'+fn+'\nensure_adb_runtime_layout || exit 1'],{env:{...process.env,DOCKER_VOLUMES_ROOT:dir,TEST_MOUNT:mount,TEST_FAIL:fail},encoding:"utf8"});
+  assert.equal(run().status,0);
+  assert.equal(fs.statSync(mount).mode&0o777,0o750);
+  assert.deepEqual(fs.readdirSync(mount),[]);
+  for(const operation of ["chmod","chown"])assert.notEqual(run(operation).status,0);
+  const key=path.join(mount,"adbkey"),pub=key+".pub";
+  fs.writeFileSync(key,"private",{mode:0o600});
+  assert.notEqual(run().status,0);
+  assert.equal(fs.statSync(key).mode&0o777,0o600);
+  fs.writeFileSync(pub,"public",{mode:0o600});
+  for(let i=0;i<2;i++)assert.equal(run().status,0);
+  for(const [file,bytes] of [[key,"private"],[pub,"public"]]){
+    assert.equal(fs.statSync(file).mode&0o777,0o640);
+    assert.equal(fs.readFileSync(file,"utf8"),bytes);
+  }
+  fs.unlinkSync(pub);fs.symlinkSync(key,pub);
+  assert.notEqual(run().status,0);
+});
