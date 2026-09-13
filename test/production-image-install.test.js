@@ -116,3 +116,20 @@ test("installer and web updater preserve an explicit trusted-proxy hop count",()
     assert.doesNotMatch(source,/sed -i ['"]s\/\^TRUST_PROXY_HOPS=.*TRUST_PROXY_HOPS=0/);
   }
 });
+
+test("publication gate names match real validation workflow identities",()=>{
+  const dir=".github/workflows";
+  const emitted=new Set(fs.readdirSync(dir).filter(file=>file.endsWith(".yml")).map(file=>{
+    const match=fs.readFileSync(path.join(dir,file),"utf8").match(/^name:\s*(.+)$/m);
+    assert.ok(match,`workflow ${file} must declare a stable name`);
+    return match[1].trim();
+  }));
+  for(const file of ["publish-main-images.yml","docker-publish.yml"]){
+    const source=fs.readFileSync(path.join(dir,file),"utf8");
+    const list=source.match(/required=\(([^\n]+)\)/)?.[1]||source.match(/for required in ([^\n]+); do/)?.[1];
+    assert.ok(list,`${file} must keep an explicit required-workflow gate`);
+    const names=[...list.matchAll(/'([^']+)'/g)].map(match=>match[1]);
+    assert.ok(names.length>=5,`${file} must retain all independent validation gates`);
+    for(const name of names)assert.ok(emitted.has(name),`${file} waits for nonexistent workflow: ${name}`);
+  }
+});
