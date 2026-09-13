@@ -46,3 +46,11 @@ html[data-product="roomgoblin"] .rg-workspace :is(button.primary,button.on){back
  .rg-workspace main{min-width:0}
 }
 @media(prefers-reduced-motion:reduce){.rg-workspace *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+/* Semantic state colors also need contrast on a light operator surface. */
+body.rg-workspace{--rg-good:#77dfa4;--rg-bad:#ff9696;--rg-danger-text:#fecaca;--rg-danger-bg:#361e29;--rg-danger-line:#79404a;--rg-link:#6ee7b7}
+html[data-brand-mode="light"] body.rg-workspace{--rg-good:#166534;--rg-bad:#b91c1c;--rg-danger-text:#991b1b;--rg-danger-bg:#fff1f2;--rg-danger-line:#fda4af;--rg-link:#0f766e}
+@media(prefers-color-scheme:light){html[data-brand-mode="system"] body.rg-workspace{--rg-good:#166534;--rg-bad:#b91c1c;--rg-danger-text:#991b1b;--rg-danger-bg:#fff1f2;--rg-danger-line:#fda4af;--rg-link:#0f766e}}
+.rg-workspace :is(.ok,.good){color:var(--rg-good)}.rg-workspace .bad{color:var(--rg-bad)}
+.rg-workspace :is(button.danger,button.off){color:var(--rg-danger-text)!important;background:var(--rg-danger-bg)!important;border-color:var(--rg-danger-line)!important}
+html[data-product="roomgoblin"] .rg-workspace a{color:var(--rg-link)}
+.rg-workspace .footerBrand{background:transparent}.rg-workspace .footerBrand b{color:var(--rg-text)}

@@ -49,3 +49,8 @@ hr{border-color:var(--rg-line);margin:24px 0}.stat{border-color:var(--rg-line)}.
 .studio-embedded .top{justify-content:flex-end;margin-bottom:12px}
 .studio-embedded .wrap{padding:16px}
 @media(max-width:440px){.studio-embedded .wrap{padding:12px 8px}.previewHead>div{min-width:0;max-width:100%}}
+/* Names and receiver IDs must wrap inside a narrow target picker. */
+.target{min-width:0}.target>span{min-width:0;flex:1}
+.targetName,.targetMeta{white-space:normal;overflow-wrap:anywhere;min-width:0}
+.target{grid-template-columns:auto auto minmax(0,1fr)}
+@media(max-width:440px){.nav{grid-template-columns:repeat(2,minmax(0,1fr))}.nav button{white-space:normal}}

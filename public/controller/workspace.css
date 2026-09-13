@@ -44,5 +44,5 @@ html[data-product="roomgoblin"] .rg-controller nav button.active{background:var(
 .rg-controller #workspaceSidebar nav button.active{background:var(--rg-surface);border-color:var(--rg-line);color:var(--rg-text);font-weight:650;box-shadow:inset 3px 0 var(--brand-accent)}
 .rg-controller #workspaceSidebar .rg-nav-group>summary{border:0;margin:0}
 .rg-controller .workspaceDisclosure{padding:10px 18px;margin:12px 0}
-.rg-controller #overview>.grid:first-of-type{grid-template-columns:repeat(3,minmax(0,1fr))}
-@media(max-width:600px){.rg-controller #overview>.grid:first-of-type{gap:8px}.rg-controller #overview>.grid:first-of-type .card{padding:12px 9px}.rg-controller #overview>.grid:first-of-type .muted{font-size:11px}.rg-controller #overview>.grid:first-of-type .kpi{font-size:16px}}
+.rg-controller #overview>.grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:600px){.rg-controller #overview>.grid{gap:8px}.rg-controller #overview>.grid .card{padding:12px 9px}.rg-controller #overview>.grid .muted{font-size:11px}.rg-controller #overview>.grid .kpi{font-size:16px}}
