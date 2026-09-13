@@ -1,0 +1,48 @@
+/* Operator-only design system. Never load on physical display renderers. */
+body.rg-workspace {
+  --rg-bg:var(--brand-background,#0B1320); --rg-surface:var(--brand-surface,#1E293B);
+  --rg-text:var(--brand-text,#F8FAFC); --rg-muted:#aab8c9; --rg-line:#344256;
+  --text:var(--rg-text); --muted:var(--rg-muted); --border:var(--rg-line); --border2:#52647b;
+  --radius:10px; --shadow:none; color:var(--rg-text); background:var(--rg-bg);
+  font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif; color-scheme:dark;
+}
+html[data-brand-mode="light"] body.rg-workspace {--rg-bg:#f3f6f9;--rg-surface:#fff;--rg-text:#1e293b;--rg-muted:#526176;--rg-line:#ccd6e0;color-scheme:light}
+@media(prefers-color-scheme:light){html[data-brand-mode="system"] body.rg-workspace {--rg-bg:#f3f6f9;--rg-surface:#fff;--rg-text:#1e293b;--rg-muted:#526176;--rg-line:#ccd6e0;color-scheme:light}}
+.rg-workspace *{box-sizing:border-box}
+.rg-workspace [hidden]{display:none!important}
+.rg-workspace :is(h1,h2,h3){color:var(--rg-text);line-height:1.25;letter-spacing:-.025em}
+.rg-workspace h1{font-size:clamp(24px,2.4vw,32px);font-weight:700}
+.rg-workspace h2{font-size:18px}.rg-workspace h3{font-size:15px}
+.rg-workspace :is(.panel,.card,.module,.hero,.adminHero,.integrationCard){background:var(--rg-surface);border:1px solid var(--rg-line);border-radius:12px;box-shadow:none;backdrop-filter:none}
+.rg-workspace :is(.panel,.card){padding:20px}
+.rg-workspace :is(.muted,.subtle,.meta,.hint){color:var(--rg-muted)}
+.rg-workspace :is(button,.buttonLink){min-height:42px;padding:9px 14px;border:1px solid var(--rg-line);border-radius:8px;background:var(--rg-surface);color:var(--rg-text);font:inherit;font-weight:600;box-shadow:none;cursor:pointer;text-decoration:none}
+.rg-workspace button:hover{border-color:var(--brand-accent,#22c55e)}
+html[data-product="roomgoblin"] .rg-workspace :is(button.primary,button.on){background:var(--brand-primary,#0f766e)!important;border-color:var(--brand-primary,#0f766e)!important;color:#fff}
+.rg-workspace button.danger{color:#fca5a5;background:#361e29;border-color:#79404a}
+.rg-workspace button:disabled{opacity:.5;cursor:not-allowed}
+.rg-workspace :is(input,select,textarea){max-width:100%;min-width:0;background:var(--rg-bg);color:var(--rg-text);border:1px solid var(--rg-line);border-radius:8px;padding:10px 12px;font:inherit}
+.rg-workspace :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),select){min-height:42px}
+.rg-workspace :is(input[type="checkbox"],input[type="radio"]){width:18px;height:18px;accent-color:var(--brand-primary,#0f766e)}
+.rg-workspace label{line-height:1.5}.rg-workspace :is(input,textarea)::placeholder{color:var(--rg-muted);opacity:.8}
+.rg-workspace :focus-visible{outline:3px solid var(--brand-accent,#22c55e);outline-offset:3px}
+.rg-workspace details>summary{cursor:pointer;min-height:44px;padding:10px 0;font-weight:650;color:var(--rg-text)}
+.rg-workspace details[open]>summary{margin-bottom:12px;border-bottom:1px solid var(--rg-line)}
+.rg-workspace :is(pre,.raw){max-width:100%;overflow:auto;background:var(--rg-bg);color:var(--rg-text);border-radius:8px}
+.rg-workspace :is(.toolbar,.actions){gap:8px;flex-wrap:wrap}
+.rg-workspace :is(.top,.hero,.section-title){gap:16px;flex-wrap:wrap}
+.rg-workspace table{color:var(--rg-text)}.rg-workspace th{color:var(--rg-muted);font-size:12px;text-align:left}
+.rg-workspace :is(th,td){padding:12px;border-color:var(--rg-line)}
+.rg-workspace dialog{background:var(--rg-surface);color:var(--rg-text);border:1px solid var(--rg-line);border-radius:14px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
+.rg-workspace dialog::backdrop{background:#020617bb}
+.rg-workspace .footerBrand{color:var(--rg-muted);font-size:11px;box-shadow:none}
+.rg-skip{position:fixed;top:-100px;left:12px;z-index:70000;padding:12px;background:var(--rg-surface);color:var(--rg-text)}.rg-skip:focus{top:12px}
+@media(max-width:700px){
+ .rg-workspace :is(.grid,.grid2,.formGrid){grid-template-columns:minmax(0,1fr)}
+ .rg-workspace :is(.panel,.card){padding:16px}
+ .rg-workspace :is(.toolbar,.actions)>input{min-width:0!important;max-width:100%}
+ .rg-workspace :is(.top,.hero){align-items:flex-start}
+ .rg-workspace :is(.scroll,.table-wrap){max-width:100%;overflow:auto}
+ .rg-workspace main{min-width:0}
+}
+@media(prefers-reduced-motion:reduce){.rg-workspace *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}

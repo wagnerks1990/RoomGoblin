@@ -1,0 +1,33 @@
+/* Lab-specific layout. Shared workspace tokens provide the visual foundation. */
+.rg-lab main,.rg-veyon main,.rg-veyon header{width:min(1440px,100%);margin-inline:auto;padding:24px 32px}
+.rg-veyon header{position:static;background:transparent;backdrop-filter:none;border:0;padding-bottom:0}
+.lab-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:28px}
+.lab-nav a{color:var(--muted);text-decoration:none;padding:10px 14px;border-radius:10px;min-height:44px;display:inline-flex;align-items:center}
+.lab-nav a:first-child{font-weight:750;color:var(--text);margin-right:auto;padding-left:0}
+.lab-nav a[aria-current=page]{background:var(--panel);color:var(--text);border:1px solid var(--border,#2c3b47)}
+.lab-title-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.lab-title-row h2,.lab-selection h2,.lab-inventory-heading h2{font-size:18px;margin:0}
+.rg-lab h1,.rg-veyon h1{font-size:30px;letter-spacing:-.8px;margin-bottom:6px}
+.lab-summary .toolbar{gap:24px}.lab-summary .kpi{font-size:24px}
+.lab-disclosure{margin-top:16px}.lab-disclosure summary{cursor:pointer;min-height:44px;padding:12px 0;font-weight:650;color:var(--text)}
+.lab-disclosure summary .muted{font-size:13px;font-weight:400;margin-left:12px}
+.lab-disclosure[open]>summary{margin-bottom:8px;border-bottom:1px solid var(--border,#2c3b47)}
+.lab-selection .toolbar{gap:8px}.lab-inventory-heading{margin-block:24px 16px}
+.rg-lab .grid,.rg-veyon .grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:16px}
+.rg-lab .card{padding:18px}.rg-lab .computerHead{align-items:center}.rg-lab .computerHead label{display:flex;gap:8px;align-items:center;min-height:44px}
+.rg-lab input[type=checkbox],.rg-veyon input[type=checkbox]{min-height:22px;min-width:22px;width:22px;height:22px;accent-color:var(--brand-primary,#00b8a9);padding:0}
+.rg-lab .card .toolbar button,.rg-veyon .actions button{min-height:44px;font-size:13px;flex:1 0 auto}
+.rg-lab .offline{opacity:1}.rg-lab .row{align-items:flex-start;overflow-wrap:anywhere}.rg-lab .computerHead b{overflow-wrap:anywhere}
+.rg-veyon .name{font-size:17px;font-weight:650}.rg-veyon .body{padding:18px}.rg-veyon .meta{font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.rg-veyon .tabs,.rg-veyon .lab-title-row .toolbar{margin:0}.rg-veyon .status{gap:8px;margin-bottom:20px}
+.rg-lab dialog{max-height:92dvh;overflow:auto;padding:24px}.rg-lab dialog:not(#historyDialog):not(#screenDialog){width:min(880px,94vw)}
+.rg-lab dialog .toolbar label{display:grid;gap:6px}.rg-lab dialog input,.rg-lab dialog select{max-width:100%}.rg-lab #actionResult:not(:empty){margin-top:14px}
+.rg-veyon .modalBox{max-height:94dvh}.rg-veyon #modal .liveToolbar{flex-shrink:0}.rg-veyon #modal .liveToolbar .grow{min-width:0}
+@media(max-width:680px){
+ .rg-lab main,.rg-veyon main,.rg-veyon header{padding:18px 14px}.rg-veyon header{padding-bottom:0}
+ .lab-nav{gap:4px;margin-bottom:22px}.lab-nav a{padding:8px;font-size:13px}.lab-nav a:first-child{flex-basis:100%}
+ .rg-lab h1,.rg-veyon h1{font-size:26px}.lab-summary .toolbar{gap:16px}.lab-disclosure summary .muted{display:block;margin:6px 0 0 18px}
+ .lab-selection .toolbar button{flex:1 1 140px}.rg-lab .panel{padding:16px}.rg-lab dialog{padding:16px}
+ .rg-lab dialog .toolbar label{width:100%}.rg-lab dialog .top{align-items:flex-start}
+ .rg-veyon #modal .modalBox{height:94dvh;max-height:94dvh;padding:10px}.rg-veyon #modal .liveToolbar{gap:6px}.rg-veyon #modal .liveToolbar button{padding:8px;font-size:12px}
+}

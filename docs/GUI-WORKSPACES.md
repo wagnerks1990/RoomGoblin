@@ -1,0 +1,96 @@
+# Operator workspaces
+
+The GUI redesign organizes RoomGoblin around daily classroom work while keeping
+configuration and maintenance available through grouped navigation and expandable
+sections. These changes are recorded under **Unreleased**; this document does not
+claim a production deployment, release, or live-device acceptance.
+
+## Finding a control
+
+The controller's initial page is labeled **Today**. Existing internal page IDs and
+API routes remain unchanged.
+
+| Navigation group | Workspaces |
+| --- | --- |
+| Room controls | Displays & AV, Lighting, Display content, Background music, Lab computers |
+| Content library | Presentations, Media library |
+| Planning | Classes, Automation |
+| Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
+
+Use **Find a workspace** to filter navigation labels. The current workspace opens
+its navigation group automatically. On smaller screens, **Menu** opens the
+navigation drawer; Escape or the backdrop closes it, and choosing a workspace
+moves focus to the main content. The controller also has a skip-to-content link.
+
+Navigation search is presentation only. `public/controller/app.js` retains page
+activation and capability-based visibility; `workspace.js` must never unhide an
+item hidden by authorization. The shared stylesheet explicitly preserves the
+`hidden` attribute. Backend authentication and authorization remain authoritative.
+
+## Surface behavior
+
+| Surface | Organization |
+| --- | --- |
+| Main controller | Grouped, searchable navigation; consistent cards, controls and spacing; existing workspace IDs and operations retained |
+| Display content editor | Target/content workflow, expandable preview and appearance/playback options; existing send and announcement controls retained |
+| Windows agent lab | Inventory summary, selection count, common classroom actions; expandable AI usage monitoring and power/maintenance controls |
+| Veyon lab | Student/teacher filters, selection count, daily actions; expandable broadcast and maintenance controls; live-view dialog keyboard handling |
+| Managed displays | Inventory first; expandable enrollment, device maintenance, agent details and remote shell; open device sections retained during inventory redraws |
+| Setup | Responsive form layout and consistent operator styling; existing configuration, receiver identity and save behavior retained |
+
+Expandable sections use native `details` and `summary`, so keyboard users can open
+and close them without a custom accordion dependency. Existing destructive-action
+confirmations remain in place. Veyon's custom live and information modal containers
+receive focus containment, Escape-to-close and return-focus handling through
+`public/controller/lab-accessibility.js`; native dialogs retain browser behavior.
+
+## Styling ownership
+
+`public/shared/workspace.css` is the operator-only design layer. It is opt-in via
+`body.rg-workspace`. The main variables are `--rg-bg`, `--rg-surface`, `--rg-text`,
+`--rg-muted` and `--rg-line`; existing `--text`, `--muted` and `--border` variables
+are mapped for compatibility. Runtime brand primary/background/surface/text tokens
+remain inputs. Dark slate surfaces, teal primary controls, explicit status labels,
+visible keyboard focus, restrained borders and reduced-motion rules provide the
+common visual treatment. Light and system brand modes have operator overrides.
+
+Page-specific layout lives in:
+
+- `public/controller/workspace.css` and `workspace.js` for the main shell;
+- `public/controller/display-workspace.css` for the content editor;
+- `public/controller/lab-workspaces.css` for both lab consoles;
+- `public/setup/workspace.css` for setup; and
+- `public/managed-displays/styles.css` for managed-device layout.
+
+Keep shared styles scoped to operator pages. Preserve page-specific control IDs,
+inline handlers, delegated data attributes, form names and iframe URLs when moving
+controls. These are binding contracts, even when the visible labels change.
+
+At phone widths, multi-column content becomes a single column, toolbars wrap and
+forms stay within the viewport. Wide diagnostic/history tables retain local
+scrolling. Do not shrink text or whole workspaces with transforms to force them
+onto a phone screen.
+
+## Playback and compatibility boundaries
+
+The physical display renderer is not part of the operator layout system.
+`public/display/layout.css` remains the single display-layout authority; this
+redesign does not replace it or add a second fit/scale engine. Document and Ant
+Media playback surfaces retain their canvas/video geometry. The retired Schoology
+page remains informational and must not regain unauthenticated classroom controls.
+
+Preserve Morning Announcements priority, scheduler reconciliation after priority
+content, Background Music recovery, timer continuation, stable display IDs,
+optional enrollment, Android/ADB trust and legacy deployment/storage identifiers.
+Changing visual grouping does not authorize changing any of these behaviors.
+Kyle Wagner attribution remains present through the existing shared attribution.
+
+## Verification and review
+
+Before merging changes to these workspaces, run `node tools/validate-controller.js`
+and the relevant repository tests. Inspect phone and desktop layouts, navigation
+search with restricted access profiles, keyboard traversal, modal Escape behavior,
+selection counts, disclosure state across polling, and live preview/control
+bindings. Physical displays, Veyon sessions and Android actions require live-device
+acceptance to validate hardware behavior. Static or simulated browser checks do
+not establish those results; record actual checks in the PR or release notes.

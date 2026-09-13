@@ -22,15 +22,15 @@
     }catch(error){artifactCache={at:Date.now(),value:{available:false,error:error.message}}}
     return artifactCache.value;
   }
-  function terminal(title,value){const el=document.getElementById("terminal");if(el)el.textContent=`${title}\n${typeof value==='string'?value:JSON.stringify(value,null,2)}`}
+  function terminal(title,value){const shell=document.getElementById("remoteShell");if(shell)shell.open=true;const el=document.getElementById("terminal");if(el)el.textContent=`${title}\n${typeof value==='string'?value:JSON.stringify(value,null,2)}`}
   function decorate(){
     for(const card of root.querySelectorAll(".card[data-id]")){
       const controls=card.querySelector(".controls");if(!controls)continue;
       let panel=card.querySelector(".agent-v2-panel");
       if(!panel){
-        panel=document.createElement("div");panel.className="agent-v2-panel";panel.style.cssText="margin-top:.8rem;padding:.7rem;border:1px solid rgba(255,255,255,.12);border-radius:.6rem";
-        panel.innerHTML='<strong>Device Agent v2</strong> <span data-v2-status>Checking…</span><div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem" data-v2-controls></div><div style="margin-top:.55rem;display:flex;flex-wrap:wrap;gap:.4rem" data-audio-controls></div><div style="margin-top:.55rem;display:flex;flex-wrap:wrap;gap:.4rem" data-lifecycle-controls></div>';
-        controls.parentNode.insertBefore(panel,controls);
+        panel=document.createElement("details");panel.className="agent-v2-panel";panel.dataset.disclosure="agent-v2";panel.open=card.dataset.agentExpanded==="true";panel.style.cssText="margin-top:.8rem;padding:.7rem;border:1px solid rgba(255,255,255,.12);border-radius:.6rem";
+        panel.innerHTML='<summary>Agent, audio & enrollment <span data-v2-status>Checking…</span></summary><div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem" data-v2-controls></div><div style="margin-top:.55rem;display:flex;flex-wrap:wrap;gap:.4rem" data-audio-controls></div><div style="margin-top:.55rem;display:flex;flex-wrap:wrap;gap:.4rem" data-lifecycle-controls></div>';
+        card.appendChild(panel);
       }
       const box=panel.querySelector("[data-v2-controls]");
       if(!box.dataset.ready){

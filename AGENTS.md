@@ -190,6 +190,13 @@ matching version text is not sufficient source identity.
 
 Run repository validation and search for unintended stale current-baseline version strings before release.
 
+## Operator GUI contract
+
+Read `docs/GUI-WORKSPACES.md` before changing operator navigation or layout.
+Scope shared workspace styles to `body.rg-workspace`; never load them into the
+physical display renderer. Preserve capability-hidden navigation, stable control
+IDs/handlers and the single display-layout engine when reorganizing controls.
+
 ## Critical behavior invariants
 
 ### Access profiles and authentication

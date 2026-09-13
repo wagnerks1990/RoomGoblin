@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Veyon Lab Computers</title>
+<title>RoomGoblin — Veyon Computers</title>
 <link rel="stylesheet" href="/shared/attribution.css">
 <script src="/shared/branding.js" defer></script>
 <script src="/shared/attribution.js" defer></script>
@@ -65,44 +65,27 @@ main{padding:14px}.status{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12p
 .featureOn{color:var(--green);font-weight:700}.featureOff{color:var(--muted)}
 .notice{padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#101820;margin-top:8px}
 .featureList{max-height:55vh;overflow:auto}.featureRow{padding:7px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
-</style></head><body>
+</style><link rel="stylesheet" href="/controller/lab-workspaces.css"><link rel="stylesheet" href="/shared/workspace.css"></head><body class="rg-workspace rg-veyon">
 <header>
-  <h1>Veyon Lab Computers</h1>
-  <div class="muted">Live Veyon framebuffer monitoring and classroom actions. No RoomGoblin Windows agent required.</div>
-  <div class="notice">Reboot, shutdown, and login target online PCs only. Desktop/session commands target online PCs with a logged-in user. Unlock/Stop recovery commands remain available to any online PC.</div>
-  <div class="tabs">
-    <button id="showStudents" class="active">Students</button>
-    <button id="showTeachers">Teachers</button>
-    <button id="showAll">All Devices</button>
-  </div>
-  <div class="toolbar">
-    <button class="primary" id="discover">Discover Veyon PCs</button>
-    <button id="refresh">Refresh</button>
-    <button id="selectAll">Select All Visible Online</button>
-    <button id="clearSel">Clear Selection</button>
-    <button id="markStudent">Mark Selected Student</button>
-    <button id="markTeacher">Mark Selected Teacher</button>
-    <button id="message">Message Selected</button>
-    <button id="lock">Lock Screens</button>
-    <button id="unlock">Unlock Screens</button>
-    <button id="inputLock">Lock Input</button>
-    <button id="inputUnlock">Unlock Input</button>
-    <button id="login">Log In User</button>
-    <button id="openSite">Open Website</button>
-    <button id="startApp">Start App</button>
-    <button id="screenshot">Download Screenshot</button>
-    <button id="broadcastFull">Broadcast Teacher — Full Screen</button>
-    <button id="broadcastWindow">Broadcast Teacher — Window</button>
-    <button id="stopBroadcast">Stop Broadcast</button>
-    <button id="features">Available Features</button>
-    <button id="pool">Connection Pool</button>
-    <button class="warn" id="logoff">Logoff</button>
-    <button class="warn" id="reboot">Reboot</button>
-    <button class="danger" id="shutdown">Shutdown</button>
-  </div>
+  <nav class="lab-nav" aria-label="Lab navigation"><a href="/controller/">RoomGoblin</a><a href="/controller/lab.html">Agent computers</a><a href="/controller/veyon.html" aria-current="page">Veyon computers</a></nav>
+  <div class="lab-title-row"><div><h1>Veyon computers</h1><div class="muted">See student screens and manage the room.</div></div><div class="toolbar"><button id="refresh">Refresh</button><button id="discover">Discover computers</button></div></div>
 </header>
+
 <main>
   <div class="status"><span class="pill" id="apiStatus">Veyon API: checking…</span><span class="pill" id="summary">0 computers</span></div>
+  <section class="panel lab-selection" aria-labelledby="veyonActionsTitle">
+    <div class="lab-title-row"><h2 id="veyonActionsTitle">Classroom actions</h2><span id="selectionCount" class="pill" role="status">0 selected</span></div>
+    <div class="toolbar">
+      <button class="primary" id="message">Send message</button><button id="lock">Lock screens</button><button id="unlock">Unlock screens</button><button id="openSite">Open website</button><button id="startApp">Start app</button>
+    </div>
+    <details class="lab-disclosure"><summary>Teaching and broadcast</summary><div class="toolbar">
+      <button id="broadcastFull">Broadcast teacher — full screen</button><button id="broadcastWindow">Broadcast teacher — window</button><button id="stopBroadcast">Stop broadcast</button><button id="screenshot">Download screenshot</button><button id="inputLock">Lock input</button><button id="inputUnlock">Unlock input</button>
+    </div></details>
+    <details class="lab-disclosure"><summary>Power, access and maintenance</summary><div class="toolbar">
+      <button id="login">Log in user</button><button class="warn" id="logoff">Log off</button><button class="warn" id="reboot">Reboot</button><button class="danger" id="shutdown">Shut down</button><button id="markStudent">Mark selected student</button><button id="markTeacher">Mark selected teacher</button><button id="features">Available features</button><button id="pool">Connection pool</button>
+    </div><p class="muted">Power and login actions target online computers. Session actions require a logged-in user. Unlock and stop actions stay available for online computers.</p></details>
+  </section>
+  <div class="lab-title-row lab-inventory-heading"><div class="tabs" aria-label="Computer filters"><button id="showStudents" class="active">Students</button><button id="showTeachers">Teachers</button><button id="showAll">All devices</button></div><div class="toolbar"><button id="selectAll">Select visible online</button><button id="clearSel">Clear selection</button></div></div>
   <div id="grid" class="grid"></div>
 </main>
 <div id="modal" class="modal" role="dialog" aria-modal="true" aria-label="Live computer view"><div id="liveModalBox" class="modalBox">
@@ -149,11 +132,13 @@ const thumbState=new Map();
 let thumbTimer=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{j={error:t}}if(!r.ok)throw new Error(j.error||j?.error?.message||`${r.status}`);return j}
+function updateSelectionCount(){$('selectionCount').textContent=`${selected.size} selected`}
 function targetIds(){return [...selected]}
 function visibleComputers(){
   return computers.filter(c=>roleFilter==='all'||(roleFilter==='teacher'?c.role==='teacher':c.role!=='teacher'));
 }
 function render(){
+  updateSelectionCount();
   const students=computers.filter(x=>x.role!=='teacher').length,teachers=computers.filter(x=>x.role==='teacher').length;
   $('summary').textContent=`${students} students • ${teachers} teachers • ${computers.filter(x=>x.online).length} online • ${computers.filter(x=>x.authenticated).length} authenticated`;
   $('grid').innerHTML=visibleComputers().map(c=>`
@@ -183,7 +168,7 @@ function render(){
         </div>
       </div>
     </article>`).join('');
-  document.querySelectorAll('[data-select]').forEach(x=>x.onchange=()=>{x.checked?selected.add(x.dataset.select):selected.delete(x.dataset.select)});
+  document.querySelectorAll('[data-select]').forEach(x=>x.onchange=()=>{x.checked?selected.add(x.dataset.select):selected.delete(x.dataset.select);updateSelectionCount()});
   queueVisibleThumbnails();
   document.querySelectorAll('[data-live]').forEach(x=>x.onclick=()=>openLive(x.dataset.live));
   document.querySelectorAll('[data-msg]').forEach(x=>x.onclick=()=>messageTargets([x.dataset.msg]));
@@ -499,4 +484,5 @@ $('logoff').onclick=()=>{const ids=needSel();if(ids.length&&confirm(`Log off ${i
 $('reboot').onclick=()=>{const ids=needSel();if(ids.length&&confirm(`Reboot ${ids.length} computer(s)?`))feature(ids,'reboot',true)};
 $('shutdown').onclick=()=>{const ids=needSel();if(ids.length&&confirm(`POWER DOWN ${ids.length} computer(s)?`))feature(ids,'powerDown',true)};
 load();startThumbnailTimer();setInterval(load,30000);
-</script></body></html>
+</script><script src="/controller/lab-accessibility.js" defer></script>
+</body></html>

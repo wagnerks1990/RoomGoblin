@@ -1,0 +1,40 @@
+.rg-controller .app{grid-template-columns:232px minmax(0,1fr)}
+.rg-controller #workspaceSidebar{padding:22px 14px;background:var(--rg-bg);border-color:var(--rg-line);backdrop-filter:none}
+.rg-controller main{padding:30px clamp(18px,3vw,48px) 24px;max-width:1800px;width:100%;margin:auto}
+.rg-controller .brandWrap{padding:0 4px 22px;gap:10px}.rg-controller .brand{font-size:20px}
+.rg-controller .brandStatus{margin-top:12px;color:var(--rg-muted)}
+.rg-controller .ver{font-size:10px;color:var(--rg-muted)}
+.rg-controller .rg-nav-search{display:block;font-size:11px;color:var(--rg-muted);margin:12px 4px 20px}
+.rg-controller .rg-nav-search input{width:100%;margin-top:6px;font-size:12px}
+.rg-controller nav{display:block}
+.rg-controller nav :is(button,a){display:block;width:100%;min-width:0;text-align:left;margin:3px 0;background:transparent;border-color:transparent;color:var(--rg-muted);font-size:13px;padding:10px 12px;border-radius:8px;text-decoration:none}
+html[data-product="roomgoblin"] .rg-controller nav button.active{background:var(--rg-surface);border-color:var(--rg-line);box-shadow:inset 3px 0 var(--brand-accent);color:var(--rg-text)}
+.rg-controller .rg-nav-group{margin:10px 0;border:0}
+.rg-controller .rg-nav-group>summary{font-size:12px;padding:10px 6px;margin:0;border:0;color:var(--rg-muted)}
+.rg-controller .rg-nav-group button,.rg-controller .rg-nav-group a{padding-left:19px}
+.rg-controller .authAccount{margin-top:24px;border-top:1px solid var(--rg-line);padding:20px 4px}.rg-controller .authAccount button{font-size:12px;padding:7px 10px}
+.rg-controller .page>.top{position:static;background:none;border:0;border-bottom:1px solid var(--rg-line);padding:0 0 22px;margin:0 0 24px;box-shadow:none;backdrop-filter:none;border-radius:0}
+.rg-controller .panel .top,.rg-controller .card .top{position:static;box-shadow:none;backdrop-filter:none;background:none;border:0;padding:0}
+.rg-controller .grid>.card{margin:0}.rg-controller .grid{margin:18px 0}
+.rg-controller .kpi{font-size:24px;letter-spacing:-.03em;font-weight:650}
+.rg-controller .overviewDisplays{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+.rg-controller .overviewCard{box-shadow:none;background:var(--rg-bg);border-color:var(--rg-line)}
+.rg-controller .panel{margin:16px 0}.rg-controller .sectionTitle{font-size:17px}
+.rg-controller .footerBrand{margin-top:36px;border-top:1px solid var(--rg-line);padding-top:16px;flex-wrap:wrap}
+.rg-controller .rg-mobilebar,#workspaceBackdrop{display:none}
+.rg-controller .authModal .panel{max-height:calc(100dvh - 32px);overflow:auto}
+@media(max-width:1000px){
+ .rg-controller .app{display:block}.rg-controller main{padding:24px 18px}
+ .rg-controller .rg-mobilebar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--rg-bg);border-bottom:1px solid var(--rg-line)}
+ .rg-controller #workspaceLocation{margin-left:auto;font-size:12px;color:var(--rg-muted)}
+ .rg-controller #workspaceSidebar{position:fixed;inset:0 auto 0 0;width:min(300px,85vw);height:100dvh;z-index:42;transform:translateX(-100%);visibility:hidden;overflow-y:auto}
+ .rg-controller.rg-menu-open #workspaceSidebar{transform:translateX(0);visibility:visible}
+ .rg-controller.rg-menu-open #workspaceBackdrop{display:block;position:fixed;inset:0;width:100%;height:100%;border:0;border-radius:0;background:#020617aa;z-index:41}
+ .rg-controller.rg-menu-open{overflow:hidden}
+}
+@media(max-width:600px){.rg-controller .page>.top .toolbar{width:100%}.rg-controller .page>.top h1{font-size:26px}.rg-controller .grid2{grid-template-columns:minmax(0,1fr)}.rg-controller .top{flex-direction:column;align-items:flex-start}}
+.rg-controller .workspaceDisclosure>summary h2{display:inline;font-size:16px;margin:0}
+.rg-controller .workspaceDisclosure>summary .muted{display:block;font-weight:400;margin:6px 0 0 20px}
+.rg-controller .disclosureBody{padding-top:12px}
+.rg-controller .rg-menu-close{display:none}
+@media(max-width:1000px){.rg-controller .rg-menu-close{display:block;margin:0 0 14px auto}}
