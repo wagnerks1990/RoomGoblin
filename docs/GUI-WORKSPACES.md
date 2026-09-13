@@ -94,3 +94,17 @@ selection counts, disclosure state across polling, and live preview/control
 bindings. Physical displays, Veyon sessions and Android actions require live-device
 acceptance to validate hardware behavior. Static or simulated browser checks do
 not establish those results; record actual checks in the PR or release notes.
+
+## Image publication and install recovery
+
+The browser workflow remains named `Display browser regression` even though it
+also checks operator workspaces. Both image publishers require that exact name.
+The initial GUI merge (`5dc717c`, PR #72) accidentally renamed it and cannot
+complete the original publication gate. The follow-up restores the stable name
+and adds a regression comparing publisher requirements to real workflow names.
+
+If the installer reports `sha-5dc717...: not found`, stop its image-wait retry loop
+with Ctrl+C. This check occurs before installer service/data mutations. Wait for
+**Publish Main Images** for the corrected main commit to finish, then pull main
+and rerun `sudo bash install.sh`. Do not relabel older images with the missing
+commit tag or bypass revision verification. The source and both images must agree.

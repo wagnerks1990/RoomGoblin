@@ -241,6 +241,15 @@ Important integrations include MQTT/Govee, Pluto Mark I, Music Assistant, Veyon,
 
 School and classroom identity and theming are stored in the SQLite site profile and exposed to browser surfaces only through presentation-safe responses. This project is intentionally education-only. Keep the Kyle Wagner attribution present on all current user-facing pages.
 
+## CI workflow identity contract
+
+Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
+and `.github/workflows/docker-publish.yml`. `Display browser regression` also runs
+operator GUI tests; describe coverage in job/step names without renaming this gate.
+Keep `test/production-image-install.test.js` workflow-identity coverage passing.
+A merged source commit is not installable until its exact Hub and maintenance images
+are published; never recommend retagging another commit or bypassing validation.
+
 ## Testing before commit/release
 
 At minimum run the validations represented by `.github/workflows/validate.yml`:

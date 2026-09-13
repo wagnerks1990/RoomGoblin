@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Image publication recovery
+
+- Restore the stable browser-workflow name consumed by both image publishers.
+  The GUI coverage expansion had renamed the workflow without updating the
+  publication contract, preventing its image pair from becoming available.
+- Test every required publisher workflow name against actual workflow definitions.
+
 ### Operator GUI
 
 - Reorganize the controller into searchable room, content, planning and

@@ -1,4 +1,5 @@
-name: Display and operator browser regression
+# Stable identity consumed by both image publication gates; includes operator tests.
+name: Display browser regression
 on:
   pull_request:
   push:
