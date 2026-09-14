@@ -65,10 +65,15 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
 # Local Docker contexts retain file modes. A root-edited 0600 server.js must not
 # produce an image that only root can start. Normalize packaged, non-secret
 # application files inside the image only; never chmod host data or secrets.
+# The isolated, root-owned native-client runtime also needs to tolerate a
+# restrictive build umask without giving the application write access.
 RUN chmod 0755 /app \
  && find /app/src /app/public /app/config /app/tools -type d -exec chmod 0755 {} + \
  && find /app/src /app/public /app/config /app/tools -type f -exec chmod 0644 {} + \
- && chmod 0644 /app/VERSION /app/package.json /app/package-lock.json
+ && chmod 0644 /app/VERSION /app/package.json /app/package-lock.json \
+ && find /opt/esphome -type d -exec chmod 0755 {} + \
+ && find /opt/esphome -type f -exec chmod 0644 {} + \
+ && find /opt/esphome/bin -type f -exec chmod 0755 {} +
 
 RUN groupadd --gid 10001 classroom-hub \
  && useradd --uid 10001 --gid 10001 --home-dir /tmp/classroom-hub --no-create-home --shell /usr/sbin/nologin classroom-hub \
@@ -85,5 +90,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 USER 10001:10001
 # Fail the build, rather than the deployed container, on unreadable source/assets.
 RUN node tools/verify-image-permissions.js && node --check src/server.js \
- && /opt/esphome/bin/python -c "from aioesphomeapi import APIClient; import ast; ast.parse(open('src/esphome/worker.py').read())"
+ && /opt/esphome/bin/python -c "from aioesphomeapi import APIClient; import ast, os; ast.parse(open('src/esphome/worker.py').read()); assert not os.access('/opt/esphome', os.W_OK)"
 CMD ["node", "--require", "./src/direct-display-compat.js", "src/startup-recovery.js"]
