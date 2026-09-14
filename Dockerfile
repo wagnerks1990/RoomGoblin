@@ -90,5 +90,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 USER 10001:10001
 # Fail the build, rather than the deployed container, on unreadable source/assets.
 RUN node tools/verify-image-permissions.js && node --check src/server.js \
- && PYTHONPATH=/app/src/esphome /opt/esphome/bin/python -c "from aioesphomeapi import APIClient; import discovery, worker_entry, ast, os; ast.parse(open('src/esphome/worker.py').read()); assert not os.access('/opt/esphome', os.W_OK)"
+ && PYTHONPATH=/app/src/esphome /opt/esphome/bin/python -c "from aioesphomeapi import APIClient; import discovery, worker_entry, ast, os; from zeroconf import ServiceStateChange; names=set(); discovery.service_changed(names, zeroconf=None, service_type=discovery.SERVICE, name='fixture.'+discovery.SERVICE, state_change=ServiceStateChange.Added); assert names; ast.parse(open('src/esphome/worker.py').read()); assert not os.access('/opt/esphome', os.W_OK)"
 CMD ["node", "--require", "./src/direct-display-compat.js", "src/startup-recovery.js"]

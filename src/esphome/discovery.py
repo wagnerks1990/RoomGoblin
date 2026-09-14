@@ -4,6 +4,7 @@ No credentials are read or emitted. Discovery only reports ESPHome native API
 advertisements and private addresses visible from the appliance network namespace.
 """
 import asyncio
+import functools
 import ipaddress
 import json
 import re
@@ -46,15 +47,25 @@ def clean_instance(name):
     return value[:100]
 
 
+def service_changed(names, zeroconf, service_type, name, state_change):
+    """Collect advertisements using zeroconf's public handler keyword contract.
+
+    zeroconf 0.151.x invokes handlers with the keyword names ``zeroconf``,
+    ``service_type``, ``name`` and ``state_change``. Keep these parameter names
+    explicit so a dependency update cannot silently turn discovery into an empty
+    result set while logging an asyncio callback TypeError.
+    """
+    del zeroconf, service_type
+    if state_change in (ServiceStateChange.Added, ServiceStateChange.Updated) and len(names) < MAX_RESULTS * 2:
+        names.add(name)
+
+
 async def scan(window=2.5):
     zeroconf = AsyncZeroconf(ip_version=IPVersion.All)
     names = set()
+    handler = functools.partial(service_changed, names)
 
-    def changed(_zc, _type, name, state):
-        if state in (ServiceStateChange.Added, ServiceStateChange.Updated) and len(names) < MAX_RESULTS * 2:
-            names.add(name)
-
-    browser = AsyncServiceBrowser(zeroconf.zeroconf, [SERVICE], handlers=[changed])
+    browser = AsyncServiceBrowser(zeroconf.zeroconf, [SERVICE], handlers=[handler])
     try:
         await asyncio.sleep(window)
         semaphore = asyncio.Semaphore(RESOLVE_CONCURRENCY)
