@@ -25,3 +25,10 @@ test("server backfills saved cross-domain step defaults as well as the editor",(
   assert.match(normalizer,/defaultAutomationActionTargets\(stepAction\)/);
   assert.match(normalizer,/item\?\.useEventTargets!==false/);
 });
+
+
+test("explicit cross-domain display targets override linked class defaults",()=>{
+  const run=server.slice(server.indexOf("async function runClassroomAutomation"),server.indexOf("function safeStoredName"));
+  assert.ok(run.indexOf("else if(explicitTargets.length)rawTargets=explicitTargets")<run.indexOf("event._classDefaultTargets"));
+  assert.match(run,/explicit target selection always wins/);
+});
