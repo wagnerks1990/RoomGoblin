@@ -94,3 +94,55 @@
 @media(max-width:600px){.rg-controller .page>.top .toolbar{width:100%}.rg-controller .page>.top h1{font-size:26px}.rg-controller .grid2{grid-template-columns:minmax(0,1fr)}.rg-controller .top{flex-direction:column;align-items:flex-start}.rg-controller .page>.top{align-items:flex-start}}
 /* Natural lab content height is measured without replacing iframe sessions. */
 .rg-controller #lab>iframe[data-natural-height]{min-height:0;height:auto;overflow:clip}
+
+/* System updates: deployment-first layout aligned with LabGoblin without changing updater behavior. */
+.rg-controller .rg-system-updates{padding:0;border:0;background:transparent;box-shadow:none;backdrop-filter:none;margin:0}
+.rg-controller .rg-system-updates>.disclosureBody{padding:0}
+.rg-controller .rg-update-page-header{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin:0 0 18px}
+.rg-controller .rg-update-page-header h2{font-size:28px;letter-spacing:-.025em;margin:3px 0 6px}
+.rg-controller .rg-update-eyebrow{margin:0;color:var(--rg-muted);font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
+.rg-controller .rg-update-description{margin:0;color:var(--rg-muted);font-size:13px;max-width:72ch}
+.rg-controller .rg-update-card{display:block;margin:12px 0;padding:18px 20px;border:1px solid var(--rg-line);border-radius:12px;background:var(--rg-surface);box-shadow:none}
+.rg-controller .rg-update-card>summary{cursor:pointer;color:var(--rg-text);font-size:14px;padding:2px 0}
+.rg-controller .rg-update-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
+.rg-controller .rg-update-card-header h3{margin:0 0 4px;font-size:17px;font-weight:650}
+.rg-controller .rg-update-card-header p{margin:0;color:var(--rg-muted);font-size:12px}
+.rg-controller .rg-update-status{display:inline-flex;align-items:center;justify-content:center;min-height:26px;padding:4px 9px;border-radius:999px;border:1px solid var(--rg-line);font-size:11px;font-weight:700;text-transform:lowercase;white-space:nowrap}
+.rg-controller .rg-update-status--idle{color:var(--rg-muted)}
+.rg-controller .rg-update-status--success{color:var(--rg-good);border-color:color-mix(in srgb,var(--rg-good) 40%,var(--rg-line));background:color-mix(in srgb,var(--rg-good) 8%,transparent)}
+.rg-controller .rg-update-status--warning{color:#f7c66a;border-color:#f7c66a66;background:#f7c66a12}
+.rg-controller .rg-update-status--danger{color:var(--rg-bad);border-color:color-mix(in srgb,var(--rg-bad) 40%,var(--rg-line));background:color-mix(in srgb,var(--rg-bad) 8%,transparent)}
+.rg-controller .rg-update-detail-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0 0 16px;border:1px solid var(--rg-line);border-radius:10px;overflow:hidden}
+.rg-controller .rg-update-detail-list>div{padding:11px 13px;min-width:0;background:var(--rg-bg);border-bottom:1px solid var(--rg-line)}
+.rg-controller .rg-update-detail-list>div:nth-child(odd){border-right:1px solid var(--rg-line)}
+.rg-controller .rg-update-detail-list>div:nth-last-child(-n+2){border-bottom:0}
+.rg-controller .rg-update-detail-list dt{font-size:10px;font-weight:700;color:var(--rg-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.rg-controller .rg-update-detail-list dd{margin:0;font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.rg-controller .rg-update-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.rg-controller .rg-update-actions button{min-height:38px;font-size:12px;padding:7px 12px}
+.rg-controller .rg-update-actions #installAppUpdateBtn:not(:disabled){border-color:var(--brand-primary);background:color-mix(in srgb,var(--brand-primary) 16%,transparent)}
+.rg-controller .rg-update-actions #revertAppUpdateBtn{margin-left:auto}
+.rg-controller .rg-update-status-detail{margin-top:14px;border-top:1px solid var(--rg-line);padding-top:12px}
+.rg-controller .rg-update-status-detail>summary{font-size:12px;color:var(--rg-muted);cursor:pointer}
+.rg-controller .rg-update-status-detail .raw{margin:10px 0 0;max-height:230px;border-radius:8px;border-color:var(--rg-line);background:var(--rg-bg)}
+.rg-controller .rg-update-settings-body{padding-top:14px}
+.rg-controller .rg-update-settings-body>.pill{display:flex;align-items:center;gap:8px;width:max-content;max-width:100%;margin:0 0 14px!important;border:0;background:transparent;padding:0;color:var(--rg-text);font-size:12px;font-weight:650}
+.rg-controller .rg-update-settings-body>.grid2{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0}
+.rg-controller .rg-update-settings-body>.grid2 label{display:grid;gap:5px;color:var(--rg-muted);font-size:11px;font-weight:650}
+.rg-controller .rg-update-settings-body>.grid2 input,.rg-controller .rg-update-settings-body>.grid2 select{width:100%;min-width:0;color:var(--rg-text)}
+.rg-controller .rg-update-settings-actions{margin-top:14px}
+.rg-controller .rg-update-settings-actions button:last-child{margin-left:auto}
+.rg-controller .rg-update-operations-body{padding-top:12px}
+.rg-controller .rg-update-operations #appUpdateHistory{margin-top:0!important;border:1px solid var(--rg-line);border-radius:9px}
+.rg-controller .rg-update-operations table{min-width:720px}
+@media(max-width:700px){
+ .rg-controller .rg-update-page-header h2{font-size:24px}
+ .rg-controller .rg-update-card{padding:15px}
+ .rg-controller .rg-update-card-header{align-items:center}
+ .rg-controller .rg-update-detail-list{grid-template-columns:minmax(0,1fr)}
+ .rg-controller .rg-update-detail-list>div:nth-child(odd){border-right:0}
+ .rg-controller .rg-update-detail-list>div:nth-last-child(-n+2){border-bottom:1px solid var(--rg-line)}
+ .rg-controller .rg-update-detail-list>div:last-child{border-bottom:0}
+ .rg-controller .rg-update-settings-body>.grid2{grid-template-columns:minmax(0,1fr)}
+ .rg-controller .rg-update-actions #revertAppUpdateBtn,.rg-controller .rg-update-settings-actions button:last-child{margin-left:0}
+}
