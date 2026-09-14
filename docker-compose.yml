@@ -5,7 +5,7 @@ services:
     build:
       context: .
       network: host
-    image: ghcr.io/wagnerks1990/roomgoblin:${CLASSROOM_CONTROL_HUB_TAG:-alpha}
+    image: ghcr.io/wagnerks1990/roomgoblin:${ROOMGOBLIN_HUB_TAG:-${CLASSROOM_CONTROL_HUB_TAG:-alpha}}
     container_name: classroom-control-hub
     restart: unless-stopped
     network_mode: host
@@ -94,7 +94,7 @@ services:
     # Host system management is delegated to the native Classroom Control Hub Host Agent
     # over a local Unix socket. Only the network namespace is shared; PID and
     # mount namespaces remain isolated and no Docker socket is mounted.
-    image: ghcr.io/wagnerks1990/roomgoblin-maintenance:${CLASSROOM_CONTROL_HUB_TAG:-alpha}
+    image: ghcr.io/wagnerks1990/roomgoblin-maintenance:${ROOMGOBLIN_MAINTENANCE_TAG:-${CLASSROOM_CONTROL_HUB_TAG:-alpha}}
     container_name: classroom-control-hub-maintenance
     restart: unless-stopped
     network_mode: host

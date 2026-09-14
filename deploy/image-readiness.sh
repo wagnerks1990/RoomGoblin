@@ -11,7 +11,8 @@ roomgoblin_remote_manifest(){
 }
 
 roomgoblin_wait_image_pair(){
-  local revision="$1" hub="$2" maintenance="$3"
+  local revision="$1" hub="$2" maintenance="$3" mode="${4:-pull}"
+  [[ "$mode" == pull || "$mode" == probe ]] || return 1
   local attempts="${CLASSROOM_HUB_IMAGE_WAIT_ATTEMPTS:-120}" deadline attempt=0 message status remaining
   [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid source revision" >&2; return 1; }
   [[ "$attempts" =~ ^[1-9][0-9]*$ && "$attempts" -le 180 ]] || {
@@ -23,6 +24,7 @@ roomgoblin_wait_image_pair(){
   echo "Checking validated image pair for $revision ..."
   while (( SECONDS < deadline )); do
     if roomgoblin_remote_manifest "$hub" "$deadline" && roomgoblin_remote_manifest "$maintenance" "$deadline"; then
+      [[ "$mode" != probe ]] || { echo "Both published images are available."; return 0; }
       echo "Both images are available. Downloading and verifying source revision ..."
       timeout 900 docker pull --quiet "$hub" && timeout 900 docker pull --quiet "$maintenance" || {
         echo "Image download failed. Existing services have not been changed; retry when registry access is restored." >&2; return 1;

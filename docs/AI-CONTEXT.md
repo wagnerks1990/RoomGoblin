@@ -377,3 +377,9 @@ restart. Sensor state/reconnects are memory-only. Firmware, HA actions, automati
 mDNS enrollment and sensor-triggered automations are not implemented by this module.
 Do not broaden this boundary or replace native encryption with unauthenticated
 HTTP, an exposed worker port, arbitrary service calls, or privileged Docker access.
+
+## Selective published-source updates and CI
+
+Normal CLI updates use `deploy/update-plan.py` and the journaled native runner. Compare each running image revision and the verified host/deployment record; never infer deployed state from HEAD alone. Preserve per-component image tags and immutable recovery IDs. Unknown deployment/migration inputs or configuration drift trigger full installer reconciliation. Source-only updates preserve the existing rollback point. See `PRODUCTION-UPDATES.md` and `CI-WORKFLOWS.md` for force-full, interruption recovery and the canonical-database limit.
+
+Required publication workflows are now Validate (including Android debug and restrictive-context image coverage), Display browser regression, and Security gates. Semantic releases promote the published SHA image pair instead of rebuilding it. Do not restore duplicate standalone workflows or weaken these gates.

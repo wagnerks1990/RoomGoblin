@@ -122,7 +122,7 @@ Take a filesystem/database-safe backup before production upgrades.
 
 The GUI updater accepts only semantic-version GitHub releases and delegates the durable update to `classroom-hub-app-update.service`. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
 
-Core service recreation is also part of the updater contract. A release can change mounts, read-only/writable paths, environment, or networking without changing an image ID. The updater must therefore force-recreate `maintenance-agent` and `classroom-hub` when applying or rolling back a release. In particular, Managed Displays depends on the dedicated `classroom-control-hub-android-adb` volume mounted at `/managed/classroom-hub/data/android-tv/.android`; the updater must verify this path is writable before declaring the release healthy. Do not replace the force-recreate deployment with a plain `docker compose up -d` unless equivalent tested mount reconciliation exists. See `docs/MANAGED-DISPLAYS-RECOVERY.md`.
+Core service recreation is also part of the updater contract. A release can change mounts, read-only/writable paths, environment, or networking without changing an image ID. The updater must therefore force-recreate `maintenance-agent` and `classroom-hub` when deployment inputs/configuration change or when rolling back a release. Published-source selective updates may retain unchanged components only after per-running-image source comparison and a verified deployment-configuration hash; unknown inputs/history must trigger full reconciliation. Read `docs/PRODUCTION-UPDATES.md`. In particular, Managed Displays depends on the dedicated `classroom-control-hub-android-adb` volume mounted at `/managed/classroom-hub/data/android-tv/.android`; the updater must verify this path is writable before declaring the release healthy. Do not replace the force-recreate deployment with a plain `docker compose up -d` unless equivalent tested mount reconciliation exists. See `docs/MANAGED-DISPLAYS-RECOVERY.md`.
 
 ## Database identity and recovery
 
@@ -254,7 +254,7 @@ School and classroom identity and theming are stored in the SQLite site profile 
 
 ## CI workflow identity contract
 
-Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
+The consolidated required workflows are `Validate`, `Display browser regression`, and `Security gates`. Android debug and restrictive-image coverage now live inside Validate; see `docs/CI-WORKFLOWS.md`. Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
 and `.github/workflows/docker-publish.yml`. `Display browser regression` also runs
 operator GUI tests; describe coverage in job/step names without renaming this gate.
 Keep `test/production-image-install.test.js` workflow-identity coverage passing.

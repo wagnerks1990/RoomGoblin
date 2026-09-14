@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# install.sh may replace the installed runner while this transaction is active.
+# Execute a private stable copy so Bash never reads a partially replaced script.
+if [[ "${ROOMGOBLIN_RUNNER_SNAPSHOT:-}" != "${BASH_SOURCE[0]}" ]]; then
+  snapshot="$(mktemp /run/classroom-hub-updater.XXXXXX)"
+  cp "${BASH_SOURCE[0]}" "$snapshot"
+  chmod 0700 "$snapshot"
+  export ROOMGOBLIN_RUNNER_SNAPSHOT="$snapshot"
+  exec bash "$snapshot" "$@"
+fi
+trap 'rm -f "$ROOMGOBLIN_RUNNER_SNAPSHOT"' EXIT
+
 HUB_ROOT="${CLASSROOM_HUB_DIR:-/opt/classroom-hub}"
 STATE_DIR=/var/lib/classroom-hub
 STATE_FILE="$STATE_DIR/app-update-status.json"
 REQUEST_FILE="$STATE_DIR/app-update-request.json"
 LOCK_FILE=/run/classroom-control-hub-appliance-mutation.lock
 mkdir -p "$STATE_DIR"
-source "$HUB_ROOT/deploy/image-identity.sh"
+source "$HUB_ROOT/deploy/image-readiness.sh"
 
 write_state(){
   local phase="$1" message="$2" ok="${3:-null}"
@@ -48,9 +59,11 @@ request=json.load(open(p))
 for item in sys.argv[1:]:
     key,value=item.split('=',1)
     request[key]=value
-with open(p+'.tmp','w') as f: json.dump(request,f,indent=2)
+with open(p+'.tmp','w') as f:
+    json.dump(request,f,indent=2); f.flush(); os.fsync(f.fileno())
 os.chmod(p+'.tmp',0o600)
 os.replace(p+'.tmp',p)
+fd=os.open(os.path.dirname(p),os.O_RDONLY); os.fsync(fd); os.close(fd)
 PY
 }
 
@@ -64,11 +77,38 @@ set_image_tag(){
   fi
   chmod 0600 .env
   export CLASSROOM_CONTROL_HUB_TAG="$tag"
+  set_component_tag ROOMGOBLIN_HUB_TAG "$tag"
+  set_component_tag ROOMGOBLIN_MAINTENANCE_TAG "$tag"
+}
+
+set_component_tag(){
+  local key="$1" tag="$2"
+  [[ "$key" == ROOMGOBLIN_HUB_TAG || "$key" == ROOMGOBLIN_MAINTENANCE_TAG ]] || return 1
+  [[ "$tag" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || return 1
+  KEY="$key" TAG="$tag" python3 - <<'PYENV'
+import os
+from pathlib import Path
+p=Path('.env'); key=os.environ['KEY']; value=os.environ['TAG']
+lines=[line for line in p.read_text().splitlines() if not line.startswith(key+'=')]
+temp=p.with_suffix('.update-tmp'); temp.write_text('\n'.join(lines+[key+'='+value])+'\n')
+temp.chmod(0o600); temp.replace(p)
+PYENV
+  export "$key=$tag"
+}
+
+activate_recovery_pair(){
+  local hub="$1" maintenance="$2"
+  # Dedicated recovery tags cannot overwrite a release/sha alias with another image.
+  set_image_tag "recovery-${hub#sha256:}"
+  set_component_tag ROOMGOBLIN_HUB_TAG "recovery-${hub#sha256:}"
+  set_component_tag ROOMGOBLIN_MAINTENANCE_TAG "recovery-${maintenance#sha256:}"
+  activate_image_id "$hub" classroom-hub
+  activate_image_id "$maintenance" maintenance-agent
 }
 
 health_check(){
   local expected="$1"
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 "${HEALTH_ATTEMPTS:-90}"); do
     if docker compose exec -T classroom-hub node -e "const port=Number(process.env.PORT||3000);let host=process.env.BIND_ADDRESS||'127.0.0.1';if(host==='0.0.0.0')host='127.0.0.1';if(host==='::'||host==='[::]')host='[::1]';if(host.includes(':')&&!host.startsWith('['))host='['+host+']';fetch('http://'+host+':'+port+'/health',{signal:AbortSignal.timeout(10000)}).then(async r=>{const j=await r.json();if(!r.ok||!j.ok||(process.argv[1]&&j.version!==process.argv[1]))process.exit(1)}).catch(()=>process.exit(1))" "$expected" >/dev/null 2>&1; then return 0; fi
     sleep 2
   done
@@ -77,8 +117,16 @@ health_check(){
 
 adb_storage_check(){
   docker volume inspect classroom-control-hub-android-adb >/dev/null || return 1
-  docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android' || return 1
+  docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android && test -w /managed/classroom-hub/data/android-tv/.android' || return 1
   docker compose exec -T maintenance-agent sh -lc 'test ! -e /managed/classroom-hub/data/android-tv/devices.json || test -r /managed/classroom-hub/data/android-tv/devices.json' || return 1
+}
+
+wait_maintenance(){
+  for _ in $(seq 1 30); do
+    if docker compose exec -T maintenance-agent node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3010)+'/health',{headers:{'x-maintenance-token':process.env.MAINTENANCE_TOKEN},signal:AbortSignal.timeout(5000)}).then(async r=>{if(!r.ok||!(await r.json()).ok)process.exit(1)}).catch(()=>process.exit(1))" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  return 1
 }
 
 appliance_health_check(){
@@ -86,7 +134,7 @@ appliance_health_check(){
   health_check "$expected" || return 1
   docker compose ps --status running --services | grep -qx classroom-hub || return 1
   docker compose ps --status running --services | grep -qx maintenance-agent || return 1
-  docker compose exec -T maintenance-agent node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3010)+'/health',{headers:{'x-maintenance-token':process.env.MAINTENANCE_TOKEN}}).then(r=>r.json()).then(j=>{if(!j.ok||j.version!==process.argv[1]||!j.hostAgent?.ok||j.hostAgent.version!==process.argv[1])process.exit(1)}).catch(()=>process.exit(1))" "$expected" || return 1
+  docker compose exec -T maintenance-agent node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3010)+'/health',{headers:{'x-maintenance-token':process.env.MAINTENANCE_TOKEN},signal:AbortSignal.timeout(10000)}).then(r=>r.json()).then(j=>{if(!j.ok||j.version!==process.argv[1]||!j.hostAgent?.ok||j.hostAgent.version!==process.argv[1])process.exit(1)}).catch(()=>process.exit(1))" "$expected" || return 1
   adb_storage_check || return 1
 }
 
@@ -94,7 +142,7 @@ capture_recovery_image(){
   local container="$1" label="$2" id ref
   id="$(docker inspect --format '{{.Image}}' "$container")"
   [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
-  ref="classroom-control-hub-recovery:${label}"
+  ref="classroom-control-hub-recovery:${label%%-*}-${id#sha256:}"
   docker image tag "$id" "$ref"
   printf '%s' "$id"
 }
@@ -103,7 +151,7 @@ activate_image_id(){
   local id="$1" service="$2" ref
   [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
   docker image inspect "$id" >/dev/null
-  ref="$(SERVICE="$service" docker compose config --format json | python3 -c 'import json,os,sys; print(json.load(sys.stdin)["services"][os.environ["SERVICE"]]["image"])')"
+  ref="$(docker compose config --format json | SERVICE="$service" python3 -c 'import json,os,sys; print(json.load(sys.stdin)["services"][os.environ["SERVICE"]]["image"])')"
   [[ -n "$ref" ]] || return 1
   docker image tag "$id" "$ref"
 }
@@ -195,18 +243,35 @@ NODE
 }
 
 exec 9>"$LOCK_FILE"
-if ! flock -n 9; then write_state failed "Another application update is already running." false; exit 30; fi
+if ! flock -n 9; then echo "Another appliance mutation is already running." >&2; exit 30; fi
+if [[ "${1:-}" == --published ]]; then
+  [[ $EUID -eq 0 && "${2:-}" =~ ^[0-9a-f]{40}$ && ( -z "${3:-}" || "${3:-}" == --full ) ]] || exit 2
+  [[ ! -e "$REQUEST_FILE" ]] || { echo "An update journal is pending; recover it before starting another update." >&2; exit 30; }
+  cd "$HUB_ROOT"
+  [[ "$(git rev-parse refs/remotes/origin/production)" == "$2" ]] || exit 34
+  REQUEST_FILE="$REQUEST_FILE" python3 - "$2" "${3:-}" <<'PYREQUEST'
+import json,os,sys
+p=os.environ['REQUEST_FILE']
+with open(p+'.tmp','w') as f: json.dump({'action':'published','targetCommit':sys.argv[1], 'forceFull':sys.argv[2]=='--full'},f)
+os.chmod(p+'.tmp',0o600);os.replace(p+'.tmp',p)
+PYREQUEST
+fi
 [[ -s "$REQUEST_FILE" ]] || { write_state failed "Application update request is missing." false; exit 31; }
 eval "$(REQUEST_FILE="$REQUEST_FILE" python3 - <<'PY'
 import json,os,shlex
 j=json.load(open(os.environ['REQUEST_FILE']))
-for key in ('action','targetRef','targetCommit','expectedVersion','rollbackCommit','rollbackVersion','rollbackHubImage','rollbackMaintenanceImage','rollbackImageTag','backupName','backupSha256','failureBackupName','failureBackupSha256','previousHubImage','previousMaintenanceImage','previousImageTag','githubToken'):
+for key in ('action','targetRef','targetCommit','expectedVersion','rollbackCommit','rollbackVersion','rollbackHubImage','rollbackMaintenanceImage','rollbackImageTag','backupName','backupSha256','failureBackupName','failureBackupSha256','previousHubImage','previousMaintenanceImage','previousImageTag','githubToken','forceFull','mutationStarted','planJson'):
     print(key.upper()+'='+shlex.quote(str(j.get(key) or '')))
 PY
 )"
 ASKPASS_FILE="" TOKEN_FILE=""
 cleanup_credentials(){ [[ -z "$ASKPASS_FILE" ]] || rm -f "$ASKPASS_FILE"; [[ -z "$TOKEN_FILE" ]] || rm -f "$TOKEN_FILE"; }
-trap cleanup_credentials EXIT
+cleanup_exit(){
+  cleanup_credentials
+  rm -f "$ROOMGOBLIN_RUNNER_SNAPSHOT"
+  if [[ "${MUTATIONSTARTED:-}" != true && "${DEPLOYMENT_MUTATED:-false}" != true ]]; then rm -f "$REQUEST_FILE"; fi
+}
+trap cleanup_exit EXIT
 if [[ -n "$GITHUBTOKEN" ]]; then
   ASKPASS_FILE="$(mktemp /run/classroom-hub-git-askpass.XXXXXX)"; TOKEN_FILE="$(mktemp /run/classroom-hub-git-token.XXXXXX)"
   chmod 0700 "$ASKPASS_FILE"; chmod 0600 "$TOKEN_FILE"; printf '%s' "$GITHUBTOKEN" >"$TOKEN_FILE"
@@ -228,27 +293,31 @@ else
   CURRENT_MAINTENANCE_IMAGE="$(capture_recovery_image classroom-control-hub-maintenance "maintenance-${CURRENT_COMMIT:0:12}")"
   set_request_fields "rollbackHubImage=$CURRENT_HUB_IMAGE" "rollbackMaintenanceImage=$CURRENT_MAINTENANCE_IMAGE" "rollbackImageTag=$CURRENT_IMAGE_TAG"
 fi
-if [[ "$ACTION" == update ]]; then
-  set_state_fields "action=$ACTION" "previousCommit=$CURRENT_COMMIT" "previousVersion=$CURRENT_VERSION" "previousHubImage=$CURRENT_HUB_IMAGE" "previousMaintenanceImage=$CURRENT_MAINTENANCE_IMAGE" "previousImageTag=$CURRENT_IMAGE_TAG" "targetRef=$TARGETREF" "backupName=$BACKUPNAME" "backupSha256=$BACKUPSHA256"
-else
-  set_state_fields "action=$ACTION" "targetRef=$TARGETREF"
-fi
 
 rollback(){
   local rc=$?
+  [[ "$rc" != 0 ]] || rc=1
   trap - ERR
   write_state rollback "Update failed; restoring the previous source and matching safety backup." null
   local rollback_ok=true
   git checkout --detach "$CURRENT_COMMIT" || rollback_ok=false
+  if [[ -f "$STATE_DIR/app-update.env" ]]; then cp "$STATE_DIR/app-update.env" .env || rollback_ok=false; chmod 0600 .env; fi
   ensure_runtime_layout || rollback_ok=false
   refresh_host_agent || rollback_ok=false
   set_image_tag "$CURRENT_IMAGE_TAG" || rollback_ok=false
-  activate_image_id "$CURRENT_HUB_IMAGE" classroom-hub || rollback_ok=false
-  activate_image_id "$CURRENT_MAINTENANCE_IMAGE" maintenance-agent || rollback_ok=false
-  docker compose stop classroom-hub || true
-  docker compose up --no-start --no-deps --force-recreate classroom-hub || rollback_ok=false
-  restore_safety_backup "$FAILUREBACKUPNAME" "$FAILUREBACKUPSHA256" || rollback_ok=false
-  docker compose up -d --no-build --force-recreate --remove-orphans maintenance-agent classroom-hub || rollback_ok=false
+  activate_recovery_pair "$CURRENT_HUB_IMAGE" "$CURRENT_MAINTENANCE_IMAGE" || rollback_ok=false
+  # Never restore database/data if stopping the writer failed. Start only the
+  # previous maintenance implementation while the Hub remains stopped.
+  if [[ "$rollback_ok" == true ]] &&
+      docker compose stop classroom-hub &&
+      docker compose up --no-start --no-deps --force-recreate classroom-hub &&
+      docker compose up -d --no-build --no-deps --force-recreate maintenance-agent &&
+      wait_maintenance &&
+      restore_safety_backup "$FAILUREBACKUPNAME" "$FAILUREBACKUPSHA256"; then
+    docker compose up -d --no-build --force-recreate --remove-orphans maintenance-agent classroom-hub || rollback_ok=false
+  else
+    rollback_ok=false
+  fi
   appliance_health_check "$CURRENT_VERSION" || rollback_ok=false
   if [[ "$rollback_ok" == true ]]; then
     set_state_fields "rollback=true" "activeCommit=$CURRENT_COMMIT" "activeVersion=$CURRENT_VERSION"
@@ -257,10 +326,19 @@ rollback(){
     set_state_fields "rollback=failed"
     write_state rollback-failed "Update failed and automatic rollback needs administrator attention." false
   fi
-  rm -f "$REQUEST_FILE"
+  rm -f "$STATE_DIR/deployment.json"
+  [[ "$rollback_ok" != true ]] || rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env"
   exit "$rc"
 }
-trap rollback ERR
+preflight_failure(){
+  local rc=$?
+  write_state failed "Update preflight failed; running services were not changed." false
+  rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env"
+  exit "$rc"
+}
+trap preflight_failure ERR
+# Never replay an interrupted deployment against partially migrated state.
+if [[ "$MUTATIONSTARTED" == true ]]; then rollback; fi
 
 write_state preflight "Checking the Git checkout and resolving the verified release target." null
 TRACKED_CHANGES="$(git status --porcelain --untracked-files=no)"
@@ -280,7 +358,14 @@ case "$ORIGIN_URL" in
   *) echo "Refusing update from unexpected origin: $ORIGIN_URL"; exit 36 ;;
 esac
 git fetch --force --prune --tags origin
-if [[ "$ACTION" == revert ]]; then
+git fetch origin +refs/heads/main:refs/remotes/origin/main
+if [[ "$ACTION" == published ]]; then
+  git fetch origin +refs/heads/production:refs/remotes/origin/production
+  [[ "$TARGETCOMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 33
+  git merge-base --is-ancestor "$TARGETCOMMIT" refs/remotes/origin/production
+  git merge-base --is-ancestor HEAD "$TARGETCOMMIT"
+  RESOLVED="$TARGETCOMMIT"
+elif [[ "$ACTION" == revert ]]; then
   [[ "$TARGETCOMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid rollback commit"; exit 33; }
   RESOLVED="$TARGETCOMMIT"
 else
@@ -290,42 +375,113 @@ fi
 git merge-base --is-ancestor "$RESOLVED" origin/main || { echo "Selected release is not in the trusted origin/main history"; exit 37; }
 set_state_fields "targetCommit=$RESOLVED"
 
-write_state switching "Switching the appliance source to the selected release." null
-git checkout --detach "$RESOLVED"
-ACTUAL_VERSION="$(tr -d '\r\n' < VERSION)"
-[[ -z "$EXPECTEDVERSION" || "$ACTUAL_VERSION" == "$EXPECTEDVERSION" ]] || { echo "Release VERSION does not match GitHub metadata"; exit 35; }
-ensure_runtime_layout
-refresh_host_agent
+ACTUAL_VERSION="$(git show "$RESOLVED:VERSION" | tr -d '\r\n')"
+[[ -z "$EXPECTEDVERSION" || "$ACTUAL_VERSION" == "$EXPECTEDVERSION" ]] || { echo "Release VERSION does not match GitHub metadata"; false; }
+PLAN_FULL=true PLAN_HUB=true PLAN_MAINTENANCE=true PLAN_HOST=true
+if [[ "$ACTION" == published ]]; then
+  force_args=(); [[ "$FORCEFULL" != True ]] || force_args+=(--full)
+  PLANJSON="$(python3 deploy/update-plan.py "$RESOLVED" "${force_args[@]}")"
+  eval "$(python3 -c 'import json,sys; p=json.loads(sys.argv[1]); [print("PLAN_"+k.upper()+"="+str(p[k]).lower()) for k in ("full","hub","maintenance","host")]' "$PLANJSON")"
+  echo "Update plan: $PLANJSON"
+fi
+if [[ "$ACTION" != revert ]]; then
+  IMAGE_TAG="$TARGETREF"
+  [[ "$ACTION" != published ]] || IMAGE_TAG="sha-$RESOLVED"
+  HUB_IMAGE="ghcr.io/wagnerks1990/roomgoblin:${IMAGE_TAG}"
+  MAINTENANCE_IMAGE="ghcr.io/wagnerks1990/roomgoblin-maintenance:${IMAGE_TAG}"
+  roomgoblin_wait_image_pair "$RESOLVED" "$HUB_IMAGE" "$MAINTENANCE_IMAGE" probe
+  if [[ "$PLAN_HUB" == true ]]; then
+    timeout 900 docker pull "$HUB_IMAGE"
+    roomgoblin_verify_image_revision "$HUB_IMAGE" "$RESOLVED"
+  fi
+  if [[ "$PLAN_MAINTENANCE" == true ]]; then
+    timeout 900 docker pull "$MAINTENANCE_IMAGE"
+    roomgoblin_verify_image_revision "$MAINTENANCE_IMAGE" "$RESOLVED"
+  fi
+fi
+if [[ "$ACTION" == published ]]; then
+  appliance_health_check "$CURRENT_VERSION"
+  if [[ "$PLAN_HUB" == false && "$PLAN_MAINTENANCE" == false && "$PLAN_HOST" == false ]]; then
+    git merge --ff-only "$RESOLVED"
+    set_state_fields "activeCommit=$RESOLVED" "activeVersion=$ACTUAL_VERSION"
+    python3 deploy/update-plan.py "$RESOLVED" --record
+    rm -f "$REQUEST_FILE"
+    write_state completed "Published source synchronized; runtime inputs are unchanged. No services restarted." true
+    echo "Source synchronized. No downloads or service restarts were needed."
+    exit 0
+  fi
+  # The legacy operational restore format has one canonical DB destination.
+  # Refuse a selective transaction against a different configured identity.
+  docker compose exec -T classroom-hub node -e 'if((process.env.DATABASE_FILE||"/app/data/classroom-control-hub.db")!=="/app/data/classroom-control-hub.db")process.exit(1)' || { echo "Custom database identity requires the full installer and its per-database snapshots." >&2; false; }
+  write_state backup "Creating the operational safety backup before changing services." null
+  BACKUP_JSON="$(docker compose exec -T maintenance-agent node -e '
+    fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backup/create",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({scope:"operational",confirmSensitiveData:true}),signal:AbortSignal.timeout(180000)}).then(async r=>{const j=await r.json();if(!r.ok||!j.ok)throw Error("Operational backup failed"); const r2=await fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backup/"+encodeURIComponent(j.name)+"/inspect",{headers:{"x-maintenance-token":process.env.MAINTENANCE_TOKEN}});const checked=await r2.json();if(!r2.ok||checked.manifest?.databaseSnapshot!==true)throw Error("Missing database snapshot");console.log(JSON.stringify({name:j.name,sha256:j.sha256}))}).catch(()=>process.exit(1))'
+  )"
+  read -r BACKUPNAME BACKUPSHA256 < <(python3 -c 'import json,re,sys; j=json.loads(sys.argv[1]); assert re.fullmatch(r"[A-Za-z0-9._-]+\.zip",j["name"]); assert re.fullmatch("[0-9a-f]{64}",j["sha256"]); print(j["name"],j["sha256"])' "$BACKUP_JSON")
+  [[ -n "$BACKUPNAME" && -n "$BACKUPSHA256" ]]
+  FAILUREBACKUPNAME="$BACKUPNAME" FAILUREBACKUPSHA256="$BACKUPSHA256"
+  set_request_fields "backupName=$BACKUPNAME" "backupSha256=$BACKUPSHA256" "failureBackupName=$BACKUPNAME" "failureBackupSha256=$BACKUPSHA256" "rollbackCommit=$CURRENT_COMMIT" "rollbackVersion=$CURRENT_VERSION"
+  set_state_fields "plan=$PLANJSON"
+fi
+if [[ "$ACTION" == update || "$ACTION" == published ]]; then
+  set_state_fields "action=$ACTION" "previousCommit=$CURRENT_COMMIT" "previousVersion=$CURRENT_VERSION" "previousHubImage=$CURRENT_HUB_IMAGE" "previousMaintenanceImage=$CURRENT_MAINTENANCE_IMAGE" "previousImageTag=$CURRENT_IMAGE_TAG" "targetRef=$TARGETREF" "backupName=$BACKUPNAME" "backupSha256=$BACKUPSHA256"
+else
+  set_state_fields "action=$ACTION" "targetRef=$TARGETREF"
+fi
+
+cp .env "$STATE_DIR/app-update.env"
+chmod 0600 "$STATE_DIR/app-update.env"
+sync -f "$STATE_DIR/app-update.env"
+# Journal precedes every source/runtime mutation and survives process/host restart.
+set_request_fields mutationStarted=true
+DEPLOYMENT_MUTATED=true
+trap rollback ERR
+write_state switching "Switching the appliance source to the selected build." null
+if [[ "$ACTION" == published ]]; then git merge --ff-only "$RESOLVED"; else git checkout --detach "$RESOLVED"; fi
+if [[ "$ACTION" != published || "$PLAN_FULL" != true ]]; then
+  if [[ "$PLAN_FULL" == true ]]; then ensure_runtime_layout; fi
+  if [[ "$PLAN_HOST" == true ]]; then refresh_host_agent; fi
+fi
 
 if [[ "$ACTION" == revert && -n "$PREVIOUSHUBIMAGE" && -n "$PREVIOUSMAINTENANCEIMAGE" ]]; then
   write_state building "Activating the immutable images saved for $ACTUAL_VERSION." null
   set_image_tag "$PREVIOUSIMAGETAG"
-  activate_image_id "$PREVIOUSHUBIMAGE" classroom-hub
-  activate_image_id "$PREVIOUSMAINTENANCEIMAGE" maintenance-agent
+  activate_recovery_pair "$PREVIOUSHUBIMAGE" "$PREVIOUSMAINTENANCEIMAGE"
 else
-  IMAGE_TAG="$TARGETREF"
-  HUB_IMAGE="ghcr.io/wagnerks1990/roomgoblin:${IMAGE_TAG}"
-  MAINTENANCE_IMAGE="ghcr.io/wagnerks1990/roomgoblin-maintenance:${IMAGE_TAG}"
-  write_state building "Pulling immutable CI-built images for $ACTUAL_VERSION." null
-  docker pull "$HUB_IMAGE"
-  docker pull "$MAINTENANCE_IMAGE"
-  roomgoblin_verify_image_revision "$HUB_IMAGE" "$RESOLVED"
-  roomgoblin_verify_image_revision "$MAINTENANCE_IMAGE" "$RESOLVED"
-  set_image_tag "$IMAGE_TAG"
+  if [[ "$PLAN_HUB" == true ]]; then set_component_tag ROOMGOBLIN_HUB_TAG "$IMAGE_TAG"; fi
+  if [[ "$PLAN_MAINTENANCE" == true ]]; then set_component_tag ROOMGOBLIN_MAINTENANCE_TAG "$IMAGE_TAG"; fi
 fi
 if [[ "$ACTION" == revert ]]; then
   write_state restoring "Restoring the matching pre-upgrade state before the older application starts." null
-  docker compose stop classroom-hub || true
+  docker compose stop classroom-hub
   docker compose up --no-start --no-deps --force-recreate classroom-hub
+  docker compose up -d --no-build --no-deps --force-recreate maintenance-agent
+  wait_maintenance
   restore_safety_backup "$BACKUPNAME" "$BACKUPSHA256"
 fi
-write_state deploying "Force-recreating appliance containers so current Compose mounts and hardening are applied while preserving persistent state." null
-docker compose up -d --no-build --force-recreate --remove-orphans maintenance-agent classroom-hub
-# Remove the legacy Caddy container from releases that included the TLS gateway.
-docker rm -f classroom-control-hub-tls >/dev/null 2>&1 || true
+if [[ "$ACTION" == published && "$PLAN_FULL" == true ]]; then
+  write_state deploying "Deployment layout or migration changed; running full reconciliation." null
+  bash "$HUB_ROOT/install.sh"
+else
+  write_state deploying "Recreating changed components while preserving unchanged services." null
+  if [[ "$PLAN_MAINTENANCE" == true ]]; then docker compose up -d --no-build --no-deps --force-recreate maintenance-agent; fi
+  if [[ "$PLAN_HUB" == true ]]; then docker compose up -d --no-build --no-deps --force-recreate classroom-hub; fi
+fi
 write_state verifying "Waiting for backend HTTP, maintenance, Host Agent, ADB key storage, Android inventory access, and version convergence." null
-appliance_health_check "$ACTUAL_VERSION"
-
+verified=false
+for _ in $(seq 1 30); do
+  if HEALTH_ATTEMPTS=1 appliance_health_check "$ACTUAL_VERSION"; then verified=true; break; fi
+  sleep 2
+done
+[[ "$verified" == true ]]
+if [[ "$ACTION" == published ]]; then
+  expected_hub="$CURRENT_HUB_IMAGE" expected_maintenance="$CURRENT_MAINTENANCE_IMAGE"
+  [[ "$PLAN_HUB" != true ]] || expected_hub="$(docker image inspect --format '{{.Id}}' "$HUB_IMAGE")"
+  [[ "$PLAN_MAINTENANCE" != true ]] || expected_maintenance="$(docker image inspect --format '{{.Id}}' "$MAINTENANCE_IMAGE")"
+  [[ "$(docker inspect --format '{{.Image}}' classroom-control-hub)" == "$expected_hub" ]]
+  [[ "$(docker inspect --format '{{.Image}}' classroom-control-hub-maintenance)" == "$expected_maintenance" ]]
+fi
+if [[ -f deploy/update-plan.py ]]; then python3 deploy/update-plan.py "$RESOLVED" --record; else rm -f "$STATE_DIR/deployment.json"; fi
 trap - ERR
 if [[ "$ACTION" == revert ]]; then
   set_state_fields "activeCommit=$RESOLVED" "activeVersion=$ACTUAL_VERSION" "rollback=false" "revertAvailable=false" "previousCommit=" "previousVersion=" "previousHubImage=" "previousMaintenanceImage=" "previousImageTag=" "backupName=" "backupSha256="
@@ -334,5 +490,5 @@ else
 fi
 install -D -m 0755 "$HUB_ROOT/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
 install -D -m 0755 "$HUB_ROOT/host-agent/app-update-runner.sh" /usr/local/libexec/classroom-control-hub/app-update-runner.sh
-rm -f "$REQUEST_FILE"
+rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env"
 write_state completed "RoomGoblin $ACTUAL_VERSION deployed and verified successfully over HTTP." true

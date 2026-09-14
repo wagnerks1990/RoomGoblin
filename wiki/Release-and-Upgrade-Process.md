@@ -138,7 +138,7 @@ The updater runs from an immutable host-installed copy. It verifies the SHA-256 
 
 Do not delete `classroom-control-hub-recovery:*` images while the controller offers **Revert Last Upgrade**. Clear an unneeded stored GitHub credential using the controller action; for this public repository no token is required. Revoke the old credential at GitHub when rotating or responding to exposure.
 
-Container publication is gated directly by the tag workflow's locked installs, dependency audits, regression tests, syntax checks, Compose validation, direct HTTP smoke test, and both image builds. A matching `VERSION` and package version alone are not sufficient.
+Container publication requires the exact main commit to pass Validate, Display browser regression and Security gates. Android debug and restrictive-image checks are included in Validate. Semantic release tags promote the already published SHA image pair instead of rebuilding it. A matching VERSION and package version alone are not sufficient.
 
 Automatic updates are off by default and run only during the configured maintenance window. Run `sudo ./install.sh` once when upgrading an older installation to install the native updater service.
 
@@ -149,3 +149,7 @@ Do not add HTTPS back as a minor Compose tweak. A future HTTPS release must have
 ## Release acceptance
 
 A release is not considered production-ready merely because the container starts. Validate the classroom behaviors that can disrupt instruction: display state, timers, announcements, audio arbitration, schedules, integration health, Host Agent access, and recovery after reconnects.
+
+## Selective production updates
+
+Normal published-source CLI updates support `--plan` and `--full`. The native runner compares running component revisions and the saved deployment configuration, backs up before runtime changes, and recreates only changed components. Unknown inputs, migrations, versions or configuration drift invoke full installer reconciliation. Docs-only changes need no service restart. Pending interrupted deployments roll back through the native update journal. See [[Production-Updates]] and [[CI-Workflows]] for operating details and limits.

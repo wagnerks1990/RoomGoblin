@@ -132,10 +132,10 @@ The standard production checkout remains `/opt/classroom-hub`. Production update
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-The updater verifies both exact-commit images before advancing the checkout, then
-runs the installer for backups and deployment. A failed or still-running `main`
+The updater checks the published image pair, verifies changed images before
+advancing source, and uses the native backup/deployment/recovery runner. A failed or still-running `main`
 build leaves the previous published build selected. Do not pull `main` before
-normal updates. See [Published production updates](docs/PRODUCTION-UPDATES.md)
+normal updates. Updates now recreate only components whose verified runtime inputs changed; use `--plan` to inspect decisions or `--full` for complete reconciliation. See [Published production updates](docs/PRODUCTION-UPDATES.md)
 for older-checkout migration and image-publication troubleshooting.
 
 For a development rebuild after the installer has established host permissions and secrets:
@@ -295,3 +295,5 @@ RoomGoblin is currently alpha software. Production deployments should pin a spec
 RoomGoblin is open-source software licensed under the [MIT License](LICENSE). You may use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the software subject to the MIT License terms and preservation of the required copyright and license notice.
 
 Copyright © 2026 [Kyle Wagner](https://github.com/wagnerks1990).
+
+CI responsibilities and consolidation are documented in [GitHub Actions workflows](docs/CI-WORKFLOWS.md).

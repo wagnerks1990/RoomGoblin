@@ -18,6 +18,7 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Verify release ref matches application version
@@ -31,92 +32,40 @@ jobs:
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           runs="$(gh api -H 'Accept: application/vnd.github+json' "/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100")"
-          for required in 'Validate' 'Display browser regression' 'Android TV Display Agent' 'Restrictive image permissions' 'Security gates'; do
-            jq -e --arg name "$required" '[.workflow_runs[] | select(.name==$name and .conclusion=="success")] | length > 0' <<<"$runs" >/dev/null \
+          for required in 'Validate' 'Display browser regression' 'Security gates'; do
+            jq -e --arg name "$required" '[.workflow_runs[] | select(.name==$name and .head_branch=="main")] | sort_by(.id, .run_attempt) | last | .conclusion=="success"' <<<"$runs" >/dev/null \
               || { echo "Required main-branch workflow did not pass for tag commit: $required" >&2; exit 1; }
           done
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          node-version: '22'
-      - name: Run release-gating validation
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify both published source images before release promotion
         run: |
           set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm audit --omit=dev --audit-level=moderate
-          npm test
-          npm --prefix maintenance-agent ci --ignore-scripts --no-audit --no-fund
-          npm --prefix maintenance-agent audit --omit=dev --audit-level=moderate
-          npm run check
-          python3 -m py_compile host-agent/server.py host-agent/start.py
-          bash -n install.sh deploy/bootstrap.sh host-agent/update-runner.sh host-agent/app-update-runner.sh
-          docker compose config >/dev/null
-          docker build -t classroom-control-hub:release-gate .
-          docker build -f maintenance-agent/Dockerfile -t classroom-control-hub-maintenance:release-gate .
-          expected="$(cat VERSION)"
-          docker run --rm --entrypoint node classroom-control-hub:release-gate -e "const fs=require('fs');const v=fs.readFileSync('/app/VERSION','utf8').trim();if(v!=='$expected')process.exit(1);for(const f of ['/app/public/controller/app.js','/app/public/display/index.html','/app/public/lab-agent/ClassroomHubAgent.ps1'])if(!fs.readFileSync(f,'utf8').includes(v))process.exit(2)"
-          docker run --rm --entrypoint node classroom-control-hub-maintenance:release-gate -e "const fs=require('fs');if(!fs.readFileSync('/app/server.js','utf8').includes('$expected'))process.exit(1);if(!fs.existsSync('/app/android-agent/agent-release-unsigned.apk')||!fs.existsSync('/app/android-agent/agent-build.json'))process.exit(2)"
-
-  hub:
-    needs: preflight
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
-        id: meta
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ghcr.io/wagnerks1990/classroom-control-hub
-          tags: |
-            type=ref,event=tag
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          sbom: true
-          provenance: mode=max
-
-  maintenance:
-    needs: preflight
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
-        id: meta
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}-maintenance
-            ghcr.io/wagnerks1990/classroom-control-hub-maintenance
-          tags: |
-            type=ref,event=tag
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          file: maintenance-agent/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          sbom: true
-          provenance: mode=max
+          source deploy/image-readiness.sh
+          roomgoblin_wait_image_pair "$GITHUB_SHA" "ghcr.io/wagnerks1990/roomgoblin:sha-$GITHUB_SHA" "ghcr.io/wagnerks1990/roomgoblin-maintenance:sha-$GITHUB_SHA"
+      - name: Promote the validated pair to release aliases
+        run: |
+          set -euo pipefail
+          for image in roomgoblin roomgoblin-maintenance; do
+            case "$image" in
+              roomgoblin) legacy=classroom-control-hub ;;
+              roomgoblin-maintenance) legacy=classroom-control-hub-maintenance ;;
+            esac
+            docker buildx imagetools create \
+              --tag "ghcr.io/wagnerks1990/${image}:${GITHUB_REF_NAME}" \
+              --tag "ghcr.io/wagnerks1990/${legacy}:${GITHUB_REF_NAME}" \
+              "ghcr.io/wagnerks1990/${image}:sha-${GITHUB_SHA}"
+          done
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [preflight, hub, maintenance]
+    needs: preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Verify tag matches application version
