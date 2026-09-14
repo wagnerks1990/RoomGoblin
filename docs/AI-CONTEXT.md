@@ -317,7 +317,7 @@ Update documentation in the same change whenever behavior or operational procedu
 - `Test Now` is an execution test, not a calendar eligibility test. It may use a linked class as a synthetic manual context when that class is not scheduled on the current day. The real scheduler continues to enforce school-cycle/date eligibility.
 - Class-default display targets are a display-domain policy. They apply to primary display actions, display actions embedded in lighting/TV-led automations, and timer overlays. They never become lighting targets.
 - Timer overlay failures and action failures must be returned and persisted with actionable details rather than only the generic `Completed with action errors` status.
-- A legacy or empty cross-domain step must recover to that domain's `all` selector at execution time and be normalized on its next save. Explicit `all`, `hdmi-all`, and `hdbt-all` TV-power selections use Pluto's matching broadcast CEC command; selected TV subsets use individual output commands.
+- A legacy or empty cross-domain step must recover to that domain's `all` selector at execution time and be normalized on its next save. An explicit action target always overrides a linked class's display default. Explicit `all`, `hdmi-all`, and `hdbt-all` TV-power selections use Pluto's matching broadcast CEC command; selected TV subsets use individual output commands.
 - Alternating automations use the authoritative school-cycle anchor from the configured schedule profile; the controller must not depend on an editor-only anchor field.
 
 ### Maintenance mutation boundary
