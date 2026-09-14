@@ -10,3 +10,11 @@ test("Today and Automation expose the same scheduler pause/resume control",()=>{
 test("Morning Announcement advanced values and timer gap round trip instead of hardcoding",()=>{assert.match(html,/morningWatchOfflineConfirmations/);assert.match(html,/morningWatchCheckInterval/);assert.match(html,/morningWatchTargets/);assert.doesNotMatch(controller,/targets:\['all'\],offlineConfirmations:2,checkIntervalSeconds:15/);assert.match(controller,/autoTimerOverlayFollowGap/)});
 test("startup and operator resume share desired-state reconciliation including TV and lighting winners",()=>{assert.match(server,/currentAutomationNonDisplayWinners/);assert.match(server,/startup-reconcile/);assert.match(server,/resourceWinners/)});
 test("recovery winner priority is deterministic and independent of updatedAt",()=>{const fn=server.slice(server.indexOf("function currentAutomationDisplayWinners"),server.indexOf("function runDisplayAutomationResync"));assert.match(fn,/storedEvent.priority/);assert.doesNotMatch(fn,/storedEvent.updatedAt/)});
+
+test("additional action target defaults are serialized instead of only shown in the editor",()=>{
+  const defaults=controller.slice(controller.indexOf("function defaultStepTargets"),controller.indexOf("function populateTimerOverlayClassSelect"));
+  assert.match(defaults,/const first=stepTargetValues\(step\)\[0\]\?\.\[0\]/);
+  assert.match(defaults,/\(!useEventTargets\?defaultStepTargets\(x\):\[\]\)/);
+  const picker=controller.slice(controller.indexOf("function stepTargetOptions"),controller.indexOf("function updateAutomationStepTargets"));
+  assert.match(picker,/defaultStepTargets\(step\)/);
+});
