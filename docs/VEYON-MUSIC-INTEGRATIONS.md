@@ -167,7 +167,10 @@ must not continuously suppress screenshots.
 | Unlock | Supersedes older waiting lock requests. Per-computer ordering and an intent check prevent stale queued locks from following it. |
 | Reboot, shutdown, login, logoff, message, website, app | A successful WebAPI response is Accepted, not proof of the final desktop outcome. An uncertain send is reported as Outcome unknown and is not automatically replayed. |
 | Broadcast | Teacher start completes before client jobs run. Owned modes are observed after reconnect, never restarted automatically with old tokens. Hub restart schedules their cleanup. |
-| Stop broadcast | Uses the same workers, reports per-computer failures and requires an observed inactive mode instead of swallowing errors. |
+| Stop broadcast | Uses the same workers, reports per-computer failures and requires an observed inactive mode instead of swallowing errors. Expired stops retain owned-mode cleanup intent until reconnect. |
+
+A newer broadcast start or stop supersedes any older teacher setup still waiting
+to fan out to students, preventing mismatched broadcast sessions.
 
 RoomGoblin-owned screen/input locks and broadcast modes enter the durable SQLite
 ownership journal. Credentials, command arguments, and Veyon connection UIDs do not enter

@@ -34,6 +34,14 @@ class VeyonCommandQueue {
         for(const old of this.jobs.values())if(old.feature===feature)for(const t of old.tasks)if(t.ip===rec.ip&&["queued","retrying"].includes(t.state)){t.state="cancelled";t.reason="superseded";t.args=null}
         this.intents.set(key,{id:rec.id,ip:rec.ip,name:rec.name,feature,active:!!active,owner,recovery,jobId:job.id,expiresAt:job.expiresAt,confirmed:false});
       }
+      // A requested broadcast stop remains cleanup intent if the endpoint is
+      // offline beyond this job's retry window. Do not merely observe it forever.
+      if(MODES.has(feature)&&!active){
+        this.activeModes.delete(this.key(rec.ip,feature));
+        // An older start may still be awaiting eligibility before it journals.
+        for(const prior of this.jobs.values())if(prior.feature===feature&&prior.active&&!prior.recovery)
+          for(const pending of prior.tasks)if(pending.ip===rec.ip&&PENDING.has(pending.state))pending.stopRequested=true;
+      }
       task.intentId=this.intents.get(this.key(rec.ip,feature))?.jobId;
       job.tasks.push(task);
     }
@@ -130,7 +138,10 @@ class VeyonCommandQueue {
           this.owned.set(key,{id:task.id,ip:task.ip,feature:job.feature,createdAt:this.now()});
           try{this.persist()}catch(error){if(previous)this.owned.set(key,previous);else this.owned.delete(key);throw error}
         }
-      if(MODES.has(job.feature)&&job.active)await this.recordModeOwnership(rec,job.feature);
+      if(MODES.has(job.feature)&&job.active){
+        await this.recordModeOwnership(rec,job.feature);
+        if(task.stopRequested)this.activeModes.delete(key);
+      }
       if(!lock||actual.active!==job.active){dispatched=true;await this.execute(task.ip,job.feature,job.active,task.args||{})}
       if(MODES.has(job.feature)&&!lock){
         const confirmed=await this.readState(task.ip,job.feature);

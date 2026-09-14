@@ -146,3 +146,32 @@ test("broadcast stop retries a disconnected endpoint and confirms inactive state
     assert.equal(h.state.get(`${target.ip}|fullScreenDemoClient`),false);
   }finally{h.q.stop()}
 });
+
+test("expired broadcast stop remains pending cleanup and clears after reconnect",async()=>{
+  let stamp=Date.now(),online=true;const h=harness({now:()=>stamp,eligible:async()=>({eligible:online,reason:"offline"})});
+  try{
+    const target=h.computers.get("pc0"),start=h.q.enqueue({feature:"fullScreenDemoClient",targets:[target],args:{demoAccessToken:"fixture-only"}});
+    await until(()=>h.q.get(start.id).state==="completed");online=false;
+    const stop=h.q.enqueue({feature:"fullScreenDemoClient",active:false,targets:[target]});
+    await until(()=>h.q.get(stop.id).summary.retrying===1);stamp+=120001;h.q.tick();
+    assert.equal(h.q.get(stop.id).results[0].reason,"expired");assert.equal(h.q.ownedLocks()[0].recoveryPending,true);
+    await until(()=>h.q.list().some(job=>job.recovery&&job.summary.retrying===1));
+    online=true;stamp+=30001;h.q.tick();
+    await until(()=>h.journal().length===0);assert.equal(h.state.get(`${target.ip}|fullScreenDemoClient`),false);
+  }finally{h.q.stop()}
+});
+
+test("stop queued behind a starting broadcast retains cleanup intent",async()=>{
+  let release,releaseStop;
+  const gate=new Promise(resolve=>{release=resolve}),stopGate=new Promise(resolve=>{releaseStop=resolve});
+  const h=harness({eligible:async(_rec,_feature,active)=>{await (active?gate:stopGate);return {eligible:true}}});
+  try{
+    const target=h.computers.get("pc0"),start=h.q.enqueue({feature:"demoServer",targets:[target]});
+    await until(()=>h.q.get(start.id).summary.running===1);
+    const stop=h.q.enqueue({feature:"demoServer",active:false,targets:[target]});
+    release();await until(()=>h.q.get(start.id).state==="completed");
+    assert.equal(h.q.activeModes.has(`${target.ip}|demoServer`),false);
+    releaseStop();await until(()=>h.q.get(stop.id).state==="completed");
+    assert.equal(h.journal().length,0);
+  }finally{release();releaseStop();h.q.stop()}
+});

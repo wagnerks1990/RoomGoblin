@@ -6269,7 +6269,10 @@ async function waitForVeyonCommand(job){
   return job;
 }
 function veyonJobResults(job){return job.results.map(row=>({...row,error:row.error||(!row.ok?row.reason||"Command is still pending; check command history.":undefined)}))}
+// Generation identities contain no broadcast tokens and exist only while a route is active.
+const veyonBroadcastWorkflows=new Map();
 app.post("/api/v1/veyon/demo/start",requireCapability("lab.control"),async(req,res)=>{
+  let workflowKey,workflow;
   try{
     const teacher=veyonComputerStore.computers[veyonComputerId(req.body?.teacherId||"")];
     if(!teacher)throw new Error("Teacher computer not found");
@@ -6279,19 +6282,31 @@ app.post("/api/v1/veyon/demo/start",requireCapability("lab.control"),async(req,r
     if(!students.length)throw new Error("At least one student computer is required");
     const mode=req.body?.mode==="window"?"window":"fullscreen",owner=requestUser(req)?.id||"legacy-control";
     const token=crypto.randomBytes(24).toString("base64url");
-    const teacherJob=await waitForVeyonCommand(veyonCommandQueue.enqueue({feature:"demoServer",active:true,targets:[teacher],args:{demoAccessToken:token},owner}));
+    const queuedTeacher=veyonCommandQueue.enqueue({feature:"demoServer",active:true,targets:[teacher],args:{demoAccessToken:token},owner});
+    workflowKey=teacher.ip;workflow={};veyonBroadcastWorkflows.set(workflowKey,workflow);
+    const superseded=()=>veyonBroadcastWorkflows.get(workflowKey)!==workflow;
+    const supersededResult=()=>res.json({ok:false,superseded:true,teacherId:teacher.id,mode,results:students.map(rec=>({id:rec.id,ip:rec.ip,name:rec.name,ok:false,skipped:true,reason:"superseded",error:"A newer broadcast or stop request superseded this start."}))});
+    const teacherJob=await waitForVeyonCommand(queuedTeacher);
+    // Teacher jobs serialize, but their HTTP waiters can resume out of order.
+    // Never fan out an obsolete token after a newer teacher start or stop.
+    if(superseded())return supersededResult();
     if(!teacherJob.results.every(row=>row.ok))return res.json({ok:false,teacherId:teacher.id,mode,results:veyonJobResults(teacherJob)});
     const clientFeature=mode==="window"?"windowDemoClient":"fullScreenDemoClient";
     const job=await waitForVeyonCommand(veyonCommandQueue.enqueue({feature:clientFeature,active:true,targets:students,args:{demoAccessToken:token,demoServerHost:teacher.ip},owner}));
+    if(superseded())return supersededResult();
     res.json({ok:job.results.every(row=>row.ok),teacherId:teacher.id,teacherIp:teacher.ip,mode,results:veyonJobResults(job)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
+  finally{if(workflow&&veyonBroadcastWorkflows.get(workflowKey)===workflow)veyonBroadcastWorkflows.delete(workflowKey)}
 });
 app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,res)=>{
+  let workflowKey,workflow;
   try{
     const teacher=veyonComputerStore.computers[veyonComputerId(req.body?.teacherId||"")],owner=requestUser(req)?.id||"legacy-control";
     const ids=Array.isArray(req.body?.studentIds)?req.body.studentIds:[];
     if(ids.length>512)throw Error("Choose at most 512 student computers.");
     const students=[...new Map(ids.map(id=>veyonComputerStore.computers[veyonComputerId(id)]).filter(Boolean).map(rec=>[rec.id,rec])).values()];
+    // Invalidate a start still awaiting its teacher before any student fanout.
+    if(teacher){workflowKey=teacher.ip;workflow={};veyonBroadcastWorkflows.set(workflowKey,workflow)}
     const jobs=[];
     for(const feature of ["fullScreenDemoClient","windowDemoClient"]){
       if(students.length)jobs.push(veyonCommandQueue.enqueue({feature,active:false,targets:students,owner}));
@@ -6305,6 +6320,7 @@ app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,re
     const results=[...byComputer.values()];
     res.json({ok:results.every(row=>row.ok),results});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
+  finally{if(workflow&&veyonBroadcastWorkflows.get(workflowKey)===workflow)veyonBroadcastWorkflows.delete(workflowKey)}
 });
 app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
 app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});

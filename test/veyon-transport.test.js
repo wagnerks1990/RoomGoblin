@@ -158,7 +158,7 @@ test("broadcast stop uses tracked jobs and reports student and teacher failures"
     app:{post:(_path,_permission,handler)=>{route=handler}},requireCapability:()=>()=>{},
     veyonComputerStore:{computers:{teacher:{id:"teacher",ip:"teacher"},a:{id:"a",ip:"a"},b:{id:"b",ip:"b"}}},
     veyonComputerId:id=>id,requestUser:()=>({id:"operator"}),
-    waitForVeyonCommand:async job=>job,
+    veyonBroadcastWorkflows:new Map(),waitForVeyonCommand:async job=>job,
     veyonJobResults:job=>job.results,
     veyonCommandQueue:{enqueue:command=>{
       commands.push(command);
@@ -183,7 +183,7 @@ test("broadcast clients wait for a confirmed teacher job and never start after t
     app:{post:(path,_permission,handler)=>routes.set(path,handler)},requireCapability:()=>()=>{},
     veyonComputerStore:{computers:{teacher:{id:"teacher",ip:"teacher"},a:{id:"a",ip:"a"}}},
     veyonComputerId:id=>id,requestUser:()=>({id:"operator"}),crypto:{randomBytes:()=>Buffer.from("test-only-demo-token")},
-    waitForVeyonCommand:async job=>job,veyonJobResults:job=>job.results,
+    veyonBroadcastWorkflows:new Map(),waitForVeyonCommand:async job=>job,veyonJobResults:job=>job.results,
     veyonCommandQueue:{enqueue:command=>{
       commands.push(command);
       return {state:"completed",results:command.targets.map(rec=>({...rec,ok:command.feature!=="demoServer"||teacherOk,verified:teacherOk}))};
@@ -198,4 +198,50 @@ test("broadcast clients wait for a confirmed teacher job and never start after t
   assert.equal(result.ok,true);assert.deepEqual(commands.map(x=>x.feature),["demoServer","windowDemoClient"]);
   assert.equal(commands[1].targets.length,1);assert.equal(commands[1].args.demoAccessToken,commands[0].args.demoAccessToken);
   assert.doesNotMatch(JSON.stringify(result),/demoAccessToken|test-only-demo-token/);
+});
+
+function controlledBroadcastRoutes(){
+  const routes=new Map(),commands=[],teacherWaiters=new Map(),workflows=new Map();let token=0;
+  const context=vm.createContext({
+    app:{post:(path,_permission,handler)=>routes.set(path,handler)},requireCapability:()=>()=>{},
+    veyonComputerStore:{computers:{teacher:{id:"teacher",ip:"teacher"},student:{id:"student",ip:"student"}}},
+    veyonComputerId:id=>id,requestUser:()=>({id:"operator"}),crypto:{randomBytes:()=>Buffer.from(`fixture-token-${++token}`)},
+    veyonBroadcastWorkflows:workflows,veyonJobResults:job=>job.results,
+    waitForVeyonCommand:job=>job.command.feature==="demoServer"&&job.command.active
+      ?new Promise(resolve=>teacherWaiters.set(job.id,()=>resolve(job))):Promise.resolve(job),
+    veyonCommandQueue:{enqueue:command=>{
+      commands.push(command);return {id:String(commands.length),command,state:"completed",results:command.targets.map(rec=>({...rec,ok:true,verified:true}))};
+    }}
+  });
+  const start=source.indexOf('app.post("/api/v1/veyon/demo/start"');
+  vm.runInContext(source.slice(start,source.indexOf('app.get("/api/v1/veyon/jobs"',start)),context);
+  const request={body:{teacherId:"teacher",studentIds:["student"],mode:"fullscreen"}};
+  const response=()=>({body:null,json(value){this.body=value},status(){return this}});
+  return {routes,commands,teacherWaiters,workflows,request,response};
+}
+
+test("overlapping broadcast starts cannot fan out an obsolete teacher token in either waiter order",async()=>{
+  for(const newestFirst of [false,true]){
+    const h=controlledBroadcastRoutes(),route=h.routes.get("/api/v1/veyon/demo/start"),first=h.response(),second=h.response();
+    const older=route(h.request,first),newer=route(h.request,second);
+    assert.equal(h.teacherWaiters.size,2);
+    if(newestFirst){h.teacherWaiters.get("2")();await newer;h.teacherWaiters.get("1")();await older}
+    else{h.teacherWaiters.get("1")();await older;assert.equal(h.workflows.size,1,"an obsolete route cannot clear the newer generation");h.teacherWaiters.get("2")();await newer}
+    assert.equal(first.body.superseded,true);assert.equal(first.body.ok,false);assert.equal(second.body.ok,true);
+    const clients=h.commands.filter(command=>command.feature==="fullScreenDemoClient");
+    assert.equal(clients.length,1);assert.equal(clients[0].args.demoAccessToken,h.commands[1].args.demoAccessToken);
+    assert.equal(h.workflows.size,0,"completed handlers do not retain generation entries");
+    assert.doesNotMatch(JSON.stringify([first.body,second.body]),/fixture-token|demoAccessToken/);
+  }
+});
+
+test("broadcast stop supersedes an older start before its teacher waiter can enqueue clients",async()=>{
+  const h=controlledBroadcastRoutes(),startResult=h.response(),stopResult=h.response();
+  const pending=h.routes.get("/api/v1/veyon/demo/start")(h.request,startResult);
+  await h.routes.get("/api/v1/veyon/demo/stop")(h.request,stopResult);
+  h.teacherWaiters.get("1")();await pending;
+  assert.equal(stopResult.body.ok,true);assert.equal(startResult.body.superseded,true);
+  assert.equal(h.commands.filter(command=>command.active&&command.feature!=="demoServer").length,0);
+  assert.deepEqual(h.commands.slice(1).map(command=>[command.feature,command.active]),[["fullScreenDemoClient",false],["windowDemoClient",false],["demoServer",false]]);
+  assert.equal(h.workflows.size,0);
 });
