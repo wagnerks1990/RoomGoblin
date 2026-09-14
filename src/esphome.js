@@ -1,5 +1,6 @@
 "use strict";
 const {spawn}=require("node:child_process");
+const {rateLimit}=require("express-rate-limit");
 const crypto=require("node:crypto");
 const path=require("node:path");
 const net=require("node:net");
@@ -196,17 +197,26 @@ class ESPHomeManager{
 }
 
 function registerESPHomeRoutes(app,{manager,requireRead,requireControl,requireAdmin,isAdmin,owner,track=task=>task,audit=()=>{}}){
+  // Appliance-wide budgets run before authorization. Fixed keys bound memory and
+  // prevent changed users, target IDs or forwarding headers multiplying quotas.
+  // Polling cannot spend the separate management and interactive-control budgets.
+  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",standardHeaders:"draft-8",legacyHeaders:false,
+    message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
+  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",standardHeaders:"draft-8",legacyHeaders:false,
+    message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
+  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",standardHeaders:"draft-8",legacyHeaders:false,
+    message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
   const route=(action,kind)=>(req,res)=>{
     const task=(async()=>{
       try{const result=await action(req);if(kind)audit({kind:`esphome.${kind}`,deviceId:req.params.id||null,ok:true});res.json(result)}
       catch(error){res.status(error.status||503).json({ok:false,error:error.status?error.message:"ESPHome operation failed. Check worker availability and the encrypted credential store."})}
     })();return track(task);
   };
-  app.get("/api/v1/esphome/devices",requireRead,(_req,res)=>res.json(manager.list()));
-  app.post("/api/v1/esphome/devices",requireAdmin,route(req=>manager.save(null,req.body),"enroll"));
-  app.put("/api/v1/esphome/devices/:id",requireAdmin,route(req=>manager.save(req.params.id,req.body),"update"));
-  app.post("/api/v1/esphome/devices/:id/enabled",requireAdmin,route(req=>manager.change(req.params.id,{enabled:req.body.enabled}),"enabled"));
-  app.delete("/api/v1/esphome/devices/:id",requireAdmin,route(req=>manager.change(req.params.id,{remove:true}),"remove"));
-  app.post("/api/v1/esphome/devices/:id/entities/:entityId/command",requireControl,route(req=>manager.command(req.params.id,req.params.entityId,req.body,{admin:isAdmin(req),owner:owner(req)}),"command"));
+  app.get("/api/v1/esphome/devices",statusLimit,requireRead,(_req,res)=>res.json(manager.list()));
+  app.post("/api/v1/esphome/devices",managementLimit,requireAdmin,route(req=>manager.save(null,req.body),"enroll"));
+  app.put("/api/v1/esphome/devices/:id",managementLimit,requireAdmin,route(req=>manager.save(req.params.id,req.body),"update"));
+  app.post("/api/v1/esphome/devices/:id/enabled",managementLimit,requireAdmin,route(req=>manager.change(req.params.id,{enabled:req.body.enabled}),"enabled"));
+  app.delete("/api/v1/esphome/devices/:id",managementLimit,requireAdmin,route(req=>manager.change(req.params.id,{remove:true}),"remove"));
+  app.post("/api/v1/esphome/devices/:id/entities/:entityId/command",commandLimit,requireControl,route(req=>manager.command(req.params.id,req.params.entityId,req.body,{admin:isAdmin(req),owner:owner(req)}),"command"));
 }
 module.exports={ESPHomeManager,registerESPHomeRoutes,validateCommand,target,encryptionKey,STORE,secretName};

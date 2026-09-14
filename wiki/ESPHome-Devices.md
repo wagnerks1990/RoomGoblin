@@ -114,6 +114,15 @@ require an enabled administrator profile and explicit confirmation. Backend and
 worker validate commands and current entity identity; UI visibility is not an
 access boundary. Global same-origin request protection remains unchanged.
 
+The HTTP layer applies separate appliance-wide, one-minute budgets before route
+permission checks: 600 inventory reads, 60 management requests (shared across
+add/edit/enable/remove), and 240 entity commands. Rejected requests count toward
+the relevant budget. Changing a device ID, session or forwarding header cannot
+multiply these budgets. Excess requests return HTTP 429 and `Retry-After`; they do
+not create worker jobs or queued hardware actions. Polling cannot consume the
+command/management budgets. Counters are memory-only and reset after a Hub restart;
+existing connection, deduplication and in-flight command bounds still apply.
+
 The native transport is encrypted. The existing alpha controller may still use
 trusted-LAN HTTP, which does **not** encrypt key entry between browser and Hub.
 Use HTTPS through a reviewed same-host proxy or local access where available,
