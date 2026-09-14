@@ -2,6 +2,7 @@
 (()=>{
   const root=document.getElementById("devices");
   if(!root)return;
+  const PROBE_MS=30000;
   let artifactCache={at:0,value:null};
   async function call(id,path,opt={}){
     const r=await fetch(`/api/v1/maintenance/android/devices/${encodeURIComponent(id)}/agent/v2${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});
@@ -14,7 +15,7 @@
     if(!r.ok||j.ok===false){const e=Error(j.error||`HTTP ${r.status}`);e.status=r.status;e.payload=j;throw e}return j;
   }
   async function stagedArtifact(force=false){
-    if(!force&&artifactCache.value&&Date.now()-artifactCache.at<15000)return artifactCache.value;
+    if(!force&&artifactCache.value&&Date.now()-artifactCache.at<PROBE_MS)return artifactCache.value;
     try{
       const r=await fetch('/api/v1/maintenance/android/agent/artifact',{credentials:'same-origin',cache:'no-store'});
       const text=await r.text();let j={};try{j=JSON.parse(text)}catch{}
@@ -146,6 +147,9 @@
       await probe(card);
     }catch(err){window.alert(`Device Agent v2: ${err.message}`)}finally{b.disabled=false}
   },true);
-  new MutationObserver(()=>decorate()).observe(root,{childList:true,subtree:true});
-  decorate();setInterval(()=>root.querySelectorAll(".card[data-id]").forEach(card=>probe(card).catch(()=>{})),10000);
+  // Inventory rendering replaces cards directly under #devices. Watching all
+  // descendants creates a feedback loop because this decorator and the capability
+  // renderer both mutate card contents. Only react to inventory-level changes.
+  new MutationObserver(()=>decorate()).observe(root,{childList:true});
+  decorate();setInterval(()=>root.querySelectorAll(".card[data-id]").forEach(card=>probe(card).catch(()=>{})),PROBE_MS);
 })();
