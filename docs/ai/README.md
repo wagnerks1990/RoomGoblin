@@ -7,6 +7,7 @@ Read the relevant file before changing the subsystem it describes.
 ## Current subsystem context
 
 - [Android TV Hardware Validation](ANDROID-TV-HARDWARE-VALIDATION.md) — physically validated Android/Google TV behavior, Accessibility Home/Back/Recents boundaries, Device Administrator scope, and the rule that Accessibility global actions must not be represented as arbitrary input injection.
+- [Android TV Sendspin and Device Admin](ANDROID-TV-SENDSPIN-DEVICE-ADMIN.md) — required Sendspin Moshi adapter order, the `JsonOptional` serialization failure mode, and the user-confirmed Device Administrator deactivation path needed for safe legacy package migration.
 
 ## Maintenance rule
 

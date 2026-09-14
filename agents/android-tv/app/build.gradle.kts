@@ -13,8 +13,8 @@ android {
         applicationId = "org.roomgoblin.display"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.0-agent-v2"
+        versionCode = 5
+        versionName = "0.3.1-agent-v2"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -31,6 +31,7 @@ dependencies {
     implementation("org.conscrypt:conscrypt-android:2.5.3")
     implementation("com.github.Sendspin:sendspin-jvm:v0.3.4")
     implementation("com.squareup.moshi:moshi:1.15.2")
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

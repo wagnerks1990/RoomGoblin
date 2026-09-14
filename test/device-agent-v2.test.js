@@ -21,8 +21,8 @@ test("maintenance image loads Device Agent v2 bridge",()=>{
 test("Device Agent v2 keeps the existing package identity and advances native-player version",()=>{
   const gradle=read("agents/android-tv/app/build.gradle.kts");
   assert.match(gradle,/applicationId = "org\.roomgoblin\.display"/);
-  assert.match(gradle,/versionCode = 4/);
-  assert.match(gradle,/versionName = "0\.3\.0-agent-v2"/);
+  assert.match(gradle,/versionCode = 5/);
+  assert.match(gradle,/versionName = "0\.3\.1-agent-v2"/);
 });
 
 test("Device Agent v2 declares durable boot, management and media playback foreground service",()=>{
