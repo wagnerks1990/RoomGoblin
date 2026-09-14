@@ -10,11 +10,11 @@ test("production installer pulls commit-matched CI images by default",()=>{
   const source=fs.readFileSync("install.sh","utf8");
   assert.match(source,/INSTALL_MODE=pull/);
   assert.match(source,/IMAGE_TAG="sha-\$\{SOURCE_COMMIT\}"/);
-  assert.match(source,/docker pull "\$HUB_IMAGE"/);
-  assert.match(source,/docker pull "\$MAINT_IMAGE"/);
-  assert.match(source,/roomgoblin_verify_image_revision "\$HUB_IMAGE" "\$SOURCE_COMMIT"/);
-  assert.match(source,/roomgoblin_verify_image_revision "\$MAINT_IMAGE" "\$SOURCE_COMMIT"/);
-  assert.ok(source.indexOf('docker pull "$HUB_IMAGE"')<source.indexOf('Creating pre-migration backup'),"images must be available before backup or migration mutations");
+  const helper=fs.readFileSync("deploy/image-readiness.sh","utf8");
+  assert.match(source,/roomgoblin_wait_image_pair "\$SOURCE_COMMIT" "\$HUB_IMAGE" "\$MAINT_IMAGE"/);
+  assert.match(helper,/roomgoblin_verify_image_revision "\$hub" "\$revision"/);
+  assert.match(helper,/roomgoblin_verify_image_revision "\$maintenance" "\$revision"/);
+  assert.ok(source.indexOf('roomgoblin_wait_image_pair')<source.indexOf('Creating pre-migration backup'),"images must be available before appliance mutation");
   assert.match(source,/--build-local/);
   assert.match(source,/docker compose up -d --no-build/);
 });

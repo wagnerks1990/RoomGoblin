@@ -103,14 +103,10 @@ Supported installers and update runners must not edit tracked files or change tr
 
 ## Upgrade model
 
-Production is Git-first. Normal supported source update flow:
+Production selects published source from `origin/production`. Normal supported update flow:
 
 ```bash
-cd /opt/classroom-hub
-git fetch origin
-git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
 For development rebuilds after host state is established:
@@ -264,6 +260,10 @@ operator GUI tests; describe coverage in job/step names without renaming this ga
 Keep `test/production-image-install.test.js` workflow-identity coverage passing.
 A merged source commit is not installable until its exact Hub and maintenance images
 are published; never recommend retagging another commit or bypassing validation.
+Only successful pair promotion advances `production`. Bootstrap and normal source
+updates follow that published ref, verify both revisions before moving source,
+and refuse silent downgrades. See `docs/PRODUCTION-UPDATES.md`; do not reintroduce
+an unconditional main pull in the production updater.
 
 ## Testing before commit/release
 

@@ -121,11 +121,7 @@ Shared runtime directories should remain:
 
 ```bash
 sudo cp -a /opt/classroom-hub "/opt/classroom-hub-backup-before-update-$(date +%Y%m%d-%H%M%S)"
-cd /opt/classroom-hub
-git fetch origin
-git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
 For development rebuilds after a valid install:

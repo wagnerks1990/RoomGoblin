@@ -27,7 +27,7 @@ BACKUP_ROOT_REAL="$(readlink -m "$BACKUP_ROOT")"
 BACKUP="$BACKUP_ROOT/migration-$STAMP"
 
 fail(){ echo "RoomGoblin installer failed: $*" >&2; exit 1; }
-source "$SOURCE/deploy/image-identity.sh"
+source "$SOURCE/deploy/image-readiness.sh"
 safe_managed_root(){
   local label="$1" raw="$2" resolved
   [[ "$raw" == /* ]] || fail "$label must be an absolute path"
@@ -66,17 +66,7 @@ if [[ "$INSTALL_MODE" == pull ]]; then
   IMAGE_TAG="sha-${SOURCE_COMMIT}"
   HUB_IMAGE="ghcr.io/wagnerks1990/roomgoblin:${IMAGE_TAG}"
   MAINT_IMAGE="ghcr.io/wagnerks1990/roomgoblin-maintenance:${IMAGE_TAG}"
-  IMAGE_WAIT_ATTEMPTS="${CLASSROOM_HUB_IMAGE_WAIT_ATTEMPTS:-60}"
-  [[ "$IMAGE_WAIT_ATTEMPTS" =~ ^[1-9][0-9]*$ && "$IMAGE_WAIT_ATTEMPTS" -le 180 ]] || fail "CLASSROOM_HUB_IMAGE_WAIT_ATTEMPTS must be between 1 and 180"
-  echo "Waiting for validated CI image pair for ${SOURCE_COMMIT} ..."
-  image_pair_ready=false
-  for attempt in $(seq 1 "$IMAGE_WAIT_ATTEMPTS"); do
-    if docker pull "$HUB_IMAGE" && docker pull "$MAINT_IMAGE" \
-      && roomgoblin_verify_image_revision "$HUB_IMAGE" "$SOURCE_COMMIT" \
-      && roomgoblin_verify_image_revision "$MAINT_IMAGE" "$SOURCE_COMMIT"; then image_pair_ready=true; break; fi
-    (( attempt < IMAGE_WAIT_ATTEMPTS )) && sleep 10
-  done
-  [[ "$image_pair_ready" == true ]] || fail "validated image pair is unavailable; wait for Publish Main Images to finish or use --build-local for development"
+  roomgoblin_wait_image_pair "$SOURCE_COMMIT" "$HUB_IMAGE" "$MAINT_IMAGE" || fail "image preflight did not complete; no appliance changes were made"
 fi
 command -v openssl >/dev/null 2>&1 || { apt-get update && apt-get install -y openssl; }
 command -v rsync >/dev/null 2>&1 || { apt-get update && apt-get install -y rsync; }

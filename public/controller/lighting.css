@@ -27,5 +27,6 @@ body.rg-workspace #lights .lightingFilters .lightingSearch{flex:2;min-width:200p
 body.rg-workspace #lights .lightingFilters input,body.rg-workspace #lights .lightingFilters select{width:100%;min-width:0}
 body.rg-workspace #lights .lightingDiscovery{margin-top:20px}
 body.rg-workspace #lights .lightingAutoAdd{display:flex;gap:8px;align-items:center;margin:12px 0}
-body.rg-workspace #lights #goveeMessage:empty{display:none}
+/* Keep command targets in place when an acknowledgement is cleared by polling. */
+body.rg-workspace #lights #goveeMessage{min-height:1.5em;line-height:1.5}
 @media(max-width:480px){body.rg-workspace #lights .lightingFilters label,body.rg-workspace #lights .lightingFilters .lightingSearch{min-width:0;flex-basis:100%}}

@@ -112,7 +112,8 @@ enrollment settings. Unknown presence means no report is available, not online.
 Scene lists load only when controls expand, with visible loading/error/empty
 states and a retry action. Empty or failed scene lists cannot send a scene command.
 Inventory refresh retains existing cards, keyboard focus, open controls and unsaved
-edits. Failed refreshes retain the inventory with an explicit stale-data message.
+edits. Command status reserves a line even when empty, so acknowledgement clearing
+does not move an Apply button between pointer down and pointer up. Failed refreshes retain the inventory with an explicit stale-data message.
 Existing Govee endpoints, MQTT payloads and schedule/device identity remain unchanged.
 
 ## Styling ownership
@@ -178,8 +179,8 @@ and adds a regression comparing publisher requirements to real workflow names.
 
 If the installer reports `sha-5dc717...: not found`, stop its image-wait retry loop
 with Ctrl+C. This check occurs before installer service/data mutations. Wait for
-**Publish Main Images** for the corrected main commit to finish, then pull main
-and rerun `sudo bash install.sh`. Do not relabel older images with the missing
+**Publish Main Images** for the corrected commit to finish, then use the
+[published-source updater](PRODUCTION-UPDATES.md). Do not relabel older images with the missing
 commit tag or bypass revision verification. The source and both images must agree.
 
 ## ESPHome device workspace

@@ -114,7 +114,7 @@ sudo bash /tmp/classroom-hub-bootstrap.sh
 The bootstrap filename and `/opt/classroom-hub` target remain legacy-compatible
 for existing automation. The source repository is now RoomGoblin. The bootstrap
 installs Docker Engine and Compose from Docker's signed package repository,
-clones the application, generates unique appliance credentials, installs the
+clones the CI-published `production` branch, generates unique appliance credentials, installs the
 native Host Agent, starts the containers, verifies component health, and prints
 the first-time setup URL. Review the downloaded script before running it.
 
@@ -126,15 +126,17 @@ Use the web controller for routine upgrades and rollback after initial installat
 
 ## Production updates
 
-The standard production checkout remains `/opt/classroom-hub`. Production updates are Git-first:
+The standard production checkout remains `/opt/classroom-hub`. Production updates follow the latest published image pair:
 
 ```bash
-cd /opt/classroom-hub
-git fetch origin
-git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
+
+The updater verifies both exact-commit images before advancing the checkout, then
+runs the installer for backups and deployment. A failed or still-running `main`
+build leaves the previous published build selected. Do not pull `main` before
+normal updates. See [Published production updates](docs/PRODUCTION-UPDATES.md)
+for older-checkout migration and image-publication troubleshooting.
 
 For a development rebuild after the installer has established host permissions and secrets:
 
