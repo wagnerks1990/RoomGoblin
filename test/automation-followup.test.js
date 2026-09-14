@@ -18,3 +18,10 @@ test("additional action target defaults are serialized instead of only shown in 
   const picker=controller.slice(controller.indexOf("function stepTargetOptions"),controller.indexOf("function updateAutomationStepTargets"));
   assert.match(picker,/defaultStepTargets\(step\)/);
 });
+
+
+test("server backfills saved cross-domain step defaults as well as the editor",()=>{
+  const normalizer=server.slice(server.indexOf("function normalizeAutomation"),server.indexOf("function automationTargetDomain"));
+  assert.match(normalizer,/defaultAutomationActionTargets\(stepAction\)/);
+  assert.match(normalizer,/item\?\.useEventTargets!==false/);
+});
