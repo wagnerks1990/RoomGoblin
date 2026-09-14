@@ -552,7 +552,8 @@ test("verified application updater has a durable host job and GUI rollback contr
   assert.match(runner,/merge-base --is-ancestor/);
   assert.match(runner,/docker compose exec -T classroom-hub node -e/);
   assert.match(runner,/restore_safety_backup/);
-  assert.match(runner,/PORT="\$\{MAINTENANCE_PORT:-3010\}"/);
+  assert.match(runner,/port=process\.env\.PORT\|\|3010/);
+  assert.doesNotMatch(runner,/docker exec[^\n]+-e PORT=/);
   assert.match(runner,/127\.0\.0\.1:\$\{port\}/);
   assert.match(controller,/Revert Last Upgrade/);
   assert.match(controller,/Automatically install approved releases/);
