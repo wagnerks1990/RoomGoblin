@@ -12,14 +12,15 @@ function target(input={}){
   const address=String(input.address||"").trim();
   const [a,b]=address.split(".").map(Number);
   if(net.isIP(address)!==4||!(a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168)))
-    throw failure("Enter a private IPv4 device address (10.x, 172.16–31.x, or 192.168.x), not a URL or hostname.");
+    throw failure("Enter a private IPv4 device address discovered on the classroom network.");
   const port=input.port===undefined?6053:Number(input.port);
   if(!Number.isInteger(port)||port<1||port>65535)throw failure("Invalid native API port.");
   return {address,port};
 }
-function encryptionKey(value){
+function encryptionKey(value,{allowEmpty=false}={}){
+  if(allowEmpty&&value==="")return "";
   if(typeof value!=="string"||! /^[A-Za-z0-9+/]{43}=$/.test(value)||Buffer.from(value,"base64").length!==32||Buffer.from(value,"base64").toString("base64")!==value)
-    throw failure("A valid 32-byte base64 ESPHome API encryption key is required.");
+    throw failure("Enter the device’s 32-byte base64 ESPHome API encryption key, or leave it blank only when that device’s native API is intentionally unencrypted.");
   return value;
 }
 function deviceName(value){
@@ -55,12 +56,13 @@ class ESPHomeManager{
     this.storage=storage;this.spawnProcess=spawnProcess;this.python=python;this.canRun=canRun;
     this.child=null;this.pending=new Map();this.live=new Map();this.busy=new Set();this.commands=new Map();
     this.closed=false;this.configHash="";this.syncing=null;this.saving=false;this.lastError="";this.sequence=0;this.lastWorkerAt=0;
+    this.discoveryCache={at:0,devices:[]};this.discoveryPromise=null;
     this.timer=autostart?setInterval(()=>{this.checkWorker();this.sync().catch(()=>{})},15000):null;this.timer?.unref();
     if(autostart)setImmediate(()=>this.sync().catch(()=>{}));
   }
   records(){const rows=this.storage.getPreference(STORE,[]);return Array.isArray(rows)?rows.slice(0,MAX_DEVICES):[]}
   record(id){return this.records().find(d=>d.id===id)}
-  list(){return {ok:true,transport:"native-encrypted",limit:MAX_DEVICES,workerError:this.lastError,devices:this.records().map(d=>{
+  list(){return {ok:true,transport:"native-api",limit:MAX_DEVICES,workerError:this.lastError,devices:this.records().map(d=>{
     const current=this.live.get(d.id),live=current?.generation===d.generation?current:null;
     return {id:d.id,generation:d.generation,name:d.name,address:d.address,port:d.port,mac:d.mac,enabled:d.enabled!==false,
       hasKey:this.storage.hasSecret(secretName(d.id)),info:live?.info||d.info||{},
@@ -71,7 +73,7 @@ class ESPHomeManager{
   worker(){
     if(this.closed)throw failure("ESPHome is stopping.",503);
     if(this.child)return this.child;
-    const child=this.spawnProcess(this.python,["-u",path.join(__dirname,"esphome","worker.py")],{
+    const child=this.spawnProcess(this.python,["-u",path.join(__dirname,"esphome","worker_entry.py")],{
       stdio:["pipe","pipe","ignore"],env:{PATH:process.env.PATH||"/usr/bin:/bin",LANG:"C.UTF-8",TZ:process.env.TZ||"UTC",PYTHONDONTWRITEBYTECODE:"1"}
     });
     this.child=child;this.lastWorkerAt=Date.now();let buffer="";
@@ -116,11 +118,41 @@ class ESPHomeManager{
     const requestId=String(++this.sequence),line=JSON.stringify({op,requestId,...payload})+"\n";
     if(Buffer.byteLength(line)>MAX_LINE)return Promise.reject(failure("ESPHome request is too large.",413));
     return new Promise((resolve,reject)=>{
-      // A stalled worker is terminated so timed-out commands cannot execute later.
       const timer=setTimeout(()=>this.failWorker(child),timeout);timer.unref();
       this.pending.set(requestId,{resolve,reject,timer});
       child.stdin.write(line,error=>{if(error)this.failWorker(child)});
     });
+  }
+  async discover({force=false}={}){
+    if(!force&&Date.now()-this.discoveryCache.at<15000)return {ok:true,cached:true,devices:this.discoveryCache.devices};
+    if(this.discoveryPromise)return this.discoveryPromise;
+    const work=()=>new Promise((resolve,reject)=>{
+      const child=this.spawnProcess(this.python,["-u",path.join(__dirname,"esphome","discovery.py")],{
+        stdio:["ignore","pipe","ignore"],env:{PATH:process.env.PATH||"/usr/bin:/bin",LANG:"C.UTF-8",TZ:process.env.TZ||"UTC",PYTHONDONTWRITEBYTECODE:"1"}
+      });
+      let output="",done=false;
+      const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value)};
+      const timer=setTimeout(()=>{try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery timed out.",504))},6000);timer.unref();
+      child.stdout.setEncoding("utf8");child.stdout.on("data",chunk=>{output+=chunk;if(Buffer.byteLength(output)>MAX_LINE){try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery returned too much data.",502))}});
+      child.once("error",()=>finish(failure("ESPHome discovery could not start.",503)));
+      child.once("exit",code=>{
+        if(done)return;if(code!==0)return finish(failure("ESPHome discovery failed.",502));
+        try{
+          const parsed=JSON.parse(output),devices=Array.isArray(parsed.devices)?parsed.devices.slice(0,128):[];
+          const enrolled=this.records();
+          const safe=devices.map(item=>({
+            name:String(item.name||"").slice(0,100),host:String(item.host||"").slice(0,253),
+            addresses:(Array.isArray(item.addresses)?item.addresses:[]).filter(address=>net.isIP(address)>0).slice(0,8),
+            port:Number.isInteger(item.port)&&item.port>0&&item.port<=65535?item.port:6053,
+            mac:/^(?:[a-f0-9]{2}:){5}[a-f0-9]{2}$/.test(String(item.mac||""))?item.mac:"",
+            version:String(item.version||"").slice(0,80),platform:String(item.platform||"").slice(0,80),board:String(item.board||"").slice(0,80),
+            enrolled:enrolled.some(row=>(item.mac&&row.mac===item.mac)||(item.addresses||[]).includes(row.address))
+          })).filter(item=>item.addresses.length);
+          this.discoveryCache={at:Date.now(),devices:safe};finish(null,{ok:true,cached:false,devices:safe});
+        }catch{finish(failure("ESPHome discovery returned invalid data.",502))}
+      });
+    });
+    this.discoveryPromise=work().finally(()=>{this.discoveryPromise=null});return this.discoveryPromise;
   }
   async sync(){
     if(this.closed)return;
@@ -129,8 +161,10 @@ class ESPHomeManager{
       const devices=[];
       for(const row of this.records()){
         if(row.enabled===false)continue;
-        try{devices.push({id:row.id,generation:row.generation,...target(row),mac:row.mac,key:encryptionKey(this.storage.getSecret(secretName(row.id)))})}
-        catch{this.live.set(row.id,{generation:row.generation,online:false,error:"configuration-or-key-unavailable",entities:[],states:{}})}
+        try{
+          const key=this.storage.hasSecret(secretName(row.id))?encryptionKey(this.storage.getSecret(secretName(row.id))):"";
+          devices.push({id:row.id,generation:row.generation,...target(row),mac:row.mac,key});
+        }catch{this.live.set(row.id,{generation:row.generation,online:false,error:"configuration-or-key-unavailable",entities:[],states:{}})}
       }
       if(!devices.length&&!this.child)return;
       const hash=crypto.createHash("sha256").update(JSON.stringify(devices)).digest("hex");
@@ -146,7 +180,8 @@ class ESPHomeManager{
       const previous=id?this.record(id):null;if(id&&!previous)throw failure("Unknown ESPHome device.",404);
       if(!previous&&this.records().length>=MAX_DEVICES)throw failure("The 64-device limit has been reached.",409);
       const name=deviceName(input.name),endpoint=target(input);
-      const key=encryptionKey(input.key|| (previous?this.storage.getSecret(secretName(id)):""));
+      const previousKey=previous&&this.storage.hasSecret(secretName(id))?this.storage.getSecret(secretName(id)):"";
+      const supplied=typeof input.key==="string"?input.key:"",key=encryptionKey(supplied||previousKey,{allowEmpty:true});
       if(this.records().some(d=>d.id!==id&&d.address===endpoint.address&&d.port===endpoint.port))throw failure("This endpoint is already enrolled.",409);
       const result=await this.rpc("probe",{device:{...endpoint,key}});
       this.checkRun();
@@ -155,8 +190,12 @@ class ESPHomeManager{
       if(previous&&mac!==previous.mac)throw failure("Device identity differs from the enrolled MAC. Remove and enroll separately only after verifying the hardware.",409);
       if(this.records().some(d=>d.id!==id&&d.mac===mac))throw failure("This device is already enrolled.",409);
       const device={id:id||crypto.randomUUID(),generation:crypto.randomUUID(),name,...endpoint,mac,info:result.info,enabled:previous?.enabled!==false};
-      this.storage.tx(()=>{this.storage.putSecret(secretName(device.id),key,{integration:"esphome",type:"native-api-encryption-key"});this.storage.setPreference(STORE,[...this.records().filter(d=>d.id!==device.id),device])});
-      this.live.delete(device.id);await this.sync().catch(()=>{});return this.list();
+      this.storage.tx(()=>{
+        if(key)this.storage.putSecret(secretName(device.id),key,{integration:"esphome",type:"native-api-encryption-key"});
+        else this.storage.deleteSecret(secretName(device.id));
+        this.storage.setPreference(STORE,[...this.records().filter(d=>d.id!==device.id),device]);
+      });
+      this.discoveryCache.at=0;this.live.delete(device.id);await this.sync().catch(()=>{});return this.list();
     }finally{this.saving=false}
   }
   async change(id,{remove=false,enabled}={}){
@@ -171,14 +210,14 @@ class ESPHomeManager{
         else rows.push({...device,enabled,generation:crypto.randomUUID()});
         this.storage.setPreference(STORE,rows);
       });
-      this.live.delete(id);await this.sync().catch(()=>{});return this.list();
+      this.discoveryCache.at=0;this.live.delete(id);await this.sync().catch(()=>{});return this.list();
     }finally{this.saving=false}
   }
   async command(id,entityId,input,{admin=false,owner=""}={}){
     this.checkRun();if(this.saving)throw failure("A device configuration change is in progress.",409);
     const record=this.record(id),live=this.live.get(id);
     if(!record)throw failure("Unknown ESPHome device.",404);
-    if(record.enabled===false||!this.storage.hasSecret(secretName(id))||!live?.online||live.generation!==record.generation)throw failure("ESPHome device is not connected.",409);
+    if(record.enabled===false||!live?.online||live.generation!==record.generation)throw failure("ESPHome device is not connected.",409);
     const entity=live.entities.find(e=>e.id===entityId),command=validateCommand(entity,input.command,admin);
     const requestId=input.requestId;
     if(typeof requestId!=="string"||!/^[a-zA-Z0-9._-]{8,80}$/.test(requestId))throw failure("A unique command request ID is required.");
@@ -197,22 +236,18 @@ class ESPHomeManager{
 }
 
 function registerESPHomeRoutes(app,{manager,requireRead,requireControl,requireAdmin,isAdmin,owner,track=task=>task,audit=()=>{}}){
-  // Appliance-wide budgets run before authorization. Fixed keys bound memory and
-  // prevent changed users, target IDs or forwarding headers multiplying quotas.
-  // Polling cannot spend the separate management and interactive-control budgets.
-  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",standardHeaders:"draft-8",legacyHeaders:false,
-    message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
-  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",standardHeaders:"draft-8",legacyHeaders:false,
-    message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
-  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",standardHeaders:"draft-8",legacyHeaders:false,
-    message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
+  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
+  const discoveryLimit=rateLimit({windowMs:60000,limit:12,keyGenerator:()=>"esphome-discovery",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome discovery request limit reached; retry later."}});
+  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
+  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
   const route=(action,kind)=>(req,res)=>{
     const task=(async()=>{
       try{const result=await action(req);if(kind)audit({kind:`esphome.${kind}`,deviceId:req.params.id||null,ok:true});res.json(result)}
-      catch(error){res.status(error.status||503).json({ok:false,error:error.status?error.message:"ESPHome operation failed. Check worker availability and the encrypted credential store."})}
+      catch(error){res.status(error.status||503).json({ok:false,error:error.status?error.message:"ESPHome operation failed. Check worker availability and the credential store."})}
     })();return track(task);
   };
   app.get("/api/v1/esphome/devices",statusLimit,requireRead,(_req,res)=>res.json(manager.list()));
+  app.get("/api/v1/esphome/discovery",discoveryLimit,requireAdmin,route(req=>manager.discover({force:req.query.force==="1"}),"discover"));
   app.post("/api/v1/esphome/devices",managementLimit,requireAdmin,route(req=>manager.save(null,req.body),"enroll"));
   app.put("/api/v1/esphome/devices/:id",managementLimit,requireAdmin,route(req=>manager.save(req.params.id,req.body),"update"));
   app.post("/api/v1/esphome/devices/:id/enabled",managementLimit,requireAdmin,route(req=>manager.change(req.params.id,{enabled:req.body.enabled}),"enabled"));
