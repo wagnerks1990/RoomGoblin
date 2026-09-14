@@ -40,3 +40,5 @@ Each scheduled action owns a target domain. Display actions select display clien
 Additional actions may reuse the main event targets only when both actions use a compatible target domain. Cross-domain actions require explicit targets in the editor. For compatibility, a legacy or empty cross-domain step uses the domain's **All** target at execution time and is written with that default the next time the automation is saved.
 
 An automated TV-power step with **All TVs**, **All HDMI TVs**, or **All HDBT TVs** uses the matching Pluto broadcast CEC command, the same command used by the Room controls. A selected set of TVs continues to use individual output commands.
+
+An explicit target selected on an additional action overrides the linked class's display defaults. Class defaults are used only when that cross-domain display action has no explicit target of its own.
