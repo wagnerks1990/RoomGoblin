@@ -684,6 +684,10 @@ nav button{min-width:135px}
     <div><h1>Classroom Automation Scheduler</h1><div class="muted">Schedule TV power, display content, URLs, media, documents, and Govee lighting throughout the day.</div><div id="schedulerClock" class="muted" style="margin-top:5px">Checking scheduler clock…</div></div>
     <div class="toolbar"><button onclick="loadSchedules()">Refresh</button><button class="primary" onclick="newAutomation()">+ New Event</button></div>
   </div>
+  <div id="automationControlPanel" class="panel" style="margin-bottom:14px">
+    <div class="top"><div><b>Scheduled Automation</b><div id="automationControlSummary" class="muted">Loading scheduler control…</div></div><div class="toolbar"><button id="automationToggleBtn" onclick="toggleAutomationScheduler()">Pause Automatic Runs</button><button class="primary" onclick="resumeScheduledAutomation()">Resume Scheduled State</button></div></div>
+    <details class="workspaceDisclosure" style="margin-top:10px"><summary>Simulation / Troubleshooting</summary><div class="disclosureBody"><div id="automationSimulationBanner" class="status"></div><div class="grid2"><label>Simulated date & time<input id="automationSimulatedTime" type="datetime-local"></label><label>Live test commands<select id="automationSimulationLive"><option value="0">Dry run only</option><option value="1">Allow real-device commands for 15 minutes</option></select></label></div><div class="toolbar"><button onclick="applyAutomationSimulation()">Apply Simulated Time</button><button onclick="evaluateAutomationSimulation()">Evaluate Now</button><button onclick="clearAutomationSimulation()">Return to Real Time</button></div><div id="automationSimulationResults" class="muted" style="margin-top:8px"></div></div></details>
+  </div>
 
   <details class="panel workspaceDisclosure" style="margin-bottom:14px">
     <summary><h2 class="sectionTitle">School Calendar Rules</h2></summary>
@@ -797,7 +801,7 @@ nav button{min-width:135px}
       <div id="autoPayload" class="panel" style="box-shadow:none;margin-top:12px"></div>
       <div class="panel" style="box-shadow:none;margin-top:12px">
         <div class="top">
-          <div><b>Additional Actions</b><div class="muted">RoomGoblin automatically clears all display screens before Action 1. Add Action 2, Action 3, and more here; they run in order. Cross-domain actions use their own target type.</div></div>
+          <div><b>Additional Actions</b><div class="muted">Actions are resource-isolated: lighting, TV power, AV, timers, and display content affect only their resolved targets. Add Action 2, Action 3, and more here; they run in order.</div></div>
           <button type="button" onclick="addAutomationStep()">+ Add Action</button>
         </div>
         <div id="autoActionSteps"></div>

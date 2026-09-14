@@ -29,6 +29,7 @@ const {applicationVersion}=require("./version");
 const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
+const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -178,6 +179,12 @@ const DATABASE_FILE = String(process.env.DATABASE_FILE || path.join(DATA_DIR,"cl
 const MASTER_KEY_FILE = String(process.env.MASTER_KEY_FILE || "/run/secrets/classroom-control-hub-master-key");
 const LEGACY_JSON_MIRROR = String(process.env.LEGACY_JSON_MIRROR || "false").toLowerCase()==="true";
 const dbStore = new ClassroomHubStorage({dataDir:DATA_DIR,dbFile:DATABASE_FILE,masterKeyFile:MASTER_KEY_FILE,legacyMirror:LEGACY_JSON_MIRROR});
+const schedulerClock=new SchedulerClock({timezone:SCHEDULER_TIMEZONE});
+const automationRunLedger=makeLedger(dbStore);
+let automationSchedulerEnabled=(dbStore.getPreference("automation.scheduler",{enabled:true})||{}).enabled!==false;
+function setAutomationSchedulerEnabled(value){automationSchedulerEnabled=!!value;dbStore.setPreference("automation.scheduler",{enabled:automationSchedulerEnabled,updatedAt:new Date().toISOString()});return automationSchedulerEnabled}
+function automationControlStatus(){const clock=schedulerClock.status(),ledger=automationRunLedger.read();return {enabled:automationSchedulerEnabled,clock,runningOccurrences:typeof automationRunningOccurrences!=="undefined"?automationRunningOccurrences.size:0,recentRuns:ledger.runs.slice(-25).reverse()}}
+
 function normalizedTimezone(value){
   const timezone=String(value||"").trim();
   try{new Intl.DateTimeFormat("en-US",{timeZone:timezone}).format(new Date())}catch{throw Error("Timezone must be a valid IANA timezone, for example America/New_York")}
@@ -1273,8 +1280,7 @@ function normalizeAutomation(input={},existing={}){
   const anchorRaw=input.anchorDate??existing.anchorDate??"";
   if(anchorRaw&&!validDateKey(anchorRaw))throw new Error("Automation anchor must be a valid YYYY-MM-DD date");
   const anchorDate=anchorRaw?String(anchorRaw):"";
-  const offsetValue=Number(input.classTimeOffsetMinutes??existing.classTimeOffsetMinutes??0);
-  if(!Number.isFinite(offsetValue))throw new Error("Class time offset must be a finite number");
+  const offsetValue=normalizeIntegerMinutes(input.classTimeOffsetMinutes??existing.classTimeOffsetMinutes??0,{name:"Class time offset",fallback:0,min:-720,max:720});
   const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
   return {
     id,
@@ -1292,7 +1298,7 @@ function normalizeAutomation(input={},existing={}){
     classIds:[...new Set((Array.isArray(input.classIds)?input.classIds:(Array.isArray(existing.classIds)?existing.classIds:[input.classId??existing.classId].filter(Boolean))).map(String).filter(Boolean))],
     classId:String((Array.isArray(input.classIds)&&input.classIds.length?input.classIds[0]:(input.classId??existing.classId??""))),
     classTimeReference:String(input.classTimeReference??existing.classTimeReference??"start")==="end"?"end":"start",
-    classTimeOffsetMinutes:Math.max(-720,Math.min(720,offsetValue)),
+    classTimeOffsetMinutes:offsetValue,
     useClassTargets:input.useClassTargets===undefined?(existing.useClassTargets!==false):!!input.useClassTargets,
     action,
     targets:[...new Set(targets)],
@@ -1326,29 +1332,11 @@ function normalizeAutomation(input={},existing={}){
 
 
 function automationTargetDomain(action){
-  const a=String(action||"").trim().toLowerCase();
-
-  // Lighting targets are Govee devices/groups.
-  if(a.startsWith("govee.") || a.startsWith("lighting.")){
-    return "lighting";
-  }
-
-  // TV/display/AV actions use classroom display targets.
-  if(a==="tv.power" || a.startsWith("display.") || a.startsWith("av.")){
-    return "display";
-  }
-
-  return "other";
+  return actionResourceDomain(action);
 }
 
 function automationDisplayTargets(targets){
-  return [...new Set((targets||[]).flatMap(t=>{
-    const id=cleanId(t);
-    if(id==="all")return Object.keys(devices).filter(k=>devices[k]?.enabled!==false);
-    if(Array.isArray(displayGroups[id]))return displayGroups[id];
-    if(devices[id]&&devices[id].enabled!==false)return [id];
-    return [];
-  }))];
+  return expandDisplayTargets(targets,{devices,displayGroups});
 }
 function announcementLockedDisplayTargets(targets){
   if(!morningAnnouncementsRuntime.active)return [];
@@ -1365,7 +1353,12 @@ function announcementPriorityError(targets){
 }
 
 
-function automationVariableContext(event,date=new Date()){
+function requireAutomationTargets(targets,label="Automation action"){
+  const resolved=automationDisplayTargets(targets);
+  if(!resolved.length)throw new Error(`${label} has no valid display targets`);
+  return resolved;
+}
+function automationVariableContext(event,date=schedulerClock.now()){
   const cls=event._class||activeAutomationClassAt(event,date)||classScheduleById(event.classId)||activeClassAt(date);
   const linkedClasses=automationClassIds(event).map(classScheduleById).filter(Boolean);
   const end=cls?classEndDate(cls,date):null;
@@ -1387,41 +1380,31 @@ function automationVariableContext(event,date=new Date()){
     "%room%":deviceConfig?.room||ROOM_NAME||""
   };
 }
-function expandAutomationVariables(value,event,date=new Date()){
+function expandAutomationVariables(value,event,date=schedulerClock.now()){
   if(typeof value!=="string")return value;
   let out=value;for(const [k,v] of Object.entries(automationVariableContext(event,date)))out=out.split(k).join(String(v));
   return out;
 }
-function expandAutomationPayload(value,event,date=new Date()){
+function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(Array.isArray(value))return value.map(v=>expandAutomationPayload(v,event,date));
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
 async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation"}={}){
-  const p=expandAutomationPayload(event.payload||{},event,new Date());
+  const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
   if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action||"(blank)"}`);
   const outputs={action,targets:event.targets||[],results:[]};
 
   if(action==="tv.power"){
     const on=String(p.state||"on").toLowerCase()==="on";
-    for(const target of event.targets||[]){
-      const id=cleanId(target);
-      if(id==="all"){
-        outputs.results.push(await directPluto({action:"cecAllOutputs",index:on?0:1}));
-      }else if(id==="hdmi-all"){
-        outputs.results.push(await directPluto({action:"cecAllHdmi",index:on?0:1}));
-      }else if(id==="hdbt-all"){
-        outputs.results.push(await directPluto({action:"cecAllHdbt",index:on?0:1}));
-      }else{
-        const cfg=devices[id];
-        const output=Number(p.output||cfg?.avOutput||id.replace(/\D/g,""));
-        if(!output||output<1||output>8)throw new Error(`No Pluto output mapped for ${id}`);
-        outputs.results.push(await directPluto({
-          action:"cecOutput",output,connection:p.connection==="hdmi"?"hdmi":"hdbt",index:on?0:1
-        }));
-      }
+    const tvTargets=expandTvTargets(event.targets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    if(p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
+    for(const target of tvTargets){
+      outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
     }
+    assertAdapterResults(outputs.results,{action:"TV power"});
+    outputs.tvTargets=tvTargets;
   }else if(action==="display.timer.class-end"){
     const ts=automationDisplayTargets(event.targets),cls=event._class||activeAutomationClassAt(event,new Date())||classScheduleById(event.classId)||activeClassAt(new Date());
     if(!cls)throw new Error("No class schedule is available for the class-end timer");
@@ -1437,10 +1420,10 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
       background:p.background||"rgba(0,0,0,.35)",linkedClassIds:chain.classes.map(c=>c.id),linkedClassNames:chain.classes.map(c=>c.name),finalClassId:labelClass.id
     }},commandSource));
   }else if(action==="display.clear"){
-    const ts=automationDisplayTargets(event.targets);
+    const ts=requireAutomationTargets(event.targets,"Display clear");
     outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
   }else if(action==="display.text"){
-    const ts=automationDisplayTargets(event.targets);
+    const ts=requireAutomationTargets(event.targets,"Display text");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
     if(p.background)outputs.results.push(await executeCommand({type:"display.background",target:ts,payload:{color:p.background}},commandSource));
     if(p.title)outputs.results.push(await executeCommand({type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
@@ -1449,13 +1432,13 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
       text:String(p.text||""),color:p.color||"#ffffff",size:Number(p.size||54),position:p.position||"center"
     }},commandSource));
   }else if(action==="display.url"){
-    const ts=automationDisplayTargets(event.targets);
+    const ts=requireAutomationTargets(event.targets,"Display URL");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
     const url=String(p.url||"").trim();
     if(!url)throw new Error("URL is required");
     outputs.results.push(await executeCommand({type:"display.web",target:ts,payload:{url,localDirect:p.localDirect!==false}},commandSource));
   }else if(action==="display.media"){
-    const ts=automationDisplayTargets(event.targets);
+    const ts=requireAutomationTargets(event.targets,"Display media");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
     const name=resolveAutomationMediaName(p);
     const full=path.join(MEDIA_DIR,name);
@@ -1505,7 +1488,7 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
         remainingSeconds=endAt?Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000)):0;
       }
     }else{
-      remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds||600));
+      remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
       endAt=new Date(Date.now()+remainingSeconds*1000);
     }
 
@@ -1665,7 +1648,7 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
       return {ok:true,atZero:true,classId:cls.id,className:cls.name,result};
     }
   }else{
-    remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds||600));
+    remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
     endAt=new Date(Date.now()+remainingSeconds*1000);
   }
 
@@ -1709,65 +1692,9 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   const steps=[{id:"primary",action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{},delaySeconds:0,continueOnError:true},...additional];
   const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[]};
 
-  // alpha.23: every scheduled/manual automation starts from a known display state,
-  // but the pre-clear is TARGET-AWARE. A TV5-only event clears TV5 only; events
-  // spanning display actions clear the union of their effective display targets.
-  // Pure non-display events retain the historical safety behavior and clear all
-  // enabled displays because they have no narrower display scope. Timer overlays are
-  // applied after normal actions and are included when they define an explicit scope.
-  try{
-    const displayScope=new Set();
-    const eventDomain=automationTargetDomain(event.action);
-    for(const step of steps){
-      const stepAction=step?.action||event.action;
-      const stepDomain=automationTargetDomain(stepAction);
-      if(stepDomain!=="display")continue;
-      const explicitTargets=Array.isArray(step?.targets)&&step.targets.length?step.targets:[];
-      let rawTargets;
-      if(step?.useEventTargets!==false && stepDomain===eventDomain)rawTargets=event.targets;
-      else if(explicitTargets.length)rawTargets=explicitTargets;
-      else rawTargets=["all"];
-      // TV aggregate selectors are power-domain aliases; for screen clearing they
-      // correspond to the enabled Classroom Control Hub displays.
-      const normalized=(rawTargets||[]).map(cleanId).map(x=>["hdmi-all","hdbt-all"].includes(x)?"all":x);
-      for(const id of automationDisplayTargets(normalized))displayScope.add(id);
-    }
-    const timer=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-    if(timer?.enabled){
-      const tt=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
-        ? event._classDefaultTargets
-        : (timer.useEventTargets!==false?event.targets:(Array.isArray(timer.targets)&&timer.targets.length?timer.targets:event.targets));
-      for(const id of automationDisplayTargets(tt||[]))displayScope.add(id);
-    }
-    const requestedClearTargets=automationDisplayTargets(displayScope.size?[...displayScope]:["all"]);
-    const lockedClearTargets=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(requestedClearTargets);
-    const lockedClearSet=new Set(lockedClearTargets);
-    const clearTargets=requestedClearTargets.filter(id=>!lockedClearSet.has(id));
-    if(!clearTargets.length&&lockedClearTargets.length){
-      combined.steps.push({index:0,id:"pre-clear",action:"display.clear",targets:[],ok:true,automatic:true,deferred:true,lockedTargets:lockedClearTargets});
-    }else if(clearTargets.length){
-    const clearResult=await runSingleAutomationAction({
-      ...event,
-      action:"display.clear",
-      targets:clearTargets,
-      payload:{},
-      timerOverlay:null
-    },{manual,skipOverlay:true,skipAudit:true});
-    combined.results.push(...(clearResult.results||[]));
-    combined.steps.push({index:0,id:"pre-clear",action:"display.clear",targets:clearTargets,ok:true,automatic:true});
-    }
-  }catch(err){
-    if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-      combined.steps.push({index:0,id:"pre-clear",action:"display.clear",targets:[],ok:true,automatic:true,deferred:true,lockedTargets:err.targets||[]});
-    }else{
-    combined.ok=false;
-    combined.steps.push({index:0,id:"pre-clear",action:"display.clear",targets:[],ok:false,error:err.message,automatic:true});
-    diagnosticError(err,{component:"automation.pre-clear",operation:"display.clear",data:{automationId:event.id}});
-    // Clearing is a safety/reset action; continue so lighting/TV shutdown and other
-    // non-display automation still executes even if a display client is unavailable.
-    }
-  }
-
+  // Resource isolation: no automation implicitly clears display content. Only an
+  // explicit display.clear or a display content action with clearBefore enabled may
+  // replace its own resolved display targets.
   for(let i=0;i<steps.length;i++){
     const step=steps[i]||{};
     const delay=Math.max(0,Number(step.delaySeconds||0));
@@ -1776,30 +1703,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     const stepDomain=automationTargetDomain(stepAction);
     const eventDomain=automationTargetDomain(event.action);
     const explicitTargets=Array.isArray(step.targets)&&step.targets.length ? step.targets : [];
+    let rawTargets=[];
+    if(step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=event.targets||[];
+    else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
+    else if(explicitTargets.length)rawTargets=explicitTargets;
     let resolvedTargets;
-    if(step.useEventTargets!==false && stepDomain===eventDomain){
-      resolvedTargets=event.targets;
-    }else if(stepDomain==="display"&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length){
-      // Class-default display targets are a display-domain policy, not a property
-      // of the primary action. This also applies to display steps inside lighting-
-      // led or TV-power automations.
-      resolvedTargets=event._classDefaultTargets;
-    }else if(explicitTargets.length){
-      resolvedTargets=explicitTargets;
-    }else if(stepDomain==="display"){
-      // Safe default for legacy cross-domain actions created before alpha.17.
-      resolvedTargets=["all"];
-    }else if(stepDomain==="lighting"){
-      // Prefer the canonical ALL Govee group; otherwise execute against every known lighting device.
-      resolvedTargets=goveeGroups.all?["all"]:Object.keys(goveeDevices);
-    }else{
-      resolvedTargets=[];
-    }
+    if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
+    else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
+    else resolvedTargets=[...rawTargets];
     let lockedTargets=[];
-    if(stepDomain==="display"&&!bypassAnnouncementPriority){
+    if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
       lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
       const lockedSet=new Set(lockedTargets);
-      resolvedTargets=automationDisplayTargets(resolvedTargets).filter(id=>!lockedSet.has(id));
+      resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
       if(!resolvedTargets.length&&lockedTargets.length){
         combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
         continue;
@@ -1807,6 +1723,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
     const stepEvent={...event,action:stepAction,payload:step.payload||{},targets:resolvedTargets,timerOverlay:null};
     try{
+      if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
       const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
       combined.results.push(...(result.results||[]));
       combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
@@ -3610,6 +3527,11 @@ function physicalDisplayState(id){
   if(state?.media?.protectedUrl==="morning-announcements")state.media.url=announcementsPlaybackUrl();
   return state;
 }
+function previewDisplayState(id){
+  const state=publicProjection(persistentState.displays[id]||null);
+  if(state?.media?.protectedUrl==="morning-announcements")state.media={type:"protected-preview",protectedUrl:"morning-announcements",label:"Morning Announcements / Herd TV is active on this display"};
+  return state;
+}
 
 function publicRuntime() {
   const now = Date.now();
@@ -5214,6 +5136,32 @@ app.delete("/api/v1/class-schedules/:id",requireCapability("schedule.manage"),(r
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 
+function evaluateAutomationAt(now=schedulerClock.now()){
+  const suppression=isAutomationSuppressed(now),dateKey=localDateKey(now),items=[];
+  for(const stored of classroomAutomations.events){
+    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored];
+    for(const event of occurrences){
+      const match=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
+      items.push({automationId:stored.id,name:stored.name,enabled:stored.enabled!==false,time:event.time,classId:event.classId||null,match:!!match.match,suppressed:!!suppression.blocked,reason:suppression.blocked?suppression.reason:(match.reason||null),targets:event.targets||[],actions:[event.action,...(event.actions||[]).map(step=>step.action)]});
+    }
+  }
+  return {observedAt:new Date().toISOString(),schedulerTime:now.toISOString(),schoolCycle:schoolCycleForDate(now),suppression,items};
+}
+async function reconcileScheduledAutomationState(reason="operator-resume"){
+  const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
+  if(suppression.blocked)return {ok:true,skipped:true,reason:suppression.reason,schedulerTime:now.toISOString()};
+  if(morningAnnouncementsRuntime.active)return {ok:true,deferred:true,reason:"Morning Announcements have priority",targets:[...(morningAnnouncementsRuntime.targets||[])]};
+  const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason);
+  await backgroundMusicTick();
+  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0});
+  return {ok:!display.results?.some(item=>item.ok===false),reason,schedulerTime:now.toISOString(),display,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
+}
+app.get("/api/v1/automation-control",requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
+app.put("/api/v1/automation-control",requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
+app.post("/api/v1/automation-control/resume",requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
+app.post("/api/v1/automation-control/simulation",requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
+app.get("/api/v1/automation-control/evaluate",requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
+
 app.get("/api/v1/automations",requireClassroomRead,(_req,res)=>{
   res.json({ok:true,events:[...classroomAutomations.events].sort(compareAutomations).map(e=>({...e,resolved:resolveAutomationFromClass(e),resolvedOccurrences:resolveAutomationOccurrences(e)})),scheduler:schedulerStatus(),actions:[
     "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
@@ -5257,6 +5205,7 @@ app.post("/api/v1/automations/:id/duplicate",requireCapability("automation.manag
       ...source,
       id:undefined,
       name:String(req.body?.name||`${source.name} - Copy`),
+      enabled:false,
       lastRun:null,
       lastExec:null,
       createdAt:undefined,
@@ -7031,7 +6980,7 @@ wss.on("connection", (ws, req) => {
             deviceId,
             room: deviceConfig.room || ROOM_NAME,
             config: devices[deviceId],
-            state: publicProjection(persistentState.displays[deviceId] || null),
+            state: previewDisplayState(deviceId),
             displayGatewayHosts:DISPLAY_GATEWAY_HOSTS
           });
           return;
@@ -7378,86 +7327,90 @@ const backgroundMusicTimer=setInterval(()=>backgroundMusicTick().catch(error=>di
 const backgroundMusicStartupTimer=setTimeout(()=>backgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-startup"})),3500);backgroundMusicStartupTimer.unref();
 
 // Unified Classroom Automation scheduler
-// Uses configured classroom timezone and a short restart/outage catch-up window.
+// Discovery is short/non-blocking. Each due occurrence is durably claimed before
+// execution and may wait independently without blocking other scheduled work.
 let automationSchedulerBusy=false;
-setInterval(async()=>{
-  if(fullExportFreeze.requested)return;
-  if(automationSchedulerBusy)return;automationSchedulerBusy=true;
+const automationRunningOccurrences=new Map();
+async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}){
+  const id=occurrenceId(event,dateKey,event.time);
+  automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"running",schedulerTime:schedulerClock.now().toISOString()});
   try{
-  const now=new Date();
-  const dateKey=localDateKey(now);
-  const nowMinutes=now.getHours()*60+now.getMinutes();
-  let changed=false;
-
-  for(const storedEvent of classroomAutomations.events){
-    if(!storedEvent?.enabled)continue;
-    const referenceDates=[-1,0,1].map(offset=>{const d=new Date(now);d.setDate(d.getDate()+offset);return d});
-    const occurrences=automationClassIds(storedEvent).length
-      ? referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(storedEvent,referenceDate)).filter(event=>event._scheduledDateKey===dateKey)
-      : [storedEvent];
-    for(const event of occurrences){
-      const dateMatch=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
-      if(!dateMatch.match)continue;
-      const [eventHour,eventMinute]=String(event.time||"00:00").split(":").map(Number);
-      const scheduledMinutes=eventHour*60+eventMinute,deltaMinutes=nowMinutes-scheduledMinutes;
-      if(deltaMinutes<0||deltaMinutes>SCHEDULER_CATCHUP_MINUTES)continue;
-      const occurrenceKey=event.classId||"manual";
-      const scheduledMinuteKey=`${dateKey} ${event.time}`;
-      storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-      if(storedEvent.lastExecByClass[occurrenceKey]===scheduledMinuteKey)continue;
-      if(morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([...automationDeferredDisplayTargets(event)]).length){
-        // Record the display portion for post-announcement resync, but continue
-        // executing non-conflicting lighting/TV actions. runClassroomAutomation
-        // filters locked display targets again before every delivery.
-        queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes);changed=true;
-      }
-      storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;
-      storedEvent.lastExec=scheduledMinuteKey;changed=true;
-      try{
-        const runResult=await runClassroomAutomation(event);
-        storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(runResult)}};
-      }catch(err){
-        storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:false,message:err.message};
-        audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
-      }
-      storedEvent.updatedAt=new Date().toISOString();
-    }
+    const runResult=await runClassroomAutomation(event);
+    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(runResult)}};
+    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
+  }catch(err){
+    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:false,message:err.message};
+    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"failed",schedulerTime:schedulerClock.now().toISOString(),error:err.message});
+    audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
+  }finally{
+    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);
   }
-  if(changed)persistAutomations();
+}
+async function automationSchedulerTick(){
+  if(fullExportFreeze.requested||automationSchedulerBusy||!automationSchedulerEnabled)return;
+  const clockStatus=schedulerClock.status();
+  if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
+  automationSchedulerBusy=true;
+  try{
+    const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
+    if(suppression.blocked)return;
+    const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes();
+    for(const storedEvent of classroomAutomations.events){
+      if(!storedEvent?.enabled)continue;
+      const referenceDates=[-1,0,1].map(offset=>{const d=new Date(now);d.setDate(d.getDate()+offset);return d});
+      const occurrences=automationClassIds(storedEvent).length
+        ? referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(storedEvent,referenceDate)).filter(event=>event._scheduledDateKey===dateKey)
+        : [storedEvent];
+      for(const event of occurrences){
+        const dateMatch=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
+        if(!dateMatch.match||isAutomationSuppressed(now).blocked)continue;
+        const [eventHour,eventMinute]=String(event.time||"00:00").split(":").map(Number);
+        const scheduledMinutes=eventHour*60+eventMinute,deltaMinutes=nowMinutes-scheduledMinutes;
+        if(deltaMinutes<0||deltaMinutes>SCHEDULER_CATCHUP_MINUTES)continue;
+        const occurrenceKey=event.classId||"manual",scheduledMinuteKey=`${dateKey} ${event.time}`;
+        storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
+        if(storedEvent.lastExecByClass[occurrenceKey]===scheduledMinuteKey)continue;
+        const id=occurrenceId(event,dateKey,event.time);
+        const claim=automationRunLedger.claim(id,{automationId:storedEvent.id,classId:event.classId||null,schedulerTime:now.toISOString()});
+        if(!claim.claimed)continue;
+        if(morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([...automationDeferredDisplayTargets(event)]).length)queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes);
+        storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;storedEvent.lastExec=scheduledMinuteKey;storedEvent.updatedAt=new Date().toISOString();persistAutomations();
+        const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
+        automationRunningOccurrences.set(id,task);task.catch(()=>{});
+      }
+    }
   }catch(error){diagnosticError(error,{component:"automation",operation:"scheduler-tick"})}
   finally{automationSchedulerBusy=false}
-},15000);
+}
+const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
 
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
-// Direct Pluto schedule executor (replaces Node-RED schedule tick)
+// They share the same scheduler policy and Morning Announcements power reservation.
 let legacyPlutoSchedulerBusy=false;
-setInterval(async()=>{
-  if(fullExportFreeze.requested)return;
-  if(legacyPlutoSchedulerBusy)return;legacyPlutoSchedulerBusy=true;
+const legacyPlutoSchedulerTimer=setInterval(async()=>{
+  if(fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
+  const clockStatus=schedulerClock.status();if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
+  legacyPlutoSchedulerBusy=true;
   try{
-  const now=new Date(),hhmm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
-  const day=now.getDay(),minuteKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${hhmm}`;
-  let changed=false;
-  if(isAutomationSuppressed(now).blocked)return;
-  for(const sch of Object.values(plutoSchedules)){
-    if(!sch?.enabled||!Array.isArray(sch.days)||!sch.days.map(Number).includes(day))continue;
-    sch.lastExec=sch.lastExec||{};sch.lastRun=sch.lastRun||{};
-    for(const [kind,time,index] of [["on",sch.onTime,0],["off",sch.offTime,1]]){
-      if(time===hhmm&&sch.lastExec[kind]!==minuteKey){
+    const now=schedulerClock.now(),hhmm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+    const day=now.getDay(),minuteKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${hhmm}`;
+    let changed=false;if(isAutomationSuppressed(now).blocked)return;
+    for(const sch of Object.values(plutoSchedules)){
+      if(!sch?.enabled||!Array.isArray(sch.days)||!sch.days.map(Number).includes(day))continue;
+      sch.lastExec=sch.lastExec||{};sch.lastRun=sch.lastRun||{};
+      for(const [kind,time,index] of [["on",sch.onTime,0],["off",sch.offTime,1]]){
+        if(time!==hhmm||sch.lastExec[kind]===minuteKey)continue;
+        const displayId=Object.keys(devices).find(id=>Number(devices[id]?.avOutput)===Number(sch.index));
+        if(displayId&&morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([displayId]).length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${displayId}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
         sch.lastExec[kind]=minuteKey;
-        try{
-          await directPluto({action:"cecOutput",output:Number(sch.index),connection:sch.type,index});
-          sch.lastRun={text:`${kind==="on"?"On":"Off"} ${now.toLocaleString()}`,stamp:Date.now(),ok:true};
-        }catch(e){
-          sch.lastRun={text:`ERROR ${now.toLocaleString()}: ${e.message}`,stamp:Date.now(),ok:false};
-        }
+        try{const result=await directPluto({action:"cecOutput",output:Number(sch.index),connection:sch.type,index});assertAdapterResults([result],{action:"Legacy TV power"});sch.lastRun={text:`${kind==="on"?"On":"Off"} ${now.toLocaleString()}`,stamp:Date.now(),ok:true}}
+        catch(e){sch.lastRun={text:`ERROR ${now.toLocaleString()}: ${e.message}`,stamp:Date.now(),ok:false}}
         changed=true;
       }
     }
-  }
-  if(changed)persistPlutoSchedules();
+    if(changed)persistPlutoSchedules();
   }finally{legacyPlutoSchedulerBusy=false}
-},15000);
+},15000);legacyPlutoSchedulerTimer.unref();
 
 connectMqtt();
 
@@ -7478,7 +7431,7 @@ function gracefulShutdown(signal){
   if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
   veyonCommandQueue.stop();
   esphomeManager.close();
-  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
+  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
   for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
   try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};
   const force=setTimeout(()=>process.exit(1),10000);force.unref();

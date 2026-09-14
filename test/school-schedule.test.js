@@ -46,3 +46,15 @@ test("legacy behavior is isolated to imported profiles",()=>{
   assert.equal(imported.continuation.legacyBisonCompatibility,true);
   assert.equal(fresh.continuation.legacyBisonCompatibility,false);
 });
+
+
+test("exception transforms reject inverted and zero-length school days",()=>{
+  assert.throws(()=>normalizeSchoolScheduleProfile({
+    cycleDays:["A"],dayGroups:[{id:"a",label:"A",cycleDays:["A"]}],
+    exceptionRules:{delay:{transform:{normalStart:"08:00",normalEnd:"15:00",delayedStart:"15:00"}}}
+  }),/delayed start must be before normal end/);
+  assert.throws(()=>normalizeSchoolScheduleProfile({
+    cycleDays:["A"],dayGroups:[{id:"a",label:"A",cycleDays:["A"]}],
+    exceptionRules:{delay:{transform:{normalStart:"15:00",normalEnd:"08:00",delayedStart:"07:00"}}}
+  }),/normal start must be before normal end/);
+});

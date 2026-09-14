@@ -100,7 +100,7 @@ function showLabConsole(kind){
   const active=windows?wf:vf;if(!active.src)active.src=active.dataset.lazySrc;
   labConsoleHelp.textContent=windows?'The Windows agent provides enrolled-computer inventory, screenshots, browser-history review, and supported power/session commands.':'Veyon monitoring uses the configured Veyon WebAPI integration.';
 }
-function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media')loadMedia();if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
+function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media')loadMedia();if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 
 function overviewContentSummary(state={}){
@@ -972,7 +972,7 @@ function newClassSchedule(){
   classContinuationOf.value='';
   classStart.value='08:00';classEnd.value='09:00';renderClassDefaultTargets(['all']);classNotes.value='';
   classScheduleMode.value='schoolcycle';
-  currentClassEdit={days:[1,2,3,4,5],scheduleMode:'schoolcycle',alternatePhase:'A',anchorDate:S.scheduleProfile?.anchorDate||'',cycleDays:[],dayType:'Any'};
+  currentClassEdit={days:[1,2,3,4,5],scheduleMode:'schoolcycle',alternatePhase:'A',anchorDate:S.scheduleProfile?.anchorDate||'',cycleDays:[],dayType:'Any',enabled:true};
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Add Class';classEditorMsg.textContent='';
 }
 function editClassSchedule(id){
@@ -981,7 +981,7 @@ function editClassSchedule(id){
   classContinuationOf.value=x.continuationOf||'';
   classStart.value=x.startTime;classEnd.value=x.endTime;renderClassDefaultTargets(x.defaultTargets?.length?x.defaultTargets:['all']);
   classNotes.value=x.notes||'';classScheduleMode.value=x.scheduleMode||'schoolcycle';
-  currentClassEdit={days:x.days||[1,2,3,4,5],scheduleMode:x.scheduleMode||'schoolcycle',alternatePhase:x.alternatePhase||'A',anchorDate:x.anchorDate||S.scheduleProfile?.anchorDate||'',cycleDays:x.cycleDays||periodPresetCycleDays(x.period),dayType:x.dayType||cycleDayColor(x.cycleDays||[])};
+  currentClassEdit={days:x.days||[1,2,3,4,5],scheduleMode:x.scheduleMode||'schoolcycle',alternatePhase:x.alternatePhase||'A',anchorDate:x.anchorDate||S.scheduleProfile?.anchorDate||'',cycleDays:x.cycleDays||periodPresetCycleDays(x.period),dayType:x.dayType||cycleDayColor(x.cycleDays||[]),enabled:x.enabled!==false};
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Edit Class';
 }
 async function saveClassSchedule(){
@@ -995,7 +995,7 @@ async function saveClassSchedule(){
       alternatePhase:mode==='alternating'?(document.getElementById('classAlternatePhase')?.value||'A'):'A',
       anchorDate:S.scheduleProfile?.anchorDate||'',
       dayType:mode==='schoolcycle'?(document.getElementById('classDayType')?.value||cycleDayColor(cycleDays)):(mode==='alternating'?scheduleGroup(document.getElementById('classAlternatePhase')?.value==='B'?1:0).label:'Any'),
-      cycleDays,defaultTargets:selectedClassDefaultTargets(),notes:classNotes.value,enabled:true
+      cycleDays,defaultTargets:selectedClassDefaultTargets(),notes:classNotes.value,enabled:currentClassEdit.enabled!==false
     };
     if(!body.name)throw Error('Class name is required');
     if(mode==='schoolcycle'&&!cycleDays.length)throw Error('Select at least one Cycle Day or choose a Period preset.');
@@ -1018,7 +1018,25 @@ async function duplicateClassSchedule(id){
   }catch(e){alert(e.message)}
 }
 
-function automationResolvedTime(cls,ref,offset){const t=ref==='end'?cls.endTime:cls.startTime;let [h,m]=t.split(':').map(Number),mins=h*60+m+Number(offset||0);mins=((mins%1440)+1440)%1440;return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`}
+let AUTOMATION_CONTROL=null;
+async function loadAutomationControl(){
+  try{const j=await api('/api/v1/automation-control');AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){if(window.automationControlSummary)automationControlSummary.textContent=`Scheduler control error: ${e.message}`}
+}
+function paintAutomationControl(j={}){
+  if(!window.automationControlSummary)return;const clock=j.clock||{},mode=clock.active?'TEST CLOCK':'Real time';automationControlSummary.textContent=`${j.enabled!==false?'Automatic runs ON':'Automatic runs PAUSED'} • ${mode} • ${clock.schedulerTime?new Date(clock.schedulerTime).toLocaleString():''}`;
+  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);
+  automationSimulationBanner.textContent=clock.active?`TEST CLOCK ACTIVE — ${new Date(clock.schedulerTime).toLocaleString()} • ${clock.liveCommands?'REAL DEVICE COMMANDS ENABLED':'dry-run only'}`:'';
+  automationSimulationBanner.className=`status ${clock.active?(clock.liveCommands?'bad':'warn'):''}`;
+}
+async function toggleAutomationScheduler(){try{const j=await api('/api/v1/automation-control',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:AUTOMATION_CONTROL?.enabled===false})});AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){notify(e.message,'error')}}
+async function resumeScheduledAutomation(){try{const j=await api('/api/v1/automation-control/resume',{method:'POST'});notify(j.deferred?j.reason:'Scheduled state reconciled.',j.ok===false?'error':'success');await Promise.all([loadAutomationControl(),refreshOverview()])}catch(e){notify(e.message,'error')}}
+function simulatedIsoFromInput(){const v=automationSimulatedTime.value;if(!v)throw Error('Choose a simulated date and time.');const d=new Date(v);if(Number.isNaN(d.getTime()))throw Error('Simulated date/time is invalid.');return d.toISOString()}
+async function applyAutomationSimulation(){try{const j=await api('/api/v1/automation-control/simulation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedulerTime:simulatedIsoFromInput(),liveCommands:automationSimulationLive.value==='1',liveMinutes:15})});AUTOMATION_CONTROL=j;paintAutomationControl(j);paintAutomationEvaluation(j.evaluation)}catch(e){notify(e.message,'error')}}
+async function clearAutomationSimulation(){try{const j=await api('/api/v1/automation-control/simulation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:false})});AUTOMATION_CONTROL=j;paintAutomationControl(j);automationSimulationResults.textContent=''}catch(e){notify(e.message,'error')}}
+async function evaluateAutomationSimulation(){try{paintAutomationEvaluation(await api('/api/v1/automation-control/evaluate'))}catch(e){notify(e.message,'error')}}
+function paintAutomationEvaluation(j={}){if(!window.automationSimulationResults)return;const items=(j.items||[]).filter(x=>x.enabled);automationSimulationResults.innerHTML=`<b>${esc(j.schoolCycle?.reason||j.schoolCycle?.dayColor||'Schedule')}</b> • ${esc(j.suppression?.blocked?`Suppressed: ${j.suppression.reason}`:'Automatic actions eligible')}<br>`+items.slice(0,30).map(x=>`${esc(x.time||'')} • ${esc(x.name)} — ${x.suppressed||!x.match?'SKIP':'MATCH'}${x.reason?' • '+esc(x.reason):''}`).join('<br>')}
+
+function automationResolvedTime(cls,ref,offset){const n=Number(offset||0);if(!Number.isInteger(n))return 'Invalid whole-minute offset';const t=ref==='end'?cls.endTime:cls.startTime;let [h,m]=t.split(':').map(Number),mins=h*60+m+n;mins=((mins%1440)+1440)%1440;return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`}
 function renderAutomationClassBinding(){
   const ids=selectedAutomationClassIds(),classes=ids.map(id=>S.classes.find(x=>x.id===id)).filter(Boolean);
   const linked=classes.length>0;
