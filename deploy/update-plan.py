@@ -16,10 +16,11 @@ def run(*args):
 
 def category(path):
     # Schema/startup identity and deployment changes require the complete installer.
-    if path in ('src/storage.js', 'src/startup-recovery.js', 'VERSION', 'package.json',
+    if path in ('src/storage.js', 'src/startup-recovery.js', 'src/direct-display-compat.js',
+                'Dockerfile', 'maintenance-agent/Dockerfile', 'VERSION', 'package.json',
                 'package-lock.json', '.dockerignore') or path.startswith(('config/', 'deploy/')):
         return 'full'
-    if path.startswith(('src/', 'public/')) or path in ('Dockerfile', 'test/esphome_worker_test.py',
+    if path.startswith(('src/', 'public/')) or path in ('test/esphome_worker_test.py',
             'tools/prepare-display-fonts.sh', 'tools/verify-image-permissions.js'):
         return 'hub'
     if path.startswith(('maintenance-agent/', 'agents/android-tv/')):

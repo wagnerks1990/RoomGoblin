@@ -319,6 +319,8 @@ rollback(){
     rollback_ok=false
   fi
   appliance_health_check "$CURRENT_VERSION" || rollback_ok=false
+  [[ "$(docker inspect --format '{{.Image}}' classroom-control-hub)" == "$CURRENT_HUB_IMAGE" ]] || rollback_ok=false
+  [[ "$(docker inspect --format '{{.Image}}' classroom-control-hub-maintenance)" == "$CURRENT_MAINTENANCE_IMAGE" ]] || rollback_ok=false
   if [[ "$rollback_ok" == true ]]; then
     set_state_fields "rollback=true" "activeCommit=$CURRENT_COMMIT" "activeVersion=$CURRENT_VERSION"
     write_state rolled-back "Update failed and the previous version was restored successfully." false

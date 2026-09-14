@@ -22,6 +22,7 @@ function fixture(t,files=['public/change.js']){
  command('git',`if [[ "$1" == fetch ]]; then exit 0; fi\nexec ${realGit} "$@"`);
  command('docker',`echo "$*" >> "$EVENTS"
 if [[ "$1" == pull && "$FAIL_PULL" == 1 ]]; then exit 1; fi
+if [[ "$1 $2 $3" == "compose stop classroom-hub" && "$FAIL_STOP" == 1 ]]; then exit 1; fi
 if [[ "$1" == inspect ]]; then
  if [[ "$*" == *classroom-control-hub-maintenance* ]]; then key=maintenance; else key=hub; fi
  if [[ -f "$FIXTURE/$key-new" ]]; then echo '${newId}'; else echo '${oldId}'; fi
@@ -37,8 +38,8 @@ elif [[ "$1 $2" == 'compose up' ]]; then
  if [[ "$KILL_DEPLOY" == 1 ]]; then kill -KILL "$PPID"; exit 1; fi
  if [[ "$FAIL_DEPLOY" == 1 && ! -f "$FIXTURE/failed" ]]; then touch "$FIXTURE/failed"; exit 1; fi
  if [[ "$*" == *'--no-start'* ]]; then exit 0; fi
- if [[ "$*" == *maintenance-agent* ]]; then touch "$FIXTURE/maintenance-new"; fi
- if [[ "$*" == *classroom-hub* ]]; then touch "$FIXTURE/hub-new"; fi
+ if [[ "$*" == *maintenance-agent* ]]; then if grep -q "^ROOMGOBLIN_MAINTENANCE_TAG=recovery-" .env; then rm -f "$FIXTURE/maintenance-new"; else touch "$FIXTURE/maintenance-new"; fi; fi
+ if [[ "$*" == *classroom-hub* ]]; then if grep -q "^ROOMGOBLIN_HUB_TAG=recovery-" .env; then rm -f "$FIXTURE/hub-new"; else touch "$FIXTURE/hub-new"; fi; fi
 elif [[ "$1 $2" == 'volume inspect' && "$*" == *Mountpoint* ]]; then echo "$FIXTURE/volumes/classroom-control-hub-android-adb/_data"
 fi
 exit 0`.replace('$BASE',base).replace('$TARGET',target));
@@ -90,4 +91,9 @@ test('interrupted deployment rolls back its durable journal before any new pull'
  assert.equal(JSON.parse(fs.readFileSync(f.state+'/app-update-request.json')).mutationStarted,'true');
  const second=f.run({},true);assert.notEqual(second.status,0);assert.equal(f.git('rev-parse','HEAD'),f.base);assert.doesNotMatch(second.events.slice(first.events.length),/^pull /m);
  assert.equal(JSON.parse(fs.readFileSync(f.state+'/app-update-status.json')).phase,'rolled-back');
+});
+
+test('rollback refuses data restoration when the application writer cannot stop',t=>{
+ const f=fixture(t),r=f.run({FAIL_DEPLOY:'1',FAIL_STOP:'1'});assert.notEqual(r.status,0);assert.doesNotMatch(r.events,/BACKUP_NAME=/);
+ assert.equal(JSON.parse(fs.readFileSync(f.state+'/app-update-status.json')).phase,'rollback-failed');assert.equal(fs.existsSync(f.state+'/app-update-request.json'),true);
 });

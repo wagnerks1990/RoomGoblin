@@ -21,7 +21,7 @@ test('selective planner separates Hub, maintenance/Android, and native host inpu
  }
 });
 test('deployment, schema, version, unknown inputs and configuration drift force full reconciliation',()=>{
- for(const paths of [['docker-compose.yml'],['src/storage.js'],['VERSION'],['config/devices.json'],['host-agent/app-update-runner.sh'],['unknown-input'],['.github/workflows/validate.yml']])assert.equal(plan(paths).full,true,paths[0]);
+ for(const paths of [['Dockerfile'],['maintenance-agent/Dockerfile'],['src/direct-display-compat.js'],['docker-compose.yml'],['src/storage.js'],['VERSION'],['config/devices.json'],['host-agent/app-update-runner.sh'],['unknown-input'],['.github/workflows/validate.yml']])assert.equal(plan(paths).full,true,paths[0]);
  for(const options of [{layout:false},{force:true},{missing:true},{revisions:{hub:'',maintenance:a,host:a}}])assert.equal(plan([] ,options).full,true);
 });
 test('mixed running revisions are compared individually, never just to source HEAD',()=>{
