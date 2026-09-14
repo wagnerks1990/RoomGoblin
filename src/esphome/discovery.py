@@ -14,6 +14,7 @@ from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZerocon
 
 SERVICE = "_esphomelib._tcp.local."
 MAX_RESULTS = 128
+RESOLVE_CONCURRENCY = 16
 PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in (
     "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"
 ))
@@ -56,34 +57,40 @@ async def scan(window=2.5):
     browser = AsyncServiceBrowser(zeroconf.zeroconf, [SERVICE], handlers=[changed])
     try:
         await asyncio.sleep(window)
-        results = []
-        for name in sorted(names)[:MAX_RESULTS]:
-            info = AsyncServiceInfo(SERVICE, name)
-            with suppress(Exception):
-                if not await info.async_request(zeroconf.zeroconf, 900):
-                    continue
-                addresses = [item for item in info.parsed_addresses(IPVersion.All) if private_address(item)]
-                if not addresses:
-                    continue
-                props = decode_properties(info.properties)
-                mac = props.get("mac", "").lower().replace("-", ":")
-                if mac and not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
-                    mac = ""
-                host = str(info.server or "").rstrip(".")[:253]
-                results.append({
-                    "name": clean_instance(name),
-                    "host": host,
-                    "addresses": addresses[:8],
-                    "port": int(info.port or 6053),
-                    "mac": mac,
-                    "version": props.get("version", ""),
-                    "platform": props.get("platform", ""),
-                    "board": props.get("board", ""),
-                    "apiEncryption": props.get("api_encryption", ""),
-                })
-        return results
+        semaphore = asyncio.Semaphore(RESOLVE_CONCURRENCY)
+
+        async def resolve(name):
+            async with semaphore:
+                info = AsyncServiceInfo(SERVICE, name)
+                try:
+                    if not await info.async_request(zeroconf.zeroconf, 900):
+                        return None
+                    addresses = [item for item in info.parsed_addresses(IPVersion.All) if private_address(item)]
+                    if not addresses:
+                        return None
+                    props = decode_properties(info.properties)
+                    mac = props.get("mac", "").lower().replace("-", ":")
+                    if mac and not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
+                        mac = ""
+                    return {
+                        "name": clean_instance(name),
+                        "host": str(info.server or "").rstrip(".")[:253],
+                        "addresses": addresses[:8],
+                        "port": int(info.port or 6053),
+                        "mac": mac,
+                        "version": props.get("version", ""),
+                        "platform": props.get("platform", ""),
+                        "board": props.get("board", ""),
+                        "apiEncryption": props.get("api_encryption", ""),
+                    }
+                except Exception:
+                    return None
+
+        resolved = await asyncio.gather(*(resolve(name) for name in sorted(names)[:MAX_RESULTS]))
+        return [item for item in resolved if item is not None]
     finally:
-        await browser.async_cancel()
+        with suppress(Exception):
+            await browser.async_cancel()
         await zeroconf.async_close()
 
 
