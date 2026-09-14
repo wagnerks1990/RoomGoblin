@@ -42,7 +42,8 @@ COPY src ./src
 # Run native-client contract tests in the exact Python/runtime image being shipped.
 # Test sources are removed from the final image and do not touch physical devices.
 COPY test/esphome_worker_test.py ./test/esphome_worker_test.py
-RUN PYTHONDONTWRITEBYTECODE=1 /opt/esphome/bin/python -m unittest discover -s test -p esphome_worker_test.py -v \
+COPY test/esphome_worker_entry_test.py ./test/esphome_worker_entry_test.py
+RUN PYTHONDONTWRITEBYTECODE=1 /opt/esphome/bin/python -m unittest discover -s test -p 'esphome_worker*_test.py' -v \
  && rm -rf /app/test
 COPY config ./config
 COPY public ./public
