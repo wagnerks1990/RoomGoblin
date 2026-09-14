@@ -30,9 +30,9 @@ The old script follows `main`. Install the new script once from the published
 branch, then use the normal command above for subsequent updates:
 
 ```bash
-cd /opt/classroom-hub
-git fetch origin +refs/heads/production:refs/remotes/origin/production
-git merge --ff-only origin/production
+cd /opt/classroom-hub &&
+git fetch origin +refs/heads/production:refs/remotes/origin/production &&
+git merge --ff-only origin/production &&
 sudo bash deploy/update-production.sh
 ```
 
