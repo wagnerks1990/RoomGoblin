@@ -1315,8 +1315,11 @@ function normalizeAutomation(input={},existing={}){
           // automation instead of reusing generic step-1/step-2 identifiers.
           id:`${id.slice(0,60)}-step-${index+1}`,
           action:stepAction,
-          targets:Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[],
           useEventTargets:item?.useEventTargets!==false,
+          targets:(()=>{
+            const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
+            return selected.length||item?.useEventTargets!==false?selected:defaultAutomationActionTargets(stepAction);
+          })(),
           payload:(item?.payload&&typeof item.payload==="object")?item.payload:{},
           delaySeconds:Math.max(0,Math.min(3600,delaySeconds)),
           continueOnError:item?.continueOnError!==false
@@ -1336,6 +1339,10 @@ function normalizeAutomation(input={},existing={}){
 
 function automationTargetDomain(action){
   return actionResourceDomain(action);
+}
+
+function defaultAutomationActionTargets(action){
+  return ["display-content","display-overlay","tv-power","lighting"].includes(automationTargetDomain(action))?["all"]:[];
 }
 
 function automationDisplayTargets(targets){
@@ -1401,10 +1408,18 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
 
   if(action==="tv.power"){
     const on=String(p.state||"on").toLowerCase()==="on";
-    const tvTargets=expandTvTargets(event.targets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
-    if(p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
-    for(const target of tvTargets){
-      outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
+    const requestedTargets=Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[];
+    const broadcastTarget=p.output===undefined&&requestedTargets.length===1?requestedTargets[0]:null;
+    const broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
+    const tvTargets=expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    if(broadcastAction){
+      // Match the proven Room controls path for the explicit all-TV selectors.
+      outputs.results.push(await directPluto({action:broadcastAction,index:on?0:1}));
+    }else{
+      if(p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
+      for(const target of tvTargets){
+        outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
+      }
     }
     assertAdapterResults(outputs.results,{action:"TV power"});
     outputs.tvTargets=tvTargets;
@@ -1712,6 +1727,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     if(step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=event.targets||[];
     else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
     else if(explicitTargets.length)rawTargets=explicitTargets;
+    else rawTargets=defaultAutomationActionTargets(stepAction);
     let resolvedTargets;
     if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
     else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
