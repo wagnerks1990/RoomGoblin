@@ -20,8 +20,11 @@ jobs:
   gate:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Wait for every required validation workflow
         env:
@@ -29,7 +32,7 @@ jobs:
           VALIDATED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          required=('Validate' 'Display browser regression' 'Android TV Display Agent' 'Restrictive image permissions' 'Security gates')
+          required=('Validate' 'Display browser regression' 'Security gates')
           for attempt in $(seq 1 60); do
             runs="$(gh api -H 'Accept: application/vnd.github+json' "/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${VALIDATED_SHA}&event=push&per_page=100")"
             missing=()
@@ -59,6 +62,7 @@ jobs:
   build:
     needs: gate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -100,6 +104,7 @@ jobs:
       packages: write
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     concurrency:
       group: publish-main-alpha-promotion
       cancel-in-progress: false

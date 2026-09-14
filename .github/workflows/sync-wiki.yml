@@ -13,12 +13,26 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
+      - name: Skip stale mirror snapshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA" || {
+            echo 'A newer main commit exists; synchronize its mirror instead.'
+            git fetch origin main
+            git checkout --detach FETCH_HEAD
+          }
       - name: Configure Git identity
         run: |
           git config --global user.name 'github-actions[bot]'

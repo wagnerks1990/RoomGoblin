@@ -35,10 +35,12 @@ test("validated main images publish under canonical and legacy aliases",()=>{
     assert.match(main,new RegExp(`ghcr\\.io/wagnerks1990/${image}`));
   const releases=fs.readFileSync(".github/workflows/docker-publish.yml","utf8");
   assert.match(main,/org\.opencontainers\.image\.revision=\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
-  assert.match(releases,/ghcr\.io\/\$\{\{ github\.repository \}\}/);
-  assert.match(releases,/ghcr\.io\/wagnerks1990\/classroom-control-hub/);
-  assert.match(releases,/ghcr\.io\/\$\{\{ github\.repository \}\}-maintenance/);
-  assert.match(releases,/ghcr\.io\/wagnerks1990\/classroom-control-hub-maintenance/);
+  assert.match(releases,/for image in roomgoblin roomgoblin-maintenance/);
+  assert.match(releases,/legacy=classroom-control-hub/);
+  assert.match(releases,/legacy=classroom-control-hub-maintenance/);
+  assert.match(releases,/roomgoblin_wait_image_pair/);
+  assert.match(releases,/docker buildx imagetools create/);
+  assert.doesNotMatch(releases,/docker build |build-push-action/);
 });
 
 test("image identity rejects a correct-version image built from another commit",t=>{
@@ -57,7 +59,7 @@ test("image identity rejects a correct-version image built from another commit",
 test("main image publication waits for all independent validation jobs",()=>{
   const workflow=fs.readFileSync(".github/workflows/publish-main-images.yml","utf8");
   assert.match(workflow,/checks: read/);
-  for(const name of ["Validate","Display browser regression","Android TV Display Agent","Restrictive image permissions"])
+  for(const name of ["Validate","Display browser regression","Security gates"])
     assert.ok(workflow.includes(name),`missing workflow-identity gate: ${name}`);
   assert.match(workflow,/state="\$\(jq -r/);
   assert.match(workflow,/failure\|cancelled\|timed_out\|action_required\|stale\|skipped/);
@@ -81,16 +83,16 @@ test("mutable alpha aliases have one guarded owner after both immutable images p
 });
 
 test("dependency audits block moderate and higher findings",()=>{
-  for(const file of [".github/workflows/validate.yml",".github/workflows/docker-publish.yml"]){
+  for(const file of [".github/workflows/validate.yml"]){
     const workflow=fs.readFileSync(file,"utf8");
     assert.doesNotMatch(workflow,/audit-level=high/);
     assert.match(workflow,/audit-level=moderate/);
   }
 });
 
-test("standalone production update delegates to the supported installer",()=>{
+test("standalone production update delegates to the journaled native runner",()=>{
   const source=fs.readFileSync("deploy/update-production.sh","utf8");
-  assert.match(source,/exec bash "\$ROOT\/install\.sh"/);
+  assert.match(source,/app-update-runner\.sh --published/);
   assert.doesNotMatch(source,/docker compose up/);
 });
 
@@ -129,7 +131,7 @@ test("publication gate names match real validation workflow identities",()=>{
     const list=source.match(/required=\(([^\n]+)\)/)?.[1]||source.match(/for required in ([^\n]+); do/)?.[1];
     assert.ok(list,`${file} must keep an explicit required-workflow gate`);
     const names=[...list.matchAll(/'([^']+)'/g)].map(match=>match[1]);
-    assert.ok(names.length>=5,`${file} must retain all independent validation gates`);
+    assert.ok(names.length===3,`${file} must retain the three consolidated validation gates`);
     for(const name of names)assert.ok(emitted.has(name),`${file} waits for nonexistent workflow: ${name}`);
   }
 });

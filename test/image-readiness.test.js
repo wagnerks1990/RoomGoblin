@@ -40,7 +40,7 @@ function updateFixture(t){
  fs.writeFileSync(path.join(origin,"file"),"published");git(origin,"commit","-am","published");const good=git(origin,"rev-parse","HEAD");git(origin,"push",remote,"HEAD:production");
  fs.writeFileSync(path.join(origin,"file"),"unpublished");git(origin,"commit","-am","unpublished");const bad=git(origin,"rev-parse","HEAD");git(origin,"push",remote,"main");
  fs.mkdirSync(path.join(local,"deploy"));fs.writeFileSync(path.join(local,"deploy/image-readiness.sh"),'roomgoblin_wait_image_pair(){ echo preflight >> "$EVENTS"; [[ "${FAIL_PREFLIGHT:-0}" == 0 ]]; }\n');fs.writeFileSync(path.join(local,"install.sh"),'echo installed >> "$EVENTS"\n');
- f.write("docker",'exit 0');const script=fs.readFileSync("deploy/update-production.sh","utf8").replace('[[ $EUID -eq 0 ]] || fail "run with sudo or as root"','');
+ f.write("docker",'exit 0');const runner=path.join(f.dir,'runner.sh');fs.writeFileSync(runner,'source "$CLASSROOM_HUB_DIR/deploy/image-readiness.sh"\nroomgoblin_wait_image_pair || exit 1\ngit merge --ff-only "$2"\nbash install.sh\n');const script=fs.readFileSync("deploy/update-production.sh","utf8").replace('/usr/local/libexec/classroom-control-hub/app-update-runner.sh',runner).replace('[[ $EUID -eq 0 ]] || fail "run with sudo or as root"','');
  const events=path.join(f.dir,"events"),env={...process.env,PATH:`${f.bin}:${process.env.PATH}`,CLASSROOM_HUB_DIR:local,EVENTS:events};
  return {f,local,base,good,bad,git,events,run(extra={}){return spawnSync("bash",["-c",script],{encoding:"utf8",env:{...env,...extra}})}};
 }

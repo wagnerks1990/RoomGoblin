@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Selective production updates and consolidated CI
+
+- Plan from verified running component revisions and deployment configuration;
+  pull/recreate changed components only, with full reconciliation for migrations,
+  deployment changes, missing history and explicit repair.
+- Share the native update lock/journal, backup, health and rollback protocol with
+  published-source CLI updates; recover interrupted transactions before new work.
+- Fix rollback service-name propagation and preserve a private runner copy during
+  installer replacement, previous environment and immutable component image IDs.
+- Consolidate Android/permission coverage into Validate, reuse scanned images in
+  the Compose smoke test, promote published images for semantic releases, bound
+  job runtime and cancel superseded PR runs without cancelling publication gates.
+
 ### Published-image update preflight
 
 - Advance the production source branch only after the validated Hub/maintenance

@@ -59,7 +59,7 @@ test("release publication requires pinned security gates",()=>{
 
 test("the downloaded Gradle distribution is checksum verified",()=>{
   const checksum="d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab";
-  for(const file of [".github/workflows/android-tv-agent.yml","maintenance-agent/Dockerfile"]){
+  for(const file of [".github/workflows/validate.yml","maintenance-agent/Dockerfile"]){
     const source=read(file);
     assert.ok(source.includes(checksum),`${file} lacks the reviewed Gradle 8.9 checksum`);
     assert.match(source,/sha256sum -c -/);

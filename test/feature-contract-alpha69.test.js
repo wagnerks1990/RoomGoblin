@@ -157,14 +157,14 @@ test("application update and rollback restore state before starting the applicat
   const rollback=runner.match(/rollback\(\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(rollback,"Updater rollback function was not found");
   const failureRestore=rollback[1].indexOf('restore_safety_backup "$FAILUREBACKUPNAME"');
-  const rollbackStart=rollback[1].indexOf("docker compose up -d");
+  const rollbackStart=rollback[1].indexOf("docker compose up -d --no-build --force-recreate --remove-orphans maintenance-agent classroom-hub");
   assert.ok(failureRestore>=0,"Failed updates must restore their safety backup");
   assert.ok(rollbackStart>=0,"Failed updates must restart the Compose application");
   assert.ok(failureRestore<rollbackStart,"Failed-update data must be restored while the application is stopped");
 
   const deployment=runner.slice(runner.indexOf('write_state switching'));
   const revertRestore=deployment.indexOf('restore_safety_backup "$BACKUPNAME"');
-  const deploymentStart=deployment.indexOf("docker compose up -d");
+  const deploymentStart=deployment.indexOf("if [[ \"$PLAN_HUB\" == true ]]; then docker compose up -d");
   assert.ok(revertRestore>=0,"Manual revert must restore the matching release backup");
   assert.ok(deploymentStart>=0,"Updater deployment start was not found");
   assert.ok(revertRestore<deploymentStart,"Manual-revert data must be restored before the reverted application starts");

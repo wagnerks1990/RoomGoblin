@@ -364,6 +364,9 @@ if [[ "$INSTALL_MODE" == build-local ]]; then
 else
   echo "Using preflighted validated CI images for ${SOURCE_COMMIT} ..."
   set_env_path CLASSROOM_CONTROL_HUB_TAG "$IMAGE_TAG"
+  set_env_path ROOMGOBLIN_HUB_TAG "$IMAGE_TAG"
+  set_env_path ROOMGOBLIN_MAINTENANCE_TAG "$IMAGE_TAG"
+  export ROOMGOBLIN_HUB_TAG="$IMAGE_TAG" ROOMGOBLIN_MAINTENANCE_TAG="$IMAGE_TAG"
   export CLASSROOM_CONTROL_HUB_TAG="$IMAGE_TAG"
 fi
 
@@ -395,6 +398,7 @@ if [[ "$MAIN_VERSION" != "$EXPECTED_VERSION" || "$MAINT_VERSION" != "$EXPECTED_V
   echo "Version convergence failed: expected=$EXPECTED_VERSION backend=$MAIN_VERSION maintenance=$MAINT_VERSION host-agent=$HOST_VERSION" >&2
   exit 1
 fi
+if [[ "$INSTALL_MODE" == pull ]]; then python3 deploy/update-plan.py "$SOURCE_COMMIT" --record; fi
 echo "Verified component convergence: $EXPECTED_VERSION (backend, maintenance, host agent)"
 echo
 echo "RoomGoblin migration completed."
