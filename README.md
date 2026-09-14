@@ -217,9 +217,11 @@ Never commit production `.env` files, databases, API tokens, private keys, backu
 
 ## Site configuration and branding
 
-The public repository intentionally does **not** include a specific school's internal IP addresses, calendars, credentials, stream URLs, or classroom hardware mappings. Configure school schedules, integrations, devices, and optional site branding in the controller; deployment secrets and bootstrap connection fallbacks remain in protected environment or secret files.
+The public repository intentionally does **not** include a specific school's internal IP addresses, calendars, credentials, stream URLs, or classroom hardware mappings. Configure school schedules, integrations, devices, school/room labels and theme in the controller; deployment secrets and bootstrap connection fallbacks remain in protected environment or secret files.
 
-RoomGoblin's built-in identity is defined by the supplied Brand Package v1. The canonical product name is **RoomGoblin**, descriptor **Classroom & Lab Management Hub**, and tagline **Run the room. Manage the lab.** Built-in UI colors and artwork live under `public/brand/`, with authoritative design/AI rules under `docs/brand/` and `design/`.
+Custom product-name, logo and favicon overrides are no longer used. School/room labels and theme remain configurable.
+
+RoomGoblin's fixed product identity is defined by the supplied Brand Package v1. The canonical product name is **RoomGoblin**, descriptor **Classroom & Lab Management Hub**, and tagline **Run the room. Manage the lab.** Built-in UI colors and artwork live under `public/brand/`, with authoritative design/AI rules under `docs/brand/` and `design/`.
 
 Important optional settings include:
 

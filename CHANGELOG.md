@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Compact lighting and fixed RoomGoblin identity
+
+- Condense Govee lighting into searchable device/group controls with expandable
+  configuration, preserving existing command routes and MQTT behavior.
+- Remove custom product-name, logo and favicon settings from Settings and Setup.
+  Use the supplied RoomGoblin name, descriptor, tagline, mascot and favicon on
+  existing and fresh installations; ignore old overrides in API and browser
+  responses and canonicalize normal saves without deleting uploaded files.
+- Keep school/room labels, device names, timezones, display prefixes and custom
+  theme settings configurable.
+
 ### Operator refinement and Veyon reliability
 
 - Rebuild Veyon's device wall with compact/comfortable/list views, search and

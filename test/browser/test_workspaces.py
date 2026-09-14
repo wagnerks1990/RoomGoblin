@@ -375,12 +375,63 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertIn('Classroom display', page.locator('#devices .card:visible').inner_text())
         self.evidence(page, errors, 'managed-filter-390')
 
-    def test_default_brand_logo_decodes_and_custom_error_falls_back(self):
-        for branding in ({}, {'logoUrl': '/missing-custom-school-logo.png'}):
-            page, errors = self.page('/controller/veyon.html', overrides={
-                '/api/v1/branding': {'branding': branding}})
-            page.wait_for_function("[...document.querySelectorAll('[data-brand-logo]')].some(img => img.complete && img.naturalWidth > 0)")
-            self.assertIn('RoomGoblin', page.locator('[data-brand-lockup]').inner_text())
+    def test_fixed_branding_ignores_custom_identity_without_requesting_custom_assets(self):
+        branding = {'productName': 'Custom portal', 'descriptor': 'Custom description',
+                    'tagline': 'Custom tagline', 'logoUrl': '/custom-school-logo.png',
+                    'faviconUrl': '/custom-school-icon.png', 'school': 'Example School', 'room': '101'}
+        for path in ('/controller/', '/controller/veyon.html', '/setup/'):
+            requests = []
+            def transport(req, target):
+                requests.append(target)
+                return False
+            page, errors = self.page(path, overrides={
+                '/api/v1/branding': {'branding': branding},
+                '/api/v1/admin/config': {**FIXTURES['/api/v1/admin/config'], 'site': branding}}, transport=transport)
+            page.wait_for_function("window.ROOMGOBLIN_BRANDING?.school === 'Example School'")
+            page.wait_for_function("[...document.querySelectorAll('[data-brand-logo], .brandWrap .logo img')].some(img => img.complete && img.naturalWidth > 0)")
+            self.assertEqual(page.evaluate('window.ROOMGOBLIN_BRANDING.productName'), 'RoomGoblin')
+            self.assertEqual(page.evaluate('window.ROOMGOBLIN_BRANDING.descriptor'), 'Classroom & Lab Management Hub')
+            self.assertEqual(page.evaluate('window.ROOMGOBLIN_BRANDING.tagline'), 'Run the room. Manage the lab.')
+            self.assertTrue(page.locator("link[rel~='icon']").first.get_attribute('href').endswith('/brand/roomgoblin_app_32x32.png'))
+            self.assertEqual(page.locator('#productName, #logoUrl, #faviconUrl, #cfgProductName, #cfgLogoUrl, #cfgFaviconUrl').count(), 0)
+            self.assertNotIn('/custom-school-logo.png', requests)
+            self.assertNotIn('/custom-school-icon.png', requests)
+            self.assertFalse(errors, errors)
+
+    def test_school_settings_save_without_obsolete_brand_inputs(self):
+        for path in ('/controller/', '/setup/'):
+            writes = []
+            def transport(route, target):
+                if target == '/api/v1/admin/site' and route.request.method == 'PUT':
+                    body = route.request.post_data_json
+                    writes.append(body)
+                    route.fulfill(json={'ok': True, 'site': {**body, 'revision': 1}})
+                    return True
+                if target == '/api/v1/admin/displays' and route.request.method == 'PUT':
+                    route.fulfill(json={'ok': True})
+                    return True
+                return False
+            page, errors = self.page(path, transport=transport)
+            if path == '/controller/':
+                page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+                page.evaluate("showPage('settings')")
+                page.locator('#cfgSchool').evaluate("el => el.closest('details').open = true")
+                page.locator('#cfgSchool').fill('Example Academy')
+                page.locator('#cfgRoom').fill('Lab 101')
+                page.locator('button[onclick="saveAdminSite()"]').click()
+                page.wait_for_function("document.getElementById('cfgSiteMsg').textContent.includes('Saved to database')")
+            else:
+                page.locator('#school').fill('Example Academy')
+                page.locator('#room').fill('Lab 101')
+                page.evaluate('save()')
+                page.wait_for_function("document.getElementById('msg').textContent === 'Base configuration saved.'")
+            self.assertEqual(len(writes), 1)
+            self.assertEqual(writes[0]['school'], 'Example Academy')
+            self.assertEqual(writes[0]['room'], 'Lab 101')
+            self.assertIn('theme', writes[0])
+            self.assertIn('timezone', writes[0])
+            for obsolete in ('productName', 'logoUrl', 'faviconUrl'):
+                self.assertNotIn(obsolete, writes[0])
             self.assertFalse(errors, errors)
 
     def test_lab_selection_respects_visible_inventory(self):

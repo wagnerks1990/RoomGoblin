@@ -22,6 +22,7 @@ const {sendspinEndpoint, relaySendspin} = require("./music-assistant-sendspin");
 const {parseAllowedHosts:parseDisplayGatewayAllowedHosts,validateAllowedTarget:validateDisplayGatewayTarget}=require("./display-gateway");
 const AdmZip = require("adm-zip");
 const {ClassroomHubStorage,keyForFile} = require("./storage");
+const {ROOMGOBLIN_IDENTITY}=require("./brand-identity");
 const {applicationVersion}=require("./version");
 const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
@@ -4831,12 +4832,11 @@ app.use(express.static(path.join(APP_DIR, "public")));
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};
 function shortBrandText(value,fallback,max=120){const text=String(value??fallback??"").trim();return (text||String(fallback||"")).slice(0,max)}
 function brandColor(value,fallback){const text=String(value||"").trim();if(text&&!/^#[0-9a-f]{6}$/i.test(text))throw Error("Theme colors must use six-digit hexadecimal values");return text||fallback}
-function brandAssetUrl(value){const text=String(value||"").trim();if(!text)return "";if(text.length>2048)throw Error("Brand asset URL is too long");if(text.startsWith("/")&&!text.startsWith("//"))return text;let parsed;try{parsed=new URL(text)}catch{throw Error("Brand asset URL must be an HTTPS, HTTP, or site-relative URL")}if(!["https:","http:"].includes(parsed.protocol))throw Error("Brand asset URL must be an HTTPS, HTTP, or site-relative URL");return parsed.href}
 function normalizedSiteProfile(input={}){
   const school=shortBrandText(input.school,"Your School");
   const room=shortBrandText(input.room,"Classroom",80);
   const mode=["dark","light","system"].includes(input.theme?.mode)?input.theme.mode:"dark";
-  return {school,room,productName:shortBrandText(input.productName,"RoomGoblin"),logoUrl:brandAssetUrl(input.logoUrl),faviconUrl:brandAssetUrl(input.faviconUrl),displayPrefix:shortBrandText(input.displayPrefix,"TV",40),timezone:normalizedTimezone(input.timezone||"America/New_York"),theme:{mode,primary:brandColor(input.theme?.primary,BRAND_THEME_DEFAULTS.primary),accent:brandColor(input.theme?.accent,BRAND_THEME_DEFAULTS.accent),background:brandColor(input.theme?.background,BRAND_THEME_DEFAULTS.background),surface:brandColor(input.theme?.surface,BRAND_THEME_DEFAULTS.surface),text:brandColor(input.theme?.text,BRAND_THEME_DEFAULTS.text)},revision:Math.max(0,Number(input.revision)||0),updatedAt:input.updatedAt||null};
+  return {school,room,...ROOMGOBLIN_IDENTITY,displayPrefix:shortBrandText(input.displayPrefix,"TV",40),timezone:normalizedTimezone(input.timezone||"America/New_York"),theme:{mode,primary:brandColor(input.theme?.primary,BRAND_THEME_DEFAULTS.primary),accent:brandColor(input.theme?.accent,BRAND_THEME_DEFAULTS.accent),background:brandColor(input.theme?.background,BRAND_THEME_DEFAULTS.background),surface:brandColor(input.theme?.surface,BRAND_THEME_DEFAULTS.surface),text:brandColor(input.theme?.text,BRAND_THEME_DEFAULTS.text)},revision:Math.max(0,Number(input.revision)||0),updatedAt:input.updatedAt||null};
 }
 function publicBranding(){const site=normalizedSiteProfile(dbStore.getAdminConfig().site||{});return {ok:true,branding:site}}
 

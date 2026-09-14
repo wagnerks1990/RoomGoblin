@@ -39,7 +39,11 @@ Design for RoomGoblin, a Classroom & Lab Management Hub. Use the canonical RoomG
 Use `/brand/roomgoblin_app_192x192.png` with live product text for operator
 headers, and `/brand/roomgoblin_app_32x32.png` for the default favicon.
 `data-brand-lockup` opts a page header into the shared compact treatment;
-`data-brand-logo` marks an existing image. Preserve custom site logos and names.
+`data-brand-logo` marks an existing image. Product name, descriptor, tagline,
+logo and favicon are fixed canonical identity, including on existing installations.
+Do not restore custom product-name or asset-URL settings. Preserve actual school,
+room and device names, display prefixes and custom theme settings. Ignore old
+identity overrides on read; canonicalize ordinary saves without deleting uploads.
 The legacy 400w/512px filenames are compatibility aliases of the valid 192px
 artwork after truncated originals were found; never infer dimensions from those
 filenames. New art must not silently replace the supplied mascot.

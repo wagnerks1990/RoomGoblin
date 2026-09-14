@@ -334,3 +334,12 @@ PR #27 retains one logical layout owner and adds `public/display/security.mjs` f
 ## Host installer group prerequisite
 
 Resolve host GID 10001 before backup/data/secret mutation. The group inside the image is not a host group record. Source `deploy/host-group.sh`, reuse an existing GID or create `classroom-hub` only when its name and ID are free, and pass the verified name to install. Fail closed on conflicts/lookup errors; never renumber existing groups, add host users to this secret-readable group, or regenerate keys for this error. Keep `test/installer-host-group.test.js` coverage and `docs/HOST-NETWORKING.md` recovery instructions synchronized.
+
+## Fixed product identity
+
+Product name, descriptor, tagline, logo and favicon always use the supplied
+RoomGoblin identity. Settings and Setup must not expose custom product-name or
+asset-URL controls. Preserve school/room labels, device names, display prefixes,
+timezones and theme settings. Old identity overrides are ignored on reads and
+canonicalized on normal saves; do not delete uploads or migrate compatibility
+identifiers. See `docs/ROOMGOBLIN-REBRAND.md` for the current contract.

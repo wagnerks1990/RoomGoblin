@@ -322,3 +322,12 @@ The exported Android configuration receiver is an ADB bootstrap surface, not a g
 Treat the staged APK and its JSON metadata as mutable application data. Before every install or artifact-ready response, verify the APK signature and compare its certificate digest with the protected keystore identity under `/signing/android-agent`; metadata alone is never signing authority. Preserve the one-time complete-pair migration from the older direct `/signing` layout.
 
 Wireless ADB endpoint recovery must bind a changed mDNS address to the saved per-device Android ID. A firmware/build fingerprint is shared by devices of the same model and must never authorize reassignment. Device Agent HTTP work must remain bounded by fixed worker, queue, header, body, and socket-timeout limits.
+
+## Fixed product identity
+
+Product name, descriptor, tagline, logo and favicon always use the supplied
+RoomGoblin identity. Settings and Setup must not expose custom product-name or
+asset-URL controls. Preserve school/room labels, device names, display prefixes,
+timezones and theme settings. Old identity overrides are ignored on reads and
+canonicalized on normal saves; do not delete uploads or migrate compatibility
+identifiers. See `docs/ROOMGOBLIN-REBRAND.md` for the current contract.

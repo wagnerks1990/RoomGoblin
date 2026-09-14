@@ -381,13 +381,13 @@ test("public surfaces and fixtures contain no deployment-specific identity",()=>
   }
 });
 
-test("school branding is public, database-backed, validated, and contains no secrets",async()=>{
+test("fixed product branding preserves database-backed school identity and validated themes without exposing secrets",async()=>{
   let result=await request("/api/v1/branding");
   assert.equal(result.response.status,200,JSON.stringify(result.json));
   assert.equal(result.json.branding.productName,"RoomGoblin");
   assert.equal(result.json.branding.room,"Classroom");
 
-  result=await request("/api/v1/admin/site",{method:"PUT",authenticated:true,body:{school:"Example School District",room:"Technology Classroom",productName:"Technology RoomGoblin",logoUrl:"/media/brand/logo.svg",faviconUrl:"https://assets.example.test/icon.png",displayPrefix:"TV",timezone:"America/New_York",theme:{mode:"dark",primary:"#123456",accent:"#654321",background:"#101820",surface:"#182630",text:"#fefefe"}}});
+  result=await request("/api/v1/admin/site",{method:"PUT",authenticated:true,body:{school:"Example School District",room:"Technology Classroom",productName:"Technology RoomGoblin",descriptor:"Custom descriptor",tagline:"Custom tagline",logoUrl:"/media/brand/logo.svg",faviconUrl:"https://assets.example.test/icon.png",displayPrefix:"TV",timezone:"America/New_York",theme:{mode:"dark",primary:"#123456",accent:"#654321",background:"#101820",surface:"#182630",text:"#fefefe"}}});
   assert.equal(result.response.status,200,JSON.stringify(result.json));
   assert.equal(result.json.site.school,"Example School District");
   assert.equal(result.json.site.room,"Technology Classroom");
@@ -397,7 +397,13 @@ test("school branding is public, database-backed, validated, and contains no sec
   assert.equal("spaceName" in result.json.site,false);
 
   result=await request("/api/v1/branding");
-  assert.equal(result.json.branding.productName,"Technology RoomGoblin");
+  assert.equal(result.json.branding.productName,"RoomGoblin");
+  assert.equal(result.json.branding.descriptor,"Classroom & Lab Management Hub");
+  assert.equal(result.json.branding.tagline,"Run the room. Manage the lab.");
+  assert.equal(result.json.branding.logoUrl,"/brand/roomgoblin_app_192x192.png");
+  assert.equal(result.json.branding.faviconUrl,"/brand/roomgoblin_app_32x32.png");
+  assert.equal(result.json.branding.school,"Example School District");
+  assert.equal(result.json.branding.room,"Technology Classroom");
   assert.equal(result.json.branding.theme.primary,"#123456");
   assert.equal(JSON.stringify(result.json).includes("preferences"),false);
   assert.equal("organizationName" in result.json.branding,false);
@@ -407,7 +413,18 @@ test("school branding is public, database-backed, validated, and contains no sec
 
   result=await request("/api/v1/admin/site",{method:"PUT",authenticated:true,body:{theme:{primary:"red"}}});
   assert.equal(result.response.status,400);
-  result=await request("/api/v1/admin/site",{method:"PUT",authenticated:true,body:{logoUrl:"javascript:alert(1)"}});
+  result=await request("/api/v1/admin/site",{method:"PUT",authenticated:true,body:{logoUrl:"javascript:alert(1)",faviconUrl:"https://assets.example.test/obsolete.ico",productName:"Obsolete client name"}});
+  assert.equal(result.response.status,200);
+  assert.equal(result.json.site.productName,"RoomGoblin");
+  assert.equal(result.json.site.logoUrl,"/brand/roomgoblin_app_192x192.png");
+  assert.equal(result.json.site.faviconUrl,"/brand/roomgoblin_app_32x32.png");
+  assert.equal(result.json.site.school,"Example School District");
+  assert.equal(result.json.site.theme.primary,"#123456");
+  result=await request("/api/v1/admin/config",{authenticated:true});
+  assert.equal(result.response.status,200);
+  assert.equal(result.json.site.productName,"RoomGoblin");
+  assert.equal(result.json.site.descriptor,"Classroom & Lab Management Hub");
+  result=await request("/api/v1/admin/site",{method:"PUT",authenticated:true,body:{timezone:"Invalid/Timezone"}});
   assert.equal(result.response.status,400);
 });
 

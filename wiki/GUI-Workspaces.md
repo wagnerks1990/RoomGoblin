@@ -85,8 +85,27 @@ shown; a cached image is not evidence of a currently connected computer.
 
 The canonical supplied 192px mascot and readable product text are the permanent
 operator lockup. Corrupt legacy asset paths are retained as valid compatibility
-copies. Custom school names, artwork and colors remain supported; see
+copies. School/room labels and colors remain configurable; product name, text,
+logo and favicon are fixed to RoomGoblin. See
 [Brand and compatibility](ROOMGOBLIN-REBRAND.md) for the asset contract.
+
+## Compact Govee lighting
+
+Lighting keeps group power and brightness first, followed by a searchable device
+inventory. Filter by name, alias, model or group, connection state, and group
+membership. Filters affect the device inventory only: **All on/off** and group
+commands still target their complete groups, with the scope stated above them.
+
+Each compact card exposes On, Off and brightness. **More controls** expands color,
+color temperature, scenes and device metadata; **Edit device** expands the saved
+friendly name and group assignments. **Discovery & setup** contains automatic
+enrollment settings. Unknown presence means no report is available, not online.
+
+Scene lists load only when controls expand, with visible loading/error/empty
+states and a retry action. Empty or failed scene lists cannot send a scene command.
+Inventory refresh retains existing cards, keyboard focus, open controls and unsaved
+edits. Failed refreshes retain the inventory with an explicit stale-data message.
+Existing Govee endpoints, MQTT payloads and schedule/device identity remain unchanged.
 
 ## Styling ownership
 
@@ -102,6 +121,7 @@ Page-specific layout lives in:
 
 - `public/controller/workspace.css` and `workspace.js` for the main shell;
 - `public/controller/display-workspace.css` for the content editor;
+- `public/controller/lighting.css` for compact Govee controls;
 - `public/controller/lab-workspaces.css` for both lab consoles;
 - `public/setup/workspace.css` for setup; and
 - `public/managed-displays/styles.css` for managed-device layout.
