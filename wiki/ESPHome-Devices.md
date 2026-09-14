@@ -1,19 +1,26 @@
 # ESPHome devices
 
-**Status: Unreleased.** This adds encrypted native ESPHome device management to
-RoomGoblin. It does not install Home Assistant, change the MQTT/Govee transport,
-flash firmware, or deploy the ESPHome Device Builder/dashboard.
+**Status: Unreleased.** RoomGoblin manages already-flashed ESPHome devices through the native API and can discover ESPHome native-API advertisements on the classroom network. Home Assistant, MQTT, and a separately deployed ESPHome dashboard are not required for discovery or control.
 
-## Operator workflow
+RoomGoblin does **not** currently compile, flash, or OTA-update ESPHome firmware. It also does not recover or bypass a lost API encryption key.
 
-Open **Room controls → ESPHome devices**. An administrator expands **Add or edit
-an ESPHome device**, enters a friendly name, its private IPv4 address, native API
-port (normally 6053), and its existing `api.encryption.key`. RoomGoblin verifies
-the encrypted connection before saving and pins the returned hardware MAC.
-Existing native-API devices do not need MQTT or a Home Assistant installation.
+## Discovery and adoption
 
-Use an already-flashed ESPHome device with API encryption enabled. This is the
-relevant device-side fragment, not a complete board or GPIO configuration:
+Open **Room controls → ESPHome devices** as an administrator. RoomGoblin automatically listens for `_esphomelib._tcp.local` mDNS advertisements when the workspace opens and periodically while it remains open. **Scan network** forces a fresh bounded scan.
+
+Discovery can show the advertised device name, private addresses, native API port, MAC when advertised, ESPHome version, platform, board, and whether the device already appears enrolled. Discovery is read-only and never alters a device.
+
+Choose **Configure / adopt** to copy a discovered device's private IPv4 address, port, and name into the enrollment form. Discovery data is not trusted as proof of identity: RoomGoblin still connects to the native API and pins the hardware MAC returned by the authenticated/verified connection before saving the device.
+
+Same-subnet mDNS normally works directly because RoomGoblin uses host networking. If ESPHome devices live on routed VLANs and multicast DNS is not forwarded, an mDNS reflector/repeater may be required. Discovery may observe hostnames and IPv6 addresses, but the current control endpoint intentionally remains a literal RFC1918 IPv4 address plus pinned MAC while hostname/IPv6 SSRF and rebinding protections are designed separately.
+
+Discovery is administrator-only, separately rate-limited, capped at 128 results, briefly cached, and implemented in a credential-free helper process. Service resolution is concurrent but bounded so a classroom full of ESPHome devices does not make scans linear or unbounded.
+
+## API encryption and unknown keys
+
+ESPHome API encryption keys are secrets. They are not published through mDNS and cannot be extracted through unauthenticated discovery.
+
+For a device configured with ESPHome API encryption, enter its existing `api.encryption.key`, for example:
 
 ```yaml
 api:
@@ -21,170 +28,111 @@ api:
     key: !secret api_encryption_key
 ```
 
-The key must decode to 32 bytes. A Wi-Fi password, OTA password, old API password,
-or dashboard login is not a native API encryption key. The integration does not
-read firmware YAML, Wi-Fi credentials or OTA secrets. Keep those in the device's
-separate firmware management system. Do not commit actual keys to this repository.
+The key must decode to 32 bytes. A Wi-Fi password, OTA password, dashboard password, or old API password is not the native API Noise encryption key.
 
-Reserve a device address in DHCP. This initial integration accepts literal
-RFC1918 IPv4 addresses only, including routed private VLANs. DNS names, `.local`,
-IPv6, automatic mDNS discovery, link-local, loopback, and public endpoints are not
-supported. Permit the appliance to reach the configured TCP API port. No new
-inbound RoomGoblin port, USB access, Docker socket mount or host privilege is added.
+If an already-flashed encrypted device's key has been lost, RoomGoblin will still be able to discover the device advertisement but cannot adopt/control it. Recovery requires a device-side action such as reflashing/rebuilding firmware or an already-authorized OTA/configuration path. RoomGoblin must not guess, bypass, replace, or silently downgrade unknown encryption.
 
-The workspace shows connection status, device identity/model/firmware, advertised
-entities, values and their report times. Expand **Entities** for controls.
-Search/filter only changes presentation. Polling retains expanded cards and
-unsaved numeric/select and enrollment edits. A failed inventory refresh retains
-last data but disables controls until a successful refresh.
+ESPHome also permits the native API to be intentionally configured without Noise encryption. RoomGoblin can adopt such a device with the key field blank. It stores no fake key and labels the connection **unencrypted native API**. This is weaker transport security and should be used only on an appropriate trusted/isolated network; migrate to encrypted API where practical.
 
-Supported controls are switches, light on/off and brightness when advertised,
-numbers with device-defined bounds/steps, selects with device-defined options,
-and explicitly confirmed administrator button presses. Sensor, binary-sensor
-and text-sensor values are read-only. Other advertised types are shown as
-unsupported/read-only. There is no generic service executor, Home Assistant action
-handler, camera subscription, lock/climate control, OTA endpoint or firmware shell.
-Disabled-by-default entities remain read-only. Configuration/diagnostic controls
-and buttons require administrator permission and confirmation.
+When editing an enrolled encrypted device, leaving the key field blank preserves the stored key. A replacement key is only needed for an intentional key rotation.
 
-Edit retains the stable RoomGoblin device ID and verifies the same MAC; leave
-the key blank to preserve it. Changing to different hardware is rejected, even
-when the address is reused. **Disable** closes the connection without changing
-hardware state. **Remove** deletes enrollment and the stored API key; it does
-not factory-reset, power off, unlock, or otherwise act on the physical device.
+## Enrollment identity and lifecycle
+
+Enrollment verifies the native API before saving and pins the returned hardware MAC. Duplicate endpoints and duplicate hardware are rejected. Editing a device cannot silently switch the record to different hardware even if DHCP later reuses an address.
+
+**Disable** closes RoomGoblin's connection without changing physical device state. **Remove** deletes the RoomGoblin enrollment and stored encryption key, if any; it does not factory-reset, power off, unlock, reflash, or otherwise modify the physical ESPHome node.
+
+The registry is stored in SQLite preference `esphome.devices.v1`. Encryption keys are stored separately as AES-GCM encrypted `secret_store` entries using the appliance master key. Inventory APIs never return the key material and the controller does not persist keys in browser local/session storage.
+
+## Supported entities and commands
+
+The workspace shows connection state, device identity/model/firmware, advertised entities, current values, and report timestamps. Supported controls are:
+
+- switches;
+- light on/off and advertised brightness;
+- numbers using device-advertised minimum, maximum, and step;
+- selects using device-advertised options;
+- administrator-confirmed ESPHome button entities.
+
+Sensor, binary-sensor, and text-sensor values are read-only. Disabled-by-default entities are read-only. Unknown/unsupported entity domains remain visible but cannot be controlled. Configuration/diagnostic controls and buttons require administrator permission and explicit confirmation.
+
+There is no generic ESPHome service executor, firmware shell, lock/climate control, camera subscription, or OTA endpoint in this integration.
 
 ## Reliability and command semantics
 
-One supervised, unprivileged Python worker maintains one persistent encrypted
-native connection per enabled node. The connection-establishment limit is six,
-with exponential reconnect delays capped at 60 seconds plus jitter. There is a
-64-node limit and a 128-entity limit per node. Slow/offline ESPHome nodes do not
-block main application health, Today, announcements, music, Veyon or displays.
-Native keepalive is 10 seconds; a lost connection may take several keepalive
-intervals to be detected. A quiet sensor value is not itself an offline signal.
-Deep-sleep nodes will naturally disconnect; this is not a wake-on-demand service.
+One supervised, unprivileged Python worker maintains persistent native API connections for enabled nodes. Connection establishment is bounded, reconnects use exponential backoff with jitter, and the registry is capped at 64 devices with 128 entities per device.
 
-Entity identity includes both native subdevice ID and entity key. Firmware state
-is reacquired after reconnect. RoomGoblin does not reassert old relay/light state
-on restart. A second simultaneous command for the same node is rejected rather
-than queued. At most 32 nodes have commands in flight. There is no offline queue.
-Commands use caller-scoped request IDs with five-minute deduplication (bounded to
-1,024 entries). A conflicting reuse is rejected. The browser never retries an
-uncertain command automatically. Deduplication is memory-only and does not survive
-a Hub restart; clients must not replay commands after a restart or timeout.
+Slow or offline ESPHome nodes do not block RoomGoblin health, Today, Morning Announcements, Background Music, scheduler recovery, Veyon, or display rendering.
 
-`state-confirmed` means a newer ESPHome state report matched the requested state;
-it is not independent verification of relay contacts or a physical action.
-`sent-unconfirmed` means a write was issued but no matching state arrived within
-two seconds. Buttons always return `sent-unconfirmed`. Disconnects/timeouts can
-leave outcomes unknown. Check the device before explicitly repeating an action.
-A stalled/crashed worker is terminated, pending commands fail without replay,
-connection status becomes unavailable, and configured connections are retried by
-the supervisor. A 45-second worker heartbeat deadline is checked every 15 seconds;
-worker address space is limited to 512 MiB and core dumps are disabled. Snapshot/error traffic and requests are bounded. Upstream raw
-exception text and device logs are not returned to the browser.
+RoomGoblin does not queue hardware commands while a node is offline and does not replay uncertain one-shot actions after reconnect/restart. A second simultaneous command for the same device is rejected. At most 32 devices may have commands in flight. Caller-scoped request IDs are deduplicated for five minutes in memory.
 
-## Architecture, credentials and authorization
+`state-confirmed` means a newer ESPHome state report matched the requested state. It is not independent physical verification of a relay/contact. `sent-unconfirmed` means the native command was written but no matching state report arrived within the confirmation window. Button presses are inherently sent-unconfirmed. If delivery becomes uncertain after a timeout/disconnect, inspect the device before explicitly repeating the action.
 
-- `src/esphome.js`: registry, encrypted-secret transactions, worker supervision,
-  bounded IPC, command validation/deduplication and authenticated HTTP routes.
-- `src/esphome/worker.py`: the official `aioesphomeapi` client, identity validation,
-  persistent subscriptions, reconnects and a fixed command allowlist. Keys arrive
-  through private stdin, never command arguments, environment variables or URLs.
-- `src/esphome/requirements.txt`: all Python dependencies pinned. The main image
-  installs `/opt/esphome` at build time and runs it as the existing UID/GID 10001.
-  There are no runtime dependency downloads. `ESPHOME_PYTHON` is a local development
-  override; production uses `/opt/esphome/bin/python`.
-- `public/controller/esphome.{js,css}`: capability-aware operator workspace, scoped
-  to the main controller. It does not load into physical display renderers.
+A stalled worker is terminated; pending commands fail and are not replayed. Connection state is marked unavailable and configured nodes are retried by the supervisor.
 
-The registry is in SQLite preference `esphome.devices.v1`. Keys are separate
-AES-GCM encrypted `secret_store` entries named
-`esphome.<stable-device-id>.encryption-key`, using the appliance's existing master
-key. Enrollment/removal updates registry and secret state in one SQLite
-transaction. Inventory APIs never return key material; password inputs are cleared
-on submission, closing the editor, leaving the workspace and authentication
-changes. Keys are not stored in browser local/session storage. Configuration
-changes should use this workspace, not manual edits to generic secret rows.
+## Authorization and HTTP boundaries
 
-Inventory requires `classroom.read`. Ordinary commands require
-`integrations.control`; device enrollment/edit/enable/remove require the existing
-administrator boundary. Buttons and configuration/diagnostic commands additionally
-require an enabled administrator profile and explicit confirmation. Backend and
-worker validate commands and current entity identity; UI visibility is not an
-access boundary. Global same-origin request protection remains unchanged.
+Inventory requires `classroom.read`. Ordinary entity commands require `integrations.control`. Enrollment, edit, enable/disable, removal, and discovery require the existing administrator boundary. Backend/worker validation is authoritative; UI visibility is not an access-control boundary.
 
-The HTTP layer applies separate appliance-wide, one-minute budgets before route
-permission checks: 600 inventory reads, 60 management requests (shared across
-add/edit/enable/remove), and 240 entity commands. Rejected requests count toward
-the relevant budget. Changing a device ID, session or forwarding header cannot
-multiply these budgets. Excess requests return HTTP 429 and `Retry-After`; they do
-not create worker jobs or queued hardware actions. Polling cannot consume the
-command/management budgets. Counters are memory-only and reset after a Hub restart;
-existing connection, deduplication and in-flight command bounds still apply.
+Separate appliance-wide one-minute limits exist for inventory, discovery, management, and interactive commands. Rejected over-limit requests do not create worker jobs or queued device actions.
 
-The native transport is encrypted. The existing alpha controller may still use
-trusted-LAN HTTP, which does **not** encrypt key entry between browser and Hub.
-Use HTTPS through a reviewed same-host proxy or local access where available,
-and restrict any remaining HTTP administration to a trusted network. Do not expose
-ESPHome, the controller, or the firmware dashboard to the public Internet.
+The ESPHome Noise transport is encrypted only when a device has an API encryption key. An intentionally unencrypted native API is plaintext on the local network. The current RoomGoblin alpha controller itself is HTTP-only, so a key entered through the browser is protected only by the trusted-network boundary until HTTPS is introduced. Do not expose RoomGoblin or ESPHome management surfaces directly to the public Internet.
 
-All ESPHome HTTP mutations and in-flight async work join Full Recovery Export
-writer-drain accounting. Enrollment rechecks the freeze after its network probe,
-before writing. Live state and reconnection work are memory-only; no sensor-history
-writer bypasses the freeze. Full Recovery already preserves the SQLite registry
-and encrypted keys as part of its database/master-key identity. Firmware projects
-and physical device configuration remain outside the appliance recovery bundle.
+## Architecture
+
+- `src/esphome.js` — registry, encrypted-secret transactions, worker supervision, bounded discovery launch, command validation/deduplication, and authenticated HTTP routes.
+- `src/esphome/discovery.py` — credential-free bounded mDNS discovery of `_esphomelib._tcp.local`.
+- `src/esphome/worker.py` — native API subscriptions, identity validation, reconnect behavior, and the fixed command allowlist.
+- `src/esphome/worker_entry.py` — production worker entry that permits an explicitly blank key only for intentionally unencrypted API nodes while preserving private-address and non-empty-key validation.
+- `src/esphome/requirements.txt` — pinned official native-client/discovery Python dependencies installed in `/opt/esphome` at image-build time.
+- `public/controller/esphome.js` / `esphome.css` — capability-aware discovery, enrollment, inventory, and control workspace.
+
+The worker receives credentials through private stdin rather than command arguments, environment variables, URLs, or browser storage. It runs as the existing unprivileged RoomGoblin UID/GID without new host capabilities or exposed ports.
 
 ## APIs
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /api/v1/esphome/devices` | Safe inventory and live cached state |
-| `POST /api/v1/esphome/devices` | Verify and enroll `{name,address,port,key}` |
-| `PUT /api/v1/esphome/devices/:id` | Verify/edit; blank key preserves stored key |
-| `POST /api/v1/esphome/devices/:id/enabled` | Enable/disable with `{enabled}` |
-| `DELETE /api/v1/esphome/devices/:id` | Remove registry and key, not physical state |
-| `POST /api/v1/esphome/devices/:id/entities/:entityId/command` | `{requestId,command}`; entity ID is `subdevice:key` |
+| `GET /api/v1/esphome/devices` | Safe enrolled inventory and cached live state |
+| `GET /api/v1/esphome/discovery` | Administrator-only bounded mDNS discovery |
+| `POST /api/v1/esphome/devices` | Verify and enroll `{name,address,port,key}`; blank key means intentionally unencrypted API |
+| `PUT /api/v1/esphome/devices/:id` | Verify/edit; blank key preserves an existing stored key |
+| `POST /api/v1/esphome/devices/:id/enabled` | Enable/disable RoomGoblin connection |
+| `DELETE /api/v1/esphome/devices/:id` | Remove registry/key without changing physical device state |
+| `POST /api/v1/esphome/devices/:id/entities/:entityId/command` | Send a bounded, validated entity command |
 
-Examples of command objects: `{"state":true}`, `{"brightness":0.5}`, and
-`{"state":"advertised option"}`. Buttons require `{"press":true,"confirm":true}`
-and administrator permission. Confirmation does not grant authorization.
+## Recovery, deployment, and acceptance
 
-## Validation, deployment and rollback
+ESPHome enrollment mutations participate in Full Recovery writer draining. The SQLite registry and encrypted keys are already covered by the RoomGoblin database/master-key recovery identity. Live sensor state and reconnect state are memory-only. Device firmware projects remain outside the RoomGoblin recovery bundle.
 
-```bash
-npm run check
-node --test test/esphome.test.js
-npm test
-python3 -m venv /tmp/roomgoblin-esphome
-/tmp/roomgoblin-esphome/bin/pip install -r src/esphome/requirements.txt
-/tmp/roomgoblin-esphome/bin/python -m unittest discover -s test -p esphome_worker_test.py -v
-```
+Validation includes Node integration tests, real Express permission/rate-limit routes, encrypted SQLite transactions, pinned native-client Python tests, browser regressions in Chromium/Firefox, restrictive non-root image tests, image vulnerability scans, host-network/Compose smoke tests, and production-image import of the discovery/worker modules.
 
-The Python suite uses actual pinned API models/signatures and simulated devices;
-the Node suite exercises real Express permission routes and encrypted SQLite
-storage, plus IPC failure fixtures. Browser regressions cover mobile/desktop,
-read-only permissions, preserved input and stale-state controls. The main Docker build runs the native tests in its exact shipped Python runtime
-and removes test sources afterward. The normal CI also builds/scans both images and runs existing classroom/recovery/display gates.
-These tests are **not physical-device acceptance**. Validate enrollment, key
-rotation, relay/light read-back, native reboot/reconnect, VLAN connectivity and
-Hub restart against real intended devices before operational use.
+These automated tests are **not physical-device acceptance**. After deployment, validate against representative real devices:
 
-Deploy only after the exact merged commit's Hub and maintenance images pass normal
-publication. Back up first and use the normal RoomGoblin upgrade path; a source-only
-update without the new image will lack the Python environment. No new optional
-container needs installation. Roll back through the existing updater and matching
-operational backup. The older application ignores the new registry preference;
-never manually delete the database or master key during rollback. ESPHome devices
-keep their own firmware state when RoomGoblin is rolled back or disabled.
+1. mDNS discovery on the intended classroom/VLAN topology;
+2. adoption of an intentionally unencrypted API node if one exists;
+3. encrypted adoption using a known real key;
+4. device reboot/disconnect/reconnect;
+5. switch/light state read-back where applicable;
+6. RoomGoblin restart recovery;
+7. failure behavior when an encrypted device is discovered without its key.
 
-Automatic discovery, firmware compilation/flashing/OTA, RGB/effect/color-temperature
-controls, sensor-triggered automation rules and other entity domains are outside
-this initial integration. Do not claim those capabilities are implemented.
+Deploy only after the exact merged commit's Hub and maintenance image pair passes RoomGoblin's normal publication/preflight path. Back up first and use the normal RoomGoblin updater/install process. Rollback preserves the existing SQLite/master-key state and does not change ESPHome firmware.
+
+## Not implemented yet
+
+The following are separate follow-up work and must not be claimed as current capabilities:
+
+- firmware compilation/building;
+- USB/serial flashing;
+- ESPHome OTA firmware/configuration management;
+- automatic recovery/replacement of unknown encryption keys;
+- hostname or IPv6 control endpoints (discovery can display them);
+- sensor-triggered RoomGoblin automation rules;
+- RGB/effect/color-temperature controls, climate, locks, cameras, and other unimplemented entity domains.
 
 ## Upstream references
 
 - [ESPHome native API](https://esphome.io/components/api/)
 - [Official aioesphomeapi client](https://github.com/esphome/aioesphomeapi)
-- [Pinned aioesphomeapi 46.4.1](https://pypi.org/project/aioesphomeapi/46.4.1/)
+- [python-zeroconf](https://github.com/python-zeroconf/python-zeroconf)
