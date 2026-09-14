@@ -16,3 +16,31 @@ Discovery runs only for authenticated administrators, is rate-limited, bounded t
 The current enrollment endpoint remains private IPv4-only even though discovery can observe hostnames and IPv6 addresses. Hostname/IPv6 control requires a separate design that preserves SSRF/rebinding protections and hardware identity pinning.
 
 Preserve existing RoomGoblin priorities and isolation: Morning Announcements, scheduler recovery, Background Music reconciliation, display stability, Veyon, Full Recovery writer draining, and managed-device compatibility must not depend on ESPHome discovery success.
+
+## Current implemented scope
+
+As of the ESPHome discovery/adoption merge, RoomGoblin can:
+
+- discover already-flashed ESPHome native-API nodes through mDNS;
+- automatically scan when an administrator opens **Room controls → ESPHome devices** and manually rescan on demand;
+- display discovered device name, private addresses, API port and advertised metadata;
+- populate the enrollment form from a discovery result;
+- enroll and control intentionally unencrypted native-API devices without inventing or storing a fake key;
+- enroll encrypted devices only when the administrator supplies the exact existing encryption key;
+- verify the native connection and pin returned hardware identity before persistence;
+- maintain bounded persistent connections, state subscriptions, command deduplication and no automatic replay of uncertain hardware commands.
+
+## Not implemented — do not claim otherwise
+
+The following remain explicit follow-up work rather than existing capability:
+
+- ESPHome firmware compilation or YAML project management;
+- USB/serial flashing;
+- OTA firmware/configuration updates;
+- extraction, recovery, replacement or bypass of an unknown encryption key;
+- hostname or IPv6 control endpoints (discovery may display them);
+- sensor-triggered RoomGoblin automation rules;
+- generic ESPHome service execution;
+- RGB/effects/color-temperature, climate, lock, camera and other unsupported entity-domain controls.
+
+For the current classroom use case, automatic discovery plus native enrollment/control is the recommended baseline. Firmware/OTA management should be added only if RoomGoblin needs to become responsible for device lifecycle/recovery rather than merely discovering and controlling already-flashed ESPHome nodes. Sensor-triggered automation is the highest-value functional extension after real-device discovery/adoption has been validated in production.
