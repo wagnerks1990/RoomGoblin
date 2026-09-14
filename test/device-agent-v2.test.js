@@ -73,6 +73,18 @@ test("Managed Displays capability UI parses and gates optional controls",()=>{
   assert.match(source,/OEM launcher/);
 });
 
+test("Managed Displays polling does not observe its own descendant mutations",()=>{
+  const capsUi=read("public/managed-displays/agent-capability-ui.js");
+  const v2Ui=read("public/managed-displays/agent-v2-ui.js");
+  assert.match(capsUi,/observe\(root,\{childList:true\}\)/);
+  assert.match(v2Ui,/observe\(root,\{childList:true\}\)/);
+  assert.doesNotMatch(capsUi,/subtree:true/);
+  assert.doesNotMatch(v2Ui,/subtree:true/);
+  assert.match(capsUi,/const REFRESH_MS=30000/);
+  assert.match(v2Ui,/const PROBE_MS=30000/);
+  assert.match(capsUi,/if\(box\.innerHTML!==html\)box\.innerHTML=html/);
+});
+
 test("always-on kiosk recovery is process-level and bounded below thirty seconds",()=>{
   const watchdog=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/KioskWatchdog.java");
   const activity=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/MainActivity.java");
