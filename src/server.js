@@ -912,9 +912,9 @@ function automationDeferredDisplayTargets(event){
     const stepDomain=automationTargetDomain(action),eventDomain=automationTargetDomain(event.action);
     let targets;
     if(step?.useEventTargets!==false&&stepDomain===eventDomain)targets=event.targets;
-    else if(stepDomain==="display"&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)targets=event._classDefaultTargets;
+    else if(["display-content","display-overlay"].includes(stepDomain)&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)targets=event._classDefaultTargets;
     else if(Array.isArray(step?.targets)&&step.targets.length)targets=step.targets;
-    else if(stepDomain==="display")targets=["all"];
+    else if(["display-content","display-overlay"].includes(stepDomain))targets=["all"];
     else targets=[];
     collect(action,targets);
   }
@@ -957,8 +957,9 @@ function currentAutomationDisplayWinners(now=new Date()){
   for(const candidate of candidates){
     for(const id of candidate.targets){
       const prior=winnersByTarget.get(id);
-      if(!prior||candidate.scheduledMinutes>prior.scheduledMinutes||
-        (candidate.scheduledMinutes===prior.scheduledMinutes&&String(candidate.storedEvent.updatedAt||"")>String(prior.storedEvent.updatedAt||""))){
+      const cp=Number(candidate.storedEvent.priority||0),pp=Number(prior?.storedEvent?.priority||0);
+      if(!prior||cp>pp||(cp===pp&&candidate.scheduledMinutes>prior.scheduledMinutes)||
+        (cp===pp&&candidate.scheduledMinutes===prior.scheduledMinutes&&String(candidate.storedEvent.id||"").localeCompare(String(prior.storedEvent.id||""))>0)){
         winnersByTarget.set(id,candidate);
       }
     }
@@ -980,7 +981,7 @@ async function runDisplayAutomationResync(event,winningTargets){
   if(allowed.size)results.push(await executeCommand({type:"display.clear",target:[...allowed],payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
   for(const step of steps){
     const action=step?.action||event.action,domain=automationTargetDomain(action);
-    if(domain!=="display")continue;
+    if(!["display-content","display-overlay"].includes(domain))continue;
     if(Number(step.delaySeconds)>0)await new Promise(resolve=>setTimeout(resolve,Math.min(3600,Number(step.delaySeconds))*1000));
     const explicit=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
     let rawTargets;
@@ -1322,6 +1323,8 @@ function normalizeAutomation(input={},existing={}){
         }})
       : (Array.isArray(existing.actions)?existing.actions:[]),
     timerOverlay:normalizeTimerOverlay(input.timerOverlay,existing.timerOverlay||null),
+    priority:Math.max(-100,Math.min(100,Number.isFinite(Number(input.priority??existing.priority))?Number(input.priority??existing.priority):0)),
+    revision:Math.max(1,Number(existing.revision||input.revision||1)),
     lastRun:existing.lastRun||null,
     lastExec:existing.lastExec||null,
     lastExecByClass:(existing.lastExecByClass&&typeof existing.lastExecByClass==="object")?existing.lastExecByClass:{},
@@ -1699,6 +1702,8 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     const step=steps[i]||{};
     const delay=Math.max(0,Number(step.delaySeconds||0));
     if(delay)await new Promise(r=>setTimeout(r,delay*1000));
+    if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
+    if(!manual&&event.id){const current=classroomAutomations.events.find(item=>item.id===event.id);if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was waiting"),{code:"AUTOMATION_CONFIGURATION_CHANGED"})}
     const stepAction=step.action||event.action;
     const stepDomain=automationTargetDomain(stepAction);
     const eventDomain=automationTargetDomain(event.action);
@@ -2295,9 +2300,9 @@ function classAlternatingPhaseForDate(anchorDate,date=new Date()){
 function classScheduleMatchesDate(cls,date=new Date()){
   const key=localDateKey(date);
   if(calendarRuleForDate(date).type==='half-day'&&!effectiveClassTimes(cls,date))return false;
+  if(isCalendarBlocked(date).blocked)return false;
   if((cls.excludedDates||[]).includes(key))return false;
   if((cls.includeDates||[]).includes(key))return true;
-  if(isCalendarBlocked(date).blocked)return false;
 
   if(cls.scheduleMode==="schoolcycle"){
     const cycleDays=normalizeCycleDays(cls.cycleDays,periodDefaultCycleDays(cls.period));
@@ -2402,7 +2407,7 @@ function resolveAutomationForClass(event,classId,date=new Date()){
   const dayOffset=Math.floor(rawMinutes/1440),mins=((rawMinutes%1440)+1440)%1440;
   const scheduledDate=new Date(date);scheduledDate.setDate(scheduledDate.getDate()+dayOffset);
   const occurrenceStart=classStartDate(cls,date),occurrenceEnd=classEndDate(cls,date);
-  return {...event,classId:cls.id,time:`${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`,days:[...(cls.days||[])],scheduleMode:cls.scheduleMode||"schoolcycle",alternatePhase:cls.alternatePhase||"A",anchorDate:cls.anchorDate||schoolCycleAnchor(),dayType:cls.dayType||"Any",cycleDays:[...(cls.cycleDays||periodDefaultCycleDays(cls.period))],period:cls.period||"",includeDates:[...(cls.includeDates||[])],targets:(event.useClassTargets!==false&&automationTargetDomain(event.action)==="display"&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),_class:cls,_classDefaultTargets:[...(cls.defaultTargets||[])],_automationClassIds:automationClassIds(event),_classStartAt:occurrenceStart?.getTime()||null,_classEndAt:occurrenceEnd?.getTime()||null,_classIsTransition:isTransitionClass(cls),_sourceDateMatched:true,_scheduledDateKey:localDateKey(scheduledDate)};
+  return {...event,classId:cls.id,time:`${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`,days:[...(cls.days||[])],scheduleMode:cls.scheduleMode||"schoolcycle",alternatePhase:cls.alternatePhase||"A",anchorDate:cls.anchorDate||schoolCycleAnchor(),dayType:cls.dayType||"Any",cycleDays:[...(cls.cycleDays||periodDefaultCycleDays(cls.period))],period:cls.period||"",includeDates:[...(cls.includeDates||[])],targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),_class:cls,_classDefaultTargets:[...(cls.defaultTargets||[])],_automationClassIds:automationClassIds(event),_classStartAt:occurrenceStart?.getTime()||null,_classEndAt:occurrenceEnd?.getTime()||null,_classIsTransition:isTransitionClass(cls),_sourceDateMatched:true,_scheduledDateKey:localDateKey(scheduledDate)};
 }
 function resolveAutomationOccurrences(event,date=new Date()){
   const ids=automationClassIds(event);
@@ -2432,7 +2437,7 @@ function resolveAutomationForManualTest(event,date=new Date()){
   return {
     ...event,
     classId:cls.id,
-    targets:(event.useClassTargets!==false&&automationTargetDomain(event.action)==="display"&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),
+    targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),
     _class:cls,
     _classDefaultTargets:[...(cls.defaultTargets||[])],
     _automationClassIds:automationClassIds(event),
@@ -5104,9 +5109,30 @@ app.get("/api/v1/class-schedules",requireClassroomRead,(_req,res)=>{
     res.status(500).json({ok:false,error:err.message,classes:classScheduleStore.classes});
   }
 });
+function classScheduleConflicts(candidate,classes,{horizonDays=370,startDate=new Date()}={}){
+  if(candidate?.enabled===false)return [];
+  const conflicts=[];
+  const start=new Date(startDate);start.setHours(12,0,0,0);
+  for(let offset=0;offset<horizonDays&&conflicts.length<20;offset++){
+    const day=new Date(start);day.setDate(day.getDate()+offset);
+    if(!classScheduleMatchesDate(candidate,day))continue;
+    const aStart=classStartDate(candidate,day),aEnd=classEndDate(candidate,day);if(!aStart||!aEnd)continue;
+    for(const other of classes||[]){
+      if(!other||other.id===candidate.id||other.enabled===false||!classScheduleMatchesDate(other,day))continue;
+      const bStart=classStartDate(other,day),bEnd=classEndDate(other,day);if(!bStart||!bEnd)continue;
+      if(aStart<bEnd&&bStart<aEnd)conflicts.push({date:localDateKey(day),candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,start:new Date(Math.max(aStart,bStart)).toISOString(),end:new Date(Math.min(aEnd,bEnd)).toISOString()});
+    }
+  }
+  return conflicts;
+}
+function assertClassScheduleConflicts(candidate,classes){
+  const conflicts=classScheduleConflicts(candidate,classes);
+  if(!conflicts.length)return;
+  const first=conflicts[0],error=new Error(`${candidate.name} overlaps ${first.otherName} on ${first.date}. Save it disabled or resolve the class times before enabling.`);error.code="CLASS_SCHEDULE_CONFLICT";error.conflicts=conflicts;throw error;
+}
 app.get("/api/v1/class-schedules/status",requireClassroomRead,(_req,res)=>{const now=new Date();res.json({ok:true,...classStatusPayload(now),scheduler:schedulerStatus()})});
-app.post("/api/v1/class-schedules",requireCapability("schedule.manage"),(req,res)=>{try{const cls=normalizeClassSchedule(req.body||{});if(classScheduleStore.classes.some(x=>x.id===cls.id))return res.status(409).json({ok:false,error:"Class ID already exists"});const next={...classScheduleStore,classes:[...classScheduleStore.classes,cls]};commitClassSchedules(next);res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.put("/api/v1/class-schedules/:id",requireCapability("schedule.manage"),(req,res)=>{try{const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);if(i<0)return res.status(404).json({ok:false,error:"Class not found"});const cls=normalizeClassSchedule(req.body||{},classScheduleStore.classes[i]),classes=[...classScheduleStore.classes];classes[i]=cls;commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message})}});
+app.post("/api/v1/class-schedules",requireCapability("schedule.manage"),(req,res)=>{try{const cls=normalizeClassSchedule(req.body||{});if(classScheduleStore.classes.some(x=>x.id===cls.id))return res.status(409).json({ok:false,error:"Class ID already exists"});assertClassScheduleConflicts(cls,classScheduleStore.classes);const next={...classScheduleStore,classes:[...classScheduleStore.classes,cls]};commitClassSchedules(next);res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
+app.put("/api/v1/class-schedules/:id",requireCapability("schedule.manage"),(req,res)=>{try{const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);if(i<0)return res.status(404).json({ok:false,error:"Class not found"});const cls=normalizeClassSchedule(req.body||{},classScheduleStore.classes[i]),classes=[...classScheduleStore.classes];assertClassScheduleConflicts(cls,classes.filter((_,index)=>index!==i));classes[i]=cls;commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
 app.post("/api/v1/class-schedules/:id/duplicate",requireCapability("schedule.manage"),(req,res)=>{
   try{
     const source=classScheduleStore.classes.find(c=>c.id===req.params.id);
@@ -5116,6 +5142,7 @@ app.post("/api/v1/class-schedules/:id/duplicate",requireCapability("schedule.man
       id:undefined,
       name:String(req.body?.name||`${source.name} - Copy`),
       shortName:String(req.body?.shortName||source.shortName||source.name),
+      enabled:false,
       createdAt:undefined,
       updatedAt:undefined
     },{});
@@ -5130,8 +5157,10 @@ app.post("/api/v1/class-schedules/:id/duplicate",requireCapability("schedule.man
 app.delete("/api/v1/class-schedules/:id",requireCapability("schedule.manage"),(req,res)=>{
   const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);
   if(i<0)return res.status(404).json({ok:false,error:"Class not found"});
-  const references=classroomAutomations.events.filter(event=>automationClassIds(event).includes(req.params.id)||String(event.timerOverlay?.classId||"")===req.params.id).map(event=>({id:event.id,name:event.name}));
-  if(references.length)return res.status(409).json({ok:false,error:"Class is referenced by one or more automations",references});
+  const references=classroomAutomations.events.filter(event=>automationClassIds(event).includes(req.params.id)||String(event.timerOverlay?.classId||"")===req.params.id).map(event=>({type:"automation",id:event.id,name:event.name}));
+  const continuations=classScheduleStore.classes.filter(item=>String(item.continuationOf||"")===req.params.id).map(item=>({type:"continuation",id:item.id,name:item.name}));
+  references.push(...continuations);
+  if(references.length)return res.status(409).json({ok:false,error:"Class is referenced by automations, timers, or continuation classes",references});
   try{const classes=[...classScheduleStore.classes],removed=classes.splice(i,1)[0];commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,removed})}
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
@@ -5147,21 +5176,83 @@ function evaluateAutomationAt(now=schedulerClock.now()){
   }
   return {observedAt:new Date().toISOString(),schedulerTime:now.toISOString(),schoolCycle:schoolCycleForDate(now),suppression,items};
 }
+function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
+  const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes(),winners=new Map();
+  for(const stored of classroomAutomations.events){
+    if(stored?.enabled===false)continue;
+    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored].filter(event=>automationMatchesDate(event,now).match);
+    for(const event of occurrences){
+      if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
+      const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;if(scheduled>nowMinutes)continue;
+      const steps=[{action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{}},...(event.actions||[])];let elapsed=0;
+      for(const step of steps){elapsed+=Math.max(0,Number(step.delaySeconds||0));const domain=automationTargetDomain(step.action);if(!["tv-power","lighting"].includes(domain))continue;const effectiveMinute=scheduled+Math.floor(elapsed/60);if(effectiveMinute>nowMinutes)continue;let targets=(step.useEventTargets!==false&&domain===automationTargetDomain(event.action))?(event.targets||[]):(step.targets||[]);const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;for(const target of resolved){const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2]))winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target})}}
+    }
+  }
+  return [...winners.values()];
+}
 async function reconcileScheduledAutomationState(reason="operator-resume"){
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {ok:true,skipped:true,reason:suppression.reason,schedulerTime:now.toISOString()};
   if(morningAnnouncementsRuntime.active)return {ok:true,deferred:true,reason:"Morning Announcements have priority",targets:[...(morningAnnouncementsRuntime.targets||[])]};
-  const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason);
+  const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
+  for(const winner of currentAutomationNonDisplayWinners(now)){
+    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
+    catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:false,error:error.message})}
+  }
   await backgroundMusicTick();
-  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0});
-  return {ok:!display.results?.some(item=>item.ok===false),reason,schedulerTime:now.toISOString(),display,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
+  const ok=!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false);
+  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:resourceResults.length,ok});
+  return {ok,reason,schedulerTime:now.toISOString(),display,resources:resourceResults,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
 }
 app.get("/api/v1/automation-control",requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
+app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString()});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
 app.post("/api/v1/automation-control/resume",requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
 
+function automationResourceKeys(event){
+  const steps=[{action:event.action,targets:event.targets,useEventTargets:true},...(event.actions||[])],keys=[];
+  for(const step of steps){
+    const action=step.action||event.action,domain=automationTargetDomain(action);let targets=[];
+    if(step.useEventTargets!==false&&domain===automationTargetDomain(event.action))targets=event.targets||[];
+    else if(Array.isArray(step.targets))targets=step.targets;
+    if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
+    if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
+    else if(domain==="tv-power")for(const target of expandTvTargets(targets,{devices}))keys.push(`tv-power:${target.connection}:${target.output}`);
+    else if(domain==="lighting")for(const id of targets)keys.push(`lighting:${cleanId(id)}`);
+  }
+  return [...new Set(keys)];
+}
+function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDate=new Date()}={}){
+  if(candidate?.enabled===false)return [];
+  const conflicts=[],start=new Date(startDate);start.setHours(12,0,0,0);
+  for(let off=0;off<horizonDays&&conflicts.length<20;off++){
+    const day=new Date(start);day.setDate(day.getDate()+off);
+    const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
+    for(const occurrence of candidateOccurrences){
+      if(!occurrence||occurrence._scheduledDateKey&&occurrence._scheduledDateKey!==localDateKey(day))continue;
+      const cKeys=new Set(automationResourceKeys(occurrence));if(!cKeys.size)continue;
+      for(const other of events||[]){
+        if(!other||other.id===candidate.id||other.enabled===false)continue;
+        const otherOccurrences=automationClassIds(other).length?resolveAutomationOccurrences(other,day):[other].filter(event=>automationMatchesDate(event,day).match);
+        for(const o of otherOccurrences){
+          if(!o||String(o.time)!==String(occurrence.time))continue;
+          const shared=automationResourceKeys(o).filter(key=>cKeys.has(key));
+          if(shared.length)conflicts.push({date:localDateKey(day),time:occurrence.time,candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,resources:shared});
+        }
+      }
+    }
+  }
+  return conflicts;
+}
+function assertAutomationConflicts(candidate,events){const conflicts=automationConflictDiagnostics(candidate,events);if(!conflicts.length)return;const first=conflicts[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=conflicts;throw error}
+app.post("/api/v1/automations/draft/simulate",requireClassroomRead,(req,res)=>{
+  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:[resolved.action,...(resolved.actions||[]).map(step=>step.action)]},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
+});
+app.post("/api/v1/automations/draft/run",requireControl,async(req,res)=>{
+  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),result=await runClassroomAutomation(resolved,{manual:true});audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:[event.action,...(event.actions||[]).map(step=>step.action)]});res.json({...result,draft:true})}catch(error){res.status(400).json({ok:false,error:error.message})}
+});
 app.get("/api/v1/automations",requireClassroomRead,(_req,res)=>{
   res.json({ok:true,events:[...classroomAutomations.events].sort(compareAutomations).map(e=>({...e,resolved:resolveAutomationFromClass(e),resolvedOccurrences:resolveAutomationOccurrences(e)})),scheduler:schedulerStatus(),actions:[
     "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
@@ -5171,8 +5262,9 @@ app.get("/api/v1/automations",requireClassroomRead,(_req,res)=>{
 
 app.post("/api/v1/automations",requireCapability("automation.manage"),(req,res)=>{
   try{
-    const event=normalizeAutomation(req.body||{});
+    const event={...normalizeAutomation(req.body||{}),revision:1};
     if(classroomAutomations.events.some(x=>x.id===event.id))return res.status(409).json({ok:false,error:"Automation ID already exists"});
+    assertAutomationConflicts(event,classroomAutomations.events);
     commitAutomations({...classroomAutomations,events:[...classroomAutomations.events,event]});
     audit({kind:"automation.create",automationId:event.id,name:event.name});
     res.json({ok:true,event});
@@ -5183,7 +5275,9 @@ app.put("/api/v1/automations/:id",requireCapability("automation.manage"),(req,re
   try{
     const id=cleanId(req.params.id),idx=classroomAutomations.events.findIndex(x=>x.id===id);
     if(idx<0)return res.status(404).json({ok:false,error:"Automation not found"});
-    const event=normalizeAutomation({...req.body,id},classroomAutomations.events[idx]);
+    const prior=classroomAutomations.events[idx];
+    const event={...normalizeAutomation({...req.body,id},prior),revision:Math.max(1,Number(prior.revision||1)+1)};
+    assertAutomationConflicts(event,classroomAutomations.events.filter((_,index)=>index!==idx));
     const events=[...classroomAutomations.events];events[idx]=event;commitAutomations({...classroomAutomations,events});
     audit({kind:"automation.update",automationId:event.id,name:event.name});
     res.json({ok:true,event});
@@ -7331,11 +7425,12 @@ const backgroundMusicStartupTimer=setTimeout(()=>backgroundMusicTick().catch(err
 // execution and may wait independently without blocking other scheduled work.
 let automationSchedulerBusy=false;
 const automationRunningOccurrences=new Map();
+const automationCancelledOccurrences=new Set();
 async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}){
   const id=occurrenceId(event,dateKey,event.time);
   automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"running",schedulerTime:schedulerClock.now().toISOString()});
   try{
-    const runResult=await runClassroomAutomation(event);
+    const runResult=await runClassroomAutomation({...event,_occurrenceId:id});
     storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(runResult)}};
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
   }catch(err){
@@ -7343,7 +7438,7 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"failed",schedulerTime:schedulerClock.now().toISOString(),error:err.message});
     audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
   }finally{
-    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);
+    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationCancelledOccurrences.delete(id);
   }
 }
 async function automationSchedulerTick(){
@@ -7383,6 +7478,7 @@ async function automationSchedulerTick(){
   finally{automationSchedulerBusy=false}
 }
 const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
+const automationStartupReconcileTimer=setTimeout(()=>{if(automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation(reconcileScheduledAutomationState("startup-reconcile")).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
 
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.
@@ -7431,7 +7527,7 @@ function gracefulShutdown(signal){
   if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
   veyonCommandQueue.stop();
   esphomeManager.close();
-  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
+  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
   for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
   try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};
   const force=setTimeout(()=>process.exit(1),10000);force.unref();

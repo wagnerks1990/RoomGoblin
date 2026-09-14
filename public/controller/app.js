@@ -219,6 +219,7 @@ const overviewPreviewResizeObserver=new ResizeObserver(()=>scaleOverviewDisplayP
 const overviewDisplaysObserverTarget=document.getElementById('overviewDisplays');
 if(overviewDisplaysObserverTarget)overviewPreviewResizeObserver.observe(overviewDisplaysObserverTarget);
 async function refreshOverview(){
+  loadAutomationControl();
   try{
     const [st,intg,dev,classes,pluto]=await Promise.all([
       api('/api/v1/status'),
@@ -1024,7 +1025,7 @@ async function loadAutomationControl(){
 }
 function paintAutomationControl(j={}){
   if(!window.automationControlSummary)return;const clock=j.clock||{},mode=clock.active?'TEST CLOCK':'Real time';automationControlSummary.textContent=`${j.enabled!==false?'Automatic runs ON':'Automatic runs PAUSED'} • ${mode} • ${clock.schedulerTime?new Date(clock.schedulerTime).toLocaleString():''}`;
-  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);
+  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);if(window.todayAutomationState){todayAutomationState.textContent=j.enabled!==false?'Automation Active':'Automation Paused';todayAutomationState.className='pill '+(j.enabled!==false?'ok':'warn')}if(window.todayAutomationToggle)todayAutomationToggle.textContent=j.enabled!==false?'Pause Automation':'Enable Automation';
   automationSimulationBanner.textContent=clock.active?`TEST CLOCK ACTIVE — ${new Date(clock.schedulerTime).toLocaleString()} • ${clock.liveCommands?'REAL DEVICE COMMANDS ENABLED':'dry-run only'}`:'';
   automationSimulationBanner.className=`status ${clock.active?(clock.liveCommands?'bad':'warn'):''}`;
 }
@@ -1160,6 +1161,7 @@ let currentEditTargets=[];
 
 
 let autoSteps=[];
+let currentAutomationPayload={};
 const AUTOMATION_ACTION_META={
   'tv.power':{group:'TV',label:'TV → Power On / Off',short:'TV Power'},
   'display.text':{group:'Display',label:'Display → Show Text',short:'Show Text'},
@@ -1489,7 +1491,7 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayLabel.value='%class_short% • Class Ends In';
     autoTimerOverlayBackground.value='rgba(0,0,0,.35)';
     autoTimerOverlayUseEventTargets.checked=true;
-    autoTimerOverlayFollowLinkedClasses.checked=true;
+    autoTimerOverlayFollowLinkedClasses.checked=true;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }else if(data&&typeof data==='object'){
     autoTimerOverlayEnabled.checked=!!data.enabled;
     autoTimerOverlaySource.value=data.source||'class-end';
@@ -1504,7 +1506,7 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayLabel.value=data.label||'%class_short% • Class Ends In';
     autoTimerOverlayBackground.value=data.background||'rgba(0,0,0,.35)';
     autoTimerOverlayUseEventTargets.checked=data.useEventTargets!==false;
-    autoTimerOverlayFollowLinkedClasses.checked=data.followLinkedClasses!==false;
+    autoTimerOverlayFollowLinkedClasses.checked=data.followLinkedClasses!==false;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(data.followGapMinutes??S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }
 
   if(data===undefined)populateTimerOverlayClassSelect(autoTimerOverlayClass?.value||'');
@@ -1531,17 +1533,18 @@ function readTimerOverlay(){
     background:autoTimerOverlayBackground.value,
     useEventTargets:autoTimerOverlayUseEventTargets.checked,
     followLinkedClasses:autoTimerOverlayFollowLinkedClasses.checked,
-    followGapMinutes:15
+    followGapMinutes:Number(window.autoTimerOverlayFollowGap?.value??S.scheduleProfile?.continuation?.maximumGapMinutes??15)
   };
 }
 function newAutomation(){
+  currentAutomationPayload={};
   autoId.value='';autoName.value='';autoTime.value='07:45';autoAction.value='tv.power';autoEnabled.value='1';autoSteps=[];renderAutomationSteps();renderTimerOverlayFields(null);populateAutomationClassSelect([]);autoClassRef.value='start';autoClassOffset.value='0';autoUseClassTargets.checked=true;
   currentEditTargets=[configuredDisplayTargets(false)[0]?.[0]||'all'];
   currentScheduleData={days:[1,2,3,4,5],scheduleMode:'weekly',alternatePhase:'A',anchorDate:'',includeDates:[]};
   autoScheduleMode.value='weekly';renderScheduleModeFields(currentScheduleData);renderAutomationFields({state:'on'});renderAutomationClassBinding();
   automationEditorTitle.textContent='New Scheduled Event';autoEditorMsg.textContent='';
 }
-function readAutoPayload(){
+function readAutoPayloadFields(){
   const action=autoAction.value;
   if(action==='tv.power'||action==='govee.power')return {state:autoState.value};
   if(action==='display.text')return {title:autoTitle.value,text:autoText.value,subtitle:autoSubtitle.value,color:autoTextColor.value,background:autoBg.value,size:Number(autoTextSize.value),position:autoPosition.value};
@@ -1555,6 +1558,7 @@ function readAutoPayload(){
   if(action==='govee.scene')return {scene:autoScene.value};
   return {};
 }
+function readAutoPayload(){return {...currentAutomationPayload,...readAutoPayloadFields()}}
 function editorEvent(){
   const mode=autoScheduleMode.value;
   const daysSelected=mode==='weekly'?[...scheduleModeFields.querySelectorAll('[data-autoday]:checked')].map(x=>Number(x.dataset.autoday)):[1,2,3,4,5];
@@ -1610,13 +1614,16 @@ async function runAutomation(id){
     throw e;
   }
 }
-async function testAutomationEditor(){
-  try{
-    const id=autoId.value;
-    if(id)return runAutomation(id);
-    autoEditorMsg.textContent='Save the event first, then Test Now.';
-  }catch(e){autoEditorMsg.textContent=e.message}
+async function simulateAutomationEditor(){
+  try{const body=editorEvent(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=j.ok?`Simulation OK • ${j.resolved?.resourceKeys?.length||0} resolved resource(s)`:j.error||`Simulation found ${(j.conflicts||[]).length} conflict(s)`;return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
 }
+async function runAutomationDraft(){
+  if(!confirm('Run the current unsaved editor values on real classroom devices? This does not save or enable the event.'))return;
+  try{const body=editorEvent(),j=await api('/api/v1/automations/draft/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});const failures=automationRunFailureSummary(j);autoEditorMsg.textContent=failures.length?`Live draft run completed with errors: ${failures.join(' • ')}`:'Live draft run completed.';return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
+}
+async function validateEnableAutomation(){autoEnabled.value='1';const simulation=await simulateAutomationEditor();if(simulation?.ok===false)throw Error('Resolve simulation conflicts before enabling.');return saveAutomation()}
+async function testAutomationEditor(){return simulateAutomationEditor()}
+
 async function duplicateAutomation(id){
   const source=S.automations.find(x=>x.id===id);
   if(!source)return;
@@ -1629,7 +1636,7 @@ async function duplicateAutomation(id){
 }
 
 function editAutomation(id){
-  const e=S.automations.find(x=>x.id===id);if(!e)return;
+  const e=S.automations.find(x=>x.id===id);if(!e)return;currentAutomationPayload=JSON.parse(JSON.stringify(e.payload||{}));
   autoId.value=e.id;autoName.value=e.name||'';autoTime.value=e.time;autoAction.value=e.action;autoEnabled.value=e.enabled?'1':'0';populateAutomationClassSelect(Array.isArray(e.classIds)&&e.classIds.length?e.classIds:[e.classId].filter(Boolean));autoClassRef.value=e.classTimeReference||'start';autoClassOffset.value=String(e.classTimeOffsetMinutes||0);autoUseClassTargets.checked=e.useClassTargets!==false;
   currentEditTargets=[...(e.targets||[])];
   currentScheduleData={days:e.days||[1,2,3,4,5],scheduleMode:e.scheduleMode||'weekly',alternatePhase:e.alternatePhase||'A',anchorDate:e.anchorDate||'',includeDates:e.includeDates||[],dayType:e.dayType||'Any',cycleDays:e.cycleDays||[]};
@@ -1748,7 +1755,7 @@ async function loadAutomationScenes(alias){
 async function loadMorningWatch(){
   try{
     const x=await api('/api/v1/automations/morning-announcements'),c=x.config||{},r=x.runtime||{};
-    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';morningWatchVolume.value=String(Number.isFinite(Number(c.volumePercent))?Number(c.volumePercent):100);morningWatchVolumeValue.textContent=morningWatchVolume.value+'%';
+    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';morningWatchVolume.value=String(Number.isFinite(Number(c.volumePercent))?Number(c.volumePercent):100);morningWatchVolumeValue.textContent=morningWatchVolume.value+'%';if(window.morningWatchOfflineConfirmations)morningWatchOfflineConfirmations.value=String(c.offlineConfirmations??2);if(window.morningWatchCheckInterval)morningWatchCheckInterval.value=String(c.checkIntervalSeconds??15);if(window.morningWatchTargets){morningWatchTargets.innerHTML=configuredDisplayTargets(false).map(([id,name])=>`<label class="pill"><input type="checkbox" data-morning-target="${esc(id)}" ${(c.targets||['all']).includes('all')||(c.targets||[]).includes(id)?'checked':''}> ${esc(name)}</label>`).join('')}
     const unknown=!r.active&&r.lastCheck&&r.probeStatus==='unavailable';
     morningWatchState.textContent=r.active?'PLAYING':(r.live?'LIVE':(unknown?'UNKNOWN':'OFFLINE'));
     morningWatchState.className='pill '+(r.active||r.live?'ok':'');
@@ -1760,7 +1767,7 @@ async function loadMorningWatch(){
 }
 async function saveMorningWatch(){
   try{
-    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:['all'],offlineConfirmations:2,checkIntervalSeconds:15})});
+    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:window.morningWatchTargets?[...morningWatchTargets.querySelectorAll('[data-morning-target]:checked')].map(x=>x.dataset.morningTarget):['all'],offlineConfirmations:Number(window.morningWatchOfflineConfirmations?.value||2),checkIntervalSeconds:Number(window.morningWatchCheckInterval?.value||15)})});
     morningWatchMsg.textContent='Saved';await loadMorningWatch();return x;
   }catch(e){morningWatchMsg.textContent=e.message}
 }
