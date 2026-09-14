@@ -18,6 +18,7 @@
 - [Troubleshooting](Troubleshooting)
 - [Development](Development)
 - [AI and Contributor Guide](AI-and-Contributor-Guide)
+- [Android TV Hardware Validation](Android-TV-Hardware-Validation)
 - [Security](Security)
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
 
@@ -61,6 +62,8 @@ The inherited baseline includes:
 - explicitly linked class-continuation rules;
 - converged runtime release versioning through release metadata/stamping.
 
+Current Android managed-display validation additionally records that Device Administrator, Accessibility, Home, and Back are physically validated on the current Onn Android 14 target; Accessibility Recents is OEM-dependent and may return Android success without showing a visible Recents UI; and native Agent v2 arbitrary input remains unimplemented. See [[Android TV Hardware Validation|Android-TV-Hardware-Validation]].
+
 ## Project principles
 
 1. RoomGoblin is the canonical current product name; legacy Classroom Control Hub identifiers remain only where compatibility or history requires them.
@@ -76,6 +79,7 @@ The inherited baseline includes:
 11. Existing Docker services can be adopted without recreation; new container creation remains limited to reviewed supported integration templates.
 12. Optional/slow hardware integrations must not block the initial controller Overview screen.
 13. Integration health is independent; one failed integration must not falsely mark unrelated integrations offline.
+14. Managed-device capability reporting must distinguish physically validated behavior, API availability, OEM-dependent behavior, and unimplemented features.
 
 ## Deployment model
 
@@ -103,6 +107,7 @@ music-assistant-server     ghcr.io/music-assistant/server:2.9.13
 
 Source repository: https://github.com/wagnerks1990/RoomGoblin
 
-The repository `docs/` directory is the canonical technical documentation set. `wiki/` is the Git-tracked mirror of this GitHub Wiki. AI coding assistants should read `AGENTS.md`, `docs/AI-CONTEXT.md`, and `docs/brand/AI-BRAND-CONTEXT.md` before modifying the project.
+The repository `docs/` directory is the canonical technical documentation set. `wiki/` is the Git-tracked mirror of this GitHub Wiki. AI coding assistants should read `AGENTS.md`, `docs/AI-CONTEXT.md`, `docs/brand/AI-BRAND-CONTEXT.md`, and the relevant `docs/ai/` context before modifying managed-device behavior.
 
 - [[ESPHome devices|ESPHome-Devices]] — encrypted native enrollment and supported controls.
+- [[Android TV Hardware Validation|Android-TV-Hardware-Validation]] — physical managed-display validation and capability-reporting boundaries.
