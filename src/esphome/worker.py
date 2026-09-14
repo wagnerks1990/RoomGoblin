@@ -37,8 +37,9 @@ def valid_target(config):
     if type(port) is not int or not 1 <= port <= 65535:
         raise ValueError("invalid-port")
     key = config.get("key", "")
-    if len(key) != 44 or len(base64.b64decode(key, validate=True)) != 32:
-        raise ValueError("encryption-key-required")
+    if key != "":
+        if len(key) != 44 or len(base64.b64decode(key, validate=True)) != 32:
+            raise ValueError("invalid-encryption-key")
     return config
 
 
@@ -276,7 +277,7 @@ class Worker:
 
     def client(self, config):
         valid_target(config)
-        return self.client_factory(config["address"], config["port"], noise_psk=config["key"],
+        return self.client_factory(config["address"], config["port"], noise_psk=config["key"] or None,
                                    client_info="RoomGoblin", keepalive=10, provide_time=False,
                                    expected_mac=config.get("mac", "").replace(":", "") or None)
 

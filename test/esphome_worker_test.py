@@ -84,12 +84,13 @@ class FakeClient:
 
 
 class ModelTests(unittest.TestCase):
-    def test_private_target_and_encryption_required(self):
+    def test_private_target_and_optional_encryption(self):
         self.assertEqual(valid_target(config())["port"], 6053)
         for address in ("127.0.0.1", "169.254.169.254", "example.test", "::1", "192.0.2.1", "224.0.0.1"):
             with self.assertRaises(ValueError):
                 valid_target({**config(), "address": address})
-        for key in ("", KEY+"\n", "malformed"):
+        self.assertEqual(valid_target({**config(), "key": ""})["key"], "")
+        for key in (KEY+"\n", "malformed"):
             with self.assertRaises(ValueError):
                 valid_target({**config(), "key": key})
         with self.assertRaises(ValueError):
@@ -218,6 +219,13 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.events[-1]["ok"])
         self.assertFalse(self.events[-1]["confirmed"])
         self.assertEqual(len(node.client.commands), 1)
+
+    async def test_unencrypted_probe_uses_no_noise_psk(self):
+        open_config={**config(), "key": ""}
+        result=await self.worker.probe(open_config)
+        self.assertEqual(result["info"]["mac_address"], MAC)
+        self.assertIsNone(FakeClient.seen[-1].kwargs["noise_psk"])
+        self.assertTrue(FakeClient.seen[-1].closed)
 
     async def test_enrollment_probe_is_read_only_and_closes_connection(self):
         result = await self.worker.probe(config())
