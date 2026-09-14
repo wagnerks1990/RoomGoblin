@@ -2,7 +2,7 @@
 
 ## Purpose
 
-RoomGoblin Display Agent `0.3.0-agent-v2` introduces a native Music Assistant playback path for managed Android/Google TV devices. Audio playback is owned by the foreground Android agent rather than the kiosk WebView. This is intended to prevent display reloads, page navigation, renderer refreshes, or kiosk recovery from interrupting classroom audio.
+RoomGoblin Display Agent `0.3.1-agent-v2` provides the native Music Assistant playback path for managed Android/Google TV devices. Audio playback is owned by the foreground Android agent rather than the kiosk WebView. This is intended to prevent display reloads, page navigation, renderer refreshes, or kiosk recovery from interrupting classroom audio.
 
 The first target remains the physically validated Onn 4K Streaming Device (`wayne`) running Android 14. Native Sendspin itself is **not physically validated yet**; the implementation must pass CI and then be tested on the Onn before being marked production-validated.
 
@@ -24,6 +24,10 @@ RoomGoblin display WebView
 ```
 
 The agent uses the Apache-2.0 `sendspin-jvm` library, pinned to release `v0.3.4` for this implementation. The library owns the Sendspin WebSocket state machine, clock synchronization and timestamped jitter buffer. RoomGoblin supplies the Android audio sink.
+
+### Moshi protocol adapters
+
+`sendspin-jvm` uses `JsonOptional<T>` to distinguish omitted fields from explicit JSON `null` values in partial server-state updates. Agent `0.3.1-agent-v2` constructs Moshi with `JsonOptionalAdapterFactory` before `KotlinJsonAdapterFactory`. Omitting that adapter causes runtime errors such as `Cannot serialize abstract class com.sendspin.protocol.JsonOptional` and prevents the player from connecting. Keep this adapter order covered by regression tests when upgrading Sendspin or Moshi.
 
 ## Initial audio-format contract
 
@@ -100,7 +104,7 @@ The Android manifest declares both `specialUse` and `mediaPlayback` foreground-s
 
 Before marking native Sendspin validated on a device family:
 
-1. Install/reinstall Agent `0.3.0-agent-v2`.
+1. Install/reinstall Agent `0.3.1-agent-v2`.
 2. Confirm Agent v2 `/v1/status` reports the new version.
 3. Configure the Music Assistant Sendspin endpoint and device/player name.
 4. Confirm the player appears in Music Assistant.
