@@ -216,6 +216,7 @@ ensure_runtime_layout(){
 }
 
 refresh_host_agent(){
+  if [[ "${PLAN_FULL:-true}" == true ]]; then
   install -D -m 0644 "$HUB_ROOT/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service
   if [[ "$HUB_ROOT" != /opt/classroom-hub ]]; then sed -i "s#/opt/classroom-hub#$HUB_ROOT#g" /etc/systemd/system/classroom-hub-host-agent.service; fi
   sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=${HOST_SERVICES_DIR:-/opt/services}#" /etc/systemd/system/classroom-hub-host-agent.service
@@ -223,6 +224,7 @@ refresh_host_agent(){
   sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
   python3 -m py_compile "$HUB_ROOT/host-agent/server.py"
   systemctl daemon-reload
+  fi
   systemctl restart classroom-hub-host-agent.service
 }
 
@@ -234,7 +236,7 @@ restore_safety_backup(){
     actual_sha="$(sha256sum "$HUB_ROOT/data/backups/$backup" | awk '{print $1}')"
     [[ "$actual_sha" == "$expected_sha" ]] || { echo "Safety backup checksum mismatch" >&2; return 1; }
   fi
-  docker exec -i -e BACKUP_NAME="$backup" -e PORT="${MAINTENANCE_PORT:-3010}" classroom-control-hub-maintenance node - <<'NODE'
+  docker exec -i -e BACKUP_NAME="$backup" classroom-control-hub-maintenance node - <<'NODE'
 const name=process.env.BACKUP_NAME,token=process.env.MAINTENANCE_TOKEN,port=process.env.PORT||3010;
 fetch(`http://127.0.0.1:${port}/backup/${encodeURIComponent(name)}/restore`,{method:'POST',headers:{'content-type':'application/json','x-maintenance-token':token},body:JSON.stringify({mode:'configuration-data',confirm:'RESTORE'})})
   .then(async r=>{const text=await r.text();if(!r.ok)throw Error(text);console.log(text)})
@@ -303,7 +305,13 @@ rollback(){
   git checkout --detach "$CURRENT_COMMIT" || rollback_ok=false
   if [[ -f "$STATE_DIR/app-update.env" ]]; then cp "$STATE_DIR/app-update.env" .env || rollback_ok=false; chmod 0600 .env; fi
   ensure_runtime_layout || rollback_ok=false
-  refresh_host_agent || rollback_ok=false
+  if [[ -f "$STATE_DIR/app-update-host.service" ]]; then
+    install -m 0644 "$STATE_DIR/app-update-host.service" /etc/systemd/system/classroom-hub-host-agent.service || rollback_ok=false
+    systemctl daemon-reload || rollback_ok=false
+    systemctl restart classroom-hub-host-agent.service || rollback_ok=false
+  else
+    refresh_host_agent || rollback_ok=false
+  fi
   set_image_tag "$CURRENT_IMAGE_TAG" || rollback_ok=false
   activate_recovery_pair "$CURRENT_HUB_IMAGE" "$CURRENT_MAINTENANCE_IMAGE" || rollback_ok=false
   # Never restore database/data if stopping the writer failed. Start only the
@@ -329,13 +337,13 @@ rollback(){
     write_state rollback-failed "Update failed and automatic rollback needs administrator attention." false
   fi
   rm -f "$STATE_DIR/deployment.json"
-  [[ "$rollback_ok" != true ]] || rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env"
+  [[ "$rollback_ok" != true ]] || rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env" "$STATE_DIR/app-update-host.service"
   exit "$rc"
 }
 preflight_failure(){
   local rc=$?
   write_state failed "Update preflight failed; running services were not changed." false
-  rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env"
+  rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env" "$STATE_DIR/app-update-host.service"
   exit "$rc"
 }
 trap preflight_failure ERR
@@ -431,6 +439,11 @@ else
   set_state_fields "action=$ACTION" "targetRef=$TARGETREF"
 fi
 
+if [[ -f /etc/systemd/system/classroom-hub-host-agent.service ]]; then
+  cp /etc/systemd/system/classroom-hub-host-agent.service "$STATE_DIR/app-update-host.service"
+  chmod 0600 "$STATE_DIR/app-update-host.service"
+  sync -f "$STATE_DIR/app-update-host.service"
+fi
 cp .env "$STATE_DIR/app-update.env"
 chmod 0600 "$STATE_DIR/app-update.env"
 sync -f "$STATE_DIR/app-update.env"
@@ -492,5 +505,5 @@ else
 fi
 install -D -m 0755 "$HUB_ROOT/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
 install -D -m 0755 "$HUB_ROOT/host-agent/app-update-runner.sh" /usr/local/libexec/classroom-control-hub/app-update-runner.sh
-rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env"
+rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env" "$STATE_DIR/app-update-host.service"
 write_state completed "RoomGoblin $ACTUAL_VERSION deployed and verified successfully over HTTP." true

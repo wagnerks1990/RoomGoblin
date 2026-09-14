@@ -68,7 +68,7 @@ test('docs-only native update performs no image download, backup or restart',t=>
 });
 test('failed native deployment restores source and snapshot through prior maintenance',t=>{
  const f=fixture(t),r=f.run({FAIL_DEPLOY:'1'});assert.notEqual(r.status,0);assert.equal(f.git('rev-parse','HEAD'),f.base);
- assert.match(r.events,/BACKUP_NAME=fixture.zip/);assert.match(fs.readFileSync(f.hub+'/.env','utf8'),/ROOMGOBLIN_HUB_TAG=recovery-/);assert.ok(r.events.indexOf('compose up -d --no-build --no-deps --force-recreate maintenance-agent')<r.events.indexOf('BACKUP_NAME=fixture.zip'));
+ assert.match(r.events,/BACKUP_NAME=fixture.zip/);assert.doesNotMatch(r.events,/-e PORT=/);assert.match(fs.readFileSync(f.hub+'/.env','utf8'),/ROOMGOBLIN_HUB_TAG=recovery-/);assert.ok(r.events.indexOf('compose up -d --no-build --no-deps --force-recreate maintenance-agent')<r.events.indexOf('BACKUP_NAME=fixture.zip'));
  const status=JSON.parse(fs.readFileSync(f.state+'/app-update-status.json'));assert.equal(status.phase,'rolled-back');assert.equal(fs.existsSync(f.state+'/deployment.json'),false);
 });
 
@@ -78,7 +78,7 @@ test('native maintenance-only update leaves Hub running',t=>{
 });
 test('native host-only update refreshes the service without container pulls/recreation',t=>{
  const f=fixture(t,['host-agent/change.py']),r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);
- assert.match(r.events,/systemctl restart classroom-hub-host-agent/);assert.doesNotMatch(r.events,/^pull |^compose up/m);
+ assert.match(r.events,/systemctl restart classroom-hub-host-agent/);assert.doesNotMatch(r.events,/^pull |^compose up|systemctl daemon-reload|install -D -m 0644/m);
 });
 test('deployment input changes invoke full installer reconciliation',t=>{
  const f=fixture(t,['docker-compose.yml']),r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);assert.match(r.events,/full-installer/);
