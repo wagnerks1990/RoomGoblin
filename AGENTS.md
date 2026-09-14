@@ -354,3 +354,18 @@ stale classroom intent.
 Queue workers must participate in Full Recovery Export pause/drain accounting.
 Do not report unavailable feature state as false or broadcast-stop failures as
 success. See `docs/VEYON-MUSIC-INTEGRATIONS.md` for recovery semantics.
+
+## Native ESPHome boundary
+
+ESPHome device management uses `src/esphome.js` and the private stdin/stdout
+`src/esphome/worker.py` worker with the pinned official `aioesphomeapi` client.
+Read `docs/ESPHOME-INTEGRATION.md` (or `ESPHOME-INTEGRATION.md` from docs).
+Preserve mandatory native encryption, private literal IPv4 targets, verified MAC
+identity, composite subdevice/entity IDs, secret-store transactions, capability
+checks and Full Recovery Export writer drain. Unknown/disabled entities are not
+arbitrary native methods. Buttons/configuration controls require administrator
+confirmation. Commands are never replayed after uncertain delivery, disconnect or
+restart. Sensor state/reconnects are memory-only. Firmware, HA actions, automatic
+mDNS enrollment and sensor-triggered automations are not implemented by this module.
+Do not broaden this boundary or replace native encryption with unauthenticated
+HTTP, an exposed worker port, arbitrary service calls, or privileged Docker access.

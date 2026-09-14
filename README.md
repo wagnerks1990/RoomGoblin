@@ -34,6 +34,7 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - priority live/morning announcements
 - Background Music through Music Assistant
 - AV routing and TV control integrations
+- encrypted native [ESPHome devices](docs/ESPHOME-INTEGRATION.md) with verified enrollment, sensor states and supported entity controls (Unreleased)
 - lighting integrations through MQTT
 - class schedules, cycle days, closures, delays, half-days, and remote-day rules
 - lab/client management integrations

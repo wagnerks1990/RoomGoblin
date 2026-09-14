@@ -22,7 +22,15 @@ RUN apt-get update \
       fonts-liberation \
       poppler-utils \
       ca-certificates \
+      python3-venv \
  && rm -rf /var/lib/apt/lists/*
+
+COPY src/esphome/requirements.txt /tmp/esphome-requirements.txt
+RUN python3 -m venv /opt/esphome \
+ && /opt/esphome/bin/python -m pip install --no-cache-dir --only-binary=:all: -r /tmp/esphome-requirements.txt \
+ && /opt/esphome/bin/python -m pip check \
+ && /opt/esphome/bin/python -m pip uninstall -y pip setuptools \
+ && rm /tmp/esphome-requirements.txt
 
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts \
@@ -31,6 +39,11 @@ RUN npm ci --omit=dev --ignore-scripts \
 
 COPY VERSION ./VERSION
 COPY src ./src
+# Run native-client contract tests in the exact Python/runtime image being shipped.
+# Test sources are removed from the final image and do not touch physical devices.
+COPY test/esphome_worker_test.py ./test/esphome_worker_test.py
+RUN PYTHONDONTWRITEBYTECODE=1 /opt/esphome/bin/python -m unittest discover -s test -p esphome_worker_test.py -v \
+ && rm -rf /app/test
 COPY config ./config
 COPY public ./public
 COPY --from=browser-build /build/public/display/sendspin.bundle.js ./public/display/sendspin.bundle.js
@@ -52,10 +65,15 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
 # Local Docker contexts retain file modes. A root-edited 0600 server.js must not
 # produce an image that only root can start. Normalize packaged, non-secret
 # application files inside the image only; never chmod host data or secrets.
+# The isolated, root-owned native-client runtime also needs to tolerate a
+# restrictive build umask without giving the application write access.
 RUN chmod 0755 /app \
  && find /app/src /app/public /app/config /app/tools -type d -exec chmod 0755 {} + \
  && find /app/src /app/public /app/config /app/tools -type f -exec chmod 0644 {} + \
- && chmod 0644 /app/VERSION /app/package.json /app/package-lock.json
+ && chmod 0644 /app/VERSION /app/package.json /app/package-lock.json \
+ && find /opt/esphome -type d -exec chmod 0755 {} + \
+ && find /opt/esphome -type f -exec chmod 0644 {} + \
+ && find /opt/esphome/bin -type f -exec chmod 0755 {} +
 
 RUN groupadd --gid 10001 classroom-hub \
  && useradd --uid 10001 --gid 10001 --home-dir /tmp/classroom-hub --no-create-home --shell /usr/sbin/nologin classroom-hub \
@@ -71,5 +89,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 USER 10001:10001
 # Fail the build, rather than the deployed container, on unreadable source/assets.
-RUN node tools/verify-image-permissions.js && node --check src/server.js
+RUN node tools/verify-image-permissions.js && node --check src/server.js \
+ && /opt/esphome/bin/python -c "from aioesphomeapi import APIClient; import ast, os; ast.parse(open('src/esphome/worker.py').read()); assert not os.access('/opt/esphome', os.W_OK)"
 CMD ["node", "--require", "./src/direct-display-compat.js", "src/startup-recovery.js"]

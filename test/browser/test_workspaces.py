@@ -493,3 +493,73 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page.locator('[data-retry="student-a"]').click()
                 page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
                 self.assertFalse(errors, errors)
+
+    def test_esphome_inventory_permissions_refresh_and_controls(self):
+        entity = {'id': '7:42', 'key': 42, 'deviceId': 7, 'name': 'Fixture brightness',
+                  'domain': 'number', 'writable': True, 'adminOnly': False,
+                  'min': 0, 'max': 10, 'step': 0.5, 'unit': ''}
+        fixture = {'ok': True, 'devices': [{'id': 'fixture-esp', 'generation': 'fixture',
+                   'name': 'Lab sensor <not HTML>', 'address': '10.200.0.8', 'port': 6053,
+                   'mac': '02:00:00:00:00:01', 'enabled': True, 'hasKey': True, 'online': True,
+                   'info': {'model': 'ESP32', 'esphome_version': 'fixture'}, 'entities': [entity],
+                   'states': {'7:42': {'state': 2.5, 'updatedAt': 1000}}}]}
+        for width in (390, 1440):
+            posts = []
+            def transport(req, target):
+                if target.endswith('/entities/7%3A42/command') or target.endswith('/entities/7:42/command'):
+                    posts.append(json.loads(req.request.post_data))
+                    req.fulfill(json={'ok': True, 'confirmed': False, 'status': 'sent-unconfirmed'})
+                    return True
+                return False
+            page, errors = self.page('/controller/', width=width,
+                overrides={'/api/v1/esphome/devices': fixture}, transport=transport)
+            page.evaluate("showPage('esphome')")
+            page.locator('#espInventory article').wait_for()
+            self.assertEqual(page.locator('#espInventory h2').inner_text(), 'Lab sensor <not HTML>')
+            page.locator('#espInventory summary').click()
+            number = page.get_by_role('spinbutton', name='Fixture brightness value')
+            number.fill('6.5')
+            page.locator('#espRefresh').click()
+            page.wait_for_timeout(100)
+            self.assertEqual(number.input_value(), '6.5')
+            page.get_by_role('button', name='Set value', exact=True).click()
+            page.get_by_text('Sent, not confirmed. Check the device before repeating.').wait_for()
+            self.assertEqual(len(posts), 1)
+            self.assertEqual(posts[0]['command'], {'state': 6.5})
+            page.get_by_role('button', name='Edit', exact=True).click()
+            page.locator('#espName').fill('Unsaved name')
+            page.locator('#espRefresh').click()
+            self.assertEqual(page.locator('#espName').input_value(), 'Unsaved name')
+            self.evidence(page, errors, f'esphome-{width}')
+        readonly, errors = self.page('/controller/', role='teacher',
+            overrides={'/api/v1/esphome/devices': fixture})
+        readonly.evaluate("showPage('esphome')")
+        readonly.locator('#espInventory summary').click()
+        self.assertTrue(readonly.get_by_role('button', name='Set value', exact=True).is_disabled())
+        self.assertFalse(readonly.locator('#espEnrollment').is_visible())
+        self.assertFalse(errors, errors)
+
+    def test_esphome_failed_refresh_preserves_inventory_but_disables_commands(self):
+        state = {'fail': False}
+        def transport(req, target):
+            if target == '/api/v1/esphome/devices':
+                if state['fail']:
+                    req.fulfill(status=503, json={'error': 'Fixture disconnected'})
+                else:
+                    req.fulfill(json={'ok': True, 'devices': [{'id': 'fixture', 'generation': '1',
+                        'name': 'Fixture relay', 'address': '10.200.0.8', 'port': 6053,
+                        'mac': '02:00:00:00:00:01', 'enabled': True, 'hasKey': True, 'online': True,
+                        'entities': [{'id': '0:1', 'domain': 'switch', 'name': 'Relay', 'writable': True}],
+                        'states': {}}]})
+                return True
+            return False
+        page, errors = self.page('/controller/', transport=transport)
+        page.evaluate("showPage('esphome')")
+        page.locator('#espInventory summary').click()
+        self.assertTrue(page.get_by_role('button', name='On', exact=True).is_enabled())
+        state['fail'] = True
+        page.locator('#espRefresh').click()
+        page.get_by_text('Inventory stale — controls paused', exact=True).wait_for()
+        self.assertEqual(page.locator('#espInventory article').count(), 1)
+        self.assertTrue(page.get_by_role('button', name='On', exact=True).is_disabled())
+        self.assertFalse(errors, errors)

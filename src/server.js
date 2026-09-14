@@ -1,6 +1,7 @@
 "use strict";
 
 const express = require("express");
+const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
@@ -4971,6 +4972,14 @@ app.post("/api/v1/commands", requireControl, async (req, res) => {
   }
 });
 
+// Optional native ESPHome connections share the unprivileged application identity.
+// Registry/key writes and asynchronous enrollment/commands participate in export drain.
+const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown});
+registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRead,
+  requireControl:requireCapability("integrations.control"),requireAdmin,
+  isAdmin:req=>!dbStore.authEnabled()||(hasRole(requestUser(req),"admin")&&hasCapability(requestUser(req),"*")),
+  owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
+
 app.get("/api/v1/integrations/check",requireCapability("integrations.control"), async (_req,res)=>{
   const out={ok:true,mqtt:{configured:runtime.mqtt.configured,connected:runtime.mqtt.connected,lastError:runtime.mqtt.lastError},
     hardware:{govee:{configured:runtime.hardware.govee.configured,reachable:runtime.mqtt.connected,lastError:runtime.hardware.govee.lastError},
@@ -7468,6 +7477,7 @@ const goveeReconcileTimer=setInterval(()=>{if(!fullExportFreeze.requested)reconc
 function gracefulShutdown(signal){
   if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
   veyonCommandQueue.stop();
+  esphomeManager.close();
   clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
   for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
   try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};
