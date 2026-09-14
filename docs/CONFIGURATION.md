@@ -125,21 +125,24 @@ The following should normally be runtime configuration rather than source consta
 
 ## School and classroom identity and theme
 
-Normal branding is configured in **Settings → School & Classroom Branding** or during browser
+School identity and theme are configured in **Settings → School & Classroom** or during browser
 setup and is stored in SQLite under the site profile. It does not require an
 `.env` or tracked JSON edit. The profile includes:
 
 - school/district and classroom names;
-- product/portal name, logo URL, and favicon URL;
+- display prefix and timezone;
 - dark, light, or system color mode plus validated primary, accent,
   background, surface, and text colors.
 
 The unauthenticated `GET /api/v1/branding` response intentionally contains only
 presentation-safe fields so the sign-in and display surfaces can load the
 correct identity before a user session exists. It never returns preferences,
-credentials, integration configuration, or encrypted-secret metadata. Brand
-asset URLs accept HTTP(S) or site-relative paths and reject executable URL
-schemes. Each saved profile receives a monotonically increasing revision.
+credentials, integration configuration, or encrypted-secret metadata. Product
+name, descriptor, tagline, logo and favicon always use the canonical RoomGoblin
+identity. Old custom identity fields remain API-compatible but their values are
+ignored; ordinary saves write the canonical identity. Reading an old profile does
+not delete its raw values or uploaded files. Each saved profile receives a
+monotonically increasing revision.
 
 The product is intentionally education-specific. New code should use classroom,
 school, teacher/operator, student/participant, class schedule, and display/TV

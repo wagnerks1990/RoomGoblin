@@ -4,6 +4,7 @@ const fs=require("fs");
 const path=require("path");
 const crypto=require("crypto");
 const {DatabaseSync}=require("node:sqlite");
+const {ROOMGOBLIN_IDENTITY}=require("./brand-identity");
 
 // Database, credential and recovery material must never inherit a permissive
 // umask from an interactive shell or container runtime.
@@ -385,11 +386,13 @@ class ClassroomHubStorage{
 
   getAdminConfig(){
     const devices=this.readNormalized("devices",{}),hardware=this.readNormalized("hardware",{}),calendar=this.readNormalized("scheduler-calendar",{});
-    const site=this.getSetting("site.profile",{school:"Your School",room:devices.room||"Classroom",timezone:"America/New_York",productName:"RoomGoblin",logoUrl:"/brand/roomgoblin_app_192x192.png",faviconUrl:"/brand/roomgoblin_app_32x32.png",displayPrefix:"TV",theme:{mode:"dark",primary:"#0F766E",accent:"#22C55E",background:"#0B1320",surface:"#1E293B",text:"#F8FAFC"},revision:0});
+    const storedSite=this.getSetting("site.profile",{school:"Your School",room:devices.room||"Classroom",timezone:"America/New_York",...ROOMGOBLIN_IDENTITY,displayPrefix:"TV",theme:{mode:"dark",primary:"#0F766E",accent:"#22C55E",background:"#0B1320",surface:"#1E293B",text:"#F8FAFC"},revision:0});
+    // Project the current product identity without rewriting a saved profile on read.
+    const site={...storedSite,...ROOMGOBLIN_IDENTITY};
     const preferences={};for(const r of this.db.prepare("SELECT key,value_json FROM system_preferences ORDER BY key").all())preferences[r.key]=parseJson(r.value_json,null);
     return {site,devices,hardware,calendar,preferences,accessProfiles:this.listAccessProfiles()};
   }
-  putSiteProfile(value){const current=this.getSetting("site.profile",{}),next={...(value||{}),revision:Math.max(0,Number(current.revision)||0)+1,updatedAt:iso()};this.setSetting("site.profile",next);return next}
+  putSiteProfile(value){const current=this.getSetting("site.profile",{}),next={...(value||{}),...ROOMGOBLIN_IDENTITY,revision:Math.max(0,Number(current.revision)||0)+1,updatedAt:iso()};this.setSetting("site.profile",next);return next}
   listAccessProfiles(){return this.db.prepare("SELECT id,name,role,enabled,config_json,updated_at FROM access_profiles ORDER BY name,id").all().map(r=>({id:r.id,name:r.name,role:r.role,enabled:!!r.enabled,config:parseJson(r.config_json,{}),updatedAt:r.updated_at}))}
   effectiveAdministrators(){return this.db.prepare(`SELECT u.id,u.username,u.profile_id profileId FROM users u JOIN access_profiles p ON p.id=u.profile_id WHERE u.enabled=1 AND u.role='admin' AND p.enabled=1 AND p.role='admin'`).all().filter(row=>{const profile=this.db.prepare("SELECT config_json FROM access_profiles WHERE id=?").get(row.profileId);return parseJson(profile?.config_json,{}).capabilities?.includes("*")})}
   assertEffectiveAdministrator(){if((this.setupCompleted()||this.userCount()>0)&&!this.effectiveAdministrators().length)throw Error("At least one enabled effective administrator is required")}

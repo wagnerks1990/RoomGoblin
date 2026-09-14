@@ -264,6 +264,7 @@ nav button{min-width:135px}
 </style>
 <link rel="stylesheet" href="/shared/workspace.css">
 <link rel="stylesheet" href="/controller/workspace.css">
+<link rel="stylesheet" href="/controller/lighting.css">
 </head>
 <body class="rg-workspace rg-controller">
 <a class="rg-skip" href="#workspaceMain">Skip to content</a>
@@ -589,24 +590,26 @@ nav button{min-width:135px}
 </section>
 
 <section id="lights" class="page">
-  <div class="top"><h1>Govee Classroom Lighting</h1><div class="toolbar"><button onclick="loadGovee()">Refresh</button><button class="on" onclick="goveeCmd('all','on')">All On</button><button class="off" onclick="goveeCmd('all','off')">All Off</button></div></div>
-  <details class="panel workspaceDisclosure" style="margin-bottom:14px">
-    <summary><h2 class="sectionTitle">Automatic Discovery</h2></summary>
-    <div class="disclosureBody">
-    <div style="display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap">
-      <div>
-        <div id="goveeDiscoveryStatus" class="muted">Waiting for MQTT discovery…</div>
-      </div>
-      <label style="display:flex;gap:8px;align-items:center">
-        <input id="goveeAutoAdd" type="checkbox" checked onchange="setGoveeAutoAdd(this.checked)">
-        Auto-add detected Govee devices
-      </label>
-    </div>
-    <div class="muted" style="margin-top:8px">New device IDs seen on govee2mqtt light/state or gv2mqtt status topics are enrolled automatically, persist across restarts, and immediately become available to schedules. Use Edit Device to rename or assign groups.</div>
+  <div class="top"><div><h1>Classroom lighting</h1><div class="muted">Govee room controls</div></div><div class="toolbar"><button onclick="loadGovee()">Refresh</button><button class="on" onclick="goveeCmd('all','on')">All on</button><button class="off" onclick="goveeCmd('all','off')">All off</button></div></div>
+  <div id="goveeMessage" class="status" role="status" aria-live="polite"></div>
+  <div class="lightingHeading"><h2 class="sectionTitle">Groups</h2><span class="muted">Room-wide controls always target the entire group</span></div>
+  <div id="lightGroups" class="lightingGrid"></div>
+  <div class="lightingHeading"><h2 class="sectionTitle">Devices</h2><span id="goveeInventorySummary" class="muted" role="status"></span></div>
+  <div class="lightingFilters">
+    <label class="lightingSearch">Find a light<input id="goveeSearch" type="search" placeholder="Name, alias, model or group" oninput="filterGoveeDevices()"></label>
+    <label>Connection<select id="goveeStatusFilter" onchange="filterGoveeDevices()"><option value="all">All devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="unknown">Unknown</option></select></label>
+    <label>Group<select id="goveeGroupFilter" onchange="filterGoveeDevices()"><option value="">All groups</option></select></label>
   </div>
+  <div id="lightDevices" class="lightingGrid"></div>
+  <p id="goveeEmpty" class="muted" hidden>No lights match these filters. <button onclick="clearGoveeFilters()">Clear filters</button></p>
+  <details class="panel workspaceDisclosure lightingDiscovery">
+    <summary><h2 class="sectionTitle">Discovery & setup</h2></summary>
+    <div class="disclosureBody">
+      <div id="goveeDiscoveryStatus" class="muted">Waiting for MQTT discovery…</div>
+      <label class="lightingAutoAdd"><input id="goveeAutoAdd" type="checkbox" checked onchange="setGoveeAutoAdd(this.checked)"> Auto-add detected Govee devices</label>
+      <p class="muted">Devices detected through govee2mqtt are saved automatically and become available to schedules. Open a device’s More controls to edit its name or groups. Unknown means no presence report is available.</p>
+    </div>
   </details>
-  <h2 class="sectionTitle">Groups</h2><div id="lightGroups" class="grid"></div>
-  <h2 class="sectionTitle" style="margin-top:18px">Devices</h2><div id="lightDevices" class="grid"></div>
 </section>
 
 
@@ -1006,15 +1009,12 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
   <div id="cfgSummary" class="adminHero"><div class="muted">Loading configuration summary…</div></div>
 
   <details class="panel workspaceDisclosure">
-    <summary><h2 class="sectionTitle">School & Classroom Branding</h2></summary>
+    <summary><h2 class="sectionTitle">School & Classroom</h2></summary>
     <div class="disclosureBody">
 
     <div class="formGrid">
       <div class="formField"><label>School / District Name</label><input id="cfgSchool" aria-label="School or district name"></div>
       <div class="formField"><label>Classroom Name</label><input id="cfgRoom" aria-label="Classroom name"></div>
-      <div class="formField"><label>Product / Portal Name</label><input id="cfgProductName" aria-label="Product or portal name" placeholder="RoomGoblin"></div>
-      <div class="formField"><label>Logo URL (optional)</label><input id="cfgLogoUrl" aria-label="Logo URL" placeholder="https://.../logo.png"></div>
-      <div class="formField"><label>Favicon URL (optional)</label><input id="cfgFaviconUrl" aria-label="Favicon URL" placeholder="/favicon.ico"></div>
       <div class="formField"><label>Default Display Prefix</label><input id="cfgDisplayPrefix" aria-label="Default display prefix" placeholder="TV"></div>
       <div class="formField"><label>Timezone</label><input id="cfgTimezone" aria-label="Timezone" placeholder="America/New_York"></div>
       <div class="formField"><label>Color Mode</label><select id="cfgThemeMode" aria-label="Color mode"><option value="dark">Dark</option><option value="light">Light</option><option value="system">Follow Device</option></select></div>

@@ -13,18 +13,13 @@
     faviconUrl:"/brand/roomgoblin_app_32x32.png",
     theme:{mode:"dark",primary:"#0F766E",accent:"#22C55E",background:"#0B1320",surface:"#1E293B",text:"#F8FAFC"}
   };
-  const LEGACY_LOGOS=new Set(["/brand/roomgoblin_primary_400w.png","/brand/roomgoblin_app_512x512.png"]);
-  const LEGACY_PRODUCT_NAMES=new Set(["Classroom Control Hub","Classroom Hub"]);
   const renderer=/\/(display|document-viewer|antmedia-player)(\/|$)/.test(location.pathname);
   document.documentElement.dataset.brandSurface=renderer?"renderer":"operator";
 
   function normalize(branding={}){
     const incoming={...branding};
-    if(!incoming.productName||LEGACY_PRODUCT_NAMES.has(incoming.productName))incoming.productName=ROOMGOBLIN.productName;
-    if(!incoming.logoUrl||LEGACY_LOGOS.has(incoming.logoUrl))incoming.logoUrl=ROOMGOBLIN.logoUrl;
-    if(!incoming.faviconUrl)incoming.faviconUrl=ROOMGOBLIN.faviconUrl;
-    if(!incoming.descriptor)incoming.descriptor=ROOMGOBLIN.descriptor;
-    if(!incoming.tagline)incoming.tagline=ROOMGOBLIN.tagline;
+    // Product identity is fixed; school, room and theme remain site settings.
+    for(const key of ["productName","descriptor","tagline","logoUrl","faviconUrl"])incoming[key]=ROOMGOBLIN[key];
     const theme={...ROOMGOBLIN.theme,...(incoming.theme||{})};
     if(theme.primary==="#2aa866")theme.primary=ROOMGOBLIN.theme.primary;
     if(theme.accent==="#1b7a49")theme.accent=ROOMGOBLIN.theme.accent;
@@ -64,17 +59,13 @@
     });
     document.querySelectorAll("[data-brand-logo], .brandWrap .logo img").forEach(mark=>{
       mark.src=profile.logoUrl;
-      mark.alt=profile.logoUrl===ROOMGOBLIN.logoUrl?`${profile.productName} logo`:`${profile.school||profile.productName} logo`;
-      mark.onerror=()=>{
-        if(mark.getAttribute("src")!==ROOMGOBLIN.logoUrl){
-          mark.src=ROOMGOBLIN.logoUrl;mark.alt=`${ROOMGOBLIN.productName} logo`;
-        }else{mark.onerror=null;mark.hidden=true;}
-      };
+      mark.alt=`${ROOMGOBLIN.productName} logo`;
+      mark.onerror=()=>{mark.onerror=null;mark.hidden=true;};
       mark.hidden=false;
     });
     let icons=[...document.querySelectorAll("link[rel~='icon']")];
     if(!icons.length){const icon=document.createElement("link");icon.rel="icon";document.head.append(icon);icons=[icon];}
-    for(const icon of icons){icon.href=profile.faviconUrl;if(profile.faviconUrl===ROOMGOBLIN.faviconUrl){icon.type="image/png";icon.sizes="32x32";}else{icon.removeAttribute("type");icon.removeAttribute("sizes");}}
+    for(const icon of icons){icon.href=ROOMGOBLIN.faviconUrl;icon.type="image/png";icon.sizes="32x32";}
   }
 
   function apply(branding={}){
@@ -94,7 +85,6 @@
     else if(document.title.includes("Classroom Hub"))document.title=document.title.replace("Classroom Hub",profile.productName);
 
 
-    const productInput=document.getElementById("productName");if(productInput&&(!productInput.value||LEGACY_PRODUCT_NAMES.has(productInput.value)))productInput.value=profile.productName;
     for(const button of document.querySelectorAll("button")){if(/Open Classroom Control Hub|Open Classroom Hub/i.test(button.textContent||""))button.textContent=`Open ${profile.productName}`;}
     const setupTheme={themePrimary:ROOMGOBLIN.theme.primary,themeAccent:ROOMGOBLIN.theme.accent,themeBackground:ROOMGOBLIN.theme.background,themeSurface:ROOMGOBLIN.theme.surface,themeText:ROOMGOBLIN.theme.text};
     for(const [id,value] of Object.entries(setupTheme)){const field=document.getElementById(id),legacy={themePrimary:"#2aa866",themeAccent:"#1b7a49",themeBackground:"#040705",themeSurface:"#121923",themeText:"#eef4f8"}[id];if(field&&(!field.value||field.value.toLowerCase()===legacy))field.value=value;}

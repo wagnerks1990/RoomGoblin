@@ -36,6 +36,7 @@ function paintBrandCycle(){
   }
 }
 function applySiteBranding(site={},fromShared=false){
+  site=window.RoomGoblinBranding?.normalize(site)||{...site,productName:'RoomGoblin',logoUrl:'/brand/roomgoblin_app_192x192.png'};
   const product=String(site.productName||'RoomGoblin');
   const school=String(site.school||'').trim();
   const room=String(site.room||'').trim();
@@ -47,7 +48,7 @@ function applySiteBranding(site={},fromShared=false){
   if(window.footerProductName)footerProductName.textContent=product;
   if(window.brandLogoWrap&&window.brandLogo){
     brandLogoWrap.style.display=logo?'':'none';
-    if(logo){brandLogo.src=logo;brandLogo.alt=`${school||product} logo`;brandLogoWrap.title=school||product;}
+    if(logo){brandLogo.src=logo;brandLogo.alt=`${product} logo`;brandLogoWrap.title=product;}
   }
   if(!fromShared&&window.ControlHubBranding)window.ControlHubBranding.apply(site);
 }
@@ -653,8 +654,17 @@ function renderAvRawStatus(){avRawStatus.style.display='block';avRawStatus.textC
 function renderTV(){const s=S.pluto.systemStatus||{},n=S.pluto.networkStatus||{};systemInfo.innerHTML=`Power: <b>${esc(s.power)}</b><br>Firmware: ${esc(s.main)}<br>Sub1: ${esc(s.sub1)}<br>Sub2: ${esc(s.sub2)}<br>CPLD: ${esc(s.cpld)}<br>Panel Lock: ${esc(s.lock)}<br>Beep: ${esc(s.beep)}`;networkInfo.innerHTML=`Model: <b>${esc(n.model)}</b><br>Hostname: ${esc(n.hostname)}<br>IP: ${esc(n.ipaddress)}<br>Subnet: ${esc(n.subnet)}<br>Gateway: ${esc(n.gateway)}<br>MAC: ${esc(n.macaddress)}<br>TCP: ${esc(n.tcpport)} • Telnet: ${esc(n.telnetport)}`}
 function toggleSystem(action){const s=S.pluto.systemStatus||{},state=action==='panelLock'?!Number(s.lock):!Number(s.beep);plutoAction({action,state})}
 
-async function loadGovee(){try{S.govee=await api('/api/v1/govee');renderGovee()}catch(e){lightDevices.innerHTML=`<div class="card bad">${esc(e.message)}</div>`}}
-async function goveeCmd(target,action,body={}){const j=await jpost(`/api/v1/govee/${encodeURIComponent(target)}/${action}`,body);setTimeout(loadGovee,200);return j}
+async function loadGovee(){
+ try{S.govee=await api('/api/v1/govee');renderGovee();document.getElementById('goveeMessage').textContent=''}
+ catch(e){document.getElementById('goveeMessage').textContent=`Lighting refresh failed: ${e.message}. Existing readings may be stale. Use Refresh to retry.`}
+}
+async function goveeCmd(target,action,body={}){
+ try{const j=await jpost(`/api/v1/govee/${encodeURIComponent(target)}/${action}`,body);document.getElementById('goveeMessage').textContent=`${target}: ${action} command sent.`;
+ const field={brightness:['b',body.level],color:['c',body.color],temp:['t',body.kelvin],scene:['s',body.scene]}[action];
+ if(field)for(const card of document.querySelectorAll('#lights .lightCard')){if(card.dataset.lightTarget!==target)continue;const input=card.querySelector(`[data-light-control=${field[0]}]`);if(input&&input.value===String(field[1]))delete input.dataset.dirty}
+ setTimeout(loadGovee,200);return j}
+ catch(e){document.getElementById('goveeMessage').textContent=`${target}: ${e.message}`;return null}
+}
 async function setGoveeAutoAdd(enabled){
   try{
     const j=await api('/api/v1/govee/discovery',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoAdd:enabled})});
@@ -671,53 +681,89 @@ async function reconcileGoveeNow(){
 }
 async function saveGoveeDevice(alias){
   try{
-    const name=document.getElementById(`edit_${alias}_name`).value.trim();
-    const groups=document.getElementById(`edit_${alias}_groups`).value.split(/[,\s]+/).map(x=>x.trim()).filter(Boolean);
+    const nameInput=document.getElementById(`edit_${alias}_name`),groupsInput=document.getElementById(`edit_${alias}_groups`);
+    const name=nameInput.value.trim(),groups=groupsInput.value.split(/[,\s]+/).map(x=>x.trim()).filter(Boolean);
+    const sentName=nameInput.value,sentGroups=groupsInput.value;
     await api('/api/v1/govee/device/'+encodeURIComponent(alias),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})});
-    await loadGovee();
-  }catch(e){alert(e.message)}
+    if(nameInput.value===sentName)delete nameInput.dataset.dirty;
+    if(groupsInput.value===sentGroups)delete groupsInput.dataset.dirty;
+    await loadGovee();document.getElementById('goveeMessage').textContent='Device saved.';
+  }catch(e){document.getElementById('goveeMessage').textContent=`Device save failed: ${e.message}`}
 }
-function colorToHex(c){if(!c)return'#377dff';const h=n=>Number(n||0).toString(16).padStart(2,'0');return '#'+h(c.r)+h(c.g)+h(c.b)}
+function colorToHex(c){if(!c)return'#0f766e';const h=n=>Math.max(0,Math.min(255,Math.round(Number(n)||0))).toString(16).padStart(2,'0');return '#'+h(c.r)+h(c.g)+h(c.b)}
 function lightCard(target,name,state,isGroup=false,device=null,presence=null,meta=null){
- const id='l_'+target.replace(/[^a-z0-9]/g,'_'),arg=inlineJsArg(target),b=state?.brightness??50,col=colorToHex(state?.color);
- const online=presence?.online;
- const seen=presence?.lastSeen?new Date(presence.lastSeen).toLocaleString():'not yet';
- const status=online===true?'ONLINE':online===false?'OFFLINE':'UNKNOWN';
- const badge=isGroup?'':` • ${status}${meta?.discovered?' • AUTO-DISCOVERED':''}`;
- const groups=(meta?.groups||[]).join(', ');
- return `<div class="card lightCard"><h3>${esc(name)}</h3><div class="muted">${esc(target)}${state?` • ${esc(state.state||'')}`:''}${badge}</div>
- ${isGroup?'':`<div class="muted">ID: ${esc(device?.id||'')} ${device?.sku?`• ${esc(device.sku)}`:''}<br>Last seen: ${esc(seen)}</div>`}
- <div class="toolbar"><button class="on" onclick="goveeCmd(${arg},'on')">On</button><button class="off" onclick="goveeCmd(${arg},'off')">Off</button></div>
- <div class="row"><span>Brightness</span><input id="${id}_b" type="range" min="1" max="100" value="${b}"><button onclick="goveeCmd(${arg},'brightness',{level:Number(${id}_b.value)})">Apply</button></div>
- <div class="row"><span>Color</span><input id="${id}_c" type="color" value="${col}"><button onclick="goveeCmd(${arg},'color',{color:${id}_c.value)})">Apply</button></div>
- <div class="row"><span>Temp</span><input id="${id}_t" type="range" min="2000" max="9000" step="100" value="6500"><button onclick="goveeCmd(${arg},'temp',{kelvin:Number(${id}_t.value)})">Apply</button></div>
- <div class="row"><span>Scene</span><select id="${id}_s"><option>Loading…</option></select><button onclick="goveeCmd(${arg},'scene',{scene:${id}_s.value})">Apply</button></div>
- ${isGroup?'':`<details style="margin-top:10px"><summary>Edit Device</summary>
-   <label>Friendly Name<input id="edit_${target}_name" value="${esc(name)}" style="width:100%"></label>
-   <label>Groups <span class="muted">(comma separated; All is automatic)</span><input id="edit_${target}_groups" value="${esc(groups)}" placeholder="tvs, hallway, strip" style="width:100%"></label>
-   <button class="primary" onclick="saveGoveeDevice(${arg})">Save Device</button>
- </details>`}
- </div>`;
+ const id='l_'+target.replace(/[^a-z0-9]/g,'_'),arg=inlineJsArg(target),scope="this.closest('.lightCard')";
+ const command=(action,body)=>`goveeCmd(${arg},'${action}',${body})`;
+ const control=(type,label,field,value,extra,action,body)=>`<div class="lightControl"><label><span>${label}</span><input id="${id}_${field}" data-light-control="${field}" type="${type}" value="${esc(value)}" ${extra} oninput="this.dataset.dirty='true';this.closest('label').querySelector('output')?.replaceChildren(this.value)"></label><button onclick="${command(action,body)}" aria-label="Apply ${action} to ${esc(name)}">Apply</button></div>`;
+ return `<article class="card lightCard" data-light-target="${esc(target)}" data-light-kind="${isGroup?'group':'device'}">
+ <div class="lightHead"><div class="lightIdentity"><h3 data-light-name>${esc(name)}</h3><div class="lightStatus" data-light-status></div></div><div class="lightPower"><button class="on" onclick="goveeCmd(${arg},'on')" aria-label="Turn on ${esc(name)}">On</button><button class="off" onclick="goveeCmd(${arg},'off')" aria-label="Turn off ${esc(name)}">Off</button></div></div>
+ ${control('range','Brightness <output>'+esc(state?.brightness??50)+'</output>%','b',state?.brightness??50,'min="1" max="100"','brightness',`{level:Number(${scope}.querySelector('[data-light-control=b]').value)}`)}
+ <details class="lightTools" ontoggle="if(this.open)openGoveeTools(this)"><summary>${isGroup?'Color, temperature & scenes':'More controls & device settings'}</summary>
+ ${control('color','Color','c',colorToHex(state?.color),'','color',`{color:${scope}.querySelector('[data-light-control=c]').value}`)}
+ ${control('range','Temperature <output>6500</output>K','t',6500,'min="2000" max="9000" step="100"','temp',`{kelvin:Number(${scope}.querySelector('[data-light-control=t]').value)}`)}
+ <div class="lightControl"><label>Scene<select id="${id}_s" data-light-control="s" onchange="this.dataset.dirty='true'"><option value="">Open controls to load scenes</option></select></label><button data-light-scene-apply data-command-unavailable="true" onclick="${command('scene',`{scene:${scope}.querySelector('[data-light-control=s]').value}`)}" disabled>Apply</button></div>
+ <div class="lightStatus" data-light-scenes-status role="status"></div><button data-light-scenes-retry onclick="openGoveeTools(this.closest('details'),true)" hidden>Retry scenes</button>
+ <div class="lightMetadata muted" data-light-metadata></div>
+ ${isGroup?'':`<details class="lightEdit"><summary>Edit device</summary><label>Friendly name<input id="edit_${esc(target)}_name" data-light-edit="name" value="${esc(name)}" oninput="this.dataset.dirty='true'"></label><label>Groups (comma separated; All is automatic)<input id="edit_${esc(target)}_groups" data-light-edit="groups" value="${esc((meta?.groups||[]).join(', '))}" placeholder="tvs, hallway, strip" oninput="this.dataset.dirty='true'"></label><button class="primary" onclick="saveGoveeDevice(${arg})">Save device</button></details>`}
+ </details></article>`;
 }
 function renderGoveeDiscovery(){
-  const d=S.govee?.discovery||{};
-  if(typeof goveeAutoAdd!=='undefined')goveeAutoAdd.checked=d.autoAdd!==false;
-  if(typeof goveeDiscoveryStatus!=='undefined'){
-    const when=d.lastDiscoveryAt?new Date(d.lastDiscoveryAt).toLocaleString():'none yet';
-    goveeDiscoveryStatus.textContent=`${d.totalCount||0} total physical devices • ${d.discoveredCount||0} auto-discovered • last discovery ${when} • stale auto-devices removed after ${Math.round((d.reconcileGraceSeconds||600)/60)} min`;
-  }
+ const d=S.govee?.discovery||{};
+ if(typeof goveeAutoAdd!=='undefined')goveeAutoAdd.checked=d.autoAdd!==false;
+ if(typeof goveeDiscoveryStatus!=='undefined'){
+  const when=d.lastDiscoveryAt?new Date(d.lastDiscoveryAt).toLocaleString():'none yet';
+  goveeDiscoveryStatus.textContent=`${d.totalCount||0} physical devices • ${d.discoveredCount||0} auto-discovered • last discovery ${when} • stale auto-devices removed after ${Math.round((d.reconcileGraceSeconds||600)/60)} min`;
+ }
+}
+function updateGoveeCard(card,target,device,isGroup){
+ const g=S.govee||{},state=g.states?.[target],presence=g.presence?.[target],meta=g.meta?.[target]||{},members=isGroup?(g.groups?.[target]||[]):[];
+ const name=isGroup?target.toUpperCase():(device.name||target),connection=presence?.online===true?'online':presence?.online===false?'offline':'unknown';
+ card.querySelector('[data-light-name]').textContent=name;
+ card.querySelector('[data-light-status]').textContent=isGroup?`${members.length} ${members.length===1?'light':'lights'}`:`${connection[0].toUpperCase()+connection.slice(1)}${state?.state?' · '+state.state:''}`;
+ card.dataset.connection=connection;
+ const groups=Object.entries(g.groups||{}).filter(([,aliases])=>aliases.includes(target)).map(([key])=>key);
+ card.dataset.groups=JSON.stringify(groups);
+ card.dataset.search=[name,target,device.id,device.sku,...groups].filter(Boolean).join(' ').toLowerCase();
+ const metadata=card.querySelector('[data-light-metadata]');
+ metadata.textContent=isGroup?members.map(alias=>g.devices?.[alias]?.name||alias).join(', ')||'No devices in this group.':`Alias: ${target} · ID: ${device.id||'unknown'}${device.sku?' · '+device.sku:''} · Last seen: ${presence?.lastSeen?new Date(presence.lastSeen).toLocaleString():'not yet'}${meta.discovered?' · Auto-discovered':''}`;
+ const set=(selector,value)=>{const input=card.querySelector(selector);if(input&&!input.dataset.dirty&&document.activeElement!==input){input.value=value;input.closest('label').querySelector('output')?.replaceChildren(String(value))}};
+ if(state?.brightness!=null)set('[data-light-control=b]',state.brightness);
+ if(state?.color)set('[data-light-control=c]',colorToHex(state.color));
+ set('[data-light-edit=name]',name);set('[data-light-edit=groups]',(meta.groups||[]).join(', '));
+ const source=isGroup?members[0]||'':target;
+ if(card.dataset.sceneSource!==source){card.dataset.sceneSource=source;delete card.dataset.scenesLoaded;card.querySelector('[data-light-control=s]').innerHTML='<option value="">Open controls to load scenes</option>';card.querySelector('[data-light-scene-apply]').disabled=true;card.querySelector('[data-light-scene-apply]').dataset.commandUnavailable='true';if(card.querySelector('.lightTools').open)openGoveeTools(card.querySelector('.lightTools'))}
 }
 function renderGovee(){
  const g=S.govee||{};renderGoveeDiscovery();
- lightGroups.innerHTML=Object.entries(g.groups||{}).map(([k,v])=>{
-   const friendly=(v||[]).map(alias=>g.devices?.[alias]?.name||alias);
-   return lightCard(k,k.toUpperCase()+' — '+friendly.join(', '),null,true);
- }).join('');
- lightDevices.innerHTML=Object.entries(g.devices||{}).map(([k,d])=>lightCard(k,d.name,g.states?.[k],false,d,g.presence?.[k],g.meta?.[k])).join('');
- for(const k of Object.keys(g.devices||{}))loadScenes(k);
- for(const k of Object.keys(g.groups||{})){const first=g.groups[k]?.[0];if(first)loadScenes(first,'l_'+k.replace(/[^a-z0-9]/g,'_')+'_s')}
+ // Keep existing DOM nodes: focus, slider drafts, scene choice and editors survive refresh.
+ for(const [container,entries,isGroup] of [[lightGroups,Object.entries(g.groups||{}),true],[lightDevices,Object.entries(g.devices||{}),false]]){
+  const old=new Map([...container.querySelectorAll('.lightCard')].map(card=>[card.dataset.lightTarget,card]));
+  for(const [target,device] of entries){let card=old.get(target);if(!card){const template=document.createElement('template');template.innerHTML=lightCard(target,isGroup?target.toUpperCase():device.name||target,g.states?.[target],isGroup,device,g.presence?.[target],g.meta?.[target]);card=template.content.firstElementChild;container.append(card)}old.delete(target);updateGoveeCard(card,target,device,isGroup)}
+  for(const card of old.values())card.remove();
+ }
+ const select=document.getElementById('goveeGroupFilter'),selected=select.value,names=Object.keys(g.groups||{}),signature=JSON.stringify(names);
+ if(select.dataset.groups!==signature){select.innerHTML='<option value="">All groups</option>'+names.map(name=>`<option value="${esc(name)}">${esc(name.toUpperCase())}</option>`).join('');select.value=names.includes(selected)?selected:'';select.dataset.groups=signature}
+ filterGoveeDevices();
 }
-async function loadScenes(alias,selectId){try{const j=await api(`/api/v1/govee/${alias}/scenes`),sel=document.getElementById(selectId||('l_'+alias+'_s'));if(sel)sel.innerHTML=j.scenes.map(x=>`<option>${esc(x)}</option>`).join('')}catch{}}
+function filterGoveeDevices(){
+ const search=document.getElementById('goveeSearch').value.trim().toLowerCase(),status=document.getElementById('goveeStatusFilter').value,group=document.getElementById('goveeGroupFilter').value;
+ const cards=[...lightDevices.querySelectorAll('.lightCard')];let visible=0,online=0;
+ for(const card of cards){if(card.dataset.connection==='online')online++;card.hidden=!(card.dataset.search.includes(search)&&(status==='all'||card.dataset.connection===status)&&(!group||JSON.parse(card.dataset.groups).includes(group)));if(!card.hidden)visible++}
+ document.getElementById('goveeInventorySummary').textContent=`${visible} of ${cards.length} shown · ${online} online`;
+ const empty=document.getElementById('goveeEmpty');empty.hidden=visible>0;
+ if(!cards.length){empty.firstChild.textContent='No lights discovered yet. Check Discovery & setup below. ';empty.querySelector('button').hidden=true}else{empty.firstChild.textContent='No lights match these filters. ';empty.querySelector('button').hidden=false}
+}
+function clearGoveeFilters(){document.getElementById('goveeSearch').value='';document.getElementById('goveeStatusFilter').value='all';document.getElementById('goveeGroupFilter').value='';filterGoveeDevices()}
+function openGoveeTools(details,retry=false){const card=details.closest('.lightCard');if(card.dataset.scenesLoaded&&!retry)return;const source=card.dataset.sceneSource;if(!source){card.querySelector('[data-light-scenes-status]').textContent='No group member is available to provide scenes.';return}loadScenes(source,null,card)}
+async function loadScenes(alias,selectId,card){
+ const sel=card?.querySelector('[data-light-control=s]')||document.getElementById(selectId||('l_'+alias.replace(/[^a-z0-9]/g,'_')+'_s'));
+ if(!sel||sel.dataset.loading==='true')return;sel.dataset.loading='true';
+ const status=card?.querySelector('[data-light-scenes-status]'),retry=card?.querySelector('[data-light-scenes-retry]'),apply=card?.querySelector('[data-light-scene-apply]');
+ if(status)status.textContent='Loading scenes…';if(retry)retry.hidden=true;
+ try{const j=await api(`/api/v1/govee/${encodeURIComponent(alias)}/scenes`);if(!sel.isConnected||card&&card.dataset.sceneSource!==alias)return;const selected=sel.value,scenes=Array.isArray(j.scenes)?j.scenes:[];sel.innerHTML=scenes.length?scenes.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join(''):'<option value="">No scenes available</option>';if(scenes.includes(selected))sel.value=selected;if(card)card.dataset.scenesLoaded='true';if(apply){apply.dataset.commandUnavailable=String(!scenes.length);apply.disabled=!scenes.length||!userCan('integrations.control');apply.setAttribute('aria-disabled',String(apply.disabled))}if(status)status.textContent=scenes.length?'':'No scenes reported for this device.'}
+ catch(e){if(status)status.textContent=`Scenes unavailable: ${e.message}`;if(retry)retry.hidden=false;if(apply){apply.disabled=true;apply.dataset.commandUnavailable='true';apply.setAttribute('aria-disabled','true')}}
+ finally{delete sel.dataset.loading;if(card&&card.dataset.sceneSource!==alias&&card.querySelector('.lightTools').open)openGoveeTools(card.querySelector('.lightTools'))}
+}
 
 const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -1826,7 +1872,7 @@ let ADMINCFG=null;
 async function loadAdminConfiguration(){
   try{
     const [j,sum,privacy]=await Promise.all([api('/api/v1/admin/config'),api('/api/v1/admin/summary'),api('/api/v1/admin/privacy-retention')]);ADMINCFG=j;
-    const site=window.RoomGoblinBranding?.normalize(j.site||{})||j.site||{},theme=site.theme||{};cfgSchool.value=site.school||'';cfgRoom.value=site.room||j.devices?.room||'';cfgProductName.value=site.productName||'RoomGoblin';cfgLogoUrl.value=site.logoUrl||'';cfgFaviconUrl.value=site.faviconUrl||'';cfgDisplayPrefix.value=site.displayPrefix||'TV';cfgTimezone.value=site.timezone||'America/New_York';cfgThemeMode.value=theme.mode||'dark';cfgThemePrimary.value=theme.primary||'#0F766E';cfgThemeAccent.value=theme.accent||'#22C55E';cfgThemeBackground.value=theme.background||'#0B1320';cfgThemeSurface.value=theme.surface||'#1E293B';cfgThemeText.value=theme.text||'#F8FAFC';applySiteBranding(site);
+    const site=window.RoomGoblinBranding?.normalize(j.site||{})||j.site||{},theme=site.theme||{};cfgSchool.value=site.school||'';cfgRoom.value=site.room||j.devices?.room||'';cfgDisplayPrefix.value=site.displayPrefix||'TV';cfgTimezone.value=site.timezone||'America/New_York';cfgThemeMode.value=theme.mode||'dark';cfgThemePrimary.value=theme.primary||'#0F766E';cfgThemeAccent.value=theme.accent||'#22C55E';cfgThemeBackground.value=theme.background||'#0B1320';cfgThemeSurface.value=theme.surface||'#1E293B';cfgThemeText.value=theme.text||'#F8FAFC';applySiteBranding(site);
     renderIntegrationConnections(j.integrationConnections||{});
     privacyHistoryEnabled.checked=privacy.policy?.browserHistoryEnabled===true;privacyHistoryHours.value=privacy.policy?.browserHistoryHours??0;privacyHistoryHours.disabled=!privacyHistoryEnabled.checked;privacyScreenshotDays.value=privacy.policy?.screenshotDays??7;privacyAlertDays.value=privacy.policy?.alertDays??30;privacyAuditDays.value=privacy.policy?.auditDays??180;
     cfgHardware.value=JSON.stringify(j.hardware||{},null,2);
@@ -1863,7 +1909,7 @@ function removeAdminDisplay(id){if(!confirm(`Remove display ${id}? Existing sche
 function addAdminDisplayGroup(){const n=cfgNewGroup.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'-');if(!n)return;if(!ADMINCFG.devices.displayGroups)ADMINCFG.devices.displayGroups={};if(ADMINCFG.devices.displayGroups[n])return alert('That group already exists.');ADMINCFG.devices.displayGroups[n]=[];cfgNewGroup.value='';renderAdminDisplayEditor()}
 function removeAdminDisplayGroup(name){if(!confirm(`Remove display group ${name}?`))return;delete ADMINCFG.devices.displayGroups[name];renderAdminDisplayEditor()}
 function renderAdminIntegrationCards(){const hw=ADMINCFG?.hardware||{},g=hw.govee||{},p=hw.pluto||{};cfgIntegrationCards.innerHTML=`<div class="integrationCard"><div><b>Pluto AV Matrix</b><div class="muted">${esc(p.name||'AV matrix')}</div><div class="integrationState"><span class="pill">${esc(p.host||'Host not configured')}</span><span class="pill">External hardware</span></div></div><button onclick="showPage('av')">Open Displays & AV</button></div><div class="integrationCard"><div><b>Govee Lighting</b><div class="muted">${Object.keys(g.devices||{}).length} devices • ${Object.keys(g.groups||{}).length} groups</div><div class="integrationState"><span class="pill">MQTT-backed</span><span class="pill">Encrypted secrets supported</span></div></div><button onclick="showPage('lights')">Open Lighting</button></div>`}
-async function saveAdminSite(){try{const body={school:cfgSchool.value.trim(),room:cfgRoom.value.trim(),productName:cfgProductName.value.trim()||'RoomGoblin',logoUrl:cfgLogoUrl.value.trim(),faviconUrl:cfgFaviconUrl.value.trim(),displayPrefix:cfgDisplayPrefix.value.trim()||'TV',timezone:cfgTimezone.value.trim(),theme:{mode:cfgThemeMode.value,primary:cfgThemePrimary.value,accent:cfgThemeAccent.value,background:cfgThemeBackground.value,surface:cfgThemeSurface.value,text:cfgThemeText.value}};const j=await api('/api/v1/admin/site',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});cfgSiteMsg.textContent=`Saved to database (revision ${j.site.revision}).`;ADMINCFG&&(ADMINCFG.site=j.site);applySiteBranding(j.site||{})}catch(e){cfgSiteMsg.textContent=e.message}}
+async function saveAdminSite(){try{const body={school:cfgSchool.value.trim(),room:cfgRoom.value.trim(),displayPrefix:cfgDisplayPrefix.value.trim()||'TV',timezone:cfgTimezone.value.trim(),theme:{mode:cfgThemeMode.value,primary:cfgThemePrimary.value,accent:cfgThemeAccent.value,background:cfgThemeBackground.value,surface:cfgThemeSurface.value,text:cfgThemeText.value}};const j=await api('/api/v1/admin/site',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});cfgSiteMsg.textContent=`Saved to database (revision ${j.site.revision}).`;ADMINCFG&&(ADMINCFG.site=j.site);applySiteBranding(j.site||{})}catch(e){cfgSiteMsg.textContent=e.message}}
 async function saveAdminHardware(){try{const v=JSON.parse(cfgHardware.value);await api('/api/v1/admin/hardware',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(v)});ADMINCFG.hardware=v;renderAdminIntegrationCards();cfgHardwareMsg.textContent='Hardware configuration validated and saved. Restart RoomGoblin if integration endpoints changed.'}catch(e){cfgHardwareMsg.textContent=e.message}}
 function showLogin(){document.body.classList.add('auth-locked');loginOverlay.style.display='flex';setTimeout(()=>loginUser.focus(),50)}
 function hideLogin(){document.body.classList.remove('auth-locked');loginOverlay.style.display='none';loginMsg.textContent=''}
@@ -1878,7 +1924,7 @@ const ACTION_CAPABILITIES={
 };
 function userCan(capability){const u=window.AUTH_STATUS?.user;if(!u)return false;if(capability==='admin')return u.role==='admin';const caps=Array.isArray(u.capabilities)?u.capabilities:[];return caps.includes('*')||caps.includes(capability)}
 function actionCapability(code=''){for(const name of ACTION_CAPABILITIES.admin)if(code.includes(name))return 'admin';for(const name of ACTION_CAPABILITIES.media)if(code.includes(name))return 'media.manage';for(const name of ACTION_CAPABILITIES.automation)if(code.includes(name))return 'automation.manage';for(const name of ACTION_CAPABILITIES.schedule)if(code.includes(name))return 'schedule.manage';for(const name of ACTION_CAPABILITIES.integrations)if(code.includes(name))return 'integrations.control';for(const name of ACTION_CAPABILITIES.classroom)if(code.includes(name))return 'classroom.control';return null}
-function enforceCapabilityControls(root=document){for(const el of root.querySelectorAll?.('button[onclick],input[onchange],select[onchange]')||[]){const required=actionCapability(el.getAttribute('onclick')||el.getAttribute('onchange')||'');if(!required)continue;const allowed=userCan(required);el.disabled=!allowed;el.setAttribute('aria-disabled',String(!allowed));if(!allowed)el.title=`Permission required: ${required}`}}
+function enforceCapabilityControls(root=document){for(const el of root.querySelectorAll?.('button[onclick],input[onchange],select[onchange]')||[]){const required=actionCapability(el.getAttribute('onclick')||el.getAttribute('onchange')||'');if(!required)continue;const allowed=userCan(required);el.disabled=!allowed||el.dataset.commandUnavailable==='true';el.setAttribute('aria-disabled',String(el.disabled));if(!allowed)el.title=`Permission required: ${required}`}}
 const capabilityObserver=new MutationObserver(records=>{if(!window.AUTH_STATUS?.user)return;for(const record of records)for(const node of record.addedNodes)if(node.nodeType===Node.ELEMENT_NODE){if(node.matches?.('button[onclick],input[onchange],select[onchange]'))enforceCapabilityControls(node.parentElement||document);else enforceCapabilityControls(node)}});
 capabilityObserver.observe(document.body,{childList:true,subtree:true});
 function applyAuthUi(j){window.AUTH_STATUS=j||{};const u=j?.user;if(u){authAccount.style.display='block';authAccountName.textContent=u.displayName||u.username;authAccountRole.textContent=(u.role||'').toUpperCase();accountIdentity.textContent=`${u.displayName||u.username} • ${u.username} • ${u.role}`;for(const [pageId,required] of Object.entries(PAGE_CAPABILITIES)){const allowed=required.every(userCan),page=document.getElementById(pageId),nav=document.querySelector(`nav button[data-page="${pageId}"]`);if(page)page.dataset.authorized=String(allowed);if(nav){nav.hidden=!allowed;nav.setAttribute('aria-hidden',String(!allowed))}}enforceCapabilityControls();const active=document.querySelector('.page.active');if(active?.dataset.authorized==='false'){const first=[...document.querySelectorAll('nav button[data-page]')].find(x=>!x.hidden);if(first)showPage(first.dataset.page)}}else{authAccount.style.display='none'}window.dispatchEvent(new Event('roomgoblin:authchange'))}

@@ -28,18 +28,20 @@ test('brand defaults render before network and preserve shared compatibility ali
   assert.equal(document.title, 'RoomGoblin');
   assert.equal(api.normalize({productName:'Classroom Hub',logoUrl:'/brand/roomgoblin_primary_400w.png'}).logoUrl, mark.src);
 });
-test('deliberate site identity survives; a broken custom logo falls back without retry loop', () => {
+test('fixed product identity overrides saved customization while retaining school and theme', () => {
   const {api, mark, icon} = runtime();
-  const profile=api.apply({productName:'Science Lab',school:'Example School',logoUrl:'/uploads/site.png',faviconUrl:'/uploads/site.ico',theme:{primary:'#123456'}});
-  assert.equal(profile.productName,'Science Lab');
+  const profile=api.apply({productName:'Science Lab',descriptor:'Custom descriptor',tagline:'Custom tagline',school:'Example School',room:'101',logoUrl:'/uploads/site.png',faviconUrl:'/uploads/site.ico',theme:{primary:'#123456'}});
+  assert.equal(profile.productName,'RoomGoblin');
+  assert.equal(profile.descriptor,'Classroom & Lab Management Hub');
+  assert.equal(profile.tagline,'Run the room. Manage the lab.');
+  assert.equal(profile.school,'Example School');
+  assert.equal(profile.room,'101');
   assert.equal(profile.theme.primary,'#123456');
-  assert.equal(mark.src,'/uploads/site.png');
-  assert.equal(mark.alt,'Example School logo');
-  assert.equal(icon.href,'/uploads/site.ico');
-  assert.equal(icon.type,undefined);
-  assert.equal(icon.sizes,undefined);
-  mark.onerror();
   assert.equal(mark.src,'/brand/roomgoblin_app_192x192.png');
+  assert.equal(mark.alt,'RoomGoblin logo');
+  assert.equal(icon.href,'/brand/roomgoblin_app_32x32.png');
+  assert.equal(icon.type,'image/png');
+  assert.equal(icon.sizes,'32x32');
   mark.onerror();
   assert.equal(mark.onerror,null);
   assert.equal(mark.hidden,true);

@@ -39,7 +39,7 @@ Do not perform a repository-wide search-and-replace. A future migration of an in
 
 ## Fresh-install behavior
 
-Fresh installations should present **RoomGoblin** by default. Sites can still customize school identity, portal name, logo, favicon, and theme. Existing sites that retained the former built-in product defaults are promoted to RoomGoblin; deliberate custom branding should remain unchanged.
+All installations present the canonical **RoomGoblin** product name, descriptor, tagline, mascot and favicon. School/classroom names and theme remain configurable. Former product-name and asset overrides are ignored on reads and canonicalized on ordinary saves without deleting uploaded files. Settings and Setup no longer expose custom product-name, logo or favicon controls.
 
 ## Operational invariants
 
@@ -53,10 +53,17 @@ Operator headers use the supplied 192 × 192 app mark at 30–48 CSS pixels,
 paired with live product text. The optional `data-brand-lockup` hook creates
 this treatment; existing shell images opt in with `data-brand-logo`.
 Do not squeeze a wordmark into a square icon slot. The runtime applies built-in
-artwork immediately, then loads the saved site profile. Custom school logos,
-favicons, names and colors remain supported; an image that fails to load falls
-back once to the bundled mark without a retry loop. Visible text remains readable
-if even that request fails. Default browser favicons use the supplied 32px icon.
+artwork immediately, then loads school, room and theme settings. Product name,
+descriptor, tagline, logo and favicon are fixed in both backend projections and
+the shared browser layer. Settings and Setup no longer expose custom product-name
+or asset-URL inputs. Browser favicons use the supplied 32px icon. If the bundled
+mark cannot load, it is hidden without a retry loop; product text stays readable.
+
+Old saved identity overrides are ignored on reads, without deleting raw profile
+data or uploaded files. A normal site-profile save writes the canonical identity.
+Stale clients may still submit the old API fields; those values are ignored.
+School/room labels, display prefixes, device names, timezones and custom colors
+remain configurable. No device identifiers or credentials are migrated.
 
 The originally committed `roomgoblin_primary_400w.png` had a broken PNG stream,
 and `roomgoblin_app_512x512.png` was truncated. Neither was recoverable as a
@@ -64,8 +71,8 @@ complete original. Both old URLs now serve byte-identical copies of the valid
 192px supplied mark for compatibility. Their filenames do **not** describe their
 current dimensions. New UI must reference `roomgoblin_app_192x192.png` directly;
 use live text for the wordmark. This repair does not introduce a replacement
-mascot, upscale artwork, or migrate saved site identity.
+mascot or upscale artwork.
 
 `test/branding.test.js` validates complete decoded image streams, default loading,
-legacy runtime aliases, custom identity preservation, and bounded logo fallback.
+legacy runtime aliases, fixed identity, retained school/theme settings and bounded image failure.
 Browser workspace checks also cover visible artwork and responsive headers.
