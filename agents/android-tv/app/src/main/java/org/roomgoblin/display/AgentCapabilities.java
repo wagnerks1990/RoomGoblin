@@ -61,7 +61,14 @@ final class AgentCapabilities {
             c.put("localAdbSelfGrant",cap(true,"experimental","paired local ADB can attempt pm grant WRITE_SECURE_SETTINGS to this agent"));
             c.put("remoteShell",cap(rootBinary,"root-only","ordinary app sandbox cannot provide system shell; optional root tier can expose a gated root command channel"));
             c.put("rootProbe",cap(rootBinary,"experimental-root","explicit probe only; normal heartbeat never requests superuser"));
-            c.put("globalNavigation",cap(accessibilityEnabled,"accessibility","Home/Back/Recents require optional accessibility service; Managed Displays can open the TV Accessibility settings"));
+
+            // Keep the aggregate capability for backward compatibility, but expose each
+            // global action separately so clients do not infer arbitrary input support.
+            c.put("globalNavigation",cap(accessibilityEnabled,"accessibility","Accessibility global actions are enabled; individual actions may still be limited by OEM firmware"));
+            c.put("navigationHome",cap(accessibilityEnabled,"accessibility","GLOBAL_ACTION_HOME through the RoomGoblin Accessibility service"));
+            c.put("navigationBack",cap(accessibilityEnabled,"accessibility","GLOBAL_ACTION_BACK through the RoomGoblin Accessibility service"));
+            c.put("navigationRecents",cap(accessibilityEnabled,"accessibility-oem","GLOBAL_ACTION_RECENTS request is available when Accessibility is enabled, but the OEM launcher may ignore it or expose no Recents UI"));
+
             c.put("launchOtherApps",cap(true,"limited","launchable packages only; Android package visibility applies"));
             c.put("installedAppInventory",cap(true,"limited","launcher-visible apps by default; broader inventory requires package-query/elevated management"));
             c.put("screenCapture",cap(false,"user-consent","full-screen capture requires MediaProjection consent; ADB/root may offer unattended alternatives"));
@@ -70,7 +77,7 @@ final class AgentCapabilities {
             c.put("interactiveApkInstall",cap(true,"native","PackageInstaller can request user-confirmed installation"));
             c.put("selfUpdate",cap(deviceOwner||rootBinary,"mixed","silent only with elevated management; otherwise user-confirmed installer flow"));
             c.put("powerOff",cap(rootBinary,"root-only","ordinary Android apps cannot power off the device"));
-            c.put("inputInjection",cap(accessibilityEnabled||rootBinary,"elevated","accessibility handles global navigation; arbitrary input injection needs shell/root/system privilege"));
+            c.put("inputInjection",cap(false,"not-implemented","Agent v2 does not implement arbitrary key, text, tap, swipe, or coordinate injection; Accessibility provides supported global actions only"));
             c.put("systemSettingsWrite",cap(secure||writeSettings||rootBinary,"permission-dependent","secure/global settings need WRITE_SECURE_SETTINGS or elevated privilege"));
             c.put("overlay",cap(overlay,"user-grant","SYSTEM_ALERT_WINDOW requires explicit approval"));
             c.put("deviceAdmin",cap(adminActive,"user-grant","legacy device-admin can lock but is not equivalent to device owner"));

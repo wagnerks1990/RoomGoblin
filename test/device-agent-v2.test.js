@@ -43,9 +43,34 @@ test("Device Agent v2 control channel requires per-device authentication",()=>{
 
 test("Device Agent v2 exposes stock, accessibility, device-owner, local ADB, kiosk and native audio tiers",()=>{
   const caps=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/AgentCapabilities.java");
-  for(const capability of ["bootAutoStart","agentHttpApi","globalNavigation","deviceOwnerProvisioning","localAdbPairing","wirelessAdbDiscovery","legacyAdbPortSwitch","rootProbe","kioskAlwaysOn","kioskSelfHeal","nativeSendspin"]){
+  for(const capability of ["bootAutoStart","agentHttpApi","globalNavigation","navigationHome","navigationBack","navigationRecents","deviceOwnerProvisioning","localAdbPairing","wirelessAdbDiscovery","legacyAdbPortSwitch","rootProbe","kioskAlwaysOn","kioskSelfHeal","nativeSendspin"]){
     assert.match(caps,new RegExp(`\\"${capability}\\"`));
   }
+});
+
+test("Accessibility global actions do not claim arbitrary input support",()=>{
+  const caps=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/AgentCapabilities.java");
+  assert.match(caps,/inputInjection",cap\(false,"not-implemented"/);
+  assert.doesNotMatch(caps,/inputInjection",cap\(accessibilityEnabled/);
+  assert.match(caps,/navigationHome",cap\(accessibilityEnabled,"accessibility"/);
+  assert.match(caps,/navigationBack",cap\(accessibilityEnabled,"accessibility"/);
+  assert.match(caps,/navigationRecents",cap\(accessibilityEnabled,"accessibility-oem"/);
+});
+
+test("Managed Displays capability UI parses and gates optional controls",()=>{
+  const ui="public/managed-displays/agent-capability-ui.js";
+  const r=spawnSync(process.execPath,["--check",ui],{encoding:"utf8"});
+  assert.equal(r.status,0,r.stderr||r.stdout);
+  const source=read(ui);
+  const html=read("public/managed-displays/index.html");
+  assert.match(html,/agent-capability-ui\.js/);
+  assert.match(source,/navigationHome/);
+  assert.match(source,/navigationBack/);
+  assert.match(source,/navigationRecents/);
+  assert.match(source,/inputInjection/);
+  assert.match(source,/Device Admin enabled/);
+  assert.match(source,/Accessibility enabled/);
+  assert.match(source,/OEM launcher/);
 });
 
 test("always-on kiosk recovery is process-level and bounded below thirty seconds",()=>{
@@ -108,11 +133,18 @@ test("browser receives redacted Agent v2 configuration",()=>{
   assert.doesNotMatch(bridge,/res\.json\([^\n]*agentToken/);
 });
 
-test("Device Agent v2 architecture and wiki are documented",()=>{
+test("Device Agent v2 architecture and hardware validation are documented",()=>{
   const docs=read("docs/DEVICE-AGENT-V2.md");
   const wiki=read("wiki/Device-Agent-v2.md");
+  const validation=read("docs/ANDROID-TV-HARDWARE-VALIDATION.md");
+  const aiValidation=read("docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md");
+  const wikiValidation=read("wiki/Android-TV-Hardware-Validation.md");
   assert.match(docs,/capability-discovery build/i);
   assert.match(docs,/Root is \*\*not\*\* a production requirement/);
   assert.match(docs,/libadb-android/);
   assert.match(wiki,/dual-channel design/);
+  assert.match(validation,/Device Administrator.*physically validated/is);
+  assert.match(validation,/GLOBAL_ACTION_RECENTS.*no visible/is);
+  assert.match(aiValidation,/inputInjection.*false/is);
+  assert.match(wikiValidation,/Home.*validated/is);
 });
