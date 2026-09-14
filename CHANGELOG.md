@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Queue classroom commands with per-computer progress, bounded concurrency,
+  request deduplication, lock read-back verification and ownership-based restart
+  cleanup. New interactive commands take priority over preview work. Uncertain
+  one-shot actions are not automatically replayed; broadcast-stop failures are
+  reported instead of hidden.
+
+
+### Veyon preview recovery and embedded scrolling
+
+- Use the main page scrollbar for embedded Veyon/Windows consoles, retaining
+  sessions and keeping dialogs within the visible parent viewport.
+- Limit embedded previews to the actual visible parent viewport; place status
+  below images and hide empty live frames until decoding succeeds.
+- Fall back to PNG after JPEG encoder errors and expose sanitized authentication,
+  capture and network failure details. Distinguish service reachability from
+  authenticated computers and working previews.
+- Omit the ignored COOP header on ordinary LAN HTTP while retaining it on HTTPS
+  and loopback origins; preserve existing content/security policies.
+
 ### Compact lighting and fixed RoomGoblin identity
 
 - Condense Govee lighting into searchable device/group controls with expandable

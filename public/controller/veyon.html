@@ -24,6 +24,13 @@
       <button id="login">Log in user</button><button class="warn" id="logoff">Log off</button><button class="warn" id="reboot">Reboot</button><button class="danger" id="shutdown">Shut down</button><button id="markStudent">Mark selected student</button><button id="markTeacher">Mark selected teacher</button><button id="features">Available features</button><button id="pool">Connection pool</button>
     </div><p class="muted">Power and login actions target online computers. Session actions require a logged-in user. Unlock and stop actions stay available for online computers.</p></details>
   </details>
+  <section class="commandProgress" aria-label="Computer command progress">
+    <div id="commandFeedback" role="status" aria-live="polite"></div><div id="commandRecoveryState" class="muted" role="status"></div>
+    <details id="commandHistory"><summary><b>Command progress</b><span id="commandSummary">Loading recent commands…</span></summary>
+      <p class="muted">Queued is waiting, Accepted is a device acknowledgement, and Confirmed means the requested lock state was read back. Unknown outcomes require review before sending an action again.</p>
+      <button id="refreshCommandJobs">Refresh progress</button><div id="commandHistoryError" class="muted" role="status"></div><div id="commandJobs"></div>
+    </details>
+  </section>
   <div class="lab-title-row lab-inventory-heading"><div class="tabs" aria-label="Computer filters"><button id="showStudents" class="active">Students</button><button id="showTeachers">Teachers</button><button id="showAll">All devices</button></div><div class="toolbar"><button id="selectAll">Select visible online</button><button id="clearSel">Clear selection</button></div></div>
   <div class="inventory-tools">
     <label class="device-search">Find a computer<input id="deviceSearch" type="search" placeholder="Name, address or signed-in user" autocomplete="off"></label>
@@ -55,7 +62,7 @@
     <button id="liveRetry">Retry frame</button><button id="closeLive">Close</button>
   </div>
   <div id="liveStatus" class="muted" role="status">Connecting…</div><div id="liveStage" class="liveStage">
-    <img id="liveImg" class="liveImg" alt="Live computer screen">
+    <img id="liveImg" class="liveImg" alt="Live computer screen" hidden>
   </div>
 </div></div>
 <div id="infoModal" class="modal" role="dialog" aria-modal="true" aria-label="Computer information"><div class="modalBox">

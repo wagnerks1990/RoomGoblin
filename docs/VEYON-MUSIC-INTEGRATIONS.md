@@ -123,7 +123,7 @@ Connection/session errors (documented WebAPI codes 2, 7 and 8) permit one renewa
 and replay; invalid credentials or denied authentication are not blindly retried.
 A new connection may authenticate before its first frame is ready: framebuffer
 code 10 permits two short retries (200 and 400 ms). Unsupported JPEG (code 9)
-falls back to PNG. The outer framebuffer loop has at most three attempts. Each
+or a JPEG encoder failure (code 11) falls back to PNG once. The outer framebuffer loop has at most three attempts. Each
 upstream frame request remains separately bounded; UI timeout/cancellation may
 precede a slow backend recovery, which will itself finish within those bounds.
 
@@ -144,6 +144,108 @@ and compact views show connection state and hidden selections clearly. If a
 preview fails, retain its displayed error and the endpoint's connection/auth state
 for diagnosis; do not rotate the classroom key or re-enroll computers as a cosmetic
 repair. Official protocol reference: https://docs.veyon.io/en/latest/developer/webapi.html.
+
+## Queued classroom commands and recovery
+
+Classroom feature commands are accepted as tracked jobs. The controller shows
+Submitting until the Hub accepts the request, then Queued, Running, Retrying,
+Confirmed, Accepted, Failed, Skipped, Cancelled, or Outcome unknown per computer.
+Queued is never displayed as a confirmed lock. Leaving the page does not cancel
+server work; returning refreshes progress. Repeated submissions carry request IDs
+so a repeated HTTP request does not execute the same action twice.
+
+The workers process several computers concurrently, serialize actions for each
+computer, and check eligibility immediately before that computer's dispatch.
+There is no full-class eligibility barrier. Session-dependent commands query the
+user rather than fetching unrelated session and feature metadata. Pending
+interactive work takes priority over new preview requests; offline retry backoff
+must not continuously suppress screenshots.
+
+| Operation | Confirmation and recovery |
+| --- | --- |
+| Screen/input lock | Read the actual mode, apply the current intent, and read back the mode before reporting Confirmed. Transient failures may retry within a bounded command window. |
+| Unlock | Supersedes older waiting lock requests. Per-computer ordering and an intent check prevent stale queued locks from following it. |
+| Reboot, shutdown, login, logoff, message, website, app | A successful WebAPI response is Accepted, not proof of the final desktop outcome. An uncertain send is reported as Outcome unknown and is not automatically replayed. |
+| Broadcast | Teacher start completes before client jobs run. Owned modes are observed after reconnect, never restarted automatically with old tokens. Hub restart schedules their cleanup. |
+| Stop broadcast | Uses the same workers, reports per-computer failures and requires an observed inactive mode instead of swallowing errors. Expired stops retain owned-mode cleanup intent until reconnect. |
+
+A newer broadcast start or stop supersedes any older teacher setup still waiting
+to fan out to students, preventing mismatched broadcast sessions.
+
+RoomGoblin-owned screen/input locks and broadcast modes enter the durable SQLite
+ownership journal. Credentials, command arguments, and Veyon connection UIDs do not enter
+that journal or command-progress responses. After a Veyon outage during the same
+Hub session, bounded reconciliation reads actual lock state before applying a
+still-valid intent. Failed, cancelled or expired requests cannot become new locks
+when a computer returns later.
+
+A fresh **Hub restart clears recorded RoomGoblin-owned locks and broadcasts** as
+computers become reachable. It never restores an old classroom lock or replays an earlier reboot,
+shutdown or login. This is an ownership-based cleanup, not a blanket reset of
+untouched features set by other Veyon controllers. A disconnected computer cannot be
+confirmed cleared until it returns and its mode is read back.
+
+The queue runs six workers, allows up to 512 targets per job and 1,024 pending
+target operations, and retains at most 128 recent jobs. Ordinary queued requests
+expire after two minutes; transient reversible operations use up to eight attempts
+with increasing delays capped at 30 seconds. Confirmed locks remain desired for
+the current Hub session until explicitly released or the owner's permission is
+revoked. Ownership cleanup continues in bounded retry cycles until a confirmed
+inactive mode removes its journal entry. Pending cleanup stays visible.
+
+Recent job history and one-shot arguments are memory-only. The durable ownership
+journal is capped at 512 host/mode entries; reaching that cap rejects a new owned
+mode before changing the endpoint. Restart reconstructs cleanup from this journal,
+not the old queue. Background checks also run without an open browser. A normal
+idle authentication renewal is not treated as a Veyon server reboot.
+
+Cancellation stops waiting targets; an already dispatched operation may still
+finish. Use Unlock to reverse a lock. Retry controls are limited to reversible
+locks and exclude targets with a newer command. Dispatch checks the actor's
+current permissions and current inventory identity. Recovery export pauses new
+queue work and drains active workers before snapshotting the ownership journal.
+
+Validation uses simulated multi-computer and outage fixtures. Actual latency
+still depends on endpoint availability, authentication, and the Veyon service;
+a fast queue acknowledgement is not a promise that every computer changes
+instantaneously.
+
+## Embedded scrolling and preview diagnostics
+
+Inside Lab computers, the controller document owns normal page scrolling. The
+same-origin `embedded-workspaces.js` helper sizes the Veyon and Windows frames to
+content height, including shrinking after filters. Frames remain mounted across
+tab and Focus workspace changes. Live and information dialogs stay inside the
+visible parent viewport. Standalone consoles retain their normal page scrolling.
+Preview workers use the actual visible parent viewport so an expanded iframe does
+not request every screen in a large inventory. Hidden consoles suspend previews.
+
+Preview status and retry controls sit below each screen, preserving the image
+area. Empty live frames remain hidden until an image successfully decodes. A
+retained last-good frame is labeled when a later request fails.
+
+The root WebAPI probe only establishes service reachability: a root HTTP 404 is
+not evidence of authenticated computers or working screenshots. Status responses
+include `verification: "reachability-only"`; cached authenticated connection counts
+are also not fresh screen verification. The operator UI states this distinction.
+
+A failed framebuffer response includes a safe message, `stage` (authentication or
+framebuffer), `reason`, documented Veyon `code` when available and `upstreamStatus`.
+It never echoes arbitrary upstream text, private keys or connection UIDs. Network,
+DNS, missing-key and timeout failures are categorized; bounded upstream timeouts
+return HTTP 504. The UI displays stage, code and HTTP status next to Retry.
+
+If a production preview still fails, capture the failed **framebuffer** request's
+**Response** in browser Network tools and the matching Veyon service log. The
+outer HTTP 502 alone cannot distinguish key/access problems, endpoint sessions,
+encoding failures or upstream availability. Do not treat a green service badge as
+proof of working screens or rotate keys without identifying the failure.
+
+On ordinary LAN HTTP pages the browser ignores Cross-Origin-Opener-Policy, so
+RoomGoblin omits that header there. HTTPS and loopback origins retain it. This
+removes the irrelevant warning without introducing TLS changes or weakening the
+existing CSP, capabilities or framebuffer authentication. COOP warnings do not
+explain a server-side framebuffer 502.
 
 ## Music Assistant setup flow
 
