@@ -136,3 +136,10 @@ All embedded version identifiers change together across backend, display rendere
 ## AI context
 
 `AGENTS.md` is the authoritative AI/contributor operating contract and `docs/AI-CONTEXT.md` is the compact technical handoff. Architecture changes that affect future reasoning should update those files and this Wiki mirror.
+
+## ESPHome native worker
+
+The main, unprivileged Hub image contains the pinned native client and supervises
+a private-pipe Python worker. It has no listener, Docker/USB privilege or firmware
+executor. See [[ESPHome devices|ESPHome-Devices]] for identity, authorization,
+command/reconnect, encrypted storage and recovery boundaries.

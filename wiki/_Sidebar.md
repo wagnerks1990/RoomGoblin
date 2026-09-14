@@ -33,3 +33,5 @@
 - [Secret URL Handling](Secret-URL-Handling)
 - [Windows Lab Agent](Windows-Lab-Agent)
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
+
+- [[ESPHome devices|ESPHome-Devices]] — encrypted native enrollment and supported controls.

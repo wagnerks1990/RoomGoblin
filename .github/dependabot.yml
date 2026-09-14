@@ -41,3 +41,11 @@ updates:
       android-agent-dependencies:
         patterns:
           - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/src/esphome"
+    schedule:
+      interval: "weekly"
+    groups:
+      esphome-native-client:
+        patterns: ["*"]

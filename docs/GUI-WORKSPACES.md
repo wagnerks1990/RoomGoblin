@@ -12,7 +12,7 @@ API routes remain unchanged.
 
 | Navigation group | Workspaces |
 | --- | --- |
-| Room controls | Displays & AV, Lighting, Display content, Background music, Lab computers |
+| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Lab computers |
 | Content library | Presentations, Media library |
 | Planning | Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
@@ -181,3 +181,9 @@ with Ctrl+C. This check occurs before installer service/data mutations. Wait for
 **Publish Main Images** for the corrected main commit to finish, then pull main
 and rerun `sudo bash install.sh`. Do not relabel older images with the missing
 commit tag or bypass revision verification. The source and both images must agree.
+
+## ESPHome device workspace
+
+The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).
+Keep forms and expanded entity cards stable across polling, mark cached inventory
+stale after failed reads, and never infer physical confirmation from socket writes.

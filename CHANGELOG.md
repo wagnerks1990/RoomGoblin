@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Encrypted native ESPHome devices
+
+- Add a Room controls workspace for verified device enrollment, live sensor state,
+  switches, light power/brightness, bounded numbers, selects and confirmed admin
+  button actions. No Home Assistant or MQTT dependency is required.
+- Store keys encrypted and pin hardware MAC identity. Preserve subdevice entity
+  IDs, require capability checks, bound reconnect/concurrency, and distinguish
+  state-confirmed from sent-unconfirmed commands without offline or restart replay.
+- Include the pinned official Python client in the unprivileged main image, with
+  regression tests, recovery-aware writes and operator/AI/Wiki documentation.
+- Firmware/OTA, automatic discovery and sensor-triggered automations are not part
+  of this initial integration; physical-device acceptance remains necessary.
+
 - Queue classroom commands with per-computer progress, bounded concurrency,
   request deduplication, lock read-back verification and ownership-based restart
   cleanup. New interactive commands take priority over preview work. Uncertain
