@@ -271,14 +271,10 @@ Browser displays use enabled stable display IDs without credentials by default. 
 
 ## Git and release workflow
 
-`main` is the source branch used by production. Normal supported update flow:
+`main` is the development source of truth; `production` is advanced by CI only after the validated image pair is published. Normal supported update flow:
 
 ```bash
-cd /opt/classroom-hub
-git fetch origin
-git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
 For development rebuilds after host state is established:

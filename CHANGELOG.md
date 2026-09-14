@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Published-image update preflight
+
+- Advance the production source branch only after the validated Hub/maintenance
+  pair is published. Bootstrap and normal updates select this branch instead of
+  a potentially unbuilt main commit.
+- Verify both images before moving the checkout; refuse silent downgrades and
+  report failed CI promptly without repeated Docker missing-tag errors.
+- Keep lighting Apply controls stationary when polling clears command status;
+  cover a refresh between pointer down and pointer up in both browser engines.
+
 ### Encrypted native ESPHome devices
 
 - Add a Room controls workspace for verified device enrollment, live sensor state,

@@ -105,6 +105,26 @@ class LightingBrowserTests(unittest.TestCase):
             self.assertIn((f'/api/v1/govee/light-1/{action}', 'POST', body), calls)
         self.assertFalse(errors, errors)
 
+    def test_refresh_does_not_move_a_command_during_click(self):
+        page, errors, _, calls = self.lighting()
+        card = page.locator('#lightDevices [data-light-target="light-1"]')
+        card.locator('.lightTools > summary').click()
+        page.wait_for_function("document.querySelector('#lightDevices [data-light-control=s]').options.length === 2")
+        card.locator('[data-light-control=t]').fill('4200')
+        button = card.locator('button[aria-label="Apply temp to Desk light 1"]')
+        page.evaluate("document.getElementById('goveeMessage').textContent = 'light-1: color command sent.'")
+        button.scroll_into_view_if_needed()
+        before = button.bounding_box()
+        page.mouse.move(before['x'] + before['width']/2, before['y'] + before['height'] - 2)
+        page.mouse.down()
+        page.evaluate('loadGovee()')
+        after = button.bounding_box()
+        page.mouse.up()
+        self.assertAlmostEqual(before['y'], after['y'], delta=1)
+        page.wait_for_function("document.getElementById('goveeMessage').textContent.includes('temp command sent')")
+        self.assertIn(('/api/v1/govee/light-1/temp', 'POST', {'kelvin': 4200}), calls)
+        self.assertFalse(errors, errors)
+
     def test_lighting_scene_failure_retry_and_empty_filter(self):
         page, errors, _, calls = self.lighting(fail_scenes=True)
         card = page.locator('#lightDevices .lightCard').first

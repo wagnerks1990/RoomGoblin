@@ -141,11 +141,7 @@ The web controller can perform release-tag updates after `sudo ./install.sh` has
 Manual update:
 
 ```bash
-cd /opt/classroom-hub
-sudo git fetch origin
-sudo git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
 Development rebuild after a valid install:

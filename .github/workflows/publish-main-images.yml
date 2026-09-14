@@ -95,6 +95,9 @@ jobs:
           provenance: mode=max
 
   promote:
+    permissions:
+      contents: write
+      packages: write
     needs: build
     runs-on: ubuntu-latest
     concurrency:
@@ -123,3 +126,13 @@ jobs:
               --tag "ghcr.io/wagnerks1990/${image}:alpha" \
               "ghcr.io/wagnerks1990/${image}:sha-${VALIDATED_SHA}"
           done
+
+          # Advertise a source commit only after the complete validated image pair exists.
+          if gh api "/repos/${GITHUB_REPOSITORY}/git/ref/heads/production" >/dev/null 2>&1; then
+            gh api --method PATCH "/repos/${GITHUB_REPOSITORY}/git/refs/heads/production" \
+              -f sha="$VALIDATED_SHA" -F force=false >/dev/null
+          else
+            gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref=refs/heads/production -f sha="$VALIDATED_SHA" >/dev/null
+          fi
+          echo "Published production source: ${VALIDATED_SHA}"
