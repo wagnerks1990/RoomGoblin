@@ -7,7 +7,7 @@ old="""# The clock is constructed before database-backed timezone settings are l
 needle='''}catch(error){console.warn(`Stored scheduler timezone ignored: ${error.message}`)}\nfunction privacyRetentionPolicy()'''
 s=replace_once(s,needle,''' }catch(error){console.warn(`Stored scheduler timezone ignored: ${error.message}`)}\nschedulerClock.timezone=SCHEDULER_TIMEZONE;\nfunction privacyRetentionPolicy()'''.lstrip(), 'scheduler clock timezone sync')
 """
-new="""# The clock is constructed before database-backed timezone settings are loaded.
+new=r"""# The clock is constructed before database-backed timezone settings are loaded.
 # Synchronize it after the persisted site timezone is applied. Keep the patch robust
 # to surrounding formatting changes and harmless if the source already contains it.
 if 'schedulerClock.timezone=SCHEDULER_TIMEZONE;' not in s:
