@@ -44,6 +44,7 @@ Critical invariants:
 - Timer chaining is only for an explicitly linked continuation of the same base class or period.
 - Runtime versions must stay converged through release metadata/stamping and the Host Agent wrapper.
 - Integration health is independent; a failure in Pluto must not falsely mark MQTT/Govee offline.
+- Cross-domain automation steps with legacy/empty targets recover to the domain's All selector; explicit all-TV selectors use Pluto broadcast CEC, while selected subsets use individual outputs.
 - Optional or slow hardware probes must not block the initial Overview screen.
 
 ## Standard production layout
