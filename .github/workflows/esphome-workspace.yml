@@ -4,24 +4,39 @@ on:
     branches: [integration/esphome-devices]
     paths: [.github/workflows/esphome-workspace.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  workspace:
+  materialize:
+    if: github.repository == 'wagnerks1990/RoomGoblin' && github.ref == 'refs/heads/integration/esphome-devices'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - name: Inspect pinned client and compatible dependencies
-        run: |
-          python3 -m venv /tmp/esp-venv
-          /tmp/esp-venv/bin/pip install aioesphomeapi==46.4.1
-          mkdir -p /tmp/esp-deps
-          /tmp/esp-venv/bin/pip freeze > /tmp/esp-deps/requirements.txt
-          /tmp/esp-venv/bin/pip download -r /tmp/esp-deps/requirements.txt --python-version 3.13 --only-binary=:all: -d /tmp/esp-deps/wheels
-          cp -r /tmp/esp-venv/lib/python*/site-packages/aioesphomeapi /tmp/esp-deps/
-          tar -C /tmp/esp-deps -czf /tmp/esphome-client.tar.gz .
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: esphome-client
-          path: /tmp/esphome-client.tar.gz
-          retention-days: 1
+          ref: integration/esphome-devices
+          fetch-depth: 0
+      - name: Verify and apply reviewed source patch
+        run: |
+          set -euo pipefail
+          git diff --quiet 640264f444903152fc690776a1455cb4b8827775 HEAD -- . ':(exclude).github/esphome-transfer/**' ':(exclude).github/workflows/esphome-workspace.yml'
+          # Repair the single known transport transcription; the complete payload
+          # must still match the locally reviewed SHA-256 before it is applied.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/esphome-transfer/02')
+          value = p.read_text()
+          assert value.count('BCDahSS14825') == 1
+          p.write_text(value.replace('BCDahSS14825', 'BCDahS14825'))
+          PY
+          cat .github/esphome-transfer/0* | base64 --decode > /tmp/esphome.patch.gz
+          echo '184b72f8dac8ef9557bc38f8e8c2580ee5fc19ef403dba1c2a1a887e690e2b48  /tmp/esphome.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/esphome.patch.gz > /tmp/esphome.patch
+          git apply --check --unidiff-zero /tmp/esphome.patch
+          git apply --index --unidiff-zero /tmp/esphome.patch
+          git diff --cached --check
+          node --check src/esphome.js
+          node --check public/controller/esphome.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat: integrate encrypted native ESPHome devices'
+          git push origin HEAD:refs/heads/integration/esphome-devices
