@@ -1725,8 +1725,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     const explicitTargets=Array.isArray(step.targets)&&step.targets.length ? step.targets : [];
     let rawTargets=[];
     if(step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=event.targets||[];
-    else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
+    // An action's explicit target selection always wins. Class defaults only
+    // supply a target when this cross-domain display step has none of its own.
     else if(explicitTargets.length)rawTargets=explicitTargets;
+    else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
     else rawTargets=defaultAutomationActionTargets(stepAction);
     let resolvedTargets;
     if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
