@@ -25,6 +25,8 @@
 - [Automation Display Media](Automation-Display-Media)
 - [Veyon and Music Assistant](Veyon-and-Music-Assistant)
 - [Music Assistant Sendspin](Music-Assistant-Sendspin)
+- [[ESPHome devices|ESPHome-Devices]] — native enrollment, security boundaries, supported controls, and recovery behavior.
+- [[ESPHome discovery|ESPHome-Discovery]] — automatic mDNS discovery and adoption of already-flashed devices.
 - [Operations](Operations)
 - [Troubleshooting](Troubleshooting)
 - [Development](Development)
@@ -33,5 +35,3 @@
 - [Secret URL Handling](Secret-URL-Handling)
 - [Windows Lab Agent](Windows-Lab-Agent)
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
-
-- [[ESPHome devices|ESPHome-Devices]] — encrypted native enrollment and supported controls.
