@@ -15,6 +15,7 @@
 .rg-controller #workspaceSidebar .rg-nav-group>summary{font-size:11px;letter-spacing:.035em;padding:9px 6px;margin:0;border:0;color:var(--rg-muted)}
 .rg-controller #workspaceSidebar .rg-nav-group :is(button,a){padding-left:19px}
 .rg-controller .authAccount{margin:24px 4px 0;border:0;border-top:1px solid var(--rg-line);border-radius:0;padding:18px 0;background:transparent}.rg-controller .authAccount button{font-size:12px;padding:7px 10px}
+.rg-controller .authAccount .name{color:var(--rg-text)}
 .rg-controller .rg-workspace-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:28px;min-height:38px}
 .rg-controller .rg-workspace-bar>div{display:flex;gap:12px;align-items:center;font-size:12px;color:var(--rg-muted)}
 .rg-controller .rg-workspace-eyebrow{border-right:1px solid var(--rg-line);padding-right:12px}
