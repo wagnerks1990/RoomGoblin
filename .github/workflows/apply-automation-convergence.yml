@@ -1,0 +1,45 @@
+name: Apply automation convergence hardening
+
+on:
+  push:
+    branches:
+      - fix/automation-scheduler-reliability
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[automation-convergence]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: fix/automation-scheduler-reliability
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+      - name: Apply automation convergence hardening
+        run: |
+          python3 tools/prepare-automation-convergence.py
+          python3 tools/apply-automation-convergence.py
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate syntax and controller
+        run: npm run check
+      - name: Run focused scheduler tests
+        run: node --test --test-concurrency=1 test/automation-runtime.test.js test/automation-convergence.test.js test/automation-followup.test.js test/automation-framework-manual.test.js test/backend-production-regressions.test.js test/school-schedule.test.js
+      - name: Run full Node regression suite
+        run: npm test
+      - name: Commit hardened source
+        run: |
+          if git diff --quiet; then
+            echo "No convergence changes required."
+            exit 0
+          fi
+          git config user.name "RoomGoblin Automation Convergence"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/automation-runtime.js src/server.js public/controller/app.js public/controller/index.html test/automation-convergence.test.js
+          git commit -m "Complete automation convergence and retry safety [automation-convergence]"
+          git push origin HEAD:fix/automation-scheduler-reliability

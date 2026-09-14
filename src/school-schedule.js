@@ -96,6 +96,9 @@ function normalizeSchoolScheduleProfile(input = {}, fallback = defaultSchoolSche
     }
     let transform = null;
     if (validTime(rule.transform?.normalStart) && validTime(rule.transform?.normalEnd) && validTime(rule.transform?.delayedStart)) {
+      const normalStart=timeToMinutes(rule.transform.normalStart),normalEnd=timeToMinutes(rule.transform.normalEnd),delayedStart=timeToMinutes(rule.transform.delayedStart);
+      if(normalStart>=normalEnd)throw new Error(`${kind} transform normal start must be before normal end`);
+      if(delayedStart>=normalEnd)throw new Error(`${kind} transform delayed start must be before normal end`);
       transform = { normalStart: rule.transform.normalStart, normalEnd: rule.transform.normalEnd, delayedStart: rule.transform.delayedStart };
     }
     exceptionRules[String(kind).slice(0, 40)] = { periodTimes, transform, excludeContinuationPeriods: rule.excludeContinuationPeriods === true };
@@ -138,9 +141,14 @@ function effectiveTimesForRule(profile, classroom, ruleType) {
   const transform = rule.transform;
   const baseStart = timeToMinutes(startTime), baseEnd = timeToMinutes(endTime);
   const normalStart = timeToMinutes(transform?.normalStart), normalEnd = timeToMinutes(transform?.normalEnd), delayedStart = timeToMinutes(transform?.delayedStart);
-  if ([baseStart, baseEnd, normalStart, normalEnd, delayedStart].every(Number.isFinite) && normalEnd > normalStart) {
+  if ([baseStart, baseEnd, normalStart, normalEnd, delayedStart].every(Number.isFinite) && normalEnd > normalStart && delayedStart < normalEnd) {
     const scale = (normalEnd - delayedStart) / (normalEnd - normalStart);
-    return { startTime: minutesToTime(delayedStart + (baseStart - normalStart) * scale), endTime: minutesToTime(delayedStart + (baseEnd - normalStart) * scale) };
+    const transformedStart=delayedStart + (baseStart - normalStart) * scale;
+    const transformedEnd=delayedStart + (baseEnd - normalStart) * scale;
+    if(!Number.isFinite(transformedStart)||!Number.isFinite(transformedEnd)||transformedStart<0||transformedEnd>1439||transformedStart>=transformedEnd){
+      throw new Error(`Exception rule ${ruleType} produces an invalid effective interval for ${classroom?.name||classroom?.period||"class"}`);
+    }
+    return { startTime: minutesToTime(transformedStart), endTime: minutesToTime(transformedEnd) };
   }
   return { startTime, endTime };
 }

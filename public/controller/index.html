@@ -321,7 +321,7 @@ nav button{min-width:135px}
 <section id="overview" class="page active">
   <div class="top">
     <div><h1>Today</h1><div class="muted">Everything you need to run the room.</div></div>
-    <div class="toolbar"><button onclick="refreshOverview()">Refresh status</button></div>
+    <div class="toolbar"><span id="todayAutomationState" class="pill">Automation…</span><button id="todayAutomationToggle" onclick="toggleAutomationScheduler()">Pause Automation</button><button onclick="resumeScheduledAutomation()">Resume Schedule</button><button onclick="refreshOverview()">Refresh status</button></div>
   </div>
 
   <div class="grid2 rg-day-summary">
@@ -684,6 +684,10 @@ nav button{min-width:135px}
     <div><h1>Classroom Automation Scheduler</h1><div class="muted">Schedule TV power, display content, URLs, media, documents, and Govee lighting throughout the day.</div><div id="schedulerClock" class="muted" style="margin-top:5px">Checking scheduler clock…</div></div>
     <div class="toolbar"><button onclick="loadSchedules()">Refresh</button><button class="primary" onclick="newAutomation()">+ New Event</button></div>
   </div>
+  <div id="automationControlPanel" class="panel" style="margin-bottom:14px">
+    <div class="top"><div><b>Scheduled Automation</b><div id="automationControlSummary" class="muted">Loading scheduler control…</div></div><div class="toolbar"><button id="automationToggleBtn" onclick="toggleAutomationScheduler()">Pause Automatic Runs</button><button class="primary" onclick="resumeScheduledAutomation()">Resume Scheduled State</button></div></div>
+    <details class="workspaceDisclosure" style="margin-top:10px"><summary>Simulation / Troubleshooting</summary><div class="disclosureBody"><div id="automationSimulationBanner" class="status"></div><div class="grid2"><label>Simulated date & time<input id="automationSimulatedTime" type="datetime-local"></label><label>Live test commands<select id="automationSimulationLive"><option value="0">Dry run only</option><option value="1">Allow real-device commands for 15 minutes</option></select></label></div><div class="toolbar"><button onclick="applyAutomationSimulation()">Apply Simulated Time</button><button onclick="evaluateAutomationSimulation()">Evaluate Now</button><button onclick="clearAutomationSimulation()">Return to Real Time</button></div><div id="automationSimulationResults" class="muted" style="margin-top:8px"></div></div></details>
+  </div>
 
   <details class="panel workspaceDisclosure" style="margin-bottom:14px">
     <summary><h2 class="sectionTitle">School Calendar Rules</h2></summary>
@@ -727,7 +731,7 @@ nav button{min-width:135px}
       <label>Stream URL<input id="morningWatchUrl" type="url" value=""></label>
       <label>Watch Start<input id="morningWatchStart" type="time" value="07:00"></label>
       <label>Watch End<input id="morningWatchEnd" type="time" value="08:30"></label>
-      <label>Announcement Volume<div class="toolbar" style="margin-top:5px"><input id="morningWatchVolume" type="range" min="0" max="100" value="100" style="flex:1" oninput="morningWatchVolumeValue.textContent=this.value+'%'"><span id="morningWatchVolumeValue" class="pill">100%</span></div></label>
+      <label>Announcement Volume<div class="toolbar" style="margin-top:5px"><input id="morningWatchVolume" type="range" min="0" max="100" value="100" style="flex:1" oninput="morningWatchVolumeValue.textContent=this.value+'%'"><span id="morningWatchVolumeValue" class="pill">100%</span></div></label><label>Offline confirmations<input id="morningWatchOfflineConfirmations" type="number" min="1" max="8" value="2"></label><label>Check interval (seconds)<input id="morningWatchCheckInterval" type="number" min="10" max="120" value="15"></label><div><label>Announcement targets</label><div id="morningWatchTargets" class="panel" style="box-shadow:none;padding:10px;margin-top:4px"></div></div>
     </div>
     <div class="toolbar"><button class="primary" onclick="saveMorningWatch()">Save Live Watch</button><button id="morningWatchCheckBtn" onclick="checkMorningWatch()">Check Stream Now</button><span id="morningWatchMsg" class="status"></span></div>
     <div class="muted" style="margin-top:8px">Targets: all enabled displays. Two consecutive offline checks are required before an active announcement is ended, preventing a brief stream hiccup from blanking the TVs.</div>
@@ -797,7 +801,7 @@ nav button{min-width:135px}
       <div id="autoPayload" class="panel" style="box-shadow:none;margin-top:12px"></div>
       <div class="panel" style="box-shadow:none;margin-top:12px">
         <div class="top">
-          <div><b>Additional Actions</b><div class="muted">RoomGoblin automatically clears all display screens before Action 1. Add Action 2, Action 3, and more here; they run in order. Cross-domain actions use their own target type.</div></div>
+          <div><b>Additional Actions</b><div class="muted">Actions are resource-isolated: lighting, TV power, AV, timers, and display content affect only their resolved targets. Add Action 2, Action 3, and more here; they run in order.</div></div>
           <button type="button" onclick="addAutomationStep()">+ Add Action</button>
         </div>
         <div id="autoActionSteps"></div>
@@ -884,8 +888,10 @@ nav button{min-width:135px}
 
 
       <div class="toolbar">
-        <button class="primary" onclick="saveAutomation()">Save Event</button>
-        <button onclick="testAutomationEditor()">Test Now</button>
+        <button onclick="saveAutomation()">Save Draft / Changes</button>
+        <button class="primary" onclick="validateEnableAutomation()">Validate & Enable</button>
+        <button onclick="simulateAutomationEditor()">Simulate Draft</button>
+        <button class="danger" onclick="runAutomationDraft()">Run Draft on Real Devices</button>
         <button onclick="newAutomation()">Cancel / New</button>
       </div>
       <div id="autoEditorMsg" class="status" style="margin-top:8px"></div>

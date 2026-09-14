@@ -14,7 +14,7 @@ test("manual automation tests do not weaken scheduled class-date enforcement",()
 
 test("class default display targets are framework-level and cross-domain",()=>{
   assert.match(server,/_classDefaultTargets:\[\.\.\.\(cls\.defaultTargets\|\|\[\]\)\]/);
-  assert.match(server,/stepDomain==="display"&&event\.useClassTargets!==false&&Array\.isArray\(event\._classDefaultTargets\)/);
+  assert.match(server,/\(stepDomain==="display-content"\|\|stepDomain==="display-overlay"\).*event\.useClassTargets!==false&&Array\.isArray\(event\._classDefaultTargets\)/);
   assert.match(server,/const timerTargetSource=\(event\.useClassTargets!==false&&Array\.isArray\(event\._classDefaultTargets\)/);
   assert.match(controller,/useClassTargets:autoUseClassTargets\.checked/);
   assert.match(controller,/autoUseClassTargets\.checked=e\.useClassTargets!==false/);

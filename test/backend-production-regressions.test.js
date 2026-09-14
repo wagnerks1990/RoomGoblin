@@ -103,11 +103,35 @@ test("timer overlays reject non-finite fields before persistence, replay, or del
   }
   assert.match(normalizer,/timerOverlay:normalizeTimerOverlay\(input\.timerOverlay/);
   const run=server.slice(server.indexOf("async function runClassroomAutomation"),server.indexOf("function safeStoredName"));
-  assert.ok(run.indexOf("normalizeTimerOverlay")<run.indexOf("displayScope"));
+  assert.match(run,/timerOverlay:normalizeTimerOverlay/);
+  assert.doesNotMatch(run,/displayScope/);
+  assert.doesNotMatch(run,/Pure non-display events.*clear all/s);
   const resync=server.slice(server.indexOf("async function runDisplayAutomationResync"),server.indexOf("function consumeDeferredAnnouncementAutomations"));
   assert.ok(resync.indexOf("normalizeTimerOverlay")<resync.indexOf('type:"display.clear"'));
   const health=server.slice(server.indexOf('app.get("/health"'),server.indexOf('app.get("/api/v1/status"'));
   assert.match(health,/normalizeTimerOverlay\(item\.timerOverlay/);
+});
+
+
+test("automation resource isolation removes global pre-clear and uses per-output TV power",()=>{
+  const run=server.slice(server.indexOf("async function runClassroomAutomation"),server.indexOf("function safeStoredName"));
+  assert.doesNotMatch(run,/id:\"pre-clear\"/);
+  assert.match(run,/no automation implicitly clears display content/);
+  const single=server.slice(server.indexOf("async function runSingleAutomationAction"),server.indexOf("function timerLinkedClassChain"));
+  assert.match(single,/expandTvTargets\(event\.targets/);
+  assert.match(single,/action:\"cecOutput\"/);
+  assert.doesNotMatch(single,/cecAllOutputs/);
+  assert.match(single,/assertAdapterResults\(outputs\.results,\{action:\"TV power\"\}\)/);
+});
+
+test("scheduler discovery is non-blocking and class occurrences still honor global suppression",()=>{
+  const scheduler=server.slice(server.indexOf("// Unified Classroom Automation scheduler"),server.indexOf("// Legacy per-output Pluto schedules"));
+  const tick=scheduler.slice(scheduler.indexOf("async function automationSchedulerTick"));
+  assert.match(tick,/automationRunLedger\.claim/);
+  assert.match(tick,/automationRunningOccurrences\.set/);
+  assert.match(tick,/isAutomationSuppressed\(now\)\.blocked/);
+  assert.doesNotMatch(tick,/await runClassroomAutomation\(event\)/);
+  assert.match(scheduler,/async function executeScheduledAutomationOccurrence/);
 });
 
 test("Morning Announcements probes use the display allowlist and validate every redirect",()=>{
