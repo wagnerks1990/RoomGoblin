@@ -1,6 +1,6 @@
 # Android TV Native Sendspin
 
-RoomGoblin Agent `0.3.0-agent-v2` moves Music Assistant playback out of the kiosk WebView and into the persistent Android foreground agent.
+RoomGoblin Agent `0.3.1-agent-v2` moves Music Assistant playback out of the kiosk WebView and into the persistent Android foreground agent.
 
 ## Why
 
@@ -16,6 +16,10 @@ Music Assistant :8927/sendspin
 RoomGoblin WebView
   -> visuals only
 ```
+
+## Protocol serialization
+
+`sendspin-jvm` uses `JsonOptional<T>` for partial server-state updates. Agent `0.3.1-agent-v2` registers Sendspin's `JsonOptionalAdapterFactory` before Moshi's Kotlin adapter. Without it, the Android player can fail before connecting with `Cannot serialize abstract class com.sendspin.protocol.JsonOptional`.
 
 ## First supported format
 
