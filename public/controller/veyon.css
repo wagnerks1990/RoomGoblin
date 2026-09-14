@@ -99,3 +99,23 @@ body.rg-veyon header,body.rg-veyon main{width:min(1800px,100%);padding-inline:cl
 .rg-veyon .lab-selection>summary h2::before{content:'▸';display:inline-block;margin-right:8px}.rg-veyon .lab-selection[open]>summary h2::before{content:'▾'}
 .rg-veyon .lab-selection>summary::-webkit-details-marker{display:none}
 @media(max-width:680px){.rg-veyon .lab-selection{padding:10px 14px}.rg-veyon .lab-nav a:first-child{flex-basis:auto}.rg-veyon .lab-nav{margin-bottom:14px}}
+
+/* Keep status and recovery text below the screen so the image stays unobscured. */
+.rg-veyon .previewFeedback{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line)}
+.rg-veyon .previewFeedback .thumbStatus{position:static;flex:1;min-width:0;padding:0;background:transparent;color:var(--muted)}
+.rg-veyon .previewFeedback .thumbRetry{position:static;flex-shrink:0;min-height:32px}
+.rg-veyon #grid[data-layout=list] .previewFeedback{display:none}
+/* Server-owned command progress never substitutes queued work for reported state. */
+.rg-veyon .commandProgress{margin:12px 0;border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:0}
+.rg-veyon #commandFeedback:empty{display:none}.rg-veyon #commandFeedback{padding:3px 0 10px;font-weight:650;overflow-wrap:anywhere}
+.rg-veyon #commandHistory>summary,.rg-veyon .commandJob>summary{display:flex;gap:12px;align-items:center;flex-wrap:wrap;min-height:34px;padding:5px 0;list-style:none}
+.rg-veyon #commandHistory>summary b::before,.rg-veyon .commandJob>summary b::before{content:'▸';margin-right:7px}.rg-veyon #commandHistory[open]>summary b::before,.rg-veyon .commandJob[open]>summary b::before{content:'▾'}
+.rg-veyon #commandSummary,.rg-veyon .commandJob>summary span{font-size:12px;color:var(--muted);font-weight:400}
+.rg-veyon .commandJob{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.rg-veyon .commandJobMeta{font-size:12px}.rg-veyon .commandJobActions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.rg-veyon .commandResults{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:6px}
+.rg-veyon .commandResult{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:7px 9px;background:var(--panel);border-radius:6px;font-size:12px;overflow-wrap:anywhere}
+.rg-veyon .commandResult small{grid-column:1/-1;color:var(--muted)}
+.rg-veyon .computerCommand{font-size:12px;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px}
+.rg-veyon [data-command-phase=queued],.rg-veyon [data-command-phase=running],.rg-veyon [data-command-phase=retrying]{color:var(--amber)}
+.rg-veyon [data-command-phase=failed],.rg-veyon [data-command-phase=unknown]{color:var(--red)}

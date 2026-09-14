@@ -89,6 +89,14 @@ copies. School/room labels and colors remain configurable; product name, text,
 logo and favicon are fixed to RoomGoblin. See
 [Brand and compatibility](ROOMGOBLIN-REBRAND.md) for the asset contract.
 
+## One scroll area for embedded lab consoles
+
+Veyon and Windows lab frames expand to their content and use the controller page's
+scrollbar. Filters can shrink the frame again. The helper preserves frame sessions
+and keeps live/info/login dialogs within the visible parent viewport. The Veyon
+preview queue uses that same viewport to request only nearby screens; hidden
+consoles suspend previews. Standalone lab pages keep normal document scrolling.
+
 ## Compact Govee lighting
 
 Lighting keeps group power and brightness first, followed by a searchable device
@@ -120,6 +128,7 @@ common visual treatment. Light and system brand modes have operator overrides.
 Page-specific layout lives in:
 
 - `public/controller/workspace.css` and `workspace.js` for the main shell;
+- `public/controller/embedded-workspaces.js` for same-origin lab frame sizing and visible viewport reporting;
 - `public/controller/display-workspace.css` for the content editor;
 - `public/controller/lighting.css` for compact Govee controls;
 - `public/controller/lab-workspaces.css` for both lab consoles;

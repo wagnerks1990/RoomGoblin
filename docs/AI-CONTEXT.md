@@ -343,3 +343,26 @@ asset-URL controls. Preserve school/room labels, device names, display prefixes,
 timezones and theme settings. Old identity overrides are ignored on reads and
 canonicalized on normal saves; do not delete uploads or migrate compatibility
 identifiers. See `docs/ROOMGOBLIN-REBRAND.md` for the current contract.
+
+## Embedded lab viewport and preview diagnostics
+
+The controller owns normal scrolling for same-origin Veyon/Windows frames through
+`embedded-workspaces.js`. Preserve frame nodes/sessions and the published child
+viewport when changing layout; a content-height iframe must not poll every screen.
+Modal bounds use the visible parent viewport. Standalone lab pages remain usable.
+Veyon root reachability (including HTTP 404) is not authentication or screen proof.
+Preserve bounded PNG fallback and sanitized failure stage/code responses; do not
+expose raw upstream text, keys or UIDs in preview errors.
+
+## Veyon command recovery
+
+Use the server-owned bounded command queue for classroom feature commands.
+Preserve per-host ordering, request-ID deduplication, dispatch-time authorization,
+latest lock intent and read-back confirmation. One-shot commands with uncertain
+outcomes must not be blindly replayed. Only reversible RoomGoblin-owned lock/broadcast mode
+metadata belongs in the SQLite journal; never persist login arguments or UIDs.
+Fresh Hub startup clears owned locks and broadcast modes instead of restoring
+stale classroom intent.
+Queue workers must participate in Full Recovery Export pause/drain accounting.
+Do not report unavailable feature state as false or broadcast-stop failures as
+success. See `docs/VEYON-MUSIC-INTEGRATIONS.md` for recovery semantics.

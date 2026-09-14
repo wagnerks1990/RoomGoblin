@@ -32,16 +32,18 @@ function render(){
         <input class="check" type="checkbox" data-select="${esc(c.id)}" aria-label="Select ${esc(c.name||c.hostname||c.ip)}" ${selected.has(c.id)?'checked':''}>
         <span class="badge ${c.online?'online':'offline'}">${c.online?'ONLINE':'OFFLINE'}</span>
         ${c.online
-          ?`<img data-thumb="${esc(c.id)}" alt="Screen preview for ${esc(c.name||c.ip)}" ${thumbState.get(c.id)?.url?`src="${thumbState.get(c.id).url}"`: 'hidden'}><span class="muted thumbStatus" data-thumb-status="${esc(c.id)}">${esc(thumbState.get(c.id)?.message||'Waiting for preview…')}</span><button class="thumbRetry" ${thumbState.get(c.id)?.failures?'':'hidden'} data-retry="${esc(c.id)}" aria-label="Retry screen for ${esc(c.name||c.ip)}">Retry</button>`
+          ?`<img data-thumb="${esc(c.id)}" alt="Screen preview for ${esc(c.name||c.ip)}" ${thumbState.get(c.id)?.url?`src="${thumbState.get(c.id).url}"`: 'hidden'}>`
           :`<span class="muted">${c.online?'Veyon not authenticated':'No Veyon connection'}</span>`}
       </div>
+      ${c.online?`<div class="previewFeedback"><span class="muted thumbStatus" data-thumb-status="${esc(c.id)}">${esc(thumbState.get(c.id)?.message||'Waiting for preview…')}</span><button class="thumbRetry" ${thumbState.get(c.id)?.failures?'':'hidden'} data-retry="${esc(c.id)}" aria-label="Retry screen for ${esc(c.name||c.ip)}">Retry</button></div>`:''}
       <div class="body">
         <div class="name">${esc(c.name||c.hostname||c.ip)} <span class="list-status ${c.online?'online':'offline'}">${c.online?'Online':'Offline'}</span></div>
         <div class="meta"><span class="${c.role==='teacher'?'roleTeacher':'roleStudent'}">${c.role==='teacher'?'TEACHER':'STUDENT'}</span> • ${esc(c.hostname||'')} ${c.hostname?'• ':''}${esc(c.ip)}</div>
         <div class="meta">User: ${esc(c.user?.fullName||c.user?.login||'No user logged in')}</div>
-        <div class="meta">Screen lock: <span class="${c.featureState?.screenLock?'featureOn':'featureOff'}">${c.featureState?.screenLock?'ACTIVE':'off'}</span> • Input lock: <span class="${c.featureState?.inputLock?'featureOn':'featureOff'}">${c.featureState?.inputLock?'ACTIVE':'off'}</span></div>
+        <div class="meta">Screen lock: <span class="${c.featureState?.screenLock?'featureOn':'featureOff'}">${c.featureState?.screenLock===true?'ACTIVE':c.featureState?.screenLock===false?'off':'unknown'}</span> • Input lock: <span class="${c.featureState?.inputLock?'featureOn':'featureOff'}">${c.featureState?.inputLock===true?'ACTIVE':c.featureState?.inputLock===false?'off':'unknown'}</span></div>
         ${c.featureState?.screenLock&&!c.user?.login?`<div class="notice">Lock is active. No lock graphic can be shown until a user is logged in; input remains locked.</div>`:''}
         ${c.error?`<div class="meta offline">${esc(c.error)}</div>`:''}
+        <div class="computerCommand" data-command-computer="${esc(c.id)}" hidden></div>
         <div class="actions">
           <button data-live="${esc(c.id)}">Live View</button>
           <button data-msg="${esc(c.id)}">Message</button>
@@ -53,7 +55,7 @@ function render(){
         </div></details>
       </div>
     </article>`).join('')||'<div class="empty-inventory">No computers match these filters. Try All devices or discover computers.</div>';
-  updateSelectionCount();
+  updateSelectionCount();renderCommandJobs();
   if(focusKey)document.querySelector(`[${focusKey.name}="${CSS.escape(focusKey.value)}"]`)?.focus({preventScroll:true});
   document.querySelectorAll('[data-retry]').forEach(x=>x.onclick=()=>{const state=thumbState.get(x.dataset.retry);if(state)state.nextTry=0;queueVisibleThumbnails()});
   document.querySelectorAll('[data-select]').forEach(x=>x.onchange=()=>{x.checked?selected.add(x.dataset.select):selected.delete(x.dataset.select);updateSelectionCount()});
@@ -67,7 +69,7 @@ function render(){
   document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>renameComputer(x.dataset.rename));
 }
 async function status(){
-  try{const x=await api('/api/v1/veyon/status');$('apiStatus').innerHTML=`Veyon API: <span class="online">CONNECTED</span> • ${esc(x.keyName||'Key not configured')}${x.scanSubnet?` • ${esc(x.scanSubnet)}.0/24`:''}`}
+  try{const x=await api('/api/v1/veyon/status');$('apiStatus').innerHTML=`Veyon service: <span class="online">REACHABLE</span> • Screens verified per computer`;$('apiStatus').title=`Service HTTP ${x.httpStatus??'unknown'}; ${Number(x.authenticatedConnections??x.pool?.size??0)} cached authenticated connections. Service reachability alone does not verify a screen preview.`}
   catch(e){$('apiStatus').innerHTML=`Veyon API: <span class="offline">OFFLINE</span> • ${esc(e.message)}`}
 }
 async function load(){
@@ -86,21 +88,111 @@ async function discover(){
   try{await api('/api/v1/veyon/discover',{method:'POST',body:'{}'});await load()}
   catch(e){alert(e.message)}finally{$('discover').disabled=false;$('discover').textContent='Discover computers'}
 }
-async function feature(targets,name,active=true,args={}){
-  if(!targets.length)return alert('Select at least one computer.');
-  try{
-    const x=await api('/api/v1/veyon/feature',{method:'POST',body:JSON.stringify({targets,feature:name,active,arguments:args})});
-    const s=x.summary||{},failed=(x.results||[]).filter(r=>!r.ok&&!r.skipped),skipped=(x.results||[]).filter(r=>r.skipped);
-    if(failed.length||skipped.length){
-      const lines=[`Succeeded: ${s.succeeded??0}`,`Skipped: ${s.skipped??0}`,`Failed: ${s.failed??failed.length}`];
-      if(s.skippedOffline)lines.push(`Offline: ${s.skippedOffline}`);
-      if(s.skippedNoUser)lines.push(`No logged-in user: ${s.skippedNoUser}`);
-      if(failed.length)lines.push('\nFailures:\n'+failed.map(r=>`${r.name||r.ip}: ${r.error||'command failed'}`).join('\n'));
-      alert(lines.join('\n'));
-    }
-    setTimeout(load,500);
-  }catch(e){alert(e.message)}
+const commandJobs=new Map(),commandSubmissions=new Set(),uncertainLockRequests=new Map(),commandIntents=new Map();
+let commandOwnedLocks=[],commandSubmissionEpoch=0,commandPollTimer=null,commandPollController=null,commandPollFailures=0;
+const COMMAND_PENDING=new Set(['queued','running','retrying']);
+function commandTitle(job){
+ const names={screenLock:job.active?'Lock screens':'Unlock screens',inputLock:job.active?'Lock input':'Unlock input',textMessage:'Send message',userLogin:'Log in user',userLogoff:'Log off',reboot:'Reboot',powerDown:'Shut down',openWebsite:'Open website',startApp:'Start app',demoServer:job.active?'Start teacher broadcast':'Stop teacher broadcast',fullScreenDemoClient:job.active?'Join full-screen broadcast':'Stop full-screen broadcast',windowDemoClient:job.active?'Join window broadcast':'Stop window broadcast'};
+ return names[job.feature]||job.feature||'Computer command';
 }
+function commandResultLabel(result){return result.state==='succeeded'?(result.verified?'Confirmed':'Accepted'):({queued:'Queued',running:'Running',retrying:'Retrying',failed:'Failed',unknown:'Outcome unknown',skipped:'Skipped',cancelled:result.reason==='superseded'?'Superseded':'Cancelled'}[result.state]||'Unknown')}
+function orderedCommandJobs(){return [...commandJobs.values()].reverse().sort((a,b)=>Number(b.sequence||0)-Number(a.sequence||0)||String(b.createdAt).localeCompare(String(a.createdAt)))}
+function commandRetryTargets(job){
+ if(!['screenLock','inputLock'].includes(job.feature))return [];
+ const ordered=orderedCommandJobs(),index=ordered.findIndex(other=>other.id===job.id);
+ const newer=ordered.slice(0,index).filter(other=>other.feature===job.feature);
+ return (job.results||[]).filter(result=>['failed','unknown'].includes(result.state)&&!newer.some(other=>(other.results||[]).some(row=>row.id===result.id))).map(result=>result.id);
+}
+function renderCommandJobs(){
+ const jobs=orderedCommandJobs(),host=$('commandJobs'),expanded=new Set([...host.querySelectorAll('details[open]')].map(el=>el.dataset.job));
+ const focused=document.activeElement?.closest('#commandJobs')?{job:document.activeElement.dataset.jobId,action:document.activeElement.dataset.jobAction}:null;
+ let waiting=0,issues=0;
+ for(const job of jobs)for(const result of job.results||[]){if(COMMAND_PENDING.has(result.state))waiting++;if(['failed','unknown'].includes(result.state))issues++}
+ const recovery=commandOwnedLocks.filter(lock=>lock.recoveryPending===true),recoveryIds=new Set(recovery.map(lock=>lock.id));
+ $('commandSummary').textContent=(jobs.length?`${waiting} pending · ${issues} need attention · ${jobs.length} recent actions`:'No recent commands')+(recovery.length?` · ${recovery.length} control recoveries pending`:'');
+ $('commandRecoveryState').textContent=recovery.length?`${recovery.length} RoomGoblin-owned controls are waiting for reconnect cleanup. Locks or broadcasts may still be active until cleanup is confirmed.`:'';
+ const signature=JSON.stringify(jobs);
+ if(host.dataset.signature!==signature){
+  host.dataset.signature=signature;
+  host.innerHTML=jobs.map(job=>{
+   const rows=job.results||[],pending=rows.some(row=>COMMAND_PENDING.has(row.state)),counts={};
+   for(const row of rows){const label=commandResultLabel(row);counts[label]=(counts[label]||0)+1}
+   const countText=Object.entries(counts).map(([label,count])=>`${count} ${label.toLowerCase()}`).join(' · ');
+   const retry=commandRetryTargets(job),cancel=rows.some(row=>['queued','retrying'].includes(row.state));
+   return `<details class="commandJob" data-job="${esc(job.id)}" ${expanded.has(job.id)?'open':''}><summary><b>${esc(commandTitle(job))}</b><span>${esc(countText||job.state)}</span></summary><div class="commandJobMeta muted">${esc(new Date(job.createdAt).toLocaleString())} · ${rows.length} computers${pending?' · Continues on the server if you leave this page':''}</div><div class="commandJobActions">${cancel?`<button data-job-action="cancel" data-job-id="${esc(job.id)}">Cancel waiting targets</button>`:''}${retry.length?`<button data-job-action="retry" data-job-id="${esc(job.id)}">Retry ${retry.length} failed target${retry.length===1?'':'s'}</button>`:''}</div><div class="commandResults">${rows.map(row=>`<div class="commandResult" data-command-target="${esc(row.id)}"><span>${esc(row.name||row.id)}</span><strong data-command-phase="${esc(row.state)}">${esc(commandResultLabel(row))}</strong>${row.error||row.reason?`<small>${esc(row.error||row.reason)}</small>`:''}</div>`).join('')}</div></details>`;
+  }).join('');
+  host.querySelectorAll('[data-job-action]').forEach(button=>button.onclick=()=>button.dataset.jobAction==='cancel'?cancelCommandJob(button.dataset.jobId,button):retryCommandJob(button.dataset.jobId));
+  if(focused?.job&&focused?.action)host.querySelector(`[data-job-id="${CSS.escape(focused.job)}"][data-job-action="${CSS.escape(focused.action)}"]`)?.focus({preventScroll:true});
+ }
+ const latest=new Map();for(const job of jobs)for(const result of job.results||[])if(!latest.has(result.id))latest.set(result.id,{job,result});
+ document.querySelectorAll('[data-command-computer]').forEach(el=>{const entry=latest.get(el.dataset.commandComputer);el.hidden=!entry&&!recoveryIds.has(el.dataset.commandComputer);if(recoveryIds.has(el.dataset.commandComputer)){el.textContent='Control recovery · Waiting for reconnect';el.dataset.commandPhase='retrying';el.title='RoomGoblin will retry clearing its owned lock or broadcast when this computer is available.'}else if(entry){el.textContent=`${commandTitle(entry.job)} · ${commandResultLabel(entry.result)}`;el.dataset.commandPhase=entry.result.state;el.title=entry.result.error||entry.result.reason||''}});
+}
+function rememberCommandJob(job){if(!job?.id)return;commandJobs.set(job.id,job);if(commandJobs.size>128){const oldest=orderedCommandJobs().at(-1);commandJobs.delete(oldest.id)}renderCommandJobs()}
+function scheduleCommandPoll(){
+ clearTimeout(commandPollTimer);if(!previewSurfaceVisible())return;
+ const pending=[...commandJobs.values()].some(job=>(job.results||[]).some(row=>COMMAND_PENDING.has(row.state)));
+ const delay=commandPollFailures?Math.min(30000,2000*2**Math.min(4,commandPollFailures)):(pending?2000:10000);
+ commandPollTimer=setTimeout(refreshCommandJobs,delay);
+}
+async function refreshCommandJobs(){
+ if(commandPollController||!previewSurfaceVisible())return;
+ const controller=new AbortController(),knownAtStart=new Set(commandJobs.keys());commandPollController=controller;
+ const timeout=setTimeout(()=>controller.abort(),15000);
+ try{
+  const response=await api('/api/v1/veyon/jobs',{signal:controller.signal});
+  const jobs=Array.isArray(response.jobs)?response.jobs:[];
+  commandOwnedLocks=Array.isArray(response.ownedLocks)?response.ownedLocks:[];
+  let completed=false;
+  for(const job of jobs){const previous=commandJobs.get(job.id);if(previous?.state!=='completed'&&job.state==='completed')completed=true;if((job.results||[]).some(row=>row.state==='succeeded'&&row.verified===true&&!(previous?.results||[]).some(old=>old.id===row.id&&old.verified===true&&old.state==='succeeded')))completed=true}
+  const returned=new Set(jobs.map(job=>job.id));for(const id of knownAtStart)if(!returned.has(id))commandJobs.delete(id);
+  for(const job of jobs.slice(0,128))if(job?.id)commandJobs.set(job.id,job);
+  commandPollFailures=0;$('commandHistoryError').textContent='';renderCommandJobs();
+  if(completed)load();
+ }catch(error){if(previewSurfaceVisible()){commandPollFailures++;$('commandHistoryError').textContent=`Command history could not refresh: ${error.message}. Last shown progress may be stale.`}}
+ finally{clearTimeout(timeout);commandPollController=null;scheduleCommandPoll()}
+}
+function syncCommandVisibility(){
+ if(previewSurfaceVisible())refreshCommandJobs();
+ else{clearTimeout(commandPollTimer);commandPollController?.abort()}
+}
+async function feature(targets,name,active=true,args={}){
+ if(!targets.length)return alert('Select at least one computer.');
+ const unique=[...new Set(targets)],key=JSON.stringify([name,active,[...unique].sort()]);
+ if(commandSubmissions.has(key))return;
+ const latest=orderedCommandJobs().find(job=>job.feature===name&&(job.results||[]).some(row=>unique.includes(row.id)));
+ if(['screenLock','inputLock'].includes(name)&&latest&&latest.active===active&&(latest.results||[]).some(row=>COMMAND_PENDING.has(row.state))&&JSON.stringify((latest.results||[]).map(row=>row.id).sort())===JSON.stringify([...unique].sort())){$('commandFeedback').textContent='This command is already queued. Watch its progress below.';return latest}
+ commandSubmissions.add(key);
+ const safeLock=['screenLock','inputLock'].includes(name),requestId=(safeLock&&uncertainLockRequests.get(key))||Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join(''),label=commandTitle({feature:name,active});
+ const epoch=++commandSubmissionEpoch;
+ if(safeLock){for(const id of unique)commandIntents.set(`${name}:${id}`,epoch);for(const other of uncertainLockRequests.keys()){const [feature,otherActive,ids]=JSON.parse(other);if(feature===name&&otherActive!==active&&ids.some(id=>unique.includes(id)))uncertainLockRequests.delete(other)}}
+ $('commandFeedback').textContent=`Submitting ${label.toLowerCase()} for ${unique.length} computers…`;
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+ try{
+  const response=await api('/api/v1/veyon/feature',{method:'POST',signal:controller.signal,body:JSON.stringify({targets:unique,feature:name,active,arguments:args,requestId})});
+  if(!response.job?.id)throw new Error('The server did not return a tracked command');
+  uncertainLockRequests.delete(key);rememberCommandJob(response.job);
+  $('commandFeedback').textContent=`Queued: ${label} for ${unique.length} computers. Progress appears below.`;
+  refreshCommandJobs();scheduleCommandPoll();
+  return response.job;
+ }catch(error){
+  if(safeLock&&unique.every(id=>commandIntents.get(`${name}:${id}`)===epoch)){uncertainLockRequests.set(key,requestId);if(uncertainLockRequests.size>128)uncertainLockRequests.delete(uncertainLockRequests.keys().next().value)}
+  $('commandFeedback').textContent=`${label}: ${error.message}. Submission outcome is unconfirmed; refresh command history before sending again.`;
+  refreshCommandJobs();
+ }finally{clearTimeout(timeout);commandSubmissions.delete(key)}
+}
+async function cancelCommandJob(id,button){
+ if(!confirm('Cancel targets still waiting? Commands already running will finish and report their outcome.'))return;
+ button.disabled=true;
+ try{const response=await api(`/api/v1/veyon/jobs/${encodeURIComponent(id)}/cancel`,{method:'POST',body:'{}'});rememberCommandJob(response.job);$('commandFeedback').textContent='Waiting targets cancelled. Running commands remain tracked.';refreshCommandJobs()}
+ catch(error){$('commandFeedback').textContent=`Cancellation could not be confirmed: ${error.message}. Refresh command history.`}
+ finally{if(button.isConnected)button.disabled=false}
+}
+function retryCommandJob(id){
+ const job=commandJobs.get(id);if(!job)return;const targets=commandRetryTargets(job);if(!targets.length)return;
+ if(!confirm(`Retry ${commandTitle(job).toLowerCase()} for ${targets.length} failed targets? A newer command excludes its targets from this retry.`))return;
+ feature(targets,job.feature,job.active);
+}
+
 async function messageTargets(targets){
   const text=prompt('Message to display:');if(!text)return;
   await feature(targets,'textMessage',true,{text});
@@ -234,7 +326,12 @@ async function imageFrame(url,controller){
   const timeout=setTimeout(()=>controller.abort(),30000);
   try{
     const response=await fetch(url,{cache:'no-store',signal:controller.signal});
-    if(!response.ok){let body;try{body=await response.json()}catch{}throw new Error(body?.error?.message||body?.error||`HTTP ${response.status}`)}
+    if(!response.ok){
+      let body;try{body=await response.json()}catch{}
+      const message=typeof body?.error?.message==='string'?body.error.message:typeof body?.error==='string'?body.error:'Screen request failed';
+      const detail=[body?.stage==='authentication'?'Authentication':body?.stage==='framebuffer'?'Screen capture':'',Number.isInteger(body?.code)?`Veyon ${body.code}`:'',`HTTP ${response.status}`].filter(Boolean).join(' · ');
+      throw new Error(`${message} (${detail})`);
+    }
     const blob=await response.blob();
     if(!blob.size||!/^image\/(jpeg|png|webp|bmp)$/i.test(blob.type))throw new Error('No valid screen image returned');
     objectUrl=URL.createObjectURL(blob);
@@ -248,7 +345,7 @@ async function imageFrame(url,controller){
   finally{clearTimeout(timeout)}
 }
 function previewSurfaceVisible(){
-  if(document.hidden)return false;
+  if(document.hidden||window.RoomGoblinEmbeddedViewport?.visible===false)return false;
   try{const frame=window.frameElement;if(frame&&!frame.getClientRects().length)return false}catch{}
   return true;
 }
@@ -284,7 +381,8 @@ async function mapThumbLimit(ids,limit,worker){
 }
 function visibleAuthenticatedThumbnailIds(){
   return [...document.querySelectorAll('[data-thumb]')].filter(el=>{
-    const rect=el.closest('.card').getBoundingClientRect();return rect.bottom>=0&&rect.top<=innerHeight+240;
+    const rect=el.closest('.card').getBoundingClientRect(),viewport=window.RoomGoblinEmbeddedViewport;
+    return rect.bottom>=(viewport?.top??0)-120&&rect.top<=(viewport?.bottom??innerHeight)+240;
   }).map(el=>el.dataset.thumb);
 }
 async function queueVisibleThumbnails(){
@@ -309,7 +407,7 @@ async function refreshLive(){
     const width=Math.max(640,Math.min(2560,Math.round(($('liveStage').clientWidth||1280)*devicePixelRatio)));
     const url=await imageFrame(`/api/v1/veyon/computers/${encodeURIComponent(liveId)}/framebuffer?format=jpeg&width=${width}&quality=78&t=${Date.now()}`,controller);
     if(generation!==liveGeneration){URL.revokeObjectURL(url);return}
-    const old=liveObjectUrl;liveObjectUrl=url;$('liveImg').src=url;if(old)URL.revokeObjectURL(old);
+    const old=liveObjectUrl;liveObjectUrl=url;$('liveImg').src=url;$('liveImg').hidden=false;if(old)URL.revokeObjectURL(old);
     liveFailures=0;$('liveStatus').textContent=`Live · updated ${new Date().toLocaleTimeString()}`;
   }catch(error){if(generation===liveGeneration){liveFailures++;$('liveStatus').textContent=`${liveObjectUrl?'Last frame · ':''}${error.message}. Retrying…`}}
   finally{if(generation===liveGeneration){liveController=null;startLiveTimer()}}
@@ -317,7 +415,7 @@ async function refreshLive(){
 function closeLive(){
   liveGeneration++;liveId=null;clearTimeout(liveTimer);liveController?.abort();liveController=null;
   $('modal').classList.remove('open','fullscreen');if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
-  $('liveImg').removeAttribute('src');if(liveObjectUrl)URL.revokeObjectURL(liveObjectUrl);liveObjectUrl=null;
+  $('liveImg').hidden=true;$('liveImg').removeAttribute('src');if(liveObjectUrl)URL.revokeObjectURL(liveObjectUrl);liveObjectUrl=null;
 }
 function fitLive(){
   const img=$('liveImg');
@@ -386,6 +484,13 @@ $('liveRetry').onclick=()=>{clearTimeout(liveTimer);refreshLive()};
 $('deviceSearch').oninput=render;$('connectionFilter').onchange=render;
 $('deviceLayout').onchange=()=>{$('grid').dataset.layout=$('deviceLayout').value;if($('deviceLayout').value==='list')cancelThumbnailRequests();queueVisibleThumbnails()};
 $('pausePreviews').onclick=()=>{previewsPaused=!previewsPaused;if(previewsPaused)cancelThumbnailRequests();$('pausePreviews').textContent=previewsPaused?'Resume previews':'Pause previews';$('pausePreviews').setAttribute('aria-pressed',String(previewsPaused));if(!previewsPaused)queueVisibleThumbnails()};
+window.addEventListener('roomgoblin:viewport',()=>{if(previewSurfaceVisible()){queueVisibleThumbnails();if(liveId)refreshLive()}else cancelThumbnailRequests()});
+window.addEventListener('scroll',queueVisibleThumbnails,{passive:true});
+window.addEventListener('resize',queueVisibleThumbnails);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){queueVisibleThumbnails();if(liveId)refreshLive()}});
 window.addEventListener('pagehide',()=>{closeLive();for(const state of thumbState.values()){state.controller?.abort();if(state.url)URL.revokeObjectURL(state.url)}thumbState.clear()});
-load();startThumbnailTimer();setInterval(()=>{if(!document.hidden)load()},30000);
+$('refreshCommandJobs').onclick=refreshCommandJobs;
+window.addEventListener('roomgoblin:viewport',syncCommandVisibility);
+document.addEventListener('visibilitychange',syncCommandVisibility);
+window.addEventListener('pagehide',()=>{clearTimeout(commandPollTimer);commandPollController?.abort()});
+refreshCommandJobs();load();startThumbnailTimer();setInterval(()=>{if(!document.hidden)load()},30000);

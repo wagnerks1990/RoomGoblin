@@ -92,3 +92,5 @@
  .rg-controller :is(#lab,#display)>iframe{min-height:600px;height:calc(100dvh - 80px)}
 }
 @media(max-width:600px){.rg-controller .page>.top .toolbar{width:100%}.rg-controller .page>.top h1{font-size:26px}.rg-controller .grid2{grid-template-columns:minmax(0,1fr)}.rg-controller .top{flex-direction:column;align-items:flex-start}.rg-controller .page>.top{align-items:flex-start}}
+/* Natural lab content height is measured without replacing iframe sessions. */
+.rg-controller #lab>iframe[data-natural-height]{min-height:0;height:auto;overflow:clip}

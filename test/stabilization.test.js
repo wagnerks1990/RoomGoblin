@@ -97,6 +97,24 @@ test.after(async()=>{
   if(tempDir)fs.rmSync(tempDir,{recursive:true,force:true});
 });
 
+test("COOP is emitted for loopback origins and omitted for direct LAN HTTP",async()=>{
+  // Native HTTP preserves a supplied Host; Node fetch replaces it with URL host.
+  const headersFor=host=>new Promise((resolve,reject)=>{
+    require("node:http").get(baseUrl+"/controller/veyon.html",{headers:{host,"x-forwarded-proto":"https"}},res=>{
+      res.resume();res.on("end",()=>resolve(res.headers));
+    }).on("error",reject);
+  });
+  for(const host of ["localhost:3000","127.0.0.1:3000","[::1]:3000"]){
+    assert.equal((await headersFor(host))["cross-origin-opener-policy"],"same-origin");
+  }
+  for(const host of ["192.0.2.5:3000","classroom.example.test:3000"]){
+    const headers=await headersFor(host);
+    assert.equal(headers["cross-origin-opener-policy"],undefined);
+    assert.equal(headers["x-content-type-options"],"nosniff");
+    assert.match(headers["content-security-policy"],/frame-ancestors 'self'/);
+  }
+});
+
 test("fresh appliance fails closed and requires the one-use setup token",async()=>{
   let result=await request("/api/v1/admin/config");
   assert.ok([401,403].includes(result.response.status));
@@ -561,4 +579,31 @@ test("one-command deployment bootstraps a guarded appliance with unique credenti
   assert.match(compose,/caddy:2\.11\.2-alpine/);
   assert.match(compose,/HUB_BIND_ADDRESS/);
   assert.match(installer,/https:\/\//);
+});
+
+test("Veyon queued command API requires control access, deduplicates requests and hides arguments",async()=>{
+  for(const endpoint of ["/api/v1/veyon/jobs","/api/v1/veyon/jobs/missing"]){
+    assert.equal((await request(endpoint)).response.status,401);
+  }
+  assert.equal((await request("/api/v1/veyon/feature",{method:"POST",body:{targets:["all"],feature:"screenLock"}})).response.status,401);
+  // An unused loopback endpoint cannot issue actions to classroom hardware.
+  const added=await request("/api/v1/veyon/computers",{method:"POST",authenticated:true,body:{ip:"127.0.0.2",name:"Queue fixture"}});
+  assert.equal(added.response.status,200);
+  const id=added.json.computer.id,password="queue-test-only-secret";
+  const body={targets:[id],feature:"userLogin",active:true,arguments:{username:"fixture-user",password},requestId:"queue-api-fixture-1"};
+  const accepted=await request("/api/v1/veyon/feature",{method:"POST",authenticated:true,body});
+  assert.equal(accepted.response.status,202);assert.equal(accepted.json.ok,true);
+  assert.ok(accepted.json.job.id);assert.equal(accepted.json.job.summary.requested,1);
+  const duplicate=await request("/api/v1/veyon/feature",{method:"POST",authenticated:true,body});
+  assert.equal(duplicate.json.job.id,accepted.json.job.id);
+  const conflict=await request("/api/v1/veyon/feature",{method:"POST",authenticated:true,body:{...body,feature:"reboot",arguments:{}}});
+  assert.equal(conflict.response.status,409);
+  const invalid=await request("/api/v1/veyon/feature",{method:"POST",authenticated:true,body:{targets:[id],feature:"arbitrary-feature"}});
+  assert.equal(invalid.response.status,400);
+  const jobs=await request("/api/v1/veyon/jobs",{authenticated:true});
+  assert.equal(jobs.response.status,200);assert.ok(jobs.json.jobs.some(job=>job.id===accepted.json.job.id));
+  assert.doesNotMatch(JSON.stringify([accepted.json,duplicate.json,jobs.json]),/queue-test-only-secret|fixture-user|"arguments"/);
+  const cancelled=await request(`/api/v1/veyon/jobs/${accepted.json.job.id}/cancel`,{method:"POST",authenticated:true,body:{}});
+  assert.equal(cancelled.response.status,200);
+  await request(`/api/v1/veyon/computers/${encodeURIComponent(id)}`,{method:"DELETE",authenticated:true});
 });

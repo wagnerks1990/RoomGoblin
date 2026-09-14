@@ -31,6 +31,7 @@ FIXTURES = {
     '/api/v1/lab/computers': {'configured': True, 'retentionHours': 168, 'computers': [], 'groups': [], 'summary': {'total': 0, 'online': 0, 'offline': 0}},
     '/api/v1/lab/ai-monitor': {'enabled': True, 'alerts': [], 'summary': {'new': 0, 'total': 0}},
     '/api/v1/veyon/computers': {'computers': []},
+    '/api/v1/veyon/jobs': {'jobs': []},
     '/api/v1/maintenance/modules': {'modules': []},
     '/api/v1/maintenance/android/status': {'ok': True, 'adbAvailable': False, 'devices': [DEVICE], 'profiles': []},
     '/api/v1/maintenance/android/agent/artifact': {'artifact': {'available': False}},
@@ -248,7 +249,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
              'online': False, 'authenticated': False, 'user': {}, 'featureState': {}},
             {'id': 'teacher', 'name': 'Teacher computer', 'ip': '192.0.2.23', 'role': 'teacher',
              'online': True, 'authenticated': True, 'user': {}, 'featureState': {}}]
-        state = {'broken': broken, 'requests': 0, 'commands': [], 'computers': computers}
+        state = {'broken': broken, 'requests': 0, 'commands': [], 'computers': computers, 'jobs': []}
         def transport(route, path):
             if path.endswith('/framebuffer'):
                 state['requests'] += 1
@@ -257,20 +258,26 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 elif state['broken'] == 'json':
                     route.fulfill(json={'error': 'Unexpected JSON in image response'})
                 elif state['broken']:
-                    route.fulfill(status=502, json={'error': 'Fixture screen capture unavailable'})
+                    route.fulfill(status=502, json={'error': 'Fixture screen capture unavailable', 'stage': 'framebuffer', 'code': 10})
                 else:
                     route.fulfill(content_type='image/png', body=png)
                 return True
             if path == '/api/v1/veyon/computers':
                 route.fulfill(json={'computers': state['computers']})
                 return True
+            if path == '/api/v1/veyon/jobs':
+                route.fulfill(json={'jobs': state['jobs']})
+                return True
             if path == '/api/v1/veyon/feature':
                 state['commands'].append(route.request.post_data_json)
-                route.fulfill(json={'results': [], 'summary': {'succeeded': 1, 'failed': 0}})
+                command = route.request.post_data_json
+                job = {'id': f'fixture-job-{len(state["commands"])}', 'sequence': len(state['commands']), 'feature': command['feature'], 'active': command.get('active', True), 'createdAt': '2026-01-01T12:00:00Z', 'state': 'completed', 'results': [{'id': target, 'state': 'succeeded', 'ok': True} for target in command['targets']]}
+                state['jobs'].insert(0, job)
+                route.fulfill(status=202, json={'job': job})
                 return True
             return False
         page, errors = self.page('/controller/veyon.html', width, transport=transport, overrides={
-            '/api/v1/veyon/status': {'keyName': 'fixture', 'scanSubnet': '192.0.2'}})
+            '/api/v1/veyon/status': {'keyName': 'fixture', 'scanSubnet': '192.0.2', 'httpStatus': 404, 'serviceReachable': True, 'verification': 'reachability-only', 'authenticatedConnections': 0}})
         page.locator('[data-select="student-a"]').wait_for()
         return page, errors, state
 
@@ -278,6 +285,9 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page, errors, state = self.veyon_page()
         page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
         page.locator('[data-select="student-a"]').check()
+        image_box = page.locator('[data-thumb="student-a"]').bounding_box()
+        status_box = page.locator('[data-thumb-status="student-a"]').bounding_box()
+        self.assertGreaterEqual(status_box['y'], image_box['y'] + image_box['height'])
         original = page.locator('[data-thumb="student-a"]').get_attribute('src')
         page.locator('#refresh').click()
         page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
@@ -295,6 +305,9 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page, errors, state = self.veyon_page(broken=True)
         page.locator('[data-retry="student-a"]').wait_for(state='visible')
         self.assertFalse(page.locator('[data-thumb="student-a"]').is_visible())
+        self.assertIn('Screen capture · Veyon 10 · HTTP 502', page.locator('[data-thumb-status="student-a"]').inner_text())
+        self.assertIn('REACHABLE', page.locator('#apiStatus').inner_text())
+        self.assertIn('Screens verified per computer', page.locator('#apiStatus').inner_text())
         state['broken'] = False
         page.locator('[data-retry="student-a"]').click()
         page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
