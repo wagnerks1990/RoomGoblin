@@ -34,7 +34,11 @@ jobs:
           set +e
           node --test --test-concurrency=1 test/automation-runtime.test.js test/school-schedule.test.js test/automation-framework-manual.test.js test/backend-production-regressions.test.js test/automation-followup.test.js > /tmp/automation-tests.log 2>&1
           status=$?
-          tail -n 220 /tmp/automation-tests.log
+          if [ "$status" -ne 0 ]; then
+            grep -E '^(# Subtest:|not ok |# tests |# pass |# fail |# duration_ms)|automation-framework-manual\.test\.js:|automation-followup\.test\.js:' /tmp/automation-tests.log | tail -n 160 || true
+          else
+            tail -n 80 /tmp/automation-tests.log
+          fi
           exit "$status"
       - name: Commit follow-up source
         run: |
@@ -44,6 +48,6 @@ jobs:
           fi
           git config user.name "RoomGoblin Automation Follow-up"
           git config user.email "actions@users.noreply.github.com"
-          git add src/server.js public/controller/index.html public/controller/app.js test/automation-followup.test.js
+          git add src/server.js public/controller/index.html public/controller/app.js test/automation-followup.test.js test/automation-framework-manual.test.js
           git commit -m "Complete automation planning and recovery hardening [automation-followup]"
           git push origin HEAD:fix/automation-scheduler-reliability
