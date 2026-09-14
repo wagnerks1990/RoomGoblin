@@ -28,6 +28,14 @@ Use **Enable Device Admin** in the Device Agent v2 panel. RoomGoblin launches An
 
 Device Admin is a fallback tier. Fully managed production deployments should target Device Owner/DPC provisioning during initial device setup.
 
+## Device Administrator deactivation
+
+Android will not uninstall an application while its Device Administrator receiver is active. During legacy package migration this can surface as `DELETE_FAILED_DEVICE_POLICY_MANAGER` for `org.classroomhub.display`.
+
+Use **Remove Device Admin** in Managed Displays. RoomGoblin selects the legacy package first when it is still installed and opens Android TV's native Device Administrator screen for the relevant `AgentDeviceAdminReceiver`. The administrator must still be deactivated with the TV remote; RoomGoblin does not silently revoke device policy authority.
+
+After deactivation, retry **Reinstall Agent**. The migration can then remove the old package, install `org.roomgoblin.display`, restore supported trusted grants and Agent v2 configuration, and relaunch the kiosk. Device Admin and Accessibility may need to be approved again because those grants belong to the installed Android package.
+
 ## Persistent ADB synchronization
 
 `Configure v2` must synchronize the existing Hub-side persistent ADB policy into the Android agent. The broadcast includes `persistent_adb` and `target_adb_port`, preventing the Hub from reporting persistent ADB enabled while Agent v2 believes it is disabled.
@@ -39,6 +47,7 @@ Do not regress these behaviors:
 1. Managed display inventory remains visible when ADB is unavailable.
 2. Removing a Hub enrollment must not remove the Android app or wipe unrelated data.
 3. Disabled enrollments remain editable and can be re-enabled.
-4. Device Admin activation requires the Android system confirmation UI.
-5. Agent v2 configuration carries the persistent ADB policy and target port.
-6. Do not require manual editing of `devices.json` for routine lifecycle operations.
+4. Device Admin activation and deactivation require Android system confirmation UI.
+5. Legacy package migration must guide Device Admin removal instead of attempting destructive policy bypasses.
+6. Agent v2 configuration carries the persistent ADB policy and target port.
+7. Do not require manual editing of `devices.json` for routine lifecycle operations.
