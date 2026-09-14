@@ -14,7 +14,7 @@ new='''  const run=server.slice(server.indexOf("async function runClassroomAutom
 '''
 if old not in s: raise SystemExit('backend regression timer/pre-clear expectation not found')
 s=s.replace(old,new,1)
-insert='''
+insert=r'''
 test("automation resource isolation removes global pre-clear and uses per-output TV power",()=>{
   const run=server.slice(server.indexOf("async function runClassroomAutomation"),server.indexOf("function safeStoredName"));
   assert.doesNotMatch(run,/id:\"pre-clear\"/);
@@ -28,10 +28,12 @@ test("automation resource isolation removes global pre-clear and uses per-output
 
 test("scheduler discovery is non-blocking and class occurrences still honor global suppression",()=>{
   const scheduler=server.slice(server.indexOf("// Unified Classroom Automation scheduler"),server.indexOf("// Legacy per-output Pluto schedules"));
-  assert.match(scheduler,/automationRunLedger\.claim/);
-  assert.match(scheduler,/automationRunningOccurrences\.set/);
-  assert.match(scheduler,/isAutomationSuppressed\(now\)\.blocked/);
-  assert.doesNotMatch(scheduler,/await runClassroomAutomation\(event\)/);
+  const tick=scheduler.slice(scheduler.indexOf("async function automationSchedulerTick"));
+  assert.match(tick,/automationRunLedger\.claim/);
+  assert.match(tick,/automationRunningOccurrences\.set/);
+  assert.match(tick,/isAutomationSuppressed\(now\)\.blocked/);
+  assert.doesNotMatch(tick,/await runClassroomAutomation\(event\)/);
+  assert.match(scheduler,/async function executeScheduledAutomationOccurrence/);
 });
 '''
 marker='test("Morning Announcements probes use the display allowlist and validate every redirect",()=>{'
