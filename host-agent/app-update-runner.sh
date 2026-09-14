@@ -117,7 +117,8 @@ health_check(){
 
 adb_storage_check(){
   docker volume inspect classroom-control-hub-android-adb >/dev/null || return 1
-  docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android && test -w /managed/classroom-hub/data/android-tv/.android' || return 1
+  # Maintenance intentionally mounts the ADB identity store read-only; host-side layout repair owns mutations.
+  docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android' || return 1
   docker compose exec -T maintenance-agent sh -lc 'test ! -e /managed/classroom-hub/data/android-tv/devices.json || test -r /managed/classroom-hub/data/android-tv/devices.json' || return 1
 }
 
