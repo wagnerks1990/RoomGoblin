@@ -113,14 +113,19 @@ test("timer overlays reject non-finite fields before persistence, replay, or del
 });
 
 
-test("automation resource isolation removes global pre-clear and uses per-output TV power",()=>{
+test("automation target recovery keeps legacy cross-domain steps usable and all-TV power matches Room controls",()=>{
   const run=server.slice(server.indexOf("async function runClassroomAutomation"),server.indexOf("function safeStoredName"));
   assert.doesNotMatch(run,/id:\"pre-clear\"/);
   assert.match(run,/no automation implicitly clears display content/);
+  assert.match(run,/else rawTargets=defaultAutomationActionTargets\(stepAction\)/);
+  const defaults=server.slice(server.indexOf("function defaultAutomationActionTargets"),server.indexOf("function automationDisplayTargets"));
+  assert.match(defaults,/tv-power/);
+  assert.match(defaults,/lighting/);
   const single=server.slice(server.indexOf("async function runSingleAutomationAction"),server.indexOf("function timerLinkedClassChain"));
-  assert.match(single,/expandTvTargets\(event\.targets/);
+  assert.match(single,/expandTvTargets\(requestedTargets/);
+  assert.match(single,/broadcastAction/);
+  assert.match(single,/cecAllOutputs/);
   assert.match(single,/action:\"cecOutput\"/);
-  assert.doesNotMatch(single,/cecAllOutputs/);
   assert.match(single,/assertAdapterResults\(outputs\.results,\{action:\"TV power\"\}\)/);
 });
 
