@@ -10,13 +10,13 @@ const {cleanPackage,cleanPort,publicDevice}=require("./android-tv-lib");
 
 const ROOT=process.env.ANDROID_TV_DATA_ROOT||"/managed/classroom-hub/data/android-tv";
 const ADB=String(process.env.ADB_BIN||"adb");
+const CURRENT_PACKAGE="org.roomgoblin.display";
+const LEGACY_PACKAGE="org.classroomhub.display";
 const originalListen=express.application.listen;
 let installed=false;
 
 function env(){return {...process.env,HOME:ROOT,ANDROID_USER_HOME:ROOT}}
 function safeAdbError(error,sensitiveValues=[]){
-  // child_process error.message can contain the complete argv. Never use it in
-  // an HTTP-facing error, and scrub credentials if adb itself echoed them.
   let message=String(error?.stderr||error?.stdout||"").trim()||"ADB command failed";
   for(const value of sensitiveValues){const secret=String(value||"");if(secret)message=message.split(secret).join("[REDACTED]")}
   const e=Error(message);e.code=error?.code;return e;
@@ -36,7 +36,7 @@ async function agentFetch(d,pathName,opt={}){
   }catch(error){if(error.name==="AbortError"){const e=Error("Device Agent v2 request timed out");e.status=504;throw e}throw error}finally{clearTimeout(timer)}
 }
 async function configure(d,body={}){
-  const pkg=cleanPackage(body.package||d.agentPackage||"org.roomgoblin.display");
+  const pkg=cleanPackage(body.package||d.agentPackage||CURRENT_PACKAGE);
   const port=cleanPort(body.port||d.agentV2?.port||8765);
   const agentToken=body.rotateToken||!d.agentV2?.token?token():d.agentV2.token;
   const url=String(body.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}
@@ -46,12 +46,33 @@ async function configure(d,body={}){
   const updated=STORE.upsertDevice({...d,displayUrl:url,agentPackage:pkg,agentV2:{enabled:true,port,token:agentToken,configuredAt:new Date().toISOString()}});
   return updated;
 }
+async function packageInstalled(d,pkg){
+  try{const result=await adb(["-s",d.serial,"shell","pm","path",pkg],15000);return /^package:/m.test(String(result.stdout||""))}catch{return false}
+}
 async function activateDeviceAdmin(d){
-  const pkg=cleanPackage(d.agentPackage||"org.roomgoblin.display");
+  const pkg=cleanPackage(d.agentPackage||CURRENT_PACKAGE);
   const component=`${pkg}/.AgentDeviceAdminReceiver`;
   const activity=`${pkg}/.DeviceAdminActivationActivity`;
   const result=await adb(["-s",d.serial,"shell","am","start","-W","-n",activity],15000);
   return {component,activity,message:String(result.stdout||result.stderr||"").trim()};
+}
+async function deactivateDeviceAdmin(d){
+  // Prefer the legacy package during package-identity migration because Android
+  // refuses to uninstall an app while its DeviceAdminReceiver remains active.
+  const pkg=await packageInstalled(d,LEGACY_PACKAGE)?LEGACY_PACKAGE:cleanPackage(d.agentPackage||CURRENT_PACKAGE);
+  const component=`${pkg}/.AgentDeviceAdminReceiver`;
+  const settingsActivity="com.android.tv.settings/.deviceadmin.DeviceAdminAdd";
+  try{
+    const result=await adb(["-s",d.serial,"shell","am","start-activity","-W","-n",settingsActivity,"--ecn","android.app.extra.DEVICE_ADMIN",component],15000);
+    return {component,activity:settingsActivity,message:String(result.stdout||result.stderr||"").trim()};
+  }catch(primary){
+    try{
+      const result=await adb(["-s",d.serial,"shell","am","start","-W","-a","android.app.action.ADD_DEVICE_ADMIN","--ecn","android.app.extra.DEVICE_ADMIN",component],15000);
+      return {component,activity:"android.app.action.ADD_DEVICE_ADMIN",message:String(result.stdout||result.stderr||"").trim()};
+    }catch{
+      const e=Error(`Unable to open Android Device Administrator deactivation UI for ${component}: ${primary.message}`);e.status=502;throw e;
+    }
+  }
 }
 function lifecycle(d,action){
   if(action==="enable")return {removed:false,device:STORE.upsertDevice({...d,enabled:true})};
@@ -71,8 +92,9 @@ function installRoutes(app){if(installed)return;installed=true;
   app.post("/android/devices/:id/agent/v2/action",route(async(req,res)=>{const d=device(req.params.id);const result=await agentFetch(d,"/v1/action",{method:"POST",body:req.body||{},timeout:Number(req.body?.timeoutMs||10000)});res.json({ok:true,transport:"agent-http",deviceId:d.id,result})}));
   app.get("/android/devices/:id/agent/v2/health",route(async(req,res)=>{const d=device(req.params.id);try{const status=await agentFetch(d,"/v1/status",{timeout:3000});res.json({ok:true,reachable:true,transport:"agent-http",status})}catch(error){res.status(503).json({ok:false,reachable:false,error:error.message})}}));
   app.post("/android/devices/:id/agent/v2/device-admin/activate",route(async(req,res)=>{const d=device(req.params.id);const result=await activateDeviceAdmin(d);res.json({ok:true,deviceId:d.id,requiresUserConfirmation:true,...result})}));
+  app.post("/android/devices/:id/agent/v2/device-admin/deactivate",route(async(req,res)=>{const d=device(req.params.id);const result=await deactivateDeviceAdmin(d);res.json({ok:true,deviceId:d.id,requiresUserConfirmation:true,...result})}));
   app.post("/android/devices/:id/lifecycle",route(async(req,res)=>{const d=device(req.params.id);const result=lifecycle(d,String(req.body?.action||"").trim().toLowerCase());res.json({ok:true,...result,device:publicDevice(result.device)})}));
 }
 
 express.application.listen=function(...args){installRoutes(this);return originalListen.apply(this,args)};
-module.exports={installRoutes,configure,agentFetch,activateDeviceAdmin,lifecycle,safeAdbError};
+module.exports={installRoutes,configure,agentFetch,activateDeviceAdmin,deactivateDeviceAdmin,lifecycle,safeAdbError};
