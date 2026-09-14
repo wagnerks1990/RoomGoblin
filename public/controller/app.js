@@ -1261,7 +1261,7 @@ function stepTargetValues(step){
 function stepTargetOptions(i){
   const step=autoSteps[i]||{};
   const values=stepTargetValues(step);
-  const selected=Array.isArray(step.targets)&&step.targets.length?step.targets:[values[0]?.[0]||'all'];
+  const selected=Array.isArray(step.targets)&&step.targets.length?step.targets:defaultStepTargets(step);
   const domain=automationActionDomain(step.action);
   const help=domain==='lighting'?'Choose Govee lighting groups or individual lighting devices.'
     :domain==='tv'?'Choose All TVs, a TV transport group, or specific TVs.'
@@ -1460,7 +1460,17 @@ function renderAutomationSteps(){
     ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);
   }
 }
-function readAutomationSteps(){return autoSteps.map((x,i)=>({id:x.id||`step-${i+1}`,action:x.action,targets:x.targets||[],useEventTargets:x.useEventTargets!==false,payload:x.payload||{},delaySeconds:Number(x.delaySeconds||0),continueOnError:x.continueOnError!==false}))}
+function defaultStepTargets(step){
+  const first=stepTargetValues(step)[0]?.[0];
+  return first?[first]:[];
+}
+function readAutomationSteps(){return autoSteps.map((x,i)=>{
+  const useEventTargets=x.useEventTargets!==false;
+  const targets=Array.isArray(x.targets)&&x.targets.length
+    ? x.targets
+    : (!useEventTargets?defaultStepTargets(x):[]);
+  return {id:x.id||`step-${i+1}`,action:x.action,targets,useEventTargets,payload:x.payload||{},delaySeconds:Number(x.delaySeconds||0),continueOnError:x.continueOnError!==false};
+})}
 
 function populateTimerOverlayClassSelect(selected=''){
   if(!window.autoTimerOverlayClass)return;
