@@ -64,3 +64,12 @@ test("ADB upgrade accepts empty or complete stores and rejects partial or linked
   fs.unlinkSync(pub);fs.symlinkSync(key,pub);
   assert.notEqual(run().status,0);
 });
+
+
+test("update preflight accepts the intentionally read-only maintenance ADB mount",()=>{
+  const compose=fs.readFileSync("docker-compose.yml","utf8");
+  const runner=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
+  assert.match(compose,/classroom-hub-android-adb:\/managed\/classroom-hub\/data\/android-tv\/\.android:ro/);
+  assert.match(runner,/test -r \/managed\/classroom-hub\/data\/android-tv\/\.android/);
+  assert.doesNotMatch(runner,/test -w \/managed\/classroom-hub\/data\/android-tv\/\.android/);
+});
