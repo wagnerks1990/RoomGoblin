@@ -13,6 +13,8 @@ jobs:
         with:
           ref: fix/esphome-keyless-adoption
           fetch-depth: 0
+      - name: Install pinned ESPHome client requirements
+        run: python3 -m pip install -r src/esphome/requirements.txt
       - name: Patch worker and regression tests
         run: |
           python3 - <<'PY'
@@ -42,7 +44,7 @@ jobs:
           t.write_text(s)
           PY
           python3 -m py_compile src/esphome/worker.py
-          PYTHONPATH=. python3 -m unittest test.esphome_worker_test
+          PYTHONPATH=. python3 test/esphome_worker_test.py
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
