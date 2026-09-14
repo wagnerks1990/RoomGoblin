@@ -35,6 +35,8 @@ Turning the requirement off immediately restores stable URL access. The legacy s
 
 ## Cross-domain scheduled actions (alpha.17)
 
-Every scheduled event begins with an automatic **Clear Screen** against all enabled RoomGoblin display clients before Action 1. The reset also applies to manual **Run Now/Test Now** executions. Timer overlays are added only after the event actions finish.
+Each scheduled action owns a target domain. Display actions select display clients, TV power selects TV targets, and Govee actions select lighting groups/devices. Actions do not implicitly clear display content; a clear is performed only by an explicit display action.
 
-Each scheduled action owns a target domain. Display actions select display clients, TV power selects TV targets, and Govee actions select lighting groups/devices. Additional actions may reuse the main event targets only when both actions use a compatible target domain. Cross-domain actions require explicit targets in the editor. Legacy cross-domain actions without explicit targets receive safe defaults at execution time so existing schedules continue to work after upgrade.
+Additional actions may reuse the main event targets only when both actions use a compatible target domain. Cross-domain actions require explicit targets in the editor. For compatibility, a legacy or empty cross-domain step uses the domain's **All** target at execution time and is written with that default the next time the automation is saved.
+
+An automated TV-power step with **All TVs**, **All HDMI TVs**, or **All HDBT TVs** uses the matching Pluto broadcast CEC command, the same command used by the Room controls. A selected set of TVs continues to use individual output commands.
