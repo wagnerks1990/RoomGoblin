@@ -10,7 +10,7 @@ Do not perform blind renames of legacy identifiers. Alpha.77 intentionally chang
 
 The Linux RoomGoblin appliance and maintenance containers, plus reviewed managed add-on templates, use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](../docs/HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
 
-Read `/AGENTS.md` before making changes. Use `/docs/AI-CONTEXT.md` for the current technical/operational model, `/docs/brand/AI-BRAND-CONTEXT.md` for branding rules, `/docs/DISPLAY-ACCESS.md` for the classroom display access contract, `/docs/AUTOMATION-DISPLAY-MEDIA.md` for automation media/class-target behavior, and `/docs/VEYON-MUSIC-INTEGRATIONS.md` for the Veyon/Music Assistant contract.
+Read `/AGENTS.md` before making changes. Use `/docs/AI-CONTEXT.md` for the current technical/operational model, `/docs/brand/AI-BRAND-CONTEXT.md` for branding rules, `/docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` for physically validated Android/Google TV capability boundaries, `/docs/DISPLAY-ACCESS.md` for the classroom display access contract, `/docs/AUTOMATION-DISPLAY-MEDIA.md` for automation media/class-target behavior, and `/docs/VEYON-MUSIC-INTEGRATIONS.md` for the Veyon/Music Assistant contract.
 
 Key rules:
 
@@ -29,6 +29,10 @@ Key rules:
 - Timer chaining is only for the matching Bison continuation of the same base period.
 - Integration health must be independent. A Pluto failure must not falsely mark MQTT/Govee offline.
 - Optional or slow hardware probes must not block initial Overview rendering.
+- Android capability reporting must distinguish API availability from physically validated behavior. Keep `globalNavigation` for compatibility, but use separate Home/Back/Recents capability entries for current UI decisions.
+- Accessibility Home and Back are physically validated on the current Onn Android 14 target. Recents is OEM-dependent: Android may accept the global action without showing a visible Recents UI.
+- Accessibility global actions are not arbitrary input injection. Until the native Agent v2 actually implements and validates arbitrary key/text/tap/swipe/coordinate input, `inputInjection.available` must remain false.
+- Do not add Onn-specific backend branches merely because a behavior was observed on that test device; represent OEM-dependent behavior through the generic capability model and documentation.
 - Veyon computer inventory and RoomGoblin-side Veyon configuration are database-authoritative. `veyon-computers.json` is migration input only; do not reintroduce it as runtime state.
 - Native `veyon.service` / `veyon-webapi.service` are host-managed but remain fully configurable from RoomGoblin. Do not deploy the obsolete Veyon proxy when native services exist.
 - Veyon control authentication uses the Veyon key pair. Domain credentials and SSH keys, when configured, are optional endpoint-deployment credentials and must not be described as Veyon control authentication.
