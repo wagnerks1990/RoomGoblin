@@ -20,6 +20,8 @@ For already provisioned Android TV devices, Device Admin is an optional fallback
 
 After approval, rerun **Capabilities** and verify `deviceAdminActive: true`. Device Admin can unlock lock/sleep behavior but is not equivalent to Device Owner.
 
+Android blocks package uninstall while an app remains an active Device Administrator. If a legacy-agent migration reports `DELETE_FAILED_DEVICE_POLICY_MANAGER`, use **Remove Device Admin** in Managed Displays. RoomGoblin opens Android TV's native Device Administrator page for the installed legacy/current RoomGoblin package; deactivate it with the TV remote, then retry **Reinstall Agent**. RoomGoblin does not silently revoke Device Admin authority.
+
 ## Device Owner
 
 Device Owner remains the recommended target for new dedicated RoomGoblin displays. Provision it during initial Android setup through the DPC/managed-device provisioning workflow rather than retrofitting a normally provisioned Google TV installation.
