@@ -16,6 +16,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [RoomGoblin AI Brand Context](brand/AI-BRAND-CONTEXT.md) — compact machine-readable guidance for assistants and automated contributors.
 - [Music Assistant Sendspin](MUSIC-ASSISTANT-SENDSPIN.md) — dedicated audio transport, PR #22 selective review, regression coverage and migration acceptance.
 - [AI Project Context](AI-CONTEXT.md) — compact current architecture, production conventions, behavioral invariants, and AI handoff context.
+- [AI Android TV Context](ai/ANDROID-TV-HARDWARE-VALIDATION.md) — machine/assistant rules derived from physical managed-display validation, including Accessibility navigation and arbitrary-input boundaries.
 - [Architecture](ARCHITECTURE.md) — system components, process boundaries, persistence, scheduling, priority arbitration, and service relationships.
 - [Deployment](DEPLOYMENT.md) — Docker Compose deployment, persistent storage, host-agent placement, Git updates, backups, and rollback.
 - [Configuration](CONFIGURATION.md) — environment variables, site-specific settings, secrets, displays, integrations, and safe public-repository practices.
@@ -29,6 +30,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Host Agent](HOST-AGENT.md) — host-level service responsibilities, migration verification, and security boundary.
 - [Windows Lab Agent](LAB-AGENT.md) — one-time enrollment, per-computer credentials, signing, removal, and privacy controls.
 - [Android TV Displays](ANDROID-TV-DISPLAYS.md) — pairing, assignment, Display Agent lifecycle, and device recovery.
+- [Android TV Hardware Validation](ANDROID-TV-HARDWARE-VALIDATION.md) — exact physical validation results and remaining acceptance tests for the current Android/Google TV target.
 - [Persistent Android ADB](PERSISTENT-ANDROID-ADB.md) — trusted-network wireless-debugging recovery and boundaries.
 - [Android TV Support Matrix](ANDROID-TV-SUPPORT-MATRIX.md) — tested, pending, and unsupported physical-device behavior.
 - [Display Access](DISPLAY-ACCESS.md) — one-use receiver enrollment and credential rotation/revocation.
@@ -41,7 +43,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 
 ## AI and contributor instructions
 
-`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`.
+`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated.
 
 Before changing behavior, an AI assistant should read:
 
@@ -49,7 +51,7 @@ Before changing behavior, an AI assistant should read:
 2. `VERSION` and `CHANGELOG.md`
 3. `docs/AI-CONTEXT.md`
 4. `docs/brand/AI-BRAND-CONTEXT.md`
-5. the relevant topic document
+5. the relevant topic document and any matching `docs/ai/` context
 6. the implementation source
 
 ## Documentation principles
@@ -59,7 +61,7 @@ Before changing behavior, an AI assistant should read:
 3. **Operationally useful.** Documentation should include commands, expected results, recovery procedures, and failure symptoms.
 4. **Version-aware.** Behavioral changes should be reflected in `CHANGELOG.md` and relevant documentation at the same time as code changes.
 5. **Preserve persistent data.** Upgrade instructions must treat databases, uploaded media, secrets, and site configuration as persistent state outside replaceable application images/source.
-6. **Keep AI context current.** Architecture, installation-path, integration-health, scheduler, priority, or branding changes must be reflected in `AGENTS.md`/`AI-CONTEXT.md`/brand AI context when they materially change how future work should be performed.
+6. **Keep AI context current.** Architecture, installation-path, integration-health, scheduler, priority, managed-device capability, or branding changes must be reflected in `AGENTS.md`/`AI-CONTEXT.md`/relevant `docs/ai/` context when they materially change how future work should be performed.
 7. **Keep the Wiki mirror current.** Changes that affect user/admin documentation should update both the relevant `docs/` page and the corresponding `wiki/` page.
 8. **Brand current surfaces as RoomGoblin.** Do not use the old product names for new user-facing copy. Preserve old strings only when they identify a compatibility-sensitive internal contract or historical release.
 
