@@ -1,0 +1,40 @@
+name: Apply updater ADB readonly fix
+on:
+  push:
+    branches: [fix/updater-adb-readonly-preflight]
+    paths: [.github/workflows/updater-adb-readonly-fix.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: fix/updater-adb-readonly-preflight
+          fetch-depth: 0
+      - name: Patch updater contract and add regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          runner=Path('host-agent/app-update-runner.sh')
+          s=runner.read_text()
+          old="  docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android && test -w /managed/classroom-hub/data/android-tv/.android' || return 1\n"
+          new="  # Maintenance intentionally mounts the ADB identity store read-only; host-side layout repair owns mutations.\n  docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android' || return 1\n"
+          assert s.count(old)==1, s.count(old)
+          runner.write_text(s.replace(old,new))
+
+          test=Path('test/live-upgrade-permissions.test.js')
+          t=test.read_text()
+          marker='test("update preflight accepts the intentionally read-only maintenance ADB mount",()=>{'
+          if marker not in t:
+              t += '''\n\ntest("update preflight accepts the intentionally read-only maintenance ADB mount",()=>{\n  const compose=fs.readFileSync("docker-compose.yml","utf8");\n  const runner=fs.readFileSync("host-agent/app-update-runner.sh","utf8");\n  assert.match(compose,/classroom-hub-android-adb:\/managed\/classroom-hub\/data\/android-tv\/\.android:ro/);\n  assert.match(runner,/test -r \/managed\/classroom-hub\/data\/android-tv\/\.android/);\n  assert.doesNotMatch(runner,/test -w \/managed\/classroom-hub\/data\/android-tv\/\.android/);\n});\n'''
+              test.write_text(t)
+          PY
+          node --test test/live-upgrade-permissions.test.js
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add host-agent/app-update-runner.sh test/live-upgrade-permissions.test.js
+          git commit -m 'fix: accept read-only ADB mount during update preflight'
+          git push origin HEAD:fix/updater-adb-readonly-preflight
