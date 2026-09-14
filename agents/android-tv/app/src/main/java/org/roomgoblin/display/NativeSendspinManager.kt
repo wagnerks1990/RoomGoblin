@@ -6,9 +6,11 @@ import android.util.Log
 import com.sendspin.protocol.AudioFormat
 import com.sendspin.protocol.ClientPreferences
 import com.sendspin.protocol.ClientSettingsStore
+import com.sendspin.protocol.JsonOptionalAdapterFactory
 import com.sendspin.protocol.OptionalRole
 import com.sendspin.protocol.SendSpinClient
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.util.UUID
@@ -74,9 +76,16 @@ object NativeSendspinManager {
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .pingInterval(15, TimeUnit.SECONDS)
                 .build()
+            // sendspin-jvm uses JsonOptional<T> for partial server-state fields.
+            // Its adapter must be installed before Kotlin reflection handling or
+            // Moshi will attempt to serialize the abstract JsonOptional class.
+            val moshi = Moshi.Builder()
+                .add(JsonOptionalAdapterFactory())
+                .addLast(KotlinJsonAdapterFactory())
+                .build()
             val created = SendSpinClient(
                 okHttpClient = http,
-                moshi = Moshi.Builder().build(),
+                moshi = moshi,
                 preferences = preferences,
                 clientId = clientId,
                 clientName = name,
