@@ -5096,12 +5096,26 @@ function compareAutomations(a,b){
     || String(a.name||"").localeCompare(String(b.name||""));
 }
 
-app.get("/api/v1/school-cycle",requireClassroomRead,(req,res)=>{
+// Scheduler APIs may evaluate a full school-year horizon or dispatch hardware. Fixed
+// appliance-wide budgets prevent an authenticated browser from amplifying that work by
+// rotating client addresses or forwarding headers.
+const schedulerReadLimit=rateLimit({
+  windowMs:60_000,limit:240,keyGenerator:()=>"scheduler-read",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Scheduler read limit reached; retry later"}
+});
+const schedulerMutationLimit=rateLimit({
+  windowMs:60_000,limit:60,keyGenerator:()=>"scheduler-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Scheduler configuration or command limit reached; retry later"}
+});
+
+app.get("/api/v1/school-cycle",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   const date=req.query.date&&validDateKey(req.query.date)?new Date(`${req.query.date}T12:00:00`):new Date();
   res.json({ok:true,...schoolCycleForDate(date),calendarRule:calendarRuleForDate(date),automationSuppressed:isAutomationSuppressed(date).blocked,cycle:schoolCycleLetters(),dayGroups:schoolScheduleProfile.dayGroups,scheduleProfileId:schoolScheduleProfile.id});
 });
 
-app.get("/api/v1/class-schedules",requireClassroomRead,(_req,res)=>{
+app.get("/api/v1/class-schedules",schedulerReadLimit,requireClassroomRead,(_req,res)=>{
   try{
     const now=new Date();
     res.json({ok:true,classes:[...classScheduleStore.classes].sort(compareClassSchedules),...classStatusPayload(now),scheduler:schedulerStatus()});
@@ -5130,10 +5144,10 @@ function assertClassScheduleConflicts(candidate,classes){
   if(!conflicts.length)return;
   const first=conflicts[0],error=new Error(`${candidate.name} overlaps ${first.otherName} on ${first.date}. Save it disabled or resolve the class times before enabling.`);error.code="CLASS_SCHEDULE_CONFLICT";error.conflicts=conflicts;throw error;
 }
-app.get("/api/v1/class-schedules/status",requireClassroomRead,(_req,res)=>{const now=new Date();res.json({ok:true,...classStatusPayload(now),scheduler:schedulerStatus()})});
-app.post("/api/v1/class-schedules",requireCapability("schedule.manage"),(req,res)=>{try{const cls=normalizeClassSchedule(req.body||{});if(classScheduleStore.classes.some(x=>x.id===cls.id))return res.status(409).json({ok:false,error:"Class ID already exists"});assertClassScheduleConflicts(cls,classScheduleStore.classes);const next={...classScheduleStore,classes:[...classScheduleStore.classes,cls]};commitClassSchedules(next);res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
-app.put("/api/v1/class-schedules/:id",requireCapability("schedule.manage"),(req,res)=>{try{const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);if(i<0)return res.status(404).json({ok:false,error:"Class not found"});const cls=normalizeClassSchedule(req.body||{},classScheduleStore.classes[i]),classes=[...classScheduleStore.classes];assertClassScheduleConflicts(cls,classes.filter((_,index)=>index!==i));classes[i]=cls;commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
-app.post("/api/v1/class-schedules/:id/duplicate",requireCapability("schedule.manage"),(req,res)=>{
+app.get("/api/v1/class-schedules/status",schedulerReadLimit,requireClassroomRead,(_req,res)=>{const now=new Date();res.json({ok:true,...classStatusPayload(now),scheduler:schedulerStatus()})});
+app.post("/api/v1/class-schedules",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{try{const cls=normalizeClassSchedule(req.body||{});if(classScheduleStore.classes.some(x=>x.id===cls.id))return res.status(409).json({ok:false,error:"Class ID already exists"});assertClassScheduleConflicts(cls,classScheduleStore.classes);const next={...classScheduleStore,classes:[...classScheduleStore.classes,cls]};commitClassSchedules(next);res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
+app.put("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{try{const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);if(i<0)return res.status(404).json({ok:false,error:"Class not found"});const cls=normalizeClassSchedule(req.body||{},classScheduleStore.classes[i]),classes=[...classScheduleStore.classes];assertClassScheduleConflicts(cls,classes.filter((_,index)=>index!==i));classes[i]=cls;commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
+app.post("/api/v1/class-schedules/:id/duplicate",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
   try{
     const source=classScheduleStore.classes.find(c=>c.id===req.params.id);
     if(!source)return res.status(404).json({ok:false,error:"Class not found"});
@@ -5154,7 +5168,7 @@ app.post("/api/v1/class-schedules/:id/duplicate",requireCapability("schedule.man
     res.status(400).json({ok:false,error:err.message});
   }
 });
-app.delete("/api/v1/class-schedules/:id",requireCapability("schedule.manage"),(req,res)=>{
+app.delete("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
   const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);
   if(i<0)return res.status(404).json({ok:false,error:"Class not found"});
   const references=classroomAutomations.events.filter(event=>automationClassIds(event).includes(req.params.id)||String(event.timerOverlay?.classId||"")===req.params.id).map(event=>({type:"automation",id:event.id,name:event.name}));
@@ -5204,12 +5218,12 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
   audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:resourceResults.length,ok});
   return {ok,reason,schedulerTime:now.toISOString(),display,resources:resourceResults,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
 }
-app.get("/api/v1/automation-control",requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
-app.put("/api/v1/automation-control",requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
-app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString()});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
-app.post("/api/v1/automation-control/resume",requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
-app.post("/api/v1/automation-control/simulation",requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
-app.get("/api/v1/automation-control/evaluate",requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
+app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
+app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
+app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString()});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
+app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
+app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
+app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
 
 function automationResourceKeys(event){
   const steps=[{action:event.action,targets:event.targets,useEventTargets:true},...(event.actions||[])],keys=[];
@@ -5247,20 +5261,20 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
   return conflicts;
 }
 function assertAutomationConflicts(candidate,events){const conflicts=automationConflictDiagnostics(candidate,events);if(!conflicts.length)return;const first=conflicts[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=conflicts;throw error}
-app.post("/api/v1/automations/draft/simulate",requireClassroomRead,(req,res)=>{
+app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:[resolved.action,...(resolved.actions||[]).map(step=>step.action)]},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
-app.post("/api/v1/automations/draft/run",requireControl,async(req,res)=>{
+app.post("/api/v1/automations/draft/run",schedulerMutationLimit,requireControl,async(req,res)=>{
   try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),result=await runClassroomAutomation(resolved,{manual:true});audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:[event.action,...(event.actions||[]).map(step=>step.action)]});res.json({...result,draft:true})}catch(error){res.status(400).json({ok:false,error:error.message})}
 });
-app.get("/api/v1/automations",requireClassroomRead,(_req,res)=>{
+app.get("/api/v1/automations",schedulerReadLimit,requireClassroomRead,(_req,res)=>{
   res.json({ok:true,events:[...classroomAutomations.events].sort(compareAutomations).map(e=>({...e,resolved:resolveAutomationFromClass(e),resolvedOccurrences:resolveAutomationOccurrences(e)})),scheduler:schedulerStatus(),actions:[
     "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
     "govee.power","govee.color","govee.brightness","govee.temp","govee.scene"
   ]});
 });
 
-app.post("/api/v1/automations",requireCapability("automation.manage"),(req,res)=>{
+app.post("/api/v1/automations",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
   try{
     const event={...normalizeAutomation(req.body||{}),revision:1};
     if(classroomAutomations.events.some(x=>x.id===event.id))return res.status(409).json({ok:false,error:"Automation ID already exists"});
@@ -5271,7 +5285,7 @@ app.post("/api/v1/automations",requireCapability("automation.manage"),(req,res)=
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 
-app.put("/api/v1/automations/:id",requireCapability("automation.manage"),(req,res)=>{
+app.put("/api/v1/automations/:id",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
   try{
     const id=cleanId(req.params.id),idx=classroomAutomations.events.findIndex(x=>x.id===id);
     if(idx<0)return res.status(404).json({ok:false,error:"Automation not found"});
@@ -5284,13 +5298,13 @@ app.put("/api/v1/automations/:id",requireCapability("automation.manage"),(req,re
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 
-app.delete("/api/v1/automations/:id",requireCapability("automation.manage"),(req,res)=>{
+app.delete("/api/v1/automations/:id",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
   const id=cleanId(req.params.id),before=classroomAutomations.events.length;
   const events=classroomAutomations.events.filter(x=>x.id!==id);
   if(events.length===before)return res.status(404).json({ok:false,error:"Automation not found"});
   try{commitAutomations({...classroomAutomations,events});audit({kind:"automation.delete",automationId:id});res.json({ok:true,id})}catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.post("/api/v1/automations/:id/duplicate",requireCapability("automation.manage"),(req,res)=>{
+app.post("/api/v1/automations/:id/duplicate",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
   try{
     const source=classroomAutomations.events.find(e=>e.id===req.params.id);
     if(!source)return res.status(404).json({ok:false,error:"Scheduled event not found"});
@@ -5316,7 +5330,7 @@ app.post("/api/v1/automations/:id/duplicate",requireCapability("automation.manag
 });
 
 
-app.post("/api/v1/automations/:id/run",requireControl,async(req,res)=>{
+app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,async(req,res)=>{
   let event=null;
   try{
     const id=cleanId(req.params.id);event=classroomAutomations.events.find(x=>x.id===id);
