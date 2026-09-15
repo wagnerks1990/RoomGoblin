@@ -11,7 +11,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "packa
 const dependabot = fs.readFileSync(path.join(__dirname, "..", ".github", "dependabot.yml"), "utf8");
 
 test("browser Sendspin stays on the reviewed Music Assistant 2.9 protocol major", () => {
-  assert.equal(packageJson.dependencies["@sendspin/sendspin-js"], "3.2.0");
+  assert.equal(packageJson.dependencies["@sendspin/sendspin-js"], "3.2.1");
   assert.match(dependabot, /dependency-name: "@sendspin\/sendspin-js"[\s\S]*version-update:semver-major/);
 });
 

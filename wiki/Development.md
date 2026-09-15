@@ -80,7 +80,7 @@ graphs, GitHub Actions, and the Android Agent Gradle build.
 Every tracked shell script is syntax checked; adding a new `.sh` file therefore
 does not require manually extending a workflow filename list.
 
-The directly downloaded Gradle 8.9 distribution is verified against Gradle's
+The directly downloaded Gradle 9.6.0 distribution is verified against Gradle's
 published SHA-256 checksum in both Android CI and the maintenance image build.
 Do not update the distribution or checksum independently.
 
@@ -172,3 +172,12 @@ Regression testing should cover:
 ## Pull requests
 
 Keep changes focused and explain schema migrations, environment variables, persistent paths, security/privilege changes, add-on templates, topology/domain changes, and behavioral invariants. Update the relevant docs in the same change. Topology changes must keep `docs/ROOM-TOPOLOGY.md`, `wiki/Room-Topology.md`, and `docs/ai/ROOM-TOPOLOGY.md` synchronized.
+
+AGP supplies built-in Kotlin support. Do not apply the standalone
+`org.jetbrains.kotlin.android` plugin or the removed `android.kotlinOptions`
+DSL. Kotlin inherits the Java 17 target from `android.compileOptions`; preserve
+that target and the Android SDK/package/signing compatibility settings.
+
+Builds use Android API 37.2 and Build Tools 36.0.0 for AGP 9.4 and OkHttp 5.5.
+Keep CI and the maintenance APK stage aligned. This changes compile-time APIs
+only: `minSdk = 26`, `targetSdk = 35`, package identity and signing stay unchanged.
