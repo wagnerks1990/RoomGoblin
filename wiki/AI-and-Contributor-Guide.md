@@ -9,8 +9,9 @@ AI coding assistants and contributors should treat the GitHub repository `main` 
 1. `AGENTS.md`
 2. `VERSION` and `CHANGELOG.md`
 3. `docs/AI-CONTEXT.md`
-4. the relevant `docs/` topic page
-5. implementation source
+4. `docs/ROOM-TOPOLOGY.md` and `docs/ai/ROOM-TOPOLOGY.md` before changing TVs, displays, sources, AV routing, classes, automation targets, presentations, media, Morning Announcements, or Music Assistant TV selection
+5. the relevant `docs/` topic page
+6. implementation source
 
 ## Live upgrade corrections
 
@@ -33,7 +34,11 @@ Critical invariants:
 - Explicit access profiles fail closed. Built-in profiles with missing/empty capability arrays are repaired without overwriting valid custom lists; Administrator resolves to `capabilities:["*"]`.
 - Passwords are opaque strings; punctuation such as `!` and `#` must survive browser/API/scrypt paths and shell troubleshooting must quote credentials safely.
 - Maintenance startup health checks the Host Agent directly rather than waiting for the main application.
-- Receiver IDs are stable/editable and display groups must be pruned when receivers are removed.
+- Room topology is canonical and domain-separated: physical TVs, content displays, content sources, and lighting are not interchangeable inventories.
+- Stable IDs survive friendly-name changes. `All TVs` resolves against enabled physical TVs; `All Displays` resolves against enabled content receivers; typed groups never cross domains.
+- Legacy `devices`, `displayGroups`, and Pluto labels are compatibility projections. Do not infer physical-TV inventory from content-display rows or hard-code `tv1..tv8` application-wide.
+- Adapter cardinality is local to the adapter. Pluto may remain an 8×8 AV surface while RoomGoblin contains additional TVs/sources on other adapters.
+- Removing or disabling a topology item must fail closed for stale saved target IDs; never redirect a missing endpoint to another device implicitly.
 - The controller inventories existing Docker containers and can adopt them for safe lifecycle/log control.
 - New container creation remains restricted to reviewed supported integration templates.
 - Supported optional managed Docker add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Node-RED; adoption must not recreate an existing container unless explicitly requested, persistent integration data must survive recreation/removal, and native Veyon services remain host-managed.
@@ -44,7 +49,7 @@ Critical invariants:
 - Timer chaining is only for an explicitly linked continuation of the same base class or period.
 - Runtime versions must stay converged through release metadata/stamping and the Host Agent wrapper.
 - Integration health is independent; a failure in Pluto must not falsely mark MQTT/Govee offline.
-- Cross-domain automation steps with legacy/empty targets recover to the domain's All selector; an explicit action target overrides a linked class display default. Explicit all-TV selectors use Pluto broadcast CEC, while selected subsets use individual outputs.
+- Cross-domain automation steps with legacy/empty targets recover to the domain's All selector; an explicit action target overrides a linked class display default. TV-power selectors use the physical-TV domain; display actions/classes remain in the content-display domain.
 - Optional or slow hardware probes must not block the initial Overview screen.
 
 ## Standard production layout
@@ -82,7 +87,7 @@ Always take a backup before production upgrades.
 
 ## Documentation contract
 
-Behavior, architecture, deployment, configuration, recovery, or security changes must update the relevant `docs/` page and matching `wiki/` mirror page.
+Behavior, architecture, deployment, configuration, recovery, or security changes must update the relevant `docs/` page and matching `wiki/` mirror page. Topology changes must also update `docs/ai/ROOM-TOPOLOGY.md` so future AI work retains the TV/display/source domain boundaries.
 
 The complete AI operating contract lives in `AGENTS.md`; `docs/AI-CONTEXT.md` contains the compact technical handoff.
 
