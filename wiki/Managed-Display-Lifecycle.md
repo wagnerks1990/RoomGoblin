@@ -4,28 +4,24 @@ RoomGoblin treats each Android TV enrollment as a durable managed-display record
 
 ## Enrollment controls
 
-- **Enable enrollment**: resumes policy automation for the record.
-- **Disable enrollment**: preserves the record but excludes it from automated device policy.
-- **Remove from Hub**: removes only the RoomGoblin enrollment. It does not uninstall the Display Agent, factory-reset the Android device, or delete unrelated RoomGoblin data.
-
-Use these controls instead of manually editing `data/android-tv/devices.json`.
-
-## Factory resets and replacement enrollments
-
-After an Android factory reset, the old Hub enrollment can remain as stale inventory because the ADB trust and Android app state were replaced. Enroll the reset device as a new display, then safely remove the stale record with **Remove from Hub**.
+- **Enable enrollment** resumes policy automation.
+- **Disable enrollment** preserves the record but excludes it from automation.
+- **Remove from Hub** removes only the RoomGoblin enrollment; it does not uninstall or factory-reset Android.
 
 ## Device Administrator
 
-For already provisioned Android TV devices, Device Admin is an optional fallback management tier. Use **Enable Device Admin** from Device Agent v2. RoomGoblin opens Android's native Device Administrator confirmation screen for `org.roomgoblin.display/.AgentDeviceAdminReceiver`; approval must occur on the TV.
+Device Admin is an optional fallback tier for already provisioned Android TV devices. **Enable Device Admin** uses Android's native approval flow. **Remove Device Admin** remains available as a standalone, user-confirmed revocation operation.
 
-After approval, rerun **Capabilities** and verify `deviceAdminActive: true`. Device Admin can unlock lock/sleep behavior but is not equivalent to Device Owner.
+### Agent upgrades
 
-Android blocks package uninstall while an app remains an active Device Administrator. If a legacy-agent migration reports `DELETE_FAILED_DEVICE_POLICY_MANAGER`, use **Remove Device Admin** in Managed Displays. RoomGoblin opens Android TV's native Device Administrator page for the installed legacy/current RoomGoblin package; deactivate it with the TV remote, then retry **Reinstall Agent**. RoomGoblin does not silently revoke Device Admin authority.
+When an administrator explicitly chooses **Reinstall/Update Agent**, RoomGoblin can use the existing trusted ADB channel to make package replacement transactional. It verifies the staged APK/signing identity first, detects prior Device Admin state, removes the active admin through Android's `dpm` shell interface, verifies it is inactive, replaces the package, restores Agent configuration and trusted grants, and attempts to restore Device Admin for the new package.
+
+RoomGoblin verifies the final Device Admin state. If the firmware still requires native confirmation, the upgrade reports that requirement instead of claiming success. It never uninstalls while the old Device Admin still verifies active. This handles legacy `org.classroomhub.display` migrations that would otherwise fail with `DELETE_FAILED_DEVICE_POLICY_MANAGER`.
 
 ## Device Owner
 
-Device Owner remains the recommended target for new dedicated RoomGoblin displays. Provision it during initial Android setup through the DPC/managed-device provisioning workflow rather than retrofitting a normally provisioned Google TV installation.
+Device Owner remains the preferred target for new dedicated displays and should be provisioned during initial Android setup.
 
 ## Persistent ADB
 
-When Device Agent v2 is configured, RoomGoblin synchronizes the Hub-side persistent ADB policy and target port into the Android agent. This keeps Hub and Agent v2 recovery state consistent.
+Agent v2 configuration synchronizes the Hub-side persistent ADB policy and target port into the Android agent, and the replacement transaction restores that policy after installation.
