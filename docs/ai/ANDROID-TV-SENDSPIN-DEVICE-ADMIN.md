@@ -2,14 +2,16 @@
 
 ## Native Sendspin serialization
 
-RoomGoblin Agent `0.3.1-agent-v2` must construct Moshi with Sendspin's `JsonOptionalAdapterFactory` before `KotlinJsonAdapterFactory`. `sendspin-jvm` uses `JsonOptional<T>` in partial server-state models. A bare `Moshi.Builder().build()` causes runtime serialization failures such as `Cannot serialize abstract class com.sendspin.protocol.JsonOptional` and prevents connection to Music Assistant.
+RoomGoblin Agent `0.3.1-agent-v2` must construct Moshi with Sendspin's `JsonOptionalAdapterFactory` before `KotlinJsonAdapterFactory`. `sendspin-jvm` uses `JsonOptional<T>` in partial server-state models. Keep the adapter order covered by regression tests.
 
-Keep the adapter order covered by regression tests when upgrading `sendspin-jvm` or Moshi.
+## Device Administrator and agent replacement
 
-## Device Administrator removal
+Android refuses to uninstall an application while its `DeviceAdminReceiver` is active and may return `DELETE_FAILED_DEVICE_POLICY_MANAGER`.
 
-Android refuses to uninstall an application while its `DeviceAdminReceiver` is active. This matters during migration from legacy `org.classroomhub.display` to current `org.roomgoblin.display` and may surface as `DELETE_FAILED_DEVICE_POLICY_MANAGER`.
+For an explicit administrator-approved Agent replacement, RoomGoblin's trusted ADB maintenance channel should make this transactional: verify the staged APK/signing identity first; detect whether the old package's Device Admin is active; request `dpm remove-active-admin`; verify it is inactive before uninstalling; install the verified replacement; restore saved Agent v2/display configuration and trusted `WRITE_SECURE_SETTINGS`; then attempt `dpm set-active-admin` for the current package and verify the resulting policy state.
 
-Managed Displays exposes **Remove Device Admin**. It does not silently revoke Device Admin. The maintenance bridge opens Android TV's native Device Administrator screen for the installed RoomGoblin/Classroom Hub package and Android requires user confirmation on the TV. During legacy migration, prefer the legacy package when it is still installed.
+Never claim Device Admin was restored merely because the command returned. If Android/OEM policy leaves it inactive, return `restoreRequiresUserConfirmation: true` and use the native approval helper. Never uninstall while verification still shows the old administrator active.
 
-Do not replace this with unattended policy removal, factory reset, or package deletion. Preserve enrollment, ADB trust, display assignment, and agent configuration while the user completes the Android confirmation flow.
+The standalone **Remove Device Admin** UI remains a user-confirmed native Android flow. Automatic removal is restricted to the explicit Agent replacement transaction over the already trusted ADB management channel.
+
+Preserve enrollment IDs, ADB trust, display assignment, Agent token/configuration, persistent-ADB policy, and unrelated RoomGoblin data throughout replacement.
