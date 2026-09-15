@@ -115,7 +115,7 @@ docker build -t classroom-control-hub-maintenance:test maintenance-agent
 - Removed/disabled target IDs fail closed rather than being silently redirected.
 - Existing Docker containers may be discovered/adopted for safe lifecycle operations.
 - New container creation remains restricted to supported integration templates.
-- Supported optional add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Veyon WebAPI.
+- Supported optional managed Docker add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Node-RED; Veyon and Veyon WebAPI remain native host services.
 - Integration persistent data survives container recreation/removal.
 - HTTP remains restricted to a trusted LAN until TLS is deliberately reintroduced.
 

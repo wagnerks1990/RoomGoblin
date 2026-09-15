@@ -57,7 +57,7 @@ A failed integration must not mark unrelated integrations offline. Slow optional
 
 The controller may inventory and operate existing Docker containers through the authenticated maintenance/Host Agent path. New container creation stays restricted to reviewed supported add-on images. Do not replace this with arbitrary root shell or unrestricted Docker execution.
 
-Supported optional managed add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Veyon WebAPI. Existing containers should be adopted without recreation unless an administrator explicitly chooses recreate/update. Persistent add-on data must survive container replacement.
+Supported optional managed Docker add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Node-RED. Veyon and Veyon WebAPI remain native host services. Existing containers should be adopted without recreation unless an administrator explicitly chooses recreate/update. Persistent add-on data must survive container replacement.
 
 ### Room topology invariants
 
@@ -156,7 +156,7 @@ validated immutable Hub + maintenance image pair
 production promotion
 ```
 
-Urgent classroom alpha fixes may be committed directly when necessary, but they must remain traceable, validated, and documented.
+Urgent classroom alpha fixes still use a checked pull request. Preserve branch protections and required checks; urgency does not authorize a direct-to-main bypass.
 
 ## Production update workflow
 
