@@ -49,10 +49,23 @@ A content source represents an AV input or other routable source. Its stable ID,
 
 Groups have an explicit domain: `display`, `tv`, `source`, or `lighting`. A TV group never becomes a content-display group merely because IDs happen to look similar.
 
+## Runtime source of truth
+
+The canonical topology is stored in SQLite system preferences. Existing `devices`, `displayGroups`, and Pluto label structures are compatibility projections generated from that topology so legacy renderer, scheduler, credential, managed-device, and AV code can continue operating during migration.
+
+After topology is saved, operator target pickers are refreshed from the canonical inventories:
+
+- display/class/presentation/media targets refresh from enabled content displays;
+- TV-power targets refresh from enabled physical TVs;
+- AV labels refresh from configured physical-TV outputs and content-source inputs;
+- lighting remains an independent inventory.
+
+Removing or disabling an item makes it unavailable to new target selections immediately. Persisted class/automation records can still contain an old stable ID for audit/edit history, but runtime resolution ignores a target that no longer exists in the matching canonical domain until the record is remapped.
+
 ## UI contract
 
 - Setup manages Physical TVs, Content Displays and Content Sources as separate dynamic inventories.
-- Displays & AV renders the current adapter topology rather than assuming eight RoomGoblin displays.
+- Displays & AV exposes the same topology editor so changes do not need to be repeated elsewhere.
 - Automation target controls are domain-specific:
   - display content -> content displays;
   - TV power -> physical TVs;
@@ -60,7 +73,15 @@ Groups have an explicit domain: `display`, `tv`, `source`, or `lighting`. A TV g
   - lighting -> lighting devices/groups.
 - Classes retain **Default Display Targets** for content receivers. Class defaults do not silently become physical-TV or lighting targets.
 - Renaming changes presentation only. Stable IDs remain unchanged.
-- Removing an item must detect references in groups, classes, automations and AV mappings and either migrate them explicitly or require confirmation.
+- Removing a physical TV unlinks content-display associations to that TV; removing a content display prunes it from typed display groups. Saved target records that reference removed IDs fail closed at runtime instead of being redirected to another device.
+
+## Adapter boundaries
+
+The canonical RoomGoblin inventory is dynamic; individual hardware adapters may still have fixed cardinality.
+
+For the current Pluto Mark I integration, the AV matrix screen is adapter-specific and continues to represent Pluto's physical input/output topology. An eight-port Pluto matrix therefore still shows eight physical matrix inputs/outputs even when fewer content displays are configured. That adapter-specific 8x8 shape must not be reused as the application-wide definition of TVs or content displays.
+
+Future adapters can expose different port counts without redefining a content display as a TV. If a second matrix or transport is added, its endpoints belong in the canonical topology with their own adapter mapping instead of extending Pluto-specific loops blindly.
 
 ## Compatibility migration
 
@@ -77,16 +98,17 @@ The legacy projection is a compatibility boundary, not the long-term source of t
 
 ## Hardware cardinality
 
-The RoomGoblin topology model supports up to 64 items per domain. A Pluto Mark I adapter may still expose an 8x8 hardware topology, but application-wide inventory logic must not assume eight TVs, eight sources, or one matrix. Future adapters can expose different cardinalities while using the same canonical inventory.
+The RoomGoblin topology model supports up to 64 items per domain. Application-wide inventory logic must not assume eight TVs, eight sources, or one matrix. The current Pluto Mark I adapter remains bounded by its own hardware topology while the canonical model can contain additional endpoints on other adapters.
 
 ## Regression requirements
 
 Tests must cover:
 
 - three content displays with eight physical TVs;
-- dynamic counts greater than eight;
+- dynamic physical-TV and content-source inventories independent of display count;
 - typed group isolation;
 - stable ID preservation across rename;
-- safe pruning/reference checks during removal;
+- safe removal/disable behavior and fail-closed stale references;
 - compatibility projection for current Setup, controller and scheduler surfaces;
+- Setup, Displays & AV, Automation, Classes, presentations and media consuming the same canonical inventory;
 - Morning Announcements priority, scheduler recovery and Background Music arbitration remaining unchanged.
