@@ -86,7 +86,8 @@ test("hub runtime creates shared persistent data with a group-readable umask",()
   const dockerfile=fs.readFileSync("Dockerfile","utf8");
   const startup=fs.readFileSync("tools/start-roomgoblin.sh","utf8");
   assert.match(dockerfile,/COPY tools\/start-roomgoblin\.sh/);
-  assert.match(dockerfile,/CMD \["bash", "tools\/start-roomgoblin\.sh"\]/);
+  assert.match(dockerfile,/CMD \["sh", "tools\/start-roomgoblin\.sh"\]/);
+  assert.match(startup,/^#!\/bin\/sh/m);
   assert.match(startup,/umask 0027/);
   assert.match(startup,/exec node --require \.\/src\/direct-display-compat\.js src\/startup-recovery\.js/);
 });
