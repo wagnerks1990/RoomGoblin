@@ -23,6 +23,11 @@ Maintenance startup must fail rather than silently serve a stale, mismatched or 
 
 Both the supported installer and verified application updater already rebuild the maintenance image, so no separate Android builder service or host Android SDK workflow is required.
 
+The Android CI job and the maintenance image must use the same reviewed Gradle
+distribution and official SHA-256 checksum. Android Gradle Plugin 9.4 requires
+Gradle 9.6.0; changing either toolchain pin requires updating both build paths,
+the checksum regression, and contributor/Wiki documentation together.
+
 ## Signing invariant
 
 Android package updates require signing continuity. The persistent per-appliance signing material lives outside application data at `/etc/classroom-control-hub/android-agent-signing` and is mounted only into maintenance at `/signing`.

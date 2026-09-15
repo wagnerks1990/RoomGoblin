@@ -80,7 +80,7 @@ graphs, GitHub Actions, and the Android Agent Gradle build.
 Every tracked shell script is syntax checked; adding a new `.sh` file therefore
 does not require manually extending a workflow filename list.
 
-The directly downloaded Gradle 8.9 distribution is verified against Gradle's
+The directly downloaded Gradle 9.6.0 distribution is verified against Gradle's
 published SHA-256 checksum in both Android CI and the maintenance image build.
 Do not update the distribution or checksum independently.
 

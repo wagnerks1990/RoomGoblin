@@ -188,13 +188,13 @@ jobs:
           test -n "${ANDROID_HOME:-}"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Install Gradle 8.9
+      - name: Install Gradle 9.6.0
         run: |
           set -euo pipefail
-          curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o "$RUNNER_TEMP/gradle.zip"
-          echo 'd725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab  '"$RUNNER_TEMP/gradle.zip" | sha256sum -c -
+          curl -fsSL https://services.gradle.org/distributions/gradle-9.6.0-bin.zip -o "$RUNNER_TEMP/gradle.zip"
+          echo 'bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01  '"$RUNNER_TEMP/gradle.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/gradle-8.9/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/gradle-9.6.0/bin" >> "$GITHUB_PATH"
       - name: Build debug APK
         working-directory: agents/android-tv
         run: gradle :app:assembleDebug --stacktrace

@@ -58,10 +58,10 @@ test("release publication requires pinned security gates",()=>{
 });
 
 test("the downloaded Gradle distribution is checksum verified",()=>{
-  const checksum="d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab";
+  const checksum="bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01";
   for(const file of [".github/workflows/validate.yml","maintenance-agent/Dockerfile"]){
     const source=read(file);
-    assert.ok(source.includes(checksum),`${file} lacks the reviewed Gradle 8.9 checksum`);
+    assert.ok(source.includes(checksum),`${file} lacks the reviewed Gradle 9.6.0 checksum`);
     assert.match(source,/sha256sum -c -/);
   }
 });

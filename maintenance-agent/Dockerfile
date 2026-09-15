@@ -1,8 +1,8 @@
 FROM eclipse-temurin:17-jdk-jammy AS android-agent-build
 
 ARG ANDROID_COMMANDLINE_TOOLS=11076708
-ARG GRADLE_VERSION=8.9
-ARG GRADLE_SHA256=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab
+ARG GRADLE_VERSION=9.6.0
+ARG GRADLE_SHA256=bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 # The release APK includes native ADB/Conscrypt libraries and Android's zipflinger

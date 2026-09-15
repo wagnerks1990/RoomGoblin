@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Android build toolchain and dependencies
+
+- Update the Android Agent dependency set and align CI plus the maintenance
+  image on checksum-verified Gradle 9.6.0 required by Android Gradle Plugin 9.4.
+- Keep the debug and embedded release APK builds on the same reviewed toolchain;
+  package identity, version metadata, signing continuity and staged-artifact
+  verification remain unchanged.
+
 ### Main-only development and updates
 
 - Restore main as the sole integration/bootstrap/update source; stop advancing a
