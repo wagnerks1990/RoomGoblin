@@ -77,7 +77,7 @@ function resolveTargets(targets,{topology,domain}){
   const t=normalizeTopology(topology||{}),wanted=Array.isArray(targets)?targets:[];
   const map=domain==="tv"?t.tvs:domain==="source"?t.sources:t.displays;
   const groupType=domain==="tv"?"tv":domain==="source"?"source":"display";
-  const out=[];const seen=new Set();const add=id=>{if(map[id]?.enabled!==false&&!seen.has(id)){seen.add(id);out.push(map[id])}};
+  const out=[];const seen=new Set();const add=id=>{const item=map[id];if(item&&item.enabled!==false&&!seen.has(id)){seen.add(id);out.push(item)}};
   for(const raw of wanted){const id=String(raw||"").trim().toLowerCase();if(!id)continue;if(id==="all"){for(const item of enabledItems(map))add(item.id);continue}const group=t.groups[id];if(group?.type===groupType){for(const member of group.members)add(member);continue}add(id)}
   return out;
 }
