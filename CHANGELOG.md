@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Main-only development and updates
+
+- Restore main as the sole integration/bootstrap/update source; stop advancing a
+  separate production branch and remove source-write permission from image promotion.
+- Keep checked PRs and permit merge/squash/rebase by policy without weakening gates;
+  a restrictive GitHub ruleset still requires an administrator to change it.
+- Safely bridge old installed runners after exact-image verification, using one
+  full journaled reconciliation before returning to selective updates.
+- Migrate legacy or detached checkouts to main without deleting old branches or
+  overwriting divergent commits. Preserve backups, rollback and pending journals.
+- Update operator, contributor, AI and Wiki documentation and add regressions for
+  main selection, legacy migration, missing images and divergent branch safety.
+- Remove conflicting source-first pull instructions from installation, migration,
+  deployment and operations guides; regression-check the legacy migration handoff
+  and distinguish live filesystem copies from database-safe recovery backups.
+
 ### Matrix-first topology controls
 
 - Keep routine TV routing ahead of the collapsed topology configuration panel.
@@ -25,9 +41,9 @@
 
 ### Published-image update preflight
 
-- Advance the production source branch only after the validated Hub/maintenance
-  pair is published. Bootstrap and normal updates select this branch instead of
-  a potentially unbuilt main commit.
+- Require the validated Hub/maintenance pair before deployment. The temporary
+  production-branch selection was superseded by the main-only workflow above;
+  bootstrap and normal updates now select main while retaining image preflight.
 - Verify both images before moving the checkout; refuse silent downgrades and
   report failed CI promptly without repeated Docker missing-tag errors.
 - Keep lighting Apply controls stationary when polling clears command status;

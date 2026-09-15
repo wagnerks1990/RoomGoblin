@@ -62,11 +62,11 @@ The HTTPS command above securely retrieves the bootstrap from GitHub; the instal
 
 Review the downloaded script before executing it. The bootstrap installs Docker Engine and Compose from Docker's signed apt repository, checks out the public repository, generates separate setup/control/display/lab/maintenance secrets, delegates to `install.sh`, and prints a first-time setup URL. Treat that URL as a temporary administrator secret; its token is unusable after the first administrator is created.
 
-Optional environment overrides are `CLASSROOM_HUB_REF`, `CLASSROOM_HUB_DIR`, and `CLASSROOM_HUB_REPOSITORY_URL`. The bootstrap will not replace an existing deployment unless `CLASSROOM_HUB_REINSTALL=true` is deliberately set; established appliances should normally be updated or reverted from the web controller.
+The default source is `main`; there are no separate deployment branches. Optional environment overrides are `CLASSROOM_HUB_REF`, `CLASSROOM_HUB_DIR`, and `CLASSROOM_HUB_REPOSITORY_URL`. The bootstrap will not replace an existing deployment unless `CLASSROOM_HUB_REINSTALL=true` is deliberately set; established appliances should normally be updated or reverted from the web controller.
 
 ## Existing Classroom Control Hub deployment
 
-From a checked-out release or staging clone, run:
+From a checked-out, CI-published main commit (or a deliberately selected semantic release), run:
 
 ```bash
 sudo bash install.sh
@@ -109,15 +109,17 @@ sudo bash install.sh
 
 ## Normal production updates
 
-Use Git rather than replacing the application tree with ZIP contents:
+Use the verified main updater rather than pulling source first or replacing the application tree with ZIP contents:
 
 ```bash
-cd /opt/classroom-hub
-sudo git fetch origin
-sudo git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
+
+Before the first update from the retired production-branch runner, follow the
+[one-time transition](docs/PRODUCTION-UPDATES.md#one-time-transition-from-the-old-production-updater).
+The updater selects main but requires its exact published image pair before
+source/runtime mutation, and retains journaled backups, health checks and rollback.
 
 For development rebuilds after the installer has established host state:
 

@@ -103,7 +103,10 @@ Supported installers and update runners must not edit tracked files or change tr
 
 ## Upgrade model
 
-Production selects published source from `origin/production`. Normal supported update flow:
+During active development, `main` is the sole integration and update branch.
+Use short-lived branches and checked pull requests into `main`; do not add
+production/staging/development promotion branches or GitHub environment approvals.
+The historical update script name is retained for compatibility. Normal flow:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
@@ -260,10 +263,15 @@ operator GUI tests; describe coverage in job/step names without renaming this ga
 Keep `test/production-image-install.test.js` workflow-identity coverage passing.
 A merged source commit is not installable until its exact Hub and maintenance images
 are published; never recommend retagging another commit or bypassing validation.
-Only successful pair promotion advances `production`. Bootstrap and normal source
-updates follow that published ref, verify both revisions before moving source,
-and refuse silent downgrades. See `docs/PRODUCTION-UPDATES.md`; do not reintroduce
-an unconditional main pull in the production updater.
+Bootstrap and source updates select `main`, but only its exact published image
+pair may be deployed. No workflow creates or advances a deployment branch.
+Preserve selective reconciliation, the legacy-runner migration, main ancestry,
+image verification, backups and rollback. Keep local branches/commits intact;
+legacy production and detached recovery checkouts transition safely to main.
+See `docs/PRODUCTION-UPDATES.md`; never replace this with an unconditional pull.
+Repository settings and the main PR ruleset must both permit merge, squash and
+rebase methods. Preserve required checks and resolved reviews, and never bypass
+protections or claim an administrative setting changed without verifying it.
 
 ## Testing before commit/release
 

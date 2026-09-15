@@ -153,20 +153,20 @@ merge to main
       ↓
 validated immutable Hub + maintenance image pair
       ↓
-production promotion
+main image-pair publication and guarded alias promotion
 ```
 
 Urgent classroom alpha fixes still use a checked pull request. Preserve branch protections and required checks; urgency does not authorize a direct-to-main bypass.
 
 ## Production update workflow
 
-Supported production updates select the validated published source/image pair rather than pulling arbitrary newer `main` directly:
+Supported production updates select `origin/main` and require its exact validated published image pair before changing source or services:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-The updater verifies the exact published revisions, applies the journaled deployment path, and refuses silent downgrade or unvalidated image substitution. Do not document `git pull origin main && install.sh` as the normal production path.
+The updater verifies the exact published revisions, applies the journaled deployment path, and refuses silent downgrade or unvalidated image substitution. No separate deployment branch advances. Follow [Main-based updates](PRODUCTION-UPDATES.md) for the one-time legacy updater transition. Do not document `git pull origin main && install.sh` as the normal production path.
 
 For development rebuilds after the installer has established the host state:
 

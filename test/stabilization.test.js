@@ -547,7 +547,8 @@ test("verified application updater has a durable host job and GUI rollback contr
   const controller=fs.readFileSync(path.join(projectRoot,"public/controller/index.html"),"utf8");
   assert.match(host,/app-updates\/start/);
   assert.match(host,/REVERT_RELEASE/);
-  assert.match(runner,/git fetch --force --prune --tags origin/);
+  assert.match(runner,/git fetch --tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main/);
+  assert.doesNotMatch(runner,/git fetch[^\n]*refs\/heads\/production/);
   assert.match(runner,/Only semantic-version release tags are accepted/);
   assert.match(runner,/merge-base --is-ancestor/);
   assert.match(runner,/docker compose exec -T classroom-hub node -e/);

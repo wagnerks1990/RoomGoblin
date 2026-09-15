@@ -138,13 +138,13 @@ Installers copy executable host runners into `/usr/local/libexec` and must not c
 
 ## Production updates
 
-The supported production path consumes the validated published source/image pair:
+The supported production path selects `origin/main` and requires its exact validated published image pair before changing source or services:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-Do not document an unconditional `git pull origin main` as the normal production update path. Production promotion verifies both immutable image revisions and refuses silent downgrade or unvalidated substitution.
+Do not document an unconditional `git pull origin main` as the normal production update path. The updater verifies both immutable image revisions and refuses silent downgrade or unvalidated substitution. No separate deployment branch advances. Follow [Main-based updates](Production-Updates) for the one-time legacy updater transition.
 
 ## Testing areas
 

@@ -110,7 +110,7 @@ test("dependency audits block moderate and higher findings",()=>{
 
 test("standalone production update delegates to the journaled native runner",()=>{
   const source=fs.readFileSync("deploy/update-production.sh","utf8");
-  assert.match(source,/app-update-runner\.sh --published/);
+  assert.match(source,/exec bash "\$RUNNER" --published/);
   assert.doesNotMatch(source,/docker compose up/);
 });
 

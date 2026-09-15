@@ -119,10 +119,17 @@ Shared runtime directories should remain:
 
 ## Safe Git upgrade sequence
 
+Retain a verified operational backup or encrypted Full Recovery export first.
+Copying a live checkout with `cp -a` is not a consistent SQLite backup.
+
 ```bash
-sudo cp -a /opt/classroom-hub "/opt/classroom-hub-backup-before-update-$(date +%Y%m%d-%H%M%S)"
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
+
+The updater selects main and requires its exact published image pair before
+mutation; do not pull source first. Follow [Main-based updates](Production-Updates)
+for the one-time legacy updater transition and pending-journal recovery.
 
 For development rebuilds after a valid install:
 

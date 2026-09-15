@@ -81,15 +81,16 @@ A missing optional integration must not be treated as an application failure, an
 After migration, use:
 
 ```bash
-cd /opt/classroom-hub
-sudo git fetch origin
-sudo git pull --ff-only origin main
-cat VERSION
-sudo docker compose build --no-cache
-sudo docker compose up -d
-sudo docker compose ps
-curl -fsS http://localhost:3000/health
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
+sudo bash /opt/classroom-hub/deploy/update-production.sh
+curl -fsS http://127.0.0.1:3000/health
 ```
+
+Follow the [one-time old-updater transition](docs/PRODUCTION-UPDATES.md#one-time-transition-from-the-old-production-updater)
+before using an installed wrapper that still follows the retired production
+branch. Main is the only update source, but its exact validated image pair must
+exist before mutation. Do not manually pull source, build images on the appliance,
+or bypass the native backup/journal/health/rollback protocol for routine updates.
 
 Before deploying, confirm the working tree is clean except for intentionally local ignored runtime files:
 

@@ -1,8 +1,16 @@
-# Published production updates
+# Main-based updates during active development
 
-`main` is the development source of truth. **Publish Main Images** advances
-`production` only after all required checks and both image publications succeed.
-Never point that branch at unbuilt source or retag another revision to satisfy it.
+`main` is the only integration and update branch. Use short-lived work branches,
+checked pull requests into main, and **Publish Main Images**. There is no separate
+production, staging or development branch/environment promotion. Existing legacy
+branches are retained as history, not fetched or advanced as deployment sources.
+The `update-production.sh` filename and native `published` journal action remain
+compatibility identifiers; neither selects a production branch.
+
+Main can move before its images finish building. The updater selects one exact
+main commit and waits for its validated image pair before source/runtime changes.
+Failed CI, missing images, a wrong revision or divergent history stops the update
+without changing running services. Never retag another revision to satisfy it.
 
 ## Normal update
 
@@ -11,8 +19,8 @@ sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-The optional plan fetches published source and reports component decisions without
-changing the checkout or services. Normal updates use the native runner's
+The optional plan fetches main and reports component decisions without
+changing the checkout or services. A plan is not proof images are ready. Normal updates use the native runner's
 appliance lock, durable journal, operational backup and health/rollback checks.
 Both published manifests must exist. Only changed images are downloaded and their
 OCI revision labels must match the exact selected commit before source switches.
@@ -46,18 +54,45 @@ sudo bash /opt/classroom-hub/deploy/update-production.sh --full
 Do not pull `main` before routine updates. Ahead/divergent checkouts fail closed;
 there is no silent source downgrade. Tracked edits and unrelated branches are
 rejected. A detached checkout left by release/recovery is supported only when
-its current commit can fast-forward to published source; the updater does not
-reset or overwrite a branch to repair it.
+its current commit and any existing local main can fast-forward to the selected
+main commit. Successful source updates switch to main without deleting the old
+branch. A single-branch production clone's fetch mapping is migrated to main.
+The updater never resets an unrelated/divergent main branch to repair it.
 
-## First transition
+## One-time transition from the old production updater
 
-An existing published-source updater runs its previous full installer once when
-installing this implementation. That establishes the component tags, deployment
-record and installed native runner. Later normal updates can use selective mode.
-If source was manually advanced without installing the matching runner, run the
-full `sudo bash /opt/classroom-hub/install.sh` once before using selective mode.
-Do not use forced resets, substitute image tags, or local development builds to
-work around failed publication.
+An old on-disk script cannot discover this change because it follows the retired
+production branch. Download the reviewed main updater outside the checkout once:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/wagnerks1990/RoomGoblin/main/deploy/update-production.sh \
+  -o /tmp/roomgoblin-main-update.sh
+sudo bash /tmp/roomgoblin-main-update.sh --plan
+sudo bash /tmp/roomgoblin-main-update.sh
+```
+
+Review the downloaded script before execution. It checks the recognized origin,
+clean source and fast-forward ancestry. When the installed runner lacks the main
+capability marker, it downloads/verifies both exact images, extracts only the
+selected commit's runner to a private temporary file, and invokes its journaled
+full reconciliation. This is not an unguarded source pull or a local image build.
+The runner owns the mutation lock, backup, source switch, health and rollback;
+the installer refreshes the installed runner for later efficient updates. Pending
+journals are never overwritten. Resume an interrupted transaction before retrying.
+Runtime `.env`, data, secrets, ADB/signing identities and managed add-ons remain
+protected. Use the normal in-checkout command after this first successful update.
+
+## Pull-request settings
+
+Both repository Settings > General > Pull Requests and the main ruleset must allow
+merge commits, squash merges and rebase merges. The default branch is main; keep
+pull requests, required checks, resolved review threads and branch protections.
+Auto-merge is useful only after all required checks/reviews complete. Do not bypass
+checks, add long-lived environment branches or disable security scans to save time.
+Squash is convenient for small fixes; all three methods are permitted by policy.
+An administrator must apply any outstanding ruleset setting; documentation or the
+repository checkboxes do not change a restrictive ruleset by themselves.
 
 ## Recovery and limits
 

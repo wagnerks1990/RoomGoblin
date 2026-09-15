@@ -1,14 +1,14 @@
-# Production publication and shared-data permissions
+# Main publication and shared-data permissions
 
-This document records the production invariants behind validated image publication, uploaded media permissions, operational backups, and selective updates.
+This document records the deployment invariants behind validated image publication, uploaded media permissions, operational backups, and selective updates. Its historical filename is retained for existing links.
 
-## Exact-commit production publication
+## Exact-commit main publication
 
 Every push to `main` starts `Publish Main Images` directly. Publication waits for `Validate`, `Display browser regression`, and `Security gates` to pass for the exact same commit SHA before any image is considered deployable.
 
-The publisher creates immutable commit tags for both runtime images and both legacy aliases, then promotes `alpha` and advances the `production` source branch only while the validated SHA is still current `main`.
+The publisher creates immutable commit tags for both runtime images and both legacy aliases, then promotes `alpha` only while the validated SHA is still current `main`. No production/staging/development source branch is created or advanced.
 
-A source commit is not production-ready merely because it is merged. Operators should deploy only after the commit-matched Hub and maintenance images exist and `production` points at that published source.
+A source commit is not deployable merely because it is merged. The main updater requires the exact commit-matched Hub and maintenance images before source/runtime changes. See [Main-based updates](PRODUCTION-UPDATES.md) for the one-time legacy-updater transition, selective update command, rollback, and PR settings. In the Wiki, use the matching **Production Updates** page.
 
 ## Maintenance image dependency retries
 
@@ -30,7 +30,7 @@ The Hub startup wrapper `tools/start-roomgoblin.sh` establishes the umask before
 
 ### Media-upload incident
 
-A large uploaded MP4 was observed as mode `0600`. The Hub itself could use the file, but the maintenance container could not read it during the mandatory operational safety backup. Production update then stopped before service mutation with an apparently generic preflight failure.
+A large uploaded MP4 was observed as mode `0600`. The Hub itself could use the file, but the maintenance container could not read it during the mandatory operational safety backup. The update then stopped before service mutation with an apparently generic preflight failure.
 
 The immediate repair for an affected installation is to restore group-read permission to the affected application-owned media file:
 
@@ -52,7 +52,7 @@ Do not recursively make persistent data world-readable. Do not change the shared
 
 ## Backup/update relationship
 
-The native production updater performs a mandatory operational backup before mutating running services. If backup creation fails, the update must stop without recreating containers.
+The native main updater performs a mandatory operational backup before mutating running services. If backup creation fails, the update must stop without recreating containers.
 
 When diagnosing a stopped update:
 
@@ -71,11 +71,12 @@ Do not bypass the safety backup to force an update through.
 Future automated changes must preserve all of the following:
 
 - exact-SHA validation before image publication;
-- complete Hub + maintenance image-pair publication before production advancement;
+- complete Hub + maintenance image-pair publication before main source deployment;
+- no separate source-branch promotion requirement during active development;
 - bounded/fail-closed retry behavior for transient Android dependency resolution;
 - Hub UID/GID `10001:10001` and runtime umask `0027` for ordinary shared application data;
 - maintenance read access to backed-up application assets without granting world access;
-- mandatory successful operational backup before production mutation;
-- compatibility aliases and the existing `production` updater contract.
+- mandatory successful operational backup before runtime mutation;
+- compatibility aliases, legacy command/journal names, data identities and the native main updater's recovery contract.
 
 Any change to these behaviors must update this document, `docs/CI-WORKFLOWS.md`, the matching Wiki pages, and AI-maintainer guidance.

@@ -191,21 +191,20 @@ See `docs/LAB-AGENT.md` and `wiki/Windows-Lab-Agent.md`.
 
 ## Git-first upgrade procedure
 
-Before a production update, retain a recovery snapshot and database-safe backup.
+Before a production update, retain a verified recovery snapshot and database-safe
+backup. Copying a live checkout with `cp -a` is not a consistent SQLite backup.
+Use the supported operational backup or encrypted Full Recovery export.
 
 ```bash
-sudo cp -a /opt/classroom-hub "/opt/classroom-hub-backup-before-update-$(date +%Y%m%d-%H%M%S)"
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-Then:
-
-```bash
-cd /opt/classroom-hub
-sudo git fetch origin
-sudo git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
-```
+The updater selects `origin/main` and verifies its exact published image pair
+before source/runtime mutation. It owns the operational backup, journal, health
+checks and rollback; do not pull source first. See [Main-based updates](PRODUCTION-UPDATES.md)
+for the one-time transition from an old production-branch wrapper and recovery
+of interrupted transactions. A plan alone does not establish image readiness.
 
 For development rebuilds after the installer has established permissions/secrets:
 

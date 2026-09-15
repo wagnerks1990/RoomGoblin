@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+ROOMGOBLIN_UPDATE_SOURCE=main
 
 # install.sh may replace the installed runner while this transaction is active.
 # Execute a private stable copy so Bash never reads a partially replaced script.
@@ -245,13 +246,31 @@ fetch(`http://127.0.0.1:${port}/backup/${encodeURIComponent(name)}/restore`,{met
 NODE
 }
 
+advance_main_source(){
+  # Never reset/delete legacy or unrelated branches. The preflight has verified
+  # both HEAD and any existing main can fast-forward to the selected commit.
+  if [[ "$(git symbolic-ref --quiet --short HEAD || true)" != main ]]; then
+    if git show-ref --verify --quiet refs/heads/main; then
+      git switch main
+    else
+      git switch -c main
+    fi
+  fi
+  git merge --ff-only "$RESOLVED"
+  if [[ "$(git config --get-all remote.origin.fetch || true)" == '+refs/heads/production:refs/remotes/origin/production' ]]; then
+    git config remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
+  fi
+  git config branch.main.remote origin
+  git config branch.main.merge refs/heads/main
+}
+
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then echo "Another appliance mutation is already running." >&2; exit 30; fi
 if [[ "${1:-}" == --published ]]; then
   [[ $EUID -eq 0 && "${2:-}" =~ ^[0-9a-f]{40}$ && ( -z "${3:-}" || "${3:-}" == --full ) ]] || exit 2
   [[ ! -e "$REQUEST_FILE" ]] || { echo "An update journal is pending; recover it before starting another update." >&2; exit 30; }
   cd "$HUB_ROOT"
-  [[ "$(git rev-parse refs/remotes/origin/production)" == "$2" ]] || exit 34
+  [[ "$(git rev-parse refs/remotes/origin/main)" == "$2" ]] || exit 34
   REQUEST_FILE="$REQUEST_FILE" python3 - "$2" "${3:-}" <<'PYREQUEST'
 import json,os,sys
 p=os.environ['REQUEST_FILE']
@@ -351,7 +370,7 @@ trap preflight_failure ERR
 # Never replay an interrupted deployment against partially migrated state.
 if [[ "$MUTATIONSTARTED" == true ]]; then rollback; fi
 
-write_state preflight "Checking the Git checkout and resolving the verified release target." null
+write_state preflight "Checking the Git checkout and resolving the trusted update target." null
 TRACKED_CHANGES="$(git status --porcelain --untracked-files=no)"
 if [[ -n "$TRACKED_CHANGES" ]]; then
   if [[ -z "$(printf '%s\n' "$TRACKED_CHANGES" | awk '{print $2}' | grep -Ev '^config/(devices|hardware)\.json$')" ]]; then
@@ -368,13 +387,16 @@ case "$ORIGIN_URL" in
   https://github.com/wagnerks1990/RoomGoblin|https://github.com/wagnerks1990/RoomGoblin.git|git@github.com:wagnerks1990/RoomGoblin.git|ssh://git@github.com/wagnerks1990/RoomGoblin.git|https://github.com/wagnerks1990/classroom-control-hub|https://github.com/wagnerks1990/classroom-control-hub.git|git@github.com:wagnerks1990/classroom-control-hub.git|ssh://git@github.com/wagnerks1990/classroom-control-hub.git) ;;
   *) echo "Refusing update from unexpected origin: $ORIGIN_URL"; exit 36 ;;
 esac
-git fetch --force --prune --tags origin
-git fetch origin +refs/heads/main:refs/remotes/origin/main
+git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
 if [[ "$ACTION" == published ]]; then
-  git fetch origin +refs/heads/production:refs/remotes/origin/production
   [[ "$TARGETCOMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 33
-  git merge-base --is-ancestor "$TARGETCOMMIT" refs/remotes/origin/production
+  git merge-base --is-ancestor "$TARGETCOMMIT" refs/remotes/origin/main
   git merge-base --is-ancestor HEAD "$TARGETCOMMIT"
+  source_branch="$(git symbolic-ref --quiet --short HEAD || true)"
+  [[ -z "$source_branch" || "$source_branch" == main || "$source_branch" == production ]] || { echo "Only main or a legacy/recovery checkout can be updated" >&2; false; }
+  if git show-ref --verify --quiet refs/heads/main; then
+    git merge-base --is-ancestor refs/heads/main "$TARGETCOMMIT" || { echo "Local main diverges; refusing to overwrite its commits" >&2; false; }
+  fi
   RESOLVED="$TARGETCOMMIT"
 elif [[ "$ACTION" == revert ]]; then
   [[ "$TARGETCOMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid rollback commit"; exit 33; }
@@ -413,11 +435,11 @@ fi
 if [[ "$ACTION" == published ]]; then
   appliance_health_check "$CURRENT_VERSION"
   if [[ "$PLAN_HUB" == false && "$PLAN_MAINTENANCE" == false && "$PLAN_HOST" == false ]]; then
-    git merge --ff-only "$RESOLVED"
+    advance_main_source
     set_state_fields "activeCommit=$RESOLVED" "activeVersion=$ACTUAL_VERSION"
     python3 deploy/update-plan.py "$RESOLVED" --record
     rm -f "$REQUEST_FILE"
-    write_state completed "Published source synchronized; runtime inputs are unchanged. No services restarted." true
+    write_state completed "Main source synchronized; runtime inputs are unchanged. No services restarted." true
     echo "Source synchronized. No downloads or service restarts were needed."
     exit 0
   fi
@@ -453,7 +475,7 @@ set_request_fields mutationStarted=true
 DEPLOYMENT_MUTATED=true
 trap rollback ERR
 write_state switching "Switching the appliance source to the selected build." null
-if [[ "$ACTION" == published ]]; then git merge --ff-only "$RESOLVED"; else git checkout --detach "$RESOLVED"; fi
+if [[ "$ACTION" == published ]]; then advance_main_source; else git checkout --detach "$RESOLVED"; fi
 if [[ "$ACTION" != published || "$PLAN_FULL" != true ]]; then
   if [[ "$PLAN_FULL" == true ]]; then ensure_runtime_layout; fi
   if [[ "$PLAN_HOST" == true ]]; then refresh_host_agent; fi
