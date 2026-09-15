@@ -7,6 +7,7 @@
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
 - [Database-First Recovery Contract](Database-First-Recovery)
+- [Production Publication and Shared Data](Production-Publication-and-Shared-Data)
 - [Host Networking](Host-Networking)
 - [Display Access](Display-Access)
 - [Display Layout Contract](Display-Layout-Contract)
