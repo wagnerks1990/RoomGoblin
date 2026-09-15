@@ -14,9 +14,13 @@ Device Admin is an optional fallback tier for already provisioned Android TV dev
 
 ### Agent upgrades
 
-When an administrator explicitly chooses **Reinstall/Update Agent**, RoomGoblin can use the existing trusted ADB channel to make package replacement transactional. It verifies the staged APK/signing identity first, detects prior Device Admin state, removes the active admin through Android's `dpm` shell interface, verifies it is inactive, replaces the package, restores Agent configuration and trusted grants, and attempts to restore Device Admin for the new package.
+Normal updates of the current `org.roomgoblin.display` package are in-place and preserve Device Admin; no remove/re-add cycle is needed.
 
-RoomGoblin verifies the final Device Admin state. If the firmware still requires native confirmation, the upgrade reports that requirement instead of claiming success. It never uninstalls while the old Device Admin still verifies active. This handles legacy `org.classroomhub.display` migrations that would otherwise fail with `DELETE_FAILED_DEVICE_POLICY_MANAGER`.
+Legacy `org.classroomhub.display` migration or an incompatible signing-identity replacement requires uninstalling the old package. Android will not uninstall a package with an active Device Administrator, and stock Android rejects ADB shell `dpm remove-active-admin` for production/non-test administrators with `SecurityException: Attempt to remove non-test admin`.
+
+When that policy restriction is detected, RoomGoblin opens Android's native Device Administrator screen for the old receiver and stops before uninstalling anything. Confirm removal on the TV, then retry **Update Agent**. This is expected to be a one-time confirmation for the legacy/signing migration. RoomGoblin then installs the verified replacement, restores Agent configuration, trusted grants and persistent ADB policy, and attempts to restore Device Admin for the current package while verifying the final state.
+
+RoomGoblin never treats a successful shell command as proof of Device Admin state and never force-uninstalls while the old administrator still verifies active.
 
 ## Device Owner
 

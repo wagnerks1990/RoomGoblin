@@ -92,7 +92,13 @@
             ? `The old Android app must be uninstalled before RoomGoblin ${artifact.versionName} can be installed. This is a reinstall, not an in-place update. Continue? RoomGoblin will restore the saved display and Agent v2 configuration afterward.`
             : `This device has an older RoomGoblin agent signed with a different temporary key. Replace it with ${artifact.versionName} using this appliance's persistent signing identity? RoomGoblin will immediately restore the saved display and Agent v2 configuration.`);
           if(!confirmed)return;
-          result=await maintenanceCall(id,"/agent/artifact/install",{method:"POST",body:JSON.stringify({replaceExisting:true})});
+          try{result=await maintenanceCall(id,"/agent/artifact/install",{method:"POST",body:JSON.stringify({replaceExisting:true})})}
+          catch(replaceError){
+            if(replaceError.payload?.code!=="device_admin_confirmation_required")throw replaceError;
+            terminal("Android Device Admin confirmation required",replaceError.payload);
+            window.alert("Android blocks silent ADB removal of a production Device Administrator. RoomGoblin opened the Device Administrator screen on the TV. Disable the old RoomGoblin/Classroom Hub administrator there, then click Update Agent again. This one-time confirmation is required for the legacy package/signing migration; normal same-package updates stay in-place afterward.");
+            return;
+          }
         }
         terminal("Android agent installation",result);
         window.alert(result.message||`Installed RoomGoblin Display Agent ${artifact.versionName}.`);

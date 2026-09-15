@@ -33,6 +33,18 @@ test('device admin activation uses first-party activity and Android system appro
   assert.match(bridge,/requiresUserConfirmation:true/);
 });
 
+test('agent replacement handles Android non-test Device Admin restriction without a raw stack failure',()=>{
+  const backend=read('maintenance-agent/android-tv-agent-artifact.js');
+  const ui=read('public/managed-displays/agent-v2-ui.js');
+  assert.match(backend,/Attempt to remove non-test admin/);
+  assert.match(backend,/deactivateDeviceAdmin/);
+  assert.match(backend,/device_admin_confirmation_required/);
+  assert.match(backend,/Confirm removal on the TV, then retry/);
+  assert.match(ui,/device_admin_confirmation_required/);
+  assert.match(ui,/blocks silent ADB removal of a production Device Administrator/);
+  assert.match(ui,/normal same-package updates stay in-place afterward/);
+});
+
 test('v2 configure synchronizes persistent adb policy',()=>{
   const source=read('maintenance-agent/android-tv-agent-v2.js');
   assert.match(source,/--ez","persistent_adb"/);
