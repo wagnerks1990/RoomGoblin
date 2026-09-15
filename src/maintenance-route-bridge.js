@@ -7,7 +7,6 @@
 const crypto=require("crypto");
 const express=require("express");
 const {DatabaseSync}=require("node:sqlite");
-const {normalizeTopology,deriveTopologyFromLegacy,legacyProjection}=require("./room-topology");
 
 const TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
 function tokenEqual(actual,expected){
@@ -43,109 +42,6 @@ global.setTimeout=function(fn,delay,...args){
   if(typeof fn==="function"&&isBackgroundMusicTimer(fn,delay))return nativeSetTimeout.call(global,()=>{if(musicAssistantTokenConfigured())return fn(...args)},delay);
   return nativeSetTimeout.call(global,fn,delay,...args);
 };
-
-// Dynamic room topology is persisted as a system preference while legacy
-// display/AV configuration remains the compatibility projection consumed by
-// existing adapters. A second SQLite connection is safe under WAL and avoids
-// coupling this bridge to server.js private state.
-const TOPOLOGY_KEY="room.topology";
-let topologyDbConnection=null;
-function topologyDb(){
-  const file=String(process.env.DATABASE_FILE||"").trim();
-  if(!file)return null;
-  if(!topologyDbConnection){
-    topologyDbConnection=new DatabaseSync(file);
-    topologyDbConnection.exec("PRAGMA busy_timeout=5000;");
-  }
-  return topologyDbConnection;
-}
-function readPersistedTopology(){
-  try{
-    const db=topologyDb();if(!db)return null;
-    const row=db.prepare("SELECT value_json FROM system_preferences WHERE key=?").get(TOPOLOGY_KEY);
-    return row?.value_json?normalizeTopology(JSON.parse(row.value_json)):null;
-  }catch{return null}
-}
-function writePersistedTopology(value){
-  const topology=normalizeTopology(value||{}),db=topologyDb();
-  if(!db)return topology;
-  const now=new Date().toISOString();
-  db.prepare(`INSERT INTO system_preferences(key,value_json,updated_at) VALUES(?,?,?)
-    ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`).run(TOPOLOGY_KEY,JSON.stringify(topology),now);
-  return topology;
-}
-function topologyFromAdminBody(body={}){
-  const legacyDevices=body?.devices?.devices||body?.devices||{};
-  const legacyGroups=body?.devices?.displayGroups||body?.displayGroups||{};
-  const current=readPersistedTopology();
-  if(current){
-    const derived=deriveTopologyFromLegacy({devices:legacyDevices,displayGroups:legacyGroups,avLabels:legacyProjection(current).avLabels});
-    return normalizeTopology({
-      tvs:Object.values(current.tvs||{}),
-      displays:Object.values(derived.displays||{}),
-      sources:Object.values(current.sources||{}),
-      groups:[...Object.values(current.groups||{}).filter(g=>g.type!=="display"),...Object.values(derived.groups||{})]
-    });
-  }
-  return deriveTopologyFromLegacy({devices:legacyDevices,displayGroups:legacyGroups});
-}
-function mergeAvLabelsIntoTopology(labels={}){
-  const current=readPersistedTopology();
-  if(!current)return null;
-  const projection=legacyProjection(current),outputs=Array.isArray(labels.outputs)?labels.outputs:projection.avLabels.outputs,inputs=Array.isArray(labels.inputs)?labels.inputs:projection.avLabels.inputs,endpoints=Array.isArray(labels.sourceEndpoints)?labels.sourceEndpoints:projection.avLabels.sourceEndpoints;
-  const tvs=Object.values(current.tvs).map(tv=>{
-    const output=Number(tv.transport?.output);return output&&tv.transport?.adapter==="pluto"?{...tv,name:String(outputs[output-1]||tv.name)}:tv;
-  });
-  const sources=Object.values(current.sources).map(source=>{
-    const input=Number(source.transport?.input);return input&&source.transport?.adapter==="pluto"?{...source,name:String(inputs[input-1]||source.name),endpointId:String(endpoints[input-1]||source.endpointId)}:source;
-  });
-  return writePersistedTopology({...current,tvs,sources});
-}
-function wrapAdminConfigHandler(handler){
-  return async function(req,res,next){
-    const json=res.json.bind(res);
-    res.json=body=>{
-      if(body&&body.ok!==false){
-        try{const topology=topologyFromAdminBody(body);writePersistedTopology(topology);body={...body,topology};}catch(error){body={...body,topologyError:error.message}}
-      }
-      return json(body);
-    };
-    return handler(req,res,next);
-  }
-}
-function wrapAdminDisplaysHandler(handler){
-  return async function(req,res,next){
-    let requestedTopology=null;
-    try{
-      if(req.body?.topology){
-        requestedTopology=normalizeTopology(req.body.topology);
-        const projected=legacyProjection(requestedTopology);
-        req.body={...req.body,devices:projected.devices,displayGroups:projected.displayGroups};
-      }
-    }catch(error){return res.status(400).json({ok:false,error:error.message})}
-    const json=res.json.bind(res);
-    res.json=body=>{
-      if(requestedTopology&&body&&body.ok!==false){
-        writePersistedTopology(requestedTopology);
-        body={...body,topology:requestedTopology,legacyProjection:legacyProjection(requestedTopology)};
-      }
-      return json(body);
-    };
-    return handler(req,res,next);
-  }
-}
-function wrapAvLabelsHandler(handler){
-  return async function(req,res,next){
-    const json=res.json.bind(res);
-    res.json=body=>{
-      if(body&&body.ok!==false){
-        try{const labels=body.labels||body;const topology=mergeAvLabelsIntoTopology(labels);if(topology)body={...body,topology};}catch{}
-      }
-      return json(body);
-    };
-    return handler(req,res,next);
-  }
-}
 
 // Music Assistant 2.9+ can expose both a Universal Player and one or more
 // protocol children for the same physical device. RoomGoblin asks for protocol
@@ -224,10 +120,6 @@ express.application.get=function(route,...handlers){
   if(route==="/api/v1/admin/config"&&handlers.length){
     const handler=handlers[handlers.length-1];
     originalGet.call(this,"/api/v1/internal/maintenance/config",requireMaintenance,handler);
-    handlers[handlers.length-1]=wrapAdminConfigHandler(handler);
-  }
-  if(route==="/api/v1/pluto/labels"&&handlers.length){
-    handlers[handlers.length-1]=wrapAvLabelsHandler(handlers[handlers.length-1]);
   }
   if(route==="/api/v1/music-assistant/status"&&handlers.length){
     const handler=handlers[handlers.length-1];
@@ -249,12 +141,6 @@ express.application.get=function(route,...handlers){
 
 const originalPut=express.application.put;
 express.application.put=function(route,...handlers){
-  if(route==="/api/v1/admin/displays"&&handlers.length){
-    handlers[handlers.length-1]=wrapAdminDisplaysHandler(handlers[handlers.length-1]);
-  }
-  if(route==="/api/v1/pluto/labels"&&handlers.length){
-    handlers[handlers.length-1]=wrapAvLabelsHandler(handlers[handlers.length-1]);
-  }
   if(route==="/api/v1/admin/integration-connections"&&handlers.length){
     const handler=handlers[handlers.length-1];
     originalPut.call(this,"/api/v1/internal/maintenance/integration-connections",requireMaintenance,handler);
@@ -279,4 +165,4 @@ express.application.post=function(route,...handlers){
   return originalPost.call(this,route,...handlers);
 };
 
-module.exports={musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId,readPersistedTopology,writePersistedTopology,topologyFromAdminBody};
+module.exports={musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId};

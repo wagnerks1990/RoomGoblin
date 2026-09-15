@@ -8,8 +8,8 @@ Read the relevant file before changing the subsystem it describes.
 
 - [CI publication](CI-PUBLICATION.md) — exact-SHA validation, complete image-pair publication, and promotion safeguards.
 - [Production shared data](PRODUCTION-SHARED-DATA.md) — Hub startup permissions, maintenance backup readability, and protected secret identities.
-- [Room topology](ROOM-TOPOLOGY.md) — canonical separation of physical TVs, content displays, content sources, and lighting; stable-ID rules; typed target domains; fail-closed stale references; adapter-vs-application cardinality; and compatibility-projection boundaries.
-- [Room topology validation](ROOM-TOPOLOGY-VALIDATION.md) — regression and physical acceptance checklist; test results do not establish live hardware health.
+- [Matrix restoration / retired topology](ROOM-TOPOLOGY.md) — original matrix controls, archived-data preservation and save/refresh boundaries.
+- [Matrix restoration validation](ROOM-TOPOLOGY-VALIDATION.md) — regression and physical acceptance checklist; test results do not establish live hardware health.
 - [Android TV Hardware Validation](ANDROID-TV-HARDWARE-VALIDATION.md) — physically validated Android/Google TV behavior, Accessibility Home/Back/Recents boundaries, Device Administrator scope, and the rule that Accessibility global actions must not be represented as arbitrary input injection.
 - [Android TV Sendspin and Device Admin](ANDROID-TV-SENDSPIN-DEVICE-ADMIN.md) — required Sendspin Moshi adapter order, the `JsonOptional` serialization failure mode, and the user-confirmed Device Administrator deactivation path needed for safe legacy package migration.
 

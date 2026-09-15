@@ -1,5 +1,13 @@
 # Configuration
 
+## Displays & AV
+
+Use the [TV Routing Matrix](TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has
+been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
+are preserved. Receiver setup uses count/IDs again; Settings manages receivers
+and AV mappings. Reload the controller after upgrading.
+
+
 ## Host-network deployment contract
 
 The Linux Hub and maintenance containers, plus reviewed managed add-on templates, now use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
@@ -176,19 +184,14 @@ The public default leaves `PLUTO_URL` empty. Production must supply the local en
 
 Do not probe an empty URL. An unconfigured Pluto should be represented as `NOT CONFIGURED` rather than repeatedly producing network/URL errors.
 
-## Room topology: TVs, displays, and sources
+## Matrix outputs and content receivers
 
-Room topology is canonical SQLite-backed configuration. Physical TVs, RoomGoblin content displays, and routable content sources are separate inventories; see [Room topology](ROOM-TOPOLOGY.md).
-
-Use Setup or **Displays & AV** to manage the same canonical topology. A save refreshes dependent target inventories used by Automations, Classes, presentations, media, and AV labels.
-
-### Physical TVs
-
-Physical TVs are power/AV endpoints. Their stable IDs are independent from content-display receiver IDs. A TV can map to a Pluto output or another future adapter.
-
-### Content displays
-
-Content displays are RoomGoblin browser/Android receivers. Each uses a stable logical ID and may optionally link to a physical TV. Names can change without changing the receiver ID or invalidating optional credentials.
+Use [TV Routing Matrix](TV-ROUTING-MATRIX.md) for hardware routing and TV/source
+names. Receiver configuration uses the existing `devices` and `displayGroups`
+stores; AV labels use their existing store. Archived room topology no longer
+participates in reads or saves. Setup edits receiver count/IDs; Settings edits
+receiver mappings and groups. Names can change without changing receiver IDs or
+invalidating optional credentials.
 
 Enabled receivers use their stable `/display/<id>` URL without credentials by default. This is the supported classroom mode and prevents cleared browser storage or an upgrade from taking every display offline.
 
@@ -205,22 +208,14 @@ one credential, rotate all credentials for a display, or cancel an unused link.
 
 `DISPLAY_TOKEN` is only a legacy fallback when individual credential authentication is required. It is unnecessary in the default stable URL mode. Unknown and disabled display IDs are rejected in both modes.
 
-### Content sources
+### Sources and targets
 
-Content sources are routable AV inputs. Their stable ID, friendly name, endpoint ID, and adapter/input mapping are independent fields.
-
-### Target semantics
-
-- `All Displays` means enabled content displays.
-- `All TVs` means enabled physical TVs.
-- Classes keep content-display defaults.
-- TV power uses physical TVs.
-- AV routing uses physical TVs and content sources.
-- Typed groups cannot cross domains.
-
-Removing or disabling an item removes it from new target selections. Persisted class/automation records that still contain a removed stable ID remain editable but fail closed at runtime until remapped; RoomGoblin does not silently redirect them to another endpoint.
-
-The current Pluto Mark I AV matrix remains an adapter-specific 8×8 surface. That hardware cardinality is not the application-wide RoomGoblin inventory and must not be used to infer content-display count or future adapter capacity.
+Source names and kiosk endpoint IDs are edited from matrix source headings.
+The current Pluto adapter exposes eight hardware ports independently of receiver
+count. Display actions and class defaults use configured content receivers;
+TV power and AV routing use their existing adapter targets. Lighting retains its
+own inventory. Stable receiver IDs and existing saved automation targets remain
+unchanged by topology removal.
 
 ## Class schedules
 

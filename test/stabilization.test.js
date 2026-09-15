@@ -609,3 +609,30 @@ test("Veyon queued command API requires control access, deduplicates requests an
   assert.equal(cancelled.response.status,200);
   await request(`/api/v1/veyon/computers/${encodeURIComponent(id)}`,{method:"DELETE",authenticated:true});
 });
+
+test("matrix configuration ignores archived topology and rejects stale editor writes",async()=>{
+  const db=new DatabaseSync(path.join(tempDir,"hub.db"));
+  const archived=JSON.stringify({version:1,tvs:{legacy:{name:"Archived TV"}},displays:{stale:{name:"Old receiver"}}});
+  db.prepare("INSERT OR REPLACE INTO system_preferences(key,value_json,updated_at) VALUES(?,?,?)").run("room.topology",archived,"2026-01-01T00:00:00Z");
+  const before=(await request("/api/v1/admin/config",{authenticated:true})).json;
+  assert.equal(before.topology,undefined);
+  const credentials=JSON.stringify(db.prepare("SELECT * FROM display_credentials ORDER BY id").all());
+  for(const body of [{topology:{}},{topology:null,devices:{},displayGroups:{}}]){
+    const result=await request("/api/v1/admin/displays",{method:"PUT",authenticated:true,body});
+    assert.equal(result.response.status,409);assert.match(result.json.error,/Reload/);
+  }
+  assert.deepEqual((await request("/api/v1/admin/config",{authenticated:true})).json.devices,before.devices);
+  const devices=structuredClone(before.devices.devices),id=Object.keys(devices)[0];
+  devices[id].name="Matrix rename regression";
+  const saved=await request("/api/v1/admin/displays",{method:"PUT",authenticated:true,body:{devices,displayGroups:before.devices.displayGroups}});
+  assert.equal(saved.response.status,200);assert.deepEqual(saved.json.devices,devices);
+  const labels=(await request("/api/v1/pluto/labels",{authenticated:true})).json.labels;
+  labels.outputs[7]="Independent matrix output";labels.inputs[1]="Camera";labels.sourceEndpoints[1]="camera";
+  const renamed=await request("/api/v1/pluto/labels",{method:"PUT",authenticated:true,body:labels});
+  assert.equal(renamed.response.status,200);
+  assert.deepEqual((await request("/api/v1/pluto/labels",{authenticated:true})).json.labels,renamed.json.labels);
+  assert.deepEqual((await request("/api/v1/admin/config",{authenticated:true})).json.devices.devices,devices);
+  assert.equal(db.prepare("SELECT value_json FROM system_preferences WHERE key='room.topology'").get().value_json,archived);
+  assert.equal(JSON.stringify(db.prepare("SELECT * FROM display_credentials ORDER BY id").all()),credentials);
+  db.close();
+});

@@ -1,5 +1,15 @@
 # AI Project Context
 
+## Displays & AV restoration
+
+The operator retired room topology. Use the original TV Routing Matrix, TV/source
+drawers, receiver Setup and Settings display editor. Read
+`docs/TV-ROUTING-MATRIX.md` and `docs/ai/ROOM-TOPOLOGY.md`. Preserve existing receiver
+and AV-label stores; leave `room.topology` archived and untouched. Do not restore
+topology scripts, request wrappers or preference projections. Keep unchanged
+matrix controls stable across polling and surface save failures.
+
+
 Alpha.82 live-upgrade corrections and acceptance limits are documented in
 `ALPHA82-UPGRADE-RECOVERY.md`. Preserve shared SQLite/ADB access under GID 10001
 and the pre-rebrand Android signing identity during every install and restore.

@@ -1,5 +1,13 @@
 # Operator workspaces
 
+## Displays & AV
+
+Use the [TV Routing Matrix](TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has
+been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
+are preserved. Receiver setup uses count/IDs again; Settings manages receivers
+and AV mappings. Reload the controller after upgrading.
+
+
 The GUI redesign organizes RoomGoblin around daily classroom work while keeping
 configuration and maintenance available through grouped navigation and expandable
 sections. These changes are recorded under **Unreleased**; this document does not
