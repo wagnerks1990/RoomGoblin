@@ -13,12 +13,12 @@ AI coding assistants and contributors should treat the GitHub repository `main` 
 5. the matching focused `docs/ai/` context when present
 6. implementation source
 
-For CI/release publication, read `docs/ai/CI-PUBLICATION.md`. For physical-TV/content-display/content-source targeting, read `docs/ai/ROOM-TOPOLOGY.md`. For managed Android package migration and Device Admin behavior, read `docs/ai/ANDROID-TV-SENDSPIN-DEVICE-ADMIN.md`.
+For CI/release publication, read `docs/ai/CI-PUBLICATION.md`. For production shared-data permissions and backup readability, read `docs/ai/PRODUCTION-SHARED-DATA.md`. For physical-TV/content-display/content-source targeting, read `docs/ai/ROOM-TOPOLOGY.md`. For managed Android package migration and Device Admin behavior, read `docs/ai/ANDROID-TV-SENDSPIN-DEVICE-ADMIN.md`.
 
 ## Live upgrade corrections
 
 See [Alpha.82 upgrade recovery](Alpha82-Upgrade-Recovery). Preserve GID 10001
-access to SQLite and ADB trust while keeping other-user access disabled.
+access to SQLite and ADB trust while keeping other-user access disabled. Also see [Production Publication and Shared Data](Production-Publication-and-Shared-Data) before changing Hub startup, uploads, backups, or production publication.
 
 ## Current baseline
 
@@ -26,8 +26,11 @@ The current production-readiness review baseline is `1.0.0-alpha.82`.
 
 Critical invariants:
 
-- A merged `main` commit is not automatically deployable. `Publish Main Images` must pass the exact-SHA `Validate`, `Display browser regression`, and `Security gates`, publish the Hub/maintenance pair, promote the pair, and only then advance `production`.
-- The `workflow_run` publication gate must not depend on optional `workflow_run.head_repository` metadata. It remains restricted to a successful `Validate` push on `main` and independently checks all required workflows for the same SHA.
+- A merged `main` commit is not automatically deployable. Every `main` push starts `Publish Main Images`, which independently waits for exact-SHA `Validate`, `Display browser regression`, and `Security gates`, publishes the Hub/maintenance pair, promotes the pair, and only then advances `production`.
+- Do not restore indirect `workflow_run` publication triggering. The publisher must use the exact `github.sha` from the main push and fail closed if any required workflow for that same SHA fails, is skipped, is cancelled, or does not complete.
+- The maintenance Android image may retry a broad transient Maven/Google dependency-resolution failure only in a bounded fail-closed loop. Deterministic Gradle failures and APK identity/version/checksum failures still block publication.
+- The Hub runtime starts through `tools/start-roomgoblin.sh` with `umask 0027`. Ordinary persistent application files must remain owner-writable and group-readable to GID 10001 so maintenance can back them up without granting world access.
+- A production update must complete its mandatory operational safety backup before mutating services. Never bypass that backup; repair only the specific incorrect application-data permission when an `EACCES` failure is diagnosed.
 - The appliance is temporarily HTTP-only for ordinary administration and restricted to a trusted classroom/admin LAN; Caddy/TLS is intentionally deferred. Full Recovery passphrases require loopback or HTTPS terminated by a same-host loopback reverse proxy.
 - Full Recovery uses one AES-256-GCM `.rgbak` envelope with scrypt `N=32768/r=8/p=1`, random salt/nonce, authenticated canonical metadata and bounded payloads.
 - Maintenance stages only authenticated allowlisted state; the Host Agent owns final paths/permissions, takes a complete safety snapshot, journals the transaction durably and rolls every changed root back after failure or interruption.
@@ -88,11 +91,13 @@ The updater selects the CI-published `production` source and its exact commit-ma
 
 The installer is part of the supported upgrade path because it reconciles secrets, Host Agent code, data-root ownership, database identity, HTTP exposure, and migration state before container recreation.
 
-Always take a backup before production upgrades.
+Always take a backup before production upgrades. The updater's mandatory operational safety backup must also succeed before service mutation.
 
 ## Documentation contract
 
-Behavior, architecture, deployment, configuration, recovery, security, CI/publication, or topology changes must update the relevant `docs/` page and matching `wiki/` mirror page. Material changes that affect future implementation choices must also update the appropriate `docs/ai/` context.
+Behavior, architecture, deployment, configuration, recovery, security, CI/publication, topology, or persistent-data permission changes must update the relevant `docs/` page and matching `wiki/` mirror page. Material changes that affect future implementation choices must also update the appropriate `docs/ai/` context.
+
+For production publication/shared-data changes, keep `docs/CI-WORKFLOWS.md`, `docs/PRODUCTION-PUBLICATION-AND-SHARED-DATA.md`, `docs/ai/CI-PUBLICATION.md`, `docs/ai/PRODUCTION-SHARED-DATA.md`, `wiki/CI-Workflows.md`, and `wiki/Production-Publication-and-Shared-Data.md` synchronized.
 
 The complete AI operating contract lives in `AGENTS.md`; `docs/AI-CONTEXT.md` contains the compact technical handoff.
 
