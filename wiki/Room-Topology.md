@@ -23,7 +23,11 @@ Existing `tv1`, `tv2`, display groups, `avOutput`, Pluto output labels, source l
 
 ## Operator configuration
 
-Setup and **Displays & AV** expose the topology editor. Adding, removing, renaming, or linking a TV/display/source updates the target inventories used by automation, classes, presentations, media, and AV labels without changing unrelated stable identities.
+Setup exposes the complete topology editor because initial hardware inventory is a setup task.
+
+For normal classroom use, **Displays & AV is matrix-first**. The TV Routing Matrix, routing summary, and quick controls appear before topology administration. The topology editor is kept after the matrix inside a collapsed **Configure TVs, Displays & Sources** section. This preserves the simple routing workflow while keeping the canonical topology available when hardware inventory or mappings actually need to change.
+
+Adding, removing, renaming, or linking a TV/display/source updates the target inventories used by automation, classes, presentations, media, and AV labels without changing unrelated stable identities.
 
 ## Future hardware
 
