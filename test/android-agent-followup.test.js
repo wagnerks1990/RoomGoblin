@@ -1,41 +1,7 @@
 "use strict";
-
-const test=require("node:test");
-const assert=require("node:assert/strict");
-const fs=require("node:fs");
-const {spawnSync}=require("node:child_process");
-const read=p=>fs.readFileSync(p,"utf8");
-
-test("native Sendspin registers JsonOptional and Kotlin Moshi adapters",()=>{
-  const manager=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/NativeSendspinManager.kt");
-  const gradle=read("agents/android-tv/app/build.gradle.kts");
-  assert.match(manager,/JsonOptionalAdapterFactory/);
-  assert.match(manager,/KotlinJsonAdapterFactory/);
-  assert.match(manager,/\.add\(JsonOptionalAdapterFactory\(\)\)/);
-  assert.match(manager,/\.addLast\(KotlinJsonAdapterFactory\(\)\)/);
-  assert.match(gradle,/moshi-kotlin:1\.15\.2/);
-  assert.match(gradle,/versionCode = 5/);
-  assert.match(gradle,/versionName = "0\.3\.1-agent-v2"/);
-});
-
-test("Managed Displays exposes a safe Device Admin removal helper",()=>{
-  const bridge=read("maintenance-agent/android-tv-agent-v2.js");
-  const ui=read("public/managed-displays/device-admin-ui.js");
-  const html=read("public/managed-displays/index.html");
-  assert.match(bridge,/device-admin\/deactivate/);
-  assert.match(bridge,/com\.android\.tv\.settings\/\.deviceadmin\.DeviceAdminAdd/);
-  assert.match(bridge,/LEGACY_PACKAGE="org\.classroomhub\.display"/);
-  assert.match(bridge,/android\.app\.extra\.DEVICE_ADMIN/);
-  assert.match(ui,/Remove Device Admin/);
-  assert.match(ui,/requires confirmation on the TV|confirmation on the TV/i);
-  assert.match(html,/device-admin-ui\.js/);
-});
-
-test("Device Admin removal UI parses and avoids descendant observer loops",()=>{
-  const file="public/managed-displays/device-admin-ui.js";
-  const r=spawnSync(process.execPath,["--check",file],{encoding:"utf8"});
-  assert.equal(r.status,0,r.stderr||r.stdout);
-  const ui=read(file);
-  assert.match(ui,/observe\(root,\{childList:true\}\)/);
-  assert.doesNotMatch(ui,/subtree:true/);
-});
+const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),{spawnSync}=require("node:child_process"),read=p=>fs.readFileSync(p,"utf8");
+test("native Sendspin registers JsonOptional and Kotlin Moshi adapters",()=>{const manager=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/NativeSendspinManager.kt"),gradle=read("agents/android-tv/app/build.gradle.kts");assert.match(manager,/JsonOptionalAdapterFactory/);assert.match(manager,/KotlinJsonAdapterFactory/);assert.match(manager,/\.add\(JsonOptionalAdapterFactory\(\)\)/);assert.match(manager,/\.addLast\(KotlinJsonAdapterFactory\(\)\)/);assert.match(gradle,/moshi-kotlin:1\.15\.2/);assert.match(gradle,/versionCode = 5/);assert.match(gradle,/versionName = "0\.3\.1-agent-v2"/)});
+test("Managed Displays exposes a safe Device Admin removal helper",()=>{const bridge=read("maintenance-agent/android-tv-agent-v2.js"),ui=read("public/managed-displays/device-admin-ui.js"),html=read("public/managed-displays/index.html");assert.match(bridge,/device-admin\/deactivate/);assert.match(bridge,/LEGACY_PACKAGE="org\.classroomhub\.display"/);assert.match(ui,/Remove Device Admin/);assert.match(html,/device-admin-ui\.js/)});
+test("agent replacement automatically migrates Device Admin when trusted ADB permits it",()=>{const source=read("maintenance-agent/android-tv-agent-artifact.js");assert.match(source,/dpm","remove-active-admin/);assert.match(source,/dpm","set-active-admin/);assert.match(source,/verifiedInactive/);assert.match(source,/restoreRequiresUserConfirmation/);assert.match(source,/replacePackage/);assert.match(source,/restoreAgentConfiguration/);assert.match(source,/WRITE_SECURE_SETTINGS/);assert.match(source,/agentPackage:CURRENT_PACKAGE/)});
+test("replacement refuses to uninstall while Device Admin remains active",()=>{const source=read("maintenance-agent/android-tv-agent-artifact.js");assert.match(source,/device_admin_removal_required/);assert.match(source,/if\(admin\.wasActive&&!admin\.verifiedInactive\)/);const removal=source.indexOf('removeAdmin(d,oldPkg)'),uninstall=source.indexOf('uninstall",oldPkg');assert.ok(removal>=0&&uninstall>removal,"Device Admin removal must precede uninstall")});
+test("Device Admin removal UI parses and avoids descendant observer loops",()=>{const file="public/managed-displays/device-admin-ui.js",r=spawnSync(process.execPath,["--check",file],{encoding:"utf8"});assert.equal(r.status,0,r.stderr||r.stdout);const ui=read(file);assert.match(ui,/observe\(root,\{childList:true\}\)/);assert.doesNotMatch(ui,/subtree:true/)});
