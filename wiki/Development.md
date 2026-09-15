@@ -11,8 +11,9 @@ AI assistants and contributors should read:
 1. `AGENTS.md`
 2. `VERSION` and `CHANGELOG.md`
 3. `docs/AI-CONTEXT.md`
-4. the relevant technical documentation
-5. implementation source
+4. `docs/ROOM-TOPOLOGY.md` and `docs/ai/ROOM-TOPOLOGY.md` before changing TVs, displays, sources, AV routing, classes, automation targets, presentations, media, Morning Announcements, or Music Assistant TV selection
+5. the relevant technical documentation
+6. implementation source
 
 The direct source tree on `main` is canonical.
 
@@ -61,10 +62,10 @@ Every release should:
 6. verify persistent-data/database compatibility;
 7. test Host Agent socket access and maintenance startup ordering;
 8. test authentication/capability migration behavior;
-9. test setup-wizard device reconciliation;
+9. test room-topology migration and dependent target refresh;
 10. test managed integration adopt/deploy/recreate behavior;
 11. test critical classroom behavior;
-12. update `CHANGELOG.md`, `docs/`, `wiki/`, and AI context.
+12. update `CHANGELOG.md`, `docs/`, `wiki/`, and focused AI context.
 
 ## Validation
 
@@ -98,7 +99,7 @@ docker build -t classroom-control-hub:test .
 docker build -t classroom-control-hub-maintenance:test maintenance-agent
 ```
 
-## Alpha.71 deployment/recovery invariants
+## Deployment/recovery invariants
 
 - `DATABASE_FILE` is authoritative; never silently switch to another existing SQLite file.
 - Back up every `data/*.db` through SQLite `.backup` before migration.
@@ -107,7 +108,11 @@ docker build -t classroom-control-hub-maintenance:test maintenance-agent
 - Administrator resolves to `capabilities:["*"]`.
 - Password punctuation including `!` and `#` survives setup/login/scrypt paths.
 - Maintenance Compose health checks the Host Agent directly instead of waiting on the main application.
-- Receiver IDs are editable and unique; display groups are pruned when receivers are removed.
+- Room topology keeps physical TVs, content displays, content sources, and lighting as separate domains.
+- `All Displays` resolves to enabled content receivers; `All TVs` resolves to enabled physical TVs.
+- Stable topology IDs survive friendly-name changes; typed groups cannot cross domains.
+- Pluto's 8×8 matrix is adapter-specific and must not become an application-wide TV/display count assumption.
+- Removed/disabled target IDs fail closed rather than being silently redirected.
 - Existing Docker containers may be discovered/adopted for safe lifecycle operations.
 - New container creation remains restricted to supported integration templates.
 - Supported optional add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Veyon WebAPI.
@@ -131,6 +136,16 @@ docker build -t classroom-control-hub-maintenance:test maintenance-agent
 
 Installers copy executable host runners into `/usr/local/libexec` and must not change tracked source modes in `/opt/classroom-hub`. A supported update that starts from a clean checkout must leave `git status --short` empty.
 
+## Production updates
+
+The supported production path consumes the validated published source/image pair:
+
+```bash
+sudo bash /opt/classroom-hub/deploy/update-production.sh
+```
+
+Do not document an unconditional `git pull origin main` as the normal production update path. Production promotion verifies both immutable image revisions and refuses silent downgrade or unvalidated substitution.
+
 ## Testing areas
 
 Regression testing should cover:
@@ -138,7 +153,10 @@ Regression testing should cover:
 - active DB selection with historical alternate database files present;
 - administrator/profile recovery and punctuation-heavy passwords;
 - controller load/authentication and Overview responsiveness;
-- setup receiver edits and shrinking display lists with custom groups;
+- migration from a smaller content-display inventory to a larger physical-TV inventory;
+- adding/removing/renaming/disabling physical TVs, content displays, and content sources;
+- Classes, Automations, presentations, media, and AV labels refreshing from canonical topology;
+- stale removed topology target IDs failing closed;
 - Docker discovery/adoption and supported add-on lifecycle;
 - display connect/reconnect and version convergence;
 - scheduled automation and manual Run Now/Test Now;
@@ -153,4 +171,4 @@ Regression testing should cover:
 
 ## Pull requests
 
-Keep changes focused and explain schema migrations, environment variables, persistent paths, security/privilege changes, add-on templates, and behavioral invariants. Update the relevant docs in the same change.
+Keep changes focused and explain schema migrations, environment variables, persistent paths, security/privilege changes, add-on templates, topology/domain changes, and behavioral invariants. Update the relevant docs in the same change. Topology changes must keep `docs/ROOM-TOPOLOGY.md`, `wiki/Room-Topology.md`, and `docs/ai/ROOM-TOPOLOGY.md` synchronized.
