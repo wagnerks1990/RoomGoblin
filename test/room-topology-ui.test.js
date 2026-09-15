@@ -15,11 +15,11 @@ test("topology UI is loaded on operator surfaces and parses",()=>{
   assert.doesNotMatch(ui,/!window\.S/);
 });
 
-test("setup separates physical TVs, content displays, and content sources",()=>{
+test("setup separates TVs, RoomGoblin displays, and AV sources",()=>{
   const ui=read("public/shared/room-topology-ui.js");
-  assert.match(ui,/Physical TVs/);
-  assert.match(ui,/Content Displays/);
-  assert.match(ui,/Content Sources/);
+  assert.match(ui,/>TVs</);
+  assert.match(ui,/RoomGoblin Displays/);
+  assert.match(ui,/AV Sources/);
   assert.match(ui,/display-setup/);
   assert.match(ui,/admin\/displays/);
   assert.match(ui,/pluto\/labels/);
@@ -32,6 +32,15 @@ test("controller target pickers use topology domains instead of display inventor
   assert.match(ui,/autoTargetValues=function/);
   assert.match(ui,/stepTargetValues=function/);
   assert.match(ui,/Room topology/);
+});
+
+test("AV label saves synchronize topology editor while direct topology remains editable",()=>{
+  const ui=read("public/shared/room-topology-ui.js");
+  assert.match(ui,/url===\"\/api\/v1\/pluto\/labels\"/);
+  assert.match(ui,/renderEditors\(\)/);
+  assert.match(ui,/savingTopology/);
+  assert.match(ui,/Save Changes/);
+  assert.match(ui,/TV names and AV source names sync automatically/);
 });
 
 test("admin compatibility bridge persists canonical topology and projects legacy state",()=>{
