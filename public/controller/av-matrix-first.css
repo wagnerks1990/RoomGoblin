@@ -1,0 +1,37 @@
+/* Displays & AV operator workflow: keep daily routing primary and topology configuration secondary. */
+.rg-controller #av.page.active{
+  display:flex;
+  flex-direction:column;
+}
+.rg-controller #av.page.active>.top{order:0}
+.rg-controller #av.page.active>.avRoutingPanel{order:10}
+.rg-controller #av.page.active>.av40Summary{order:20}
+.rg-controller #av.page.active>[data-room-topology-editor]{
+  order:30;
+  display:none;
+}
+.rg-controller #av.page.active:has(#avAdvanced[open])>[data-room-topology-editor]{display:block}
+.rg-controller #av.page.active>#avAdvanced{order:40}
+.rg-controller #av.page.active>#avTvConfig,
+.rg-controller #av.page.active>#avSourceConfig,
+.rg-controller #av.page.active>#avGroupEditor,
+.rg-controller #av.page.active>#avNewGroup,
+.rg-controller #av.page.active>#avConfigMsg,
+.rg-controller #av.page.active>table{order:50}
+.rg-controller #av.page.active>#avTvDrawerBackdrop,
+.rg-controller #av.page.active>#avTvDrawer,
+.rg-controller #av.page.active>#avSourceDrawer{order:60}
+
+/* Advanced is now also the explicit entry point for room topology configuration. */
+.rg-controller #av #avAdvanced>summary::after{
+  content:" · Configure TVs, displays & sources";
+  color:var(--rg-muted);
+  font-weight:400;
+}
+.rg-controller #av [data-room-topology-editor]{
+  border-color:var(--rg-line);
+  background:var(--rg-surface);
+}
+.rg-controller #av [data-room-topology-editor]>.top{
+  margin-bottom:12px;
+}
