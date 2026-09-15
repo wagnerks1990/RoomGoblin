@@ -187,7 +187,7 @@ jobs:
           java -version
           test -n "${ANDROID_HOME:-}"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37' 'build-tools;36.0.0'
       - name: Install Gradle 9.6.0
         run: |
           set -euo pipefail

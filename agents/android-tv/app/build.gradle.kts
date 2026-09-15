@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "org.roomgoblin.display"
-    compileSdk = 35
+    compileSdk = 37
     buildFeatures {
         buildConfig = true
     }

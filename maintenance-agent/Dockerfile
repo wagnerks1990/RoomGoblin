@@ -20,13 +20,13 @@ RUN apt-get update \
  && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
  && rm /tmp/android-tools.zip \
  && (yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true) \
- && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' \
+ && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'platform-tools' \
  && curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
  && echo "${GRADLE_SHA256}  /tmp/gradle.zip" | sha256sum -c - \
  && unzip -q /tmp/gradle.zip -d /opt \
  && ln -s "/opt/gradle-${GRADLE_VERSION}" /opt/gradle \
  && rm /tmp/gradle.zip
-ENV PATH=/opt/gradle/bin:/opt/android-sdk/build-tools/35.0.0:/opt/android-sdk/cmdline-tools/latest/bin:$PATH
+ENV PATH=/opt/gradle/bin:/opt/android-sdk/build-tools/36.0.0:/opt/android-sdk/cmdline-tools/latest/bin:$PATH
 WORKDIR /android-agent
 COPY agents/android-tv ./
 # Maven/Google repository availability has occasionally failed a complete
@@ -75,7 +75,7 @@ RUN apt-get update && \
       rm -f /tmp/platform-tools.zip && \
       adb version && adb help 2>&1 | grep -q "pair HOST"; \
     fi
-COPY --from=android-agent-build /opt/android-sdk/build-tools/35.0.0 /opt/android-build-tools
+COPY --from=android-agent-build /opt/android-sdk/build-tools/36.0.0 /opt/android-build-tools
 ENV PATH=/opt/android-build-tools:$PATH
 RUN apksigner --version && keytool -help >/dev/null
 WORKDIR /app
