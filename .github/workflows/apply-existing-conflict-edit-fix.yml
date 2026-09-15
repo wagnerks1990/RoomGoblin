@@ -1,0 +1,42 @@
+name: Apply existing automation conflict edit fix
+
+on:
+  push:
+    branches:
+      - fix/automation-edit-existing-conflicts
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[existing-conflict-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: fix/automation-edit-existing-conflicts
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+      - name: Apply compatibility fix
+        run: python3 tools/fix-automation-existing-conflicts.py
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate syntax and controller
+        run: npm run check
+      - name: Run focused automation regression tests
+        run: node --test --test-concurrency=1 test/automation-existing-conflict-edit.test.js test/automation-convergence.test.js test/automation-followup.test.js test/automation-framework-manual.test.js test/school-schedule.test.js
+      - name: Stage source and documentation changes
+        run: |
+          git add src/server.js test/automation-existing-conflict-edit.test.js docs/AUTOMATION-FRAMEWORK.md
+          if [ -f wiki/Automation-Framework.md ]; then git add wiki/Automation-Framework.md; fi
+          git rm tools/fix-automation-existing-conflicts.py .github/workflows/apply-existing-conflict-edit-fix.yml
+      - name: Commit fixed source
+        run: |
+          git config user.name "RoomGoblin Automation Fix"
+          git config user.email "actions@users.noreply.github.com"
+          git diff --cached --check
+          git commit -m "Allow edits of pre-existing automation conflicts [existing-conflict-fix]"
+          git push origin HEAD:fix/automation-edit-existing-conflicts
