@@ -2,14 +2,14 @@
 
 ## Missing CI image tag during update
 
-A merged main commit may still be pending or fail a required check. The published
-`production` branch advances only after both validated images exist. Use
+A merged main commit may still be pending or fail a required check. Main is the
+only source; there is no production branch promotion. Use
 `sudo bash /opt/classroom-hub/deploy/update-production.sh` for routine updates;
 do not pull main first. The updater verifies both revisions before changing
 source and refuses to silently downgrade an already advanced checkout.
 
 An older updater must first be migrated using the transition in
-[Published production updates](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/PRODUCTION-UPDATES.md).
+[Main-based updates](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/PRODUCTION-UPDATES.md).
 If publication is blocked, fix the named CI gate and wait for a new complete
 pair. Repeated pulls, Docker reinstallation or retagging an old image cannot
 repair failed CI. Image preflight failures leave running services unchanged.

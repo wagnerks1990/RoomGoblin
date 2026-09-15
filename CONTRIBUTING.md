@@ -17,3 +17,12 @@ including confidential employer or school information.
 All accepted contributions must preserve the license, required notice, security
 boundaries, classroom focus, tests, and documentation requirements described in
 [AGENTS.md](AGENTS.md).
+
+## Development flow
+
+Use short-lived work branches and pull requests into `main`; do not introduce
+production/staging/development promotion branches or environment gates during
+active development. Keep required tests, security checks and resolved reviews.
+The desired merge policy permits merge commits, squash and rebase in both the
+repository settings and main ruleset. See [Main-based updates](docs/PRODUCTION-UPDATES.md)
+for publishing, appliance migration, verification and recovery.

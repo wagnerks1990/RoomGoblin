@@ -49,6 +49,6 @@ roomgoblin_wait_image_pair(){
     (( remaining > 10 )) && remaining=10
     sleep "$remaining"
   done
-  echo "Publication is not ready. Existing services have not been changed. Use deploy/update-production.sh for published builds, or retry this exact revision after CI succeeds." >&2
+  echo "Publication is not ready. Existing services have not been changed. Retry deploy/update-production.sh after the selected main revision passes CI and both images publish." >&2
   return 1
 }

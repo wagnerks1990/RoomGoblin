@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 REPOSITORY_URL="${CLASSROOM_HUB_REPOSITORY_URL:-https://github.com/wagnerks1990/RoomGoblin.git}"
-REPOSITORY_REF="${CLASSROOM_HUB_REF:-production}"
+REPOSITORY_REF="${CLASSROOM_HUB_REF:-main}"
 TARGET="${CLASSROOM_HUB_DIR:-/opt/classroom-hub}"
 SERVICES="${CLASSROOM_HUB_SERVICES_DIR:-/opt/services}"
 BACKUPS="${CLASSROOM_HUB_BACKUP_DIR:-/opt/classroom-hub-backups}"

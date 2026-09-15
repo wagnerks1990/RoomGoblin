@@ -271,7 +271,11 @@ Browser displays use enabled stable display IDs without credentials by default. 
 
 ## Git and release workflow
 
-`main` is the development source of truth; `production` is advanced by CI only after the validated image pair is published. Normal supported update flow:
+`main` is the only integration/update source during active development. Work on
+short-lived branches, pass PR checks, merge to main, and publish its exact image
+pair. No production/staging/development branch or environment promotion is used.
+Allow merge commits, squash and rebase in both repository settings and the main
+ruleset, without bypassing required checks/reviews. Normal supported update flow:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
@@ -379,8 +383,8 @@ mDNS enrollment and sensor-triggered automations are not implemented by this mod
 Do not broaden this boundary or replace native encryption with unauthenticated
 HTTP, an exposed worker port, arbitrary service calls, or privileged Docker access.
 
-## Selective published-source updates and CI
+## Selective main updates and CI
 
-Normal CLI updates use `deploy/update-plan.py` and the journaled native runner. Compare each running image revision and the verified host/deployment record; never infer deployed state from HEAD alone. Preserve per-component image tags and immutable recovery IDs. Unknown deployment/migration inputs or configuration drift trigger full installer reconciliation. Source-only updates preserve the existing rollback point. See `PRODUCTION-UPDATES.md` and `CI-WORKFLOWS.md` for force-full, interruption recovery and the canonical-database limit.
+Normal CLI updates select origin/main and use `deploy/update-plan.py` and the journaled native runner. An old installed runner is migrated only after the exact main image pair is verified; the candidate runner forces one full reconciliation and preserves pending-journal recovery. Legacy/deferred branch names are not active update sources. Compare each running image revision and the verified host/deployment record; never infer deployed state from HEAD alone. Preserve per-component image tags and immutable recovery IDs. Unknown deployment/migration inputs or configuration drift trigger full installer reconciliation. Source-only updates preserve the existing rollback point. See `PRODUCTION-UPDATES.md` and `CI-WORKFLOWS.md` for force-full, interruption recovery and the canonical-database limit.
 
 Required publication workflows are now Validate (including Android debug and restrictive-context image coverage), Display browser regression, and Security gates. Semantic releases promote the published SHA image pair instead of rebuilding it. Do not restore duplicate standalone workflows or weaken these gates.

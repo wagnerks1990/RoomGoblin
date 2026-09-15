@@ -114,7 +114,7 @@ sudo bash /tmp/classroom-hub-bootstrap.sh
 The bootstrap filename and `/opt/classroom-hub` target remain legacy-compatible
 for existing automation. The source repository is now RoomGoblin. The bootstrap
 installs Docker Engine and Compose from Docker's signed package repository,
-clones the CI-published `production` branch, generates unique appliance credentials, installs the
+clones `main`, waits for its exact CI-published images, generates unique appliance credentials, installs the
 native Host Agent, starts the containers, verifies component health, and prints
 the first-time setup URL. Review the downloaded script before running it.
 
@@ -124,19 +124,25 @@ bundled Android/ADB toolchain have passed the same release validation.
 
 Use the web controller for routine upgrades and rollback after initial installation. The bootstrap refuses to overwrite an existing installation unless `CLASSROOM_HUB_REINSTALL=true` is explicitly supplied.
 
-## Production updates
+## Main-based updates
 
-The standard production checkout remains `/opt/classroom-hub`. Production updates follow the latest published image pair:
+During active development, main is the only integration and update branch. Use
+short-lived work branches and checked PRs into main; no staging, development or
+production promotion branches are required. The checkout remains
+`/opt/classroom-hub`; the historical update script
+name remains compatible with existing commands:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-The updater checks the published image pair, verifies changed images before
-advancing source, and uses the native backup/deployment/recovery runner. A failed or still-running `main`
-build leaves the previous published build selected. Do not pull `main` before
-normal updates. Updates now recreate only components whose verified runtime inputs changed; use `--plan` to inspect decisions or `--full` for complete reconciliation. See [Published production updates](docs/PRODUCTION-UPDATES.md)
-for older-checkout migration and image-publication troubleshooting.
+The updater selects `origin/main`, checks the exact published image pair, verifies
+changed images before advancing source, and uses the native backup/recovery runner.
+A failed or still-running main build leaves the existing checkout and services
+unchanged; no fallback branch or silent downgrade is used. Do not pull main first.
+Only components whose verified runtime inputs changed are recreated; use `--plan`
+to inspect decisions or `--full` for repair. See [Main-based updates](docs/PRODUCTION-UPDATES.md)
+for the one-time old-updater transition, PR settings and publication troubleshooting.
 
 For a development rebuild after the installer has established host permissions and secrets:
 

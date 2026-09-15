@@ -5,14 +5,14 @@ function fixture(t,files=['public/change.js']){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rg-runner-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
  const hub=path.join(dir,'hub'),bin=path.join(dir,'bin'),state=path.join(dir,'state');for(const d of [hub,bin,state])fs.mkdirSync(d);
  function git(...args){const r=spawnSync('git',args,{cwd:hub,encoding:'utf8',env:{...process.env,GIT_AUTHOR_NAME:'Fixture',GIT_AUTHOR_EMAIL:'fixture@example.invalid',GIT_COMMITTER_NAME:'Fixture',GIT_COMMITTER_EMAIL:'fixture@example.invalid'}});assert.equal(r.status,0,r.stderr);return r.stdout.trim()}
- git('init','-b','production');git('remote','add','origin','https://github.com/wagnerks1990/RoomGoblin.git');
+ git('init','-b','main');git('remote','add','origin','https://github.com/wagnerks1990/RoomGoblin.git');
  for(const name of ['deploy/image-identity.sh','deploy/image-readiness.sh','deploy/update-plan.py']){
   fs.mkdirSync(path.dirname(path.join(hub,name)),{recursive:true});fs.writeFileSync(path.join(hub,name),fs.readFileSync(path.join(root,name),'utf8').replace("Path('/var/lib/classroom-hub/deployment.json')",`Path(${JSON.stringify(path.join(state,'deployment.json'))})`));
  }
  fs.writeFileSync(path.join(hub,'VERSION'),'1.0.0-alpha.82\n');fs.writeFileSync(path.join(hub,'.gitignore'),'.env\ndata/\n');fs.writeFileSync(path.join(hub,'install.sh'),'echo full-installer >> "$EVENTS"\ntouch "$FIXTURE/hub-new" "$FIXTURE/maintenance-new"\n');
  git('add','.');git('commit','-m','baseline');const base=git('rev-parse','HEAD');
  for(const name of files){fs.mkdirSync(path.dirname(path.join(hub,name)),{recursive:true});fs.writeFileSync(path.join(hub,name),'changed\n')}
- git('add','.');git('commit','-m','target');const target=git('rev-parse','HEAD');git('update-ref','refs/remotes/origin/main',target);git('update-ref','refs/remotes/origin/production',target);git('reset','--hard',base);
+ git('add','.');git('commit','-m','target');const target=git('rev-parse','HEAD');git('update-ref','refs/remotes/origin/main',target);git('reset','--hard',base);
  fs.writeFileSync(path.join(hub,'.env'),'CLASSROOM_CONTROL_HUB_TAG=alpha\n');fs.mkdirSync(path.join(hub,'data/backups'),{recursive:true});const backup='fixture.zip';fs.writeFileSync(path.join(hub,'data/backups',backup),'snapshot');const sha=crypto.createHash('sha256').update('snapshot').digest('hex');
  const config={services:{'classroom-hub':{image:'hub'},'maintenance-agent':{image:'maintenance'}}};
  const digest=spawnSync('python3',['-c','import json,hashlib;print(hashlib.sha256(json.dumps({"services":{"classroom-hub":{"image":"hub"},"maintenance-agent":{"image":"maintenance"}}},sort_keys=True).encode()).hexdigest())'],{encoding:'utf8'}).stdout.trim();
@@ -55,7 +55,7 @@ exit 0`.replace('$BASE',base).replace('$TARGET',target));
  fs.mkdirSync(dir+'/systemd');fs.writeFileSync(dir+'/systemd/classroom-hub-host-agent.service','fixture');fs.mkdirSync(hub+'/host-agent');fs.writeFileSync(hub+'/host-agent/server.py','');
  const runner=path.join(dir,'runner.sh');fs.writeFileSync(runner,script);
  const env={...process.env,PATH:bin+':'+process.env.PATH,CLASSROOM_HUB_DIR:hub,EVENTS:dir+'/events',FIXTURE:dir,DOCKER_VOLUMES_ROOT:dir+'/volumes'};
- return {dir,hub,state,base,target,git,run(extra={},resume=false){const r=spawnSync('bash',[runner,...(resume?[]:['--published',target])],{env:{...env,...extra},encoding:'utf8',timeout:15000});return {...r,events:fs.readFileSync(env.EVENTS,'utf8')}}};
+ return {dir,hub,state,base,target,git,run(extra={},resume=false){const r=spawnSync('bash',[runner,...(resume?[]:['--published',target])],{env:{...env,...extra},encoding:'utf8',timeout:45000});assert.ifError(r.error);return {...r,events:fs.readFileSync(env.EVENTS,'utf8')}}};
 }
 test('native runner pulls/recreates only Hub and journals a verified rollback point',t=>{
  const f=fixture(t),r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);assert.equal(f.git('rev-parse','HEAD'),f.target);
@@ -96,4 +96,26 @@ test('interrupted deployment rolls back its durable journal before any new pull'
 test('rollback refuses data restoration when the application writer cannot stop',t=>{
  const f=fixture(t),r=f.run({FAIL_DEPLOY:'1',FAIL_STOP:'1'});assert.notEqual(r.status,0);assert.doesNotMatch(r.events,/BACKUP_NAME=/);
  assert.equal(JSON.parse(fs.readFileSync(f.state+'/app-update-status.json')).phase,'rollback-failed');assert.equal(fs.existsSync(f.state+'/app-update-request.json'),true);
+});
+
+
+test('legacy production checkout moves to main and preserves its previous branch',t=>{
+ const f=fixture(t);f.git('branch','-m','production');
+ f.git('config','remote.origin.fetch','+refs/heads/production:refs/remotes/origin/production');
+ const r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);
+ assert.equal(f.git('symbolic-ref','--short','HEAD'),'main');assert.equal(f.git('rev-parse','main'),f.target);assert.equal(f.git('rev-parse','production'),f.base);
+ assert.equal(f.git('config','remote.origin.fetch'),'+refs/heads/main:refs/remotes/origin/main');assert.equal(f.git('config','branch.main.merge'),'refs/heads/main');
+});
+test('verified detached recovery checkout rejoins main without a reset',t=>{
+ const f=fixture(t);f.git('checkout','--detach',f.base);const r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);
+ assert.equal(f.git('symbolic-ref','--short','HEAD'),'main');assert.equal(f.git('rev-parse','HEAD'),f.target);
+});
+test('legacy migration refuses to overwrite divergent local main commits',t=>{
+ const f=fixture(t);f.git('branch','-m','production');f.git('switch','-c','main');
+ fs.writeFileSync(path.join(f.hub,'local-main.txt'),'preserve');f.git('add','local-main.txt');f.git('commit','-m','local work');const local=f.git('rev-parse','HEAD');f.git('switch','production');
+ const r=f.run();assert.notEqual(r.status,0);assert.equal(f.git('rev-parse','HEAD'),f.base);assert.equal(f.git('rev-parse','main'),local);assert.doesNotMatch(r.events,/^pull |^compose up|\/backup\/create/m);assert.match(r.stderr,/Local main diverges/);
+});
+test('pending journal is preserved when a new main update is requested',t=>{
+ const f=fixture(t);const pending=JSON.stringify({action:'published',targetCommit:f.base,mutationStarted:'true'});fs.writeFileSync(f.state+'/app-update-request.json',pending);fs.writeFileSync(f.dir+'/events','');
+ const r=f.run();assert.notEqual(r.status,0);assert.match(r.stderr,/journal is pending/);assert.equal(fs.readFileSync(f.state+'/app-update-request.json','utf8'),pending);assert.equal(f.git('rev-parse','HEAD'),f.base);assert.equal(r.events,'');
 });
