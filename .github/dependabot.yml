@@ -10,6 +10,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Sendspin 4+ changes the client identity/pairing protocol. Keep the
+    # physically reviewed Music Assistant 2.9 browser bridge on 3.x until that
+    # protocol migration has its own compatibility and device validation.
+    ignore:
+      - dependency-name: "@sendspin/sendspin-js"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:

@@ -8,6 +8,12 @@ Critical invariant: do not reload or navigate an already-loaded display WebView 
 
 Keep `WebSettings.setMediaPlaybackRequiresUserGesture(false)` enabled. Keep the receiver's explicit `SendspinPlayer.unlock()` gesture hook as fallback after genuine navigations, but do not use repeated reload/unlock loops as lifecycle recovery.
 
+Keep the browser SDK on the reviewed Sendspin 3.x contract unless a dedicated
+major-version migration also handles the newer cryptographic client identity,
+Noise/pairing lifecycle, Music Assistant compatibility, registration mapping,
+physical-TV validation, and rollback. Do not accept a major Dependabot bump
+based only on bundle compilation or mocked browser tests.
+
 Do not change the same-Hub ticketed Sendspin proxy boundary, stable display IDs, enrollment behavior, Morning Announcements priority, scheduler reconciliation, or Background Music arbitration while working on this area.
 
 Regression coverage: `test/android-tv-management.test.js` verifies ordinary resume/non-reload launch paths preserve the existing WebView.

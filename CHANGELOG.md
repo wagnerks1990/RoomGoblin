@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Browser media dependencies
+
+- Update `hls.js` to 1.7.3 while retaining the reviewed Sendspin 3.2 browser
+  protocol for Music Assistant 2.9 compatibility.
+- Block automated Sendspin major upgrades until stable cryptographic display
+  identity, pairing, registration mapping and physical-TV rollback are reviewed.
+
 ### Main-only development and updates
 
 - Restore main as the sole integration/bootstrap/update source; stop advancing a
