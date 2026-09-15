@@ -15,7 +15,7 @@ Configuration comes from:
 3. environment variables / `.env` required to bootstrap the appliance or provide host/container boundaries;
 4. optional JSON configuration/catalog files used only for shipped defaults, schemas, and migration compatibility.
 
-Normal classroom identity, display, schedule, automation, MQTT/Govee, Pluto, Veyon, Music Assistant, and application-update configuration should be changed through the GUI. `.env` remains necessary for settings that must exist before SQLite can be opened or before the browser is available, including database/master-key paths, initial setup and internal service tokens, port mapping, and reverse-proxy security boundaries.
+Normal classroom identity, room topology, schedule, automation, MQTT/Govee, Pluto, Veyon, Music Assistant, and application-update configuration should be changed through the GUI. `.env` remains necessary for settings that must exist before SQLite can be opened or before the browser is available, including database/master-key paths, initial setup and internal service tokens, port mapping, and reverse-proxy security boundaries.
 
 ## `.env`
 
@@ -112,7 +112,9 @@ The following should normally be runtime configuration rather than source consta
 
 - school/district and classroom branding;
 - classroom names;
-- display IDs/names;
+- physical-TV IDs/names and adapter mappings;
+- content-display IDs/names and physical-TV links;
+- content-source IDs/names and adapter mappings;
 - private/internal IP addresses;
 - AV matrix addresses and Pluto URL;
 - lighting device IDs;
@@ -174,21 +176,19 @@ The public default leaves `PLUTO_URL` empty. Production must supply the local en
 
 Do not probe an empty URL. An unconfigured Pluto should be represented as `NOT CONFIGURED` rather than repeatedly producing network/URL errors.
 
-## Displays
+## Room topology: TVs, displays, and sources
 
-Each display should use a stable logical ID. Names may change without changing identity.
+Room topology is canonical SQLite-backed configuration. Physical TVs, RoomGoblin content displays, and routable content sources are separate inventories; see [Room topology](ROOM-TOPOLOGY.md).
 
-Recommended conceptual record:
+Use Setup or **Displays & AV** to manage the same canonical topology. A save refreshes dependent target inventories used by Automations, Classes, presentations, media, and AV labels.
 
-```json
-{
-  "id": "tv1",
-  "name": "Front Display",
-  "enabled": true
-}
-```
+### Physical TVs
 
-Do not use a transient IP address as the only display identity unless the environment guarantees it is stable.
+Physical TVs are power/AV endpoints. Their stable IDs are independent from content-display receiver IDs. A TV can map to a Pluto output or another future adapter.
+
+### Content displays
+
+Content displays are RoomGoblin browser/Android receivers. Each uses a stable logical ID and may optionally link to a physical TV. Names can change without changing the receiver ID or invalidating optional credentials.
 
 Enabled receivers use their stable `/display/<id>` URL without credentials by default. This is the supported classroom mode and prevents cleared browser storage or an upgrade from taking every display offline.
 
@@ -204,6 +204,23 @@ visible URL. Only token hashes are stored in SQLite. Administrators can revoke
 one credential, rotate all credentials for a display, or cancel an unused link.
 
 `DISPLAY_TOKEN` is only a legacy fallback when individual credential authentication is required. It is unnecessary in the default stable URL mode. Unknown and disabled display IDs are rejected in both modes.
+
+### Content sources
+
+Content sources are routable AV inputs. Their stable ID, friendly name, endpoint ID, and adapter/input mapping are independent fields.
+
+### Target semantics
+
+- `All Displays` means enabled content displays.
+- `All TVs` means enabled physical TVs.
+- Classes keep content-display defaults.
+- TV power uses physical TVs.
+- AV routing uses physical TVs and content sources.
+- Typed groups cannot cross domains.
+
+Removing or disabling an item removes it from new target selections. Persisted class/automation records that still contain a removed stable ID remain editable but fail closed at runtime until remapped; RoomGoblin does not silently redirect them to another endpoint.
+
+The current Pluto Mark I AV matrix remains an adapter-specific 8×8 surface. That hardware cardinality is not the application-wide RoomGoblin inventory and must not be used to infer content-display count or future adapter capacity.
 
 ## Class schedules
 
