@@ -34,7 +34,7 @@ test("validated main images publish under canonical and legacy aliases",()=>{
   for(const image of ["roomgoblin","roomgoblin-maintenance","classroom-control-hub","classroom-control-hub-maintenance"])
     assert.match(main,new RegExp(`ghcr\\.io/wagnerks1990/${image}`));
   const releases=fs.readFileSync(".github/workflows/docker-publish.yml","utf8");
-  assert.match(main,/org\.opencontainers\.image\.revision=\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(main,/org\.opencontainers\.image\.revision=\$\{\{ github\.sha \}\}/);
   assert.match(releases,/for image in roomgoblin roomgoblin-maintenance/);
   assert.match(releases,/legacy=classroom-control-hub/);
   assert.match(releases,/legacy=classroom-control-hub-maintenance/);
@@ -63,7 +63,7 @@ test("main image publication waits for all independent validation jobs",()=>{
     assert.ok(workflow.includes(name),`missing workflow-identity gate: ${name}`);
   assert.match(workflow,/state="\$\(jq -r/);
   assert.match(workflow,/failure\|cancelled\|timed_out\|action_required\|stale\|skipped/);
-  assert.match(workflow,/group: publish-main-images-\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(workflow,/group: publish-main-images-\$\{\{ github\.sha \}\}/);
   assert.match(workflow,/cancel-in-progress: false/);
 });
 
@@ -80,6 +80,24 @@ test("mutable alpha aliases have one guarded owner after both immutable images p
 
   const release=fs.readFileSync(".github/workflows/docker-publish.yml","utf8");
   assert.doesNotMatch(release,/value=alpha|\}:alpha|publish-main-alpha-promotion/);
+});
+
+test("hub runtime creates shared persistent data with a group-readable umask",()=>{
+  const dockerfile=fs.readFileSync("Dockerfile","utf8");
+  const startup=fs.readFileSync("tools/start-roomgoblin.sh","utf8");
+  assert.match(dockerfile,/COPY tools\/start-roomgoblin\.sh/);
+  assert.match(dockerfile,/CMD \["sh", "tools\/start-roomgoblin\.sh"\]/);
+  assert.match(startup,/^#!\/bin\/sh/m);
+  assert.match(startup,/umask 0027/);
+  assert.match(startup,/exec node --require \.\/src\/direct-display-compat\.js src\/startup-recovery\.js/);
+});
+
+test("maintenance Android image retries transient repository resolution without hiding deterministic failure",()=>{
+  const source=fs.readFileSync("maintenance-agent/Dockerfile","utf8");
+  assert.match(source,/for attempt in 1 2 3/);
+  assert.match(source,/--refresh-dependencies/);
+  assert.match(source,/test "\$build_ok" = 1/);
+  assert.match(source,/assembleRelease/);
 });
 
 test("dependency audits block moderate and higher findings",()=>{
