@@ -5278,7 +5278,23 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
   }
   return conflicts;
 }
-function assertAutomationConflicts(candidate,events){const conflicts=automationConflictDiagnostics(candidate,events);if(!conflicts.length)return;const first=conflicts[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=conflicts;throw error}
+function automationConflictSignature(conflict){
+  return [String(conflict?.otherId||""),String(conflict?.date||""),String(conflict?.time||""),...(conflict?.resources||[]).map(String).sort()].join("|");
+}
+function assertAutomationConflicts(candidate,events,{previous=null,startDate=new Date()}={}){
+  const conflicts=automationConflictDiagnostics(candidate,events,{startDate});
+  if(!conflicts.length)return;
+  // Preserve exact conflicts that already existed before this edit. Conflict
+  // validation was introduced after many installations had valid overlapping
+  // events, and an unrelated edit must not turn those records into a lockout.
+  let blocking=conflicts;
+  if(previous&&previous.enabled!==false){
+    const existing=new Set(automationConflictDiagnostics(previous,events,{startDate}).map(automationConflictSignature));
+    blocking=conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict)));
+  }
+  if(!blocking.length)return;
+  const first=blocking[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=blocking;throw error;
+}
 app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:[resolved.action,...(resolved.actions||[]).map(step=>step.action)]},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
@@ -5309,7 +5325,7 @@ app.put("/api/v1/automations/:id",schedulerMutationLimit,requireCapability("auto
     if(idx<0)return res.status(404).json({ok:false,error:"Automation not found"});
     const prior=classroomAutomations.events[idx];
     const event={...normalizeAutomation({...req.body,id},prior),revision:Math.max(1,Number(prior.revision||1)+1)};
-    assertAutomationConflicts(event,classroomAutomations.events.filter((_,index)=>index!==idx));
+    assertAutomationConflicts(event,classroomAutomations.events.filter((_,index)=>index!==idx),{previous:prior});
     const events=[...classroomAutomations.events];events[idx]=event;commitAutomations({...classroomAutomations,events});
     audit({kind:"automation.update",automationId:event.id,name:event.name});
     res.json({ok:true,event});
