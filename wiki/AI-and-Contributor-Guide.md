@@ -17,6 +17,8 @@ AI coding assistants and contributors should treat the GitHub repository `main` 
 See [Alpha.82 upgrade recovery](Alpha82-Upgrade-Recovery). Preserve GID 10001
 access to SQLite and ADB trust while keeping other-user access disabled.
 
+Also read [Production publication and shared-data permissions](Production-Publication-and-Shared-Data) before changing image publication, runtime startup, media uploads, backup behavior, or updater preflight. The Hub must start with umask `0027` so ordinary application-owned persistent files remain owner-writable, group-readable to maintenance, and inaccessible to other users. Production images must be gated by the exact `main` SHA and the complete Hub+maintenance pair before `production` advances.
+
 ## Current baseline
 
 The current production-readiness review baseline is `1.0.0-alpha.82`.
@@ -46,6 +48,9 @@ Critical invariants:
 - Integration health is independent; a failure in Pluto must not falsely mark MQTT/Govee offline.
 - Cross-domain automation steps with legacy/empty targets recover to the domain's All selector; an explicit action target overrides a linked class display default. Explicit all-TV selectors use Pluto broadcast CEC, while selected subsets use individual outputs.
 - Optional or slow hardware probes must not block the initial Overview screen.
+- Every `main` push starts image publication directly; publication then waits for Validate, Display browser regression, and Security gates to pass for that exact SHA. Do not restore indirect `workflow_run` triggering that can silently skip a valid merge commit.
+- The maintenance Android build may retry transient Maven/Google repository failures only in a bounded fail-closed loop; deterministic failures must still block publication.
+- The Hub startup wrapper establishes umask `0027`. Ordinary persistent application files must remain group-readable to maintenance so operational/full-recovery backups can read them without granting world access.
 
 ## Standard production layout
 
@@ -78,13 +83,13 @@ sudo bash /opt/classroom-hub/deploy/update-production.sh
 
 The installer is part of the supported upgrade path because it reconciles secrets, Host Agent code, data-root ownership, database identity, HTTP exposure, and migration state before container recreation.
 
-Always take a backup before production upgrades.
+Always take a backup before production upgrades. The updater's own mandatory operational safety backup must succeed before service mutation; do not bypass it. If a backup reports `EACCES`, repair only the incorrect application-owned file mode/ownership and re-run backup verification.
 
 ## Documentation contract
 
 Behavior, architecture, deployment, configuration, recovery, or security changes must update the relevant `docs/` page and matching `wiki/` mirror page.
 
-The complete AI operating contract lives in `AGENTS.md`; `docs/AI-CONTEXT.md` contains the compact technical handoff.
+The complete AI operating contract lives in `AGENTS.md`; `docs/AI-CONTEXT.md` contains the compact technical handoff. Production publication/shared-data changes must also keep `docs/CI-WORKFLOWS.md` and `docs/PRODUCTION-PUBLICATION-AND-SHARED-DATA.md` synchronized with their Wiki counterparts.
 
 ## Dedicated Sendspin transport (selective PR #22 migration)
 
