@@ -11,6 +11,7 @@
 - [RoomGoblin Brand and Compatibility](RoomGoblin-Brand-and-Compatibility)
 - [Operator Workspaces](GUI-Workspaces)
 - [Architecture](Architecture)
+- [Room Topology](Room-Topology)
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
 - [Database-First Recovery Contract](Database-First-Recovery)
@@ -23,6 +24,16 @@
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
 
 ## Current verified baseline
+
+The current baseline includes the dynamic room-topology model:
+
+- physical TVs, RoomGoblin content displays, and AV content sources are independent inventories;
+- Setup and **Displays & AV** edit the same SQLite-backed topology;
+- `All TVs` resolves against physical TVs while `All Displays` resolves against content receivers;
+- Classes keep content-display defaults and do not implicitly target every physical TV;
+- legacy display/device maps and Pluto labels remain compatibility projections;
+- stale removed topology target IDs fail closed until explicitly remapped; and
+- Pluto's current 8×8 shape remains an adapter property rather than the application-wide device count.
 
 Alpha.80 retains the recovery invariants established in alpha.71/alpha.79 and adds:
 
@@ -51,7 +62,7 @@ The inherited baseline includes:
 - startup recovery for incomplete built-in access profiles;
 - punctuation-safe local authentication regression coverage;
 - maintenance startup health independent of main-app readiness;
-- editable receiver IDs with stale display-group pruning;
+- stable content-display IDs with optional credentials and compatibility-safe legacy projection;
 - appliance-wide Docker inventory/lifecycle control for existing containers;
 - optional managed deployment/adoption for Mosquitto, Govee2MQTT, Music Assistant, and Veyon WebAPI;
 - HLS-based Morning Announcements live detection;
@@ -71,15 +82,16 @@ Current Android managed-display validation additionally records that Device Admi
 3. Persistent runtime data must survive container replacement and Git upgrades.
 4. The configured active SQLite database must never silently switch to a stale alternate file during recreation.
 5. Built-in authorization profiles must remain complete; explicit profiles fail closed.
-6. Morning Announcements are a priority system and may preempt normal display/audio automation.
-7. When announcements end, current scheduler state is re-evaluated rather than restoring stale display snapshots.
-8. Background Music is independent of visual automation and yields to priority audio.
-9. Classroom schedules, cycle days, delays, half days, remote days, and closures are first-class scheduling inputs.
-10. Host-level management remains separated from the main web container through the authenticated Host Agent.
-11. Existing Docker services can be adopted without recreation; new container creation remains limited to reviewed supported integration templates.
-12. Optional/slow hardware integrations must not block the initial controller Overview screen.
-13. Integration health is independent; one failed integration must not falsely mark unrelated integrations offline.
-14. Managed-device capability reporting must distinguish physically validated behavior, API availability, OEM-dependent behavior, and unimplemented features.
+6. Physical TVs, content displays, content sources, and lighting are separate target domains with stable IDs.
+7. Morning Announcements are a priority system and may preempt normal display/audio automation.
+8. When announcements end, current scheduler state is re-evaluated rather than restoring stale display snapshots.
+9. Background Music is independent of visual automation and yields to priority audio.
+10. Classroom schedules, cycle days, delays, half days, remote days, and closures are first-class scheduling inputs.
+11. Host-level management remains separated from the main web container through the authenticated Host Agent.
+12. Existing Docker services can be adopted without recreation; new container creation remains limited to reviewed supported integration templates.
+13. Optional/slow hardware integrations must not block the initial controller Overview screen.
+14. Integration health is independent; one failed integration must not falsely mark unrelated integrations offline.
+15. Managed-device capability reporting must distinguish physically validated behavior, API availability, OEM-dependent behavior, and unimplemented features.
 
 ## Deployment model
 
@@ -107,7 +119,8 @@ music-assistant-server     ghcr.io/music-assistant/server:2.9.13
 
 Source repository: https://github.com/wagnerks1990/RoomGoblin
 
-The repository `docs/` directory is the canonical technical documentation set. `wiki/` is the Git-tracked mirror of this GitHub Wiki. AI coding assistants should read `AGENTS.md`, `docs/AI-CONTEXT.md`, `docs/brand/AI-BRAND-CONTEXT.md`, and the relevant `docs/ai/` context before modifying managed-device behavior.
+The repository `docs/` directory is the canonical technical documentation set. `wiki/` is the Git-tracked mirror of this GitHub Wiki. AI coding assistants should read `AGENTS.md`, `docs/AI-CONTEXT.md`, `docs/ROOM-TOPOLOGY.md`, `docs/brand/AI-BRAND-CONTEXT.md`, and the relevant `docs/ai/` context before modifying topology or managed-device behavior.
 
+- [[Room Topology|Room-Topology]] — physical TV, content display, content source, target-domain, and adapter boundaries.
 - [[ESPHome devices|ESPHome-Devices]] — encrypted native enrollment and supported controls.
 - [[Android TV Hardware Validation|Android-TV-Hardware-Validation]] — physical managed-display validation and capability-reporting boundaries.

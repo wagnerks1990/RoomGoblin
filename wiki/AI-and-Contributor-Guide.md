@@ -9,9 +9,10 @@ AI coding assistants and contributors should treat the GitHub repository `main` 
 1. `AGENTS.md`
 2. `VERSION` and `CHANGELOG.md`
 3. `docs/AI-CONTEXT.md`
-4. the relevant `docs/` topic page
-5. the matching focused `docs/ai/` context when present
-6. implementation source
+4. `docs/ROOM-TOPOLOGY.md` and `docs/ai/ROOM-TOPOLOGY.md` before changing TVs, displays, sources, AV routing, classes, automation targets, presentations, media, Morning Announcements, or Music Assistant TV selection
+5. the relevant `docs/` topic page
+6. the matching focused `docs/ai/` context when present
+7. implementation source
 
 For CI/release publication, read `docs/ai/CI-PUBLICATION.md`. For production shared-data permissions and backup readability, read `docs/ai/PRODUCTION-SHARED-DATA.md`. For physical-TV/content-display/content-source targeting, read `docs/ai/ROOM-TOPOLOGY.md`. For managed Android package migration and Device Admin behavior, read `docs/ai/ANDROID-TV-SENDSPIN-DEVICE-ADMIN.md`.
 
@@ -41,7 +42,11 @@ Critical invariants:
 - Explicit access profiles fail closed. Built-in profiles with missing/empty capability arrays are repaired without overwriting valid custom lists; Administrator resolves to `capabilities:["*"]`.
 - Passwords are opaque strings; punctuation such as `!` and `#` must survive browser/API/scrypt paths and shell troubleshooting must quote credentials safely.
 - Maintenance startup health checks the Host Agent directly rather than waiting for the main application.
-- Physical TVs, RoomGoblin content displays, and content sources are separate inventories. `All TVs` targets enabled physical TVs; `All Displays` targets enabled content receivers; typed groups may not cross target domains.
+- Room topology is canonical and domain-separated: physical TVs, content displays, content sources, and lighting are not interchangeable inventories.
+- Stable IDs survive friendly-name changes. `All TVs` resolves against enabled physical TVs; `All Displays` resolves against enabled content receivers; typed groups never cross domains.
+- Legacy `devices`, `displayGroups`, and Pluto labels are compatibility projections. Do not infer physical-TV inventory from content-display rows or hard-code `tv1..tv8` application-wide.
+- Adapter cardinality is local to the adapter. Pluto may remain an 8×8 AV surface while RoomGoblin contains additional TVs/sources on other adapters.
+- Removing or disabling a topology item must fail closed for stale saved target IDs; never redirect a missing endpoint to another device implicitly.
 - Legacy receiver IDs, display groups, AV mappings, enrollment state, ADB trust and source labels remain compatibility projections while the canonical topology evolves.
 - Receiver IDs are stable/editable and display groups must be pruned when receivers are removed.
 - The controller inventories existing Docker containers and can adopt them for safe lifecycle/log control.
@@ -54,7 +59,7 @@ Critical invariants:
 - Timer chaining is only for an explicitly linked continuation of the same base class or period.
 - Runtime versions must stay converged through release metadata/stamping and the Host Agent wrapper.
 - Integration health is independent; a failure in Pluto must not falsely mark MQTT/Govee offline.
-- Cross-domain automation steps with legacy/empty targets recover to the domain's All selector; an explicit action target overrides a linked class display default.
+- Cross-domain automation steps with legacy/empty targets recover to the domain's All selector; an explicit action target overrides a linked class display default. TV-power selectors use the physical-TV domain; display actions/classes remain in the content-display domain.
 - Optional or slow hardware probes must not block the initial Overview screen.
 - Legacy `org.classroomhub.display` migration may require one native Device Administrator confirmation on the TV because Android blocks silent removal of a production/non-test admin. Normal `org.roomgoblin.display` updates stay in-place with `adb install -r` and preserve Device Admin.
 
@@ -96,6 +101,8 @@ Always take a backup before production upgrades. The updater's mandatory operati
 ## Documentation contract
 
 Behavior, architecture, deployment, configuration, recovery, security, CI/publication, topology, or persistent-data permission changes must update the relevant `docs/` page and matching `wiki/` mirror page. Material changes that affect future implementation choices must also update the appropriate `docs/ai/` context.
+
+Topology changes must also update `docs/ai/ROOM-TOPOLOGY.md` so future AI work retains the TV/display/source domain boundaries.
 
 For production publication/shared-data changes, keep `docs/CI-WORKFLOWS.md`, `docs/PRODUCTION-PUBLICATION-AND-SHARED-DATA.md`, `docs/ai/CI-PUBLICATION.md`, `docs/ai/PRODUCTION-SHARED-DATA.md`, `wiki/CI-Workflows.md`, and `wiki/Production-Publication-and-Shared-Data.md` synchronized.
 
