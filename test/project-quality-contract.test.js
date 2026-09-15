@@ -66,6 +66,14 @@ test("the downloaded Gradle distribution is checksum verified",()=>{
   }
 });
 
+test("AGP 9 uses built-in Kotlin without the incompatible legacy plugin",()=>{
+  const root=read("agents/android-tv/build.gradle.kts");
+  const app=read("agents/android-tv/app/build.gradle.kts");
+  assert.doesNotMatch(root,/org\.jetbrains\.kotlin\.android/);
+  assert.doesNotMatch(app,/org\.jetbrains\.kotlin\.android|kotlinOptions/);
+  assert.match(app,/targetCompatibility = JavaVersion\.VERSION_17/);
+});
+
 test("runtime images exclude browser build tooling and the npm toolchain",()=>{
   const pkg=JSON.parse(read("package.json")),hub=read("Dockerfile"),maintenance=read("maintenance-agent/Dockerfile");
   assert.equal(pkg.dependencies.esbuild,undefined);
