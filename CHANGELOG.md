@@ -18,6 +18,14 @@
   deployment and operations guides; regression-check the legacy migration handoff
   and distinguish live filesystem copies from database-safe recovery backups.
 
+### Matrix-first topology controls
+
+- Keep routine TV routing ahead of the collapsed topology configuration panel.
+- Synchronize TV/output and AV-source/input labels from their normal controls;
+  retain an explicit Save Changes action for direct RoomGoblin Display naming.
+- Order topology cards by hardware output/input or natural stable receiver ID,
+  independently of friendly names, without changing endpoint identity or routing.
+
 ### Selective production updates and consolidated CI
 
 - Plan from verified running component revisions and deployment configuration;

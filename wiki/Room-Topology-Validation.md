@@ -7,6 +7,8 @@ Use this checklist after topology, targeting, or AV-inventory changes:
 - Class defaults stay content-display scoped.
 - TV power never derives its target set from browser/content-display inventory.
 - Stable IDs survive friendly-name changes.
+- Topology cards keep output/input order for TVs/AV Sources and natural stable receiver-ID order for RoomGoblin Displays after rename.
+- Displays & AV keeps routing first, configuration collapsed, and AV-label saves synchronized with topology without a second save.
 - Typed groups do not cross domains.
 - Removed/disabled target IDs fail closed until explicitly remapped.
 - Setup and Displays & AV show the same canonical topology.
