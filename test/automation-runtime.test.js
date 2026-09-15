@@ -26,13 +26,13 @@ test("display expansion never treats TV transport aliases as browser displays",(
   assert.deepEqual(expandDisplayTargets(["all"],{devices}),["tv1","tv2"]);
 });
 
-test("TV aggregate selectors expand to individual known-good CEC outputs",()=>{
-  assert.deepEqual(expandTvTargets(["all"],{devices}),[
-    {id:"tv1",output:1,connection:"hdbt"},{id:"tv2",output:2,connection:"hdbt"}
-  ]);
-  assert.deepEqual(expandTvTargets(["hdmi-all"],{devices}),[
-    {id:"tv1",output:1,connection:"hdmi"},{id:"tv2",output:2,connection:"hdmi"}
-  ]);
+test("legacy TV aggregate selectors cover the complete eight-output AV transport",()=>{
+  assert.deepEqual(expandTvTargets(["all"],{devices}),Array.from({length:8},(_,i)=>({
+    id:`tv${i+1}`,output:i+1,connection:"hdbt"
+  })));
+  assert.deepEqual(expandTvTargets(["hdmi-all"],{devices}),Array.from({length:8},(_,i)=>({
+    id:`tv${i+1}`,output:i+1,connection:"hdmi"
+  })));
 });
 
 test("whole-minute offsets are enforced",()=>{
