@@ -7,6 +7,13 @@ const path = require("node:path");
 
 const display = fs.readFileSync(path.join(__dirname, "..", "public", "display", "index.html"), "utf8");
 const androidActivity = fs.readFileSync(path.join(__dirname, "..", "agents", "android-tv", "app", "src", "main", "java", "org", "roomgoblin", "display", "MainActivity.java"), "utf8");
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+const dependabot = fs.readFileSync(path.join(__dirname, "..", ".github", "dependabot.yml"), "utf8");
+
+test("browser Sendspin stays on the reviewed Music Assistant 2.9 protocol major", () => {
+  assert.equal(packageJson.dependencies["@sendspin/sendspin-js"], "3.2.0");
+  assert.match(dependabot, /dependency-name: "@sendspin\/sendspin-js"[\s\S]*version-update:semver-major/);
+});
 
 test("Sendspin browser fallback retains explicit user-gesture audio unlock", () => {
   assert.match(display, /async function unlockMusicAssistantAudio\(\)/);
