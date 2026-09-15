@@ -64,7 +64,13 @@ Removing or disabling an item makes it unavailable to new target selections imme
 
 ## UI contract
 
-- Setup manages Physical TVs, Content Displays and Content Sources as separate dynamic inventories.
+- Setup manages TVs, RoomGoblin Displays and AV Sources as separate dynamic inventories.
+- **Displays & AV is matrix-first.** The TV Routing Matrix and its routing summary/quick controls are the primary day-to-day interface.
+- The topology editor on Displays & AV is secondary administration. It appears after the matrix inside a collapsed **Configure TVs, RoomGoblin Displays & AV Sources** disclosure so routine routing does not require understanding topology internals.
+- Pluto output/TV names and Pluto input/AV-source names synchronize into canonical topology when their normal AV controls save them; the open topology editor refreshes from the returned canonical topology automatically.
+- RoomGoblin Display names remain directly editable in topology when no other naming surface owns them. Direct topology edits use the visible **Save Changes** action.
+- Topology presentation order is stable and independent of friendly names: TVs sort by hardware output number, AV Sources sort by hardware input number, and RoomGoblin Displays sort naturally by stable receiver ID. Renaming an item must not reshuffle the inventory.
+- Opening topology configuration must not change the canonical topology model, compatibility projection, stable IDs, target domains, or AV adapter behavior.
 - Displays & AV exposes the same topology editor so changes do not need to be repeated elsewhere.
 - Automation target controls are domain-specific:
   - display content -> content displays;
@@ -110,5 +116,8 @@ Tests must cover:
 - stable ID preservation across rename;
 - safe removal/disable behavior and fail-closed stale references;
 - compatibility projection for current Setup, controller and scheduler surfaces;
+- matrix-first Displays & AV ordering with topology configuration collapsed by default;
+- automatic AV-label-to-topology name synchronization without a second manual save;
+- stable hardware/receiver ordering after friendly-name changes;
 - Setup, Displays & AV, Automation, Classes, presentations and media consuming the same canonical inventory;
 - Morning Announcements priority, scheduler recovery and Background Music arbitration remaining unchanged.

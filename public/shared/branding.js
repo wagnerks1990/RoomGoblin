@@ -18,7 +18,6 @@
 
   function normalize(branding={}){
     const incoming={...branding};
-    // Product identity is fixed; school, room and theme remain site settings.
     for(const key of ["productName","descriptor","tagline","logoUrl","faviconUrl"])incoming[key]=ROOMGOBLIN[key];
     const theme={...ROOMGOBLIN.theme,...(incoming.theme||{})};
     if(theme.primary==="#2aa866")theme.primary=ROOMGOBLIN.theme.primary;
@@ -47,7 +46,6 @@
   }
 
   function applyArtwork(profile){
-    // Opt-in product marks keep page layout under each workspace's ownership.
     document.querySelectorAll("[data-brand-lockup]").forEach(lockup=>{
       if(!lockup.querySelector("[data-brand-logo]")){
         const mark=document.createElement("img");mark.dataset.brandLogo="";
@@ -80,15 +78,11 @@
     document.querySelectorAll("[data-brand-descriptor]").forEach(x=>x.textContent=profile.descriptor);
     document.querySelectorAll("[data-brand-tagline]").forEach(x=>x.textContent=profile.tagline);
     replaceLegacyPresentationText(document.body,profile.productName);
-
     if(document.title.includes("Classroom Control Hub"))document.title=document.title.replace("Classroom Control Hub",profile.productName);
     else if(document.title.includes("Classroom Hub"))document.title=document.title.replace("Classroom Hub",profile.productName);
-
-
     for(const button of document.querySelectorAll("button")){if(/Open Classroom Control Hub|Open Classroom Hub/i.test(button.textContent||""))button.textContent=`Open ${profile.productName}`;}
     const setupTheme={themePrimary:ROOMGOBLIN.theme.primary,themeAccent:ROOMGOBLIN.theme.accent,themeBackground:ROOMGOBLIN.theme.background,themeSurface:ROOMGOBLIN.theme.surface,themeText:ROOMGOBLIN.theme.text};
     for(const [id,value] of Object.entries(setupTheme)){const field=document.getElementById(id),legacy={themePrimary:"#2aa866",themeAccent:"#1b7a49",themeBackground:"#040705",themeSurface:"#121923",themeText:"#eef4f8"}[id];if(field&&(!field.value||field.value.toLowerCase()===legacy))field.value=value;}
-
     window.CONTROL_HUB_BRANDING=profile;
     window.ROOMGOBLIN_BRANDING=profile;
     window.dispatchEvent(new CustomEvent("controlhub:branding",{detail:profile}));
@@ -112,6 +106,7 @@
 
   if(!renderer&&location.pathname.startsWith("/controller"))managedDisplaysOverviewLink();
   if(!renderer&&!document.querySelector('script[data-roomgoblin-topology]')){const script=document.createElement("script");script.src="/shared/room-topology-ui.js";script.defer=true;script.dataset.roomgoblinTopology="1";document.head.append(script);}
+  if(!renderer&&!document.querySelector('script[data-roomgoblin-topology-order]')){const script=document.createElement("script");script.src="/shared/topology-order.js";script.defer=true;script.dataset.roomgoblinTopologyOrder="1";document.head.append(script);}
   if(!renderer&&!document.querySelector('script[data-controlhub-integration-setup]')){const script=document.createElement("script");script.src="/shared/integration-setup.js";script.defer=true;script.dataset.controlhubIntegrationSetup="1";document.head.append(script);}
   if(!renderer&&!document.querySelector('script[data-controlhub-automation-fix]')){const script=document.createElement("script");script.src="/shared/automation-hotfix.js";script.defer=true;script.dataset.controlhubAutomationFix="1";document.head.append(script);}
 })();
