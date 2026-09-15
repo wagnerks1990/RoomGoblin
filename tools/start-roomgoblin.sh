@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Runtime data is shared with the maintenance container through GID 10001.
 # Keep newly created files owner-writable and group-readable so backups,
