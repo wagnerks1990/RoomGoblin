@@ -52,7 +52,9 @@ Groups have an explicit domain: `display`, `tv`, `source`, or `lighting`. A TV g
 ## UI contract
 
 - Setup manages Physical TVs, Content Displays and Content Sources as separate dynamic inventories.
-- Displays & AV renders the current adapter topology rather than assuming eight RoomGoblin displays.
+- **Displays & AV is matrix-first.** The TV Routing Matrix and its routing summary/quick controls are the primary day-to-day interface.
+- The topology editor on Displays & AV is secondary administration. It appears after the matrix inside a collapsed **Configure TVs, Displays & Sources** disclosure so routine routing does not require understanding topology internals.
+- Opening topology configuration must not change the canonical topology model, compatibility projection, stable IDs, target domains, or AV adapter behavior.
 - Automation target controls are domain-specific:
   - display content -> content displays;
   - TV power -> physical TVs;
@@ -89,4 +91,5 @@ Tests must cover:
 - stable ID preservation across rename;
 - safe pruning/reference checks during removal;
 - compatibility projection for current Setup, controller and scheduler surfaces;
+- matrix-first Displays & AV ordering with topology configuration collapsed by default;
 - Morning Announcements priority, scheduler recovery and Background Music arbitration remaining unchanged.
