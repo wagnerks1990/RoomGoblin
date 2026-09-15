@@ -35,8 +35,10 @@ rollback. `hls.js` remains independently updatable.
 
 Version 3.2.1 stays on the same identity/pairing protocol and adds upstream
 audio-unlock, initial-state sequencing, changed-state and correction-limit
-fixes. Automated browser coverage validates RoomGoblin's unlock and reconnect
-contracts; physical-TV audibility still requires the post-upgrade check below.
+fixes. A regression bundles the installed SDK and checks its public `unlock()`
+API; call-site and relay tests cover the surrounding RoomGoblin contracts.
+Physical-TV audibility still requires the post-upgrade check below. Runtime SDK
+version diagnostics must match the locked dependency.
 
 ## Configuration and host networking
 
