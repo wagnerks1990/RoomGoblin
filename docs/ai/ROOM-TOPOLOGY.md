@@ -1,6 +1,6 @@
 # Dynamic room topology AI context
 
-Read `docs/ROOM-TOPOLOGY.md` before changing displays, AV routing, setup inventory, class targets, automation targets, presentations, Morning Announcements, Music Assistant TV selection, or any code that enumerates TVs/sources/displays.
+Read `docs/ROOM-TOPOLOGY.md` before changing displays, AV routing, setup inventory, class targets, automation targets, presentations, Morning Announcements, Music Assistant TV selection, or any code that enumerates TVs/sources/displays. Use `docs/ai/ROOM-TOPOLOGY-VALIDATION.md` as the regression checklist for those changes.
 
 Do not conflate these domains:
 
