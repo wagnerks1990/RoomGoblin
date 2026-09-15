@@ -172,3 +172,8 @@ Regression testing should cover:
 ## Pull requests
 
 Keep changes focused and explain schema migrations, environment variables, persistent paths, security/privilege changes, add-on templates, topology/domain changes, and behavioral invariants. Update the relevant docs in the same change. Topology changes must keep `docs/ROOM-TOPOLOGY.md`, `wiki/Room-Topology.md`, and `docs/ai/ROOM-TOPOLOGY.md` synchronized.
+
+AGP supplies built-in Kotlin support. Do not apply the standalone
+`org.jetbrains.kotlin.android` plugin or the removed `android.kotlinOptions`
+DSL. Kotlin inherits the Java 17 target from `android.compileOptions`; preserve
+that target and the Android SDK/package/signing compatibility settings.

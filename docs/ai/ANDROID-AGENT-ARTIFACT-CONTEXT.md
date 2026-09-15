@@ -70,3 +70,8 @@ The persistent signing mount is separate from application data. Do not fix acces
 ## Onn Android 14 diagnostic invariant
 
 The existing physical-device rule remains mandatory: do not use or recommend `dumpsys package` on the validated Onn Android 14 `wayne` target because it can hang. Prefer `pm path`, `pm list packages`, `pidof`, Agent Status/Capabilities and other direct bounded commands.
+
+AGP supplies built-in Kotlin support. Do not apply the standalone
+`org.jetbrains.kotlin.android` plugin or the removed `android.kotlinOptions`
+DSL. Kotlin inherits the Java 17 target from `android.compileOptions`; preserve
+that target and the Android SDK/package/signing compatibility settings.

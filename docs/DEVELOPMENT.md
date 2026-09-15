@@ -213,3 +213,8 @@ High-value regression scenarios include:
 ## Documentation requirement
 
 Behavior-changing changes should update `CHANGELOG.md`, the relevant `docs/` page, and the matching `wiki/` mirror page. Changes that materially affect future AI/contributor decisions should also update `AGENTS.md`, `docs/AI-CONTEXT.md`, or the relevant focused `docs/ai/` context. Topology changes specifically must keep `docs/ROOM-TOPOLOGY.md`, `wiki/Room-Topology.md`, and `docs/ai/ROOM-TOPOLOGY.md` synchronized.
+
+AGP supplies built-in Kotlin support. Do not apply the standalone
+`org.jetbrains.kotlin.android` plugin or the removed `android.kotlinOptions`
+DSL. Kotlin inherits the Java 17 target from `android.compileOptions`; preserve
+that target and the Android SDK/package/signing compatibility settings.

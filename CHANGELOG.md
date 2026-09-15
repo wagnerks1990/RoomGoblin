@@ -6,6 +6,8 @@
 
 - Update the Android Agent dependency set and align CI plus the maintenance
   image on checksum-verified Gradle 9.6.0 required by Android Gradle Plugin 9.4.
+- Migrate to AGP built-in Kotlin, removing the conflicting standalone plugin
+  and legacy Kotlin options while retaining Java 17 bytecode compatibility.
 - Keep the debug and embedded release APK builds on the same reviewed toolchain;
   package identity, version metadata, signing continuity and staged-artifact
   verification remain unchanged.
