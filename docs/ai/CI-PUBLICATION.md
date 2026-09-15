@@ -1,14 +1,16 @@
-# AI Context: CI Publication and Production Promotion
+# AI Context: CI Publication and Main Updates
 
-Use this file whenever changing GitHub Actions, release publication, production-update selection, image identity, Android maintenance-image publication, or branch-promotion logic.
+Use this file whenever changing GitHub Actions, release publication, source-update selection, image identity, Android maintenance-image publication, or package promotion.
 
 ## Source and release identities
 
-- `main` is the source-of-truth development branch.
-- A `main` commit is **not deployable merely because it merged**.
-- The deployable source is the `production` branch, which advances only after the exact validated Hub and maintenance image pair has been published and promoted.
+- `main` is the sole integration/bootstrap/update branch during active development.
+- Use short-lived branches and checked PRs into main, not production/staging/development promotion branches or environment approvals.
+- A `main` commit is **not deployable merely because it merged**. Its exact validated Hub and maintenance image pair must exist before source/runtime mutation.
+- No workflow creates or advances a separate deployment branch. Retain old branches as history rather than deleting or overwriting their commits.
 - Immutable images are tagged `sha-<40-character commit SHA>` and must carry `org.opencontainers.image.revision=<same SHA>`.
-- The mutable `alpha` aliases are convenience pointers only; production/update correctness is based on the exact immutable SHA pair.
+- Mutable `alpha` aliases are convenience pointers only; update correctness is based on the exact immutable SHA pair.
+- Repository settings and the main ruleset must both allow merge commits, squash and rebase while retaining required checks and resolved reviews. A restrictive ruleset requires an authorized administrative change, not a code-only declaration or protection bypass.
 
 ## Required validation gate
 
@@ -35,45 +37,30 @@ After the exact-SHA gate passes:
 - build both `ghcr.io/wagnerks1990/roomgoblin:sha-<SHA>` and `ghcr.io/wagnerks1990/roomgoblin-maintenance:sha-<SHA>`;
 - publish the legacy compatibility aliases for the same immutable SHA;
 - retain SBOM and provenance generation;
-- do not advance `production` until the complete pair exists;
+- wait for the complete pair before mutable alias promotion;
 - before mutable alias promotion, verify that `main` still equals the validated SHA so a stale run cannot replace a newer alpha;
-- advance `production` only after pair promotion succeeds.
+- promote package aliases only, with read-only source permissions; never advance a production/staging/development branch.
 
-If either image fails, promotion and `production` advancement must fail closed.
+If either image fails, pair promotion must fail closed. Semantic releases remain optional for existing GUI release/revert compatibility; a new release tag is not required for CLI main updates.
 
 ## Android maintenance-image dependency retries
 
 The maintenance image compiles the Android Agent APK. If a hosted runner sees a broad simultaneous failure resolving otherwise valid artifacts from Google Maven, Maven Central, or the Gradle plugin portal, the Docker build may retry the same immutable release build up to three times and force fresh dependency resolution after the first failure.
 
-This retry is bounded reliability hardening only. Never suppress a deterministic Gradle failure, use mutable dependency versions to make the build pass, or skip APK package/version/checksum verification. If all attempts fail, the maintenance image and therefore the production pair must remain unpublished.
+This retry is bounded reliability hardening only. Never suppress a deterministic Gradle failure, use mutable dependency versions to make the build pass, or skip APK package/version/checksum verification. If all attempts fail, the maintenance image and therefore the complete pair must remain unpublished.
 
-## Production update behavior
+## Main update behavior and legacy migration
 
-Install/update paths select the published `production` source and pull the matching immutable image pair. Do not change the default production flow back to local builds or to an unvalidated newer `main` commit. `install.sh --build-local` remains an explicit development/recovery choice only.
+The historical `deploy/update-production.sh` filename and native `published` journal action remain compatibility identifiers, not production-branch selectors. Install/update paths select main, require trusted main ancestry and the exact immutable image pair, and use the conservative component plan plus native lock/journal/backup/health/rollback protocol. Do not change the default to local builds or an unvalidated main commit. `install.sh --build-local` remains an explicit development/recovery choice only.
+
+An old on-disk wrapper follows the retired production ref. Follow `docs/PRODUCTION-UPDATES.md` for the one-time outside-checkout wrapper download. An installed runner without the main capability marker is bridged only after both exact images verify; the target runner performs one full journaled reconciliation. Never overwrite pending journals, reset divergent local main commits, delete old branches, or pull source before image preflight. Later updates recreate only changed verified runtime components.
 
 ## Regression expectations
 
-Keep `test/publish-main-images-gate.test.js` and `test/production-image-install.test.js` passing. They protect:
-
-- direct `main` push publication;
-- exact commit-matched image pulls;
-- canonical and legacy image aliases;
-- all three required workflow identities;
-- stale-promotion protection;
-- single ownership of mutable `alpha` promotion;
-- rejection of image/source revision mismatch;
-- bounded Android dependency retry with fail-closed behavior.
+Keep `test/publish-main-images-gate.test.js`, `test/production-image-install.test.js`, `test/image-readiness.test.js`, `test/update-plan.test.js` and `test/update-runner.test.js` passing. They protect direct main publication, exact images, aliases, all validation gates, stale-promotion rejection, revision mismatch rejection, bounded Android retry, main-only selection, legacy migration, selective reconciliation, backups and interrupted rollback.
 
 ## Documentation synchronization
 
-When publication behavior changes, update together:
+When publication behavior changes, update the publisher, relevant build logic, `docs/CI-WORKFLOWS.md`, its Wiki mirror, `docs/PRODUCTION-UPDATES.md`, its Wiki mirror, this context, regression tests and `AGENTS.md` together. Preserve the shared-data startup umask and backup-readability contract described in `PRODUCTION-SHARED-DATA.md`.
 
-- `.github/workflows/publish-main-images.yml`
-- `maintenance-agent/Dockerfile` when retry/build behavior changes
-- `docs/CI-WORKFLOWS.md`
-- `wiki/CI-Workflows.md`
-- this AI context
-- regression tests
-- `AGENTS.md` if contributor policy or required workflow identities change
-
-Never weaken validation, image-pair atomicity, exact-SHA identity checks, or production-branch promotion to make a release appear available sooner.
+Never weaken validation, exact-SHA identity, complete-pair publication, backup or recovery gates to make an update appear available sooner.

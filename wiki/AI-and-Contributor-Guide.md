@@ -2,7 +2,7 @@
 
 See [Host Networking](Host-Networking) for the current Linux container topology, loopback-only maintenance API, explicit add-on migration, listener ports and recovery rules.
 
-AI coding assistants and contributors should treat the GitHub repository `main` branch as the source of truth for development, while production deployment follows the CI-published `production` branch and exact immutable image pair.
+AI coding assistants and contributors must use `main` as the sole integration/bootstrap/update branch during active development. Use short-lived branches and checked PRs, not production/staging/development promotion branches or environment approvals. Deployment still requires the exact validated immutable image pair. Repository and main-ruleset settings must both allow merge, squash and rebase while retaining checks, review-thread resolution and branch protections.
 
 ## Read first
 
@@ -18,7 +18,7 @@ For CI/release publication, read `docs/ai/CI-PUBLICATION.md`. For production sha
 ## Live upgrade corrections
 
 See [Alpha.82 upgrade recovery](Alpha82-Upgrade-Recovery). Preserve GID 10001
-access to SQLite and ADB trust while keeping other-user access disabled. Also see [Production Publication and Shared Data](Production-Publication-and-Shared-Data) before changing Hub startup, uploads, backups, or production publication.
+access to SQLite and ADB trust while keeping other-user access disabled. Also see [Main Publication and Shared Data](Production-Publication-and-Shared-Data) before changing Hub startup, uploads, backups, or image publication.
 
 ## Current baseline
 
@@ -26,7 +26,7 @@ The current production-readiness review baseline is `1.0.0-alpha.82`.
 
 Critical invariants:
 
-- A merged `main` commit is not automatically deployable. Every `main` push starts `Publish Main Images`, which independently waits for exact-SHA `Validate`, `Display browser regression`, and `Security gates`, publishes the Hub/maintenance pair, promotes the pair, and only then advances `production`.
+- A merged `main` commit is not automatically deployable. Every main push starts `Publish Main Images`, which independently waits for exact-SHA `Validate`, `Display browser regression`, and `Security gates`, publishes the Hub/maintenance pair, and promotes package aliases only. No deployment source branch is created or advanced.
 - Do not restore indirect `workflow_run` publication triggering. The publisher must use the exact `github.sha` from the main push and fail closed if any required workflow for that same SHA fails, is skipped, is cancelled, or does not complete.
 - The maintenance Android image may retry a broad transient Maven/Google dependency-resolution failure only in a bounded fail-closed loop. Deterministic Gradle failures and APK identity/version/checksum failures still block publication.
 - The Hub runtime starts through `tools/start-roomgoblin.sh` with `umask 0027`. Ordinary persistent application files must remain owner-writable and group-readable to GID 10001 so maintenance can back them up without granting world access.
@@ -81,23 +81,23 @@ not be deployed.
 
 Production runtime `.env`, databases, data, uploads, backups, integration data, private keys, master keys, tokens, endpoints, and site-specific mappings must remain outside Git.
 
-## Production update flow
+## Main update flow
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-The updater selects the CI-published `production` source and its exact commit-matched Hub/maintenance images. Do not deploy a newer unpromoted `main` commit merely because source CI passed.
+The historical filename and native `published` action are compatibility identifiers. The updater selects main and verifies its exact commit-matched Hub/maintenance images before changing source or services. It never deploys an unbuilt commit merely because source CI passed. Use [Main-based updates](Production-Updates) for the one-time outside-checkout migration from an old production-following updater. Preserve pending journals, divergent local commits and old branches; later updates selectively recreate changed runtime components.
 
 The installer is part of the supported upgrade path because it reconciles secrets, Host Agent code, data-root ownership, database identity, HTTP exposure, and migration state before container recreation.
 
-Always take a backup before production upgrades. The updater's mandatory operational safety backup must also succeed before service mutation.
+Always take a backup before live upgrades. The updater's mandatory operational safety backup must also succeed before service mutation.
 
 ## Documentation contract
 
 Behavior, architecture, deployment, configuration, recovery, security, CI/publication, topology, or persistent-data permission changes must update the relevant `docs/` page and matching `wiki/` mirror page. Material changes that affect future implementation choices must also update the appropriate `docs/ai/` context.
 
-For production publication/shared-data changes, keep `docs/CI-WORKFLOWS.md`, `docs/PRODUCTION-PUBLICATION-AND-SHARED-DATA.md`, `docs/ai/CI-PUBLICATION.md`, `docs/ai/PRODUCTION-SHARED-DATA.md`, `wiki/CI-Workflows.md`, and `wiki/Production-Publication-and-Shared-Data.md` synchronized.
+For publication/shared-data changes, keep `docs/CI-WORKFLOWS.md`, `docs/PRODUCTION-UPDATES.md`, `docs/PRODUCTION-PUBLICATION-AND-SHARED-DATA.md`, `docs/ai/CI-PUBLICATION.md`, `docs/ai/PRODUCTION-SHARED-DATA.md` and their matching Wiki pages synchronized. An AI connection without administrative writes must report any remaining main-ruleset merge-method setting instead of claiming it changed it or bypassing protection.
 
 The complete AI operating contract lives in `AGENTS.md`; `docs/AI-CONTEXT.md` contains the compact technical handoff.
 

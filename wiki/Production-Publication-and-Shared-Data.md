@@ -1,14 +1,14 @@
-# Production publication and shared-data permissions
+# Main publication and shared-data permissions
 
-This page records the production invariants behind validated image publication, uploaded media permissions, operational backups, and selective updates.
+This page records the deployment invariants behind validated image publication, uploaded media permissions, operational backups, and selective updates. Its historical filename is retained for existing links.
 
 ## Exact-commit publication
 
 Every push to `main` starts **Publish Main Images** directly. Publication waits for **Validate**, **Display browser regression**, and **Security gates** to pass for the exact same commit SHA before any image is deployable.
 
-The publisher creates immutable commit tags for the Hub and maintenance images plus legacy compatibility aliases, then promotes `alpha` and advances `production` only while the validated SHA is still current `main`.
+The publisher creates immutable commit tags for the Hub and maintenance images plus legacy compatibility aliases, then promotes `alpha` only while the validated SHA is still current `main`. No production/staging/development source branch is created or advanced.
 
-Merged source is not automatically deployable; the commit-matched image pair must exist first.
+Merged source is not automatically deployable; the commit-matched image pair must exist first. See [Main-based updates](Production-Updates) for the one-time old-updater migration, selective update command, PR settings and recovery.
 
 ## Android dependency reliability
 
@@ -24,7 +24,7 @@ Do not remove `tools/start-roomgoblin.sh`, inherit an unknown runtime umask, use
 
 ## Media upload / backup failure
 
-A large uploaded MP4 was observed as `0600`. The Hub could read it, but maintenance could not include it in the mandatory safety backup. The production updater correctly stopped before changing services.
+A large uploaded MP4 was observed as `0600`. The Hub could read it, but maintenance could not include it in the mandatory safety backup. The updater correctly stopped before changing services.
 
 For an affected application-owned media file:
 
@@ -44,7 +44,7 @@ A healthy result prints nothing.
 
 ## Update troubleshooting
 
-If a production update stops before mutation:
+If an update stops before mutation:
 
 1. inspect `/var/lib/classroom-hub/app-update-status.json`;
 2. confirm Hub and maintenance health;
@@ -58,4 +58,4 @@ Never bypass the mandatory safety backup to force an update through.
 
 ## AI / contributor rules
 
-Preserve exact-SHA publication gating, the complete Hub+maintenance image pair, bounded Android dependency retries, Hub UID/GID `10001:10001`, runtime umask `0027`, maintenance read access without world access, and the mandatory pre-mutation operational backup.
+Preserve exact-SHA publication gating, the complete Hub+maintenance image pair, bounded Android dependency retries, Hub UID/GID `10001:10001`, runtime umask `0027`, maintenance read access without world access, and the mandatory pre-mutation operational backup. Main is the sole integration/update source; preserve legacy command names without restoring a separate branch-promotion requirement.
