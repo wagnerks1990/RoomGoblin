@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
         setIntent(intent);
         enterImmersive();
         if(intent!=null&&intent.getBooleanExtra(EXTRA_RELOAD,false)&&webView!=null)webView.reload();
-        else loadConfiguredUrl();
+        else ensureConfiguredUrlLoaded();
     }
 
     private void enterImmersive(){
@@ -74,6 +74,12 @@ public class MainActivity extends Activity {
         String url=HubStorage.prefs(this).getString("display_url","");
         if(url==null||url.trim().isEmpty())webView.loadData("<html><body style='background:#0b1017;color:white;font-family:sans-serif;padding:8vw'><h1>RoomGoblin Display</h1><p>This device is installed but has not been assigned a display URL.</p></body></html>","text/html","UTF-8");
         else webView.loadUrl(url);
+    }
+
+    private void ensureConfiguredUrlLoaded(){
+        if(webView==null)return;
+        String current=webView.getUrl();
+        if(current==null||current.trim().isEmpty())loadConfiguredUrl();
     }
 
     private void startPolicyWatchdog(){
@@ -108,7 +114,7 @@ public class MainActivity extends Activity {
         enterImmersive();
         enforceManagementPolicy("resume");
         NativeSendspinManager.INSTANCE.ensureStarted(this);
-        if(webView!=null)loadConfiguredUrl();
+        ensureConfiguredUrlLoaded();
     }
 
     @Override protected void onPause(){

@@ -119,3 +119,17 @@ test("persistent ADB bootstrap uses direct-boot-safe agent storage",()=>{
   assert.match(bridge,/"tcpip"/);
   assert.match(bridge,/persistent-adb\/bootstrap/);
 });
+
+test("managed browser display preserves its WebView across ordinary resume and launch",()=>{
+  const source=fs.readFileSync(path.join(process.cwd(),"agents/android-tv/app/src/main/java/org/roomgoblin/display/MainActivity.java"),"utf8");
+  const onResume=source.match(/@Override protected void onResume\(\)\{([\s\S]*?)\n    \}/)?.[1]||"";
+  const onNewIntent=source.match(/@Override protected void onNewIntent\(Intent intent\)\{([\s\S]*?)\n    \}/)?.[1]||"";
+  assert.match(source,/settings\.setMediaPlaybackRequiresUserGesture\(false\)/);
+  assert.match(source,/private void ensureConfiguredUrlLoaded\(\)/);
+  assert.match(onResume,/ensureConfiguredUrlLoaded\(\)/);
+  assert.doesNotMatch(onResume,/loadConfiguredUrl\(\)/);
+  assert.match(onNewIntent,/EXTRA_RELOAD/);
+  assert.match(onNewIntent,/webView\.reload\(\)/);
+  assert.match(onNewIntent,/else ensureConfiguredUrlLoaded\(\)/);
+  assert.doesNotMatch(onNewIntent,/else loadConfiguredUrl\(\)/);
+});
