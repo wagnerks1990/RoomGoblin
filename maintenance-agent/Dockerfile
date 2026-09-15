@@ -1,8 +1,8 @@
 FROM eclipse-temurin:17-jdk-jammy AS android-agent-build
 
-ARG ANDROID_COMMANDLINE_TOOLS=11076708
-ARG GRADLE_VERSION=8.9
-ARG GRADLE_SHA256=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab
+ARG ANDROID_COMMANDLINE_TOOLS=16111833
+ARG GRADLE_VERSION=9.6.0
+ARG GRADLE_SHA256=bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 # The release APK includes native ADB/Conscrypt libraries and Android's zipflinger
@@ -20,13 +20,13 @@ RUN apt-get update \
  && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
  && rm /tmp/android-tools.zip \
  && (yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true) \
- && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools' \
+ && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-37.2' 'build-tools;36.0.0' 'platform-tools' \
  && curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
  && echo "${GRADLE_SHA256}  /tmp/gradle.zip" | sha256sum -c - \
  && unzip -q /tmp/gradle.zip -d /opt \
  && ln -s "/opt/gradle-${GRADLE_VERSION}" /opt/gradle \
  && rm /tmp/gradle.zip
-ENV PATH=/opt/gradle/bin:/opt/android-sdk/build-tools/35.0.0:/opt/android-sdk/cmdline-tools/latest/bin:$PATH
+ENV PATH=/opt/gradle/bin:/opt/android-sdk/build-tools/36.0.0:/opt/android-sdk/cmdline-tools/latest/bin:$PATH
 WORKDIR /android-agent
 COPY agents/android-tv ./
 # Maven/Google repository availability has occasionally failed a complete
@@ -75,7 +75,7 @@ RUN apt-get update && \
       rm -f /tmp/platform-tools.zip && \
       adb version && adb help 2>&1 | grep -q "pair HOST"; \
     fi
-COPY --from=android-agent-build /opt/android-sdk/build-tools/35.0.0 /opt/android-build-tools
+COPY --from=android-agent-build /opt/android-sdk/build-tools/36.0.0 /opt/android-build-tools
 ENV PATH=/opt/android-build-tools:$PATH
 RUN apksigner --version && keytool -help >/dev/null
 WORKDIR /app
