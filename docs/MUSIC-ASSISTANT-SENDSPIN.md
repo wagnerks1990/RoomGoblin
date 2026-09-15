@@ -18,7 +18,7 @@ Upstream reference, checked 2026-09-09: [Music Assistant Sendspin player documen
 
 ## Browser SDK compatibility pin
 
-The browser receiver intentionally remains on `@sendspin/sendspin-js` 3.2.0
+The browser receiver intentionally remains on `@sendspin/sendspin-js` 3.2.1
 for the reviewed Music Assistant 2.9 compatibility contract. Sendspin 4 and 5
 replace the caller-supplied player identity with a persisted cryptographic
 identity and add a new Noise/pairing handshake. Updating the package alone
@@ -32,6 +32,13 @@ upgrade must be a dedicated migration with Music Assistant version support,
 stable per-display identity and re-pairing behavior, status-registration
 mapping, Chromium/Firefox coverage, physical-TV audio checks, and documented
 rollback. `hls.js` remains independently updatable.
+
+Version 3.2.1 stays on the same identity/pairing protocol and adds upstream
+audio-unlock, initial-state sequencing, changed-state and correction-limit
+fixes. A regression bundles the installed SDK and checks its public `unlock()`
+API; call-site and relay tests cover the surrounding RoomGoblin contracts.
+Physical-TV audibility still requires the post-upgrade check below. Runtime SDK
+version diagnostics must match the locked dependency.
 
 ## Configuration and host networking
 

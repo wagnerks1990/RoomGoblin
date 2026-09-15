@@ -11,7 +11,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "packa
 const dependabot = fs.readFileSync(path.join(__dirname, "..", ".github", "dependabot.yml"), "utf8");
 
 test("browser Sendspin stays on the reviewed Music Assistant 2.9 protocol major", () => {
-  assert.equal(packageJson.dependencies["@sendspin/sendspin-js"], "3.2.0");
+  assert.equal(packageJson.dependencies["@sendspin/sendspin-js"], "3.2.1");
   assert.match(dependabot, /dependency-name: "@sendspin\/sendspin-js"[\s\S]*version-update:semver-major/);
 });
 
@@ -41,4 +41,16 @@ test("desired volume and mute are applied after Sendspin connect instead of befo
 
 test("managed Android WebView keeps autoplay gesture exemption enabled", () => {
   assert.match(androidActivity, /setMediaPlaybackRequiresUserGesture\(false\)/);
+});
+
+// Check the installed public API: 3.2.0 had the caller hook but no SDK unlock.
+test("installed Sendspin SDK exposes the display gesture-unlock API", async () => {
+  const { build } = require("esbuild");
+  const bundle = await build({
+    entryPoints: [path.join(__dirname, "..", "public", "display", "sendspin-entry.js")],
+    bundle: true, format: "esm", target: "es2022", write: false, logLevel: "silent",
+  });
+  const source = Buffer.from(bundle.outputFiles[0].text).toString("base64");
+  const { SendspinPlayer } = await import(`data:text/javascript;base64,${source}`);
+  assert.equal(typeof SendspinPlayer.prototype.unlock, "function");
 });

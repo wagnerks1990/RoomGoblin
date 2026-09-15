@@ -16,8 +16,12 @@
 
 ### Browser media dependencies
 
-- Update `hls.js` to 1.7.3 while retaining the reviewed Sendspin 3.2 browser
-  protocol for Music Assistant 2.9 compatibility.
+- Update `hls.js` to 1.7.3 and Sendspin JS to the compatible 3.2.1 patch while
+  retaining the reviewed Sendspin 3.2 browser protocol for Music Assistant 2.9.
+- Carry Sendspin's audio-unlock, initial-state sequencing, changed-state and
+  inaudible correction-limit fixes without accepting the 4/5 protocol break.
+- Verify the installed SDK supplies the gesture-unlock API and synchronize
+  runtime SDK version diagnostics.
 - Block automated Sendspin major upgrades until stable cryptographic display
   identity, pairing, registration mapping and physical-TV rollback are reviewed.
 
