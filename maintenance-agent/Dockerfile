@@ -1,6 +1,6 @@
 FROM eclipse-temurin:17-jdk-jammy AS android-agent-build
 
-ARG ANDROID_COMMANDLINE_TOOLS=11076708
+ARG ANDROID_COMMANDLINE_TOOLS=16111833
 ARG GRADLE_VERSION=9.6.0
 ARG GRADLE_SHA256=bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
 ENV ANDROID_HOME=/opt/android-sdk
@@ -20,7 +20,7 @@ RUN apt-get update \
  && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
  && rm /tmp/android-tools.zip \
  && (yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true) \
- && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'platform-tools' \
+ && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-37.2' 'build-tools;36.0.0' 'platform-tools' \
  && curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
  && echo "${GRADLE_SHA256}  /tmp/gradle.zip" | sha256sum -c - \
  && unzip -q /tmp/gradle.zip -d /opt \

@@ -178,6 +178,6 @@ AGP supplies built-in Kotlin support. Do not apply the standalone
 DSL. Kotlin inherits the Java 17 target from `android.compileOptions`; preserve
 that target and the Android SDK/package/signing compatibility settings.
 
-Builds use Android API 37 and Build Tools 36.0.0 for AGP 9.4 and OkHttp 5.5.
+Builds use Android API 37.2 and Build Tools 36.0.0 for AGP 9.4 and OkHttp 5.5.
 Keep CI and the maintenance APK stage aligned. This changes compile-time APIs
 only: `minSdk = 26`, `targetSdk = 35`, package identity and signing stay unchanged.

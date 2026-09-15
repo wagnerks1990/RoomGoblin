@@ -8,7 +8,7 @@
   image on checksum-verified Gradle 9.6.0 required by Android Gradle Plugin 9.4.
 - Migrate to AGP built-in Kotlin, removing the conflicting standalone plugin
   and legacy Kotlin options while retaining Java 17 bytecode compatibility.
-- Align the compile SDK at API 37 and Build Tools at 36.0.0 for OkHttp 5.5;
+- Align the compile SDK at API 37.2 and Build Tools at 36.0.0 for OkHttp 5.5;
   retain minimum API 26 and target API 35 for existing managed-device behavior.
 - Keep the debug and embedded release APK builds on the same reviewed toolchain;
   package identity, version metadata, signing continuity and staged-artifact
