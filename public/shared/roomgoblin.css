@@ -11,3 +11,6 @@ html[data-product="roomgoblin"] a{color:#6EE7B7}html[data-product="roomgoblin"] 
 [data-brand-lockup] span{overflow-wrap:anywhere}
 html[data-product="roomgoblin"] .brandWrap .logo{background:transparent;box-shadow:none;border-radius:12px;flex-shrink:0}
 html[data-product="roomgoblin"] .brandWrap .logo img{display:block;object-fit:contain}
+
+/* Matrix-first AV workspace marker. */
+.rg-controller #av.page.active>.avRoutingPanel{position:relative}
