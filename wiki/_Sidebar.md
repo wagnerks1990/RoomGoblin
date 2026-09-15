@@ -6,6 +6,8 @@
 - [Architecture](Architecture)
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
+- [Room Topology](Room-Topology)
+- [CI Workflows](CI-Workflows)
 - [Database-First Recovery Contract](Database-First-Recovery)
 - [Host Networking](Host-Networking)
 - [Display Access](Display-Access)
