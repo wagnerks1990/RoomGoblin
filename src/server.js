@@ -5565,6 +5565,8 @@ app.put("/api/v1/admin/site",requireAdmin,(req,res)=>{
 });
 app.put("/api/v1/admin/displays",requireAdmin,(req,res)=>{
   try{
+    // Old open tabs must not overwrite receiver configuration through the retired editor.
+    if(Object.prototype.hasOwnProperty.call(req.body||{},"topology"))return res.status(409).json({ok:false,error:"Room topology configuration has been retired. Reload RoomGoblin and use the TV Routing Matrix or Settings display editor."});
     const incoming=req.body||{};
     const nextDevices=incoming.devices&&typeof incoming.devices==="object"?incoming.devices:devices;
     const nextGroups=incoming.displayGroups&&typeof incoming.displayGroups==="object"?incoming.displayGroups:displayGroups;

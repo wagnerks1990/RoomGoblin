@@ -19,7 +19,8 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [AI Android TV Context](ai/ANDROID-TV-HARDWARE-VALIDATION.md) — machine/assistant rules derived from physical managed-display validation, including Accessibility navigation and arbitrary-input boundaries.
 - [AI CI Publication Context](ai/CI-PUBLICATION.md) — machine/assistant rules for direct-main exact-SHA validation, image publication, bounded Android dependency retry, promotion, and production-branch advancement.
 - [AI Production Shared-Data Context](ai/PRODUCTION-SHARED-DATA.md) — machine/assistant rules for runtime umask, backup readability, permission repair, and updater safety.
-- [Room Topology](ROOM-TOPOLOGY.md) — canonical physical-TV, content-display, content-source, and typed-group model plus compatibility projection.
+- [TV Routing Matrix](TV-ROUTING-MATRIX.md) — restored controls, saving, preserved data and verification.
+- [Retired room topology](ROOM-TOPOLOGY.md) — removal and archived-data compatibility.
 - [CI Workflows](CI-WORKFLOWS.md) — required validation gates, exact-revision image publication, release promotion, and failure handling.
 - [Production Publication and Shared Data](PRODUCTION-PUBLICATION-AND-SHARED-DATA.md) — exact-SHA deployment publication, Android build retry behavior, shared-data permissions, backup failures, and operator recovery.
 - [Architecture](ARCHITECTURE.md) — system components, process boundaries, persistence, scheduling, priority arbitration, and service relationships.

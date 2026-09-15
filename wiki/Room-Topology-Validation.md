@@ -1,19 +1,16 @@
-# Room Topology Validation
+# Matrix restoration validation checklist
 
-Use this checklist after topology, targeting, or AV-inventory changes:
-
-- Physical TVs, content displays, content sources, and lighting remain separate domains.
-- `All TVs` uses physical-TV inventory; `All Displays` uses content-display inventory.
-- Class defaults stay content-display scoped.
-- TV power never derives its target set from browser/content-display inventory.
-- Stable IDs survive friendly-name changes.
-- Topology cards keep output/input order for TVs/AV Sources and natural stable receiver-ID order for RoomGoblin Displays after rename.
-- Displays & AV keeps routing first, configuration collapsed, and AV-label saves synchronized with topology without a second save.
-- Typed groups do not cross domains.
-- Removed/disabled target IDs fail closed until explicitly remapped.
-- Setup and Displays & AV show the same canonical topology.
-- Automations, Classes, presentations, media, and AV labels refresh after a topology save.
-- Pluto's fixed 8×8 behavior remains adapter-specific.
-- Morning Announcements, scheduler recovery, Background Music, display credentials, enrollment IDs, ADB trust, and managed-device compatibility remain intact unless deliberately changed and tested.
-
-See [Room Topology](Room-Topology) for the architecture contract.
+- No room topology editor, script loader, target override or ordering observer.
+- Matrix retains eight Pluto ports even with fewer content receivers.
+- Original receiver count and stable IDs are visible in Setup.
+- Mapped TV renames preserve receiver IDs, fields, groups and credentials.
+- Unmapped output renames persist labels without inventing receivers.
+- Source names/endpoint IDs survive reload; failures remain visible and retryable.
+- An unchanged refresh preserves routing button identity and open drawer drafts.
+- Normal configuration GETs do not write or expose archived topology.
+- Old topology saves return 409 without altering configuration, including mixed payloads.
+- Archived topology is preserved byte-for-byte for backup/recovery.
+- Morning Announcements, scheduler recovery, Background Music, Android identity
+  and ADB trust remain unchanged.
+- Test actual hardware routing/audio separately; browser fixtures are not proof
+  of live integration health.

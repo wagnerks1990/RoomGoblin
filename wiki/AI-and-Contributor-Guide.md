@@ -42,12 +42,11 @@ Critical invariants:
 - Explicit access profiles fail closed. Built-in profiles with missing/empty capability arrays are repaired without overwriting valid custom lists; Administrator resolves to `capabilities:["*"]`.
 - Passwords are opaque strings; punctuation such as `!` and `#` must survive browser/API/scrypt paths and shell troubleshooting must quote credentials safely.
 - Maintenance startup health checks the Host Agent directly rather than waiting for the main application.
-- Room topology is canonical and domain-separated: physical TVs, content displays, content sources, and lighting are not interchangeable inventories.
-- Stable IDs survive friendly-name changes. `All TVs` resolves against enabled physical TVs; `All Displays` resolves against enabled content receivers; typed groups never cross domains.
-- Legacy `devices`, `displayGroups`, and Pluto labels are compatibility projections. Do not infer physical-TV inventory from content-display rows or hard-code `tv1..tv8` application-wide.
-- Adapter cardinality is local to the adapter. Pluto may remain an 8×8 AV surface while RoomGoblin contains additional TVs/sources on other adapters.
-- Removing or disabling a topology item must fail closed for stale saved target IDs; never redirect a missing endpoint to another device implicitly.
-- Legacy receiver IDs, display groups, AV mappings, enrollment state, ADB trust and source labels remain compatibility projections while the canonical topology evolves.
+- Room topology is retired. Use the TV Routing Matrix, receiver Setup and Settings.
+- Existing receiver/group and Pluto label stores are authoritative; retain archived topology untouched.
+- Do not reinstall topology editors, target wrappers or page-wide ordering observers.
+- Preserve matrix button identity on unchanged polls and drafts in open drawers.
+- Save errors and partial success must be explicit; an unmapped matrix output can be renamed without creating a receiver.
 - Receiver IDs are stable/editable and display groups must be pruned when receivers are removed.
 - The controller inventories existing Docker containers and can adopt them for safe lifecycle/log control.
 - New container creation remains restricted to reviewed supported integration templates.

@@ -1,5 +1,13 @@
 # Configuration
 
+## Displays & AV
+
+Use the [TV Routing Matrix](TV-Routing-Matrix) and its TV/source drawers. Room topology has
+been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
+are preserved. Receiver setup uses count/IDs again; Settings manages receivers
+and AV mappings. Reload the controller after upgrading.
+
+
 See [Host Networking](Host-Networking) for the current Linux container topology, loopback-only maintenance API, explicit add-on migration, listener ports and recovery rules.
 
 RoomGoblin keeps public source generic while each installation supplies school-specific settings at runtime.
@@ -152,32 +160,15 @@ The Setup Wizard and controller Settings page store school/district name, classr
 
 The product is intentionally education-specific and does not expose a neutral organization/site/space preset.
 
-## Room topology
+## Matrix and receiver configuration
 
-See [Room Topology](Room-Topology). Setup and **Displays & AV** edit the same SQLite-backed topology so the application has one source of truth.
+See [TV Routing Matrix](TV-Routing-Matrix). The topology editor is retired.
+Use matrix TV/source drawers for AV names and routing; Setup exposes receiver
+count/IDs and Settings manages receiver mappings/groups. Existing receiver/group
+and Pluto label stores are authoritative; archived `room.topology` is untouched.
+Names do not change stable IDs or credentials. Pluto has eight matrix ports even
+when fewer content receivers are configured. Classes keep content-display targets.
 
-RoomGoblin separates:
-
-- **Physical TVs** — power/AV endpoints and adapter/output mappings.
-- **Content Displays** — browser/Android receivers with stable display IDs and optional physical-TV links.
-- **Content Sources** — routable AV inputs with stable IDs, endpoint IDs, and adapter/input mappings.
-- **Lighting** — a separate device/group domain.
-
-Rules:
-
-- friendly names may change without changing stable IDs;
-- `All Displays` means enabled content receivers;
-- `All TVs` means enabled physical TVs;
-- Classes keep content-display defaults;
-- TV power targets physical TVs, while display media/text/URLs target content displays;
-- AV routing uses physical TVs and content sources;
-- typed groups cannot cross domains;
-- removing/disabling a topology item removes it from new target selections immediately;
-- stale saved target IDs remain editable but resolve to no endpoint until remapped; they are never silently redirected.
-
-Enabled content displays connect through their stable `/display/<id>` URL without credentials by default. **Settings → Classroom Display Access** offers optional one-use enrollment and a deliberate **Require individual display credentials** switch for environments that need per-browser revocation.
-
-The current Pluto Mark I screen remains an adapter-specific 8×8 matrix. That fixed hardware shape is not the RoomGoblin-wide TV/display/source count and must not be copied into application-wide target logic.
 
 ## Access profiles and passwords
 

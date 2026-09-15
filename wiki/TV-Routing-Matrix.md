@@ -1,0 +1,71 @@
+# TV Routing Matrix
+
+Displays & AV uses the TV Routing Matrix and its TV/source drawers. The room
+topology editor and its browser target overrides have been removed from both
+Displays & AV and Setup at the operator's request.
+
+## Everyday controls
+
+- Click a routing cell to select a source for a TV. The existing hardware
+  read-back check distinguishes verified routing from an unconfirmed command.
+- Click a TV name to open its name, power, source, groups and display tools.
+  An output without a content receiver can still be renamed; this saves its
+  matrix label without creating a receiver or enrollment identity.
+- Click a source heading to edit its name and browser/kiosk endpoint ID.
+- Use Settings' display editor for receiver names, AV output mappings and groups.
+  Setup again exposes the receiver count and editable stable receiver IDs.
+- Matrix & Diagnostics contains the existing hardware system/network controls.
+
+The Pluto matrix has eight input/output ports regardless of the number of
+RoomGoblin receivers. Receiver URLs and credentials are separate from hardware
+ports. Display tools still require a configured receiver; AV routing does not.
+
+## Saving and refresh
+
+Receiver configuration is owned by the normal database-backed `devices` and
+`displayGroups` configuration. Pluto labels and source endpoint IDs are owned by
+the existing AV-label API. No topology editor, API wrapper, target-picker override
+or page-wide topology ordering observer participates in normal reads or saves.
+
+A mapped TV name save updates its existing receiver and matrix label. The UI
+reports a partial failure if the receiver was saved but the label request failed;
+retry the save instead of assuming both completed. Source save errors are also
+shown explicitly. A matrix output with no receiver updates only its label.
+
+Matrix polling builds the grid once per changed state, keeps unchanged routing
+buttons in place, and no longer rebuilds hidden legacy configuration inventories.
+Polling does not replace the open TV/source drawer's unsaved inputs.
+
+## Upgrade and recovery
+
+No database reset or automatic rollback of operator edits is performed. Previously
+saved receiver IDs/names, groups, AV mappings, output/input labels, source endpoint
+IDs and optional enrollment credentials remain in their existing stores. Android
+package identity, management state, ADB keys and native Sendspin are unchanged.
+
+The old `system_preferences` entry named `room.topology` is retained untouched as
+historical data for backup/recovery. It is no longer read, written or projected by
+the application. Do not use it to restore names or inventory automatically: it
+may be stale. Cached topology submissions receive HTTP 409 with a reload message
+instead of silently changing current receiver configuration.
+
+After installing the exact validated Hub/maintenance image pair, reload the
+controller (Ctrl+Shift+R if the previous editor is still present). No Android APK
+reinstallation is needed for this change. Use the normal backed-up updater in
+[Production updates](Production-Updates); preserve its image checks and rollback.
+A source rollback reactivates the earlier topology behavior and may consult stale
+historical data, so use the updater's coordinated source/database backup rollback
+and verify names/mappings before routing hardware.
+
+## Verification
+
+Regression coverage includes matrix-only desktop/mobile layouts, unchanged grid
+identity across refresh, unsaved drawer edits, mapped and unmapped TV renames,
+source endpoint/name saves, visible save failures, and read-back after reload.
+Backend coverage verifies stale topology requests fail without modifying receiver
+state, archived topology remains untouched, and ordinary display/label saves and
+credential preservation continue to work. Existing scheduler, Morning
+Announcements, Background Music and Android compatibility suites remain required.
+Browser fixtures do not establish physical TV/Pluto acceptance. After upgrade,
+verify routing on one output, names after refresh, remote controls and uninterrupted
+native audio; report hardware tests separately from automated results.

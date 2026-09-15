@@ -11,7 +11,7 @@
 - [RoomGoblin Brand and Compatibility](RoomGoblin-Brand-and-Compatibility)
 - [Operator Workspaces](GUI-Workspaces)
 - [Architecture](Architecture)
-- [Room Topology](Room-Topology)
+- [TV Routing Matrix](TV-Routing-Matrix)
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
 - [Database-First Recovery Contract](Database-First-Recovery)
@@ -25,15 +25,10 @@
 
 ## Current verified baseline
 
-The current baseline includes the dynamic room-topology model:
-
-- physical TVs, RoomGoblin content displays, and AV content sources are independent inventories;
-- Setup and **Displays & AV** edit the same SQLite-backed topology;
-- `All TVs` resolves against physical TVs while `All Displays` resolves against content receivers;
-- Classes keep content-display defaults and do not implicitly target every physical TV;
-- legacy display/device maps and Pluto labels remain compatibility projections;
-- stale removed topology target IDs fail closed until explicitly remapped; and
-- Pluto's current 8×8 shape remains an adapter property rather than the application-wide device count.
+Displays & AV now uses the restored TV Routing Matrix and its TV/source drawers.
+Room topology has been removed; receiver Setup uses count/IDs again and Settings
+owns receiver mappings/groups. Existing saved configuration and credentials are
+preserved. See [TV Routing Matrix](TV-Routing-Matrix) for upgrade and validation.
 
 Alpha.80 retains the recovery invariants established in alpha.71/alpha.79 and adds:
 
@@ -121,6 +116,6 @@ Source repository: https://github.com/wagnerks1990/RoomGoblin
 
 The repository `docs/` directory is the canonical technical documentation set. `wiki/` is the Git-tracked mirror of this GitHub Wiki. AI coding assistants should read `AGENTS.md`, `docs/AI-CONTEXT.md`, `docs/ROOM-TOPOLOGY.md`, `docs/brand/AI-BRAND-CONTEXT.md`, and the relevant `docs/ai/` context before modifying topology or managed-device behavior.
 
-- [[Room Topology|Room-Topology]] — physical TV, content display, content source, target-domain, and adapter boundaries.
+- [[TV Routing Matrix|TV-Routing-Matrix]] — controls, preserved configuration and validation after topology removal.
 - [[ESPHome devices|ESPHome-Devices]] — encrypted native enrollment and supported controls.
 - [[Android TV Hardware Validation|Android-TV-Hardware-Validation]] — physical managed-display validation and capability-reporting boundaries.

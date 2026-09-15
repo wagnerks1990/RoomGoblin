@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Restore TV Routing Matrix and remove room topology
+
+- Remove topology editors, target overrides, page-wide ordering observer and
+  backend preference projections; restore the original receiver Setup workflow.
+- Preserve saved receiver/group/AV data and credentials; retain archived topology
+  untouched, and reject stale topology saves with an explicit reload message.
+- Allow names on matrix outputs without a receiver, report save/partial-save
+  errors, and avoid repeatedly rebuilding unchanged routing controls and hidden
+  configuration inventories during polling.
+- Add backend/browser regression coverage and update operator, Wiki and AI docs.
+  Live hardware acceptance remains separate from automated validation.
+
 ### Android build toolchain and dependencies
 
 - Update the Android Agent dependency set and align CI plus the maintenance
@@ -41,7 +53,7 @@
   deployment and operations guides; regression-check the legacy migration handoff
   and distinguish live filesystem copies from database-safe recovery backups.
 
-### Matrix-first topology controls
+### Earlier matrix-first topology controls (superseded by removal above)
 
 - Keep routine TV routing ahead of the collapsed topology configuration panel.
 - Synchronize TV/output and AV-source/input labels from their normal controls;

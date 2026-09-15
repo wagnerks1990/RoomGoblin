@@ -59,25 +59,18 @@ The controller may inventory and operate existing Docker containers through the 
 
 Supported optional managed Docker add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Node-RED. Veyon and Veyon WebAPI remain native host services. Existing containers should be adopted without recreation unless an administrator explicitly chooses recreate/update. Persistent add-on data must survive container replacement.
 
-### Room topology invariants
+### Matrix and receiver setup invariants
 
-RoomGoblin has separate canonical inventories for physical TVs, content displays, content sources, and lighting. Do not infer one domain from another.
+Read [TV Routing Matrix](TV-ROUTING-MATRIX.md). The topology layer is retired.
+Use the original matrix drawers and receiver setup; do not restore topology
+editors, target wrappers, preference projection or ordering observers. Keep
+stable receiver IDs, groups, AV mappings and credentials. Leave archived
+`room.topology` data untouched. Display/class targets remain content receivers;
+Pluto matrix port count is independent of configured receiver count.
 
-- `All Displays` resolves against enabled content receivers.
-- `All TVs` resolves against enabled physical TVs.
-- Classes keep content-display defaults.
-- TV power targets physical TVs; display text/media/URLs target content displays.
-- AV routing uses physical TVs plus content sources.
-- Stable IDs survive friendly-name changes.
-- Typed groups cannot cross domains.
-- Missing/removed target IDs fail closed rather than being redirected.
-- Pluto's current 8×8 shape is adapter-specific and must not become an application-wide device-count assumption.
-
-Setup and **Displays & AV** edit the same SQLite-backed topology. Changes must refresh dependent operator target inventories without requiring duplicate configuration.
-
-### Setup wizard invariants
-
-Setup edits the canonical topology rather than treating receiver count as the room's TV count. Content-display IDs remain stable/editable, and physical-TV/source inventory is independent. Legacy receiver/device projections remain compatibility boundaries during migration.
+Setup keeps receiver count and IDs editable and prunes removed receiver IDs from
+groups. Matrix polling preserves open drawer drafts and unchanged route controls.
+Save errors and partial success must be visible.
 
 Discovery actions must match backend capabilities: **Adopt Existing** must not call a route that rejects adoption, and **Deploy/Recreate** must remain an explicit action.
 
@@ -189,10 +182,7 @@ High-value regression scenarios include:
 - maintenance startup while the main application is still stopped;
 - adopting existing Docker integrations without recreation;
 - deploy/recreate/remove of supported add-ons while preserving persistent data;
-- topology migration from three content displays to eight physical TVs;
-- adding/removing/renaming/disabling physical TVs, content displays, and content sources without cross-domain leakage;
-- Classes/Automations/presentations/media refreshing from the canonical topology;
-- stale removed topology target IDs failing closed;
+- matrix-only layouts, persisted TV/source renames, unchanged polling controls and stale topology-save rejection;
 - multiple displays connecting/reconnecting simultaneously;
 - automation execution at period boundaries;
 - active-class selection for multi-class events;

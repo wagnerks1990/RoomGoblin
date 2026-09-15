@@ -62,7 +62,7 @@ Every release should:
 6. verify persistent-data/database compatibility;
 7. test Host Agent socket access and maintenance startup ordering;
 8. test authentication/capability migration behavior;
-9. test room-topology migration and dependent target refresh;
+9. test matrix-only routing, persisted names, stable polling controls and stale topology-save rejection;
 10. test managed integration adopt/deploy/recreate behavior;
 11. test critical classroom behavior;
 12. update `CHANGELOG.md`, `docs/`, `wiki/`, and focused AI context.
@@ -108,11 +108,9 @@ docker build -t classroom-control-hub-maintenance:test maintenance-agent
 - Administrator resolves to `capabilities:["*"]`.
 - Password punctuation including `!` and `#` survives setup/login/scrypt paths.
 - Maintenance Compose health checks the Host Agent directly instead of waiting on the main application.
-- Room topology keeps physical TVs, content displays, content sources, and lighting as separate domains.
-- `All Displays` resolves to enabled content receivers; `All TVs` resolves to enabled physical TVs.
-- Stable topology IDs survive friendly-name changes; typed groups cannot cross domains.
-- Pluto's 8×8 matrix is adapter-specific and must not become an application-wide TV/display count assumption.
-- Removed/disabled target IDs fail closed rather than being silently redirected.
+- Room topology is retired; the original matrix and receiver stores are authoritative.
+- Keep stable IDs, archived topology data, AV mappings, groups and credentials intact.
+- Matrix port count remains independent of content-receiver count.
 - Existing Docker containers may be discovered/adopted for safe lifecycle operations.
 - New container creation remains restricted to supported integration templates.
 - Supported optional managed Docker add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Node-RED; Veyon and Veyon WebAPI remain native host services.
@@ -153,10 +151,10 @@ Regression testing should cover:
 - active DB selection with historical alternate database files present;
 - administrator/profile recovery and punctuation-heavy passwords;
 - controller load/authentication and Overview responsiveness;
-- migration from a smaller content-display inventory to a larger physical-TV inventory;
-- adding/removing/renaming/disabling physical TVs, content displays, and content sources;
-- Classes, Automations, presentations, media, and AV labels refreshing from canonical topology;
-- stale removed topology target IDs failing closed;
+- matrix-only layout and TV/source names surviving refresh/reload;
+- unmapped output rename without creating receivers, and visible save failures;
+- unchanged matrix polls do not replace controls or issue routing commands;
+- stale topology saves fail without changing current or archived configuration;
 - Docker discovery/adoption and supported add-on lifecycle;
 - display connect/reconnect and version convergence;
 - scheduled automation and manual Run Now/Test Now;

@@ -545,7 +545,7 @@ function avInputLabel(n){return avLabels().inputs[Number(n)-1]||`Content Source 
 async function refreshPluto(){
  try{
   const [j,cfg,dev]=await Promise.all([api('/api/v1/pluto/status'),api('/api/v1/config'),api('/api/v1/devices').catch(()=>({status:{}}))]);S.pluto=j;S.avConfig=cfg||{};S.avDeviceStatus=dev.status||{};
-  syncAvOutputLabelsFromDisplays();renderDisplayAvConfiguration();renderMatrix();renderOutputs();renderInputs();renderTV();
+  syncAvOutputLabelsFromDisplays();renderMatrix();renderTV();
   avHealth.textContent=j.ok?'Matrix Online':'Matrix Partial';avHealth.className='pill '+(j.ok?'ok':'bad');avMsg.textContent=j.ok?'Ready':'Some matrix status queries failed';
  }catch(e){avHealth.textContent='Matrix Offline';avHealth.className='pill bad';avMsg.textContent=e.message}
 }
@@ -561,7 +561,21 @@ function storedAvPowerStates(){try{const value=JSON.parse(localStorage.getItem('
 function avPowerStateInfo(output){const live=avReportedPowerState(output);if(live.known)return {...live,verified:true,label:live.on?'On':'Off'};const m=storedAvPowerStates(),v=m[output];if(v&&typeof v==='object'&&(v.on===true||v.on===false))return {known:true,on:v.on,verified:false,label:v.on?'On':'Off',at:v.at||null};if(v===true||v===false)return {known:true,on:v,verified:false,label:v?'On':'Off'};return {known:false,on:null,verified:false,label:'Unknown'}}
 function avPowerState(output){return avPowerStateInfo(output).on===true}
 function saveAvPowerState(output,on){const m=storedAvPowerStates();m[output]={on:!!on,at:new Date().toISOString()};try{localStorage.setItem('classroomHub.avPowerStates',JSON.stringify(m))}catch{}}
-function renderMatrix(){const v=S.pluto.videoStatus||{},routes=v.allsource||[],L=avLabels();matrix.innerHTML='<div class="mh">TV / SOURCE →</div>'+L.inputs.map((n,i)=>`<div class="mh"><button class="av40SourceHead" onclick="openAvSourceDrawer(${i+1})">${esc(n)}</button><small>Input ${i+1}</small></div>`).join('');for(let o=1;o<=8;o++){const online=avTvOnline(o),ps=avPowerStateInfo(o),cls=ps.known?(ps.on?'on':'off'):'unknown',title=ps.verified?`Live reported power: ${ps.label}. Click to toggle.`:ps.known?`Last RoomGoblin command: ${ps.label}. Hardware does not currently report live TV power. Click to toggle.`:'TV power state is not reported by the matrix. Click to send Power On.';matrix.innerHTML+=`<div class="mh av40TvCell"><button class="av40TvName" onclick="openAvTvDrawer(${o})"><b>${esc(L.outputs[o-1])}</b><small>HDBT ${o} • ${online?'Receiver online':'Receiver offline'}</small></button><button class="av40PowerMini ${cls} ${ps.verified?'reported':''}" title="${esc(title)}" onclick="event.stopPropagation();toggleRowTvPower(${o})">⏻</button></div>`;for(let i=1;i<=8;i++)matrix.innerHTML+=`<button class="route ${Number(routes[o-1])===i?'active':''}" onclick="route(${o},${i})">${Number(routes[o-1])===i?'●':'○'} ${esc(L.inputs[i-1])}</button>`}routeAll.innerHTML='<b>Route all TVs:</b>'+L.inputs.map((n,i)=>`<button onclick="routeAllTo(${i+1})">All → ${esc(n)}</button>`).join('');renderAv40Summary()}
+let avMatrixMarkup='',avRouteAllMarkup='';
+function renderMatrix(){
+ const routes=S.pluto.videoStatus?.allsource||[],L=avLabels();
+ let markup='<div class="mh">TV / SOURCE →</div>'+L.inputs.map((n,i)=>`<div class="mh"><button class="av40SourceHead" onclick="openAvSourceDrawer(${i+1})">${esc(n)}</button><small>Input ${i+1}</small></div>`).join('');
+ for(let o=1;o<=8;o++){
+  const online=avTvOnline(o),ps=avPowerStateInfo(o),cls=ps.known?(ps.on?'on':'off'):'unknown',title=ps.verified?`Live reported power: ${ps.label}. Click to toggle.`:ps.known?`Last RoomGoblin command: ${ps.label}. Hardware does not currently report live TV power. Click to toggle.`:'TV power state is not reported by the matrix. Click to send Power On.';
+  markup+=`<div class="mh av40TvCell"><button class="av40TvName" onclick="openAvTvDrawer(${o})"><b>${esc(L.outputs[o-1])}</b><small>HDBT ${o} • ${online?'Receiver online':'Receiver offline'}</small></button><button class="av40PowerMini ${cls} ${ps.verified?'reported':''}" title="${esc(title)}" onclick="event.stopPropagation();toggleRowTvPower(${o})">⏻</button></div>`;
+  for(let i=1;i<=8;i++)markup+=`<button class="route ${Number(routes[o-1])===i?'active':''}" onclick="route(${o},${i})">${Number(routes[o-1])===i?'●':'○'} ${esc(L.inputs[i-1])}</button>`;
+ }
+ // Avoid repeatedly parsing the growing grid and replacing unchanged controls on polling.
+ if(markup!==avMatrixMarkup){matrix.innerHTML=markup;avMatrixMarkup=markup;}
+ const allMarkup='<b>Route all TVs:</b>'+L.inputs.map((n,i)=>`<button onclick="routeAllTo(${i+1})">All → ${esc(n)}</button>`).join('');
+ if(allMarkup!==avRouteAllMarkup){routeAll.innerHTML=allMarkup;avRouteAllMarkup=allMarkup;}
+ renderAv40Summary();
+}
 async function toggleRowTvPower(output){const ps=avPowerStateInfo(output),turnOn=ps.known?!ps.on:true;try{await plutoAction({action:'cecOutput',output:Number(output),connection:'hdbt',index:turnOn?0:1},false);saveAvPowerState(output,turnOn);renderMatrix();avMsg.textContent=`${avOutputLabel(output)} power ${turnOn?'on':'off'} sent`;}catch(e){notify(e.message,'error')}}
 function renderAv40Summary(){const routes=S.pluto.videoStatus?.allsource||[],L=avLabels(),counts={};routes.forEach(x=>counts[x]=(counts[x]||0)+1);const best=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];av40MatrixSummary.textContent=S.pluto?.ok?'Operational':'Needs Attention';av40MatrixSummary.className='kpi '+(S.pluto?.ok?'ok':'bad');av40Firmware.textContent=`Firmware ${S.pluto.systemStatus?.main||'—'}`;av40RouteSummary.textContent=best?`${best[1]} TV(s) → ${L.inputs[Number(best[0])-1]||'Unknown'}`:'No routes reported'}
 async function route(o,i){await plutoAction({action:'route',output:o,input:i},false);for(let n=0;n<4;n++){await new Promise(r=>setTimeout(r,120*(n+1)));const v=(await jpost('/api/v1/pluto',{action:'videoStatus'})).data;if(Number(v.allsource?.[o-1])===i){S.pluto.videoStatus=v;renderMatrix();avMsg.textContent=`Verified: ${avOutputLabel(o)} → ${avInputLabel(i)}`;if(S.avDrawerOutput===o)renderAvDrawer();return}}avMsg.textContent=`Route sent but not verified: ${avOutputLabel(o)} → ${avInputLabel(i)}`}
@@ -575,10 +589,31 @@ function closeAvSourceDrawer(){avSourceDrawer.classList.remove('open');if(!avTvD
 function renderAvSourceDrawer(){const i=Number(S.avDrawerInput||1),L=avLabels(),x=S.pluto.inputStatus||{},inactive=Number(x.inactive?.[i-1]),edid=x.edid?.[i-1];avSourceDrawerTitle.textContent=L.inputs[i-1];avSourceDrawerSubtitle.textContent=`Matrix Input ${i}`;avSourceDrawerName.value=L.inputs[i-1];avSourceDrawerEndpoint.value=L.sourceEndpoints[i-1]||`source${i}`;avSourceDrawerEdid.value=edid??15;avSourceDrawerInfo.innerHTML=`Signal: <b>${inactive===0?'Detected':inactive===1?'No signal':'Unknown'}</b><br>EDID profile: ${esc(edid??'Unknown')}<br>Endpoint: ${esc(L.sourceEndpoints[i-1]||`source${i}`)}`}
 async function sourceDrawerPower(index){const i=Number(S.avDrawerInput||1);await plutoAction({action:'cecInput',input:i,index},false);notify(`${avInputLabel(i)} power ${index===1?'on':'off'} command sent.`,'success')}
 async function saveSourceDrawerEdid(){const i=Number(S.avDrawerInput||1),profile=Number(avSourceDrawerEdid.value);if(!Number.isFinite(profile)||profile<0||profile>255)return notify('EDID profile must be 0-255.','error');if(!confirm(`Change ${avInputLabel(i)} EDID profile to ${profile}? Only change EDID when troubleshooting source compatibility.`))return;await plutoAction({action:'setEdid',input:i,profile});setTimeout(refreshPluto,250)}
-async function saveSourceDrawer(){const i=Number(S.avDrawerInput),L=avLabels(),name=avSourceDrawerName.value.trim()||`Content Source ${i}`,endpoint=avSourceDrawerEndpoint.value.trim()||`source${i}`;L.inputs[i-1]=name;L.sourceEndpoints[i-1]=endpoint;const j=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(L)});S.pluto.labels=j.labels;renderMatrix();renderAvSourceDrawer();renderDisplayAvConfiguration();notify('Source saved.','success')}
+async function saveSourceDrawer(){
+ try{
+  const i=Number(S.avDrawerInput),L=avLabels(),name=avSourceDrawerName.value.trim()||`Content Source ${i}`,endpoint=avSourceDrawerEndpoint.value.trim()||`source${i}`;
+  L.inputs[i-1]=name;L.sourceEndpoints[i-1]=endpoint;
+  const j=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(L)});
+  S.pluto.labels=j.labels;renderMatrix();renderAvSourceDrawer();notify('Source saved.','success');
+ }catch(e){notify(`Source was not saved: ${e.message}`,'error')}
+}
 function renderAvDrawer(){const o=Number(S.avDrawerOutput||1),L=avLabels(),input=Number(S.pluto.videoStatus?.allsource?.[o-1]||1),hit=displayByAvOutput(o),id=hit?.[0]||`tv${o}`,st=S.avDeviceStatus?.[id]||{},sig=Number(S.pluto.inputStatus?.inactive?.[input-1])===0,ps=avPowerStateInfo(o);avDrawerTitle.textContent=L.outputs[o-1];avDrawerTvName.value=L.outputs[o-1];avDrawerSubtitle.textContent=`HDBT ${o} • Receiver ${id}`;avDrawerCurrentSource.textContent=L.inputs[input-1]||`Content Source ${input}`;avDrawerSource.innerHTML=L.inputs.map((n,i)=>`<option value="${i+1}" ${i+1===input?'selected':''}>${esc(n)} (Input ${i+1})</option>`).join('');avDrawerPowerStatus.textContent=ps.verified?`Power: ${ps.label} • live matrix report`:(ps.known?`Power: ${ps.label} • last RoomGoblin command; not hardware-confirmed`:'Power: Unknown • this matrix firmware is not reporting live TV power');avDrawerInfo.innerHTML=`Receiver: <b>${st.online?'Online':'Offline'}</b><br>Current Source: ${esc(L.inputs[input-1]||'—')}<br>Source Signal: ${sig?'Detected':'Not detected'}<br>Resolution: ${esc(st.meta?.resolution||'Unknown')}<br>Last Seen: ${esc(overviewLastSeen(st))}`;renderDrawerTvGroups(id)}
 async function drawerTvPower(index){const o=Number(S.avDrawerOutput);await plutoAction({action:'cecOutput',output:o,connection:'hdbt',index},false);saveAvPowerState(o,index===0);renderMatrix();renderAvDrawer();notify(`${avOutputLabel(o)} power ${index===0?'on':'off'} sent.`,'success')}
-async function saveDrawerTvName(){const o=Number(S.avDrawerOutput),name=avDrawerTvName.value.trim()||`TV ${o}`,hit=displayByAvOutput(o);if(!hit)throw new Error(`No receiver is mapped to HDBT ${o}`);const [id]=hit,devices={...(S.avConfig.devices||{})};devices[id]={...devices[id],name};await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:S.avConfig?.room,devices,displayGroups:S.avConfig?.displayGroups||{},lightingGroups:S.avConfig?.lightingGroups||[]})});const L=avLabels();L.outputs[o-1]=name;const j=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(L)});S.pluto.labels=j.labels;S.avConfig.devices=devices;renderMatrix();renderAvDrawer();renderDisplayAvConfiguration();notify('TV name saved.','success')}
+async function saveDrawerTvName(){
+ let receiverSaved=false;
+ try{
+  const o=Number(S.avDrawerOutput),name=avDrawerTvName.value.trim()||`TV ${o}`,hit=displayByAvOutput(o);
+  // A matrix output can exist without a RoomGoblin receiver. Rename its label only.
+  if(hit){
+   const [id]=hit,devices={...(S.avConfig.devices||{})};devices[id]={...devices[id],name};
+   const saved=await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({devices,displayGroups:S.avConfig?.displayGroups||{}})});
+   S.avConfig.devices=saved.devices;receiverSaved=true;
+  }
+  const L=avLabels();L.outputs[o-1]=name;
+  const j=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(L)});
+  S.pluto.labels=j.labels;renderMatrix();renderAvDrawer();notify('TV name saved.','success');
+ }catch(e){notify(`${receiverSaved?'Receiver name saved, but the matrix label was not saved':'TV name was not saved'}: ${e.message}`,'error')}
+}
 function renderDrawerTvGroups(id){const groups=S.avConfig?.displayGroups||{};avDrawerGroups.innerHTML=Object.entries(groups).filter(([n])=>n!=='all').map(([name,members])=>`<label><input type="checkbox" data-drawer-tv-group="${esc(name)}" ${(members||[]).includes(id)?'checked':''}>${esc(name)}</label>`).join('')||'<span class="muted">No optional groups configured.</span>'}
 async function saveDrawerTvGroups(){const o=Number(S.avDrawerOutput),id=avTvDisplayId(o),groups={...(S.avConfig?.displayGroups||{})};document.querySelectorAll('[data-drawer-tv-group]').forEach(cb=>{const n=cb.dataset.drawerTvGroup,m=new Set(groups[n]||[]);cb.checked?m.add(id):m.delete(id);groups[n]=[...m]});if(groups.all&&!groups.all.includes(id))groups.all=[...groups.all,id];await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:S.avConfig?.room,devices:S.avConfig?.devices||{},displayGroups:groups,lightingGroups:S.avConfig?.lightingGroups||[]})});S.avConfig.displayGroups=groups;notify('TV groups saved.','success')}
 function drawerUpdateRoute(){return route(Number(S.avDrawerOutput),Number(avDrawerSource.value))}

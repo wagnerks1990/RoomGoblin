@@ -1,5 +1,15 @@
 # AI and Contributor Operating Contract
 
+## Displays & AV restoration
+
+The operator retired room topology. Use the original TV Routing Matrix, TV/source
+drawers, receiver Setup and Settings display editor. Read
+`docs/TV-ROUTING-MATRIX.md` and `docs/ai/ROOM-TOPOLOGY.md`. Preserve existing receiver
+and AV-label stores; leave `room.topology` archived and untouched. Do not restore
+topology scripts, request wrappers or preference projections. Keep unchanged
+matrix controls stable across polling and surface save failures.
+
+
 For alpha.82 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
 Keep SQLite database/WAL/SHM access shared with maintenance (0660), ADB trust
 group-readable (0750 directory/0640 keys), and legacy signing keys unchanged.
