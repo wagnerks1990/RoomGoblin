@@ -29,7 +29,24 @@ RUN apt-get update \
 ENV PATH=/opt/gradle/bin:/opt/android-sdk/build-tools/35.0.0:/opt/android-sdk/cmdline-tools/latest/bin:$PATH
 WORKDIR /android-agent
 COPY agents/android-tv ./
-RUN gradle :app:assembleRelease --no-daemon --stacktrace --max-workers=2 \
+# Maven/Google repository availability has occasionally failed a complete
+# dependency graph in one GitHub-hosted build while sibling jobs succeeded.
+# Retry the immutable Android build a bounded number of times and force a fresh
+# dependency lookup after the first failure. Deterministic build failures still
+# fail closed after three attempts.
+RUN set -e; \
+    build_ok=0; \
+    for attempt in 1 2 3; do \
+      refresh=""; \
+      if [ "$attempt" -gt 1 ]; then refresh="--refresh-dependencies"; fi; \
+      if gradle :app:assembleRelease --no-daemon --stacktrace --max-workers=2 $refresh; then \
+        build_ok=1; \
+        break; \
+      fi; \
+      echo "Android release build attempt ${attempt}/3 failed; retrying dependency resolution." >&2; \
+      sleep $((attempt * 5)); \
+    done; \
+    test "$build_ok" = 1 \
  && test -s app/build/outputs/apk/release/app-release-unsigned.apk \
  && BADGING="$(aapt dump badging app/build/outputs/apk/release/app-release-unsigned.apk | head -n1)" \
  && printf '%s\n' "$BADGING" | grep -Fq "package: name='org.roomgoblin.display'" \
