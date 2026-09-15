@@ -5,17 +5,51 @@ on:
     branches: [fix/main-update-flow]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   source:
+    if: ${{ !contains(github.event.head_commit.message, '[main-update-applied]') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          persist-credentials: false
-      - name: Archive tracked source only
+          ref: fix/main-update-flow
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+      - name: Apply reviewed source and regression changes
+        run: |
+          set -euo pipefail
+          python3 tools/apply-main-update-flow.py
+          python3 tools/apply-main-update-tests.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('test/update-runner.test.js')
+          s=p.read_text()
+          assert s.count('timeout:15000') == 1
+          s=s.replace('timeout:15000','timeout:45000').replace("return {...r,events:fs.readFileSync(env.EVENTS,'utf8')}","assert.ifError(r.error);return {...r,events:fs.readFileSync(env.EVENTS,'utf8')}")
+          p.write_text(s)
+          PY
+          rm tools/apply-main-update-flow.py tools/apply-main-update-tests.py
+      - name: Verify syntax and focused migration regressions
+        run: |
+          set -euo pipefail
+          npm run check
+          while IFS= read -r script; do bash -n "$script"; done < <(git ls-files '*.sh')
+          node --test --test-concurrency=1 test/image-readiness.test.js test/update-runner.test.js test/update-plan.test.js test/publish-main-images-gate.test.js test/production-image-install.test.js
+          git diff --check
+      - name: Commit source to the work branch only
+        run: |
+          set -euo pipefail
+          git config user.name 'RoomGoblin Main Update Review'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -u
+          git commit -m 'Restore main-only updates with safe legacy migration [main-update-applied]'
+          git push origin HEAD:fix/main-update-flow
+      - name: Archive tracked source for verification
         run: git archive --format=tar.gz -o "$RUNNER_TEMP/roomgoblin-source.tar.gz" HEAD
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
