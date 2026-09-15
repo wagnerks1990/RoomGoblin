@@ -8,6 +8,7 @@
 - [Configuration](Configuration)
 - [Room Topology](Room-Topology)
 - [CI Workflows](CI-Workflows)
+- [Production Publication and Shared Data](Production-Publication-and-Shared-Data)
 - [Database-First Recovery Contract](Database-First-Recovery)
 - [Host Networking](Host-Networking)
 - [Display Access](Display-Access)
