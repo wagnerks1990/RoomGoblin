@@ -4,6 +4,7 @@
 - [Brand and Compatibility](RoomGoblin-Brand-and-Compatibility)
 - [Operator Workspaces](GUI-Workspaces)
 - [Architecture](Architecture)
+- [Room Topology](Room-Topology)
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
 - [Database-First Recovery Contract](Database-First-Recovery)
