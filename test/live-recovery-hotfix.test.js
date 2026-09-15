@@ -18,8 +18,9 @@ test("installer backs up every SQLite database and canonicalizes the configured 
 });
 
 test("startup recovery restores missing built-in capabilities before the application starts",()=>{
-  const recovery=read("src/startup-recovery.js"),dockerfile=read("Dockerfile");
-  assert.match(dockerfile,/CMD \["node",(?:\s*"--require",\s*"\.\/src\/direct-display-compat\.js",)?\s*"src\/startup-recovery\.js"\]/);
+  const recovery=read("src/startup-recovery.js"),dockerfile=read("Dockerfile"),startup=read("tools/start-roomgoblin.sh");
+  assert.match(dockerfile,/CMD \["sh",\s*"tools\/start-roomgoblin\.sh"\]/);
+  assert.match(startup,/exec node --require \.\/src\/direct-display-compat\.js src\/startup-recovery\.js/);
   assert.match(recovery,/administrator:[\s\S]*?capabilities:\["\*"\]/);
   assert.match(recovery,/repairAdministrator/);
   assert.match(recovery,/UPDATE access_profiles SET role=\?,enabled=\?,config_json=\?,updated_at=\?/);

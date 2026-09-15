@@ -7,7 +7,7 @@ Six workflows have distinct responsibilities:
 | Validate | Locked dependency audits, syntax, Node/Python regressions, Windows parsing, Android debug APK, restrictive-context Hub build, maintenance build, two Trivy scans and appliance smoke tests |
 | Display browser regression | Chromium and Firefox receiver/operator regression tests |
 | Security gates | Full-history secret scan; PR dependency review at moderate severity |
-| Publish Main Images | Wait for the three main-commit validation workflows, publish exact-revision Hub/maintenance images and refresh alpha aliases without a deployment branch |
+| Publish Main Images | Start on every `main` push, wait for all three exact-SHA validation workflows, publish exact-revision Hub/maintenance images and refresh alpha aliases without a deployment branch |
 | Publish Containers | Verify semantic version/main ancestry and required checks, then promote the published SHA pair to release tags and create the release |
 | Sync Wiki | Synchronize the tracked mirror on relevant changes or manual dispatch |
 
@@ -30,26 +30,51 @@ have finite timeouts. Wiki writes are serialized and refresh stale source before
 syncing. Security checks, both browser engines, APK build/signing-contract coverage,
 immutable revision checks and main image-pair gating are not optional.
 
-The publisher is restricted to successful main **push** validation. The
-`workflow_run` trigger is already scoped to the repository's `Validate` workflow
-and `main` branch, so the job gate intentionally does not depend on optional
-`workflow_run.head_repository` payload metadata. It still requires a successful
-push run on `main`, gates the exact `head_sha` against the latest `Validate`,
-`Display browser regression`, and `Security gates` push runs, and promotes only
-when that validated SHA is still current `main`. This prevents a missing optional
-payload field from silently skipping publication while preserving repository,
-branch, commit, and required-check boundaries.
+## Main publication trigger and exact-SHA gate
+
+`Publish Main Images` is a direct `push` workflow on `main`. It does **not** depend
+on a `workflow_run` payload from Validate. This removes the class of failures where
+a valid merge is validated but publication is skipped because optional or changed
+upstream workflow payload metadata does not satisfy the publisher's job-level
+condition.
+
+The direct trigger does not weaken validation. The publisher fails closed:
+
+- `VALIDATED_SHA` is exactly `${{ github.sha }}` from the `main` push;
+- the gate polls Actions for that exact SHA with `event=push`;
+- `Validate`, `Display browser regression`, and `Security gates` must all report
+  `success` for that SHA;
+- failure, cancellation, timeout, action-required, stale, or skipped state blocks
+  publication;
+- immutable Hub and maintenance images are labeled with the same exact Git SHA;
+- both canonical and legacy aliases are built as one validated pair;
+- mutable `alpha` aliases advance only after the complete pair exists; no source
+  branch is created or advanced;
+- promotion is skipped when the validated SHA is no longer current `main`.
 
 Gate selection checks the latest run/attempt for each workflow; a prior success
 cannot mask a failed rerun. Workflow identities are regression checked against
 real files. Before changing branch/ruleset required checks, inspect repository
-settings: this change does not weaken or silently edit them. If an administrator
-configured the removed standalone job names as required, replace those
-requirements with their corresponding Validate jobs before merging.
+settings; publication hardening must not weaken required checks.
+
+## Transient Android dependency resolution
+
+The maintenance image builds the Android Agent from repository source. A hosted
+runner can occasionally encounter an external Google Maven/Maven Central/plugin
+portal incident where many otherwise valid Kotlin/Android dependencies appear
+unavailable at the same time. The maintenance Docker build therefore retries the
+immutable Android release build up to three times and forces fresh dependency
+resolution after the first failed attempt.
+
+This is bounded reliability hardening, not failure suppression. A deterministic
+source/build problem still fails closed after the retry limit, and publication
+still requires a successfully built APK plus package, version, and checksum
+verification.
 
 Third-party actions remain pinned to reviewed commit SHAs. Dependabot retains
 Node, Actions and Gradle coverage. Do not consolidate by disabling security scans,
-using path filters that strand required checks, or accepting unpublished source.
+using path filters that strand required checks, bypassing the exact-SHA gate, or
+accepting unpublished source.
 
 ## Main-only development policy
 
