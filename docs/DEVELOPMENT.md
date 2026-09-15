@@ -2,7 +2,7 @@
 
 ## Read first
 
-AI assistants and contributors should read `AGENTS.md` and `docs/AI-CONTEXT.md` before changing behavior.
+AI assistants and contributors should read `AGENTS.md` and `docs/AI-CONTEXT.md` before changing behavior. Before changing TVs, displays, sources, AV routing, class targets, automation targets, presentations, media, Morning Announcements, or Music Assistant TV selection, also read `docs/ROOM-TOPOLOGY.md` and `docs/ai/ROOM-TOPOLOGY.md`.
 
 The direct source tree on `main` is canonical. The temporary `source-archive/` migration payload and materialization workflow have been removed.
 
@@ -57,11 +57,27 @@ A failed integration must not mark unrelated integrations offline. Slow optional
 
 The controller may inventory and operate existing Docker containers through the authenticated maintenance/Host Agent path. New container creation stays restricted to reviewed supported add-on images. Do not replace this with arbitrary root shell or unrestricted Docker execution.
 
-Supported optional managed add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Veyon WebAPI. Existing containers should be adopted without recreation unless an administrator explicitly chooses recreate/update. Persistent add-on data must survive container replacement.
+Supported optional managed Docker add-ons are Mosquitto, Govee2MQTT, Music Assistant, and Node-RED. Veyon and Veyon WebAPI remain native host services. Existing containers should be adopted without recreation unless an administrator explicitly chooses recreate/update. Persistent add-on data must survive container replacement.
+
+### Room topology invariants
+
+RoomGoblin has separate canonical inventories for physical TVs, content displays, content sources, and lighting. Do not infer one domain from another.
+
+- `All Displays` resolves against enabled content receivers.
+- `All TVs` resolves against enabled physical TVs.
+- Classes keep content-display defaults.
+- TV power targets physical TVs; display text/media/URLs target content displays.
+- AV routing uses physical TVs plus content sources.
+- Stable IDs survive friendly-name changes.
+- Typed groups cannot cross domains.
+- Missing/removed target IDs fail closed rather than being redirected.
+- Pluto's current 8×8 shape is adapter-specific and must not become an application-wide device-count assumption.
+
+Setup and **Displays & AV** edit the same SQLite-backed topology. Changes must refresh dependent operator target inventories without requiring duplicate configuration.
 
 ### Setup wizard invariants
 
-Receiver IDs are stable, editable identifiers. Setup must reject duplicate receiver IDs and prune every display group against the final saved receiver set before writing configuration.
+Setup edits the canonical topology rather than treating receiver count as the room's TV count. Content-display IDs remain stable/editable, and physical-TV/source inventory is independent. Legacy receiver/device projections remain compatibility boundaries during migration.
 
 Discovery actions must match backend capabilities: **Adopt Existing** must not call a route that rejects adoption, and **Deploy/Recreate** must remain an explicit action.
 
@@ -127,23 +143,30 @@ A newer `VERSION` supersedes the version number, but existing behavioral invaria
 Preferred workflow:
 
 ```text
+feature/fix branch
       ↓
-GHCR images + release notes
+pull request
+      ↓
+Validate + Display browser regression + Security gates
+      ↓
+merge to main
+      ↓
+validated immutable Hub + maintenance image pair
+      ↓
+main image-pair publication and guarded alias promotion
 ```
 
-Urgent classroom alpha fixes may be committed directly when necessary, but they must remain traceable, validated, and documented.
+Urgent classroom alpha fixes still use a checked pull request. Preserve branch protections and required checks; urgency does not authorize a direct-to-main bypass.
 
 ## Production update workflow
 
+Supported production updates select `origin/main` and require its exact validated published image pair before changing source or services:
+
 ```bash
-cd /opt/classroom-hub
-git fetch origin
-git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
 
-The installer copies host runners to `/usr/local/libexec` with executable permissions. It must not chmod or rewrite tracked source files in `/opt/classroom-hub`; `git status --short` should remain empty after a supported update when the checkout began clean.
+The updater verifies the exact published revisions, applies the journaled deployment path, and refuses silent downgrade or unvalidated image substitution. No separate deployment branch advances. Follow [Main-based updates](PRODUCTION-UPDATES.md) for the one-time legacy updater transition. Do not document `git pull origin main && install.sh` as the normal production path.
 
 For development rebuilds after the installer has established the host state:
 
@@ -166,7 +189,10 @@ High-value regression scenarios include:
 - maintenance startup while the main application is still stopped;
 - adopting existing Docker integrations without recreation;
 - deploy/recreate/remove of supported add-ons while preserving persistent data;
-- Setup receiver-ID edits and shrinking display sets with custom groups;
+- topology migration from three content displays to eight physical TVs;
+- adding/removing/renaming/disabling physical TVs, content displays, and content sources without cross-domain leakage;
+- Classes/Automations/presentations/media refreshing from the canonical topology;
+- stale removed topology target IDs failing closed;
 - multiple displays connecting/reconnecting simultaneously;
 - automation execution at period boundaries;
 - active-class selection for multi-class events;
@@ -186,4 +212,4 @@ High-value regression scenarios include:
 
 ## Documentation requirement
 
-Behavior-changing changes should update `CHANGELOG.md`, the relevant `docs/` page, and the matching `wiki/` mirror page. Changes that materially affect future AI/contributor decisions should also update `AGENTS.md` and/or `docs/AI-CONTEXT.md`.
+Behavior-changing changes should update `CHANGELOG.md`, the relevant `docs/` page, and the matching `wiki/` mirror page. Changes that materially affect future AI/contributor decisions should also update `AGENTS.md`, `docs/AI-CONTEXT.md`, or the relevant focused `docs/ai/` context. Topology changes specifically must keep `docs/ROOM-TOPOLOGY.md`, `wiki/Room-Topology.md`, and `docs/ai/ROOM-TOPOLOGY.md` synchronized.

@@ -14,7 +14,7 @@ A deployment can use:
 - `config/` JSON files for generic defaults, schemas, and migration compatibility;
 - mounted persistent directories for site-specific and managed-integration state.
 
-Normal classroom configuration should be completed in the GUI. MQTT/Govee, Pluto, Veyon, Music Assistant, displays, schedules, automations, and update settings become database-authoritative after they are saved.
+Normal classroom configuration should be completed in the GUI. MQTT/Govee, Pluto, Veyon, Music Assistant, room topology, schedules, automations, and update settings become database-authoritative after they are saved.
 
 ## Standard production paths
 
@@ -152,19 +152,32 @@ The Setup Wizard and controller Settings page store school/district name, classr
 
 The product is intentionally education-specific and does not expose a neutral organization/site/space preset.
 
-## Display configuration
+## Room topology
 
-Displays use stable receiver IDs. The Setup Wizard Receiver IDs field is editable rather than a disabled preview.
+See [Room Topology](Room-Topology). Setup and **Displays & AV** edit the same SQLite-backed topology so the application has one source of truth.
+
+RoomGoblin separates:
+
+- **Physical TVs** — power/AV endpoints and adapter/output mappings.
+- **Content Displays** — browser/Android receivers with stable display IDs and optional physical-TV links.
+- **Content Sources** — routable AV inputs with stable IDs, endpoint IDs, and adapter/input mappings.
+- **Lighting** — a separate device/group domain.
 
 Rules:
 
-- receiver IDs must be unique;
-- editing the receiver list synchronizes the display count;
-- changing the display count adds/removes trailing default IDs;
-- saving a reduced receiver set prunes every display group's member list to IDs that still exist;
-- friendly display names may change without changing receiver IDs or invalidating optional credentials.
+- friendly names may change without changing stable IDs;
+- `All Displays` means enabled content receivers;
+- `All TVs` means enabled physical TVs;
+- Classes keep content-display defaults;
+- TV power targets physical TVs, while display media/text/URLs target content displays;
+- AV routing uses physical TVs and content sources;
+- typed groups cannot cross domains;
+- removing/disabling a topology item removes it from new target selections immediately;
+- stale saved target IDs remain editable but resolve to no endpoint until remapped; they are never silently redirected.
 
-Enabled receivers connect through their stable `/display/<id>` URL without credentials by default. **Settings → Classroom Display Access** offers optional one-use enrollment and a deliberate **Require individual display credentials** switch for environments that need per-browser revocation.
+Enabled content displays connect through their stable `/display/<id>` URL without credentials by default. **Settings → Classroom Display Access** offers optional one-use enrollment and a deliberate **Require individual display credentials** switch for environments that need per-browser revocation.
+
+The current Pluto Mark I screen remains an adapter-specific 8×8 matrix. That fixed hardware shape is not the RoomGoblin-wide TV/display/source count and must not be copied into application-wide target logic.
 
 ## Access profiles and passwords
 
@@ -208,7 +221,7 @@ Before live deployment, verify:
 3. timezone is correct;
 4. `DATABASE_FILE` resolves to the intended live database;
 5. Administrator has effective `*` capability;
-6. receiver IDs/groups are internally consistent;
+6. topology IDs, display links, typed groups, and adapter mappings are internally consistent;
 7. class/calendar rules resolve the expected current day;
 8. integration endpoints are reachable from the correct host/container;
 9. Host Agent and maintenance both see `/run/classroom-control-hub/host-agent.sock`;

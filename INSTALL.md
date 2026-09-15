@@ -109,15 +109,17 @@ sudo bash install.sh
 
 ## Normal production updates
 
-Use Git rather than replacing the application tree with ZIP contents:
+Use the verified main updater rather than pulling source first or replacing the application tree with ZIP contents:
 
 ```bash
-cd /opt/classroom-hub
-sudo git fetch origin
-sudo git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
+
+Before the first update from the retired production-branch runner, follow the
+[one-time transition](docs/PRODUCTION-UPDATES.md#one-time-transition-from-the-old-production-updater).
+The updater selects main but requires its exact published image pair before
+source/runtime mutation, and retains journaled backups, health checks and rollback.
 
 For development rebuilds after the installer has established host state:
 

@@ -61,6 +61,11 @@ Keep `test/publish-main-images-gate.test.js`, `test/production-image-install.tes
 
 ## Documentation synchronization
 
+`test/update-documentation.test.js` guards the installation, migration, deployment,
+operations and development entrypoints against reintroducing routine source-first
+pulls or losing the one-time legacy updater handoff. Keep canonical and Wiki
+operator procedures aligned; a live filesystem copy is not a SQLite-safe backup.
+
 When publication behavior changes, update the publisher, relevant build logic, `docs/CI-WORKFLOWS.md`, its Wiki mirror, `docs/PRODUCTION-UPDATES.md`, its Wiki mirror, this context, regression tests and `AGENTS.md` together. Preserve the shared-data startup umask and backup-readability contract described in `PRODUCTION-SHARED-DATA.md`.
 
 Never weaken validation, exact-SHA identity, complete-pair publication, backup or recovery gates to make an update appear available sooner.

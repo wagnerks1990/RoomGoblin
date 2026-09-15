@@ -174,15 +174,17 @@ If health reports `scheduler.ok=false`, inspect class schedules and automation a
 
 ## Production updates
 
-Use Git-first updates:
+Use the guarded main updater:
 
 ```bash
-cd /opt/classroom-hub
-git fetch origin
-git pull --ff-only origin main
-cat VERSION
-sudo bash install.sh
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
+sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
+
+It requires the exact published main image pair before source/runtime mutation.
+Do not pull source first. Follow [Main-based updates](PRODUCTION-UPDATES.md) for
+the one-time legacy wrapper migration and pending-journal recovery. Preserve the
+native backup, health, selective reconciliation and rollback protocol.
 
 For a development rebuild after the installer has established runtime permissions:
 

@@ -141,8 +141,14 @@ The web controller can perform release-tag updates after `sudo ./install.sh` has
 Manual update:
 
 ```bash
+sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
 sudo bash /opt/classroom-hub/deploy/update-production.sh
 ```
+
+Main is the sole source, but its exact published image pair is required before
+source/runtime mutation. Do not pull source first. Follow [Main-based updates](Production-Updates)
+for the one-time transition from the retired production-branch wrapper; retain
+the native backup/journal/health/rollback safeguards.
 
 Development rebuild after a valid install:
 

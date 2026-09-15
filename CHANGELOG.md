@@ -14,6 +14,9 @@
   overwriting divergent commits. Preserve backups, rollback and pending journals.
 - Update operator, contributor, AI and Wiki documentation and add regressions for
   main selection, legacy migration, missing images and divergent branch safety.
+- Remove conflicting source-first pull instructions from installation, migration,
+  deployment and operations guides; regression-check the legacy migration handoff
+  and distinguish live filesystem copies from database-safe recovery backups.
 
 ### Selective production updates and consolidated CI
 
