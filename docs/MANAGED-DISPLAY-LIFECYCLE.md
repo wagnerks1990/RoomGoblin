@@ -4,50 +4,34 @@ Managed Displays are durable RoomGoblin enrollments. A device record may survive
 
 ## Lifecycle operations
 
-The Managed Displays UI exposes three enrollment lifecycle actions:
+- **Enable enrollment** — marks the record active.
+- **Disable enrollment** — preserves configuration but excludes it from policy automation.
+- **Remove from Hub** — removes only the RoomGoblin enrollment, not the Android app or TV data.
 
-- **Enable enrollment** — marks the record active so policy automation can manage it.
-- **Disable enrollment** — keeps inventory and configuration but excludes the display from policy automation.
-- **Remove from Hub** — deletes only the RoomGoblin enrollment record. It does not uninstall `org.roomgoblin.display`, factory-reset Android, or delete unrelated RoomGoblin data.
+## Device Administrator
 
-Removal is intentionally non-destructive to the physical device. Destructive device actions must remain separate and explicit.
+**Enable Device Admin** opens Android's native approval flow. Device Admin enables the fallback sleep/lock tier but is not Device Owner.
 
-## Re-enrollment after factory reset
+**Remove Device Admin** remains an explicit user-confirmed native Android operation when an administrator wants to revoke Device Admin independently of an upgrade.
 
-A factory reset creates a new Android trust/enrollment context. If the same physical display is enrolled again, remove the stale RoomGoblin record through **Remove from Hub** instead of editing `devices.json` manually. The new record can then be assigned the desired school, building, room, profile, and display URL.
+## Automatic Agent replacement
 
-## Device Administrator activation
+An explicit **Reinstall/Update Agent** operation may use the already trusted ADB management channel to preserve Device Admin across a package replacement. RoomGoblin validates the staged APK and appliance signing identity before changing the device. If the installed package has active Device Admin, it requests removal with Android's `dpm` shell interface and verifies that the receiver is inactive before uninstalling anything. If verification fails, replacement stops rather than forcing package deletion.
 
-On the tested Onn 4K Streaming Device running Android 14, `dpm set-active-admin` returned success but `DevicePolicyManager.isAdminActive()` remained false. RoomGoblin therefore uses Android's user-visible Device Administrator approval flow for reliable activation.
+After installation RoomGoblin restores saved Agent v2/display configuration, supported trusted grants such as `WRITE_SECURE_SETTINGS`, persistent-ADB policy, and relaunches the kiosk. If Device Admin was active before replacement, RoomGoblin attempts to reactivate the current `org.roomgoblin.display/.AgentDeviceAdminReceiver` and verifies the resulting state. Some Android TV firmware may still require the native confirmation screen; in that case the result explicitly reports that confirmation is required rather than claiming restoration succeeded.
 
-Use **Enable Device Admin** in the Device Agent v2 panel. RoomGoblin launches Android's `android.app.action.ADD_DEVICE_ADMIN` screen for `org.roomgoblin.display/.AgentDeviceAdminReceiver`. Approve the request on the TV, then rerun **Capabilities**. Expected state after successful activation:
-
-- `deviceAdminActive: true`
-- `sleepDisplay.available: true`
-- `deviceOwner: false` unless the device was separately provisioned as Device Owner.
-
-Device Admin is a fallback tier. Fully managed production deployments should target Device Owner/DPC provisioning during initial device setup.
-
-## Device Administrator deactivation
-
-Android will not uninstall an application while its Device Administrator receiver is active. During legacy package migration this can surface as `DELETE_FAILED_DEVICE_POLICY_MANAGER` for `org.classroomhub.display`.
-
-Use **Remove Device Admin** in Managed Displays. RoomGoblin selects the legacy package first when it is still installed and opens Android TV's native Device Administrator screen for the relevant `AgentDeviceAdminReceiver`. The administrator must still be deactivated with the TV remote; RoomGoblin does not silently revoke device policy authority.
-
-After deactivation, retry **Reinstall Agent**. The migration can then remove the old package, install `org.roomgoblin.display`, restore supported trusted grants and Agent v2 configuration, and relaunch the kiosk. Device Admin and Accessibility may need to be approved again because those grants belong to the installed Android package.
+This transaction is particularly important when migrating legacy `org.classroomhub.display`, where Android otherwise returns `DELETE_FAILED_DEVICE_POLICY_MANAGER`.
 
 ## Persistent ADB synchronization
 
-`Configure v2` must synchronize the existing Hub-side persistent ADB policy into the Android agent. The broadcast includes `persistent_adb` and `target_adb_port`, preventing the Hub from reporting persistent ADB enabled while Agent v2 believes it is disabled.
+`Configure v2` synchronizes the Hub-side persistent ADB policy and target port into the Android agent.
 
 ## Regression invariants
 
-Do not regress these behaviors:
-
 1. Managed display inventory remains visible when ADB is unavailable.
-2. Removing a Hub enrollment must not remove the Android app or wipe unrelated data.
-3. Disabled enrollments remain editable and can be re-enabled.
-4. Device Admin activation and deactivation require Android system confirmation UI.
-5. Legacy package migration must guide Device Admin removal instead of attempting destructive policy bypasses.
-6. Agent v2 configuration carries the persistent ADB policy and target port.
-7. Do not require manual editing of `devices.json` for routine lifecycle operations.
+2. Removing Hub enrollment never removes the Android app or wipes unrelated data.
+3. Agent replacement validates the replacement artifact before changing the installed package.
+4. Never uninstall an app while its Device Admin receiver still verifies active.
+5. Restore enrollment identity, Agent configuration, persistent ADB, trusted grants, and prior Device Admin intent after replacement.
+6. Never report Device Admin restored without verifying it active.
+7. Standalone Device Admin removal remains distinct from the automatic replacement transaction.
