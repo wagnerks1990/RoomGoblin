@@ -16,6 +16,23 @@ The Music Assistant long-lived token remains encrypted in SQLite as `musicassist
 
 Upstream reference, checked 2026-09-09: [Music Assistant Sendspin player documentation](https://www.music-assistant.io/player-support/sendspin/), section **Connecting Other Sendspin Players**, documents `:8927/sendspin` for external clients and distinguishes it from the built-in web-player route on port 8095.
 
+## Browser SDK compatibility pin
+
+The browser receiver intentionally remains on `@sendspin/sendspin-js` 3.2.0
+for the reviewed Music Assistant 2.9 compatibility contract. Sendspin 4 and 5
+replace the caller-supplied player identity with a persisted cryptographic
+identity and add a new Noise/pairing handshake. Updating the package alone
+would make RoomGoblin report its historical `classroom-hub-*` player ID while
+the SDK advertises a different client ID, and the existing browser/relay tests
+do not exercise a real Music Assistant pairing flow.
+
+Dependabot therefore ignores only semver-major updates for this package. Minor
+and patch updates within the supported major remain eligible. A future major
+upgrade must be a dedicated migration with Music Assistant version support,
+stable per-display identity and re-pairing behavior, status-registration
+mapping, Chromium/Firefox coverage, physical-TV audio checks, and documented
+rollback. `hls.js` remains independently updatable.
+
 ## Configuration and host networking
 
 Existing `musicassistant.config` fields are retained; this change does not migrate the database or reset saved audio/attachment preferences.
