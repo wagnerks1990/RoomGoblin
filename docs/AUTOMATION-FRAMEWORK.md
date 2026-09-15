@@ -50,6 +50,12 @@ Morning Announcements reserve only their target displays. The scheduler may cont
 
 Background Music remains paused until display reconciliation succeeds. A failed reconciliation is retried while the audio-priority hold remains active.
 
+## Existing-conflict edit compatibility
+
+Conflict validation must not turn an already-saved automation into an uneditable record after an upgrade. When an existing enabled automation is edited, RoomGoblin compares the candidate conflicts with the exact conflicts produced by the previously saved revision over the same planning horizon. Exact pre-existing date/time/resource overlaps are grandfathered for that edit; newly introduced overlaps are still rejected. New automations continue to require conflict-free enabled schedules.
+
+This compatibility rule does not create new runtime priority semantics and does not silently disable either event. It exists only to preserve editability of configurations that were valid before conflict validation was introduced. Operators can then deliberately resolve or reprioritize those legacy overlaps instead of being locked out of unrelated edits.
+
 ## Regression requirements
 
 Changes to the scheduler or controller must preserve these invariants:
