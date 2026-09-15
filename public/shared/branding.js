@@ -111,6 +111,7 @@
   window.addEventListener("load",()=>{const p=window.ROOMGOBLIN_BRANDING||ROOMGOBLIN;replaceLegacyPresentationText(document.body,p.productName);applyArtwork(p);});
 
   if(!renderer&&location.pathname.startsWith("/controller"))managedDisplaysOverviewLink();
+  if(!renderer&&!document.querySelector('script[data-roomgoblin-topology]')){const script=document.createElement("script");script.src="/shared/room-topology-ui.js";script.defer=true;script.dataset.roomgoblinTopology="1";document.head.append(script);}
   if(!renderer&&!document.querySelector('script[data-controlhub-integration-setup]')){const script=document.createElement("script");script.src="/shared/integration-setup.js";script.defer=true;script.dataset.controlhubIntegrationSetup="1";document.head.append(script);}
   if(!renderer&&!document.querySelector('script[data-controlhub-automation-fix]')){const script=document.createElement("script");script.src="/shared/automation-hotfix.js";script.defer=true;script.dataset.controlhubAutomationFix="1";document.head.append(script);}
 })();
