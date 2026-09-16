@@ -1,0 +1,110 @@
+"use strict";
+
+const net=require("node:net");
+const dgram=require("node:dgram");
+
+// Protocol identifiers verified against upstream v4.9.7. Keep this allowlist
+// separate from discovery: WebAPI advertises local plugins, not endpoint proof.
+const POWER_FEATURES=Object.freeze({
+  powerDownNow:"a88039f2-6716-40d8-b4e1-9f5cd48e91ed",
+  installUpdatesAndPowerDown:"09bcb3a1-fc11-4d03-8cf1-efd26be8655b",
+  powerDownConfirmed:"ea2406be-d5c7-42b8-9f04-53469d3cc34c",
+  powerDownDelayed:"352de795-7fc4-4850-bc57-525bcb7033f5"
+});
+
+function normalizeMac(value){
+  const input=String(value||"").trim();
+  if(!input)return "";
+  if(!/^(?:[a-f\d]{12}|(?:[a-f\d]{2}:){5}[a-f\d]{2}|(?:[a-f\d]{2}-){5}[a-f\d]{2})$/i.test(input))throw Error("Use a six-byte MAC address.");
+  const mac=input.replace(/[:-]/g,"").toUpperCase();
+  if(/^0{12}$/.test(mac)||(parseInt(mac.slice(0,2),16)&1))throw Error("A unicast MAC address is required.");
+  return mac.match(/../g).join(":");
+}
+function magicPacket(mac){
+  const normalized=normalizeMac(mac);if(!normalized)throw Error("Save this computer's MAC address first.");
+  const bytes=Buffer.from(normalized.replace(/:/g,""),"hex");
+  return Buffer.concat([Buffer.alloc(6,255),...Array(16).fill(bytes)]);
+}
+function wakeComputer(mac,createSocket=dgram.createSocket){
+  const packet=magicPacket(mac);
+  return new Promise((resolve,reject)=>{
+    const socket=createSocket("udp4");let done=false;
+    const finish=error=>{if(done)return;done=true;clearTimeout(timer);try{socket.close()}catch{};error?reject(Error("Wake-on-LAN packet could not be sent.")):resolve({accepted:true,verified:false})};
+    const timer=setTimeout(()=>finish(Error("timeout")),3000);
+    socket.once("error",finish);
+    try{socket.bind(0,()=>{try{socket.setBroadcast(true);socket.send(packet,9,"255.255.255.255",finish)}catch(error){finish(error)}})}catch(error){finish(error)}
+  });
+}
+function powerArguments(feature,args={},active=true){
+  if(!Object.hasOwn(POWER_FEATURES,feature))return args;
+  if(active===false)throw Error("Shutdown requests cannot be cancelled through Veyon WebAPI.");
+  if(feature!=="powerDownDelayed")return {};
+  const seconds=Number(args.shutdownTimeout);
+  if(!Number.isInteger(seconds)||seconds<30||seconds>3600)throw Error("Shutdown delay must be 30–3600 seconds.");
+  return {shutdownTimeout:seconds};
+}
+function nativeLauncher(computers,mode){
+  if(!["view","control","master"].includes(mode))throw Error("Unsupported desktop tool.");
+  if(!Array.isArray(computers)||!computers.length||computers.length>16)throw Error("Choose 1–16 computers for desktop tools.");
+  const hosts=computers.map(c=>{if(net.isIP(c.ip)!==4)throw Error("Desktop tools require saved IPv4 targets.");return c.ip});
+  // Only validated IPv4 literals are interpolated. No keys, names or arbitrary
+  // commands cross this boundary. Authentication uses the teacher's local Veyon.
+  return `# RoomGoblin Veyon desktop tools — run on the teacher's Windows computer.\r\n`+
+    `$ErrorActionPreference = 'Stop'\r\n`+
+    `$veyonDir = Join-Path $env:ProgramFiles 'Veyon'\r\n`+
+    `$cli = Join-Path $veyonDir 'veyon-cli.exe'\r\n`+
+    `if (!(Test-Path -LiteralPath $cli)) { throw 'Install and configure official Veyon on this teacher computer first.' }\r\n`+
+    `$targets = @('${hosts.join("','")}')\r\n`+
+    `Write-Host ('Selected computers: ' + ($targets -join ', '))\r\n`+
+    `Write-Host 'Uses your local Veyon authentication and access rules. No RoomGoblin keys are exported.'\r\n`+
+    (mode==="master"?
+      `Write-Host 'Select the listed computers in Veyon Master for file transfer, clipboard, screen selection and installed community plugins.'\r\nStart-Process -FilePath (Join-Path $veyonDir 'veyon-master.exe')\r\n`:
+      `foreach ($target in $targets) { Start-Process -FilePath $cli -ArgumentList @('remoteaccess','${mode}',$target) }\r\n`);
+}
+const CATALOG=Object.freeze([
+  ["MonitoringMode","Monitor screens","web","Live previews and live view"],
+  ["RemoteView","Remote view","desktop","Download native viewer launcher, or use web Live View"],
+  ["RemoteControl","Remote keyboard and mouse","desktop","Native control launcher; requires teacher-side Veyon authentication"],
+  ["ClipboardExchange","Clipboard exchange","desktop","Native remote-control window and Veyon clipboard settings"],
+  ["Screenshot","Screenshots","web","Download screenshot"],
+  ["Demo","Broadcast","web","Teacher or selected student source, fullscreen or windowed"],
+  ...["DemoServer","FullScreenDemo","WindowDemo","ShareOwnScreenFullScreen","ShareOwnScreenWindow","ShareUserScreenFullScreen","ShareUserScreenWindow"].map(name=>[name,"Broadcast component","workflow","Use broadcast controls; these components are coordinated together"]),
+  ["ScreenLock","Screen lock","web","Lock and unlock with read-back and restart recovery"],
+  ["InputDevicesLock","Input lock","web","Lock and unlock keyboard/mouse input"],
+  ["TextMessage","Message","web","Send message"],
+  ["StartApp","Launch applications","web","Start app or saved lesson action"],
+  ["OpenWebsite","Open websites","web","Open website or saved lesson action"],
+  ["FileTransfer","Distribute files","desktop","Use Veyon Master; 4.9.7 WebAPI cannot initialize a transfer"],
+  ["FileCollect","Collect files","desktop","Requires a newer Veyon release providing collection; absent in 4.9.7"],
+  ["PowerOn","Wake-on-LAN","web","Save MAC address, select offline computer, then Wake"],
+  ["Reboot","Restart","web","Reboot"],
+  ["PowerDown","Shutdown","web","Shut down"],
+  ...Object.keys(POWER_FEATURES).map(name=>[name[0].toUpperCase()+name.slice(1),"Shutdown option","web","Power options; acceptance does not prove shutdown"]),
+  ["UserLogin","Log in","web","Masked login dialog"],
+  ["UserLogoff","Log off","web","Log off selected computers"],
+  ["UserInfo","Signed-in user","web","Device details"],
+  ["SessionInfo","Session information","web","Device details"],
+  ["QueryScreens","Monitor selection","desktop","Native remote access; no screen enumeration endpoint in 4.9.7 WebAPI"],
+  ["QueryApplicationVersion","Endpoint version query","internal","Internal Veyon protocol; use native diagnostics"],
+  ["QueryActiveFeatures","Active feature query","workflow","Lock/broadcast state; action features do not have persistent active state"],
+  ["SystemTrayIcon","Student notification icon","configuration","Configure in Veyon Configurator"],
+  ["DesktopAccessDialog","Access confirmation","configuration","Configure endpoint access confirmation in Veyon Configurator"],
+  ["AccessControlProvider","Access rules","configuration","Configure Veyon authorization; never expose as arbitrary classroom commands"]
+].map(([name,label,provider,detail])=>Object.freeze({name,label,provider,detail})));
+function featureCatalog(advertised){
+  const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
+  return CATALOG.map(row=>({...row,advertised:names.has(row.name),endpointVerified:false}));
+}
+function normalizeLessonAction(input){
+  const name=String(input?.name||"").trim();
+  if(!name||name.length>80)throw Error("Lesson action needs a name of 1–80 characters.");
+  const feature=String(input?.feature||""),value=String(input?.value||"").trim();
+  if(!["openWebsite","startApp","textMessage"].includes(feature))throw Error("Only website, app and message lesson actions can be saved.");
+  if(!value||value.length>2000)throw Error("Lesson action content must be 1–2000 characters.");
+  if(feature==="openWebsite"){
+    let url;try{url=new URL(value)}catch{throw Error("Enter a valid HTTP or HTTPS URL.")}
+    if(!["http:","https:"].includes(url.protocol)||url.username||url.password)throw Error("Use HTTP(S) without embedded credentials.");
+  }
+  return {name,feature,value};
+}
+module.exports={POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,nativeLauncher,CATALOG,featureCatalog,normalizeLessonAction};

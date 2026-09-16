@@ -4,6 +4,7 @@ const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
+const {POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,nativeLauncher,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
@@ -88,6 +89,7 @@ let VEYON_AUTH_RETRIES = Math.max(0,Math.min(5,Number(process.env.VEYON_AUTH_RET
 let VEYON_THUMBNAIL_CONCURRENCY = Math.max(2,Math.min(24,Number(process.env.VEYON_THUMBNAIL_CONCURRENCY||8)));
 const VEYON_AUTHKEYS_UUID = "0c69b301-81b4-42d6-8fae-128cdd113314";
 const VEYON_FEATURES = Object.freeze({
+  ...POWER_FEATURES,
   screenLock:"ccb535a2-1d24-4cc1-a709-8b47d2b2ac79",
   inputLock:"e4a77879-e544-4fec-bc18-e534f33b934c",
   userLogin:"7310707d-3918-460d-a949-65bd152cb958",
@@ -103,6 +105,8 @@ const VEYON_FEATURES = Object.freeze({
 });
 
 const VEYON_COMMAND_POLICY = Object.freeze({
+  powerDownNow:{requiresUser:false}, installUpdatesAndPowerDown:{requiresUser:false},
+  powerDownConfirmed:{requiresUser:false}, powerDownDelayed:{requiresUser:false},
   reboot:{requiresUser:false}, powerDown:{requiresUser:false}, userLogin:{requiresUser:false},
   userLogoff:{requiresUser:true}, textMessage:{requiresUser:true}, openWebsite:{requiresUser:true},
   startApp:{requiresUser:true}, screenLock:{requiresUser:true}, inputLock:{requiresUser:true},
@@ -116,6 +120,10 @@ function veyonPolicyFor(feature,active=true){
 async function veyonCommandEligibility(rec,feature,active=true){
   const online=await veyonTcpProbe(rec.ip);
   if(!online)return {eligible:false,reason:"offline"};
+  if(Object.hasOwn(POWER_FEATURES,feature)){
+    const available=await veyonAvailableFeatures(rec.ip);
+    if(!Array.isArray(available)||!available.some(f=>String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"")===POWER_FEATURES[feature]))return {eligible:false,reason:"feature-not-advertised"};
+  }
   const policy=veyonPolicyFor(feature,active);
   if(!policy.requiresUser)return {eligible:true};
   const user=await veyonConnectedJson(rec.ip,"/api/v1/user");
@@ -2606,6 +2614,7 @@ async function veyonFeatureStatus(host,feature){
   return veyonConnectedJson(host,`/api/v1/feature/${encodeURIComponent(uid)}`);
 }
 async function veyonFeature(host,feature,active=true,args={}){
+  args=powerArguments(feature,args,active);
   const uid=VEYON_FEATURES[feature]||feature;
   if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
   return veyonConnectedRequest(host,`/api/v1/feature/${encodeURIComponent(uid)}`,{
@@ -6269,6 +6278,7 @@ app.put("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)
     const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
     if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
     const patch={name:String(req.body?.name||rec.name).slice(0,120)};
+    if(req.body?.mac!==undefined){patch.mac=normalizeMac(req.body.mac);patch.macHostname=String(rec.hostname||rec.id).toLowerCase();}
     if(req.body?.role==="teacher"||req.body?.role==="student")patch.role=req.body.role;
     res.json({ok:true,computer:upsertVeyonComputer(rec.ip,patch)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
@@ -6334,6 +6344,39 @@ app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),asy
     res.json({ok:true,features:await veyonAvailableFeatures(rec.ip)});
   }catch(err){res.status(502).json({ok:false,error:err.message})}
 });
+
+app.get("/api/v1/veyon/computers/:id/catalog",requireCapability("lab.read"),async(req,res)=>{
+  const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
+  if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
+  try{res.json({ok:true,features:featureCatalog(await veyonAvailableFeatures(rec.ip)),verification:"proxy-advertisement-only"})}
+  catch(error){res.status(503).json(safeVeyonFailure(error))}
+});
+app.post("/api/v1/veyon/desktop-launcher",requireCapability("lab.control"),(req,res)=>{
+  try{
+    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>16)throw Error("Choose 1–16 computers.");
+    const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
+    const script=nativeLauncher(targets,req.body.mode);
+    res.set({"Cache-Control":"no-store","Content-Disposition":"attachment; filename=RoomGoblin-Veyon-Desktop.ps1"}).type("text/plain").send(script);
+  }catch(error){res.status(400).json({ok:false,error:error.message})}
+});
+app.post("/api/v1/veyon/wake",requireCapability("lab.control"),async(req,res)=>{
+  try{
+    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 computers.");
+    const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
+    const results=await mapLimit(targets,4,async rec=>{try{if(rec.macHostname!==String(rec.hostname||rec.id).toLowerCase())throw Error("Save the MAC address again after an inventory identity change.");return {id:rec.id,...await wakeComputer(rec.mac)}}catch(error){return {id:rec.id,accepted:false,verified:false,error:error.message}}});
+    audit({kind:"veyon.wake",targets:targets.map(rec=>rec.id),accepted:results.filter(r=>r.accepted).length});
+    res.json({ok:results.every(r=>r.accepted),results});
+  }catch(error){res.status(400).json({ok:false,error:error.message})}
+});
+app.get("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
+app.put("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),(req,res)=>{
+  try{
+    const inputs=req.body?.actions;if(!Array.isArray(inputs)||inputs.length>40)throw Error("Save at most 40 lesson actions.");
+    const actions=inputs.map(normalizeLessonAction);
+    if(new Set(actions.map(x=>x.name.toLowerCase())).size!==actions.length)throw Error("Lesson action names must be unique.");
+    dbStore.setPreference("veyon.lesson-actions",actions);audit({kind:"veyon.lesson-actions",count:actions.length});res.json({ok:true,actions});
+  }catch(error){res.status(400).json({ok:false,error:error.message})}
+});
 app.get("/api/v1/veyon/computers/:id/feature/:feature",requireCapability("lab.read"),async(req,res)=>{
   try{
     const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
@@ -6373,6 +6416,19 @@ async function waitForVeyonCommand(job){
 function veyonJobResults(job){return job.results.map(row=>({...row,error:row.error||(!row.ok?row.reason||"Command is still pending; check command history.":undefined)}))}
 // Generation identities contain no broadcast tokens and exist only while a route is active.
 const veyonBroadcastWorkflows=new Map();
+app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),async(req,res)=>{
+  const workflows=[];
+  try{
+    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 broadcast participants.");
+    const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
+    const owner=requestUser(req)?.id||"legacy-control";
+    // Reserve all three jobs before yielding so an old start cannot fan out.
+    for(const rec of targets){const marker={};veyonBroadcastWorkflows.set(rec.ip,marker);workflows.push([rec.ip,marker])}
+    const jobs=veyonCommandQueue.enqueueModeCleanup(targets,owner);
+    res.status(202).json({ok:true,jobs});
+  }catch(error){res.status(error.status||400).json({ok:false,error:error.message})}
+  finally{for(const [ip,marker] of workflows)if(veyonBroadcastWorkflows.get(ip)===marker)veyonBroadcastWorkflows.delete(ip)}
+});
 app.post("/api/v1/veyon/demo/start",requireCapability("lab.control"),async(req,res)=>{
   let workflowKey,workflow;
   try{
@@ -6380,7 +6436,7 @@ app.post("/api/v1/veyon/demo/start",requireCapability("lab.control"),async(req,r
     if(!teacher)throw new Error("Teacher computer not found");
     const ids=Array.isArray(req.body?.studentIds)?req.body.studentIds:[];
     if(!ids.length||ids.length>512)throw Error("Choose between 1 and 512 student computers.");
-    const students=[...new Map(ids.map(id=>veyonComputerStore.computers[veyonComputerId(id)]).filter(Boolean).map(rec=>[rec.id,rec])).values()];
+    const students=[...new Map(ids.map(id=>veyonComputerStore.computers[veyonComputerId(id)]).filter(rec=>rec&&rec.id!==teacher.id).map(rec=>[rec.id,rec])).values()];
     if(!students.length)throw new Error("At least one student computer is required");
     const mode=req.body?.mode==="window"?"window":"fullscreen",owner=requestUser(req)?.id||"legacy-control";
     const token=crypto.randomBytes(24).toString("base64url");
@@ -6433,7 +6489,7 @@ app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res)=>{
     if(!targets.length||targets.length>512)throw Error("Choose between 1 and 512 targets.");
     const feature=String(req.body?.feature||"");
     if(!Object.hasOwn(VEYON_FEATURES,feature))throw Error("Unsupported Veyon feature");
-    const args=req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{};
+    const args=powerArguments(feature,req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{},req.body?.active!==false);
     if(Buffer.byteLength(JSON.stringify(args))>16384)throw Error("Veyon command arguments are too large");
     const requestId=String(req.body?.requestId||"");
     if(requestId&&!/^[a-zA-Z0-9._:-]{1,100}$/.test(requestId))throw Error("Invalid command request ID");

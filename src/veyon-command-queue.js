@@ -47,6 +47,14 @@ class VeyonCommandQueue {
     }
     this.jobs.set(job.id,job);queueMicrotask(()=>this.tick());return this.view(job);
   }
+  enqueueModeCleanup(targets,owner){
+    if(!Array.isArray(targets)||!targets.length||targets.length>512)throw Error("Choose between 1 and 512 computers.");
+    this.prune();
+    const pending=[...this.jobs.values()].reduce((n,j)=>n+j.tasks.filter(t=>PENDING.has(t.state)).length,0);
+    if(this.jobs.size+MODES.size>128||pending+targets.length*MODES.size>1024)throw Object.assign(Error("Veyon command queue is full. No cleanup commands were queued."),{status:429});
+    // No await: capacity for all modes is checked before any enqueue mutates intent.
+    return [...MODES].map(feature=>this.enqueue({feature,active:false,targets,owner}));
+  }
   view(job){
     const summary={requested:job.tasks.length,queued:0,running:0,retrying:0,succeeded:0,failed:0,skipped:0,cancelled:0,unknown:0};
     const results=job.tasks.map(t=>{summary[t.state]++;return {id:t.id,ip:t.ip,name:t.name,state:t.state,attempts:t.attempts,ok:t.state==="succeeded",verified:t.verified===true,error:t.error,reason:t.reason,nextAttemptAt:t.nextAttemptAt}});

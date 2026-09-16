@@ -207,3 +207,27 @@ jobs:
           path: agents/android-tv/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  veyon-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native pilot build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build cmake g++ \
+            qt6-base-dev qt6-5compat-dev qt6-l10n-tools qt6-tools-dev qt6-declarative-dev qt6-httpserver-dev qt6-websockets-dev \
+            libpipewire-0.3-dev libspa-0.2-dev xorg-dev libfakekey-dev libvncserver-dev \
+            libssl-dev libpam0g-dev libproc2-dev libldap2-dev libsasl2-dev libqca-qt6-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+      - name: Prepare pinned standalone Veyon source
+        run: python3 tools/prepare-veyon-pilot.py "$RUNNER_TEMP/veyon-pilot"
+      - name: Compile community plugins against official Veyon
+        run: |
+          cmake -S "$RUNNER_TEMP/veyon-pilot" -B "$RUNNER_TEMP/veyon-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug -DWITH_LTO=OFF -DWITH_TRANSLATIONS=OFF
+          cmake --build "$RUNNER_TEMP/veyon-build" --target classroomchat remotefilebrowser roomgoblin-pilot-policy-test --parallel 2
+          "$RUNNER_TEMP/veyon-build/plugins/remotefilebrowser/roomgoblin-pilot-policy-test"

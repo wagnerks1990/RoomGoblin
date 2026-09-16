@@ -1,5 +1,7 @@
 # RoomGoblin Documentation
 
+See [Free Veyon features and community pilot](VEYON-FREE-FEATURES.md) for web controls, native tools, testing and rollback.
+
 **RoomGoblin — Classroom & Lab Management Hub**  
 *Run the room. Manage the lab.*
 

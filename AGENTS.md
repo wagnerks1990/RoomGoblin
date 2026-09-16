@@ -412,3 +412,7 @@ physical matrix routing and power remain independent. Cleanup of empty repeated
 `display-` groups is explicit and limited to the draft until saved; never rewrite
 schedule references or delete nonempty/custom groups automatically. Follow
 `docs/TV-ROUTING-MATRIX.md` for recovery and validation details.
+
+## Free Veyon features and native pilot
+
+Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. Never pretend WebAPI can initialize native file transfer or return successful arbitrary internal commands. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no installer, production key change, commercial add-on or unvalidated Windows ABI claim. Preserve the new Linux pilot build gate and operator tests.
