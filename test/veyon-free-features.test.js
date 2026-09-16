@@ -122,10 +122,12 @@ test('Clipboard requires an exact native bridge identity and bounds UTF-8 conten
 test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
   const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
   let handler,cap,limit;const queued=[];
-  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:'bounded',requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:(_req,res)=>{res.limited=true},requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
   vm.runInNewContext(source.slice(start,end),context);
   const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
-  assert.equal(cap,'lab.control');assert.equal(limit,'bounded');
+  assert.equal(cap,'lab.control');
+  const budget={};let bypassed=0;limit({body:{feature:'clipboardWrite'}},budget,()=>bypassed++);assert.equal(budget.limited,true);
+  limit({body:{feature:'screenLock',active:false}},{},()=>bypassed++);assert.equal(bypassed,1);
   for(const targets of [['all'],['one','one'],['constructor'],['missing']])assert.equal(call({feature:'clipboardWrite',targets,arguments:{clipboardText:'x'}}).code,400);
   assert.equal(queued.length,0);
   assert.equal(call({feature:'clipboardWrite',targets:['one'],arguments:{clipboardText:'x',privateKey:'discard'}}).code,202);

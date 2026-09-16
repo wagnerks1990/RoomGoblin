@@ -6493,7 +6493,7 @@ app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,re
 app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
 app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
 app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/feature",veyonFreeWriteLimit,requireCapability("lab.control"),(req,res)=>{
+app.post("/api/v1/veyon/feature",(req,res,next)=>["clipboardWrite","keySequence"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),requireCapability("lab.control"),(req,res)=>{
   try{
     const targets=Array.isArray(req.body?.targets)?req.body.targets:[req.body?.target].filter(Boolean);
     if(!targets.length||targets.length>512)throw Error("Choose between 1 and 512 targets.");
