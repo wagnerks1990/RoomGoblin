@@ -133,6 +133,7 @@ const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 500);
 const DEVICE_OFFLINE_SECONDS = Number(process.env.DEVICE_OFFLINE_SECONDS || 45);
 
 const APP_DIR = path.resolve(__dirname, "..");
+const PUBLIC_DIR = path.join(APP_DIR, "public");
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(APP_DIR, "data"));
 const MEDIA_DIR = path.join(DATA_DIR, "media");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
