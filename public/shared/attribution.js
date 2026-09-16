@@ -18,12 +18,12 @@ if(location.pathname==="/controller/display.html"&&!document.querySelector('scri
   const events=[];
   const stream={active:false,key:"",state:"idle",lastEvent:null,lastEventAt:null,lastPlayerUpdate:null,lastError:null,reassertionsSuppressed:0,takeoverClearsSuppressed:0,player:null};
   function safeTelemetryUrl(value){try{const u=new URL(String(value||""),location.origin);return `${u.origin}${u.pathname}`}catch{return ""}}
-  function record(kind,detail={}){
+  function record(kind,detail={},quiet=false){
     const item={at:new Date().toISOString(),kind,...detail};
     events.push(item);if(events.length>60)events.shift();
     stream.lastEvent=kind;stream.lastEventAt=item.at;
     if(detail.error)stream.lastError=String(detail.error);
-    try{console.info("[ClassroomHub MorningStream]",kind,detail)}catch{}
+    if(!quiet)try{console.info("[ClassroomHub MorningStream]",kind,detail)}catch{}
   }
   function mediaKey(payload={}){return JSON.stringify({url:String(payload.url||""),volume:Number(payload.volume??1),muted:!!payload.muted,fit:String(payload.fit||"cover"),contentKind:String(payload.contentKind||"")})}
   function inspectServerMessage(raw){
@@ -82,7 +82,9 @@ if(location.pathname==="/controller/display.html"&&!document.querySelector('scri
         return descriptor.set.call(this,wrapped);
       }
     });
-    record("websocket-command-filter-installed");
+    // Keep this evidence available through ClassroomStreamDiagnostics without
+    // emitting one console line per display/embedded renderer context.
+    record("websocket-command-filter-installed",{},true);
   }else record("websocket-command-filter-unavailable",{error:"WebSocket onmessage accessor is not configurable"});
 
   const originalSend=WebSocket.prototype.send;
