@@ -1,5 +1,7 @@
 "use strict";
 
+const {runtimeVeyonKeyring,validPrivateKey,shouldFallbackAuthentication}=require("./veyon-keyring");
+
 function veyonError(message,reason,extra={}) {
   return Object.assign(new Error(message),{reason,...extra});
 }
@@ -16,38 +18,77 @@ function safeVeyonFailure(error) {
   };
 }
 
-// Keep the deadline active through body consumption, not just HTTP headers.
-async function bufferedVeyonFetch(url, options = {}, fetchImpl = fetch) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 7000);
-  const maxBytes = options.maxBytes || 16 * 1024 * 1024;
-  try {
-    const response = await fetchImpl(url, {
-      method: options.method || "GET", headers: options.headers || {},
-      body: options.body, signal: controller.signal, redirect: "error"
-    });
-    if (Number(response.headers.get("content-length")) > maxBytes) throw veyonError("Veyon response exceeds size limit", "response-too-large");
-    const chunks = []; let size = 0;
-    if (response.body) {
-      for await (const chunk of response.body) {
-        size += chunk.byteLength;
-        if (size > maxBytes) throw veyonError("Veyon response exceeds size limit", "response-too-large");
-        chunks.push(Buffer.from(chunk));
-      }
+function veyonAuthenticationRequest(url,options={}){
+  if(String(options.method||"GET").toUpperCase()!=="POST")return null;
+  let parsedUrl;try{parsedUrl=new URL(String(url))}catch{return null}
+  const match=parsedUrl.pathname.match(/\/api\/v1\/authentication\/([^/]+)$/);if(!match)return null;
+  let body;try{body=JSON.parse(String(options.body||""))}catch{return null}
+  const credentials=body?.credentials||{},keyName=String(credentials.keyname||"").trim(),privateKey=String(credentials.keydata||"");
+  if(!keyName||!validPrivateKey(privateKey))return null;
+  let host="";try{host=decodeURIComponent(match[1])}catch{host=match[1]}
+  return {host,body,keyName,privateKey};
+}
+
+async function bufferedResponse(response,maxBytes){
+  if(Number(response.headers.get("content-length"))>maxBytes)throw veyonError("Veyon response exceeds size limit","response-too-large");
+  const chunks=[];let size=0;
+  if(response.body){
+    for await(const chunk of response.body){
+      size+=chunk.byteLength;
+      if(size>maxBytes)throw veyonError("Veyon response exceeds size limit","response-too-large");
+      chunks.push(Buffer.from(chunk));
     }
-    return new Response([204, 205, 304].includes(response.status) ? null : Buffer.concat(chunks), {
-      status: response.status, statusText: response.statusText, headers: response.headers
-    });
-  } catch(error) {
+  }
+  return new Response([204,205,304].includes(response.status)?null:Buffer.concat(chunks),{status:response.status,statusText:response.statusText,headers:response.headers});
+}
+
+async function authenticationCandidates(request){
+  if(!request)return [];
+  try{
+    if(!String(process.env.DATABASE_FILE||"").trim())return [{keyName:request.keyName,privateKey:request.privateKey}];
+    return runtimeVeyonKeyring.orderedCredentials(request.host,{keyName:request.keyName,privateKey:request.privateKey});
+  }catch{return [{keyName:request.keyName,privateKey:request.privateKey}]}
+}
+
+// Keep the deadline active through body consumption, not just HTTP headers.
+// Authentication POSTs may transparently try another configured Veyon key, but
+// only after Veyon explicitly rejects key authentication (codes 4/5/6). Pool
+// exhaustion, transport failures and timeouts never trigger key spraying.
+async function bufferedVeyonFetch(url, options = {}, fetchImpl = fetch) {
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),options.timeoutMs||7000);
+  const maxBytes=options.maxBytes||16*1024*1024;
+  const authentication=veyonAuthenticationRequest(url,options);
+  let candidates=authentication?await authenticationCandidates(authentication):[];
+  if(!candidates.length)candidates=[null];
+  try{
+    let lastResponse=null;
+    for(let index=0;index<candidates.length;index++){
+      const candidate=candidates[index];
+      let body=options.body;
+      if(authentication&&candidate){
+        body=JSON.stringify({...authentication.body,credentials:{...authentication.body.credentials,keyname:candidate.keyName,keydata:candidate.privateKey}});
+      }
+      const upstream=await fetchImpl(url,{method:options.method||"GET",headers:options.headers||{},body,signal:controller.signal,redirect:"error"});
+      const response=await bufferedResponse(upstream,maxBytes);lastResponse=response;
+      if(!authentication||!candidate||response.ok){
+        if(authentication&&candidate&&response.ok){try{runtimeVeyonKeyring.rememberHost(authentication.host,candidate.keyName)}catch{}}
+        return response;
+      }
+      if(index>=candidates.length-1)return response;
+      const rejection=await veyonResponseError(response.clone());
+      if(!shouldFallbackAuthentication(rejection))return response;
+    }
+    return lastResponse;
+  }catch(error){
     if(error.reason)throw error;
     if(controller.signal.aborted)throw veyonError("Veyon request timed out. Check the WebAPI service and endpoint connection.","timeout",{status:504});
     const networkCode=error.cause?.code||error.code;
     if(networkCode==="ECONNREFUSED")throw veyonError("Veyon WebAPI refused the connection. Check its service and configured address.","connection-refused");
     if(["ENOTFOUND","EAI_AGAIN"].includes(networkCode))throw veyonError("Veyon WebAPI hostname could not be resolved. Check its configured address.","name-resolution");
     throw veyonError("Cannot reach Veyon WebAPI. Check its service and network connection.","network-failure");
-  } finally {
-    controller.abort();
-    clearTimeout(timeout);
+  }finally{
+    controller.abort();clearTimeout(timeout);
   }
 }
 
@@ -99,4 +140,4 @@ async function readVeyonFrame(query, request, wait = ms => new Promise(resolve =
   }
 }
 
-module.exports = {bufferedVeyonFetch, veyonResponseError, framebufferType, readVeyonFrame, safeVeyonFailure};
+module.exports={bufferedVeyonFetch,veyonResponseError,framebufferType,readVeyonFrame,safeVeyonFailure,veyonAuthenticationRequest};
