@@ -68,6 +68,18 @@ set_env_value() {
   mv "$tmp" "$TARGET/.env"
 }
 
+wait_for_hub_health() {
+  local timeout_seconds="${1:-90}" deadline
+  deadline=$((SECONDS + timeout_seconds))
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 5 "http://127.0.0.1:${HUB_PORT}/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 install_cloudflared() {
   if ! command -v cloudflared >/dev/null; then
     (( SKIP_INSTALL == 0 )) || fail "cloudflared is not installed and --skip-install was requested"
@@ -141,7 +153,7 @@ HUB_PORT="${HUB_PORT:-3000}"
 (( HUB_PORT >= 1 && HUB_PORT <= 65535 )) || fail "HUB_PORT is out of range"
 
 info "Checking local RoomGoblin health on 127.0.0.1:${HUB_PORT}"
-curl -fsS --max-time 5 "http://127.0.0.1:${HUB_PORT}/health" >/dev/null || fail "RoomGoblin health check failed on loopback"
+wait_for_hub_health 10 || fail "RoomGoblin health check failed on loopback"
 
 install_cloudflared
 write_token
@@ -156,8 +168,15 @@ if (( NO_RESTART == 0 )); then
   )
 fi
 
-info "Verifying local services"
-curl -fsS --max-time 10 "http://127.0.0.1:${HUB_PORT}/health" >/dev/null
+info "Waiting for RoomGoblin readiness"
+if ! wait_for_hub_health 90; then
+  echo "RoomGoblin did not become healthy within 90 seconds." >&2
+  (cd "$TARGET" && docker compose ps) >&2 || true
+  docker logs --tail 80 classroom-control-hub >&2 2>&1 || true
+  fail "RoomGoblin health verification failed after recreation"
+fi
+
+info "Verifying Cloudflare Tunnel service"
 systemctl is-active --quiet cloudflared-roomgoblin.service
 
 cat <<EOF_DONE
