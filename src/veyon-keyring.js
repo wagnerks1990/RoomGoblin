@@ -139,6 +139,17 @@ class VeyonKeyring{
     while(entries.length>MAX_HOST_PREFERENCES){const [stale]=entries.shift();delete prefs[stale]}
     store.setPreference(HOST_KEY_PREF,prefs);
   }
+  moveHostPreference(fromHost,toHost){
+    const from=String(fromHost||"").trim(),to=String(toHost||"").trim();
+    if(!from||!to||from===to)return false;
+    const store=this.storage(),prefs=store.getPreference(HOST_KEY_PREF,{})||{};
+    const value=prefs[from];if(!value)return false;
+    try{normalizeKeyName(value)}catch{return false}
+    delete prefs[from];delete prefs[to];prefs[to]=value;
+    const entries=Object.entries(prefs);
+    while(entries.length>MAX_HOST_PREFERENCES){const [stale]=entries.shift();delete prefs[stale]}
+    store.setPreference(HOST_KEY_PREF,prefs);return true;
+  }
   orderedCredentials(host,original={}){
     const originalName=normalizeKeyName(original.keyName||"ClassroomControlHub"),originalKey=String(original.privateKey||"");
     if(validPrivateKey(originalKey))this.observeCredential(originalName,originalKey);

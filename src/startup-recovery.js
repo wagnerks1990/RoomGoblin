@@ -114,8 +114,11 @@ if(fs.existsSync(dbFile)){
 }
 
 // Register scoped route bridges before server.js creates the Express routes.
-// The Veyon bridge preserves legacy-key compatibility while adding an encrypted
-// multi-key ring. The maintenance bridge then mirrors the established handlers.
+// The Veyon bridges preserve legacy-key compatibility, move mutable DHCP
+// addresses behind stable hostname identities, and expose guarded lifecycle
+// checks/updates. The maintenance bridge then mirrors established handlers.
 require("./veyon-keyring-bridge");
+require("./veyon-dhcp-identity-bridge");
+require("./veyon-update-bridge");
 require("./maintenance-route-bridge");
 require("./server");
