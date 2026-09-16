@@ -27,7 +27,16 @@ function hostAgentJson(method,pathName,body=null,timeoutMs=15000){return new Pro
 function hostAgentRequest(args,timeoutMs=180000){return hostAgentJson("POST","/docker/exec",{args,cwd:""},timeoutMs)}
 async function containerExists(name){try{await hostAgentRequest(["inspect",name],10000);return true}catch{return false}}
 async function hostServices(){try{const body=await hostAgentJson("GET","/services",null,10000);return Array.isArray(body.items)?body.items:Array.isArray(body.services)?body.services:[]}catch{return []}}
-async function nativeVeyon(){const services=await hostServices(),webapi=services.find(x=>x&&x.name==="veyon-webapi.service"),service=services.find(x=>x&&x.name==="veyon.service");const installed=!!webapi&&webapi.active!=="inactive"&&webapi.active!=="not-found";return {installed,webapi:webapi||null,service:service||null,url:NATIVE_VEYON_URL}}
+function nativeServicePresent(unit){
+  if(!unit)return false;
+  if(unit.active==="not-found"||unit.enabled==="not-found")return false;
+  // Older Host Agents always project policy-known service names. For those
+  // responses, an empty description plus inactive/disabled means the unit is
+  // genuinely absent; an inactive unit with a description is installed/stopped.
+  if(unit.active==="inactive"&&unit.enabled==="disabled"&&!String(unit.description||"").trim())return false;
+  return true;
+}
+async function nativeVeyon(){const services=await hostServices(),webapi=services.find(x=>x&&x.name==="veyon-webapi.service"),service=services.find(x=>x&&x.name==="veyon.service");const installed=nativeServicePresent(webapi),running=installed&&webapi.active==="active";return {installed,running,webapi:webapi||null,service:service||null,url:NATIVE_VEYON_URL}}
 
 async function mainAppJson(method,pathName,body=null,timeoutMs=20000){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);try{const response=await fetch(`${MAIN_APP_URL}${pathName}`,{method,headers:{"x-maintenance-token":TOKEN,...(body==null?{}:{"content-type":"application/json"})},body:body==null?undefined:JSON.stringify(body),signal:controller.signal});const text=await response.text();let value;try{value=JSON.parse(text||"{}")}catch{value={}}if(!response.ok)throw Error(value.error||`Application HTTP ${response.status}`);return value}finally{clearTimeout(timer)}}
 async function mainAppPut(id,settings){return mainAppJson("PUT",`/api/v1/internal/maintenance/integrations/${encodeURIComponent(id)}`,{settings:settings||{}})}
@@ -65,7 +74,7 @@ async function saveVeyonSettings(settings={}){
   return veyonComputers();
 }
 
-async function adoptNativeVeyon(settings={}){const native=await nativeVeyon();if(!native.installed)return null;const status=await saveVeyonSettings(settings),summary=status.summary||{};const detail=status.ok?`${summary.total||0} database computer(s), ${summary.online||0} online, ${summary.authenticated||0} authenticated.`:`Computer control test unavailable: ${status.error||"unknown error"}`;return {ok:true,id:"veyonwebapi",adopted:true,managed:true,management:"host-managed",hostManaged:true,nativeService:"veyon-webapi.service",companionService:native.service?.name||null,url:settings.url||NATIVE_VEYON_URL,veyonSummary:summary,message:`Native Veyon WebAPI configuration saved. ${detail}`}}
+async function adoptNativeVeyon(settings={}){const native=await nativeVeyon();if(!native.installed)return null;const status=await saveVeyonSettings(settings),summary=status.summary||{};const stopped=native.running?"":" Native Veyon WebAPI is installed but stopped; start veyon-webapi.service before expecting computer control.";const detail=status.ok?`${summary.total||0} database computer(s), ${summary.online||0} online, ${summary.authenticated||0} authenticated.`:`Computer control test unavailable: ${status.error||"unknown error"}`;return {ok:true,id:"veyonwebapi",adopted:true,managed:true,management:"host-managed",hostManaged:true,nativeService:"veyon-webapi.service",companionService:native.service?.name||null,url:settings.url||NATIVE_VEYON_URL,veyonSummary:summary,message:`Native Veyon WebAPI configuration saved. ${detail}${stopped}`}}
 
 async function deployAddon(id,settings={},recreate=false){
   const addon=ADDONS[id];if(!addon)throw Error("Unknown optional integration");
@@ -127,8 +136,8 @@ async function augmentModules(body){
   const maCurrent=byId.get("musicassistant");
   if(maCurrent&&maCurrent.state!=="not-installed")Object.assign(maCurrent,{configured:ma.configured===true&&ma.online===true,setupRequired:ma.configured!==true||ma.online!==true,health:ma.online?"authenticated":"authentication-required",uiUrl:ma.url||MUSIC_ASSISTANT_URL,configurationMessage:ma.online?`Music Assistant authenticated; ${ma.players?.length||0} player(s) discovered.`:(ma.configured?`Authentication failed: ${ma.error||"token rejected"}`:"Long-lived access token required before this integration is usable.")});
   if(native.installed){
-    const current=byId.get("veyonwebapi"),stored=managed.integrations?.modules?.veyonwebapi||{},probe=await veyonComputers(),summary=probe.summary||{};
-    Object.assign(current,{state:native.webapi?.active==="active"?"running":"installed",health:probe.ok?(summary.authenticated>0?"ready":"reachable-needs-authentication"):(native.webapi?.active||"installed"),configured:true,management:"host-managed",hostManaged:true,nativeService:"veyon-webapi.service",companionService:native.service?.name||null,networkMode:"native-host",networkMigrationRequired:false,endpoint:stored.url||NATIVE_VEYON_URL,externalOnly:false,canDeploy:true,canRemove:false,image:null,veyonSummary:summary,description:"Native Veyon WebAPI service discovered on the appliance host. Configure Veyon authentication, computer discovery and optional endpoint deployment credentials here; the host service itself is not recreated or removed."});
+    const current=byId.get("veyonwebapi"),stored=managed.integrations?.modules?.veyonwebapi||{},probe=native.running?await veyonComputers():{ok:false,summary:{}},summary=probe.summary||{};
+    Object.assign(current,{state:native.running?"running":"installed",health:native.running?(probe.ok?(summary.authenticated>0?"ready":"reachable-needs-authentication"):(native.webapi?.active||"installed")):"stopped",configured:true,management:"host-managed",hostManaged:true,nativeService:"veyon-webapi.service",companionService:native.service?.name||null,networkMode:"native-host",networkMigrationRequired:false,endpoint:stored.url||NATIVE_VEYON_URL,externalOnly:false,canDeploy:true,canRemove:false,image:null,veyonSummary:summary,configurationMessage:native.running?undefined:"Native Veyon WebAPI is installed but stopped. Start veyon-webapi.service (or veyon.service when the RoomGoblin dependency drop-in is installed).",description:"Native Veyon WebAPI service discovered on the appliance host. Configure Veyon authentication, computer discovery and optional endpoint deployment credentials here; the host service itself is not recreated or removed."});
   }
   return body;
 }
