@@ -1,5 +1,7 @@
 # RoomGoblin
 
+See [Free Veyon features and community pilot](docs/VEYON-FREE-FEATURES.md) for web controls, native tools, testing and rollback.
+
 ## Displays & AV
 
 Use the [TV Routing Matrix](docs/TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has

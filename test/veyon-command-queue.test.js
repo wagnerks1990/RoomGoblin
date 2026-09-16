@@ -175,3 +175,15 @@ test("stop queued behind a starting broadcast retains cleanup intent",async()=>{
     assert.equal(h.journal().length,0);
   }finally{release();releaseStop();h.q.stop()}
 });
+
+test('selected broadcast cleanup reserves all modes or none when queue is full',()=>{
+  const h=harness();h.pause(true);
+  try{
+    const targets=[...h.computers.values()];
+    const jobs=h.q.enqueueModeCleanup(targets,'operator');assert.equal(jobs.length,3);assert.ok(jobs.every(j=>j.active===false));
+    while(h.q.jobs.size<126)h.q.enqueue({feature:'textMessage',targets:[targets[0]]});
+    const before=h.q.jobs.size;
+    assert.throws(()=>h.q.enqueueModeCleanup(targets,'operator'),/No cleanup commands/);
+    assert.equal(h.q.jobs.size,before);
+  }finally{h.q.stop()}
+});

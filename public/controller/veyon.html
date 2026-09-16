@@ -31,6 +31,29 @@
       <button id="refreshCommandJobs">Refresh progress</button><div id="commandHistoryError" class="muted" role="status"></div><div id="commandJobs"></div>
     </details>
   </section>
+  <details class="panel" id="freeFeatureTools">
+    <summary><b>Free features and experimental tools</b></summary>
+    <p class="muted">Commands use the current selection, including hidden selections. Desktop launchers run on your teacher Windows computer with its existing Veyon authentication.</p>
+    <div class="toolbar">
+      <button id="freeCatalog">Feature coverage</button><button id="deviceInfo">User and session details</button>
+      <button id="nativeView">Native viewer</button><button id="nativeControl">Native remote control</button><button id="nativeMaster">Native file and clipboard tools</button>
+      <button id="saveMac">Set MAC address</button><button id="wakeComputers">Wake computers</button>
+    </div>
+    <details class="lab-disclosure"><summary>Additional power options</summary>
+      <p class="muted">Shutdown options cannot be cancelled through Veyon. Save student work first. An accepted command is not proof that Windows shut down.</p>
+      <div class="toolbar"><button id="powerNow" class="danger">Immediate shutdown</button><button id="powerConfirm" class="warn">Ask student to shut down</button><button id="powerDelay" class="warn">Delayed shutdown</button><button id="powerUpdates" class="warn">Updates then shutdown</button></div>
+    </details>
+    <details class="lab-disclosure"><summary>Lesson actions and student demonstrations</summary>
+      <div class="toolbar"><button id="lessonActions">Saved lesson actions</button><button id="studentDemoFull">Share a student — fullscreen</button><button id="studentDemoWindow">Share a student — window</button><button id="stopSelectedDemo">Stop selected broadcast participants</button></div>
+      <p class="muted">Select the source and audience before starting a student demonstration. To stop it, select the source and all recipients, including offline participants needing recovery.</p>
+    </details>
+    <details class="lab-disclosure"><summary>Experimental screen recording</summary>
+      <p class="muted">Record 1–4 selected screens as a silent WebM contact sheet, up to five minutes or 32 MiB. Captures are sampled about once per second. Keep this workspace visible; hiding it stops recording. Download the result before leaving.</p>
+      <div class="toolbar"><button id="startRecording">Record selected screens</button><button id="stopRecording" disabled>Stop recording</button><button id="downloadRecording" disabled>Download recording</button><button id="discardRecording" disabled>Discard recording</button></div>
+      <div id="recordingStatus" role="status" aria-live="polite">Not recording</div>
+    </details>
+    <p><a href="https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/VEYON-FREE-FEATURES.md" target="_blank" rel="noopener">Community plugin pilot, installation and recovery instructions</a></p>
+  </details>
   <div class="lab-title-row lab-inventory-heading"><div class="tabs" aria-label="Computer filters"><button id="showStudents" class="active">Students</button><button id="showTeachers">Teachers</button><button id="showAll">All devices</button></div><div class="toolbar"><button id="selectAll">Select visible online</button><button id="clearSel">Clear selection</button></div></div>
   <div class="inventory-tools">
     <label class="device-search">Find a computer<input id="deviceSearch" type="search" placeholder="Name, address or signed-in user" autocomplete="off"></label>
@@ -77,5 +100,5 @@
     <div class="toolbar"><button type="button" id="cancelLogin">Cancel</button><button type="submit" class="primary">Log In</button></div>
   </form>
 </dialog>
-<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/lab-accessibility.js" defer></script>
+<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/lab-accessibility.js" defer></script>
 </body></html>

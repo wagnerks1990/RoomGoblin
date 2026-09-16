@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Free Veyon controls and isolated community pilot
+
+- Add bounded Wake, shutdown variants, native desktop launchers, student demonstrations, shared lesson actions and browser-only screen recording.
+- Reserve all selected broadcast cleanup modes atomically; keep acceptance distinct from endpoint verification.
+- Incorporate GPL community chat and restricted file-browser source in a separate pinned native pilot; repair routing, argument reads, incomplete saves and resource limits.
+- Add feature coverage, all supplied repository dispositions, operational/AI/Wiki documentation and focused regression/native build coverage. Native Windows and classroom acceptance remain separate from automated validation.
+
 ### Browser Sendspin close diagnostics
 
 - Retain browser close codes/reasons and stale-generation evidence without
