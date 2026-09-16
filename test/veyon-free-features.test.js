@@ -122,7 +122,7 @@ test('Clipboard requires an exact native bridge identity and bounds UTF-8 conten
 test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
   const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
   let handler,cap,limit;const queued=[];
-  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:'bounded',requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.KEY_FEATURE},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:'bounded',requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
   vm.runInNewContext(source.slice(start,end),context);
   const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
   assert.equal(cap,'lab.control');assert.equal(limit,'bounded');
@@ -152,7 +152,7 @@ test('Clipboard dialog pins its named target and clears text before submitting',
 });
 
 test('Keyboard bridge allows only complete fixed key sequences and exact advertisement',()=>{
-  assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.KEY_FEATURE}]),true);
+  assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.INPUT_FEATURE_UID}]),true);
   assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.CLIPBOARD_FEATURE}]),false);
   for(const sequence of helpers.KEY_SEQUENCES)assert.deepEqual(helpers.keyArguments({sequence,held:true}),{sequence});
   for(const sequence of ['Ctrl+Alt+Delete','Win+R','',null,4,'a','0xff0d'])assert.throws(()=>helpers.keyArguments({sequence}));

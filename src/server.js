@@ -4,7 +4,7 @@ const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
-const {KEY_FEATURE,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,nativeLauncher,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
+const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,nativeLauncher,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
@@ -91,7 +91,7 @@ const VEYON_AUTHKEYS_UUID = "0c69b301-81b4-42d6-8fae-128cdd113314";
 const VEYON_FEATURES = Object.freeze({
   ...POWER_FEATURES,
   clipboardWrite:CLIPBOARD_FEATURE,
-  keySequence:KEY_FEATURE,
+  keySequence:INPUT_FEATURE_UID,
   screenLock:"ccb535a2-1d24-4cc1-a709-8b47d2b2ac79",
   inputLock:"e4a77879-e544-4fec-bc18-e534f33b934c",
   userLogin:"7310707d-3918-460d-a949-65bd152cb958",

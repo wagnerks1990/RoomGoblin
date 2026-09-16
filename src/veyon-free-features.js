@@ -13,14 +13,14 @@ const POWER_FEATURES=Object.freeze({
 });
 
 const CLIPBOARD_FEATURE="d344032e-70ce-4a83-8cb8-3ebd6d6f6f39";
-const KEY_FEATURE="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
+const INPUT_FEATURE_UID="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
 const KEY_SEQUENCES=Object.freeze(["Enter","Tab","Escape","Backspace","Delete","Left","Up","Right","Down","Home","End","PageUp","PageDown","Ctrl+A","Ctrl+C","Ctrl+V"]);
 function keyArguments(args,active=true){
   if(active===false||!KEY_SEQUENCES.includes(args?.sequence))throw Error("Choose a supported key or shortcut.");
   return {sequence:args.sequence};
 }
 function keyAdvertised(features){
-  return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")==="RoomGoblinKeySequence"&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===KEY_FEATURE);
+  return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")==="RoomGoblinKeySequence"&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===INPUT_FEATURE_UID);
 }
 function clipboardArguments(args,active=true){
   const text=args?.clipboardText;
@@ -130,4 +130,4 @@ function normalizeLessonAction(input){
   }
   return {name,feature,value};
 }
-module.exports={KEY_FEATURE,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,nativeLauncher,CATALOG,featureCatalog,normalizeLessonAction};
+module.exports={INPUT_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,nativeLauncher,CATALOG,featureCatalog,normalizeLessonAction};
