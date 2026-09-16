@@ -107,3 +107,43 @@ test('feature discovery retains new appliance features without old-version assum
   assert.equal(rows.find(x=>x.name==='NewPluginFeature').endpointVerified,false);
   assert.ok(rows.every(x=>!x.detail.includes('4.9.7')));
 });
+
+test('Clipboard requires an exact native bridge identity and bounds UTF-8 content',()=>{
+  const valid={name:'RoomGoblinClipboardWrite',uid:helpers.CLIPBOARD_FEATURE};
+  assert.equal(helpers.clipboardAdvertised([valid]),true);
+  assert.equal(helpers.clipboardAdvertised([{name:valid.name,uid:'wrong'}]),false);
+  assert.equal(helpers.clipboardAdvertised([{name:'ClipboardExchange',uid:valid.uid}]),false);
+  assert.equal(helpers.featureCatalog([{name:valid.name,uid:'wrong'}]).find(f=>f.name===valid.name).advertised,false);
+  assert.deepEqual(helpers.clipboardArguments({clipboardText:'  hello\n',extra:'ignored'}),{clipboardText:'  hello\n'});
+  assert.equal(helpers.clipboardArguments({clipboardText:'é'.repeat(4096)}).clipboardText.length,4096);
+  for(const text of ['',null,4,{},'x\0y','é'.repeat(4097)])assert.throws(()=>helpers.clipboardArguments({clipboardText:text}));
+  assert.throws(()=>helpers.clipboardArguments({clipboardText:'text'},false));
+});
+test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
+  const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
+  let handler,cap,limit;const queued=[];
+  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:'bounded',requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  vm.runInNewContext(source.slice(start,end),context);
+  const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
+  assert.equal(cap,'lab.control');assert.equal(limit,'bounded');
+  for(const targets of [['all'],['one','one'],['constructor'],['missing']])assert.equal(call({feature:'clipboardWrite',targets,arguments:{clipboardText:'x'}}).code,400);
+  assert.equal(queued.length,0);
+  assert.equal(call({feature:'clipboardWrite',targets:['one'],arguments:{clipboardText:'x',privateKey:'discard'}}).code,202);
+  assert.equal(queued[0].owner,'teacher');assert.deepEqual(JSON.parse(JSON.stringify(queued[0].args)),{clipboardText:'x'});
+});
+
+test('Clipboard dialog pins its named target and clears text before submitting',async()=>{
+  const elements=new Map(),sent=[],alerts=[];let selected=['one'],closed=false,advertised=true;
+  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,value:'',focus(){}});return elements.get(id)};
+  const context={$ ,targetIds:()=>selected,computers:[{id:'one',name:'Test <PC>'}],TextEncoder,
+    api:async()=>({features:[{name:'RoomGoblinClipboardWrite',advertised}]}),esc:v=>String(v).replaceAll('<','&lt;'),
+    openInfo:(_title,html)=>{assert.match(html,/Test &lt;PC>/);closed=false},closeInfo:()=>{closed=true},
+    feature:async(...args)=>{assert.equal($('clipboardText').value,'');assert.equal(closed,true);sent.push(args)},
+    alert:message=>alerts.push(message),document:{addEventListener(){}},window:{addEventListener(){}}};
+  vm.runInNewContext(fs.readFileSync('public/controller/veyon-free-features.js','utf8'),context);
+  await $('sendClipboard').onclick();selected=['other'];$('clipboardText').value='multi\nline é';
+  await $('clipboardForm').onsubmit({preventDefault(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)),[[['one'],'clipboardWrite',true,{clipboardText:'multi\nline é'}]]);
+  selected=['one'];advertised=false;await $('sendClipboard').onclick();assert.match(alerts[0],/requires the RoomGoblinWebBridge/);
+  assert.equal(sent.length,1);assert.equal($('sendClipboard').disabled,false);
+});

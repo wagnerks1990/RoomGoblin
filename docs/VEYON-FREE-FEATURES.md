@@ -6,7 +6,7 @@ Veyon feature a browser API.** Native configuration and interactive file transfe
 still belong in Veyon Configurator/Master. Paid add-ons, subscriptions and
 commercial trials are excluded.
 
-The appliance baseline is Veyon 4.9.7. Its service and WebAPI remain host-managed;
+Veyon service and WebAPI remain host-managed;
 this change never installs, upgrades or restarts either service. Existing keys,
 multi-key authentication, DHCP inventory, command recovery, displays, Morning
 Announcements and Background Music remain on their established paths.
@@ -21,6 +21,7 @@ targets remain selected; check the existing selection count before confirming.
 | --- | --- | --- |
 | Monitoring, screenshots, remote view | Existing previews, Live View, screenshot download | Requires `lab.sensitive.read`; an image proves capture, TCP alone does not |
 | Remote keyboard/mouse control | Native control launcher | Run downloaded PowerShell on the teacher Windows PC with official Veyon configured |
+| Clipboard text sending | [Browser form and native bridge](VEYON-WEB-CLIPBOARD.md) | One target; explicit text only; requires RoomGoblinWebBridge on the appliance |
 | Clipboard exchange, monitor selection | Native Veyon remote-access window | Teacher-side settings and authentication apply; not implemented through 4.9.7 WebAPI |
 | Teacher/student demonstration, fullscreen/window | Existing teacher controls or new student demonstration controls | Select source and audience; source must have a signed-in user; source excluded from recipients |
 | Stop selected demonstrations | Select source and all recipients, then stop | Queues all three mode cleanups atomically; offline owned modes retain existing recovery behavior |

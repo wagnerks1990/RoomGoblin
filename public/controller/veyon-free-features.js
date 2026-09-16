@@ -12,6 +12,19 @@
     $('commandFeedback').textContent='Launcher downloaded. Run it on your teacher Windows computer. Native Master requires selecting the listed targets in its own inventory; no keys were exported.';
   }
   bind('nativeView',()=>desktop('view'));bind('nativeControl',()=>desktop('control'));bind('nativeMaster',()=>desktop('master'));
+  bind('sendClipboard',async()=>{
+    const [id]=selection(1),computer=computers.find(c=>c.id===id);
+    const catalog=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
+    if(!catalog.features.some(f=>f.name==='RoomGoblinClipboardWrite'&&f.advertised))throw Error('Clipboard sending requires the RoomGoblinWebBridge native plugin on the appliance. Stock Veyon WebAPI does not forward clipboard text.');
+    openInfo('Send clipboard text',`<p>Replace the clipboard on ${esc(computer?.name||id)}. Sending does not paste or run the text. Up to 8192 UTF-8 bytes. Verify delivery on the selected computer.</p><form id="clipboardForm"><label for="clipboardText">Text to send</label><textarea id="clipboardText" maxlength="8192" rows="6" required autocomplete="off" spellcheck="false"></textarea><button type="submit">Send to selected computer</button></form>`);
+    $('clipboardText').focus();
+    $('clipboardForm').onsubmit=async event=>{
+      event.preventDefault();const field=$('clipboardText'),text=field.value;
+      if(!text.length||text.includes('\0')||new TextEncoder().encode(text).length>8192)return alert('Enter 1–8192 UTF-8 bytes without NUL characters.');
+      field.value='';closeInfo();
+      await feature([id],'clipboardWrite',true,{clipboardText:text});
+    };
+  });
   bind('saveMac',async()=>{const [id]=selection(1),computer=computers.find(c=>c.id===id);const mac=prompt('MAC address for Wake-on-LAN (blank removes it):',computer.mac||'');if(mac===null)return;await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({mac})});await load()});
   bind('wakeComputers',async()=>{const targets=selection();if(!confirm(`Send Wake-on-LAN packets for ${targets.length} selected computers?`))return;const result=await api('/api/v1/veyon/wake',{method:'POST',body:JSON.stringify({targets})});$('commandFeedback').textContent=(result.results||[]).map(r=>`${r.id}: ${r.accepted?'Wake packet sent; startup unverified':r.error||'Failed'}`).join(' · ')});
   bind('deviceInfo',async()=>{const [id]=selection(1);const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/info`),c=x.computer;openInfo('User and session details',`<pre style="white-space:pre-wrap">${esc(JSON.stringify({name:c.name,online:c.online,authenticated:c.authenticated,user:c.user,session:c.session,locks:c.featureState,error:c.error},null,2))}</pre>`)});

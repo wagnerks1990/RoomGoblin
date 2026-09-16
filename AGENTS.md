@@ -429,3 +429,8 @@ require disposable matching Ubuntu desktop VMs for interactive acceptance.
 Veyon installed-version reporting must use host package inventory, independently
 of pending apt upgrades. Never infer endpoint features from a fixed 4.9.7
 baseline. See docs/VEYON-LIFECYCLE.md for evidence and browser-adapter boundaries.
+
+Browser clipboard writes use the existing transient command queue and require
+exact RoomGoblinWebBridge advertisement. Read docs/VEYON-WEB-CLIPBOARD.md before
+changing that path. No clipboard payload in logs/journal/job projections, no
+uncertain replay, no arbitrary protocol forwarding, no inferred endpoint success.
