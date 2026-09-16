@@ -240,13 +240,14 @@ jobs:
             libpipewire-0.3-dev libspa-0.2-dev xorg-dev libfakekey-dev libvncserver-dev \
             libssl-dev libpam0g-dev libproc2-dev libldap2-dev libsasl2-dev libqca-qt6-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
-      - name: Prepare pinned standalone Veyon source
-        run: |
-          python3 -m unittest discover -s tools -p test_prepare_veyon_pilot.py
-          python3 tools/prepare-veyon-pilot.py "$RUNNER_TEMP/veyon-pilot"
-      - name: Compile community plugins against official Veyon
-        run: |
-          cmake -S "$RUNNER_TEMP/veyon-pilot" -B "$RUNNER_TEMP/veyon-build" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug -DWITH_LTO=OFF -DWITH_TRANSLATIONS=OFF
-          cmake --build "$RUNNER_TEMP/veyon-build" --target classroomchat remotefilebrowser roomgoblin-pilot-policy-test --parallel 2
-          "$RUNNER_TEMP/veyon-build/plugins/remotefilebrowser/roomgoblin-pilot-policy-test"
+      - name: Verify native pilot preparation
+        run: python3 -m unittest discover -s tools -p test_prepare_veyon_pilot.py
+      - name: Build and verify complete community pilot
+        run: bash tools/package-veyon-pilot.sh "$RUNNER_TEMP/roomgoblin-native-pilot"
+      - name: Upload complete native pilot and corresponding source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: RoomGoblin-Veyon-pilot-linux
+          path: ${{ runner.temp }}/roomgoblin-native-pilot/artifacts/
+          if-no-files-found: error
+          retention-days: 14

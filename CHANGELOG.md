@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Complete Linux Veyon pilot artifacts
+
+- Build and stage the entire matching native Veyon distribution with chat and file browsing.
+- Verify installed plugin discovery and publish binaries, full corresponding source, inventories and checksums as a CI artifact.
+- Document disposable-VM installation and rollback; production and Windows installations remain unchanged.
+
 ### Free Veyon controls and isolated community pilot
 
 - Add bounded Wake, shutdown variants, native desktop launchers, student demonstrations, shared lesson actions and browser-only screen recording.

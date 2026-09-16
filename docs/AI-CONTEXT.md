@@ -414,3 +414,12 @@ schedule references or delete nonempty/custom groups automatically. Follow
 ## Free Veyon features and native pilot
 
 Read [VEYON-FREE-FEATURES.md](VEYON-FREE-FEATURES.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. Never pretend WebAPI can initialize native file transfer or return successful arbitrary internal commands. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no installer, production key change, commercial add-on or unvalidated Windows ABI claim. Preserve the new Linux pilot build gate and operator tests.
+
+## Native pilot artifacts
+
+The Validate native job builds the entire pinned Linux Veyon tree and publishes
+matching binaries plus all corresponding source. See VEYON-PILOT-BINARIES.md.
+`tools/package-veyon-pilot.sh` uses DESTDIR staging and verifies both community
+plugins with the installed CLI. No production install, service start, key export
+or Windows compatibility claim is allowed. Preserve GPL source distribution and
+require disposable matching Ubuntu desktop VMs for interactive acceptance.
