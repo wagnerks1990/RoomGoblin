@@ -28,7 +28,9 @@ The destination must not exist. Source and submodules are pinned by
 with DESTDIR and verifies both community plugins through the staged CLI. It never
 invokes a service manager or installs into the host root. System libraries are
 not bundled: use matching Ubuntu 24.04 dependencies, compiler architecture and
-Qt generation. This is not a portable cross-distribution archive.
+Qt generation. Include `libqca-qt6-plugins`: the QCA development package alone
+does not supply the RSA provider required at runtime. This is not a portable
+cross-distribution archive.
 
 ## Pilot installation and acceptance
 
