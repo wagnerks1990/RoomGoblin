@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Restore receiver mapping and group editing
+
+- Restore the missing receiver form under Displays & AV, linked from Settings
+  and TV drawers; preserve drafts, receiver fields and stable IDs when saving.
+- Report shared and missing output assignments without guessing receiver IDs;
+  keep hardware routing independent and refresh target names after edits.
+- Offer explicit cleanup of empty repeated-prefix groups and wrap long group
+  names; preserve other groups and existing schedule references.
+- Cover mapping repairs, reload persistence, save failures and safe command
+  targeting in focused browser regressions; document operator recovery and limits.
+
 ### Restore TV Routing Matrix and remove room topology
 
 - Remove topology editors, target overrides, page-wide ordering observer and

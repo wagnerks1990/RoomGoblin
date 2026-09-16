@@ -5,7 +5,9 @@
 Use the [TV Routing Matrix](docs/TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has
 been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
 are preserved. Receiver setup uses count/IDs again; Settings manages receivers
-and AV mappings. Reload the controller after upgrading.
+and AV mappings through the Receiver Settings link. The collapsed receiver editor
+under Displays & AV supports mapping repairs and explicit empty legacy-group
+cleanup. Reload the controller after upgrading.
 
 
 **Classroom & Lab Management Hub**  

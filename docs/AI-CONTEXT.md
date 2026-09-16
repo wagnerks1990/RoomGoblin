@@ -398,3 +398,15 @@ HTTP, an exposed worker port, arbitrary service calls, or privileged Docker acce
 Normal CLI updates select origin/main and use `deploy/update-plan.py` and the journaled native runner. An old installed runner is migrated only after the exact main image pair is verified; the candidate runner forces one full reconciliation and preserves pending-journal recovery. Legacy/deferred branch names are not active update sources. Compare each running image revision and the verified host/deployment record; never infer deployed state from HEAD alone. Preserve per-component image tags and immutable recovery IDs. Unknown deployment/migration inputs or configuration drift trigger full installer reconciliation. Source-only updates preserve the existing rollback point. See `PRODUCTION-UPDATES.md` and `CI-WORKFLOWS.md` for force-full, interruption recovery and the canonical-database limit.
 
 Required publication workflows are now Validate (including Android debug and restrictive-context image coverage), Display browser regression, and Security gates. Semantic releases promote the published SHA image pair instead of rebuilding it. Do not restore duplicate standalone workflows or weaken these gates.
+
+## Receiver editor recovery
+
+The receiver editor lives in the collapsed `receiverSettings` form under Displays
+& AV, linked from Settings and the TV drawer. Keep its `RECEIVERCFG` draft separate
+from poll-refreshed `S.avConfig`. Preserve drafts when editing/removing groups.
+Do not infer receiver IDs from output numbers or choose the first of several
+receivers sharing an output. Receiver tools require a unique saved assignment;
+physical matrix routing and power remain independent. Cleanup of empty repeated
+`display-` groups is explicit and limited to the draft until saved; never rewrite
+schedule references or delete nonempty/custom groups automatically. Follow
+`docs/TV-ROUTING-MATRIX.md` for recovery and validation details.

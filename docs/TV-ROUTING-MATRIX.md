@@ -12,7 +12,7 @@ Displays & AV and Setup at the operator's request.
   An output without a content receiver can still be renamed; this saves its
   matrix label without creating a receiver or enrollment identity.
 - Click a source heading to edit its name and browser/kiosk endpoint ID.
-- Use Settings' display editor for receiver names, AV output mappings and groups.
+- Use Receiver names, mappings & groups under Displays & AV for receiver settings.
   Setup again exposes the receiver count and editable stable receiver IDs.
 - Matrix & Diagnostics contains the existing hardware system/network controls.
 
@@ -69,3 +69,37 @@ Announcements, Background Music and Android compatibility suites remain required
 Browser fixtures do not establish physical TV/Pluto acceptance. After upgrade,
 verify routing on one output, names after refresh, remote controls and uninterrupted
 native audio; report hardware tests separately from automated results.
+
+## Receiver mapping recovery
+
+Open **Displays & AV → Receiver names, mappings & groups** (also linked from
+Settings and the TV drawer). The earlier rollback left the editor functions in
+place without their visible form. This form lists every stored receiver once,
+including independent receivers and multiple receivers sharing an output.
+
+Edit a receiver's name and AV Output, or leave AV Output blank for an independent
+display. Stable IDs, optional enrollment credentials, connection metadata,
+lighting mappings and unrelated receiver fields remain intact. Save with
+**Save Receivers & Groups**. Saving updates target names immediately and does not
+send routing, power or display commands. Polling and reopening the disclosure
+preserve drafts; **Reload Saved Settings** explicitly discards them.
+
+The matrix now reports missing and shared receiver assignments. It never guesses
+`tvN` from output N. Test Image, Clear, Reload and drawer group saves require a
+unique mapped receiver. Hardware routing/power remain available for every port.
+A shared or unmapped output name changes only its matrix label; individual
+receiver names can be edited in the form. No automatic physical reassignment is
+performed, because receiver identity and matrix output numbers can differ.
+
+Repeated-prefix empty groups are omitted from the TV drawer. In the receiver
+editor, **Remove Empty Legacy Groups** removes only empty group IDs starting with
+two or more `display-` prefixes from the draft. Review the confirmation and save
+to apply. Nonempty groups, custom empty groups and `all` remain intact. Existing
+schedule references are not rewritten; review schedules before removing any
+referenced group. Individual groups can also be removed using their own button.
+Names wrap instead of running together. No new group names are synthesized.
+
+Browser regressions cover shared/missing mappings, draft retention, field and
+membership preservation, reload persistence, save errors, administrator-only save
+controls and absence of command writes from configuration changes. Physical
+receiver assignments and routing still require operator verification.

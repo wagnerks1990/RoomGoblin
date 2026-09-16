@@ -387,3 +387,15 @@ restart. Sensor state/reconnects are memory-only. Firmware, HA actions, automati
 mDNS enrollment and sensor-triggered automations are not implemented by this module.
 Do not broaden this boundary or replace native encryption with unauthenticated
 HTTP, an exposed worker port, arbitrary service calls, or privileged Docker access.
+
+## Receiver editor recovery
+
+The receiver editor lives in the collapsed `receiverSettings` form under Displays
+& AV, linked from Settings and the TV drawer. Keep its `RECEIVERCFG` draft separate
+from poll-refreshed `S.avConfig`. Preserve drafts when editing/removing groups.
+Do not infer receiver IDs from output numbers or choose the first of several
+receivers sharing an output. Receiver tools require a unique saved assignment;
+physical matrix routing and power remain independent. Cleanup of empty repeated
+`display-` groups is explicit and limited to the draft until saved; never rewrite
+schedule references or delete nonempty/custom groups automatically. Follow
+`docs/TV-ROUTING-MATRIX.md` for recovery and validation details.
