@@ -22,6 +22,14 @@ hidden editors. The existing automation target expansion helpers remain for
 compatibility; runtime code does not read archived topology. Do not revert
 scheduler or priority fixes as part of this UI removal.
 
+Require one explicit enabled AV-output receiver mapping before sending receiver
+commands or changing drawer group membership. Never fall back to a guessed `tvN`
+or pick the first of duplicate mappings. Matrix ports remain independent physical
+targets. Long saved group keys wrap without renaming: retired fallback/projection
+cycles could accumulate `display-` prefixes, but removing those prefixes safely
+requires reference-aware migration and production evidence. Do not restore archived
+topology or guess missing TV identity to repair a label mismatch.
+
 Retain Morning Announcements priority, scheduler reconciliation, Background Music,
 native Sendspin, managed-device state and ADB trust. Use the validation checklist
 in `docs/ai/ROOM-TOPOLOGY-VALIDATION.md`; distinguish browser fixtures from physical
