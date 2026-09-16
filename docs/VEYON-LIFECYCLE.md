@@ -22,6 +22,31 @@ The **Install available update** action therefore starts the normal guarded host
 
 The lifecycle API refuses to start an update when the configured apt sources do not currently offer a Veyon package update.
 
+## Native service recovery
+
+RoomGoblin depends on both native services when Veyon is configured:
+
+- `veyon.service` provides the native Veyon service;
+- `veyon-webapi.service` runs `veyon-cli webapi runserver`, normally on TCP `11080`.
+
+A package transaction can stop `veyon.service`. Because the WebAPI unit requires Veyon, systemd also stops `veyon-webapi.service`. Starting only the replacement `veyon.service` does not normally restart a dependent unit that was stopped with it.
+
+The guarded RoomGoblin host updater therefore installs `/etc/systemd/system/veyon.service.d/roomgoblin-webapi.conf` when both native units exist. The drop-in adds `Wants=veyon-webapi.service`, enables both units, preserves whether Veyon was expected to be running before the package transaction, and verifies that both services are active again after the update when they were previously active. The drop-in lives under `/etc`, so ordinary package replacement of the vendor Veyon unit does not overwrite it.
+
+An installed but stopped `veyon-webapi.service` is **not** the same as a missing service. RoomGoblin reports that state as installed/stopped and preserves the host-managed integration instead of incorrectly telling the administrator to reinstall Veyon.
+
+Useful checks after package work are:
+
+```bash
+systemctl is-enabled veyon.service veyon-webapi.service
+systemctl is-active veyon.service veyon-webapi.service
+systemctl cat veyon.service
+systemctl status veyon-webapi.service --no-pager -l
+ss -lntp | grep ':11080'
+```
+
+A request to `GET /` on port `11080` can legitimately return `404 Invalid command or non-matching HTTP method`. That proves only that the WebAPI process is reachable; it does not prove endpoint authentication, screenshots, or classroom-control operations.
+
 ## Upstream release check
 
 RoomGoblin requests the latest public release metadata from the official `veyon/veyon` GitHub repository on the server side. This check is informational:
@@ -43,16 +68,17 @@ RoomGoblin requests the latest public release metadata from the official `veyon/
 
 For a major/minor Veyon change, validate one non-critical endpoint before broad rollout:
 
-1. verify Veyon/WebAPI service health;
-2. verify the endpoint appears under its stable hostname identity;
-3. verify thumbnail and enlarged screen-preview startup;
-4. verify screen lock/unlock and input lock/unlock;
-5. verify text messages;
-6. verify teacher demonstration/broadcast start and stop;
-7. verify user/session information updates;
-8. change the endpoint's DHCP address and verify RoomGoblin follows the hostname;
-9. if multiple Veyon authentication keys exist, verify the previously successful key preference follows the device;
-10. verify update/reboot state in **Infrastructure & Recovery**.
+1. verify both `veyon.service` and `veyon-webapi.service` are enabled and active;
+2. verify TCP `11080` is listening and the WebAPI is reachable;
+3. verify the endpoint appears under its stable hostname identity;
+4. verify thumbnail and enlarged screen-preview startup;
+5. verify screen lock/unlock and input lock/unlock;
+6. verify text messages;
+7. verify teacher demonstration/broadcast start and stop;
+8. verify user/session information updates;
+9. change the endpoint's DHCP address and verify RoomGoblin follows the hostname;
+10. if multiple Veyon authentication keys exist, verify the previously successful key preference follows the device;
+11. verify update/reboot state in **Infrastructure & Recovery**.
 
 ## Rollback considerations
 

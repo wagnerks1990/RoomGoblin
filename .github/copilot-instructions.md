@@ -35,6 +35,7 @@ Key rules:
 - Do not add Onn-specific backend branches merely because a behavior was observed on that test device; represent OEM-dependent behavior through the generic capability model and documentation.
 - Veyon computer inventory and RoomGoblin-side Veyon configuration are database-authoritative. `veyon-computers.json` is migration input only; do not reintroduce it as runtime state.
 - Native `veyon.service` / `veyon-webapi.service` are host-managed but remain fully configurable from RoomGoblin. Do not deploy the obsolete Veyon proxy when native services exist.
+- Treat an inactive `veyon-webapi.service` as installed/stopped, not missing. The guarded host updater must preserve the `/etc/systemd/system/veyon.service.d/roomgoblin-webapi.conf` dependency drop-in and, when Veyon was active before a package transaction, require both native services to be active again before accepting the update.
 - Veyon control authentication uses the Veyon key pair. Domain credentials and SSH keys, when configured, are optional endpoint-deployment credentials and must not be described as Veyon control authentication.
 - Veyon private keys and endpoint deployment secrets must be encrypted in SQLite. Native Veyon filesystem keys are derived/imported runtime material, not RoomGoblin configuration authority.
 - Music Assistant is not ready merely because its container is running. A valid long-lived token is mandatory; Save & Verify must fail on missing/rejected credentials and the token must remain encrypted/database-backed.
