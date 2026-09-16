@@ -36,6 +36,7 @@ test("native Veyon WebAPI is host-managed but remains fully configurable",()=>{
   const ext=read("maintenance-agent/extensions.js");
   const hostServer=read("host-agent/server.py");
   const hostUnit=read("host-agent/classroom-control-hub-host-agent.service");
+  const updateRunner=read("host-agent/update-runner.sh");
   const keySync=read("host-agent/sync-veyon-key.sh");
   const bridge=read("src/maintenance-route-bridge.js");
   const ui=read("public/shared/integration-setup.js");
@@ -48,6 +49,16 @@ test("native Veyon WebAPI is host-managed but remains fully configurable",()=>{
   assert.match(ext,/externalOnly:false/);
   assert.match(ext,/saveVeyonSettings/);
   assert.match(ext,/internal\/maintenance\/integration-connections/);
+  assert.match(ext,/function nativeServicePresent\(unit\)/);
+  assert.match(ext,/unit\.active==="inactive"&&unit\.enabled==="disabled"&&!String\(unit\.description\|\|""\)\.trim\(\)/);
+  assert.match(ext,/health:native\.running\?[\s\S]*?:"stopped"/);
+  assert.match(ext,/Native Veyon WebAPI is installed but stopped/);
+  assert.doesNotMatch(ext,/webapi\.active!=="inactive"&&webapi\.active!=="not-found"/);
+  assert.match(updateRunner,/VEYON_DROPIN=.*roomgoblin-webapi\.conf/);
+  assert.match(updateRunner,/Wants=veyon-webapi\.service/);
+  assert.match(updateRunner,/systemctl enable veyon\.service veyon-webapi\.service/);
+  assert.match(updateRunner,/systemctl start veyon\.service/);
+  assert.match(updateRunner,/systemctl is-active --quiet veyon-webapi\.service/);
   assert.match(ui,/keyName\|\|"master"/);
   assert.match(ui,/placeholder:"master"/);
   assert.match(ui,/windowsCredentialPassword/);
