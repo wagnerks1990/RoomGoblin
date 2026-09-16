@@ -18,6 +18,9 @@ RoomGoblin modifications, September 2026:
   `LinuxServerProcess.cpp`; an auto-deduced QStringBuilder retains references
   to temporary operands. The preparer checks the exact pinned patch anchor.
   Keep file-policy assertions enabled in Release test builds.
+- Bundled x11vnc: initialize the input-loop frame counter before calling
+  `fb_update_sent`, which can leave it unset in no-framebuffer mode. The fixed
+  submodule revision remains b32d00e81a6cc5bd5c5be5882e0db56bb7537da8.
 
 - Chat: repair enum argument reads that did not compile; reject no-op headless
   execution; bind responses to a selected endpoint/session and requests to their

@@ -34,6 +34,14 @@ def prepare(destination):
         raise RuntimeError('Upstream source identity mismatch')
     subprocess.run(['git', '-C', str(destination), 'submodule', 'update', '--init', '--recursive'], check=True)
     patch_linux_string_lifetime(destination)
+    # fb_update_sent can return early in no-framebuffer mode without setting
+    # its output argument. Initialize the caller's counter for that path.
+    input_path = destination / '3rdparty/x11vnc/src/userinput.c'
+    content = input_path.read_text()
+    anchor = 'int cnt, iter = 0;'
+    if content.count(anchor) != 1:
+        raise RuntimeError('Pinned x11vnc counter patch does not match source')
+    input_path.write_text(content.replace(anchor, 'int cnt = 0, iter = 0;'))
     for plugin in PLUGINS:
         shutil.copytree(source / plugin, destination / 'plugins' / plugin)
     # Official v4.11.2 discovers plugin subdirectories automatically.
