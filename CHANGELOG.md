@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Veyon installed version and feature discovery
+
+- Read installed package versions even when apt offers no update; flag mixed installs.
+- Remove obsolete 4.9.7 GUI feature claims and retain newly advertised feature names.
+- Keep package, proxy-advertisement and endpoint-verification evidence distinct.
+
+
 ### Complete Linux Veyon pilot artifacts
 
 - Build and stage the entire matching native Veyon distribution with chat and file browsing.

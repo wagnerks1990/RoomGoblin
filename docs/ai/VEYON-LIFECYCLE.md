@@ -44,3 +44,20 @@ Keep these values informational and do not infer that an upstream release is ins
 ## Upgrade acceptance
 
 After a Veyon upgrade, first verify both native services are enabled and active and TCP `11080` is listening. Then validate WebAPI reachability, thumbnail and enlarged screen-preview behavior, screen/input lock, text message, demonstration/broadcast, user/session reporting, DHCP hostname identity, and multi-key affinity on a non-critical workstation before classroom-wide rollout.
+
+## Installed version and browser feature discovery
+
+RoomGoblin reads installed Veyon package versions from the Host Agent's fixed
+`dpkg-query` inventory independently of apt's pending upgrades. The installed
+version remains visible when no upgrade is pending. Mixed package versions are
+reported rather than selecting an arbitrary component. Missing inventory means
+unknown, never an assumed 4.9.7 or 4.11.2. This is host package inventory, not
+proof of the loaded WebAPI binary or Windows endpoint version; services may need
+a restart after an external upgrade.
+
+The feature catalog includes newly advertised names with an explicit unmapped
+status. Advertisement does not prove endpoint support or a working browser
+implementation. Remove version-specific absence claims from GUI text. Native
+launchers and isolated plugin packages do not satisfy the web-GUI integration
+goal: keyboard/mouse, clipboard, two-way chat and file operations need actual
+authenticated browser/backend/native adapters and endpoint acceptance tests.
