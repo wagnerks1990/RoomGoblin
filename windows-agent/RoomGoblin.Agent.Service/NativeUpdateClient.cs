@@ -39,7 +39,7 @@ internal sealed class NativeUpdateClient
             UriPartial.Authority);
 
         var manifestUri =
-            new Uri(origin + "/api/v1/lab-agent/native-manifest");
+            new Uri(origin + "/lab-agent/native/manifest.json");
 
         var manifest =
             await http.GetFromJsonAsync<NativeManifest>(
