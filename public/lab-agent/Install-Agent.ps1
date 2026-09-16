@@ -42,8 +42,10 @@ try{
   if(Test-Path $config){Remove-Item ($config+'.bak') -Force -ErrorAction SilentlyContinue;[IO.File]::Replace($configTemp,$config,$config+'.bak',$true)}else{[IO.File]::Move($configTemp,$config)}
   if(Test-Path $agent){Remove-Item ($agent+'.previous') -Force -ErrorAction SilentlyContinue;[IO.File]::Replace($stage,$agent,$agent+'.previous',$true)}else{[IO.File]::Move($stage,$agent)}
 }finally{Remove-Item $configTemp,$stage -Force -ErrorAction SilentlyContinue}
-& icacls.exe $agent $config /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)' | Out-Null
-if($LASTEXITCODE -ne 0){throw 'Could not secure installed agent files.'}
+foreach($installedFile in @($agent,$config)){
+  & icacls.exe $installedFile /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)' | Out-Null
+  if($LASTEXITCODE -ne 0){throw "Could not secure installed agent file: $installedFile"}
+}
 $action="-NoProfile -ExecutionPolicy AllSigned -File `"$agent`" -ConfigPath `"$config`""
 if(!$TrustedPublisherThumbprint){$action=$action -replace 'AllSigned','RemoteSigned'}
 $taskAction=New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument $action

@@ -24,9 +24,8 @@ def prepare(destination):
     subprocess.run(['git', '-C', str(destination), 'submodule', 'update', '--init', '--recursive'], check=True)
     for plugin in PLUGINS:
         shutil.copytree(source / plugin, destination / 'plugins' / plugin)
-    with (destination / 'plugins' / 'CMakeLists.txt').open('a') as cmake:
-        for plugin in PLUGINS:
-            cmake.write(f'\nadd_subdirectory({plugin})\n')
+    # Official v4.11.2 discovers plugin subdirectories automatically.
+    # Do not add duplicate add_subdirectory entries.
     shutil.copyfile(source / 'PROVENANCE.md', destination / 'ROOMGOBLIN-PILOT.md')
     print(json.dumps({'source': str(destination), 'revision': actual, 'plugins': PLUGINS,
                       'installed': False, 'warning': 'Disposable pilot only; never mix with production 4.9.7 binaries.'}))

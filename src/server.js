@@ -141,6 +141,7 @@ const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 500);
 const DEVICE_OFFLINE_SECONDS = Number(process.env.DEVICE_OFFLINE_SECONDS || 45);
 
 const APP_DIR = path.resolve(__dirname, "..");
+const PUBLIC_DIR = path.join(APP_DIR, "public");
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(APP_DIR, "data"));
 const MEDIA_DIR = path.join(DATA_DIR, "media");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
@@ -6422,9 +6423,9 @@ app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),asy
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 broadcast participants.");
     const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
     const owner=requestUser(req)?.id||"legacy-control";
-    // Reserve all three jobs before yielding so an old start cannot fan out.
-    for(const rec of targets){const marker={};veyonBroadcastWorkflows.set(rec.ip,marker);workflows.push([rec.ip,marker])}
+    // Reserve all three jobs before changing workflow intent or yielding.
     const jobs=veyonCommandQueue.enqueueModeCleanup(targets,owner);
+    for(const rec of targets){const marker={};veyonBroadcastWorkflows.set(rec.ip,marker);workflows.push([rec.ip,marker])}
     res.status(202).json({ok:true,jobs});
   }catch(error){res.status(error.status||400).json({ok:false,error:error.message})}
   finally{for(const [ip,marker] of workflows)if(veyonBroadcastWorkflows.get(ip)===marker)veyonBroadcastWorkflows.delete(ip)}

@@ -57,3 +57,30 @@ test('Protected routes reject arbitrary targets and stale MAC identity, and stor
   assert.deepEqual((await h.call('get','/api/v1/veyon/lesson-actions')).body.actions,[]);
   r=await h.call('get','/api/v1/veyon/computers/:id/catalog',{}, {id:'one'});assert.equal(r.cap,'lab.read');assert.equal(r.body.verification,'proxy-advertisement-only');
 });
+
+function recorderHarness(){
+  const elements=new Map(),timers=new Map(),listeners=new Map(),recorders=[],state={visible:true,stoppedTracks:0,signal:null};let timerId=0;
+  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,textContent:''});return elements.get(id)};
+  class Canvas {getContext(){return {fillRect(){}}}captureStream(){return {getTracks:()=>[{stop:()=>state.stoppedTracks++}]}}}
+  class Recorder {static isTypeSupported(){return true}constructor(){this.state='inactive';recorders.push(this)}start(){this.state='recording'}stop(){this.state='inactive';this.onstop()}}
+  const context={$ ,targetIds:()=>['one'],previewSurfaceVisible:()=>state.visible,HTMLCanvasElement:Canvas,MediaRecorder:Recorder,AbortController,Blob,Date,
+    document:{hidden:false,createElement:()=>new Canvas(),addEventListener:(event,fn)=>listeners.set('document:'+event,fn)},window:{addEventListener:(event,fn)=>listeners.set(event,fn)},
+    setTimeout:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId},clearTimeout:id=>timers.delete(id),confirm:()=>true,alert:message=>{throw Error(message)},
+    imageFrame:(_url,controller)=>{state.signal=controller.signal;return new Promise(()=>{})}};
+  vm.runInNewContext(fs.readFileSync('public/controller/veyon-free-features.js','utf8'),context);
+  return {$,timers,listeners,recorders,state};
+}
+test('Recording hard deadline and embedded hide stop tracks even when capture is stalled',async()=>{
+  for(const event of ['deadline','roomgoblin:viewport']){
+    const h=recorderHarness();await h.$('startRecording').onclick();assert.equal(h.$('startRecording').disabled,true);
+    if(event==='deadline') [...h.timers.values()].find(t=>t.delay===300000).fn();
+    else {h.state.visible=false;h.listeners.get(event)()}
+    assert.equal(h.state.stoppedTracks,1);assert.equal(h.state.signal.aborted,true);
+    assert.equal(h.$('startRecording').disabled,false);assert.equal(h.$('stopRecording').disabled,true);assert.equal(h.timers.size,0);
+  }
+});
+test('Recording discards a chunk that would exceed its hard memory/output limit',async()=>{
+  const h=recorderHarness();await h.$('startRecording').onclick();h.recorders[0].ondataavailable({data:{size:32*1024*1024+1}});
+  assert.match(h.$('recordingStatus').textContent,/Size limit exceeded; recording discarded/);
+  assert.equal(h.$('downloadRecording').disabled,true);assert.equal(h.state.stoppedTracks,1);
+});
