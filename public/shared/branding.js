@@ -107,4 +107,5 @@
   if(!renderer&&location.pathname.startsWith("/controller"))managedDisplaysOverviewLink();
   if(!renderer&&!document.querySelector('script[data-controlhub-integration-setup]')){const script=document.createElement("script");script.src="/shared/integration-setup.js";script.defer=true;script.dataset.controlhubIntegrationSetup="1";document.head.append(script);}
   if(!renderer&&!document.querySelector('script[data-controlhub-automation-fix]')){const script=document.createElement("script");script.src="/shared/automation-hotfix.js";script.defer=true;script.dataset.controlhubAutomationFix="1";document.head.append(script);}
+  if(!renderer&&location.pathname.startsWith("/controller")&&!document.querySelector('script[data-roomgoblin-veyon-keyring]')){const script=document.createElement("script");script.src="/controller/veyon-keyring-ui.js";script.defer=true;script.dataset.roomgoblinVeyonKeyring="1";document.head.append(script);}
 })();

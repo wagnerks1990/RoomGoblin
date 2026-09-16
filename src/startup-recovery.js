@@ -113,8 +113,9 @@ if(fs.existsSync(dbFile)){
   }finally{db.close()}
 }
 
-// Register scoped maintenance-agent route mirrors before server.js creates the
-// Express routes. Database writes and secret encryption still execute inside
-// server.js handlers; the bridge only supplies maintenance-token authorization.
+// Register scoped route bridges before server.js creates the Express routes.
+// The Veyon bridge preserves legacy-key compatibility while adding an encrypted
+// multi-key ring. The maintenance bridge then mirrors the established handlers.
+require("./veyon-keyring-bridge");
 require("./maintenance-route-bridge");
 require("./server");
