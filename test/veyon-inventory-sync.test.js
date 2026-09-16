@@ -1,6 +1,7 @@
 "use strict";
 const test=require("node:test");
 const assert=require("node:assert/strict");
+const fs=require("node:fs");
 const {hostKey,identitySnapshot,reconciliationPlan,dedupeInventory}=require("../public/controller/veyon-inventory-sync");
 
 test("Veyon inventory identity follows hostname instead of DHCP address",()=>{
@@ -60,4 +61,16 @@ test("duplicate hostnames are preserved when more than one record is online",()=
     {id:"b",hostname:"duplicate",online:true}
   ];
   assert.deepEqual(dedupeInventory(rows).map(row=>row.id),["a","b"]);
+});
+
+test("browser discovery no longer writes DHCP identity patches",()=>{
+  const source=fs.readFileSync("public/controller/veyon-inventory-sync.js","utf8");
+  const start=source.indexOf("async function runDiscovery");
+  const end=source.indexOf("const refresh=",start);
+  const region=source.slice(start,end);
+  assert.match(region,/\/api\/v1\/veyon\/status/);
+  assert.match(region,/scan subnet prefix is configured/);
+  assert.match(region,/\/api\/v1\/veyon\/discover/);
+  assert.doesNotMatch(region,/method:'PUT'/);
+  assert.doesNotMatch(region,/reconciliationPlan\(/);
 });
