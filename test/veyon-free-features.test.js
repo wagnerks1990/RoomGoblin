@@ -122,13 +122,16 @@ test('Clipboard requires an exact native bridge identity and bounds UTF-8 conten
 test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
   const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
   let handler,cap,limit;const queued=[];
-  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:'bounded',requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:'bounded',requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.KEY_FEATURE},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
   vm.runInNewContext(source.slice(start,end),context);
   const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
   assert.equal(cap,'lab.control');assert.equal(limit,'bounded');
   for(const targets of [['all'],['one','one'],['constructor'],['missing']])assert.equal(call({feature:'clipboardWrite',targets,arguments:{clipboardText:'x'}}).code,400);
   assert.equal(queued.length,0);
   assert.equal(call({feature:'clipboardWrite',targets:['one'],arguments:{clipboardText:'x',privateKey:'discard'}}).code,202);
+  assert.equal(call({feature:'keySequence',targets:['one'],arguments:{sequence:'Ctrl+V'}}).code,202);
+  assert.ok(queued[1].expiresAt>Date.now()&&queued[1].expiresAt<=Date.now()+5000);
+  assert.equal(call({feature:'keySequence',targets:['all'],arguments:{sequence:'Enter'}}).code,400);
   assert.equal(queued[0].owner,'teacher');assert.deepEqual(JSON.parse(JSON.stringify(queued[0].args)),{clipboardText:'x'});
 });
 
@@ -146,4 +149,14 @@ test('Clipboard dialog pins its named target and clears text before submitting',
   assert.deepEqual(JSON.parse(JSON.stringify(sent)),[[['one'],'clipboardWrite',true,{clipboardText:'multi\nline é'}]]);
   selected=['one'];advertised=false;await $('sendClipboard').onclick();assert.match(alerts[0],/requires the RoomGoblinWebBridge/);
   assert.equal(sent.length,1);assert.equal($('sendClipboard').disabled,false);
+});
+
+test('Keyboard bridge allows only complete fixed key sequences and exact advertisement',()=>{
+  assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.KEY_FEATURE}]),true);
+  assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.CLIPBOARD_FEATURE}]),false);
+  for(const sequence of helpers.KEY_SEQUENCES)assert.deepEqual(helpers.keyArguments({sequence,held:true}),{sequence});
+  for(const sequence of ['Ctrl+Alt+Delete','Win+R','',null,4,'a','0xff0d'])assert.throws(()=>helpers.keyArguments({sequence}));
+  assert.throws(()=>helpers.keyArguments({sequence:'Enter'},false));
+  const native=fs.readFileSync('integrations/veyon-plugins/webbridge/RoomGoblinWebBridge.cpp','utf8');
+  for(const sequence of helpers.KEY_SEQUENCES)assert.ok(native.includes(`QStringLiteral("${sequence}")`));
 });

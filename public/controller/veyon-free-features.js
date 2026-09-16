@@ -12,6 +12,15 @@
     $('commandFeedback').textContent='Launcher downloaded. Run it on your teacher Windows computer. Native Master requires selecting the listed targets in its own inventory; no keys were exported.';
   }
   bind('nativeView',()=>desktop('view'));bind('nativeControl',()=>desktop('control'));bind('nativeMaster',()=>desktop('master'));
+  bind('sendKey',async()=>{
+    const [id]=selection(1),computer=computers.find(c=>c.id===id);
+    const catalog=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
+    if(!catalog.features.some(f=>f.name==='RoomGoblinKeySequence'&&f.advertised))throw Error('Keyboard sending requires the RoomGoblinWebBridge native plugin on the appliance.');
+    const sequences=['Enter','Tab','Escape','Backspace','Delete','Left','Up','Right','Down','Home','End','PageUp','PageDown','Ctrl+A','Ctrl+C','Ctrl+V'];
+    openInfo('Send key or shortcut',`<p>Send to the focused application on ${esc(computer?.name||id)}. Check its screen first. Ctrl+V pastes its current clipboard. Requests expire after five seconds if still waiting.</p><form id="keyForm"><label for="keySequence">Key or shortcut</label><select id="keySequence">${sequences.map(key=>`<option>${esc(key)}</option>`).join('')}</select><button type="submit">Send to selected computer</button></form>`);
+    $('keySequence').focus();
+    $('keyForm').onsubmit=async event=>{event.preventDefault();const sequence=$('keySequence').value;closeInfo();await feature([id],'keySequence',true,{sequence})};
+  });
   bind('sendClipboard',async()=>{
     const [id]=selection(1),computer=computers.find(c=>c.id===id);
     const catalog=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);

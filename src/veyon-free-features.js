@@ -13,6 +13,15 @@ const POWER_FEATURES=Object.freeze({
 });
 
 const CLIPBOARD_FEATURE="d344032e-70ce-4a83-8cb8-3ebd6d6f6f39";
+const KEY_FEATURE="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
+const KEY_SEQUENCES=Object.freeze(["Enter","Tab","Escape","Backspace","Delete","Left","Up","Right","Down","Home","End","PageUp","PageDown","Ctrl+A","Ctrl+C","Ctrl+V"]);
+function keyArguments(args,active=true){
+  if(active===false||!KEY_SEQUENCES.includes(args?.sequence))throw Error("Choose a supported key or shortcut.");
+  return {sequence:args.sequence};
+}
+function keyAdvertised(features){
+  return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")==="RoomGoblinKeySequence"&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===KEY_FEATURE);
+}
 function clipboardArguments(args,active=true){
   const text=args?.clipboardText;
   if(active===false||typeof text!=="string"||!text.length||text.includes("\0")||Buffer.byteLength(text,"utf8")>8192)throw Error("Clipboard requires 1–8192 UTF-8 bytes of text and cannot be stopped.");
@@ -75,6 +84,7 @@ const CATALOG=Object.freeze([
   ["MonitoringMode","Monitor screens","web","Live previews and live view"],
   ["RemoteView","Remote view","desktop","Download native viewer launcher, or use web Live View"],
   ["RemoteControl","Remote keyboard and mouse","desktop","Native control launcher; requires teacher-side Veyon authentication"],
+  ["RoomGoblinKeySequence","Send key or shortcut","web","Press and release a fixed shortcut; requires RoomGoblinWebBridge; endpoint delivery unverified"],
   ["RoomGoblinClipboardWrite","Send clipboard text","web","Send clipboard text button; requires RoomGoblinWebBridge on the appliance; endpoint delivery unverified"],
   ["ClipboardExchange","Clipboard exchange","desktop","Native remote-control window and Veyon clipboard settings"],
   ["Screenshot","Screenshots","web","Download screenshot"],
@@ -106,7 +116,7 @@ function featureCatalog(advertised){
   const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
   const known=new Set(CATALOG.map(row=>row.name));
   const discovered=[...names].filter(name=>name&&!known.has(name)).slice(0,100).map(name=>({name:name.slice(0,120),label:name.slice(0,120),provider:"unmapped",detail:"Advertised by the installed appliance; browser integration has not been implemented",advertised:true,endpointVerified:false}));
-  return [...CATALOG.map(row=>({...row,advertised:row.name==="RoomGoblinClipboardWrite"?clipboardAdvertised(advertised):names.has(row.name),endpointVerified:false})),...discovered];
+  return [...CATALOG.map(row=>({...row,advertised:row.name==="RoomGoblinKeySequence"?keyAdvertised(advertised):row.name==="RoomGoblinClipboardWrite"?clipboardAdvertised(advertised):names.has(row.name),endpointVerified:false})),...discovered];
 }
 function normalizeLessonAction(input){
   const name=String(input?.name||"").trim();
@@ -120,4 +130,4 @@ function normalizeLessonAction(input){
   }
   return {name,feature,value};
 }
-module.exports={CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,nativeLauncher,CATALOG,featureCatalog,normalizeLessonAction};
+module.exports={KEY_FEATURE,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,nativeLauncher,CATALOG,featureCatalog,normalizeLessonAction};

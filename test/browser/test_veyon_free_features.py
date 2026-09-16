@@ -57,6 +57,19 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         self.assertEqual(len(state['commands']), 1)
         self.assertFalse(errors, errors)
 
+    def test_key_sequence_is_an_explicit_single_target_action(self):
+        page, errors, state = self.pilot_page()
+        page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={
+            'features': [{'name': 'RoomGoblinKeySequence', 'advertised': True}]}))
+        page.locator('#sendKey').click()
+        page.locator('#keySequence').select_option('Ctrl+V')
+        page.locator('#keyForm button').click()
+        page.wait_for_function("document.querySelector('#commandFeedback').textContent.startsWith('Queued:')")
+        self.assertEqual(state['commands'][-1]['targets'], ['student-a'])
+        self.assertEqual(state['commands'][-1]['feature'], 'keySequence')
+        self.assertEqual(state['commands'][-1]['arguments'], {'sequence': 'Ctrl+V'})
+        self.assertFalse(errors, errors)
+
     def test_record_stop_download_discard_and_capture_failure(self):
         page, errors, state = self.pilot_page()
         page.on('dialog', lambda dialog: dialog.accept())

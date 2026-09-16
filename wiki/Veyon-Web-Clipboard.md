@@ -53,3 +53,25 @@ Restore the disposable VM snapshot to remove native pilot changes. Hub rollback
 removes the new browser operation without changing keys or endpoint configuration.
 Keyboard/mouse control, clipboard reading, browser file transfer/collection and
 two-way chat remain separate unfinished adapters.
+
+## Browser keys and shortcuts
+
+**Send key or shortcut** uses the same bridge, one-target authorization and
+transient queue. Available actions are Enter, Tab, Escape, Backspace, Delete,
+arrows, Home, End, PageUp, PageDown and Ctrl+A/C/V. Keys are pressed together and
+released in reverse order in one native invocation; no held-key session exists.
+Arbitrary keycodes, command strings and operating-system launch shortcuts are
+not accepted. Native control must be permitted and have a valid framebuffer.
+
+Check the target screen and focused application before sending. Ctrl+V pastes
+its current clipboard; it does not implicitly send the form text. Send clipboard
+text first, inspect the result, then explicitly send Ctrl+V. Clipboard and key
+commands remain ordered per target. Keyboard commands waiting in the Hub expire
+after five seconds; an already dispatched network operation can still arrive
+later, so no hard end-to-end latency is promised. Uncertain delivery is never
+replayed automatically. **Accepted** does not verify the focused application or
+key effect. Test Enter/Tab/arrows and Ctrl+V on a non-sensitive test editor, denied
+native control, missing framebuffer, queue expiry and disconnect.
+
+The native feature name is `RoomGoblinKeySequence`. This is a bounded shortcut
+sender, not continuous keyboard capture or full mouse/keyboard remote control.

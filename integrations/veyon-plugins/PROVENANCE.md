@@ -60,3 +60,7 @@ RemoteAccessFeaturePlugin ClipboardExchange UID and ClipboardText argument index
 1. No community code is copied into this plugin. It respects appliance disabled
 features/clipboard policy and leaves endpoint authorization to native Veyon.
 The Hub remains separate; matching binary artifacts include this source.
+
+Keyboard shortcuts use official VncConnection keyEvent with fixed X11/RFB
+keysyms and complete reverse-order release. No endpoint plugin or held-key
+session is added. Native remote-control disabled-feature policy applies.

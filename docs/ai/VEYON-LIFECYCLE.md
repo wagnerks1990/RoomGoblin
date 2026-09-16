@@ -70,3 +70,7 @@ ClipboardExchange alone is not sufficient. Keep content transient, one target,
 8192 UTF-8 bytes, no automatic replay, no success/verification inflation. The
 GPL RoomGoblinWebBridge plugin emits the official clipboard message using
 argument index 1. Keep the native build isolated and package corresponding source.
+
+`keySequence` uses the same bridge with a fixed keysym allowlist, press/release
+pairs and a five-second Hub queue expiry. Do not add arbitrary held key state or
+retry ambiguous input. This is not continuous remote control.

@@ -4,7 +4,7 @@ const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
-const {CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,nativeLauncher,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
+const {KEY_FEATURE,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,nativeLauncher,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
@@ -91,6 +91,7 @@ const VEYON_AUTHKEYS_UUID = "0c69b301-81b4-42d6-8fae-128cdd113314";
 const VEYON_FEATURES = Object.freeze({
   ...POWER_FEATURES,
   clipboardWrite:CLIPBOARD_FEATURE,
+  keySequence:KEY_FEATURE,
   screenLock:"ccb535a2-1d24-4cc1-a709-8b47d2b2ac79",
   inputLock:"e4a77879-e544-4fec-bc18-e534f33b934c",
   userLogin:"7310707d-3918-460d-a949-65bd152cb958",
@@ -126,6 +127,7 @@ async function veyonCommandEligibility(rec,feature,active=true){
     if(!Array.isArray(available)||!available.some(f=>String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"")===POWER_FEATURES[feature]))return {eligible:false,reason:"feature-not-advertised"};
   }
   if(feature==="clipboardWrite"&&!clipboardAdvertised(await veyonAvailableFeatures(rec.ip)))return {eligible:false,reason:"clipboard-bridge-unavailable"};
+  if(feature==="keySequence"&&!keyAdvertised(await veyonAvailableFeatures(rec.ip)))return {eligible:false,reason:"keyboard-bridge-unavailable"};
   const policy=veyonPolicyFor(feature,active);
   if(!policy.requiresUser)return {eligible:true};
   const user=await veyonConnectedJson(rec.ip,"/api/v1/user");
@@ -2617,7 +2619,7 @@ async function veyonFeatureStatus(host,feature){
   return veyonConnectedJson(host,`/api/v1/feature/${encodeURIComponent(uid)}`);
 }
 async function veyonFeature(host,feature,active=true,args={}){
-  args=feature==="clipboardWrite"?clipboardArguments(args,active):powerArguments(feature,args,active);
+  args=feature==="keySequence"?keyArguments(args,active):feature==="clipboardWrite"?clipboardArguments(args,active):powerArguments(feature,args,active);
   const uid=VEYON_FEATURES[feature]||feature;
   if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
   return veyonConnectedRequest(host,`/api/v1/feature/${encodeURIComponent(uid)}`,{
@@ -6498,6 +6500,10 @@ app.post("/api/v1/veyon/feature",veyonFreeWriteLimit,requireCapability("lab.cont
     const feature=String(req.body?.feature||"");
     if(!Object.hasOwn(VEYON_FEATURES,feature))throw Error("Unsupported Veyon feature");
     let args=powerArguments(feature,req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{},req.body?.active!==false);
+    if(feature==="keySequence"){
+      if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one keyboard target.");
+      args=keyArguments(args,req.body?.active!==false);
+    }
     if(feature==="clipboardWrite"){
       if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one clipboard target.");
       args=clipboardArguments(args,req.body?.active!==false);
@@ -6511,7 +6517,7 @@ app.post("/api/v1/veyon/feature",veyonFreeWriteLimit,requireCapability("lab.cont
       else{const key=veyonComputerId(target),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");selected.push(rec)}
     }
     const uniq=[...new Map(selected.map(rec=>[rec.id,rec])).values()];
-    const job=veyonCommandQueue.enqueue({feature,active:req.body?.active!==false,targets:uniq,args,requestId,owner:requestUser(req)?.id||"legacy-control"});
+    const job=veyonCommandQueue.enqueue({feature,active:req.body?.active!==false,targets:uniq,args,requestId,expiresAt:feature==="keySequence"?Date.now()+5000:undefined,owner:requestUser(req)?.id||"legacy-control"});
     res.status(202).json({ok:true,job});
   }catch(error){res.status([409,429].includes(error.status)?error.status:400).json({ok:false,error:error.message})}
 });

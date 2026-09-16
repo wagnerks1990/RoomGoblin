@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Browser clipboard sending
+### Browser clipboard and keyboard sending
 
 - Add a one-computer text form and bounded, authorized queue command with bridge discovery.
 - Add a free native RoomGoblinWebBridge plugin that forwards the existing clipboard protocol; include it in matching Linux builds/source archives.
