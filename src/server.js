@@ -6346,13 +6346,18 @@ app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),asy
   }catch(err){res.status(502).json({ok:false,error:err.message})}
 });
 
-app.get("/api/v1/veyon/computers/:id/catalog",requireCapability("lab.read"),async(req,res)=>{
+// Fixed appliance-wide budgets: forwarded addresses cannot multiply work.
+// Cleanup has its own budget so ordinary writes cannot consume the stop quota.
+const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
+const veyonFreeWriteLimit=rateLimit({windowMs:60_000,limit:30,keyGenerator:()=>"veyon-free-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool action limit reached; retry later"}});
+const veyonFreeCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon cleanup limit reached; retry later"}});
+app.get("/api/v1/veyon/computers/:id/catalog",veyonFreeReadLimit,requireCapability("lab.read"),async(req,res)=>{
   const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
   try{res.json({ok:true,features:featureCatalog(await veyonAvailableFeatures(rec.ip)),verification:"proxy-advertisement-only"})}
   catch(error){res.status(503).json(safeVeyonFailure(error))}
 });
-app.post("/api/v1/veyon/desktop-launcher",requireCapability("lab.control"),(req,res)=>{
+app.post("/api/v1/veyon/desktop-launcher",veyonFreeWriteLimit,requireCapability("lab.control"),(req,res)=>{
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>16)throw Error("Choose 1–16 computers.");
     const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
@@ -6360,7 +6365,7 @@ app.post("/api/v1/veyon/desktop-launcher",requireCapability("lab.control"),(req,
     res.set({"Cache-Control":"no-store","Content-Disposition":"attachment; filename=RoomGoblin-Veyon-Desktop.ps1"}).type("text/plain").send(script);
   }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
-app.post("/api/v1/veyon/wake",requireCapability("lab.control"),async(req,res)=>{
+app.post("/api/v1/veyon/wake",veyonFreeWriteLimit,requireCapability("lab.control"),async(req,res)=>{
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 computers.");
     const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
@@ -6369,8 +6374,8 @@ app.post("/api/v1/veyon/wake",requireCapability("lab.control"),async(req,res)=>{
     res.json({ok:results.every(r=>r.accepted),results});
   }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
-app.get("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
-app.put("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),(req,res)=>{
+app.get("/api/v1/veyon/lesson-actions",veyonFreeReadLimit,requireCapability("lab.control"),(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
+app.put("/api/v1/veyon/lesson-actions",veyonFreeWriteLimit,requireCapability("lab.control"),(req,res)=>{
   try{
     const inputs=req.body?.actions;if(!Array.isArray(inputs)||inputs.length>40)throw Error("Save at most 40 lesson actions.");
     const actions=inputs.map(normalizeLessonAction);
@@ -6417,7 +6422,7 @@ async function waitForVeyonCommand(job){
 function veyonJobResults(job){return job.results.map(row=>({...row,error:row.error||(!row.ok?row.reason||"Command is still pending; check command history.":undefined)}))}
 // Generation identities contain no broadcast tokens and exist only while a route is active.
 const veyonBroadcastWorkflows=new Map();
-app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),async(req,res)=>{
+app.post("/api/v1/veyon/demo/stop-selected",veyonFreeCleanupLimit,requireCapability("lab.control"),async(req,res)=>{
   const workflows=[];
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 broadcast participants.");

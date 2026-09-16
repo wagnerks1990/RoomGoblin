@@ -44,7 +44,7 @@ function routes(){
   const computers={one:{id:'one',ip:'192.0.2.1',hostname:'PC-A',macHostname:'pc-a',mac:'02:12:34:56:78:90'}};
   const source=fs.readFileSync('src/server.js','utf8');
   const region=source.slice(source.indexOf('app.get("/api/v1/veyon/computers/:id/catalog"'),source.indexOf('app.get("/api/v1/veyon/computers/:id/feature/:feature"'));
-  const context={...helpers,app:Object.fromEntries(['get','post','put'].map(method=>[method,(path,cap,fn)=>registered.set(method+' '+path,{cap,fn})])),requireCapability:c=>c,veyonComputerStore:{computers},veyonComputerId:String,dbStore:{getPreference:(k,f)=>prefs.get(k)||f,setPreference:(k,v)=>prefs.set(k,v)},audit:()=>{},mapLimit:async(items,_limit,fn)=>Promise.all(items.map(fn)),wakeComputer:async mac=>{packets.push(mac);return {accepted:true,verified:false}},veyonAvailableFeatures:async()=>[{name:'RemoteControl'}],safeVeyonFailure:()=>({ok:false,error:'Unavailable'})};
+  const context={...helpers,veyonFreeReadLimit:()=>{},veyonFreeWriteLimit:()=>{},app:Object.fromEntries(['get','post','put'].map(method=>[method,(path,_limit,cap,fn)=>registered.set(method+' '+path,{cap,fn})])),requireCapability:c=>c,veyonComputerStore:{computers},veyonComputerId:String,dbStore:{getPreference:(k,f)=>prefs.get(k)||f,setPreference:(k,v)=>prefs.set(k,v)},audit:()=>{},mapLimit:async(items,_limit,fn)=>Promise.all(items.map(fn)),wakeComputer:async mac=>{packets.push(mac);return {accepted:true,verified:false}},veyonAvailableFeatures:async()=>[{name:'RemoteControl'}],safeVeyonFailure:()=>({ok:false,error:'Unavailable'})};
   vm.runInNewContext(region,context);
   async function call(method,path,body={},params={}){const {cap,fn}=registered.get(method+' '+path),res={statusCode:200,status(n){this.statusCode=n;return this},json(v){this.body=JSON.parse(JSON.stringify(v));return this},set(){return this},type(){return this},send(v){this.body=v;return this}};await fn({body,params},res);return {...res,cap}}
   return {call,computers,packets};
@@ -84,4 +84,18 @@ test('Recording discards a chunk that would exceed its hard memory/output limit'
   const h=recorderHarness();await h.$('startRecording').onclick();h.recorders[0].ondataavailable({data:{size:32*1024*1024+1}});
   assert.match(h.$('recordingStatus').textContent,/Size limit exceeded; recording discarded/);
   assert.equal(h.$('downloadRecording').disabled,true);assert.equal(h.state.stoppedTracks,1);
+});
+
+test('Free-tool budgets reject write floods across forwarded addresses without starving cleanup',async()=>{
+  const express=require('express'),{rateLimit}=require('express-rate-limit');
+  const source=fs.readFileSync('src/server.js','utf8'),defs=source.slice(source.indexOf('const veyonFreeReadLimit='),source.indexOf('app.get("/api/v1/veyon/computers/:id/catalog"'));
+  const context={rateLimit};vm.runInNewContext(defs+';globalThis.limits={read:veyonFreeReadLimit,write:veyonFreeWriteLimit,cleanup:veyonFreeCleanupLimit}',context);
+  const app=express();for(const [name,limiter] of Object.entries(context.limits))app.get('/'+name,limiter,(_req,res)=>res.json({ok:true}));
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  try{
+    const base='http://127.0.0.1:'+server.address().port;
+    for(let i=0;i<30;i++)assert.equal((await fetch(base+'/write',{headers:{'X-Forwarded-For':`192.0.2.${i+1}`}})).status,200);
+    const blocked=await fetch(base+'/write',{headers:{'X-Forwarded-For':'198.51.100.1'}});assert.equal(blocked.status,429);assert.ok(blocked.headers.get('retry-after'));
+    assert.equal((await fetch(base+'/cleanup')).status,200);assert.equal((await fetch(base+'/read')).status,200);
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));for(const limit of Object.values(context.limits))limit.resetKey('unused')}
 });

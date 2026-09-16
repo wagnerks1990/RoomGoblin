@@ -166,7 +166,12 @@ GitHub extensions are compatible or have been installed.
 ## API and authorization
 
 All paths below begin `/api/v1/veyon` and retain normal same-origin session/CSRF
-and recovery-writer boundaries:
+and recovery-writer boundaries. New tool reads share a 60/minute appliance-wide
+budget; Wake, launcher and preset writes share 30/minute. Selected broadcast
+cleanup has an independent 60/minute budget so other writes cannot consume its
+quota. Excess requests return HTTP 429 and Retry-After. Forwarding headers do not
+create additional budgets. Existing polling, DHCP metadata and preview limits are
+unchanged:
 
 | Route | Capability | Contract |
 | --- | --- | --- |
