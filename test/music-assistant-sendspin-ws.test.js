@@ -15,7 +15,7 @@ async function start(t) {
   await once(dedicated,"listening");
   const hub=new WebSocketServer({host:"127.0.0.1",port:0,path:"/music-assistant/sendspin-proxy"});
   await once(hub,"listening");
-  const errors=[],paths=[],frames=[];
+  const errors=[],paths=[],frames=[],closures=[];
   dedicated.on("connection",(socket,req)=>{
     paths.push(req.url);
     socket.send('{"type":"server/hello","payload":{"name":"fixture"}}');
@@ -24,14 +24,14 @@ async function start(t) {
   });
   hub.on("connection",client=>relaySendspin(client,{WebSocket,config:{
     url:`http://127.0.0.1:${api.address().port}/api`,sendspinHost:"127.0.0.1",sendspinPort:dedicated.address().port
-  },onError:error=>errors.push(error)}));
+  },onError:error=>errors.push(error),onClosed:event=>closures.push(event)}));
   const clients=[];
   t.after(async()=>{
     for(const client of clients)if(client.readyState!==WebSocket.CLOSED)client.terminate();
     for(const server of [hub,dedicated])for(const client of server.clients)client.terminate();
     await Promise.all([new Promise(resolve=>hub.close(resolve)),new Promise(resolve=>dedicated.close(resolve)),new Promise(resolve=>api.close(resolve))]);
   });
-  return {hub,dedicated,frames,paths,errors,apiRequests:()=>apiRequests,connect(){
+  return {hub,dedicated,frames,paths,errors,closures,apiRequests:()=>apiRequests,connect(){
     const ws=new WebSocket(`ws://127.0.0.1:${hub.address().port}/music-assistant/sendspin-proxy`);clients.push(ws);return ws;
   }};
 }
@@ -69,4 +69,17 @@ test("real close/reconnect cycles do not leave old upstream sessions running",{t
     await until(()=>f.dedicated.clients.size===0&&f.hub.clients.size===0);
   }
   assert.equal(f.paths.length,3);assert.equal(f.apiRequests(),0);assert.deepEqual(f.errors,[]);
+});
+
+
+test("real upstream termination retains observed 1006 while sending legal 1011 to browser",{timeout:10000},async t=>{
+  const f=await start(t),client=f.connect();await once(client,"open");
+  await until(()=>f.dedicated.clients.size===1);
+  const closed=once(client,"close");
+  [...f.dedicated.clients][0].terminate();
+  const [code]=await closed;
+  assert.equal(code,1011);
+  assert.equal(f.closures.length,1);
+  assert.equal(f.closures[0].closedBy,"upstream");
+  assert.equal(f.closures[0].observedCode,1006);
 });

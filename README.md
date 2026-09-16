@@ -52,6 +52,9 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - optional managed integration deployment/adoption
 - diagnostics, backup/recovery, and host-management tooling
 
+For browser audio troubleshooting, see [Sendspin close diagnostics](docs/MUSIC-ASSISTANT-SENDSPIN.md#browser-reconnect-diagnostics).
+Use a unique receiver ID on each active display host.
+
 ## Operator interface
 
 The controller groups daily room controls, content, planning and administration

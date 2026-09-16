@@ -39,6 +39,14 @@ test("desired volume and mute are applied after Sendspin connect instead of befo
   assert.ok(muteCall > connectCall, "mute must not be sent before Sendspin connects");
 });
 
+test("adopted Sendspin socket does not advertise a fake direct-server base URL", () => {
+  const attachStart = display.indexOf("function attachMusicAssistant");
+  const detachStart = display.indexOf("function detachMusicAssistant", attachStart);
+  const attach = display.slice(attachStart, detachStart);
+  assert.match(attach, /new SendspinPlayer\(\{playerId,webSocket:socket,/);
+  assert.doesNotMatch(attach, /sendspin\.local|baseUrl:/);
+});
+
 test("managed Android WebView keeps autoplay gesture exemption enabled", () => {
   assert.match(androidActivity, /setMediaPlaybackRequiresUserGesture\(false\)/);
 });

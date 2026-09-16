@@ -8,7 +8,7 @@ const {sendspinEndpoint, relaySendspin} = require("../src/music-assistant-sendsp
 
 function fixture(t) {
   t.mock.timers.enable({apis:["setTimeout"]});
-  const sockets = [], connected = [], errors = [];
+  const sockets = [], connected = [], errors = [], closures = [];
   class Socket extends EventEmitter {
     static CONNECTING=0; static OPEN=1; static CLOSING=2; static CLOSED=3;
     constructor(url, options) {
@@ -23,9 +23,9 @@ function fixture(t) {
   }
   const client=new Socket(); client.open();
   const handle=relaySendspin(client,{WebSocket:Socket,config:{url:"http://ma.example:8095",sendspinHost:"ma.example"},
-    maxPayload:123456,onConnected:url=>connected.push(url),onError:e=>errors.push(e)});
+    maxPayload:123456,onConnected:url=>connected.push(url),onError:e=>errors.push(e),onClosed:event=>closures.push(event)});
   t.after(()=>handle.close());
-  return {client,upstream:sockets[1],connected,errors,handle,Socket,sockets};
+  return {client,upstream:sockets[1],connected,errors,closures,handle,Socket,sockets};
 }
 
 test("dedicated endpoint uses saved host/port, not the web/API path or protocol",()=>{
@@ -122,10 +122,11 @@ test("actual server connection handler retains single-use tickets, attachment, e
   const end=source.indexOf('\n\nwss.on("connection",',start);
   const wss=new EventEmitter(),calls=[],tickets=new Map();
   let targets=["tv1"],enabled=true;
-  const context={maSendspinProxyWss:wss,WebSocket:{OPEN:1},URL,
+  const audits=[];
+  const context={maSendspinProxyWss:wss,WebSocket:{OPEN:1},URL,crypto:require("node:crypto"),
     clientAddress:()=>"192.0.2.1",consumeMusicAssistantProxyTicket:value=>{const v=tickets.get(value);tickets.delete(value);return v},
     dbStore:{getPreference:()=>targets},musicAssistantConfig:()=>({tvBridgeEnabled:enabled}),
-    relaySendspin:(...args)=>calls.push(args),WS_MAX_PAYLOAD_BYTES:123456,audit(){},diagnosticError(){}};
+    relaySendspin:(...args)=>calls.push(args),WS_MAX_PAYLOAD_BYTES:123456,audit:event=>audits.push(event),diagnosticError(){}};
   vm.runInNewContext(source.slice(start,end),context);
   function connect(ticket){const client=new EventEmitter();client.readyState=1;client.close=(code,reason)=>{client.closed={code,reason};client.readyState=3};wss.emit("connection",client,{url:'/music-assistant/sendspin-proxy?ticket='+ticket});return client;}
   assert.equal(connect("missing").closed.code,1008);assert.equal(calls.length,0);
@@ -135,4 +136,68 @@ test("actual server connection handler retains single-use tickets, attachment, e
   tickets.set("detached",{deviceId:"tv1"});targets=[];assert.equal(connect("detached").closed.code,1008);
   tickets.set("disabled",{deviceId:"tv1"});targets=["tv1"];enabled=false;assert.equal(connect("disabled").closed.code,1008);
   assert.equal(calls.length,1);
+  const relay=calls[0][1];
+  relay.onConnected("ws://ma.example:8927/sendspin");
+  relay.onClosed({closedBy:"upstream",observedCode:1006,forwardedCode:1011});
+  const opened=audits.find(e=>e.kind==="musicassistant.sendspin.proxy.connected");
+  const closed=audits.find(e=>e.kind==="musicassistant.sendspin.proxy.closed");
+  assert.equal(closed.relayId,opened.relayId);
+  assert.equal(closed.deviceId,"tv1");assert.equal(closed.observedCode,1006);
+  assert.equal(audits.filter(e=>e.kind==="musicassistant.sendspin.proxy.rejected").length,4);
+  assert.doesNotMatch(JSON.stringify(audits),/ticket=|"ticket"/);
+});
+
+
+test("close diagnostics preserve the first source and original abnormal code once",t=>{
+  const f=fixture(t);f.upstream.open();
+  f.upstream.readyState=3;
+  f.upstream.emit("close",1006,Buffer.from("https://peer.invalid/?token=do-not-log"));
+  assert.equal(f.closures.length,1);
+  assert.equal(f.closures[0].closedBy,"upstream");
+  assert.equal(f.closures[0].observedCode,1006);
+  assert.equal(f.closures[0].forwardedCode,1011);
+  assert.equal(f.closures[0].upstreamConnected,true);
+  assert.ok(f.closures[0].durationMs>=0);
+  assert.doesNotMatch(JSON.stringify(f.closures),/do-not-log|peer.invalid/);
+  f.handle.close();f.client.emit("close",1000);
+  assert.equal(f.closures.length,1);
+});
+
+test("client-initiated closure is distinct from the upstream cleanup it causes",t=>{
+  const f=fixture(t);f.upstream.open();f.client.close(1001,"leaving");
+  assert.equal(f.closures.length,1);
+  assert.equal(f.closures[0].closedBy,"browser");
+  assert.equal(f.closures[0].observedCode,1001);
+  assert.equal(f.upstream.closes[0].code,1000);
+});
+
+test("timeout diagnostics are emitted once and identify an unopened upstream",t=>{
+  const f=fixture(t);t.mock.timers.tick(10000);
+  assert.equal(f.closures.length,1);
+  assert.equal(f.closures[0].closedBy,"connect-timeout");
+  assert.equal(f.closures[0].upstreamConnected,false);
+});
+
+test("buffer diagnostics identify a local limit without changing close codes",t=>{
+  const f=fixture(t);f.upstream.open();f.client.bufferedAmount=8*1024*1024;
+  f.upstream.emit("message",Buffer.from("audio"),true);
+  assert.equal(f.closures.length,1);
+  assert.equal(f.closures[0].closedBy,"buffer-limit");
+  assert.equal(f.closures[0].forwardedCode,1013);
+});
+
+test("send errors report direction without reclassifying the resulting peer close",t=>{
+  const f=fixture(t);f.upstream.open();f.upstream.sendError=new Error("fixture");
+  f.client.emit("message",Buffer.from("hello"),false);
+  assert.equal(f.closures.length,1);
+  assert.equal(f.closures[0].closedBy,"upstream-send-error");
+  assert.equal(f.closures[0].observedCode,null);
+});
+
+test("a failing diagnostic observer cannot interrupt relay teardown",t=>{
+  const f=fixture(t);
+  const handle=relaySendspin(f.client,{WebSocket:f.Socket,config:{},onClosed(){throw Error("observer")}});
+  assert.doesNotThrow(()=>handle.close());
+  assert.equal(f.client.readyState,3);
+  assert.equal(f.sockets[2].terminated,1);
 });

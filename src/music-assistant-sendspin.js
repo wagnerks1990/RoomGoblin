@@ -36,8 +36,9 @@ function byteLength(data) {
 // The caller must consume a one-time ticket and check attachment before calling.
 // WebSocket is injected so lifecycle races can be tested without a real MA server.
 function relaySendspin(client, {WebSocket, config, maxPayload = MAX_BUFFERED_BYTES,
-  onConnected = () => {}, onError = () => {}}) {
+  onConnected = () => {}, onError = () => {}, onClosed = () => {}}) {
   let upstream = null, ready = false, closed = false, connectTimer = null;
+  const startedAt = Date.now();
   let pendingBytes = 0;
   const pending = [];
 
@@ -48,51 +49,56 @@ function relaySendspin(client, {WebSocket, config, maxPayload = MAX_BUFFERED_BYT
       else if (socket.readyState === WebSocket.OPEN) socket.close(code, reason);
     } catch { try { socket.terminate(); } catch {} }
   }
-  function finish(code = 1011, reason = "Music Assistant Sendspin connection closed") {
+  function finish(code = 1011, reason = "Music Assistant Sendspin connection closed", closedBy = "hub", observedCode = code) {
     if (closed) return;
     closed = true;
     clearTimeout(connectTimer); connectTimer = null;
     pending.length = 0; pendingBytes = 0;
     stop(upstream, 1000, "Hub bridge closed");
     stop(client, closeCode(code), reason);
+    // One bounded record for the first terminal event, not the peer's resulting
+    // close. Never include tickets, URLs, frames or untrusted peer reason text.
+    try { onClosed({closedBy, observedCode, forwardedCode:closeCode(code), reason,
+      upstreamConnected:ready, durationMs:Math.max(0, Date.now() - startedAt)}); } catch {}
   }
-  function failure(error) {
+  function failure(error, closedBy = "upstream-error") {
     if (closed) return;
     // Log only the error, never protocol frames or API credentials.
     try { onError(error); } catch {}
-    finish(1011, "Music Assistant Sendspin upstream error");
+    finish(1011, "Music Assistant Sendspin upstream error", closedBy, null);
   }
   function forward(socket, data, isBinary) {
     if (closed || socket?.readyState !== WebSocket.OPEN) return false;
     if (socket.bufferedAmount + byteLength(data) > MAX_BUFFERED_BYTES) {
-      finish(1013, "Music Assistant Sendspin bridge buffer limit exceeded"); return false;
+      finish(1013, "Music Assistant Sendspin bridge buffer limit exceeded", "buffer-limit"); return false;
     }
-    try { socket.send(data, {binary: isBinary}, error => { if (error) failure(error); }); }
-    catch (error) { failure(error); return false; }
+    const failedSend = error => failure(error, socket === client ? "browser-send-error" : "upstream-send-error");
+    try { socket.send(data, {binary: isBinary}, error => { if (error) failedSend(error); }); }
+    catch (error) { failedSend(error); return false; }
     return !closed;
   }
 
-  client.on("close", () => finish(1000));
-  client.on("error", failure);
+  client.on("close", code => finish(1000, "Music Assistant Sendspin connection closed", "browser", code));
+  client.on("error", error => failure(error, "browser-error"));
   client.on("message", (data, isBinary) => {
     if (closed) return;
     if (ready) { forward(upstream, data, isBinary); return; }
     const size = byteLength(data);
     if (pending.length >= MAX_PENDING_FRAMES || pendingBytes + size > MAX_PENDING_BYTES) {
-      finish(1009, "Music Assistant Sendspin pending buffer limit exceeded"); return;
+      finish(1009, "Music Assistant Sendspin pending buffer limit exceeded", "pending-buffer-limit"); return;
     }
     pending.push({data, isBinary}); pendingBytes += size;
   });
 
   try {
-    if (client.readyState !== WebSocket.OPEN) { finish(1000); return {close: finish}; }
+    if (client.readyState !== WebSocket.OPEN) { finish(1000, "Music Assistant Sendspin connection closed", "browser-not-open", null); return {close: finish}; }
     const url = sendspinEndpoint(config);
     upstream = new WebSocket(url, {handshakeTimeout: CONNECT_TIMEOUT_MS, maxPayload, followRedirects: false});
     upstream.binaryType = "arraybuffer";
-    upstream.on("error", failure);
-    upstream.on("close", code => finish(code, "Music Assistant Sendspin upstream closed"));
+    upstream.on("error", error => failure(error));
+    upstream.on("close", code => finish(code, "Music Assistant Sendspin upstream closed", "upstream"));
     upstream.on("message", (data, isBinary) => forward(client, data, isBinary));
-    connectTimer = setTimeout(() => finish(1011, "Music Assistant Sendspin upstream connection timed out"), CONNECT_TIMEOUT_MS);
+    connectTimer = setTimeout(() => finish(1011, "Music Assistant Sendspin upstream connection timed out", "connect-timeout"), CONNECT_TIMEOUT_MS);
     upstream.on("open", () => {
       if (closed || client.readyState !== WebSocket.OPEN) { stop(upstream, 1000, "Hub bridge closed"); return; }
       ready = true; clearTimeout(connectTimer); connectTimer = null;
