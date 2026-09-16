@@ -3,6 +3,11 @@
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QFile>
+// The distributable pilot uses Release builds. Keep checks and their fixture
+// setup active when the compiler defines NDEBUG.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 int main(int argc, char** argv) {
     QCoreApplication app(argc,argv);

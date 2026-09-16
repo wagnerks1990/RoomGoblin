@@ -102,6 +102,12 @@ folder check is not a race-resistant security sandbox against a hostile local
 user swapping links during a read. Use disposable VMs and non-sensitive sample
 files. Native Veyon authentication and access rules remain mandatory.
 
+### Download a complete Linux pilot
+
+See [Native pilot binaries](VEYON-PILOT-BINARIES.md) for the complete Linux
+CI artifact, matching source, checksums, installation in disposable VMs and
+acceptance tests. Windows packages remain separate work.
+
 ### Prepare and build the native pilot
 
 Use a **new disposable build directory** and the official Veyon build dependencies
