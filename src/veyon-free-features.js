@@ -74,8 +74,8 @@ const CATALOG=Object.freeze([
   ["TextMessage","Message","web","Send message"],
   ["StartApp","Launch applications","web","Start app or saved lesson action"],
   ["OpenWebsite","Open websites","web","Open website or saved lesson action"],
-  ["FileTransfer","Distribute files","desktop","Use Veyon Master; 4.9.7 WebAPI cannot initialize a transfer"],
-  ["FileCollect","Collect files","desktop","Requires a newer Veyon release providing collection; absent in 4.9.7"],
+  ["FileTransfer","Distribute files","desktop","Native transfer available; a browser transfer adapter is not implemented"],
+  ["FileCollect","Collect files","desktop","Requires an advertised collection feature and a browser collection adapter"],
   ["PowerOn","Wake-on-LAN","web","Save MAC address, select offline computer, then Wake"],
   ["Reboot","Restart","web","Reboot"],
   ["PowerDown","Shutdown","web","Shut down"],
@@ -84,7 +84,7 @@ const CATALOG=Object.freeze([
   ["UserLogoff","Log off","web","Log off selected computers"],
   ["UserInfo","Signed-in user","web","Device details"],
   ["SessionInfo","Session information","web","Device details"],
-  ["QueryScreens","Monitor selection","desktop","Native remote access; no screen enumeration endpoint in 4.9.7 WebAPI"],
+  ["QueryScreens","Monitor selection","desktop","Native remote access; browser monitor selection is not implemented"],
   ["QueryApplicationVersion","Endpoint version query","internal","Internal Veyon protocol; use native diagnostics"],
   ["QueryActiveFeatures","Active feature query","workflow","Lock/broadcast state; action features do not have persistent active state"],
   ["SystemTrayIcon","Student notification icon","configuration","Configure in Veyon Configurator"],
@@ -93,7 +93,9 @@ const CATALOG=Object.freeze([
 ].map(([name,label,provider,detail])=>Object.freeze({name,label,provider,detail})));
 function featureCatalog(advertised){
   const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
-  return CATALOG.map(row=>({...row,advertised:names.has(row.name),endpointVerified:false}));
+  const known=new Set(CATALOG.map(row=>row.name));
+  const discovered=[...names].filter(name=>name&&!known.has(name)).slice(0,100).map(name=>({name:name.slice(0,120),label:name.slice(0,120),provider:"unmapped",detail:"Advertised by the installed appliance; browser integration has not been implemented",advertised:true,endpointVerified:false}));
+  return [...CATALOG.map(row=>({...row,advertised:names.has(row.name),endpointVerified:false})),...discovered];
 }
 function normalizeLessonAction(input){
   const name=String(input?.name||"").trim();

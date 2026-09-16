@@ -1,7 +1,7 @@
 "use strict";
 
 const express=require("express");
-const {parseVersion,compareVersions,parseAptVeyon}=require("./veyon-update-policy");
+const {parseVersion,compareVersions,parseAptVeyon,installedVeyonVersion}=require("./veyon-update-policy");
 
 const GITHUB_LATEST="https://api.github.com/repos/veyon/veyon/releases/latest";
 const MAINTENANCE_URL=String(process.env.MAINTENANCE_URL||"http://127.0.0.1:3010").replace(/\/$/,"");
@@ -30,11 +30,12 @@ async function upstreamRelease(){
 async function statusPayload(){
   const [updates,release]=await Promise.all([hostUpdates(),upstreamRelease()]);
   const apt=parseAptVeyon(updates.packages);
-  const baseline=apt.candidateVersion||apt.installedVersion;
+  const installed=installedVeyonVersion(updates.veyonInstalledPackages);
+  const baseline=apt.candidateVersion||installed.installedVersion;
   const cmp=baseline&&release.version?compareVersions(baseline,release.version):null;
   return {
     ok:true,
-    installedVersion:apt.installedVersion||null,
+    ...installed,
     candidateVersion:apt.candidateVersion||null,
     aptUpdateAvailable:apt.packages.length>0,
     packages:apt.packages.map(row=>({name:row.name,security:!!row.security,raw:row.raw})),

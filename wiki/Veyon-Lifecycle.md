@@ -48,3 +48,20 @@ ss -lntp | grep ':11080'
 Validate both native services and port `11080`, then test one non-critical workstation first: thumbnail and enlarged screen preview, screen and input lock/unlock, text message, demonstration/broadcast, user/session state, DHCP address changes, and multi-key authentication behavior.
 
 RoomGoblin application rollback does not downgrade native Veyon packages. If a Veyon release itself must be rolled back, use the host package-source rollback procedure.
+
+## Installed version and browser feature discovery
+
+RoomGoblin reads installed Veyon package versions from the Host Agent's fixed
+`dpkg-query` inventory independently of apt's pending upgrades. The installed
+version remains visible when no upgrade is pending. Mixed package versions are
+reported rather than selecting an arbitrary component. Missing inventory means
+unknown, never an assumed 4.9.7 or 4.11.2. This is host package inventory, not
+proof of the loaded WebAPI binary or Windows endpoint version; services may need
+a restart after an external upgrade.
+
+The feature catalog includes newly advertised names with an explicit unmapped
+status. Advertisement does not prove endpoint support or a working browser
+implementation. Remove version-specific absence claims from GUI text. Native
+launchers and isolated plugin packages do not satisfy the web-GUI integration
+goal: keyboard/mouse, clipboard, two-way chat and file operations need actual
+authenticated browser/backend/native adapters and endpoint acceptance tests.

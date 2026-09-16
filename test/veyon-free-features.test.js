@@ -99,3 +99,11 @@ test('Free-tool budgets reject write floods across forwarded addresses without s
     assert.equal((await fetch(base+'/cleanup')).status,200);assert.equal((await fetch(base+'/read')).status,200);
   }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));for(const limit of Object.values(context.limits))limit.resetKey('unused')}
 });
+
+test('feature discovery retains new appliance features without old-version assumptions',()=>{
+  const rows=helpers.featureCatalog([{name:'FileCollect'},{name:'NewPluginFeature'}]);
+  assert.equal(rows.find(x=>x.name==='FileCollect').advertised,true);
+  assert.equal(rows.find(x=>x.name==='NewPluginFeature').provider,'unmapped');
+  assert.equal(rows.find(x=>x.name==='NewPluginFeature').endpointVerified,false);
+  assert.ok(rows.every(x=>!x.detail.includes('4.9.7')));
+});

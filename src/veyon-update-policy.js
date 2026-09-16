@@ -22,4 +22,10 @@ function parseAptVeyon(packages){
   return {packages:rows,installedVersion:parseVersion(installed)?.text||installed,candidateVersion:parseVersion(candidate)?.text||candidate};
 }
 
-module.exports={parseVersion,compareVersions,parseAptVeyon};
+function installedVeyonVersion(packages){
+  const versions=[...new Set((Array.isArray(packages)?packages:[])
+    .filter(row=>/^veyon(?:-[a-z0-9+-]+)?(?::[a-z0-9]+)?$/.test(String(row?.name||"")))
+    .map(row=>parseVersion(row.version)?.text).filter(Boolean))];
+  return {installedVersion:versions.length===1?versions[0]:null,mixedInstalledVersions:versions.length>1,installedVersions:versions};
+}
+module.exports={parseVersion,compareVersions,parseAptVeyon,installedVeyonVersion};

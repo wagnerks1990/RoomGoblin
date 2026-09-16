@@ -425,3 +425,7 @@ matching binaries plus all corresponding source. See docs/VEYON-PILOT-BINARIES.m
 plugins with the installed CLI. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
+
+Veyon installed-version reporting must use host package inventory, independently
+of pending apt upgrades. Never infer endpoint features from a fixed 4.9.7
+baseline. See docs/VEYON-LIFECYCLE.md for evidence and browser-adapter boundaries.

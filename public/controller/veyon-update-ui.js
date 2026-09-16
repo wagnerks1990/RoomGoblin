@@ -12,12 +12,12 @@
     return body;
   }
   function versionLine(status){
+    const current=status.mixedInstalledVersions?'Mixed installed Veyon package versions · ':status.installedVersion?`Installed ${esc(status.installedVersion)} · `:'Installed version unavailable · ';
     if(status.aptUpdateAvailable){
-      const current=status.installedVersion?`Installed ${esc(status.installedVersion)} · `:"";
       return `${current}Package update available: <b>${esc(status.candidateVersion||"newer version")}</b>`;
     }
-    if(status.upstream?.ok&&status.upstream.version)return `No apt update currently offered. Latest upstream release: <b>${esc(status.upstream.version)}</b>.`;
-    return "No Veyon package update is currently offered by the configured apt sources.";
+    if(status.upstream?.ok&&status.upstream.version)return `${current}No apt update currently offered. Latest upstream release: <b>${esc(status.upstream.version)}</b>.`;
+    return `${current}No Veyon package update is currently offered by the configured apt sources.`;
   }
   function detailsLine(status){
     const bits=[];

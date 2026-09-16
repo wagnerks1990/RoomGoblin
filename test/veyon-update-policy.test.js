@@ -43,3 +43,12 @@ test("startup loads DHCP identity and lifecycle bridges before the server",()=>{
   const server=source.indexOf('require("./server")');
   assert.ok(dhcp>=0&&lifecycle>dhcp&&server>lifecycle);
 });
+
+test("installed Veyon version survives an empty apt upgrade list",()=>{
+  const {installedVeyonVersion}=require('../src/veyon-update-policy');
+  assert.equal(parseAptVeyon([]).installedVersion,'');
+  assert.deepEqual(installedVeyonVersion([{name:'veyon',version:'4.11.2-1'}]),{installedVersion:'4.11.2',mixedInstalledVersions:false,installedVersions:['4.11.2']});
+  assert.equal(installedVeyonVersion([{name:'veyon-service',version:'4.11.2'},{name:'veyon-master',version:'4.9.7'}]).mixedInstalledVersions,true);
+  assert.equal(installedVeyonVersion([]).installedVersion,null);
+  assert.equal(installedVeyonVersion([{name:'unrelated',version:'4.9.7'}]).installedVersion,null);
+});

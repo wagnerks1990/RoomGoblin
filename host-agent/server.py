@@ -150,6 +150,18 @@ def update_details():
                 if name: pkgs.append({"name":name,"security":bool(re.search(r'security',line,re.I)),"raw":line.strip()[:500]})
         except Exception: pass
     base["packages"]=pkgs[:250]
+    # Upgradable rows disappear after an upgrade; query installed packages
+    # independently so the GUI never mistakes a candidate for the running host.
+    base["veyonInstalledPackages"]=[]
+    if shutil.which('dpkg-query'):
+        try:
+            result=run(['dpkg-query','-W','-f=${binary:Package}\t${Version}\t${db:Status-Status}\n','veyon*'],5,False)
+            for line in result.stdout.splitlines():
+                fields=line.split('\t')
+                if len(fields)==3 and fields[2]=='installed' and re.fullmatch(r'veyon(?:-[a-z0-9+-]+)?(?::[a-z0-9]+)?',fields[0]):
+                    base["veyonInstalledPackages"].append({"name":fields[0],"version":fields[1][:100]})
+        except Exception:
+            pass
     return base
 
 UPDATE_STATE_FILE=Path('/var/lib/classroom-hub/update-status.json')
