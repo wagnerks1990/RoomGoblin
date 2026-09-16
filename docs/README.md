@@ -15,7 +15,9 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [RoomGoblin Brand Guide](brand/BRAND-GUIDE.md) — authoritative visual/verbal identity, colors, typography, logo usage, and copy rules.
 - [RoomGoblin AI Brand Context](brand/AI-BRAND-CONTEXT.md) — compact machine-readable guidance for assistants and automated contributors.
 - [Music Assistant Sendspin](MUSIC-ASSISTANT-SENDSPIN.md) — dedicated audio transport, PR #22 selective review, regression coverage and migration acceptance.
+- [Cloudflare Tunnel](CLOUDFLARE-TUNNEL.md) — optional remotely-managed HTTPS tunnel, token handling, reverse-proxy trust, Access guidance, validation, rollback and failure isolation.
 - [AI Project Context](AI-CONTEXT.md) — compact current architecture, production conventions, behavioral invariants, and AI handoff context.
+- [AI Cloudflare Tunnel Context](ai/CLOUDFLARE-TUNNEL.md) — machine/assistant invariants for Cloudflare exposure, loopback proxy trust and secret handling.
 - [AI Android TV Context](ai/ANDROID-TV-HARDWARE-VALIDATION.md) — machine/assistant rules derived from physical managed-display validation, including Accessibility navigation and arbitrary-input boundaries.
 - [AI CI Publication Context](ai/CI-PUBLICATION.md) — machine/assistant rules for direct-main exact-SHA validation, image publication, bounded Android dependency retry, promotion, and production-branch advancement.
 - [AI Production Shared-Data Context](ai/PRODUCTION-SHARED-DATA.md) — machine/assistant rules for runtime umask, backup readability, permission repair, and updater safety.
@@ -49,7 +51,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 
 ## AI and contributor instructions
 
-`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated. CI/release-publication work must also follow `docs/ai/CI-PUBLICATION.md`, production shared-data/backup work must follow `docs/ai/PRODUCTION-SHARED-DATA.md`, and topology/targeting work must follow `docs/ai/ROOM-TOPOLOGY.md`.
+`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Cloudflare/reverse-proxy work must also follow `docs/ai/CLOUDFLARE-TUNNEL.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated. CI/release-publication work must also follow `docs/ai/CI-PUBLICATION.md`, production shared-data/backup work must follow `docs/ai/PRODUCTION-SHARED-DATA.md`, and topology/targeting work must follow `docs/ai/ROOM-TOPOLOGY.md`.
 
 Before changing behavior, an AI assistant should read:
 
