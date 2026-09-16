@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Browser Sendspin close diagnostics
+
+- Retain browser close codes/reasons and stale-generation evidence without
+  logging ticket-bearing URLs or changing playback/reconnect behavior.
+- Record bounded, correlated relay closure/rejection events, preserving original
+  abnormal close codes and distinguishing browser/upstream/local failures.
+- Document unique receiver IDs per host, recovered autoplay warnings, and the
+  difference between browser activation and transport stability.
+- Remove the unused fake base URL from adopted-socket player configuration and
+  document managed autoplay policy for unattended desktop kiosk browsers.
+
 ### Restore receiver mapping and group editing
 
 - Restore the missing receiver form under Displays & AV, linked from Settings

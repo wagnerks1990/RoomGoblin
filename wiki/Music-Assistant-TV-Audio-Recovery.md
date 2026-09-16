@@ -26,6 +26,48 @@ The maintained receiver now owns the unlock behavior directly in `public/display
 
 `agents/android-tv/.../MainActivity.java` must also retain `setMediaPlaybackRequiresUserGesture(false)` for ordinary media autoplay, but that WebView setting does not replace the Web Audio unlock fallback.
 
+## Unattended desktop kiosk browsers
+
+RoomGoblin cannot synthesize a trusted browser gesture. If clicking or pressing a
+key in the receiver immediately changes the log to `AudioContext resumed`,
+`audio unlocked`, and `ctx=running`, the receiver hook is working and the
+remaining unattended-start requirement belongs to the browser's managed policy.
+
+For a dedicated Chrome or Edge kiosk profile, use administrator-managed autoplay
+policy scoped to the RoomGoblin display origin where the browser supports an
+allowlist. [Chrome documents](https://developer.chrome.com/blog/autoplay/#chrome-enterprise-policies)
+`AutoplayAllowed` and `AutoplayAllowlist` for kiosk and unattended systems.
+[Edge exposes](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/autoplayallowlist)
+the same named mandatory policies; on
+Windows they are under `SOFTWARE\Policies\Microsoft\Edge`, with numbered
+`REG_SZ` values beneath `AutoplayAllowlist`. Use a generic origin pattern such
+as `http://roomgoblin-host:3000` in documentation and substitute the actual
+trusted local origin only during deployment.
+
+On Linux Chrome, [machine policy JSON](https://support.google.com/chrome/a/answer/9027408)
+belongs under
+`/etc/opt/chrome/policies/managed/`. A dedicated kiosk policy can use:
+
+```json
+{
+  "AutoplayAllowed": true,
+  "AutoplayAllowlist": ["http://roomgoblin-host:3000"]
+}
+```
+
+An explicitly managed kiosk launch may alternatively add
+`--autoplay-policy=no-user-gesture-required`; enterprise policy is preferred
+because it is visible and auditable. Do not add this flag to ordinary interactive
+browsers. After a policy change, fully close and reopen every browser process,
+confirm the values and `OK` status in `chrome://policy` or `edge://policy`, and
+test a fresh page load without touching the receiver. Keep one unique display ID
+per active host.
+
+Policy permits unattended audio; it does not prove speaker output, volume, route,
+or Music Assistant transport health. If the context still reports `suspended`,
+the policy did not apply to that executable/profile/origin. Do not add synthetic
+clicks, reconnect loops, or repeated page reloads as a workaround.
+
 ## Preferred managed-TV architecture
 
 Once physically validated for the target hardware, use Native Sendspin for managed Android/Google TV devices:
