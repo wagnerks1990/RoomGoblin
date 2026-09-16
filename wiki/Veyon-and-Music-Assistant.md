@@ -256,3 +256,5 @@ RoomGoblin omits that header there. HTTPS and loopback origins retain it. This
 removes the irrelevant warning without introducing TLS changes or weakening the
 existing CSP, capabilities or framebuffer authentication. COOP warnings do not
 explain a server-side framebuffer 502.
+
+See [Free Veyon features and community pilot](Veyon-Free-Features) for extra controls, native tools, recording and isolated community sources.

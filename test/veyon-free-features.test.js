@@ -51,6 +51,7 @@ function routes(){
 }
 test('Protected routes reject arbitrary targets and stale MAC identity, and store no failed presets',async()=>{
   const h=routes();let r=await h.call('post','/api/v1/veyon/desktop-launcher',{targets:['missing'],mode:'view'});assert.equal(r.statusCode,400);assert.equal(r.cap,'lab.control');
+  r=await h.call('post','/api/v1/veyon/wake',{targets:['constructor']});assert.equal(r.statusCode,400);assert.equal(h.packets.length,0);
   r=await h.call('post','/api/v1/veyon/wake',{targets:['one','one']});assert.equal(r.body.results.length,1);assert.equal(h.packets.length,1);assert.equal(r.body.results[0].verified,false);
   h.computers.one.hostname='OTHER';r=await h.call('post','/api/v1/veyon/wake',{targets:['one']});assert.equal(r.body.ok,false);assert.equal(h.packets.length,1);
   r=await h.call('put','/api/v1/veyon/lesson-actions',{actions:[{name:'a',feature:'textMessage',value:'x'},{name:'A',feature:'textMessage',value:'y'}]});assert.equal(r.statusCode,400);

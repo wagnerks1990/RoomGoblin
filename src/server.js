@@ -6355,7 +6355,7 @@ app.get("/api/v1/veyon/computers/:id/catalog",requireCapability("lab.read"),asyn
 app.post("/api/v1/veyon/desktop-launcher",requireCapability("lab.control"),(req,res)=>{
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>16)throw Error("Choose 1–16 computers.");
-    const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
+    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
     const script=nativeLauncher(targets,req.body.mode);
     res.set({"Cache-Control":"no-store","Content-Disposition":"attachment; filename=RoomGoblin-Veyon-Desktop.ps1"}).type("text/plain").send(script);
   }catch(error){res.status(400).json({ok:false,error:error.message})}
@@ -6363,7 +6363,7 @@ app.post("/api/v1/veyon/desktop-launcher",requireCapability("lab.control"),(req,
 app.post("/api/v1/veyon/wake",requireCapability("lab.control"),async(req,res)=>{
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 computers.");
-    const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
+    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
     const results=await mapLimit(targets,4,async rec=>{try{if(rec.macHostname!==String(rec.hostname||rec.id).toLowerCase())throw Error("Save the MAC address again after an inventory identity change.");return {id:rec.id,...await wakeComputer(rec.mac)}}catch(error){return {id:rec.id,accepted:false,verified:false,error:error.message}}});
     audit({kind:"veyon.wake",targets:targets.map(rec=>rec.id),accepted:results.filter(r=>r.accepted).length});
     res.json({ok:results.every(r=>r.accepted),results});
@@ -6421,7 +6421,7 @@ app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),asy
   const workflows=[];
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 broadcast participants.");
-    const targets=[...new Set(ids)].map(id=>{const rec=veyonComputerStore.computers[veyonComputerId(id)];if(!rec)throw Error("Computer not found");return rec});
+    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
     const owner=requestUser(req)?.id||"legacy-control";
     // Reserve all three jobs before changing workflow intent or yielding.
     const jobs=veyonCommandQueue.enqueueModeCleanup(targets,owner);
