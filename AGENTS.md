@@ -8,6 +8,9 @@ drawers, receiver Setup and Settings display editor. Read
 and AV-label stores; leave `room.topology` archived and untouched. Do not restore
 topology scripts, request wrappers or preference projections. Keep unchanged
 matrix controls stable across polling and surface save failures.
+Receiver tools/group saves must require a unique enabled output mapping, never a
+guessed `tvN`. Preserve long group keys and references; wrap them for readability
+instead of automatically stripping historical `display-` prefixes.
 
 
 For alpha.82 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.

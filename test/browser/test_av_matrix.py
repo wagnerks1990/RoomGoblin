@@ -52,6 +52,8 @@ class MatrixBrowserTests(unittest.TestCase):
                 if body['action'] == 'route':
                     routes[body['output'] - 1] = body['input']
                 route.fulfill(json={'ok': True, 'data': {'allsource': routes}})
+            elif target == '/api/v1/commands':
+                route.fulfill(json={'ok': True})
             else:
                 return False
             return True
@@ -138,6 +140,62 @@ class MatrixBrowserTests(unittest.TestCase):
         self.assertIn('active', page.locator('#matrix button[onclick="route(1,2)"]').get_attribute('class'))
         self.assertFalse(errors, errors)
 
+    def test_unmapped_duplicate_and_disabled_receivers_fail_closed(self):
+        page, errors, config, _, writes = self.matrix()
+        # A real online receiver called tv8 belongs to another output. Never infer
+        # its target from the unmapped HDBT 8 port number.
+        config['devices']['tv8'] = {'name': 'Other receiver', 'avOutput': 2, 'enabled': True}
+        page.evaluate("refreshPluto()")
+        page.evaluate("S.avDeviceStatus={tv8:{online:true},'receiver-a':{online:true}};openAvTvDrawer(8)")
+        self.assertIn('No unique receiver mapping', page.locator('#avDrawerSubtitle').inner_text())
+        self.assertEqual(page.locator('#avDrawerGroups input').count(), 0)
+        for action in ('drawerTestImage()', 'drawerClearDisplay()', 'drawerReloadDisplay()', 'saveDrawerTvGroups()'):
+            page.evaluate(action)
+            self.assertIn('no unique receiver mapping', page.locator('#hubToast').inner_text())
+        self.assertEqual(writes, [])
+        config['devices']['tv8']['avOutput'] = 1
+        page.evaluate('refreshPluto()')
+        page.evaluate('openAvTvDrawer(1)')
+        page.evaluate('drawerTestImage()')
+        page.evaluate('saveDrawerTvGroups()')
+        self.assertEqual(writes, [])
+        config['devices']['tv8']['avOutput'] = 2
+        config['devices']['receiver-a']['enabled'] = False
+        page.evaluate('refreshPluto()')
+        page.evaluate("S.avDeviceStatus['receiver-a']={online:true};openAvTvDrawer(1)")
+        page.evaluate('drawerReloadDisplay()')
+        self.assertIn('disabled', page.locator('#hubToast').inner_text())
+        self.assertEqual(writes, [])
+        config['devices']['receiver-a']['enabled'] = True
+        page.evaluate('refreshPluto()')
+        page.evaluate("S.avDeviceStatus['receiver-a']={online:true};openAvTvDrawer(1)")
+        for action in ('drawerTestImage()', 'drawerClearDisplay()', 'drawerReloadDisplay()'):
+            page.evaluate(action)
+        self.assertEqual([body['target'] for target, body in writes], ['receiver-a'] * 3)
+        self.assertFalse(errors, errors)
+
+    def test_long_group_keys_wrap_and_save_without_renaming(self):
+        for width in (390, 1440):
+            with self.subTest(width=width):
+                page, errors, config, _, writes = self.matrix(width)
+                keys = ['display-' * 12 + 'front', 'display-' * 9 + 'rear']
+                config['displayGroups'].update({key: [] for key in keys})
+                page.evaluate('refreshPluto()')
+                page.evaluate('openAvTvDrawer(1)')
+                labels = page.locator('#avDrawerGroups label')
+                self.assertEqual(labels.count(), 2)
+                for i, key in enumerate(keys):
+                    self.assertEqual(labels.nth(i).locator('span').inner_text(), key)
+                self.assertTrue(page.locator('#avDrawerGroups').evaluate('(e)=>e.scrollWidth<=e.clientWidth+1'))
+                self.assertTrue(labels.nth(0).evaluate('(e)=>e.getBoundingClientRect().bottom<=e.nextElementSibling.getBoundingClientRect().top'))
+                page.locator('#avDrawerGroups input').first.check()
+                page.evaluate('saveDrawerTvGroups()')
+                self.assertEqual(config['displayGroups'][keys[0]], ['receiver-a'])
+                self.assertEqual(config['displayGroups'][keys[1]], [])
+                self.assertEqual(set(config['displayGroups']), {'all', *keys})
+                self.assertEqual([target for target, _ in writes], ['/api/v1/admin/displays'])
+                self.evidence(page, errors, f'matrix-long-groups-{width}')
+
     def test_setup_restores_receiver_count_and_ids(self):
         page, errors = self.page('/setup/')
         self.assertTrue(page.locator('#displayCount').is_visible())
@@ -192,7 +250,7 @@ class MatrixBrowserTests(unittest.TestCase):
             page.evaluate('drawerClearDisplay()')
             page.evaluate('drawerReloadDisplay()')
             page.evaluate('saveDrawerTvGroups()')
-            self.assertIn('No unique receiver', page.locator('#hubToast').inner_text())
+            self.assertIn('no unique receiver mapping', page.locator('#hubToast').inner_text())
         self.assertEqual(writes, [])
         page.locator('#avDrawerTvName').fill('Shared physical TV')
         page.evaluate('saveDrawerTvName()')

@@ -59,6 +59,33 @@ and verify names/mappings before routing hardware.
 
 ## Verification
 
+### Missing receiver names and long group keys
+
+Matrix ports and class/content targets are different inventories: the matrix
+always shows eight physical outputs, while class targets list configured content
+receivers. A matrix label alone does not create a receiver. Check Settings' stable
+receiver ID, enabled state and AV Output against the physical wiring before
+changing a mapping. Do not infer identity from a friendly name or a `tvN` ID.
+
+Display tools and group saves require exactly one enabled receiver mapped to the
+selected output. Missing or duplicate mappings fail closed instead of guessing
+`tvN`; the drawer explicitly reports a missing unique mapping. Routing and power
+still address physical matrix ports, and label-only renaming remains available.
+
+The retired browser topology fallback prepended `display-` to group IDs; backend
+projection saved those IDs as legacy group keys. Repeated fallback/projection
+cycles could accumulate prefixes. Removing topology stops that path but does not
+rename previously saved keys. The drawer now wraps each full key on a separate
+row. Names are deliberately not stripped, merged or rewritten: schedules and
+automations may reference them, and similarly named groups can have different
+members. Any future cleanup needs a database-safe backup and a reviewed migration
+of all references, not a cosmetic string replacement. Archived topology remains
+untouched. These changes do not establish the identity of a missing physical TV.
+
+Regression fixtures cover long keys on narrow/wide screens, exact-key group saves,
+unmapped outputs whose guessed `tvN` exists elsewhere, duplicate mappings and
+disabled receivers. No classroom hardware or saved production data is modified.
+
 Regression coverage includes matrix-only desktop/mobile layouts, unchanged grid
 identity across refresh, unsaved drawer edits, mapped and unmapped TV renames,
 source endpoint/name saves, visible save failures, and read-back after reload.
@@ -91,7 +118,7 @@ A shared or unmapped output name changes only its matrix label; individual
 receiver names can be edited in the form. No automatic physical reassignment is
 performed, because receiver identity and matrix output numbers can differ.
 
-Repeated-prefix empty groups are omitted from the TV drawer. In the receiver
+Full group IDs remain visible and wrap in the TV drawer. In the receiver
 editor, **Remove Empty Legacy Groups** removes only empty group IDs starting with
 two or more `display-` prefixes from the draft. Review the confirmation and save
 to apply. Nonempty groups, custom empty groups and `all` remain intact. Existing

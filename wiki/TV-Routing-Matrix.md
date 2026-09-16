@@ -59,6 +59,27 @@ and verify names/mappings before routing hardware.
 
 ## Verification
 
+### Missing receiver names and long group keys
+
+The matrix always shows eight physical ports; class/content targets list configured
+receivers. A label does not create a receiver. Check the stable ID, enabled state
+and AV Output in Settings against physical wiring. Never infer identity from a
+friendly name or `tvN`. Display tools and group saves require one enabled receiver
+mapped to the output; missing/duplicate mappings fail closed. Physical routing,
+power and label-only saves remain independent of receiver availability.
+
+The retired topology browser fallback prefixed group IDs with `display-`, and
+backend projection persisted those IDs as legacy keys. Repeating that cycle could
+accumulate prefixes. The removed code no longer does this, but stored keys remain.
+Each full key now wraps separately in the drawer. Do not strip/merge names without
+a database-safe backup and reference-aware migration: schedules may use them and
+similar names can have different memberships. Archived topology stays untouched.
+
+Automated fixtures cover long keys on mobile/desktop, exact-key saves, disabled or
+duplicate mappings, and unmapped ports whose guessed `tvN` exists elsewhere. They
+do not establish which receiver belongs to a missing physical TV; that requires
+the installation's saved configuration and physical mapping evidence.
+
 Regression coverage includes matrix-only desktop/mobile layouts, unchanged grid
 identity across refresh, unsaved drawer edits, mapped and unmapped TV renames,
 source endpoint/name saves, visible save failures, and read-back after reload.
@@ -91,7 +112,7 @@ A shared or unmapped output name changes only its matrix label; individual
 receiver names can be edited in the form. No automatic physical reassignment is
 performed, because receiver identity and matrix output numbers can differ.
 
-Repeated-prefix empty groups are omitted from the TV drawer. In the receiver
+Full group IDs remain visible and wrap in the TV drawer. In the receiver
 editor, **Remove Empty Legacy Groups** removes only empty group IDs starting with
 two or more `display-` prefixes from the draft. Review the confirmation and save
 to apply. Nonempty groups, custom empty groups and `all` remain intact. Existing
