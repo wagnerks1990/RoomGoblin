@@ -10,12 +10,19 @@ class MatrixBrowserTests(unittest.TestCase):
     page = harness.WorkspaceBrowserTests.page
     evidence = harness.WorkspaceBrowserTests.evidence
 
-    def matrix(self, width=1440, fail_labels=False):
+    def matrix(self, width=1440, fail_labels=False, recovery=False):
         config = {'devices': {'receiver-a': {'name': 'Front TV', 'enabled': True, 'avOutput': 1,
                    'tags': ['existing'], 'lightingAlias': 'front'}}, 'displayGroups': {'all': ['receiver-a']}}
         labels = {'outputs': ['Front TV'] + [f'TV {n}' for n in range(2, 9)],
                   'inputs': [f'Source {n}' for n in range(1, 9)],
                   'sourceEndpoints': [f'source{n}' for n in range(1, 9)]}
+        if recovery:
+            config['devices']['receiver-a']['avOutput'] = 5
+            config['devices']['receiver-a']['avConnection'] = 'hdbt'
+            config['devices']['receiver-b'] = {'name': 'Independent screen', 'enabled': True, 'avOutput': 5}
+            config['displayGroups'] = {'all': ['receiver-a', 'receiver-b'],
+                'display-all': ['receiver-a'], 'display-display-front': [],
+                'display-display-rear': ['receiver-b'], 'empty-custom': []}
         routes = [1] * 8
         writes = []
         def transport(route, target):
@@ -194,4 +201,78 @@ class MatrixBrowserTests(unittest.TestCase):
         self.assertTrue(page.locator('#displayCount').is_visible())
         self.assertTrue(page.locator('#receiverIds').is_visible())
         self.assertEqual(page.locator('[data-room-topology-editor]').count(), 0)
+        self.assertFalse(errors, errors)
+
+    def test_receiver_recovery_preserves_drafts_fields_and_group_memberships(self):
+        for width in (390, 1440):
+            with self.subTest(width=width):
+                page, errors, config, labels, writes = self.matrix(width, recovery=True)
+                page.evaluate('openReceiverSettings()')
+                page.wait_for_selector('[data-display-id="receiver-a"]')
+                self.assertIn('Output 5: receiver-a, receiver-b', page.locator('#cfgMappingWarnings').inner_text())
+                row = page.locator('[data-display-id="receiver-a"]')
+                row.locator('[data-f="name"]').fill('Renamed screen')
+                row.locator('[data-f="avOutput"]').fill('2')
+                page.evaluate('refreshPluto()')
+                self.assertEqual(row.locator('[data-f="name"]').input_value(), 'Renamed screen')
+                self.assertEqual(row.locator('[data-f="avOutput"]').input_value(), '2')
+                page.remove_listener('dialog', page._fixture_dialog_handler)
+                page.once('dialog', lambda dialog: dialog.accept())
+                page.evaluate('removeEmptyLegacyDisplayGroups()')
+                self.assertEqual(row.locator('[data-f="name"]').input_value(), 'Renamed screen')
+                self.assertIn('display-display-front', config['displayGroups'])
+                page.evaluate('saveAdminDisplaysStructured()')
+                self.assertEqual(page.locator('#cfgDisplaysMsg').inner_text(), 'Receivers and groups saved.')
+                self.assertEqual(config['devices']['receiver-a']['avOutput'], 2)
+                self.assertEqual(config['devices']['receiver-a']['name'], 'Renamed screen')
+                self.assertEqual(config['devices']['receiver-a']['avConnection'], 'hdbt')
+                self.assertEqual(config['devices']['receiver-a']['tags'], ['existing'])
+                self.assertEqual(config['devices']['receiver-a']['lightingAlias'], 'front')
+                self.assertEqual(config['devices']['receiver-b']['avOutput'], 5)
+                self.assertEqual(config['displayGroups'], {'all': ['receiver-a', 'receiver-b'],
+                    'display-all': ['receiver-a'], 'display-display-rear': ['receiver-b'], 'empty-custom': []})
+                self.assertIn('Renamed screen', page.locator('#classDefaultTargets').inner_text())
+                self.assertTrue(all(target == '/api/v1/admin/displays' for target, _ in writes))
+                page.reload()
+                page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+                page.evaluate("showPage('av');openReceiverSettings()")
+                page.wait_for_selector('[data-display-id="receiver-a"]')
+                self.assertEqual(page.locator('[data-display-id="receiver-a"] [data-f="avOutput"]').input_value(), '2')
+                self.evidence(page, errors, f'receiver-recovery-{width}')
+
+    def test_unmapped_and_shared_outputs_do_not_guess_command_targets(self):
+        page, errors, config, labels, writes = self.matrix(recovery=True)
+        # Even an online receiver whose ID matches the port must not be guessed.
+        page.evaluate("S.avConfig.devices.tv2={name:'Different screen',avOutput:7};S.avDeviceStatus={tv2:{online:true},'receiver-a':{online:true},'receiver-b':{online:true}}")
+        for output in (2, 5):
+            page.evaluate(f'openAvTvDrawer({output})')
+            self.assertEqual(page.locator('[data-drawer-tv-group]').count(), 0)
+            page.evaluate('drawerTestImage()')
+            page.evaluate('drawerClearDisplay()')
+            page.evaluate('drawerReloadDisplay()')
+            page.evaluate('saveDrawerTvGroups()')
+            self.assertIn('no unique receiver mapping', page.locator('#hubToast').inner_text())
+        self.assertEqual(writes, [])
+        page.locator('#avDrawerTvName').fill('Shared physical TV')
+        page.evaluate('saveDrawerTvName()')
+        self.assertEqual(config['devices']['receiver-a']['name'], 'Front TV')
+        self.assertEqual(config['devices']['receiver-b']['name'], 'Independent screen')
+        self.assertEqual(labels['outputs'][4], 'Shared physical TV')
+        self.assertEqual([target for target, _ in writes], ['/api/v1/pluto/labels'])
+        self.assertFalse(errors, errors)
+
+    def test_receiver_save_failure_keeps_draft_and_non_admin_cannot_save(self):
+        page, errors, config, _, writes = self.matrix(recovery=True)
+        page.evaluate('openReceiverSettings()')
+        page.wait_for_selector('[data-display-id="receiver-a"]')
+        name = page.locator('[data-display-id="receiver-a"] [data-f="name"]')
+        name.fill('Retained draft')
+        page.route('**/api/v1/admin/displays', lambda route: route.fulfill(status=503, json={'error':'Save unavailable'}))
+        page.evaluate('saveAdminDisplaysStructured()')
+        self.assertIn('Not saved: Save unavailable', page.locator('#cfgDisplaysMsg').inner_text())
+        self.assertEqual(name.input_value(), 'Retained draft')
+        self.assertEqual(config['devices']['receiver-a']['name'], 'Front TV')
+        page.evaluate("applyAuthUi({user:{role:'teacher',capabilities:['integrations.control']}})")
+        self.assertTrue(page.locator('button[onclick="saveAdminDisplaysStructured()"]').is_disabled())
+        self.assertTrue(page.locator('button[onclick="removeEmptyLegacyDisplayGroups()"]').is_disabled())
         self.assertFalse(errors, errors)
