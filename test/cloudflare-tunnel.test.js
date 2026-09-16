@@ -38,3 +38,12 @@ test("Cloudflare Tunnel uses the reviewed loopback proxy topology",()=>{
   assert.match(docs,/3010/);
   assert.match(docs,/optional/i);
 });
+
+test("Cloudflare Tunnel waits for Hub readiness after recreation",()=>{
+  const script=read(scriptPath);
+  assert.match(script,/wait_for_hub_health\(\)/);
+  assert.match(script,/sleep 2/);
+  assert.match(script,/wait_for_hub_health 90/);
+  assert.match(script,/RoomGoblin did not become healthy within 90 seconds/);
+  assert.match(script,/docker logs --tail 80 classroom-control-hub/);
+});
