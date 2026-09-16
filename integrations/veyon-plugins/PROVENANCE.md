@@ -14,6 +14,11 @@ source (including these changes), notices and GPL terms.
 
 RoomGoblin modifications, September 2026:
 
+- Linux native baseline: materialize `desktopFile` as QString in
+  `LinuxServerProcess.cpp`; an auto-deduced QStringBuilder retains references
+  to temporary operands. The preparer checks the exact pinned patch anchor.
+  Keep file-policy assertions enabled in Release test builds.
+
 - Chat: repair enum argument reads that did not compile; reject no-op headless
   execution; bind responses to a selected endpoint/session and requests to their
   authenticated teacher; one active teacher conversation per student; limit

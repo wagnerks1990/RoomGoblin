@@ -11,6 +11,17 @@ REVISION = 'afecfd6cbf78efa34da80acb7ea449001574e8cc'  # official v4.11.2
 PLUGINS = ('classroomchat', 'remotefilebrowser')
 
 
+def patch_linux_string_lifetime(destination):
+    # QStringBuilder holds references. Materialize before temporary operands die.
+    path = Path(destination) / 'plugins/platform/linux/LinuxServerProcess.cpp'
+    original = 'const auto desktopFile = VeyonCore::applicationsDirectory()'
+    replacement = 'const QString desktopFile = VeyonCore::applicationsDirectory()'
+    content = path.read_text()
+    if content.count(original) != 1:
+        raise RuntimeError('Pinned Linux string-lifetime patch does not match source')
+    path.write_text(content.replace(original, replacement))
+
+
 def prepare(destination):
     destination = Path(destination).absolute()
     if destination.exists():
@@ -22,6 +33,7 @@ def prepare(destination):
     if actual != REVISION:
         raise RuntimeError('Upstream source identity mismatch')
     subprocess.run(['git', '-C', str(destination), 'submodule', 'update', '--init', '--recursive'], check=True)
+    patch_linux_string_lifetime(destination)
     for plugin in PLUGINS:
         shutil.copytree(source / plugin, destination / 'plugins' / plugin)
     # Official v4.11.2 discovers plugin subdirectories automatically.
