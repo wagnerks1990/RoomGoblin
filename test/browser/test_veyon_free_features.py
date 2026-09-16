@@ -32,6 +32,31 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         self.assertEqual(state['commands'][0]['targets'], ['student-a'])
         self.evidence(page, errors, 'veyon-free-features-mobile')
 
+    def test_clipboard_form_target_content_and_missing_bridge(self):
+        page, errors, state = self.pilot_page(390)
+        page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={
+            'features': [{'name': 'RoomGoblinClipboardWrite', 'advertised': True}]}))
+        page.locator('#sendClipboard').click()
+        page.locator('#clipboardText').fill('Clipboard sample é\nSecond line')
+        self.evidence(page, errors, 'veyon-clipboard-mobile')
+        # A changed selection must not redirect the open form.
+        page.evaluate("selectedSet.clear()")
+        page.locator('#clipboardForm button').click()
+        page.wait_for_function("document.querySelector('#commandFeedback').textContent.startsWith('Queued:')")
+        self.assertEqual(state['commands'][-1]['targets'], ['student-a'])
+        self.assertEqual(state['commands'][-1]['feature'], 'clipboardWrite')
+        self.assertEqual(state['commands'][-1]['arguments'], {'clipboardText': 'Clipboard sample é\nSecond line'})
+        self.assertEqual(page.locator('#clipboardText').count(), 0)
+        page.evaluate("selectedSet.add('student-a')")
+        page.unroute('**/api/v1/veyon/computers/*/catalog')
+        page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={'features': []}))
+        messages = []
+        page.once('dialog', lambda dialog: (messages.append(dialog.message), dialog.accept()))
+        page.locator('#sendClipboard').click()
+        self.assertIn('requires the RoomGoblinWebBridge', messages[0])
+        self.assertEqual(len(state['commands']), 1)
+        self.assertFalse(errors, errors)
+
     def test_record_stop_download_discard_and_capture_failure(self):
         page, errors, state = self.pilot_page()
         page.on('dialog', lambda dialog: dialog.accept())

@@ -30,7 +30,9 @@ clearing is implemented.
 - Shared 30/minute Veyon action budget, bounded queue, per-host ordering,
   dispatch-time permission/identity checks and recovery-export pause/drain.
 - Content stays in pending command memory, is cleared on completion/cancel/expiry,
-  and is excluded from job responses, audit records and the durable journal.
+  and is excluded from Hub job responses, audit records and the durable journal.
+  Native Veyon debug logging is separate and can include protocol message content;
+  keep debug logging off when testing sensitive clipboard data.
 - No automatic retry after uncertain delivery. Inspect the endpoint before
   deliberately sending again. Closing the browser does not cancel an accepted job.
 - **Accepted** means the proxy accepted the request, not that the endpoint
