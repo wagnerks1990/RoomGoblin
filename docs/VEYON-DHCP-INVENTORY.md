@@ -8,7 +8,7 @@ The historical Veyon store is keyed by IPv4 address. With DHCP, a workstation ca
 
 ## Server-side identity layer
 
-RoomGoblin now reconciles Veyon identity at the server/API boundary rather than depending on browser cache repair.
+RoomGoblin reconciles Veyon identity at the server/API boundary rather than depending on browser cache repair.
 
 For authenticated computers with a usable hostname:
 
@@ -25,9 +25,23 @@ The existing IP-keyed Veyon object store remains a compatibility implementation 
 
 ## Discovery behavior
 
-The Veyon workspace still performs bounded automatic discovery approximately every 30 seconds while visible, plus an initial discovery shortly after loading and a refresh after returning to a stale hidden tab. Manual **Discover computers** remains available.
+The Veyon workspace performs bounded automatic discovery approximately every 30 seconds while visible, plus an initial discovery shortly after loading and a refresh after returning to a stale hidden tab. Manual **Discover computers** remains available.
 
-The browser-side hostname reconciliation helper remains as a compatibility layer for older API responses, but the server is now authoritative for stable identity and current command routing.
+Automatic DHCP tracking requires a configured scan subnet prefix. `VEYON_SCAN_SUBNET` / the GUI **Scan subnet prefix** must identify the subnet that contains the managed Veyon clients. If this value is blank, discovery has no targets and DHCP address changes cannot be learned automatically. Existing database inventory may still appear, which can otherwise make the configuration error look like a DHCP-reconciliation failure.
+
+The browser now treats the server as the identity authority. It triggers discovery, refreshes the inventory, and restores selection by hostname, but it no longer writes client-side role/name patches in an attempt to repair DHCP identity.
+
+## Operational diagnosis
+
+When discovery appears stale:
+
+1. Read **Settings → Integrations & Hardware → Veyon Classroom Computers** and confirm **Scan subnet prefix**, start, and end are configured.
+2. Call `POST /api/v1/veyon/discover` and verify `summary.found` is non-zero when managed clients are online.
+3. Confirm discovered rows have a hostname-derived public ID such as `host-<normalized-hostname>` rather than an IP address.
+4. Compare `GET /api/v1/veyon/computers?info=0` after discovery and confirm the hostname remains stable while the IP reflects the current DHCP lease.
+5. If Veyon temporarily reports an IP string as `hostname`, do not treat that IP as a stable identity. A later successful hostname-bearing discovery may reconcile it; standard reverse DNS is not assumed to exist.
+
+A successful host TCP check alone does not prove discovery is configured. The RoomGoblin host can reach Veyon clients while `scanSubnet` is blank, in which case manual and automatic discovery still have no scan target range.
 
 ## Safety boundaries
 
@@ -44,14 +58,15 @@ The browser-side hostname reconciliation helper remains as a compatibility layer
 
 Use non-critical workstations first:
 
-1. Confirm a workstation appears with its expected hostname, display name, and role.
-2. Record its public inventory ID from the API or browser state.
-3. Move it to another DHCP address inside the configured scan range.
-4. Run discovery or wait for automatic discovery.
-5. Confirm the displayed IP changes while the public inventory ID, display name, role, and operator selection remain associated with that hostname.
-6. Confirm a reversible lock/unlock or message reaches the workstation at the new address.
-7. Reuse the old address with a different hostname and confirm the original hostname is never routed to the new machine.
-8. Swap the addresses of two test computers and confirm each hostname keeps its own stable identity and commands follow the physical workstation.
-9. If more than one Veyon key is configured, confirm a previously successful key preference follows the workstation to its new address.
+1. Confirm **Scan subnet prefix** is configured and discovery finds the expected live clients.
+2. Confirm a workstation appears with its expected hostname, display name, and role.
+3. Record its public inventory ID from the API or browser state.
+4. Move it to another DHCP address inside the configured scan range.
+5. Run discovery or wait for automatic discovery.
+6. Confirm the displayed IP changes while the public inventory ID, display name, role, and operator selection remain associated with that hostname.
+7. Confirm a reversible lock/unlock or message reaches the workstation at the new address.
+8. Reuse the old address with a different hostname and confirm the original hostname is never routed to the new machine.
+9. Swap the addresses of two test computers and confirm each hostname keeps its own stable identity and commands follow the physical workstation.
+10. If more than one Veyon key is configured, confirm a previously successful key preference follows the workstation to its new address.
 
 If the workstation hostname itself changes, RoomGoblin intentionally treats it as a new identity; rename or reimage workflows should be reconciled deliberately.
