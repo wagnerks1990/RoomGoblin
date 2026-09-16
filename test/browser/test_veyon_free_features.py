@@ -40,14 +40,14 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('#clipboardText').fill('Clipboard sample é\nSecond line')
         self.evidence(page, errors, 'veyon-clipboard-mobile')
         # A changed selection must not redirect the open form.
-        page.evaluate("selectedSet.clear()")
+        page.locator('[data-select="student-a"]').evaluate("el => { el.checked=false; el.dispatchEvent(new Event('change', {bubbles:true})); }")
         page.locator('#clipboardForm button').click()
         page.wait_for_function("document.querySelector('#commandFeedback').textContent.startsWith('Queued:')")
         self.assertEqual(state['commands'][-1]['targets'], ['student-a'])
         self.assertEqual(state['commands'][-1]['feature'], 'clipboardWrite')
         self.assertEqual(state['commands'][-1]['arguments'], {'clipboardText': 'Clipboard sample é\nSecond line'})
         self.assertEqual(page.locator('#clipboardText').count(), 0)
-        page.evaluate("selectedSet.add('student-a')")
+        page.locator('[data-select="student-a"]').evaluate("el => { el.checked=true; el.dispatchEvent(new Event('change', {bubbles:true})); }")
         page.unroute('**/api/v1/veyon/computers/*/catalog')
         page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={'features': []}))
         messages = []
