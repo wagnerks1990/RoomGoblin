@@ -25,9 +25,6 @@
     for(const row of Array.isArray(rows)?rows:[]){
       const key=hostKey(row);if(!key)continue;
       const prior=next[key],rowId=String(row.id||'');
-      // veyonStatusFor can observe a new hostname at an old IP before discovery.
-      // If the browser already knew this hostname at another inventory ID, keep
-      // that known presentation identity until discovery reconciles the new IP.
       if(prior?.id&&rowId&&String(prior.id)!==rowId)continue;
       next[key]={
         hostname:String(row.hostname||'').trim(),
@@ -40,6 +37,8 @@
     return next;
   }
 
+  // Kept for compatibility tests and older cached data migrations. The browser
+  // no longer applies these patches; server-side DHCP reconciliation is authoritative.
   function reconciliationPlan(identity,discovered){
     const patches=[];
     for(const row of Array.isArray(discovered)?discovered:[]){
@@ -112,19 +111,15 @@
       const oldLabel=button?.textContent;
       if(interactive&&button){button.disabled=true;button.textContent='Scanning…';}
       try{
-        const beforeResponse=await api('/api/v1/veyon/computers?info=0');
-        const before=Array.isArray(beforeResponse.computers)?beforeResponse.computers:[];
-        const identity=identitySnapshot(before,readCache());
-        const selectedHosts=selectionHostKeys(before);
-        const result=await api('/api/v1/veyon/discover',{method:'POST',body:'{}'});
-        const discovered=Array.isArray(result.computers)?result.computers:[];
-        for(const change of reconciliationPlan(identity,discovered)){
-          await api('/api/v1/veyon/computers/'+encodeURIComponent(change.id),{method:'PUT',body:JSON.stringify(change.patch)});
+        const status=await api('/api/v1/veyon/status');
+        if(!String(status?.scanSubnet||'').trim()){
+          throw new Error('Veyon discovery is disabled until a scan subnet prefix is configured in Settings → Integrations & Hardware → Veyon Classroom Computers.');
         }
+        const selectedHosts=selectionHostKeys(computers);
+        await api('/api/v1/veyon/discover',{method:'POST',body:'{}'});
         lastDiscoveryAt=Date.now();
         await load();
         restoreSelection(selectedHosts);
-        // Successful reconciliation establishes the new current inventory IDs.
         writeCache(identitySnapshot(computers,{}));
       }catch(error){
         if(interactive)alert(error.message);
