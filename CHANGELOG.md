@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Matrix receiver safety and readable groups
+
+- Stop guessing receiver IDs for unmapped outputs; reject ambiguous/disabled
+  receiver commands and group saves while preserving physical routing and labels.
+- Wrap full saved group keys on separate drawer rows without changing membership,
+  schedule references or archived topology; surface group-save failures.
+- Document historical prefix accumulation and missing-receiver diagnosis; add
+  mobile/desktop browser regressions. Physical mapping remains operator-verified.
+
 ### Restore TV Routing Matrix and remove room topology
 
 - Remove topology editors, target overrides, page-wide ordering observer and

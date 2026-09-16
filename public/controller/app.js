@@ -550,8 +550,14 @@ async function refreshPluto(){
  }catch(e){avHealth.textContent='Matrix Offline';avHealth.className='pill bad';avMsg.textContent=e.message}
 }
 let avLivePollBusy=false;setInterval(async()=>{if(avLivePollBusy||!document.getElementById('av')?.classList.contains('active'))return;avLivePollBusy=true;try{await refreshPluto();}catch{}finally{avLivePollBusy=false}},5000);
-function avTvDisplayId(output){const hit=displayByAvOutput(output);return hit?.[0]||`tv${output}`}
-function avTvOnline(output){return !!S.avDeviceStatus?.[avTvDisplayId(output)]?.online}
+function avTvDisplayId(output){return displayByAvOutput(output)?.[0]||null}
+function avTvOnline(output){const id=avTvDisplayId(output);return !!id&&S.avConfig?.devices?.[id]?.enabled!==false&&!!S.avDeviceStatus?.[id]?.online}
+function requireAvReceiver(output){
+ const id=avTvDisplayId(output);
+ if(!id)throw new Error(`HDBT ${output} has no unique receiver mapping. Check Settings → Displays before using display tools or groups.`);
+ if(S.avConfig?.devices?.[id]?.enabled===false)throw new Error(`Receiver ${id} is disabled. Check Settings → Displays.`);
+ return id;
+}
 function avReportedPowerState(output){
  const o=Number(output),sources=[S.pluto?.cecStatus||{},S.pluto?.outputStatus||{}];
  for(const src of sources){for(const key of ['hdbtPower','hdbt_power','hdbtPowerState','hdbt_power_state','allhdbtpower','allhdbtpowerstate']){const a=src?.[key];if(Array.isArray(a)&&a.length>=o){const v=a[o-1];if(v===true||Number(v)===1)return {known:true,on:true,source:key};if(v===false||Number(v)===0)return {known:true,on:false,source:key}}}}
@@ -597,7 +603,7 @@ async function saveSourceDrawer(){
   S.pluto.labels=j.labels;renderMatrix();renderAvSourceDrawer();notify('Source saved.','success');
  }catch(e){notify(`Source was not saved: ${e.message}`,'error')}
 }
-function renderAvDrawer(){const o=Number(S.avDrawerOutput||1),L=avLabels(),input=Number(S.pluto.videoStatus?.allsource?.[o-1]||1),hit=displayByAvOutput(o),id=hit?.[0]||`tv${o}`,st=S.avDeviceStatus?.[id]||{},sig=Number(S.pluto.inputStatus?.inactive?.[input-1])===0,ps=avPowerStateInfo(o);avDrawerTitle.textContent=L.outputs[o-1];avDrawerTvName.value=L.outputs[o-1];avDrawerSubtitle.textContent=`HDBT ${o} • Receiver ${id}`;avDrawerCurrentSource.textContent=L.inputs[input-1]||`Content Source ${input}`;avDrawerSource.innerHTML=L.inputs.map((n,i)=>`<option value="${i+1}" ${i+1===input?'selected':''}>${esc(n)} (Input ${i+1})</option>`).join('');avDrawerPowerStatus.textContent=ps.verified?`Power: ${ps.label} • live matrix report`:(ps.known?`Power: ${ps.label} • last RoomGoblin command; not hardware-confirmed`:'Power: Unknown • this matrix firmware is not reporting live TV power');avDrawerInfo.innerHTML=`Receiver: <b>${st.online?'Online':'Offline'}</b><br>Current Source: ${esc(L.inputs[input-1]||'—')}<br>Source Signal: ${sig?'Detected':'Not detected'}<br>Resolution: ${esc(st.meta?.resolution||'Unknown')}<br>Last Seen: ${esc(overviewLastSeen(st))}`;renderDrawerTvGroups(id)}
+function renderAvDrawer(){const o=Number(S.avDrawerOutput||1),L=avLabels(),input=Number(S.pluto.videoStatus?.allsource?.[o-1]||1),hit=displayByAvOutput(o),id=hit?.[0]||null,st=S.avDeviceStatus?.[id]||{},sig=Number(S.pluto.inputStatus?.inactive?.[input-1])===0,ps=avPowerStateInfo(o);avDrawerTitle.textContent=L.outputs[o-1];avDrawerTvName.value=L.outputs[o-1];avDrawerSubtitle.textContent=`HDBT ${o} • ${id?'Receiver '+id:'No unique receiver mapping'}`;avDrawerCurrentSource.textContent=L.inputs[input-1]||`Content Source ${input}`;avDrawerSource.innerHTML=L.inputs.map((n,i)=>`<option value="${i+1}" ${i+1===input?'selected':''}>${esc(n)} (Input ${i+1})</option>`).join('');avDrawerPowerStatus.textContent=ps.verified?`Power: ${ps.label} • live matrix report`:(ps.known?`Power: ${ps.label} • last RoomGoblin command; not hardware-confirmed`:'Power: Unknown • this matrix firmware is not reporting live TV power');avDrawerInfo.innerHTML=`Receiver: <b>${!id?'No unique mapping':hit[1].enabled===false?'Disabled':st.online?'Online':'Offline'}</b><br>Current Source: ${esc(L.inputs[input-1]||'—')}<br>Source Signal: ${sig?'Detected':'Not detected'}<br>Resolution: ${esc(st.meta?.resolution||'Unknown')}<br>Last Seen: ${esc(overviewLastSeen(st))}`;renderDrawerTvGroups(id)}
 async function drawerTvPower(index){const o=Number(S.avDrawerOutput);await plutoAction({action:'cecOutput',output:o,connection:'hdbt',index},false);saveAvPowerState(o,index===0);renderMatrix();renderAvDrawer();notify(`${avOutputLabel(o)} power ${index===0?'on':'off'} sent.`,'success')}
 async function saveDrawerTvName(){
  let receiverSaved=false;
@@ -614,12 +620,12 @@ async function saveDrawerTvName(){
   S.pluto.labels=j.labels;renderMatrix();renderAvDrawer();notify('TV name saved.','success');
  }catch(e){notify(`${receiverSaved?'Receiver name saved, but the matrix label was not saved':'TV name was not saved'}: ${e.message}`,'error')}
 }
-function renderDrawerTvGroups(id){const groups=S.avConfig?.displayGroups||{};avDrawerGroups.innerHTML=Object.entries(groups).filter(([n])=>n!=='all').map(([name,members])=>`<label><input type="checkbox" data-drawer-tv-group="${esc(name)}" ${(members||[]).includes(id)?'checked':''}>${esc(name)}</label>`).join('')||'<span class="muted">No optional groups configured.</span>'}
-async function saveDrawerTvGroups(){const o=Number(S.avDrawerOutput),id=avTvDisplayId(o),groups={...(S.avConfig?.displayGroups||{})};document.querySelectorAll('[data-drawer-tv-group]').forEach(cb=>{const n=cb.dataset.drawerTvGroup,m=new Set(groups[n]||[]);cb.checked?m.add(id):m.delete(id);groups[n]=[...m]});if(groups.all&&!groups.all.includes(id))groups.all=[...groups.all,id];await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:S.avConfig?.room,devices:S.avConfig?.devices||{},displayGroups:groups,lightingGroups:S.avConfig?.lightingGroups||[]})});S.avConfig.displayGroups=groups;notify('TV groups saved.','success')}
+function renderDrawerTvGroups(id){const groups=S.avConfig?.displayGroups||{};avDrawerGroups.innerHTML=id?Object.entries(groups).filter(([n])=>n!=='all').map(([name,members])=>`<label><input type="checkbox" data-drawer-tv-group="${esc(name)}" ${(members||[]).includes(id)?'checked':''}><span>${esc(name)}</span></label>`).join('')||'<span class="muted">No optional groups configured.</span>':'<span class="muted">No unique receiver mapping. Check Settings → Displays.</span>'}
+async function saveDrawerTvGroups(){try{const o=Number(S.avDrawerOutput),id=requireAvReceiver(o),groups={...(S.avConfig?.displayGroups||{})};document.querySelectorAll('[data-drawer-tv-group]').forEach(cb=>{const n=cb.dataset.drawerTvGroup,m=new Set(groups[n]||[]);cb.checked?m.add(id):m.delete(id);groups[n]=[...m]});if(groups.all&&!groups.all.includes(id))groups.all=[...groups.all,id];const saved=await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:S.avConfig?.room,devices:S.avConfig?.devices||{},displayGroups:groups,lightingGroups:S.avConfig?.lightingGroups||[]})});S.avConfig.displayGroups=saved.displayGroups;notify('TV groups saved.','success')}catch(e){notify(`TV groups were not saved: ${e.message}`,'error')}}
 function drawerUpdateRoute(){return route(Number(S.avDrawerOutput),Number(avDrawerSource.value))}
 async function sendTvTestImage(id,output){return api('/api/v1/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'display.image',target:id,payload:{url:`/test-images/tv${output}.svg`,fit:'contain'}})})}
-async function drawerTestImage(){const o=Number(S.avDrawerOutput),id=avTvDisplayId(o);if(!S.avDeviceStatus?.[id]?.online){const e=`${avOutputLabel(o)} receiver ${id} is offline`;avDrawerToolStatus.textContent=e;return notify(e,'error')}await sendTvTestImage(id,o);avDrawerToolStatus.textContent=`Test image sent to ${id}`;notify(`Test image sent to ${avOutputLabel(o)}.`,'success')}
-async function drawerDisplayCommand(type,label){const o=Number(S.avDrawerOutput),id=avTvDisplayId(o),st=S.avDeviceStatus?.[id];if(!st?.online)throw new Error(`${avOutputLabel(o)} receiver ${id} is offline`);avDrawerToolStatus.textContent=`Sending ${label} to ${id}…`;const j=await api('/api/v1/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,target:id,payload:{requestedAt:new Date().toISOString()}})});avDrawerToolStatus.textContent=`${label} sent to ${id}`;notify(`${label} sent to ${avOutputLabel(o)}.`,'success');return j}
+async function drawerTestImage(){try{const o=Number(S.avDrawerOutput),id=requireAvReceiver(o);if(!S.avDeviceStatus?.[id]?.online)throw new Error(`${avOutputLabel(o)} receiver ${id} is offline`);await sendTvTestImage(id,o);avDrawerToolStatus.textContent=`Test image sent to ${id}`;notify(`Test image sent to ${avOutputLabel(o)}.`,'success')}catch(e){avDrawerToolStatus.textContent=e.message;notify(e.message,'error')}}
+async function drawerDisplayCommand(type,label){const o=Number(S.avDrawerOutput),id=requireAvReceiver(o),st=S.avDeviceStatus?.[id];if(!st?.online)throw new Error(`${avOutputLabel(o)} receiver ${id} is offline`);avDrawerToolStatus.textContent=`Sending ${label} to ${id}…`;const j=await api('/api/v1/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,target:id,payload:{requestedAt:new Date().toISOString()}})});avDrawerToolStatus.textContent=`${label} sent to ${id}`;notify(`${label} sent to ${avOutputLabel(o)}.`,'success');return j}
 async function drawerClearDisplay(){try{return await drawerDisplayCommand('display.clear','Clear Display')}catch(e){avDrawerToolStatus.textContent=e.message;notify(e.message,'error')}}
 async function drawerReloadDisplay(){try{return await drawerDisplayCommand('display.reload','Reload Display')}catch(e){avDrawerToolStatus.textContent=e.message;notify(e.message,'error')}}
 function renderAvTargets(){
@@ -655,7 +661,8 @@ function renderInputs(){
 }
 function displayByAvOutput(output){
  const ds=S.avConfig?.devices||{};
- return Object.entries(ds).find(([,d])=>Number(d?.avOutput)===Number(output))||null;
+ const matches=Object.entries(ds).filter(([,d])=>Number(d?.avOutput)===Number(output));
+ return matches.length===1?matches[0]:null;
 }
 function syncAvOutputLabelsFromDisplays(){
  const L=avLabels();
