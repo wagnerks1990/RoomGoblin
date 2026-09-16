@@ -336,6 +336,16 @@ Resolve host GID 10001 before backup/data/secret mutation. The group inside the 
 
 The backend's dedicated Sendspin relay is in `src/music-assistant-sendspin.js`. It uses the configured audio port (normally 8927), not the API/web-player socket on 8095; the API token never enters raw audio frames. Keep the browser on the existing ticketed same-Hub proxy and preserve the single display-layout engine. Do not reintroduce PR #22's patch scripts or direct-browser/auto-fit experiments. See [Sendspin architecture and selective review](docs/MUSIC-ASSISTANT-SENDSPIN.md).
 
+Keep each active display host on its own receiver ID. Preserve bounded relay
+close diagnostics and browser `lastProxyClose`; never log proxy ticket URLs or
+raw peer reasons. Stale close callbacks may log but cannot mutate successor
+sessions. A browser autoplay warning followed by `ctx=running` is recovered
+context state, not evidence that the transport is failing. Read
+`docs/ai/BROWSER-DISPLAY-AUDIO-CONTEXT.md` before changing this lifecycle.
+Unattended desktop Chrome/Edge requires administrator-managed autoplay policy;
+JavaScript must not pretend to manufacture user activation. Keep policy examples
+generic and origin-scoped; never commit a production appliance address.
+
 ### Managed Android trust boundaries
 
 The exported Android configuration receiver is an ADB bootstrap surface, not a general inter-app API. Keep it guarded by the platform `android.permission.DUMP` permission so `adb shell am broadcast` remains compatible while ordinary apps cannot replace the display URL, Device Agent token, persistent-ADB policy, or root-tools policy.

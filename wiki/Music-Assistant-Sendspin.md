@@ -94,3 +94,80 @@ The diagnostic event `musicassistant.sendspin.proxy.connected` indicates an upst
 ## Music Assistant route budgets
 
 The touched status endpoint allows 120 requests per 60 seconds appliance-wide. Configuration saves and TV bridge attach/detach share a separate 30-request/60-second budget. The limiters run before the existing authorization handlers, return HTTP 429 with Retry-After, use fixed keys unaffected by forwarding headers, and reset on process restart. Status polling cannot consume the mutation budget. These limits do not throttle raw audio frames or internal scheduled music operations. The locked express-rate-limit version matches the already reviewed maintenance dependency. Actual HTTP regression tests exercise both limits and their independence.
+
+## Browser reconnect diagnostics
+
+Every active browser host must have its own stable receiver ID. Two live hosts
+using the same `/display/<id>` also advertise the same `classroom-hub-<id>`
+Sendspin identity and can replace each other's Music Assistant connection. A live
+operator test isolated a reconnect loop to reuse of an occupied receiver ID;
+using an unused ID stopped that loop. This does not establish that every future
+close has the same cause.
+
+The browser uses an adopted, ticketed WebSocket. Sendspin 3.2.1 does not reconnect
+that socket itself; RoomGoblin retains its existing reconnect request after an
+active session closes. The diagnostics update does not change retry timing,
+player creation, codecs, buffers, autoplay policy, or duplicate-session handling.
+
+The receiver now logs `RoomGoblin Music Assistant proxy closed` with code, the
+Hub-supplied reason, clean-handshake flag, player ID, generation, prior protocol
+activation and whether the callback is stale. Stale callbacks log evidence but
+still cannot change current playback state or schedule a reconnect. Active close
+errors remain visible and `lastProxyClose` persists in bridge status across the
+next reconnect, while the current error can clear after recovery. A clean close
+(code 1000) does not prove the shutdown was desirable or identify its initiator.
+
+The Hub records one `musicassistant.sendspin.proxy.closed` audit event for the
+first terminal event of each admitted relay. `relayId` correlates it with the
+existing `.connected` event. `closedBy` distinguishes `browser`, `upstream`,
+`browser-error`, `upstream-error`, `browser-send-error`, `upstream-send-error`,
+`connect-timeout`, `pending-buffer-limit`, `buffer-limit`, `browser-not-open`,
+and explicit `hub` teardown. These describe the boundary observed by the Hub,
+not necessarily the underlying network or application root cause.
+
+`observedCode` retains the original peer code for close events (including 1006);
+it is null for errors without a close frame and uses the selected local code for
+Hub timeouts/limits. `forwardedCode` is the legal code selected for the browser,
+so an upstream 1006 is still forwarded as 1011. `reason` is a fixed Hub diagnostic
+label; `durationMs` and `upstreamConnected` provide lifecycle context. Admission
+failures generate `.rejected` with the policy code and fixed reason. A consumed
+ticket is checked only at admission: its 60-second expiry does not time out an
+established audio stream.
+
+Proxy URLs contain one-use credentials. Never log those URLs, request query
+strings, API tokens, protocol payloads or arbitrary peer-supplied close text.
+Browser reason text is supplied by the Hub; backend events deliberately retain
+fixed reasons rather than raw upstream messages. Diagnostics callback failures
+must not interrupt teardown. Events use the existing bounded audit/diagnostics
+storage and its existing authorization rules.
+
+After installing the exact published image pair, reload the test receiver once,
+keep only one host on its receiver ID, and reproduce the failure. Capture the
+browser close record and run this in a signed-in controller's Console:
+
+```javascript
+(async () => {
+  const result = {};
+  for (const kind of ['closed', 'rejected']) {
+    const r = await fetch(`/api/v1/diagnostics/events?kind=musicassistant.sendspin.proxy.${kind}&limit=40`);
+    if (!r.ok) throw new Error(`Diagnostics request failed: ${r.status}`);
+    result[kind] = (await r.json()).events;
+  }
+  console.log(JSON.stringify(result, null, 2));
+})();
+```
+
+An autoplay warning followed by `AudioContext resumed`, `audio unlocked` and
+`ctx=running` records recovery from the initial browser restriction; it is not
+proof of an ongoing transport failure or of audible sound. A navigation creates
+a fresh playback context and may require another real tap/key interaction on the
+display page. A controller click does not activate a separate receiver browser.
+Managed Android retains its existing WebView autoplay exemption and resume
+preservation. Do not fabricate activation or reconnect on every gesture.
+
+Regression coverage executes the actual receiver close/reconnect handlers,
+checks stale-generation isolation and ticket-free logs, and tests relay source
+classification, once-only teardown, observer failures, and real upstream 1006
+termination. Physical audio remains operator-verified. Rollback uses the normal
+updater's saved source/images and operational backup; this update has no database
+migration, receiver identity change, or new playback policy.

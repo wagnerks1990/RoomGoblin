@@ -7027,7 +7027,8 @@ server.on("upgrade",(req,socket,head)=>{
 maSendspinProxyWss.on("connection",(client,req)=>{
   client.remoteAddress=clientAddress(req);
   client.on("error",()=>{}); // Also cover rejected tickets during the close handshake.
-  const reject=(code,reason)=>{if(client.readyState===WebSocket.OPEN)client.close(code,reason)};
+  const relayId=crypto.randomUUID();
+  const reject=(code,reason)=>{audit({kind:"musicassistant.sendspin.proxy.rejected",relayId,code,reason});if(client.readyState===WebSocket.OPEN)client.close(code,reason)};
   try{
     const u=new URL(req.url||"/","http://classroom-hub.local"),ticket=consumeMusicAssistantProxyTicket(u.searchParams.get("ticket"));
     if(!ticket)return reject(1008,"Invalid or expired Music Assistant bridge ticket");
@@ -7037,7 +7038,8 @@ maSendspinProxyWss.on("connection",(client,req)=>{
     if(!cfg.tvBridgeEnabled)return reject(1008,"Music Assistant TV bridge is disabled");
     relaySendspin(client,{
       WebSocket,config:cfg,maxPayload:WS_MAX_PAYLOAD_BYTES,
-      onConnected:upstreamUrl=>audit({kind:"musicassistant.sendspin.proxy.connected",deviceId:ticket.deviceId,playerId:ticket.playerId,upstreamUrl}),
+      onConnected:upstreamUrl=>audit({kind:"musicassistant.sendspin.proxy.connected",relayId,deviceId:ticket.deviceId,playerId:ticket.playerId,upstreamUrl}),
+      onClosed:closure=>audit({kind:"musicassistant.sendspin.proxy.closed",relayId,deviceId:ticket.deviceId,playerId:ticket.playerId,...closure}),
       onError:e=>diagnosticError(e,{component:"music-assistant",operation:"sendspin-proxy",deviceId:ticket.deviceId})
     });
   }catch(e){diagnosticError(e,{component:"music-assistant",operation:"sendspin-proxy-setup"});reject(1011,"Music Assistant Sendspin proxy setup failed")}
