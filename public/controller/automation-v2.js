@@ -103,7 +103,7 @@
     const rows=targetRows(step),selected=step.targets?.length?step.targets:[rows[0]?.[0]].filter(Boolean);
     const canShare=i>0&&actionDomain(step.action)===actionDomain(autoSteps[0]?.action);
     return `${canShare?`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" ${step.useEventTargets!==false?'checked':''} onchange="RoomGoblinAutomationV2.shareTargets(${i},this.checked)"> Use the same targets as Action 1</label>`:''}
-      ${!canShare||step.useEventTargets===false?`<div class="toolbar" style="margin-top:7px">${rows.map(([id,label])=>`<label><input type="checkbox" ${selected.includes(id)?'checked':''} onchange="RoomGoblinAutomationV2.target(${i},${JSON.stringify(String(id))},this.checked)"> ${esc(label)}</label>`).join("")}</div>`:`<div class="muted">Targets follow Action 1, including linked-class default display targets.</div>`}`;
+      ${!canShare||step.useEventTargets===false?`<div class="toolbar" style="margin-top:7px">${rows.map(([id,label])=>`<label><input type="checkbox" ${selected.includes(id)?'checked':''} onchange="RoomGoblinAutomationV2.target(${i},${inlineJsArg(String(id))},this.checked)"> ${esc(label)}</label>`).join("")}</div>`:`<div class="muted">Targets follow Action 1, including linked-class default display targets.</div>`}`;
   }
   function render(){
     const host=document.getElementById("autoActionSteps");if(!host)return;
