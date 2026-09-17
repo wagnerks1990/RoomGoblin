@@ -1,5 +1,44 @@
 "use strict";
 
+(function installReceiverMediaPlane(){
+  if(!/^\/display\//.test(location.pathname)||location.protocol!=="http:")return;
+  const MEDIA_PORT=String(window.ROOMGOBLIN_MEDIA_PORT||3020);
+  const descriptor=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,"src");
+  if(!descriptor?.set||!descriptor?.get||!descriptor.configurable)return;
+  const originalSet=descriptor.set,originalGet=descriptor.get;
+  const fallback=new WeakMap();
+  function route(value){
+    try{
+      const u=new URL(String(value||""),location.href);
+      if(u.origin!==location.origin||!u.pathname.startsWith("/media/"))return String(value||"");
+      const media=new URL(u.toString());
+      media.port=MEDIA_PORT;
+      return media.toString();
+    }catch{return String(value||"")}
+  }
+  Object.defineProperty(HTMLMediaElement.prototype,"src",{
+    configurable:true,enumerable:descriptor.enumerable,
+    get(){return originalGet.call(this)},
+    set(value){
+      const original=String(value||""),routed=route(original);
+      if(routed!==original){
+        fallback.set(this,original);
+        if(!this.dataset.rgMediaPlaneFallbackBound){
+          this.dataset.rgMediaPlaneFallbackBound="1";
+          this.addEventListener("error",()=>{
+            const prior=fallback.get(this);if(!prior||this.dataset.rgMediaPlaneFallbackUsed)return;
+            this.dataset.rgMediaPlaneFallbackUsed="1";
+            fallback.delete(this);
+            originalSet.call(this,prior);
+            try{this.load()}catch{}
+          });
+        }
+      }else fallback.delete(this);
+      return originalSet.call(this,routed);
+    }
+  });
+})();
+
 if(!window.ControlHubBranding&&!document.querySelector('script[src="/shared/branding.js"]')){
   const branding=document.createElement("script");
   branding.src="/shared/branding.js";
@@ -82,8 +121,6 @@ if(location.pathname==="/controller/display.html"&&!document.querySelector('scri
         return descriptor.set.call(this,wrapped);
       }
     });
-    // Keep this evidence available through ClassroomStreamDiagnostics without
-    // emitting one console line per display/embedded renderer context.
     record("websocket-command-filter-installed",{},true);
   }else record("websocket-command-filter-unavailable",{error:"WebSocket onmessage accessor is not configurable"});
 
