@@ -25,3 +25,7 @@ Two follow-up issues remained:
 - receiver `display.media.status` telemetry populates the Media Library and Display Studio live-playback panels;
 - Today previews again show live receiver state but do not become additional MP4 decoders;
 - video traffic remains on the media plane while control traffic remains responsive.
+
+## Release convergence correction
+
+All independently deployed release surfaces are converged on `1.0.0-alpha.83`, including the controller bundle, root and maintenance package metadata, package locks, and native Host Agent wrapper. This is required so receiver build/version comparison can force stale display renderers to reload after the media-session hotfix.
