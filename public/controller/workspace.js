@@ -178,6 +178,27 @@
       `Remove-Item $Dir -Recurse -Force -ErrorAction SilentlyContinue`
     ].join('; ');
   }
+  function nativeEnrollmentFile(enrollment){
+    const origin=new URL(enrollment.installerUrl,location.href).origin;
+    return {
+      schema:'roomgoblin-native-enrollment-v1',
+      hubUrl:origin,
+      agentId:String(enrollment.agentId||''),
+      enrollmentToken:String(enrollment.token||''),
+      allowHttp:new URL(origin).protocol==='http:',
+      trustedPublisherThumbprint:''
+    };
+  }
+  function downloadNativeEnrollmentFile(enrollment){
+    const payload=JSON.stringify(nativeEnrollmentFile(enrollment),null,2)+'\n';
+    const blob=new Blob([payload],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const safe=String(enrollment.agentId||'computer').replace(/[^A-Za-z0-9._-]/g,'-');
+    const a=document.createElement('a');
+    a.href=url;a.download=`roomgoblin-enrollment-${safe}.json`;
+    document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function enhanceNativeEnrollment(){
     if(typeof window.createLabAgentEnrollment!=='function'||typeof window.api!=='function')return;
     window.createLabAgentEnrollment=async function(){
@@ -189,8 +210,10 @@
         const enrollment=j.enrollment,result=document.getElementById('labEnrollmentResult');
         if(!enrollment?.token||!enrollment?.installerUrl||!result)throw Error('RoomGoblin returned an incomplete enrollment package.');
         const nativeCommand=nativeEnrollmentCommand(enrollment);
+        const safe=String(enrollment.agentId||'computer').replace(/[^A-Za-z0-9._-]/g,'-');
         result.style.display='block';
-        result.innerHTML=`<b>Recommended: native Windows service installer for ${esc(enrollment.agentId)}</b><textarea class="raw" readonly style="width:100%;min-height:190px;margin-top:8px">${esc(nativeCommand)}</textarea><div class="muted">Run once in elevated Windows PowerShell. RoomGoblin verifies the four native package hashes before installation. Expires ${esc(new Date(enrollment.expiresAt).toLocaleString())}. The raw one-time enrollment token appears only in this command.</div><details style="margin-top:10px"><summary>Legacy PowerShell scheduled-task installer</summary><textarea class="raw" readonly style="width:100%;min-height:110px;margin-top:8px">${esc(enrollment.installCommand||'')}</textarea><div class="muted">Compatibility fallback only. New deployments should use the native Windows service above.</div></details>`;
+        result.innerHTML=`<b>Recommended: browser package + native bootstrap for ${esc(enrollment.agentId)}</b><div class="toolbar" style="margin-top:8px"><a class="buttonLink" href="/lab-agent/native/RoomGoblinNativeAgent.zip" download>1. Download native package</a><button type="button" data-native-enrollment-file>2. Download one-time enrollment file</button></div><div class="muted" style="margin-top:8px">On the Windows computer, extract the ZIP, place the downloaded enrollment JSON in the extracted folder, open an elevated Command Prompt or PowerShell there, and run <code>RoomGoblinAgentBootstrap.exe install --enrollment-file roomgoblin-enrollment-${esc(safe)}.json</code>. The bootstrap deletes the plaintext enrollment file immediately after reading it and verifies manifest.json plus all four native executable hashes before installation. Expires ${esc(new Date(enrollment.expiresAt).toLocaleString())}.</div><details style="margin-top:10px"><summary>Automated PowerShell native installer fallback</summary><textarea class="raw" readonly style="width:100%;min-height:190px;margin-top:8px">${esc(nativeCommand)}</textarea><div class="muted">Use only where endpoint-protection policy permits the PowerShell download-and-execute chain. The browser package workflow above is preferred.</div></details><details style="margin-top:10px"><summary>Legacy PowerShell scheduled-task installer</summary><textarea class="raw" readonly style="width:100%;min-height:110px;margin-top:8px">${esc(enrollment.installCommand||'')}</textarea><div class="muted">Compatibility fallback only.</div></details>`;
+        result.querySelector('[data-native-enrollment-file]')?.addEventListener('click',()=>downloadNativeEnrollmentFile(enrollment),{once:true});
         await loadLabAgentCredentials();
       }catch(error){notify(error.message,'error')}
     };
