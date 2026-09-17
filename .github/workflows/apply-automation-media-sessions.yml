@@ -36,7 +36,11 @@ jobs:
           set +e
           npm test > /tmp/roomgoblin-full-test.log 2>&1
           status=$?
-          tail -n 500 /tmp/roomgoblin-full-test.log
+          if [ "$status" -ne 0 ]; then
+            grep -n -B 25 -A 90 -E '^not ok|failureType:|AssertionError|ERR_ASSERTION|# fail [1-9]' /tmp/roomgoblin-full-test.log || true
+          else
+            tail -n 30 /tmp/roomgoblin-full-test.log
+          fi
           exit $status
       - name: Commit validated implementation
         run: |
