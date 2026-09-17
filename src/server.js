@@ -5341,7 +5341,7 @@ function assertAutomationConflicts(candidate,events,{previous=null,startDate=new
 app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:[resolved.action,...(resolved.actions||[]).map(step=>step.action)]},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
-app.get("/api/v1/displays/:id/media/status",requireControl,(req,res)=>{
+app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(req,res)=>{
   const id=cleanId(req.params.id);
   if(!id||!devices[id]||devices[id].enabled===false)return res.status(404).json({ok:false,error:"Unknown display"});
   res.json({ok:true,status:runtime.displays[id]?.mediaSession||null});
