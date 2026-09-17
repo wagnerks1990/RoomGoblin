@@ -43,6 +43,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Host Agent](HOST-AGENT.md) — host-level service responsibilities, migration verification, and security boundary.
 - [Windows Lab Agent](LAB-AGENT.md) — one-time enrollment, per-computer credentials, signing, removal, and privacy controls.
 - [Native Windows Lab Agent](NATIVE-WINDOWS-LAB-AGENT.md) — native service architecture, interactive-session helper, update trust, migration/rollback, build and live acceptance.
+- [Native Windows Enrollment](NATIVE-WINDOWS-ENROLLMENT.md) — controller-generated native installer, manifest hash verification, fresh-enrollment security, and legacy fallback.
 - [Android TV Displays](ANDROID-TV-DISPLAYS.md) — pairing, assignment, Display Agent lifecycle, and device recovery.
 - [Android TV Hardware Validation](ANDROID-TV-HARDWARE-VALIDATION.md) — exact physical validation results and remaining acceptance tests for the current Android/Google TV target.
 - [Persistent Android ADB](PERSISTENT-ANDROID-ADB.md) — trusted-network wireless-debugging recovery and boundaries.
