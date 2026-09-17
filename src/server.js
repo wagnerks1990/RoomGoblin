@@ -1246,6 +1246,16 @@ const AUTOMATION_ACTIONS=new Set([
   "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
   "govee.power","govee.color","govee.brightness","govee.temp","govee.scene"
 ]);
+const AUTOMATION_EXECUTION_MODES=new Set(["once","repeat","loop"]);
+function automationExecutionMode(value,action){
+  const mode=String(value||"once").trim().toLowerCase();
+  if(!AUTOMATION_EXECUTION_MODES.has(mode))return "once";
+  // Continuous looping is intentionally native only for media. Reissuing power,
+  // routing, lighting or clear commands forever is unsafe and unnecessary.
+  return mode==="loop"&&action!=="display.media"?"repeat":mode;
+}
+function automationRepeatCount(value){const n=Number(value);return Number.isInteger(n)?Math.max(1,Math.min(100,n)):2}
+function automationRepeatDelaySeconds(value){const n=Number(value);return Number.isFinite(n)?Math.max(0,Math.min(3600,n)):0}
 function finiteTimerOverlayNumber(value,{name,fallback,min,max}){
   const candidate=value===undefined||value===null||value===""?fallback:Number(value);
   if(!Number.isFinite(candidate))throw new Error(`Timer overlay ${name} must be a finite number`);
@@ -1335,6 +1345,9 @@ function normalizeAutomation(input={},existing={}){
           })(),
           payload:(item?.payload&&typeof item.payload==="object")?item.payload:{},
           delaySeconds:Math.max(0,Math.min(3600,delaySeconds)),
+          executionMode:automationExecutionMode(item?.executionMode,stepAction),
+          repeatCount:automationRepeatCount(item?.repeatCount),
+          repeatDelaySeconds:automationRepeatDelaySeconds(item?.repeatDelaySeconds),
           continueOnError:item?.continueOnError!==false
         }})
       : (Array.isArray(existing.actions)?existing.actions:[]),
@@ -1474,12 +1487,20 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     const name=resolveAutomationMediaName(p);
     const full=path.join(MEDIA_DIR,name);
     const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
+    const mediaSession={
+      sessionId:String(p.sessionId||`${event._occurrenceId||event.id||"manual"}:${event._stepId||"primary"}:${name}`),
+      volume:Math.max(0,Math.min(1,Number(p.volume??1))),
+      muted:!!p.muted,loop:!!p.loop,
+      startAtSeconds:Math.max(0,Number(p.startAtSeconds||0)),
+      endAtSeconds:Number(p.endAtSeconds)>0?Number(p.endAtSeconds):null,
+      playbackRate:Math.max(.25,Math.min(4,Number(p.playbackRate||1)))
+    };
     const sourceUrl=automationMediaUrl(name);
     outputs.media={storedName:name,originalName:rec.originalName||name,type,size:fs.statSync(full).size,url:sourceUrl};
     if(type==="image"){
       outputs.results.push(await executeCommand({type:"display.image",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",retry:true}},commandSource));
     }else if(type==="video"){
-      outputs.results.push(await executeCommand({type:"display.video",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",autoplay:true,muted:!!p.muted,loop:!!p.loop}},commandSource));
+      outputs.results.push(await executeCommand({type:"display.video",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",autoplay:true,muted:!!p.muted,loop:!!p.loop,...mediaSession}},commandSource));
     }else if(type==="pdf"){
       outputs.results.push(await executeCommand({type:"display.pdf",target:ts,payload:{url:documentViewerUrl(name,p),sourceUrl:mediaUrl(name)}},commandSource));
     }else if(type==="presentation"||type==="document"){
@@ -1720,7 +1741,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // Validate legacy/imported records again before the pre-clear or any delivery.
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
   const additional=Array.isArray(event.actions)?event.actions:[];
-  const steps=[{id:"primary",action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{},delaySeconds:0,continueOnError:true},...additional];
+  const steps=[{id:"primary",action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{},delaySeconds:0,executionMode:"once",repeatCount:1,repeatDelaySeconds:0,continueOnError:true},...additional];
   const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[]};
 
   // Resource isolation: no automation implicitly clears display content. Only an
@@ -1757,12 +1778,20 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
         continue;
       }
     }
-    const stepEvent={...event,action:stepAction,payload:step.payload||{},targets:resolvedTargets,timerOverlay:null};
+    const executionMode=automationExecutionMode(step.executionMode,stepAction);
+    const repeatCount=executionMode==="repeat"?automationRepeatCount(step.repeatCount):1;
+    const repeatDelaySeconds=automationRepeatDelaySeconds(step.repeatDelaySeconds);
+    const stepEvent={...event,_stepId:step.id||`step-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(executionMode==="loop"&&stepAction==="display.media"?{loop:true}:{})},targets:resolvedTargets,timerOverlay:null};
     try{
       if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-      const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
-      combined.results.push(...(result.results||[]));
-      combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
+      let lastResult=null;
+      for(let attempt=0;attempt<repeatCount;attempt++){
+        if(attempt&&repeatDelaySeconds)await new Promise(r=>setTimeout(r,repeatDelaySeconds*1000));
+        if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
+        lastResult=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+        combined.results.push(...(lastResult.results||[]));
+      }
+      combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode,repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
     }catch(err){
       if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
         combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
@@ -5312,6 +5341,28 @@ function assertAutomationConflicts(candidate,events,{previous=null,startDate=new
 app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:[resolved.action,...(resolved.actions||[]).map(step=>step.action)]},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
+app.get("/api/v1/displays/:id/media/status",requireControl,(req,res)=>{
+  const id=cleanId(req.params.id);
+  if(!id||!devices[id]||devices[id].enabled===false)return res.status(404).json({ok:false,error:"Unknown display"});
+  res.json({ok:true,status:runtime.displays[id]?.mediaSession||null});
+});
+
+app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireControl,async(req,res)=>{
+  try{
+    const id=cleanId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
+    const action=String(req.body?.action||"").trim().toLowerCase();
+    if(!["play","pause","stop","restart","seek","volume","mute","rate"].includes(action))throw new Error("Unsupported media control action");
+    const payload={action};
+    if(action==="seek")payload.positionSeconds=Math.max(0,Number(req.body?.positionSeconds||0));
+    if(action==="volume")payload.volume=Math.max(0,Math.min(1,Number(req.body?.volume??1)));
+    if(action==="mute")payload.muted=req.body?.muted!==false;
+    if(action==="rate")payload.playbackRate=Math.max(.25,Math.min(4,Number(req.body?.playbackRate||1)));
+    const result=await executeCommand({type:"display.media.control",target:[id],payload},"controller");
+    audit({kind:"display.media.control",deviceId:id,action});
+    res.json({ok:true,result});
+  }catch(error){res.status(400).json({ok:false,error:error.message})}
+});
+
 app.post("/api/v1/automations/draft/run",schedulerMutationLimit,requireControl,async(req,res)=>{
   try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),result=await runClassroomAutomation(resolved,{manual:true});audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:[event.action,...(event.actions||[]).map(step=>step.action)]});res.json({...result,draft:true})}catch(error){res.status(400).json({ok:false,error:error.message})}
 });
@@ -7338,6 +7389,12 @@ wss.on("connection", (ws, req) => {
         }
 
         throw new Error("Role must be controller, admin, preview, display, lab-agent, student, or session-teacher");
+      }
+
+      if (msg.type === "display.media.status" && ws.role === "display") {
+        const previous=runtime.displays[ws.deviceId]||{};
+        runtime.displays[ws.deviceId]={...previous,mediaSession:boundedWsObject(msg.status,"Media session status"),lastSeen:new Date().toISOString()};
+        return;
       }
 
       if (msg.type === "display.media.ended" && ws.role === "display") {

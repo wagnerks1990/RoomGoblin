@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### Automation action loops and live media sessions
+
+- Add per-action run-once, bounded-repeat and receiver-native media-loop behavior so looping one video no longer restarts an entire scheduled automation.
+- Keep MP4 playback as a persistent receiver session with live play/pause, stop/restart, seek/scrub, volume/mute and playback-rate controls that do not reload the file.
+- Add configurable video start/end boundaries, clip looping and receiver playback telemetry; expose the same live controls in the Media workspace and document scheduler/announcement/BGM invariants.
+
+
 ### Browser clipboard and keyboard sending
 
 - Remove native launcher buttons, generated scripts and the download API; show only browser workflows in feature coverage.
