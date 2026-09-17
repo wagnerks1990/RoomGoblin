@@ -11,6 +11,8 @@ Use this file as the implementation contract for changes involving `windows-agen
 - Fresh enrollment requires `--hub-url`, `--agent-id`, and `--enrollment-token` together. Plain HTTP must fail unless `--allow-http` is explicitly present.
 - Fresh-enrollment config ACLs remain limited to `SYSTEM` and local `Administrators`; do not loosen them for convenience.
 - If a fresh native install fails health acceptance, remove the newly created enrollment configuration so a reusable one-time secret is not left behind.
+- The controller should present the native Windows service as the recommended enrollment path while preserving the historical `installCommand` as an explicit compatibility fallback.
+- Before first-install execution, the controller-generated native command must fetch the same-origin native manifest, require exactly the four known filenames, and verify each downloaded SHA-256. Do not replace this with `Invoke-Expression`, `irm | iex`, arbitrary manifest execution, or unchecked downloads.
 - The service must remain outbound-only. Do not add a workstation-side inbound control listener.
 - The service must not become an arbitrary shell/RMM executor. Preserve the allowlisted RoomGoblin command surface.
 - Interactive operations must use the one-shot `RoomGoblinSessionAgent.exe` bridge. Do not move the long-running service into a user session.
@@ -55,6 +57,8 @@ The legacy PowerShell scheduled-task agent remains a compatibility fallback duri
 
 For a computer without an existing compatibility config, the bootstrap may create one only when all required fresh-enrollment arguments are supplied and validated. The Hub origin is normalized from the supplied absolute URL, the enrollment token is DPAPI protected, and the config is ACL-restricted before the service starts.
 
+The controller-generated first-install command is a second, independent package-integrity boundary. It stages only the four expected executables and verifies each SHA-256 against `/lab-agent/native/manifest.json` before invoking the bootstrap. The server-issued legacy enrollment command remains available for compatibility and must not be silently removed from the API contract.
+
 Do not delete the legacy installation or its credential/config as part of a migration that still relies on rollback.
 
 ## Production acceptance baseline
@@ -66,6 +70,8 @@ The production rollout also confirmed that the mandatory operational backup is a
 ## CI expectations
 
 Changes under `windows-agent/**`, Docker native packaging, or `VERSION` must keep the Windows native-agent workflow green. Node source regressions should also verify source presence, version authority, session-bridge security invariants, update hashing/signature hooks, rollback, fresh-enrollment DPAPI/ACL/HTTP-policy invariants, Docker packaging, and deliberate command refusals.
+
+Controller changes to Windows enrollment must verify that the native path remains preferred, all four files remain allowlisted, SHA-256 checks occur before bootstrap execution, HTTP opt-in is propagated only for HTTP origins, and the legacy `installCommand` fallback remains visible.
 
 ## Security guidance
 
