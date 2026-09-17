@@ -53,5 +53,9 @@ lines=[
 ]
 replacement='\n'.join(lines)+'\n'
 s=s[:start]+replacement+s[end:]
+old="if entry not in d:d=once(d,'## Unreleased\\n','## Unreleased\\n\\n'+entry,'changelog entry')"
+new="if entry not in d:d=d.replace('## Unreleased\\n','## Unreleased\\n\\n'+entry,1)"
+if old not in s: raise SystemExit('changelog generator marker missing')
+s=s.replace(old,new,1)
 p.write_text(s)
 print('prepared robust automation/media patch generator')
