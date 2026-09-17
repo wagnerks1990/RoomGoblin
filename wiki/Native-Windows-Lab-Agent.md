@@ -6,7 +6,7 @@ RoomGoblin's native Windows Lab Agent replaces the long-running PowerShell sched
 
 - `RoomGoblinAgent.exe` — delayed-auto LocalSystem service.
 - `RoomGoblinSessionAgent.exe` — one-shot active-user helper for lock/screenshot operations.
-- `RoomGoblinAgentBootstrap.exe` — install/repair/uninstall and migration rollback.
+- `RoomGoblinAgentBootstrap.exe` — install/repair/uninstall, secure fresh enrollment, and migration rollback.
 - `RoomGoblinAgentUpdater.exe` — verified staged update with health-gated rollback.
 
 Installed binaries live under `C:\Program Files\RoomGoblin\Agent`. Existing identity/configuration remains under `C:\ProgramData\ClassroomControlHub\lab-agent.json` and uses Windows LocalMachine DPAPI.
@@ -20,6 +20,29 @@ Build or obtain the four-file native package, then run the bootstrap elevated fr
 ```
 
 The bootstrap disables the legacy `RoomGoblin Agent` scheduled task, installs the `RoomGoblinAgent` Windows service, starts it, and waits for a fresh native health record. If the service does not connect successfully, the bootstrap removes the failed native service and restores the legacy scheduled task.
+
+## Fresh native enrollment
+
+A computer without an existing `lab-agent.json` can be enrolled directly with a one-time Hub enrollment token:
+
+```powershell
+.\RoomGoblinAgentBootstrap.exe install `
+  --hub-url https://roomgoblin.example.edu `
+  --agent-id LAB-PC-01 `
+  --enrollment-token <one-time-token>
+```
+
+For a trusted classroom network that still uses HTTP, add the explicit acknowledgement:
+
+```powershell
+.\RoomGoblinAgentBootstrap.exe install `
+  --hub-url http://roomgoblin.local:3000 `
+  --agent-id LAB-PC-01 `
+  --enrollment-token <one-time-token> `
+  --allow-http
+```
+
+The bootstrap requires all three enrollment arguments together, validates the agent ID and URL, DPAPI-protects the enrollment token before it reaches disk, and ACLs the compatibility directory/config to `SYSTEM` and local `Administrators`. If fresh installation fails native health acceptance, the new enrollment config is removed.
 
 To remove the native service and restore the legacy task when it is still installed:
 
@@ -53,5 +76,7 @@ The native command surface includes messages, power actions with cancellation, l
 ## Live validation
 
 The service architecture was validated on a real RoomGoblin Windows endpoint for connection/heartbeat, existing DPAPI credentials, Unicode username reporting, messages, screenshots, secure lock, instructor lock, logoff, DNS flush, browser history, restart/shutdown scheduling with cancellation, clean helper teardown, permanent service migration, SCM recovery, and legacy-task disablement.
+
+The exact production image was also deployed and verified to serve all four native binaries plus `manifest.json`; the merged bootstrap successfully repaired an enrolled Windows endpoint into the LocalSystem native service and produced fresh `native-windows-service` health. Fresh-enrollment, reboot-persistence, self-update, and uninstall/legacy-restore acceptance should continue to be exercised on release builds.
 
 See `docs/NATIVE-WINDOWS-LAB-AGENT.md` for the full architecture, security model, build process, and rollout contract.

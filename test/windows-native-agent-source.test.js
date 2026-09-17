@@ -68,6 +68,21 @@ test("native update path is allowlisted, hashed, optionally signed, and rollback
   assert.match(updater, /expectedVersion/);
 });
 
+test("native bootstrap supports secure fresh enrollment without weakening migration", () => {
+  const bootstrap = read("windows-agent/RoomGoblin.Agent.Bootstrap/Program.cs");
+  assert.match(bootstrap, /--hub-url/);
+  assert.match(bootstrap, /--agent-id/);
+  assert.match(bootstrap, /--enrollment-token/);
+  assert.match(bootstrap, /--allow-http/);
+  assert.match(bootstrap, /HTTP enrollment requires the explicit --allow-http option/);
+  assert.match(bootstrap, /enrollmentTokenProtected = MachineDpapi\.ProtectString/);
+  assert.match(bootstrap, /CryptProtectLocalMachine/);
+  assert.match(bootstrap, /SYSTEM:\(F\)/);
+  assert.match(bootstrap, /Administrators:\(F\)/);
+  assert.match(bootstrap, /Existing RoomGoblin configuration was not found/);
+  assert.match(bootstrap, /File\.Delete\(config\)/);
+});
+
 test("appliance Docker image cross-builds and packages native agent", () => {
   const docker = read("Dockerfile");
   assert.match(docker, /mcr\.microsoft\.com\/dotnet\/sdk:8\.0-bookworm-slim AS native-agent-build/);
