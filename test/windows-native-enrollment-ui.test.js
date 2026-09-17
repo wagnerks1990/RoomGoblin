@@ -8,9 +8,18 @@ const path=require("node:path");
 const ROOT=path.resolve(__dirname,"..");
 const source=fs.readFileSync(path.join(ROOT,"public/controller/workspace.js"),"utf8");
 
-test("controller prefers the verified native Windows service enrollment path",()=>{
+test("controller prefers the browser package and native enrollment file",()=>{
   assert.match(source,/window\.createLabAgentEnrollment=async function/);
-  assert.match(source,/Recommended: native Windows service installer/);
+  assert.match(source,/Recommended: browser package \+ native bootstrap/);
+  assert.match(source,/RoomGoblinNativeAgent\.zip/);
+  assert.match(source,/roomgoblin-native-enrollment-v1/);
+  assert.match(source,/new Blob/);
+  assert.match(source,/--enrollment-file/);
+  assert.match(source,/data-native-enrollment-file/);
+});
+
+test("controller retains verified automated native fallback",()=>{
+  assert.match(source,/Automated PowerShell native installer fallback/);
   assert.match(source,/\/lab-agent\/native\/manifest\.json/);
   assert.match(source,/RoomGoblinAgent\.exe/);
   assert.match(source,/RoomGoblinSessionAgent\.exe/);
