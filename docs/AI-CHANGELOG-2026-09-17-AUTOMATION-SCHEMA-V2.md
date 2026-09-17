@@ -50,3 +50,9 @@ During the transition release, legacy runtime fields are compiled from the canon
 ## Removal plan
 
 After the backend/runtime is fully native to `actionSequence[]` and deployed through a compatibility window, remove the legacy compiler, hidden primary widgets, and private repeat-tail representation. Do not remove them before migrated production records have been verified.
+
+## Validation hardening
+
+The unified editor must not interpolate runtime identifiers directly into inline event-handler JavaScript. Target IDs are encoded through the existing `inlineJsArg()` boundary before entering generated handlers. This preserves the controller's browser-action security contract while keeping the v2 editor data-driven.
+
+Release `1.0.0-alpha.83` is the first compatibility release for this schema migration. Existing v1 records are converted in memory and compiled back to the legacy runtime representation during the transition; opening an old automation does not silently discard its original action order or payload.
