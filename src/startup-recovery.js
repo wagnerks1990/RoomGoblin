@@ -2,6 +2,7 @@
 
 const fs=require("fs");
 const path=require("path");
+const {spawn}=require("child_process");
 const {DatabaseSync}=require("node:sqlite");
 process.umask(0o077);
 
@@ -101,6 +102,31 @@ function reconcileVeyonSecretMetadata(db){
   console.warn(`Startup recovery reconciled Veyon private-key metadata to '${keyName}'.`);
 }
 
+function startMediaPlane(){
+  const child=spawn(process.execPath,[path.join(__dirname,"media-server.js")],{
+    env:process.env,
+    stdio:"inherit"
+  });
+  let intentional=false;
+  const stop=()=>{
+    if(intentional)return;
+    intentional=true;
+    try{child.kill("SIGTERM")}catch{}
+  };
+  process.once("exit",stop);
+  child.once("error",error=>{
+    console.error(`RoomGoblin media plane failed to start: ${error.message}`);
+    if(!intentional){intentional=true;process.exit(1)}
+  });
+  child.once("exit",(code,signal)=>{
+    if(intentional)return;
+    intentional=true;
+    console.error(`RoomGoblin media plane exited unexpectedly (${signal||code||"unknown"}).`);
+    process.exit(1);
+  });
+  return child;
+}
+
 adoptSynchronizedVeyonKeyName();
 const dbFile=canonicalDatabaseFile();
 process.env.DATABASE_FILE=dbFile;
@@ -112,6 +138,12 @@ if(fs.existsSync(dbFile)){
     reconcileVeyonSecretMetadata(db);
   }finally{db.close()}
 }
+
+// Keep the application as PID 1 while supervising the isolated media-plane
+// child from the same Node lifecycle. Docker still observes one authoritative
+// application process, and an unexpected media-plane exit fails the container
+// so restart policy restores a converged pair.
+startMediaPlane();
 
 // Register scoped route bridges before server.js creates the Express routes.
 // The Veyon bridges preserve legacy-key compatibility, move mutable DHCP

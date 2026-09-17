@@ -24,8 +24,6 @@
   if(!doc.body||win.document!==doc)return;
   const visible=frame.getClientRects().length>0&&!document.hidden;
   if(visible){
-   // Body flow height can shrink as filters/disclosures close. Never measure the
-   // viewport-sized documentElement.scrollHeight, which would prevent shrinking.
    const height=Math.max(1,Math.ceil(doc.body.getBoundingClientRect().height)+2);
    if(Math.abs(frame.getBoundingClientRect().height-height)>1)frame.style.height=height+'px';
   }
@@ -49,10 +47,42 @@
    frame.dataset.naturalHeight='true';
    const observer=new ResizeObserver(schedule);observer.observe(doc.body);
    state.set(frame,{doc,observer,viewport:null});schedule();
-  }catch{/* Only explicitly supported same-origin lab pages participate. */}
+  }catch{}
  }
  for(const frame of frames){frame.addEventListener('load',()=>connect(frame));new MutationObserver(schedule).observe(frame,{attributes:true,attributeFilter:['hidden']});connect(frame)}
  new ResizeObserver(schedule).observe(document.getElementById('workspaceMain'));
  const lab=document.getElementById('lab');if(lab)new MutationObserver(schedule).observe(lab,{attributes:true,attributeFilter:['class','data-authorized']});
  addEventListener('scroll',schedule,{passive:true});addEventListener('resize',schedule);document.addEventListener('visibilitychange',schedule);
+})();
+
+/* Controller overview must not behave like a bank of display receivers.
+ * Replace receiver preview iframes with lightweight status placeholders so the
+ * operator browser never opens one WebSocket/video renderer per TV.
+ */
+(()=>{
+ 'use strict';
+ const root=document.getElementById('overviewDisplays');
+ if(!root)return;
+ function stripReceiverPreviews(scope=root){
+  scope.querySelectorAll?.('iframe[data-overview-preview]').forEach(frame=>{
+   const holder=frame.closest('.displayPreview')||frame.parentElement;
+   const name=frame.dataset.overviewPreview||'display';
+   frame.src='about:blank';
+   frame.remove();
+   if(holder&&!holder.querySelector('[data-rg-overview-preview-disabled]')){
+    const note=document.createElement('div');
+    note.dataset.rgOverviewPreviewDisabled='1';
+    note.className='displayPreviewOffline';
+    note.innerHTML=`<div style="text-align:center"><b>${String(name).replace(/[<>&"']/g,'')}</b><br>Live preview disabled in controller</div>`;
+    holder.appendChild(note);
+   }
+  })
+ }
+ const originalRefresh=window.refreshOverviewDisplayPreviews;
+ window.refreshOverviewDisplayPreviews=()=>{stripReceiverPreviews();return undefined};
+ const originalRender=window.renderOverviewDisplays;
+ if(typeof originalRender==='function')window.renderOverviewDisplays=function(...args){const result=originalRender.apply(this,args);stripReceiverPreviews();return result};
+ const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1)stripReceiverPreviews(node.matches?.('iframe[data-overview-preview]')?node.parentElement||root:node)});
+ observer.observe(root,{childList:true,subtree:true});
+ stripReceiverPreviews();
 })();
