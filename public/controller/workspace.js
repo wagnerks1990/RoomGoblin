@@ -155,6 +155,48 @@
     if(intro)intro.remove();
   }
 
+  // The admin enrollment API must keep returning the legacy PowerShell command for
+  // compatibility, but the controller presents the native service path first. The
+  // generated command downloads only the four manifest-listed binaries from the
+  // same Hub origin and verifies every SHA-256 before invoking the bootstrap.
+  function powerShellLiteral(value){return `'${String(value).replaceAll("'","''")}'`}
+  function nativeEnrollmentCommand(enrollment){
+    const origin=new URL(enrollment.installerUrl,location.href).origin;
+    const allowHttp=new URL(origin).protocol==='http:'?' --allow-http':'';
+    const files=['RoomGoblinAgent.exe','RoomGoblinSessionAgent.exe','RoomGoblinAgentUpdater.exe','RoomGoblinAgentBootstrap.exe'];
+    const expected=files.map(powerShellLiteral).join(',');
+    return [
+      `$Hub=${powerShellLiteral(origin)}`,
+      `$Dir=Join-Path $env:TEMP ('RoomGoblin-Native-'+[guid]::NewGuid().ToString('N'))`,
+      `New-Item -ItemType Directory -Path $Dir -Force | Out-Null`,
+      `$Manifest=Invoke-RestMethod -Uri ($Hub+'/lab-agent/native/manifest.json')`,
+      `$Expected=@(${expected})`,
+      `if(-not $Manifest.ok -or @($Manifest.files).Count -ne $Expected.Count){throw 'Invalid RoomGoblin native manifest.'}`,
+      `foreach($Name in $Expected){$Entry=@($Manifest.files|Where-Object {$_.name -eq $Name});if($Entry.Count -ne 1){throw ('Missing or duplicate manifest entry: '+$Name)};$Path=Join-Path $Dir $Name;Invoke-WebRequest -Uri ($Hub+'/lab-agent/native/'+$Name) -OutFile $Path -UseBasicParsing;$Actual=(Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant();if($Actual -ne ([string]$Entry[0].sha256).ToLowerInvariant()){throw ('SHA-256 verification failed: '+$Name)}}`,
+      `& (Join-Path $Dir 'RoomGoblinAgentBootstrap.exe') install --hub-url ${powerShellLiteral(origin)} --agent-id ${powerShellLiteral(enrollment.agentId)} --enrollment-token ${powerShellLiteral(enrollment.token)}${allowHttp}`,
+      `if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}`,
+      `Remove-Item $Dir -Recurse -Force -ErrorAction SilentlyContinue`
+    ].join('; ');
+  }
+  function enhanceNativeEnrollment(){
+    if(typeof window.createLabAgentEnrollment!=='function'||typeof window.api!=='function')return;
+    window.createLabAgentEnrollment=async function(){
+      try{
+        const id=document.getElementById('labEnrollmentId')?.value.trim();
+        if(!id)throw Error('Enter a stable computer ID.');
+        const ttl=Number(document.getElementById('labEnrollmentTtl')?.value||15);
+        const j=await api(`/api/v1/admin/lab-agents/${encodeURIComponent(id)}/enrollment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ttlMinutes:ttl})});
+        const enrollment=j.enrollment,result=document.getElementById('labEnrollmentResult');
+        if(!enrollment?.token||!enrollment?.installerUrl||!result)throw Error('RoomGoblin returned an incomplete enrollment package.');
+        const nativeCommand=nativeEnrollmentCommand(enrollment);
+        result.style.display='block';
+        result.innerHTML=`<b>Recommended: native Windows service installer for ${esc(enrollment.agentId)}</b><textarea class="raw" readonly style="width:100%;min-height:190px;margin-top:8px">${esc(nativeCommand)}</textarea><div class="muted">Run once in elevated Windows PowerShell. RoomGoblin verifies the four native package hashes before installation. Expires ${esc(new Date(enrollment.expiresAt).toLocaleString())}. The raw one-time enrollment token appears only in this command.</div><details style="margin-top:10px"><summary>Legacy PowerShell scheduled-task installer</summary><textarea class="raw" readonly style="width:100%;min-height:110px;margin-top:8px">${esc(enrollment.installCommand||'')}</textarea><div class="muted">Compatibility fallback only. New deployments should use the native Windows service above.</div></details>`;
+        await loadLabAgentCredentials();
+      }catch(error){notify(error.message,'error')}
+    };
+  }
+
+  enhanceNativeEnrollment();
   enhanceUpdateWorkspace();
   syncAuthorization();
   sync();
