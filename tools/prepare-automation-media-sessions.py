@@ -7,7 +7,7 @@ start=s.index('# Add stable session metadata and playback configuration to uploa
 end=s.index('# Manual media-session control API.',start)
 lines=[
 '# Add stable session metadata and playback configuration to uploaded video delivery.',
-"media_start=s.index('}else if(action==\"display.media\"){')",
+"media_start=s.index('}else if(action===\"display.media\"){')",
 'try:',
 "    media_end=s.index('}else if(action===',media_start+10)",
 'except ValueError:',
