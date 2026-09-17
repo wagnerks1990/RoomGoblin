@@ -27,16 +27,16 @@
   <section class="commandProgress" aria-label="Computer command progress">
     <div id="commandFeedback" role="status" aria-live="polite"></div><div id="commandRecoveryState" class="muted" role="status"></div>
     <details id="commandHistory"><summary><b>Command progress</b><span id="commandSummary">Loading recent commands…</span></summary>
-      <p class="muted">Queued is waiting, Accepted is a device acknowledgement, and Confirmed means the requested lock state was read back. Unknown outcomes require review before sending an action again.</p>
+      <p class="muted">Queued is waiting, Accepted means the proxy accepted the request, and Confirmed means the requested lock state was read back. Unknown outcomes require review before sending an action again.</p>
       <button id="refreshCommandJobs">Refresh progress</button><div id="commandHistoryError" class="muted" role="status"></div><div id="commandJobs"></div>
     </details>
   </section>
   <details class="panel" id="freeFeatureTools">
     <summary><b>Free features and experimental tools</b></summary>
-    <p class="muted">Commands use the current selection, including hidden selections. Desktop launchers run on your teacher Windows computer with its existing Veyon authentication.</p>
+    <p class="muted">Commands use the current selection, including hidden selections. Clipboard and input tools require the RoomGoblin native bridge.</p>
     <div class="toolbar">
       <button id="freeCatalog">Feature coverage</button><button id="deviceInfo">User and session details</button>
-      <button id="nativeView">Native viewer</button><button id="nativeControl">Native remote control</button><button id="nativeMaster">Native file and clipboard tools</button>
+      <button id="sendKey">Send key or shortcut</button><button id="sendClipboard">Send clipboard text</button>
       <button id="saveMac">Set MAC address</button><button id="wakeComputers">Wake computers</button>
     </div>
     <details class="lab-disclosure"><summary>Additional power options</summary>

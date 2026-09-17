@@ -8,7 +8,7 @@ import subprocess
 
 UPSTREAM = 'https://github.com/veyon/veyon.git'
 REVISION = 'afecfd6cbf78efa34da80acb7ea449001574e8cc'  # official v4.11.2
-PLUGINS = ('classroomchat', 'remotefilebrowser')
+PLUGINS = ('classroomchat', 'remotefilebrowser', 'webbridge')
 
 
 def patch_linux_string_lifetime(destination):

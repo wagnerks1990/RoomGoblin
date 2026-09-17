@@ -1,6 +1,5 @@
 "use strict";
 
-const net=require("node:net");
 const dgram=require("node:dgram");
 
 // Protocol identifiers verified against upstream v4.9.7. Keep this allowlist
@@ -11,6 +10,25 @@ const POWER_FEATURES=Object.freeze({
   powerDownConfirmed:"ea2406be-d5c7-42b8-9f04-53469d3cc34c",
   powerDownDelayed:"352de795-7fc4-4850-bc57-525bcb7033f5"
 });
+
+const CLIPBOARD_FEATURE="d344032e-70ce-4a83-8cb8-3ebd6d6f6f39";
+const INPUT_FEATURE_UID="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
+const KEY_SEQUENCES=Object.freeze(["Enter","Tab","Escape","Backspace","Delete","Left","Up","Right","Down","Home","End","PageUp","PageDown","Ctrl+A","Ctrl+C","Ctrl+V"]);
+function keyArguments(args,active=true){
+  if(active===false||!KEY_SEQUENCES.includes(args?.sequence))throw Error("Choose a supported key or shortcut.");
+  return {sequence:args.sequence};
+}
+function keyAdvertised(features){
+  return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")==="RoomGoblinKeySequence"&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===INPUT_FEATURE_UID);
+}
+function clipboardArguments(args,active=true){
+  const text=args?.clipboardText;
+  if(active===false||typeof text!=="string"||!text.length||text.includes("\0")||Buffer.byteLength(text,"utf8")>8192)throw Error("Clipboard requires 1–8192 UTF-8 bytes of text and cannot be stopped.");
+  return {clipboardText:text};
+}
+function clipboardAdvertised(features){
+  return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")==="RoomGoblinClipboardWrite"&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===CLIPBOARD_FEATURE);
+}
 
 function normalizeMac(value){
   const input=String(value||"").trim();
@@ -43,28 +61,12 @@ function powerArguments(feature,args={},active=true){
   if(!Number.isInteger(seconds)||seconds<30||seconds>3600)throw Error("Shutdown delay must be 30–3600 seconds.");
   return {shutdownTimeout:seconds};
 }
-function nativeLauncher(computers,mode){
-  if(!["view","control","master"].includes(mode))throw Error("Unsupported desktop tool.");
-  if(!Array.isArray(computers)||!computers.length||computers.length>16)throw Error("Choose 1–16 computers for desktop tools.");
-  const hosts=computers.map(c=>{if(net.isIP(c.ip)!==4)throw Error("Desktop tools require saved IPv4 targets.");return c.ip});
-  // Only validated IPv4 literals are interpolated. No keys, names or arbitrary
-  // commands cross this boundary. Authentication uses the teacher's local Veyon.
-  return `# RoomGoblin Veyon desktop tools — run on the teacher's Windows computer.\r\n`+
-    `$ErrorActionPreference = 'Stop'\r\n`+
-    `$veyonDir = Join-Path $env:ProgramFiles 'Veyon'\r\n`+
-    `$cli = Join-Path $veyonDir 'veyon-cli.exe'\r\n`+
-    `if (!(Test-Path -LiteralPath $cli)) { throw 'Install and configure official Veyon on this teacher computer first.' }\r\n`+
-    `$targets = @('${hosts.join("','")}')\r\n`+
-    `Write-Host ('Selected computers: ' + ($targets -join ', '))\r\n`+
-    `Write-Host 'Uses your local Veyon authentication and access rules. No RoomGoblin keys are exported.'\r\n`+
-    (mode==="master"?
-      `Write-Host 'Select the listed computers in Veyon Master for file transfer, clipboard, screen selection and installed community plugins.'\r\nStart-Process -FilePath (Join-Path $veyonDir 'veyon-master.exe')\r\n`:
-      `foreach ($target in $targets) { Start-Process -FilePath $cli -ArgumentList @('remoteaccess','${mode}',$target) }\r\n`);
-}
 const CATALOG=Object.freeze([
   ["MonitoringMode","Monitor screens","web","Live previews and live view"],
-  ["RemoteView","Remote view","desktop","Download native viewer launcher, or use web Live View"],
-  ["RemoteControl","Remote keyboard and mouse","desktop","Native control launcher; requires teacher-side Veyon authentication"],
+  ["RemoteView","Remote view","web","Open Live View"],
+  ["RemoteControl","Remote keyboard and mouse","desktop","Full browser remote control is not implemented; explicit shortcuts use the web bridge"],
+  ["RoomGoblinKeySequence","Send key or shortcut","web","Press and release a fixed shortcut; requires RoomGoblinWebBridge; endpoint delivery unverified"],
+  ["RoomGoblinClipboardWrite","Send clipboard text","web","Send clipboard text button; requires RoomGoblinWebBridge on the appliance; endpoint delivery unverified"],
   ["ClipboardExchange","Clipboard exchange","desktop","Native remote-control window and Veyon clipboard settings"],
   ["Screenshot","Screenshots","web","Download screenshot"],
   ["Demo","Broadcast","web","Teacher or selected student source, fullscreen or windowed"],
@@ -93,9 +95,7 @@ const CATALOG=Object.freeze([
 ].map(([name,label,provider,detail])=>Object.freeze({name,label,provider,detail})));
 function featureCatalog(advertised){
   const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
-  const known=new Set(CATALOG.map(row=>row.name));
-  const discovered=[...names].filter(name=>name&&!known.has(name)).slice(0,100).map(name=>({name:name.slice(0,120),label:name.slice(0,120),provider:"unmapped",detail:"Advertised by the installed appliance; browser integration has not been implemented",advertised:true,endpointVerified:false}));
-  return [...CATALOG.map(row=>({...row,advertised:names.has(row.name),endpointVerified:false})),...discovered];
+  return CATALOG.filter(row=>["web","workflow"].includes(row.provider)).map(row=>({...row,advertised:row.name==="RoomGoblinKeySequence"?keyAdvertised(advertised):row.name==="RoomGoblinClipboardWrite"?clipboardAdvertised(advertised):names.has(row.name),endpointVerified:false}));
 }
 function normalizeLessonAction(input){
   const name=String(input?.name||"").trim();
@@ -109,4 +109,4 @@ function normalizeLessonAction(input){
   }
   return {name,feature,value};
 }
-module.exports={POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,nativeLauncher,CATALOG,featureCatalog,normalizeLessonAction};
+module.exports={INPUT_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};

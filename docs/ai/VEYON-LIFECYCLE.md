@@ -61,3 +61,25 @@ implementation. Remove version-specific absence claims from GUI text. Native
 launchers and isolated plugin packages do not satisfy the web-GUI integration
 goal: keyboard/mouse, clipboard, two-way chat and file operations need actual
 authenticated browser/backend/native adapters and endpoint acceptance tests.
+
+## Browser clipboard adapter
+
+See `docs/VEYON-WEB-CLIPBOARD.md`. `clipboardWrite` is a one-shot queued command,
+not a stateful mode. Require the exact RoomGoblinClipboardWrite name and UUID;
+ClipboardExchange alone is not sufficient. Keep content transient, one target,
+8192 UTF-8 bytes, no automatic replay, no success/verification inflation. The
+GPL RoomGoblinWebBridge plugin emits the official clipboard message using
+argument index 1. Keep the native build isolated and package corresponding source.
+
+`keySequence` uses the same bridge with a fixed keysym allowlist, press/release
+pairs and a five-second Hub queue expiry. Do not add arbitrary held key state or
+retry ambiguous input. This is not continuous remote control.
+
+## Browser-only interface policy
+
+Native launchers and their API were removed at the operator's request. Catalog
+projection is limited to implemented web/workflow entries; unknown and native-only
+features remain documentation-only. Do not equate discovering a feature with
+adding a usable browser action. Keep native prerequisites visible for real web
+adapters. Community chat/file browsing still need browser adapters and matching
+endpoint builds; Veyon-detection remains an unintegrated AGPL candidate.

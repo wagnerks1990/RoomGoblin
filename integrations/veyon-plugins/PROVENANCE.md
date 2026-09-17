@@ -51,3 +51,16 @@ Build and runtime compatibility are separate: compiler/Qt/Veyon versions must
 match across the entire native build. Never copy these DLLs into the existing
 4.9.7 installation. See docs/VEYON-FREE-FEATURES.md in RoomGoblin for pilot steps
 and the complete reviewed repository disposition.
+
+## RoomGoblinWebBridge
+
+Original RoomGoblin contributor code, GPL-2.0-or-later, September 2026. Compiled
+against the pinned official 4.11.2 source above. Clipboard sending uses official
+RemoteAccessFeaturePlugin ClipboardExchange UID and ClipboardText argument index
+1. No community code is copied into this plugin. It respects appliance disabled
+features/clipboard policy and leaves endpoint authorization to native Veyon.
+The Hub remains separate; matching binary artifacts include this source.
+
+Keyboard shortcuts use official VncConnection keyEvent with fixed X11/RFB
+keysyms and complete reverse-order release. No endpoint plugin or held-key
+session is added. Native remote-control disabled-feature policy applies.

@@ -177,23 +177,6 @@ jobs:
             if ($agent -notmatch "'$([regex]::Escape($action))'\s*\{") { throw "Missing Windows action: $action" }
           }
 
-      - name: Parse generated Veyon desktop launchers
-        shell: pwsh
-        run: |
-          $generator = @'
-          const fs=require("node:fs"),path=require("node:path");
-          const {nativeLauncher}=require("./src/veyon-free-features");
-          fs.writeFileSync(path.join(process.env.RUNNER_TEMP,"veyon-"+process.argv[1]+".ps1"),nativeLauncher([{ip:"192.0.2.1"}],process.argv[1]));
-          '@
-          foreach ($mode in @('view','control','master')) {
-            node -e $generator $mode
-            if ($LASTEXITCODE -ne 0) { throw 'Launcher generation failed.' }
-            $tokens = $null
-            $errors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:RUNNER_TEMP "veyon-$mode.ps1"), [ref]$tokens, [ref]$errors)
-            if ($errors.Count) { throw "Generated Veyon launcher syntax failed: $errors" }
-          }
-
   android-agent:
     runs-on: ubuntu-latest
     timeout-minutes: 40

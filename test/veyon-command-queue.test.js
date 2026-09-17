@@ -187,3 +187,16 @@ test('selected broadcast cleanup reserves all modes or none when queue is full',
     assert.equal(h.q.jobs.size,before);
   }finally{h.q.stop()}
 });
+
+test("clipboard content is transient, unverified, deduplicated and never replayed",async()=>{
+  let count=0;const h=harness({execute:async()=>{count++;throw Error("delivery uncertain")}});
+  try{
+    const command={feature:"clipboardWrite",targets:[h.computers.get("pc0")],args:{clipboardText:"sensitive clipboard sample"},requestId:"clipboard-1"};
+    const job=h.q.enqueue(command);assert.equal(h.q.enqueue(command).id,job.id);
+    await until(()=>h.q.get(job.id).state==="completed");
+    assert.equal(count,1);assert.equal(h.q.get(job.id).results[0].state,"unknown");
+    assert.equal(h.q.get(job.id).results[0].verified,false);
+    assert.doesNotMatch(JSON.stringify(h.q.list()),/sensitive clipboard sample|clipboardText/);
+    assert.equal(h.q.jobs.get(job.id).tasks[0].args,null);assert.deepEqual(h.journal(),[]);
+  }finally{h.q.stop()}
+});

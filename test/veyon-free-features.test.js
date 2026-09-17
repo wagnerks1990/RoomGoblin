@@ -21,17 +21,11 @@ test('Shutdown arguments are bounded and cannot imply a cancellation',()=>{
   for(const feature of Object.keys(helpers.POWER_FEATURES))assert.throws(()=>helpers.powerArguments(feature,{},false),/cannot be cancelled/);
   assert.deepEqual(helpers.powerArguments('powerDownNow',{shutdownTimeout:55,password:'not-forwarded'}),{});
 });
-test('Native launchers cannot inject hostnames, commands or computer metadata into PowerShell',()=>{
-  const script=helpers.nativeLauncher([{ip:'192.0.2.4',name:"'; Write-Host injected; #",privateKey:'secret'}],'control');
-  assert.match(script,/'remoteaccess','control',\$target/);assert.doesNotMatch(script,/injected|secret|ExecutionPolicy|Invoke-Expression/);
-  for(const ip of ['host.example','192.0.2.4;whoami','::1'])assert.throws(()=>helpers.nativeLauncher([{ip}],'view'));
-  assert.throws(()=>helpers.nativeLauncher([{ip:'192.0.2.1'}],'shell'));
-  assert.throws(()=>helpers.nativeLauncher(Array(17).fill({ip:'192.0.2.1'}),'view'));
-});
-test('Catalog never treats local plugin advertisement as endpoint verification',()=>{
-  const rows=helpers.featureCatalog([{name:'FileTransfer'}]);const file=rows.find(r=>r.name==='FileTransfer');
-  assert.equal(file.advertised,true);assert.equal(file.provider,'desktop');assert.equal(rows.some(r=>r.endpointVerified),false);
-  assert.equal(rows.find(r=>r.name==='PowerOn').advertised,false);
+test('Catalog shows browser workflows only and never claims endpoint verification',()=>{
+  const rows=helpers.featureCatalog([{name:'FileTransfer'},{name:'RemoteView'},{name:'UnknownNative'}]);
+  assert.equal(rows.some(r=>['FileTransfer','RemoteControl','UnknownNative','QueryScreens','DesktopAccessDialog'].includes(r.name)),false);
+  assert.equal(rows.find(r=>r.name==='RemoteView').advertised,true);
+  assert.equal(rows.some(r=>r.endpointVerified),false);
 });
 test('Lesson actions allow only bounded app/message/http presets and reject URL credentials',()=>{
   assert.deepEqual(helpers.normalizeLessonAction({name:' Example ',feature:'openWebsite',value:' https://example.com '}),{name:'Example',feature:'openWebsite',value:'https://example.com'});
@@ -50,7 +44,7 @@ function routes(){
   return {call,computers,packets};
 }
 test('Protected routes reject arbitrary targets and stale MAC identity, and store no failed presets',async()=>{
-  const h=routes();let r=await h.call('post','/api/v1/veyon/desktop-launcher',{targets:['missing'],mode:'view'});assert.equal(r.statusCode,400);assert.equal(r.cap,'lab.control');
+  const h=routes();let r;
   r=await h.call('post','/api/v1/veyon/wake',{targets:['constructor']});assert.equal(r.statusCode,400);assert.equal(h.packets.length,0);
   r=await h.call('post','/api/v1/veyon/wake',{targets:['one','one']});assert.equal(r.body.results.length,1);assert.equal(h.packets.length,1);assert.equal(r.body.results[0].verified,false);
   h.computers.one.hostname='OTHER';r=await h.call('post','/api/v1/veyon/wake',{targets:['one']});assert.equal(r.body.ok,false);assert.equal(h.packets.length,1);
@@ -100,10 +94,63 @@ test('Free-tool budgets reject write floods across forwarded addresses without s
   }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));for(const limit of Object.values(context.limits))limit.resetKey('unused')}
 });
 
-test('feature discovery retains new appliance features without old-version assumptions',()=>{
-  const rows=helpers.featureCatalog([{name:'FileCollect'},{name:'NewPluginFeature'}]);
-  assert.equal(rows.find(x=>x.name==='FileCollect').advertised,true);
-  assert.equal(rows.find(x=>x.name==='NewPluginFeature').provider,'unmapped');
-  assert.equal(rows.find(x=>x.name==='NewPluginFeature').endpointVerified,false);
-  assert.ok(rows.every(x=>!x.detail.includes('4.9.7')));
+test('Clipboard requires an exact native bridge identity and bounds UTF-8 content',()=>{
+  const valid={name:'RoomGoblinClipboardWrite',uid:helpers.CLIPBOARD_FEATURE};
+  assert.equal(helpers.clipboardAdvertised([valid]),true);
+  assert.equal(helpers.clipboardAdvertised([{name:valid.name,uid:'wrong'}]),false);
+  assert.equal(helpers.clipboardAdvertised([{name:'ClipboardExchange',uid:valid.uid}]),false);
+  assert.equal(helpers.featureCatalog([{name:valid.name,uid:'wrong'}]).find(f=>f.name===valid.name).advertised,false);
+  assert.deepEqual(helpers.clipboardArguments({clipboardText:'  hello\n',extra:'ignored'}),{clipboardText:'  hello\n'});
+  assert.equal(helpers.clipboardArguments({clipboardText:'é'.repeat(4096)}).clipboardText.length,4096);
+  for(const text of ['',null,4,{},'x\0y','é'.repeat(4097)])assert.throws(()=>helpers.clipboardArguments({clipboardText:text}));
+  assert.throws(()=>helpers.clipboardArguments({clipboardText:'text'},false));
+});
+test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
+  const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
+  let handler,cap,limit;const queued=[];
+  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:(_req,res)=>{res.limited=true},requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  vm.runInNewContext(source.slice(start,end),context);
+  const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
+  assert.equal(cap,'lab.control');
+  const budget={};let bypassed=0;limit({body:{feature:'clipboardWrite'}},budget,()=>bypassed++);assert.equal(budget.limited,true);
+  limit({body:{feature:'screenLock',active:false}},{},()=>bypassed++);assert.equal(bypassed,1);
+  for(const targets of [['all'],['one','one'],['constructor'],['missing']])assert.equal(call({feature:'clipboardWrite',targets,arguments:{clipboardText:'x'}}).code,400);
+  assert.equal(queued.length,0);
+  assert.equal(call({feature:'clipboardWrite',targets:['one'],arguments:{clipboardText:'x',privateKey:'discard'}}).code,202);
+  assert.equal(call({feature:'keySequence',targets:['one'],arguments:{sequence:'Ctrl+V'}}).code,202);
+  assert.ok(queued[1].expiresAt>Date.now()&&queued[1].expiresAt<=Date.now()+5000);
+  assert.equal(call({feature:'keySequence',targets:['all'],arguments:{sequence:'Enter'}}).code,400);
+  assert.equal(queued[0].owner,'teacher');assert.deepEqual(JSON.parse(JSON.stringify(queued[0].args)),{clipboardText:'x'});
+});
+
+test('Clipboard dialog pins its named target and clears text before submitting',async()=>{
+  const elements=new Map(),sent=[],alerts=[];let selected=['one'],closed=false,advertised=true;
+  const $=id=>{if(!elements.has(id))elements.set(id,{disabled:false,value:'',focus(){}});return elements.get(id)};
+  const context={$ ,targetIds:()=>selected,computers:[{id:'one',name:'Test <PC>'}],TextEncoder,
+    api:async()=>({features:[{name:'RoomGoblinClipboardWrite',advertised}]}),esc:v=>String(v).replaceAll('<','&lt;'),
+    openInfo:(_title,html)=>{assert.match(html,/Test &lt;PC>/);closed=false},closeInfo:()=>{closed=true},
+    feature:async(...args)=>{assert.equal($('clipboardText').value,'');assert.equal(closed,true);sent.push(args)},
+    alert:message=>alerts.push(message),document:{addEventListener(){}},window:{addEventListener(){}}};
+  vm.runInNewContext(fs.readFileSync('public/controller/veyon-free-features.js','utf8'),context);
+  await $('sendClipboard').onclick();selected=['other'];$('clipboardText').value='multi\nline é';
+  await $('clipboardForm').onsubmit({preventDefault(){}});
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)),[[['one'],'clipboardWrite',true,{clipboardText:'multi\nline é'}]]);
+  selected=['one'];advertised=false;await $('sendClipboard').onclick();assert.match(alerts[0],/requires the RoomGoblinWebBridge/);
+  assert.equal(sent.length,1);assert.equal($('sendClipboard').disabled,false);
+});
+
+test('Keyboard bridge allows only complete fixed key sequences and exact advertisement',()=>{
+  assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.INPUT_FEATURE_UID}]),true);
+  assert.equal(helpers.keyAdvertised([{name:'RoomGoblinKeySequence',uid:helpers.CLIPBOARD_FEATURE}]),false);
+  for(const sequence of helpers.KEY_SEQUENCES)assert.deepEqual(helpers.keyArguments({sequence,held:true}),{sequence});
+  for(const sequence of ['Ctrl+Alt+Delete','Win+R','',null,4,'a','0xff0d'])assert.throws(()=>helpers.keyArguments({sequence}));
+  assert.throws(()=>helpers.keyArguments({sequence:'Enter'},false));
+  const native=fs.readFileSync('integrations/veyon-plugins/webbridge/RoomGoblinWebBridge.cpp','utf8');
+  for(const sequence of helpers.KEY_SEQUENCES)assert.ok(native.includes(`QStringLiteral("${sequence}")`));
+});
+
+test('Native launcher buttons and download route are removed',()=>{
+  assert.doesNotMatch(fs.readFileSync('public/controller/veyon.html','utf8'),/id="native(?:View|Control|Master)"/);
+  assert.doesNotMatch(fs.readFileSync('src/server.js','utf8'),/app\.post\("\/api\/v1\/veyon\/desktop-launcher"/);
+  assert.equal(helpers.nativeLauncher,undefined);
 });

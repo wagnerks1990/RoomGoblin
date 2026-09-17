@@ -92,7 +92,7 @@ const commandJobs=new Map(),commandSubmissions=new Set(),uncertainLockRequests=n
 let commandOwnedLocks=[],commandSubmissionEpoch=0,commandPollTimer=null,commandPollController=null,commandPollFailures=0;
 const COMMAND_PENDING=new Set(['queued','running','retrying']);
 function commandTitle(job){
- const names={screenLock:job.active?'Lock screens':'Unlock screens',inputLock:job.active?'Lock input':'Unlock input',textMessage:'Send message',userLogin:'Log in user',userLogoff:'Log off',reboot:'Reboot',powerDown:'Shut down',powerDownNow:'Immediate shutdown',powerDownConfirmed:'Ask student to shut down',powerDownDelayed:'Delayed shutdown',installUpdatesAndPowerDown:'Updates then shutdown',openWebsite:'Open website',startApp:'Start app',demoServer:job.active?'Start teacher broadcast':'Stop teacher broadcast',fullScreenDemoClient:job.active?'Join full-screen broadcast':'Stop full-screen broadcast',windowDemoClient:job.active?'Join window broadcast':'Stop window broadcast'};
+ const names={keySequence:'Send key or shortcut',clipboardWrite:'Send clipboard text',screenLock:job.active?'Lock screens':'Unlock screens',inputLock:job.active?'Lock input':'Unlock input',textMessage:'Send message',userLogin:'Log in user',userLogoff:'Log off',reboot:'Reboot',powerDown:'Shut down',powerDownNow:'Immediate shutdown',powerDownConfirmed:'Ask student to shut down',powerDownDelayed:'Delayed shutdown',installUpdatesAndPowerDown:'Updates then shutdown',openWebsite:'Open website',startApp:'Start app',demoServer:job.active?'Start teacher broadcast':'Stop teacher broadcast',fullScreenDemoClient:job.active?'Join full-screen broadcast':'Stop full-screen broadcast',windowDemoClient:job.active?'Join window broadcast':'Stop window broadcast'};
  return names[job.feature]||job.feature||'Computer command';
 }
 function commandResultLabel(result){return result.state==='succeeded'?(result.verified?'Confirmed':'Accepted'):({queued:'Queued',running:'Running',retrying:'Retrying',failed:'Failed',unknown:'Outcome unknown',skipped:'Skipped',cancelled:result.reason==='superseded'?'Superseded':'Cancelled'}[result.state]||'Unknown')}
@@ -230,15 +230,11 @@ $('closeInfo').onclick=closeInfo;$('infoModal').onclick=e=>{if(e.target===$('inf
 
 async function showDeviceFeatures(id){
   const c=computers.find(x=>x.id===id);if(!c)return;
-  openInfo(`Features — ${c.name||c.ip}`,'Loading…');
+  openInfo(`Browser features — ${c.name||c.ip}`,'Loading…');
   try{
-    const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/features`);
-    const rows=(x.features||[]).map(f=>{
-      const name=f.name||f.Name||f.description||f.Description||'Feature';
-      const uid=f.uid||f.UID||f.id||f.Id||'';
-      return `<div class="featureRow"><span>${esc(name)}</span><code>${esc(uid)}</code></div>`;
-    }).join('');
-    $('infoBody').innerHTML=`<div class="featureList">${rows||'<span class="muted">No feature list returned.</span>'}</div>`;
+    const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
+    const rows=(x.features||[]).map(f=>`<div class="featureRow"><span>${esc(f.label||f.name)}</span><span>${esc(f.detail)} · ${f.advertised?'Appliance advertised':'Not advertised'}</span></div>`).join('');
+    $('infoBody').innerHTML=`<p>Browser workflows only. Advertisement does not verify endpoint support or delivery.</p><div class="featureList">${rows||'<span class="muted">No browser feature list returned.</span>'}</div>`;
   }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
 }
 async function showFeatures(){

@@ -1,0 +1,2 @@
+include(BuildVeyonPlugin)
+build_veyon_plugin(webbridge NAME RoomGoblinWebBridge SOURCES RoomGoblinWebBridge.cpp RoomGoblinWebBridge.h)

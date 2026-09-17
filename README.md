@@ -1,5 +1,7 @@
 # RoomGoblin
 
+[Browser clipboard sending](docs/VEYON-WEB-CLIPBOARD.md) adds a queued web command with an explicit native bridge requirement.
+
 [Native Veyon pilot downloads and testing](docs/VEYON-PILOT-BINARIES.md) cover complete Linux builds with community chat and file browsing.
 
 See [Free Veyon features and community pilot](docs/VEYON-FREE-FEATURES.md) for web controls, native tools, testing and rollback.

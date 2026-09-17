@@ -72,3 +72,9 @@ checks. CLI discovery proves loading, not interactive classroom functionality.
 Rollback is restoring both VM snapshots. There is no production uninstall or
 in-place replacement path: copying individual libraries back cannot reliably
 restore an earlier Veyon/Qt installation.
+
+## Browser bridge
+
+The complete Linux build also contains RoomGoblinWebBridge and checks its
+ClipboardWrite feature inventory. See [browser clipboard sending](VEYON-WEB-CLIPBOARD.md)
+for the web workflow, stock-WebAPI limitation and acceptance requirements.
