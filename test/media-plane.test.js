@@ -48,6 +48,7 @@ test("media plane validates signed request upstream and serves byte ranges",asyn
   const ranged=await fetch(`http://127.0.0.1:${mediaPort}/media/fixture.mp4?asset=valid`,{headers:{range:"bytes=5-12"}});
   assert.equal(ranged.status,206);
   assert.equal(ranged.headers.get("accept-ranges"),"bytes");
+  assert.equal(ranged.headers.get("cross-origin-resource-policy"),"cross-origin");
   assert.equal(ranged.headers.get("content-range"),`bytes 5-12/${body.length}`);
   assert.equal(await ranged.text(),body.subarray(5,13).toString());
 
