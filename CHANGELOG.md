@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+### Native Windows enrollment EDR hardening
+
+- Prefer a browser-downloaded native ZIP plus one-time enrollment JSON instead of PowerShell download-and-execute for first-time Windows enrollment.
+- Package the exact four native binaries with `manifest.json`; make the bootstrap verify all executable SHA-256 values before service installation.
+- Add `--enrollment-file` support that deletes the plaintext enrollment file immediately after reading it, then preserves the existing DPAPI, HTTP-opt-in, ACL and health-gated rollback boundaries.
+- Retain the verified automated PowerShell native installer and legacy scheduled-task installer only as explicit fallbacks.
+
+
 ### Automation action loops and live media sessions
 
 - Add per-action run-once, bounded-repeat and receiver-native media-loop behavior so looping one video no longer restarts an entire scheduled automation.

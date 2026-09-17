@@ -71,7 +71,16 @@ int Install()
     {
         if (freshEnrollment)
         {
-            WriteFreshEnrollmentConfig(config, options);
+            if (options.TryGetValue("--enrollment-file", out var enrollmentFile) &&
+                !string.IsNullOrWhiteSpace(enrollmentFile))
+            {
+                VerifyPackageManifest(required);
+                WriteFreshEnrollmentConfigFromFile(config, enrollmentFile);
+            }
+            else
+            {
+                WriteFreshEnrollmentConfig(config, options);
+            }
             createdFreshConfig = true;
         }
         else if (!File.Exists(config))
@@ -266,21 +275,138 @@ bool HasFreshEnrollmentArguments(Dictionary<string, string?> parsed)
 {
     var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "--hub-url", "--agent-id", "--enrollment-token", "--allow-http", "--trusted-publisher-thumbprint"
+        "--hub-url", "--agent-id", "--enrollment-token", "--enrollment-file",
+        "--allow-http", "--trusted-publisher-thumbprint"
     };
 
     foreach (var key in parsed.Keys)
         if (!known.Contains(key))
             throw new ArgumentException($"Unknown option: {key}");
 
+    var enrollmentFile = parsed.ContainsKey("--enrollment-file");
     var supplied = new[] { "--hub-url", "--agent-id", "--enrollment-token" }
         .Count(parsed.ContainsKey);
+
+    if (enrollmentFile && supplied > 0)
+        throw new ArgumentException(
+            "--enrollment-file cannot be combined with --hub-url, --agent-id or --enrollment-token.");
+
+    if (enrollmentFile)
+        return true;
+
     if (supplied == 0)
         return false;
     if (supplied != 3)
         throw new ArgumentException(
             "Fresh enrollment requires --hub-url, --agent-id and --enrollment-token together.");
     return true;
+}
+
+void VerifyPackageManifest(string[] required)
+{
+    var manifestPath = Path.Combine(sourceRoot, "manifest.json");
+    if (!File.Exists(manifestPath))
+        throw new InvalidDataException(
+            "Native enrollment packages must include manifest.json next to the bootstrap.");
+
+    using var manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+    var root = manifest.RootElement;
+    if (!root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True ||
+        !root.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array)
+    {
+        throw new InvalidDataException("Invalid RoomGoblin native package manifest.");
+    }
+
+    var entries = files.EnumerateArray().ToArray();
+    if (entries.Length != required.Length)
+        throw new InvalidDataException("Native package manifest contains an unexpected file count.");
+
+    var requiredSet = new HashSet<string>(required, StringComparer.OrdinalIgnoreCase);
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var entry in entries)
+    {
+        var name = entry.GetProperty("name").GetString() ?? "";
+        var expected = entry.GetProperty("sha256").GetString() ?? "";
+
+        if (!requiredSet.Contains(name) || !seen.Add(name))
+            throw new InvalidDataException($"Unexpected or duplicate native package file: {name}");
+
+        if (!Regex.IsMatch(expected, "^[0-9a-fA-F]{64}$"))
+            throw new InvalidDataException($"Invalid SHA-256 for {name}.");
+
+        var path = Path.Combine(sourceRoot, name);
+        using var stream = File.OpenRead(path);
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var actual = Convert.ToHexString(sha256.ComputeHash(stream));
+
+        if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"SHA-256 verification failed for {name}.");
+    }
+
+    if (seen.Count != requiredSet.Count)
+        throw new InvalidDataException("Native package manifest is incomplete.");
+}
+
+void WriteFreshEnrollmentConfigFromFile(string configPath, string enrollmentPath)
+{
+    var fullPath = Path.GetFullPath(enrollmentPath);
+    string json;
+    try
+    {
+        json = File.ReadAllText(fullPath);
+    }
+    finally
+    {
+        try
+        {
+            if (File.Exists(fullPath))
+                File.Delete(fullPath);
+        }
+        catch
+        {
+        }
+    }
+
+    using var document = JsonDocument.Parse(json);
+    var root = document.RootElement;
+    var schema = root.TryGetProperty("schema", out var schemaValue)
+        ? schemaValue.GetString()
+        : null;
+    if (!string.Equals(schema, "roomgoblin-native-enrollment-v1", StringComparison.Ordinal))
+        throw new InvalidDataException("Unsupported RoomGoblin enrollment file schema.");
+
+    string ReadRequired(string name)
+    {
+        if (!root.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException($"Enrollment file is missing {name}.");
+        var text = value.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+            throw new InvalidDataException($"Enrollment file contains an empty {name}.");
+        return text;
+    }
+
+    var parsed = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["--hub-url"] = ReadRequired("hubUrl"),
+        ["--agent-id"] = ReadRequired("agentId"),
+        ["--enrollment-token"] = ReadRequired("enrollmentToken")
+    };
+
+    if (root.TryGetProperty("allowHttp", out var allowHttp) &&
+        allowHttp.ValueKind == JsonValueKind.True)
+    {
+        parsed["--allow-http"] = "true";
+    }
+
+    if (root.TryGetProperty("trustedPublisherThumbprint", out var publisher) &&
+        publisher.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(publisher.GetString()))
+    {
+        parsed["--trusted-publisher-thumbprint"] = publisher.GetString();
+    }
+
+    WriteFreshEnrollmentConfig(configPath, parsed);
 }
 
 void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> parsed)
@@ -493,7 +619,7 @@ bool IsAdministrator()
 int Usage()
 {
     Console.WriteLine(
-        "Usage: RoomGoblinAgentBootstrap.exe [install|repair|uninstall] [--hub-url URL --agent-id ID --enrollment-token TOKEN [--allow-http] [--trusted-publisher-thumbprint HEX]]");
+        "Usage: RoomGoblinAgentBootstrap.exe [install|repair|uninstall] [--enrollment-file PATH | --hub-url URL --agent-id ID --enrollment-token TOKEN [--allow-http] [--trusted-publisher-thumbprint HEX]]");
     return 1;
 }
 
