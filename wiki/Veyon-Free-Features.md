@@ -14,3 +14,5 @@ matching binaries plus all corresponding source. See [native pilot binaries](htt
 plugins with the installed CLI. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
+
+Browser adapters for the incorporated chat and restricted file browser are described in [Community web tools](Veyon-Community-Web.md). They require matching native pilot components.

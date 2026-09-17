@@ -119,3 +119,5 @@ body.rg-veyon header,body.rg-veyon main{width:min(1800px,100%);padding-inline:cl
 .rg-veyon .computerCommand{font-size:12px;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:6px}
 .rg-veyon [data-command-phase=queued],.rg-veyon [data-command-phase=running],.rg-veyon [data-command-phase=retrying]{color:var(--amber)}
 .rg-veyon [data-command-phase=failed],.rg-veyon [data-command-phase=unknown]{color:var(--red)}
+
+#communityDialog{width:min(680px,90vw);max-height:80vh;overflow:auto} #communityDialog textarea{display:block;width:100%;box-sizing:border-box} #communityBody pre{overflow-wrap:anywhere}

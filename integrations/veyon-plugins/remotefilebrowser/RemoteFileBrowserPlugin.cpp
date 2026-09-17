@@ -234,7 +234,7 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonWorkerInterface& worker
 	switch( message.command<FeatureCommand>() )
 	{
 	case FeatureCommand::GetDrives:
-		return workerGetDrives( worker );
+		return workerGetDrives( worker, message );
 
 	case FeatureCommand::ListDirectory:
 		return workerListDirectory( worker, message );
@@ -256,7 +256,7 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonWorkerInterface& worker
 
 
 
-bool RemoteFileBrowserPlugin::workerGetDrives( VeyonWorkerInterface& worker )
+bool RemoteFileBrowserPlugin::workerGetDrives( VeyonWorkerInterface& worker, const FeatureMessage& message )
 {
 	QVariantList entries;
 
@@ -270,6 +270,7 @@ bool RemoteFileBrowserPlugin::workerGetDrives( VeyonWorkerInterface& worker )
 
 	return worker.sendFeatureMessageReply(
 				FeatureMessage( m_feature.uid(), FeatureCommand::DriveList )
+                    .addArgument( Argument::RequestId, message.argument( Argument::RequestId ) )
 					.addArgument( Argument::Entries, entries ) );
 }
 
@@ -308,6 +309,7 @@ bool RemoteFileBrowserPlugin::workerListDirectory( VeyonWorkerInterface& worker,
 
 	return worker.sendFeatureMessageReply(
 				FeatureMessage( m_feature.uid(), FeatureCommand::DirectoryListing )
+                    .addArgument( Argument::RequestId, message.argument( Argument::RequestId ) )
 					.addArgument( Argument::Path, dir.absolutePath() )
 					.addArgument( Argument::Entries, entries )
 					.addArgument( Argument::Error, error ) );

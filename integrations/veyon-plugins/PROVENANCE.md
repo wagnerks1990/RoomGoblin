@@ -39,7 +39,7 @@ The file browser intentionally keeps the first teacher connection pinned for the
 endpoint service lifetime. Restart the **pilot endpoint's** Veyon service before
 using a replacement teacher connection. This fails closed instead of routing
 old worker replies to a new controller. Chat also requires the teacher to close
-its dialog before opening another session. Neither plugin is a WebAPI feature.
+its dialog before opening another session. Stock WebAPI does not expose either plugin; the RoomGoblin browser adapter adds a fixed authenticated route for this matching pilot.
 
 The test folder is a pilot restriction, not a hardened filesystem sandbox against
 an adversarial local user changing filesystem links concurrently. Test with
@@ -64,3 +64,5 @@ The Hub remains separate; matching binary artifacts include this source.
 Keyboard shortcuts use official VncConnection keyEvent with fixed X11/RFB
 keysyms and complete reverse-order release. No endpoint plugin or held-key
 session is added. Native remote-control disabled-feature policy applies.
+
+Browser session adapter: authenticated typed WebAPI route; user/connection-bound Hub sessions, 15-minute native chat expiry, bounded replies, correlated file listings and 8 MiB browser downloads. Existing native file policy remains unchanged.

@@ -5,6 +5,7 @@
  */
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -30,6 +31,7 @@ const Feature::Uid ClassroomChatFeatureUid{ QStringLiteral( "8a9e0f1d-2c3b-4467-
 
 QMutex g_chatContextMutex;
 QHash<QUuid, MessageContext> g_chatContexts;
+QHash<QUuid, qint64> g_chatDeadlines;
 
 QDialog* g_studentDialog = nullptr;
 QPlainTextEdit* g_studentLog = nullptr;
@@ -281,13 +283,14 @@ bool ClassroomChatFeaturePlugin::handleFeatureMessage( VeyonServerInterface& ser
 		QMutexLocker locker(&g_chatContextMutex);
 		// A student has one teacher conversation. Never replace an active caller.
 		for(auto it=g_chatContexts.begin(); it!=g_chatContexts.end(); )
-			if(!it.value().ioDevice()) it=g_chatContexts.erase(it); else ++it;
+			if(!it.value().ioDevice() || g_chatDeadlines.value(it.key()) < QDateTime::currentMSecsSinceEpoch()) { g_chatDeadlines.remove(it.key()); it=g_chatContexts.erase(it); } else ++it;
 		if(cmd == ChatCommand::StartSession) {
 			if(!g_chatContexts.isEmpty()) return false;
 			g_chatContexts.insert(id,messageContext);
+            g_chatDeadlines.insert(id,QDateTime::currentMSecsSinceEpoch()+15*60*1000);
 		} else {
 			if(!g_chatContexts.contains(id) || g_chatContexts.value(id).ioDevice()!=messageContext.ioDevice()) return false;
-			if(cmd == ChatCommand::StopSession) g_chatContexts.remove(id);
+			if(cmd == ChatCommand::StopSession) { g_chatContexts.remove(id); g_chatDeadlines.remove(id); }
 		}
 	}
 	server.featureWorkerManager().sendMessageToUnmanagedSessionWorker(message);
@@ -312,7 +315,7 @@ bool ClassroomChatFeaturePlugin::handleFeatureMessageFromWorker( VeyonServerInte
 	const QUuid id = QUuid( message.argument( Argument::ContextId ).toString() );
 
 	QMutexLocker locker( &g_chatContextMutex );
-	if(!g_chatContexts.contains(id) || message.argument(Argument::Text).toString().size()>2000) return false;
+	if(!g_chatContexts.contains(id) || g_chatDeadlines.value(id)<QDateTime::currentMSecsSinceEpoch() || message.argument(Argument::Text).toString().size()>2000) return false;
 	const MessageContext ctx = g_chatContexts.value( id );
 	locker.unlock();
 
@@ -373,6 +376,11 @@ bool ClassroomChatFeaturePlugin::handleFeatureMessage( VeyonWorkerInterface& wor
 			g_studentDialog->resize( 480, 360 );
 		}
 
+        const auto context = g_studentContext;
+        QTimer::singleShot(15*60*1000, g_studentDialog, [context]() {
+            if (g_studentContext!=context) return;
+            g_studentContext={}; g_studentDialog->hide(); g_studentLog->clear(); g_studentInput->clear();
+        });
 		g_studentLog->clear();
 		g_studentInput->clear();
 		g_studentDialog->show();

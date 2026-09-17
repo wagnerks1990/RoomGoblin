@@ -22,6 +22,25 @@ def patch_linux_string_lifetime(destination):
     path.write_text(content.replace(original, replacement))
 
 
+
+def patch_browser_api(destination):
+    base = Path(destination) / 'plugins/webapi'
+    patches = {
+        'WebApiController.h': ('\tResponse getFramebuffer( const Request& request );',
+            '\tResponse roomGoblinRequest(const Request& request, const QString& action);\n\tResponse getFramebuffer( const Request& request );'),
+        'WebApiHttpServer.cpp': ('\tauto success = true;',
+            '\tauto success = true;\n\tsuccess &= addRoute<Method::Post>(QStringLiteral("roomgoblin/<arg>"), &WebApiController::roomGoblinRequest);'),
+    }
+    for name, (old, new) in patches.items():
+        path = base / name
+        text = path.read_text()
+        if text.count(old) != 1:
+            raise RuntimeError('Pinned browser API patch does not match source: ' + name)
+        path.write_text(text.replace(old, new))
+    path = base / 'WebApiController.cpp'
+    path.write_text(path.read_text() + '\n#include "../webbridge/WebApiBrowserRequest.inc"\n')
+
+
 def prepare(destination):
     destination = Path(destination).absolute()
     if destination.exists():
@@ -44,6 +63,7 @@ def prepare(destination):
     input_path.write_text(content.replace(anchor, 'int cnt = 0, iter = 0;'))
     for plugin in PLUGINS:
         shutil.copytree(source / plugin, destination / 'plugins' / plugin)
+    patch_browser_api(destination)
     # Official v4.11.2 discovers plugin subdirectories automatically.
     # Do not add duplicate add_subdirectory entries.
     shutil.copyfile(source / 'PROVENANCE.md', destination / 'ROOMGOBLIN-PILOT.md')

@@ -223,3 +223,5 @@ workflows. For a Hub regression, restore the matching pre-upgrade recovery backu
 through the established updater/recovery procedure, preserving database/key
 identity together; do not reset native keys or blindly check out older code over
 new runtime data.
+
+See [Community browser tools](VEYON-COMMUNITY-WEB.md) for two-way browser chat and restricted file browsing/downloads with matching native pilot components.

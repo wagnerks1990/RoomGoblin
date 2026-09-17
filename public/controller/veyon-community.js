@@ -1,0 +1,72 @@
+/* Authenticated community tools; private Veyon connection identifiers stay on the Hub. */
+(() => {
+  'use strict';
+  const dialog=$('communityDialog'),body=$('communityBody'),status=$('communityStatus');
+  let current=null;
+  function button(label,run){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{b.disabled=true;try{await run()}catch(e){status.textContent=e.message}finally{b.disabled=false}};return b}
+  function call(s,action,args={}){
+    const task=s.tail.catch(()=>{}).then(()=>{
+      if(current!==s&&action!=='close')throw Error('Browser session closed');
+      return api(`/api/v1/veyon/computers/${encodeURIComponent(s.id)}/browser/${action}`,{method:'POST',body:JSON.stringify({...args,session:s.session})});
+    });s.tail=task;return task;
+  }
+  async function close(){
+    const s=current;if(!s)return;current=null;clearTimeout(s.timer);if(s.downloadUrl)URL.revokeObjectURL(s.downloadUrl);body.replaceChildren();dialog.close();
+    try{await call(s,'close')}catch(e){$('commandFeedback').textContent=`Session close could not be confirmed: ${e.message} Native chat expires after 15 minutes.`}
+  }
+  $('communityClose').onclick=close;dialog.addEventListener('cancel',e=>{e.preventDefault();close()});
+  async function refresh(s){
+    if(current!==s)return;
+    const state=await call(s,'state');
+    if(current!==s)return;
+    status.textContent=state.error|| (state.pending?'Waiting for endpoint response…':s.kind==='chat'?'Messages sent by the teacher are unverified until checked on the student screen.':'Ready. Downloads are limited to 8 MiB.');
+    if(s.kind==='chat'){
+      s.log.textContent=state.messages.map(m=>`${m.from}: ${m.text}`).join('\n');s.log.scrollTop=s.log.scrollHeight;
+    }else{
+      s.list.replaceChildren();
+      if(!state.pending&&!state.error)for(const entry of state.entries){
+        const path=state.path?`${state.path.replace(/[\\/]$/,'')}/${entry.name}`:entry.name;
+        const row=document.createElement('div');row.append(button(`${entry.dir?'Folder: ':'Download: '}${entry.name}`,async()=>{
+          await call(s,entry.dir?'list':'download',{path});s.download=!entry.dir;await refresh(s);
+        }));s.list.append(row);
+      }
+      if(s.download&&state.complete){
+        s.download=false;
+        const size=state.size;if(!Number.isSafeInteger(size)||size<0||size>8*1024*1024)throw Error('Invalid download size');
+        const chunks=[];let offset=0;
+        while(offset<size){const part=await call(s,'chunk',{offset});const bytes=Uint8Array.from(atob(part.data),c=>c.charCodeAt(0));if(!bytes.length||offset+bytes.length>size)throw Error('Incomplete file; download discarded');chunks.push(bytes);offset+=bytes.length}
+        if(current!==s)return;
+        const blob=new Blob(chunks),url=URL.createObjectURL(blob),a=document.createElement('a');
+        a.href=url;a.download=state.fileName||'pilot-download';a.textContent=`Save ${state.fileName||'download'}`;s.list.append(a);
+        // Keep the completed download available until the next user action or close.
+        clearTimeout(s.timer);s.timer=null;s.downloadUrl=url;status.textContent='Complete file received. Select Save to download.';s.saved=true;
+      }
+    }
+  }
+  async function open(kind){
+    const ids=targetIds();if(ids.length!==1)return alert('Select exactly one computer.');
+    if(current)await close();
+    const id=ids[0],computer=computers.find(c=>c.id===id);
+    try{
+      const result=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/browser/open`,{method:'POST',body:JSON.stringify({kind})});
+      const s={id,session:result.session,kind,tail:Promise.resolve(),timer:null};current=s;
+      body.replaceChildren();status.textContent='Session opened; endpoint support is not yet verified.';
+      $('communityTitle').textContent=`${kind==='chat'?'Two-way chat':'Pilot files'} — ${computer?.name||id}`;
+      if(kind==='chat'){
+        s.log=document.createElement('pre');s.log.style.whiteSpace='pre-wrap';s.log.style.maxHeight='35vh';s.log.style.overflow='auto';s.log.setAttribute('aria-live','polite');
+        const form=document.createElement('form'),label=document.createElement('label'),input=document.createElement('textarea'),send=document.createElement('button');
+        label.textContent='Message (up to 2000 characters)';input.maxLength=2000;input.required=true;input.autocomplete='off';label.append(input);send.type='submit';send.textContent='Send';form.append(label,send);
+        form.onsubmit=async e=>{e.preventDefault();const text=input.value;input.value='';send.disabled=true;try{await call(s,'send',{text});await refresh(s)}catch(error){status.textContent=error.message}finally{send.disabled=false}};
+        body.append(s.log,form);
+      }else{
+        s.list=document.createElement('div');body.append(button('Pilot folder',async()=>{if(s.downloadUrl)URL.revokeObjectURL(s.downloadUrl);s.saved=false;await call(s,'roots');await refresh(s);schedule(s)}),s.list);
+        await call(s,'roots');
+      }
+      dialog.showModal();await refresh(s);schedule(s);
+    }catch(e){if(current)await close();alert(e.message)}
+  }
+  function schedule(s){clearTimeout(s.timer);if(current!==s||s.saved)return;s.timer=setTimeout(async()=>{try{if(!previewSurfaceVisible())return await close();await refresh(s);schedule(s)}catch(e){status.textContent=e.message}},2000)}
+  $('communityChat').onclick=()=>open('chat');$('communityFiles').onclick=()=>open('files');
+  dialog.addEventListener('close',()=>{if(current)close()});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)close()});
+})();

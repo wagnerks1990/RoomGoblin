@@ -31,6 +31,33 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         self.assertIn('Remote view', page.locator('#infoBody').inner_text())
         self.assertFalse(errors, errors)
 
+    def test_community_chat_is_target_bound_and_renders_reply_as_text(self):
+        page, errors, state = self.pilot_page(390)
+        requests = []
+        def respond(route):
+            action = route.request.url.rsplit('/', 1)[-1]
+            data = route.request.post_data_json
+            requests.append((action, data))
+            reply = {'ok': True}
+            if action == 'open':
+                reply.update(session='fixture-session', kind='chat')
+            if action == 'state':
+                reply.update(messages=[{'from': 'student', 'text': '<img src=x onerror=alert(1)>'}], entries=[])
+            route.fulfill(json=reply)
+        page.route('**/api/v1/veyon/computers/student-a/browser/*', respond)
+        page.locator('#communityChat').click()
+        page.locator('#communityDialog[open]').wait_for()
+        self.assertIn('<img src=x', page.locator('#communityBody pre').inner_text())
+        self.assertEqual(page.locator('#communityBody img').count(), 0)
+        page.locator('#communityBody textarea').fill('Hello student')
+        page.locator('#communityBody button[type="submit"]').click()
+        page.wait_for_function("document.querySelector('#communityBody textarea').value === ''")
+        page.locator('#communityClose').click()
+        page.wait_for_timeout(200)
+        self.assertTrue(any(a == 'send' and d.get('text') == 'Hello student' for a, d in requests))
+        self.assertTrue(any(a == 'close' for a, d in requests))
+        self.assertFalse(errors, errors)
+
     def test_shutdown_cancel_and_delay_arguments(self):
         page, errors, state = self.pilot_page(390)
         page.once('dialog', lambda dialog: dialog.dismiss())

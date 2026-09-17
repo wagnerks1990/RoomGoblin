@@ -1,5 +1,7 @@
 # Changelog
 
+- Community browser pilot: two-way chat and restricted file browsing/downloads through a matching authenticated native bridge; no native production installation or AI monitor deployment.
+
 ## Unreleased
 
 ### Browser clipboard and keyboard sending
