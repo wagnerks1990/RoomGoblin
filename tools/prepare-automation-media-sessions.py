@@ -59,6 +59,11 @@ new="if entry not in d:d=d.replace('## Unreleased\\n','## Unreleased\\n\\n'+entr
 if old not in s: raise SystemExit('changelog generator marker missing')
 s=s.replace(old,new,1)
 
+# Preserve historical source-shape contracts used by compatibility tests.  The
+# strict-clock test intentionally searches for the first occurrence of the name
+# normalizeAutomation, so new helpers must not share that prefix.
+s=s.replace('normalizeAutomationExecutionMode','automationExecutionMode')
+
 # Review hardening that applies to generator template text.
 s=s.replace('!displayDevices[id]||displayDevices[id].enabled===false','!devices[id]||devices[id].enabled===false')
 post_marker='''app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireControl,async(req,res)=>{'''
@@ -71,6 +76,14 @@ bind_old='''  activeMediaSession={video,spec:{...m,startAtSeconds:start,endAtSec
 bind_new='''  activeMediaSession={video,spec:{...m,startAtSeconds:start,endAtSeconds:end}};\n  if(video.dataset.rgMediaSessionBound==='1'){reportMediaStatus('session-update');return}\n  video.dataset.rgMediaSessionBound='1';\n  const enforceEnd=()=>{'''
 if bind_old not in s: raise SystemExit('media listener binding marker missing')
 s=s.replace(bind_old,bind_new,1)
+
+# Keep the legacy explicit volume assignment visible in the receiver source as
+# well as configuring it in the persistent media-session helper.  Existing
+# manual-media controls and regression tooling depend on this direct contract.
+video_old="else if(m.type==='video'){n=document.createElement('video');n.src=authorizedUrl;configureVideoSession(n,{...m,authorizedUrl})}"
+video_new="else if(m.type==='video'){n=document.createElement('video');n.src=authorizedUrl;n.volume=Math.max(0,Math.min(1,Number(m.volume??1)));configureVideoSession(n,{...m,authorizedUrl})}"
+if video_old not in s: raise SystemExit('video render volume marker missing')
+s=s.replace(video_old,video_new,1)
 
 # Extend focused regression tests for the review findings.
 test_marker="  assert.match(server,/\\/api\\/v1\\/displays\\/:id\\/media\\/control/);"
