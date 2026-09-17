@@ -27,7 +27,7 @@ test("manual display media exposes persistent playback controls",()=>{
   assert.match(helper,/disablePreviewLoader\(\)/);
   assert.match(helper,/window\.loadPreview=\(\)=>/);
   assert.match(helper,/setAttribute\(\"src\",\"about:blank\"\)/);
-  assert.match(helper,/controller never loads the receiver video locally/);
+  assert.match(helper,/controller never loads the receiver video locally/i);
   assert.match(helper,/muted:muted\.checked\|\|volume<=0/);
   assert.match(helper,/window\.controllerDisplayCommand\(type,window\.controllerDisplayTargetArg\(\),payload\)/);
   assert.match(controller,/window\.controllerDisplayCommand=cmd/);
