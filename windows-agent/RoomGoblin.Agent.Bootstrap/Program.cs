@@ -1,6 +1,10 @@
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 if (!OperatingSystem.IsWindows())
 {
@@ -17,6 +21,7 @@ if (!IsAdministrator())
 var command = args.Length > 0
     ? args[0].ToLowerInvariant()
     : "install";
+var options = ParseOptions(args.Skip(1).ToArray());
 
 var sourceRoot = AppContext.BaseDirectory;
 var installRoot = Path.Combine(
@@ -59,11 +64,27 @@ int Install()
     }
 
     var config = Path.Combine(dataRoot, "lab-agent.json");
-    if (!File.Exists(config))
+    var freshEnrollment = HasFreshEnrollmentArguments(options);
+    var createdFreshConfig = false;
+
+    try
     {
-        Console.Error.WriteLine(
-            $"Existing RoomGoblin configuration not found: {config}");
-        return 11;
+        if (freshEnrollment)
+        {
+            WriteFreshEnrollmentConfig(config, options);
+            createdFreshConfig = true;
+        }
+        else if (!File.Exists(config))
+        {
+            Console.Error.WriteLine(
+                "Existing RoomGoblin configuration was not found. For a new computer, provide --hub-url, --agent-id and --enrollment-token.");
+            return 11;
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Could not prepare RoomGoblin enrollment: {ex.Message}");
+        return 12;
     }
 
     Directory.CreateDirectory(installRoot);
@@ -168,6 +189,18 @@ int Install()
                 allowFailure: true);
         }
 
+        if (createdFreshConfig)
+        {
+            try
+            {
+                if (File.Exists(config))
+                    File.Delete(config);
+            }
+            catch
+            {
+            }
+        }
+
         return 20;
     }
 }
@@ -203,6 +236,121 @@ int Uninstall()
     Console.WriteLine(
         "RoomGoblin native service removed. Legacy scheduled-task agent restored when available.");
     return 0;
+}
+
+Dictionary<string, string?> ParseOptions(string[] optionArgs)
+{
+    var parsed = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+    for (var i = 0; i < optionArgs.Length; i++)
+    {
+        var key = optionArgs[i];
+        if (!key.StartsWith("--", StringComparison.Ordinal))
+            throw new ArgumentException($"Unexpected argument: {key}");
+
+        if (key.Equals("--allow-http", StringComparison.OrdinalIgnoreCase))
+        {
+            parsed[key] = "true";
+            continue;
+        }
+
+        if (i + 1 >= optionArgs.Length || optionArgs[i + 1].StartsWith("--", StringComparison.Ordinal))
+            throw new ArgumentException($"Missing value for {key}.");
+
+        parsed[key] = optionArgs[++i];
+    }
+
+    return parsed;
+}
+
+bool HasFreshEnrollmentArguments(Dictionary<string, string?> parsed)
+{
+    var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "--hub-url", "--agent-id", "--enrollment-token", "--allow-http", "--trusted-publisher-thumbprint"
+    };
+
+    foreach (var key in parsed.Keys)
+        if (!known.Contains(key))
+            throw new ArgumentException($"Unknown option: {key}");
+
+    var supplied = new[] { "--hub-url", "--agent-id", "--enrollment-token" }
+        .Count(parsed.ContainsKey);
+    if (supplied == 0)
+        return false;
+    if (supplied != 3)
+        throw new ArgumentException(
+            "Fresh enrollment requires --hub-url, --agent-id and --enrollment-token together.");
+    return true;
+}
+
+void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> parsed)
+{
+    var hubUrl = RequireOption(parsed, "--hub-url").Trim().TrimEnd('/');
+    var agentId = RequireOption(parsed, "--agent-id").Trim();
+    var enrollmentToken = RequireOption(parsed, "--enrollment-token");
+    var allowHttp = parsed.ContainsKey("--allow-http");
+    var publisher = parsed.TryGetValue("--trusted-publisher-thumbprint", out var thumbprint)
+        ? Regex.Replace(thumbprint ?? "", "\\s+", "").ToUpperInvariant()
+        : "";
+
+    if (!Uri.TryCreate(hubUrl, UriKind.Absolute, out var hubUri) ||
+        string.IsNullOrWhiteSpace(hubUri.Host) ||
+        (hubUri.Scheme != Uri.UriSchemeHttps && hubUri.Scheme != Uri.UriSchemeHttp))
+    {
+        throw new ArgumentException("--hub-url must be an absolute http:// or https:// URL.");
+    }
+
+    if (hubUri.Scheme == Uri.UriSchemeHttp && !allowHttp)
+        throw new ArgumentException("HTTP enrollment requires the explicit --allow-http option.");
+
+    if (!Regex.IsMatch(agentId, "^[A-Za-z0-9._-]{1,128}$"))
+        throw new ArgumentException("--agent-id must contain only letters, digits, period, underscore or hyphen.");
+
+    if (enrollmentToken.Length < 32 || enrollmentToken.Length > 4096)
+        throw new ArgumentException("--enrollment-token has an invalid length.");
+
+    if (publisher.Length > 0 && !Regex.IsMatch(publisher, "^(?:[0-9A-F]{40}|[0-9A-F]{64})$"))
+        throw new ArgumentException("--trusted-publisher-thumbprint must be a SHA-1 or SHA-256 hexadecimal thumbprint.");
+
+    Directory.CreateDirectory(dataRoot);
+    RunProcess(
+        "icacls.exe",
+        new[] { dataRoot, "/inheritance:r", "/grant:r", "SYSTEM:(OI)(CI)(F)", "Administrators:(OI)(CI)(F)" });
+
+    var configObject = new
+    {
+        hubUrl = hubUri.GetLeftPart(UriPartial.Authority),
+        agentId,
+        enrollmentToken = "",
+        enrollmentTokenProtected = MachineDpapi.ProtectString(enrollmentToken),
+        credentialProtected = "",
+        trustedPublisherThumbprint = publisher
+    };
+
+    var temp = Path.Combine(dataRoot, $"lab-agent.{Guid.NewGuid():N}.tmp");
+    try
+    {
+        File.WriteAllText(temp, JsonSerializer.Serialize(configObject), new UTF8Encoding(false));
+        RunProcess(
+            "icacls.exe",
+            new[] { temp, "/inheritance:r", "/grant:r", "SYSTEM:(F)", "Administrators:(F)" });
+        File.Move(temp, configPath, overwrite: true);
+        RunProcess(
+            "icacls.exe",
+            new[] { configPath, "/inheritance:r", "/grant:r", "SYSTEM:(F)", "Administrators:(F)" });
+    }
+    finally
+    {
+        if (File.Exists(temp))
+            File.Delete(temp);
+    }
+}
+
+string RequireOption(Dictionary<string, string?> parsed, string key)
+{
+    if (!parsed.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+        throw new ArgumentException($"Missing required option {key}.");
+    return value;
 }
 
 void StopAndDeleteService(string name)
@@ -345,7 +493,7 @@ bool IsAdministrator()
 int Usage()
 {
     Console.WriteLine(
-        "Usage: RoomGoblinAgentBootstrap.exe [install|repair|uninstall]");
+        "Usage: RoomGoblinAgentBootstrap.exe [install|repair|uninstall] [--hub-url URL --agent-id ID --enrollment-token TOKEN [--allow-http] [--trusted-publisher-thumbprint HEX]]");
     return 1;
 }
 
@@ -353,3 +501,67 @@ internal sealed record ProcessResult(
     int ExitCode,
     string Output,
     string Error);
+
+internal static class MachineDpapi
+{
+    private const int CryptProtectLocalMachine = 0x4;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DataBlob
+    {
+        public int cbData;
+        public IntPtr pbData;
+    }
+
+    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CryptProtectData(
+        ref DataBlob pDataIn,
+        string? szDataDescr,
+        IntPtr pOptionalEntropy,
+        IntPtr pvReserved,
+        IntPtr pPromptStruct,
+        int dwFlags,
+        out DataBlob pDataOut);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr LocalFree(IntPtr hMem);
+
+    public static string ProtectString(string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var inputPtr = Marshal.AllocHGlobal(bytes.Length);
+        try
+        {
+            Marshal.Copy(bytes, 0, inputPtr, bytes.Length);
+            var input = new DataBlob { cbData = bytes.Length, pbData = inputPtr };
+            if (!CryptProtectData(
+                    ref input,
+                    null,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    CryptProtectLocalMachine,
+                    out var output))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            try
+            {
+                var protectedBytes = new byte[output.cbData];
+                Marshal.Copy(output.pbData, protectedBytes, 0, output.cbData);
+                return Convert.ToBase64String(protectedBytes);
+            }
+            finally
+            {
+                if (output.pbData != IntPtr.Zero)
+                    LocalFree(output.pbData);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(inputPtr);
+        }
+    }
+}
