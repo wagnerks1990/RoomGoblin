@@ -35,3 +35,18 @@ If fresh enrollment fails native health acceptance, the newly created enrollment
 The enrollment result also contains a collapsed **Legacy PowerShell scheduled-task installer** section. Use it only when a native rollout issue requires the compatibility path. Existing API consumers still receive the historical `installCommand`, so this UI change does not break earlier tooling.
 
 Do not retire the fallback until reboot persistence, native self-update, uninstall/legacy restoration, and representative fleet acceptance are complete.
+
+
+## Browser package enrollment
+
+The preferred first-time deployment path uses the browser rather than an interactive PowerShell download-and-execute chain:
+
+1. create the one-time enrollment in RoomGoblin;
+2. download `RoomGoblinNativeAgent.zip`;
+3. download the matching one-time enrollment JSON;
+4. extract the ZIP and place the JSON beside the bootstrap;
+5. run `RoomGoblinAgentBootstrap.exe install --enrollment-file <file>` elevated.
+
+The ZIP contains the four native executables plus `manifest.json`. Before installing, the bootstrap verifies the manifest has exactly the expected files and validates every executable SHA-256. It then reads and deletes the plaintext enrollment JSON, validates the enrollment policy, and writes only the DPAPI-protected enrollment secret to the compatibility config.
+
+The automated PowerShell native installer is retained only as a fallback for environments where EDR policy permits that behavior.
