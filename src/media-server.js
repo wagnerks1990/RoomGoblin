@@ -35,13 +35,16 @@ function safeMediaPath(pathname){
   return candidate.startsWith(prefix)?candidate:null;
 }
 
-function authorizeWithControlPlane(reqUrl){
+function authorizeWithControlPlane(reqUrl,clientHeaders={}){
   return new Promise((resolve,reject)=>{
     const upstream=new URL(reqUrl,CONTROL_ORIGIN);
     upstream.protocol="http:";
     upstream.hostname="127.0.0.1";
     upstream.port=String(CONTROL_PORT);
-    const request=http.request(upstream,{method:"HEAD",headers:{"user-agent":"RoomGoblin-Media-Plane/1","accept":"*/*"}},response=>{
+    const headers={"user-agent":"RoomGoblin-Media-Plane/1","accept":"*/*"};
+    const cookie=String(clientHeaders.cookie||"").trim();
+    if(cookie)headers.cookie=cookie;
+    const request=http.request(upstream,{method:"HEAD",headers},response=>{
       let bytes=0;
       response.on("data",chunk=>{bytes+=chunk.length;if(bytes>MAX_AUTH_RESPONSE_BYTES)request.destroy(new Error("authorization response too large"))});
       response.on("end",()=>resolve({ok:response.statusCode>=200&&response.statusCode<300,statusCode:response.statusCode||502}));
@@ -88,7 +91,7 @@ async function handle(req,res){
   if(!file){res.writeHead(404,{"cache-control":"no-store"});res.end();return}
 
   let auth;
-  try{auth=await authorizeWithControlPlane(req.url)}catch{
+  try{auth=await authorizeWithControlPlane(req.url,req.headers)}catch{
     res.writeHead(503,{"cache-control":"no-store","retry-after":"1"});res.end();return;
   }
   if(!auth.ok){res.writeHead(auth.statusCode===401||auth.statusCode===403?auth.statusCode:403,{"cache-control":"no-store"});res.end();return}
