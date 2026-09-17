@@ -2,6 +2,24 @@
 
 RoomGoblin's administrator enrollment workflow recommends the native Windows service for new computers while retaining the legacy PowerShell scheduled-task installer as an explicit compatibility fallback.
 
+## Endpoint protection / EDR behavior
+
+RoomGoblin's native package is currently unsigned unless the deployment pipeline is supplied with an approved code-signing identity. Some endpoint-protection products can classify the combination of an interactive PowerShell downloader, newly downloaded unsigned executables, Windows-service creation, one-shot interactive-session helpers, and self-extracted native SQLite support as suspicious behavior.
+
+A production acceptance run on 2026-09-17 showed SentinelOne quarantining the RoomGoblin native executables after a successful first-time enrollment. The endpoint had already exchanged the one-time token for a DPAPI-protected permanent credential and produced fresh native health before quarantine. Treat this as an endpoint-protection deployment concern, not as evidence that broad antivirus exclusions are appropriate.
+
+Operational rules:
+
+- do not disable or stop endpoint protection to install RoomGoblin;
+- do not create blanket exclusions for PowerShell, TEMP, Program Files, or the RoomGoblin data directory;
+- prefer a publisher-based allow policy after the binaries are Authenticode signed;
+- until signing is available, use an administrator-approved exact-file/hash exception for the immutable release artifacts only;
+- verify hashes against the Hub's same-origin `/lab-agent/native/manifest.json` before restoring or allowing a quarantined binary;
+- after an EDR block, do not issue another enrollment token if `credentialProtected` is already populated; restore/allow the verified release and use bootstrap `repair` with the existing configuration;
+- keep the legacy scheduled-task fallback until the native package is accepted by the organization's endpoint-protection policy.
+
+The controller should avoid presenting PowerShell download-and-execute behavior as the long-term deployment model. A browser/package-based enrollment path and signed publisher trust are preferred because they reduce heuristic risk and produce a clearer audit trail.
+
 ## Administrator workflow
 
 In the controller's Windows Lab Agent enrollment panel:
