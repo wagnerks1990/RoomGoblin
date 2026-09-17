@@ -90,6 +90,8 @@ test("appliance Docker image cross-builds and packages native agent", () => {
   assert.match(docker, /-p:EnableWindowsTargeting=true/);
   assert.match(docker, /public\/lab-agent\/native\/RoomGoblinAgent\.exe/);
   assert.match(docker, /manifest\.json/);
+  assert.match(docker, /RoomGoblinNativeAgent\.zip/);
+  assert.match(docker, /AdmZip/);
   assert.match(docker, /createHash\("sha256"\)/);
 });
 
@@ -104,4 +106,15 @@ test("native command compatibility and deliberate safety refusals are preserved"
   assert.match(commands, /cannot be remotely unlocked safely/);
   assert.match(commands, /app-lock/);
   assert.match(commands, /AppLocker/);
+});
+
+
+test("native bootstrap verifies package manifests and consumes enrollment files", () => {
+  const bootstrap = read("windows-agent/RoomGoblin.Agent.Bootstrap/Program.cs");
+  assert.match(bootstrap, /--enrollment-file/);
+  assert.match(bootstrap, /roomgoblin-native-enrollment-v1/);
+  assert.match(bootstrap, /VerifyPackageManifest/);
+  assert.match(bootstrap, /SHA-256 verification failed/);
+  assert.match(bootstrap, /File\.Delete\(fullPath\)/);
+  assert.match(bootstrap, /enrollment-file cannot be combined/);
 });
