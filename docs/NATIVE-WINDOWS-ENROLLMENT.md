@@ -9,25 +9,35 @@ In the controller's Windows Lab Agent enrollment panel:
 1. enter the stable computer ID;
 2. choose the short one-time enrollment lifetime;
 3. select **Create One-Time Installer**;
-4. copy the **Recommended: native Windows service installer** command;
-5. run it once from an elevated Windows PowerShell window on the target computer.
+4. download **RoomGoblinNativeAgent.zip** in the target Windows browser;
+5. download the matching one-time enrollment JSON;
+6. extract the ZIP, place the JSON in the extracted directory, and run the native bootstrap elevated with `--enrollment-file`.
+
+Example:
+
+```powershell
+.\RoomGoblinAgentBootstrap.exe install --enrollment-file .\roomgoblin-enrollment-LAB-PC-01.json
+```
+
+The recommended path no longer requires PowerShell to download and immediately execute unsigned binaries. The automated PowerShell native installer remains available only as an explicit fallback for environments whose endpoint-protection policy permits that process chain.
 
 The raw one-time enrollment token is displayed only in the generated command. It expires according to the configured enrollment policy and is exchanged for the computer's permanent RoomGoblin credential during the first successful native connection.
 
-## What the generated command does
+## Native package and enrollment file
 
-The controller derives the Hub origin from the server-issued installer URL rather than inventing another endpoint. The command then:
+The appliance publishes `/lab-agent/native/RoomGoblinNativeAgent.zip` containing the exact four native executables plus `manifest.json`. The browser-generated enrollment JSON uses the schema `roomgoblin-native-enrollment-v1` and contains the Hub origin, stable agent ID, one-time enrollment token, HTTP acknowledgement when applicable, and optional publisher thumbprint.
 
-1. creates a unique temporary staging directory;
-2. downloads `/lab-agent/native/manifest.json` from the same Hub origin;
-3. requires the manifest to contain the exact four expected native files;
-4. downloads `RoomGoblinAgent.exe`, `RoomGoblinSessionAgent.exe`, `RoomGoblinAgentUpdater.exe`, and `RoomGoblinAgentBootstrap.exe`;
-5. computes SHA-256 for every downloaded file and compares it with the manifest before execution;
-6. invokes `RoomGoblinAgentBootstrap.exe install` with the Hub URL, stable agent ID, and one-time enrollment token;
-7. supplies `--allow-http` only when the current RoomGoblin deployment itself uses HTTP;
-8. removes the temporary package after a successful bootstrap run.
+When `--enrollment-file` is used, the bootstrap:
 
-The generated installer does not use `Invoke-Expression`, pipe downloaded script text into PowerShell, or accept arbitrary filenames from the manifest.
+1. requires `manifest.json` beside the bootstrap;
+2. requires exactly the four allowlisted native executable entries;
+3. computes SHA-256 for each executable and compares it with the package manifest before installation;
+4. reads the enrollment JSON and immediately deletes the plaintext enrollment file;
+5. validates the schema, Hub URL, agent ID, enrollment-token bounds, HTTP policy, and optional publisher thumbprint;
+6. DPAPI-protects the enrollment token before writing the compatibility configuration;
+7. installs the service only after all package and enrollment checks pass.
+
+The older automated PowerShell native path still downloads `manifest.json`, limits downloads to the exact four filenames, verifies SHA-256 for each executable, and then invokes the bootstrap. It remains a fallback rather than the recommended workflow.
 
 ## Bootstrap security
 
