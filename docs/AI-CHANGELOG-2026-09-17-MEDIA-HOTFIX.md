@@ -49,3 +49,8 @@ Persistent media-session replay no longer forces an already-running session back
 
 The version bump to `1.0.0-alpha.84` is required to force every physical receiver to reload the corrected renderer.
 
+## Separate-port CORP follow-up
+
+Production testing exposed Chromium `ERR_BLOCKED_BY_RESPONSE.NotSameSite` on correctly signed `:3020/media/*` requests. The media response still carried `Cross-Origin-Resource-Policy: same-site`; with the receiver on port 3000 and media on port 3020, Chromium blocked the response before playback.
+
+The media plane now returns `Cross-Origin-Resource-Policy: cross-origin` for authorized media responses. This does not relax RoomGoblin's asset authorization: the signed display token or authenticated controller session is still validated by the control plane before any bytes are served. The header only permits the already-authorized media element to consume the intentionally separate-port response.
