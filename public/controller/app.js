@@ -100,7 +100,7 @@ function showLabConsole(kind){
   const active=windows?wf:vf;if(!active.src)active.src=active.dataset.lazySrc;
   labConsoleHelp.textContent=windows?'The Windows agent provides enrolled-computer inventory, screenshots, browser-history review, and supported power/session commands.':'Veyon monitoring uses the configured Veyon WebAPI integration.';
 }
-function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media')loadMedia();if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
+function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media'){loadMedia();ensureMediaSessionControls();refreshMediaSessionControls();}if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 
 function overviewContentSummary(state={}){
@@ -207,6 +207,20 @@ function refreshOverviewDisplayPreviews(){
   });
   requestAnimationFrame(scaleOverviewDisplayPreviews);
 }
+let mediaSessionRefreshTimer=null;
+function mediaSessionTargetOptions(){return configuredDisplayTargets(false).map(([id,name])=>`<option value="${esc(id)}">${esc(name)}</option>`).join('')}
+function ensureMediaSessionControls(){
+  const page=document.getElementById('media');if(!page||document.getElementById('mediaSessionControls'))return;
+  const panel=document.createElement('div');panel.id='mediaSessionControls';panel.className='panel';panel.innerHTML=`<h3 style="margin-top:0">Live Video Playback</h3><div class="muted">Control the video element already playing on a receiver. Volume, pause, seek, and playback-rate changes do not reload the MP4.</div><div class="grid2" style="margin-top:10px"><label>Display<select id="mediaSessionTarget">${mediaSessionTargetOptions()}</select></label><label>Playback Rate<select id="mediaSessionRate"><option>.5</option><option>.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label></div><div class="toolbar" style="margin-top:10px"><button onclick="mediaSessionCommand('play')">Play</button><button onclick="mediaSessionCommand('pause')">Pause</button><button onclick="mediaSessionCommand('restart')">Restart Clip</button><button onclick="mediaSessionCommand('stop')">Stop / Rewind</button><button onclick="mediaSessionSeekRelative(-10)">−10s</button><button onclick="mediaSessionSeekRelative(10)">+10s</button></div><label style="display:block;margin-top:10px">Position <span id="mediaSessionPositionLabel">0:00 / --:--</span><input id="mediaSessionSeek" type="range" min="0" max="1" step="0.1" value="0" style="width:100%" onchange="mediaSessionCommand('seek',{positionSeconds:Number(this.value)})"></label><label style="display:block;margin-top:10px">Volume <span id="mediaSessionVolumeLabel">100%</span><input id="mediaSessionVolume" type="range" min="0" max="100" step="1" value="100" style="width:100%" oninput="mediaSessionVolumeLabel.textContent=this.value+'%'" onchange="mediaSessionCommand('volume',{volume:Number(this.value)/100})"></label><div id="mediaSessionStatus" class="muted" style="margin-top:8px">No playback telemetry yet.</div>`;page.appendChild(panel);mediaSessionTarget.onchange=refreshMediaSessionControls;mediaSessionRate.onchange=()=>mediaSessionCommand('rate',{playbackRate:Number(mediaSessionRate.value)});clearInterval(mediaSessionRefreshTimer);mediaSessionRefreshTimer=setInterval(()=>{if(document.getElementById('media')?.classList.contains('active'))refreshMediaSessionControls()},1000)
+}
+function mediaTime(v){v=Math.max(0,Number(v||0));const m=Math.floor(v/60),sec=Math.floor(v%60);return `${m}:${String(sec).padStart(2,'0')}`}
+async function mediaSessionCommand(action,extra={}){try{const id=mediaSessionTarget?.value;if(!id)return;await jpost(`/api/v1/displays/${encodeURIComponent(id)}/media/control`,{action,...extra});setTimeout(refreshMediaSessionControls,120)}catch(e){notify(e.message,'error')}}
+function mediaSessionSeekRelative(delta){const cur=Number(mediaSessionSeek?.value||0);mediaSessionCommand('seek',{positionSeconds:Math.max(0,cur+Number(delta||0))})}
+async function refreshMediaSessionControls(){
+  if(!window.mediaSessionTarget)return;const options=mediaSessionTargetOptions();if(mediaSessionTarget.innerHTML!==options){const old=mediaSessionTarget.value;mediaSessionTarget.innerHTML=options;if([...mediaSessionTarget.options].some(o=>o.value===old))mediaSessionTarget.value=old}
+  const id=mediaSessionTarget.value;if(!id)return;try{const st=await api('/api/v1/status'),ms=st.runtime?.displays?.[id]?.mediaSession||st.displays?.[id]?.mediaSession;if(!ms){mediaSessionStatus.textContent='No active video telemetry from this display.';return}const pos=Number(ms.positionSeconds||0),dur=Number(ms.durationSeconds||0);mediaSessionSeek.max=String(Math.max(1,dur));mediaSessionSeek.value=String(Math.min(pos,Math.max(1,dur)));mediaSessionPositionLabel.textContent=`${mediaTime(pos)} / ${dur?mediaTime(dur):'--:--'}`;mediaSessionVolume.value=String(Math.round(Number(ms.volume??1)*100));mediaSessionVolumeLabel.textContent=mediaSessionVolume.value+'%';mediaSessionRate.value=String(ms.playbackRate||1);mediaSessionStatus.textContent=`${String(ms.state||'unknown')} • session ${String(ms.sessionId||'manual')} • ${ms.loop?'looping':'single play'}`}catch(e){mediaSessionStatus.textContent=`Playback status unavailable: ${e.message}`}
+}
+
 async function reloadAllDisplays(){
   if(!confirm('Reload every online physical display? Current display content will reconnect automatically.'))return;
   try{
@@ -1180,7 +1194,13 @@ function renderAutomationFields(payload={}){
         <label>Fit<select id="autoFit"><option value="contain" ${payload.fit!=='cover'?'selected':''}>Contain</option><option value="cover" ${payload.fit==='cover'?'selected':''}>Cover</option></select></label>
         ${payloadInput('Slide/Page Seconds','autoMediaSeconds','number',Math.round((payload.autoAdvanceMs||10000)/1000),'min="0" max="300"')}
        </div>
-       <div class="toolbar"><label><input id="autoLoop" type="checkbox" ${payload.loop!==false?'checked':''}> Loop</label><label><input id="autoMuted" type="checkbox" ${payload.muted?'checked':''}> Mute Video</label></div>`;
+       <div class="grid2" style="margin-top:8px">
+         ${payloadInput('Start at (seconds)','autoMediaStart','number',Number(payload.startAtSeconds||0),'min="0" step="0.1"')}
+         ${payloadInput('End at (seconds, 0 = file end)','autoMediaEnd','number',Number(payload.endAtSeconds||0),'min="0" step="0.1"')}
+         ${payloadInput('Volume %','autoMediaVolume','number',Math.round(Number(payload.volume??1)*100),'min="0" max="100"')}
+         ${payloadInput('Playback Rate','autoMediaRate','number',Number(payload.playbackRate||1),'min="0.25" max="4" step="0.25"')}
+       </div>
+       <div class="toolbar"><label><input id="autoLoop" type="checkbox" ${payload.loop!==false?'checked':''}> Loop selected video/clip</label><label><input id="autoMuted" type="checkbox" ${payload.muted?'checked':''}> Mute Video</label></div>`;
   }else if(action==='display.timer.class-end'){
     h=payloadInput('Timer Label','autoTimerLabel','text',payload.label||'Class Ends In')+
       `<div class="grid2"><label>Position<select id="autoTimerPosition"><option value="top">Top</option><option value="center">Center</option><option value="bottom" selected>Bottom</option></select></label>${payloadInput('Font Size','autoTimerSize','number',payload.fontSize||64,'min="20" max="220"')}${payloadInput('Text Color','autoTimerTextColor','color',payload.textColor||'#ffffff')}${payloadInput('Border Color','autoTimerBorderColor','color',payload.borderColor||'#ffffff')}${payloadInput('Border Width','autoTimerBorderWidth','number',payload.borderWidth??4)}${payloadInput('Border Radius','autoTimerBorderRadius','number',payload.borderRadius??18)}</div>`+
@@ -1239,7 +1259,7 @@ function addAutomationStep(){
   autoSteps.push({
     id:`step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     action:'display.clear',targets:[],useEventTargets:true,payload:{},
-    delaySeconds:0,continueOnError:true
+    delaySeconds:0,executionMode:'once',repeatCount:2,repeatDelaySeconds:0,continueOnError:true
   });
   renderAutomationSteps();
 }
@@ -1495,6 +1515,19 @@ function renderAutomationSteps(){
         <div style="margin-top:8px">${stepPayloadHtml(step,i)}</div>
       </div>
 
+      <div class="grid2" style="margin-top:10px">
+        <label>Execution
+          <select onchange="autoSteps[${i}].executionMode=this.value;renderAutomationSteps()">
+            <option value="once" ${step.executionMode!=='repeat'&&step.executionMode!=='loop'?'selected':''}>Run once</option>
+            <option value="repeat" ${step.executionMode==='repeat'?'selected':''}>Repeat N times</option>
+            ${step.action==='display.media'?`<option value="loop" ${step.executionMode==='loop'?'selected':''}>Loop media continuously</option>`:''}
+          </select>
+        </label>
+        ${step.executionMode==='repeat'?`<label>Repeat Count<input type="number" min="1" max="100" value="${Number(step.repeatCount||2)}" onchange="autoSteps[${i}].repeatCount=Math.max(1,Math.min(100,Number(this.value||2)))"></label>`:''}
+        ${step.executionMode==='repeat'?`<label>Seconds Between Repeats<input type="number" min="0" max="3600" step="0.1" value="${Number(step.repeatDelaySeconds||0)}" onchange="autoSteps[${i}].repeatDelaySeconds=Math.max(0,Number(this.value||0))"></label>`:''}
+      </div>
+      <div class="muted">Loop is receiver-native for video, so earlier TV, routing, lighting, and setup actions are not restarted.</div>
+
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
         <input type="checkbox" ${step.continueOnError!==false?'checked':''}
           onchange="autoSteps[${i}].continueOnError=this.checked">
@@ -1516,7 +1549,7 @@ function readAutomationSteps(){return autoSteps.map((x,i)=>{
   const targets=Array.isArray(x.targets)&&x.targets.length
     ? x.targets
     : (!useEventTargets?defaultStepTargets(x):[]);
-  return {id:x.id||`step-${i+1}`,action:x.action,targets,useEventTargets,payload:x.payload||{},delaySeconds:Number(x.delaySeconds||0),continueOnError:x.continueOnError!==false};
+  return {id:x.id||`step-${i+1}`,action:x.action,targets,useEventTargets,payload:x.payload||{},delaySeconds:Number(x.delaySeconds||0),executionMode:x.executionMode||'once',repeatCount:Number(x.repeatCount||2),repeatDelaySeconds:Number(x.repeatDelaySeconds||0),continueOnError:x.continueOnError!==false};
 })}
 
 function populateTimerOverlayClassSelect(selected=''){
@@ -1606,7 +1639,7 @@ function readAutoPayloadFields(){
   if(action==='tv.power'||action==='govee.power')return {state:autoState.value};
   if(action==='display.text')return {title:autoTitle.value,text:autoText.value,subtitle:autoSubtitle.value,color:autoTextColor.value,background:autoBg.value,size:Number(autoTextSize.value),position:autoPosition.value};
   if(action==='display.url')return {url:autoUrl.value.trim(),localDirect:autoLocalDirect.checked};
-  if(action==='display.media')return {storedName:autoMedia.value,fit:autoFit.value,autoAdvanceMs:Number(autoMediaSeconds.value||0)*1000,loop:autoLoop.checked,muted:autoMuted.checked};
+  if(action==='display.media')return {storedName:autoMedia.value,fit:autoFit.value,autoAdvanceMs:Number(autoMediaSeconds.value||0)*1000,loop:autoLoop.checked,muted:autoMuted.checked,startAtSeconds:Number(autoMediaStart.value||0),endAtSeconds:Number(autoMediaEnd.value||0),volume:Math.max(0,Math.min(1,Number(autoMediaVolume.value||100)/100)),playbackRate:Number(autoMediaRate.value||1)};
   if(action==='display.timer.class-end')return {label:autoTimerLabel.value,position:autoTimerPosition.value,fontSize:Number(autoTimerSize.value||64),textColor:autoTimerTextColor.value,borderColor:autoTimerBorderColor.value,borderWidth:Number(autoTimerBorderWidth.value||4),borderRadius:Number(autoTimerBorderRadius.value||18),background:autoTimerBackground.value};
   if(action==='display.clear')return {};
   if(action==='govee.color')return {color:autoColor.value};

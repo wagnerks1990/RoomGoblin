@@ -69,3 +69,10 @@ Changes to the scheduler or controller must preserve these invariants:
 7. SQLite remains the authoritative automation store.
 
 The automated regression coverage for this contract lives in `test/automation-framework-manual.test.js`.
+
+
+## Per-action execution policy
+
+Additional automation actions persist `executionMode`, `repeatCount`, and `repeatDelaySeconds`. The default is `once`. `repeat` is bounded to 100 executions. `loop` is native only for display media and therefore loops the receiver's current media element rather than replaying the whole automation. Non-media loop requests are normalized to bounded repeat semantics so power, routing, lighting, and other side-effecting commands cannot accidentally become unbounded command generators.
+
+Scheduler reconciliation continues to reason about the configured action sequence and resources; repeat metadata does not create additional scheduled occurrences or restart earlier steps.

@@ -242,6 +242,10 @@ The controller is the appliance control plane. It inventories existing Docker co
 
 Do not silently recreate an externally discovered service during adoption. Destructive removal/recreation must remain explicit.
 
+### Automation action loops and media sessions
+
+Per-action looping must never be implemented by restarting an automation occurrence. `display.media` loop mode is receiver-native and preserves the active HTML5 media session. Live volume/seek/pause/rate changes use `display.media.control`; do not reissue `display.media` for control-only changes because replacing the media command restarts playback. Non-media actions may use bounded repeat only. Preserve Morning Announcements priority, Background Music reconciliation, scheduler occurrence identity and display recovery.
+
 ### Morning Announcements
 
 Morning Announcements have highest priority whether started manually or automatically. While active, conflicting display automations must not overwrite announcement targets and Background Music must be paused. When announcements end, the scheduler must re-evaluate the current moment and re-trigger the winning currently applicable display automations before Background Music resumes.
