@@ -27,6 +27,7 @@ test("media plane validates signed request upstream and serves byte ranges",asyn
   const controlPort=await freePort(),mediaPort=await freePort();
   const control=http.createServer((req,res)=>{
     if(req.method==="HEAD"&&req.url==="/media/fixture.mp4?asset=valid"){res.writeHead(200);res.end();return}
+    if(req.method==="HEAD"&&req.url==="/media/fixture.mp4"&&req.headers.cookie==="classroom_hub_session=preview-session"){res.writeHead(200);res.end();return}
     res.writeHead(401);res.end();
   });
   await new Promise((resolve,reject)=>{control.on("error",reject);control.listen(controlPort,"127.0.0.1",resolve)});
@@ -39,6 +40,10 @@ test("media plane validates signed request upstream and serves byte ranges",asyn
 
   const denied=await fetch(`http://127.0.0.1:${mediaPort}/media/fixture.mp4?asset=bad`);
   assert.equal(denied.status,401);
+
+  const controllerPreview=await fetch(`http://127.0.0.1:${mediaPort}/media/fixture.mp4`,{headers:{cookie:"classroom_hub_session=preview-session",range:"bytes=0-3"}});
+  assert.equal(controllerPreview.status,206);
+  assert.equal(await controllerPreview.text(),"0123");
 
   const ranged=await fetch(`http://127.0.0.1:${mediaPort}/media/fixture.mp4?asset=valid`,{headers:{range:"bytes=5-12"}});
   assert.equal(ranged.status,206);

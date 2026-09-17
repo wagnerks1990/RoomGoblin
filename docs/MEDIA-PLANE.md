@@ -25,7 +25,7 @@ The control plane remains on the normal RoomGoblin listener (default `3000`). Up
 
 The media plane does not create a second authentication system and does not expose the media directory anonymously.
 
-Every `/media/*` request is first validated by issuing a bounded `HEAD` request to the existing control-plane URL with the original path and signed query string. The control plane remains the authority for RoomGoblin's short-lived protected asset tokens. Only a successful 2xx authorization response permits the media process to read the requested file.
+Every `/media/*` request is first validated by issuing a bounded `HEAD` request to the existing control-plane URL. Physical receivers preserve their signed query string. Authenticated controller/browser requests may also carry the existing RoomGoblin session cookie; the media process forwards that cookie only to the loopback control-plane authorization probe and never treats it as a media-plane credential of its own. The control plane remains the sole authorization authority. Only a successful 2xx authorization response permits the media process to read the requested file.
 
 The media process resolves requested paths beneath `data/media` and rejects traversal outside that root.
 
@@ -50,7 +50,7 @@ Physical RoomGoblin display pages transparently rewrite same-origin `/media/*` v
 
 The rewrite is currently enabled for HTTP classroom deployments. If the media listener is unavailable, the receiver performs a one-time fallback to the original control-plane URL so existing installations fail gracefully. Persistent fallback should be treated as a media-plane health problem, not the normal operating mode.
 
-Controller preview pages do not decode receiver video locally. Physical receivers remain the playback authority.
+Controller preview pages do not decode receiver video locally. The preview renderer short-circuits video before creating a `<video src>`, showing a lightweight `Video active on physical display` state instead. This prevents controller previews from issuing MP4 requests at all while still allowing authenticated image/document previews through the normal control-plane authorization check. Physical receivers remain the playback authority.
 
 ## Synchronization
 

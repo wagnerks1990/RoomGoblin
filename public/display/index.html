@@ -137,7 +137,7 @@ function applyMediaControl(p={}){
   else return false;reportMediaStatus(action);return true;
 }
 function renderMedia(m){
-  if(preview&&m?.type==='protected-preview'){clearWebAudioTimers();activeWebFrame=null;activeWebSpec=null;activeMediaSession=null;media.replaceChildren();const box=document.createElement('div');box.style.cssText='font-size:72px;text-align:center;padding:80px;line-height:1.2';box.textContent=m.label||'Protected live content is active on this display';media.appendChild(box);return}
+  if(preview&&(m?.type==='protected-preview'||m?.type==='video')){clearWebAudioTimers();activeWebFrame=null;activeWebSpec=null;activeMediaSession=null;media.replaceChildren();const box=document.createElement('div');box.dataset.previewMediaPlaceholder='1';box.style.cssText='font-size:72px;text-align:center;padding:80px;line-height:1.2';box.textContent=m?.type==='video'?'Video active on physical display':(m.label||'Protected live content is active on this display');media.appendChild(box);return}
   let authorizedUrl='';if(m?.url){try{authorizedUrl=authorizeAssetUrl(m.url)}catch{badge.textContent=`${id} rejected invalid media URL`;return}}
   if(m?.type==='video'&&activeMediaSession?.video&&activeMediaSession.spec?.sessionId&&m.sessionId===activeMediaSession.spec.sessionId&&authorizedUrl===activeMediaSession.spec.authorizedUrl){activeMediaSession.spec={...activeMediaSession.spec,...m,authorizedUrl};configureVideoSession(activeMediaSession.video,activeMediaSession.spec);return}
   clearWebAudioTimers();activeWebFrame=null;activeWebSpec=null;activeMediaSession=null;media.replaceChildren();if(!authorizedUrl)return;let n;

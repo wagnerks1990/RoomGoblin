@@ -44,6 +44,9 @@ test("Today display previews stay live but suppress local video decoding",()=>{
   assert.match(embedded,/Video active on physical display/);
   assert.match(embedded,/video\.removeAttribute\('src'\)/);
   assert.match(embedded,/MutationObserver\(suppress\)/);
+  const receiver=read("public/display/index.html");
+  assert.match(receiver,/preview&&\(m\?\.type==='protected-preview'\|\|m\?\.type==='video'\)/);
+  assert.match(receiver,/Video active on physical display/);
 });
 
 test("media-session renderer release forces receiver convergence",()=>{

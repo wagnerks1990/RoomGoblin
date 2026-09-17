@@ -29,3 +29,9 @@ Two follow-up issues remained:
 ## Release convergence correction
 
 All independently deployed release surfaces are converged on `1.0.0-alpha.83`, including the controller bundle, root and maintenance package metadata, package locks, and native Host Agent wrapper. This is required so receiver build/version comparison can force stale display renderers to reload after the media-session hotfix.
+
+## Preview authorization follow-up
+
+Production alpha.83 testing showed repeated `3020 /media/*.mp4 -> 401` requests in the controller while Today live previews were open. These requests came from preview receivers, which intentionally do not hold physical-display asset tokens, briefly creating a video source before the parent controller removed it.
+
+The preview renderer now short-circuits `video` state before URL authorization or `<video src>` creation and renders a lightweight `Video active on physical display` placeholder instead. The media plane also forwards an authenticated controller browser's existing session cookie only to its loopback `3000` HEAD authorization probe so protected image/document previews remain available. Physical receivers continue to authorize with signed asset tokens.
