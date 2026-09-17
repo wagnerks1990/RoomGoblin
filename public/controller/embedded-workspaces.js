@@ -54,3 +54,40 @@
  const lab=document.getElementById('lab');if(lab)new MutationObserver(schedule).observe(lab,{attributes:true,attributeFilter:['class','data-authorized']});
  addEventListener('scroll',schedule,{passive:true});addEventListener('resize',schedule);document.addEventListener('visibilitychange',schedule);
 })();
+
+/* Today-page display previews remain live observers for text, images, timers and
+ * state changes. Video payloads are intentionally not decoded in the controller:
+ * once a preview renderer adds a <video>, cancel its source and show a lightweight
+ * status overlay while the physical display keeps playing the real media.
+ */
+(()=>{
+ 'use strict';
+ const install=frame=>{
+  try{
+   const doc=frame.contentDocument;if(!doc?.body)return;
+   const media=doc.getElementById('media');if(!media)return;
+   const suppress=()=>{
+    media.querySelectorAll('video').forEach(video=>{
+     if(video.dataset.rgControllerPreviewSuppressed==='1')return;
+     video.dataset.rgControllerPreviewSuppressed='1';
+     try{video.pause()}catch{}
+     try{video.removeAttribute('src');video.load()}catch{}
+     if(!media.querySelector('[data-rg-video-preview-note]')){
+      const note=doc.createElement('div');
+      note.dataset.rgVideoPreviewNote='1';
+      note.style.cssText='position:absolute;inset:0;display:grid;place-items:center;padding:8%;text-align:center;background:#05080c;color:#d9e2ec;font-size:64px;line-height:1.2;z-index:20';
+      note.textContent='Video active on physical display';
+      media.appendChild(note);
+     }
+    });
+    if(!media.querySelector('video'))media.querySelectorAll('[data-rg-video-preview-note]').forEach(n=>n.remove());
+   };
+   suppress();
+   const observer=new MutationObserver(suppress);observer.observe(media,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
+   frame.addEventListener('load',()=>observer.disconnect(),{once:true});
+  }catch{}
+ };
+ const wire=()=>document.querySelectorAll('iframe[data-overview-preview]').forEach(frame=>{if(frame.dataset.rgLightPreviewBound==='1')return;frame.dataset.rgLightPreviewBound='1';frame.addEventListener('load',()=>install(frame));if(frame.contentDocument?.readyState==='complete')install(frame)});
+ const root=document.getElementById('overviewDisplays');if(!root)return;
+ wire();new MutationObserver(wire).observe(root,{childList:true,subtree:true});
+})();
