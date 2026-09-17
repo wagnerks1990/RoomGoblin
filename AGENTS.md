@@ -13,7 +13,7 @@ guessed `tvN`. Preserve long group keys and references; wrap them for readabilit
 instead of automatically stripping historical `display-` prefixes.
 
 
-For alpha.83 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
+For alpha.84 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
 Keep SQLite database/WAL/SHM access shared with maintenance (0660), ADB trust
 group-readable (0750 directory/0640 keys), and legacy signing keys unchanged.
 
@@ -45,7 +45,7 @@ Do not infer production configuration from public defaults. Site-specific config
 
 ## Current baseline
 
-The current review baseline is `1.0.0-alpha.83`.
+The current review baseline is `1.0.0-alpha.84`.
 
 Verified live-test/recovery behaviors inherited by this baseline include:
 
