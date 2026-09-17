@@ -21,3 +21,24 @@ For linked-class automations, **Use class default display targets** is a persist
 When **Use class default display targets** is enabled, the class display targets apply to every display-domain action in the automation, including display actions added to a lighting-led event and the timer overlay. Lighting targets remain separate.
 
 Alternating-day automations inherit the configured school-cycle anchor. Phase A/B remains the stored phase identity even when the school profile gives those phases friendly labels such as Green Days or Group B Days.
+
+
+## Action execution modes and persistent video sessions
+
+Automation follow-up actions now carry an execution policy. **Run once** executes the action one time, **Repeat N times** repeats only that action with an optional delay, and **Loop media continuously** is available for `display.media`. Media looping is receiver-native: RoomGoblin does not restart the automation, so preceding TV power, routing, lighting, or setup actions are not reissued.
+
+Uploaded video playback is a persistent media session identified by a stable `sessionId`. Reissuing the same session updates playback properties rather than replacing the `<video>` element. Operators can change volume, mute state, playback rate, play/pause state, and current position while the MP4 remains loaded.
+
+Video actions support `startAtSeconds`, `endAtSeconds`, `volume`, `muted`, `playbackRate`, and `loop`. When an end boundary is configured, looping seeks back to the configured start boundary instead of restarting the automation. A non-looping bounded clip pauses at the end and emits the normal media-ended signal.
+
+The Media workspace includes a live playback panel for the selected receiver with play, pause, stop/rewind, restart, ±10-second seek, scrubber, volume, playback rate, and receiver telemetry. These commands use `display.media.control` and do not call `display.media`, so they must not reload or restart the active video.
+
+Receivers report bounded `display.media.status` telemetry containing session ID, position, duration, volume, mute, loop and playback-rate state. This telemetry is operational state only; it does not replace persisted automation configuration.
+
+### Safety and priority invariants
+
+- Morning Announcements remain the highest-priority display/audio owner.
+- Normal automation media still participates in existing Background Music priority reconciliation.
+- Arbitrary non-media actions are never allowed to run forever. A requested `loop` on a non-media action is normalized to bounded repeat behavior.
+- Display clear explicitly destroys the active video session.
+- Existing stable display URLs, signed media access, class-target resolution, scheduler recovery, and timer behavior remain unchanged.
