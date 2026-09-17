@@ -434,3 +434,8 @@ Browser clipboard writes use the existing transient command queue and require
 exact RoomGoblinWebBridge advertisement. Read docs/VEYON-WEB-CLIPBOARD.md before
 changing that path. No clipboard payload in logs/journal/job projections, no
 uncertain replay, no arbitrary protocol forwarding, no inferred endpoint success.
+
+The operator already has Veyon Master. Do not add native launcher buttons,
+download scripts or native-only entries to the web feature catalog. Keep such
+capabilities and community candidates in documentation. Features with actual
+browser adapters may state their required native bridge explicitly.

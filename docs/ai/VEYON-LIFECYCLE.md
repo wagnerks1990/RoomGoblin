@@ -74,3 +74,12 @@ argument index 1. Keep the native build isolated and package corresponding sourc
 `keySequence` uses the same bridge with a fixed keysym allowlist, press/release
 pairs and a five-second Hub queue expiry. Do not add arbitrary held key state or
 retry ambiguous input. This is not continuous remote control.
+
+## Browser-only interface policy
+
+Native launchers and their API were removed at the operator's request. Catalog
+projection is limited to implemented web/workflow entries; unknown and native-only
+features remain documentation-only. Do not equate discovering a feature with
+adding a usable browser action. Keep native prerequisites visible for real web
+adapters. Community chat/file browsing still need browser adapters and matching
+endpoint builds; Veyon-detection remains an unintegrated AGPL candidate.

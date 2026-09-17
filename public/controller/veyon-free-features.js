@@ -4,14 +4,6 @@
   function selection(max=64){const ids=targetIds();if(!ids.length||ids.length>max)throw Error(`Select 1–${max} computers.`);return ids}
   function bind(id,fn){$(id).onclick=async()=>{const button=$(id);button.disabled=true;try{await fn()}catch(error){alert(error.message)}finally{button.disabled=false}}}
   function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
-  async function desktop(mode){
-    const targets=selection(16);
-    const response=await fetch('/api/v1/veyon/desktop-launcher',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets,mode})});
-    if(!response.ok){const error=await response.json();throw Error(error.error||'Could not create desktop launcher')}
-    download(await response.blob(),'RoomGoblin-Veyon-Desktop.ps1');
-    $('commandFeedback').textContent='Launcher downloaded. Run it on your teacher Windows computer. Native Master requires selecting the listed targets in its own inventory; no keys were exported.';
-  }
-  bind('nativeView',()=>desktop('view'));bind('nativeControl',()=>desktop('control'));bind('nativeMaster',()=>desktop('master'));
   bind('sendKey',async()=>{
     const [id]=selection(1),computer=computers.find(c=>c.id===id);
     const catalog=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
@@ -37,7 +29,7 @@
   bind('saveMac',async()=>{const [id]=selection(1),computer=computers.find(c=>c.id===id);const mac=prompt('MAC address for Wake-on-LAN (blank removes it):',computer.mac||'');if(mac===null)return;await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({mac})});await load()});
   bind('wakeComputers',async()=>{const targets=selection();if(!confirm(`Send Wake-on-LAN packets for ${targets.length} selected computers?`))return;const result=await api('/api/v1/veyon/wake',{method:'POST',body:JSON.stringify({targets})});$('commandFeedback').textContent=(result.results||[]).map(r=>`${r.id}: ${r.accepted?'Wake packet sent; startup unverified':r.error||'Failed'}`).join(' · ')});
   bind('deviceInfo',async()=>{const [id]=selection(1);const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/info`),c=x.computer;openInfo('User and session details',`<pre style="white-space:pre-wrap">${esc(JSON.stringify({name:c.name,online:c.online,authenticated:c.authenticated,user:c.user,session:c.session,locks:c.featureState,error:c.error},null,2))}</pre>`)});
-  bind('freeCatalog',async()=>{const [id]=selection(1),x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);openInfo('Free feature coverage',`<p>Advertised means the appliance plugin is present. It does not verify the Windows endpoint. Desktop and configuration features use native Veyon.</p><div style="overflow:auto"><table><thead><tr><th>Feature</th><th>Access</th><th>Appliance</th><th>Use</th></tr></thead><tbody>${x.features.map(f=>`<tr><td>${esc(f.name)}</td><td>${esc(f.provider)}</td><td>${f.advertised?'Advertised':'Not advertised'}</td><td>${esc(f.detail)}</td></tr>`).join('')}</tbody></table></div>`)});
+  bind('freeCatalog',async()=>{const [id]=selection(1),x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);openInfo('Browser feature coverage',`<p>Only browser workflows are listed. Advertised means the appliance plugin is present; it does not verify the endpoint. Native-only capabilities are documented separately.</p><div style="overflow:auto"><table><thead><tr><th>Feature</th><th>Access</th><th>Appliance</th><th>Use</th></tr></thead><tbody>${x.features.map(f=>`<tr><td>${esc(f.name)}</td><td>${esc(f.provider)}</td><td>${f.advertised?'Advertised':'Not advertised'}</td><td>${esc(f.detail)}</td></tr>`).join('')}</tbody></table></div>`)});
   for(const [id,name,label] of [['powerNow','powerDownNow','shut down immediately'],['powerConfirm','powerDownConfirmed','request shutdown confirmation (shuts down immediately when no user is logged in)'],['powerDelay','powerDownDelayed','schedule shutdown'],['powerUpdates','installUpdatesAndPowerDown','install available updates and shut down']])bind(id,async()=>{
     const targets=selection(),args={};
     if(name==='powerDownDelayed'){const value=prompt('Shutdown delay in seconds (30–3600):','120');if(value===null)return;args.shutdownTimeout=Number(value);if(!Number.isInteger(args.shutdownTimeout)||args.shutdownTimeout<30||args.shutdownTimeout>3600)throw Error('Enter 30–3600 seconds.')}

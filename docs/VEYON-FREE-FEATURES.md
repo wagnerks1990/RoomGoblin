@@ -1,7 +1,8 @@
 # Free Veyon features and community pilot
 
 RoomGoblin exposes the free Veyon classroom controls that its WebAPI can execute
-and provides native launchers for desktop-only tools. **This does not make every
+through browser workflows. Native-only tools are documented here and excluded
+from the web GUI. **This does not make every
 Veyon feature a browser API.** Native configuration and interactive file transfer
 still belong in Veyon Configurator/Master. Paid add-ons, subscriptions and
 commercial trials are excluded.
@@ -20,15 +21,16 @@ targets remain selected; check the existing selection count before confirming.
 | Free capability | How to test | Limits / expected result |
 | --- | --- | --- |
 | Monitoring, screenshots, remote view | Existing previews, Live View, screenshot download | Requires `lab.sensitive.read`; an image proves capture, TCP alone does not |
-| Remote keyboard/mouse control | Native control launcher | Run downloaded PowerShell on the teacher Windows PC with official Veyon configured |
+| Keyboard shortcuts | Browser Send key or shortcut | Requires RoomGoblinWebBridge; fixed press/release sequences |
+| Full remote keyboard/mouse control | Native-only; documentation reference | Full browser control remains unimplemented; no launcher in the web GUI |
 | Clipboard text sending | [Browser form and native bridge](VEYON-WEB-CLIPBOARD.md) | One target; explicit text only; requires RoomGoblinWebBridge on the appliance |
-| Clipboard exchange, monitor selection | Native Veyon remote-access window | Teacher-side settings and authentication apply; not implemented through 4.9.7 WebAPI |
+| Clipboard exchange, monitor selection | Native Veyon remote-access window | Teacher-side settings and authentication apply; browser clipboard reading and monitor selection remain unimplemented |
 | Teacher/student demonstration, fullscreen/window | Existing teacher controls or new student demonstration controls | Select source and audience; source must have a signed-in user; source excluded from recipients |
 | Stop selected demonstrations | Select source and all recipients, then stop | Queues all three mode cleanups atomically; offline owned modes retain existing recovery behavior |
 | Screen/input locks | Existing lock/unlock controls | Read-back confirmation, per-host order and restart cleanup retained |
 | Text messages, open websites, launch applications | Existing buttons or saved lesson actions | Presets require explicit Run and target confirmation; no automatic execution |
-| File distribution | Native Veyon Master | 4.9.7 WebAPI cannot initialize its interactive transfer controller |
-| File collection | Newer native Veyon with collection support | Not present in the supplied 4.9.7 inventory; do not send an invented WebAPI command |
+| File distribution | Native Veyon Master | Stock WebAPI cannot initialize its interactive transfer controller |
+| File collection | Newer native Veyon with collection support | Requires a browser collection adapter; not exposed as a fake web action |
 | Wake-on-LAN | Save MAC for one computer, select targets, Wake | Fixed local broadcast UDP/9; BIOS/NIC/network must support it; packet acceptance does not prove startup |
 | Reboot, shutdown | Existing controls | One-shot request; never automatically retry uncertain delivery |
 | Immediate, confirmed, delayed, updates-then-shutdown | New power options | Destructive confirmation; delay 30–3600 seconds; no cancellation after dispatch; OS behavior varies |
@@ -119,13 +121,13 @@ python3 tools/prepare-veyon-pilot.py /tmp/roomgoblin-veyon-pilot
 cmake -S /tmp/roomgoblin-veyon-pilot -B /tmp/roomgoblin-veyon-build \
   -DCMAKE_BUILD_TYPE=Debug -DWITH_TRANSLATIONS=OFF -DWITH_LTO=OFF
 cmake --build /tmp/roomgoblin-veyon-build \
-  --target classroomchat remotefilebrowser roomgoblin-pilot-policy-test --parallel 2
+  --target classroomchat remotefilebrowser webbridge roomgoblin-pilot-policy-test --parallel 2
 /tmp/roomgoblin-veyon-build/plugins/remotefilebrowser/roomgoblin-pilot-policy-test
 ```
 
 The preparer clones official Veyon **v4.11.2 at a fixed commit**, checks that
-identity, initializes pinned submodules and adds only the two reviewed plugin
-directories. It refuses an existing destination. It does not install anything,
+identity, initializes pinned submodules and adds the two reviewed community plugin
+directories plus RoomGoblinWebBridge. It refuses an existing destination. It does not install anything,
 copy authentication keys or invoke a service manager. Dependencies and the native
 build are separate from RoomGoblin's npm dependencies.
 
@@ -133,7 +135,7 @@ For an operational native pilot, use the official [Veyon source/build
 instructions](https://github.com/veyon/veyon) to build/package the **entire matching
 native version** in disposable teacher and student VMs. Compiler, Qt and Veyon
 versions must match; Windows DLLs cannot come from the Linux build. Do not copy
-these plugins into the current 4.9.7 installation. Linux compilation is a CI gate;
+these plugins into a different Veyon/Qt installation. Linux compilation is a CI gate;
 Windows packaging and real Windows endpoint interoperability remain acceptance
 work, not a claimed result. These sources are not a ready-made Windows installer.
 
@@ -149,7 +151,7 @@ pilot binary you distribute.
 
 | Repository | Decision |
 | --- | --- |
-| [veyon/veyon](https://github.com/veyon/veyon) | Official baseline; 4.9.7 WebAPI semantics, separately pinned 4.11.2 native pilot |
+| [veyon/veyon](https://github.com/veyon/veyon) | Official baseline; pinned 4.11.2 native build and browser bridge |
 | [veyon/addons](https://github.com/veyon/addons) | No licensed commercial add-on or trial activated; repository availability alone is not a free license |
 | [veyon/docs](https://github.com/veyon/docs) | Reference for native configuration, features and builds |
 | [veyon/libvncserver](https://github.com/veyon/libvncserver) | Native upstream dependency; use upstream's pinned submodule, no production replacement |
@@ -174,7 +176,7 @@ GitHub extensions are compatible or have been installed.
 
 All paths below begin `/api/v1/veyon` and retain normal same-origin session/CSRF
 and recovery-writer boundaries. New tool reads share a 60/minute appliance-wide
-budget; Wake, launcher and preset writes share 30/minute. Selected broadcast
+budget; Wake, browser input and preset writes share 30/minute. Selected broadcast
 cleanup has an independent 60/minute budget so other writes cannot consume its
 quota. Excess requests return HTTP 429 and Retry-After. Forwarding headers do not
 create additional budgets. Existing polling, DHCP metadata and preview limits are
@@ -185,18 +187,17 @@ unchanged:
 | `GET /computers/:id/catalog` | `lab.read` | Feature map; no keys/connection UIDs |
 | `PUT /computers/:id` with `mac` | `lab.control` | Validated unicast MAC; blank removes it; hostname association |
 | `POST /wake` | `lab.control` | 1–64 saved targets, four concurrent UDP sends, no startup claim |
-| `POST /desktop-launcher` | `lab.control` | 1–16 saved IPv4 targets; view/control/master only; downloadable script without keys |
 | `GET/PUT /lesson-actions` | `lab.control` | Shared bounded presets |
 | `POST /demo/stop-selected` | `lab.control` | 1–64 saved targets; all-mode cleanup capacity reserved before enqueue |
 | `POST /feature` | `lab.control` | Existing queue, plus four allowlisted shutdown variants |
 
-Recording uses the existing `lab.sensitive.read` framebuffer route; downloading
-a launcher never exports authentication material. The teacher's local Veyon
-installation must already have appropriate keys and authorization.
+Recording uses the existing `lab.sensitive.read` framebuffer route; browser commands never export authentication material. Native-only capabilities
+and newly discovered plugins without a browser adapter are omitted from the GUI
+feature catalog. Their presence is not proof of browser support.
 
 ## Verification and recovery
 
-Automated coverage includes packet bytes, rejected MAC/launcher inputs, bounded
+Automated coverage includes packet bytes, rejected MAC/input arguments, bounded
 arguments/presets, protected route contracts, stale MAC identity, atomic cleanup
 queue admission, real-browser recording/download/error handling, shutdown
 confirmation/cancellation and existing Veyon regressions. CI additionally builds
@@ -216,7 +217,7 @@ systemctl is-active veyon.service veyon-webapi.service
 Reload the controller. Test reversible controls and one small recording first.
 Use a spare endpoint for login/logoff/shutdown tests. Verify physical screens
 rather than interpreting Accepted as completion. Native test VMs can be reverted
-to their snapshots; production 4.9.7 was never replaced. Stop recording and discard
+to their snapshots; native production packages are not replaced by a Hub update. Stop recording and discard
 its browser buffer, remove unused saved actions or clear MACs to disable the new
 workflows. For a Hub regression, restore the matching pre-upgrade recovery backup
 through the established updater/recovery procedure, preserving database/key

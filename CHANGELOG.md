@@ -4,6 +4,8 @@
 
 ### Browser clipboard and keyboard sending
 
+- Remove native launcher buttons, generated scripts and the download API; show only browser workflows in feature coverage.
+
 - Add a one-computer text form and bounded, authorized queue command with bridge discovery.
 - Add a free native RoomGoblinWebBridge plugin that forwards the existing clipboard protocol; include it in matching Linux builds/source archives.
 - Preserve transient content, no uncertain replay and explicit unverified delivery; document native rollout and live acceptance still required.

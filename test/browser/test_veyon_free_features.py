@@ -18,6 +18,18 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.remove_listener('dialog', page._fixture_dialog_handler)
         return page, errors, state
 
+    def test_native_launchers_absent_and_device_features_use_web_catalog(self):
+        page, errors, state = self.pilot_page()
+        self.assertEqual(page.locator('#nativeView, #nativeControl, #nativeMaster').count(), 0)
+        page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={
+            'features': [{'name': 'RemoteView', 'label': 'Remote view', 'provider': 'web',
+                          'detail': 'Open Live View', 'advertised': True}]}))
+        page.locator('#features').click()
+        page.locator('#infoBody .featureRow').wait_for()
+        self.assertIn('Browser workflows only', page.locator('#infoBody').inner_text())
+        self.assertIn('Remote view', page.locator('#infoBody').inner_text())
+        self.assertFalse(errors, errors)
+
     def test_shutdown_cancel_and_delay_arguments(self):
         page, errors, state = self.pilot_page(390)
         page.once('dialog', lambda dialog: dialog.dismiss())
@@ -50,10 +62,10 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('[data-select="student-a"]').evaluate("el => { el.checked=true; el.dispatchEvent(new Event('change', {bubbles:true})); }")
         page.unroute('**/api/v1/veyon/computers/*/catalog')
         page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={'features': []}))
-        messages = []
-        page.once('dialog', lambda dialog: (messages.append(dialog.message), dialog.accept()))
-        page.locator('#sendClipboard').click()
-        self.assertIn('requires the RoomGoblinWebBridge', messages[0])
+        page.once('dialog', lambda dialog: dialog.accept())
+        with page.expect_event('dialog') as blocked:
+            page.locator('#sendClipboard').click()
+        self.assertIn('requires the RoomGoblinWebBridge', blocked.value.message)
         self.assertEqual(len(state['commands']), 1)
         self.assertFalse(errors, errors)
 

@@ -230,15 +230,11 @@ $('closeInfo').onclick=closeInfo;$('infoModal').onclick=e=>{if(e.target===$('inf
 
 async function showDeviceFeatures(id){
   const c=computers.find(x=>x.id===id);if(!c)return;
-  openInfo(`Features — ${c.name||c.ip}`,'Loading…');
+  openInfo(`Browser features — ${c.name||c.ip}`,'Loading…');
   try{
-    const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/features`);
-    const rows=(x.features||[]).map(f=>{
-      const name=f.name||f.Name||f.description||f.Description||'Feature';
-      const uid=f.uid||f.UID||f.id||f.Id||'';
-      return `<div class="featureRow"><span>${esc(name)}</span><code>${esc(uid)}</code></div>`;
-    }).join('');
-    $('infoBody').innerHTML=`<div class="featureList">${rows||'<span class="muted">No feature list returned.</span>'}</div>`;
+    const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
+    const rows=(x.features||[]).map(f=>`<div class="featureRow"><span>${esc(f.label||f.name)}</span><span>${esc(f.detail)} · ${f.advertised?'Appliance advertised':'Not advertised'}</span></div>`).join('');
+    $('infoBody').innerHTML=`<p>Browser workflows only. Advertisement does not verify endpoint support or delivery.</p><div class="featureList">${rows||'<span class="muted">No browser feature list returned.</span>'}</div>`;
   }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
 }
 async function showFeatures(){

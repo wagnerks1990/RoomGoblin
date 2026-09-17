@@ -21,17 +21,11 @@ test('Shutdown arguments are bounded and cannot imply a cancellation',()=>{
   for(const feature of Object.keys(helpers.POWER_FEATURES))assert.throws(()=>helpers.powerArguments(feature,{},false),/cannot be cancelled/);
   assert.deepEqual(helpers.powerArguments('powerDownNow',{shutdownTimeout:55,password:'not-forwarded'}),{});
 });
-test('Native launchers cannot inject hostnames, commands or computer metadata into PowerShell',()=>{
-  const script=helpers.nativeLauncher([{ip:'192.0.2.4',name:"'; Write-Host injected; #",privateKey:'secret'}],'control');
-  assert.match(script,/'remoteaccess','control',\$target/);assert.doesNotMatch(script,/injected|secret|ExecutionPolicy|Invoke-Expression/);
-  for(const ip of ['host.example','192.0.2.4;whoami','::1'])assert.throws(()=>helpers.nativeLauncher([{ip}],'view'));
-  assert.throws(()=>helpers.nativeLauncher([{ip:'192.0.2.1'}],'shell'));
-  assert.throws(()=>helpers.nativeLauncher(Array(17).fill({ip:'192.0.2.1'}),'view'));
-});
-test('Catalog never treats local plugin advertisement as endpoint verification',()=>{
-  const rows=helpers.featureCatalog([{name:'FileTransfer'}]);const file=rows.find(r=>r.name==='FileTransfer');
-  assert.equal(file.advertised,true);assert.equal(file.provider,'desktop');assert.equal(rows.some(r=>r.endpointVerified),false);
-  assert.equal(rows.find(r=>r.name==='PowerOn').advertised,false);
+test('Catalog shows browser workflows only and never claims endpoint verification',()=>{
+  const rows=helpers.featureCatalog([{name:'FileTransfer'},{name:'RemoteView'},{name:'UnknownNative'}]);
+  assert.equal(rows.some(r=>['FileTransfer','RemoteControl','UnknownNative','QueryScreens','DesktopAccessDialog'].includes(r.name)),false);
+  assert.equal(rows.find(r=>r.name==='RemoteView').advertised,true);
+  assert.equal(rows.some(r=>r.endpointVerified),false);
 });
 test('Lesson actions allow only bounded app/message/http presets and reject URL credentials',()=>{
   assert.deepEqual(helpers.normalizeLessonAction({name:' Example ',feature:'openWebsite',value:' https://example.com '}),{name:'Example',feature:'openWebsite',value:'https://example.com'});
@@ -50,7 +44,7 @@ function routes(){
   return {call,computers,packets};
 }
 test('Protected routes reject arbitrary targets and stale MAC identity, and store no failed presets',async()=>{
-  const h=routes();let r=await h.call('post','/api/v1/veyon/desktop-launcher',{targets:['missing'],mode:'view'});assert.equal(r.statusCode,400);assert.equal(r.cap,'lab.control');
+  const h=routes();let r;
   r=await h.call('post','/api/v1/veyon/wake',{targets:['constructor']});assert.equal(r.statusCode,400);assert.equal(h.packets.length,0);
   r=await h.call('post','/api/v1/veyon/wake',{targets:['one','one']});assert.equal(r.body.results.length,1);assert.equal(h.packets.length,1);assert.equal(r.body.results[0].verified,false);
   h.computers.one.hostname='OTHER';r=await h.call('post','/api/v1/veyon/wake',{targets:['one']});assert.equal(r.body.ok,false);assert.equal(h.packets.length,1);
@@ -98,14 +92,6 @@ test('Free-tool budgets reject write floods across forwarded addresses without s
     const blocked=await fetch(base+'/write',{headers:{'X-Forwarded-For':'198.51.100.1'}});assert.equal(blocked.status,429);assert.ok(blocked.headers.get('retry-after'));
     assert.equal((await fetch(base+'/cleanup')).status,200);assert.equal((await fetch(base+'/read')).status,200);
   }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));for(const limit of Object.values(context.limits))limit.resetKey('unused')}
-});
-
-test('feature discovery retains new appliance features without old-version assumptions',()=>{
-  const rows=helpers.featureCatalog([{name:'FileCollect'},{name:'NewPluginFeature'}]);
-  assert.equal(rows.find(x=>x.name==='FileCollect').advertised,true);
-  assert.equal(rows.find(x=>x.name==='NewPluginFeature').provider,'unmapped');
-  assert.equal(rows.find(x=>x.name==='NewPluginFeature').endpointVerified,false);
-  assert.ok(rows.every(x=>!x.detail.includes('4.9.7')));
 });
 
 test('Clipboard requires an exact native bridge identity and bounds UTF-8 content',()=>{
@@ -161,4 +147,10 @@ test('Keyboard bridge allows only complete fixed key sequences and exact adverti
   assert.throws(()=>helpers.keyArguments({sequence:'Enter'},false));
   const native=fs.readFileSync('integrations/veyon-plugins/webbridge/RoomGoblinWebBridge.cpp','utf8');
   for(const sequence of helpers.KEY_SEQUENCES)assert.ok(native.includes(`QStringLiteral("${sequence}")`));
+});
+
+test('Native launcher buttons and download route are removed',()=>{
+  assert.doesNotMatch(fs.readFileSync('public/controller/veyon.html','utf8'),/id="native(?:View|Control|Master)"/);
+  assert.doesNotMatch(fs.readFileSync('src/server.js','utf8'),/app\.post\("\/api\/v1\/veyon\/desktop-launcher"/);
+  assert.equal(helpers.nativeLauncher,undefined);
 });

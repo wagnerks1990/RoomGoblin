@@ -4,7 +4,7 @@ const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
-const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,nativeLauncher,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
+const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
@@ -6360,14 +6360,6 @@ app.get("/api/v1/veyon/computers/:id/catalog",veyonFreeReadLimit,requireCapabili
   if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
   try{res.json({ok:true,features:featureCatalog(await veyonAvailableFeatures(rec.ip)),verification:"proxy-advertisement-only"})}
   catch(error){res.status(503).json(safeVeyonFailure(error))}
-});
-app.post("/api/v1/veyon/desktop-launcher",veyonFreeWriteLimit,requireCapability("lab.control"),(req,res)=>{
-  try{
-    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>16)throw Error("Choose 1–16 computers.");
-    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
-    const script=nativeLauncher(targets,req.body.mode);
-    res.set({"Cache-Control":"no-store","Content-Disposition":"attachment; filename=RoomGoblin-Veyon-Desktop.ps1"}).type("text/plain").send(script);
-  }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
 app.post("/api/v1/veyon/wake",veyonFreeWriteLimit,requireCapability("lab.control"),async(req,res)=>{
   try{
