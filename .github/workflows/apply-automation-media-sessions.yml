@@ -1,0 +1,44 @@
+name: Apply automation media sessions
+
+on:
+  push:
+    branches:
+      - feature/automation-media-sessions
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[automation-media-sessions]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feature/automation-media-sessions
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Apply automation and media session changes
+        run: python3 tools/apply-automation-media-sessions.py
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate syntax and controller
+        run: npm run check
+      - name: Run focused automation and display tests
+        run: node --test --test-concurrency=1 test/automation-media-sessions.test.js test/automation-runtime.test.js test/automation-convergence.test.js test/automation-framework-manual.test.js test/display-browser.test.js test/backend-production-regressions.test.js
+      - name: Run full Node regression suite
+        run: npm test
+      - name: Commit validated implementation
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "RoomGoblin Automation Media Sessions"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/server.js public/display/index.html public/controller/app.js test/automation-media-sessions.test.js docs/AUTOMATION-DISPLAY-MEDIA.md docs/AUTOMATION-FRAMEWORK.md wiki/Automation-Display-Media.md AGENTS.md CHANGELOG.md
+          git commit -m "Add action loops and persistent media sessions [automation-media-sessions]"
+          git push origin HEAD:feature/automation-media-sessions
