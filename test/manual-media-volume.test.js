@@ -32,7 +32,18 @@ test("manual display media exposes persistent playback controls",()=>{
   assert.match(helper,/window\.controllerDisplayCommand\(type,window\.controllerDisplayTargetArg\(\),payload\)/);
   assert.match(controller,/window\.controllerDisplayCommand=cmd/);
   assert.match(controller,/window\.controllerDisplayTargetArg=targetArg/);
-  assert.match(receiver,/n\.volume=Math\.max\(0,Math\.min\(1,Number\(m\.volume\?\?1\)\)\)/);
+  assert.match(receiver,/async function startVideoPlayback\(video,m,reason='autoplay'\)/);
+  assert.match(receiver,/video\.muted=true;video\.defaultMuted=true/);
+  assert.match(receiver,/await video\.play\(\)/);
+  assert.match(receiver,/muted-fallback/);
+  assert.match(receiver,/activeMediaSession=\{video,spec\}/);
+});
+
+test("Display Studio media library never loads MP4 files as thumbnails",()=>{
+  const controller=read("public/controller/display.html");
+  assert.doesNotMatch(controller,/document\.createElement\('video'\)/);
+  assert.match(controller,/thumb\.textContent='VIDEO'/);
+  assert.match(controller,/f\.originalName\|\|f\.storedName/);
 });
 
 test("Today display previews stay live but suppress local video decoding",()=>{
@@ -50,5 +61,5 @@ test("Today display previews stay live but suppress local video decoding",()=>{
 });
 
 test("media-session renderer release forces receiver convergence",()=>{
-  assert.equal(read("VERSION").trim(),"1.0.0-alpha.83");
+  assert.equal(read("VERSION").trim(),"1.0.0-alpha.84");
 });
