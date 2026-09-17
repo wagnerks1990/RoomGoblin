@@ -1,3 +1,27 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim AS native-agent-build
+
+WORKDIR /src
+COPY VERSION ./VERSION
+COPY windows-agent ./windows-agent
+RUN RELEASE_VERSION="$(cat VERSION)" \
+ && mkdir -p /out \
+ && for project in \
+      windows-agent/RoomGoblin.Agent.Service/RoomGoblin.Agent.Service.csproj \
+      windows-agent/RoomGoblin.Agent.Session/RoomGoblin.Agent.Session.csproj \
+      windows-agent/RoomGoblin.Agent.Bootstrap/RoomGoblin.Agent.Bootstrap.csproj \
+      windows-agent/RoomGoblin.Agent.Updater/RoomGoblin.Agent.Updater.csproj; do \
+      dotnet publish "$project" -c Release -r win-x64 --self-contained true \
+        -p:PublishSingleFile=true \
+        -p:EnableWindowsTargeting=true \
+        -p:Version="$RELEASE_VERSION" \
+        -p:InformationalVersion="$RELEASE_VERSION" \
+        -o /out; \
+    done \
+ && test -s /out/RoomGoblinAgent.exe \
+ && test -s /out/RoomGoblinSessionAgent.exe \
+ && test -s /out/RoomGoblinAgentBootstrap.exe \
+ && test -s /out/RoomGoblinAgentUpdater.exe
+
 FROM node:22-bookworm-slim AS browser-build
 
 WORKDIR /build
@@ -48,6 +72,10 @@ RUN PYTHONDONTWRITEBYTECODE=1 /opt/esphome/bin/python -m unittest discover -s te
 COPY config ./config
 COPY public ./public
 COPY --from=browser-build /build/public/display/sendspin.bundle.js ./public/display/sendspin.bundle.js
+COPY --from=native-agent-build /out/RoomGoblinAgent.exe ./public/lab-agent/native/RoomGoblinAgent.exe
+COPY --from=native-agent-build /out/RoomGoblinSessionAgent.exe ./public/lab-agent/native/RoomGoblinSessionAgent.exe
+COPY --from=native-agent-build /out/RoomGoblinAgentBootstrap.exe ./public/lab-agent/native/RoomGoblinAgentBootstrap.exe
+COPY --from=native-agent-build /out/RoomGoblinAgentUpdater.exe ./public/lab-agent/native/RoomGoblinAgentUpdater.exe
 COPY tools/prepare-display-fonts.sh ./tools/prepare-display-fonts.sh
 COPY tools/verify-image-permissions.js ./tools/verify-image-permissions.js
 COPY tools/start-roomgoblin.sh ./tools/start-roomgoblin.sh
@@ -63,6 +91,10 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
       public/controller/display.html \
       public/display/index.html \
       public/lab-agent/ClassroomHubAgent.ps1
+
+# Generate the native update manifest from the exact Windows binaries that are
+# packaged into this image. The service verifies every SHA-256 before staging.
+RUN RELEASE_VERSION="$(cat VERSION)" node -e 'const fs=require("fs"),crypto=require("crypto"),path=require("path");const dir="public/lab-agent/native";const names=["RoomGoblinAgent.exe","RoomGoblinSessionAgent.exe","RoomGoblinAgentBootstrap.exe","RoomGoblinAgentUpdater.exe"];const files=names.map(name=>{const b=fs.readFileSync(path.join(dir,name));return {name,sha256:crypto.createHash("sha256").update(b).digest("hex"),bytes:b.length}});fs.writeFileSync(path.join(dir,"manifest.json"),JSON.stringify({ok:true,version:process.env.RELEASE_VERSION,files},null,2)+"\n")'
 
 # Local Docker contexts retain file modes. A root-edited 0600 server.js must not
 # produce an image that only root can start. Normalize packaged, non-secret

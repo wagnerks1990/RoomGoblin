@@ -23,6 +23,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [AI Android TV Context](ai/ANDROID-TV-HARDWARE-VALIDATION.md) — machine/assistant rules derived from physical managed-display validation, including Accessibility navigation and arbitrary-input boundaries.
 - [AI CI Publication Context](ai/CI-PUBLICATION.md) — machine/assistant rules for direct-main exact-SHA validation, image publication, bounded Android dependency retry, promotion, and production-branch advancement.
 - [AI Production Shared-Data Context](ai/PRODUCTION-SHARED-DATA.md) — machine/assistant rules for runtime umask, backup readability, permission repair, and updater safety.
+- [AI Native Windows Lab Agent Context](ai/NATIVE-WINDOWS-LAB-AGENT.md) — Session 0/service boundaries, DPAPI compatibility, one-shot helper security, native update trust, and rollback invariants.
 - [AI Veyon DHCP Inventory Context](ai/VEYON-DHCP-INVENTORY.md) — hostname-stable Veyon identity, DHCP reconciliation, selection safety, and future backend migration boundaries.
 - [AI Veyon Multi-Key Authentication Context](ai/VEYON-MULTI-KEY-AUTH.md) — encrypted named-key storage, per-host key preference, bounded fallback, and credential-handling invariants.
 - [TV Routing Matrix](TV-ROUTING-MATRIX.md) — restored controls, saving, preserved data and verification.
@@ -41,6 +42,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Database-First Recovery](DATABASE-FIRST-RECOVERY.md) — alpha.80 encrypted single-export recovery contract, host transaction/rollback model, compatibility limits, and operator drill.
 - [Host Agent](HOST-AGENT.md) — host-level service responsibilities, migration verification, and security boundary.
 - [Windows Lab Agent](LAB-AGENT.md) — one-time enrollment, per-computer credentials, signing, removal, and privacy controls.
+- [Native Windows Lab Agent](NATIVE-WINDOWS-LAB-AGENT.md) — native service architecture, interactive-session helper, update trust, migration/rollback, build and live acceptance.
 - [Android TV Displays](ANDROID-TV-DISPLAYS.md) — pairing, assignment, Display Agent lifecycle, and device recovery.
 - [Android TV Hardware Validation](ANDROID-TV-HARDWARE-VALIDATION.md) — exact physical validation results and remaining acceptance tests for the current Android/Google TV target.
 - [Persistent Android ADB](PERSISTENT-ANDROID-ADB.md) — trusted-network wireless-debugging recovery and boundaries.
@@ -57,7 +59,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 
 ## AI and contributor instructions
 
-`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Cloudflare/reverse-proxy work must also follow `docs/ai/CLOUDFLARE-TUNNEL.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated. CI/release-publication work must also follow `docs/ai/CI-PUBLICATION.md`, production shared-data/backup work must follow `docs/ai/PRODUCTION-SHARED-DATA.md`, topology/targeting work must follow `docs/ai/ROOM-TOPOLOGY.md`, Veyon DHCP/inventory work must follow `docs/ai/VEYON-DHCP-INVENTORY.md`, and Veyon authentication/keyring work must follow `docs/ai/VEYON-MULTI-KEY-AUTH.md`.
+`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Cloudflare/reverse-proxy work must also follow `docs/ai/CLOUDFLARE-TUNNEL.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated. CI/release-publication work must also follow `docs/ai/CI-PUBLICATION.md`, production shared-data/backup work must follow `docs/ai/PRODUCTION-SHARED-DATA.md`, native Windows Lab Agent work must follow `docs/ai/NATIVE-WINDOWS-LAB-AGENT.md`, topology/targeting work must follow `docs/ai/ROOM-TOPOLOGY.md`, Veyon DHCP/inventory work must follow `docs/ai/VEYON-DHCP-INVENTORY.md`, and Veyon authentication/keyring work must follow `docs/ai/VEYON-MULTI-KEY-AUTH.md`.
 
 Before changing behavior, an AI assistant should read:
 

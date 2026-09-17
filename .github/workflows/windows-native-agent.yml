@@ -1,0 +1,62 @@
+name: Windows Native Agent
+
+on:
+  pull_request:
+    paths:
+      - 'windows-agent/**'
+      - 'VERSION'
+      - 'Dockerfile'
+      - '.github/workflows/windows-native-agent.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'windows-agent/**'
+      - 'VERSION'
+      - 'Dockerfile'
+      - '.github/workflows/windows-native-agent.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build native Windows agent
+        shell: pwsh
+        run: .\windows-agent\scripts\Build-Native-Agent.ps1
+      - name: Verify native artifact set
+        shell: pwsh
+        run: |
+          $root = '.\windows-agent\artifacts\native-agent'
+          $required = @(
+            'RoomGoblinAgent.exe',
+            'RoomGoblinSessionAgent.exe',
+            'RoomGoblinAgentBootstrap.exe',
+            'RoomGoblinAgentUpdater.exe'
+          )
+          foreach ($name in $required) {
+            $path = Join-Path $root $name
+            if (!(Test-Path $path)) { throw "Missing native artifact: $name" }
+            if ((Get-Item $path).Length -le 0) { throw "Empty native artifact: $name" }
+          }
+          $version = (Get-Content .\VERSION -Raw).Trim()
+          $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root 'RoomGoblinAgent.exe'))
+          if ($info.ProductVersion -notlike "$version*") {
+            throw "Native service ProductVersion '$($info.ProductVersion)' does not match VERSION '$version'"
+          }
+      - name: Upload native package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: RoomGoblin-native-agent-win-x64
+          path: windows-agent/artifacts/native-agent/
+          if-no-files-found: error
