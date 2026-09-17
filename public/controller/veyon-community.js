@@ -8,11 +8,11 @@
     const button=$('analyzeScreen');button.disabled=true;
     try{
       const result=await api(`/api/v1/veyon/computers/${encodeURIComponent(ids[0])}/analyze`,{method:'POST',body:'{}'});
-      openInfo('Local screen analysis',`<p>One capture; no screenshot or result archive. Detections are estimates, not evidence of misconduct. Original model labels are preserved.</p><ul>${result.detections.map(d=>`<li>${esc(d.label)} — ${Math.round(d.confidence*100)}%</li>`).join('')||'<li>No detections above the model threshold.</li>'}</ul><p><a href="https://github.com/wagnerks1990/RoomGoblin/tree/main/integrations/veyon-ai" target="_blank" rel="noopener">Model provenance and service source (AGPL)</a></p>`);
+      openInfo('Local screen analysis',`<p>One capture; no screenshot or result archive. Detections are estimates, not evidence of misconduct. Original model labels are preserved.</p><ul>${result.detections.map(d=>`<li>${esc(d.label)} — ${Math.round(d.confidence*100)}%</li>`).join('')||'<li>No detections above the model threshold.</li>'}</ul><p><a href="${esc(result.source)}" target="_blank" rel="noopener">Pinned model provenance (AGPL)</a></p>`);
     }catch(e){alert(e.message)}finally{button.disabled=false}
   };
   const dialog=$('communityDialog'),body=$('communityBody'),status=$('communityStatus');
-  let current=null;
+  let current=null,opening=false;
   function button(label,run){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{b.disabled=true;try{await run()}catch(e){status.textContent=e.message}finally{b.disabled=false}};return b}
   function call(s,action,args={}){
     const task=s.tail.catch(()=>{}).then(()=>{
@@ -29,16 +29,21 @@
     if(current!==s)return;
     const state=await call(s,'state');
     if(current!==s)return;
-    status.textContent=state.error|| (state.pending?'Waiting for endpoint response…':s.kind==='chat'?'Messages sent by the teacher are unverified until checked on the student screen.':'Ready. Downloads are limited to 8 MiB.');
+    const nextStatus=state.error|| (state.pending?'Waiting for endpoint response…':s.kind==='chat'?'Messages sent by the teacher are unverified until checked on the student screen.':'Ready. Downloads are limited to 8 MiB.');
+    if(status.textContent!==nextStatus)status.textContent=nextStatus;
     if(s.kind==='chat'){
-      s.log.textContent=state.messages.map(m=>`${m.from}: ${m.text}`).join('\n');s.log.scrollTop=s.log.scrollHeight;
+      const nextLog=state.messages.map(m=>`${m.from}: ${m.text}`).join('\n');if(s.log.textContent!==nextLog){s.log.textContent=nextLog;s.log.scrollTop=s.log.scrollHeight}
     }else{
-      s.list.replaceChildren();
-      if(!state.pending&&!state.error)for(const entry of state.entries){
-        const path=state.path?`${state.path.replace(/[\\/]$/,'')}/${entry.name}`:entry.name;
-        const row=document.createElement('div');row.append(button(`${entry.dir?'Folder: ':'Download: '}${entry.name}`,async()=>{
-          await call(s,entry.dir?'list':'download',{path});s.download=!entry.dir;await refresh(s);
-        }));s.list.append(row);
+      const signature=JSON.stringify([state.pending,state.error,state.path,state.entries]);
+      if(signature!==s.entriesSignature){
+        const focused=document.activeElement?.dataset?.pilotPath;s.entriesSignature=signature;s.list.replaceChildren();
+        if(!state.pending&&!state.error)for(const entry of state.entries){
+          const path=state.path?`${state.path.replace(/[\\/]$/,'')}/${entry.name}`:entry.name;
+          const row=document.createElement('div'),entryButton=button(`${entry.dir?'Folder: ':'Download: '}${entry.name}`,async()=>{
+            await call(s,entry.dir?'list':'download',{path});s.download=!entry.dir;await refresh(s);
+          });entryButton.dataset.pilotPath=path;row.append(entryButton);s.list.append(row);
+        }
+        if(focused)s.list.querySelector(`[data-pilot-path="${CSS.escape(focused)}"]`)?.focus();
       }
       if(s.download&&state.complete){
         s.download=false;
@@ -54,12 +59,15 @@
     }
   }
   async function open(kind){
+    if(opening)return;
     const ids=targetIds();if(ids.length!==1)return alert('Select exactly one computer.');
+    opening=true;$('communityChat').disabled=true;$('communityFiles').disabled=true;
     if(current)await close();
     const id=ids[0],computer=computers.find(c=>c.id===id);
+    let created=null;
     try{
       const result=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/browser/open`,{method:'POST',body:JSON.stringify({kind})});
-      const s={id,session:result.session,kind,tail:Promise.resolve(),timer:null};current=s;
+      const s={id,session:result.session,kind,tail:Promise.resolve(),timer:null};created=s;current=s;
       body.replaceChildren();status.textContent='Session opened; endpoint support is not yet verified.';
       $('communityTitle').textContent=`${kind==='chat'?'Two-way chat':'Pilot files'} — ${computer?.name||id}`;
       if(kind==='chat'){
@@ -73,7 +81,8 @@
         await call(s,'roots');
       }
       dialog.showModal();await refresh(s);schedule(s);
-    }catch(e){if(current)await close();alert(e.message)}
+    }catch(e){if(created&&current===created)await close();alert(e.message)}
+    finally{opening=false;$('communityChat').disabled=false;$('communityFiles').disabled=false}
   }
   function schedule(s){clearTimeout(s.timer);if(current!==s||s.saved)return;s.timer=setTimeout(async()=>{try{if(!previewSurfaceVisible())return await close();await refresh(s);schedule(s)}catch(e){status.textContent=e.message}},2000)}
   $('communityChat').onclick=()=>open('chat');$('communityFiles').onclick=()=>open('files');

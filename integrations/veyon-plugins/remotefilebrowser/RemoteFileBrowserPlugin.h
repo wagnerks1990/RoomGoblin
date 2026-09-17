@@ -25,6 +25,7 @@
 #pragma once
 
 #include <QFile>
+#include <QHash>
 #include <QPointer>
 #include <QTimer>
 #include <QUuid>
@@ -135,6 +136,7 @@ public:
 	void startDownload( const ComputerControlInterface::Pointer& computer,
 						QUuid transferId, const QString& remotePath );
 	void cancelDownload( const ComputerControlInterface::Pointer& computer, QUuid transferId );
+	void stopWorker( const ComputerControlInterface::Pointer& computer );
 
 	// keys used within an entry of the Entries argument (a QVariantList of QVariantMap)
 	static QString entryKeyName() { return QStringLiteral("name"); }
@@ -161,6 +163,8 @@ private:
 	// server side: remember which master asked, so worker replies can be routed back
 	MessageContext m_masterContext{};
 	bool m_callerAssigned{false};
+	QHash<QUuid, MessageContext> m_requestContexts;
+	QHash<QUuid, MessageContext> m_transferContexts;
 
 	// worker side download state
 	VeyonWorkerInterface* m_worker{nullptr};

@@ -4581,11 +4581,15 @@ async function verifyUserAsync(username,password){
 
 // Diagnostic API access log. Bodies are never persisted here, so credentials,
 // uploaded data and control secrets are not captured.
+const highFrequencyAuditAt=new Map();
 app.use((req,res,next)=>{
   const started=Date.now();
   res.on("finish",()=>{
     if(!req.path.startsWith("/api/"))return;
     const isFramebuffer=req.path.includes("/api/v1/veyon/computers/")&&req.path.endsWith("/framebuffer");
+    const isBrowserPulse=/\/api\/v1\/veyon\/computers\/[^/]+\/browser\/(?:state|pointer|key|chunk)$/.test(req.path);
+    if((isFramebuffer||isBrowserPulse)&&res.statusCode<400)return;
+    if(isFramebuffer||isBrowserPulse){const key=`${isFramebuffer?"frame":"control"}:${res.statusCode}`;const now=Date.now();if(now-(highFrequencyAuditAt.get(key)||0)<60_000)return;highFrequencyAuditAt.set(key,now)}
     const transientFramebuffer=isFramebuffer&&[409,429,502,503,504].includes(res.statusCode);
     const auditPath=req.path.startsWith("/api/v1/recovery-status/")?"/api/v1/recovery-status/:recoveryId":req.path;
     const event={
@@ -6406,12 +6410,12 @@ app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),asy
 const {VeyonAI}=require("./veyon-ai");
 const veyonAI=new VeyonAI({token:String(process.env.VEYON_AI_TOKEN||"")});
 const veyonAILimit=rateLimit({windowMs:60_000,limit:6,keyGenerator:()=>"veyon-ai",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Screen analysis limit reached; wait a minute"}});
-app.post("/api/v1/veyon/computers/:id/analyze",veyonAILimit,requireCapability("lab.control"),requireCapability("lab.sensitive.read"),async(req,res)=>{
+app.post("/api/v1/veyon/computers/:id/analyze",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonAILimit,async(req,res)=>{
   res.set("Cache-Control","no-store");
   const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
   if(veyonCommandQueue.pressure())return res.status(503).json({ok:false,error:"Wait for classroom commands to finish"});
-  try{res.json(await trackFullExportMutation(veyonAI.analyze(async()=>{
+  try{const result=await trackFullExportMutation(veyonAI.analyze(async()=>{
     const frame=await readVeyonFrame(new URLSearchParams({format:"jpeg",width:"1280",height:"720",quality:"80"}),pathname=>veyonConnectedRequest(computer.ip,pathname,{timeoutMs:10000,maxBytes:4*1024*1024},async(pathname,options)=>{
       const response=await veyonFetch(pathname,options);if(!response.ok)throw await veyonResponseError(response);return response;
     }));
@@ -6419,7 +6423,7 @@ app.post("/api/v1/veyon/computers/:id/analyze",veyonAILimit,requireCapability("l
     if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.sensitive.read")||!hasCapability(user,"lab.control")))throw Error("Permission revoked");
     if(veyonComputerStore.computers[computer.id]?.ip!==computer.ip)throw Error("Computer identity changed");
     return frame.buffer;
-  })))}catch{res.status(503).json({ok:false,error:"Local screen analysis unavailable. Configure and start the separate AI pilot service."})}
+  }));audit({kind:"veyon.ai",actor:requestUser(req)?.id||"legacy-control",computer:computer.id,accepted:true,detections:Array.isArray(result.detections)?result.detections.length:0});res.json(result)}catch{res.status(503).json({ok:false,error:"Local screen analysis unavailable. Configure and start the separate AI pilot service."})}
 });
 const {BrowserSessions}=require("./veyon-browser-sessions");
 const veyonBrowserSessions=new BrowserSessions({
@@ -6437,24 +6441,27 @@ const veyonBrowserSessions=new BrowserSessions({
 });
 setInterval(()=>veyonBrowserSessions.prune(),10000).unref();
 const veyonBrowserLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-browser",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser tool limit reached"}});
-app.post("/api/v1/veyon/computers/:id/browser/:action",veyonBrowserLimit,requireCapability("lab.control"),requireCapability("lab.sensitive.read"),async(req,res)=>{
+const veyonBrowserControlLimit=rateLimit({windowMs:60_000,limit:2400,keyGenerator:()=>"veyon-browser-control",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser control limit reached"}});
+const veyonBrowserCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-browser-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser cleanup limit reached"}});
+const veyonBrowserActionLimit=(req,res,next)=>(req.params.action==="close"?veyonBrowserCleanupLimit:["state","pointer","key","clipboard"].includes(req.params.action)?veyonBrowserControlLimit:veyonBrowserLimit)(req,res,next);
+app.post("/api/v1/veyon/computers/:id/browser/:action",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonBrowserActionLimit,async(req,res)=>{
   res.set("Cache-Control","no-store");
   const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
   const authorize=()=>{const user=requestUser(req);if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.control")||!hasCapability(user,"lab.sensitive.read")))throw Object.assign(Error("Browser tool permission revoked"),{status:403})};
-  try{res.json(await trackFullExportMutation(veyonBrowserSessions.run({owner:requestUser(req)?.id||"legacy-control",computer,action:req.params.action,input:req.body,authorize})))}
+  try{const actor=requestUser(req)?.id||"legacy-control";const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:req.params.action,input:req.body,authorize}));if(["open","close","send","download","clipboard"].includes(req.params.action)&&!(req.params.action==="clipboard"&&result.pending))audit({kind:"veyon.browser",actor,action:req.params.action,sessionKind:req.params.action==="open"?String(req.body?.kind||"").slice(0,20):undefined,computer:computer.id,accepted:true});res.json(result)}
   catch(error){res.status([403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Browser request failed"})}
 });
 const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
 const veyonFreeWriteLimit=rateLimit({windowMs:60_000,limit:30,keyGenerator:()=>"veyon-free-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool action limit reached; retry later"}});
 const veyonFreeCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon cleanup limit reached; retry later"}});
-app.get("/api/v1/veyon/computers/:id/catalog",veyonFreeReadLimit,requireCapability("lab.read"),async(req,res)=>{
+app.get("/api/v1/veyon/computers/:id/catalog",requireCapability("lab.read"),veyonFreeReadLimit,async(req,res)=>{
   const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
   try{res.json({ok:true,features:featureCatalog(await veyonAvailableFeatures(rec.ip)),verification:"proxy-advertisement-only"})}
   catch(error){res.status(503).json(safeVeyonFailure(error))}
 });
-app.post("/api/v1/veyon/wake",veyonFreeWriteLimit,requireCapability("lab.control"),async(req,res)=>{
+app.post("/api/v1/veyon/wake",requireCapability("lab.control"),veyonFreeWriteLimit,async(req,res)=>{
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 computers.");
     const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
@@ -6463,8 +6470,8 @@ app.post("/api/v1/veyon/wake",veyonFreeWriteLimit,requireCapability("lab.control
     res.json({ok:results.every(r=>r.accepted),results});
   }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
-app.get("/api/v1/veyon/lesson-actions",veyonFreeReadLimit,requireCapability("lab.control"),(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
-app.put("/api/v1/veyon/lesson-actions",veyonFreeWriteLimit,requireCapability("lab.control"),(req,res)=>{
+app.get("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),veyonFreeReadLimit,(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
+app.put("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),veyonFreeWriteLimit,(req,res)=>{
   try{
     const inputs=req.body?.actions;if(!Array.isArray(inputs)||inputs.length>40)throw Error("Save at most 40 lesson actions.");
     const actions=inputs.map(normalizeLessonAction);
@@ -6511,7 +6518,7 @@ async function waitForVeyonCommand(job){
 function veyonJobResults(job){return job.results.map(row=>({...row,error:row.error||(!row.ok?row.reason||"Command is still pending; check command history.":undefined)}))}
 // Generation identities contain no broadcast tokens and exist only while a route is active.
 const veyonBroadcastWorkflows=new Map();
-app.post("/api/v1/veyon/demo/stop-selected",veyonFreeCleanupLimit,requireCapability("lab.control"),async(req,res)=>{
+app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),veyonFreeCleanupLimit,async(req,res)=>{
   const workflows=[];
   try{
     const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 broadcast participants.");
@@ -6578,7 +6585,7 @@ app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,re
 app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
 app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
 app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/feature",(req,res,next)=>["clipboardWrite","keySequence"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),requireCapability("lab.control"),(req,res)=>{
+app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res,next)=>["clipboardWrite","keySequence"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),(req,res)=>{
   try{
     const targets=Array.isArray(req.body?.targets)?req.body.targets:[req.body?.target].filter(Boolean);
     if(!targets.length||targets.length>512)throw Error("Choose between 1 and 512 targets.");

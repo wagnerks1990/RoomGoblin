@@ -1,6 +1,6 @@
 'use strict';
 const MODEL_SHA256='06e0beb4adecd05a6d04f5dd9d42669dc3020fe6669f68302ac0ff85e1600b6c';
-const SOURCE='https://github.com/wagnerks1990/RoomGoblin/tree/main/integrations/veyon-ai';
+const SOURCE='https://github.com/vainmari/Veyon-detection/tree/db02a70439aad0c21e93de51d37761e082a9c393';
 function validateResult(value){
   if(value?.ok!==true||value.modelSha256!==MODEL_SHA256||!Array.isArray(value.detections)||value.detections.length>100)throw Error('Unexpected local model response');
   for(const d of value.detections)if(typeof d.label!=='string'||d.label.length>100||!Number.isFinite(d.confidence)||d.confidence<0||d.confidence>1||!Array.isArray(d.box)||d.box.length!==4||!d.box.every(n=>Number.isFinite(n)&&n>=0&&n<=4096))throw Error('Invalid local detection');

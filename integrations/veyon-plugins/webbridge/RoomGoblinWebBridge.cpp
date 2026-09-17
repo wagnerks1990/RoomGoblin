@@ -4,6 +4,13 @@
 #include "VeyonCore.h"
 #include "VeyonConfiguration.h"
 #include "VncConnection.h"
+#include "VeyonServerInterface.h"
+#include "VeyonWorkerInterface.h"
+#include "FeatureWorkerManager.h"
+#include <QClipboard>
+#include <QDateTime>
+#include <QGuiApplication>
+#include <QMutexLocker>
 #include <QMap>
 
 namespace {
@@ -11,19 +18,36 @@ const Feature::Uid WriteUid{"d344032e-70ce-4a83-8cb8-3ebd6d6f6f39"};
 const Feature::Uid KeyUid{"6c33a9b1-8b1f-4c71-bc64-85f7df210cab"};
 const Feature::Uid ExchangeUid{"8fa73e19-3d66-4d59-9783-c2a1bb07e20e"};
 const Feature::Uid ControlUid{"ca00ad68-1709-4abe-85e2-48dff6ccf8a2"};
+const Feature::Uid BrowserControlUid{"c775285d-ea7e-4c48-a613-a73af94d4be3"};
+const Feature::Uid ClipboardReadUid{"9fd323eb-5ae1-4552-8a4c-8b18837b78f7"};
+QMutex clipboardContextsMutex;
+QHash<QUuid, QPair<MessageContext,qint64>> clipboardContexts;
 }
 
 RoomGoblinWebBridge::RoomGoblinWebBridge(QObject* parent) : QObject(parent)
 {
+    m_browserSessionTimer.setInterval(500);
+    connect(&m_browserSessionTimer, &QTimer::timeout, this, &RoomGoblinWebBridge::pruneBrowserSessions);
+    m_browserSessionTimer.start();
     if (allowed(false))
+    {
         m_features.append(Feature{QStringLiteral("RoomGoblinKeySequence"), Feature::Flag::Meta,
                                   KeyUid, {}, tr("Send key or shortcut"), {},
                                   tr("Press and release a fixed keyboard shortcut")});
+        m_features.append(Feature{QStringLiteral("RoomGoblinBrowserControl"), Feature::Flag::Meta,
+                                  BrowserControlUid, {}, tr("Browser remote control"), {},
+                                  tr("Bounded live pointer and keyboard session")});
+    }
     // Do not advertise an operation forbidden by this proxy's configuration.
     if (allowed())
+    {
         m_features.append(Feature{QStringLiteral("RoomGoblinClipboardWrite"), Feature::Flag::Meta,
                                   WriteUid, {}, tr("Send clipboard text"), {},
                                   tr("Send explicitly entered text to one authenticated endpoint")});
+        m_features.append(Feature{QStringLiteral("RoomGoblinClipboardRead"), Feature::Flag::Meta | Feature::Flag::AllComponents,
+                                  ClipboardReadUid, {}, tr("Read clipboard text"), {},
+                                  tr("Return clipboard text only after an explicit correlated request")});
+    }
 }
 
 bool RoomGoblinWebBridge::allowed(bool clipboard) const
@@ -33,7 +57,8 @@ bool RoomGoblinWebBridge::allowed(bool clipboard) const
     for (const auto& value : disabled)
     {
         const Feature::Uid uid{value};
-        if (uid == ControlUid || (clipboard && (uid == WriteUid || uid == ExchangeUid)) || (!clipboard && uid == KeyUid)) return false;
+        if (uid == ControlUid || (clipboard && (uid == WriteUid || uid == ExchangeUid || uid == ClipboardReadUid)) ||
+            (!clipboard && (uid == KeyUid || uid == BrowserControlUid))) return false;
     }
     return true;
 }
@@ -79,4 +104,55 @@ bool RoomGoblinWebBridge::controlFeature(Feature::Uid uid, Operation operation,
     // policy remain enforced by Veyon's authenticated transport/FeatureManager.
     sendFeatureMessage(FeatureMessage{ExchangeUid}.addArgument(1, text), clients);
     return true;
+}
+
+bool RoomGoblinWebBridge::handleFeatureMessage(VeyonServerInterface& server, const MessageContext& context,
+                                                const FeatureMessage& message)
+{
+    if (message.featureUid()!=ClipboardReadUid || !allowed()) return false;
+    const auto request=message.argument(0).toUuid();
+    if (message.command<int>()!=1 || request.isNull() || !context.ioDevice()) return false;
+    {
+        QMutexLocker lock(&clipboardContextsMutex);
+        const auto now=QDateTime::currentMSecsSinceEpoch();
+        for (auto it=clipboardContexts.begin();it!=clipboardContexts.end();)
+            if (!it.value().first.ioDevice() || it.value().second<now) it=clipboardContexts.erase(it); else ++it;
+        if (clipboardContexts.size()>=4) return false;
+        clipboardContexts.insert(request,{context,now+5000});
+    }
+    auto& manager=server.featureWorkerManager();
+    if (!manager.isWorkerRunning(ClipboardReadUid) && !manager.startUnmanagedSessionWorker(ClipboardReadUid)) {
+        QMutexLocker lock(&clipboardContextsMutex); clipboardContexts.remove(request); return false;
+    }
+    manager.sendMessageToUnmanagedSessionWorker(message);
+    return true;
+}
+
+bool RoomGoblinWebBridge::handleFeatureMessageFromWorker(VeyonServerInterface& server,
+                                                          const FeatureMessage& message)
+{
+    if (message.featureUid()!=ClipboardReadUid || !allowed() || message.command<int>()!=2) return false;
+    const auto request=message.argument(0).toUuid();
+    MessageContext context;
+    {
+        QMutexLocker lock(&clipboardContextsMutex);
+        const auto it=clipboardContexts.find(request);
+        if (it==clipboardContexts.end() || it.value().second<QDateTime::currentMSecsSinceEpoch()) return false;
+        context=it.value().first; clipboardContexts.erase(it);
+    }
+    return context.ioDevice() && server.sendFeatureMessageReply(context,message);
+}
+
+bool RoomGoblinWebBridge::handleFeatureMessage(VeyonWorkerInterface& worker, const FeatureMessage& message)
+{
+    if (message.featureUid()!=ClipboardReadUid || !allowed() || message.command<int>()!=1) return false;
+    const auto request=message.argument(0).toUuid();
+    if (request.isNull()) return false;
+    const auto clipboard=QGuiApplication::clipboard();
+    const auto text=clipboard ? clipboard->text() : QString{};
+    const auto bytes=text.toUtf8();
+    const bool valid=clipboard && !text.contains(QChar{0}) && bytes.size()<=8192;
+    return worker.sendFeatureMessageReply(FeatureMessage{ClipboardReadUid,static_cast<FeatureMessage::Command>(2)}
+        .addArgument(0,request).addArgument(1,valid?text:QString{})
+        .addArgument(2,valid?QString{}:tr("Clipboard is unavailable or exceeds 8 KiB")));
 }

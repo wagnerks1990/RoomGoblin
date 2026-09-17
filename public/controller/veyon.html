@@ -83,10 +83,16 @@
     <button id="liveActual">1:1</button>
     <button id="liveFullscreen">Full Screen</button>
     <button id="liveResetSize">Reset Size</button>
+    <button id="startBrowserControl">Control</button>
+    <label id="liveScreenLabel" hidden>View monitor<select id="liveScreen"><option value="all">All screens</option></select></label>
+    <button id="readRemoteClipboard" hidden>Read clipboard</button>
+    <button id="stopBrowserControl" class="danger" hidden>Exit control</button>
     <button id="liveRetry">Retry frame</button><button id="closeLive">Close</button>
   </div>
+  <textarea id="remoteClipboard" readonly hidden aria-label="Remote clipboard text"></textarea>
   <div id="liveStatus" class="muted" role="status">Connecting…</div><div id="liveStage" class="liveStage">
     <img id="liveImg" class="liveImg" alt="Live computer screen" hidden>
+    <canvas id="controlCanvas" tabindex="0" aria-label="Controlled remote computer screen" hidden></canvas>
   </div>
 </div></div>
 <div id="infoModal" class="modal" role="dialog" aria-modal="true" aria-label="Computer information"><div class="modalBox">
@@ -105,5 +111,5 @@
   <div class="row"><strong id="communityTitle">Community tools</strong><button id="communityClose" type="button">Close session</button></div>
   <p id="communityStatus" role="status"></p><div id="communityBody"></div>
 </dialog>
-<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/veyon-community.js"></script><script src="/controller/lab-accessibility.js" defer></script>
+<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/veyon-community.js"></script><script src="/controller/veyon-control.js"></script><script src="/controller/lab-accessibility.js" defer></script>
 </body></html>

@@ -22,9 +22,12 @@ test('Shutdown arguments are bounded and cannot imply a cancellation',()=>{
   assert.deepEqual(helpers.powerArguments('powerDownNow',{shutdownTimeout:55,password:'not-forwarded'}),{});
 });
 test('Catalog shows browser workflows only and never claims endpoint verification',()=>{
-  const rows=helpers.featureCatalog([{name:'FileTransfer'},{name:'RemoteView'},{name:'UnknownNative'}]);
-  assert.equal(rows.some(r=>['FileTransfer','RemoteControl','UnknownNative','QueryScreens','DesktopAccessDialog'].includes(r.name)),false);
+  const rows=helpers.featureCatalog([{name:'FileTransfer'},{name:'RemoteView'},{name:'UnknownNative'},{name:'RoomGoblinBrowserControl',uid:'wrong'},{name:'RoomGoblinClipboardRead',uid:helpers.CLIPBOARD_READ_FEATURE_UID}]);
+  assert.equal(rows.some(r=>['FileTransfer','UnknownNative','DesktopAccessDialog'].includes(r.name)),false);
+  assert.equal(rows.some(r=>r.name==='RemoteControl'),true);assert.equal(rows.some(r=>r.name==='QueryScreens'),true);
   assert.equal(rows.find(r=>r.name==='RemoteView').advertised,true);
+  assert.equal(rows.find(r=>r.name==='RoomGoblinBrowserControl').advertised,false);
+  assert.equal(rows.find(r=>r.name==='RoomGoblinClipboardRead').advertised,true);
   assert.equal(rows.some(r=>r.endpointVerified),false);
 });
 test('Lesson actions allow only bounded app/message/http presets and reject URL credentials',()=>{
@@ -38,7 +41,7 @@ function routes(){
   const computers={one:{id:'one',ip:'192.0.2.1',hostname:'PC-A',macHostname:'pc-a',mac:'02:12:34:56:78:90'}};
   const source=fs.readFileSync('src/server.js','utf8');
   const region=source.slice(source.indexOf('app.get("/api/v1/veyon/computers/:id/catalog"'),source.indexOf('app.get("/api/v1/veyon/computers/:id/feature/:feature"'));
-  const context={...helpers,veyonFreeReadLimit:()=>{},veyonFreeWriteLimit:()=>{},app:Object.fromEntries(['get','post','put'].map(method=>[method,(path,_limit,cap,fn)=>registered.set(method+' '+path,{cap,fn})])),requireCapability:c=>c,veyonComputerStore:{computers},veyonComputerId:String,dbStore:{getPreference:(k,f)=>prefs.get(k)||f,setPreference:(k,v)=>prefs.set(k,v)},audit:()=>{},mapLimit:async(items,_limit,fn)=>Promise.all(items.map(fn)),wakeComputer:async mac=>{packets.push(mac);return {accepted:true,verified:false}},veyonAvailableFeatures:async()=>[{name:'RemoteControl'}],safeVeyonFailure:()=>({ok:false,error:'Unavailable'})};
+  const context={...helpers,veyonFreeReadLimit:()=>{},veyonFreeWriteLimit:()=>{},app:Object.fromEntries(['get','post','put'].map(method=>[method,(path,cap,_limit,fn)=>registered.set(method+' '+path,{cap,fn})])),requireCapability:c=>c,veyonComputerStore:{computers},veyonComputerId:String,dbStore:{getPreference:(k,f)=>prefs.get(k)||f,setPreference:(k,v)=>prefs.set(k,v)},audit:()=>{},mapLimit:async(items,_limit,fn)=>Promise.all(items.map(fn)),wakeComputer:async mac=>{packets.push(mac);return {accepted:true,verified:false}},veyonAvailableFeatures:async()=>[{name:'RemoteControl'}],safeVeyonFailure:()=>({ok:false,error:'Unavailable'})};
   vm.runInNewContext(region,context);
   async function call(method,path,body={},params={}){const {cap,fn}=registered.get(method+' '+path),res={statusCode:200,status(n){this.statusCode=n;return this},json(v){this.body=JSON.parse(JSON.stringify(v));return this},set(){return this},type(){return this},send(v){this.body=v;return this}};await fn({body,params},res);return {...res,cap}}
   return {call,computers,packets};
@@ -108,7 +111,7 @@ test('Clipboard requires an exact native bridge identity and bounds UTF-8 conten
 test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
   const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
   let handler,cap,limit;const queued=[];
-  const context={...helpers,Buffer,app:{post(_path,l,c,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:(_req,res)=>{res.limited=true},requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  const context={...helpers,Buffer,app:{post(_path,c,l,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:(_req,res)=>{res.limited=true},requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
   vm.runInNewContext(source.slice(start,end),context);
   const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
   assert.equal(cap,'lab.control');
@@ -153,4 +156,13 @@ test('Native launcher buttons and download route are removed',()=>{
   assert.doesNotMatch(fs.readFileSync('public/controller/veyon.html','utf8'),/id="native(?:View|Control|Master)"/);
   assert.doesNotMatch(fs.readFileSync('src/server.js','utf8'),/app\.post\("\/api\/v1\/veyon\/desktop-launcher"/);
   assert.equal(helpers.nativeLauncher,undefined);
+});
+
+test('Browser audit keeps a stable event kind and separates the session kind',()=>{
+  const source=fs.readFileSync('src/server.js','utf8');
+  const start=source.indexOf('app.post("/api/v1/veyon/computers/:id/browser/:action"');
+  const block=source.slice(start,source.indexOf('const veyonFreeReadLimit=',start));
+  assert.match(block,/audit\(\{kind:"veyon\.browser",actor,action:req\.params\.action,sessionKind:/);
+  assert.doesNotMatch(block,/audit\(\{kind:"veyon\.browser"[^}]*,kind:/);
+  assert.doesNotMatch(block,/audit\(\{[^}]*\b(session|text|path|lease):/);
 });

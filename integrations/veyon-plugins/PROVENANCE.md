@@ -31,14 +31,13 @@ RoomGoblin modifications, September 2026:
 - File browser: restrict ordinary file reads/listings to the logged-in user's
   `RoomGoblin-Pilot` folder, reject canonical paths outside it and symbolic-link
   entries; cap directory results at 1000, files at 50 MiB and chunk size at
-  128 KiB; pace chunks; pin replies to the selected endpoint and first teacher
-  connection; use QSaveFile for atomic saves, verify byte counts and write results,
-  and discard incomplete transfers after 60 seconds.
+  128 KiB; pace chunks; correlate replies to the selected endpoint and exact
+  request/transfer generation; allow one transfer; use QSaveFile for atomic saves,
+  verify byte counts and write results, and stop the worker on close/timeout.
 
-The file browser intentionally keeps the first teacher connection pinned for the
-endpoint service lifetime. Restart the **pilot endpoint's** Veyon service before
-using a replacement teacher connection. This fails closed instead of routing
-old worker replies to a new controller. Chat also requires the teacher to close
+The file browser pins one authenticated teacher only while its worker session is
+open. Close the browser/native dialog before using a replacement connection;
+late replies have no generation mapping and are discarded. Chat requires the teacher to close
 its dialog before opening another session. Stock WebAPI does not expose either plugin; the RoomGoblin browser adapter adds a fixed authenticated route for this matching pilot.
 
 The test folder is a pilot restriction, not a hardened filesystem sandbox against

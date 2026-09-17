@@ -12,7 +12,8 @@ a successful HTTP response does not prove the student saw it. Each conversation
 retains at most 100 messages of 2000 characters in memory. Closing or hiding the
 workspace attempts to stop it; endpoint conversations expire after 15 minutes
 if the browser disappears. Reopen to continue. Nothing is archived by the Hub.
-Native debug logging can include message contents and should remain disabled.
+The pinned preparer redacts RoomGoblin bridge request bodies, response maps and
+connection headers from native debug logs.
 
 The file browser lists the student's existing `RoomGoblin-Pilot` folder, opens
 subdirectories and downloads complete files up to 8 MiB. It cannot upload, delete,
@@ -26,14 +27,18 @@ Both tools require `lab.control` and `lab.sensitive.read`. The Hub binds opaque
 browser sessions to their user, saved computer identity and exact authenticated
 native connection. Eight sessions at most; no automatic reconnect, command retry,
 or persistence across restarts. A connection change requires reopening. The
-file plugin retains its existing first-teacher connection restriction: a new
-native connection can require restarting the disposable endpoint service.
+file plugin releases its authenticated caller on browser close, so a later
+authenticated connection can reopen it without restarting the endpoint.
 
 ## API and implementation
 
-`POST /api/v1/veyon/computers/:id/browser/:action` uses normal session/CSRF checks,
-no-store responses and a shared 600/minute budget including polling/chunks.
-Actions are `open`, `close`, `state`, `send`, `roots`, `list`, `download`, `chunk`.
+`POST /api/v1/veyon/computers/:id/browser/:action` uses normal session/CSRF checks
+and no-store responses. Chat/file operations have an appliance-wide 600/minute
+budget; control state/input/clipboard have a separate 2400/minute budget.
+Authorization runs before that appliance-wide budget. Close has a separate
+cleanup budget so ordinary polling cannot prevent resource release.
+Actions are `open`, `close`, `state`, `send`, `roots`, `list`, `download`, `chunk`,
+`pointer`, `key`, and `clipboard`, with a per-session kind allowlist.
 Payloads are validated and reconstructed; arbitrary native protocol forwarding
 is not exposed. Each session permits only one in-flight request. Asynchronous
 work remains counted for Full Recovery Export even if the HTTP client closes.
@@ -57,4 +62,8 @@ empty/multichunk files, checksum equality, out-of-folder rejection, disconnect,
 and interrupted/oversized downloads. Revert the disposable VM snapshot to remove
 the pilot; preserve production packages, keys and authentication rules.
 
-Full remote mouse/keyboard control, clipboard reading, monitor selection and native distribution/collection adapters remain unimplemented. The optional separate AI adapter is described in [Local AI pilot](VEYON-LOCAL-AI.md); it is not deployed by a Hub update.
+Bounded browser control, explicit clipboard reading and monitor viewport
+selection are described in [Browser remote control](VEYON-BROWSER-CONTROL.md).
+Official distribution/collection remain native-only because stock 4.11.2 has no
+safe, acknowledged WebAPI adapter. The optional separate AI adapter is described
+in [Local AI pilot](VEYON-LOCAL-AI.md); it is not deployed by a Hub update.

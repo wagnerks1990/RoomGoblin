@@ -224,7 +224,7 @@ jobs:
             libssl-dev libpam0g-dev libproc2-dev libldap2-dev libsasl2-dev libqca-qt6-dev libqca-qt6-plugins \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
       - name: Verify native pilot preparation
-        run: python3 -m unittest discover -s tools -p test_prepare_veyon_pilot.py
+        run: python3 -m unittest discover -s tools -p 'test_*veyon_pilot*.py'
       - name: Build and verify complete community pilot
         run: bash tools/package-veyon-pilot.sh "$RUNNER_TEMP/roomgoblin-native-pilot"
       - name: Upload complete native pilot and corresponding source

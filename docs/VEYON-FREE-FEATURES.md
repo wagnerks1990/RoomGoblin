@@ -22,15 +22,15 @@ targets remain selected; check the existing selection count before confirming.
 | --- | --- | --- |
 | Monitoring, screenshots, remote view | Existing previews, Live View, screenshot download | Requires `lab.sensitive.read`; an image proves capture, TCP alone does not |
 | Keyboard shortcuts | Browser Send key or shortcut | Requires RoomGoblinWebBridge; fixed press/release sequences |
-| Full remote keyboard/mouse control | Native-only; documentation reference | Full browser control remains unimplemented; no launcher in the web GUI |
+| Full remote keyboard/mouse control | Control in Live View | One target; matching bridge; fresh-frame lease, native rate/queue bounds, forced release; input is sent/unverified |
 | Clipboard text sending | [Browser form and native bridge](VEYON-WEB-CLIPBOARD.md) | One target; explicit text only; requires RoomGoblinWebBridge on the appliance |
-| Clipboard exchange, monitor selection | Native Veyon remote-access window | Teacher-side settings and authentication apply; browser clipboard reading and monitor selection remain unimplemented |
+| Clipboard read, monitor view | Active Browser Control session | Explicit correlated text read; monitor selection crops the combined framebuffer and does not switch endpoint output |
 | Teacher/student demonstration, fullscreen/window | Existing teacher controls or new student demonstration controls | Select source and audience; source must have a signed-in user; source excluded from recipients |
 | Stop selected demonstrations | Select source and all recipients, then stop | Queues all three mode cleanups atomically; offline owned modes retain existing recovery behavior |
 | Screen/input locks | Existing lock/unlock controls | Read-back confirmation, per-host order and restart cleanup retained |
 | Text messages, open websites, launch applications | Existing buttons or saved lesson actions | Presets require explicit Run and target confirmation; no automatic execution |
-| File distribution | Native Veyon Master | Stock WebAPI cannot initialize its interactive transfer controller |
-| File collection | Newer native Veyon with collection support | Requires a browser collection adapter; not exposed as a fake web action |
+| File distribution | Native Veyon Master | Native-only: stock endpoints provide no delivery acknowledgement and WebAPI cannot safely initialize the controller |
+| File collection | Native Veyon Master where available | Native-only: stock controller lacks browser-safe path/count/size/atomic-write boundaries |
 | Wake-on-LAN | Save MAC for one computer, select targets, Wake | Fixed local broadcast UDP/9; BIOS/NIC/network must support it; packet acceptance does not prove startup |
 | Reboot, shutdown | Existing controls | One-shot request; never automatically retry uncertain delivery |
 | Immediate, confirmed, delayed, updates-then-shutdown | New power options | Destructive confirmation; delay 30–3600 seconds; no cancellation after dispatch; OS behavior varies |
@@ -96,9 +96,9 @@ runtime** and is not automatically installed on classroom computers.
   from the signed-in user's `RoomGoblin-Pilot` folder. No upload/delete feature.
   Up to 1000 directory entries, 50 MiB per file, 128 KiB chunks and a 60-second
   transfer deadline. Local destination files change only after a complete,
-  successful atomic save. Replies are bound to the selected endpoint and the
-  endpoint service's first teacher connection; reconnecting/replacing that
-  teacher requires a restart of the disposable endpoint's Veyon service.
+  successful atomic save. Replies are bound to the selected endpoint and exact
+  request/transfer generation. Closing the browser or native dialog stops the
+  worker and releases the authenticated caller before a replacement connects.
 
 These restrictions are intentionally narrower than the original forks. The file
 folder check is not a race-resistant security sandbox against a hostile local

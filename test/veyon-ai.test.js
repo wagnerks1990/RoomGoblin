@@ -1,9 +1,10 @@
 'use strict';
 const {test}=require('node:test');const assert=require('node:assert/strict');
-const {VeyonAI,validateResult,MODEL_SHA256}=require('../src/veyon-ai');
+const {VeyonAI,validateResult,MODEL_SHA256,SOURCE}=require('../src/veyon-ai');
 const good={ok:true,modelSha256:MODEL_SHA256,detections:[{label:'Word',confidence:.7,box:[0,0,10,10]}]};
 test('AI results require exact model and bounded valid detections',()=>{
   assert.deepEqual(validateResult({...good,private:'secret'}).detections,good.detections);
+  assert.match(SOURCE,/\/tree\/[0-9a-f]{40}$/);assert.equal(validateResult(good).source,SOURCE);
   assert.equal(validateResult({...good,private:'secret'}).private,undefined);
   for(const value of [{...good,modelSha256:'wrong'},{...good,detections:Array(101).fill(good.detections[0])},{...good,detections:[{...good.detections[0],confidence:NaN}]}])assert.throws(()=>validateResult(value));
 });

@@ -89,6 +89,49 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('#communityClose').click()
         self.assertFalse(errors, errors)
 
+    def test_browser_control_sends_leased_input_reads_clipboard_and_closes(self):
+        page, errors, state = self.pilot_page()
+        requests = []
+        def respond(route):
+            action = route.request.url.rsplit('/', 1)[-1]
+            data = route.request.post_data_json
+            requests.append((action, data))
+            reply = {'ok': True}
+            if action == 'open':
+                reply.update(session='control-fixture', kind='control')
+            elif action == 'state':
+                reply.update(frameWidth=100, frameHeight=100, ready=True,
+                             lease='123e4567-e89b-12d3-a456-426614174000',
+                             frameRevision=7, topology='a' * 64,
+                             screens=[{'index': 0, 'name': 'Main', 'x': 0, 'y': 0, 'width': 100, 'height': 100}],
+                             messages=[], entries=[])
+            elif action == 'clipboard':
+                reply.update(pending=False, text='remote é')
+            route.fulfill(json=reply)
+        page.route('**/api/v1/veyon/computers/student-a/browser/*', respond)
+        page.locator('[data-live="student-a"]').click()
+        page.wait_for_function("document.querySelector('#liveImg').naturalWidth > 0")
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.locator('#startBrowserControl').click()
+        page.locator('#controlCanvas').wait_for(state='visible')
+        page.wait_for_function("document.querySelector('#controlCanvas').dataset.ready === 'true'")
+        page.locator('#controlCanvas').click(position={'x': 10, 'y': 10})
+        page.locator('#controlCanvas').press('a')
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.locator('#readRemoteClipboard').click()
+        page.locator('#remoteClipboard').wait_for(state='visible')
+        self.assertEqual(page.locator('#remoteClipboard').input_value(), 'remote é')
+        page.keyboard.press('Escape')
+        page.wait_for_function("document.querySelector('#controlCanvas').hidden")
+        self.assertEqual(page.locator('#startBrowserControl').evaluate("e => document.activeElement === e && !e.hidden"), True)
+        leased = [data for action, data in requests if action in ('pointer', 'key')]
+        self.assertTrue(leased)
+        self.assertTrue(all(data.get('lease') == '123e4567-e89b-12d3-a456-426614174000' and
+                            data.get('revision') == 7 and data.get('sequence', 0) > 0 for data in leased))
+        self.assertTrue(any(action == 'clipboard' for action, _ in requests))
+        self.assertTrue(any(action == 'close' for action, _ in requests))
+        self.assertFalse(errors, errors)
+
     def test_local_ai_is_explicit_and_labels_are_plain_text(self):
         page, errors, state = self.pilot_page()
         requests = []

@@ -30,6 +30,8 @@ grep -Fxq RoomGoblinWebBridge "$work/artifacts/plugins.txt"
 "$work/stage/usr/bin/veyon-cli" feature list > "$work/artifacts/features.txt"
 grep -Fxq RoomGoblinClipboardWrite "$work/artifacts/features.txt"
 grep -Fxq RoomGoblinKeySequence "$work/artifacts/features.txt"
+grep -Fxq RoomGoblinBrowserControl "$work/artifacts/features.txt"
+grep -Fxq RoomGoblinClipboardRead "$work/artifacts/features.txt"
 cp "$root/docs/VEYON-PILOT-BINARIES.md" "$work/artifacts/README.md"
 cp "$root/integrations/veyon-plugins/COPYING" "$work/artifacts/COPYING"
 cp "$root/integrations/veyon-plugins/PROVENANCE.md" "$work/artifacts/PROVENANCE.md"
@@ -38,7 +40,8 @@ git -C "$work/source" rev-parse HEAD > "$work/artifacts/veyon-revision.txt"
 # Include all corresponding source, including initialized submodules, and omit
 # only Git metadata. The build directory and runtime configuration are separate.
 tar --exclude=.git -czf "$work/artifacts/veyon-pilot-source.tar.gz" -C "$work" source
-tar -czf "$work/artifacts/veyon-pilot-linux.tar.gz" -C "$work/stage" .
+tar --numeric-owner --owner=0 --group=0 -czf "$work/artifacts/veyon-pilot-linux.tar.gz" -C "$work/stage" .
+python3 "$root/tools/verify-veyon-pilot-archive.py" "$work/artifacts/veyon-pilot-linux.tar.gz"
 (
   cd "$work/artifacts"
   sha256sum ./*.tar.gz > SHA256SUMS
