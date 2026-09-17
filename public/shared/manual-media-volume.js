@@ -9,7 +9,15 @@
   function api(url,opt={}){return fetch(url,{cache:"no-store",credentials:"same-origin",...opt}).then(async r=>{const text=await r.text();let body={};try{body=JSON.parse(text)}catch{body={raw:text}}if(!r.ok)throw new Error(body.error||body.message||`HTTP ${r.status}`);return body})}
   function post(url,body){return api(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}
   function fmtTime(value){const seconds=Math.max(0,Number(value||0));return `${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,"0")}`}
-  function suspendPreview(){const frame=el("previewFrame");if(frame&&frame.src&&frame.src!=="about:blank"){frame.dataset.rgSuspendedForVideo="1";frame.src="about:blank"}}
+  function suspendPreview(){
+    const frame=el("previewFrame");
+    if(frame){frame.dataset.rgPreviewDisabled="1";if(frame.getAttribute("src")!=="about:blank")frame.setAttribute("src","about:blank")}
+    const viewport=el("previewViewport");
+    if(viewport&&!viewport.querySelector("[data-rg-preview-disabled]")){
+      const note=document.createElement("div");note.dataset.rgPreviewDisabled="1";note.className="muted";note.style.cssText="position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;background:#111820;color:#d9e2ec;z-index:2";note.textContent="Live receiver preview is disabled in the controller. Physical displays remain the playback authority.";viewport.appendChild(note)
+    }
+  }
+  function disablePreviewLoader(){window.loadPreview=()=>{suspendPreview();return false};suspendPreview()}
   function sessionTarget(){return el("manualMediaSessionTarget")?.value||""}
   async function loadSessionTargets(){
     const select=el("manualMediaSessionTarget");if(!select)return;
@@ -33,7 +41,6 @@
     try{
       const response=await api(`/api/v1/displays/${encodeURIComponent(id)}/media/status`),ms=response.mediaSession||response.status||response;
       if(!ms||!ms.sessionId){status.textContent="No active video telemetry from this display.";return}
-      suspendPreview();
       const pos=Number(ms.positionSeconds||0),dur=Number(ms.durationSeconds||0),seek=el("manualMediaSeek"),volume=el("mediaVolume"),rate=el("manualMediaRate");
       if(seek){seek.max=String(Math.max(1,dur));seek.value=String(Math.min(pos,Math.max(1,dur)))}
       if(el("manualMediaPosition"))el("manualMediaPosition").textContent=`${fmtTime(pos)} / ${dur?fmtTime(dur):"--:--"}`;
@@ -47,6 +54,7 @@
   function install(){
     const muted=el("videoMuted"),opacity=el("mediaOpacity");
     if(!muted||!opacity||el("mediaVolume"))return;
+    disablePreviewLoader();
 
     const wrap=document.createElement("div");
     wrap.className="grid2";
@@ -73,7 +81,7 @@
     controls.className="panel";
     controls.style.marginTop="10px";
     controls.innerHTML=`<h3 style="margin-top:0">Live Video Playback</h3>
-      <div class="muted">Controls the video already playing on the selected receiver. Pause, seek, volume and rate changes do not reload the MP4. The local live preview is suspended when video starts so the controller browser does not decode the MP4.</div>
+      <div class="muted">Controls the video already playing on the selected receiver. Pause, seek, volume and rate changes do not reload the MP4. The controller never loads the receiver video locally.</div>
       <div class="grid2" style="margin-top:8px"><label>Receiver<select id="manualMediaSessionTarget"></select></label><label>Position <span id="manualMediaPosition">0:00 / --:--</span><input id="manualMediaSeek" type="range" min="0" max="1" step="0.1" value="0"></label></div>
       <div class="toolbar"><button type="button" id="manualMediaPlay">Play</button><button type="button" id="manualMediaPause">Pause</button><button type="button" id="manualMediaRestart">Restart Clip</button><button type="button" id="manualMediaStop">Stop / Rewind</button><button type="button" id="manualMediaBack">−10s</button><button type="button" id="manualMediaForward">+10s</button><button type="button" id="manualMediaRefresh">Refresh Status</button></div>
       <div id="manualMediaSessionStatus" class="muted" style="margin-top:7px">No playback telemetry yet.</div>`;
@@ -118,7 +126,6 @@
         ...(isWeb?{forceAudio:volume>0}:{}),
         localDirect:el("mediaLocalDirect")?.checked!==false
       };
-      if(isVideo)suspendPreview();
       const result=window.controllerDisplayCommand(type,window.controllerDisplayTargetArg(),payload);
       if(isVideo){loadSessionTargets().then(()=>{const previewId=el("previewSelect")?.value,select=el("manualMediaSessionTarget");if(previewId&&select&&[...select.options].some(o=>o.value===previewId))select.value=previewId;startStatusPolling()})}
       return result;
