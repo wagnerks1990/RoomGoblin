@@ -24,6 +24,7 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.route('**/api/v1/veyon/computers/*/catalog', lambda route: route.fulfill(json={
             'features': [{'name': 'RemoteView', 'label': 'Remote view', 'provider': 'web',
                           'detail': 'Open Live View', 'advertised': True}]}))
+        page.evaluate("document.querySelectorAll('details').forEach(el=>el.open=true)")
         page.locator('#features').click()
         page.locator('#infoBody .featureRow').wait_for()
         self.assertIn('Browser workflows only', page.locator('#infoBody').inner_text())
