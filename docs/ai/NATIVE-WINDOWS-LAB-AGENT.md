@@ -7,7 +7,8 @@ Use this file as the implementation contract for changes involving `windows-agen
 - The native production service is `RoomGoblinAgent` and runs as `LocalSystem` in Session 0.
 - Keep the existing `C:\ProgramData\ClassroomControlHub\lab-agent.json` compatibility contract unless an explicit migration is implemented and tested.
 - Existing one-time enrollment tokens and permanent bearer credentials are valid native-agent identity. Permanent credentials remain Windows LocalMachine DPAPI protected. Do not introduce per-device certificate identity unless requirements explicitly change.
-- Fresh enrollment must never write the one-time token in plaintext. The bootstrap protects it with LocalMachine DPAPI before writing the compatibility config.
+- Fresh enrollment must never write the one-time token into the compatibility config in plaintext. The bootstrap protects it with LocalMachine DPAPI before writing the compatibility config.
+- Prefer the browser-downloadable native ZIP plus one-time enrollment JSON over a PowerShell download-and-execute chain. When `--enrollment-file` is used, require sibling `manifest.json`, verify the exact four executable SHA-256 values, and delete the plaintext enrollment file immediately after reading it.
 - Fresh enrollment requires `--hub-url`, `--agent-id`, and `--enrollment-token` together. Plain HTTP must fail unless `--allow-http` is explicitly present.
 - Fresh-enrollment config ACLs remain limited to `SYSTEM` and local `Administrators`; do not loosen them for convenience.
 - If a fresh native install fails health acceptance, remove the newly created enrollment configuration so a reusable one-time secret is not left behind.
