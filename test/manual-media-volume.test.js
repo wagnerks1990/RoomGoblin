@@ -24,11 +24,22 @@ test("manual display media exposes persistent playback controls",()=>{
   assert.match(helper,/endAtSeconds/);
   assert.match(helper,/playbackRate/);
   assert.match(helper,/sessionId/);
-  assert.match(helper,/suspendPreview\(\)/);
-  assert.match(helper,/frame\.src=\"about:blank\"/);
+  assert.match(helper,/disablePreviewLoader\(\)/);
+  assert.match(helper,/window\.loadPreview=\(\)=>/);
+  assert.match(helper,/setAttribute\(\"src\",\"about:blank\"\)/);
+  assert.match(helper,/controller never loads the receiver video locally/);
   assert.match(helper,/muted:muted\.checked\|\|volume<=0/);
   assert.match(helper,/window\.controllerDisplayCommand\(type,window\.controllerDisplayTargetArg\(\),payload\)/);
   assert.match(controller,/window\.controllerDisplayCommand=cmd/);
   assert.match(controller,/window\.controllerDisplayTargetArg=targetArg/);
   assert.match(receiver,/n\.volume=Math\.max\(0,Math\.min\(1,Number\(m\.volume\?\?1\)\)\)/);
+});
+
+test("controller overview does not keep receiver preview clients alive",()=>{
+  const embedded=read("public/controller/embedded-workspaces.js");
+  assert.match(embedded,/iframe\[data-overview-preview\]/);
+  assert.match(embedded,/Live preview disabled in controller/);
+  assert.match(embedded,/frame\.src='about:blank'/);
+  assert.match(embedded,/frame\.remove\(\)/);
+  assert.match(embedded,/window\.refreshOverviewDisplayPreviews=\(\)=>/);
 });
