@@ -137,27 +137,32 @@ async function startVideoPlayback(video,m,reason='autoplay'){
 }
 function configureVideoSession(video,m){
   const start=Math.max(0,Number(m.startAtSeconds||0)),end=Number(m.endAtSeconds)>0?Number(m.endAtSeconds):null;
-  video.autoplay=m.autoplay!==false;video.muted=true;video.defaultMuted=true;video.volume=Math.max(0,Math.min(1,Number(m.volume??1)));video.loop=!!m.loop&&!end;video.playbackRate=Math.max(.25,Math.min(4,Number(m.playbackRate||1)));video.playsInline=true;video.preload='auto';
-  activeMediaSession={video,spec:{...m,startAtSeconds:start,endAtSeconds:end}};
-  if(video.dataset.rgMediaSessionBound==='1'){reportMediaStatus('session-update');return}
+  const desiredVolume=Math.max(0,Math.min(1,Number(m.volume??1))),desiredRate=Math.max(.25,Math.min(4,Number(m.playbackRate||1)));
+  const spec={...m,startAtSeconds:start,endAtSeconds:end,volume:desiredVolume,playbackRate:desiredRate,muted:!!m.muted};
+  activeMediaSession={video,spec};
+  if(video.dataset.rgMediaSessionBound==='1'){
+    video.loop=!!spec.loop&&!end;video.playbackRate=desiredRate;video.volume=desiredVolume;video.muted=!!spec.muted;video.defaultMuted=!!spec.muted;
+    reportMediaStatus('session-update');return
+  }
+  video.autoplay=m.autoplay!==false;video.muted=true;video.defaultMuted=true;video.volume=desiredVolume;video.loop=!!m.loop&&!end;video.playbackRate=desiredRate;video.playsInline=true;video.preload='auto';
   video.dataset.rgMediaSessionBound='1';
-  const enforceEnd=()=>{if(!activeMediaSession||activeMediaSession.video!==video)return;if(end&&video.currentTime>=end-.08){if(m.loop){video.currentTime=start;startVideoPlayback(video,m,'loop').catch(()=>{})}else{video.pause();reportMediaStatus('clip-ended');if(ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:m.sessionId||null}))}catch{}}}}else reportMediaStatus('timeupdate')};
+  const enforceEnd=()=>{const current=activeMediaSession?.spec||spec;if(!activeMediaSession||activeMediaSession.video!==video)return;const currentEnd=Number(current.endAtSeconds)>0?Number(current.endAtSeconds):null,currentStart=Math.max(0,Number(current.startAtSeconds||0));if(currentEnd&&video.currentTime>=currentEnd-.08){if(current.loop){video.currentTime=currentStart;startVideoPlayback(video,current,'loop').catch(()=>{})}else{video.pause();reportMediaStatus('clip-ended');if(ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:current.sessionId||null}))}catch{}}}}else reportMediaStatus('timeupdate')};
   video.addEventListener('timeupdate',enforceEnd);video.addEventListener('play',()=>reportMediaStatus('play'));video.addEventListener('playing',()=>reportMediaStatus('playing'));video.addEventListener('pause',()=>reportMediaStatus('pause'));video.addEventListener('ratechange',()=>reportMediaStatus('ratechange'));video.addEventListener('volumechange',()=>reportMediaStatus('volumechange'));
   video.addEventListener('error',()=>{reportMediaStatus('media-error');badge.textContent=`${id} video load error`});
-  video.addEventListener('loadedmetadata',()=>{const wanted=Math.min(Number.isFinite(video.duration)?video.duration:start,start);if(Math.abs(video.currentTime-wanted)>.2)video.currentTime=wanted;reportMediaStatus('loadedmetadata')});
-  video.oncanplay=()=>{startVideoPlayback(video,m,'canplay').catch(()=>{});reportMediaStatus('canplay')};
-  video.onended=()=>{reportMediaStatus('ended');if(!video.loop&&ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:m.sessionId||null}))}catch{}}};
+  video.addEventListener('loadedmetadata',()=>{const current=activeMediaSession?.spec||spec,currentStart=Math.max(0,Number(current.startAtSeconds||0)),wanted=Math.min(Number.isFinite(video.duration)?video.duration:currentStart,currentStart);if(Math.abs(video.currentTime-wanted)>.2)video.currentTime=wanted;reportMediaStatus('loadedmetadata')});
+  video.oncanplay=()=>{startVideoPlayback(video,activeMediaSession?.spec||spec,'canplay').catch(()=>{});reportMediaStatus('canplay')};
+  video.onended=()=>{const current=activeMediaSession?.spec||spec;reportMediaStatus('ended');if(!video.loop&&ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:current.sessionId||null}))}catch{}}};
 }
 function applyMediaControl(p={}){
   const video=activeMediaSession?.video;if(!video)return false;const action=String(p.action||'').toLowerCase(),spec=activeMediaSession.spec||{};
-  if(action==='play')video.play().catch(()=>{});
+  if(action==='play')startVideoPlayback(video,spec,'control-play').catch(()=>{});
   else if(action==='pause')video.pause();
   else if(action==='stop'){video.pause();video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));}
   else if(action==='restart'){video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));startVideoPlayback(video,spec,'control-restart').catch(()=>{});}
-  else if(action==='seek')video.currentTime=Math.max(0,Math.min(Number.isFinite(video.duration)?video.duration:Number.MAX_SAFE_INTEGER,Number(p.positionSeconds||0)));
-  else if(action==='volume'){video.volume=Math.max(0,Math.min(1,Number(p.volume??1)));if(video.volume>0){video.muted=false;video.defaultMuted=false}}
-  else if(action==='mute'){video.muted=p.muted!==false;video.defaultMuted=video.muted;}
-  else if(action==='rate')video.playbackRate=Math.max(.25,Math.min(4,Number(p.playbackRate||1)));
+  else if(action==='seek'){const position=Math.max(0,Math.min(Number.isFinite(video.duration)?video.duration:Number.MAX_SAFE_INTEGER,Number(p.positionSeconds||0)));video.currentTime=position;spec.positionSeconds=position}
+  else if(action==='volume'){spec.volume=Math.max(0,Math.min(1,Number(p.volume??1)));video.volume=spec.volume;if(video.volume>0){spec.muted=false;video.muted=false;video.defaultMuted=false}}
+  else if(action==='mute'){spec.muted=p.muted!==false;video.muted=spec.muted;video.defaultMuted=video.muted;}
+  else if(action==='rate'){spec.playbackRate=Math.max(.25,Math.min(4,Number(p.playbackRate||1)));video.playbackRate=spec.playbackRate}
   else return false;reportMediaStatus(action);return true;
 }
 function renderMedia(m){
