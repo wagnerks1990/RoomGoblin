@@ -6352,6 +6352,30 @@ app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),asy
 
 // Fixed appliance-wide budgets: forwarded addresses cannot multiply work.
 // Cleanup has its own budget so ordinary writes cannot consume the stop quota.
+const {BrowserSessions}=require("./veyon-browser-sessions");
+const veyonBrowserSessions=new BrowserSessions({
+  connect:async host=>{await veyonAuthenticate(host);return veyonConnectionCache.get(host)},
+  identity:(computer,connection)=>{
+    const current=veyonComputerStore.computers[computer.id];
+    return !!current&&current.ip===computer.ip&&current.hostname===computer.hostname&&
+      veyonConnectionCache.get(computer.ip)===connection&&Number(connection.validUntil)>Date.now()/1000+5;
+  },
+  request:async(session,action,data)=>{
+    session.connection.lastUsed=Date.now();
+    try{return await veyonJson(`/api/v1/roomgoblin/${action}`,{method:"POST",headers:{"Content-Type":"application/json","Connection-Uid":session.connection.uid},body:JSON.stringify(data)})}
+    catch{throw Object.assign(Error("Native browser bridge unavailable or response lost; no automatic retry was made."),{status:503})}
+  }
+});
+setInterval(()=>veyonBrowserSessions.prune(),10000).unref();
+const veyonBrowserLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-browser",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser tool limit reached"}});
+app.post("/api/v1/veyon/computers/:id/browser/:action",veyonBrowserLimit,requireCapability("lab.control"),requireCapability("lab.sensitive.read"),async(req,res)=>{
+  res.set("Cache-Control","no-store");
+  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
+  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
+  const authorize=()=>{const user=requestUser(req);if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.control")||!hasCapability(user,"lab.sensitive.read")))throw Object.assign(Error("Browser tool permission revoked"),{status:403})};
+  try{res.json(await trackFullExportMutation(veyonBrowserSessions.run({owner:requestUser(req)?.id||"legacy-control",computer,action:req.params.action,input:req.body,authorize})))}
+  catch(error){res.status([403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Browser request failed"})}
+});
 const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
 const veyonFreeWriteLimit=rateLimit({windowMs:60_000,limit:30,keyGenerator:()=>"veyon-free-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool action limit reached; retry later"}});
 const veyonFreeCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon cleanup limit reached; retry later"}});

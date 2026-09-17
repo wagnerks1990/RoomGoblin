@@ -36,6 +36,7 @@
     <p class="muted">Commands use the current selection, including hidden selections. Clipboard and input tools require the RoomGoblin native bridge.</p>
     <div class="toolbar">
       <button id="freeCatalog">Feature coverage</button><button id="deviceInfo">User and session details</button>
+      <button id="communityChat">Two-way chat</button><button id="communityFiles">Browse pilot files</button>
       <button id="sendKey">Send key or shortcut</button><button id="sendClipboard">Send clipboard text</button>
       <button id="saveMac">Set MAC address</button><button id="wakeComputers">Wake computers</button>
     </div>
@@ -100,5 +101,9 @@
     <div class="toolbar"><button type="button" id="cancelLogin">Cancel</button><button type="submit" class="primary">Log In</button></div>
   </form>
 </dialog>
-<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/lab-accessibility.js" defer></script>
+<dialog id="communityDialog" aria-labelledby="communityTitle">
+  <div class="row"><strong id="communityTitle">Community tools</strong><button id="communityClose" type="button">Close session</button></div>
+  <p id="communityStatus" role="status"></p><div id="communityBody"></div>
+</dialog>
+<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/veyon-community.js"></script><script src="/controller/lab-accessibility.js" defer></script>
 </body></html>

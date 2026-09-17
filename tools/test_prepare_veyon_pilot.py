@@ -27,6 +27,11 @@ class PreparePilotTests(unittest.TestCase):
                 if args[1] == 'clone':
                     (destination / 'plugins').mkdir(parents=True)
                     (destination / 'plugins' / 'CMakeLists.txt').write_text(original)
+                    webapi = destination / 'plugins/webapi'
+                    webapi.mkdir()
+                    (webapi / 'WebApiController.h').write_text('\tResponse getFramebuffer( const Request& request );')
+                    (webapi / 'WebApiHttpServer.cpp').write_text('\tauto success = true;')
+                    (webapi / 'WebApiController.cpp').write_text('// fixture')
                     linux = destination / 'plugins/platform/linux'
                     linux.mkdir(parents=True)
                     (linux / 'LinuxServerProcess.cpp').write_text('const auto desktopFile = VeyonCore::applicationsDirectory() + suffix;')

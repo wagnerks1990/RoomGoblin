@@ -146,7 +146,7 @@ private:
 	static QString featureIconUrl();
 
 	// worker-side handlers
-	bool workerGetDrives( VeyonWorkerInterface& worker );
+	bool workerGetDrives( VeyonWorkerInterface& worker, const FeatureMessage& message );
 	bool workerListDirectory( VeyonWorkerInterface& worker, const FeatureMessage& message );
 	bool workerStartDownload( VeyonWorkerInterface& worker, const FeatureMessage& message );
 	void workerCancelDownload();

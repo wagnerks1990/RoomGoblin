@@ -439,3 +439,5 @@ The operator already has Veyon Master. Do not add native launcher buttons,
 download scripts or native-only entries to the web feature catalog. Keep such
 capabilities and community candidates in documentation. Features with actual
 browser adapters may state their required native bridge explicitly.
+
+Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. These are matching native pilot adapters, not stock WebAPI capabilities.
