@@ -862,13 +862,14 @@ window.loadMedia=async()=>{
     const card=document.createElement('div');card.className='mediaCard';
     const thumb=document.createElement('div');thumb.className='mediaThumb';
     if(f.type==='image'){const i=document.createElement('img');i.src=f.url;thumb.appendChild(i)}
-    else if(f.type==='video'){const v=document.createElement('video');v.src=f.url;v.muted=true;thumb.appendChild(v)}
+    else if(f.type==='video'){thumb.textContent='VIDEO';thumb.dataset.mediaPlaceholder='video'}
     else thumb.textContent=f.type.toUpperCase();
     const body=document.createElement('div');body.className='mediaBody';
-    const n=document.createElement('div');n.className='mediaName';n.textContent=f.name;
+    const label=f.originalName||f.storedName||'Uploaded media';
+    const n=document.createElement('div');n.className='mediaName';n.textContent=label;
     const m=document.createElement('div');m.className='mediaMeta';m.textContent=`${f.type} • ${(f.size/1024/1024).toFixed(1)} MB`;
     const tb=document.createElement('div');tb.className='toolbar';
-    const use=document.createElement('button');use.textContent='Select';use.onclick=()=>{el('mediaUrl').value=f.url;setResultSummary(`Selected ${f.name}`,true,f)};
+    const use=document.createElement('button');use.textContent='Select';use.onclick=()=>{el('mediaUrl').value=f.url;setResultSummary(`Selected ${label}`,true,f)};
     const show=document.createElement('button');show.textContent=f.type==='video'?'Play':'Show';show.onclick=()=>{el('mediaUrl').value=f.url;sendMedia(f.type==='video'?'display.video':'display.image')};
     tb.append(use,show);body.append(n,m,tb);card.append(thumb,body);w.appendChild(card);
   }

@@ -110,7 +110,7 @@ async function handle(req,res){
     "accept-ranges":"bytes",
     "cache-control":"private, max-age=60",
     "x-content-type-options":"nosniff",
-    "cross-origin-resource-policy":"same-site"
+    "cross-origin-resource-policy":"cross-origin"
   };
   if(range){
     const length=range.end-range.start+1;

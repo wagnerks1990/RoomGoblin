@@ -29,6 +29,8 @@ Every `/media/*` request is first validated by issuing a bounded `HEAD` request 
 
 The media process resolves requested paths beneath `data/media` and rejects traversal outside that root.
 
+Because the browser receiver is loaded from port `3000` and the media payload is intentionally delivered from port `3020`, media responses use `Cross-Origin-Resource-Policy: cross-origin`. Authorization still occurs before any file bytes are served, so this header permits the already-authorized browser media element to embed the separate-port response; it does not make media anonymous or bypass signed-token/session checks.
+
 ## Range transport
 
 Browser MP4 playback requires efficient random access. The media plane implements:
