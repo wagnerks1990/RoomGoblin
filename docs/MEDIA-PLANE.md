@@ -48,7 +48,7 @@ This moves large socket send queues away from port `3000`, preserving clear/stop
 
 Physical RoomGoblin display pages transparently rewrite same-origin `/media/*` video/audio sources from the control-plane origin to port `3020`. The signed query string is preserved.
 
-The rewrite is currently enabled for HTTP classroom deployments. If the media listener is unavailable, the receiver performs a one-time fallback to the original control-plane URL so existing installations fail gracefully.
+The rewrite is currently enabled for HTTP classroom deployments. If the media listener is unavailable, the receiver performs a one-time fallback to the original control-plane URL so existing installations fail gracefully. Persistent fallback should be treated as a media-plane health problem, not the normal operating mode.
 
 Controller preview pages do not decode receiver video locally. Physical receivers remain the playback authority.
 
