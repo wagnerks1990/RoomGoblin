@@ -39,8 +39,13 @@ export function authorizeMediaUrl(value, baseOrigin, accessToken = '', depth = 0
       const file = url.searchParams.get('file');
       if (file) url.searchParams.set('file', authorizeMediaUrl(file, origin, accessToken, depth + 1));
     }
-    if (url.pathname.startsWith('/media/') || url.pathname.startsWith('/presentations/')) {
-      url.searchParams.set('access_token', accessToken);
+    if ((url.pathname.startsWith('/media/') || url.pathname.startsWith('/presentations/')) && String(accessToken || '').trim()) {
+      // A blank access_token is not an authorization mechanism. In the default
+      // stable-display policy, tokenless same-origin media is intentionally
+      // authorized by the control plane. When credential authentication is
+      // required, the receiver receives a non-empty short-lived token during
+      // its authenticated hello handshake. Never manufacture ?access_token=.
+      url.searchParams.set('access_token', String(accessToken).trim());
     }
     return url.href;
   }
