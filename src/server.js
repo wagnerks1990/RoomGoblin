@@ -6368,7 +6368,7 @@ const veyonBrowserSessions=new BrowserSessions({
 });
 setInterval(()=>veyonBrowserSessions.prune(),10000).unref();
 const veyonBrowserLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-browser",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser tool limit reached"}});
-app.post("/api/v1/veyon/computers/:id/browser/:action",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonBrowserLimit,async(req,res)=>{
+app.post("/api/v1/veyon/computers/:id/browser/:action",veyonBrowserLimit,requireCapability("lab.control"),requireCapability("lab.sensitive.read"),async(req,res)=>{
   res.set("Cache-Control","no-store");
   const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});

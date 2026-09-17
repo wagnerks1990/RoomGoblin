@@ -58,6 +58,37 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         self.assertTrue(any(a == 'close' for a, d in requests))
         self.assertFalse(errors, errors)
 
+    def test_community_download_requires_complete_file(self):
+        import base64
+        page, errors, state = self.pilot_page()
+        downloaded = False
+        def respond(route):
+            nonlocal downloaded
+            action = route.request.url.rsplit('/', 1)[-1]
+            reply = {'ok': True}
+            if action == 'open':
+                reply.update(session='file-fixture', kind='files')
+            elif action == 'download':
+                downloaded = True
+            elif action == 'state':
+                reply.update(messages=[], entries=[] if downloaded else [{'name': 'sample.txt', 'dir': False, 'size': 6}],
+                             path='/home/student/RoomGoblin-Pilot', pending=False,
+                             complete=downloaded, size=6, fileName='sample.txt', error='')
+            elif action == 'chunk':
+                reply['data'] = base64.b64encode(b'sample').decode()
+            route.fulfill(json=reply)
+        page.route('**/api/v1/veyon/computers/student-a/browser/*', respond)
+        page.locator('#communityFiles').click()
+        page.locator('#communityDialog[open]').wait_for()
+        self.assertEqual(page.locator('#communityBody a[download]').count(), 0)
+        page.get_by_role('button', name='Download: sample.txt', exact=True).click()
+        page.locator('#communityBody a[download]').wait_for()
+        with page.expect_download() as saved:
+            page.locator('#communityBody a[download]').click()
+        self.assertEqual(saved.value.path().read_bytes(), b'sample')
+        page.locator('#communityClose').click()
+        self.assertFalse(errors, errors)
+
     def test_shutdown_cancel_and_delay_arguments(self):
         page, errors, state = self.pilot_page(390)
         page.once('dialog', lambda dialog: dialog.dismiss())
