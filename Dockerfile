@@ -96,6 +96,11 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
 # packaged into this image. The service verifies every SHA-256 before staging.
 RUN RELEASE_VERSION="$(cat VERSION)" node -e 'const fs=require("fs"),crypto=require("crypto"),path=require("path");const dir="public/lab-agent/native";const names=["RoomGoblinAgent.exe","RoomGoblinSessionAgent.exe","RoomGoblinAgentBootstrap.exe","RoomGoblinAgentUpdater.exe"];const files=names.map(name=>{const b=fs.readFileSync(path.join(dir,name));return {name,sha256:crypto.createHash("sha256").update(b).digest("hex"),bytes:b.length}});fs.writeFileSync(path.join(dir,"manifest.json"),JSON.stringify({ok:true,version:process.env.RELEASE_VERSION,files},null,2)+"\n")'
 
+# Publish a browser-downloadable package so first-time enrollment does not need
+# PowerShell to download and execute unsigned binaries. The native bootstrap
+# re-verifies manifest.json and every executable before creating the service.
+RUN node -e 'const AdmZip=require("adm-zip"),path=require("path");const dir="public/lab-agent/native";const names=["RoomGoblinAgent.exe","RoomGoblinSessionAgent.exe","RoomGoblinAgentBootstrap.exe","RoomGoblinAgentUpdater.exe","manifest.json"];const zip=new AdmZip();for(const name of names)zip.addLocalFile(path.join(dir,name));zip.writeZip(path.join(dir,"RoomGoblinNativeAgent.zip"))'
+
 # Local Docker contexts retain file modes. A root-edited 0600 server.js must not
 # produce an image that only root can start. Normalize packaged, non-secret
 # application files inside the image only; never chmod host data or secrets.
