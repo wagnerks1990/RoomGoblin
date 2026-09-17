@@ -32,7 +32,12 @@ jobs:
       - name: Run focused automation and display tests
         run: node --test --test-concurrency=1 test/automation-media-sessions.test.js test/automation-runtime.test.js test/automation-convergence.test.js test/automation-framework-manual.test.js test/display-browser.test.js test/backend-production-regressions.test.js
       - name: Run full Node regression suite
-        run: npm test
+        run: |
+          set +e
+          npm test > /tmp/roomgoblin-full-test.log 2>&1
+          status=$?
+          tail -n 500 /tmp/roomgoblin-full-test.log
+          exit $status
       - name: Commit validated implementation
         run: |
           if git diff --quiet; then
@@ -41,6 +46,6 @@ jobs:
           fi
           git config user.name "RoomGoblin Automation Media Sessions"
           git config user.email "actions@users.noreply.github.com"
-          git add src/server.js public/display/index.html public/controller/app.js test/automation-media-sessions.test.js docs/AUTOMATION-DISPLAY-MEDIA.md docs/AUTOMATION-FRAMEWORK.md wiki/Automation-Display-Media.md AGENTS.md CHANGELOG.md tools/apply-automation-media-sessions.py tools/prepare-automation-media-sessions.py
+          git add src/server.js public/display/index.html public/controller/app.js test/automation-media-sessions.test.js docs/AUTOMATION-DISPLAY-MEDIA.md docs/AUTOMATION-FRAMEWORK.md docs/AI-CONTEXT.md wiki/Automation-Display-Media.md AGENTS.md CHANGELOG.md
           git commit -m "Add action loops and persistent media sessions [automation-media-sessions]"
           git push origin HEAD:feature/automation-media-sessions
