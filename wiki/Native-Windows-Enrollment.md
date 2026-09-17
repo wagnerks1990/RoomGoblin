@@ -50,3 +50,10 @@ The preferred first-time deployment path uses the browser rather than an interac
 The ZIP contains the four native executables plus `manifest.json`. Before installing, the bootstrap verifies the manifest has exactly the expected files and validates every executable SHA-256. It then reads and deletes the plaintext enrollment JSON, validates the enrollment policy, and writes only the DPAPI-protected enrollment secret to the compatibility config.
 
 The automated PowerShell native installer is retained only as a fallback for environments where EDR policy permits that behavior.
+
+
+## Live first-time enrollment acceptance
+
+On 2026-09-17 a Windows endpoint with no active compatibility config completed true first-time native enrollment against the production RoomGoblin alpha.83 package. The one-time token was exchanged for a DPAPI-protected permanent credential, enrollment token fields were cleared, the config ACL remained restricted to SYSTEM and Administrators, all four installed binaries exactly matched the server manifest, and the LocalSystem service restarted successfully and remained running during stability verification.
+
+SentinelOne flagged the interactive PowerShell download/launch chain and quarantined related copies, including the self-extracted SQLite native library. The verified installed files remained present and usable. Do not respond by disabling EDR or adding broad exclusions. The browser package + native bootstrap path is now preferred, and issue #142 tracks publisher signing and remaining EDR hardening.
