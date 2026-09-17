@@ -89,6 +89,24 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('#communityClose').click()
         self.assertFalse(errors, errors)
 
+    def test_local_ai_is_explicit_and_labels_are_plain_text(self):
+        page, errors, state = self.pilot_page()
+        requests = []
+        def respond(route):
+            requests.append(route.request.url)
+            route.fulfill(json={'ok': True, 'detections': [{'label': '<img src=x>', 'confidence': 0.75, 'box': [0, 0, 5, 5]}]})
+        page.route('**/api/v1/veyon/computers/student-a/analyze', respond)
+        page.once('dialog', lambda dialog: dialog.dismiss())
+        page.locator('#analyzeScreen').click()
+        self.assertEqual(requests, [])
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.locator('#analyzeScreen').click()
+        page.locator('#infoModal.open').wait_for()
+        self.assertIn('<img src=x> — 75%', page.locator('#infoBody').inner_text())
+        self.assertEqual(page.locator('#infoBody img').count(), 0)
+        self.assertEqual(len(requests), 1)
+        self.assertFalse(errors, errors)
+
     def test_shutdown_cancel_and_delay_arguments(self):
         page, errors, state = self.pilot_page(390)
         page.once('dialog', lambda dialog: dialog.dismiss())

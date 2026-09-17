@@ -1,6 +1,16 @@
 /* Authenticated community tools; private Veyon connection identifiers stay on the Hub. */
 (() => {
   'use strict';
+  $('analyzeScreen').onclick=async()=>{
+    const ids=targetIds();if(ids.length!==1)return alert('Select exactly one computer.');
+    const computer=computers.find(c=>c.id===ids[0]);
+    if(!confirm(`Analyze one current screen from ${computer?.name||ids[0]} using the local pilot model? The result is an estimate for human review.`))return;
+    const button=$('analyzeScreen');button.disabled=true;
+    try{
+      const result=await api(`/api/v1/veyon/computers/${encodeURIComponent(ids[0])}/analyze`,{method:'POST',body:'{}'});
+      openInfo('Local screen analysis',`<p>One capture; no screenshot or result archive. Detections are estimates, not evidence of misconduct. Original model labels are preserved.</p><ul>${result.detections.map(d=>`<li>${esc(d.label)} — ${Math.round(d.confidence*100)}%</li>`).join('')||'<li>No detections above the model threshold.</li>'}</ul><p><a href="https://github.com/wagnerks1990/RoomGoblin/tree/main/integrations/veyon-ai" target="_blank" rel="noopener">Model provenance and service source (AGPL)</a></p>`);
+    }catch(e){alert(e.message)}finally{button.disabled=false}
+  };
   const dialog=$('communityDialog'),body=$('communityBody'),status=$('communityStatus');
   let current=null;
   function button(label,run){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{b.disabled=true;try{await run()}catch(e){status.textContent=e.message}finally{b.disabled=false}};return b}

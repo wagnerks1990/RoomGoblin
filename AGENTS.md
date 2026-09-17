@@ -441,3 +441,5 @@ capabilities and community candidates in documentation. Features with actual
 browser adapters may state their required native bridge explicitly.
 
 Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. These are matching native pilot adapters, not stock WebAPI capabilities.
+
+Local AI pilot: docs/VEYON-LOCAL-AI.md and integrations/veyon-ai/PROVENANCE.md. Keep the AGPL service separate, exact model hash, fixed loopback endpoint, separate token, explicit single-screen capture, no retention/enforcement, bounded concurrency and export drain. Do not claim the full upstream AI dashboard or verified classroom accuracy.

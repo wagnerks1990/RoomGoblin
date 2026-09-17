@@ -6352,6 +6352,24 @@ app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),asy
 
 // Fixed appliance-wide budgets: forwarded addresses cannot multiply work.
 // Cleanup has its own budget so ordinary writes cannot consume the stop quota.
+const {VeyonAI}=require("./veyon-ai");
+const veyonAI=new VeyonAI({token:String(process.env.VEYON_AI_TOKEN||"")});
+const veyonAILimit=rateLimit({windowMs:60_000,limit:6,keyGenerator:()=>"veyon-ai",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Screen analysis limit reached; wait a minute"}});
+app.post("/api/v1/veyon/computers/:id/analyze",veyonAILimit,requireCapability("lab.control"),requireCapability("lab.sensitive.read"),async(req,res)=>{
+  res.set("Cache-Control","no-store");
+  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
+  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
+  if(veyonCommandQueue.pressure())return res.status(503).json({ok:false,error:"Wait for classroom commands to finish"});
+  try{res.json(await trackFullExportMutation(veyonAI.analyze(async()=>{
+    const frame=await readVeyonFrame(new URLSearchParams({format:"jpeg",width:"1280",height:"720",quality:"80"}),pathname=>veyonConnectedRequest(computer.ip,pathname,{timeoutMs:10000,maxBytes:4*1024*1024},async(pathname,options)=>{
+      const response=await veyonFetch(pathname,options);if(!response.ok)throw await veyonResponseError(response);return response;
+    }));
+    const user=requestUser(req);
+    if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.sensitive.read")||!hasCapability(user,"lab.control")))throw Error("Permission revoked");
+    if(veyonComputerStore.computers[computer.id]?.ip!==computer.ip)throw Error("Computer identity changed");
+    return frame.buffer;
+  })))}catch{res.status(503).json({ok:false,error:"Local screen analysis unavailable. Configure and start the separate AI pilot service."})}
+});
 const {BrowserSessions}=require("./veyon-browser-sessions");
 const veyonBrowserSessions=new BrowserSessions({
   connect:async host=>{await veyonAuthenticate(host);return veyonConnectionCache.get(host)},

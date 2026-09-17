@@ -1,5 +1,7 @@
 # Changelog
 
+- Optional local AI screen analysis using the pinned community model and separate AGPL service; explicit capture only, no retention or automatic enforcement.
+
 - Community browser pilot: two-way chat and restricted file browsing/downloads through a matching authenticated native bridge; no native production installation or AI monitor deployment.
 
 ## Unreleased
