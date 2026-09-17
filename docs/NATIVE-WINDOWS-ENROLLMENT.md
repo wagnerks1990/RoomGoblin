@@ -79,4 +79,6 @@ Repository validation must cover all of these surfaces:
 - continued visibility of the legacy fallback;
 - Docker packaging of the exact four native binaries plus manifest.
 
-The production appliance has already been validated serving the native package and migrating an existing enrolled endpoint. Fresh first-time enrollment still requires live endpoint acceptance for each materially changed release build.
+The production appliance has been validated serving the native package, migrating an existing enrolled endpoint, and completing a true first-time native enrollment on a computer with no active `lab-agent.json`. During that 2026-09-17 acceptance, the endpoint exchanged the one-time token for a DPAPI-protected permanent credential, cleared the enrollment token fields, preserved SYSTEM/Administrators-only ACLs, matched all four installed binaries to the deployed alpha.83 manifest hashes, and remained running after a controlled restart and stability observation.
+
+SentinelOne did raise a heuristic detection during the one-time installer process and quarantined copies associated with the PowerShell download/launch chain. The installed files remained present and exactly matched the RoomGoblin manifest, and the native service restarted and remained healthy. This is recorded as an EDR packaging/deployment-hardening issue, not as a reason to weaken endpoint protection.
