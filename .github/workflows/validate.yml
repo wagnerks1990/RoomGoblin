@@ -234,3 +234,19 @@ jobs:
           path: ${{ runner.temp }}/roomgoblin-native-pilot/artifacts/
           if-no-files-found: error
           retention-days: 14
+
+  veyon-ai:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify isolated AI service boundary
+        run: python3 -m unittest discover -s integrations/veyon-ai -p test_server.py
+      - name: Prepare pinned AI model and corresponding source
+        run: python3 integrations/veyon-ai/prepare.py "$RUNNER_TEMP/roomgoblin-ai-pilot"
+      - name: Verify real CPU inference
+        run: |
+          python3 -m venv "$RUNNER_TEMP/roomgoblin-ai-venv"
+          "$RUNNER_TEMP/roomgoblin-ai-venv/bin/pip" install -r integrations/veyon-ai/requirements.txt
+          "$RUNNER_TEMP/roomgoblin-ai-venv/bin/python" integrations/veyon-ai/smoke.py "$RUNNER_TEMP/roomgoblin-ai-pilot/upstream/weights/yolo26n.onnx"

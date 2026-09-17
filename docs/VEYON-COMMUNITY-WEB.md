@@ -57,6 +57,4 @@ empty/multichunk files, checksum equality, out-of-folder rejection, disconnect,
 and interrupted/oversized downloads. Revert the disposable VM snapshot to remove
 the pilot; preserve production packages, keys and authentication rules.
 
-The AI detection service, full remote mouse/keyboard control, clipboard reading,
-monitor selection and native distribution/collection adapters are not implemented
-by this change. They must not be described as enabled.
+Full remote mouse/keyboard control, clipboard reading, monitor selection and native distribution/collection adapters remain unimplemented. The optional separate AI adapter is described in [Local AI pilot](VEYON-LOCAL-AI.md); it is not deployed by a Hub update.

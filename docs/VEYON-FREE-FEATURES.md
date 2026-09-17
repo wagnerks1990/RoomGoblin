@@ -156,7 +156,7 @@ pilot binary you distribute.
 | [veyon/docs](https://github.com/veyon/docs) | Reference for native configuration, features and builds |
 | [veyon/libvncserver](https://github.com/veyon/libvncserver) | Native upstream dependency; use upstream's pinned submodule, no production replacement |
 | [veyon/ultravnc](https://github.com/veyon/ultravnc) | Windows upstream dependency; no separate server replacement |
-| [vainmari/Veyon-detection](https://github.com/vainmari/Veyon-detection) | Local AI detection candidate, not installed: requires model/resource/retention validation and separate AGPL service review |
+| [vainmari/Veyon-detection](https://github.com/vainmari/Veyon-detection) | Pinned local model integrated through an optional separate AGPL inference service; see VEYON-LOCAL-AI.md; not installed automatically |
 | [jorgetargz/veyon-advisor](https://github.com/jorgetargz/veyon-advisor) | Excluded: monitoring detection/blocking is contrary to classroom management |
 | [Korckyjals-CODE/VeyonScripts](https://github.com/Korckyjals-CODE/VeyonScripts) | Lesson-script ideas inform bounded saved actions; no unreviewed privileged script runner copied |
 | [JackStar6677-1/VeyonScripts](https://github.com/JackStar6677-1/VeyonScripts) | MAC/Wake workflow ideas; independent RoomGoblin implementation, no WinRM credential runner |
