@@ -35,11 +35,17 @@ test("manual display media exposes persistent playback controls",()=>{
   assert.match(receiver,/n\.volume=Math\.max\(0,Math\.min\(1,Number\(m\.volume\?\?1\)\)\)/);
 });
 
-test("controller overview does not keep receiver preview clients alive",()=>{
+test("Today display previews stay live but suppress local video decoding",()=>{
   const embedded=read("public/controller/embedded-workspaces.js");
-  assert.match(embedded,/iframe\[data-overview-preview\]/);
-  assert.match(embedded,/Live preview disabled in controller/);
-  assert.match(embedded,/frame\.src='about:blank'/);
-  assert.match(embedded,/frame\.remove\(\)/);
-  assert.match(embedded,/window\.refreshOverviewDisplayPreviews=\(\)=>/);
+  const controller=read("public/controller/app.js");
+  assert.match(controller,/iframe data-overview-preview/);
+  assert.doesNotMatch(embedded,/Live preview disabled in controller/);
+  assert.doesNotMatch(embedded,/frame\.remove\(\)/);
+  assert.match(embedded,/Video active on physical display/);
+  assert.match(embedded,/video\.removeAttribute\('src'\)/);
+  assert.match(embedded,/MutationObserver\(suppress\)/);
+});
+
+test("media-session renderer release forces receiver convergence",()=>{
+  assert.equal(read("VERSION").trim(),"1.0.0-alpha.83");
 });

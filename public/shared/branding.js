@@ -98,6 +98,11 @@
     const refresh=[...toolbar.querySelectorAll("button")].find(button=>String(button.getAttribute("onclick")||"").includes("refreshOverview"));if(refresh)refresh.after(link);else toolbar.prepend(link);
   }
 
+  function injectScript(src,datasetKey){
+    if(document.querySelector(`script[data-${datasetKey}]`))return;
+    const script=document.createElement("script");script.src=src;script.defer=true;script.setAttribute(`data-${datasetKey}`,"1");document.head.append(script);
+  }
+
   window.RoomGoblinBranding={apply,normalize,load:async()=>{try{const response=await fetch("/api/v1/branding",{credentials:"same-origin",cache:"no-store"});if(!response.ok)throw Error(`HTTP ${response.status}`);const value=await response.json();return apply(value.branding||{})}catch{return apply(ROOMGOBLIN)}}};
   window.ControlHubBranding=window.RoomGoblinBranding;
   apply(ROOMGOBLIN);
@@ -105,8 +110,9 @@
   window.addEventListener("load",()=>{const p=window.ROOMGOBLIN_BRANDING||ROOMGOBLIN;replaceLegacyPresentationText(document.body,p.productName);applyArtwork(p);});
 
   if(!renderer&&location.pathname.startsWith("/controller"))managedDisplaysOverviewLink();
-  if(!renderer&&!document.querySelector('script[data-controlhub-integration-setup]')){const script=document.createElement("script");script.src="/shared/integration-setup.js";script.defer=true;script.dataset.controlhubIntegrationSetup="1";document.head.append(script);}
-  if(!renderer&&!document.querySelector('script[data-controlhub-automation-fix]')){const script=document.createElement("script");script.src="/shared/automation-hotfix.js";script.defer=true;script.dataset.controlhubAutomationFix="1";document.head.append(script);}
-  if(!renderer&&location.pathname.startsWith("/controller")&&!document.querySelector('script[data-roomgoblin-veyon-keyring]')){const script=document.createElement("script");script.src="/controller/veyon-keyring-ui.js";script.defer=true;script.dataset.roomgoblinVeyonKeyring="1";document.head.append(script);}
-  if(!renderer&&location.pathname.startsWith("/controller")&&!document.querySelector('script[data-roomgoblin-veyon-lifecycle]')){const script=document.createElement("script");script.src="/controller/veyon-update-ui.js";script.defer=true;script.dataset.roomgoblinVeyonLifecycle="1";document.head.append(script);}
+  if(!renderer)injectScript("/shared/integration-setup.js","controlhub-integration-setup");
+  if(!renderer)injectScript("/shared/automation-hotfix.js","controlhub-automation-fix");
+  if(!renderer&&location.pathname==="/controller/")injectScript("/controller/automation-v2.js","roomgoblin-automation-v2");
+  if(!renderer&&location.pathname.startsWith("/controller"))injectScript("/controller/veyon-keyring-ui.js","roomgoblin-veyon-keyring");
+  if(!renderer&&location.pathname.startsWith("/controller"))injectScript("/controller/veyon-update-ui.js","roomgoblin-veyon-lifecycle");
 })();

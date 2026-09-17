@@ -26,6 +26,19 @@ test('asset tokens stay on protected same-origin paths; nested viewers fail clos
   assert.throws(()=>authorizeMediaUrl(recursive,origin));
 });
 
+test('tokenless stable-display media never manufactures an empty access token',async()=>{
+  const {authorizeMediaUrl}=await policy;
+  for(const token of ['', '   ', null, undefined]){
+    const direct=new URL(authorizeMediaUrl('/media/lesson.mp4',origin,token));
+    assert.equal(direct.searchParams.has('access_token'),false);
+    const presentation=new URL(authorizeMediaUrl('/presentations/unit-1/slide-001.jpg',origin,token));
+    assert.equal(presentation.searchParams.has('access_token'),false);
+    const viewer=new URL(authorizeMediaUrl('/document-viewer/?file=%2Fmedia%2Flesson.pdf',origin,token));
+    assert.equal(new URL(viewer.searchParams.get('file')).searchParams.has('access_token'),false);
+  }
+  assert.doesNotMatch(authorizeMediaUrl('/media/lesson.mp4',origin,''),/access_token=/);
+});
+
 test('Sendspin uses only the fixed same-Hub proxy with one valid ticket',async()=>{
   const {musicAssistantProxyUrl}=await policy;
   const path='/music-assistant/sendspin-proxy?ticket='+ticket;

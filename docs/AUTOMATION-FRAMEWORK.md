@@ -1,60 +1,72 @@
 # Automation Framework
 
-RoomGoblin automations are stored in SQLite and execute through a shared framework regardless of whether the primary action controls displays, TV power, lighting, media, or a class-end timer. This document defines the behavior that must remain consistent across all automation types.
+RoomGoblin automations are stored in SQLite and execute through a shared framework regardless of whether an action controls displays, TV power, lighting, media, or a class-end timer.
+
+## Schema v2: one ordered action sequence
+
+Automation schema v2 removes the historical distinction between a special primary action and additional actions. The canonical editor model is an ordered `actionSequence[]`. Every action uses the same shape:
+
+- `id`
+- `action`
+- `targets`
+- `useEventTargets`
+- `payload`
+- `delaySeconds`
+- `executionMode` (`once`, `repeat`, or media-only `loop`)
+- `repeatCount`
+- `repeatDelaySeconds`
+- `continueOnError`
+
+Action 1 has the same execution controls and payload editor as Action 2, Action 3, and later actions. Every `display.media` action exposes the complete media payload: uploaded item, fit, page/slide interval, clip start/end, volume, playback rate, mute, and receiver-native looping.
+
+### Migration and compatibility
+
+`src/automation-schema.js` contains the idempotent v1 → v2 converter. A legacy event is interpreted as:
+
+1. legacy `action` + `targets` + `payload` → `actionSequence[0]`;
+2. legacy `actions[]` → subsequent sequence entries;
+3. legacy media `payload.loop=true` → `executionMode=loop`;
+4. missing per-action execution metadata → `once`.
+
+For the transition release RoomGoblin also compiles a legacy compatibility view (`action`, `targets`, `payload`, and additional `actions[]`) from the canonical sequence. This lets the existing scheduler/runtime execute migrated records while the controller and future persistence use one coherent schema. A repeated Action 1 is compiled into a private repeat-tail step because the legacy runtime always executes its primary action once. That compatibility step is never presented as a user action and is collapsed when old data is read back.
+
+The conversion is designed to be idempotent: running it against an already-normalized v2 event does not create additional actions or change their order.
 
 ## Persistence
 
 SQLite is authoritative. Compatibility helpers may continue to refer to historical JSON filenames such as `automations.json`, but data-directory reads and writes are redirected through `ClassroomHubStorage`. A stale physical JSON file must never be treated as current state when `LEGACY_JSON_MIRROR=false`.
 
-## Linked classes
+## Linked classes and targets
 
 An automation can link to one or more class schedules. Normal scheduled execution resolves each matching class independently, using that class's effective start/end times and school-cycle rules. Date, cycle, exclusion, and class-enabled checks remain strict for real scheduled runs.
 
-`Test Now` is intentionally different: it validates execution rather than today's calendar eligibility. If no linked class is active or scheduled today, the first enabled linked class becomes a deterministic manual-test context. This permits testing text variables, class-default targets, media, and class-end timer rendering without weakening the real scheduler.
+`Test Now` validates execution rather than today's calendar eligibility. If no linked class is active or scheduled today, the first enabled linked class becomes a deterministic manual-test context.
 
-## Class-default display targets
+Class-default display targets remain a display-domain policy. Actions in another resource domain never inherit display IDs as lighting or TV identifiers. Later actions may explicitly use the same compatible targets as Action 1 or select their own targets.
 
-`Use class default display targets` is a display-domain policy and must persist for every automation, including automations whose primary action is lighting or TV power.
+## Execution policy
 
-When enabled, linked-class default display targets apply to:
+Every action persists an execution policy.
 
-- a primary display action;
-- display actions added to a lighting- or TV-led automation;
-- class-end timer actions;
-- the Timer Overlay addon;
-- the automatic pre-clear display scope.
+- `once`: execute one time.
+- `repeat`: execute 1–100 times with an optional bounded delay between attempts.
+- `loop`: valid only for `display.media`; looping is performed inside the receiver's active media element so preceding TV, lighting, routing, and setup actions are not rerun.
 
-Class display targets never become lighting targets. Lighting actions continue to resolve their own lighting targets independently.
+A non-media request for an unbounded loop is normalized to bounded repeat semantics. RoomGoblin must never create an infinite power, lighting, routing, or other side-effecting command generator.
 
 ## Timer behavior
 
-Scheduled class-end timers require the class to be scheduled on the actual execution date. Manual `Test Now` runs may bypass only that calendar-eligibility check; they still resolve the configured class and its effective end time. If the effective end time has already passed, the renderer may show the terminal `00:00` state rather than inventing a future class period.
-
-Both the standalone `display.timer.class-end` action and the Timer Overlay addon follow this same manual-versus-scheduled contract.
-
-## Alternating schedules
-
-The school schedule profile owns the authoritative alternating-cycle anchor. The automation editor persists that profile anchor rather than depending on a separate editor-only anchor input.
-
-`alternatePhase` remains the stable `A`/`B` identity. Friendly labels such as `Green Days` or `Group B Days` are presentation labels and do not replace the stored phase identifier.
-
-## Test Now and failure reporting
-
-`Test Now` returns the complete automation execution result. The controller surfaces failures by action, and timer overlay failures are reported separately. The backend persists structured failure details in `lastRun.resultSummary.failures` for both manual and scheduled runs.
-
-A successful primary action must not be misdiagnosed as failed merely because a timer overlay failed. Conversely, a failed timer overlay must remain visible as a distinct failure rather than being hidden behind a generic `Completed with action errors` message.
+Scheduled class-end timers require the class to be scheduled on the actual execution date. Manual `Test Now` runs may bypass only that calendar-eligibility check; they still resolve the configured class and its effective end time. Both standalone `display.timer.class-end` actions and the Timer Overlay addon follow this contract.
 
 ## Announcement priority during execution
 
-Morning Announcements reserve only their target displays. The scheduler may continue non-display actions, including lighting, while recording locked display work for the post-announcement winner resync. Priority is checked immediately before every display delivery as well as at automation entry; a delayed or multi-step automation that began first cannot overwrite a later announcement takeover.
+Morning Announcements reserve only their target displays. The scheduler may continue non-display actions while recording locked display work for the post-announcement winner resync. Priority is checked before every display delivery; a delayed or multi-step automation cannot overwrite an announcement takeover that began after the automation started.
 
-Background Music remains paused until display reconciliation succeeds. A failed reconciliation is retried while the audio-priority hold remains active.
+Background Music remains paused until display reconciliation succeeds.
 
 ## Existing-conflict edit compatibility
 
-Conflict validation must not turn an already-saved automation into an uneditable record after an upgrade. When an existing enabled automation is edited, RoomGoblin compares the candidate conflicts with the exact conflicts produced by the previously saved revision over the same planning horizon. Exact pre-existing date/time/resource overlaps are grandfathered for that edit; newly introduced overlaps are still rejected. New automations continue to require conflict-free enabled schedules.
-
-This compatibility rule does not create new runtime priority semantics and does not silently disable either event. It exists only to preserve editability of configurations that were valid before conflict validation was introduced. Operators can then deliberately resolve or reprioritize those legacy overlaps instead of being locked out of unrelated edits.
+Conflict validation must not turn an already-saved automation into an uneditable record after an upgrade. Existing exact date/time/resource conflicts may be grandfathered for an edit; newly introduced conflicts are still rejected.
 
 ## Regression requirements
 
@@ -62,17 +74,13 @@ Changes to the scheduler or controller must preserve these invariants:
 
 1. Real scheduled runs retain strict school-calendar and cycle enforcement.
 2. Manual tests can use a linked class even when it is not scheduled today.
-3. Class-default display targets work across primary and cross-domain display actions.
-4. The class-default target checkbox survives save/edit cycles regardless of primary action domain.
-5. Alternating schedules save the authoritative school-profile anchor.
-6. Timer and action failures expose actionable details.
-7. SQLite remains the authoritative automation store.
+3. Class-default display targets work across cross-domain action sequences.
+4. Every action, including Action 1, has the same execution-policy model.
+5. Every media action has the complete media payload editor.
+6. v1 → v2 migration is ordered, lossless for supported fields, and idempotent.
+7. Media loop never restarts preceding actions.
+8. Non-media unbounded loops are rejected/normalized.
+9. Timer and action failures expose actionable details.
+10. SQLite remains authoritative.
 
-The automated regression coverage for this contract lives in `test/automation-framework-manual.test.js`.
-
-
-## Per-action execution policy
-
-Additional automation actions persist `executionMode`, `repeatCount`, and `repeatDelaySeconds`. The default is `once`. `repeat` is bounded to 100 executions. `loop` is native only for display media and therefore loops the receiver's current media element rather than replaying the whole automation. Non-media loop requests are normalized to bounded repeat semantics so power, routing, lighting, and other side-effecting commands cannot accidentally become unbounded command generators.
-
-Scheduler reconciliation continues to reason about the configured action sequence and resources; repeat metadata does not create additional scheduled occurrences or restart earlier steps.
+Core regression coverage includes `test/automation-schema-v2.test.js`, `test/automation-editor-v2.test.js`, `test/automation-media-sessions.test.js`, and the existing scheduler stabilization suites.
