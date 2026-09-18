@@ -10,6 +10,7 @@
 - Initialize Timer Overlay after the first pass so continuous sequences cannot starve overlays; keep Morning Announcements and Background Music reconciliation invariants.
 - Replace the long Scheduled Events card stack with one time-ordered automation selector; the editor follows that selection instead of rendering a redundant second selector.
 - Collapse class schedule links into a compact summary and move multi-class selection into an explicit Edit Links dialog with Save/Cancel behavior.
+- Simplify the automation editor footer to Save & Enable plus Cancel / New; validation now runs automatically before the save-and-enable operation.
 - Make uploaded-media settings content-aware so images, videos, and paged documents expose only applicable controls.
 - Retire the browser automation hotfix and fold its required schedule-ordering behavior into the canonical controller.
 
