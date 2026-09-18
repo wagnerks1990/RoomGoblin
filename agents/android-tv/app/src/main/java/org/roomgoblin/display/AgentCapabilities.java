@@ -33,10 +33,12 @@ final class AgentCapabilities {
             boolean writeSettings=Settings.System.canWrite(context);
             boolean accessibilityEnabled=AgentAccessibilityService.isEnabled(context);
             boolean rootBinary=RootTools.binaryDetected();
+            boolean rootPolicy=HubStorage.prefs(context).getBoolean("allow_root_tools",false);
+            boolean rootCommandsAvailable=rootBinary&&rootPolicy;
             JSONObject sendspin=NativeSendspinManager.INSTANCE.status(context);
 
             root.put("agentVersion",BuildConfig.VERSION_NAME);root.put("sdk",Build.VERSION.SDK_INT);root.put("manufacturer",Build.MANUFACTURER);root.put("model",Build.MODEL);root.put("device",Build.DEVICE);root.put("product",Build.PRODUCT);root.put("fingerprint",Build.FINGERPRINT);
-            root.put("deviceOwner",deviceOwner);root.put("deviceAdminActive",adminActive);root.put("writeSecureSettings",secure);root.put("notificationPermission",notify);root.put("overlayPermission",overlay);root.put("writeSystemSettings",writeSettings);root.put("accessibilityEnabled",accessibilityEnabled);root.put("rootBinaryDetected",rootBinary);root.put("sendspin",sendspin);
+            root.put("deviceOwner",deviceOwner);root.put("deviceAdminActive",adminActive);root.put("writeSecureSettings",secure);root.put("notificationPermission",notify);root.put("overlayPermission",overlay);root.put("writeSystemSettings",writeSettings);root.put("accessibilityEnabled",accessibilityEnabled);root.put("rootBinaryDetected",rootBinary);root.put("rootPolicyEnabled",rootPolicy);root.put("sendspin",sendspin);
 
             JSONObject c=new JSONObject();
             c.put("bootAutoStart",cap(true,"native","BOOT_COMPLETED/LOCKED_BOOT_COMPLETED receiver"));
@@ -59,7 +61,7 @@ final class AgentCapabilities {
             c.put("wirelessAdbDiscovery",cap(true,"experimental","first-party local ADB client uses Android mDNS discovery through libadb-android"));
             c.put("legacyAdbPortSwitch",cap(true,"experimental","local ADB can request tcpip:<target-port>; actual firmware behavior is measured at runtime"));
             c.put("localAdbSelfGrant",cap(true,"experimental","paired local ADB can attempt pm grant WRITE_SECURE_SETTINGS to this agent"));
-            c.put("remoteShell",cap(rootBinary,"root-only","ordinary app sandbox cannot provide system shell; optional root tier can expose a gated root command channel"));
+            c.put("remoteShell",cap(rootCommandsAvailable,"root-only","requires both a detected superuser binary and the explicit RoomGoblin root-tools policy"));
             c.put("rootProbe",cap(rootBinary,"experimental-root","explicit probe only; normal heartbeat never requests superuser"));
 
             // Keep the aggregate capability for backward compatibility, but expose each
@@ -73,12 +75,12 @@ final class AgentCapabilities {
             c.put("installedAppInventory",cap(true,"limited","launcher-visible apps by default; broader inventory requires package-query/elevated management"));
             c.put("screenCapture",cap(false,"user-consent","full-screen capture requires MediaProjection consent; ADB/root may offer unattended alternatives"));
             c.put("ownDisplaySnapshot",cap(true,"planned","own WebView can be rendered without MediaProjection"));
-            c.put("silentApkInstall",cap(deviceOwner||rootBinary,"elevated","device-owner or optional root tier required for unattended install"));
+            c.put("silentApkInstall",cap(deviceOwner||rootCommandsAvailable,"elevated","device-owner or policy-enabled optional root tier required for unattended install"));
             c.put("interactiveApkInstall",cap(true,"native","PackageInstaller can request user-confirmed installation"));
-            c.put("selfUpdate",cap(deviceOwner||rootBinary,"mixed","silent only with elevated management; otherwise user-confirmed installer flow"));
-            c.put("powerOff",cap(rootBinary,"root-only","ordinary Android apps cannot power off the device"));
+            c.put("selfUpdate",cap(deviceOwner||rootCommandsAvailable,"mixed","silent only with elevated management; otherwise user-confirmed installer flow"));
+            c.put("powerOff",cap(rootCommandsAvailable,"root-only","ordinary Android apps cannot power off the device; optional root tools must be enabled"));
             c.put("inputInjection",cap(false,"not-implemented","Agent v2 does not implement arbitrary key, text, tap, swipe, or coordinate injection; Accessibility provides supported global actions only"));
-            c.put("systemSettingsWrite",cap(secure||writeSettings||rootBinary,"permission-dependent","secure/global settings need WRITE_SECURE_SETTINGS or elevated privilege"));
+            c.put("systemSettingsWrite",cap(secure||writeSettings||rootCommandsAvailable,"permission-dependent","secure/global settings need WRITE_SECURE_SETTINGS, WRITE_SETTINGS, or policy-enabled elevated privilege"));
             c.put("overlay",cap(overlay,"user-grant","SYSTEM_ALERT_WINDOW requires explicit approval"));
             c.put("deviceAdmin",cap(adminActive,"user-grant","legacy device-admin can lock but is not equivalent to device owner"));
             c.put("deviceOwnerProvisioning",cap(deviceOwner,"provisioning","normally requires provisioning/factory-reset workflow on consumer Android TV"));

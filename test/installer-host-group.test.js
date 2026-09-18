@@ -99,4 +99,7 @@ test("installer creates the Host Agent state root before restarting systemd serv
 
   const unit = fs.readFileSync(path.join(root, "host-agent/classroom-control-hub-host-agent.service"), "utf8");
   assert.match(unit, /ReadWritePaths=.*\/var\/lib\/classroom-hub/);
+  assert.doesNotMatch(unit, /ReadWritePaths=.*(?:^|\s)\/opt(?:\s|$)/m);
+  assert.match(unit, /ReadWritePaths=.*\/opt\/classroom-hub .*\/opt\/services .*\/opt\/classroom-hub-backups/);
+  assert.match(installer, /ReadWritePaths=\/run\/classroom-control-hub \$TARGET \$SERVICES \$BACKUP_ROOT/);
 });

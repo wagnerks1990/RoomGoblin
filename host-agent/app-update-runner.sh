@@ -224,6 +224,7 @@ refresh_host_agent(){
   sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=${HOST_SERVICES_DIR:-/opt/services}#" /etc/systemd/system/classroom-hub-host-agent.service
   sed -i "s#^Environment=HOST_BACKUP_DIR=.*#Environment=HOST_BACKUP_DIR=${HOST_BACKUP_DIR:-/opt/classroom-hub-backups}#" /etc/systemd/system/classroom-hub-host-agent.service
   sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
+  sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $HUB_ROOT ${HOST_SERVICES_DIR:-/opt/services} ${HOST_BACKUP_DIR:-/opt/classroom-hub-backups} /etc/classroom-control-hub /var/lib/classroom-hub ${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
   python3 -m py_compile "$HUB_ROOT/host-agent/server.py"
   systemctl daemon-reload
   fi

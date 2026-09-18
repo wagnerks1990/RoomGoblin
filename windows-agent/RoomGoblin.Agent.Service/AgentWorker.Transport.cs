@@ -11,7 +11,7 @@ namespace RoomGoblin.Agent.Service;
 
 internal sealed partial class AgentWorker
 {
-    private static async Task SendCommandResultAsync(
+    private async Task SendCommandResultAsync(
         ClientWebSocket socket,
         string commandId,
         string action,
@@ -34,7 +34,7 @@ internal sealed partial class AgentWorker
             ct);
     }
 
-    private static async Task SendRawJsonAsync(
+    private async Task SendRawJsonAsync(
         ClientWebSocket socket,
         object value,
         CancellationToken ct)
@@ -42,11 +42,7 @@ internal sealed partial class AgentWorker
         var payload =
             JsonSerializer.SerializeToUtf8Bytes(value);
 
-        await socket.SendAsync(
-            payload,
-            WebSocketMessageType.Text,
-            true,
-            ct);
+        await SendPayloadAsync(socket,payload,ct);
     }
 
     private static async Task RunProcessBoundedAsync(
@@ -129,7 +125,7 @@ internal sealed partial class AgentWorker
         }
     }
 
-    private static async Task SendJsonAsync<T>(
+    private async Task SendJsonAsync<T>(
         ClientWebSocket socket,
         T value,
         JsonTypeInfo<T> typeInfo,
@@ -140,11 +136,25 @@ internal sealed partial class AgentWorker
                 value,
                 typeInfo);
 
-        await socket.SendAsync(
-            payload,
-            WebSocketMessageType.Text,
-            true,
-            ct);
+        await SendPayloadAsync(socket,payload,ct);
+    }
+
+    private async Task SendPayloadAsync(
+        ClientWebSocket socket,
+        ReadOnlyMemory<byte> payload,
+        CancellationToken ct)
+    {
+        await _sendGate.WaitAsync(ct);
+        try
+        {
+            if (socket.State != WebSocketState.Open)
+                throw new WebSocketException("RoomGoblin WebSocket is not open for sending.");
+            await socket.SendAsync(payload,WebSocketMessageType.Text,true,ct);
+        }
+        finally
+        {
+            _sendGate.Release();
+        }
     }
 
     private static async Task<string?> ReceiveTextAsync(

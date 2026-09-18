@@ -183,6 +183,14 @@ if _HOST_AGENT_DIR not in sys.path: sys.path.insert(0,_HOST_AGENT_DIR)
 from full_recovery import FullRecoveryManager
 FULL_RECOVERY = FullRecoveryManager(run, hub_root=HUB_ROOT, services_root=SERVICES_ROOT)
 STARTUP_RECOVERY_ACTIVE = False
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
+REQUEST_READ_TIMEOUT_SECONDS = 10
+MANAGED_OWNERSHIP_LABEL = 'org.roomgoblin.deployment-ownership=roomgoblin'
+
+class RequestError(RuntimeError):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
 
 def normalize_restored_data(body):
     if str(body.get('confirm') or '')!='NORMALIZE_RESTORED_DATA': raise RuntimeError('Explicit NORMALIZE_RESTORED_DATA confirmation required')
@@ -218,16 +226,18 @@ def validate_docker_run(args):
     if any(x in ('-p', '--publish', '-P', '--publish-all') for x in args):
         raise RuntimeError('Published ports are not supported with host networking; configure the application listener')
     if args[-1] not in MANAGED_IMAGES: raise RuntimeError('Integration image is not pinned or allowlisted')
+    if args.count('--label') != 1: raise RuntimeError('Managed integrations require exactly one ownership label')
     i=1
     while i < len(args)-1:
         option=args[i]
         if option=='-d': i+=1; continue
-        if option in ('--name','--restart','--network','-p','--publish','-v','--volume','-e','--env'):
+        if option in ('--name','--restart','--network','--label','-p','--publish','-v','--volume','-e','--env'):
             if i+1>=len(args)-1: raise RuntimeError(f'Missing value for Docker option {option}')
             value=args[i+1]
             if option=='--name' and value not in MANAGED_CONTAINERS: raise RuntimeError('Managed container name required')
             if option=='--restart' and value!='unless-stopped': raise RuntimeError('Unsupported restart policy')
             if option=='--network' and value!='host': raise RuntimeError('Unsupported Docker network')
+            if option=='--label' and value!=MANAGED_OWNERSHIP_LABEL: raise RuntimeError('Managed container ownership label is invalid')
             if option in ('-p','--publish') and not re.fullmatch(r'[0-9]{1,5}:[0-9]{1,5}',value): raise RuntimeError('Invalid published port')
             if option in ('-v','--volume') and (not allowed_managed_path(value) or 'docker.sock' in value): raise RuntimeError('Volume source is outside the managed roots')
             if option in ('-e','--env') and not re.fullmatch(r'[A-Z][A-Z0-9_]{0,127}=.{0,2048}',value,re.S): raise RuntimeError('Invalid container environment setting')
@@ -419,6 +429,9 @@ def cleanup_legacy_backup(path_value, action):
 
 class Handler(BaseHTTPRequestHandler):
     server_version="ClassroomHubHostAgent/"+VERSION
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(REQUEST_READ_TIMEOUT_SECONDS)
     def log_message(self, fmt, *args):
         return
     def send_json(self, code, obj):
@@ -430,9 +443,17 @@ class Handler(BaseHTTPRequestHandler):
         return True
     def body(self):
         try:
-            n=int(self.headers.get('Content-Length','0') or 0)
-            return json.loads(self.rfile.read(n) or b'{}')
-        except Exception: return {}
+            raw_length=self.headers.get('Content-Length')
+            if raw_length is None: raise RequestError('Content-Length is required',411)
+            n=int(raw_length)
+            if n<0: raise RequestError('Content-Length is invalid')
+            if n>MAX_REQUEST_BODY_BYTES: raise RequestError('Request body is too large',413)
+            value=json.loads(self.rfile.read(n) or b'{}')
+            if not isinstance(value,dict): raise RequestError('JSON request body must be an object')
+            return value
+        except RequestError: raise
+        except (ValueError,json.JSONDecodeError): raise RequestError('Request body is not valid JSON')
+        except TimeoutError: raise RequestError('Request body read timed out',408)
     def do_GET(self):
         if not self.auth(): return
         u=urllib.parse.urlparse(self.path); path=u.path; q=urllib.parse.parse_qs(u.query)
@@ -461,7 +482,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/cleanup/migration-snapshots':
                 items=migration_snapshots(); return self.send_json(200,{"ok":True,"items":items,"count":len(items)})
             return self.send_json(404,{"ok":False,"error":"Not found"})
-        except Exception as e: return self.send_json(500,{"ok":False,"error":str(e)})
+        except Exception as e: return self.send_json(getattr(e,'status',500),{"ok":False,"error":str(e)})
     def do_POST(self):
         if not self.auth(): return
         path=urllib.parse.urlparse(self.path).path
@@ -530,7 +551,7 @@ class Handler(BaseHTTPRequestHandler):
             p=run(args,50,False)
             if p.returncode != 0: return self.send_json(500,{"ok":False,"error":(p.stderr or p.stdout).strip(),"output":(p.stdout or '')+(p.stderr or '')})
             return self.send_json(200,{"ok":True,"name":name,"action":action,"output":(p.stdout or '')+(p.stderr or ''),"state":unit_state(name)})
-        except Exception as e: return self.send_json(500,{"ok":False,"error":str(e)})
+        except Exception as e: return self.send_json(getattr(e,'status',500),{"ok":False,"error":str(e)})
 
 def socket_hostname():
     try: return Path('/etc/hostname').read_text().strip()
@@ -539,7 +560,8 @@ def socket_hostname():
 class UnixHTTPServer(socketserver.UnixStreamServer):
     allow_reuse_address=True
 
-if __name__=='__main__':
+def serve():
+    global STARTUP_RECOVERY_ACTIVE
     Path(SOCKET_PATH).parent.mkdir(parents=True,exist_ok=True)
     try: os.unlink(SOCKET_PATH)
     except FileNotFoundError: pass
@@ -568,3 +590,6 @@ if __name__=='__main__':
         server.server_close()
         try: os.unlink(SOCKET_PATH)
         except FileNotFoundError: pass
+
+if __name__=='__main__':
+    serve()

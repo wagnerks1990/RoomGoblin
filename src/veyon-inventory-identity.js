@@ -1,5 +1,6 @@
 "use strict";
 
+const {createHash}=require("node:crypto");
 const MAX_MAPPINGS=2048;
 
 function cleanId(value){return String(value||"").replace(/[^A-Za-z0-9._-]/g,"-").slice(0,220)}
@@ -10,7 +11,14 @@ function normalizeHostname(value){
 }
 function stableIdForHostname(hostname){
   const host=normalizeHostname(hostname);
-  return host?`host-${cleanId(host)}`:"";
+  if(!host)return "";
+  const cleaned=cleanId(host);
+  // Preserve IDs for ordinary DNS/Windows hostnames. If normalization would
+  // collapse distinct endpoint identities, append a deterministic digest.
+  if(cleaned===host)return `host-${cleaned}`;
+  const prefix=(cleaned||"device").slice(0,200);
+  const digest=createHash("sha256").update(host).digest("hex").slice(0,16);
+  return `host-${prefix}-${digest}`;
 }
 function timestamp(value){const n=Date.parse(String(value||""));return Number.isFinite(n)?n:0}
 function score(row){return [row?.online===true?1:0,row?.authenticated===true?1:0,timestamp(row?.lastDiscoveredAt),timestamp(row?.updatedAt)]}
@@ -43,6 +51,14 @@ function normalizedMapping(value){
       stale:entry.stale===true,
       updatedAt:String(entry.updatedAt||"")
     };
+  }
+  const counts={};
+  for(const entry of Object.values(out))counts[entry.stableId]=(counts[entry.stableId]||0)+1;
+  for(const entry of Object.values(out)){
+    const safeId=stableIdForHostname(entry.hostname),legacyId=`host-${cleanId(entry.hostname)}`;
+    // Preserve a unique legacy compatibility ID. Upgrade only an actual
+    // collision produced by the old lossy cleaning scheme.
+    if(counts[entry.stableId]>1&&safeId!==legacyId&&entry.stableId===legacyId)entry.stableId=safeId;
   }
   return out;
 }
@@ -80,8 +96,8 @@ function projectRows(mappingValue,rows){
 function resolveBackendId(mappingValue,id){
   const raw=String(id||"");if(!raw.startsWith("host-"))return raw;
   const mapping=normalizedMapping(mappingValue);
-  for(const entry of Object.values(mapping))if(entry.stableId===raw&&entry.backendId&&!entry.stale)return entry.backendId;
-  return raw;
+  const matches=Object.values(mapping).filter(entry=>entry.stableId===raw&&entry.backendId&&!entry.stale);
+  return matches.length===1?matches[0].backendId:raw;
 }
 function stableIdForBackend(mappingValue,id){
   const raw=String(id||"");if(!raw)return raw;

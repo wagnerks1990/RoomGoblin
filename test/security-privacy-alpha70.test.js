@@ -9,7 +9,7 @@ const source=fs.readFileSync(path.join(__dirname,"..","src","server.js"),"utf8")
 
 test("student browser history is explicit opt-in and supports zero retention",()=>{
   assert.match(source,/browserHistoryEnabled:p\.browserHistoryEnabled===true/);
-  assert.match(source,/LAB_HISTORY_RETENTION_HOURS \|\| 0/);
+  assert.match(source,/environmentInteger\("LAB_HISTORY_RETENTION_HOURS",0,0,24\*365\)/);
   assert.match(source,/historyPollSeconds:privacy\.browserHistoryEnabled\?30:0/);
   assert.match(source,/if\(!policy\.browserHistoryEnabled\|\|policy\.browserHistoryHours===0\)return/);
 });

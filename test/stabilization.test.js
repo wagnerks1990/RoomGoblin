@@ -589,7 +589,7 @@ test("Veyon queued command API requires control access, deduplicates requests an
   }
   assert.equal((await request("/api/v1/veyon/feature",{method:"POST",body:{targets:["all"],feature:"screenLock"}})).response.status,401);
   // An unused loopback endpoint cannot issue actions to classroom hardware.
-  const added=await request("/api/v1/veyon/computers",{method:"POST",authenticated:true,body:{ip:"127.0.0.2",name:"Queue fixture"}});
+  const added=await request("/api/v1/veyon/computers",{method:"POST",authenticated:true,body:{ip:"192.168.254.2",name:"Queue fixture"}});
   assert.equal(added.response.status,200);
   const id=added.json.computer.id,password="queue-test-only-secret";
   const body={targets:[id],feature:"userLogin",active:true,arguments:{username:"fixture-user",password},requestId:"queue-api-fixture-1"};

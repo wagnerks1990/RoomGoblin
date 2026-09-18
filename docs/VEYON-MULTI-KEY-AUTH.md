@@ -4,7 +4,7 @@ RoomGoblin can keep more than one named Veyon private authentication key. This i
 
 ## Storage and security
 
-- Private PEM material is stored through RoomGoblin's encrypted SQLite secret store.
+- Private PEM material is cryptographically parsed and bounded to 64 KiB before it is stored through RoomGoblin's encrypted SQLite secret store.
 - Each named key uses a deterministic secret-store slot derived from a SHA-256 digest of the key name. The PEM is not placed in preferences, logs, diagnostics, browser storage, or API responses.
 - The established `veyon.private-key` compatibility secret and `VEYON_PRIVATE_KEY_FILE` remain supported. On appliance startup/use, the compatibility key is captured into the named keyring before a replacement can overwrite that compatibility secret.
 - API/UI responses contain only key names, the preferred key name, and a count.

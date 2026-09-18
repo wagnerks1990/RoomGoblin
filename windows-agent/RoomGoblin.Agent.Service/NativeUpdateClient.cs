@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 
 namespace RoomGoblin.Agent.Service;
@@ -17,6 +18,8 @@ internal sealed record NativeManifest(
 
 internal sealed class NativeUpdateClient
 {
+    private const long MaxFileBytes = 256L * 1024 * 1024;
+    private const long MaxPackageBytes = 512L * 1024 * 1024;
     private static readonly HashSet<string> AllowedFiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -32,7 +35,8 @@ internal sealed class NativeUpdateClient
     {
         using var http = new HttpClient
         {
-            Timeout = TimeSpan.FromSeconds(45)
+            Timeout = TimeSpan.FromSeconds(45),
+            MaxResponseContentBufferSize = 1024 * 1024
         };
 
         var origin = new Uri(config.HubUrl).GetLeftPart(
@@ -50,6 +54,8 @@ internal sealed class NativeUpdateClient
 
         if (!manifest.Ok ||
             string.IsNullOrWhiteSpace(manifest.Version) ||
+            manifest.Version.Length > 128 ||
+            !Regex.IsMatch(manifest.Version,"^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$") ||
             manifest.Files is null ||
             manifest.Files.Length != AllowedFiles.Count)
         {
@@ -57,11 +63,14 @@ internal sealed class NativeUpdateClient
                 "Hub returned an invalid native agent manifest.");
         }
 
-        if (manifest.Files.Any(
+        if (manifest.Files.Select(x=>x.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=AllowedFiles.Count ||
+            manifest.Files.Any(
                 x => !AllowedFiles.Contains(x.Name) ||
-                     !System.Text.RegularExpressions.Regex.IsMatch(
+                     x.Bytes<=0 || x.Bytes>MaxFileBytes ||
+                     !Regex.IsMatch(
                          x.Sha256 ?? "",
-                         "^[0-9a-fA-F]{64}$")))
+                         "^[0-9a-fA-F]{64}$")) ||
+            manifest.Files.Sum(x=>x.Bytes)>MaxPackageBytes)
         {
             throw new InvalidDataException(
                 "Hub native manifest contains an invalid file entry.");
@@ -87,8 +96,7 @@ internal sealed class NativeUpdateClient
                     "/lab-agent/native/" +
                     Uri.EscapeDataString(file.Name));
 
-                await using (var input =
-                    await http.GetStreamAsync(source, ct))
+                using (var response=await http.GetAsync(source,HttpCompletionOption.ResponseHeadersRead,ct))
                 await using (var output =
                     new FileStream(
                         target,
@@ -98,13 +106,28 @@ internal sealed class NativeUpdateClient
                         1024 * 1024,
                         FileOptions.WriteThrough))
                 {
-                    await input.CopyToAsync(output, ct);
+                    response.EnsureSuccessStatusCode();
+                    if(response.Content.Headers.ContentLength is long declared&&declared!=file.Bytes)
+                        throw new InvalidDataException($"Native update size mismatch for {file.Name}.");
+                    await using var input=await response.Content.ReadAsStreamAsync(ct);
+                    var buffer=new byte[1024*1024];
+                    long written=0;
+                    while(true)
+                    {
+                        var count=await input.ReadAsync(buffer,ct);
+                        if(count==0)break;
+                        written+=count;
+                        if(written>file.Bytes||written>MaxFileBytes)
+                            throw new InvalidDataException($"Native update exceeds the declared size for {file.Name}.");
+                        await output.WriteAsync(buffer.AsMemory(0,count),ct);
+                    }
+                    if(written!=file.Bytes)
+                        throw new InvalidDataException($"Native update size mismatch for {file.Name}.");
                     await output.FlushAsync(ct);
                 }
 
-                var actual = Convert.ToHexString(
-                    SHA256.HashData(
-                        await File.ReadAllBytesAsync(target, ct)));
+                await using var verified=File.OpenRead(target);
+                var actual=Convert.ToHexString(await SHA256.HashDataAsync(verified,ct));
 
                 if (!actual.Equals(
                         file.Sha256,

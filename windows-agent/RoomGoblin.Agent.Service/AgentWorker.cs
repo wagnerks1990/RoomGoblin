@@ -27,6 +27,9 @@ internal sealed partial class AgentWorker : BackgroundService
     private readonly string _configPath;
     private readonly SessionBridge _sessionBridge = new();
     private readonly BrowserHistoryCollector _historyCollector = new();
+    // ClientWebSocket permits one concurrent sender and one receiver. Heartbeats,
+    // telemetry, and command results share this gate so frames never overlap.
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
 
     public AgentWorker(
         ILogger<AgentWorker> logger,

@@ -64,6 +64,8 @@ The Agent channel remains the normal management plane even if local ADB works pe
 
 Root is never a baseline requirement. Do not automate bootloader unlocking, firmware flashing, Magisk installation, or rooting against production devices. `root-probe` must remain explicit. `root-command` must remain disabled unless `allow_root_tools=true` was deliberately provisioned to a lab device.
 
+Root execution must stay bounded by fixed time/output ceilings, and capability discovery must distinguish root-binary detection from the `allow_root_tools` policy. Live configuration commits before service reconciliation; listener disable/port changes must take effect without killing kiosk or native audio duties. Exported settings helpers and configuration remain guarded by `android.permission.DUMP`, and the HTTP parser rejects rather than truncates an oversized body.
+
 The known 2023 Onn Gen 2 rooting guide is archived and states that its method no longer works. It also requires a factory reset during bootloader unlock. Treat model/firmware-specific rooting instructions as historical lab research, not deployment automation.
 
 ## External research license notes

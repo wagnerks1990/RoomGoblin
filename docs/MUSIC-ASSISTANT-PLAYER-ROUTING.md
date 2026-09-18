@@ -29,6 +29,13 @@ Canonicalization rules:
 6. Rewrite controller-originated `player_id` and `queue_id` values through the alias map before calling Music Assistant.
 7. Never deduplicate solely by display name, MAC-looking string, or a hard-coded `up<mac>` convention.
 
+Status requests can overlap and Music Assistant can temporarily return a partial
+player inventory. RoomGoblin applies alias snapshots in request-generation order,
+retains previously observed aliases for a bounded five-minute grace period, and
+never lets an older response overwrite a newer mapping. This keeps commands aimed
+at a protocol child routed to the canonical queue during short inventory refreshes
+without retaining removed relationships indefinitely.
+
 This preserves compatibility if Music Assistant changes Universal Player identifier formatting while retaining its public output-protocol relationship.
 
 ## Queue ownership
@@ -62,5 +69,6 @@ Do not remove or merge ESPHome entities merely because their names or purpose ov
 - child player and queue IDs resolve to the Universal Player;
 - unrelated/native players remain unchanged;
 - unknown protocol references do not hide unrelated players.
+- partial and out-of-order status snapshots do not erase or roll back a newer alias.
 
 Production validation must continue to run `npm run check` and the complete `npm test` suite.

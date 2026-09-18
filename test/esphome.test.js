@@ -116,6 +116,29 @@ test("oversized and stalled IPC terminate the worker rather than executing late 
     try{const pending=manager.rpc("command",{},20);const rejected=assert.rejects(pending,/not be replayed/);if(mode==="oversize")child.stdout.write("x".repeat(2*1024*1024+1));await delay(30);await rejected;assert.equal(child.killed,true)}finally{manager.close();db.close()}}
 });
 
+test("worker restart backoff prevents rapid process respawn and grows across pre-health failures",async()=>{
+  const db=store(),children=[fakeChild(),fakeChild()],spawned=[];let now=0;
+  const manager=new ESPHomeManager({storage:db.storage,autostart:false,now:()=>now,restartBaseMs:100,restartMaxMs:400,spawnProcess:()=>{const child=children[spawned.length];spawned.push(child);return child}});
+  try{
+    const first=manager.rpc("probe",{});children[0].emit("exit",1);await assert.rejects(first,/not be replayed/);
+    await assert.rejects(manager.rpc("probe",{}),/cooling down/);assert.equal(spawned.length,1);
+    now=100;const second=manager.rpc("probe",{});assert.equal(spawned.length,2);
+    children[1].stdout.write("{}\n");children[1].emit("exit",1);await assert.rejects(second,/not be replayed/);
+    now=299;await assert.rejects(manager.rpc("probe",{}),/cooling down/);
+    assert.equal(spawned.length,2);assert.equal(manager.nextWorkerAt,300);
+  }finally{manager.close();db.close()}
+});
+
+test("synchronous worker spawn failures enter the same restart cooldown",async()=>{
+  const db=store();let now=0,calls=0;
+  const manager=new ESPHomeManager({storage:db.storage,autostart:false,now:()=>now,restartBaseMs:50,spawnProcess:()=>{calls++;throw Error("exec failed")}});
+  try{
+    await assert.rejects(manager.rpc("probe",{}),/unavailable/);
+    await assert.rejects(manager.rpc("probe",{}),/cooling down/);assert.equal(calls,1);
+    now=50;await assert.rejects(manager.rpc("probe",{}),/unavailable/);assert.equal(calls,2);
+  }finally{manager.close();db.close()}
+});
+
 test("real HTTP routes enforce read/control/admin boundaries, hide key material and track async export mutations",async()=>{
   const h=harness(),app=express();let active=0,role="none";app.use(express.json());
   const gate=allowed=>(_req,res,next)=>allowed.includes(role)?next():res.status(403).json({error:"denied"});

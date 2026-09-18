@@ -45,6 +45,12 @@ test("native agent version is repository driven", () => {
   assert.match(build, /-p:InformationalVersion=\$roomGoblinVersion/);
 });
 
+test("native locked restores pin the self-contained runtime patch", () => {
+  const props = read("windows-agent/Directory.Build.props");
+  assert.match(props, /<RestoreLockedMode[^>]*>true<\/RestoreLockedMode>/);
+  assert.match(props, /<RuntimeFrameworkVersion>8\.0\.31<\/RuntimeFrameworkVersion>/);
+});
+
 test("native interactive helper keeps one-use authenticated pipe boundary", () => {
   const bridge = read("windows-agent/RoomGoblin.Agent.Service/SessionBridge.cs");
   assert.match(bridge, /NamedPipeServerStreamAcl\.Create/);
@@ -66,6 +72,9 @@ test("native update path is allowlisted, hashed, optionally signed, and rollback
   assert.match(updater, /rollback-/);
   assert.match(updater, /WaitForHealth/);
   assert.match(updater, /expectedVersion/);
+  assert.match(client, /MaxFileBytes/);
+  assert.match(client, /ResponseHeadersRead/);
+  assert.match(client, /written>file\.Bytes/);
 });
 
 test("native bootstrap supports secure fresh enrollment without weakening migration", () => {
@@ -116,5 +125,26 @@ test("native bootstrap verifies package manifests and consumes enrollment files"
   assert.match(bootstrap, /VerifyPackageManifest/);
   assert.match(bootstrap, /SHA-256 verification failed/);
   assert.match(bootstrap, /File\.Delete\(fullPath\)/);
+  assert.match(bootstrap, /if \(File\.Exists\(fullPath\)\)/);
+  assert.match(bootstrap, /Enrollment file could not be securely consumed/);
   assert.match(bootstrap, /enrollment-file cannot be combined/);
+});
+
+test("native transport serializes sends and bounds sensitive telemetry",()=>{
+  const worker=read("windows-agent/RoomGoblin.Agent.Service/AgentWorker.cs");
+  const transport=read("windows-agent/RoomGoblin.Agent.Service/AgentWorker.Transport.cs");
+  const commands=read("windows-agent/RoomGoblin.Agent.Service/AgentWorker.Commands.cs");
+  const history=read("windows-agent/RoomGoblin.Agent.Service/BrowserHistoryCollector.cs");
+  assert.match(worker,/SemaphoreSlim _sendGate/);
+  assert.match(transport,/_sendGate\.WaitAsync/);
+  assert.match(transport,/_sendGate\.Release/);
+  assert.match(commands,/alertId\.Length>128/);
+  assert.match(history,/MaxHistoryDatabaseBytes/);
+  assert.match(history,/CollectionTimeout/);
+});
+
+test("publisher SHA-256 pins hash certificate bytes rather than the SHA-1 Thumbprint",()=>{
+  const verifier=read("windows-agent/RoomGoblin.Agent.Service/AuthenticodeVerifier.cs");
+  assert.match(verifier,/64 => Convert\.ToHexString\(SHA256\.HashData\(cert\.RawData\)\)/);
+  assert.match(verifier,/40 => cert\.GetCertHashString\(HashAlgorithmName\.SHA1\)/);
 });

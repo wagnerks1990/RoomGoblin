@@ -10,6 +10,7 @@ const HOST_KEY_PREF="veyon.auth-key-hosts";
 const LEGACY_SECRET="veyon.private-key";
 const MAX_KEYS=32;
 const MAX_HOST_PREFERENCES=512;
+const MAX_PRIVATE_KEY_BYTES=64*1024;
 
 function normalizeKeyName(value){
   const name=String(value||"").trim();
@@ -22,7 +23,8 @@ function secretNameForKey(keyName){
 }
 function validPrivateKey(value){
   const key=String(value||"").trim();
-  return key.includes("BEGIN")&&key.includes("PRIVATE KEY");
+  if(!key||Buffer.byteLength(key,"utf8")>MAX_PRIVATE_KEY_BYTES)return false;
+  try{return crypto.createPrivateKey({key,format:"pem"}).type==="private"}catch{return false}
 }
 function defaultPaths(){
   const dataDir=path.resolve(process.env.DATA_DIR||path.join(__dirname,"..","data"));
@@ -72,7 +74,7 @@ class VeyonKeyring{
   hasKey(keyName){return !!this.getKey(keyName)}
   importKey(keyName,privateKey,{preferred=false}={}){
     const name=normalizeKeyName(keyName),key=String(privateKey||"").trim();
-    if(!validPrivateKey(key))throw new Error("Veyon private key must be PEM-formatted private-key material");
+    if(!validPrivateKey(key))throw new Error("Veyon private key must be a valid PEM private key no larger than 64 KiB");
     const store=this.storage(),ring=this.ring();
     if(!ring.keyNames.includes(name)&&ring.keyNames.length>=MAX_KEYS)throw new Error(`Veyon supports at most ${MAX_KEYS} stored authentication keys`);
     store.putSecret(secretNameForKey(name),key,{type:"private-key",integration:"veyon",keyName:name,keyring:true});

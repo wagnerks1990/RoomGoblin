@@ -18,6 +18,8 @@ internal sealed record BrowserHistoryItem(
 
 internal sealed class BrowserHistoryCollector
 {
+    private const long MaxHistoryDatabaseBytes = 512L * 1024 * 1024;
+    private static readonly TimeSpan CollectionTimeout = TimeSpan.FromSeconds(30);
     private readonly string _tempRoot =
         Path.Combine(AgentPaths.Root, "history-temp");
 
@@ -29,20 +31,23 @@ internal sealed class BrowserHistoryCollector
     {
         limit = Math.Clamp(limit, 1, 500);
         Directory.CreateDirectory(_tempRoot);
+        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(CollectionTimeout);
+        var operationToken=timeout.Token;
 
         var items = new List<BrowserHistoryItem>();
 
-        foreach (var profile in EnumerateProfiles())
+        foreach (var profile in EnumerateProfiles().Take(128))
         {
-            ct.ThrowIfCancellationRequested();
+            operationToken.ThrowIfCancellationRequested();
 
             foreach (var source in EnumerateSources(profile.Path))
             {
-                ct.ThrowIfCancellationRequested();
+                operationToken.ThrowIfCancellationRequested();
 
                 foreach (var historyFile in source.Files)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    operationToken.ThrowIfCancellationRequested();
 
                     try
                     {
@@ -52,9 +57,13 @@ internal sealed class BrowserHistoryCollector
                             historyFile,
                             source.Query,
                             limit,
-                            ct);
+                            operationToken);
 
                         items.AddRange(records);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
                     }
                     catch
                     {
@@ -85,6 +94,10 @@ internal sealed class BrowserHistoryCollector
 
         try
         {
+            var sourceInfo=new FileInfo(historyFile);
+            if(!sourceInfo.Exists||sourceInfo.Length<=0||sourceInfo.Length>MaxHistoryDatabaseBytes||
+               (sourceInfo.Attributes&FileAttributes.ReparsePoint)!=0)
+                throw new InvalidDataException("Browser history database is not a bounded regular file.");
             File.Copy(historyFile, snapshot, overwrite: true);
             CopySidecar(historyFile, snapshot, "-wal");
             CopySidecar(historyFile, snapshot, "-shm");
@@ -118,8 +131,8 @@ internal sealed class BrowserHistoryCollector
 
                 list.Add(new BrowserHistoryItem(
                     Id: $"{browser}-{profile.Sid}-{recordId}",
-                    Url: Convert.ToString(reader["url"]) ?? "",
-                    Title: Convert.ToString(reader["title"]) ?? "",
+                    Url: Truncate(Convert.ToString(reader["url"]) ?? "",4096),
+                    Title: Truncate(Convert.ToString(reader["title"]) ?? "",1024),
                     VisitTime: Convert.ToString(reader["visit_time"]) ?? "",
                     VisitCount: Convert.ToInt32(reader["visit_count"]),
                     TypedCount: Convert.ToInt32(reader["typed_count"]),
@@ -233,9 +246,12 @@ internal sealed class BrowserHistoryCollector
         string suffix)
     {
         var source = sourceDatabase + suffix;
-        if (File.Exists(source))
+        if (File.Exists(source)&&new FileInfo(source).Length<=MaxHistoryDatabaseBytes)
             File.Copy(source, snapshotDatabase + suffix, overwrite: true);
     }
+
+    private static string Truncate(string value,int max) =>
+        value.Length<=max?value:value[..max];
 
     private static void DeleteIfExists(string path)
     {
@@ -258,8 +274,8 @@ internal sealed class BrowserHistoryCollector
     private const string ChromiumQuery = """
         SELECT
           CAST(v.id AS TEXT) AS record_id,
-          COALESCE(u.url, '') AS url,
-          COALESCE(u.title, '') AS title,
+          substr(COALESCE(u.url, ''), 1, 4096) AS url,
+          substr(COALESCE(u.title, ''), 1, 1024) AS title,
           strftime(
             '%Y-%m-%dT%H:%M:%SZ',
             (v.visit_time / 1000000) - 11644473600,
@@ -276,8 +292,8 @@ internal sealed class BrowserHistoryCollector
     private const string FirefoxQuery = """
         SELECT
           CAST(v.id AS TEXT) AS record_id,
-          COALESCE(p.url, '') AS url,
-          COALESCE(p.title, '') AS title,
+          substr(COALESCE(p.url, ''), 1, 4096) AS url,
+          substr(COALESCE(p.title, ''), 1, 1024) AS title,
           strftime(
             '%Y-%m-%dT%H:%M:%SZ',
             v.visit_date / 1000000,

@@ -147,10 +147,47 @@ test("recovery implementation includes bounded input and crash-safe state restor
   assert.match(transaction,/"start" if running else "stop"/);
   assert.match(transaction,/secretDecryption/);
   assert.match(transaction,/classroom-control-hub-android-adb/);
-  const main=host.slice(host.indexOf("if __name__=='__main__':"));
-  assert.ok(main.indexOf("UnixHTTPServer(SOCKET_PATH,Handler)")<main.indexOf("FULL_RECOVERY.startup_recover()"),"host socket must be bound before interrupted recovery can recreate health-dependent containers");
-  assert.ok(main.indexOf("serving.start()")<main.indexOf("FULL_RECOVERY.startup_recover()"),"host socket must serve health before interrupted recovery reconciliation");
+  const serve=host.slice(host.indexOf("def serve():"),host.indexOf("if __name__=='__main__':"));
+  assert.ok(serve.indexOf("UnixHTTPServer(SOCKET_PATH,Handler)")<serve.indexOf("FULL_RECOVERY.startup_recover()"),"host socket must be bound before interrupted recovery can recreate health-dependent containers");
+  assert.ok(serve.indexOf("serving.start()")<serve.indexOf("FULL_RECOVERY.startup_recover()"),"host socket must serve health before interrupted recovery reconciliation");
   assert.match(host,/if STARTUP_RECOVERY_ACTIVE:\s+return self\.send_json\(423/);
+});
+
+test("maintenance recovery journals precede host mutation and reconcile before listening",()=>{
+  const maintenance=fs.readFileSync(path.join(ROOT,"maintenance-agent/server.js"),"utf8");
+  const fullExport=maintenance.slice(
+    maintenance.indexOf("async function createFullRecoveryExport"),
+    maintenance.indexOf('app.post("/backup/create"')
+  );
+  const legacyRestore=maintenance.slice(
+    maintenance.indexOf('app.post("/backup/:name/restore"'),
+    maintenance.indexOf('app.delete("/backup/:name"')
+  );
+  const startup=maintenance.slice(maintenance.indexOf("async function start()"));
+
+  assert.match(maintenance,/function boundedEnvironmentInteger/);
+  assert.match(maintenance,/Number\.isSafeInteger\(value\)/);
+  assert.match(maintenance,/fs\.fsyncSync\(fd\)/);
+  assert.match(maintenance,/fs\.renameSync\(partial,dest\)/);
+  assert.match(maintenance,/if\(legacyRestoreMutationLocked\)return res\.status\(423\)/);
+  assert.ok(
+    fullExport.indexOf("writeJsonAtomic(FULL_EXPORT_JOURNAL")<fullExport.indexOf('["stop",service.container]'),
+    "the durable service-state journal must precede the first add-on stop"
+  );
+  assert.match(fullExport,/restartError\?500:400/);
+  assert.match(fullExport,/Recovery will retry when maintenance restarts/);
+  assert.ok(
+    legacyRestore.indexOf("writeJsonAtomic(LEGACY_RESTORE_JOURNAL")<legacyRestore.indexOf('["stop",APP_CONTAINER]'),
+    "the durable rollback journal must precede application stop or restore mutation"
+  );
+  assert.ok(
+    startup.indexOf("recoverInterruptedFullExport()")<startup.indexOf("app.listen("),
+    "interrupted add-on reconciliation must complete before maintenance becomes ready"
+  );
+  assert.ok(
+    startup.indexOf("recoverInterruptedLegacyRestore()")<startup.indexOf("app.listen("),
+    "interrupted legacy rollback must complete before maintenance becomes ready"
+  );
 });
 
 test("native Veyon runtime data is outside the managed Docker recovery namespace",()=>{

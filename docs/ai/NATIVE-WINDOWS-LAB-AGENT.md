@@ -8,7 +8,7 @@ Use this file as the implementation contract for changes involving `windows-agen
 - Keep the existing `C:\ProgramData\ClassroomControlHub\lab-agent.json` compatibility contract unless an explicit migration is implemented and tested.
 - Existing one-time enrollment tokens and permanent bearer credentials are valid native-agent identity. Permanent credentials remain Windows LocalMachine DPAPI protected. Do not introduce per-device certificate identity unless requirements explicitly change.
 - Fresh enrollment must never write the one-time token into the compatibility config in plaintext. The bootstrap protects it with LocalMachine DPAPI before writing the compatibility config.
-- Prefer the browser-downloadable native ZIP plus one-time enrollment JSON over a PowerShell download-and-execute chain. When `--enrollment-file` is used, require sibling `manifest.json`, verify the exact four executable SHA-256 values, and delete the plaintext enrollment file immediately after reading it.
+- Prefer the browser-downloadable native ZIP plus one-time enrollment JSON over a PowerShell download-and-execute chain. When `--enrollment-file` is used, require sibling `manifest.json`, verify the exact four executable SHA-256 values, cap the file at 64 KiB, reject reparse points, and fail installation if the plaintext enrollment file cannot be deleted immediately after reading it.
 - Fresh enrollment requires `--hub-url`, `--agent-id`, and `--enrollment-token` together. Plain HTTP must fail unless `--allow-http` is explicitly present.
 - Fresh-enrollment config ACLs remain limited to `SYSTEM` and local `Administrators`; do not loosen them for convenience.
 - If a fresh native install fails health acceptance, remove the newly created enrollment configuration so a reusable one-time secret is not left behind.
@@ -23,6 +23,10 @@ Use this file as the implementation contract for changes involving `windows-agen
 - `app-lock` / `app-unlock` are intentionally rejected by this constrained agent unless a separately designed managed-policy control plane is introduced.
 - Browser history is optional sensitive telemetry. A single locked/corrupt browser database must not terminate the service or prevent other profiles from reporting.
 - Screenshots remain bounded to the current safe payload limit and must be captured in the interactive session rather than Session 0.
+- Serialize every `ClientWebSocket.SendAsync` call. Heartbeats and command telemetry can be produced concurrently, but .NET permits only one concurrent WebSocket sender.
+- Treat update byte counts, browser database/profile counts and time, screenshot dimensions/quality/response, command output, and pipe lines as explicitly bounded inputs. A manifest hash alone does not provide a resource bound.
+- A 40-hex publisher pin is the certificate SHA-1 digest; a 64-hex pin is SHA-256 over `SignerCertificate.RawData`. `X509Certificate2.Thumbprint` is SHA-1 and must not be compared with a SHA-256 pin.
+- The legacy PowerShell uninstaller owns only its scheduled task and named runtime artifacts. `C:\ProgramData\ClassroomControlHub` is shared with the native service and must not be recursively removed while native state exists.
 
 ## Version authority
 

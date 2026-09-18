@@ -12,12 +12,16 @@ if($task){
 Get-ScheduledTask -TaskName 'RoomGoblin Interactive *' -ErrorAction SilentlyContinue|Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
 $root=Join-Path $env:ProgramData 'ClassroomControlHub'
 if(Test-Path -LiteralPath $root){
-  if($KeepConfiguration){
-    # Preserve only the enrollment/configuration identity. Executables, health,
-    # history snapshots, update staging, and captures must still be uninstalled.
-    Get-ChildItem -LiteralPath $root -Force|Where-Object{$_.Name -ne 'lab-agent.json'}|Remove-Item -Recurse -Force -ErrorAction Stop
-    $config=Join-Path $root 'lab-agent.json'
-    if(Test-Path -LiteralPath $config){& icacls.exe $config /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)'|Out-Null;if($LASTEXITCODE -ne 0){throw 'Configuration was retained but its private ACL could not be verified.'}}
-  }else{Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop}
+  $nativeService=Get-Service -Name 'RoomGoblinAgent' -ErrorAction SilentlyContinue
+  # ProgramData\ClassroomControlHub is shared with the native service. Remove
+  # only files owned by this scheduled-task agent and never recursively erase
+  # native update/health state or its active configuration.
+  foreach($name in @('ClassroomHubAgent.ps1','ClassroomHubAgent.ps1.previous','agent-health.json','interactive','history-temp','updates')){
+    $owned=Join-Path $root $name;if(Test-Path -LiteralPath $owned){Remove-Item -LiteralPath $owned -Recurse -Force -ErrorAction Stop}
+  }
+  $config=Join-Path $root 'lab-agent.json'
+  if(!$KeepConfiguration -and !$nativeService -and (Test-Path -LiteralPath $config)){Remove-Item -LiteralPath $config -Force -ErrorAction Stop}
+  if(($KeepConfiguration -or $nativeService) -and (Test-Path -LiteralPath $config)){& icacls.exe $config /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)'|Out-Null;if($LASTEXITCODE -ne 0){throw 'Configuration was retained but its private ACL could not be verified.'}}
+  if(!(Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue)){Remove-Item -LiteralPath $root -Force -ErrorAction Stop}
 }
 Write-Host 'RoomGoblin agent removed. Revoke its credential in the web controller.'

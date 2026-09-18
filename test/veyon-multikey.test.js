@@ -15,12 +15,21 @@ process.env.DATABASE_FILE=dbFile;
 process.env.MASTER_KEY_FILE=masterKeyFile;
 process.env.VEYON_PRIVATE_KEY_FILE=path.join(tempDir,"missing-legacy-key");
 
-const {runtimeVeyonKeyring,secretNameForKey,shouldFallbackAuthentication}=require("../src/veyon-keyring");
+const {runtimeVeyonKeyring,secretNameForKey,shouldFallbackAuthentication,validPrivateKey}=require("../src/veyon-keyring");
 const {bufferedVeyonFetch,veyonResponseError}=require("../src/veyon-transport");
 
-const privateKeyLabel=["PRIVATE","KEY"].join(" ");
-const privateKeyHeader=["BEGIN",privateKeyLabel].join(" ");
-const pem=name=>`-----${privateKeyHeader}-----\n${Buffer.from(`fixture-${name}`).toString("base64")}\n-----${["END",privateKeyLabel].join(" ")}-----`;
+const privateKeyHeader="BEGIN PRIVATE KEY";
+const keyFixtures=new Map();
+const pem=name=>{
+  if(!keyFixtures.has(name))keyFixtures.set(name,crypto.generateKeyPairSync("rsa",{modulusLength:1024,privateKeyEncoding:{type:"pkcs8",format:"pem"},publicKeyEncoding:{type:"spki",format:"pem"}}).privateKey);
+  return keyFixtures.get(name);
+};
+
+test("Veyon key validation cryptographically parses bounded private PEM material",()=>{
+  assert.equal(validPrivateKey(pem("valid")),true);
+  assert.equal(validPrivateKey("-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----"),false);
+  assert.equal(validPrivateKey(`-----BEGIN PRIVATE KEY-----\n${"A".repeat(70*1024)}\n-----END PRIVATE KEY-----`),false);
+});
 
 test.after(()=>{
   try{runtimeVeyonKeyring.storage().db.close()}catch{}

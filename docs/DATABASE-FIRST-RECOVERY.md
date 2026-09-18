@@ -324,6 +324,14 @@ and removes the incomplete bundle; operators should expect a brief interruption
 to RoomGoblin-owned MQTT, lighting, automation, or audio services while a full
 export is created.
 
+Before stopping the first owned add-on, Maintenance durably records the exact
+validated set of previously running services beneath the managed backup root.
+It removes that journal only after every service has restarted and its running
+state has been verified. If Maintenance or the host restarts during export,
+startup reconciliation restores and verifies those services before the
+maintenance API begins listening. A restart failure is returned to the caller
+and leaves the journal in place for the next startup attempt.
+
 The export is a cooperative point-in-time transaction, not merely a SQLite
 `.backup`. Before selecting the active database or copying any root, Maintenance
 holds the Host Agent appliance-mutation lock and obtains a one-use freeze token
@@ -445,6 +453,15 @@ Restore should automatically:
     if restore validation fails or an interrupted transaction is recovered.
 
 The import workflow should not ask the administrator which individual files to restore.
+
+The compatibility `configuration`, `data`, and `configuration-data` restore
+modes are not the preferred disaster-recovery path; use Full Recovery for a
+complete appliance restore. While those modes remain available, Maintenance
+creates a complete pre-restore operational backup and durably records it before
+stopping the application or changing data. An interrupted legacy restore is
+rolled back from that safety backup and health-checked before Maintenance starts
+listening. The journal is retained when rollback or health verification fails,
+so a partial restore is never silently presented as ready.
 
 ### Service ownership and restart rules
 

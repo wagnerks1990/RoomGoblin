@@ -68,7 +68,7 @@ RoomGoblin does not queue hardware commands while a node is offline and does not
 
 `state-confirmed` means a newer ESPHome state report matched the requested state. It is not independent physical verification of a relay/contact. `sent-unconfirmed` means the native command was written but no matching state report arrived within the confirmation window. Button presses are inherently sent-unconfirmed. If delivery becomes uncertain after a timeout/disconnect, inspect the device before explicitly repeating the action.
 
-A stalled worker is terminated; pending commands fail and are not replayed. Connection state is marked unavailable and configured nodes are retried by the supervisor.
+A stalled worker is terminated; pending commands fail and are not replayed. Connection state is marked unavailable and configured nodes are retried by the supervisor. Process-level start/crash failures use an exponential restart cooldown capped at 30 seconds, preventing a broken interpreter or dependency from becoming a rapid spawn loop. One valid worker IPC message resets that cooldown.
 
 ## Authorization and HTTP boundaries
 

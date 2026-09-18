@@ -49,7 +49,7 @@ function connectionHarness(json){
   const context=vm.createContext({
     veyonConnectionCache:cache,veyonAuthInFlight:inFlight,
     VEYON_POOL_MAX:4,VEYON_AUTH_RETRIES:1,VEYON_AUTHKEYS_UUID:"auth-key",VEYON_KEY_NAME:"fixture",
-    veyonPrivateKey:()=>"test-only",veyonJson:json,
+    veyonPrivateKey:()=>"test-only",veyonJson:json,validatedVeyonHost:value=>value,
     setInterval:()=>({unref(){}}),setTimeout,Date,Map,Promise,encodeURIComponent
   });
   vm.runInContext(source.slice(source.indexOf("async function veyonCloseConnection("),source.indexOf("async function veyonAvailableFeatures(")),context);
@@ -91,7 +91,7 @@ test("connected image read refreshes an expired UID once and releases its lease"
   assert.deepEqual(Buffer.from(await response.arrayBuffer()),jpeg);assert.equal(reads,2);assert.equal(posts,1);assert.equal(cache.get("fixture").active,0);
 });
 test("authentication failure cannot be reported as a successfully authenticated computer",async()=>{
-  const context=vm.createContext({veyonConnectedJson:async()=>{throw new Error("authentication denied")},veyonFeatureStatus:async()=>({active:false})});
+  const context=vm.createContext({validatedVeyonHost:value=>value,veyonConnectedJson:async()=>{throw new Error("authentication denied")},veyonFeatureStatus:async()=>({active:false})});
   vm.runInContext(source.slice(source.indexOf("async function veyonComputerInfo("),source.indexOf("function veyonComputerId(")),context);
   await assert.rejects(context.veyonComputerInfo("fixture"),/authentication denied/);
 });

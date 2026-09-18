@@ -4,7 +4,7 @@
   if(location.pathname!=="/controller/display.html")return;
 
   const SESSION_POLL_MS=1500;
-  let statusTimer=null,statusInFlight=false;
+  let statusTimer=null,statusInFlight=false,statusRefreshQueued=false,statusGeneration=0;
   function el(id){return document.getElementById(id)}
   function api(url,opt={}){return fetch(url,{cache:"no-store",credentials:"same-origin",...opt}).then(async r=>{const text=await r.text();let body={};try{body=JSON.parse(text)}catch{body={raw:text}}if(!r.ok)throw new Error(body.error||body.message||`HTTP ${r.status}`);return body})}
   function post(url,body){return api(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}
@@ -37,9 +37,10 @@
   }
   async function refreshSessionStatus(){
     const id=sessionTarget(),status=el("manualMediaSessionStatus");if(!id||!status||statusInFlight||document.hidden)return;
-    statusInFlight=true;
+    const generation=statusGeneration;statusInFlight=true;
     try{
       const response=await api(`/api/v1/displays/${encodeURIComponent(id)}/media/status`),ms=response.mediaSession||response.status||response;
+      if(sessionTarget()!==id||statusGeneration!==generation)return;
       if(!ms||!ms.sessionId){status.textContent="No active video telemetry from this display.";return}
       const pos=Number(ms.positionSeconds||0),dur=Number(ms.durationSeconds||0),seek=el("manualMediaSeek"),volume=el("mediaVolume"),rate=el("manualMediaRate");
       if(seek){seek.max=String(Math.max(1,dur));seek.value=String(Math.min(pos,Math.max(1,dur)))}
@@ -47,8 +48,8 @@
       if(volume&&document.activeElement!==volume){volume.value=String(Math.round(Number(ms.volume??1)*100));el("mediaVolumeValue").textContent=`${volume.value}%`}
       if(rate&&document.activeElement!==rate)rate.value=String(ms.playbackRate||1);
       status.textContent=`${String(ms.state||"unknown")} • ${ms.loop?"looping":"single play"} • session ${String(ms.sessionId)}`;
-    }catch(e){status.textContent=`Playback status unavailable: ${e.message}`}
-    finally{statusInFlight=false}
+    }catch(e){if(sessionTarget()===id&&statusGeneration===generation)status.textContent=`Playback status unavailable: ${e.message}`}
+    finally{statusInFlight=false;if(statusRefreshQueued){statusRefreshQueued=false;refreshSessionStatus()}}
   }
   function startStatusPolling(){clearInterval(statusTimer);statusTimer=setInterval(refreshSessionStatus,SESSION_POLL_MS);refreshSessionStatus()}
   function install(){
@@ -98,7 +99,7 @@
     });
     rate?.addEventListener("change",()=>controlSession("rate",{playbackRate:Number(rate.value||1)}));
     seek?.addEventListener("change",()=>controlSession("seek",{positionSeconds:Number(seek.value||0)}));
-    el("manualMediaSessionTarget")?.addEventListener("change",refreshSessionStatus);
+    el("manualMediaSessionTarget")?.addEventListener("change",()=>{statusGeneration++;if(statusInFlight)statusRefreshQueued=true;else refreshSessionStatus()});
     el("manualMediaPlay")?.addEventListener("click",()=>controlSession("play"));
     el("manualMediaPause")?.addEventListener("click",()=>controlSession("pause"));
     el("manualMediaRestart")?.addEventListener("click",()=>controlSession("restart"));

@@ -22,6 +22,12 @@ When a hostname moves to another IP:
 - commands are translated to the current backend/IP record immediately before execution;
 - the remembered successful Veyon authentication key name follows the workstation to its new address.
 
+Normal DNS/Windows hostnames retain `host-<normalized-hostname>` compatibility.
+If endpoint-supplied punctuation or excessive length would make two different
+hostnames clean to the same ID, RoomGoblin appends a deterministic digest.
+Mapping persistence completes before that ID is returned or key affinity moves;
+storage failure therefore fails closed instead of publishing an unresolvable ID.
+
 If an old IP is reused by a different hostname, the old hostname mapping is invalidated before it can route commands to that address. Historical duplicate rows are suppressed from the public inventory when a current record exists.
 
 ## What to verify after a DHCP change

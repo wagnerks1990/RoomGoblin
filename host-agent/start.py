@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import os, threading
-from pathlib import Path
 import server as core
 
 core.VERSION='1.0.0-alpha.84'
@@ -41,19 +39,4 @@ def managed_docker(args,cwd=''):
 core.managed_docker=managed_docker
 
 if __name__=='__main__':
-    core.FULL_RECOVERY.startup_recover()
-    Path(core.SOCKET_PATH).parent.mkdir(parents=True,exist_ok=True)
-    try: os.unlink(core.SOCKET_PATH)
-    except FileNotFoundError: pass
-    server=core.UnixHTTPServer(core.SOCKET_PATH,core.Handler)
-    os.chmod(core.SOCKET_PATH,0o660)
-    print(f'RoomGoblin Host Agent {core.VERSION} listening on {core.SOCKET_PATH}',flush=True)
-    if core.APP_UPDATE_REQUEST_FILE.exists():
-        def resume_interrupted_update():
-            core.run(['systemctl','start','--no-block',core.APP_UPDATE_SERVICE],20,False)
-        threading.Timer(2.0,resume_interrupted_update).start()
-    try: server.serve_forever()
-    finally:
-        server.server_close()
-        try: os.unlink(core.SOCKET_PATH)
-        except FileNotFoundError: pass
+    core.serve()

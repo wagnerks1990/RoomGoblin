@@ -44,6 +44,8 @@ The service listens on the configured LAN port, default `8765`, and requires the
 
 The configuration broadcast remains exported only for the Android shell bootstrap and is guarded by the platform `android.permission.DUMP` permission. Ordinary installed applications cannot invoke it. The HTTP listener uses a fixed maximum of eight client workers, a sixteen-client queue, five-second socket timeouts, bounded headers and a 64 KiB request-body ceiling so unauthenticated slow clients cannot create an unbounded thread pool.
 
+Configuration is committed before the foreground service is signaled. A running service closes and rebinds its listener when the configured port changes, and closes it without stopping kiosk/audio service duties when Agent HTTP is disabled. The two exported settings-helper activities use the same shell-only `DUMP` permission boundary as configuration. Android 10+ foreground registration declares both `specialUse` and `mediaPlayback`, matching the manifest and native Sendspin responsibility.
+
 Current endpoints inside the agent are:
 
 - `GET /v1/status`
@@ -120,6 +122,8 @@ Consumer devices generally require provisioning before normal setup and may requ
 ### Tier 4 — optional root/Magisk laboratory profile
 
 Root is **not** a production requirement. Root/Magisk remains research-only for comparing the elevated-control ceiling on sacrificial hardware. The production Agent v2 control plane must not expose arbitrary root command execution.
+
+The research root-command action is unavailable unless both a superuser binary is detected and the explicit per-device `allow_root_tools` policy is enabled. Root probes and commands have fixed timeouts, forcibly terminate an overrun process, and retain at most 64 KiB of combined output. Capability reports distinguish binary detection from policy enablement; binary presence alone never advertises the gated command tier as available.
 
 Potential root-only capabilities to study separately include power control, deeper package/system inspection, input injection, privileged settings, remapping, and recovery hooks. These are not appropriate baseline assumptions for school-wide deployments.
 

@@ -1,6 +1,9 @@
 FROM eclipse-temurin:17-jdk-jammy AS android-agent-build
 
 ARG ANDROID_COMMANDLINE_TOOLS=16111833
+ARG ANDROID_COMMANDLINE_TOOLS_SHA256=0877a1d048fe4a24efe2eff536ca4223f7adeb58648bb81909d33c446918cfa8
+ARG ANDROID_PLATFORM_TOOLS=36.0.2
+ARG ANDROID_PLATFORM_TOOLS_SHA256=3afdea91441815ab41254193df0343d92c1b1c0d0237165c3a345c8af8891c31
 ARG GRADLE_VERSION=9.6.0
 ARG GRADLE_SHA256=bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01
 ENV ANDROID_HOME=/opt/android-sdk
@@ -16,11 +19,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /opt/android-sdk/cmdline-tools \
  && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_COMMANDLINE_TOOLS}_latest.zip" -o /tmp/android-tools.zip \
+ && echo "${ANDROID_COMMANDLINE_TOOLS_SHA256}  /tmp/android-tools.zip" | sha256sum -c - \
  && unzip -q /tmp/android-tools.zip -d /opt/android-sdk/cmdline-tools \
  && mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest \
  && rm /tmp/android-tools.zip \
  && (yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true) \
- && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-37.2' 'build-tools;36.0.0' 'platform-tools' \
+ && /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager 'platforms;android-37.2' 'build-tools;36.0.0' \
  && curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
  && echo "${GRADLE_SHA256}  /tmp/gradle.zip" | sha256sum -c - \
  && unzip -q /tmp/gradle.zip -d /opt \
@@ -61,6 +65,8 @@ RUN set -e; \
 FROM node:22-bookworm-slim
 
 ARG TARGETARCH
+ARG ANDROID_PLATFORM_TOOLS=36.0.2
+ARG ANDROID_PLATFORM_TOOLS_SHA256=3afdea91441815ab41254193df0343d92c1b1c0d0237165c3a345c8af8891c31
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -68,7 +74,8 @@ RUN apt-get update && \
       iputils-ping jq coreutils util-linux sqlite3 adb openssl openjdk-17-jre-headless && \
     rm -rf /var/lib/apt/lists/* && \
     if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
-      curl -fsSLo /tmp/platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip && \
+      curl -fsSLo /tmp/platform-tools.zip "https://dl.google.com/android/repository/platform-tools_r${ANDROID_PLATFORM_TOOLS}-linux.zip" && \
+      echo "${ANDROID_PLATFORM_TOOLS_SHA256}  /tmp/platform-tools.zip" | sha256sum -c - && \
       mkdir -p /opt/android-sdk && \
       unzip -q -o /tmp/platform-tools.zip -d /opt/android-sdk && \
       ln -sf /opt/android-sdk/platform-tools/adb /usr/local/bin/adb && \

@@ -12,11 +12,13 @@ The historical Veyon object store remains IP-keyed internally for compatibility,
 
 - Reconcile discovery results by normalized hostname on the server.
 - Keep the public/stable computer ID unchanged when DHCP changes the current IP.
+- Preserve compatibility IDs for ordinary hostnames, while deterministically disambiguating hostnames whose unsupported punctuation or excessive length would otherwise clean to the same public ID.
 - Persist only bounded hostname-to-current-backend mapping metadata.
 - If an IP/backend ID is claimed by a different hostname, invalidate the old hostname mapping before it can route a command.
 - Suppress stale historical rows when a current row exists for the same hostname.
 - Preserve display name, teacher/student role, browser selection, and command intent across address changes.
 - Move the remembered successful Veyon key-name affinity from the old IP to the new IP; never copy private-key material into identity metadata.
+- Persist the authoritative mapping before projecting an ID or moving key affinity. Storage failure must fail closed and must not return an ID that the next request cannot resolve.
 - Support two-machine address swaps without losing either identity.
 - Continue bounded single-flight automatic discovery while the Veyon workspace is active.
 - Require a configured scan subnet for automatic discovery/DHCP tracking; do not describe the scan subnet as optional when fresh DHCP tracking is expected.
@@ -49,3 +51,4 @@ Do not rename compatibility-sensitive Veyon routes or replace native `veyon.serv
 - ordinary records without a usable hostname remaining compatible;
 - browser discovery remaining read/refresh oriented and not applying identity-repair PUTs;
 - empty scan-subnet state producing a clear operator-facing discovery warning.
+- adversarial hostname-cleaning collisions and mapping persistence failure before side effects.

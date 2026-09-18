@@ -14,18 +14,20 @@ function store(){
   storeInstance=new ClassroomHubStorage({dataDir,dbFile:String(process.env.DATABASE_FILE||path.join(dataDir,"classroom-control-hub.db")),masterKeyFile:String(process.env.MASTER_KEY_FILE||"/run/secrets/classroom-control-hub-master-key")});
   return storeInstance;
 }
-function readMapping(){try{return store().getPreference(PREF,{})||{}}catch{return {}}}
-function saveMapping(mapping){try{store().setPreference(PREF,mapping)}catch{}}
+function readMapping(){return store().getPreference(PREF,{})||{}}
+function saveMapping(mapping){store().setPreference(PREF,mapping)}
 function migrateKeyPreference(move){
   if(!move?.fromIp||!move?.toIp||move.fromIp===move.toIp)return;
   try{runtimeVeyonKeyring.moveHostPreference(move.fromIp,move.toIp)}catch{}
 }
-function reconcileBody(body){
+function reconcileBody(body,{read=readMapping,save=saveMapping,migrate=migrateKeyPreference}={}){
   if(!body||typeof body!=="object"||!Array.isArray(body.computers))return body;
-  const current=readMapping();
+  const current=read();
   const result=reconcileMappings(current,body.computers);
-  for(const move of result.moves)migrateKeyPreference(move);
-  saveMapping(result.mapping);
+  // Never publish IDs which cannot be resolved by the next request. Persist
+  // authoritative identity before projection or optional key-affinity moves.
+  save(result.mapping);
+  for(const move of result.moves)migrate(move);
   const computers=projectRows(result.mapping,body.computers);
   return recalcSummary({...body,computers},computers);
 }
@@ -63,9 +65,15 @@ function rewriteRequestIds(req){
 }
 function wrapVeyonHandler(handler,{inventory=false}={}){
   return async function(req,res,next){
-    rewriteRequestIds(req);
+    try{rewriteRequestIds(req)}catch{return res.status(503).json({ok:false,error:"Veyon identity mapping is temporarily unavailable"})}
     const json=res.json.bind(res);
-    res.json=body=>json(inventory?reconcileBody(body):projectOperationalBody(body));
+    res.json=body=>{
+      try{return json(inventory?reconcileBody(body):projectOperationalBody(body))}
+      catch{
+        if(res.headersSent)return res.end();
+        res.status(503);return json({ok:false,error:"Veyon identity mapping could not be persisted"});
+      }
+    };
     return handler(req,res,next);
   };
 }

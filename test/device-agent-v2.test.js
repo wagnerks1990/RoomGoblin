@@ -82,7 +82,8 @@ test("Managed Displays polling does not observe its own descendant mutations",()
   assert.doesNotMatch(v2Ui,/subtree:true/);
   assert.match(capsUi,/const REFRESH_MS=30000/);
   assert.match(v2Ui,/const PROBE_MS=30000/);
-  assert.match(capsUi,/if\(box\.innerHTML!==html\)box\.innerHTML=html/);
+  assert.match(capsUi,/box\.replaceChildren\(/);
+  assert.doesNotMatch(capsUi,/\.innerHTML\s*=/);
 });
 
 test("always-on kiosk recovery is process-level and bounded below thirty seconds",()=>{

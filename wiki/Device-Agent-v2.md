@@ -69,6 +69,8 @@ Root is optional laboratory testing only. Production RoomGoblin does not require
 
 `root-probe` is explicit. Arbitrary root commands are disabled unless the Hub provisions `allow_root_tools=true` for a lab device.
 
+Root probes and commands are time-bounded, terminate overruns, and capture no more than 64 KiB. Capability reports distinguish a detected root binary from the explicit policy grant, so binary presence alone does not enable root-command controls.
+
 The referenced 2023 Onn Gen 2 rooting guide is archived and states its method no longer works. Its bootloader-unlock workflow also factory-resets the device. Do not use it as a normal deployment procedure.
 
 ## Security
@@ -78,5 +80,7 @@ The referenced 2023 Onn Gen 2 rooting guide is archived and states its method no
 - ADB `:5555` is for trusted/isolated management networks only.
 - Root tooling defaults off.
 - Optional capability failure must degrade cleanly rather than making the device disappear or reporting false state.
+- Live Agent configuration must close/rebind the authenticated listener when its enable flag or port changes. Oversized bodies are rejected rather than truncated.
+- Exported configuration and Android settings-helper entry points remain guarded by the shell-only `android.permission.DUMP` boundary.
 
 See `docs/DEVICE-AGENT-V2.md` in the repository for the full architecture, research references, capability tiers, and physical-device validation procedure.

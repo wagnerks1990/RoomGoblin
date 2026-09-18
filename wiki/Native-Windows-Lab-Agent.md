@@ -73,6 +73,10 @@ Interactive desktop operations use a short-lived helper launched into the active
 
 The native command surface includes messages, power actions with cancellation, logoff, secure Windows lock, instructor lock, screenshot, approved presets, browser-history reporting, and agent update. Remote unlock and arbitrary application-lock execution are intentionally not provided.
 
+All WebSocket writes are serialized. Update downloads enforce declared and aggregate size ceilings before SHA-256/Authenticode acceptance; SHA-256 publisher pins hash the signing certificate bytes rather than comparing the SHA-1-only Windows thumbprint property. Browser-history and screenshot collection bound files, duration, dimensions, fields, and response size. One-use enrollment fails closed if its plaintext JSON cannot be deleted, and configuration replacement removes old secret-bearing backups.
+
+The scheduled-task PowerShell fallback shares `C:\ProgramData\ClassroomControlHub` with this service. Its uninstaller removes only fallback-owned artifacts and preserves the native configuration/update/health state whenever `RoomGoblinAgent` is installed.
+
 ## Live validation
 
 The service architecture was validated on a real RoomGoblin Windows endpoint for connection/heartbeat, existing DPAPI credentials, Unicode username reporting, messages, screenshots, secure lock, instructor lock, logoff, DNS flush, browser history, restart/shutdown scheduling with cancellation, clean helper teardown, permanent service migration, SCM recovery, and legacy-task disablement.

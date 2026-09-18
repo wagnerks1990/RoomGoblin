@@ -1,5 +1,15 @@
 # Database-First and Full Recovery
 
+Authentication checks query the authoritative session row on every request so
+expiry, user disablement, and revocation remain immediate. Routine
+`last_seen_at` updates and expired-session cleanup are coalesced to one-minute
+intervals to avoid unnecessary WAL writes; list queries independently exclude
+expired rows.
+
+The maintenance integration guard compares the configured database device/inode
+before its credential probe and reopens the read-only handle after an atomic
+recovery replacement. A failed probe is also discarded and retried later.
+
 > **Status in alpha.80:** RoomGoblin supports a passphrase-encrypted,
 > authenticated, one-export/one-import full recovery on the reviewed Ubuntu
 > Server 24.04 LTS `amd64` appliance profile.
@@ -26,6 +36,12 @@ Export briefly quiesces running add-ons only when their RoomGoblin ownership
 marker and pinned image both match, then restarts them in dependency-safe order.
 Adopted/external services are neither stopped nor copied. A stop/restart failure
 fails the export and removes the incomplete bundle.
+
+Maintenance writes the validated set of previously running owned add-ons to a
+durable journal before stopping the first one. The journal is removed only after
+all restarts are verified. Following a Maintenance or host restart, startup
+reconciliation restores those services before the maintenance API listens; a
+failed restart remains visible and the journal stays available for retry.
 
 ## `.rgbak` security
 
@@ -69,6 +85,13 @@ host). The native Host Agent:
 
 Do not remove staging, journal or safety-snapshot data while a recovery is
 active or failed.
+
+The older `configuration`, `data`, and `configuration-data` modes are
+compatibility restores, not substitutes for Full Recovery. They create and
+durably journal a complete operational safety backup before stopping the
+application or mutating data. If interrupted, Maintenance rolls back and
+health-checks the application before listening. A failed rollback retains the
+journal and prevents Maintenance from advertising readiness.
 
 ## Service ownership
 

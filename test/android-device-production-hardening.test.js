@@ -29,6 +29,28 @@ test("Device Agent listener has bounded clients, queue, headers, and idle time",
   assert.match(service,/MAX_HEADER_LINES=32/);
   assert.match(service,/catch\(RejectedExecutionException busy\)/);
   assert.doesNotMatch(service,/newCachedThreadPool/);
+  assert.match(service,/MAX_BODY_BYTES=65536/);
+  assert.match(service,/writeJson\(out,413,error\("body_too_large"/);
+  assert.doesNotMatch(service,/Math\.min\(65536,Integer\.parseInt/);
+  assert.match(service,/reconcileServer\(\)/);
+  assert.match(service,/closeListenerLocked\(\)/);
+});
+
+test("exported Android settings helpers retain the shell-only permission boundary",()=>{
+  const manifest=read("agents/android-tv/app/src/main/AndroidManifest.xml");
+  for(const activity of ["DeviceAdminActivationActivity","AccessibilityActivationActivity"]){
+    assert.match(manifest,new RegExp(`android:name="\\.${activity}"[^>]+android:permission="android\\.permission\\.DUMP"`));
+  }
+});
+
+test("optional root execution is time/output bounded and advertised only when policy enabled",()=>{
+  const root=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/RootTools.java");
+  const caps=read("agents/android-tv/app/src/main/java/org/roomgoblin/display/AgentCapabilities.java");
+  assert.match(root,/MAX_OUTPUT_BYTES=64\*1024/);
+  assert.match(root,/waitFor\(timeoutSeconds,TimeUnit\.SECONDS\)/);
+  assert.match(root,/destroyForcibly\(\)/);
+  assert.match(caps,/rootCommandsAvailable=rootBinary&&rootPolicy/);
+  assert.match(caps,/remoteShell",cap\(rootCommandsAvailable/);
 });
 
 test("staged APK is reverified against the protected keystore at use time",()=>{

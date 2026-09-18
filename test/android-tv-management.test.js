@@ -86,7 +86,9 @@ test("managed minimal mode only targets third-party packages and preserves the R
 
 test("maintenance image installs an ADB build that supports wireless pairing",()=>{
   const dockerfile=fs.readFileSync(path.join(process.cwd(),"maintenance-agent/Dockerfile"),"utf8");
-  assert.match(dockerfile,/platform-tools-latest-linux\.zip/);
+  assert.match(dockerfile,/platform-tools_r\$\{ANDROID_PLATFORM_TOOLS\}-linux\.zip/);
+  assert.doesNotMatch(dockerfile,/platform-tools-latest-linux\.zip/);
+  assert.match(dockerfile,/ANDROID_PLATFORM_TOOLS_SHA256/);
   assert.match(dockerfile,/adb help 2>&1 \| grep -q "pair HOST"/);
   assert.match(dockerfile,/\/usr\/local\/bin\/adb/);
   assert.match(dockerfile,/android-tv-persistent-adb\.js/);

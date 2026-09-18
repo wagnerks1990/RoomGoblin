@@ -57,7 +57,10 @@ class PreparePilotTests(unittest.TestCase):
             for name in pilot.PLUGINS:
                 self.assertTrue((destination / 'plugins' / name / 'CMakeLists.txt').is_file())
             self.assertTrue((destination / 'ROOMGOBLIN-PILOT.md').is_file())
-            self.assertEqual((destination / 'plugins/webapi/WebApiHttpServer.cpp').read_text().count('[redacted]'), 2)
+            webapi_server = (destination / 'plugins/webapi/WebApiHttpServer.cpp').read_text()
+            self.assertEqual(webapi_server.count('[redacted]'), 2)
+            self.assertIn('request.path.startsWith(QStringLiteral("authentication/"))', webapi_server)
+            self.assertIn('request.url().path().startsWith(QStringLiteral("/api/v1/authentication/"))', webapi_server)
             feature_log = (destination / 'core/src/FeatureMessage.cpp').read_text()
             self.assertIn('[arguments redacted]', feature_log)
             self.assertNotIn('stringify(message.arguments())', feature_log)
