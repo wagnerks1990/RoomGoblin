@@ -57,6 +57,8 @@ The native Host Agent remains `ProtectSystem=full`; managed provisioning grants 
 
 The GUI installs the connector without restarting the requesting Hub and then offers a separate **Restart RoomGoblin** action so `TRUST_PROXY_HOPS=1` can take effect cleanly.
 
+RoomGoblin checkpoints the created tunnel and DNS IDs before installing the local connector. If host installation fails, retry provisioning reuses those recorded resources instead of leaving them as an unrecognized same-name tunnel.
+
 ## Availability
 
 Cloudflare is outside RoomGoblin health. Internet, DNS, Cloudflare, or tunnel outages affect only the remote path. Local schedules, Morning Announcements, Background Music, displays, managed devices, and maintenance continue independently.
