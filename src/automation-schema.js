@@ -16,7 +16,7 @@ function actionId(value,index=0){
 }
 function normalizeExecutionMode(_action,value,payload={}){
   let mode=String(value||"").toLowerCase();
-  if(!mode&&payload?.loop===true)mode="loop";
+  if(!mode&&String(_action)==="display.media"&&payload?.loop===true)mode="loop";
   if(!ACTION_EXECUTION_MODES.has(mode))mode="once";
   return mode;
 }
