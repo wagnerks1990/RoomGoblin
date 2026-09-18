@@ -70,6 +70,20 @@ test("lab computer removal can revoke credentials and pending enrollment atomica
   assert.equal(store.listLabAgentCredentials().pending.length,0);
 }));
 
+test("display and lab-agent authentication coalesce last-used writes",()=>withStore(store=>{
+  store.writeNormalized("devices",{room:"Test",devices:{tv1:{name:"TV 1",enabled:true}},displayGroups:{},lightingGroups:[]});
+  const displayEnrollment=store.createDisplayEnrollment("tv1"),display=store.consumeDisplayEnrollment("tv1",displayEnrollment.token);
+  const labEnrollment=store.createLabAgentEnrollment("student-1"),lab=store.consumeLabAgentEnrollment("student-1",labEnrollment.token);
+  const displayBefore=store.listDisplayCredentials().credentials[0].lastUsedAt,labBefore=store.listLabAgentCredentials().credentials[0].lastUsedAt;
+  store.authenticateDisplay("tv1",display.credential);store.authenticateLabAgent("student-1",lab.credential);
+  assert.equal(store.listDisplayCredentials().credentials[0].lastUsedAt,displayBefore);
+  assert.equal(store.listLabAgentCredentials().credentials[0].lastUsedAt,labBefore);
+  store.db.prepare("UPDATE display_credentials SET last_used_at=? WHERE id=?").run("2020-01-01T00:00:00.000Z",display.id);
+  store.db.prepare("UPDATE lab_agent_credentials SET last_used_at=? WHERE id=?").run("2020-01-01T00:00:00.000Z",lab.id);
+  assert.notEqual(store.authenticateDisplay("tv1",display.credential).lastUsedAt,"2020-01-01T00:00:00.000Z");
+  assert.notEqual(store.authenticateLabAgent("student-1",lab.credential).lastUsedAt,"2020-01-01T00:00:00.000Z");
+}));
+
 test("session validation remains immediate while routine maintenance writes are coalesced",()=>withStore(store=>{
   const admin=store.createFirstAdministrator({username:"session-admin",displayName:"Session Admin"},{password:"correct-horse-battery"});
   const issued=store.createSession(admin);
