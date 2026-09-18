@@ -44,6 +44,7 @@ function normalizeSettings(input={},prior={}){
     brotli:input.brotli===undefined?prior.brotli!==false:input.brotli!==false,
     accessEnabled,accessEmailDomain,
     replaceConflictingDns:input.replaceConflictingDns===undefined?prior.replaceConflictingDns===true:input.replaceConflictingDns===true,
+    adoptExistingTunnel:input.adoptExistingTunnel===undefined?prior.adoptExistingTunnel===true:input.adoptExistingTunnel===true,
     ids:{...(prior.ids||{})},
     ownership:{...(prior.ownership||{})}
   };
@@ -135,14 +136,28 @@ class CloudflareManager{
     return (Array.isArray(list)?list:[]).find(x=>x.name===name)||null;
   }
   async ensureTunnel(ctx,settings){
-    let tunnel=await this.findTunnel(ctx.client,ctx.accountId,settings.tunnelName),created=false;
-    if(!tunnel){tunnel=await ctx.client.post(`/accounts/${ctx.accountId}/cfd_tunnel`,{name:settings.tunnelName,config_src:"cloudflare"});created=true}
+    let tunnel=null,created=false,adopted=false;
+    const recordedId=cleanText(settings.ids?.tunnelId,80);
+    if(recordedId){
+      try{tunnel=await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${recordedId}`)}
+      catch(error){if(error.status!==404)throw error}
+      if(tunnel&&tunnel.name!==settings.tunnelName)throw failure("The recorded RoomGoblin tunnel exists under a different name. Resolve the saved Cloudflare configuration before reprovisioning.",409);
+    }
+    if(!tunnel){
+      const sameName=await this.findTunnel(ctx.client,ctx.accountId,settings.tunnelName);
+      if(sameName){
+        if(!settings.adoptExistingTunnel)throw failure("A Cloudflare tunnel with this name already exists but is not recorded as RoomGoblin-managed. Choose a different tunnel name or explicitly allow adoption; adoption replaces that tunnel's ingress configuration.",409);
+        tunnel=sameName;adopted=true;
+      }else{
+        tunnel=await ctx.client.post(`/accounts/${ctx.accountId}/cfd_tunnel`,{name:settings.tunnelName,config_src:"cloudflare"});created=true;
+      }
+    }
     if(!tunnel?.id)throw failure("Cloudflare did not return a tunnel ID",502);
     await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress:[
       {hostname:settings.hostname,service:this.originUrl},
       {service:"http_status:404"}
     ]}});
-    return {tunnel,created};
+    return {tunnel,created,adopted};
   }
   async ensureDns(ctx,settings,tunnel){
     const name=settings.hostname,target=`${tunnel.id}.cfargotunnel.com`;
@@ -195,7 +210,7 @@ class CloudflareManager{
       ownership:{tunnel:tunnelResult.created,dns:dnsResult.created,accessApp:access.created===true}};
     this.storage.setPreference(PREF,persisted);
     return {ok:true,settings:publicSettings(persisted,this.storage),zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},
-      tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created},
+      tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted},
       dns:{id:dnsResult.record?.id,name:settings.hostname,target:`${tunnelResult.tunnel.id}.cfargotunnel.com`,created:dnsResult.created,adopted:dnsResult.adopted},
       edge,access:{enabled:access.enabled===true,appId:access.app?.id||null,policyId:access.policy?.id||null},connector,
       publicUrl:`https://${settings.hostname}/controller/`};
