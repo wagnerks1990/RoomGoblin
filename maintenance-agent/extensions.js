@@ -135,7 +135,7 @@ async function deployAddon(id,settings={},recreate=false){
     throw Error("Native veyon-webapi.service was not found. Install/configure native Veyon on the appliance host before enabling this integration.");
   }
   const exists=await containerExists(addon.container);
-  if(exists&&recreate){const info=await containerInspect(addon.container);if(!roomGoblinOwnsContainer(info))throw Error("Refusing to recreate an adopted container because its persistent mounts may be outside RoomGoblin managed storage. Migrate the service data into the managed services root first, then deploy a RoomGoblin-owned container.");}
+  if(id==="musicassistant"&&exists&&recreate){const info=await containerInspect(addon.container);if(!roomGoblinOwnsContainer(info))throw Error("Refusing to recreate an adopted Music Assistant container because its persistent /data mount may be outside RoomGoblin managed storage. Migrate the service data into the managed services root first, then deploy a RoomGoblin-owned container.");}
   if(id==="musicassistant"&&exists&&!recreate){const status=await saveMusicAssistantSettings(settings);return {ok:true,id,adopted:true,managed:true,container:addon.container,image:addon.image,message:`Existing Music Assistant adopted and authenticated successfully (${status.players?.length||0} player(s) discovered).`}}
   let resolved=settings||{};
   if(id!=="musicassistant"){const saved=await mainAppPut(id,settings);resolved=saved.resolved||resolved}
