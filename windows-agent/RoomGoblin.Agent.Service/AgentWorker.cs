@@ -91,15 +91,9 @@ internal sealed partial class AgentWorker : BackgroundService
                 MachineDpapi.UnprotectString(config.EnrollmentTokenProtected);
         }
 
-        using var socket = new ClientWebSocket();
-        socket.Options.KeepAliveInterval = HeartbeatInterval;
-
-        var uri = BuildWebSocketUri(config.HubUrl);
-        _logger.LogInformation(
-            "Connecting RoomGoblin native agent to {Hub}.",
-            uri.GetLeftPart(UriPartial.Authority));
-
-        await socket.ConnectAsync(uri, ct);
+        var connection = await ConnectToHubAsync(config, ct);
+        using var socket = connection.Socket;
+        var uri = connection.Uri;
 
         var capabilities = GetCapabilities();
         var meta = GetMeta();
