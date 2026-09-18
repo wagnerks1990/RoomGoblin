@@ -27,7 +27,7 @@ Use either Setup -> **Cloudflare Remote HTTPS** or Controller -> Settings -> **I
 
 The managed flow can:
 
-1. validate the Cloudflare credential and active zone;
+1. validate the Cloudflare credential and active zone; if the zone is pending, show the Cloudflare-assigned nameservers that must be set at the registrar;
 2. create a dedicated remotely managed tunnel;
 3. reuse RoomGoblin's previously recorded tunnel;
 4. optionally adopt a same-name existing tunnel only after explicit administrator consent;
