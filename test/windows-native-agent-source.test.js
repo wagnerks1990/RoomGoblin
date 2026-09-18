@@ -76,6 +76,8 @@ test("native update path is allowlisted, hashed, optionally signed, and rollback
   assert.match(client, /MaxFileBytes/);
   assert.match(client, /ResponseHeadersRead/);
   assert.match(client, /written>file\.Bytes/);
+  assert.match(client, /config\.FallbackHubUrl/);
+  assert.match(client, /any configured Hub origin/);
 });
 
 test("native bootstrap supports secure fresh enrollment without weakening migration", () => {
