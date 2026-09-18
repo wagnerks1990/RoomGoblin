@@ -1103,17 +1103,17 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
         <button onclick="loadCloudflareSettings()">Refresh</button>
       </div>
       <div class="formGrid">
-        <div class="formField"><label>Authentication</label><select id="cfgCloudflareAuthMode" onchange="renderCloudflareAuthMode()"><option value="token">Scoped API Token (recommended)</option><option value="global">Global API Key (legacy)</option></select></div>
-        <div class="formField" id="cfgCloudflareTokenField"><label>API Token</label><input id="cfgCloudflareApiToken" type="password" autocomplete="new-password" placeholder="Leave blank to keep encrypted token"></div>
-        <div class="formField cfgCloudflareGlobal"><label>Cloudflare account email</label><input id="cfgCloudflareApiEmail" type="email" autocomplete="off"></div>
-        <div class="formField cfgCloudflareGlobal"><label>Global API Key</label><input id="cfgCloudflareGlobalKey" type="password" autocomplete="new-password" placeholder="Leave blank to keep encrypted key"></div>
-        <div class="formField"><label>Cloudflare zone / domain</label><input id="cfgCloudflareZone" placeholder="example.org"></div>
-        <div class="formField"><label>RoomGoblin public hostname</label><input id="cfgCloudflareHostname" placeholder="roomgoblin.example.org"></div>
-        <div class="formField"><label>Tunnel name</label><input id="cfgCloudflareTunnelName" placeholder="roomgoblin-roomgoblin.example.org"></div>
+        <div class="formField"><label for="cfgCloudflareAuthMode">Authentication</label><select id="cfgCloudflareAuthMode" onchange="renderCloudflareAuthMode()"><option value="token">Scoped API Token (recommended)</option><option value="global">Global API Key (legacy)</option></select></div>
+        <div class="formField" id="cfgCloudflareTokenField"><label for="cfgCloudflareApiToken">API Token</label><input id="cfgCloudflareApiToken" type="password" autocomplete="new-password" placeholder="Leave blank to keep encrypted token"></div>
+        <div class="formField cfgCloudflareGlobal"><label for="cfgCloudflareApiEmail">Cloudflare account email</label><input id="cfgCloudflareApiEmail" type="email" autocomplete="off"></div>
+        <div class="formField cfgCloudflareGlobal"><label for="cfgCloudflareGlobalKey">Global API Key</label><input id="cfgCloudflareGlobalKey" type="password" autocomplete="new-password" placeholder="Leave blank to keep encrypted key"></div>
+        <div class="formField"><label for="cfgCloudflareZone">Cloudflare zone / domain</label><input id="cfgCloudflareZone" placeholder="example.org"></div>
+        <div class="formField"><label for="cfgCloudflareHostname">RoomGoblin public hostname</label><input id="cfgCloudflareHostname" placeholder="roomgoblin.example.org"></div>
+        <div class="formField"><label for="cfgCloudflareTunnelName">Tunnel name</label><input id="cfgCloudflareTunnelName" placeholder="roomgoblin-roomgoblin.example.org"></div>
         <label><input id="cfgCloudflareHttps" type="checkbox" checked> Always Use HTTPS</label>
         <label><input id="cfgCloudflareRewrites" type="checkbox" checked> Automatic HTTPS Rewrites</label><label><input id="cfgCloudflareHttp3" type="checkbox" checked> HTTP/3</label><label><input id="cfgCloudflareBrotli" type="checkbox" checked> Brotli compression</label>
         <label><input id="cfgCloudflareAccess" type="checkbox" onchange="cfgCloudflareAccessDomain.disabled=!this.checked"> Protect with Cloudflare Access</label>
-        <div class="formField"><label>Access allowed email domain</label><input id="cfgCloudflareAccessDomain" placeholder="staff.example.org" disabled></div>
+        <div class="formField"><label for="cfgCloudflareAccessDomain">Access allowed email domain</label><input id="cfgCloudflareAccessDomain" placeholder="staff.example.org" disabled></div>
         <label><input id="cfgCloudflareReplaceDns" type="checkbox"> Allow replacement of a conflicting existing DNS record</label><label><input id="cfgCloudflareAdoptTunnel" type="checkbox"> Adopt a same-name existing tunnel and replace its ingress rules</label>
       </div>
       <div class="muted" style="margin-top:8px">The safe preset does not enable Bot Fight Mode or cache authenticated RoomGoblin pages/API traffic. Access is only provisioned when an explicit email-domain allow rule is supplied.</div>
