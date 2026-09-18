@@ -532,6 +532,14 @@ if [[ "$ACTION" == revert ]]; then
 else
   set_state_fields "activeCommit=$RESOLVED" "activeVersion=$ACTUAL_VERSION" "rollback=false" "revertAvailable=true"
 fi
+# Keep automatic pre-* recovery archives bounded after a verified update.
+# The maintenance endpoint preserves the currently pinned revert backup and
+# never deletes user-created or Full Recovery archives. Cleanup is best-effort
+# because application health has already been verified at this point.
+docker compose exec -T maintenance-agent node -e '
+fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backups/retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({keep:10,confirm:"PRUNE_AUTOMATIC_BACKUPS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Automatic backup retention:",JSON.stringify(j))).catch(e=>{console.error("Automatic backup retention warning:",e.message);process.exit(1)})
+' || echo "Warning: automatic backup retention cleanup did not complete; update remains healthy." >&2
+
 install -D -m 0755 "$HUB_ROOT/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
 install -D -m 0755 "$HUB_ROOT/host-agent/app-update-runner.sh" /usr/local/libexec/classroom-control-hub/app-update-runner.sh
 rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env" "$STATE_DIR/app-update-host.service"
