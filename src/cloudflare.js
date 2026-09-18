@@ -239,10 +239,28 @@ class CloudflareManager{
     checkpoint({tunnelId:tunnelResult.tunnel.id},{
       tunnel:tunnelResult.created===true?true:(tunnelResult.adopted===true?false:settings.ownership?.tunnel===true)
     });
+
+    let musicAssistantAccess={enabled:false},musicAssistantDns=null;
+    if(settings.musicAssistantPublicEnabled){
+      musicAssistantAccess=await this.ensureAccessForHostname(ctx,settings.musicAssistantHostname,settings.accessEmailDomain,"RoomGoblin Music Assistant");
+      checkpoint({musicAssistantAccessAppId:musicAssistantAccess.app?.id||"",musicAssistantAccessPolicyId:musicAssistantAccess.policy?.id||""},{
+        musicAssistantAccessApp:musicAssistantAccess.created===true?true:(settings.ownership?.musicAssistantAccessApp===true)
+      });
+    }
+
+    const ingress=await this.configureTunnel(ctx,settings,tunnelResult.tunnel);
+
     const dnsResult=await this.ensureDns(ctx,settings,tunnelResult.tunnel);
     checkpoint({dnsRecordId:dnsResult.record?.id||""},{
       dns:dnsResult.created===true?true:(settings.ownership?.dns===true)
     });
+    if(settings.musicAssistantPublicEnabled){
+      musicAssistantDns=await this.ensureDns(ctx,settings,tunnelResult.tunnel,settings.musicAssistantHostname,"Managed by RoomGoblin: Music Assistant HTTPS");
+      checkpoint({musicAssistantDnsRecordId:musicAssistantDns.record?.id||""},{
+        musicAssistantDns:musicAssistantDns.created===true?true:(settings.ownership?.musicAssistantDns===true)
+      });
+    }
+
     const edge={
       alwaysUseHttps:await this.setZoneSetting(ctx,"always_use_https",settings.alwaysUseHttps?"on":"off"),
       automaticHttpsRewrites:await this.setZoneSetting(ctx,"automatic_https_rewrites",settings.automaticHttpsRewrites?"on":"off"),
@@ -254,6 +272,14 @@ class CloudflareManager{
     const persisted=checkpoint({accessAppId:access.app?.id||"",accessPolicyId:access.policy?.id||""},{
       accessApp:access.created===true?true:(settings.ownership?.accessApp===true)
     });
+
+    let musicAssistantPublicUrl=null;
+    if(settings.musicAssistantPublicEnabled){
+      musicAssistantPublicUrl=`https://${settings.musicAssistantHostname}/`;
+      const ma=this.storage.getPreference("musicassistant.config",{})||{};
+      this.storage.setPreference("musicassistant.config",{...ma,browserUrl:musicAssistantPublicUrl});
+    }
+
     let connector={installed:false,restartRequired:false};
     if(this.connectorInstaller){
       const token=await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnelResult.tunnel.id}/token`);
@@ -261,9 +287,10 @@ class CloudflareManager{
       connector=await this.connectorInstaller(token);
     }
     return {ok:true,settings:publicSettings(persisted,this.storage),zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},
-      tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted},
+      tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted,ingress},
       dns:{id:dnsResult.record?.id,name:settings.hostname,target:`${tunnelResult.tunnel.id}.cfargotunnel.com`,created:dnsResult.created,adopted:dnsResult.adopted},
       edge,warnings:edgeWarnings,access:{enabled:access.enabled===true,appId:access.app?.id||null,policyId:access.policy?.id||null},connector,
+      resources:{musicAssistant:{enabled:settings.musicAssistantPublicEnabled===true,hostname:settings.musicAssistantHostname||null,publicUrl:musicAssistantPublicUrl,dnsId:musicAssistantDns?.record?.id||null,accessAppId:musicAssistantAccess.app?.id||null,accessPolicyId:musicAssistantAccess.policy?.id||null}},
       publicUrl:`https://${settings.hostname}/controller/`};
   }
   async liveStatus(){
