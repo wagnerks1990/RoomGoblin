@@ -344,14 +344,18 @@ def app_update_source_status():
     if head.returncode!=0: raise RuntimeError((head.stderr or head.stdout or 'Unable to resolve RoomGoblin source revision').strip())
     commit=head.stdout.strip()
     branch=run(['git','-C',str(HUB_ROOT),'symbolic-ref','--quiet','--short','HEAD'],20,False)
-    status=run(['git','-C',str(HUB_ROOT),'status','--porcelain','--untracked-files=no'],20,False)
+    worktree=run(['git','-C',str(HUB_ROOT),'diff','--name-only','--'],20,False)
+    index=run(['git','-C',str(HUB_ROOT),'diff','--cached','--name-only','--'],20,False)
+    if worktree.returncode!=0 or index.returncode!=0: raise RuntimeError('Unable to inspect tracked RoomGoblin source changes')
+    tracked=sorted(set([line.strip() for line in (worktree.stdout+'\n'+index.stdout).splitlines() if line.strip()]))
     origin=run(['git','-C',str(HUB_ROOT),'remote','get-url','origin'],20,False)
     return {
         "commit":commit,
         "shortCommit":commit[:12],
         "branch":branch.stdout.strip() if branch.returncode==0 else "",
         "detached":branch.returncode!=0,
-        "trackedDirty":bool(status.stdout.strip()) if status.returncode==0 else None,
+        "trackedDirty":bool(tracked),
+        "trackedChanges":tracked,
         "origin":origin.stdout.strip() if origin.returncode==0 else ""
     }
 
