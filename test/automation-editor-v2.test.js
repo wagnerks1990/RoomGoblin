@@ -6,44 +6,65 @@ const path=require("node:path");
 const root=path.resolve(__dirname,"..");
 const read=file=>fs.readFileSync(path.join(root,file),"utf8");
 
-test("controller loads the unified automation v2 editor",()=>{
+test("controller loads the unified scheduled automation editor",()=>{
   const branding=read("public/shared/branding.js");
   const editor=read("public/controller/automation-v2.js");
+  const html=read("public/controller/index.html");
   assert.match(branding,/automation-v2\.js/);
   assert.match(editor,/Build one ordered action sequence/);
-  assert.match(editor,/Every action uses the same schema/);
+  assert.match(editor,/returns to Action 1/);
   assert.match(editor,/ACTION \$\{i\+1\}/);
+  assert.match(html,/automationEventSelect/);
+  assert.doesNotMatch(html,/automationEditorEventSelect/);
+  assert.match(html,/autoClassModal/);
+  assert.match(html,/Edit Links/);
 });
 
-test("every action exposes execution controls",()=>{
+test("every action exposes pass participation controls",()=>{
   const editor=read("public/controller/automation-v2.js");
   assert.match(editor,/Execution<select/);
   assert.match(editor,/Run once/);
-  assert.match(editor,/Repeat N times/);
-  assert.match(editor,/Loop media continuously/);
-  assert.match(editor,/repeatDelaySeconds/);
+  assert.match(editor,/Loop X times/);
+  assert.match(editor,/Loop continually/);
+  assert.match(editor,/Total Passes/);
+  assert.match(editor,/Wait Before Next Loop/);
 });
 
-test("every media action exposes the complete playback payload",()=>{
+test("media controls are content-aware",()=>{
   const editor=read("public/controller/automation-v2.js");
+  assert.match(editor,/selectedMediaType/);
+  assert.match(editor,/isVideo/);
+  assert.match(editor,/isPaged/);
+  assert.match(editor,/isImage/);
   for(const field of ["storedName","fit","autoAdvanceMs","startAtSeconds","endAtSeconds","volume","playbackRate","muted"]){
     assert.match(editor,new RegExp(field));
   }
-  assert.match(editor,/Continuous video looping is controlled by the Execution setting/);
+  assert.match(editor,/Media-specific controls appear only when they apply/);
 });
 
-test("v2 event keeps canonical sequence and transition compatibility fields",()=>{
+test("canonical event persists one ordered sequence",()=>{
   const editor=read("public/controller/automation-v2.js");
+  assert.match(editor,/const SCHEMA_VERSION=3/);
   assert.match(editor,/automationSchemaVersion:SCHEMA_VERSION/);
   assert.match(editor,/actionSequence:canonical/);
-  assert.match(editor,/PRIMARY|primary/i);
-  assert.match(editor,/TAIL_SUFFIX/);
 });
 
-test("legacy primary widgets are hidden rather than used as a second editor",()=>{
+test("legacy primary widgets are hidden rather than exposed as a second editor",()=>{
   const editor=read("public/controller/automation-v2.js");
   assert.match(editor,/autoAction/);
   assert.match(editor,/autoTargets/);
   assert.match(editor,/autoPayload/);
   assert.match(editor,/style\.display="none"/);
+});
+
+test("class schedule links stay compact until explicitly edited",()=>{
+  const app=read("public/controller/app.js");
+  const html=read("public/controller/index.html");
+  assert.match(html,/Linked Class Schedule\(s\)/);
+  assert.match(html,/autoClassSummary/);
+  assert.match(html,/Save Class Links/);
+  assert.match(app,/openAutomationClassLinker/);
+  assert.match(app,/closeAutomationClassLinker/);
+  assert.match(app,/automationClassSelectionSnapshot/);
+  assert.match(app,/updateAutomationClassLinkSummary/);
 });

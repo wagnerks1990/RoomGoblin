@@ -59,7 +59,10 @@ The source is included in the pinned Veyon 4.11.2 pilot and the Linux build gate
 verifies feature registration. The actual process launch is Windows-only. A Linux
 worker returns an explicit unavailable response. Windows ABI/build and live lab
 operation are not proven until the entire matching Veyon tree is built with the
-Windows toolchain and tested on disposable teacher/student VMs.
+reviewed Windows toolchain and tested on disposable teacher/student VMs. Use the
+complete packaging, one-endpoint deployment and rollback procedure in
+[Veyon Windows endpoint pilot](VEYON-WINDOWS-PILOT.md); individual plugin DLL
+deployment is unsupported.
 
 Acceptance requires checking both `cmd` and `powershell`, identity with `whoami`,
 plain-text rendering, output truncation/reset, close and ten-minute expiry,

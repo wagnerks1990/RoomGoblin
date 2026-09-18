@@ -42,6 +42,7 @@ Key rules:
 - Treat an inactive `veyon-webapi.service` as installed/stopped, not missing. The guarded host updater must preserve the `/etc/systemd/system/veyon.service.d/roomgoblin-webapi.conf` dependency drop-in and, when Veyon was active before a package transaction, require both native services to be active again before accepting the update.
 - Veyon control authentication uses the Veyon key pair. Domain credentials and SSH keys, when configured, are optional endpoint-deployment credentials and must not be described as Veyon control authentication.
 - Veyon private keys and endpoint deployment secrets must be encrypted in SQLite. Native Veyon filesystem keys are derived/imported runtime material, not RoomGoblin configuration authority.
+- Windows Veyon pilots use only a complete matching NSIS installer from the pinned 4.11.2 MinGW/Qt build. Never copy individual plugin DLLs. Require exact pilot/rollback hashes, a configuration export, a disposable endpoint/snapshot and runtime CLI plus live acceptance; see `docs/VEYON-WINDOWS-PILOT.md`.
 - Music Assistant is not ready merely because its container is running. A valid long-lived token is mandatory; Save & Verify must fail on missing/rejected credentials and the token must remain encrypted/database-backed.
 - Do not treat Veyon WebAPI `GET /` returning HTTP 404 as proof of successful Veyon authentication/control. Use computer/authentication status for operational validation.
 - Update the relevant `docs/` and `wiki/` mirror pages when behavior, branding, or operations change.

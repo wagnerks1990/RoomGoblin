@@ -160,6 +160,7 @@ class ClassroomHubStorage{
     this.db.prepare("INSERT OR IGNORE INTO schema_migrations(version,name,applied_at) VALUES(9,'lab agent enrollment and revocable credentials',?)").run(iso());
     this.ensureDefaultAccessProfiles();
     this.applyGranularCapabilityMigration();
+    this.applyAutomationActionExecutionMigration();
     this.db.exec("UPDATE users SET profile_id=CASE role WHEN 'admin' THEN 'administrator' WHEN 'operator' THEN 'teacher' ELSE 'read-only' END WHERE profile_id IS NULL OR profile_id=''");
     this.masterKey=this.loadMasterKey();
     this.migrateNormalizedObjects();
@@ -176,7 +177,7 @@ class ClassroomHubStorage{
       "initial sqlite storage","normalized classroom configuration tables","web-managed configuration and access profile tables",
       "controller ui defaults and access profiles","audit telemetry separation","local authentication users and setup state",
       "display enrollment and revocable credentials","capability profiles assigned to users","lab agent enrollment and revocable credentials",
-      "granular authorization and configurable school schedule"
+      "granular authorization and configurable school schedule","automation action sequence execution metadata"
     ];
     const rows=this.db.prepare("SELECT version,name FROM schema_migrations ORDER BY version").all();
     for(let i=0;i<expected.length;i++){const row=rows[i];if(!row||row.version!==i+1||row.name!==expected[i])throw Error(`Invalid or incomplete schema migration history at version ${i+1}`)}
@@ -241,6 +242,41 @@ class ClassroomHubStorage{
     if(technician&&JSON.stringify(technician.config)===oldTechnician)this.db.prepare("UPDATE access_profiles SET config_json=?,updated_at=? WHERE id='technician'").run(JSON.stringify({description:"Classroom operations, student-computer diagnostics and integrations.",capabilities:["classroom.read","classroom.control","schedule.manage","automation.manage","media.manage","integrations.control","lab.read","lab.control","lab.sensitive.read","diagnostics.read","diagnostics.run"]}),iso());
     if(teacher&&JSON.stringify(teacher.config)===oldTeacher)this.db.prepare("UPDATE access_profiles SET config_json=?,updated_at=? WHERE id='teacher'").run(JSON.stringify({description:"Daily classroom, display, lighting, AV and schedule operations.",capabilities:["classroom.read","classroom.control","schedule.manage","automation.manage","media.manage","integrations.control","lab.read","lab.control","diagnostics.read"]}),iso());
     this.db.prepare("INSERT INTO schema_migrations(version,name,applied_at) VALUES(10,'granular authorization and configurable school schedule',?)").run(iso());
+  }
+
+  applyAutomationActionExecutionMigration(){
+    if(this.db.prepare("SELECT 1 FROM schema_migrations WHERE version=11").get())return;
+    const columns=new Set(this.db.prepare("PRAGMA table_info(automation_actions)").all().map(row=>row.name));
+    if(!columns.has("execution_mode"))this.db.exec("ALTER TABLE automation_actions ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'once'");
+    if(!columns.has("repeat_count"))this.db.exec("ALTER TABLE automation_actions ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1");
+    if(!columns.has("repeat_delay_seconds"))this.db.exec("ALTER TABLE automation_actions ADD COLUMN repeat_delay_seconds REAL NOT NULL DEFAULT 0");
+    const rows=this.db.prepare("SELECT id,data_json FROM automations ORDER BY id").all();
+    const insertAction=this.db.prepare("INSERT INTO automation_actions(id,automation_id,position,action,target_domain,use_event_targets,delay_seconds,continue_on_error,payload_json,execution_mode,repeat_count,repeat_delay_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+    const insertTarget=this.db.prepare("INSERT INTO automation_targets(action_id,target_id,position) VALUES(?,?,?)");
+    this.db.exec("BEGIN");
+    try{
+      for(const row of rows){
+        const event=parseJson(row.data_json,{}),sequence=Array.isArray(event.actionSequence)?event.actionSequence.filter(Boolean):[];
+        if(sequence.length){
+          this.db.prepare("DELETE FROM automation_targets WHERE action_id IN (SELECT id FROM automation_actions WHERE automation_id=?)").run(row.id);
+          this.db.prepare("DELETE FROM automation_actions WHERE automation_id=?").run(row.id);
+          sequence.forEach((step,index)=>{
+            const aid=`${row.id}:action:${index+1}`,payload=step?.payload&&typeof step.payload==="object"?step.payload:{};
+            const mode=["once","repeat","loop"].includes(String(step?.executionMode||"").toLowerCase())?String(step.executionMode).toLowerCase():(step?.action==="display.media"&&payload.loop===true?"loop":"once");
+            insertAction.run(aid,row.id,index,String(step?.action||""),targetDomain(step?.action),bool(index>0&&step?.useEventTargets!==false),Number(step?.delaySeconds||0),bool(step?.continueOnError!==false),JSON.stringify(payload),mode,Math.max(1,Math.min(100,Math.round(Number(step?.repeatCount)||1))),Math.max(0,Math.min(3600,Number(step?.repeatDelaySeconds)||0)));
+            (Array.isArray(step?.targets)?step.targets:[]).forEach((target,targetIndex)=>insertTarget.run(aid,String(target),targetIndex));
+          });
+        }else{
+          for(const action of this.db.prepare("SELECT id,action,payload_json FROM automation_actions WHERE automation_id=?").all(row.id)){
+            const payload=parseJson(action.payload_json,{});
+            const mode=action.action==="display.media"&&payload.loop===true?"loop":"once";
+            this.db.prepare("UPDATE automation_actions SET execution_mode=?,repeat_count=1,repeat_delay_seconds=0 WHERE id=?").run(mode,action.id);
+          }
+        }
+      }
+      this.db.prepare("INSERT INTO schema_migrations(version,name,applied_at) VALUES(11,'automation action sequence execution metadata',?)").run(iso());
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error}
   }
 
   tx(fn){this.db.exec("BEGIN IMMEDIATE");try{const out=fn();this.db.exec("COMMIT");return out}catch(err){this.db.exec("ROLLBACK");throw err}}
@@ -308,14 +344,22 @@ class ClassroomHubStorage{
     if(namespace==="class-schedules"){const meta=this.getSetting("class-schedules.meta",{version:1});return {...meta,classes:this.db.prepare("SELECT data_json FROM class_schedules ORDER BY start_time,name").all().map(r=>parseJson(r.data_json,{}))}}
     if(namespace==="scheduler-calendar"){const r=this.db.prepare("SELECT * FROM scheduler_calendar WHERE id=1").get();if(!r)return fallback;const raw=parseJson(r.excluded_dates_json,[]);return Array.isArray(raw)?{excludedDates:raw,noSchoolDates:raw,halfDayDates:[],oneHourDelayDates:[],twoHourDelayDates:[],remoteDates:[],updatedAt:r.updated_at}:{...raw,updatedAt:r.updated_at}}
     if(namespace==="automations"){
-      const meta=this.getSetting("automations.meta",{version:1}),events=[];
+      const meta=this.getSetting("automations.meta",{version:3}),events=[];
       for(const r of this.db.prepare("SELECT * FROM automations ORDER BY id").all()){
-        const event=parseJson(r.data_json,{}),steps=[];
-        const rows=this.db.prepare("SELECT * FROM automation_actions WHERE automation_id=? AND position>0 ORDER BY position").all(r.id);
-        for(const a of rows){const targets=this.db.prepare("SELECT target_id FROM automation_targets WHERE action_id=? ORDER BY position,target_id").all(a.id).map(x=>x.target_id);steps.push({id:a.id,action:a.action,targets,useEventTargets:!!a.use_event_targets,payload:parseJson(a.payload_json,{}),delaySeconds:a.delay_seconds,continueOnError:!!a.continue_on_error})}
-        event.actions=steps;events.push(event);
+        const event=parseJson(r.data_json,{}),sequence=[];
+        const rows=this.db.prepare("SELECT * FROM automation_actions WHERE automation_id=? ORDER BY position").all(r.id);
+        for(const a of rows){
+          const targets=this.db.prepare("SELECT target_id FROM automation_targets WHERE action_id=? ORDER BY position,target_id").all(a.id).map(x=>x.target_id);
+          sequence.push({id:a.id,action:a.action,targets,useEventTargets:a.position>0&&!!a.use_event_targets,payload:parseJson(a.payload_json,{}),delaySeconds:Number(a.delay_seconds||0),executionMode:["once","repeat","loop"].includes(String(a.execution_mode||""))?String(a.execution_mode):"once",repeatCount:Math.max(1,Math.min(100,Number(a.repeat_count)||1)),repeatDelaySeconds:Math.max(0,Math.min(3600,Number(a.repeat_delay_seconds)||0)),continueOnError:!!a.continue_on_error});
+        }
+        if(sequence.length){
+          const first=sequence[0];
+          event.action=first.action;event.targets=[...first.targets];event.payload={...(first.payload||{})};
+          event.actionSequence=sequence;event.actions=sequence.slice(1);event.automationSchemaVersion=3;
+        }
+        events.push(event);
       }
-      return {...meta,events};
+      return {...meta,version:Math.max(3,Number(meta.version)||1),events};
     }
     if(namespace==="scenes"){const out={};for(const r of this.db.prepare("SELECT * FROM scenes ORDER BY id").all())out[r.id]=parseJson(r.data_json,{});return out}
     if(namespace==="sessions"){const out={};for(const r of this.db.prepare("SELECT * FROM sessions ORDER BY id").all())out[r.id]=parseJson(r.data_json,{});return out}
@@ -345,10 +389,22 @@ class ClassroomHubStorage{
     if(namespace==="scheduler-calendar"){const payload={noSchoolDates:value?.noSchoolDates||value?.excludedDates||[],excludedDates:value?.noSchoolDates||value?.excludedDates||[],halfDayDates:value?.halfDayDates||[],oneHourDelayDates:value?.oneHourDelayDates||[],twoHourDelayDates:value?.twoHourDelayDates||[],remoteDates:value?.remoteDates||[],anchorDate:value?.anchorDate||'2026-08-19',anchorCycleDay:'A',anchorDayColor:'Green'};this.db.prepare(`INSERT INTO scheduler_calendar(id,skip_federal_holidays,excluded_dates_json,updated_at) VALUES(1,0,?,?) ON CONFLICT(id) DO UPDATE SET skip_federal_holidays=0,excluded_dates_json=excluded.excluded_dates_json,updated_at=excluded.updated_at`).run(JSON.stringify(payload),String(value?.updatedAt||now));return value}
     if(namespace==="automations")return this.tx(()=>{
       this.db.exec("DELETE FROM automation_targets;DELETE FROM automation_actions;DELETE FROM automations;");
-      for(const e of value?.events||[]){const id=String(e.id),base={...e};delete base.actions;this.db.prepare("INSERT INTO automations(id,name,enabled,action,schedule_mode,data_json,updated_at) VALUES(?,?,?,?,?,?,?)").run(id,String(e.name||id),bool(e.enabled!==false),e.action||null,e.scheduleMode||null,JSON.stringify(base),now);
-        const primaryId=`${id}:primary`,primaryTargets=Array.isArray(e.targets)?e.targets:[];this.db.prepare("INSERT INTO automation_actions(id,automation_id,position,action,target_domain,use_event_targets,delay_seconds,continue_on_error,payload_json) VALUES(?,?,?,?,?,?,?,?,?)").run(primaryId,id,0,String(e.action||""),targetDomain(e.action),1,0,1,JSON.stringify(e.payload||{}));primaryTargets.forEach((t,i)=>this.db.prepare("INSERT INTO automation_targets(action_id,target_id,position) VALUES(?,?,?)").run(primaryId,String(t),i));
-        (e.actions||[]).forEach((a,idx)=>{const aid=String(a.id||`${id}:step-${idx+1}`);this.db.prepare("INSERT INTO automation_actions(id,automation_id,position,action,target_domain,use_event_targets,delay_seconds,continue_on_error,payload_json) VALUES(?,?,?,?,?,?,?,?,?)").run(aid,id,idx+1,String(a.action||""),targetDomain(a.action),bool(a.useEventTargets!==false),Number(a.delaySeconds||0),bool(a.continueOnError!==false),JSON.stringify(a.payload||{}));(a.targets||[]).forEach((t,i)=>this.db.prepare("INSERT INTO automation_targets(action_id,target_id,position) VALUES(?,?,?)").run(aid,String(t),i))})}
-      const meta={...value};delete meta.events;this.setSetting("automations.meta",meta);return value;
+      const insertAction=this.db.prepare("INSERT INTO automation_actions(id,automation_id,position,action,target_domain,use_event_targets,delay_seconds,continue_on_error,payload_json,execution_mode,repeat_count,repeat_delay_seconds) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
+      const insertTarget=this.db.prepare("INSERT INTO automation_targets(action_id,target_id,position) VALUES(?,?,?)");
+      for(const e of value?.events||[]){
+        const id=String(e.id),sequence=Array.isArray(e.actionSequence)&&e.actionSequence.length?e.actionSequence:[{id:`${id}:action:1`,action:e.action,targets:e.targets||[],useEventTargets:false,payload:e.payload||{},delaySeconds:e.primaryDelaySeconds||0,executionMode:e.primaryExecutionMode||(e.action==="display.media"&&e.payload?.loop?"loop":"once"),repeatCount:e.primaryRepeatCount||1,repeatDelaySeconds:e.primaryRepeatDelaySeconds||0,continueOnError:e.continueOnError!==false},...(e.actions||[])];
+        const first=sequence[0]||{};
+        const base={...e,action:first.action||e.action,targets:Array.isArray(first.targets)?first.targets:(e.targets||[]),payload:first.payload||e.payload||{},automationSchemaVersion:3};
+        delete base.actions;delete base.actionSequence;delete base.primaryActionId;delete base.primaryDelaySeconds;delete base.primaryExecutionMode;delete base.primaryRepeatCount;delete base.primaryRepeatDelaySeconds;
+        this.db.prepare("INSERT INTO automations(id,name,enabled,action,schedule_mode,data_json,updated_at) VALUES(?,?,?,?,?,?,?)").run(id,String(e.name||id),bool(e.enabled!==false),base.action||null,e.scheduleMode||null,JSON.stringify(base),now);
+        sequence.forEach((a,idx)=>{
+          const aid=`${id}:action:${idx+1}`,payload=a?.payload&&typeof a.payload==="object"?a.payload:{};
+          const mode=["once","repeat","loop"].includes(String(a?.executionMode||"").toLowerCase())?String(a.executionMode).toLowerCase():(a?.action==="display.media"&&payload.loop===true?"loop":"once");
+          insertAction.run(aid,id,idx,String(a?.action||""),targetDomain(a?.action),bool(idx>0&&a?.useEventTargets!==false),Number(a?.delaySeconds||0),bool(a?.continueOnError!==false),JSON.stringify(payload),mode,Math.max(1,Math.min(100,Math.round(Number(a?.repeatCount)||1))),Math.max(0,Math.min(3600,Number(a?.repeatDelaySeconds)||0)));
+          (Array.isArray(a?.targets)?a.targets:[]).forEach((target,targetIndex)=>insertTarget.run(aid,String(target),targetIndex));
+        });
+      }
+      const meta={...value,version:3};delete meta.events;this.setSetting("automations.meta",meta);return value;
     });
     if(namespace==="scenes")return this.tx(()=>{this.db.exec("DELETE FROM scenes");for(const [id,s] of Object.entries(value||{}))this.db.prepare("INSERT INTO scenes(id,name,data_json,updated_at) VALUES(?,?,?,?)").run(id,String(s?.name||id),JSON.stringify(s),now);this.setSetting("scenes.meta",{normalized:true});return value});
     if(namespace==="sessions")return this.tx(()=>{this.db.exec("DELETE FROM sessions");for(const [id,s] of Object.entries(value||{}))this.db.prepare("INSERT INTO sessions(id,data_json,updated_at) VALUES(?,?,?)").run(id,JSON.stringify(s),now);this.setSetting("sessions.meta",{normalized:true});return value});

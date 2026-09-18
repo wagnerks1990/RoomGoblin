@@ -6,7 +6,6 @@ RoomGoblin has an optional first-class Cloudflare provisioning path. Site-specif
 
 The tunnel exposes only the Hub through same-host loopback and uses `TRUST_PROXY_HOPS=1`; Cloudflare is never allowed to publish maintenance 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, or lab subnets. Cloudflare failure affects remote access only and must not gate Morning Announcements, scheduler recovery, Background Music reconciliation, managed displays/devices, local administration, updates, or recovery. Read `docs/ai/CLOUDFLARE-TUNNEL.md` before changing this feature.
 
-
 ## Displays & AV restoration
 
 The operator retired room topology. Use the original TV Routing Matrix, TV/source
@@ -443,7 +442,7 @@ schedule references or delete nonempty/custom groups automatically. Follow
 
 ## Free Veyon features and native pilot
 
-Read [VEYON-FREE-FEATURES.md](VEYON-FREE-FEATURES.md), [VEYON-LIVE-TERMINAL.md](VEYON-LIVE-TERMINAL.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The pilot file adapter permits only single-target 2 MiB atomic, no-overwrite uploads to `RoomGoblin-Pilot/Inbox`; it is not arbitrary native transfer. The only permitted arbitrary Windows command surface is the dedicated enabled-administrator terminal route: one saved target, authenticated Veyon feature/worker transport, signed-in-user CMD or Windows PowerShell, ten-minute expiry, bounded transient input/output, no content audit/elevation/retry/second agent. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no production key change, commercial add-on or unvalidated Windows ABI claim. InternetGuard and terminal process launch are Windows-only disposable pilots with explicit recovery/acceptance gates. Preserve the Linux pilot build gate and operator tests.
+Read [VEYON-FREE-FEATURES.md](VEYON-FREE-FEATURES.md), [VEYON-LIVE-TERMINAL.md](VEYON-LIVE-TERMINAL.md), [VEYON-WINDOWS-PILOT.md](VEYON-WINDOWS-PILOT.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The pilot file adapter permits only single-target 2 MiB atomic, no-overwrite uploads to `RoomGoblin-Pilot/Inbox`; it is not arbitrary native transfer. The only permitted arbitrary Windows command surface is the dedicated enabled-administrator terminal route: one saved target, authenticated Veyon feature/worker transport, signed-in-user CMD or Windows PowerShell, ten-minute expiry, bounded transient input/output, no content audit/elevation/retry/second agent. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no production key change, commercial add-on or unvalidated Windows ABI claim. InternetGuard and terminal process launch are Windows-only disposable pilots with explicit recovery/acceptance gates. Preserve the Linux pilot build gate and operator tests.
 
 ## Native pilot artifacts
 
@@ -454,7 +453,24 @@ plugins with the installed CLI. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
 
+Windows packaging uses the complete upstream NSIS path in a reviewed x86-64
+MinGW/Qt environment, never individual DLLs. CI publication remains disabled
+until that toolchain is immutable and reviewed. One-endpoint deployment requires
+exact pilot/rollback hashes, configuration/evidence backup, explicit disposable
+risk acknowledgement and automatic known-good installer/config rollback on CLI
+failure. Live Windows acceptance remains separate.
+
 
 ## Automation action execution and media-session control
 
 Automation action looping is per-action, never implemented by restarting the whole occurrence. Additional actions persist `executionMode`, `repeatCount`, and `repeatDelaySeconds`; continuous `loop` is native only for `display.media`, while other commands remain bounded repeats. Uploaded video uses a persistent receiver media session. Live play/pause/seek/volume/mute/rate changes use `display.media.control` and must not reissue `display.media`, because replacing the content command restarts playback. Receivers report bounded media-session status for the controller scrubber. Preserve Morning Announcements priority, scheduler winner reconciliation, Background Music recovery, stable receiver IDs and signed media URLs when changing this path.
+
+## Automation sequence runner (schema v3)
+
+Scheduled automation execution is pass-based and canonical on `actionSequence[]`. Every action independently uses `once`, bounded `repeat`, or continuous `loop` participation. The runner walks the ordered sequence and returns to Action 1 while any action remains eligible. Do not restore the old special-primary-action runtime or per-step in-place repeat model.
+
+Continuous loops are valid for every supported action type, not only media. They must be cancellation-aware, class-end-aware, and capped to at most one zero-delay full pass per second. Newer overlapping scheduled occurrences supersede older running loops. Startup reconciliation and operator Resume recover currently applicable continuous occurrences outside the ordinary catch-up window. Manual live draft tests containing a continuous action are bounded to one pass.
+
+Timer Overlay initializes after the first sequence pass so it works with continuous sequences. Morning Announcements still preempt display delivery and post-announcement reconciliation still restores current scheduled winners before Background Music resumes.
+
+The Scheduled workspace uses time-ordered selectors. Media settings are content-aware: image, video, and paged-document controls must not be mixed indiscriminately. The old browser automation hotfix is retired; required compatibility logic belongs in the canonical controller/backend.

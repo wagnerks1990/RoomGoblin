@@ -33,3 +33,8 @@ require matching native pilot components.
 
 The Windows-only [Internet Guard pilot](Veyon-Internet-Guard-Pilot.md) is a
 separate disposable endpoint test with explicit firewall recovery.
+
+The [Windows endpoint pilot](Veyon-Windows-Pilot) builds only a complete
+matching NSIS package in the reviewed MinGW/Qt environment. It requires exact
+pilot and rollback hashes, configuration/evidence capture and one disposable
+endpoint before any broader testing. CLI discovery is not live acceptance.

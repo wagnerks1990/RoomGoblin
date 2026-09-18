@@ -11,6 +11,17 @@
 - Preserve local classroom availability when Cloudflare, DNS, or Internet access fails; Cloudflare remains outside core health, scheduler, announcement, Background Music, managed-device, update, and rollback readiness.
 - Add mocked Cloudflare API regression coverage plus synchronized operator, Wiki, configuration, and AI/contributor documentation.
 
+### Scheduled automation sequence rebuild
+
+- Rebuild scheduled automation execution around canonical schema-v3 `actionSequence[]` passes instead of the legacy special primary action plus additional actions runtime.
+- Define per-action participation as Run once, Loop X times, or Loop continually; after the last action the runner returns to Action 1 while any action remains eligible.
+- Make continuous sequences cancellable, class-end-aware, safe against zero-delay command storms, superseded by newer overlapping scheduled occurrences, and recoverable after restart/operator Resume when still applicable.
+- Initialize Timer Overlay after the first pass so continuous sequences cannot starve overlays; keep Morning Announcements and Background Music reconciliation invariants.
+- Replace the long Scheduled Events card stack with one time-ordered automation selector; the editor follows that selection instead of rendering a redundant second selector.
+- Collapse class schedule links into a compact summary and move multi-class selection into an explicit Edit Links dialog with Save/Cancel behavior.
+- Make uploaded-media settings content-aware so images, videos, and paged documents expose only applicable controls.
+- Retire the browser automation hotfix and fold its required schedule-ordering behavior into the canonical controller.
+
 
 ### Securly physical-console kiosk
 
@@ -46,6 +57,13 @@
 
 ### Community Veyon web pilots
 
+- Add a fail-closed complete Windows Veyon 4.11.2 packaging path for the reviewed
+  x86-64 MinGW/Qt environment, including PE architecture checks, required plugin
+  inventory, corresponding GPL source/provenance and SHA-256 manifests.
+- Add a one-disposable-endpoint PowerShell gate that requires verified pilot and
+  rollback installers, exports current configuration/evidence, validates runtime
+  plugin/feature discovery and automatically reapplies the known-good installer
+  and configuration when acceptance fails. Live Windows behavior remains pending.
 - Allow host-native Ubuntu 26.04/GCC 15 pilot builds to pass the QtConcurrent
   atomic optimizer false positive while retaining the warning and all other
   Veyon `-Werror` enforcement.

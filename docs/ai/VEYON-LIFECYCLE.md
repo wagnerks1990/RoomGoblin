@@ -96,6 +96,16 @@ Linux compilation proves only source/registration compatibility. Do not claim
 Windows operation until a matching 4.11.2 Windows build and disposable endpoint
 acceptance have passed.
 
+The Windows packaging path is `tools/package-veyon-pilot-windows.sh`; it must run
+only in a reviewed x86-64 MinGW/Qt environment and produce the complete upstream
+NSIS package plus corresponding source and hashes. Do not publish it from CI
+until the toolchain image is immutable and reviewed. Never substitute individual
+DLL deployment. `deploy/test-veyon-windows-pilot.ps1` is intentionally limited to
+one disposable endpoint and requires exact pilot/rollback hashes, a new evidence
+directory, configuration export and explicit risk acknowledgement. Runtime CLI
+discovery does not replace terminal, firewall, log-redaction and classroom
+acceptance. Preserve automatic known-good installer/config rollback on failure.
+
 ## Browser-only interface policy
 
 Native launchers and their API were removed at the operator's request. Catalog

@@ -752,12 +752,24 @@ nav button{min-width:135px}
 
   <div class="grid2">
     <div class="panel">
-      <h2 class="sectionTitle">Scheduled Events</h2>
-      <div id="automationList" class="muted">Loading…</div>
+      <h2 class="sectionTitle">Scheduled Automations</h2>
+      <div class="muted">Choose an automation. Entries are ordered by resolved run time.</div>
+      <label style="display:block;margin-top:10px">Scheduled automation
+        <select id="automationEventSelect" onchange="selectScheduledAutomation(this.value)" style="width:100%"></select>
+      </label>
+      <div id="automationList" class="muted" style="margin-top:10px">Loading…</div>
+      <div class="toolbar" style="margin-top:10px">
+        <button onclick="editSelectedAutomation()">Edit</button>
+        <button onclick="duplicateSelectedAutomation()">Duplicate</button>
+        <button onclick="runSelectedAutomation()">Run Now</button>
+        <button class="danger" onclick="deleteSelectedAutomation()">Delete</button>
+      </div>
     </div>
 
     <div class="panel">
-      <h2 class="sectionTitle" id="automationEditorTitle">New Scheduled Event</h2>
+      <div class="top" style="position:static;margin:0 0 12px">
+        <div><h2 class="sectionTitle" id="automationEditorTitle">New Scheduled Automation</h2><div class="muted">Edit the automation selected on the left, or create a new one.</div></div>
+      </div>
       <input id="autoId" type="hidden">
       <div class="grid2">
         <label>Name<input id="autoName" placeholder="Morning welcome"></label>
@@ -765,13 +777,31 @@ nav button{min-width:135px}
       </div>
 
       <div class="panel" style="box-shadow:none;margin-top:10px">
-        <label>Link to Class Schedule(s)</label>
-        <div id="autoClassIds" class="toolbar" style="margin-top:6px"></div>
-        <div class="muted">Select one or more classes. The event runs independently for each selected class using that class's own times and school-cycle mapping.</div>
+        <label><b>Linked Class Schedule(s)</b></label>
+        <div class="toolbar" style="margin-top:6px">
+          <button type="button" id="autoClassSummary" onclick="openAutomationClassLinker()" aria-haspopup="dialog">No classes linked ▾</button>
+          <button type="button" onclick="openAutomationClassLinker()">Edit Links</button>
+        </div>
+        <div id="autoClassLinkSummary" class="muted" style="margin-top:6px">This automation is not linked to a class schedule.</div>
         <div id="autoClassBindingFields" style="display:none;margin-top:8px">
           <div class="grid2"><label>Run Relative To<select id="autoClassRef" onchange="updateAutomationClassPreview()"><option value="start">Class Start</option><option value="end">Class End</option></select></label><label>Offset Minutes<input id="autoClassOffset" type="number" min="-720" max="720" value="0" onchange="updateAutomationClassPreview()"></label></div>
           <label style="display:flex;gap:8px;align-items:center"><input id="autoUseClassTargets" type="checkbox" checked> Use class default display targets</label>
           <div id="autoClassPreview" class="muted"></div>
+        </div>
+      </div>
+
+      <div id="autoClassModal" class="authModal" role="dialog" aria-modal="true" aria-labelledby="autoClassModalTitle">
+        <div class="panel" style="width:min(820px,100%);margin:0">
+          <div class="top" style="position:static;margin:0 0 12px">
+            <div><h2 id="autoClassModalTitle" class="sectionTitle">Link to Class Schedule(s)</h2><div class="muted">Choose one or more classes, then save the links.</div></div>
+            <button type="button" onclick="closeAutomationClassLinker(false)">Close</button>
+          </div>
+          <div id="autoClassIds" class="checkGrid" style="max-height:55vh;overflow:auto"></div>
+          <div class="toolbar" style="margin-top:12px">
+            <button type="button" class="primary" onclick="closeAutomationClassLinker(true)">Save Class Links</button>
+            <button type="button" onclick="clearAutomationClassLinks()">Clear All</button>
+            <button type="button" onclick="closeAutomationClassLinker(false)">Cancel</button>
+          </div>
         </div>
       </div>
 
@@ -813,7 +843,7 @@ nav button{min-width:135px}
       <div id="autoPayload" class="panel" style="box-shadow:none;margin-top:12px"></div>
       <div class="panel" style="box-shadow:none;margin-top:12px">
         <div class="top">
-          <div><b>Additional Actions</b><div class="muted">Actions are resource-isolated: lighting, TV power, AV, timers, and display content affect only their resolved targets. Add Action 2, Action 3, and more here; they run in order.</div></div>
+          <div><b>Actions</b><div class="muted">Actions run in order. After the last action, the sequence returns to Action 1 while any action is still eligible.</div></div>
           <button type="button" onclick="addAutomationStep()">+ Add Action</button>
         </div>
         <div id="autoActionSteps"></div>

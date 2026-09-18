@@ -151,9 +151,11 @@ native version** in disposable teacher and student VMs. Compiler, Qt and Veyon
 versions must match; Windows DLLs cannot come from the Linux build. The Linux
 InternetGuard provider exists only so the controller can dispatch the command;
 its firewall backend is unavailable on Linux. Do not copy
-these plugins into a different Veyon/Qt installation. Linux compilation is a CI gate;
-Windows packaging and real Windows endpoint interoperability remain acceptance
-work, not a claimed result. These sources are not a ready-made Windows installer.
+these plugins into a different Veyon/Qt installation. Linux compilation is a CI
+gate. Windows packaging tooling now builds a complete upstream-style installer
+in a reviewed MinGW/Qt environment, but a Windows artifact and real endpoint
+interoperability remain acceptance work, not a claimed result. See
+`VEYON-WINDOWS-PILOT.md`; these sources alone are not a ready-made installer.
 
 Create `RoomGoblin-Pilot` under the test student's home/profile and populate only
 sample files. Start with one teacher and one student. Validate both plugin names
