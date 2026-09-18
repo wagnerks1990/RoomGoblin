@@ -80,6 +80,8 @@ jobs:
           test "$(stat -c %a "$context/src/server.js")" = 600
           test "$(stat -c %a "$context/src")" = 700
           docker build --network host -t classroom-control-hub:test "$context"
+      - name: Smoke user-defined integration bridge
+        run: bash tools/smoke-integration-network.sh classroom-control-hub:test
       - name: Verify packaged access without root or runtime mounts
         run: |
           test "$(docker image inspect -f '{{.Config.User}}' classroom-control-hub:test)" = 10001:10001
