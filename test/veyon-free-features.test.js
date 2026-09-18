@@ -206,7 +206,9 @@ test('Community upload and Internet Guard sources preserve pilot safety bounds',
   assert.match(files,/existing\.exists\(\).*uploads never overwrite/s);
   assert.match(files,/QFileInfo::exists\(m_uploadFile\.fileName\(\)\)/);
   assert.match(files,/m_uploadFile\.commit\(\)/);assert.match(files,/m_uploadFile\.cancelWriting\(\)/);
-  assert.match(cmake,/if\(NOT VEYON_BUILD_WINDOWS\)[\s\S]*return\(\)/);
+  assert.doesNotMatch(cmake,/if\(NOT VEYON_BUILD_WINDOWS\)[\s\S]*return\(\)/);
+  assert.match(cmake,/if\(VEYON_BUILD_WINDOWS\)[\s\S]*target_sources\(internetguard PRIVATE WindowsFirewall\.cpp\)[\s\S]*target_link_libraries\(internetguard PRIVATE ole32 oleaut32\)/);
+  assert.match(guard,/#ifdef Q_OS_WIN[\s\S]*#include "WindowsFirewall\.h"[\s\S]*#else[\s\S]*bool blockInternet\(\) \{ return false; \}[\s\S]*bool allowInternet\(\) \{ return false; \}/);
   assert.match(firewall,/activeProfilesAreEnabled/);assert.doesNotMatch(firewall,/put_FirewallEnabled/);
   assert.match(firewall,/transactional rule application failed; pilot rules rolled back/);
   assert.match(guard,/15 \* 60 \* 1000/);assert.match(guard,/m_autoReleaseTimer\.start/);
