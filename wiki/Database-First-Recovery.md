@@ -164,3 +164,18 @@ database value.
 
 See `docs/DATABASE-FIRST-RECOVERY.md` in the repository for the complete
 technical contract and acceptance matrix.
+
+
+## Database performance and storage hygiene
+
+SQLite remains the authoritative location for structured RoomGoblin state,
+including configuration, schedules, users, credentials, encrypted settings and
+bounded audit/telemetry metadata. Large files such as media, screenshots,
+diagnostic archives, backups and export/import staging belong on disk instead.
+
+Successful high-frequency polling is coalesced rather than appended as audit
+history. Session and credential activity timestamps are rate-limited so
+authentication still occurs on every request without forcing a SQLite write on
+every poll. Privacy retention removes expired audit rows periodically; routine
+production operation relies on SQLite page reuse rather than running disruptive
+automatic VACUUM operations.

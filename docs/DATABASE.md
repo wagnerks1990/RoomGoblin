@@ -92,3 +92,32 @@ The maintenance integration guard detects when recovery replaces the configured
 database inode and reopens its read-only credential probe. It also drops a failed
 probe handle so a transient restore or schema transition cannot leave Background
 Music permanently dormant.
+
+
+## Storage placement and write-frequency policy
+
+RoomGoblin uses SQLite for authoritative, structured application state: normalized
+device/integration configuration, schedules and automations, users/sessions,
+credential metadata, encrypted settings/secrets, audit history, and compact
+telemetry aggregates. Large/generated payloads do not belong in SQLite.
+
+Keep these on disk instead:
+
+- uploaded media, presentations and generated artifacts;
+- screenshots and browser-history payload files governed by privacy retention;
+- operational/full-recovery archives and exports;
+- diagnostic download bundles;
+- temporary build/import/export staging and caches.
+
+High-frequency state must not create one durable write per poll when the value is
+only bookkeeping. Successful API/service polling is coalesced into
+`telemetry_state`; user-session last-seen writes are throttled; display and
+lab-agent credential `last_used_at` writes are also coalesced to a five-minute
+window. Security decisions still validate credentials on every request; only the
+non-security timestamp update is delayed.
+
+The privacy-retention task prunes expired audit rows every ten minutes. Deletions
+make SQLite pages reusable but do not imply an immediate smaller database file;
+avoid routine `VACUUM` during classroom operation because it requires an
+exclusive rewrite and temporary free disk capacity. Use controlled maintenance
+only when physical file compaction is actually required.

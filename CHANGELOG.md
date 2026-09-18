@@ -106,6 +106,10 @@
 - Make administrator Veyon terminal Close dispatch cleanup immediately instead of
   waiting behind state/read polling, fixing a Firefox-visible teardown race while
   retaining the native ten-minute failsafe expiry.
+- Reduce SQLite write amplification by coalescing display/lab-agent credential
+  last-used timestamps, keep diagnostic bundles in temporary storage, and bound
+  verified update safety backups to the newest ten automatic pre-* archives while
+  preserving pinned revert and user-created recovery backups.
 
 ### Browser-complete Veyon pilot
 
