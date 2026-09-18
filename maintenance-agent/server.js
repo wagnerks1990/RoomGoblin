@@ -170,9 +170,8 @@ app.post("/app-updates/start",async(req,res)=>{try{
     if(String(req.body?.confirm||"")!=="INSTALL_MAIN")return res.status(400).json({ok:false,error:"Explicit INSTALL_MAIN confirmation required"});
     const targetCommit=String(req.body?.targetCommit||"").toLowerCase();
     if(!/^[0-9a-f]{40}$/.test(targetCommit))return res.status(400).json({ok:false,error:"A full Git commit from trusted main is required"});
-    const safety=await createOperationalBackupNamed("pre-main-update");
-    const result=await hostAgentRequest("POST","/app-updates/start",{action:"published",targetCommit,githubToken:String(req.body?.githubToken||""),backupName:safety.name,backupSha256:safety.sha256,failureBackupName:safety.name,failureBackupSha256:safety.sha256,confirm:"INSTALL_MAIN"},30000);
-    return res.status(202).json({ok:true,safetyBackup:safety.name,...result});
+    const result=await hostAgentRequest("POST","/app-updates/start",{action:"published",targetCommit,githubToken:String(req.body?.githubToken||""),confirm:"INSTALL_MAIN"},30000);
+    return res.status(202).json({ok:true,safetyBackup:"creating after image preflight",...result});
   }
   if(String(req.body?.confirm||"")!=="INSTALL_RELEASE")return res.status(400).json({ok:false,error:"Explicit INSTALL_RELEASE confirmation required"});
   const targetRef=String(req.body?.targetRef||""),expectedVersion=String(req.body?.expectedVersion||"");
