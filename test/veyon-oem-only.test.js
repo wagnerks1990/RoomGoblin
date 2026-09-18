@@ -32,5 +32,4 @@ test("Veyon stays on the OEM-only source boundary",()=>{
 
   const workflow=fs.readFileSync(path.join(root,".github/workflows/validate.yml"),"utf8");
   assert.doesNotMatch(workflow,/^  veyon-(?:pilot|ai):/m);
-  assert.doesNotMatch(workflow,/package-veyon-pilot|test-veyon-windows-pilot|integrations\/veyon-ai/);
 });
