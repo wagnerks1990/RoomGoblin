@@ -148,7 +148,43 @@ except Exception:
     pass
 `;
   fs.writeFileSync(target,script,{mode:0o640});
-  return compat;
+  const waitScript=path.join(compat,"wait-for-lan.sh");
+  fs.writeFileSync(waitScript,`#!/bin/sh
+set -eu
+
+echo "RoomGoblin: waiting for Music Assistant LAN IPv4..."
+
+i=0
+while [ "$i" -lt 60 ]; do
+  if python3 - <<'PY'
+import sys
+import ifaddr
+
+for adapter in ifaddr.get_adapters():
+    for item in getattr(adapter, "ips", ()):
+        if getattr(item, "is_IPv6", False):
+            continue
+        value = getattr(item, "ip", "")
+        if isinstance(value, tuple):
+            value = value[0]
+        value = str(value)
+        if value and not value.startswith(("127.", "169.254.")):
+            print(f"RoomGoblin: LAN ready: {getattr(adapter, 'nice_name', None) or getattr(adapter, 'name', '')} -> {value}")
+            sys.exit(0)
+
+sys.exit(1)
+PY
+  then
+    exec /usr/local/bin/entrypoint.sh --data-dir /data --cache-dir /data/.cache
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+
+echo "RoomGoblin: ERROR: Music Assistant LAN IPv4 did not become ready within 60 seconds." >&2
+exit 1
+`,{mode:0o750});
+  return {compat,waitScript};
 }
 
 async function saveMusicAssistantSettings(settings={}){
@@ -206,9 +242,10 @@ async function deployAddon(id,settings={},recreate=false){
     args.push("-e",`GOVEE_MQTT_HOST=${serviceHost(resolved.mqttHost||settings.mqttHost||"127.0.0.1",["mosquitto"],"host")}`,"-e",`GOVEE_MQTT_PORT=${cleanPort(resolved.mqttPort||settings.mqttPort,1883)}`,"-e",`TZ=${resolved.timezone||settings.timezone||process.env.TZ||"UTC"}`);
     for(const [env,key] of [["GOVEE_MQTT_USER","mqttUsername"],["GOVEE_MQTT_PASSWORD","mqttPassword"],["GOVEE_API_KEY","apiKey"],["GOVEE_EMAIL","email"],["GOVEE_PASSWORD","password"]]){const value=resolved[key]||settings[key];if(value)args.push("-e",`${env}=${value}`)}
   }else if(id==="musicassistant"){
-    const base=managedPath("music-assistant"),compat=ensureMusicAssistantNetworkCompat(base);args.push("-v",`${base}:/data`,"-e",`PYTHONPATH=/data/${path.basename(compat)}`,"-e",`LOG_LEVEL=${String(settings.logLevel||"info")}`);
+    const base=managedPath("music-assistant"),networkCompat=ensureMusicAssistantNetworkCompat(base),compat=networkCompat.compat;args.push("-v",`${base}:/data`,"-e",`PYTHONPATH=/data/${path.basename(compat)}`,"-e",`LOG_LEVEL=${String(settings.logLevel||"info")}`,"--entrypoint","/bin/sh");
   }
   args.push(addon.image);
+  if(id==="musicassistant")args.push("/data/.roomgoblin-compat/wait-for-lan.sh");
   if(exists)await hostAgentRequest(["rm","-f",addon.container],30000);
   const result=await hostAgentRequest(args,180000);
   markRoomGoblinManaged(addon.dataRoot);
