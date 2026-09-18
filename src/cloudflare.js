@@ -77,15 +77,27 @@ class CloudflareClient{
     return {"X-Auth-Email":this.auth.email,"X-Auth-Key":this.auth.key};
   }
   async request(method,path,body){
-    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
-    try{
-      let response;
-      try{response=await this.fetch(this.baseUrl+path,{method,headers:{...this.headers(),...(body===undefined?{}:{"Content-Type":"application/json"})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal})}
-      catch(e){throw failure(e?.name==="AbortError"?"Cloudflare API request timed out":"Cloudflare API is unreachable",502)}
-      let value={};try{value=await response.json()}catch{}
-      if(!response.ok||value.success===false)throw sanitizeApiError(value,response.status);
-      return value.result;
-    }finally{clearTimeout(timer)}
+    const safeMethod=String(method||"GET").toUpperCase(),safePath=cleanText(path,500)||"/";
+    const retryable=["GET","PUT","PATCH","DELETE"].includes(safeMethod),attempts=retryable?3:1;
+    for(let attempt=1;attempt<=attempts;attempt++){
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+      try{
+        let response;
+        try{
+          response=await this.fetch(this.baseUrl+path,{method:safeMethod,headers:{...this.headers(),...(body===undefined?{}:{"Content-Type":"application/json"})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
+        }catch(e){
+          const timedOut=e?.name==="AbortError";
+          if(!timedOut&&attempt<attempts){await new Promise(resolve=>setTimeout(resolve,250*attempt));continue}
+          const cause=cleanText(e?.cause?.code||e?.code||e?.message,120);
+          const detail=timedOut?"timed out":cause||"network request failed";
+          throw failure(`Cloudflare API ${safeMethod} ${safePath} ${detail}`,502);
+        }
+        let value={};try{value=await response.json()}catch{}
+        if(!response.ok||value.success===false)throw sanitizeApiError(value,response.status);
+        return value.result;
+      }finally{clearTimeout(timer)}
+    }
+    throw failure(`Cloudflare API ${safeMethod} ${safePath} failed`,502);
   }
   get(path){return this.request("GET",path)}
   post(path,body){return this.request("POST",path,body)}
@@ -237,7 +249,7 @@ class CloudflareManager{
       publicUrl:`https://${settings.hostname}/controller/`};
   }
   async liveStatus(){
-    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null};
+    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null,publicUrl:settings.hostname?`https://${settings.hostname}/controller/`:null};
     if(!result.configured)return result;
     try{
       const ctx=await this.resolve(settings),tunnel=settings.ids?.tunnelId?await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${settings.ids.tunnelId}`):await this.findTunnel(ctx.client,ctx.accountId,settings.tunnelName);

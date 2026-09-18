@@ -132,7 +132,10 @@ WantedBy=multi-user.target
 EOF_UNIT
   chmod 0644 "$UNIT_PATH"
   systemctl daemon-reload
-  systemctl enable --now cloudflared-roomgoblin.service
+  systemctl enable cloudflared-roomgoblin.service >/dev/null
+  # A reprovisioned tunnel changes the connector token. "enable --now" does not
+  # restart an already-running service, so explicitly restart to load the new token.
+  systemctl restart cloudflared-roomgoblin.service
 }
 
 HUB_PORT="$(read_env_value HUB_PORT)"
