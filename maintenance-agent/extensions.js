@@ -188,7 +188,7 @@ exit 1
 }
 
 async function saveMusicAssistantSettings(settings={}){
-  const url=cleanUrl(settings.url,MUSIC_ASSISTANT_URL),browserUrl=settings.browserUrl===undefined?undefined:cleanUrl(settings.browserUrl,"");
+  const url=cleanUrl(settings.url,MUSIC_ASSISTANT_URL),browserRaw=settings.browserUrl===undefined?undefined:String(settings.browserUrl||"").trim(),browserUrl=browserRaw===undefined?undefined:(browserRaw?cleanUrl(browserRaw,""):"");
   const body={url,tvBridgeEnabled:true};if(browserUrl!==undefined)body.browserUrl=browserUrl;
   const suppliedToken=String(settings.token||"").trim();if(suppliedToken&&suppliedToken!=="••••••••")body.token=suppliedToken;
   await mainAppJson("PUT","/api/v1/internal/maintenance/music-assistant/config",body,20000);
