@@ -219,6 +219,9 @@ ensure_runtime_layout(){
 
 refresh_host_agent(){
   if [[ "${PLAN_FULL:-true}" == true ]]; then
+  # This root oneshot is intentionally outside the Host Agent mount namespace.
+  # Install/verify cloudflared here; the Host Agent itself must never run apt.
+  bash "$HUB_ROOT/deploy/install-cloudflared-host.sh"
   install -D -m 0644 "$HUB_ROOT/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service
   if [[ "$HUB_ROOT" != /opt/classroom-hub ]]; then sed -i "s#/opt/classroom-hub#$HUB_ROOT#g" /etc/systemd/system/classroom-hub-host-agent.service; fi
   sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=${HOST_SERVICES_DIR:-/opt/services}#" /etc/systemd/system/classroom-hub-host-agent.service
