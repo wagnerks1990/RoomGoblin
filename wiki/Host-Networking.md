@@ -55,6 +55,10 @@ The appliance retains a pre-RoomGoblin Music Assistant Compose deployment at `/o
 
 The corrected design pins Music Assistant adapter enumeration to the default-route LAN rather than host interface order. Production acceptance must include at least one reboot with Tailscale enabled and Docker networks present, followed by HTTP 200 on 8095, stream listener 8097, Sendspin 8927, correct LAN publication, and no Zeroconf `Errno 19`.
 
+A later live reboot exposed one additional early-boot race: Music Assistant 2.9.13 can enter Streams configuration before the physical LAN has received IPv4, leaving its candidate list empty and raising `IndexError: tuple index out of range` at `ip_addresses[0]`. The managed template now writes `/data/.roomgoblin-compat/wait-for-lan.sh` and overrides the container entrypoint to `/bin/sh` with that script as the only post-image argument. The gate waits up to 60 seconds for the already-filtered Music Assistant adapter set to contain a non-loopback/non-APIPA IPv4, then `exec`s the image's reviewed upstream startup contract: `/usr/local/bin/entrypoint.sh --data-dir /data --cache-dir /data/.cache`. Failure after 60 seconds exits nonzero so Docker's restart policy remains the recovery boundary. Do not replace this with an unbounded wait or hard-coded site IP.
+
+This startup gate was validated live through a reboot: the log showed the gate waiting, then `LAN ready` on the physical adapter, followed by one clean Music Assistant startup, correct LAN publication, HTTP 200, and listeners on 8095/8097/8927 with no Zeroconf `Errno 19` or Streams `IndexError`.
+
 On the same restart investigation, RoomGoblin's Background Music scheduler could reach the Music Assistant API before the configured player/provider finished registering. Scheduled playback now waits for the configured player to be present and available, and transient scheduled start failures back off for 30 seconds instead of issuing volume/play calls every five seconds. Manual controls remain immediate.
 
 ### Managed integration bridge
