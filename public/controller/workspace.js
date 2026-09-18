@@ -71,9 +71,9 @@
     updateLabLink();
   }
 
-  // Present the existing release updater with the same deployment-first hierarchy used by LabGoblin.
-  // This is presentation-only: existing IDs, handlers, semantic-release checks, backup/health gates,
-  // maintenance windows and rollback behavior remain owned by app.js and the updater service.
+  // Present the main-branch updater with the same deployment-first hierarchy used by LabGoblin.
+  // Existing IDs and handlers remain owned by app.js; the backend resolves only trusted merged main
+  // commits and the native updater still owns exact-image verification, backup, health and rollback.
   function enhanceUpdateWorkspace(){
     const repository=document.getElementById('appUpdateRepository');
     const output=document.getElementById('updateOutput');
@@ -102,12 +102,12 @@
 
     const header=document.createElement('header');
     header.className='rg-update-page-header';
-    header.innerHTML='<div><p class="rg-update-eyebrow">Administration</p><h2>System updates</h2><p class="rg-update-description">Health-gated GitHub releases with a database-safe backup and automatic rollback point.</p></div>';
+    header.innerHTML='<div><p class="rg-update-eyebrow">Administration</p><h2>System updates</h2><p class="rg-update-description">Merged <code>main</code> commits, exact CI-built images, database-safe backup, and automatic rollback.</p></div>';
 
     const deployment=document.createElement('section');
     deployment.className='rg-update-card';
     deployment.setAttribute('aria-labelledby','rg-update-deployment-title');
-    deployment.innerHTML='<div class="rg-update-card-header"><div><h3 id="rg-update-deployment-title">Deployment</h3><p>Review the exact release state before starting a host operation.</p></div><span id="rgUpdateOperationBadge" class="rg-update-status rg-update-status--idle">idle</span></div><dl class="rg-update-detail-list"><div><dt>Repository</dt><dd id="rgUpdateRepositoryValue"></dd></div><div><dt>Current version</dt><dd id="rgUpdateCurrentVersion">Checking…</dd></div><div><dt>Available release</dt><dd id="rgUpdateAvailableVersion">Checking…</dd></div><div><dt>Rollback point</dt><dd id="rgUpdateRollbackState">Checking…</dd></div></dl><div class="rg-update-actions"></div><details class="rg-update-status-detail"><summary><strong>Update status</strong></summary></details>';
+    deployment.innerHTML='<div class="rg-update-card-header"><div><h3 id="rg-update-deployment-title">Deployment</h3><p>Review the installed commit and latest merged <code>main</code> commit before updating.</p></div><span id="rgUpdateOperationBadge" class="rg-update-status rg-update-status--idle">idle</span></div><dl class="rg-update-detail-list"><div><dt>Repository</dt><dd id="rgUpdateRepositoryValue"></dd></div><div><dt>Installed</dt><dd id="rgUpdateCurrentVersion">Checking…</dd></div><div><dt>Main update</dt><dd id="rgUpdateAvailableVersion">Checking…</dd></div><div><dt>Rollback point</dt><dd id="rgUpdateRollbackState">Checking…</dd></div></dl><div class="rg-update-actions"></div><details class="rg-update-status-detail"><summary><strong>Update status</strong></summary></details>';
     deployment.querySelector('#rgUpdateRepositoryValue').textContent=repository.value;
     const actions=deployment.querySelector('.rg-update-actions');
     [checkButton,installButton,revertButton].filter(Boolean).forEach(button=>actions.append(button));
@@ -136,13 +136,14 @@
         for(const label of labels){const match=text.match(new RegExp(`^${label}\\s*:\\s*(.+)$`,'mi'));if(match)return match[1].trim()}
         return '';
       };
-      const current=valueFor('Current','Installed version','Current version');
-      const available=valueFor('Available','Latest channel release','Latest approved release','Latest release');
-      document.getElementById('rgUpdateCurrentVersion').textContent=current||'See update status';
-      document.getElementById('rgUpdateAvailableVersion').textContent=available||(/no newer/i.test(text)?'Up to date':'See update status');
+      const currentVersion=valueFor('Current version','Current');
+      const currentCommit=valueFor('Current commit','Active commit');
+      const available=valueFor('Available','Main commit','Target commit');
+      document.getElementById('rgUpdateCurrentVersion').textContent=[currentVersion,currentCommit].filter(Boolean).join(' @ ')||'See update status';
+      document.getElementById('rgUpdateAvailableVersion').textContent=available||(/up to date/i.test(text)?'Up to date':'See update status');
       document.getElementById('rgUpdateRollbackState').textContent=revertButton?.disabled?'No revert point available':'Previous upgrade available';
       const badge=document.getElementById('rgUpdateOperationBadge');
-      const failed=/\b(fail|error|rollback failed|unhealthy)\b/i.test(text);
+      const failed=/\b(fail|error|rollback failed|unhealthy|blocked)\b/i.test(text);
       const running=/\b(installing|updating|checking|running|queued|deploying)\b/i.test(text);
       const ready=!installButton?.disabled;
       badge.className=`rg-update-status ${failed?'rg-update-status--danger':running?'rg-update-status--warning':'rg-update-status--success'}`;
