@@ -474,3 +474,9 @@ Keep official file distribution/collection native-only until an adapter has
 bounded paths/storage and honest endpoint acknowledgement semantics.
 
 Local AI pilot: docs/VEYON-LOCAL-AI.md and integrations/veyon-ai/PROVENANCE.md. Keep the AGPL service separate, exact model hash, fixed loopback endpoint, separate token, explicit single-screen capture, no retention/enforcement, bounded concurrency and export drain. Do not claim the full upstream AI dashboard or verified classroom accuracy.
+
+## Automation sequence execution
+
+Automation runtime is canonical on `actionSequence[]`. Do not special-case Action 1. Every action participates per sequence pass: `once` on pass 1, `repeat` through its configured pass count, and `loop` on every pass. Continuous loops are allowed for all supported action types and must remain cancellable, class-boundary-aware, supersedable by newer overlapping scheduled occurrences, recoverable after process restart/operator Resume, and protected by the zero-delay cycle floor.
+
+Preserve Morning Announcements priority, scheduler occurrence identity/recovery, Background Music reconciliation, stable targets, and database compatibility. Timer Overlay must initialize after the first pass so a continuous sequence cannot starve it. Keep media controls content-aware in the editor. Do not reintroduce `public/shared/automation-hotfix.js` or a second legacy automation editor.

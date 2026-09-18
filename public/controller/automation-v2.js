@@ -1,7 +1,7 @@
 "use strict";
 
 (function installAutomationV2(){
-  const SCHEMA_VERSION=2;
+  const SCHEMA_VERSION=3;
   const TAIL_SUFFIX=".__primary-repeat-tail";
   let installed=false;
 
@@ -20,7 +20,6 @@
     const allowed=new Set(["once","repeat","loop"]);let mode=String(value||"").toLowerCase();
     if(!mode&&action==="display.media"&&payload.loop===true)mode="loop";
     if(!allowed.has(mode))mode="once";
-    if(mode==="loop"&&action!=="display.media")mode="repeat";
     return mode;
   }
   function normalizeAction(input={},index=0){
@@ -46,13 +45,15 @@
     return [primary,...extras.map((x,i)=>normalizeAction(x,i+1))];
   }
   function compileLegacy(sequence){
-    const first=normalizeAction(sequence[0]||{},0),extras=[];
-    const payload={...(first.payload||{})};if(first.action==="display.media")payload.loop=first.executionMode==="loop";
-    if(first.executionMode==="repeat"&&first.repeatCount>1){
-      extras.push({...first,id:first.id+TAIL_SUFFIX,targets:[],useEventTargets:true,delaySeconds:first.repeatDelaySeconds,executionMode:"repeat",repeatCount:first.repeatCount-1,_schemaCompatibilityTail:true});
-    }
-    extras.push(...sequence.slice(1).map((x,i)=>normalizeAction(x,i+1)));
-    return {action:first.action,targets:ids(first.targets),payload,actions:extras,primaryActionId:first.id,primaryDelaySeconds:first.delaySeconds,primaryExecutionMode:first.executionMode,primaryRepeatCount:first.repeatCount,primaryRepeatDelaySeconds:first.repeatDelaySeconds,continueOnError:first.continueOnError};
+    const first=normalizeAction(sequence[0]||{},0),payload={...(first.payload||{})};
+    if(first.action==="display.media")payload.loop=first.executionMode==="loop";
+    return {
+      action:first.action,targets:ids(first.targets),payload,
+      actions:sequence.slice(1).map((x,i)=>normalizeAction(x,i+1)),
+      primaryActionId:first.id,primaryDelaySeconds:first.delaySeconds,
+      primaryExecutionMode:first.executionMode,primaryRepeatCount:first.repeatCount,
+      primaryRepeatDelaySeconds:first.repeatDelaySeconds,continueOnError:first.continueOnError
+    };
   }
   function allActionOptions(selected){return automationActionOptions(selected)}
   function actionDomain(action){return automationActionDomain(action)}
@@ -70,20 +71,26 @@
     const saved=selected&&!allowed.some(f=>f.storedName===selected)?`<option value="${esc(selected)}" selected>${esc(selected)} (saved item)</option>`:"";
     return `${saved}<option value="">— Select uploaded media —</option>${allowed.map(f=>`<option value="${esc(f.storedName)}" ${selected===f.storedName?'selected':''}>${esc(f.originalName||f.storedName)} • ${esc(f.type)}</option>`).join("")}`;
   }
+  function selectedMediaType(storedName=""){
+    return String((S.mediaFiles||[]).find(f=>f.storedName===storedName)?.type||"").toLowerCase();
+  }
   function setPayload(i,key,value){autoSteps[i].payload=autoSteps[i].payload||{};autoSteps[i].payload[key]=value}
   function mediaPayload(step,i){
-    const p=step.payload||{};
-    return `<label>Uploaded Media<select onchange="RoomGoblinAutomationV2.payload(${i},'storedName',this.value)">${mediaOptions(p.storedName||"")}</select></label>
+    const p=step.payload||{},type=selectedMediaType(p.storedName||"");
+    const isVideo=type==="video",isPaged=["pdf","presentation","document"].includes(type),isImage=type==="image";
+    return `<label>Uploaded Media<select onchange="RoomGoblinAutomationV2.payload(${i},'storedName',this.value);RoomGoblinAutomationV2.render()">${mediaOptions(p.storedName||"")}</select></label>
+      ${type?`<div class="muted" style="margin-top:6px">Detected content type: ${esc(type)}</div>`:'<div class="muted" style="margin-top:6px">Select media to show only settings that apply to that content type.</div>'}
       <div class="grid2" style="margin-top:8px">
        <label>Fit<select onchange="RoomGoblinAutomationV2.payload(${i},'fit',this.value)"><option value="contain" ${p.fit!=="cover"?'selected':''}>Contain</option><option value="cover" ${p.fit==="cover"?'selected':''}>Cover</option></select></label>
-       <label>Slide / Page Seconds<input type="number" min="0" max="300" value="${Math.round(Number(p.autoAdvanceMs||10000)/1000)}" onchange="RoomGoblinAutomationV2.payload(${i},'autoAdvanceMs',Number(this.value)*1000)"></label>
-       <label>Start at (seconds)<input type="number" min="0" step="0.1" value="${Number(p.startAtSeconds||0)}" onchange="RoomGoblinAutomationV2.payload(${i},'startAtSeconds',Number(this.value||0))"></label>
+       ${isPaged?`<label>Slide / Page Seconds<input type="number" min="0" max="300" value="${Math.round(Number(p.autoAdvanceMs||10000)/1000)}" onchange="RoomGoblinAutomationV2.payload(${i},'autoAdvanceMs',Number(this.value)*1000)"></label>`:''}
+       ${isVideo?`<label>Start at (seconds)<input type="number" min="0" step="0.1" value="${Number(p.startAtSeconds||0)}" onchange="RoomGoblinAutomationV2.payload(${i},'startAtSeconds',Number(this.value||0))"></label>
        <label>End at (seconds, 0 = file end)<input type="number" min="0" step="0.1" value="${Number(p.endAtSeconds||0)}" onchange="RoomGoblinAutomationV2.payload(${i},'endAtSeconds',Number(this.value||0))"></label>
        <label>Volume %<input type="number" min="0" max="100" value="${Math.round(Number(p.volume??1)*100)}" onchange="RoomGoblinAutomationV2.payload(${i},'volume',Math.max(0,Math.min(1,Number(this.value||0)/100)))"></label>
-       <label>Playback Rate<input type="number" min="0.25" max="4" step="0.25" value="${Number(p.playbackRate||1)}" onchange="RoomGoblinAutomationV2.payload(${i},'playbackRate',Number(this.value||1))"></label>
+       <label>Playback Rate<input type="number" min="0.25" max="4" step="0.25" value="${Number(p.playbackRate||1)}" onchange="RoomGoblinAutomationV2.payload(${i},'playbackRate',Number(this.value||1))"></label>`:''}
       </div>
-      <div class="toolbar"><label><input type="checkbox" ${p.muted?'checked':''} onchange="RoomGoblinAutomationV2.payload(${i},'muted',this.checked)"> Mute video</label><button type="button" onclick="RoomGoblinAutomationV2.previewMedia(${i})">Preview Selected Media</button></div>
-      <div class="muted">Continuous video looping is controlled by the Execution setting below. Clip, volume and playback-rate settings apply to every media action.</div>`;
+      ${isVideo?`<div class="toolbar"><label><input type="checkbox" ${p.muted?'checked':''} onchange="RoomGoblinAutomationV2.payload(${i},'muted',this.checked)"> Mute video</label><button type="button" onclick="RoomGoblinAutomationV2.previewMedia(${i})">Preview Selected Media</button></div>`:
+        (isImage||isPaged)?`<div class="toolbar"><button type="button" onclick="RoomGoblinAutomationV2.previewMedia(${i})">Preview Selected Media</button></div>`:''}
+      <div class="muted">Media-specific controls appear only when they apply to the selected content type.</div>`;
   }
   function payloadHtml(step,i){
     const p=step.payload||{},a=step.action;
@@ -108,12 +115,12 @@
   function render(){
     const host=document.getElementById("autoActionSteps");if(!host)return;
     host.innerHTML=autoSteps.map((raw,i)=>{const step=normalizeAction(raw,i);autoSteps[i]=step;const label=automationActionLabel(step.action);return `<div class="card" style="margin-top:12px;border-width:2px" data-automation-v2-action="${i}">
-      <div class="top"><div><b>ACTION ${i+1} — ${esc(label)}</b><div class="muted">Every action uses the same schema: targets, settings, delay, execution policy and error handling.</div></div><div class="toolbar"><button type="button" onclick="RoomGoblinAutomationV2.move(${i},-1)" ${i===0?'disabled':''}>↑</button><button type="button" onclick="RoomGoblinAutomationV2.move(${i},1)" ${i===autoSteps.length-1?'disabled':''}>↓</button><button type="button" class="danger" onclick="RoomGoblinAutomationV2.remove(${i})" ${autoSteps.length===1?'disabled':''}>Remove</button></div></div>
+      <div class="top"><div><b>ACTION ${i+1} — ${esc(label)}</b><div class="muted">Every action independently decides whether it runs on each pass through the sequence.</div></div><div class="toolbar"><button type="button" onclick="RoomGoblinAutomationV2.move(${i},-1)" ${i===0?'disabled':''}>↑</button><button type="button" onclick="RoomGoblinAutomationV2.move(${i},1)" ${i===autoSteps.length-1?'disabled':''}>↓</button><button type="button" class="danger" onclick="RoomGoblinAutomationV2.remove(${i})" ${autoSteps.length===1?'disabled':''}>Remove</button></div></div>
       <div class="grid2"><label>Action<select onchange="RoomGoblinAutomationV2.changeAction(${i},this.value)">${allActionOptions(step.action)}</select></label><label>Wait before running<input type="number" min="0" max="3600" step="0.1" value="${step.delaySeconds}" onchange="RoomGoblinAutomationV2.set(${i},'delaySeconds',Number(this.value||0))"></label></div>
       <div class="panel" style="box-shadow:none;margin-top:10px"><b>Targets</b>${targetsHtml(step,i)}</div>
       <div class="panel" style="box-shadow:none;margin-top:10px"><b>Action Settings</b><div style="margin-top:8px">${payloadHtml(step,i)}</div></div>
-      <div class="grid2" style="margin-top:10px"><label>Execution<select onchange="RoomGoblinAutomationV2.execution(${i},this.value)"><option value="once" ${step.executionMode==='once'?'selected':''}>Run once</option><option value="repeat" ${step.executionMode==='repeat'?'selected':''}>Repeat N times</option>${step.action==='display.media'?`<option value="loop" ${step.executionMode==='loop'?'selected':''}>Loop media continuously</option>`:''}</select></label>${step.executionMode==='repeat'?`<label>Repeat Count<input type="number" min="1" max="100" value="${step.repeatCount}" onchange="RoomGoblinAutomationV2.set(${i},'repeatCount',Math.max(1,Math.min(100,Number(this.value||1))))"></label><label>Seconds Between Repeats<input type="number" min="0" max="3600" step="0.1" value="${step.repeatDelaySeconds}" onchange="RoomGoblinAutomationV2.set(${i},'repeatDelaySeconds',Math.max(0,Number(this.value||0)))"></label>`:''}</div>
-      ${step.action==='display.media'&&step.executionMode==='loop'?`<div class="muted">This video/clip loops inside the receiver. Earlier actions are not rerun.</div>`:''}
+      <div class="grid2" style="margin-top:10px"><label>Execution<select onchange="RoomGoblinAutomationV2.execution(${i},this.value)"><option value="once" ${step.executionMode==='once'?'selected':''}>Run once</option><option value="repeat" ${step.executionMode==='repeat'?'selected':''}>Loop X times</option><option value="loop" ${step.executionMode==='loop'?'selected':''}>Loop continually</option></select></label>${step.executionMode==='repeat'?`<label>Total Passes<input type="number" min="1" max="100" value="${step.repeatCount}" onchange="RoomGoblinAutomationV2.set(${i},'repeatCount',Math.max(1,Math.min(100,Number(this.value||1))))"></label>`:''}${step.executionMode!=='once'?`<label>Wait Before Next Loop<input type="number" min="0" max="3600" step="0.1" value="${step.repeatDelaySeconds}" onchange="RoomGoblinAutomationV2.set(${i},'repeatDelaySeconds',Math.max(0,Number(this.value||0)))"></label>`:''}</div>
+      ${step.executionMode==='loop'?`<div class="muted">Runs every time the sequence returns to this action. The sequence continues until cancelled, changed, disabled, or superseded.</div>`:step.executionMode==='repeat'?`<div class="muted">Runs on the first ${step.repeatCount} pass(es), then is skipped on later passes.</div>`:`<div class="muted">Runs on the first pass only, then is skipped if other actions keep the sequence looping.</div>`}
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" ${step.continueOnError?'checked':''} onchange="RoomGoblinAutomationV2.set(${i},'continueOnError',this.checked)"> Continue to the next action if this action fails</label>
     </div>`}).join("");
     enforceCapabilityControls?.(host);
@@ -123,7 +130,7 @@
     const targets=document.getElementById("autoTargets")?.parentElement;if(targets)targets.style.display="none";
     const payload=document.getElementById("autoPayload");if(payload)payload.style.display="none";
     const steps=document.getElementById("autoActionSteps"),panel=steps?.closest(".panel");
-    if(panel){const top=panel.querySelector(":scope > .top");if(top){const title=top.querySelector("b");if(title)title.textContent="Actions";const help=top.querySelector(".muted");if(help)help.textContent="Build one ordered action sequence. Action 1 uses the same controls and execution policy as every later action."}}
+    if(panel){const top=panel.querySelector(":scope > .top");if(top){const title=top.querySelector("b");if(title)title.textContent="Actions";const help=top.querySelector(".muted");if(help)help.textContent="Build one ordered action sequence. After the last action, RoomGoblin returns to Action 1 while any action is still eligible to run."}}
   }
   function syncHiddenFirst(){
     const first=normalizeAction(autoSteps[0]||{},0);autoAction.value=first.action;currentEditTargets=[...first.targets];currentAutomationPayload=clone(first.payload||{});renderAutomationFields(first.payload||{});
@@ -133,9 +140,9 @@
     return {...base,...legacy,automationSchemaVersion:SCHEMA_VERSION,actionSequence:canonical};
   }
   async function save(){
-    try{const body=v2Event();if(!body.actionSequence.length)throw Error("Add at least one action");if(!body.targets.length&&!((body.classIds||[]).length&&body.useClassTargets))throw Error("Action 1 needs a target or linked-class default targets");const id=autoId.value;const j=id?await api('/api/v1/automations/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}):await jpost('/api/v1/automations',body);autoEditorMsg.textContent=`Saved • ${body.actionSequence.length} action(s) • schema v2`;await loadSchedules();window.editAutomation(j.event.id);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
+    try{const body=v2Event();if(!body.actionSequence.length)throw Error("Add at least one action");if(!body.targets.length&&!((body.classIds||[]).length&&body.useClassTargets))throw Error("Action 1 needs a target or linked-class default targets");const id=autoId.value;const j=id?await api('/api/v1/automations/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}):await jpost('/api/v1/automations',body);autoEditorMsg.textContent=`Saved • ${body.actionSequence.length} action(s) • schema v3`;await loadSchedules();window.editAutomation(j.event.id);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
   }
-  async function simulate(){try{const body=v2Event(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=j.ok?`Simulation OK • ${body.actionSequence.length} action(s)`:(j.error||`Simulation found ${(j.conflicts||[]).length} conflict(s)`);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}}
+  async function simulate(){try{const body=v2Event(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=j.ok?`Simulation OK • ${body.actionSequence.length} action(s) • pass-based execution`:(j.error||`Simulation found ${(j.conflicts||[]).length} conflict(s)`);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}}
   async function runDraft(){if(!confirm('Run the current unsaved action sequence on real classroom devices? This does not save or enable the event.'))return;try{const body=v2Event(),j=await api('/api/v1/automations/draft/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});const failures=automationRunFailureSummary(j);autoEditorMsg.textContent=failures.length?`Live draft completed with errors: ${failures.join(' • ')}`:'Live draft completed.';return j}catch(e){autoEditorMsg.textContent=e.message;throw e}}
   const original={editAutomation:window.editAutomation,newAutomation:window.newAutomation,editorEvent:window.editorEvent,renderAutomationSteps:window.renderAutomationSteps};
   function install(){
@@ -144,8 +151,8 @@
     window.addAutomationStep=()=>{autoSteps.push(normalizeAction({id:uid(),action:"display.clear",targets:[],useEventTargets:autoSteps.length>0,payload:{}},autoSteps.length));render()};
     window.removeAutomationStep=i=>{if(autoSteps.length<=1)return;autoSteps.splice(i,1);autoSteps.forEach((x,n)=>x.useEventTargets=n>0&&x.useEventTargets!==false);render()};
     window.moveAutomationStep=(i,d)=>{const j=i+d;if(j<0||j>=autoSteps.length)return;[autoSteps[i],autoSteps[j]]=[autoSteps[j],autoSteps[i]];autoSteps[0].useEventTargets=false;render()};
-    window.newAutomation=function(){original.newAutomation();autoSteps=[normalizeAction({id:uid(),action:"tv.power",targets:[configuredDisplayTargets(false)[0]?.[0]||"all"],useEventTargets:false,payload:{state:"on"}},0)];hideLegacy();render()};
-    window.editAutomation=function(id){original.editAutomation(id);const event=S.automations.find(x=>x.id===id);if(event)autoSteps=sequenceFromEvent(event);if(!autoSteps.length)autoSteps=[normalizeAction({},0)];autoSteps[0].useEventTargets=false;hideLegacy();render();automationEditorTitle.textContent=`Edit Scheduled Event • schema v${event?.automationSchemaVersion||1}${event?.automationSchemaVersion===2?'':' → will migrate on save'}`};
+    window.newAutomation=function(){original.newAutomation();automationEditorTitle.textContent='New Scheduled Automation';autoSteps=[normalizeAction({id:uid(),action:"tv.power",targets:[configuredDisplayTargets(false)[0]?.[0]||"all"],useEventTargets:false,payload:{state:"on"}},0)];hideLegacy();render()};
+    window.editAutomation=function(id){original.editAutomation(id);const event=S.automations.find(x=>x.id===id);if(event)autoSteps=sequenceFromEvent(event);if(!autoSteps.length)autoSteps=[normalizeAction({},0)];autoSteps[0].useEventTargets=false;hideLegacy();render();automationEditorTitle.textContent='Edit Scheduled Automation';syncScheduledAutomationSelectors?.(event?.id||'')};
     window.editorEvent=v2Event;window.saveAutomation=save;window.simulateAutomationEditor=simulate;window.testAutomationEditor=simulate;window.runAutomationDraft=runDraft;
     window.validateEnableAutomation=async()=>{autoEnabled.value="1";const result=await simulate();if(result?.ok===false)throw Error("Resolve simulation conflicts before enabling.");return save()};
     window.RoomGoblinAutomationV2={

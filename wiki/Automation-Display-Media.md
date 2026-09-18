@@ -42,3 +42,11 @@ Receivers report bounded `display.media.status` telemetry containing session ID,
 - Arbitrary non-media actions are never allowed to run forever. A requested `loop` on a non-media action is normalized to bounded repeat behavior.
 - Display clear explicitly destroys the active video session.
 - Existing stable display URLs, signed media access, class-target resolution, scheduler recovery, and timer behavior remain unchanged.
+
+## Sequence-pass execution
+
+Scheduled automations now cycle through their ordered actions. Run once participates only on the first pass, Loop X times participates for the configured number of passes, and Loop continually participates on every pass. This applies to display, TV, and lighting actions.
+
+The sequence returns to Action 1 after its final action while at least one action is still eligible. A newer overlapping scheduled automation cancels an older continuous loop. Class-linked loops stop at the resolved class end. Timer Overlay starts after the first pass.
+
+The controller shows media settings by content type: images do not display video controls; video exposes clip/audio/rate controls; documents and presentations expose page/slide timing.

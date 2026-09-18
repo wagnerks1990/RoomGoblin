@@ -451,3 +451,13 @@ require disposable matching Ubuntu desktop VMs for interactive acceptance.
 ## Automation action execution and media-session control
 
 Automation action looping is per-action, never implemented by restarting the whole occurrence. Additional actions persist `executionMode`, `repeatCount`, and `repeatDelaySeconds`; continuous `loop` is native only for `display.media`, while other commands remain bounded repeats. Uploaded video uses a persistent receiver media session. Live play/pause/seek/volume/mute/rate changes use `display.media.control` and must not reissue `display.media`, because replacing the content command restarts playback. Receivers report bounded media-session status for the controller scrubber. Preserve Morning Announcements priority, scheduler winner reconciliation, Background Music recovery, stable receiver IDs and signed media URLs when changing this path.
+
+## Automation sequence runner (schema v3)
+
+Scheduled automation execution is pass-based and canonical on `actionSequence[]`. Every action independently uses `once`, bounded `repeat`, or continuous `loop` participation. The runner walks the ordered sequence and returns to Action 1 while any action remains eligible. Do not restore the old special-primary-action runtime or per-step in-place repeat model.
+
+Continuous loops are valid for every supported action type, not only media. They must be cancellation-aware, class-end-aware, and capped to at most one zero-delay full pass per second. Newer overlapping scheduled occurrences supersede older running loops. Startup reconciliation and operator Resume recover currently applicable continuous occurrences outside the ordinary catch-up window. Manual live draft tests containing a continuous action are bounded to one pass.
+
+Timer Overlay initializes after the first sequence pass so it works with continuous sequences. Morning Announcements still preempt display delivery and post-announcement reconciliation still restores current scheduled winners before Background Music resumes.
+
+The Scheduled workspace uses time-ordered selectors. Media settings are content-aware: image, video, and paged-document controls must not be mixed indiscriminately. The old browser automation hotfix is retired; required compatibility logic belongs in the canonical controller/backend.

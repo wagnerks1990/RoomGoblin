@@ -3,13 +3,14 @@ const test=require("node:test"),assert=require("node:assert/strict"),fs=require(
 const root=path.join(__dirname,"..");
 const server=fs.readFileSync(path.join(root,"src/server.js"),"utf8");
 const display=fs.readFileSync(path.join(root,"public/display/index.html"),"utf8");
-const controller=fs.readFileSync(path.join(root,"public/controller/app.js"),"utf8");
+const editor=fs.readFileSync(path.join(root,"public/controller/automation-v2.js"),"utf8");
 
-test("automation actions persist per-step execution policy",()=>{
-  assert.match(server,/executionMode:automationExecutionMode/);
-  assert.match(server,/repeatCount:automationRepeatCount/);
-  assert.match(controller,/Loop media continuously/);
-  assert.match(controller,/repeatDelaySeconds/);
+test("automation actions persist pass-based execution policy",()=>{
+  assert.match(server,/automationActionSequence\(event\)/);
+  assert.match(server,/actionEligibleOnPass\(step,pass\)/);
+  assert.match(server,/sequenceHasEligibleActions\(steps,pass\+1\)/);
+  assert.match(editor,/Loop continually/);
+  assert.match(editor,/repeatDelaySeconds/);
 });
 
 test("video renderer keeps a stable media session and supports live control",()=>{
@@ -25,6 +26,6 @@ test("video renderer keeps a stable media session and supports live control",()=
 
 test("automation video payload supports clip boundaries volume and rate",()=>{
   for(const token of ["startAtSeconds","endAtSeconds","playbackRate","volume","sessionId"])assert.ok(server.includes(token),token);
-  assert.match(controller,/Start at \(seconds\)/);
-  assert.match(controller,/Live Video Playback/);
+  assert.match(editor,/Start at \(seconds\)/);
+  assert.match(editor,/Mute video/);
 });

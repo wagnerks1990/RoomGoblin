@@ -5,20 +5,19 @@ const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const hotfix = fs.readFileSync(
-  path.join(__dirname, '..', 'public', 'shared', 'automation-hotfix.js'),
-  'utf8'
-);
+const controller = fs.readFileSync(path.join(__dirname, '..', 'public', 'controller', 'app.js'),'utf8');
+const branding = fs.readFileSync(path.join(__dirname, '..', 'public', 'shared', 'branding.js'),'utf8');
 
-test('linked automation list uses the first resolved occurrence time', () => {
-  assert.match(hotfix, /path==="\/api\/v1\/automations"&&method==="GET"/);
-  assert.match(hotfix, /event\.legacyTime=event\.time/);
-  assert.match(hotfix, /event\.time=primary\.time/);
+test('scheduled automation selectors use resolved occurrence time and time ordering', () => {
+  assert.match(controller, /function scheduledAutomationSortKey\(e\)/);
+  assert.match(controller, /resolvedOccurrences/);
+  assert.match(controller, /localeCompare/);
+  assert.match(controller, /syncScheduledAutomationSelectors/);
 });
 
-test('linked automation schedule description is derived from resolved occurrences', () => {
-  assert.match(hotfix, /window\.scheduleDescription=function patchedScheduleDescription/);
-  assert.match(hotfix, /event\?\.resolvedOccurrences/);
-  assert.match(hotfix, /originalScheduleDescription\(occ\)/);
-  assert.match(hotfix, /\.join\(" \| "\)/);
+test('linked schedule descriptions use resolved occurrences without a browser hotfix', () => {
+  assert.match(controller, /function scheduledAutomationDescription\(e\)/);
+  assert.match(controller, /scheduleDescription\(occ\)/);
+  assert.match(controller, /\.join\(" \| "\)/);
+  assert.doesNotMatch(branding, /automation-hotfix\.js/);
 });
