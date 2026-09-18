@@ -11,7 +11,7 @@ This audit separates browser/agent endpoints that should prefer the configured p
 3. **LAN HTTP remains an explicit fallback** where it materially improves recovery or preserves a validated local-media topology.
 4. Do not expose arbitrary local ports through Cloudflare merely to make them HTTPS.
 5. WebSocket clients must derive `wss://` from an HTTPS Hub origin and `ws://` only from an explicitly selected HTTP fallback.
-6. Never publish maintenance, Host Agent, Docker, ADB, Veyon WebAPI, MQTT, ESPHome native API, local AI, or device-agent management ports directly to the Internet.
+6. Never publish maintenance, Host Agent, Docker, ADB, Veyon WebAPI, MQTT, ESPHome native API, or device-agent management ports directly to the Internet.
 
 ## Runtime endpoint inventory
 
@@ -29,7 +29,6 @@ This audit separates browser/agent endpoints that should prefer the configured p
 | Native Host Agent | Unix socket | Root host-management bridge | **Never public** | Local socket only |
 | Veyon WebAPI | `127.0.0.1:11080` HTTP | RoomGoblin server-side Veyon control API | **Never publish raw WebAPI.** Browser Veyon controls already traverse RoomGoblin HTTPS/API. | Loopback only |
 | Veyon native service | TCP 11100 on managed LAN | Native Veyon master/service communication to endpoints | Not HTTP; do not route through Cloudflare. Keep LAN-native Veyon transport. | Managed LAN |
-| Veyon local AI | `127.0.0.1:3025` HTTP | Authenticated local image analysis | **Never public** | Loopback only |
 | Music Assistant UI/API | TCP 8095 HTTP | Music Assistant administration/API | Keep RoomGoblin backend configuration on local service address. Browser access needs a reviewed HTTPS proxy or dedicated protected hostname; do not simply expose raw 8095 under the existing RoomGoblin tunnel. | Direct LAN 8095 |
 | Music Assistant stream service | TCP 8097 normally | Audio streaming/discovery | Do not proxy through RoomGoblin HTTPS by default; LAN audio path | Managed LAN |
 | Music Assistant Sendspin | WS TCP 8927 | Hub-to-Music Assistant audio upstream | Keep local/LAN WS upstream; RoomGoblin relays authenticated display-side traffic | Local/LAN |
