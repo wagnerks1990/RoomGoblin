@@ -83,6 +83,8 @@ The temporary file is deleted after the installer exits. The durable connector t
 
 The native Host Agent remains systemd-sandboxed with `ProtectSystem=full`. Automatic connector provisioning therefore grants write access only to `/etc/cloudflared` and the pre-created `/etc/systemd/system/cloudflared-roomgoblin.service` file; it does not make the rest of `/etc` or `/usr` writable to the Host Agent.
 
+Package installation is deliberately outside that sandbox. `install.sh` and the verified application-update runner install or verify `cloudflared` as root before the Host Agent is refreshed. The Host Agent then invokes `configure-cloudflare-tunnel.sh --skip-install`, so it never writes `/usr/share/keyrings`, APT sources, dpkg state, or `/usr/bin`.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```
