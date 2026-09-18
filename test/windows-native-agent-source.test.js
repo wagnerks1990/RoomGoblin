@@ -45,9 +45,10 @@ test("native agent version is repository driven", () => {
   assert.match(build, /-p:InformationalVersion=\$roomGoblinVersion/);
 });
 
-test("native locked restores pin the self-contained runtime patch", () => {
+test("native locked restores pin runtime and allow Linux dependency restore", () => {
   const props = read("windows-agent/Directory.Build.props");
   assert.match(props, /<RestoreLockedMode[^>]*>true<\/RestoreLockedMode>/);
+  assert.match(props, /<EnableWindowsTargeting>true<\/EnableWindowsTargeting>/);
   assert.match(props, /<RuntimeFrameworkVersion>8\.0\.31<\/RuntimeFrameworkVersion>/);
 });
 

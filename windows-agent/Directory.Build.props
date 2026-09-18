@@ -3,6 +3,12 @@
     <!-- NuGet restores are reproducible and fail CI when lock metadata drifts. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+    <!--
+      These projects target Windows but dependency submission restores them on Linux.
+      Keep cross-platform restore enabled at the project layer so GitHub's generated
+      NuGet dependency-submission job does not require custom MSBuild arguments.
+    -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!-- Keep implicit self-contained runtime/ILLink inputs identical across SDK hosts. -->
     <RuntimeFrameworkVersion>8.0.31</RuntimeFrameworkVersion>
     <NuGetAudit>true</NuGetAudit>
