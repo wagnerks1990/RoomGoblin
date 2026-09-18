@@ -14,7 +14,7 @@ without changing running services. Never retag another revision to satisfy it.
 
 ## Web System Updates
 
-The administrator **System updates** page follows the trusted `main` branch, not semantic-version release tags. **Check GitHub** compares the installed Git commit with the latest merged commit on `wagnerks1990/RoomGoblin:main`. The GUI enables **Install Main Update** only when the installed checkout is a clean fast-forward ancestor of that exact main commit.
+The administrator **System updates** page follows the trusted `main` branch, not semantic-version release tags. **Check GitHub** compares the installed Git commit with the latest merged commit on `wagnerks1990/RoomGoblin:main`. The GUI enables **Install Main Update** only when the installed checkout is a fast-forward ancestor of that exact main commit and has no unsupported tracked source edits. The two legacy tracked device-configuration files retain the native migration exception.
 
 The browser never performs a Git pull itself and never treats a merge alone as deployable. Installation hands the exact 40-character main commit to the native `published` transaction. That transaction re-fetches trusted `origin/main`, re-verifies ancestry, waits for the exact `sha-<commit>` Hub and maintenance image pair, verifies image revision labels, creates the operational recovery backup after preflight, applies the selective component plan, and health-checks or rolls back. If CI images for the newest merge are still building, the install attempt fails closed before source/runtime mutation and can be retried after publication completes.
 
