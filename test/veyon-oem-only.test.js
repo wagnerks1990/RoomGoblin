@@ -27,6 +27,9 @@ test("Veyon stays on the OEM-only source boundary",()=>{
   const html=fs.readFileSync(path.join(root,"public/controller/veyon.html"),"utf8");
   assert.doesNotMatch(html,/freeFeatureTools|Free features and experimental tools|communityDialog|terminalDialog|startBrowserControl|controlCanvas/);
 
+  const controller=fs.readFileSync(path.join(root,"public/controller/veyon.js"),"utf8");
+  assert.doesNotMatch(controller,/startBrowserControl|veyonControlActive|pauseVeyonLive|resumeVeyonLive|closeVeyonControl/);
+
   const server=fs.readFileSync(path.join(root,"src/server.js"),"utf8");
   assert.doesNotMatch(server,/veyon-free-features|veyon-browser-sessions|\.\/veyon-ai|\/api\/v1\/veyon\/(?:wake|lesson-actions)|\/terminal\/:action|\/browser\/:action/);
 
