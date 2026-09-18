@@ -388,16 +388,15 @@ async function queueVisibleThumbnails(){
 }
 function startThumbnailTimer(){clearInterval(thumbTimer);thumbTimer=setInterval(queueVisibleThumbnails,2000)}
 function liveInterval(){return Math.max(250,Number($('liveRefreshMs').value||1000))}
-function startLiveTimer(){clearTimeout(liveTimer);if(liveId&&!window.veyonControlActive)liveTimer=setTimeout(refreshLive,liveFailures?Math.min(30000,2000*2**Math.min(4,liveFailures-1)):liveInterval())}
+function startLiveTimer(){clearTimeout(liveTimer);if(liveId)liveTimer=setTimeout(refreshLive,liveFailures?Math.min(30000,2000*2**Math.min(4,liveFailures-1)):liveInterval())}
 function openLive(id){
   closeLive();liveFailures=0;const c=computers.find(x=>x.id===id);liveId=id;
-  $('startBrowserControl').dataset.id=id;$('startBrowserControl').disabled=false;
   cancelThumbnailRequests();
   $('liveTitle').textContent=`Live View — ${c?.name||c?.ip||id}`;
   $('liveStatus').textContent='Connecting…';$('modal').classList.add('open');fitLive();refreshLive();
 }
 async function refreshLive(){
-  if(!liveId||liveController||window.veyonControlActive)return;
+  if(!liveId||liveController)return;
   if(!previewSurfaceVisible()){startLiveTimer();return}
   const generation=liveGeneration,controller=new AbortController();liveController=controller;
   try{
@@ -409,12 +408,8 @@ async function refreshLive(){
   }catch(error){if(generation===liveGeneration){liveFailures++;$('liveStatus').textContent=`${liveObjectUrl?'Last frame · ':''}${error.message}. Retrying…`}}
   finally{if(generation===liveGeneration){liveController=null;startLiveTimer()}}
 }
-window.pauseVeyonLive=()=>{window.veyonControlActive=true;clearTimeout(liveTimer);liveController?.abort();liveController=null};
-window.resumeVeyonLive=()=>{window.veyonControlActive=false;if(liveId){startLiveTimer();refreshLive()}};
 function closeLive(){
-  window.closeVeyonControl?.('Live view closed');
   liveGeneration++;liveId=null;clearTimeout(liveTimer);liveController?.abort();liveController=null;
-  $('startBrowserControl').dataset.id='';$('startBrowserControl').disabled=true;
   $('modal').classList.remove('open','fullscreen');if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
   $('liveImg').hidden=true;$('liveImg').removeAttribute('src');if(liveObjectUrl)URL.revokeObjectURL(liveObjectUrl);liveObjectUrl=null;
 }
