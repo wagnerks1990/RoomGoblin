@@ -18,11 +18,11 @@ The browser talks only to RoomGoblin. GitHub and maintenance credentials stay se
 
 ## Install an available update
 
-When apt offers a Veyon package update, **Install available update** starts RoomGoblin's existing guarded host package updater.
+When apt offers a Veyon package update, **Install available update** starts RoomGoblin's existing guarded host package updater. If the configured PPA is behind but the official Veyon release provides a checksum-pinned Ubuntu `amd64` DEB matching the appliance release, the same button uses the guarded official-package fallback.
 
 Because Veyon is a native host package, this operation can also install other pending Ubuntu/third-party package updates. The GUI asks for confirmation before starting it.
 
-RoomGoblin does not download or execute Veyon binaries directly from GitHub. The official release check is informational; apt remains the installation source.
+APT remains preferred. The fallback accepts only the exact `github.com/veyon/veyon/releases/download/...` Ubuntu package name for the detected appliance version and architecture, verifies GitHub's SHA-256 digest plus DEB package/version/architecture metadata, creates a recovery backup, and preserves native Veyon service recovery. Arbitrary URLs and mismatched packages are rejected.
 
 ## Native service recovery
 
