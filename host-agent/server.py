@@ -8,6 +8,7 @@ VERSION = "1.0.0-alpha.82"
 SOCKET_PATH = os.environ.get("CLASSROOM_HUB_HOST_AGENT_SOCKET", "/run/classroom-control-hub/host-agent.sock")
 TOKEN = os.environ.get("MAINTENANCE_TOKEN", "")
 APPLIANCE_MUTATION_LOCK = Path(os.environ.get("CLASSROOM_HUB_MUTATION_LOCK", "/run/classroom-control-hub-appliance-mutation.lock"))
+HOST_BACKUP_ROOT = Path(os.environ.get("HOST_BACKUP_DIR", "/opt/classroom-hub-backups")).resolve()
 EXPORT_FREEZE_GUARD = threading.Lock()
 EXPORT_FREEZE = {"token":None,"file":None,"timer":None}
 
@@ -472,7 +473,7 @@ def restart_roomgoblin_for_cloudflare():
     return {'ok':True,'scheduled':True,'message':'RoomGoblin restart scheduled so TRUST_PROXY_HOPS=1 can take effect.'}
 
 def migration_snapshots():
-    base=Path('/opt/classroom-control-hub-backups'); items=[]
+    base=HOST_BACKUP_ROOT; items=[]
     if base.exists():
         for x in base.glob('migration-*'):
             if not x.is_dir(): continue
@@ -488,7 +489,7 @@ def prune_migration_snapshots(keep):
     items=migration_snapshots(); removed=[]
     for x in items[keep:]:
         p=Path(x['path'])
-        if p.parent!=Path('/opt/classroom-control-hub-backups') or not p.name.startswith('migration-'): continue
+        if p.parent!=HOST_BACKUP_ROOT or not p.name.startswith('migration-'): continue
         shutil.rmtree(p); removed.append(x)
     return {"ok":True,"keep":keep,"removed":removed,"removedCount":len(removed),"remaining":len(items)-len(removed)}
 
@@ -517,7 +518,7 @@ def legacy_backups():
 
 
 LEGACY_BACKUP_PREFIX = "/opt/classroom-control-hub-backup-"
-LEGACY_ARCHIVE_ROOT = Path("/opt/classroom-control-hub-backups/legacy-archive")
+LEGACY_ARCHIVE_ROOT = HOST_BACKUP_ROOT / "legacy-archive"
 
 def validated_legacy_backup(value):
     raw=str(value or "")
