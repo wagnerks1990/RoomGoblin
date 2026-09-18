@@ -33,7 +33,7 @@ test("actual listener ports and IP bindings drive internal health URLs", () => {
   assert.equal(network.mainAppUrl({MAIN_APP_URL:"http://classroom-hub:3000", HUB_NETWORK_MODE:"host"}), "http://127.0.0.1:3000");
 });
 
-function addonHarness(t, exists = false) {
+function addonHarness(t, exists = false, owned = true) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-host-network-"));
   t.after(() => fs.rmSync(dir, {recursive:true, force:true}));
   const calls = [];
@@ -46,7 +46,7 @@ function addonHarness(t, exists = false) {
   vm.runInContext(read("maintenance-agent/extensions.js"), context);
   context.containerExists = async () => exists;
   context.mainAppPut = async (_id, settings) => ({resolved:settings});
-  context.hostAgentRequest = async args => {calls.push(Array.from(args)); return {ok:true, stdout:"test-container"};};
+  context.hostAgentRequest = async args => {calls.push(Array.from(args)); if(args[0]==="inspect"&&exists)return {ok:true,stdout:JSON.stringify([{Config:{Labels:owned?{"org.roomgoblin.deployment-ownership":"roomgoblin"}:{}},Mounts:[]}])}; return {ok:true, stdout:"test-container"};};
   return {context, calls, dir};
 }
 
@@ -97,6 +97,16 @@ def get_adapters():
   });
   assert.equal(result.status,0,result.stderr);
   assert.equal(result.stdout.trim(),"enp4s0,tailscale0,mystery0");
+});
+
+test("recreate refuses adopted containers with foreign persistent mounts", async t => {
+  const h = addonHarness(t, true, false);
+  await assert.rejects(
+    h.context.deployAddon("musicassistant", {}, true),
+    /Refusing to recreate an adopted container/
+  );
+  assert.ok(!h.calls.some(args => args[0] === "rm"));
+  assert.ok(!h.calls.some(args => args[0] === "run"));
 });
 
 test("explicit Music Assistant recreate bypasses dead-service authentication preflight", async t => {
