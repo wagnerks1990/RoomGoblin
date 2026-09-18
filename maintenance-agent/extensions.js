@@ -35,13 +35,14 @@ async function ensureIntegrationNetwork(){
     const result=await hostAgentRequest(["network","inspect",INTEGRATION_NETWORK],10000);
     const parsed=JSON.parse(result.stdout||"[]"),network=Array.isArray(parsed)?parsed[0]:null;
     if(network?.Driver!=="bridge")throw Error("RoomGoblin integration network exists but is not a bridge network");
+    if(network?.Labels?.["org.roomgoblin.network"]!=="integration")throw Error("RoomGoblin integration network exists without the expected ownership label");
     return network;
   }catch(error){
     if(!/No such network|not found|does not exist/i.test(String(error?.message||""))&&!/Docker operation failed/i.test(String(error?.message||"")))throw error;
     await hostAgentRequest(["network","create","--driver","bridge","--label",INTEGRATION_NETWORK_LABEL,INTEGRATION_NETWORK],30000);
     const result=await hostAgentRequest(["network","inspect",INTEGRATION_NETWORK],10000);
     const parsed=JSON.parse(result.stdout||"[]"),network=Array.isArray(parsed)?parsed[0]:null;
-    if(network?.Driver!=="bridge")throw Error("RoomGoblin integration bridge could not be verified");
+    if(network?.Driver!=="bridge"||network?.Labels?.["org.roomgoblin.network"]!=="integration")throw Error("RoomGoblin integration bridge could not be verified");
     return network;
   }
 }
