@@ -3,8 +3,10 @@
 RoomGoblin includes a GPL-2.0-only source port of
 `lellomele/veyon-internet-guard` for the exact pinned Veyon 4.11.2 pilot. The
 upstream release binary targets Veyon only through 4.10.x and must not be copied
-into 4.11.2. RoomGoblin builds the source as part of the matching Windows pilot
-instead. This component is Windows-only and is not present in the Linux artifact.
+into 4.11.2. RoomGoblin builds the source as part of the matching pilot instead.
+The Linux controller build advertises and dispatches the feature, but its worker
+backend always returns unavailable and never changes Linux networking. Firewall
+mutation remains Windows-endpoint-only.
 
 The Veyon controller page exposes **Block Internet — 15 minutes** and **Allow
 Internet now** for selected computers only when the exact `InternetGuard` feature

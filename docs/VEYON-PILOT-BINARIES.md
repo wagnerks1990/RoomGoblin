@@ -13,11 +13,12 @@ submodules, GPL terms, provenance, plugin/feature inventories and SHA-256 sums.
 Artifacts expire after 14 days; retain the source alongside any binary you share.
 No paid add-on or trial is activated. The Hub Docker images do not contain these
 native binaries and the production updater does not install them.
-The source archive also carries the Windows-only InternetGuard port, but the
-Linux artifact intentionally does not build or advertise that plugin. The
-RoomGoblinTerminal feature is compiled and discovered on Linux so its shared
-protocol code stays in the build gate; attempting to start it on a Linux worker
-returns unavailable. Actual CMD/PowerShell process launch remains Windows-only.
+The Linux artifact builds and advertises InternetGuard so the Linux controller
+can dispatch its feature messages to matching Windows endpoints. Its Linux
+worker backend always returns unavailable and never changes local networking;
+actual firewall mutation remains Windows-only. RoomGoblinTerminal follows the
+same split: its shared feature protocol is compiled and discovered on Linux,
+while CMD/PowerShell process launch remains Windows-only.
 
 ## Build locally
 
@@ -92,8 +93,9 @@ restore an earlier Veyon/Qt installation.
 
 ## Browser bridge
 
-The complete Linux build also contains RoomGoblinWebBridge and checks its
-ClipboardWrite, BrowserControl, ClipboardRead and Terminal feature inventories. See
+The complete Linux build also contains RoomGoblinWebBridge and InternetGuard and
+checks their ClipboardWrite, BrowserControl, ClipboardRead, Terminal and
+InternetGuard feature inventories. See
 [browser clipboard sending](VEYON-WEB-CLIPBOARD.md) and
 [browser remote control](VEYON-BROWSER-CONTROL.md) for those acceptance requirements.
 See [Veyon live terminal](VEYON-LIVE-TERMINAL.md) for the separate Windows build,

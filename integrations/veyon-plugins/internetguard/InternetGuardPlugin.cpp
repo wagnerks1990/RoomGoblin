@@ -3,7 +3,15 @@
 // Derived from lellomele/veyon-internet-guard for the RoomGoblin pilot.
 #include "InternetGuardPlugin.h"
 
+#ifdef Q_OS_WIN
 #include "WindowsFirewall.h"
+#else
+namespace WindowsFirewall
+{
+bool blockInternet() { return false; }
+bool allowInternet() { return false; }
+}
+#endif
 
 namespace
 {

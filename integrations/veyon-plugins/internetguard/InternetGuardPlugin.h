@@ -23,7 +23,7 @@ public:
 	{
 		return Plugin::Uid{QStringLiteral("a4b3c2d1-e5f6-7890-abcd-ef1234567890")};
 	}
-	QVersionNumber version() const override { return QVersionNumber(1, 3); }
+	QVersionNumber version() const override { return QVersionNumber(1, 4); }
 	QString name() const override { return QStringLiteral("InternetGuard"); }
 	QString description() const override
 	{
@@ -41,7 +41,6 @@ public:
 
 private:
 	enum class Command : qint32 { Block = 10, Allow = 11 };
-	Q_ENUM(Command)
 
 	bool isOwnFeature(Feature::Uid featureUid) const;
 	void blockInternet();

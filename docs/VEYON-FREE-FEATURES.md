@@ -147,7 +147,9 @@ build are separate from RoomGoblin's npm dependencies.
 For an operational native pilot, use the official [Veyon source/build
 instructions](https://github.com/veyon/veyon) to build/package the **entire matching
 native version** in disposable teacher and student VMs. Compiler, Qt and Veyon
-versions must match; Windows DLLs cannot come from the Linux build. Do not copy
+versions must match; Windows DLLs cannot come from the Linux build. The Linux
+InternetGuard provider exists only so the controller can dispatch the command;
+its firewall backend is unavailable on Linux. Do not copy
 these plugins into a different Veyon/Qt installation. Linux compilation is a CI gate;
 Windows packaging and real Windows endpoint interoperability remain acceptance
 work, not a claimed result. These sources are not a ready-made Windows installer.
