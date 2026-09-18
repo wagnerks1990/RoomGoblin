@@ -244,6 +244,14 @@ The controller is the appliance control plane. It inventories existing Docker co
 
 Do not silently recreate an externally discovered service during adoption. Destructive removal/recreation must remain explicit.
 
+### Media plane and persistent receiver playback
+
+Port `3000` is the control plane; port `3020` is the uploaded-media byte plane. Keep large MP4 range traffic off the control/API/WebSocket listener. The media plane remains authorization-gated through the control plane and uses `Cross-Origin-Resource-Policy: cross-origin` only so an already-authorized receiver on port 3000 can consume bytes from port 3020.
+
+Controller previews and media-library cards must not become extra MP4 decoders. Physical receivers are the playback authority. Start commanded receiver video in an autoplay-safe muted state, then apply requested audio after playback begins; fallback to muted playback instead of stopping when audible autoplay is blocked. Live play/pause/seek/volume/rate/restart must mutate the persistent session and not replace the media command.
+
+Production acceptance on 2026-09-18 verified healthy control/media endpoints, working playback and controls, multi-megabyte backpressure isolated on `:3020`, and responsive `:3000` control traffic. See `docs/MEDIA-PLANE.md` and `docs/ai/MEDIA-PLANE.md`.
+
 ### Automation action loops and media sessions
 
 Per-action looping must never be implemented by restarting an automation occurrence. `display.media` loop mode is receiver-native and preserves the active HTML5 media session. Live volume/seek/pause/rate changes use `display.media.control`; do not reissue `display.media` for control-only changes because replacing the media command restarts playback. Non-media actions may use bounded repeat only. Preserve Morning Announcements priority, Background Music reconciliation, scheduler occurrence identity and display recovery.
