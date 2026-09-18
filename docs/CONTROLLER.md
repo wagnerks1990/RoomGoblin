@@ -42,3 +42,9 @@ Additional actions may reuse the main event targets only when both actions use a
 An automated TV-power step with **All TVs**, **All HDMI TVs**, or **All HDBT TVs** uses the matching Pluto broadcast CEC command, the same command used by the Room controls. A selected set of TVs continues to use individual output commands.
 
 An explicit target selected on an additional action overrides the linked class's display defaults. Class defaults are used only when that cross-domain display action has no explicit target of its own.
+
+## Scheduled automation workspace
+
+Scheduled automations are selected from time-ordered dropdowns rather than expanded cards. Class-linked automations sort by earliest resolved occurrence. The action editor shows only controls relevant to the selected action and uploaded media type.
+
+Execution is pass-based: Run once participates only on pass 1, Loop X times participates through X passes, and Loop continually participates every pass until the occurrence ends or is superseded/cancelled.
