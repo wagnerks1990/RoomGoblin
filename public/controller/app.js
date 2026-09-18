@@ -1638,7 +1638,7 @@ function newAutomation(){
   currentEditTargets=[configuredDisplayTargets(false)[0]?.[0]||'all'];
   currentScheduleData={days:[1,2,3,4,5],scheduleMode:'weekly',alternatePhase:'A',anchorDate:'',includeDates:[]};
   autoScheduleMode.value='weekly';renderScheduleModeFields(currentScheduleData);renderAutomationFields({state:'on'});renderAutomationClassBinding();
-  automationEditorTitle.textContent='New Scheduled Event';autoEditorMsg.textContent='';
+  automationEditorTitle.textContent='New Scheduled Automation';autoEditorMsg.textContent='';syncScheduledAutomationSelectors('');
 }
 function readAutoPayloadFields(){
   const action=autoAction.value;
@@ -1737,7 +1737,7 @@ function editAutomation(id){
   currentEditTargets=[...(e.targets||[])];
   currentScheduleData={days:e.days||[1,2,3,4,5],scheduleMode:e.scheduleMode||'weekly',alternatePhase:e.alternatePhase||'A',anchorDate:e.anchorDate||'',includeDates:e.includeDates||[],dayType:e.dayType||'Any',cycleDays:e.cycleDays||[]};
   autoScheduleMode.value=currentScheduleData.scheduleMode;renderScheduleModeFields(currentScheduleData);renderAutomationFields(e.payload||{});renderAutomationClassBinding();renderTimerOverlayFields(e.timerOverlay||null);autoSteps=Array.isArray(e.actions)?JSON.parse(JSON.stringify(e.actions)):[];renderAutomationSteps();
-  automationEditorTitle.textContent='Edit Scheduled Event';
+  automationEditorTitle.textContent='Edit Scheduled Automation';syncScheduledAutomationSelectors(e.id);
 }
 function describeAutomation(e){
   const p=e.payload||{};
@@ -1827,20 +1827,46 @@ function renderSchedulerClock(){
     ? `Scheduler: <b>${esc(s.localTime)}</b> • Timezone: <b>${esc(s.timezone)}</b> • UTC: ${esc(s.utcTime)} • Catch-up: ${Number(s.catchupMinutes||0)} min`
     : 'Scheduler clock unavailable';
 }
+function scheduledAutomationSortKey(e){
+  const occurrences=Array.isArray(e?.resolvedOccurrences)?e.resolvedOccurrences.filter(Boolean):[];
+  const first=occurrences.slice().sort((a,b)=>String(a?.time||"").localeCompare(String(b?.time||"")))[0];
+  return String(first?.time||e?.time||"23:59");
+}
+function scheduledAutomationLabel(e){
+  return `${scheduledAutomationSortKey(e)} — ${e.name||"Unnamed"}${e.enabled===false?" (Disabled)":""}`;
+}
+function selectedScheduledAutomationId(){
+  return String(window.automationEventSelect?.value||window.automationEditorEventSelect?.value||autoId?.value||"");
+}
+function syncScheduledAutomationSelectors(preferredId=""){
+  const sorted=[...S.automations].sort((a,b)=>scheduledAutomationSortKey(a).localeCompare(scheduledAutomationSortKey(b))||String(a.name||"").localeCompare(String(b.name||"")));
+  const selected=preferredId||selectedScheduledAutomationId()||sorted[0]?.id||"";
+  const html=['<option value="">— New scheduled automation —</option>',...sorted.map(e=>`<option value="${esc(e.id)}" ${e.id===selected?'selected':''}>${esc(scheduledAutomationLabel(e))}</option>`)].join("");
+  if(window.automationEventSelect)automationEventSelect.innerHTML=html;
+  if(window.automationEditorEventSelect)automationEditorEventSelect.innerHTML=html;
+  if(window.automationEventSelect)automationEventSelect.value=selected;
+  if(window.automationEditorEventSelect)automationEditorEventSelect.value=selected;
+}
+function selectScheduledAutomation(id){
+  if(!id){newAutomation();syncScheduledAutomationSelectors("");return}
+  editAutomation(id);syncScheduledAutomationSelectors(id);
+}
+function selectedScheduledAutomation(){return S.automations.find(e=>e.id===selectedScheduledAutomationId())||null}
+function editSelectedAutomation(){const e=selectedScheduledAutomation();if(e)editAutomation(e.id)}
+function duplicateSelectedAutomation(){const e=selectedScheduledAutomation();if(e)duplicateAutomation(e.id)}
+function runSelectedAutomation(){const e=selectedScheduledAutomation();if(e)runAutomation(e.id)}
+function deleteSelectedAutomation(){const e=selectedScheduledAutomation();if(e)deleteAutomation(e.id,e.name)}
 function renderAutomationList(){
-  if(!S.automations.length){automationList.innerHTML='<div class="muted">No scheduled events yet.</div>';return}
-  const sorted=[...S.automations].sort(compareAutomationsByPhaseTime);
-  automationList.innerHTML=sorted.map(e=>{
-    const last=e.lastRun?`${e.lastRun.ok?'✓':'✕'} ${new Date(e.lastRun.at).toLocaleString()}${e.lastRun.message?' — '+esc(e.lastRun.message):''}`:'Never';
-    return `<div class="card" style="box-shadow:none;margin:8px 0">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-        <div><b>${esc(e.time)} — ${esc(e.name)}</b> ${e.enabled?'<span class="pill">Enabled</span>':'<span class="pill">Disabled</span>'}
-        <div class="muted">${esc(scheduleDescription(e))} • ${esc(e.action)} • ${esc((e.targets||[]).join(', '))}</div>
-        <div>${esc(describeAutomation(e))}</div><div class="muted">Last run: ${last}</div></div>
-        <div class="toolbar"><button onclick="editAutomation(${inlineJsArg(e.id)})">Edit</button><button onclick="duplicateAutomation(${inlineJsArg(e.id)})">Duplicate</button><button onclick="runAutomation(${inlineJsArg(e.id)})">Run Now</button><button class="danger" onclick="deleteAutomation(${inlineJsArg(e.id)},${inlineJsArg(e.name)})">Delete</button></div>
-      </div>
-    </div>`;
-  }).join('');
+  if(!S.automations.length){automationList.innerHTML='<div class="muted">No scheduled automations yet.</div>';syncScheduledAutomationSelectors("");return}
+  const sorted=[...S.automations].sort((a,b)=>scheduledAutomationSortKey(a).localeCompare(scheduledAutomationSortKey(b))||String(a.name||"").localeCompare(String(b.name||"")));
+  syncScheduledAutomationSelectors(autoId?.value||"");
+  const e=sorted.find(x=>x.id===selectedScheduledAutomationId())||sorted[0];
+  if(!e){automationList.innerHTML='<div class="muted">No scheduled automations yet.</div>';return}
+  const last=e.lastRun?`${e.lastRun.ok?'✓':'✕'} ${new Date(e.lastRun.at).toLocaleString()}${e.lastRun.message?' — '+esc(e.lastRun.message):''}`:'Never';
+  automationList.innerHTML=`<div><b>${esc(scheduledAutomationLabel(e))}</b> ${e.enabled?'<span class="pill">Enabled</span>':'<span class="pill">Disabled</span>'}</div>
+    <div class="muted">${esc(scheduleDescription(e))}</div>
+    <div>${esc(describeAutomation(e))}</div>
+    <div class="muted">Last run: ${last}</div>`;
 }
 async function loadAutomationScenes(alias){
   try{
