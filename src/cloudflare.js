@@ -206,16 +206,22 @@ class CloudflareManager{
     try{return {ok:true,result:await ctx.client.patch(`/zones/${ctx.zone.id}/settings/${id}`,{value})}}
     catch(error){return {ok:false,error:error.message}}
   }
+  async ensureAccessForHostname(ctx,hostname,emailDomainValue,label="RoomGoblin"){
+    hostname=dnsName(hostname,"Access hostname");
+    const allowed=emailDomain(emailDomainValue);
+    if(!allowed)throw failure(`${label} public access requires an allowed email domain`,409);
+    const apps=await ctx.client.get(`/accounts/${ctx.accountId}/access/apps?per_page=100`);
+    let app=(Array.isArray(apps)?apps:[]).find(x=>String(x.domain||"").toLowerCase()===hostname),created=false;
+    if(!app){app=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps`,{name:`${label} - ${hostname}`,domain:hostname,type:"self_hosted",session_duration:"12h",app_launcher_visible:false});created=true}
+    const policies=await ctx.client.get(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies?per_page=100`);
+    const pname=`${label} allow @${allowed}`;
+    let policy=(Array.isArray(policies)?policies:[]).find(x=>x.name===pname);
+    if(!policy)policy=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies`,{name:pname,decision:"allow",precedence:1,include:[{email_domain:{domain:allowed}}]});
+    return {enabled:true,app,policy,created};
+  }
   async ensureAccess(ctx,settings){
     if(!settings.accessEnabled)return {enabled:false};
-    const apps=await ctx.client.get(`/accounts/${ctx.accountId}/access/apps?per_page=100`);
-    let app=(Array.isArray(apps)?apps:[]).find(x=>String(x.domain||"").toLowerCase()===settings.hostname),created=false;
-    if(!app){app=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps`,{name:`RoomGoblin — ${settings.hostname}`,domain:settings.hostname,type:"self_hosted",session_duration:"12h",app_launcher_visible:false});created=true}
-    const policies=await ctx.client.get(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies?per_page=100`);
-    const pname=`RoomGoblin allow @${settings.accessEmailDomain}`;
-    let policy=(Array.isArray(policies)?policies:[]).find(x=>x.name===pname);
-    if(!policy)policy=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies`,{name:pname,decision:"allow",precedence:1,include:[{email_domain:{domain:settings.accessEmailDomain}}]});
-    return {enabled:true,app,policy,created};
+    return this.ensureAccessForHostname(ctx,settings.hostname,settings.accessEmailDomain,"RoomGoblin");
   }
   async provision(input={}){
     let settings=this.save(input);
