@@ -1,7 +1,7 @@
 "use strict";
 
 function parseVersion(value){
-  const m=String(value||"").trim().match(/v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  const m=String(value||"").trim().match(/^(?:\d+:)?v?(\d+)\.(\d+)\.(\d+)(?:[.+~:-].*)?$/);
   return m?{text:`${m[1]}.${m[2]}.${m[3]}`,parts:m.slice(1,4).map(Number)}:null;
 }
 function compareVersions(a,b){

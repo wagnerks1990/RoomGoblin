@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Veyon package-version normalization
+
+- Normalize Debian/Ubuntu Veyon package versions such as `4.11.3.0-ubuntu.26.04` to the upstream release version `4.11.3` for lifecycle display and comparisons.
+- Add regression coverage for Ubuntu package suffixes, distro revisions, and Debian epochs so the lifecycle UI no longer reports `11.3.0` after installing Veyon 4.11.3.
+
+
 ### Veyon lifecycle official-package fallback
 
 - Fix the Veyon lifecycle install bridge to call the actual guarded host-update endpoint.

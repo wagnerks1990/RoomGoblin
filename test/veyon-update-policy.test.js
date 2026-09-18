@@ -10,6 +10,9 @@ const root=path.join(__dirname,"..");
 
 test("Veyon release versions compare semantically",()=>{
   assert.equal(parseVersion("v4.11.2").text,"4.11.2");
+  assert.equal(parseVersion("4.11.3.0-ubuntu.26.04").text,"4.11.3");
+  assert.equal(parseVersion("4.11.0-1~resolute").text,"4.11.0");
+  assert.equal(parseVersion("1:4.11.3.0-ubuntu.26.04").text,"4.11.3");
   assert.equal(compareVersions("4.11.2","4.11.0")>0,true);
   assert.equal(compareVersions("4.10.4","4.11.0")<0,true);
   assert.equal(compareVersions("4.11.2","4.11.2"),0);
@@ -67,7 +70,7 @@ test("startup loads DHCP identity and lifecycle bridges before the server",()=>{
 test("installed Veyon version survives an empty apt upgrade list",()=>{
   const {installedVeyonVersion}=require('../src/veyon-update-policy');
   assert.equal(parseAptVeyon([]).installedVersion,'');
-  assert.deepEqual(installedVeyonVersion([{name:'veyon',version:'4.11.2-1'}]),{installedVersion:'4.11.2',mixedInstalledVersions:false,installedVersions:['4.11.2']});
+  assert.deepEqual(installedVeyonVersion([{name:'veyon',version:'4.11.3.0-ubuntu.26.04'}]),{installedVersion:'4.11.3',mixedInstalledVersions:false,installedVersions:['4.11.3']});
   assert.equal(installedVeyonVersion([{name:'veyon-service',version:'4.11.2'},{name:'veyon-master',version:'4.9.7'}]).mixedInstalledVersions,true);
   assert.equal(installedVeyonVersion([]).installedVersion,null);
   assert.equal(installedVeyonVersion([{name:'unrelated',version:'4.9.7'}]).installedVersion,null);
