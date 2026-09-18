@@ -141,6 +141,45 @@ internal sealed partial class AgentWorker
             SqliteHistory: true);
     }
 
+    private async Task<(ClientWebSocket Socket, Uri Uri)> ConnectToHubAsync(
+        AgentConfig config,
+        CancellationToken ct)
+    {
+        Exception? lastError = null;
+        foreach (var hub in HubCandidates(config))
+        {
+            var uri = BuildWebSocketUri(hub);
+            var socket = new ClientWebSocket();
+            socket.Options.KeepAliveInterval = HeartbeatInterval;
+            try
+            {
+                _logger.LogInformation(
+                    "Connecting RoomGoblin native agent to {Hub}.",
+                    uri.GetLeftPart(UriPartial.Authority));
+                await socket.ConnectAsync(uri, ct);
+                return (socket, uri);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                socket.Dispose();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                socket.Dispose();
+                lastError = ex;
+                _logger.LogWarning(
+                    ex,
+                    "RoomGoblin agent could not connect to {Hub}; trying the next configured origin.",
+                    uri.GetLeftPart(UriPartial.Authority));
+            }
+        }
+
+        throw new InvalidOperationException(
+            "RoomGoblin agent could not connect to any configured Hub origin.",
+            lastError);
+    }
+
     private static IReadOnlyList<string> HubCandidates(AgentConfig config)
     {
         var values = new[] { config.HubUrl, config.FallbackHubUrl };
