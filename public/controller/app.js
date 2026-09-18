@@ -1638,7 +1638,7 @@ function newAutomation(){
   currentEditTargets=[configuredDisplayTargets(false)[0]?.[0]||'all'];
   currentScheduleData={days:[1,2,3,4,5],scheduleMode:'weekly',alternatePhase:'A',anchorDate:'',includeDates:[]};
   autoScheduleMode.value='weekly';renderScheduleModeFields(currentScheduleData);renderAutomationFields({state:'on'});renderAutomationClassBinding();
-  automationEditorTitle.textContent='New Scheduled Automation';autoEditorMsg.textContent='';syncScheduledAutomationSelectors('');
+  automationEditorTitle.textContent='New Scheduled Automation';autoEditorMsg.textContent='';syncScheduledAutomationSelectors('');if(window.automationList)automationList.innerHTML='<div class="muted">Creating a new scheduled automation.</div>';
 }
 function readAutoPayloadFields(){
   const action=autoAction.value;
