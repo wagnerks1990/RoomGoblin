@@ -22,6 +22,23 @@ def patch_linux_string_lifetime(destination):
     path.write_text(content.replace(original, replacement))
 
 
+def patch_gcc15_qt_atomic_false_positive(destination):
+    # GCC 15 can diagnose QtConcurrent's inlined QAtomicInteger increment as a
+    # zero-sized destination under -O3. Keep the warning visible, but do not let
+    # this compiler-specific false positive defeat Veyon's target-wide -Werror.
+    path = Path(destination) / 'core/CMakeLists.txt'
+    anchor = 'target_compile_options(veyon-core PRIVATE -Wno-parentheses)'
+    replacement = '''target_compile_options(veyon-core PRIVATE -Wno-parentheses)
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+	target_compile_options(veyon-core PRIVATE -Wno-error=stringop-overflow)
+endif()'''
+    content = path.read_text()
+    if content.count(anchor) != 1:
+        raise RuntimeError('Pinned GCC 15 compatibility patch does not match source')
+    path.write_text(content.replace(anchor, replacement))
+
+
 
 def patch_browser_api(destination):
     base = Path(destination) / 'plugins/webapi'
@@ -106,6 +123,7 @@ def prepare(destination):
         raise RuntimeError('Upstream source identity mismatch')
     subprocess.run(['git', '-C', str(destination), 'submodule', 'update', '--init', '--recursive'], check=True)
     patch_linux_string_lifetime(destination)
+    patch_gcc15_qt_atomic_false_positive(destination)
     # fb_update_sent can return early in no-framebuffer mode without setting
     # its output argument. Initialize the caller's counter for that path.
     input_path = destination / '3rdparty/x11vnc/src/userinput.c'
