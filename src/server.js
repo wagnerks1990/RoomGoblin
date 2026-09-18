@@ -5385,6 +5385,9 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
+      const id=occurrenceId(event,dateKey,event.time);
+      const latest=[...automationRunLedger.read().runs].reverse().find(run=>run.occurrenceId===id);
+      if(latest?.status==="cancelled")continue;
       candidates.push({storedEvent,event});
     }
   }
@@ -7851,9 +7854,11 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
     storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(runResult)}};
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
   }catch(err){
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:false,message:err.message};
-    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"failed",schedulerTime:schedulerClock.now().toISOString(),error:err.message});
-    audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
+    const cancelled=err.code==="AUTOMATION_CANCELLED";
+    const reason=cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
+    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:cancelled,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:{})};
+    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:cancelled?"cancelled":"failed",schedulerTime:schedulerClock.now().toISOString(),...(cancelled?{reason}:{error:err.message})});
+    audit({kind:cancelled?"automation.cancelled":"automation.error",automationId:storedEvent.id,name:storedEvent.name,...(cancelled?{reason}:{error:err.message})});
   }finally{
     storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
   }
