@@ -26,6 +26,8 @@ const ADDONS={
 function hostAgentJson(method,pathName,body=null,timeoutMs=15000){return new Promise((resolve,reject)=>{const raw=body==null?null:Buffer.from(JSON.stringify(body));const req=http.request({socketPath:HOST_AGENT_SOCKET,path:pathName,method,headers:{"x-maintenance-token":TOKEN,...(raw?{"content-type":"application/json","content-length":raw.length}:{})}},res=>{const chunks=[];res.on("data",c=>chunks.push(c));res.on("end",()=>{const text=Buffer.concat(chunks).toString("utf8");let value;try{value=JSON.parse(text||"{}")}catch{value={error:text}}if((res.statusCode||500)>=400||value.ok===false)return reject(Error(value.error||`Host Agent HTTP ${res.statusCode}`));resolve(value)})});req.on("error",reject);req.setTimeout(timeoutMs,()=>req.destroy(Error("Host Agent request timed out")));if(raw)req.write(raw);req.end()})}
 function hostAgentRequest(args,timeoutMs=180000){return hostAgentJson("POST","/docker/exec",{args,cwd:""},timeoutMs)}
 async function containerExists(name){try{await hostAgentRequest(["inspect",name],10000);return true}catch{return false}}
+async function containerInspect(name){const result=await hostAgentRequest(["inspect",name],10000);const parsed=JSON.parse(result.stdout||"[]");if(!Array.isArray(parsed)||!parsed[0])throw Error("Container inspection returned no data");return parsed[0]}
+function roomGoblinOwnsContainer(info){return info?.Config?.Labels?.["org.roomgoblin.deployment-ownership"]==="roomgoblin"}
 async function hostServices(){try{const body=await hostAgentJson("GET","/services",null,10000);return Array.isArray(body.items)?body.items:Array.isArray(body.services)?body.services:[]}catch{return []}}
 function nativeServicePresent(unit){
   if(!unit)return false;
@@ -49,6 +51,56 @@ function bounded(value,fallback,min,max){const n=Number(value);return Number.isF
 function managedPath(name){const value=path.join(SERVICES_ROOT,name);fs.mkdirSync(value,{recursive:true,mode:0o750});return value}
 function markRoomGoblinManaged(name){const marker=path.join(managedPath(name),".roomgoblin-managed");if(!fs.existsSync(marker))fs.writeFileSync(marker,"roomgoblin-managed-v1\n",{mode:0o660,flag:"wx"})}
 function cleanUrl(value,fallback){const raw=String(value||fallback).trim().replace(/\/$/,"");let u;try{u=new URL(raw)}catch{throw Error("Service URL must be a valid HTTP or HTTPS URL")}if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw Error("Service URL must use HTTP(S) without embedded credentials");return raw}
+
+function ensureMusicAssistantNetworkCompat(base){
+  const compat=path.join(base,".roomgoblin-compat"),target=path.join(compat,"sitecustomize.py");
+  fs.mkdirSync(compat,{recursive:true,mode:0o750});
+  const script=`"""RoomGoblin compatibility guard for Music Assistant host networking.
+
+Music Assistant 2.9/2.10 enumerates explicit IPv4 adapters whenever a global
+IPv6 address is present. Linux Docker bridges can retain addresses while their
+operstate is down; passing those dead addresses to python-zeroconf can abort
+startup with OSError(19). Filter only adapters confirmed down and fail open for
+unknown/unreadable interface state.
+"""
+import os
+
+try:
+    import ifaddr
+
+    _roomgoblin_get_adapters = ifaddr.get_adapters
+    _roomgoblin_sys_class_net = os.environ.get(
+        "ROOMGOBLIN_SYS_CLASS_NET", "/sys/class/net"
+    )
+
+    def _roomgoblin_live_adapters():
+        adapters = _roomgoblin_get_adapters()
+        live = []
+        for adapter in adapters:
+            name = getattr(adapter, "nice_name", None) or getattr(adapter, "name", "")
+            if not name or "/" in name:
+                live.append(adapter)
+                continue
+            try:
+                with open(
+                    os.path.join(_roomgoblin_sys_class_net, name, "operstate"),
+                    encoding="ascii",
+                ) as handle:
+                    state = handle.read().strip().lower()
+            except OSError:
+                state = ""
+            if state == "down":
+                continue
+            live.append(adapter)
+        return live
+
+    ifaddr.get_adapters = _roomgoblin_live_adapters
+except Exception:
+    pass
+`;
+  fs.writeFileSync(target,script,{mode:0o640});
+  return compat;
+}
 
 async function saveMusicAssistantSettings(settings={}){
   const url=cleanUrl(settings.url,MUSIC_ASSISTANT_URL),body={url,tvBridgeEnabled:true};
@@ -83,7 +135,8 @@ async function deployAddon(id,settings={},recreate=false){
     throw Error("Native veyon-webapi.service was not found. Install/configure native Veyon on the appliance host before enabling this integration.");
   }
   const exists=await containerExists(addon.container);
-  if(id==="musicassistant"&&exists){const status=await saveMusicAssistantSettings(settings);if(!recreate)return {ok:true,id,adopted:true,managed:true,container:addon.container,image:addon.image,message:`Existing Music Assistant adopted and authenticated successfully (${status.players?.length||0} player(s) discovered).`}}
+  if(id==="musicassistant"&&exists&&recreate){const info=await containerInspect(addon.container);if(!roomGoblinOwnsContainer(info))throw Error("Refusing to recreate an adopted Music Assistant container because its persistent /data mount may be outside RoomGoblin managed storage. Migrate the service data into the managed services root first, then deploy a RoomGoblin-owned container.");}
+  if(id==="musicassistant"&&exists&&!recreate){const status=await saveMusicAssistantSettings(settings);return {ok:true,id,adopted:true,managed:true,container:addon.container,image:addon.image,message:`Existing Music Assistant adopted and authenticated successfully (${status.players?.length||0} player(s) discovered).`}}
   let resolved=settings||{};
   if(id!=="musicassistant"){const saved=await mainAppPut(id,settings);resolved=saved.resolved||resolved}
   if(exists&&!recreate)return {ok:true,id,adopted:true,managed:true,container:addon.container,image:addon.image,message:"Existing container adopted by RoomGoblin without recreation."};
@@ -102,7 +155,7 @@ async function deployAddon(id,settings={},recreate=false){
     args.push("-e",`GOVEE_MQTT_HOST=${serviceHost(resolved.mqttHost||settings.mqttHost||"127.0.0.1",["mosquitto"],"host")}`,"-e",`GOVEE_MQTT_PORT=${cleanPort(resolved.mqttPort||settings.mqttPort,1883)}`,"-e",`TZ=${resolved.timezone||settings.timezone||process.env.TZ||"UTC"}`);
     for(const [env,key] of [["GOVEE_MQTT_USER","mqttUsername"],["GOVEE_MQTT_PASSWORD","mqttPassword"],["GOVEE_API_KEY","apiKey"],["GOVEE_EMAIL","email"],["GOVEE_PASSWORD","password"]]){const value=resolved[key]||settings[key];if(value)args.push("-e",`${env}=${value}`)}
   }else if(id==="musicassistant"){
-    const base=managedPath("music-assistant");args.push("-v",`${base}:/data`,`-e`,`LOG_LEVEL=${String(settings.logLevel||"info")}`);
+    const base=managedPath("music-assistant"),compat=ensureMusicAssistantNetworkCompat(base);args.push("-v",`${base}:/data`,"-e",`PYTHONPATH=/data/${path.basename(compat)}`,"-e",`LOG_LEVEL=${String(settings.logLevel||"info")}`);
   }
   args.push(addon.image);
   if(exists)await hostAgentRequest(["rm","-f",addon.container],30000);

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Music Assistant host-network recovery
+
+- Fix Music Assistant startup on hosts that combine Tailscale/global IPv6 with addressed but link-down Docker bridges by filtering only interfaces whose Linux `operstate` is explicitly `down` before Music Assistant Zeroconf enumeration.
+- Keep host networking, LAN multicast discovery, Tailscale IPv6 and persistent Music Assistant data intact; fail open for unreadable/unknown interfaces.
+- Allow an explicit RoomGoblin-owned Music Assistant recreate to repair an offline/dead API instead of requiring successful authentication before container replacement; refuse destructive recreate of foreign/adopted containers until their persistent data is migrated into managed storage; add regression coverage and synchronized host-network/AI documentation.
+
 ### Community Veyon web pilots
 
 - Allow host-native Ubuntu 26.04/GCC 15 pilot builds to pass the QtConcurrent
