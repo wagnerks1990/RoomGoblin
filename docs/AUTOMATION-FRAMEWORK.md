@@ -37,7 +37,7 @@ Scheduled occurrences are durably claimed before execution. When a newer schedul
 
 Editing, disabling, or deleting a running automation also invalidates its revision/configuration and causes the runner to stop at the next cancellation-aware checkpoint.
 
-Linked-class continuous automations stop cleanly when the resolved class occurrence ends.
+Linked-class continuous automations stop cleanly when the resolved class occurrence ends. Startup reconciliation and operator Resume also recover continuous occurrences that are still currently applicable, even when their original start time is outside the normal scheduler catch-up window.
 
 ## Manual execution
 
