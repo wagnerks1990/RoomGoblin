@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### HTTPS/public-origin endpoint migration
+
+- Add a repository-wide endpoint inventory covering RoomGoblin browser/API/WebSocket traffic, Windows agents, displays/media plane, Music Assistant, Veyon, MQTT, ESPHome, Android management, maintenance/Host Agent and auxiliary web UIs.
+- Prefer the recorded managed Cloudflare HTTPS origin for new and existing RoomGoblin Windows agents while retaining an explicit LAN origin fallback; HTTPS automatically upgrades the long-lived control channel to WSS and native self-update also follows primary-to-fallback origin selection.
+- Keep Veyon WebAPI/native endpoint traffic private: browser Veyon controls continue through the RoomGoblin HTTPS Controller while the Hub talks to loopback Veyon WebAPI and LAN-native Veyon services.
+- Add an allowlisted protected Music Assistant HTTPS resource on the managed Cloudflare tunnel using a separate hostname routed to local port 8095, mandatory Cloudflare Access policy, ownership-aware DNS/Access cleanup, and a separate persisted browser URL while backend/API and Sendspin/streaming paths remain local/LAN.
+- Stop browser helpers from translating loopback Music Assistant into `http://<public-RoomGoblin-host>:8095`; HTTPS sessions require the explicit protected browser URL, while LAN HTTP remains a deliberate fallback.
+- Preserve physical-display HTTP/media-plane behavior until a reviewed HTTPS design retains the dedicated port-3020 large-media path; no privileged local control port is auto-published merely for URL uniformity.
+
+
 ### Managed Cloudflare remote HTTPS
 
 - Expand the existing host-side Cloudflare Tunnel pilot into first-class Setup and Controller provisioning for an optional remotely managed tunnel, proxied DNS hostname, HTTPS rewrites/enforcement, HTTP/3, Brotli, and optional Cloudflare Access.
