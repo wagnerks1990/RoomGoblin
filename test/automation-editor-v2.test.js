@@ -15,7 +15,9 @@ test("controller loads the unified scheduled automation editor",()=>{
   assert.match(editor,/returns to Action 1/);
   assert.match(editor,/ACTION \$\{i\+1\}/);
   assert.match(html,/automationEventSelect/);
-  assert.match(html,/automationEditorEventSelect/);
+  assert.doesNotMatch(html,/automationEditorEventSelect/);
+  assert.match(html,/autoClassModal/);
+  assert.match(html,/Edit Links/);
 });
 
 test("every action exposes pass participation controls",()=>{
@@ -53,4 +55,16 @@ test("legacy primary widgets are hidden rather than exposed as a second editor",
   assert.match(editor,/autoTargets/);
   assert.match(editor,/autoPayload/);
   assert.match(editor,/style\.display="none"/);
+});
+
+test("class schedule links stay compact until explicitly edited",()=>{
+  const app=read("public/controller/app.js");
+  const html=read("public/controller/index.html");
+  assert.match(html,/Linked Class Schedule\(s\)/);
+  assert.match(html,/autoClassSummary/);
+  assert.match(html,/Save Class Links/);
+  assert.match(app,/openAutomationClassLinker/);
+  assert.match(app,/closeAutomationClassLinker/);
+  assert.match(app,/automationClassSelectionSnapshot/);
+  assert.match(app,/updateAutomationClassLinkSummary/);
 });
