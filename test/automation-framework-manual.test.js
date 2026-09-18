@@ -33,3 +33,10 @@ test("Test Now and persisted run summaries expose action-level failures",()=>{
   assert.match(server,/failures:automationRunFailures\(runResult\)/);
   assert.match(controller,/function automationRunFailureSummary\(result=\{\}\)/);
 });
+
+test("continuous scheduled automations recover after restart or operator resume",()=>{
+  assert.match(server,/function recoverContinuousAutomationOccurrences\(reason="scheduler-recovery"\)/);
+  assert.match(server,/sequenceHasContinuousActions\(automationActionSequence\(event\)\)/);
+  assert.match(server,/continuousRecovery=await recoverContinuousAutomationOccurrences\("operator-resume"\)/);
+  assert.match(server,/recoverContinuousAutomationOccurrences\("startup-reconcile"\)/);
+});
