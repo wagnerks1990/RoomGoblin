@@ -20,6 +20,12 @@ plugins with the installed CLI. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
 
+For host-native Ubuntu 26.04 builds, the pinned preparer narrowly demotes GCC
+15's QtConcurrent atomic `stringop-overflow` false positive from an error to a
+warning on `veyon-core` only. It does not disable the diagnostic or weaken
+`-Werror` for other warnings. The produced binary remains tied to that host ABI
+and is not interchangeable with the Ubuntu 24.04 CI artifact.
+
 Browser adapters for chat and restricted file browsing are described in
 [Community web tools](Veyon-Community-Web.md). Remote input, monitor view and
 clipboard read are described in [Browser control](Veyon-Browser-Control). They
