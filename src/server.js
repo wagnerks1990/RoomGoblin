@@ -1250,16 +1250,6 @@ const AUTOMATION_ACTIONS=new Set([
   "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
   "govee.power","govee.color","govee.brightness","govee.temp","govee.scene"
 ]);
-const AUTOMATION_EXECUTION_MODES=new Set(["once","repeat","loop"]);
-function automationExecutionMode(value,action){
-  const mode=String(value||"once").trim().toLowerCase();
-  if(!AUTOMATION_EXECUTION_MODES.has(mode))return "once";
-  // Continuous looping is intentionally native only for media. Reissuing power,
-  // routing, lighting or clear commands forever is unsafe and unnecessary.
-  return mode==="loop"&&action!=="display.media"?"repeat":mode;
-}
-function automationRepeatCount(value){const n=Number(value);return Number.isInteger(n)?Math.max(1,Math.min(100,n)):2}
-function automationRepeatDelaySeconds(value){const n=Number(value);return Number.isFinite(n)?Math.max(0,Math.min(3600,n)):0}
 function finiteTimerOverlayNumber(value,{name,fallback,min,max}){
   const candidate=value===undefined||value===null||value===""?fallback:Number(value);
   if(!Number.isFinite(candidate))throw new Error(`Timer overlay ${name} must be a finite number`);
@@ -1769,7 +1759,12 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     return !Number.isFinite(end)||schedulerClock.now().getTime()<end;
   }
   function assertRunActive(){
-    if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
+    if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId)){
+      const reason=automationCancellationReasons.get(event._occurrenceId)||"cancelled";
+      throw Object.assign(new Error(`Automation run ${reason}`),{code:"AUTOMATION_CANCELLED",reason});
+    }
+    if(!manual&&!automationSchedulerEnabled)throw Object.assign(new Error("Automation scheduler paused"),{code:"AUTOMATION_SCHEDULER_PAUSED"});
+    if(!manual&&isAutomationSuppressed(schedulerClock.now()).blocked)throw Object.assign(new Error("Automation suppressed by current school calendar state"),{code:"AUTOMATION_SUPPRESSED"});
     if(!manual&&event.id){
       const current=classroomAutomations.events.find(item=>item.id===event.id);
       if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was active"),{code:"AUTOMATION_CONFIGURATION_CHANGED"});
@@ -5339,9 +5334,29 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
     const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored].filter(event=>automationMatchesDate(event,now).match);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
-      const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;if(scheduled>nowMinutes)continue;
-      const steps=[{action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{}},...(event.actions||[])];let elapsed=0;
-      for(const step of steps){elapsed+=Math.max(0,Number(step.delaySeconds||0));const domain=automationTargetDomain(step.action);if(!["tv-power","lighting"].includes(domain))continue;const effectiveMinute=scheduled+Math.floor(elapsed/60);if(effectiveMinute>nowMinutes)continue;let targets=(step.useEventTargets!==false&&domain===automationTargetDomain(event.action))?(event.targets||[]):(step.targets||[]);const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;for(const target of resolved){const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2]))winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target})}}
+      const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;
+      if(scheduled>nowMinutes)continue;
+      const steps=automationActionSequence(event),first=steps[0]||{},eventDomain=automationTargetDomain(first.action);
+      let elapsed=0;
+      for(let index=0;index<steps.length;index++){
+        const step=steps[index]||{};
+        elapsed+=Math.max(0,Number(step.delaySeconds||0));
+        const domain=automationTargetDomain(step.action);
+        if(!["tv-power","lighting"].includes(domain))continue;
+        const effectiveMinute=scheduled+Math.floor(elapsed/60);
+        if(effectiveMinute>nowMinutes)continue;
+        let targets=[];
+        if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
+        else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
+        else targets=defaultAutomationActionTargets(step.action);
+        const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;
+        for(const target of resolved){
+          const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
+          if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2])){
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target});
+          }
+        }
+      }
     }
   }
   return [...winners.values()];
@@ -5362,7 +5377,7 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
 }
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
-app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString()});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
+app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"operator-cancelled");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"operator-cancelled"});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
 app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
@@ -7769,6 +7784,7 @@ let automationSchedulerBusy=false;
 const automationRunningOccurrences=new Map();
 const automationRunningOccurrenceMeta=new Map();
 const automationCancelledOccurrences=new Set();
+const automationCancellationReasons=new Map();
 function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
   const resources=new Set(automationResourceKeys(event));
   if(!resources.size)return [];
@@ -7776,7 +7792,7 @@ function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(runningId===newOccurrenceId)continue;
     if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
-    automationCancelledOccurrences.add(runningId);
+    automationCancelledOccurrences.add(runningId);automationCancellationReasons.set(runningId,"superseded");
     automationRunLedger.record({occurrenceId:runningId,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"superseded"});
     cancelled.push(runningId);
   }
@@ -7788,14 +7804,14 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
   automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"running",schedulerTime:schedulerClock.now().toISOString()});
   try{
     const runResult=await runClassroomAutomation({...event,_occurrenceId:id});
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(runResult)}};
+    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(runResult)}};
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
   }catch(err){
     storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:false,message:err.message};
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"failed",schedulerTime:schedulerClock.now().toISOString(),error:err.message});
     audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
   }finally{
-    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);
+    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
   }
 }
 async function automationSchedulerTick(){
