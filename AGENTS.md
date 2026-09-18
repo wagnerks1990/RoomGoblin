@@ -430,6 +430,10 @@ plugins with the installed CLI. Preserve numeric root archive ownership and the
 archive path/link/privileged-metadata policy gate. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
+Host-native Ubuntu 26.04/GCC 15 builds require the preparer's `veyon-core`-only
+`-Wno-error=stringop-overflow` guard for the QtConcurrent atomic false positive.
+Keep the warning visible and all other `-Werror` behavior intact; never broaden
+the exception globally.
 
 Veyon installed-version reporting must use host package inventory, independently
 of pending apt upgrades. Never infer endpoint features from a fixed 4.9.7
