@@ -93,6 +93,8 @@ The Host Agent temporary token file must contain the exact connector token plus 
 
 The Controller treats persistence and connectivity as separate states. After reload/reboot it shows saved configuration/credential state and reconstructs the public HTTPS link from the stored hostname, while tunnel health remains based on current Cloudflare status.
 
+Cloudflare API reconciliation retries transient network failures only for idempotent GET/PUT/PATCH/DELETE operations. Resource-creation POST requests are not automatically retried because an ambiguous network failure could otherwise duplicate a tunnel, DNS record, Access application, or policy. Network 502 errors identify the failing Cloudflare method/path so operators can distinguish a transient edge/API call from credential or host-connector failures.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```
