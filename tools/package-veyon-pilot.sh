@@ -37,6 +37,13 @@ cp "$root/integrations/veyon-plugins/COPYING" "$work/artifacts/COPYING"
 cp "$root/integrations/veyon-plugins/PROVENANCE.md" "$work/artifacts/PROVENANCE.md"
 git -C "$root" rev-parse HEAD > "$work/artifacts/roomgoblin-revision.txt"
 git -C "$work/source" rev-parse HEAD > "$work/artifacts/veyon-revision.txt"
+# CMake's DESTDIR install can inherit a runner umask/permission normalization.
+# Restore and verify the two upstream-declared setuid-root helper modes inside
+# the isolated staging tree before archive metadata is normalized to root.
+for helper in veyon-auth-helper veyon-input-helper; do
+  chmod 4755 "$work/stage/usr/bin/$helper"
+  [[ $(stat -c '%a' "$work/stage/usr/bin/$helper") == 4755 ]] || { echo "Invalid staged mode for $helper" >&2; exit 1; }
+done
 # Include all corresponding source, including initialized submodules, and omit
 # only Git metadata. The build directory and runtime configuration are separate.
 tar --exclude=.git -czf "$work/artifacts/veyon-pilot-source.tar.gz" -C "$work" source

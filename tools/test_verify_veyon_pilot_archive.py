@@ -24,6 +24,13 @@ class ArchivePolicyTests(unittest.TestCase):
         member.size = 1
         policy.verify(self.make_archive(member))
 
+    def test_accepts_only_exact_privileged_helper_metadata(self):
+        for name in ('veyon-auth-helper', 'veyon-input-helper'):
+            member = tarfile.TarInfo('./usr/bin/' + name)
+            member.size = 1
+            member.mode = 0o4755
+            policy.verify(self.make_archive(member))
+
     def test_rejects_non_root_owner_and_traversal(self):
         member = tarfile.TarInfo('./usr/bin/veyon-cli')
         member.size = 1
