@@ -3,12 +3,20 @@
 (function(){
   const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
   const LOCAL_HOSTS=new Set(["host.docker.internal","localhost","127.0.0.1","0.0.0.0","[::1]"]);
-  function browserServiceUrl(value,defaultPort){
-    try{
-      const url=new URL(String(value||`http://${location.hostname}:${defaultPort}`));
-      if(LOCAL_HOSTS.has(url.hostname))url.hostname=location.hostname;
-      return url.toString().replace(/\/$/,"");
-    }catch{return `http://${location.hostname}:${defaultPort}`}
+  function browserServiceUrl(browserValue,backendValue,defaultPort){
+    const explicit=String(browserValue||"").trim();
+    if(explicit){
+      const publicUrl=new URL(explicit);
+      if(!["http:","https:"].includes(publicUrl.protocol)||publicUrl.username||publicUrl.password)throw Error("Browser URL must use HTTP(S) without embedded credentials.");
+      return publicUrl.toString().replace(/\/$/,"");
+    }
+    const backend=new URL(String(backendValue||`http://127.0.0.1:${defaultPort}`));
+    if(!LOCAL_HOSTS.has(backend.hostname))return backend.toString().replace(/\/$/,"");
+    if(location.protocol==="http:"){
+      backend.hostname=location.hostname;
+      return backend.toString().replace(/\/$/,"");
+    }
+    throw Error("Music Assistant has no protected browser HTTPS URL. Configure it under Cloudflare Remote HTTPS, or open RoomGoblin over the LAN HTTP fallback.");
   }
   async function maintenanceConfig(id){
     try{
@@ -30,7 +38,8 @@
     return `<div class="integration-guided-fields" style="grid-column:1/-1">
       <div class="muted" style="margin-bottom:8px"><b>Required:</b> Music Assistant API access is disabled until a valid long-lived access token is saved. Create one in Music Assistant under Settings → Profile → Long-lived access tokens.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
-        ${field({key:"url",label:"Music Assistant URL",value:url,placeholder:"http://127.0.0.1:8095",help:"Host-local API address. The Open Music Assistant button converts this to a browser-reachable address.",scope})}
+        ${field({key:"url",label:"Music Assistant backend/API URL",value:url,placeholder:"http://127.0.0.1:8095",help:"Keep this on the host-local/LAN service address for RoomGoblin backend communication.",scope})}
+        ${field({key:"browserUrl",label:"Music Assistant browser/public URL",value:cfg.browserUrl||"",placeholder:"https://music.example.org",help:"Optional browser-facing URL. Managed Cloudflare provisioning fills this automatically when Music Assistant HTTPS is enabled.",scope})}
         ${field({key:"token",label:"Long-lived access token",value:cfg.token||"",placeholder:"Required access token",help:"Stored encrypted in the RoomGoblin database. Saving is rejected if authentication fails.",secret:true,scope})}
       </div>
       <div class="actions toolbar" style="margin-top:10px"><button type="button" data-open-music-assistant>Open Music Assistant</button><span class="muted">Create/copy the token there, return here, paste it, then Save & Verify.</span></div>
@@ -105,8 +114,10 @@
   }
   function wire(root,cfg){
     root?.querySelectorAll("[data-open-music-assistant]").forEach(button=>button.addEventListener("click",()=>{
-      const input=root.querySelector('[data-k="url"],[data-module-field="url"]');
-      window.open(browserServiceUrl(input?.value||cfg.url,8095),"_blank","noopener");
+      const backend=root.querySelector('[data-k="url"],[data-module-field="url"]');
+      const browser=root.querySelector('[data-k="browserUrl"],[data-module-field="browserUrl"]');
+      try{window.open(browserServiceUrl(browser?.value||cfg.browserUrl,backend?.value||cfg.url,8095),"_blank","noopener")}
+      catch(error){if(typeof window.notify==="function")window.notify(error.message,"error");else alert(error.message)}
     }));
   }
   function enhance(){
