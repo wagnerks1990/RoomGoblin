@@ -1755,8 +1755,14 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   const steps=automationActionSequence(event);
   const continuous=sequenceHasContinuousActions(steps);
   const boundedMaxPasses=Number.isInteger(maxPasses)&&maxPasses>0?Math.min(1000,maxPasses):null;
-  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous};
+  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous,endedReason:null};
+  let overlayApplied=false;
 
+  function windowOpen(){
+    if(manual)return true;
+    const end=Number(event._classEndAt);
+    return !Number.isFinite(end)||schedulerClock.now().getTime()<end;
+  }
   function assertRunActive(){
     if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
     if(!manual&&event.id){
@@ -1764,9 +1770,40 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was active"),{code:"AUTOMATION_CONFIGURATION_CHANGED"});
     }
   }
+  async function waitSeconds(seconds){
+    const deadline=Date.now()+Math.max(0,Number(seconds||0))*1000;
+    while(Date.now()<deadline){
+      assertRunActive();
+      if(!windowOpen())return false;
+      await new Promise(r=>setTimeout(r,Math.min(500,Math.max(1,deadline-Date.now()))));
+    }
+    return windowOpen();
+  }
+  async function applyTimerOverlayOnce(){
+    if(overlayApplied||!event.timerOverlay?.enabled)return;
+    overlayApplied=true;
+    try{
+      const lockedTimerTargets=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(
+        event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length
+          ? event._classDefaultTargets
+          : (event.timerOverlay.useEventTargets!==false?event.targets:event.timerOverlay.targets)
+      );
+      if(lockedTimerTargets.length)combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
+      else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
+      if(combined.timerOverlay?.result)combined.results.push(combined.timerOverlay.result);
+    }catch(err){
+      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE")combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
+      else{
+        combined.ok=false;
+        combined.timerOverlay={ok:false,error:err.message};
+        diagnosticError(err,{component:"automation.timer",operation:"timer-overlay",data:{automationId:event.id,classId:event.timerOverlay?.classId||event.classId||null}});
+      }
+    }
+  }
 
   let pass=1,aborted=false;
   while(sequenceHasEligibleActions(steps,pass)){
+    if(!windowOpen()){combined.endedReason="class-ended";break}
     if(boundedMaxPasses&&pass>boundedMaxPasses)break;
     const passStarted=Date.now();
     let executed=0;
@@ -1776,8 +1813,8 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       assertRunActive();
       const firstDelay=Math.max(0,Number(step.delaySeconds||0));
       const loopDelay=pass>1?Math.max(0,Number(step.repeatDelaySeconds||0)):0;
-      if(firstDelay)await new Promise(r=>setTimeout(r,firstDelay*1000));
-      if(loopDelay)await new Promise(r=>setTimeout(r,loopDelay*1000));
+      if(firstDelay&&!(await waitSeconds(firstDelay))){combined.endedReason="class-ended";aborted=true;break}
+      if(loopDelay&&!(await waitSeconds(loopDelay))){combined.endedReason="class-ended";aborted=true;break}
       assertRunActive();
 
       const stepAction=step.action;
@@ -1826,36 +1863,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       executed++;
     }
     combined.passes=pass;
+    if(pass===1)await applyTimerOverlayOnce();
     if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
     pass++;
     // A continuous sequence with no configured waits must remain safe for
     // hardware and the event loop. Cap the fastest complete cycle at 1 Hz.
     if(continuous){
       const remaining=Math.max(0,1000-(Date.now()-passStarted));
-      if(remaining)await new Promise(r=>setTimeout(r,remaining));
+      if(remaining&&!(await waitSeconds(remaining/1000))){combined.endedReason="class-ended";break}
     }
     if(!executed)break;
   }
 
-  if(event.timerOverlay?.enabled){
-    try{
-      const lockedTimerTargets=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(
-        event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length
-          ? event._classDefaultTargets
-          : (event.timerOverlay.useEventTargets!==false?event.targets:event.timerOverlay.targets)
-      );
-      if(lockedTimerTargets.length)combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
-      else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
-      if(combined.timerOverlay?.result)combined.results.push(combined.timerOverlay.result);
-    }catch(err){
-      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE")combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
-      else{
-        combined.ok=false;
-        combined.timerOverlay={ok:false,error:err.message};
-        diagnosticError(err,{component:"automation.timer",operation:"timer-overlay",data:{automationId:event.id,classId:event.timerOverlay?.classId||event.classId||null}});
-      }
-    }
-  }
+  await applyTimerOverlayOnce();
 
   audit({kind:"automation.run",automationId:event.id,name:event.name,manual,actions:steps.map(x=>x.action),targets:event.targets,passes:combined.passes,continuous,ok:combined.ok});
   return combined;
@@ -7742,7 +7762,22 @@ const backgroundMusicStartupTimer=setTimeout(()=>backgroundMusicTick().catch(err
 // execution and may wait independently without blocking other scheduled work.
 let automationSchedulerBusy=false;
 const automationRunningOccurrences=new Map();
+const automationRunningOccurrenceMeta=new Map();
 const automationCancelledOccurrences=new Set();
+function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
+  const resources=new Set(automationResourceKeys(event));
+  if(!resources.size)return [];
+  const cancelled=[];
+  for(const [runningId,meta] of automationRunningOccurrenceMeta){
+    if(runningId===newOccurrenceId)continue;
+    if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
+    automationCancelledOccurrences.add(runningId);
+    automationRunLedger.record({occurrenceId:runningId,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"superseded"});
+    cancelled.push(runningId);
+  }
+  if(cancelled.length)audit({kind:"automation.run.supersede",automationId:event.id,occurrenceId:newOccurrenceId,cancelled});
+  return cancelled;
+}
 async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}){
   const id=occurrenceId(event,dateKey,event.time);
   automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"running",schedulerTime:schedulerClock.now().toISOString()});
@@ -7755,7 +7790,7 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"failed",schedulerTime:schedulerClock.now().toISOString(),error:err.message});
     audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
   }finally{
-    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationCancelledOccurrences.delete(id);
+    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);
   }
 }
 async function automationSchedulerTick(){
@@ -7787,6 +7822,8 @@ async function automationSchedulerTick(){
         if(!claim.claimed)continue;
         if(morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([...automationDeferredDisplayTargets(event)]).length)queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes);
         storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;storedEvent.lastExec=scheduledMinuteKey;storedEvent.updatedAt=new Date().toISOString();persistAutomations();
+        supersedeOverlappingAutomationRuns(event,id);
+        automationRunningOccurrenceMeta.set(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString()});
         const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
         automationRunningOccurrences.set(id,task);task.catch(()=>{});
       }
