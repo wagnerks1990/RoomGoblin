@@ -113,7 +113,9 @@ test("maintenance backups and restores enforce private files and reject link tra
   assert.match(source,/process\.umask\(0o077\)/);
   assert.match(source,/ent\.isSymbolicLink\(\)\)throw Error\(`Symbolic links are not permitted in recovery sources/);
   assert.match(source,/Special files are not permitted in restore archives/);
-  assert.match(source,/fs\.chmodSync\(dest,0o600\)/);\n  assert.match(source,/classroom-hub-diagnostics-.*UPLOAD_DIR/);\n  assert.match(source,/res\.download\(dest,name,error=>\{fs\.rmSync\(dest,\{force:true\}\)/);
+  assert.match(source,/fs\.chmodSync\(dest,0o600\)/);
+  assert.match(source,/classroom-hub-diagnostics-.*UPLOAD_DIR/);
+  assert.match(source,/res\.download\(dest,name,error=>\{fs\.rmSync\(dest,\{force:true\}\)/);
   assert.match(source,/restoreModes/);
   assert.match(source,/restore-journal\.json/);
   assert.match(source,/Symbolic links are not permitted in recovery targets/);
