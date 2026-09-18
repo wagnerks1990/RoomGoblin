@@ -132,7 +132,7 @@ A failure before source/runtime mutation leaves running services unchanged.
 
 Before a runtime-changing application or Ubuntu host update, RoomGoblin creates
 an operational `pre-*.zip` safety backup. After health verification succeeds,
-the update runner retains the newest 10 automatic safety archives and prunes
+the update runner retains the newest 3 automatic operational archives and 1 `pre-*` safety archive and prunes
 older automatic ones. A backup pinned for application revert is preserved even
 when older than that window.
 
@@ -142,3 +142,26 @@ already passed health verification.
 
 Diagnostic support bundles are temporary download artifacts and are deleted
 after transfer rather than being retained with recovery backups.
+
+
+### Migration snapshots
+
+Full reconciliation creates `migration-*` rollback snapshots under the host
+backup root. After a successful, version-converged install, RoomGoblin now keeps
+the newest 3 migration snapshots through the authenticated Host Agent retention
+operation. Failed installs do not trigger this cleanup.
+
+
+### Fixed automatic retention limits
+
+Successful maintenance now automatically retains only:
+
+- 3 automatic operational ZIP backups;
+- 1 `pre-*` safety backup;
+- 3 `migration-*` installer snapshots.
+
+New automatic operational archives use `auto-operational-*`; manually created
+operational exports use `manual-operational-*`. Historical
+`classroom-hub-operational-*` files are treated as legacy automatic backups and
+participate in the three-backup limit. Full Recovery `.rgbak` files are never
+auto-pruned.
