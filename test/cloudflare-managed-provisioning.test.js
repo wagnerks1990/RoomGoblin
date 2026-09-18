@@ -47,6 +47,12 @@ test("Cloudflare settings validate domain boundaries and Access lockout guard",(
   assert.equal(s.accessEmailDomain,"staff.example.org");
 });
 
+test("Cloudflare client preserves 404 for missing-resource reconciliation",async()=>{
+  const fetch=async()=>response({error:"not found"},404);
+  const client=new CloudflareClient({auth:{mode:"token",token:"token-value"},fetchImpl:fetch});
+  await assert.rejects(client.get("/missing"),error=>error.status===404&&/not found/.test(error.message));
+});
+
 test("Cloudflare client prefers scoped bearer token and supports legacy global key",async()=>{
   const seen=[];
   const fetch=async(_url,opts)=>{seen.push(opts.headers);return response([])};
