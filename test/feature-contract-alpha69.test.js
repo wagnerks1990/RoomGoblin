@@ -195,6 +195,20 @@ test("GitHub main checks are bounded and select only trusted merged commits",()=
   assert.match(server,/const TRUSTED_UPDATE_BRANCH="main"/,"main must remain the GUI update branch");
 });
 
+test("System Updates admin routes have appliance-wide rate limits",()=>{
+  const server=read("src/server.js");
+  assert.match(server,/const appUpdateReadLimit=rateLimit/);
+  assert.match(server,/const appUpdateMutationLimit=rateLimit/);
+  for(const route of [
+    'app.get("/api/v1/admin/app-updates/settings",appUpdateReadLimit,requireAdmin',
+    'app.post("/api/v1/admin/app-updates/check",appUpdateReadLimit,requireAdmin',
+    'app.get("/api/v1/admin/app-updates/job",appUpdateReadLimit,requireAdmin',
+    'app.put("/api/v1/admin/app-updates/settings",appUpdateMutationLimit,requireAdmin',
+    'app.post("/api/v1/admin/app-updates/install",appUpdateMutationLimit,requireAdmin',
+    'app.post("/api/v1/admin/app-updates/revert",appUpdateMutationLimit,requireAdmin'
+  ])assert.ok(server.includes(route),`missing updater rate limit: ${route}`);
+});
+
 test("System Updates GUI uses the native published-main transaction",()=>{
   const server=read("src/server.js"),maintenance=read("maintenance-agent/server.js"),host=read("host-agent/server.py");
   const controller=read("public/controller/app.js"),html=read("public/controller/index.html");
