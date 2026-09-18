@@ -89,6 +89,10 @@ If an earlier failed attempt left `/etc/systemd/system/cloudflared-roomgoblin.se
 
 Connector reprovisioning always restarts `cloudflared-roomgoblin.service` after writing the new token and unit. `systemctl enable --now` alone is insufficient because it does not restart an already-running connector; without the explicit restart, cloudflared can continue using an old in-memory token and Cloudflare may return Error 1033 / `Unauthorized: Tunnel not found`.
 
+The Host Agent temporary token file must contain the exact connector token plus one real newline. Never append the literal two-character sequence `\\n`; cloudflared rejects that payload as an invalid tunnel token.
+
+The Controller treats persistence and connectivity as separate states. After reload/reboot it shows saved configuration/credential state and reconstructs the public HTTPS link from the stored hostname, while tunnel health remains based on current Cloudflare status.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```
