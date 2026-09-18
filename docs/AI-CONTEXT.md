@@ -448,7 +448,7 @@ schedule references or delete nonempty/custom groups automatically. Follow
 
 RoomGoblin supports the host-managed upstream/OEM Veyon installation, its normal configuration, and upstream/OEM add-ons only. Do not vendor, build, install, restore, or expose custom/community Veyon plugins, RoomGoblin-native Veyon bridges, experimental browser tools, local Veyon analysis services, custom endpoint command shells, or pilot package builders. The Veyon web workspace may use only the reviewed upstream WebAPI operations already mapped in the core command allowlist. Feature discovery is informational and must never auto-enable an unreviewed action.
 
-Preserve existing Veyon keys, multi-key authentication, inventory/DHCP identity, host package lifecycle, command recovery, standard monitoring/live view, screen/input lock, messaging, website/application launch, login/logoff, reboot/shutdown, and teacher demonstration controls. Upstream/OEM add-ons remain installed/configured by the Veyon/OEM mechanism; RoomGoblin must not synthesize its own replacement plugin or bypass licensing. Read `docs/VEYON-OEM-POLICY.md` before changing Veyon behavior.
+Preserve existing Veyon keys, multi-key authentication, inventory/DHCP identity, host package lifecycle, command recovery, standard monitoring/live view, screen/input lock, messaging, website/application launch, login/logoff, reboot/shutdown, and teacher demonstration controls. Retained command status endpoints are appliance-wide rate-limited, and mutation endpoints use a separate bounded write budget. Upstream/OEM add-ons remain installed/configured by the Veyon/OEM mechanism; RoomGoblin must not synthesize its own replacement plugin or bypass licensing. Read `docs/VEYON-OEM-POLICY.md` before changing Veyon behavior.
 
 ## Automation action execution and media-session control
 
@@ -463,3 +463,24 @@ Continuous loops are valid for every supported action type, not only media. They
 Timer Overlay initializes after the first sequence pass so it works with continuous sequences. Morning Announcements still preempt display delivery and post-announcement reconciliation still restores current scheduled winners before Background Music resumes.
 
 The Scheduled workspace uses time-ordered selectors. Media settings are content-aware: image, video, and paged-document controls must not be mixed indiscriminately. The old browser automation hotfix is retired; required compatibility logic belongs in the canonical controller/backend.
+
+
+### Database and local-storage hygiene
+
+SQLite is the authoritative store for structured configuration, identity,
+authorization, scheduler/automation state, encrypted settings and bounded
+audit/telemetry metadata. Do not move authoritative relational state to ad-hoc
+JSON files as a performance workaround. Conversely, do not put media, diagnostic
+archives, screenshots, backups, exports, caches or temporary staging blobs into
+SQLite.
+
+High-frequency successful polling belongs in coalesced telemetry rather than
+append-only audit rows. Authentication must still validate every request, but
+non-security `last_used_at`/last-seen bookkeeping should be rate-limited to
+avoid needless WAL churn.
+
+Update safety archives use the `pre-*.zip` naming boundary. Verified app/host
+updates retain the newest ten automatic safety backups while preserving the
+currently pinned revert backup. Automatic retention must never match user-created
+archives or encrypted Full Recovery bundles. Diagnostic downloads are temporary
+and must be removed after transfer.

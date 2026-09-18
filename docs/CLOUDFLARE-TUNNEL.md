@@ -85,6 +85,16 @@ The native Host Agent remains systemd-sandboxed with `ProtectSystem=full`. Autom
 
 Package installation is deliberately outside that sandbox. `install.sh` and the verified application-update runner install or verify `cloudflared` as root before the Host Agent is refreshed. The Host Agent then invokes `configure-cloudflare-tunnel.sh --skip-install`, so it never writes `/usr/share/keyrings`, APT sources, dpkg state, or `/usr/bin`.
 
+If an earlier failed attempt left `/etc/systemd/system/cloudflared-roomgoblin.service` masked to `/dev/null`, RoomGoblin removes only that exact stale mask and recreates a regular dedicated unit path. Existing valid RoomGoblin Cloudflare unit files are preserved across updates and are not blanked or replaced until explicit connector provisioning rewrites the dedicated unit.
+
+Connector reprovisioning always restarts `cloudflared-roomgoblin.service` after writing the new token and unit. `systemctl enable --now` alone is insufficient because it does not restart an already-running connector; without the explicit restart, cloudflared can continue using an old in-memory token and Cloudflare may return Error 1033 / `Unauthorized: Tunnel not found`.
+
+The Host Agent temporary token file must contain the exact connector token plus one real newline. Never append the literal two-character sequence `\\n`; cloudflared rejects that payload as an invalid tunnel token.
+
+The Controller treats persistence and connectivity as separate states. After reload/reboot it shows saved configuration/credential state and reconstructs the public HTTPS link from the stored hostname, while tunnel health remains based on current Cloudflare status.
+
+Cloudflare API reconciliation retries transient network failures only for idempotent GET/PUT/PATCH/DELETE operations. Resource-creation POST requests are not automatically retried because an ambiguous network failure could otherwise duplicate a tunnel, DNS record, Access application, or policy. Network 502 errors identify the failing Cloudflare method/path so operators can distinguish a transient edge/API call from credential or host-connector failures.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```

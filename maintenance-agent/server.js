@@ -747,13 +747,13 @@ app.delete("/backup/:name",(req,res)=>{try{const name=cleanName(req.params.name)
 app.get("/audit/status",async(_req,res)=>{try{const status=await mainAppStatus();res.json({ok:true,...status.audit,database:status.database})}catch(e){res.status(e.status||502).json({ok:false,error:e.message})}});
 app.post("/audit/prune",async(req,res)=>{try{res.json(await mainAppRequest("POST","/api/v1/internal/maintenance/audit/prune",req.body||{}))}catch(e){res.status(e.status||502).json({ok:false,error:e.message})}});
 app.get("/diagnostics/bundle",async(_req,res)=>{try{
-  const stamp=new Date().toISOString().replace(/[:.]/g,"-"),name=`classroom-hub-diagnostics-${stamp}.zip`,dest=path.join(BACKUP_DIR,name),zip=new AdmZip();
+  const stamp=new Date().toISOString().replace(/[:.]/g,"-"),name=`classroom-hub-diagnostics-${stamp}.zip`,dest=path.join(UPLOAD_DIR,name),zip=new AdmZip();
   let application=null;try{application=await mainAppStatus()}catch{application={ok:false}}
   let containers=[];try{containers=await dockerContainers()}catch{}
   const documents=diagnosticSupportDocuments({createdAt:new Date().toISOString(),agentVersion:"1.0.0-alpha.81",application,containers,system:{platform:os.platform(),architecture:os.arch(),cpuCount:os.cpus().length,memoryBytes:os.totalmem()}});
   zip.addFile("summary.json",Buffer.from(JSON.stringify(documents.summary,null,2)));
   zip.addFile("docker/containers.json",Buffer.from(JSON.stringify(documents.containers,null,2)));
-  writeZipAtomic(zip,dest);res.download(dest,name);
+  writeZipAtomic(zip,dest);res.download(dest,name,error=>{fs.rmSync(dest,{force:true});if(error)console.error(`Diagnostics download failed: ${error.message}`)});
 }catch(e){res.status(500).json({ok:false,error:e.message})}});
 const MANAGED_INTEGRATIONS_FILE=path.join(HUB_ROOT,"data","managed-integrations.json");
 async function readManagedIntegrations({resolved=false}={}){

@@ -61,7 +61,7 @@ test('native runner pulls/recreates only Hub and journals a verified rollback po
  const f=fixture(t),r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);assert.equal(f.git('rev-parse','HEAD'),f.target);
  const up=r.events.split('\n').filter(x=>x.startsWith('compose up'));assert.equal(up.length,1);assert.match(up[0],/--no-deps --force-recreate classroom-hub$/);
  assert.equal(r.events.split('\n').filter(x=>x.startsWith('pull ')).length,1);assert.doesNotMatch(r.events,/systemctl restart/);
- const status=JSON.parse(fs.readFileSync(f.state+'/app-update-status.json'));assert.equal(status.revertAvailable,true);assert.equal(status.previousCommit,f.base);assert.equal(status.phase,'completed');assert.equal(fs.existsSync(f.state+'/app-update-request.json'),false);
+ const status=JSON.parse(fs.readFileSync(f.state+'/app-update-status.json'));assert.equal(status.revertAvailable,true);assert.equal(status.previousCommit,f.base);assert.equal(status.phase,'completed');assert.equal(fs.existsSync(f.state+'/app-update-request.json'),false);assert.ok(r.events.includes("backups/retention"));
 });
 test('docs-only native update performs no image download, backup or restart',t=>{
  const f=fixture(t,['docs/change.md']),r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);assert.equal(f.git('rev-parse','HEAD'),f.target);assert.doesNotMatch(r.events,/^pull |^compose up|\/backup\/create|systemctl restart/m);

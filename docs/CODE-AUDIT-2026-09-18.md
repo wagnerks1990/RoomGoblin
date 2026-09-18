@@ -114,3 +114,32 @@ A post-audit appliance walkthrough exercised the controller screens and controls
 The walkthrough also encountered host/configuration-dependent responses from optional Veyon integration paths. The supported configuration is now restricted to the host-managed upstream/OEM Veyon installation and upstream/OEM add-ons; removed custom extension paths are not part of current operation.
 
 The diagnostics database contained substantial historical audit data. Current `main` already coalesces successful high-frequency GET/service polling into `telemetry_state` and provides bounded audit-retention pruning; no second competing retention mechanism was added during this follow-up.
+
+
+
+## Database and local-storage performance follow-up
+
+A post-deployment storage review identified three avoidable persistence costs.
+
+- Display and Windows/lab-agent authentication updated credential
+  `last_used_at` on every successful request. Authentication remains immediate,
+  while the bookkeeping timestamp is now coalesced to five-minute intervals to
+  reduce WAL/write amplification.
+- Diagnostic ZIP downloads were created under persistent `data/backups`.
+  They now use maintenance temporary storage and are removed when the HTTP
+  transfer completes.
+- Application and Ubuntu host updates created automatic `pre-*.zip` recovery
+  points but did not invoke the existing retention facility after success.
+  Verified updates now retain the newest ten automatic safety archives while
+  preserving a currently pinned revert backup and excluding user-created/full
+  recovery archives.
+
+The storage-boundary review did not find a reason to move authoritative
+configuration, scheduler, identity or encrypted-setting records out of SQLite.
+Large/generated payloads remain file-backed; high-frequency successful polling
+remains coalesced telemetry; audit rows remain subject to privacy retention.
+
+
+## Veyon OEM-only cleanup follow-up
+
+The custom/community Veyon plugin, browser-bridge, terminal, clipboard, Internet Guard, file/chat pilot and local-analysis source paths were removed. The retained Veyon command/status APIs remain on the upstream/OEM WebAPI boundary and now use explicit appliance-wide status/write rate limits. CI guards assert that the retired extension trees and pilot build/deployment scripts cannot return unnoticed.

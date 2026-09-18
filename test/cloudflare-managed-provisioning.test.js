@@ -60,6 +60,24 @@ test("Cloudflare client preserves 404 for missing-resource reconciliation",async
   await assert.rejects(client.get("/missing"),error=>error.status===404&&/not found/.test(error.message));
 });
 
+test("Cloudflare client retries transient safe reconciliation failures and reports the failing operation",async()=>{
+  let calls=0;
+  const fetch=async()=>{
+    calls++;
+    if(calls<3){const error=Error("fetch failed");error.cause={code:"ECONNRESET"};throw error}
+    return response([{id:"ok"}]);
+  };
+  const client=new CloudflareClient({auth:{mode:"token",token:"token-value"},fetchImpl:fetch});
+  const value=await client.get("/zones?name=example.org");
+  assert.equal(calls,3);
+  assert.equal(value[0].id,"ok");
+
+  let postCalls=0;
+  const postClient=new CloudflareClient({auth:{mode:"token",token:"token-value"},fetchImpl:async()=>{postCalls++;throw Error("fetch failed")}});
+  await assert.rejects(()=>postClient.post("/accounts/acct/cfd_tunnel",{name:"x"}),error=>error.status===502&&/POST \/accounts\/acct\/cfd_tunnel/.test(error.message));
+  assert.equal(postCalls,1);
+});
+
 test("Cloudflare client prefers scoped bearer token and supports legacy global key",async()=>{
   const seen=[];
   const fetch=async(_url,opts)=>{seen.push(opts.headers);return response([])};
@@ -144,14 +162,31 @@ test("provisioning refuses conflicting DNS takeover unless explicitly enabled",a
   assert.equal(fx.calls.some(x=>x.method==="PUT"&&x.path.includes("/dns_records/existing")),false);
 });
 
+test("controller reload preserves configured Cloudflare state and HTTPS link",()=>{
+  const app=fs.readFileSync("public/controller/app.js","utf8");
+  const cloudflare=fs.readFileSync("src/cloudflare.js","utf8");
+  assert.match(app,/Credential stored/);
+  assert.match(app,/Open HTTPS URL/);
+  assert.match(app,/j\?\.publicUrl/);
+  assert.match(app,/Tunnel \$\{esc\(live\.tunnel\.status/);
+  assert.match(cloudflare,/publicUrl:settings\.hostname/);
+});
+
 test("Cloudflare host integration never places tunnel token in process arguments or browser state",()=>{
   const host=fs.readFileSync("host-agent/server.py","utf8"),maint=fs.readFileSync("maintenance-agent/server.js","utf8"),bridge=fs.readFileSync("src/cloudflare-bridge.js","utf8"),installer=fs.readFileSync("deploy/configure-cloudflare-tunnel.sh","utf8");
   const unit=fs.readFileSync("host-agent/classroom-control-hub-host-agent.service","utf8");
   const appUpdater=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
+  const hostInstaller=fs.readFileSync("deploy/install-cloudflared-host.sh","utf8");
   assert.match(host,/cloudflare-token-/);assert.match(host,/--token-file/);assert.match(host,/--skip-install/);assert.doesNotMatch(host,/--token['"]/);
+  assert.match(host,/token\+'\\n'/);assert.doesNotMatch(host,/token\+'\\\\n'/);
   assert.match(installer,/chmod 0600/);assert.match(installer,/TRUST_PROXY_HOPS 1/);
+  assert.match(installer,/systemctl restart cloudflared-roomgoblin\.service/);
+  assert.doesNotMatch(installer,/enable --now cloudflared-roomgoblin\.service/);
+  assert.ok(installer.indexOf('printf \'%s\\n\' "$token" > "$TOKEN_PATH"') < installer.indexOf("systemctl restart cloudflared-roomgoblin.service"));
   assert.match(unit,/ReadWritePaths=.*\/etc\/cloudflared .*\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
   assert.match(appUpdater,/ReadWritePaths=.*\/etc\/cloudflared .*\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
+  assert.match(hostInstaller,/ROOMGOBLIN_UNIT=\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
+  assert.match(hostInstaller,/readlink "\$ROOMGOBLIN_UNIT"\)" == \/dev\/null/);
   assert.match(bridge,/integration\.cloudflare\.api-token/);assert.match(bridge,/\/api\/v1\/admin\/cloudflare\/provision/);
   assert.match(maint,/\/cloudflare\/configure/);
 });

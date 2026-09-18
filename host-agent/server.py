@@ -407,7 +407,7 @@ def configure_cloudflare_connector(body):
     try:
         fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         try:
-            os.write(fd,(token+'\\n').encode('utf-8')); os.fsync(fd)
+            os.write(fd,(token+'\n').encode('utf-8')); os.fsync(fd)
         finally: os.close(fd)
         p=run(['bash',str(script),'--root',str(HUB_ROOT),'--token-file',str(temp),'--skip-install','--no-restart'],240,False)
         if p.returncode!=0: raise RuntimeError((p.stderr or p.stdout or 'Cloudflare connector provisioning failed').strip())

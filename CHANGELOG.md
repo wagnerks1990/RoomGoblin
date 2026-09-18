@@ -8,6 +8,7 @@
 - Removed corresponding runtime routes and configuration so the Veyon workspace dispatches only the reviewed upstream WebAPI command allowlist.
 - Retained host-managed upstream/OEM Veyon configuration, keys, inventory, package lifecycle, monitoring/live view, classroom commands, and upstream/OEM add-on compatibility.
 - Added explicit operator/contributor policy and regression guards against reintroducing custom Veyon extension trees or experimental controller bundles.
+- Added bounded appliance-wide rate limits to retained Veyon command status and mutation APIs after CodeQL review.
 
 
 ### Managed Cloudflare remote HTTPS
@@ -21,6 +22,11 @@
 - Fix Host Agent sandbox provisioning so the GUI can write only `/etc/cloudflared` and the dedicated `/etc/systemd/system/cloudflared-roomgoblin.service` file while retaining `ProtectSystem=full`.
 - Checkpoint Cloudflare tunnel/DNS ownership before local connector installation so a host-side failure can be retried without leaving a newly created tunnel unrecorded.
 - Move `cloudflared` package installation out of the systemd-sandboxed Host Agent and into the normal root install/update path; Host Agent provisioning now requires the already-installed binary with `--skip-install`.
+- Recover a stale `cloudflared-roomgoblin.service -> /dev/null` mask left by failed provisioning without touching generic Cloudflare services, and preserve an existing valid RoomGoblin Cloudflare unit instead of overwriting it during updates.
+- Explicitly restart `cloudflared-roomgoblin.service` after connector token reprovisioning so an already-running process cannot continue using a stale/deleted tunnel token and trigger Cloudflare Error 1033.
+- Fix Host Agent tunnel-token serialization so it writes a real trailing newline instead of the literal characters `\\n`, preventing `Provided Tunnel token is not valid` restart loops.
+- Persist Cloudflare GUI state across reload/reboot with explicit Configured/Credential stored indicators, accurate tunnel health styling, and a reconstructed Open HTTPS URL link.
+- Retry transient network failures for idempotent Cloudflare reconciliation calls and include the failing HTTP method/path in 502 errors; non-idempotent create calls remain single-attempt/fail-closed to avoid duplicate resources.
 
 ### Scheduled automation sequence rebuild
 
@@ -85,6 +91,10 @@
 - Follow up the live controller click-through by allowing only the eight built-in
   `/test-images/tvN.svg` assets through media-command URL validation, fixing the
   Controller **Test Image** action without widening arbitrary same-origin paths.
+- Reduce SQLite write amplification by coalescing display/lab-agent credential
+  last-used timestamps, keep diagnostic bundles in temporary storage, and bound
+  verified update safety backups to the newest ten automatic pre-* archives while
+  preserving pinned revert and user-created recovery backups.
 
 ### Native Windows enrollment EDR hardening
 

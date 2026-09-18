@@ -2092,7 +2092,14 @@ function renderCloudflareState(j){
   cfgCloudflareAuthMode.value=s.authMode||'token';cfgCloudflareApiEmail.value=s.apiEmail||'';cfgCloudflareZone.value=s.zone||'';cfgCloudflareHostname.value=s.hostname||'';cfgCloudflareTunnelName.value=s.tunnelName||'';cfgCloudflareHttps.checked=s.alwaysUseHttps!==false;cfgCloudflareRewrites.checked=s.automaticHttpsRewrites!==false;cfgCloudflareHttp3.checked=s.http3!==false;cfgCloudflareBrotli.checked=s.brotli!==false;cfgCloudflareAccess.checked=s.accessEnabled===true;cfgCloudflareAccessDomain.value=s.accessEmailDomain||'';cfgCloudflareAccessDomain.disabled=!cfgCloudflareAccess.checked;cfgCloudflareReplaceDns.checked=s.replaceConflictingDns===true;cfgCloudflareAdoptTunnel.checked=s.adoptExistingTunnel===true;
   cfgCloudflareApiToken.value='';cfgCloudflareGlobalKey.value='';cfgCloudflareApiToken.placeholder=s.apiTokenConfigured?'Token encrypted — leave blank to keep':'Paste a scoped API token';cfgCloudflareGlobalKey.placeholder=s.globalKeyConfigured?'Key encrypted — leave blank to keep':'Paste Global API Key';
   renderCloudflareAuthMode();
-  const live=j?.cloudflare,parts=[];if(j?.error)parts.push(`<span class="bad">${esc(j.error)}</span>`);if(live?.zone)parts.push(`<span class="pill ok">Zone ${esc(live.zone.status||'active')}</span>`);if(live?.tunnel)parts.push(`<span class="pill ok">Tunnel ${esc(live.tunnel.status||'configured')}</span>`);if(live?.dns)parts.push(`<span class="pill ok">DNS proxied ${live.dns.proxied?'ON':'OFF'}</span>`);if(!parts.length)parts.push(s.zone&&s.hostname?'Saved; validate or provision to check Cloudflare.':'Cloudflare is not configured.');
+  const live=j?.cloudflare,parts=[];if(j?.error)parts.push(`<span class="bad">${esc(j.error)}</span>`);
+  if(j?.configured||s.zone&&s.hostname)parts.push('<span class="pill ok">Configured</span>');
+  if(s.apiTokenConfigured||s.globalKeyConfigured)parts.push('<span class="pill ok">Credential stored</span>');
+  if(live?.zone)parts.push(`<span class="pill ${live.zone.status==='active'?'ok':'bad'}">Zone ${esc(live.zone.status||'unknown')}</span>`);
+  if(live?.tunnel){const ts=String(live.tunnel.status||'configured').toLowerCase(),connected=['healthy','active','up'].includes(ts);parts.push(`<span class="pill ${connected?'ok':'bad'}">Tunnel ${esc(live.tunnel.status||'configured')}</span>`)}
+  if(live?.dns)parts.push(`<span class="pill ${live.dns.proxied?'ok':'bad'}">DNS proxied ${live.dns.proxied?'ON':'OFF'}</span>`);
+  const publicUrl=j?.publicUrl||(s.hostname?`https://${s.hostname}/controller/`:'');if(publicUrl)parts.push(`<a href="${esc(publicUrl)}" target="_blank" rel="noopener">Open HTTPS URL</a>`);
+  if(!parts.length)parts.push('Cloudflare is not configured.');
   cfgCloudflareStatus.innerHTML=parts.join(' ');
 }
 async function loadCloudflareSettings(){try{cfgCloudflareStatus.textContent='Loading Cloudflare state…';renderCloudflareState(await api('/api/v1/admin/cloudflare'))}catch(e){cfgCloudflareStatus.innerHTML=`<span class="bad">${esc(e.message)}</span>`}}

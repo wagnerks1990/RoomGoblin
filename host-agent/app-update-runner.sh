@@ -228,7 +228,13 @@ refresh_host_agent(){
   sed -i "s#^Environment=HOST_BACKUP_DIR=.*#Environment=HOST_BACKUP_DIR=${HOST_BACKUP_DIR:-/opt/classroom-hub-backups}#" /etc/systemd/system/classroom-hub-host-agent.service
   sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
   install -d -m 0700 -o root -g root /etc/cloudflared
-  [[ -e /etc/systemd/system/cloudflared-roomgoblin.service ]] || install -m 0644 -o root -g root /dev/null /etc/systemd/system/cloudflared-roomgoblin.service
+  cloudflared_unit=/etc/systemd/system/cloudflared-roomgoblin.service
+  if [[ -L "$cloudflared_unit" ]]; then
+    [[ "$(readlink "$cloudflared_unit")" == /dev/null ]] || { echo "Cloudflare unit path is an unexpected symbolic link" >&2; return 1; }
+    rm -f "$cloudflared_unit"
+  fi
+  [[ -e "$cloudflared_unit" ]] || install -m 0644 -o root -g root /dev/null "$cloudflared_unit"
+  [[ -f "$cloudflared_unit" && ! -L "$cloudflared_unit" ]] || { echo "Cloudflare unit path is not a regular file" >&2; return 1; }
   sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $HUB_ROOT ${HOST_SERVICES_DIR:-/opt/services} ${HOST_BACKUP_DIR:-/opt/classroom-hub-backups} /etc/classroom-control-hub /etc/cloudflared /etc/systemd/system/cloudflared-roomgoblin.service /var/lib/classroom-hub ${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
   python3 -m py_compile "$HUB_ROOT/host-agent/server.py"
   systemctl daemon-reload
@@ -532,6 +538,14 @@ if [[ "$ACTION" == revert ]]; then
 else
   set_state_fields "activeCommit=$RESOLVED" "activeVersion=$ACTUAL_VERSION" "rollback=false" "revertAvailable=true"
 fi
+# Keep automatic pre-* recovery archives bounded after a verified update.
+# The maintenance endpoint preserves the currently pinned revert backup and
+# never deletes user-created or Full Recovery archives. Cleanup is best-effort
+# because application health has already been verified at this point.
+docker compose exec -T maintenance-agent node -e '
+fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backups/retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({keep:10,confirm:"PRUNE_AUTOMATIC_BACKUPS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Automatic backup retention:",JSON.stringify(j))).catch(e=>{console.error("Automatic backup retention warning:",e.message);process.exit(1)})
+' || echo "Warning: automatic backup retention cleanup did not complete; update remains healthy." >&2
+
 install -D -m 0755 "$HUB_ROOT/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
 install -D -m 0755 "$HUB_ROOT/host-agent/app-update-runner.sh" /usr/local/libexec/classroom-control-hub/app-update-runner.sh
 rm -f "$REQUEST_FILE" "$STATE_DIR/app-update.env" "$STATE_DIR/app-update-host.service"

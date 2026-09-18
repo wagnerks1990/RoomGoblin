@@ -279,8 +279,18 @@ if [[ ! -e /etc/classroom-control-hub/veyon/private.pem ]]; then install -m 0640
 install -d -m 0750 -o root -g root /var/lib/classroom-hub
 # Cloudflare connector provisioning runs through the sandboxed Host Agent. These
 # exact host paths must exist before systemd constructs its writable allowlist.
+# Preserve a valid existing unit. Recover only the exact /dev/null mask that can
+# remain after an interrupted/failed provisioning attempt.
 install -d -m 0700 -o root -g root /etc/cloudflared
-install -m 0644 -o root -g root /dev/null /etc/systemd/system/cloudflared-roomgoblin.service
+CLOUDFLARED_UNIT=/etc/systemd/system/cloudflared-roomgoblin.service
+if [[ -L "$CLOUDFLARED_UNIT" ]]; then
+  [[ "$(readlink "$CLOUDFLARED_UNIT")" == /dev/null ]] || fail "Cloudflare unit path is an unexpected symbolic link"
+  rm -f "$CLOUDFLARED_UNIT"
+fi
+if [[ ! -e "$CLOUDFLARED_UNIT" ]]; then
+  install -m 0644 -o root -g root /dev/null "$CLOUDFLARED_UNIT"
+fi
+[[ -f "$CLOUDFLARED_UNIT" && ! -L "$CLOUDFLARED_UNIT" ]] || fail "Cloudflare unit path is not a regular file"
 
 command -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
 # Package installation must happen outside the sandboxed Host Agent. The Host
