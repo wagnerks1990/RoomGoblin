@@ -59,7 +59,8 @@ function publicSettings(value={},store){
 }
 function sanitizeApiError(body,status){
   const errors=Array.isArray(body?.errors)?body.errors.map(x=>cleanText(x?.message,300)).filter(Boolean):[];
-  return failure(errors.join("; ")||`Cloudflare API request failed (HTTP ${status})`,status===401||status===403?403:502);
+  const normalized=Number.isInteger(status)&&status>=400&&status<500?status:502;
+  return failure(errors.join("; ")||`Cloudflare API request failed (HTTP ${status})`,normalized);
 }
 
 class CloudflareClient{
