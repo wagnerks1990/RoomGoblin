@@ -126,3 +126,19 @@ GitHub metadata never authorizes an image. The publication budget defaults to
 20 minutes (`CLASSROOM_HUB_IMAGE_WAIT_ATTEMPTS`, 1–180 ten-second units), each
 manifest probe is limited to 20 seconds and each image download to 15 minutes.
 A failure before source/runtime mutation leaves running services unchanged.
+
+
+## Automatic backup retention
+
+Before a runtime-changing application or Ubuntu host update, RoomGoblin creates
+an operational `pre-*.zip` safety backup. After health verification succeeds,
+the update runner retains the newest 10 automatic safety archives and prunes
+older automatic ones. A backup pinned for application revert is preserved even
+when older than that window.
+
+This cleanup never targets user-created backups or encrypted Full Recovery
+`.rgbak` archives. Cleanup failure is a warning only after the new runtime has
+already passed health verification.
+
+Diagnostic support bundles are temporary download artifacts and are deleted
+after transfer rather than being retained with recovery backups.
