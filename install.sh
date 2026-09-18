@@ -280,6 +280,7 @@ install -d -m 0750 -o root -g root /var/lib/classroom-hub
 # Cloudflare connector provisioning runs through the sandboxed Host Agent. These
 # exact host paths must exist before systemd constructs its writable allowlist.
 install -d -m 0700 -o root -g root /etc/cloudflared
+install -m 0644 -o root -g root /dev/null /etc/systemd/system/cloudflared-roomgoblin.service
 
 command -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
 install -D -m 0644 "$TARGET/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service
