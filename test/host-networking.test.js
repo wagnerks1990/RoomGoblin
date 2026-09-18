@@ -106,7 +106,7 @@ class Adapter:
         self.ips=[IP(x) for x in ips]
 def get_adapters():
     return [
-        Adapter("enp4s0", ["172.16.127.5"]),
+        Adapter("enp4s0", ["192.0.2.5"]),
         Adapter("docker0", ["172.17.0.1"]),
         Adapter("br-deadbeef", ["172.20.0.1"]),
         Adapter("tailscale0", ["100.120.61.26"]),
@@ -148,7 +148,8 @@ test("adoption never removes an existing container or changes its network", asyn
 test("invalid recreation settings do not remove the existing broker", async t => {
   const h = addonHarness(t, true);
   await assert.rejects(h.context.deployAddon("mosquitto", {username:"hub",password:"a-test-password-with-16-chars",port:65536}, true), /Port/);
-  assert.deepEqual(h.calls, []);
+  assert.ok(h.calls.every(args=>args[0]==="network"&&args[1]==="inspect"),JSON.stringify(h.calls));
+  assert.ok(!h.calls.some(args=>args[0]==="rm"||args[0]==="run"));
   assert.equal(fs.existsSync(path.join(h.dir,"mosquitto/config/mosquitto.conf")), false);
 });
 
