@@ -52,6 +52,10 @@ Desktop focus mode changes shell layout without reloading embedded tools.
 Inventory filters retain hidden selections with explicit counts. Canonical product
 marks use the supplied valid192 mascot; old400w/512 URLs are compatibility aliases.
 
+## Optional Securly physical-console kiosk
+
+The appliance may also use its directly attached monitor as an independent Securly Pass kiosk. This is a host-side Xorg/Openbox/Chromium Snap session, not a RoomGoblin container or application-health dependency. The production kiosk URL/code is local secret state under `/etc/roomgoblin/` and must never enter Git, logs, examples, or AI-generated patches. Preserve SSH and a separate sudo-capable maintenance account. The known-good Snap session uses the systemd user D-Bus bus, redirects Chromium away from tty1 file descriptors, uses the Snap-owned browser profile, and currently launches Chromium with `--disable-gpu` while Xorg continues to use the host GPU driver. Read `SECURLY-KIOSK.md` and `ai/SECURLY-KIOSK.md` before changing this path.
+
 ## Runtime architecture
 
 ```text

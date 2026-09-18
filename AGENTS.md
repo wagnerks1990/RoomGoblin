@@ -1,5 +1,9 @@
 # AI and Contributor Operating Contract
 
+## Securly physical-console kiosk
+
+The optional Securly Pass kiosk is host-side and independent of RoomGoblin application/container health. Read `docs/SECURLY-KIOSK.md` and `docs/ai/SECURLY-KIOSK.md` before changing it. Never commit the production kiosk URL/code. Preserve the password-locked non-sudo `kiosk` account, a separate sudo-capable maintenance account, SSH, and the `Ctrl+Alt+F2` recovery path. Chromium Snap must use the systemd user D-Bus session, must not inherit tty1 standard file descriptors, and must use its Snap-owned profile. Keep kiosk failures from affecting Morning Announcements, scheduler recovery, Background Music, managed displays, Veyon, Docker integrations, or RoomGoblin health.
+
 ## Displays & AV restoration
 
 The operator retired room topology. Use the original TV Routing Matrix, TV/source
