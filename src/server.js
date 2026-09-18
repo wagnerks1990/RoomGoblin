@@ -31,6 +31,7 @@ const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=requ
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
+const {AUTOMATION_SCHEMA_VERSION,normalizeAutomationAction,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceHasContinuousActions,normalizeAutomationEvent}=require("./automation-schema");
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -932,7 +933,7 @@ function automationDeferredDisplayTargets(event){
   collect(event.action,event.targets);
   for(const step of Array.isArray(event.actions)?event.actions:[]){
     const action=step?.action||event.action;
-    const stepDomain=automationTargetDomain(action),eventDomain=automationTargetDomain(event.action);
+    const stepDomain=automationTargetDomain(action),eventDomain=automationTargetDomain(steps[0]?.action);
     let targets;
     if(step?.useEventTargets!==false&&stepDomain===eventDomain)targets=event.targets;
     else if(["display-content","display-overlay"].includes(stepDomain)&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)targets=event._classDefaultTargets;
@@ -1304,10 +1305,6 @@ function normalizeAutomation(input={},existing={}){
   if(!validTime(time))throw new Error("Time must be a valid HH:MM value");
   const days=(Array.isArray(input.days)?input.days:existing.days||[1,2,3,4,5])
     .map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6);
-  const action=String(input.action||existing.action||"").trim();
-  if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action}`);
-  const targets=Array.isArray(input.targets)?input.targets.map(cleanId).filter(Boolean):
-    (Array.isArray(existing.targets)?existing.targets:["tv1"]);
   const scheduleMode=["weekly","alternating","schoolcycle","dates"].includes(String(input.scheduleMode||existing.scheduleMode||"weekly"))
     ? String(input.scheduleMode||existing.scheduleMode||"weekly") : "weekly";
   const alternatePhase=String(input.alternatePhase||existing.alternatePhase||"A").toUpperCase()==="B"?"B":"A";
@@ -1316,9 +1313,44 @@ function normalizeAutomation(input={},existing={}){
   const anchorDate=anchorRaw?String(anchorRaw):"";
   const offsetValue=normalizeIntegerMinutes(input.classTimeOffsetMinutes??existing.classTimeOffsetMinutes??0,{name:"Class time offset",fallback:0,min:-720,max:720});
   const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
-  return {
+  const primaryAction=String(input.action??existing.action??input.actionSequence?.[0]?.action??existing.actionSequence?.[0]?.action??"display.clear").trim();
+  if(!AUTOMATION_ACTIONS.has(primaryAction))throw new Error(`Unsupported automation action: ${primaryAction||"(blank)"}`);
+  const primaryTargets=Array.isArray(input.targets)?input.targets.map(cleanId).filter(Boolean):
+    (Array.isArray(existing.targets)?existing.targets:["tv1"]);
+  const primaryPayload=(input.payload&&typeof input.payload==="object")?input.payload:(existing.payload||{});
+
+  const hasCanonicalInput=Array.isArray(input.actionSequence)&&input.actionSequence.length>0;
+  const keepExistingCanonical=!hasCanonicalInput&&input.action===undefined&&input.actions===undefined&&Array.isArray(existing.actionSequence)&&existing.actionSequence.length>0;
+  const rawSequence=hasCanonicalInput
+    ? input.actionSequence
+    : keepExistingCanonical
+      ? existing.actionSequence
+      : [{id:input.primaryActionId||existing.primaryActionId||`${id.slice(0,60)}-action-1`,action:primaryAction,targets:primaryTargets,useEventTargets:false,payload:primaryPayload,delaySeconds:input.primaryDelaySeconds??existing.primaryDelaySeconds??0,executionMode:input.primaryExecutionMode??existing.primaryExecutionMode,repeatCount:input.primaryRepeatCount??existing.primaryRepeatCount,repeatDelaySeconds:input.primaryRepeatDelaySeconds??existing.primaryRepeatDelaySeconds,continueOnError:input.continueOnError??existing.continueOnError},...(Array.isArray(input.actions)?input.actions:(Array.isArray(existing.actions)?existing.actions:[]))];
+
+  const usedIds=new Set();
+  const actionSequence=rawSequence.map((item,index)=>{
+    const stepAction=String(item?.action||"").trim();
+    if(!AUTOMATION_ACTIONS.has(stepAction))throw new Error(`Unsupported automation action: ${stepAction||"(blank)"}`);
+    const delaySeconds=Number(item?.delaySeconds??0);
+    if(!Number.isFinite(delaySeconds))throw new Error(`Automation action ${index+1} delay must be a finite number`);
+    let actionId=cleanId(item?.id||`${id.slice(0,60)}-action-${index+1}`);
+    if(!actionId||usedIds.has(actionId))actionId=`${id.slice(0,60)}-action-${index+1}`;
+    usedIds.add(actionId);
+    const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
+    const normalized=normalizeAutomationAction({
+      ...item,
+      id:actionId,
+      action:stepAction,
+      targets:selected.length||item?.useEventTargets!==false?selected:defaultAutomationActionTargets(stepAction),
+      useEventTargets:index===0?false:item?.useEventTargets!==false
+    },index,{primaryTargets});
+    return normalized;
+  });
+  if(!actionSequence.length)throw new Error("Automation requires at least one action");
+
+  const base={
     id,
-    name:String(input.name??existing.name??action).trim().slice(0,120),
+    name:String(input.name??existing.name??primaryAction).trim().slice(0,120),
     enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,
     time,
     days:[...new Set(days)],
@@ -1334,33 +1366,11 @@ function normalizeAutomation(input={},existing={}){
     classTimeReference:String(input.classTimeReference??existing.classTimeReference??"start")==="end"?"end":"start",
     classTimeOffsetMinutes:offsetValue,
     useClassTargets:input.useClassTargets===undefined?(existing.useClassTargets!==false):!!input.useClassTargets,
-    action,
-    targets:[...new Set(targets)],
-    payload:(input.payload&&typeof input.payload==="object")?input.payload:(existing.payload||{}),
-    actions:Array.isArray(input.actions)
-      ? input.actions.map((item,index)=>{
-          const stepAction=String(item?.action||"").trim();
-          if(!AUTOMATION_ACTIONS.has(stepAction))throw new Error(`Unsupported automation action: ${stepAction||"(blank)"}`);
-          const delaySeconds=Number(item?.delaySeconds??0);
-          if(!Number.isFinite(delaySeconds))throw new Error(`Automation step ${index+1} delay must be a finite number`);
-          return {
-          // Action IDs are globally unique in SQLite. Scope them to the
-          // automation instead of reusing generic step-1/step-2 identifiers.
-          id:`${id.slice(0,60)}-step-${index+1}`,
-          action:stepAction,
-          useEventTargets:item?.useEventTargets!==false,
-          targets:(()=>{
-            const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
-            return selected.length||item?.useEventTargets!==false?selected:defaultAutomationActionTargets(stepAction);
-          })(),
-          payload:(item?.payload&&typeof item.payload==="object")?item.payload:{},
-          delaySeconds:Math.max(0,Math.min(3600,delaySeconds)),
-          executionMode:automationExecutionMode(item?.executionMode,stepAction),
-          repeatCount:automationRepeatCount(item?.repeatCount),
-          repeatDelaySeconds:automationRepeatDelaySeconds(item?.repeatDelaySeconds),
-          continueOnError:item?.continueOnError!==false
-        }})
-      : (Array.isArray(existing.actions)?existing.actions:[]),
+    action:actionSequence[0].action,
+    targets:[...actionSequence[0].targets],
+    payload:{...(actionSequence[0].payload||{})},
+    actionSequence,
+    automationSchemaVersion:AUTOMATION_SCHEMA_VERSION,
     timerOverlay:normalizeTimerOverlay(input.timerOverlay,existing.timerOverlay||null),
     priority:Math.max(-100,Math.min(100,Number.isFinite(Number(input.priority??existing.priority))?Number(input.priority??existing.priority):0)),
     revision:Math.max(1,Number(existing.revision||input.revision||1)),
@@ -1370,8 +1380,8 @@ function normalizeAutomation(input={},existing={}){
     createdAt:existing.createdAt||new Date().toISOString(),
     updatedAt:new Date().toISOString()
   };
+  return normalizeAutomationEvent(base);
 }
-
 
 function automationTargetDomain(action){
   return actionResourceDomain(action);
@@ -1747,70 +1757,91 @@ function automationRunFailures(result={}){
   return failures;
 }
 
-async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPriority=false}={}){
-  // Validate legacy/imported records again before the pre-clear or any delivery.
+async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPriority=false,maxPasses=null}={}){
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
-  const additional=Array.isArray(event.actions)?event.actions:[];
-  const steps=[{id:"primary",action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{},delaySeconds:0,executionMode:"once",repeatCount:1,repeatDelaySeconds:0,continueOnError:true},...additional];
-  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[]};
+  const steps=automationActionSequence(event);
+  const continuous=sequenceHasContinuousActions(steps);
+  const boundedMaxPasses=Number.isInteger(maxPasses)&&maxPasses>0?Math.min(1000,maxPasses):null;
+  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous};
 
-  // Resource isolation: no automation implicitly clears display content. Only an
-  // explicit display.clear or a display content action with clearBefore enabled may
-  // replace its own resolved display targets.
-  for(let i=0;i<steps.length;i++){
-    const step=steps[i]||{};
-    const delay=Math.max(0,Number(step.delaySeconds||0));
-    if(delay)await new Promise(r=>setTimeout(r,delay*1000));
+  function assertRunActive(){
     if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
-    if(!manual&&event.id){const current=classroomAutomations.events.find(item=>item.id===event.id);if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was waiting"),{code:"AUTOMATION_CONFIGURATION_CHANGED"})}
-    const stepAction=step.action||event.action;
-    const stepDomain=automationTargetDomain(stepAction);
-    const eventDomain=automationTargetDomain(event.action);
-    const explicitTargets=Array.isArray(step.targets)&&step.targets.length ? step.targets : [];
-    let rawTargets=[];
-    if(step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=event.targets||[];
-    // An action's explicit target selection always wins. Class defaults only
-    // supply a target when this cross-domain display step has none of its own.
-    else if(explicitTargets.length)rawTargets=explicitTargets;
-    else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
-    else rawTargets=defaultAutomationActionTargets(stepAction);
-    let resolvedTargets;
-    if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
-    else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
-    else resolvedTargets=[...rawTargets];
-    let lockedTargets=[];
-    if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
-      lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
-      const lockedSet=new Set(lockedTargets);
-      resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
-      if(!resolvedTargets.length&&lockedTargets.length){
-        combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
-        continue;
-      }
+    if(!manual&&event.id){
+      const current=classroomAutomations.events.find(item=>item.id===event.id);
+      if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was active"),{code:"AUTOMATION_CONFIGURATION_CHANGED"});
     }
-    const executionMode=automationExecutionMode(step.executionMode,stepAction);
-    const repeatCount=executionMode==="repeat"?automationRepeatCount(step.repeatCount):1;
-    const repeatDelaySeconds=automationRepeatDelaySeconds(step.repeatDelaySeconds);
-    const stepEvent={...event,_stepId:step.id||`step-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(executionMode==="loop"&&stepAction==="display.media"?{loop:true}:{})},targets:resolvedTargets,timerOverlay:null};
-    try{
-      if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-      let lastResult=null;
-      for(let attempt=0;attempt<repeatCount;attempt++){
-        if(attempt&&repeatDelaySeconds)await new Promise(r=>setTimeout(r,repeatDelaySeconds*1000));
-        if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
-        lastResult=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
-        combined.results.push(...(lastResult.results||[]));
+  }
+
+  let pass=1,aborted=false;
+  while(sequenceHasEligibleActions(steps,pass)){
+    if(boundedMaxPasses&&pass>boundedMaxPasses)break;
+    const passStarted=Date.now();
+    let executed=0;
+    for(let i=0;i<steps.length;i++){
+      const step=steps[i]||{};
+      if(!actionEligibleOnPass(step,pass))continue;
+      assertRunActive();
+      const firstDelay=Math.max(0,Number(step.delaySeconds||0));
+      const loopDelay=pass>1?Math.max(0,Number(step.repeatDelaySeconds||0)):0;
+      if(firstDelay)await new Promise(r=>setTimeout(r,firstDelay*1000));
+      if(loopDelay)await new Promise(r=>setTimeout(r,loopDelay*1000));
+      assertRunActive();
+
+      const stepAction=step.action;
+      const stepDomain=automationTargetDomain(stepAction);
+      const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
+      const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
+      let rawTargets=[];
+      if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
+      else if(explicitTargets.length)rawTargets=explicitTargets;
+      else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
+      else rawTargets=defaultAutomationActionTargets(stepAction);
+
+      let resolvedTargets;
+      if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
+      else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
+      else resolvedTargets=[...rawTargets];
+
+      let lockedTargets=[];
+      if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
+        lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
+        const lockedSet=new Set(lockedTargets);
+        resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
+        if(!resolvedTargets.length&&lockedTargets.length){
+          combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
+          executed++;
+          continue;
+        }
       }
-      combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode,repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
-    }catch(err){
-      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-        combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
-        continue;
+
+      const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+      try{
+        if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
+        const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+        combined.results.push(...(result.results||[]));
+        combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
+      }catch(err){
+        if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
+          combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
+          executed++;
+          continue;
+        }
+        combined.ok=false;
+        combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
+        if(step.continueOnError===false){aborted=true;break}
       }
-      combined.ok=false;
-      combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
-      if(step.continueOnError===false)break;
+      executed++;
     }
+    combined.passes=pass;
+    if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
+    pass++;
+    // A continuous sequence with no configured waits must remain safe for
+    // hardware and the event loop. Cap the fastest complete cycle at 1 Hz.
+    if(continuous){
+      const remaining=Math.max(0,1000-(Date.now()-passStarted));
+      if(remaining)await new Promise(r=>setTimeout(r,remaining));
+    }
+    if(!executed)break;
   }
 
   if(event.timerOverlay?.enabled){
@@ -1820,22 +1851,20 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           ? event._classDefaultTargets
           : (event.timerOverlay.useEventTargets!==false?event.targets:event.timerOverlay.targets)
       );
-      if(lockedTimerTargets.length){
-        combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
-      }else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
+      if(lockedTimerTargets.length)combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
+      else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
       if(combined.timerOverlay?.result)combined.results.push(combined.timerOverlay.result);
     }catch(err){
-      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-        combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
-      }else{
-      combined.ok=false;
-      combined.timerOverlay={ok:false,error:err.message};
-      diagnosticError(err,{component:"automation.timer",operation:"timer-overlay",data:{automationId:event.id,classId:event.timerOverlay?.classId||event.classId||null}});
+      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE")combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
+      else{
+        combined.ok=false;
+        combined.timerOverlay={ok:false,error:err.message};
+        diagnosticError(err,{component:"automation.timer",operation:"timer-overlay",data:{automationId:event.id,classId:event.timerOverlay?.classId||event.classId||null}});
       }
     }
   }
 
-  audit({kind:"automation.run",automationId:event.id,name:event.name,manual,actions:steps.map(x=>x.action),targets:event.targets,ok:combined.ok});
+  audit({kind:"automation.run",automationId:event.id,name:event.name,manual,actions:steps.map(x=>x.action),targets:event.targets,passes:combined.passes,continuous,ok:combined.ok});
   return combined;
 }
 
@@ -5321,10 +5350,10 @@ app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireC
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
 
 function automationResourceKeys(event){
-  const steps=[{action:event.action,targets:event.targets,useEventTargets:true},...(event.actions||[])],keys=[];
+  const steps=automationActionSequence(event),keys=[];
   for(const step of steps){
-    const action=step.action||event.action,domain=automationTargetDomain(action);let targets=[];
-    if(step.useEventTargets!==false&&domain===automationTargetDomain(event.action))targets=event.targets||[];
+    const action=step.action,domain=automationTargetDomain(action);let targets=[];
+    if(step!==steps[0]&&step.useEventTargets!==false&&domain===automationTargetDomain(steps[0]?.action))targets=steps[0]?.targets||event.targets||[];
     else if(Array.isArray(step.targets))targets=step.targets;
     if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
     if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
