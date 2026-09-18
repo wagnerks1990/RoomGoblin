@@ -98,6 +98,9 @@
 - Follow up the live controller click-through by allowing only the eight built-in
   `/test-images/tvN.svg` assets through media-command URL validation, fixing the
   Controller **Test Image** action without widening arbitrary same-origin paths.
+- Make administrator Veyon terminal Close dispatch cleanup immediately instead of
+  waiting behind state/read polling, fixing a Firefox-visible teardown race while
+  retaining the native ten-minute failsafe expiry.
 
 ### Browser-complete Veyon pilot
 
