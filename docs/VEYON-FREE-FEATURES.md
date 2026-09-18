@@ -133,14 +133,15 @@ python3 tools/prepare-veyon-pilot.py /tmp/roomgoblin-veyon-pilot
 cmake -S /tmp/roomgoblin-veyon-pilot -B /tmp/roomgoblin-veyon-build \
   -DCMAKE_BUILD_TYPE=Debug -DWITH_TRANSLATIONS=OFF -DWITH_LTO=OFF
 cmake --build /tmp/roomgoblin-veyon-build \
-  --target classroomchat remotefilebrowser webbridge roomgoblin-pilot-policy-test --parallel 2
+  --target classroomchat remotefilebrowser webbridge internetguard roomgoblin-pilot-policy-test --parallel 2
 /tmp/roomgoblin-veyon-build/plugins/remotefilebrowser/roomgoblin-pilot-policy-test
 ```
 
 The preparer clones official Veyon **v4.11.2 at a fixed commit**, checks that
 identity, initializes pinned submodules and adds the reviewed community plugin
-directories plus RoomGoblinWebBridge. InternetGuard source is included but its
-CMake target is skipped on non-Windows builds. The preparer refuses an existing destination. It does not install anything,
+directories plus RoomGoblinWebBridge. InternetGuard's cross-platform feature
+provider is built on Linux so the controller can advertise and dispatch it; only
+the Windows Firewall backend and COM libraries are Windows-only. The preparer refuses an existing destination. It does not install anything,
 copy authentication keys or invoke a service manager. Dependencies and the native
 build are separate from RoomGoblin's npm dependencies.
 
