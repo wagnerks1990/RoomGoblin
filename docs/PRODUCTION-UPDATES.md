@@ -130,22 +130,24 @@ A failure before source/runtime mutation leaves running services unchanged.
 
 ## Automatic safety-backup retention
 
-Runtime-changing RoomGoblin and Ubuntu host updates create an operational
-`pre-*.zip` safety backup before mutation. After the updated appliance passes
-health verification, the runner now asks the authenticated maintenance service to
-retain the newest **10** automatic `pre-*` archives and prune older automatic
-ones.
+Runtime-changing update flows create rollback material before mutation. After
+the updated appliance passes health and version convergence, RoomGoblin
+automatically enforces fixed retention:
 
-Retention is intentionally conservative:
+- newest **3** automatic operational archives;
+- newest **1** `pre-*.zip` safety archive;
+- newest **3** host-level `migration-*` snapshots.
 
-- the backup currently pinned for application revert is preserved even if it
-  falls outside the newest ten;
-- user-created backups and encrypted Full Recovery `.rgbak` archives are never
-  included in automatic pruning;
-- cleanup failure is reported as a warning and does not convert an otherwise
-  verified deployment into a failed/rolled-back update;
-- operators can inspect or invoke the existing backup-retention endpoint
-  independently when additional cleanup is needed.
+Update-created operational exports are named `auto-operational-*.zip`.
+Operator-created operational exports are named `manual-operational-*.zip`.
+Historical `classroom-hub-operational-*.zip` files are treated as legacy
+automatic update archives so existing appliances can be cleaned automatically.
+
+The currently rollback-pinned archive is preserved even when it is older than
+the normal limit. Manual operational exports and encrypted Full Recovery
+`.rgbak` archives are never auto-deleted. Cleanup occurs only after successful
+verification and is best-effort, so cleanup failure cannot turn a healthy update
+into a failed deployment.
 
 Diagnostic bundles are download artifacts, not recovery points. They are now
 created in maintenance temporary storage and deleted after the HTTP download
