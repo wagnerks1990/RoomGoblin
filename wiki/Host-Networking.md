@@ -33,7 +33,7 @@ Music Assistant is intentionally host-networked for physical-LAN discovery. On m
 
 RoomGoblin-managed Music Assistant recreations write `/data/.roomgoblin-compat/sitecustomize.py` and set `PYTHONPATH=/data/.roomgoblin-compat`. The guard filters only interfaces explicitly reporting Linux `operstate=down` before Music Assistant enumerates adapters. Active/unknown interfaces, including the classroom LAN and Tailscale, are preserved; unreadable state fails open. Do not disable Tailscale IPv6, remove Docker bridge addresses, or reset Music Assistant data as the permanent workaround.
 
-Existing adopted containers are never silently recreated. After upgrading from a pre-guard deployment, explicitly **Recreate/Update** Music Assistant once so the reviewed template is applied. The recreate path must remain usable even when the current Music Assistant API is offline; do not require successful pre-recreate authentication. Verify recovery with an HTTP response from `127.0.0.1:8095`, not merely a running container or listening socket.
+Existing adopted containers are never silently recreated. A RoomGoblin-owned Music Assistant container can be explicitly **Recreate/Update**d to apply the guard even when its current API is offline; do not require successful pre-recreate authentication. A foreign/adopted container is deliberately refused for recreate until its persistent data has been migrated into the managed services root, because replacing it with the managed template could otherwise switch `/data` to a different host directory. Verify recovery with an HTTP response from `127.0.0.1:8095`, not merely a running container or listening socket.
 
 ## Saved settings and browser links
 
