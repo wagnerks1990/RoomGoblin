@@ -26,6 +26,8 @@ const ADDONS={
 function hostAgentJson(method,pathName,body=null,timeoutMs=15000){return new Promise((resolve,reject)=>{const raw=body==null?null:Buffer.from(JSON.stringify(body));const req=http.request({socketPath:HOST_AGENT_SOCKET,path:pathName,method,headers:{"x-maintenance-token":TOKEN,...(raw?{"content-type":"application/json","content-length":raw.length}:{})}},res=>{const chunks=[];res.on("data",c=>chunks.push(c));res.on("end",()=>{const text=Buffer.concat(chunks).toString("utf8");let value;try{value=JSON.parse(text||"{}")}catch{value={error:text}}if((res.statusCode||500)>=400||value.ok===false)return reject(Error(value.error||`Host Agent HTTP ${res.statusCode}`));resolve(value)})});req.on("error",reject);req.setTimeout(timeoutMs,()=>req.destroy(Error("Host Agent request timed out")));if(raw)req.write(raw);req.end()})}
 function hostAgentRequest(args,timeoutMs=180000){return hostAgentJson("POST","/docker/exec",{args,cwd:""},timeoutMs)}
 async function containerExists(name){try{await hostAgentRequest(["inspect",name],10000);return true}catch{return false}}
+async function containerInspect(name){const result=await hostAgentRequest(["inspect",name],10000);const parsed=JSON.parse(result.stdout||"[]");if(!Array.isArray(parsed)||!parsed[0])throw Error("Container inspection returned no data");return parsed[0]}
+function roomGoblinOwnsContainer(info){return info?.Config?.Labels?.["org.roomgoblin.deployment-ownership"]==="roomgoblin"}
 async function hostServices(){try{const body=await hostAgentJson("GET","/services",null,10000);return Array.isArray(body.items)?body.items:Array.isArray(body.services)?body.services:[]}catch{return []}}
 function nativeServicePresent(unit){
   if(!unit)return false;
@@ -133,6 +135,7 @@ async function deployAddon(id,settings={},recreate=false){
     throw Error("Native veyon-webapi.service was not found. Install/configure native Veyon on the appliance host before enabling this integration.");
   }
   const exists=await containerExists(addon.container);
+  if(exists&&recreate){const info=await containerInspect(addon.container);if(!roomGoblinOwnsContainer(info))throw Error("Refusing to recreate an adopted container because its persistent mounts may be outside RoomGoblin managed storage. Migrate the service data into the managed services root first, then deploy a RoomGoblin-owned container.");}
   if(id==="musicassistant"&&exists&&!recreate){const status=await saveMusicAssistantSettings(settings);return {ok:true,id,adopted:true,managed:true,container:addon.container,image:addon.image,message:`Existing Music Assistant adopted and authenticated successfully (${status.players?.length||0} player(s) discovered).`}}
   let resolved=settings||{};
   if(id!=="musicassistant"){const saved=await mainAppPut(id,settings);resolved=saved.resolved||resolved}
