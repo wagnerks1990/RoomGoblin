@@ -188,11 +188,12 @@ class CloudflareManager{
     await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress}});
     return ingress;
   }
-  async ensureDns(ctx,settings,tunnel){
-    const name=settings.hostname,target=`${tunnel.id}.cfargotunnel.com`;
+  async ensureDns(ctx,settings,tunnel,name=settings.hostname,comment="Managed by RoomGoblin Cloudflare provisioning"){
+    name=dnsName(name,"Managed hostname");
+    const target=`${tunnel.id}.cfargotunnel.com`;
     const rows=await ctx.client.get(`/zones/${ctx.zone.id}/dns_records?name=${encodeURIComponent(name)}&per_page=100`);
     const existing=(Array.isArray(rows)?rows:[]).find(x=>String(x.name).toLowerCase()===name);
-    const desired={type:"CNAME",name,content:target,proxied:true,ttl:1,comment:"Managed by RoomGoblin Cloudflare provisioning"};
+    const desired={type:"CNAME",name,content:target,proxied:true,ttl:1,comment};
     if(existing){
       const same=existing.type==="CNAME"&&String(existing.content).toLowerCase()===target.toLowerCase();
       if(!same&&!settings.replaceConflictingDns)throw failure(`DNS ${name} already exists and does not point to the RoomGoblin tunnel. Enable explicit conflicting-record replacement to take ownership.`,409);
