@@ -26,7 +26,10 @@ test("supported optional integrations can be adopted or Hub-managed",()=>{
   assert.match(ext,/dataPreserved:true/);
   assert.match(ext,/org\.roomgoblin\.deployment-ownership=roomgoblin/);
   assert.match(ext,/\.roomgoblin-managed/);
-  assert.match(ext,/musicassistant[\s\S]*?--network","host"/);
+  assert.match(ext,/INTEGRATION_NETWORK="roomgoblin-integrations"/);
+  assert.match(ext,/const networkMode=id==="mosquitto"\?INTEGRATION_NETWORK:"host"/);
+  assert.match(ext,/PYTHONPATH=\/data\/\.roomgoblin-compat/);
+  assert.match(ext,/ROOMGOBLIN_MA_LAN_INTERFACE/);
   assert.match(host,/_adopt_existing/);
   assert.match(host,/docker','inspect'/);
   assert.match(dockerfile,/NODE_OPTIONS=--require=\/app\/extensions\.js/);
