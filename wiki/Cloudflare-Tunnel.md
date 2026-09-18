@@ -57,6 +57,8 @@ The native Host Agent remains `ProtectSystem=full`; managed provisioning grants 
 
 `cloudflared` package installation is handled by the normal root RoomGoblin install/update path, not by the Host Agent. The Host Agent configures only an already-installed binary, avoiding writes to APT, dpkg, or `/usr` from its restricted mount namespace.
 
+If an interrupted/failed attempt left the dedicated RoomGoblin unit masked to `/dev/null`, the next RoomGoblin update safely removes only that stale dedicated mask. A valid existing `cloudflared-roomgoblin.service` file is preserved rather than overwritten.
+
 The GUI installs the connector without restarting the requesting Hub and then offers a separate **Restart RoomGoblin** action so `TRUST_PROXY_HOPS=1` can take effect cleanly.
 
 RoomGoblin checkpoints the created tunnel and DNS IDs before installing the local connector. If host installation fails, retry provisioning reuses those recorded resources instead of leaving them as an unrecognized same-name tunnel.
