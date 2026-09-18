@@ -120,7 +120,7 @@ If the release changes the database schema, follow release-specific rollback ins
 
 ## Web-managed updates
 
-The **System updates** page tracks merged commits on the trusted `main` branch. It does not wait for or select alpha/beta/stable GitHub release tags. **Check GitHub** compares the installed Git commit with the latest `wagnerks1990/RoomGoblin:main` commit and offers an update only when the current checkout is clean and can fast-forward to that exact commit.
+The **System updates** page tracks merged commits on the trusted `main` branch. It does not wait for or select alpha/beta/stable GitHub release tags. **Check GitHub** compares the installed Git commit with the latest `wagnerks1990/RoomGoblin:main` commit and offers an update only when the current checkout can fast-forward to that exact commit and has no unsupported tracked source edits; the existing legacy device/hardware configuration migration remains allowed.
 
 Installing from the GUI still uses the production update transaction rather than a browser-side Git pull. The Hub rechecks the selected main commit immediately before handoff, then the native updater independently fetches `origin/main`, verifies ancestry, waits for both exact `sha-<commit>` CI images, checks their embedded revision labels, creates an operational recovery backup, performs selective reconciliation, and verifies application/maintenance/Host Agent health. Missing or failed CI artifacts stop the operation before source/runtime mutation. Automatic updates use the same main-commit flow during the configured maintenance window.
 
