@@ -224,9 +224,25 @@ class CloudflareManager{
     return this.ensureAccessForHostname(ctx,settings.hostname,settings.accessEmailDomain,"RoomGoblin");
   }
   async provision(input={}){
+    const previous=this.saved();
     let settings=this.save(input);
     settings=this.saved();
     const ctx=await this.resolve(settings);
+    if(previous.musicAssistantPublicEnabled&&!settings.musicAssistantPublicEnabled){
+      if(previous.ownership?.musicAssistantDns===true&&previous.ids?.musicAssistantDnsRecordId){
+        try{await ctx.client.delete(`/zones/${ctx.zone.id}/dns_records/${previous.ids.musicAssistantDnsRecordId}`)}catch(error){if(error.status!==404)throw error}
+      }
+      if(previous.ownership?.musicAssistantAccessApp===true&&previous.ids?.musicAssistantAccessAppId){
+        try{await ctx.client.delete(`/accounts/${ctx.accountId}/access/apps/${previous.ids.musicAssistantAccessAppId}`)}catch(error){if(error.status!==404)throw error}
+      }
+      const current=this.saved();
+      current.ids={...(current.ids||{}),musicAssistantDnsRecordId:"",musicAssistantAccessAppId:"",musicAssistantAccessPolicyId:""};
+      current.ownership={...(current.ownership||{}),musicAssistantDns:false,musicAssistantAccessApp:false};
+      this.storage.setPreference(PREF,current);settings=current;
+      const ma=this.storage.getPreference("musicassistant.config",{})||{};
+      const previousUrl=previous.musicAssistantHostname?`https://${previous.musicAssistantHostname}/`:"";
+      if(previousUrl&&ma.browserUrl===previousUrl)this.storage.setPreference("musicassistant.config",{...ma,browserUrl:""});
+    }
     const checkpoint=(ids={},ownership={})=>{
       const current=this.saved(),persisted={...current,
         ids:{...(current.ids||{}),accountId:ctx.accountId,zoneId:ctx.zone.id,...ids},
