@@ -1847,9 +1847,9 @@ function scheduledAutomationDescription(e){
 function selectedScheduledAutomationId(){
   return String(window.automationEventSelect?.value||window.automationEditorEventSelect?.value||autoId?.value||"");
 }
-function syncScheduledAutomationSelectors(preferredId=""){
+function syncScheduledAutomationSelectors(preferredId=null){
   const sorted=[...S.automations].sort((a,b)=>scheduledAutomationSortKey(a).localeCompare(scheduledAutomationSortKey(b))||String(a.name||"").localeCompare(String(b.name||"")));
-  const selected=preferredId||selectedScheduledAutomationId()||sorted[0]?.id||"";
+  const selected=preferredId!==null?String(preferredId):(selectedScheduledAutomationId()||sorted[0]?.id||"");
   const html=['<option value="">— New scheduled automation —</option>',...sorted.map(e=>`<option value="${esc(e.id)}" ${e.id===selected?'selected':''}>${esc(scheduledAutomationLabel(e))}</option>`)].join("");
   if(window.automationEventSelect)automationEventSelect.innerHTML=html;
   if(window.automationEditorEventSelect)automationEditorEventSelect.innerHTML=html;
@@ -1868,7 +1868,7 @@ function deleteSelectedAutomation(){const e=selectedScheduledAutomation();if(e)d
 function renderAutomationList(){
   if(!S.automations.length){automationList.innerHTML='<div class="muted">No scheduled automations yet.</div>';syncScheduledAutomationSelectors("");return}
   const sorted=[...S.automations].sort((a,b)=>scheduledAutomationSortKey(a).localeCompare(scheduledAutomationSortKey(b))||String(a.name||"").localeCompare(String(b.name||"")));
-  syncScheduledAutomationSelectors(autoId?.value||"");
+  syncScheduledAutomationSelectors(autoId?.value||null);
   const e=sorted.find(x=>x.id===selectedScheduledAutomationId())||sorted[0];
   if(!e){automationList.innerHTML='<div class="muted">No scheduled automations yet.</div>';return}
   const last=e.lastRun?`${e.lastRun.ok?'✓':'✕'} ${new Date(e.lastRun.at).toLocaleString()}${e.lastRun.message?' — '+esc(e.lastRun.message):''}`:'Never';
