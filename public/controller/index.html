@@ -1111,7 +1111,7 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
         <div class="formField"><label>RoomGoblin public hostname</label><input id="cfgCloudflareHostname" placeholder="roomgoblin.example.org"></div>
         <div class="formField"><label>Tunnel name</label><input id="cfgCloudflareTunnelName" placeholder="roomgoblin-roomgoblin.example.org"></div>
         <label><input id="cfgCloudflareHttps" type="checkbox" checked> Always Use HTTPS</label>
-        <label><input id="cfgCloudflareRewrites" type="checkbox" checked> Automatic HTTPS Rewrites</label>
+        <label><input id="cfgCloudflareRewrites" type="checkbox" checked> Automatic HTTPS Rewrites</label><label><input id="cfgCloudflareHttp3" type="checkbox" checked> HTTP/3</label><label><input id="cfgCloudflareBrotli" type="checkbox" checked> Brotli compression</label>
         <label><input id="cfgCloudflareAccess" type="checkbox" onchange="cfgCloudflareAccessDomain.disabled=!this.checked"> Protect with Cloudflare Access</label>
         <div class="formField"><label>Access allowed email domain</label><input id="cfgCloudflareAccessDomain" placeholder="staff.example.org" disabled></div>
         <label><input id="cfgCloudflareReplaceDns" type="checkbox"> Allow replacement of a conflicting existing DNS record</label>
