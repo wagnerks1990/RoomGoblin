@@ -31,7 +31,7 @@ const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=requ
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
-const {AUTOMATION_SCHEMA_VERSION,normalizeAutomationAction,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceHasContinuousActions,normalizeAutomationEvent}=require("./automation-schema");
+const {AUTOMATION_SCHEMA_VERSION,normalizeAutomationAction:normalizeSequenceAction,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceHasContinuousActions,normalizeAutomationEvent:normalizeSequenceEvent}=require("./automation-schema");
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -1322,7 +1322,7 @@ function normalizeAutomation(input={},existing={}){
     if(!actionId||usedIds.has(actionId))actionId=cleanId(`${id.slice(0,60)}-action-${index+1}`).slice(0,100);
     usedIds.add(actionId);
     const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
-    const normalized=normalizeAutomationAction({
+    const normalized=normalizeSequenceAction({
       ...item,
       id:actionId,
       action:stepAction,
@@ -1365,7 +1365,7 @@ function normalizeAutomation(input={},existing={}){
     createdAt:existing.createdAt||new Date().toISOString(),
     updatedAt:new Date().toISOString()
   };
-  return normalizeAutomationEvent(base);
+  return normalizeSequenceEvent(base);
 }
 
 function automationTargetDomain(action){
@@ -1801,6 +1801,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
   }
 
+  // Resource isolation: no automation implicitly clears display content; only explicit actions replace content.
   let pass=1,aborted=false;
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
@@ -1823,6 +1824,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
       let rawTargets=[];
       if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
+      // An action's explicit target selection always wins over linked-class defaults.
       else if(explicitTargets.length)rawTargets=explicitTargets;
       else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
