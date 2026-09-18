@@ -60,6 +60,24 @@ test("Cloudflare client preserves 404 for missing-resource reconciliation",async
   await assert.rejects(client.get("/missing"),error=>error.status===404&&/not found/.test(error.message));
 });
 
+test("Cloudflare client retries transient safe reconciliation failures and reports the failing operation",async()=>{
+  let calls=0;
+  const fetch=async()=>{
+    calls++;
+    if(calls<3){const error=Error("fetch failed");error.cause={code:"ECONNRESET"};throw error}
+    return response([{id:"ok"}]);
+  };
+  const client=new CloudflareClient({auth:{mode:"token",token:"token-value"},fetchImpl:fetch});
+  const value=await client.get("/zones?name=example.org");
+  assert.equal(calls,3);
+  assert.equal(value[0].id,"ok");
+
+  let postCalls=0;
+  const postClient=new CloudflareClient({auth:{mode:"token",token:"token-value"},fetchImpl:async()=>{postCalls++;throw Error("fetch failed")}});
+  await assert.rejects(()=>postClient.post("/accounts/acct/cfd_tunnel",{name:"x"}),error=>error.status===502&&/POST \/accounts\/acct\/cfd_tunnel/.test(error.message));
+  assert.equal(postCalls,1);
+});
+
 test("Cloudflare client prefers scoped bearer token and supports legacy global key",async()=>{
   const seen=[];
   const fetch=async(_url,opts)=>{seen.push(opts.headers);return response([])};
