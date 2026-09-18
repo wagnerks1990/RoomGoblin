@@ -68,6 +68,14 @@ The GUI installs the connector without restarting the requesting Hub and then of
 RoomGoblin checkpoints the created tunnel and DNS IDs before installing the local connector. If host installation fails, retry provisioning reuses those recorded resources instead of leaving them as an unrecognized same-name tunnel.
 
 ## Availability
+## Additional protected HTTPS resources
+
+Music Assistant can optionally use a separate hostname on the same RoomGoblin tunnel. Its public hostname routes to local port 8095 and is required to have a Cloudflare Access email-domain Allow policy. RoomGoblin keeps its backend Music Assistant URL local and does not move stream/Sendspin traffic onto the public UI hostname.
+
+After provisioning, use the returned Music Assistant HTTPS URL as Music Assistant's browser/external URL. Direct LAN port 8095 remains available as a trusted-network fallback.
+
+This is an allowlist, not a generic port publisher. Veyon WebAPI, maintenance, Host Agent, media plane, MQTT, ESPHome, Android management/ADB and local AI stay private.
+
 
 Cloudflare is outside RoomGoblin health. Internet, DNS, Cloudflare, or tunnel outages affect only the remote path. Local schedules, Morning Announcements, Background Music, displays, managed devices, and maintenance continue independently.
 
