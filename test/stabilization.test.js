@@ -577,6 +577,9 @@ test("one-command deployment bootstraps a guarded appliance with unique credenti
   }
   assert.match(installer,/SOURCE_REAL.*TARGET_REAL/);
   assert.match(installer,/First-time setup:/);
+  assert.match(installer,/host\/migration-retention/);
+  assert.match(installer,/PRUNE_MIGRATIONS/);
+  assert.match(installer,/keep:3/);
   assert.match(compose,/LAB_AGENT_TOKEN:/);
   assert.match(compose,/caddy:2\.11\.2-alpine/);
   assert.match(compose,/HUB_BIND_ADDRESS/);
