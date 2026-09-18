@@ -39,4 +39,6 @@ test("continuous scheduled automations recover after restart or operator resume"
   assert.match(server,/sequenceHasContinuousActions\(automationActionSequence\(event\)\)/);
   assert.match(server,/continuousRecovery=await recoverContinuousAutomationOccurrences\("operator-resume"\)/);
   assert.match(server,/recoverContinuousAutomationOccurrences\("startup-reconcile"\)/);
+  assert.match(server,/latest\?\.status==="cancelled"/);
+  assert.match(server,/status:cancelled\?"cancelled":"failed"/);
 });
