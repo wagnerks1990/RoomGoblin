@@ -16,6 +16,7 @@ namespace {
 const Feature::Uid Chat{"8a9e0f1d-2c3b-4467-a987-654321fedcba"};
 const Feature::Uid Files{"b1d9f27a-4c86-4f1e-9a3d-6e0c85f7b214"};
 const Feature::Uid ClipboardRead{"9fd323eb-5ae1-4552-8a4c-8b18837b78f7"};
+const Feature::Uid Terminal{"b6e98d71-41ad-4d2d-8c9e-7624db7a6cb0"};
 constexpr qint64 MaxFile = 8 * 1024 * 1024;
 constexpr qint64 MaxUpload = 2 * 1024 * 1024;
 FeatureMessage message(Feature::Uid uid, int command) {
@@ -133,6 +134,8 @@ void RoomGoblinWebBridge::pruneBrowserSessions()
                 sendFeatureMessage(message(Chat,13).addArgument(0,it->context),{client});
             if (client && it->kind==QStringLiteral("files"))
                 sendFeatureMessage(message(Files,4).addArgument(3,it->transfer),{client});
+            if (client && it->kind==QStringLiteral("terminal"))
+                sendFeatureMessage(message(Terminal,3).addArgument(0,it->context),{client});
             it=m_browserSessions.erase(it);
         } else ++it;
     }
@@ -151,19 +154,23 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
         return {{QStringLiteral("ok"),true},{QStringLiteral("protocol"),1},
                 {QStringLiteral("chat"),permitted(Chat)},{QStringLiteral("files"),permitted(Files)},
                 {QStringLiteral("upload"),permitted(Files)},
-                {QStringLiteral("control"),allowed(false)}};
+                {QStringLiteral("control"),allowed(false)},
+                {QStringLiteral("terminal"),terminalAllowed()}};
     const auto token=data.value(QStringLiteral("session")).toString();
     if (QUuid{token}.isNull()) return failure(QStringLiteral("Invalid browser session"));
     if (action==QStringLiteral("open")) {
         const auto kind=data.value(QStringLiteral("kind")).toString();
-        if ((kind!=QStringLiteral("chat") && kind!=QStringLiteral("files") && kind!=QStringLiteral("control")) ||
+        if ((kind!=QStringLiteral("chat") && kind!=QStringLiteral("files") && kind!=QStringLiteral("control") && kind!=QStringLiteral("terminal")) ||
             (kind==QStringLiteral("chat") && !permitted(Chat)) ||
             (kind==QStringLiteral("files") && !permitted(Files)) ||
-            (kind==QStringLiteral("control") && !allowed(false))) return failure(QStringLiteral("Feature unavailable"));
+            (kind==QStringLiteral("control") && !allowed(false)) ||
+            (kind==QStringLiteral("terminal") && !terminalAllowed())) return failure(QStringLiteral("Feature unavailable"));
         for (const auto& session : std::as_const(m_browserSessions))
             if (session.client.toStrongRef()==client) return failure(QStringLiteral("Close the existing browser session first"));
         if (kind==QStringLiteral("control") && std::count_if(m_browserSessions.cbegin(),m_browserSessions.cend(),[](const auto& item){return item.kind==QStringLiteral("control");})>=4)
             return failure(QStringLiteral("Remote control session limit"));
+        if (kind==QStringLiteral("terminal") && std::count_if(m_browserSessions.cbegin(),m_browserSessions.cend(),[](const auto& item){return item.kind==QStringLiteral("terminal");})>=2)
+            return failure(QStringLiteral("Terminal session limit"));
         if (m_browserSessions.size()>=8 || m_browserSessions.contains(token)) return failure(QStringLiteral("Browser session limit"));
         BrowserSession session;
         session.client=client; session.kind=kind; session.context=QUuid::createUuid(); session.expires=now+15*60*1000;
@@ -180,9 +187,18 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
                 }
             });
         }
+        if (kind==QStringLiteral("terminal")) {
+            const auto shell=data.value(QStringLiteral("shell")).toString();
+            if (shell!=QStringLiteral("cmd") && shell!=QStringLiteral("powershell"))
+                return failure(QStringLiteral("Choose CMD or Windows PowerShell"));
+            session.expires=now+10*60*1000; session.deadline=now+5000;
+            session.pending=true; session.terminalShell=shell;
+        }
         m_browserSessions.insert(token,session);
         if (kind==QStringLiteral("chat"))
             sendFeatureMessage(message(Chat,10).addArgument(0,session.context),{client});
+        if (kind==QStringLiteral("terminal"))
+            sendFeatureMessage(message(Terminal,1).addArgument(0,session.context).addArgument(1,session.terminalShell),{client});
         return {{QStringLiteral("ok"),true},{QStringLiteral("accepted"),true},{QStringLiteral("endpointVerified"),false}};
     }
     auto it=m_browserSessions.find(token);
@@ -191,13 +207,15 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
     if (action==QStringLiteral("close")) {
         if (session.kind==QStringLiteral("chat")) sendFeatureMessage(message(Chat,13).addArgument(0,session.context),{client});
         else if (session.kind==QStringLiteral("files")) sendFeatureMessage(message(Files,4).addArgument(3,session.transfer),{client});
+        else if (session.kind==QStringLiteral("terminal")) sendFeatureMessage(message(Terminal,3).addArgument(0,session.context),{client});
         else closeBrowserSession(session);
         m_browserSessions.erase(it);
         return {{QStringLiteral("ok"),true}};
     }
     if ((session.kind==QStringLiteral("chat") && !permitted(Chat)) ||
         (session.kind==QStringLiteral("files") && !permitted(Files)) ||
-        (session.kind==QStringLiteral("control") && !allowed(false))) return failure(QStringLiteral("Feature disabled"));
+        (session.kind==QStringLiteral("control") && !allowed(false)) ||
+        (session.kind==QStringLiteral("terminal") && !terminalAllowed())) return failure(QStringLiteral("Feature disabled"));
     if (session.pending && now>session.deadline) {
         if (session.kind==QStringLiteral("files"))
             sendFeatureMessage(message(Files,4).addArgument(3,session.transfer),{client});
@@ -205,6 +223,11 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
         session.transfer={}; session.request={};
     }
     if (action==QStringLiteral("state")) {
+        if (session.kind==QStringLiteral("terminal") && session.pending && now>session.deadline) {
+            session.pending=false; session.terminalExited=true;
+            session.error=QStringLiteral("Endpoint did not start the terminal");
+            sendFeatureMessage(message(Terminal,3).addArgument(0,session.context),{client});
+        }
         QVariantList screens;
         if (session.kind==QStringLiteral("control")) {
             QPoint minimum{};
@@ -234,7 +257,36 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
                 {QStringLiteral("frameHeight"),client->framebuffer().height()},
                 {QStringLiteral("ready"),!session.lease.isEmpty()},{QStringLiteral("lease"),session.lease},
                 {QStringLiteral("frameRevision"),static_cast<qulonglong>(session.leaseRevision)},
-                {QStringLiteral("topology"),session.topology}};
+                {QStringLiteral("topology"),session.topology},
+                {QStringLiteral("terminalReady"),session.terminalReady},
+                {QStringLiteral("terminalExited"),session.terminalExited},
+                {QStringLiteral("terminalBase"),session.terminalBase},
+                {QStringLiteral("terminalEnd"),session.terminalBase+session.terminalOutput.size()},
+                {QStringLiteral("shell"),session.terminalShell}};
+    }
+    if (session.kind==QStringLiteral("terminal")) {
+        if (action==QStringLiteral("terminalRead")) {
+            bool offsetOk=false; auto offset=data.value(QStringLiteral("offset")).toLongLong(&offsetOk);
+            if (!offsetOk || offset<0) return failure(QStringLiteral("Invalid terminal offset"));
+            bool reset=offset<session.terminalBase || offset>session.terminalBase+session.terminalOutput.size();
+            if (reset) offset=session.terminalBase;
+            const auto start=static_cast<int>(offset-session.terminalBase);
+            const auto text=session.terminalOutput.mid(start,32768);
+            return {{QStringLiteral("ok"),true},{QStringLiteral("text"),text},
+                    {QStringLiteral("cursor"),offset+text.size()},{QStringLiteral("reset"),reset},
+                    {QStringLiteral("ready"),session.terminalReady},{QStringLiteral("exited"),session.terminalExited},
+                    {QStringLiteral("error"),session.error}};
+        }
+        if (action==QStringLiteral("terminalWrite")) {
+            const auto value=data.value(QStringLiteral("text"));
+            if (!session.terminalReady || session.terminalExited || value.metaType().id()!=QMetaType::QString ||
+                !textArgument(data,QStringLiteral("text"),4096) || value.toString().toUtf8().size()>4096)
+                return failure(QStringLiteral("Terminal is not ready or input is invalid"));
+            sendFeatureMessage(message(Terminal,2).addArgument(0,session.context)
+                               .addArgument(2,value.toString()).addArgument(3,++session.terminalInputSequence),{client});
+            return {{QStringLiteral("ok"),true},{QStringLiteral("accepted"),true}};
+        }
+        return failure(QStringLiteral("Unsupported terminal action"));
     }
     if (session.kind==QStringLiteral("control")) {
         auto* connection=client->vncConnection();
@@ -371,6 +423,7 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
 
 bool RoomGoblinWebBridge::handleFeatureMessage(ComputerControlInterface::Pointer client, const FeatureMessage& msg)
 {
+    if (msg.featureUid()==Terminal) return handleTerminalMaster(client,msg);
     if (msg.featureUid()!=Chat && msg.featureUid()!=Files && msg.featureUid()!=ClipboardRead) return false;
     QMutexLocker lock(&m_browserMutex);
     const auto now=QDateTime::currentMSecsSinceEpoch();

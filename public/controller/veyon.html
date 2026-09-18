@@ -36,7 +36,7 @@
     <p class="muted">Commands use the current selection, including hidden selections. Clipboard and input tools require the RoomGoblin native bridge.</p>
     <div class="toolbar">
       <button id="freeCatalog">Feature coverage</button><button id="deviceInfo">User and session details</button>
-      <button id="analyzeScreen">Analyze screen locally</button><button id="communityChat">Two-way chat</button><button id="communityFiles">Browse pilot files</button>
+      <button id="analyzeScreen">Analyze screen locally</button><button id="communityChat">Two-way chat</button><button id="communityFiles">Browse pilot files</button><button id="liveTerminal" hidden>Live CMD / PowerShell</button>
       <button id="sendKey">Send key or shortcut</button><button id="sendClipboard">Send clipboard text</button>
       <button id="saveMac">Set MAC address</button><button id="wakeComputers">Wake computers</button>
     </div>
@@ -115,5 +115,12 @@
   <div class="row"><strong id="communityTitle">Community tools</strong><button id="communityClose" type="button">Close session</button></div>
   <p id="communityStatus" role="status"></p><div id="communityBody"></div>
 </dialog>
-<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/veyon-community.js"></script><script src="/controller/veyon-control.js"></script><script src="/controller/lab-accessibility.js" defer></script>
+<dialog id="terminalDialog" aria-labelledby="terminalTitle">
+  <div class="row"><strong id="terminalTitle">Live command session</strong><button id="terminalClose" type="button">Terminate session</button></div>
+  <p class="muted">Administrator-only, one computer, ten-minute maximum. Commands run with the signed-in user's permissions. Commands and output are not saved by RoomGoblin.</p>
+  <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-live="polite"></pre>
+  <form id="terminalForm"><label>Command<input id="terminalInput" maxlength="4096" autocomplete="off" spellcheck="false"></label><button type="submit">Run</button></form>
+  <p id="terminalStatus" role="status"></p>
+</dialog>
+<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/veyon-community.js"></script><script src="/controller/veyon-terminal.js"></script><script src="/controller/veyon-control.js"></script><script src="/controller/lab-accessibility.js" defer></script>
 </body></html>

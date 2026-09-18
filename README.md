@@ -8,6 +8,8 @@ See [Free Veyon features and community pilot](docs/VEYON-FREE-FEATURES.md) for w
 
 [Windows Internet Guard browser pilot](docs/VEYON-INTERNET-GUARD-PILOT.md) documents the disposable 4.11.2 endpoint test and firewall recovery path.
 
+[Veyon live terminal pilot](docs/VEYON-LIVE-TERMINAL.md) documents the administrator-only CMD/Windows PowerShell bridge, strict Veyon-only transport and Windows acceptance gate.
+
 ## Displays & AV
 
 Use the [TV Routing Matrix](docs/TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has

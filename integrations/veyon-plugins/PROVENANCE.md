@@ -38,13 +38,20 @@ RoomGoblin modifications, September 2026:
   verify byte counts and write results, and stop the worker on close/timeout.
   Add browser uploads only to `RoomGoblin-Pilot/Inbox`, limited to 2 MiB,
   128 KiB ordered chunks and one transfer. New files use QSaveFile atomic commit;
-  existing names are never overwritten and partial files are discarded.
+  existing names are never overwritten and partial files are discarded. This
+  file feature still provides no deletion, shell or execution operation.
 - Internet Guard: port the GPL Windows backend into the exact pinned Veyon
   4.11.2 build instead of loading the upstream 4.10-targeted DLL. Do not enable
   a disabled Windows Firewall profile; apply the eight named rules
   transactionally or roll all of them back; expose only selected-PC block/allow;
   and schedule a 15-minute in-process automatic release. This is incomplete
   tunnel prevention and a crashed service can leave named rules behind.
+- RoomGoblinWebBridge terminal: original RoomGoblin GPL-2.0-or-later code; no
+  community or commercial terminal implementation is copied. It binds an opaque
+  context to the authenticated Veyon caller and starts only `cmd.exe` or Windows
+  PowerShell in Veyon's signed-in-user session worker. It does not use a second
+  endpoint agent, WinRM, SSH, UAC elevation or SYSTEM execution. Sessions expire
+  after ten minutes and bound input/output in memory.
 
 The file browser pins one authenticated teacher only while its worker session is
 open. Close the browser/native dialog before using a replacement connection;
@@ -55,7 +62,9 @@ The test folder is a pilot restriction, not a hardened filesystem sandbox agains
 an adversarial local user changing filesystem links concurrently. Test with
 non-sensitive sample files in disposable VMs. Veyon's existing authentication,
 access rules and user-session permissions remain mandatory. Upload is restricted
-to the pilot Inbox; no overwrite, deletion, remote shell or execution is added.
+to the pilot Inbox; no overwrite, deletion or execution is added by the file
+feature. The separate administrator-only terminal has the explicit boundary
+documented in `docs/VEYON-LIVE-TERMINAL.md`.
 Internet Guard is Windows-only and must be tested on a disposable endpoint with
 the documented manual firewall-rule cleanup available.
 
@@ -79,4 +88,6 @@ session is added. Native remote-control disabled-feature policy applies.
 
 Browser session adapter: authenticated typed WebAPI route; user/connection-bound
 Hub sessions, 15-minute native chat expiry, bounded replies, correlated file
-listings, 8 MiB browser downloads and 2 MiB ordered browser uploads.
+listings, 8 MiB browser downloads and 2 MiB ordered browser uploads. The terminal
+route is separately administrator-gated, bound to one saved endpoint/connection,
+has no command-content audit and never exposes an arbitrary program or transport.

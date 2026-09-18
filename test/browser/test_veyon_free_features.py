@@ -170,6 +170,38 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         self.assertTrue(any(action == 'close' for action, _ in requests))
         self.assertFalse(errors, errors)
 
+    def test_live_terminal_uses_admin_route_and_renders_output_as_text(self):
+        page, errors, state = self.pilot_page()
+        requests = []
+        def respond(route):
+            action = route.request.url.rsplit('/', 1)[-1]
+            data = route.request.post_data_json
+            requests.append((action, data))
+            reply = {'ok': True}
+            if action == 'open':
+                reply.update(session='terminal-fixture', kind='terminal')
+            elif action == 'state':
+                reply.update(terminalReady=True, terminalExited=False, shell='powershell',
+                             terminalBase=0, terminalEnd=28, error='', messages=[], entries=[])
+            elif action == 'read':
+                reply.update(text='<img src=x onerror=alert(1)>', cursor=28, reset=False,
+                             ready=True, exited=False, error='')
+            route.fulfill(json=reply)
+        page.route('**/api/v1/veyon/computers/student-a/terminal/*', respond)
+        answers = iter(['powershell', None])
+        page.on('dialog', lambda dialog: dialog.accept(next(answers)))
+        page.locator('#liveTerminal').click()
+        page.locator('#terminalDialog[open]').wait_for()
+        page.wait_for_function("document.querySelector('#terminalOutput').textContent.includes('<img src=x')")
+        self.assertEqual(page.locator('#terminalOutput img').count(), 0)
+        page.locator('#terminalInput').fill('Get-Date')
+        page.locator('#terminalForm button[type="submit"]').click()
+        page.wait_for_timeout(100)
+        page.locator('#terminalClose').click()
+        self.assertTrue(any(action == 'write' and data.get('text') == 'Get-Date\r\n' for action, data in requests))
+        self.assertTrue(any(action == 'close' for action, _ in requests))
+        self.assertFalse(errors, errors)
+
     def test_local_ai_is_explicit_and_labels_are_plain_text(self):
         page, errors, state = self.pilot_page()
         requests = []

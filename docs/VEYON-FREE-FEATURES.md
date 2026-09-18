@@ -32,6 +32,7 @@ targets remain selected; check the existing selection count before confirming.
 | Small pilot file distribution | Community file tool | One target/file, 2 MiB, `RoomGoblin-Pilot/Inbox` only, atomic and no-overwrite; not official bulk distribution |
 | File collection | Community file tool | One target, pilot-folder browse and complete downloads up to 8 MiB; official bulk collection remains native-only |
 | Temporary Internet block | Experimental network access | Windows pilot only; common ports, selected PCs, 15-minute in-process release; see [recovery guide](VEYON-INTERNET-GUARD-PILOT.md) |
+| Live CMD / Windows PowerShell | Live terminal | Administrator only; one Windows endpoint, signed-in-user token, ten-minute lifetime and memory-only bounded output; see [pilot guide](VEYON-LIVE-TERMINAL.md) |
 | Wake-on-LAN | Save MAC for one computer, select targets, Wake | Fixed local broadcast UDP/9; BIOS/NIC/network must support it; packet acceptance does not prove startup |
 | Reboot, shutdown | Existing controls | One-shot request; never automatically retry uncertain delivery |
 | Immediate, confirmed, delayed, updates-then-shutdown | New power options | Destructive confirmation; delay 30–3600 seconds; no cancellation after dispatch; OS behavior varies |
@@ -105,6 +106,11 @@ runtime** and is not automatically installed on classroom computers.
   backend ported to the exact Veyon 4.11.2 pilot. The upstream binary stops at
   4.10.x. RoomGoblin refuses to enable a disabled firewall, rolls back partial
   rule creation and exposes explicit selected-PC block/allow in the browser.
+- **RoomGoblin live terminal:** original GPL RoomGoblinWebBridge code, not copied
+  from a community repository. It uses only Veyon's authenticated feature and
+  signed-in-user worker path; no WinRM, SSH, second agent or paid add-on. The
+  first pilot is an administrator-only bounded CMD/PowerShell stream, not a
+  full ConPTY emulator.
 
 These restrictions are intentionally narrower than the original forks. The file
 folder check is not a race-resistant security sandbox against a hostile local
@@ -199,6 +205,7 @@ unchanged:
 | `GET/PUT /lesson-actions` | `lab.control` | Shared bounded presets |
 | `POST /demo/stop-selected` | `lab.control` | 1–64 saved targets; all-mode cleanup capacity reserved before enqueue |
 | `POST /feature` | `lab.control` | Existing queue, four allowlisted shutdown variants and exact-UID Internet Guard pilot |
+| `POST /computers/:id/terminal/:action` | enabled administrator | Typed `open/state/read/write/close`; one saved target, no command/output audit or retry |
 
 Recording uses the existing `lab.sensitive.read` framebuffer route; browser commands never export authentication material. Native-only capabilities
 and newly discovered plugins without a browser adapter are omitted from the GUI
@@ -212,7 +219,7 @@ queue admission, real-browser recording/download/error handling, shutdown
 confirmation/cancellation and existing Veyon regressions. CI additionally builds
 the isolated C++ plugins and runs the filesystem policy fixture on Linux.
 These checks do not establish BIOS Wake support, OS shutdown semantics, Windows
-plugin ABI compatibility or real classroom operation.
+plugin ABI compatibility, Windows shell launch or real classroom operation.
 
 After exact main-image publication, use the existing backed-up RoomGoblin updater:
 
@@ -233,4 +240,4 @@ through the established updater/recovery procedure, preserving database/key
 identity together; do not reset native keys or blindly check out older code over
 new runtime data.
 
-See [Community browser tools](VEYON-COMMUNITY-WEB.md) for two-way browser chat and restricted file browsing/downloads with matching native pilot components.
+See [Community browser tools](VEYON-COMMUNITY-WEB.md) for two-way browser chat and restricted file browsing/downloads, and [Veyon live terminal](VEYON-LIVE-TERMINAL.md) for the administrator shell pilot.

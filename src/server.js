@@ -6478,11 +6478,30 @@ const veyonBrowserCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:
 const veyonBrowserActionLimit=(req,res,next)=>(req.params.action==="close"?veyonBrowserCleanupLimit:["state","pointer","key","clipboard"].includes(req.params.action)?veyonBrowserControlLimit:veyonBrowserLimit)(req,res,next);
 app.post("/api/v1/veyon/computers/:id/browser/:action",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonBrowserActionLimit,async(req,res)=>{
   res.set("Cache-Control","no-store");
+  if(req.body?.kind==="terminal"||String(req.params.action).startsWith("terminal"))return res.status(403).json({ok:false,error:"Live terminal requires the administrator-only terminal route"});
   const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
   const authorize=()=>{const user=requestUser(req);if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.control")||!hasCapability(user,"lab.sensitive.read")))throw Object.assign(Error("Browser tool permission revoked"),{status:403})};
   try{const actor=requestUser(req)?.id||"legacy-control";const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:req.params.action,input:req.body,authorize}));if(["open","close","send","download","uploadStart","uploadFinish","clipboard"].includes(req.params.action)&&!(req.params.action==="clipboard"&&result.pending))audit({kind:"veyon.browser",actor,action:req.params.action,sessionKind:req.params.action==="open"?String(req.body?.kind||"").slice(0,20):undefined,computer:computer.id,accepted:true});res.json(result)}
   catch(error){res.status([403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Browser request failed"})}
+});
+const veyonTerminalLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-terminal",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Terminal request limit reached"}});
+const veyonTerminalCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-terminal-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Terminal cleanup limit reached"}});
+const veyonTerminalActionLimit=(req,res,next)=>(req.params.action==="close"?veyonTerminalCleanupLimit:veyonTerminalLimit)(req,res,next);
+app.post("/api/v1/veyon/computers/:id/terminal/:action",requireAdmin,veyonTerminalActionLimit,async(req,res)=>{
+  res.set("Cache-Control","no-store");
+  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
+  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
+  const action=String(req.params.action||""),mapped={open:"open",close:"close",state:"state",read:"terminalRead",write:"terminalWrite"}[action];
+  if(!mapped)return res.status(400).json({ok:false,error:"Unsupported terminal action"});
+  const actor=requestUser(req)?.id;
+  const authorize=()=>{const user=requestUser(req);if(!user||!hasRole(user,"admin")||!hasCapability(user,"*"))throw Object.assign(Error("Administrator terminal permission revoked"),{status:403})};
+  const input={...(req.body||{})};if(mapped==="open"){input.kind="terminal";input.shell=String(input.shell||"")}
+  try{
+    const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:mapped,input,authorize}));
+    if(action==="open"||action==="close")audit({kind:"veyon.terminal",actor,action,computer:computer.id,shell:action==="open"?String(input.shell).slice(0,20):undefined,accepted:true});
+    res.json(result);
+  }catch(error){res.status([400,403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Terminal request failed"})}
 });
 const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
 const veyonFreeWriteLimit=rateLimit({windowMs:60_000,limit:30,keyGenerator:()=>"veyon-free-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool action limit reached; retry later"}});
