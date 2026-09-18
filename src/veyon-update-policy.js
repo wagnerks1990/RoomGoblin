@@ -28,4 +28,16 @@ function installedVeyonVersion(packages){
     .map(row=>parseVersion(row.version)?.text).filter(Boolean))];
   return {installedVersion:versions.length===1?versions[0]:null,mixedInstalledVersions:versions.length>1,installedVersions:versions};
 }
-module.exports={parseVersion,compareVersions,parseAptVeyon,installedVeyonVersion};
+function selectOfficialUbuntuAsset(release,host){
+  const version=parseVersion(release?.tag_name||release?.version)?.text;
+  const versionId=String(host?.osRelease?.versionId||"").trim();
+  const arch=String(host?.architecture||"").trim();
+  if(!version||!/^\d{2}\.\d{2}$/.test(versionId)||arch!=="amd64")return null;
+  const expectedName=`veyon_${version}.0-ubuntu.${versionId}_amd64.deb`;
+  const expectedUrl=`https://github.com/veyon/veyon/releases/download/v${version}/${expectedName}`;
+  const asset=(Array.isArray(release?.assets)?release.assets:[]).find(item=>String(item?.name||"")===expectedName);
+  const digest=String(asset?.digest||"");
+  if(!asset||String(asset.browser_download_url||"")!==expectedUrl||!/^sha256:[0-9a-f]{64}$/.test(digest))return null;
+  return {name:expectedName,url:expectedUrl,sha256:digest.slice(7),version,architecture:"amd64",distribution:"ubuntu",versionId};
+}
+module.exports={parseVersion,compareVersions,parseAptVeyon,installedVeyonVersion,selectOfficialUbuntuAsset};
