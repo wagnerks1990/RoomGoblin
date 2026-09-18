@@ -51,7 +51,7 @@ SERVICE_POLICY = {
     "chrony.service":{"owner":"host","recommendation":"keep","purpose":"Time synchronization","protected":True},
     "smartmontools.service":{"owner":"host","recommendation":"keep","purpose":"Disk health monitoring"},
     "unattended-upgrades.service":{"owner":"host","recommendation":"keep","purpose":"Ubuntu security updates"},
-    "classroom-control-hub-host-agent.service":{"owner":"core","recommendation":"keep","purpose":"Native host-management bridge for RoomGoblin","protected":True},
+    "classroom-hub-host-agent.service":{"owner":"core","recommendation":"keep","purpose":"Native host-management bridge for RoomGoblin","protected":True},
     "classroom-hub-update.service":{"owner":"core","recommendation":"keep","purpose":"Native package update runner (idle except during explicit updates)","protected":True},
     "classroom-hub-app-update.service":{"owner":"core","recommendation":"keep","purpose":"Verified application release and rollback runner","protected":True},
 }
@@ -530,7 +530,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200,{"ok":True,"version":VERSION,"socket":SOCKET_PATH,"systemd":shutil.which('systemctl') is not None})
             if path=='/system':
                 disk=shutil.disk_usage('/')
-                return self.send_json(200,{"ok":True,"version":VERSION,"hostname":socket_hostname(),"kernel":os.uname().release,"architecture":os.uname().machine,"cpuCount":os.cpu_count(),"uptimeSeconds":float(Path('/proc/uptime').read_text().split()[0]),"loadavg":os.getloadavg(),"memory":meminfo(),"disk":{"total":disk.total,"used":disk.used,"free":disk.free},"temperature":cpu_temperature(),"smart":smart_summary(),"updates":update_details(),"agentService":unit_state('classroom-control-hub-host-agent.service')})
+                return self.send_json(200,{"ok":True,"version":VERSION,"hostname":socket_hostname(),"kernel":os.uname().release,"architecture":os.uname().machine,"cpuCount":os.cpu_count(),"uptimeSeconds":float(Path('/proc/uptime').read_text().split()[0]),"loadavg":os.getloadavg(),"memory":meminfo(),"disk":{"total":disk.total,"used":disk.used,"free":disk.free},"temperature":cpu_temperature(),"smart":smart_summary(),"updates":update_details(),"agentService":unit_state('classroom-hub-host-agent.service')})
             if path=='/services':
                 items=list_services(); return self.send_json(200,{"ok":True,"agentVersion":VERSION,"items":items,"summary":{"total":len(items),"running":sum(x['active']=='active' for x in items),"integrated":sum(x.get('owner')=='integration' for x in items),"review":sum(x.get('owner')=='unmanaged' for x in items)}})
             m=re.fullmatch(r'/service/([^/]+)/logs',path)
