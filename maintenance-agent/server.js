@@ -460,7 +460,7 @@ app.post("/backup/create",async(req,res)=>{let dbSnapshot="";try{
   if(scope==="full")return await createFullRecoveryExport(req,res);
   const containsSensitiveData=backupContainsSensitiveData(scope);
   if(containsSensitiveData&&req.body?.confirmSensitiveData!==true)return res.status(400).json({ok:false,error:"This recovery backup contains private appliance data. Resubmit with confirmSensitiveData=true."});
-  const stamp=new Date().toISOString().replace(/[:.]/g,"-"),name=`classroom-hub-${scope}-${stamp}.zip`,dest=path.join(BACKUP_DIR,name),zip=new AdmZip();
+  const stamp=new Date().toISOString().replace(/[:.]/g,"-"),name=`classroom-hub-${scope}-${stamp}.zip`,dest=path.join(UPLOAD_DIR,name),zip=new AdmZip();
   const dbPath=path.join(HUB_ROOT,"data","classroom-control-hub.db");dbSnapshot=path.join(UPLOAD_DIR,`db-backup-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.db`);
   let hasDbSnapshot=false;if(!["quick","diagnostic"].includes(scope)&&fs.existsSync(dbPath)){await run("sqlite3",[dbPath,`.backup '${dbSnapshot.replace(/'/g,"''")}'`],{timeout:60000});hasDbSnapshot=fs.existsSync(dbSnapshot)}
   const baseFilter=backupFilter(scope),filter=(full,rel,ent)=>{if(/classroom-hub\.db(?:-wal|-shm)?$/.test(rel))return false;return baseFilter(full,rel,ent)};
@@ -753,7 +753,7 @@ app.get("/diagnostics/bundle",async(_req,res)=>{try{
   const documents=diagnosticSupportDocuments({createdAt:new Date().toISOString(),agentVersion:"1.0.0-alpha.81",application,containers,system:{platform:os.platform(),architecture:os.arch(),cpuCount:os.cpus().length,memoryBytes:os.totalmem()}});
   zip.addFile("summary.json",Buffer.from(JSON.stringify(documents.summary,null,2)));
   zip.addFile("docker/containers.json",Buffer.from(JSON.stringify(documents.containers,null,2)));
-  writeZipAtomic(zip,dest);res.download(dest,name);
+  writeZipAtomic(zip,dest);res.download(dest,name,error=>{fs.rmSync(dest,{force:true});if(error)console.error(`Diagnostics download failed: ${error.message}`)});
 }catch(e){res.status(500).json({ok:false,error:e.message})}});
 const MANAGED_INTEGRATIONS_FILE=path.join(HUB_ROOT,"data","managed-integrations.json");
 async function readManagedIntegrations({resolved=false}={}){
