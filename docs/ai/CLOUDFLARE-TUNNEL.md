@@ -18,6 +18,7 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 - `TRUST_PROXY_HOPS=1` is the reviewed topology. Full Recovery forwarded HTTPS still requires an immediate loopback peer.
 - Do not weaken `src/recovery-transport-policy.js` to trust arbitrary forwarded headers.
 - Same-name tunnels are not automatically adopted. Explicit adoption is required because RoomGoblin replaces the tunnel ingress configuration.
+- Persist Cloudflare resource IDs/ownership before invoking the host connector installer so a host-side failure remains safely retryable and does not orphan a RoomGoblin-created tunnel.
 - Conflicting DNS takeover requires explicit consent.
 - Cloudflare Access is optional and requires an explicit Allow selector. RoomGoblin authentication/capabilities remain mandatory.
 - Safe managed defaults are proxied DNS, Tunnel, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, and Brotli.
