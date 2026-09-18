@@ -124,8 +124,12 @@ test("provisioning refuses conflicting DNS takeover unless explicitly enabled",a
 
 test("Cloudflare host integration never places tunnel token in process arguments or browser state",()=>{
   const host=fs.readFileSync("host-agent/server.py","utf8"),maint=fs.readFileSync("maintenance-agent/server.js","utf8"),bridge=fs.readFileSync("src/cloudflare-bridge.js","utf8"),installer=fs.readFileSync("deploy/configure-cloudflare-tunnel.sh","utf8");
+  const unit=fs.readFileSync("host-agent/classroom-control-hub-host-agent.service","utf8");
+  const appUpdater=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
   assert.match(host,/cloudflare-token-/);assert.match(host,/--token-file/);assert.doesNotMatch(host,/--token['"]/);
   assert.match(installer,/chmod 0600/);assert.match(installer,/TRUST_PROXY_HOPS 1/);
+  assert.match(unit,/ReadWritePaths=.*\/etc\/cloudflared .*\/etc\/systemd\/system/);
+  assert.match(appUpdater,/ReadWritePaths=.*\/etc\/cloudflared .*\/etc\/systemd\/system/);
   assert.match(bridge,/integration\.cloudflare\.api-token/);assert.match(bridge,/\/api\/v1\/admin\/cloudflare\/provision/);
   assert.match(maint,/\/cloudflare\/configure/);
 });
