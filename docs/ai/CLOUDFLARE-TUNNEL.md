@@ -12,11 +12,13 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 - Tunnel connector tokens are not persisted in SQLite. They move server-side to maintenance/Host Agent and end at `/etc/cloudflared/roomgoblin.token` mode 0600.
 - Never place Cloudflare credentials in process arguments, `.env`, Git, logs, diagnostics, browser state, recovery exports, or documentation.
 - The connector service is `cloudflared-roomgoblin.service`; do not take over a generic `cloudflared.service`.
+- The sandboxed Host Agent must retain only the exact Cloudflare write exceptions `/etc/cloudflared` and `/etc/systemd/system/cloudflared-roomgoblin.service`; never broaden this to all of `/etc/systemd/system` or disable `ProtectSystem=full`.
 - Tunnel ingress exposes only the configured RoomGoblin hostname to `http://127.0.0.1:${PORT:-3000}`, followed by terminal `http_status:404`.
 - Never expose maintenance port 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, arbitrary URLs, or lab subnets.
 - `TRUST_PROXY_HOPS=1` is the reviewed topology. Full Recovery forwarded HTTPS still requires an immediate loopback peer.
 - Do not weaken `src/recovery-transport-policy.js` to trust arbitrary forwarded headers.
 - Same-name tunnels are not automatically adopted. Explicit adoption is required because RoomGoblin replaces the tunnel ingress configuration.
+- Persist Cloudflare resource IDs/ownership before invoking the host connector installer so a host-side failure remains safely retryable and does not orphan a RoomGoblin-created tunnel.
 - Conflicting DNS takeover requires explicit consent.
 - Cloudflare Access is optional and requires an explicit Allow selector. RoomGoblin authentication/capabilities remain mandatory.
 - Safe managed defaults are proxied DNS, Tunnel, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, and Brotli.

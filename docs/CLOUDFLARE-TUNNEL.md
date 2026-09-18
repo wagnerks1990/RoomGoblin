@@ -40,6 +40,7 @@ The managed flow can:
 11. offer a separate Hub restart so `TRUST_PROXY_HOPS=1` becomes active.
 
 Provisioning is repeatable. RoomGoblin stores resource IDs plus creation/adoption metadata in SQLite so later work can distinguish managed resources from unrelated Cloudflare resources.
+Cloudflare-side tunnel and DNS ownership is checkpointed before local connector installation. If host installation fails after Cloudflare resources were created, a later retry reuses the recorded resources instead of treating them as unrelated.
 
 ## Authentication
 
@@ -79,6 +80,8 @@ administrator route
 ```
 
 The temporary file is deleted after the installer exits. The durable connector token remains only at:
+
+The native Host Agent remains systemd-sandboxed with `ProtectSystem=full`. Automatic connector provisioning therefore grants write access only to `/etc/cloudflared` and the pre-created `/etc/systemd/system/cloudflared-roomgoblin.service` file; it does not make the rest of `/etc` or `/usr` writable to the Host Agent.
 
 ```text
 /etc/cloudflared/roomgoblin.token

@@ -277,6 +277,10 @@ if [[ ! -e /etc/classroom-control-hub/veyon/private.pem ]]; then install -m 0640
 # systemd requires every ReadWritePaths entry to exist before it can create the
 # Host Agent mount namespace. This state root is also used by updates/recovery.
 install -d -m 0750 -o root -g root /var/lib/classroom-hub
+# Cloudflare connector provisioning runs through the sandboxed Host Agent. These
+# exact host paths must exist before systemd constructs its writable allowlist.
+install -d -m 0700 -o root -g root /etc/cloudflared
+install -m 0644 -o root -g root /dev/null /etc/systemd/system/cloudflared-roomgoblin.service
 
 command -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
 install -D -m 0644 "$TARGET/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service
@@ -284,7 +288,7 @@ if [[ "$TARGET" != "/opt/classroom-hub" ]]; then sed -i "s#/opt/classroom-hub#$T
 sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=$SERVICES#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^Environment=HOST_BACKUP_DIR=.*#Environment=HOST_BACKUP_DIR=$BACKUP_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=$DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
-sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $TARGET $SERVICES $BACKUP_ROOT /etc/classroom-control-hub /var/lib/classroom-hub $DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
+sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $TARGET $SERVICES $BACKUP_ROOT /etc/classroom-control-hub /etc/cloudflared /etc/systemd/system/cloudflared-roomgoblin.service /var/lib/classroom-hub $DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 python3 -m py_compile "$TARGET/host-agent/server.py" "$TARGET/host-agent/start.py" "$TARGET/host-agent/full_recovery.py"
 install -d -m 0750 /run/classroom-control-hub
 install -D -m 0755 "$TARGET/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
