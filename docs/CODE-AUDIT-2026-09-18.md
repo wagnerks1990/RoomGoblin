@@ -107,3 +107,11 @@ only an error trap or metadata file would create false safety and could restart 
 mixed source/data state. Existing installations should continue to use the
 journaled application updater; designing a second host-owned installer transaction
 is tracked as an architectural follow-up rather than weakened in this patch.
+
+## Live controller click-through follow-up
+
+A post-audit appliance walkthrough exercised the controller screens and controls while a diagnostics snapshot was collected. Core Hub, scheduler, MQTT, configured hardware integrations, Veyon reachability, and managed displays were healthy in that snapshot. The walkthrough identified one reproducible application regression in the current UI path: the Controller generated its own `/test-images/tvN.svg` URL, while backend media validation rejected that path. The fix narrowly permits only the eight shipped test-card assets and adds traversal/out-of-range regression coverage.
+
+The walkthrough also encountered host/configuration-dependent 503 responses from optional Veyon community pilots and a Cloudflare provisioning failure from a runtime started before the latest host-install correction. Those are not treated as evidence of core Veyon or scheduler failure. Optional pilot controls remain dependent on their documented endpoint/service prerequisites, and Cloudflare provisioning must run on an updated appliance where `cloudflared` package installation occurs outside the sandboxed Host Agent.
+
+The diagnostics database contained substantial historical audit data. Current `main` already coalesces successful high-frequency GET/service polling into `telemetry_state` and provides bounded audit-retention pruning; no second competing retention mechanism was added during this follow-up.
