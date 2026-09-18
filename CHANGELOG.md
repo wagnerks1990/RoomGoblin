@@ -92,9 +92,9 @@
   `/test-images/tvN.svg` assets through media-command URL validation, fixing the
   Controller **Test Image** action without widening arbitrary same-origin paths.
 - Reduce SQLite write amplification by coalescing display/lab-agent credential
-  last-used timestamps, keep diagnostic bundles in temporary storage, and bound
-  verified update safety backups to the newest ten automatic pre-* archives while
-  preserving pinned revert and user-created recovery backups.
+  last-used timestamps, keep diagnostic bundles in temporary storage, and enforce
+  automatic retention of 3 operational backups, 1 pre-* safety backup, and 3
+  migration snapshots while preserving pinned rollback, manual, and Full Recovery archives.
 
 ### Native Windows enrollment EDR hardening
 
