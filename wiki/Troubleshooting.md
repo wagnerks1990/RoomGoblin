@@ -44,6 +44,17 @@ sudo docker exec classroom-control-hub-maintenance ls -la /run/classroom-control
 
 The current standard install path is `/opt/classroom-hub`. Older service units pointing at `/opt/classroom-control-hub` or `/run/classroom-hub/host-agent.sock` are stale migration configuration.
 
+## Controller Test Image reports a media URL error
+
+The Controller's per-TV **Test Image** action uses only RoomGoblin's built-in
+`/test-images/tv1.svg` through `/test-images/tv8.svg` assets. Those exact paths
+are valid media-command inputs. Arbitrary `/test-images/` paths remain rejected.
+
+If a current build still returns `Media URL must use...` for a built-in test
+card, the running Hub is older than the click-through fix. Update RoomGoblin and
+recreate the Hub container before changing media security policy. Do not work
+around this by allowing all same-origin paths.
+
 ## Displays repeatedly reload or flash
 
 A common cause is version mismatch between the backend and display renderer. Verify every embedded version identifier was updated together. Backend, controller, display, maintenance, and host-agent versions must converge.
