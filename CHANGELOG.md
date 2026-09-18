@@ -2,7 +2,25 @@
 
 ## Unreleased
 
+### Securly physical-console kiosk
+
+- Add an optional Ubuntu Server physical-console Securly Pass kiosk using tty1 autologin, Xorg, Openbox and Chromium Snap while preserving SSH and separate sudo-capable recovery access.
+- Capture the live-validated Chromium Snap requirements: systemd user D-Bus, no inherited tty1 standard file descriptors, Snap-owned profile storage and software browser rendering; retain the host NVIDIA Xorg driver independently.
+- Add `deploy/configure-securly-kiosk.sh`, operational helpers, operator/Wiki/AI documentation, cold-boot acceptance criteria and public-safe secret handling with no production kiosk code in Git.
+
+### Docker network least-privilege restoration
+
+- Restore service-specific Docker networking instead of applying host mode to every managed add-on.
+- Move RoomGoblin-managed Mosquitto to the named `roomgoblin-integrations` user-defined bridge and publish its configured MQTT port only on `127.0.0.1`.
+- Keep Govee2MQTT and Music Assistant on host networking because their reviewed upstream LAN multicast/discovery requirements depend on it.
+- Make the Host Agent enforce the exact network topology and allow lifecycle operations only for the reviewed named integration bridge.
+- Replace the Music Assistant DOWN-interface workaround with deterministic default-route LAN adapter selection so an UP Docker bridge cannot become the published/discovery interface after reboot.
+- Update controller messaging, operator/Wiki/AI/contributor documentation, and focused network-policy regressions.
+
 ### Music Assistant host-network recovery
+
+- Live-validate the permanent Zeroconf guard on the production appliance after reboot with Tailscale IPv6 restored and inactive addressed Docker bridges still present; preserve the legacy `/opt/music-assistant/data` bind and confirm HTTP 200 on 8095 plus listeners on 8097/8927.
+- Defer scheduled Background Music until the configured Music Assistant player is registered and available, and apply a 30-second backoff after transient scheduled start failures so provider/player startup does not generate repeated `PlayerUnavailableError`/`MediaNotFoundError` calls.
 
 - Fix Music Assistant startup on hosts that combine Tailscale/global IPv6 with addressed but link-down Docker bridges by filtering only interfaces whose Linux `operstate` is explicitly `down` before Music Assistant Zeroconf enumeration.
 - Keep host networking, LAN multicast discovery, Tailscale IPv6 and persistent Music Assistant data intact; fail open for unreadable/unknown interfaces.

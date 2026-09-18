@@ -39,9 +39,9 @@ deployment contract:
 
 Do not rename these merely for cosmetic consistency. A future internal-identifier migration must provide upgrade, rollback, data-preservation, and device-compatibility tests first. See [`docs/ROOMGOBLIN-REBRAND.md`](docs/ROOMGOBLIN-REBRAND.md) and [`docs/brand/BRAND-GUIDE.md`](docs/brand/BRAND-GUIDE.md).
 
-## Host-network deployment contract
+## Docker network deployment contract
 
-The Linux RoomGoblin appliance and maintenance containers, plus reviewed managed add-on templates, use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](docs/HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
+RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](docs/HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
 > **Status:** `1.0.0-alpha.84` — alpha software. Production deployment remains limited to reviewed, backed-up `amd64` installations. Normal administration may use the trusted-LAN HTTP deployment; recovery passphrases require loopback or HTTPS through a same-host proxy.
 
@@ -61,6 +61,7 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - appliance-wide Docker inventory/lifecycle controls
 - optional managed integration deployment/adoption
 - diagnostics, backup/recovery, and host-management tooling
+- optional attached-monitor Securly Pass kiosk with separate admin/SSH recovery
 
 For browser audio troubleshooting, see [Sendspin close diagnostics](docs/MUSIC-ASSISTANT-SENDSPIN.md#browser-reconnect-diagnostics).
 Use a unique receiver ID on each active display host.
@@ -289,6 +290,7 @@ Start with:
 - [`docs/brand/BRAND-GUIDE.md`](docs/brand/BRAND-GUIDE.md) — authoritative visual and verbal identity
 - [`docs/brand/AI-BRAND-CONTEXT.md`](docs/brand/AI-BRAND-CONTEXT.md) — machine/assistant branding rules
 - [`docs/AI-CONTEXT.md`](docs/AI-CONTEXT.md) — compact technical context for AI assistants
+- [`docs/SECURLY-KIOSK.md`](docs/SECURLY-KIOSK.md) — optional physical-console Securly kiosk setup, recovery and secret-handling contract
 - [`AGENTS.md`](AGENTS.md) — authoritative contributor/AI operating contract
 - [`wiki/`](wiki/) — Git-tracked mirror of the GitHub Wiki
 

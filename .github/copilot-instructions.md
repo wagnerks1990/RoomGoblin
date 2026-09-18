@@ -1,14 +1,18 @@
 # GitHub Copilot Instructions
 
+## Securly physical-console kiosk
+
+The optional host-console Securly kiosk is independent of RoomGoblin container health. Follow `docs/SECURLY-KIOSK.md` and `docs/ai/SECURLY-KIOSK.md`. Never commit or expose the real kiosk URL/code. Preserve the locked non-sudo kiosk account, separate sudo maintenance access, SSH and the Ctrl+Alt+F2 recovery path. Chromium Snap requires the systemd user D-Bus session and detached tty1 standard file descriptors; do not reintroduce private dbus-launch sessions or arbitrary custom Chromium profile paths.
+
 ## Product identity
 
 The current product name is **RoomGoblin — Classroom & Lab Management Hub**. The tagline is **Run the room. Manage the lab.** Read `/docs/brand/AI-BRAND-CONTEXT.md` before adding or changing user-facing names, colors, logos, icons, setup copy, documentation, or agent presentation.
 
 Do not perform blind renames of legacy identifiers. Alpha.77 intentionally changes the Android identity from `org.classroomhub.display` to `org.roomgoblin.display` and therefore requires uninstall/reinstall. Existing appliance paths, environment variables, service/socket/container identifiers, persisted keys, and enrollment IDs remain compatibility-sensitive. New user-facing copy should say RoomGoblin; old names may remain only for history, transition detection, or compatibility contracts documented in `/docs/ROOMGOBLIN-REBRAND.md`.
 
-## Host-network deployment contract
+## Docker network deployment contract
 
-The Linux RoomGoblin appliance and maintenance containers, plus reviewed managed add-on templates, use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](../docs/HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
+RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](../docs/HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
 Read `/AGENTS.md` before making changes. Use `/docs/AI-CONTEXT.md` for the current technical/operational model, `/docs/brand/AI-BRAND-CONTEXT.md` for branding rules, `/docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` for physically validated Android/Google TV capability boundaries, `/docs/DISPLAY-ACCESS.md` for the classroom display access contract, `/docs/AUTOMATION-DISPLAY-MEDIA.md` for automation media/class-target behavior, and `/docs/VEYON-MUSIC-INTEGRATIONS.md` for the Veyon/Music Assistant contract.
 
