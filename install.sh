@@ -283,6 +283,9 @@ install -d -m 0700 -o root -g root /etc/cloudflared
 install -m 0644 -o root -g root /dev/null /etc/systemd/system/cloudflared-roomgoblin.service
 
 command -v python3 >/dev/null 2>&1 || { apt-get update && apt-get install -y python3; }
+# Package installation must happen outside the sandboxed Host Agent. The Host
+# Agent only configures an already-installed cloudflared binary.
+bash "$TARGET/deploy/install-cloudflared-host.sh"
 install -D -m 0644 "$TARGET/host-agent/classroom-control-hub-host-agent.service" /etc/systemd/system/classroom-hub-host-agent.service
 if [[ "$TARGET" != "/opt/classroom-hub" ]]; then sed -i "s#/opt/classroom-hub#$TARGET#g" /etc/systemd/system/classroom-hub-host-agent.service; fi
 sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=$SERVICES#" /etc/systemd/system/classroom-hub-host-agent.service
