@@ -14,9 +14,9 @@ Alpha.82 live-upgrade corrections and acceptance limits are documented in
 `ALPHA82-UPGRADE-RECOVERY.md`. Preserve shared SQLite/ADB access under GID 10001
 and the pre-rebrand Android signing identity during every install and restore.
 
-## Host-network deployment contract
+## Docker network deployment contract
 
-The Linux Hub and maintenance containers, plus reviewed managed add-on templates, now use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
+RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
 This document gives AI assistants a compact operational model of RoomGoblin. `AGENTS.md` is the primary contributor contract; this document expands the technical context.
 
@@ -258,6 +258,7 @@ Integration health must be independent. A Pluto failure must not make MQTT/Govee
 
 Music Assistant managed Docker deployment uses host networking so local multicast discovery works and keeps its persistent `/data` outside the container. Native `veyon.service` and `veyon-webapi.service` are host-managed; the retired Veyon proxy container is not a supported managed add-on or recovery root.
 RoomGoblin-managed Music Assistant recreations also install `/data/.roomgoblin-compat/sitecustomize.py` and set `PYTHONPATH` to it. This guard filters only Linux adapters whose `operstate` is explicitly `down` before Music Assistant/ifaddr builds Zeroconf interface lists; it exists to prevent dual-stack startup failure on hosts with Tailscale IPv6 plus inactive addressed Docker bridges. Preserve active/unknown interfaces and fail open when state cannot be read. RoomGoblin-owned containers require an explicit recreate to gain the guard, and that recreate must not be blocked by an offline Music Assistant authentication preflight. Foreign/adopted containers must refuse destructive recreate until their `/data` is migrated into the managed services root.
+A live 2026-09-18 appliance also retains a separate legacy Compose deployment at `/opt/music-assistant` with `/opt/music-assistant/data:/data`. Its permanent repair is an in-place `.roomgoblin-compat/sitecustomize.py` plus `PYTHONPATH=/data/.roomgoblin-compat`; do not migrate that data root merely to apply the Zeroconf guard. Post-reboot acceptance proved Tailscale IPv6 can remain enabled, down Docker bridges can remain addressed, and 8095/8097/8927 remain healthy. Background Music scheduled startup must wait until the configured MA player is present/available and back off transient start failures rather than hammering `play_media` during provider initialization.
 
 Background Music runtime tracks the player that actually started playback. Pause, stop, and resume must address that player even if configuration changes or a manual request supplied a player override. Changing the configured player or favorite while active stops the prior playback identity before reconciling the new schedule.
 

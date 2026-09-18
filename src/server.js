@@ -5800,7 +5800,8 @@ const backgroundMusicRuntime={
   activeFavoriteId:null,
   lastAction:null,
   lastActionAt:null,
-  lastError:null
+  lastError:null,
+  retryAfter:0
 };
 const backgroundMusicPriorityTargets=new Set();
 let backgroundMusicTickBusy=false;
@@ -5952,14 +5953,31 @@ async function backgroundMusicTick(){
         backgroundMusicRuntime.pausedForPriority=false;
         backgroundMusicRuntime.activePlayerId=String(cfg.playerId||"");
         backgroundMusicRuntime.activeFavoriteId=String(cfg.favoriteId||"")||null;
+        backgroundMusicRuntime.retryAfter=0;
+        backgroundMusicRuntime.lastError=null;
       }else if(!backgroundMusicRuntime.manualStopped&&!backgroundMusicRuntime.pausedForPriority){
         backgroundMusicRuntime.playing=false;
         backgroundMusicRuntime.paused=false;
       }
     }
 
+    // Music Assistant can accept authenticated API calls before a configured
+    // player or media provider has completed startup. Do not hammer volume/play
+    // commands into a known-missing or unavailable player, and back off after a
+    // transient start failure so provider initialization can finish.
     if(!backgroundMusicRuntime.playing&&!backgroundMusicRuntime.paused){
-      await backgroundMusicStart({reason:actual?.found?"schedule-player-idle":"schedule"});
+      if(!actual?.found||actual.available===false){
+        backgroundMusicRuntime.lastError=actual?.found?"Background Music player is temporarily unavailable":"Background Music player has not registered yet";
+        return;
+      }
+      if(Number(backgroundMusicRuntime.retryAfter||0)>Date.now())return;
+      try{
+        await backgroundMusicStart({reason:"schedule-player-idle"});
+        backgroundMusicRuntime.retryAfter=0;
+      }catch(error){
+        backgroundMusicRuntime.retryAfter=Date.now()+30000;
+        throw error;
+      }
       backgroundMusicPlayerProbe.at=0;
     }else if(backgroundMusicRuntime.pausedForPriority){
       await backgroundMusicResume("priority-ended");

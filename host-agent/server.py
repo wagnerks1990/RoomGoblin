@@ -186,6 +186,8 @@ STARTUP_RECOVERY_ACTIVE = False
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 REQUEST_READ_TIMEOUT_SECONDS = 10
 MANAGED_OWNERSHIP_LABEL = 'org.roomgoblin.deployment-ownership=roomgoblin'
+INTEGRATION_NETWORK = 'roomgoblin-integrations'
+INTEGRATION_NETWORK_LABEL = 'org.roomgoblin.network=integration'
 
 class RequestError(RuntimeError):
     def __init__(self, message, status=400):
@@ -221,12 +223,33 @@ def allowed_managed_path(value):
     return resolved==SERVICES_ROOT or SERVICES_ROOT in resolved.parents or resolved==HUB_ROOT or HUB_ROOT in resolved.parents
 
 def validate_docker_run(args):
-    if args.count('--network') != 1 or args[args.index('--network')+1:args.index('--network')+2] != ['host']:
-        raise RuntimeError('Managed integrations require exactly one --network host option')
-    if any(x in ('-p', '--publish', '-P', '--publish-all') for x in args):
-        raise RuntimeError('Published ports are not supported with host networking; configure the application listener')
     if args[-1] not in MANAGED_IMAGES: raise RuntimeError('Integration image is not pinned or allowlisted')
     if args.count('--label') != 1: raise RuntimeError('Managed integrations require exactly one ownership label')
+    if args.count('--network') != 1: raise RuntimeError('Managed integrations require exactly one Docker network')
+    try:
+        name=args[args.index('--name')+1]
+        network=args[args.index('--network')+1]
+    except (ValueError, IndexError):
+        raise RuntimeError('Managed container name and network are required')
+    if name not in MANAGED_CONTAINERS: raise RuntimeError('Managed container name required')
+
+    host_required = name in {'music-assistant-server','govee2mqtt','nodered'}
+    if host_required and network!='host':
+        raise RuntimeError(f'{name} requires host networking for its reviewed deployment')
+    if name=='mosquitto' and network!=INTEGRATION_NETWORK:
+        raise RuntimeError('Mosquitto must use the RoomGoblin user-defined integration bridge')
+
+    published=[args[i+1] for i,x in enumerate(args[:-1]) if x in ('-p','--publish')]
+    if host_required and published:
+        raise RuntimeError('Published ports are not supported for host-networked integrations')
+    if name=='mosquitto':
+        if len(published)!=1 or not re.fullmatch(r'127\.0\.0\.1:([0-9]{1,5}):\1',published[0]):
+            raise RuntimeError('Mosquitto must publish exactly one same-port listener on 127.0.0.1')
+        port=int(published[0].split(':')[1])
+        if port<1 or port>65535: raise RuntimeError('Invalid published port')
+    elif published:
+        raise RuntimeError('Published ports are not allowlisted for this integration')
+
     i=1
     while i < len(args)-1:
         option=args[i]
@@ -236,9 +259,9 @@ def validate_docker_run(args):
             value=args[i+1]
             if option=='--name' and value not in MANAGED_CONTAINERS: raise RuntimeError('Managed container name required')
             if option=='--restart' and value!='unless-stopped': raise RuntimeError('Unsupported restart policy')
-            if option=='--network' and value!='host': raise RuntimeError('Unsupported Docker network')
+            if option=='--network' and value not in ('host',INTEGRATION_NETWORK): raise RuntimeError('Unsupported Docker network')
             if option=='--label' and value!=MANAGED_OWNERSHIP_LABEL: raise RuntimeError('Managed container ownership label is invalid')
-            if option in ('-p','--publish') and not re.fullmatch(r'[0-9]{1,5}:[0-9]{1,5}',value): raise RuntimeError('Invalid published port')
+            if option in ('-p','--publish') and not re.fullmatch(r'127\.0\.0\.1:[0-9]{1,5}:[0-9]{1,5}',value): raise RuntimeError('Invalid published port')
             if option in ('-v','--volume') and (not allowed_managed_path(value) or 'docker.sock' in value): raise RuntimeError('Volume source is outside the managed roots')
             if option in ('-e','--env') and not re.fullmatch(r'[A-Z][A-Z0-9_]{0,127}=.{0,2048}',value,re.S): raise RuntimeError('Invalid container environment setting')
             i+=2; continue
@@ -267,6 +290,10 @@ def managed_docker(args, cwd=''):
         if len(args)!=2 or args[1] not in MANAGED_CONTAINERS: raise RuntimeError('Container is outside the managed allowlist')
     elif verb=='rm':
         if len(args) not in (2,3) or args[-1] not in MANAGED_CONTAINERS or (len(args)==3 and args[1]!='-f'): raise RuntimeError('Unsupported container removal')
+    elif verb=='network':
+        tail=args[1:]
+        valid = tail==['inspect',INTEGRATION_NETWORK] or tail==['create','--driver','bridge','--label',INTEGRATION_NETWORK_LABEL,INTEGRATION_NETWORK]
+        if not valid: raise RuntimeError('Only the reviewed RoomGoblin integration bridge may be inspected or created')
     elif verb=='compose':
         if cwd!='hub' or any(x not in ('compose','config','--services','ps') for x in args): raise RuntimeError('Only read-only hub Compose inspection is allowed')
     elif verb=='run':

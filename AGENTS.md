@@ -23,9 +23,9 @@ The current product is **RoomGoblin — Classroom & Lab Management Hub**. The ca
 
 New user-facing copy must say **RoomGoblin**. Do **not** perform blind source-wide renames of legacy compatibility identifiers. Alpha.77 deliberately migrates Android from `org.classroomhub.display` to `org.roomgoblin.display`; this requires uninstalling the old app and installing the new app rather than an in-place update. Appliance paths, environment variables, service/socket/container names, persisted storage keys, API contracts, device IDs, enrollment credentials, and ADB trust material remain protected compatibility identifiers unless a separately reviewed migration supplies rollback and data-preservation tests.
 
-## Host-network deployment contract
+## Docker network deployment contract
 
-The Linux RoomGoblin appliance and maintenance containers, plus reviewed managed add-on templates, use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](docs/HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
+RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
 This file is the authoritative project context for AI coding assistants and human contributors working on RoomGoblin.
 
@@ -111,6 +111,7 @@ music-assistant-server     ghcr.io/music-assistant/server:2.9.13
 Native Veyon services remain host-managed. Existing Docker containers may be discovered and adopted for safe lifecycle/diagnostic control. Creation of new containers remains restricted to these pinned reviewed integration images; do not turn the Host Agent into an arbitrary root Docker command API.
 
 Music Assistant host-network compatibility is part of the managed deployment contract: recreated containers must keep `/data/.roomgoblin-compat/sitecustomize.py` on `PYTHONPATH` so interfaces explicitly reporting Linux `operstate=down` are excluded from Music Assistant Zeroconf enumeration. Do not solve this by disabling Tailscale IPv6 or deleting Docker bridge addresses. Adopt-without-recreate remains non-destructive. A RoomGoblin-owned container may be recreated even when the existing Music Assistant API is offline; a foreign/adopted container must refuse recreate until persistent data is migrated into the managed services root.
+The live appliance may instead retain the validated legacy `/opt/music-assistant` Compose deployment and `/opt/music-assistant/data:/data`; preserve that data root and apply the compatibility shim in place. Scheduled Background Music must not issue volume/play commands until its configured Music Assistant player is registered and available; transient scheduled starts use a bounded backoff while manual controls continue to report immediate errors.
 
 Persistent/runtime data must survive source updates. Never replace or commit production `.env`, databases, data, uploads, backups, master keys, private keys, credentials, or site-specific secrets.
 
