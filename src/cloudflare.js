@@ -179,11 +179,14 @@ class CloudflareManager{
       }
     }
     if(!tunnel?.id)throw failure("Cloudflare did not return a tunnel ID",502);
-    await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress:[
-      {hostname:settings.hostname,service:this.originUrl},
-      {service:"http_status:404"}
-    ]}});
     return {tunnel,created,adopted};
+  }
+  async configureTunnel(ctx,settings,tunnel){
+    const ingress=[];
+    if(settings.musicAssistantPublicEnabled)ingress.push({hostname:settings.musicAssistantHostname,service:"http://127.0.0.1:8095"});
+    ingress.push({hostname:settings.hostname,service:this.originUrl},{service:"http_status:404"});
+    await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress}});
+    return ingress;
   }
   async ensureDns(ctx,settings,tunnel){
     const name=settings.hostname,target=`${tunnel.id}.cfargotunnel.com`;
