@@ -15,6 +15,8 @@ const MAIN_APP_URL=mainAppUrl();
 const SERVICES_ROOT=path.resolve(process.env.MANAGED_SERVICES_ROOT||"/managed/services");
 const NATIVE_VEYON_URL="http://127.0.0.1:11080";
 const MUSIC_ASSISTANT_URL="http://127.0.0.1:8095";
+const INTEGRATION_NETWORK="roomgoblin-integrations";
+const INTEGRATION_NETWORK_LABEL="org.roomgoblin.network=integration";
 
 const ADDONS={
   mosquitto:{id:"mosquitto",name:"MQTT Broker",container:"mosquitto",image:"eclipse-mosquitto:2.0.22",dataRoot:"mosquitto",description:"MQTT broker used by RoomGoblin integrations."},
@@ -28,6 +30,21 @@ function hostAgentRequest(args,timeoutMs=180000){return hostAgentJson("POST","/d
 async function containerExists(name){try{await hostAgentRequest(["inspect",name],10000);return true}catch{return false}}
 async function containerInspect(name){const result=await hostAgentRequest(["inspect",name],10000);const parsed=JSON.parse(result.stdout||"[]");if(!Array.isArray(parsed)||!parsed[0])throw Error("Container inspection returned no data");return parsed[0]}
 function roomGoblinOwnsContainer(info){return info?.Config?.Labels?.["org.roomgoblin.deployment-ownership"]==="roomgoblin"}
+async function ensureIntegrationNetwork(){
+  try{
+    const result=await hostAgentRequest(["network","inspect",INTEGRATION_NETWORK],10000);
+    const parsed=JSON.parse(result.stdout||"[]"),network=Array.isArray(parsed)?parsed[0]:null;
+    if(network?.Driver!=="bridge")throw Error("RoomGoblin integration network exists but is not a bridge network");
+    return network;
+  }catch(error){
+    if(!/No such network|not found|does not exist/i.test(String(error?.message||""))&&!/Docker operation failed/i.test(String(error?.message||"")))throw error;
+    await hostAgentRequest(["network","create","--driver","bridge","--label",INTEGRATION_NETWORK_LABEL,INTEGRATION_NETWORK],30000);
+    const result=await hostAgentRequest(["network","inspect",INTEGRATION_NETWORK],10000);
+    const parsed=JSON.parse(result.stdout||"[]"),network=Array.isArray(parsed)?parsed[0]:null;
+    if(network?.Driver!=="bridge")throw Error("RoomGoblin integration bridge could not be verified");
+    return network;
+  }
+}
 async function hostServices(){try{const body=await hostAgentJson("GET","/services",null,10000);return Array.isArray(body.items)?body.items:Array.isArray(body.services)?body.services:[]}catch{return []}}
 function nativeServicePresent(unit){
   if(!unit)return false;
@@ -55,46 +72,77 @@ function cleanUrl(value,fallback){const raw=String(value||fallback).trim().repla
 function ensureMusicAssistantNetworkCompat(base){
   const compat=path.join(base,".roomgoblin-compat"),target=path.join(compat,"sitecustomize.py");
   fs.mkdirSync(compat,{recursive:true,mode:0o750});
-  const script=`"""RoomGoblin compatibility guard for Music Assistant host networking.
+  const script=`"""RoomGoblin LAN-interface guard for Music Assistant host networking.
 
-Music Assistant 2.9/2.10 enumerates explicit IPv4 adapters whenever a global
-IPv6 address is present. Linux Docker bridges can retain addresses while their
-operstate is down; passing those dead addresses to python-zeroconf can abort
-startup with OSError(19). Filter only adapters confirmed down and fail open for
-unknown/unreadable interface state.
+Music Assistant needs host networking for local player discovery, but the host
+also carries Docker bridge/veth and VPN interfaces. Select the adapter holding
+the host's default-route IPv4 address so mDNS/Zeroconf and publish-address
+selection stay on the physical LAN across reboots. An explicit
+ROOMGOBLIN_MA_LAN_INTERFACE override may be used on multi-NIC appliances.
 """
 import os
+import socket
 
 try:
     import ifaddr
 
     _roomgoblin_get_adapters = ifaddr.get_adapters
-    _roomgoblin_sys_class_net = os.environ.get(
-        "ROOMGOBLIN_SYS_CLASS_NET", "/sys/class/net"
+    _virtual_prefixes = (
+        "br-", "docker", "veth", "tailscale", "tun", "tap", "wg",
+        "virbr", "vmnet", "podman", "cni", "flannel", "zt",
     )
 
-    def _roomgoblin_live_adapters():
-        adapters = _roomgoblin_get_adapters()
-        live = []
-        for adapter in adapters:
-            name = getattr(adapter, "nice_name", None) or getattr(adapter, "name", "")
-            if not name or "/" in name:
-                live.append(adapter)
-                continue
-            try:
-                with open(
-                    os.path.join(_roomgoblin_sys_class_net, name, "operstate"),
-                    encoding="ascii",
-                ) as handle:
-                    state = handle.read().strip().lower()
-            except OSError:
-                state = ""
-            if state == "down":
-                continue
-            live.append(adapter)
-        return live
+    def _adapter_name(adapter):
+        return (
+            getattr(adapter, "nice_name", None)
+            or getattr(adapter, "name", "")
+            or ""
+        )
 
-    ifaddr.get_adapters = _roomgoblin_live_adapters
+    def _adapter_ipv4s(adapter):
+        result = []
+        for ip_config in getattr(adapter, "ips", ()):
+            if getattr(ip_config, "is_IPv6", False):
+                continue
+            value = getattr(ip_config, "ip", "")
+            if isinstance(value, tuple):
+                value = value[0]
+            if value:
+                result.append(str(value))
+        return result
+
+    def _default_route_ipv4():
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.settimeout(0)
+            sock.connect(("10.254.254.254", 1))
+            return sock.getsockname()[0]
+        except Exception:
+            return ""
+        finally:
+            sock.close()
+
+    def _roomgoblin_lan_adapters():
+        adapters = _roomgoblin_get_adapters()
+        preferred = os.environ.get("ROOMGOBLIN_MA_LAN_INTERFACE", "").strip()
+        if preferred:
+            selected = [a for a in adapters if _adapter_name(a) == preferred]
+            if selected:
+                return selected
+
+        primary_ip = _default_route_ipv4()
+        if primary_ip:
+            selected = [a for a in adapters if primary_ip in _adapter_ipv4s(a)]
+            if selected:
+                return selected
+
+        physical = [
+            a for a in adapters
+            if not _adapter_name(a).lower().startswith(_virtual_prefixes)
+        ]
+        return physical or adapters
+
+    ifaddr.get_adapters = _roomgoblin_lan_adapters
 except Exception:
     pass
 `;
@@ -140,7 +188,9 @@ async function deployAddon(id,settings={},recreate=false){
   let resolved=settings||{};
   if(id!=="musicassistant"){const saved=await mainAppPut(id,settings);resolved=saved.resolved||resolved}
   if(exists&&!recreate)return {ok:true,id,adopted:true,managed:true,container:addon.container,image:addon.image,message:"Existing container adopted by RoomGoblin without recreation."};
-  let args=["run","-d","--network","host","--name",addon.container,"--restart","unless-stopped","--label","org.roomgoblin.deployment-ownership=roomgoblin"];
+  const networkMode=id==="mosquitto"?INTEGRATION_NETWORK:"host";
+  if(id==="mosquitto")await ensureIntegrationNetwork();
+  let args=["run","-d","--network",networkMode,"--name",addon.container,"--restart","unless-stopped","--label","org.roomgoblin.deployment-ownership=roomgoblin"];
   if(id==="mosquitto"){
     const username=String(resolved.username||settings.username||"classroom-hub").replace(/[^A-Za-z0-9._-]/g,"");
     const password=String(resolved.password||settings.password||"");
@@ -150,7 +200,7 @@ async function deployAddon(id,settings={},recreate=false){
     const salt=crypto.randomBytes(12),hash=crypto.pbkdf2Sync(password,salt,101,64,"sha512");
     fs.writeFileSync(path.join(config,"passwords"),`${username}:$7$101$${salt.toString("base64").replace(/=+$/g,"")}$${hash.toString("base64").replace(/=+$/g,"")}\n`,{mode:0o600});
     fs.writeFileSync(path.join(config,"mosquitto.conf"),`persistence true\npersistence_location /mosquitto/data/\nlog_dest stdout\nlistener ${port}\nallow_anonymous false\npassword_file /mosquitto/config/passwords\n`,{mode:0o600});
-    args.push(`-v`,`${config}:/mosquitto/config`,`-v`,`${data}:/mosquitto/data`,`-v`,`${log}:/mosquitto/log`);
+    args.push("-p",`127.0.0.1:${port}:${port}`,`-v`,`${config}:/mosquitto/config`,`-v`,`${data}:/mosquitto/data`,`-v`,`${log}:/mosquitto/log`);
   }else if(id==="govee2mqtt"){
     args.push("-e",`GOVEE_MQTT_HOST=${serviceHost(resolved.mqttHost||settings.mqttHost||"127.0.0.1",["mosquitto"],"host")}`,"-e",`GOVEE_MQTT_PORT=${cleanPort(resolved.mqttPort||settings.mqttPort,1883)}`,"-e",`TZ=${resolved.timezone||settings.timezone||process.env.TZ||"UTC"}`);
     for(const [env,key] of [["GOVEE_MQTT_USER","mqttUsername"],["GOVEE_MQTT_PASSWORD","mqttPassword"],["GOVEE_API_KEY","apiKey"],["GOVEE_EMAIL","email"],["GOVEE_PASSWORD","password"]]){const value=resolved[key]||settings[key];if(value)args.push("-e",`${env}=${value}`)}
