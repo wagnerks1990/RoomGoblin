@@ -8,12 +8,12 @@ Treat Veyon as a native host-managed integration, not a RoomGoblin container.
 - An inactive/stopped `veyon-webapi.service` is installed state, not missing state. Do not tell operators to reinstall Veyon merely because the unit is inactive.
 - When both native Veyon units exist, preserve the systemd relationship that starting `veyon.service` also wants `veyon-webapi.service`. The guarded host updater owns the persistent `/etc/systemd/system/veyon.service.d/roomgoblin-webapi.conf` drop-in and must not remove it during package updates.
 - Before a host package transaction, remember whether the native Veyon integration was expected to be active. If it was active, both native units must be active again before the guarded update is accepted.
-- Apt/package sources are the installation authority. The upstream GitHub release is informational only.
+- Apt is the preferred installation authority. When the configured PPA is behind, the only permitted fallback is the exact official `veyon/veyon` GitHub release Ubuntu `amd64` DEB selected from release metadata, checksum-pinned, and independently revalidated by the Host Agent.
 - Never make the browser fetch GitHub directly; lifecycle checks are server-side and projected through same-origin admin APIs.
 - Never expose `MAINTENANCE_TOKEN` or Host Agent credentials to the browser.
 - Veyon package installation must reuse the existing guarded host-update transaction rather than inventing an unbounded shell/package endpoint.
 - The GUI must disclose that starting a Veyon update can also install other pending Ubuntu/third-party package updates.
-- Refuse the dedicated Veyon update action if the configured apt sources do not currently offer a Veyon package update.
+- Refuse the dedicated Veyon update action unless apt offers Veyon or a verified official release asset exactly matches the appliance Ubuntu version and architecture. Never accept caller-supplied arbitrary package URLs.
 - GitHub release lookup failure must not hide apt status.
 - Do not download/execute release binaries directly from GitHub.
 - RoomGoblin application rollback does not imply native Veyon package rollback.
