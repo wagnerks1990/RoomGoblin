@@ -36,6 +36,15 @@ jobs:
           test -f docs/AI-CONTEXT.md
           test ! -e Caddyfile
           test ! -e source-archive
+          test ! -e integrations/veyon-plugins
+          test ! -e integrations/veyon-ai
+          test ! -e public/controller/veyon-free-features.js
+          test ! -e public/controller/veyon-community.js
+          test ! -e public/controller/veyon-terminal.js
+          test ! -e public/controller/veyon-control.js
+          test ! -e tools/package-veyon-pilot.sh
+          test ! -e tools/package-veyon-pilot-windows.sh
+          test ! -e deploy/test-veyon-windows-pilot.ps1
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Audit production dependencies
