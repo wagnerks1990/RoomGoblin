@@ -1,30 +1,56 @@
-# AI context: Cloudflare Tunnel
+# AI context: Cloudflare managed provisioning
 
-RoomGoblin has an optional remotely-managed Cloudflare Tunnel integration. Read `docs/CLOUDFLARE-TUNNEL.md` before changing network exposure, reverse-proxy trust, recovery transport, installer/update behavior, or remote-access documentation.
+Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, proxy trust, Full Recovery transport, Setup/Controller Cloudflare UI, or connector installation.
 
 ## Invariants
 
-- Cloudflare is optional and must never become a dependency for local classroom operation or RoomGoblin health.
-- The connector is a host service named `cloudflared-roomgoblin.service`.
-- The tunnel origin is `http://127.0.0.1:${HUB_PORT:-3000}`.
-- The tunnel token is host secret state at `/etc/cloudflared/roomgoblin.token`, mode `0600`; never commit it, place it in RoomGoblin `.env`, log it, or include it in diagnostics/recovery exports.
-- The connector uses `cloudflared tunnel --no-autoupdate run --token-file ...`; `--token-file` requires cloudflared 2025.4.0 or newer.
-- Cloudflare's remotely-managed tunnel configuration owns the public hostname. RoomGoblin does not store Cloudflare account IDs, zone IDs, DNS records, Access policies, or API tokens.
-- `TRUST_PROXY_HOPS=1` is the reviewed Cloudflare topology. Do not increase it without a topology/security review and tests.
-- Full Recovery forwarded HTTPS remains trusted only when the backend's immediate peer is loopback. Do not weaken `src/recovery-transport-policy.js` to trust arbitrary remote `X-Forwarded-Proto` headers.
-- Existing `HUB_BIND_ADDRESS=0.0.0.0` LAN access may remain so displays/agents continue to work; cloudflared still reaches the Hub through loopback.
-- Never publish maintenance port 3010, the Host Agent socket, Docker, MQTT, Veyon, Music Assistant, SSH, or arbitrary local services through this integration.
-- Cloudflare Access may provide an additional outer gate, but it never replaces RoomGoblin authentication, capabilities, audit behavior, or recovery authorization.
-- A Cloudflare outage must affect only the remote Cloudflare path. Morning Announcements, scheduler recovery, Background Music reconciliation, managed displays, local administration and update/rollback behavior must remain independent.
-- Do not add cloudflared status to core `/health`, update acceptance, database readiness, scheduler readiness, maintenance readiness, or rollback decisions.
+- Cloudflare is optional and failure-isolated from local classroom operation.
+- Managed Cloudflare logic lives in `src/cloudflare.js`; administrator routes are registered by `src/cloudflare-bridge.js`.
+- Site domains, account/zone/resource IDs, and tenant-specific values are runtime configuration. Never hard-code a school domain or Cloudflare tenant identifier into public source.
+- API Tokens and Global API Keys are encrypted secret-store values. Browser responses expose only configured flags.
+- Prefer scoped API Tokens. Global API Key support is compatibility-only.
+- Tunnel connector tokens are not persisted in SQLite. They move server-side to maintenance/Host Agent and end at `/etc/cloudflared/roomgoblin.token` mode 0600.
+- Never place Cloudflare credentials in process arguments, `.env`, Git, logs, diagnostics, browser state, recovery exports, or documentation.
+- The connector service is `cloudflared-roomgoblin.service`; do not take over a generic `cloudflared.service`.
+- Tunnel ingress exposes only the configured RoomGoblin hostname to `http://127.0.0.1:${PORT:-3000}`, followed by terminal `http_status:404`.
+- Never expose maintenance port 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, arbitrary URLs, or lab subnets.
+- `TRUST_PROXY_HOPS=1` is the reviewed topology. Full Recovery forwarded HTTPS still requires an immediate loopback peer.
+- Do not weaken `src/recovery-transport-policy.js` to trust arbitrary forwarded headers.
+- Same-name tunnels are not automatically adopted. Explicit adoption is required because RoomGoblin replaces the tunnel ingress configuration.
+- Conflicting DNS takeover requires explicit consent.
+- Cloudflare Access is optional and requires an explicit Allow selector. RoomGoblin authentication/capabilities remain mandatory.
+- Safe managed defaults are proxied DNS, Tunnel, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, and Brotli.
+- Do not automatically enable Bot Fight Mode, Cache Everything/authenticated caching, HSTS, WARP/private-network routing, or arbitrary service publication.
+- Cloudflare status must never become part of core `/health`, scheduler/update/maintenance readiness, or rollback decisions.
+- Preserve Morning Announcements priority, scheduler recovery, Background Music reconciliation, display stability, and managed-device compatibility.
 
-## Change review
+## Host boundary
 
-Any change to the Cloudflare integration should verify:
+Automatic connector provisioning follows:
 
-1. `deploy/configure-cloudflare-tunnel.sh` passes `bash -n` and its regression test;
-2. tunnel tokens never enter process arguments, tracked files or RoomGoblin `.env`;
-3. the origin remains loopback-only from cloudflared's perspective;
-4. direct remote HTTP cannot satisfy Full Recovery transport checks;
-5. Cloudflare remains optional and failure-isolated;
-6. documentation and the Git-tracked Wiki remain synchronized.
+```text
+admin API
+ -> loopback maintenance API
+ -> authenticated Host Agent Unix socket
+ -> tracked deploy/configure-cloudflare-tunnel.sh
+ -> root-only temporary token file
+ -> /etc/cloudflared/roomgoblin.token
+```
+
+The Host Agent accepts only a bounded non-whitespace connector token and invokes only the reviewed installer. Do not convert this into arbitrary shell/package/systemd execution.
+
+The installer runs with `--no-restart`; the GUI exposes a separate deliberate Hub restart so an in-flight provisioning response is not destroyed.
+
+## Review checklist
+
+1. `node --check src/cloudflare.js src/cloudflare-bridge.js`.
+2. Cloudflare unit tests use mocked APIs; CI requires no real Cloudflare credential.
+3. `bash -n deploy/configure-cloudflare-tunnel.sh`.
+4. Host Agent Python compiles.
+5. Browser/static validation passes.
+6. No secret appears in responses, logs, fixtures, command arguments, or tracked examples.
+7. Existing tunnel/DNS takeover remains opt-in.
+8. Access still requires an explicit Allow rule.
+9. Tunnel ingress remains loopback-only.
+10. Cloudflare remains absent from core availability decisions.
+11. Operator docs, Wiki, AI context, and changelog remain synchronized.
