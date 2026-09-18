@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Securly physical-console kiosk
+
+- Add an optional Ubuntu Server physical-console Securly Pass kiosk using tty1 autologin, Xorg, Openbox and Chromium Snap while preserving SSH and separate sudo-capable recovery access.
+- Capture the live-validated Chromium Snap requirements: systemd user D-Bus, no inherited tty1 standard file descriptors, Snap-owned profile storage and software browser rendering; retain the host NVIDIA Xorg driver independently.
+- Add `deploy/configure-securly-kiosk.sh`, operational helpers, operator/Wiki/AI documentation, cold-boot acceptance criteria and public-safe secret handling with no production kiosk code in Git.
+
 ### Docker network least-privilege restoration
 
 - Restore service-specific Docker networking instead of applying host mode to every managed add-on.
