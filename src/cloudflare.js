@@ -205,6 +205,7 @@ class CloudflareManager{
       http3:await this.setZoneSetting(ctx,"http3",settings.http3?"on":"off"),
       brotli:await this.setZoneSetting(ctx,"brotli",settings.brotli?"on":"off")
     };
+    const edgeWarnings=Object.entries(edge).filter(([,value])=>value?.ok===false).map(([name,value])=>`${name}: ${value.error}`);
     const access=await this.ensureAccess(ctx,settings);
     let connector={installed:false,restartRequired:false};
     if(this.connectorInstaller){
@@ -218,7 +219,7 @@ class CloudflareManager{
     return {ok:true,settings:publicSettings(persisted,this.storage),zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},
       tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted},
       dns:{id:dnsResult.record?.id,name:settings.hostname,target:`${tunnelResult.tunnel.id}.cfargotunnel.com`,created:dnsResult.created,adopted:dnsResult.adopted},
-      edge,access:{enabled:access.enabled===true,appId:access.app?.id||null,policyId:access.policy?.id||null},connector,
+      edge,warnings:edgeWarnings,access:{enabled:access.enabled===true,appId:access.app?.id||null,policyId:access.policy?.id||null},connector,
       publicUrl:`https://${settings.hostname}/controller/`};
   }
   async liveStatus(){
