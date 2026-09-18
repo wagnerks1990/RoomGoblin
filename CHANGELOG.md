@@ -10,6 +10,7 @@
 - Route connector installation through the loopback maintenance API and authenticated Host Agent, invoking only the reviewed Cloudflare installer; keep the Hub restart a separate explicit action.
 - Preserve local classroom availability when Cloudflare, DNS, or Internet access fails; Cloudflare remains outside core health, scheduler, announcement, Background Music, managed-device, update, and rollback readiness.
 - Add mocked Cloudflare API regression coverage plus synchronized operator, Wiki, configuration, and AI/contributor documentation.
+- Fix Host Agent sandbox provisioning so the GUI can write only `/etc/cloudflared` and the dedicated `/etc/systemd/system/cloudflared-roomgoblin.service` file while retaining `ProtectSystem=full`.
 
 ### Scheduled automation sequence rebuild
 
