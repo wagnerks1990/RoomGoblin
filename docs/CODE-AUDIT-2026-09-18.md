@@ -54,8 +54,7 @@ Reviewed areas:
 
 ### Veyon and ESPHome
 
-- Redacted authentication payloads and connection identifiers from prepared
-  Veyon pilot diagnostics.
+- Redacted authentication payloads and connection identifiers from Veyon diagnostics.
 - Added collision-resistant hostname identities, atomic DHCP identity changes,
   and cryptographic bounded private-key parsing.
 - Added bounded ESPHome worker restart backoff, including synchronous spawn
