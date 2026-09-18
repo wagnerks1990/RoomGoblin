@@ -1301,18 +1301,18 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
     <summary><h2 class="sectionTitle">Update RoomGoblin</h2></summary>
     <div class="disclosureBody">
 
-      <div class="muted">Check a configured GitHub repository for verified semantic-version releases. Every installation creates a database-safe backup and automatically rolls back if deployment health fails.</div>
+      <div class="muted">Track merged commits on the trusted <code>main</code> branch. RoomGoblin installs only the exact CI-built images for that commit, creates a database-safe backup first, and automatically rolls back if deployment health fails.</div>
       <div class="grid2" style="margin-top:12px">
         <label>Trusted GitHub Repository<input id="appUpdateRepository" value="wagnerks1990/RoomGoblin" readonly></label>
-        <label>Release Channel<select id="appUpdateChannel"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="stable">Stable</option></select></label>
+        <label>Update Source<select id="appUpdateChannel" disabled><option value="main" selected>Main — merged commits</option></select></label>
         <label>GitHub Read Token (optional/private repository)<input id="appUpdateToken" type="password" placeholder="Leave blank to keep stored token"></label>
         <label>Check Interval (hours)<input id="appUpdateInterval" type="number" min="1" max="168" value="24"></label>
         <label>Maintenance Window Start<input id="appUpdateStart" type="time" value="02:00"></label>
         <label>Maintenance Window End<input id="appUpdateEnd" type="time" value="04:00"></label>
       </div>
-      <label class="pill" style="margin:10px 0"><input id="appUpdateAutomatic" type="checkbox"> Automatically install approved releases during the maintenance window</label>
-      <div class="toolbar"><button onclick="saveAppUpdateSettings()">Save Settings</button><button onclick="clearAppUpdateToken()">Clear Stored Token</button><button onclick="checkAppUpdate()">Check GitHub</button><button id="installAppUpdateBtn" class="primary" onclick="installAppUpdate()" disabled>Install Available Release</button><button id="revertAppUpdateBtn" class="danger" onclick="revertAppUpdate()" disabled>Revert Last Upgrade</button></div>
-      <pre id="updateOutput" class="raw">Loading release status…</pre>
+      <label class="pill" style="margin:10px 0"><input id="appUpdateAutomatic" type="checkbox"> Automatically install new merged main commits during the maintenance window</label>
+      <div class="toolbar"><button onclick="saveAppUpdateSettings()">Save Settings</button><button onclick="clearAppUpdateToken()">Clear Stored Token</button><button onclick="checkAppUpdate()">Check GitHub</button><button id="installAppUpdateBtn" class="primary" onclick="installAppUpdate()" disabled>Install Main Update</button><button id="revertAppUpdateBtn" class="danger" onclick="revertAppUpdate()" disabled>Revert Last Upgrade</button></div>
+      <pre id="updateOutput" class="raw">Loading main-branch update status…</pre>
       <div id="appUpdateHistory" class="scroll" style="margin-top:10px"></div>
     </div>
   </details>
