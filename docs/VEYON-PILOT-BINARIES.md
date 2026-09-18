@@ -40,6 +40,15 @@ metadata. Include `libqca-qt6-plugins`: the QCA development package alone
 does not supply the RSA provider required at runtime. This is not a portable
 cross-distribution archive.
 
+A host-native source build on Ubuntu 26.04 uses GCC 15. That compiler can emit a
+`stringop-overflow` false positive while optimizing QtConcurrent's inlined atomic
+increment in `MonitoringMode.cpp`; upstream's target-wide `-Werror` otherwise
+stops the build. The pinned preparer adds only
+`-Wno-error=stringop-overflow` to `veyon-core`, and only for GNU compiler version
+15 or newer. The diagnostic remains a warning, other warnings remain errors, and
+the CI Ubuntu 24.04 build is unchanged. Do not replace this with a global warning
+disable.
+
 The source preparer redacts native WebAPI debug logging for both RoomGoblin
 browser-bridge and Veyon authentication routes. Authentication POST bodies carry
 private PEM material and their responses carry private connection identifiers;
