@@ -32,6 +32,10 @@ test("media command validation happens before dispatch and rejects credentialed 
     validateGoveeCommand(){},plutoActionForCommand(){return {action:"route"}},plutoBuild(){}
   });
   assert.equal(context.safeMediaUrl("/media/example.mp4"),"/media/example.mp4");
+  assert.equal(context.safeMediaUrl("/test-images/tv1.svg"),"/test-images/tv1.svg");
+  assert.equal(context.safeMediaUrl("/test-images/tv8.svg"),"/test-images/tv8.svg");
+  assert.throws(()=>context.safeMediaUrl("/test-images/tv9.svg"),/Media URL/);
+  assert.throws(()=>context.safeMediaUrl("/test-images/../secret.svg"),/Media URL/);
   assert.equal(context.safeMediaUrl("https://display.example/video.mp4"),"https://display.example/video.mp4");
   assert.throws(()=>context.safeMediaUrl("https://user:secret@display.example/video.mp4"),/Media URL/);
   assert.throws(()=>context.safeMediaUrl("/media/..\\secret"),/backslashes/);
