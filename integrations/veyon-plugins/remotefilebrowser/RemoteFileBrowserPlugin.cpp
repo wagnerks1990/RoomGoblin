@@ -194,10 +194,13 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonServerInterface& server
 	const auto transferId=message.argument(Argument::TransferId).toUuid();
 	if(command!=FeatureCommand::GetDrives && command!=FeatureCommand::ListDirectory &&
 	   command!=FeatureCommand::StartDownload && command!=FeatureCommand::CancelDownload &&
-	   command!=FeatureCommand::StopWorker) return false;
+	   command!=FeatureCommand::StopWorker && command!=FeatureCommand::StartUpload &&
+	   command!=FeatureCommand::UploadDataChunk && command!=FeatureCommand::FinishUpload &&
+	   command!=FeatureCommand::CancelUpload) return false;
 	if((command==FeatureCommand::GetDrives || command==FeatureCommand::ListDirectory) && requestId.isNull()) return false;
-	if(command==FeatureCommand::StartDownload && transferId.isNull()) return false;
-	if(command==FeatureCommand::CancelDownload && transferId.isNull()) return false;
+	if((command==FeatureCommand::StartDownload || command==FeatureCommand::CancelDownload ||
+		command==FeatureCommand::StartUpload || command==FeatureCommand::UploadDataChunk ||
+		command==FeatureCommand::FinishUpload || command==FeatureCommand::CancelUpload) && transferId.isNull()) return false;
 	// Pilot is pinned to one active authenticated teacher. Validate before
 	// assigning ownership, and clear generations before a replacement caller.
 	if(!messageContext.ioDevice()) return false;
@@ -210,10 +213,10 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonServerInterface& server
 	if((command==FeatureCommand::GetDrives || command==FeatureCommand::ListDirectory) && m_requestContexts.size()>=16) return false;
 	// The session worker owns one QFile. Never replace an in-flight generation
 	// without a terminal reply to its authenticated caller.
-	if(command==FeatureCommand::StartDownload && !m_transferContexts.isEmpty()) return false;
+	if((command==FeatureCommand::StartDownload || command==FeatureCommand::StartUpload) && !m_transferContexts.isEmpty()) return false;
 	if(command==FeatureCommand::GetDrives || command==FeatureCommand::ListDirectory) m_requestContexts.insert(requestId,messageContext);
-	if(command==FeatureCommand::StartDownload) m_transferContexts.insert(transferId,messageContext);
-	if(command==FeatureCommand::CancelDownload && !transferId.isNull()) m_transferContexts.remove(transferId);
+	if(command==FeatureCommand::StartDownload || command==FeatureCommand::StartUpload) m_transferContexts.insert(transferId,messageContext);
+	if(command==FeatureCommand::CancelDownload || command==FeatureCommand::CancelUpload) m_transferContexts.remove(transferId);
 	if(command==FeatureCommand::StopWorker) {
 		server.featureWorkerManager().stopWorker(m_feature.uid());
 		m_requestContexts.clear();
@@ -244,10 +247,11 @@ bool RemoteFileBrowserPlugin::handleFeatureMessageFromWorker( VeyonServerInterfa
 	if(command==FeatureCommand::DriveList || command==FeatureCommand::DirectoryListing) {
 		const auto id=message.argument(Argument::RequestId).toUuid();
 		context=m_requestContexts.take(id);
-	} else if(command==FeatureCommand::DownloadInfo || command==FeatureCommand::DownloadDataChunk || command==FeatureCommand::DownloadFinished) {
+	} else if(command==FeatureCommand::DownloadInfo || command==FeatureCommand::DownloadDataChunk ||
+		command==FeatureCommand::DownloadFinished || command==FeatureCommand::UploadFinished) {
 		const auto id=message.argument(Argument::TransferId).toUuid();
 		context=m_transferContexts.value(id);
-		if(command==FeatureCommand::DownloadFinished ||
+		if(command==FeatureCommand::DownloadFinished || command==FeatureCommand::UploadFinished ||
 		   (command==FeatureCommand::DownloadInfo && !message.argument(Argument::Error).toString().isEmpty()))
 			m_transferContexts.remove(id);
 	} else return false;
@@ -282,9 +286,23 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonWorkerInterface& worker
 	case FeatureCommand::StartDownload:
 		return workerStartDownload( worker, message );
 
+	case FeatureCommand::StartUpload:
+		return workerStartUpload( worker, message );
+
+	case FeatureCommand::UploadDataChunk:
+		return workerUploadChunk( worker, message );
+
+	case FeatureCommand::FinishUpload:
+		return workerFinishUpload( worker, message );
+
+	case FeatureCommand::CancelUpload:
+		workerCancelUpload();
+		return true;
+
 	case FeatureCommand::CancelDownload:
 	case FeatureCommand::StopWorker:
 		workerCancelDownload();
+		workerCancelUpload();
 		return true;
 
 	default:
@@ -446,6 +464,88 @@ void RemoteFileBrowserPlugin::workerCancelDownload()
 	{
 		m_downloadFile.close();
 	}
+}
+
+
+bool RemoteFileBrowserPlugin::workerStartUpload( VeyonWorkerInterface& worker,
+											 const FeatureMessage& message )
+{
+	workerCancelUpload();
+	m_uploadTransferId=message.argument(Argument::TransferId).toUuid();
+	const auto name=message.argument(Argument::FileName).toString();
+	m_uploadExpected=message.argument(Argument::FileSize).toLongLong();
+	QString error;
+	const auto root=pilotRoot();
+	const auto inbox=QDir(root).filePath(QStringLiteral("Inbox"));
+	if(m_uploadTransferId.isNull() || name.isEmpty() || name.size()>255 ||
+		name==QStringLiteral(".") || name==QStringLiteral("..") ||
+		name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) ||
+		m_uploadExpected<0 || m_uploadExpected>2*1024*1024)
+	{
+		error=tr("Choose one ordinary file up to 2 MiB.");
+	}
+	else if(!allowedPilotPath(root) || (!QDir().mkpath(inbox)) || !allowedPilotPath(inbox))
+	{
+		error=tr("RoomGoblin-Pilot/Inbox is unavailable.");
+	}
+	else
+	{
+		const auto destination=QDir(inbox).filePath(name);
+		const QFileInfo existing(destination);
+		if(existing.exists() || existing.isSymLink()) error=tr("A file with that name already exists; uploads never overwrite.");
+		else { m_uploadFile.setFileName(destination); if(!m_uploadFile.open(QFile::WriteOnly)) error=tr("Could not create the destination file."); }
+	}
+	if(!error.isEmpty())
+	{
+		workerCancelUpload();
+		return worker.sendFeatureMessageReply(FeatureMessage(m_feature.uid(),FeatureCommand::UploadFinished)
+			.addArgument(Argument::TransferId,message.argument(Argument::TransferId)).addArgument(Argument::Error,error));
+	}
+	m_uploadReceived=0;
+	return true;
+}
+
+
+bool RemoteFileBrowserPlugin::workerUploadChunk( VeyonWorkerInterface& worker,
+											 const FeatureMessage& message )
+{
+	const auto id=message.argument(Argument::TransferId).toUuid();
+	const auto offset=message.argument(Argument::Offset).toLongLong();
+	const auto bytes=message.argument(Argument::DataChunk).toByteArray();
+	if(id!=m_uploadTransferId || !m_uploadFile.isOpen() || offset!=m_uploadReceived ||
+		bytes.isEmpty() || bytes.size()>ChunkSize || m_uploadReceived+bytes.size()>m_uploadExpected ||
+		m_uploadFile.write(bytes)!=bytes.size())
+	{
+		workerCancelUpload();
+		return worker.sendFeatureMessageReply(FeatureMessage(m_feature.uid(),FeatureCommand::UploadFinished)
+			.addArgument(Argument::TransferId,id).addArgument(Argument::Error,tr("Upload chunk rejected; partial file discarded.")));
+	}
+	m_uploadReceived+=bytes.size();
+	return true;
+}
+
+
+bool RemoteFileBrowserPlugin::workerFinishUpload( VeyonWorkerInterface& worker,
+											  const FeatureMessage& message )
+{
+	const auto id=message.argument(Argument::TransferId).toUuid();
+	QString error;
+	if(id!=m_uploadTransferId || !m_uploadFile.isOpen() || m_uploadReceived!=m_uploadExpected)
+		error=tr("Upload length mismatch; partial file discarded.");
+	else if(QFileInfo::exists(m_uploadFile.fileName()))
+		error=tr("A file with that name appeared during upload; partial file discarded.");
+	else if(!m_uploadFile.commit()) error=tr("Could not commit uploaded file atomically.");
+	if(!error.isEmpty()) workerCancelUpload();
+	else { m_uploadTransferId={}; m_uploadExpected=0; m_uploadReceived=0; }
+	return worker.sendFeatureMessageReply(FeatureMessage(m_feature.uid(),FeatureCommand::UploadFinished)
+		.addArgument(Argument::TransferId,id).addArgument(Argument::Error,error));
+}
+
+
+void RemoteFileBrowserPlugin::workerCancelUpload()
+{
+	if(m_uploadFile.isOpen()) m_uploadFile.cancelWriting();
+	m_uploadTransferId={}; m_uploadExpected=0; m_uploadReceived=0;
 }
 
 

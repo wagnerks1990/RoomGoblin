@@ -4,7 +4,7 @@ const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
-const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
+const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,INTERNET_GUARD_FEATURE_UID,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
@@ -92,6 +92,7 @@ const VEYON_FEATURES = Object.freeze({
   ...POWER_FEATURES,
   clipboardWrite:CLIPBOARD_FEATURE,
   keySequence:INPUT_FEATURE_UID,
+  internetGuard:INTERNET_GUARD_FEATURE_UID,
   screenLock:"ccb535a2-1d24-4cc1-a709-8b47d2b2ac79",
   inputLock:"e4a77879-e544-4fec-bc18-e534f33b934c",
   userLogin:"7310707d-3918-460d-a949-65bd152cb958",
@@ -112,10 +113,11 @@ const VEYON_COMMAND_POLICY = Object.freeze({
   reboot:{requiresUser:false}, powerDown:{requiresUser:false}, userLogin:{requiresUser:false},
   userLogoff:{requiresUser:true}, textMessage:{requiresUser:true}, openWebsite:{requiresUser:true},
   startApp:{requiresUser:true}, screenLock:{requiresUser:true}, inputLock:{requiresUser:true},
-  demoServer:{requiresUser:true}, fullScreenDemoClient:{requiresUser:true}, windowDemoClient:{requiresUser:true}
+  demoServer:{requiresUser:true}, fullScreenDemoClient:{requiresUser:true}, windowDemoClient:{requiresUser:true},
+  internetGuard:{requiresUser:false}
 });
 function veyonPolicyFor(feature,active=true){
-  if(active===false&&["screenLock","inputLock","demoServer","fullScreenDemoClient","windowDemoClient"].includes(feature))
+  if(active===false&&["screenLock","inputLock","demoServer","fullScreenDemoClient","windowDemoClient","internetGuard"].includes(feature))
     return {requiresUser:false,recovery:true};
   return VEYON_COMMAND_POLICY[feature]||{requiresUser:true};
 }
@@ -6449,7 +6451,7 @@ app.post("/api/v1/veyon/computers/:id/browser/:action",requireCapability("lab.co
   const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
   if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
   const authorize=()=>{const user=requestUser(req);if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.control")||!hasCapability(user,"lab.sensitive.read")))throw Object.assign(Error("Browser tool permission revoked"),{status:403})};
-  try{const actor=requestUser(req)?.id||"legacy-control";const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:req.params.action,input:req.body,authorize}));if(["open","close","send","download","clipboard"].includes(req.params.action)&&!(req.params.action==="clipboard"&&result.pending))audit({kind:"veyon.browser",actor,action:req.params.action,sessionKind:req.params.action==="open"?String(req.body?.kind||"").slice(0,20):undefined,computer:computer.id,accepted:true});res.json(result)}
+  try{const actor=requestUser(req)?.id||"legacy-control";const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:req.params.action,input:req.body,authorize}));if(["open","close","send","download","uploadStart","uploadFinish","clipboard"].includes(req.params.action)&&!(req.params.action==="clipboard"&&result.pending))audit({kind:"veyon.browser",actor,action:req.params.action,sessionKind:req.params.action==="open"?String(req.body?.kind||"").slice(0,20):undefined,computer:computer.id,accepted:true});res.json(result)}
   catch(error){res.status([403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Browser request failed"})}
 });
 const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
@@ -6585,12 +6587,13 @@ app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,re
 app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
 app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
 app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res,next)=>["clipboardWrite","keySequence"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),(req,res)=>{
+app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res,next)=>["clipboardWrite","keySequence","internetGuard"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),(req,res)=>{
   try{
     const targets=Array.isArray(req.body?.targets)?req.body.targets:[req.body?.target].filter(Boolean);
     if(!targets.length||targets.length>512)throw Error("Choose between 1 and 512 targets.");
     const feature=String(req.body?.feature||"");
     if(!Object.hasOwn(VEYON_FEATURES,feature))throw Error("Unsupported Veyon feature");
+    if(feature==="internetGuard"&&targets.length>64)throw Error("Choose at most 64 Internet Guard targets.");
     let args=powerArguments(feature,req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{},req.body?.active!==false);
     if(feature==="keySequence"){
       if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one keyboard target.");
@@ -6600,6 +6603,7 @@ app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res,next)
       if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one clipboard target.");
       args=clipboardArguments(args,req.body?.active!==false);
     }
+    if(feature==="internetGuard")args={};
     if(Buffer.byteLength(JSON.stringify(args))>16384)throw Error("Veyon command arguments are too large");
     const requestId=String(req.body?.requestId||"");
     if(requestId&&!/^[a-zA-Z0-9._:-]{1,100}$/.test(requestId))throw Error("Invalid command request ID");

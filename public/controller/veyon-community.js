@@ -45,6 +45,7 @@
         }
         if(focused)s.list.querySelector(`[data-pilot-path="${CSS.escape(focused)}"]`)?.focus();
       }
+      if(s.uploading&&!state.pending){status.textContent=state.complete&&!state.error?'File uploaded atomically to RoomGoblin-Pilot/Inbox.':state.error||'Upload failed.';s.uploading=false}
       if(s.download&&state.complete){
         s.download=false;
         const size=state.size;if(!Number.isSafeInteger(size)||size<0||size>8*1024*1024)throw Error('Invalid download size');
@@ -77,7 +78,27 @@
         form.onsubmit=async e=>{e.preventDefault();const text=input.value;input.value='';send.disabled=true;try{await call(s,'send',{text});await refresh(s)}catch(error){status.textContent=error.message}finally{send.disabled=false}};
         body.append(s.log,form);
       }else{
-        s.list=document.createElement('div');body.append(button('Pilot folder',async()=>{if(s.downloadUrl)URL.revokeObjectURL(s.downloadUrl);s.saved=false;await call(s,'roots');await refresh(s);schedule(s)}),s.list);
+        s.list=document.createElement('div');
+        const controls=[button('Pilot folder',async()=>{if(s.downloadUrl)URL.revokeObjectURL(s.downloadUrl);s.saved=false;await call(s,'roots');await refresh(s);schedule(s)})];
+        if(result.upload){
+          const upload=document.createElement('input');upload.type='file';upload.setAttribute('aria-label','Small file to send');
+          const send=button('Send file to Pilot Inbox',async()=>{
+            const file=upload.files?.[0];if(!file)throw Error('Choose one file.');
+            if(file.size>2*1024*1024)throw Error('Browser pilot uploads are limited to 2 MiB.');
+            if(!confirm(`Send ${file.name} (${file.size.toLocaleString()} bytes) to this computer's RoomGoblin-Pilot/Inbox? Existing files are never overwritten.`))return;
+            if(s.downloadUrl)URL.revokeObjectURL(s.downloadUrl);s.downloadUrl=null;s.saved=false;s.uploading=true;
+            await call(s,'uploadStart',{name:file.name,size:file.size});let offset=0;
+            while(offset<file.size){
+              const bytes=new Uint8Array(await file.slice(offset,offset+128*1024).arrayBuffer());let binary='';
+              for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+              await call(s,'uploadChunk',{offset,data:btoa(binary)});offset+=bytes.length;
+              status.textContent=`Sending ${file.name}: ${Math.round(offset/file.size*100)}%`;
+            }
+            await call(s,'uploadFinish');upload.value='';await refresh(s);schedule(s);
+          });
+          controls.push(upload,send);
+        }
+        body.append(...controls,s.list);
         await call(s,'roots');
       }
       dialog.showModal();await refresh(s);schedule(s);

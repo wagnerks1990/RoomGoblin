@@ -44,6 +44,10 @@
       <p class="muted">Shutdown options cannot be cancelled through Veyon. Save student work first. An accepted command is not proof that Windows shut down.</p>
       <div class="toolbar"><button id="powerNow" class="danger">Immediate shutdown</button><button id="powerConfirm" class="warn">Ask student to shut down</button><button id="powerDelay" class="warn">Delayed shutdown</button><button id="powerUpdates" class="warn">Updates then shutdown</button></div>
     </details>
+    <details class="lab-disclosure"><summary>Experimental network access</summary>
+      <p class="muted">Windows pilot only. Blocks common web, DNS, encrypted-DNS and proxy ports—not every possible tunnel—and also affects matching services on the local network. The endpoint plugin attempts automatic release after 15 minutes, but a service or machine crash can leave its named firewall rules behind.</p>
+      <div class="toolbar"><button id="internetGuardBlock" class="danger">Block Internet — 15 minutes</button><button id="internetGuardAllow">Allow Internet now</button></div>
+    </details>
     <details class="lab-disclosure"><summary>Lesson actions and student demonstrations</summary>
       <div class="toolbar"><button id="lessonActions">Saved lesson actions</button><button id="studentDemoFull">Share a student — fullscreen</button><button id="studentDemoWindow">Share a student — window</button><button id="stopSelectedDemo">Stop selected broadcast participants</button></div>
       <p class="muted">Select the source and audience before starting a student demonstration. To stop it, select the source and all recipients, including offline participants needing recovery.</p>

@@ -6,6 +6,8 @@
 
 See [Free Veyon features and community pilot](docs/VEYON-FREE-FEATURES.md) for web controls, native tools, testing and rollback.
 
+[Windows Internet Guard browser pilot](docs/VEYON-INTERNET-GUARD-PILOT.md) documents the disposable 4.11.2 endpoint test and firewall recovery path.
+
 ## Displays & AV
 
 Use the [TV Routing Matrix](docs/TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has

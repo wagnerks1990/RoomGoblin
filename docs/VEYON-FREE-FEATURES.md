@@ -3,7 +3,7 @@
 RoomGoblin exposes the free Veyon classroom controls that its WebAPI can execute
 through browser workflows. Native-only tools are documented here and excluded
 from the web GUI. **This does not make every
-Veyon feature a browser API.** Native configuration and interactive file transfer
+Veyon feature a browser API.** Native configuration and full bulk file transfer
 still belong in Veyon Configurator/Master. Paid add-ons, subscriptions and
 commercial trials are excluded.
 
@@ -29,8 +29,9 @@ targets remain selected; check the existing selection count before confirming.
 | Stop selected demonstrations | Select source and all recipients, then stop | Queues all three mode cleanups atomically; offline owned modes retain existing recovery behavior |
 | Screen/input locks | Existing lock/unlock controls | Read-back confirmation, per-host order and restart cleanup retained |
 | Text messages, open websites, launch applications | Existing buttons or saved lesson actions | Presets require explicit Run and target confirmation; no automatic execution |
-| File distribution | Native Veyon Master | Native-only: stock endpoints provide no delivery acknowledgement and WebAPI cannot safely initialize the controller |
-| File collection | Native Veyon Master where available | Native-only: stock controller lacks browser-safe path/count/size/atomic-write boundaries |
+| Small pilot file distribution | Community file tool | One target/file, 2 MiB, `RoomGoblin-Pilot/Inbox` only, atomic and no-overwrite; not official bulk distribution |
+| File collection | Community file tool | One target, pilot-folder browse and complete downloads up to 8 MiB; official bulk collection remains native-only |
+| Temporary Internet block | Experimental network access | Windows pilot only; common ports, selected PCs, 15-minute in-process release; see [recovery guide](VEYON-INTERNET-GUARD-PILOT.md) |
 | Wake-on-LAN | Save MAC for one computer, select targets, Wake | Fixed local broadcast UDP/9; BIOS/NIC/network must support it; packet acceptance does not prove startup |
 | Reboot, shutdown | Existing controls | One-shot request; never automatically retry uncertain delivery |
 | Immediate, confirmed, delayed, updates-then-shutdown | New power options | Destructive confirmation; delay 30–3600 seconds; no cancellation after dispatch; OS behavior varies |
@@ -84,7 +85,7 @@ pilot and pause normal previews if needed.
 ## Community sources actually incorporated
 
 Native plugin source is isolated under `integrations/veyon-plugins`, with its own
-GPL-2.0-or-later COPYING and pinned provenance. It is **not included in the Hub
+GPL terms and pinned provenance. It is **not included in the Hub
 runtime** and is not automatically installed on classroom computers.
 
 - **mravariya/Veyon classroom chat:** teacher-to-selected-students text and
@@ -93,12 +94,17 @@ runtime** and is not automatically installed on classroom computers.
   logs and one teacher conversation per endpoint. Stop/close the teacher dialog
   before starting another conversation. No chat persistence.
 - **0mattsmith/VeyonFork file browser:** browse/retrieve ordinary sample files
-  from the signed-in user's `RoomGoblin-Pilot` folder. No upload/delete feature.
+  from the signed-in user's `RoomGoblin-Pilot` folder and atomically upload one
+  file up to 2 MiB into its Inbox. No overwrite/delete/execute/arbitrary path.
   Up to 1000 directory entries, 50 MiB per file, 128 KiB chunks and a 60-second
   transfer deadline. Local destination files change only after a complete,
   successful atomic save. Replies are bound to the selected endpoint and exact
   request/transfer generation. Closing the browser or native dialog stops the
   worker and releases the authenticated caller before a replacement connects.
+- **lellomele/veyon-internet-guard:** reviewed GPL-2.0-only Windows firewall
+  backend ported to the exact Veyon 4.11.2 pilot. The upstream binary stops at
+  4.10.x. RoomGoblin refuses to enable a disabled firewall, rolls back partial
+  rule creation and exposes explicit selected-PC block/allow in the browser.
 
 These restrictions are intentionally narrower than the original forks. The file
 folder check is not a race-resistant security sandbox against a hostile local
@@ -126,8 +132,9 @@ cmake --build /tmp/roomgoblin-veyon-build \
 ```
 
 The preparer clones official Veyon **v4.11.2 at a fixed commit**, checks that
-identity, initializes pinned submodules and adds the two reviewed community plugin
-directories plus RoomGoblinWebBridge. It refuses an existing destination. It does not install anything,
+identity, initializes pinned submodules and adds the reviewed community plugin
+directories plus RoomGoblinWebBridge. InternetGuard source is included but its
+CMake target is skipped on non-Windows builds. The preparer refuses an existing destination. It does not install anything,
 copy authentication keys or invoke a service manager. Dependencies and the native
 build are separate from RoomGoblin's npm dependencies.
 
@@ -163,8 +170,10 @@ pilot binary you distribute.
 | [nmserain/VeyonScripts](https://github.com/nmserain/VeyonScripts) | Legacy deployment reference; no second installer over the managed setup |
 | [OliverAshford-development/VeyonProxyPlugin](https://github.com/OliverAshford-development/VeyonProxyPlugin) | Excluded: old baseline and incompatible proxy assumptions; preserve current authenticated WebAPI |
 | [lliurex/veyon-noble](https://github.com/lliurex/veyon-noble) | Distribution packaging reference; no demonstrated need to replace Ubuntu packages |
-| [Rarder44/VeyonRecorder](https://github.com/Rarder44/VeyonRecorder) | Source not copied because README/license versions disagree; independent browser recorder added |
+| [Rarder44/VeyonRecorder](https://github.com/Rarder44/VeyonRecorder) | Current license files were reviewed, but source is not copied: configurable paths are interpolated into detached command scripts and finalization can wait without a bound; independent bounded browser recorder retained |
 | [0mattsmith/VeyonFork](https://github.com/0mattsmith/VeyonFork) | File-browser source incorporated with pilot restrictions and GPL provenance |
+| [lellomele/veyon-internet-guard](https://github.com/lellomele/veyon-internet-guard) | GPL Windows backend ported and hardened for the pinned 4.11.2 source; browser block/allow pilot added |
+| [campusdevfp/internet-veyon-plugin](https://github.com/campusdevfp/internet-veyon-plugin) | Excluded: README says all rights reserved and test procedure flushes the entire OUTPUT firewall chain |
 | [Railsimulatornet/VeyonAutoupdateforWindows](https://github.com/Railsimulatornet/VeyonAutoupdateforWindows) | Upgrade reference only; automatic endpoint version drift is inappropriate for this matching-version pilot |
 | [mravariya/Veyon](https://github.com/mravariya/Veyon) | Chat source incorporated and corrected; unrelated remote execution/restriction features not imported |
 | [claudio-cavalcante/veyon](https://github.com/claudio-cavalcante/veyon) | Unrelated Godot project; excluded |
@@ -189,7 +198,7 @@ unchanged:
 | `POST /wake` | `lab.control` | 1–64 saved targets, four concurrent UDP sends, no startup claim |
 | `GET/PUT /lesson-actions` | `lab.control` | Shared bounded presets |
 | `POST /demo/stop-selected` | `lab.control` | 1–64 saved targets; all-mode cleanup capacity reserved before enqueue |
-| `POST /feature` | `lab.control` | Existing queue, plus four allowlisted shutdown variants |
+| `POST /feature` | `lab.control` | Existing queue, four allowlisted shutdown variants and exact-UID Internet Guard pilot |
 
 Recording uses the existing `lab.sensitive.read` framebuffer route; browser commands never export authentication material. Native-only capabilities
 and newly discovered plugins without a browser adapter are omitted from the GUI

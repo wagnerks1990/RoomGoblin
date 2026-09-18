@@ -4,13 +4,29 @@ const {BrowserSessions,argumentsFor,project}=require('../src/veyon-browser-sessi
 function fixture(){
   let time=0,valid=true;const connection={active:0},calls=[];
   const computer={id:'sample',ip:'192.0.2.1',hostname:'sample'};
-  const sessions=new BrowserSessions({now:()=>time,connect:async()=>connection,identity:()=>valid,request:async(s,action,data)=>{calls.push({action,data});return action==='capabilities'?{ok:true,protocol:1,chat:true,files:true,control:true}:{ok:true}}});
+  const sessions=new BrowserSessions({now:()=>time,connect:async()=>connection,identity:()=>valid,request:async(s,action,data)=>{calls.push({action,data});return action==='capabilities'?{ok:true,protocol:1,chat:true,files:true,upload:true,control:true}:{ok:true}}});
   const run=(action,input={},owner='teacher')=>sessions.run({owner,computer,action,input,authorize:()=>{}});
   return {sessions,run,connection,calls,setTime:x=>time=x,invalidate:()=>valid=false};
 }
 test('browser arguments cannot forward arbitrary protocols, paths or oversized content',()=>{
-  for(const [a,v] of [['shell',{}],['send',{text:'a'.repeat(2001)}],['send',{text:'\0'}],['list',{path:'a\0b'}],['chunk',{offset:-1}],['chunk',{offset:1.5}],['open',{kind:'native'}]])assert.throws(()=>argumentsFor(a,v));
+  for(const [a,v] of [['shell',{}],['send',{text:'a'.repeat(2001)}],['send',{text:'\0'}],['list',{path:'a\0b'}],['chunk',{offset:-1}],['chunk',{offset:1.5}],['uploadStart',{name:'../bad',size:1}],['uploadStart',{name:'x',size:2*1024*1024+1}],['uploadChunk',{offset:0,data:'%%%'}],['uploadChunk',{offset:0,data:Buffer.alloc(128*1024+1).toString('base64')}],['open',{kind:'native'}]])assert.throws(()=>argumentsFor(a,v));
   assert.deepEqual(argumentsFor('send',{text:'hello',uid:'private',shell:'bad'}),{text:'hello'});
+});
+test('file sessions forward only bounded typed upload messages',async()=>{
+  const f=fixture(),opened=await f.run('open',{kind:'files'}),data=Buffer.from('sample').toString('base64');assert.equal(opened.upload,true);
+  await f.run('uploadStart',{session:opened.session,name:'sample.txt',size:6,uid:'discard'});
+  await f.run('uploadChunk',{session:opened.session,offset:0,data,private:'discard'});
+  await f.run('uploadFinish',{session:opened.session,extra:'discard'});
+  assert.deepEqual(f.calls.slice(-3),[
+    {action:'uploadStart',data:{session:opened.session,name:'sample.txt',size:6}},
+    {action:'uploadChunk',data:{session:opened.session,offset:0,data}},
+    {action:'uploadFinish',data:{session:opened.session}}
+  ]);
+  await assert.rejects(f.run('uploadStart',{session:opened.session,name:'../bad',size:1}),/ordinary file/);
+});
+test('an older native bridge keeps file browsing but does not advertise upload',async()=>{
+  const f=fixture();f.sessions.request=async(_session,action)=>action==='capabilities'?{ok:true,protocol:1,files:true}:{ok:true};
+  const opened=await f.run('open',{kind:'files'});assert.equal(opened.upload,false);
 });
 test('sessions are owned by one user and pinned to one connection',async()=>{
   const f=fixture(),opened=await f.run('open',{kind:'chat'});assert.equal(f.connection.active,1);

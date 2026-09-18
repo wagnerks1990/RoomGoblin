@@ -15,6 +15,7 @@ const CLIPBOARD_FEATURE="d344032e-70ce-4a83-8cb8-3ebd6d6f6f39";
 const INPUT_FEATURE_UID="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
 const BROWSER_CONTROL_FEATURE_UID="c775285d-ea7e-4c48-a613-a73af94d4be3";
 const CLIPBOARD_READ_FEATURE_UID="9fd323eb-5ae1-4552-8a4c-8b18837b78f7";
+const INTERNET_GUARD_FEATURE_UID="a4b3c2d1-e5f6-7890-abcd-ef1234567890";
 const KEY_SEQUENCES=Object.freeze(["Enter","Tab","Escape","Backspace","Delete","Left","Up","Right","Down","Home","End","PageUp","PageDown","Ctrl+A","Ctrl+C","Ctrl+V"]);
 function keyArguments(args,active=true){
   if(active===false||!KEY_SEQUENCES.includes(args?.sequence))throw Error("Choose a supported key or shortcut.");
@@ -77,6 +78,7 @@ const CATALOG=Object.freeze([
   ["ClipboardExchange","Clipboard exchange","workflow","Clipboard writes use Veyon's protocol; explicit reads require the matching RoomGoblin endpoint plugin"],
   ["ClassroomChat","Two-way classroom chat","web","Community chat button; matching native browser bridge and endpoint chat plugin required"],
   ["RemoteFileBrowser","Browse pilot files","web","Community file browser; matching bridge and endpoint plugin, pilot-folder access only"],
+  ["InternetGuard","Temporary Internet block","web","Windows-only community pilot; blocks common web/DNS/proxy ports for at most 15 minutes and requires the matching endpoint plugin"],
   ["Screenshot","Screenshots","web","Download screenshot"],
   ["Demo","Broadcast","web","Teacher or selected student source, fullscreen or windowed"],
   ...["DemoServer","FullScreenDemo","WindowDemo","ShareOwnScreenFullScreen","ShareOwnScreenWindow","ShareUserScreenFullScreen","ShareUserScreenWindow"].map(name=>[name,"Broadcast component","workflow","Use broadcast controls; these components are coordinated together"]),
@@ -85,7 +87,7 @@ const CATALOG=Object.freeze([
   ["TextMessage","Message","web","Send message"],
   ["StartApp","Launch applications","web","Start app or saved lesson action"],
   ["OpenWebsite","Open websites","web","Open website or saved lesson action"],
-  ["FileTransfer","Distribute files","desktop","Native transfer available; a browser transfer adapter is not implemented"],
+  ["FileTransfer","Distribute files","desktop","Official bulk distribution remains native-only; use Browse pilot files for the separate one-target Inbox upload"],
   ["FileCollect","Collect files","desktop","Requires an advertised collection feature and a browser collection adapter"],
   ["PowerOn","Wake-on-LAN","web","Save MAC address, select offline computer, then Wake"],
   ["Reboot","Restart","web","Reboot"],
@@ -104,8 +106,8 @@ const CATALOG=Object.freeze([
 ].map(([name,label,provider,detail])=>Object.freeze({name,label,provider,detail})));
 function featureCatalog(advertised){
   const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
-  const bridgeUids={RoomGoblinKeySequence:INPUT_FEATURE_UID,RoomGoblinClipboardWrite:CLIPBOARD_FEATURE,RoomGoblinBrowserControl:BROWSER_CONTROL_FEATURE_UID,RoomGoblinClipboardRead:CLIPBOARD_READ_FEATURE_UID};
-  return CATALOG.filter(row=>["web","workflow"].includes(row.provider)).map(row=>({...row,advertised:bridgeUids[row.name]?exactBridgeAdvertised(advertised,row.name,bridgeUids[row.name]):names.has(row.name),endpointVerified:false}));
+  const exactUids={RoomGoblinKeySequence:INPUT_FEATURE_UID,RoomGoblinClipboardWrite:CLIPBOARD_FEATURE,RoomGoblinBrowserControl:BROWSER_CONTROL_FEATURE_UID,RoomGoblinClipboardRead:CLIPBOARD_READ_FEATURE_UID,InternetGuard:INTERNET_GUARD_FEATURE_UID};
+  return CATALOG.filter(row=>["web","workflow"].includes(row.provider)).map(row=>({...row,advertised:exactUids[row.name]?exactBridgeAdvertised(advertised,row.name,exactUids[row.name]):names.has(row.name),endpointVerified:false}));
 }
 function normalizeLessonAction(input){
   const name=String(input?.name||"").trim();
@@ -119,4 +121,4 @@ function normalizeLessonAction(input){
   }
   return {name,feature,value};
 }
-module.exports={INPUT_FEATURE_UID,BROWSER_CONTROL_FEATURE_UID,CLIPBOARD_READ_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,exactBridgeAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};
+module.exports={INPUT_FEATURE_UID,BROWSER_CONTROL_FEATURE_UID,CLIPBOARD_READ_FEATURE_UID,INTERNET_GUARD_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,exactBridgeAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};

@@ -5,8 +5,9 @@ The [complete feature map, repository review, API boundaries, pilot build and re
 RoomGoblin adds Wake, extended shutdown controls, student demonstrations, shared
 lesson actions, browser clipboard/shortcut commands, bounded recording, and
 one-target browser remote control with monitor view and explicit clipboard read.
-Official distribution/collection and Configurator settings remain native-only
-and omitted from the web GUI. Paid add-ons are excluded.
+RoomGoblin also provides bounded pilot-folder download and 2 MiB atomic Inbox
+upload plus a Windows Internet Guard browser pilot. Official bulk transfer and
+Configurator settings remain native-only. Paid add-ons are excluded.
 
 Community chat and restricted file-browser sources live separately under `integrations/veyon-plugins` with GPL provenance and a pinned official native baseline. They are not installed by a Hub update. Do not copy these plugins into the different Veyon/Qt installation. Linux build checks do not prove Windows compatibility; use matching disposable teacher/student VMs and sample files for acceptance.
 
@@ -23,3 +24,6 @@ Browser adapters for chat and restricted file browsing are described in
 [Community web tools](Veyon-Community-Web.md). Remote input, monitor view and
 clipboard read are described in [Browser control](Veyon-Browser-Control). They
 require matching native pilot components.
+
+The Windows-only [Internet Guard pilot](Veyon-Internet-Guard-Pilot.md) is a
+separate disposable endpoint test with explicit firewall recovery.

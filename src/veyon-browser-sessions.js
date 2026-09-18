@@ -1,6 +1,6 @@
 "use strict";
 const {randomUUID}=require("node:crypto");
-const ACTIONS=new Set(["open","close","state","send","roots","list","download","chunk","pointer","key","clipboard"]);
+const ACTIONS=new Set(["open","close","state","send","roots","list","download","chunk","uploadStart","uploadChunk","uploadFinish","pointer","key","clipboard"]);
 const CONTROL_KEYS=new Set(["Backspace","Tab","Enter","Escape","Delete","Home","Left","Up","Right","Down","PageUp","PageDown","End","Insert","Shift","Control","Alt","Meta",...Array.from({length:12},(_,i)=>`F${i+1}`)]);
 const fail=message=>{throw Object.assign(Error(message),{status:409})};
 function argumentsFor(action,input={}){
@@ -20,6 +20,18 @@ function argumentsFor(action,input={}){
   if(action==="chunk"){
     if(!Number.isSafeInteger(input.offset)||input.offset<0||input.offset>8*1024*1024)fail("Invalid download offset");
     return {offset:input.offset};
+  }
+  if(action==="uploadStart"){
+    const name=typeof input.name==="string"?input.name:"",size=input.size;
+    if(!name||name.length>255||name==="."||name===".."||/[\\/\x00-\x1f]/.test(name)||!Number.isSafeInteger(size)||size<0||size>2*1024*1024)fail("Choose one ordinary file up to 2 MiB");
+    return {name,size};
+  }
+  if(action==="uploadChunk"){
+    const offset=input.offset,data=input.data;
+    if(!Number.isSafeInteger(offset)||offset<0||offset>2*1024*1024||typeof data!=="string"||data.length>174764||!/^[A-Za-z0-9+/]+={0,2}$/.test(data))fail("Invalid upload chunk");
+    const bytes=Buffer.from(data,"base64");
+    if(!bytes.length||bytes.length>128*1024||bytes.toString("base64")!==data)fail("Invalid upload chunk");
+    return {offset,data};
   }
   if(action==="pointer"){
     if(!Number.isInteger(input.x)||!Number.isInteger(input.y)||!Number.isInteger(input.buttons)||input.x<0||input.y<0||input.x>16384||input.y>16384||input.buttons<0||input.buttons>7||![undefined,-1,1].includes(input.wheel))fail("Invalid pointer event");
@@ -56,17 +68,18 @@ class BrowserSessions{
         const caps=await this.request(s,"capabilities",{});authorize();
         if(caps?.protocol!==1||caps?.[args.kind]!==true)fail("Matching native browser bridge is unavailable");
         if(!this.identity(computer,connection))fail("Computer identity or connection changed");
+        const upload=args.kind==="files"&&caps?.upload===true;
         const result=await this.request(s,"open",{session:id,...args});
         if(result?.ok!==true)fail("Native browser session was refused");
         s.busy=false;
-        return {ok:true,session:id,kind:s.kind,expiresAt:s.expires,endpointVerified:false};
+        return {ok:true,session:id,kind:s.kind,expiresAt:s.expires,endpointVerified:false,upload};
       }catch(error){if(id)this.drop(id);throw error}finally{this.opening.delete(key)}
     }
     const id=String(input?.session||""),s=this.sessions.get(id);
     if(!s||s.owner!==owner||s.computer.id!==key)fail("Browser session expired or unavailable");
     if(s.busy)fail("Wait for the current browser request");
     if(!this.identity(s.computer,s.connection)){this.drop(id);fail("Computer identity or connection changed; reopen the tool")}
-    const allowed=s.kind==="chat"?["close","state","send"]:s.kind==="files"?["close","state","roots","list","download","chunk"]:["close","state","pointer","key","clipboard"];
+    const allowed=s.kind==="chat"?["close","state","send"]:s.kind==="files"?["close","state","roots","list","download","chunk","uploadStart","uploadChunk","uploadFinish"]:["close","state","pointer","key","clipboard"];
     if(!allowed.includes(action))fail("Action does not match this browser session");
     s.busy=true;
     try{
