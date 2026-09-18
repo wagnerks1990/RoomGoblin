@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Veyon OEM-only reset
+
+- Removed RoomGoblin custom/community Veyon extension source, experimental web controls, local analysis/command bridges, pilot packaging/deployment tooling, and their CI/test/documentation surfaces.
+- Removed corresponding runtime routes and configuration so the Veyon workspace dispatches only the reviewed upstream WebAPI command allowlist.
+- Retained host-managed upstream/OEM Veyon configuration, keys, inventory, package lifecycle, monitoring/live view, classroom commands, and upstream/OEM add-on compatibility.
+- Added explicit operator/contributor policy and regression guards against reintroducing custom Veyon extension trees or experimental controller bundles.
+
+
 ### Managed Cloudflare remote HTTPS
 
 - Expand the existing host-side Cloudflare Tunnel pilot into first-class Setup and Controller provisioning for an optional remotely managed tunnel, proxied DNS hostname, HTTPS rewrites/enforcement, HTTP/3, Brotli, and optional Cloudflare Access.
@@ -59,27 +67,6 @@
 - Keep host networking, LAN multicast discovery, Tailscale IPv6 and persistent Music Assistant data intact; fail open for unreadable/unknown interfaces.
 - Allow an explicit RoomGoblin-owned Music Assistant recreate to repair an offline/dead API instead of requiring successful authentication before container replacement; refuse destructive recreate of foreign/adopted containers until their persistent data is migrated into managed storage; add regression coverage and synchronized host-network/AI documentation.
 
-### Community Veyon web pilots
-
-- Add a fail-closed complete Windows Veyon 4.11.2 packaging path for the reviewed
-  x86-64 MinGW/Qt environment, including PE architecture checks, required plugin
-  inventory, corresponding GPL source/provenance and SHA-256 manifests.
-- Add a one-disposable-endpoint PowerShell gate that requires verified pilot and
-  rollback installers, exports current configuration/evidence, validates runtime
-  plugin/feature discovery and automatically reapplies the known-good installer
-  and configuration when acceptance fails. Live Windows behavior remains pending.
-- Allow host-native Ubuntu 26.04/GCC 15 pilot builds to pass the QtConcurrent
-  atomic optimizer false positive while retaining the warning and all other
-  Veyon `-Werror` enforcement.
-- Add an original administrator-only live CMD/Windows PowerShell pilot carried
-  entirely by the authenticated RoomGoblinWebBridge Veyon feature/worker path.
-  Sessions run as the signed-in user, expire after ten minutes, bound transient
-  input/output and never audit command/output content; Windows build and endpoint
-  acceptance remain explicit gates.
-- Add selected-PC browser controls for the reviewed GPL Internet Guard backend, ported to the pinned Veyon 4.11.2 Windows source with named firewall rules, transactional rollback, disabled-firewall refusal, explicit allow and a 15-minute in-process release timer.
-- Add one-target browser uploads to `RoomGoblin-Pilot/Inbox`, limited to 2 MiB and ordered 128 KiB chunks with no intentional overwrite, atomic commit, request correlation and partial-file discard.
-- Document exact provenance, exclusions, Windows build/acceptance requirements and manual firewall recovery; commercial Veyon add-ons remain excluded.
-
 ### Repository-wide correctness and security audit
 
 - Review all 538 tracked project files (about 64,600 lines of source, tests,
@@ -98,19 +85,6 @@
 - Follow up the live controller click-through by allowing only the eight built-in
   `/test-images/tvN.svg` assets through media-command URL validation, fixing the
   Controller **Test Image** action without widening arbitrary same-origin paths.
-- Make administrator Veyon terminal Close dispatch cleanup immediately instead of
-  waiting behind state/read polling, fixing a Firefox-visible teardown race while
-  retaining the native ten-minute failsafe expiry.
-
-### Browser-complete Veyon pilot
-
-- Add one-target live browser pointer and broad keyboard control with fresh-frame leases, topology/revision binding, monotonic input sequences, native queue/rate bounds and forced key/button release.
-- Add per-monitor viewport selection and explicit correlated clipboard reads; no automatic clipboard polling, persistence or execution claims.
-- Redact RoomGoblin bridge bodies/responses/connection identifiers from native debug logs, give cleanup a separate authorized budget, and allow the restricted file browser to reopen after a clean close.
-- Normalize and validate native pilot archive ownership and paths before publication. Official distribution/collection and production/Windows packages remain documented native-only gates.
-
-- Optional local AI screen analysis using the pinned community model and separate AGPL service; explicit capture only, no retention or automatic enforcement.
-- Community browser pilot: two-way chat and restricted file browsing/downloads through a matching authenticated native bridge; no native production installation or AI monitor deployment.
 
 ### Native Windows enrollment EDR hardening
 
@@ -129,33 +103,12 @@
 - Add configurable video start/end boundaries, clip looping and receiver playback telemetry; expose the same live controls in the Media workspace and document scheduler/announcement/BGM invariants.
 
 
-### Browser clipboard and keyboard sending
-
-- Remove native launcher buttons, generated scripts and the download API; show only browser workflows in feature coverage.
-
-- Add a one-computer text form and bounded, authorized queue command with bridge discovery.
-- Add a free native RoomGoblinWebBridge plugin that forwards the existing clipboard protocol; include it in matching Linux builds/source archives.
-- Preserve transient content, no uncertain replay and explicit unverified delivery; document native rollout and live acceptance still required.
-
 ### Veyon installed version and feature discovery
 
 - Read installed package versions even when apt offers no update; flag mixed installs.
 - Remove obsolete 4.9.7 GUI feature claims and retain newly advertised feature names.
 - Keep package, proxy-advertisement and endpoint-verification evidence distinct.
 
-
-### Complete Linux Veyon pilot artifacts
-
-- Build and stage the entire matching native Veyon distribution with chat and file browsing.
-- Verify installed plugin discovery and publish binaries, full corresponding source, inventories and checksums as a CI artifact.
-- Document disposable-VM installation and rollback; production and Windows installations remain unchanged.
-
-### Free Veyon controls and isolated community pilot
-
-- Add bounded Wake, shutdown variants, native desktop launchers, student demonstrations, shared lesson actions and browser-only screen recording.
-- Reserve all selected broadcast cleanup modes atomically; keep acceptance distinct from endpoint verification.
-- Incorporate GPL community chat and restricted file-browser source in a separate pinned native pilot; repair routing, argument reads, incomplete saves and resource limits.
-- Add feature coverage, all supplied repository dispositions, operational/AI/Wiki documentation and focused regression/native build coverage. Native Windows and classroom acceptance remain separate from automated validation.
 
 ### Browser Sendspin close diagnostics
 
