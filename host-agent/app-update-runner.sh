@@ -226,6 +226,8 @@ refresh_host_agent(){
   sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
   sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $HUB_ROOT ${HOST_SERVICES_DIR:-/opt/services} ${HOST_BACKUP_DIR:-/opt/classroom-hub-backups} /etc/classroom-control-hub /var/lib/classroom-hub ${DOCKER_VOLUMES_ROOT:-/var/lib/docker/volumes}#" /etc/systemd/system/classroom-hub-host-agent.service
   python3 -m py_compile "$HUB_ROOT/host-agent/server.py"
+  systemctl disable --now classroom-control-hub-host-agent.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/classroom-control-hub-host-agent.service
   systemctl daemon-reload
   fi
   systemctl restart classroom-hub-host-agent.service
