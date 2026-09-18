@@ -23,6 +23,16 @@ The recommended path no longer requires PowerShell to download and immediately e
 
 The raw one-time enrollment token is displayed only in the generated command. It expires according to the configured enrollment policy and is exchanged for the computer's permanent RoomGoblin credential during the first successful native connection.
 
+## HTTPS primary with LAN fallback
+
+When managed Cloudflare HTTPS is recorded, newly issued enrollment artifacts prefer that public HTTPS RoomGoblin origin. Both the native service and legacy PowerShell agent convert HTTPS to WSS for the long-lived control channel and preserve the current/requested LAN origin as `fallbackHubUrl`.
+
+After an authenticated handshake, an updated agent may accept a server-advertised preferred Hub origin only when it is HTTPS. Before promoting it, the agent preserves its current origin as fallback. Reconnect and native self-update both try the preferred origin first and the fallback second.
+
+HTTP primary or fallback origins require explicit insecure-LAN acknowledgement during bootstrap. Existing agents therefore retain a local path when Cloudflare or the Internet is unavailable.
+
+Cloudflare Access on the main RoomGoblin hostname can require interactive browser authentication. Do not assume unattended agents can satisfy that challenge; use an Access-compatible machine policy before combining those features.
+
 ## Native package and enrollment file
 
 The appliance publishes `/lab-agent/native/RoomGoblinNativeAgent.zip` containing the exact four native executables plus `manifest.json`. The browser-generated enrollment JSON uses the schema `roomgoblin-native-enrollment-v1` and contains the Hub origin, stable agent ID, one-time enrollment token, HTTP acknowledgement when applicable, and optional publisher thumbprint.
