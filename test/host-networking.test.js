@@ -48,7 +48,7 @@ function addonHarness(t, exists = false, owned = true) {
   context.mainAppPut = async (_id, settings) => ({resolved:settings});
   context.hostAgentRequest = async args => {
     calls.push(Array.from(args));
-    if(args[0]==="network"&&args[1]==="inspect")return {ok:true,stdout:JSON.stringify([{Name:"roomgoblin-integrations",Driver:"bridge"}])};
+    if(args[0]==="network"&&args[1]==="inspect")return {ok:true,stdout:JSON.stringify([{Name:"roomgoblin-integrations",Driver:"bridge",Labels:{"org.roomgoblin.network":"integration"}}])};
     if(args[0]==="inspect"&&exists)return {ok:true,stdout:JSON.stringify([{Config:{Labels:owned?{"org.roomgoblin.deployment-ownership":"roomgoblin"}:{}},Mounts:[]}])};
     return {ok:true, stdout:"test-container"};
   };
