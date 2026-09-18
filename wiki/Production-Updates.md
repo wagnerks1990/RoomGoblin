@@ -165,3 +165,11 @@ operational exports use `manual-operational-*`. Historical
 `classroom-hub-operational-*` files are treated as legacy automatic backups and
 participate in the three-backup limit. Full Recovery `.rgbak` files are never
 auto-pruned.
+
+
+### Retention path consistency
+
+Full reconciliation applies ZIP and migration retention after successful
+component convergence. Host-side migration and legacy archive cleanup use the
+configured `HOST_BACKUP_DIR` (default `/opt/classroom-hub-backups`) rather
+than the obsolete historical backup path.
