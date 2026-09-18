@@ -12,6 +12,14 @@ main commit and waits for its validated image pair before source/runtime changes
 Failed CI, missing images, a wrong revision or divergent history stops the update
 without changing running services. Never retag another revision to satisfy it.
 
+## Web System Updates
+
+The administrator **System updates** page follows the trusted `main` branch, not semantic-version release tags. **Check GitHub** compares the installed Git commit with the latest merged commit on `wagnerks1990/RoomGoblin:main`. The GUI enables **Install Main Update** only when the installed checkout is a clean fast-forward ancestor of that exact main commit.
+
+The browser never performs a Git pull itself and never treats a merge alone as deployable. Installation hands the exact 40-character main commit to the native `published` transaction. That transaction re-fetches trusted `origin/main`, re-verifies ancestry, waits for the exact `sha-<commit>` Hub and maintenance image pair, verifies image revision labels, creates the operational recovery backup after preflight, applies the selective component plan, and health-checks or rolls back. If CI images for the newest merge are still building, the install attempt fails closed before source/runtime mutation and can be retried after publication completes.
+
+Automatic application updates use the same main-commit path during the configured maintenance window. The GitHub token remains optional for the public repository and is only used for read-only GitHub metadata access. The previous-release rollback control remains available independently of how the current main commit was selected.
+
 ## Normal update
 
 ```bash
@@ -105,11 +113,14 @@ The runner executes a private copy so an installer cannot overwrite its active
 shell program. A failed rollback retains its journal for diagnosis.
 
 Status remains in `/var/lib/classroom-hub/app-update-status.json` and recovery is
-owned by `classroom-hub-app-update.service`. After a terminated CLI session, use
-`sudo systemctl start classroom-hub-app-update.service` to resume its pending
-journal. Do not delete the journal to force another mutation. The existing web
-release/revert controls share this runner; they still accept semantic releases
-only and reconcile both containers. They do not accept arbitrary commit requests.
+owned by `classroom-hub-app-update.service`. After a terminated transaction, the
+Host Agent resumes a still-present durable request journal automatically; a manual
+service start is meaningful only when that request file exists. Do not start the
+oneshot with no request and do not delete a pending journal to force another
+mutation. The web updater accepts only the exact latest merged commit resolved from
+the trusted `main` branch, then re-validates it through the native `published`
+path. Arbitrary user-supplied commits remain prohibited. Rollback uses the same
+verified previous images and matching recovery backup.
 
 The operational ZIP restore format currently targets the canonical
 `/app/data/classroom-control-hub.db`. Selective transactions reject another active
