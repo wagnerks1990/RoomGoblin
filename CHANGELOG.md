@@ -1,10 +1,16 @@
 # Changelog
 
-- Optional local AI screen analysis using the pinned community model and separate AGPL service; explicit capture only, no retention or automatic enforcement.
-
-- Community browser pilot: two-way chat and restricted file browsing/downloads through a matching authenticated native bridge; no native production installation or AI monitor deployment.
-
 ## Unreleased
+
+### Browser-complete Veyon pilot
+
+- Add one-target live browser pointer and broad keyboard control with fresh-frame leases, topology/revision binding, monotonic input sequences, native queue/rate bounds and forced key/button release.
+- Add per-monitor viewport selection and explicit correlated clipboard reads; no automatic clipboard polling, persistence or execution claims.
+- Redact RoomGoblin bridge bodies/responses/connection identifiers from native debug logs, give cleanup a separate authorized budget, and allow the restricted file browser to reopen after a clean close.
+- Normalize and validate native pilot archive ownership and paths before publication. Official distribution/collection and production/Windows packages remain documented native-only gates.
+
+- Optional local AI screen analysis using the pinned community model and separate AGPL service; explicit capture only, no retention or automatic enforcement.
+- Community browser pilot: two-way chat and restricted file browsing/downloads through a matching authenticated native bridge; no native production installation or AI monitor deployment.
 
 ### Native Windows enrollment EDR hardening
 

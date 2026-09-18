@@ -3,8 +3,11 @@
 #pragma once
 #include "FeatureProviderInterface.h"
 #include "RoomGoblinBridgeInterface.h"
+#include "MessageContext.h"
 #include <QMutex>
 #include <QHash>
+#include <QSet>
+#include <QTimer>
 
 class RoomGoblinWebBridge : public QObject, public FeatureProviderInterface, public PluginInterface, public RoomGoblinBridgeInterface
 {
@@ -25,19 +28,34 @@ public:
     QVariantMap browserRequest(ComputerControlInterface::Pointer client, const QString& action,
                                const QVariantMap& data) override;
     bool handleFeatureMessage(ComputerControlInterface::Pointer client, const FeatureMessage& message) override;
+    bool handleFeatureMessage(VeyonServerInterface& server, const MessageContext& context,
+                              const FeatureMessage& message) override;
+    bool handleFeatureMessageFromWorker(VeyonServerInterface& server, const FeatureMessage& message) override;
+    bool handleFeatureMessage(VeyonWorkerInterface& worker, const FeatureMessage& message) override;
 private:
     struct BrowserSession {
         QWeakPointer<ComputerControlInterface> client;
         QString kind;
         QUuid context, request, transfer;
-        qint64 expires{0}, deadline{0}, size{-1};
+        qint64 expires{0}, deadline{0}, size{-1}, lastFrameMs{0}, leaseDeadline{0}, rateWindow{0};
+        quint64 frameRevision{0}, leaseRevision{0}, inputSequence{0};
         QVariantList messages, entries;
         QByteArray bytes;
-        QString path, fileName, error;
-        bool pending{false}, complete{false};
+        QString path, fileName, error, clipboardText, topology, lease;
+        QUuid clipboardRequest;
+        QSet<unsigned int> pressedKeys;
+        int pointerX{0}, pointerY{0}, pointerMask{0}, eventCount{0};
+        qint64 inputDeadline{0};
+        bool pending{false}, complete{false}, clipboardPending{false}, clipboardReady{false};
+        ComputerControlInterface::UpdateMode previousUpdateMode{ComputerControlInterface::UpdateMode::Basic};
+        QMetaObject::Connection frameConnection;
     };
+    void releaseInput(BrowserSession& session);
+    void closeBrowserSession(BrowserSession& session);
+    void pruneBrowserSessions();
     QMutex m_browserMutex;
     QHash<QString, BrowserSession> m_browserSessions;
+    QTimer m_browserSessionTimer;
     bool allowed(bool clipboard = true) const;
     FeatureList m_features;
 };

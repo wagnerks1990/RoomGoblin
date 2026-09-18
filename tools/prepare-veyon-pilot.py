@@ -40,6 +40,57 @@ def patch_browser_api(destination):
     path = base / 'WebApiController.cpp'
     path.write_text(path.read_text() + '\n#include "../webbridge/WebApiBrowserRequest.inc"\n')
 
+    # The upstream debug logger prints POST bodies, response maps and connection
+    # headers. Browser bridge traffic can contain chat, clipboard and file data.
+    path = base / 'WebApiHttpServer.cpp'
+    content = path.read_text()
+    response_anchor = '''{
+\tif( response.error == WebApiController::Error::NoError )
+\t{'''
+    response_replacement = '''{
+\tconst bool roomGoblinSensitive = request.path.startsWith(QStringLiteral("roomgoblin/"));
+\tif( roomGoblinSensitive && response.error == WebApiController::Error::NoError )
+\t{
+\t\twaDebug() << "[RESP]" << request.path.toUtf8().constData() << "[redacted]";
+\t\tif( response.binaryData.isEmpty() == false ) return QHttpServerResponse{ response.binaryData };
+\t\tif( response.arrayData.isEmpty() == false ) return { QJsonArray::fromVariantList(response.arrayData) };
+\t\treturn { QJsonObject::fromVariantMap(response.mapData) };
+\t}
+\tif( response.error == WebApiController::Error::NoError )
+\t{'''
+    post_anchor = '''\twaDebug() << "[REQ] [POST]"
+\t\t\t  << request.url().toString().toUtf8().constData()
+\t\t\t  << toJson(request.headers()).constData()
+\t\t\t  << request.body().constData();'''
+    post_replacement = '''\tif( request.url().path().startsWith(QStringLiteral("/api/v1/roomgoblin/")) )
+\t\twaDebug() << "[REQ] [POST]" << request.url().path().toUtf8().constData() << "[redacted]";
+\telse
+\t\twaDebug() << "[REQ] [POST]"
+\t\t\t\t  << request.url().toString().toUtf8().constData()
+\t\t\t\t  << toJson(request.headers()).constData()
+\t\t\t\t  << request.body().constData();'''
+    for old, new in ((response_anchor, response_replacement), (post_anchor, post_replacement)):
+        if content.count(old) != 1:
+            raise RuntimeError('Pinned browser log-redaction patch does not match source')
+        content = content.replace(old, new)
+    path.write_text(content)
+
+    # Feature messages also pass through core debug logging outside HTTP. Never
+    # stringify arguments: they can contain login passwords, demo tokens, chat,
+    # clipboard text, paths, or file bytes. Feature name and command are enough.
+    path = Path(destination) / 'core/src/FeatureMessage.cpp'
+    content = path.read_text()
+    old = '''\tstream << QStringLiteral("FeatureMessage(%1,%2,%3)")
+\t\t\t\t  .arg(VeyonCore::featureManager().feature(message.featureUid()).name())
+\t\t\t\t  .arg(FeatureMessage::CommandType(message.command()))
+\t\t\t\t  .arg(VeyonCore::stringify(message.arguments())).toUtf8().constData();'''
+    new = '''\tstream << QStringLiteral("FeatureMessage(%1,%2,[arguments redacted])")
+\t\t\t\t  .arg(VeyonCore::featureManager().feature(message.featureUid()).name())
+\t\t\t\t  .arg(FeatureMessage::CommandType(message.command())).toUtf8().constData();'''
+    if content.count(old) != 1:
+        raise RuntimeError('Pinned feature-message log-redaction patch does not match source')
+    path.write_text(content.replace(old, new))
+
 
 def prepare(destination):
     destination = Path(destination).absolute()

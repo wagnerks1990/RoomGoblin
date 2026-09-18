@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 MODEL_SHA256 = '06e0beb4adecd05a6d04f5dd9d42669dc3020fe6669f68302ac0ff85e1600b6c'
 MAX_IMAGE = 4 * 1024 * 1024
-SOURCE = 'https://github.com/wagnerks1990/RoomGoblin/tree/main/integrations/veyon-ai'
+SOURCE = 'https://github.com/vainmari/Veyon-detection/tree/db02a70439aad0c21e93de51d37761e082a9c393'
 
 
 class Detector:
@@ -103,8 +103,8 @@ def handler(detector, token):
 if __name__ == '__main__':
     token_path = Path(os.environ['ROOMGOBLIN_AI_TOKEN_FILE'])
     token = token_path.read_text().strip()
-    if len(token) < 32 or len(token) > 256 or not token.isascii():
-        raise ValueError('Use a separate random ASCII token of 32–256 characters')
+    if not 32 <= len(token) <= 256 or any(ord(char) < 0x21 or ord(char) > 0x7e for char in token):
+        raise ValueError('Use a separate random base64url or hexadecimal token of 32–256 characters')
     model = Path(__file__).parent / 'upstream/weights/yolo26n.onnx'
     # One request at a time; fixed loopback listener, no model/path upload API.
     HTTPServer(('127.0.0.1', 3025), handler(Detector(model), token)).serve_forever()

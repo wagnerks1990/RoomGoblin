@@ -20,8 +20,10 @@ protocol, so no new Windows plugin is intended for clipboard sending. Windows
 interoperability is not established by Linux compilation. The endpoint must have
 a signed-in user and permit clipboard exchange through its existing Veyon rules.
 Appliance clipboard synchronization and disabled-feature settings are respected.
-No clipboard read-back, image transfer, automatic synchronization or empty-text
-clearing is implemented.
+Clipboard read-back is a separate, explicit action inside Browser Control; see
+[Browser remote control](VEYON-BROWSER-CONTROL.md). It uses a new correlated
+request/reply feature on matching pilots and never relies on stale VNC clipboard
+events. Image transfer and automatic synchronization are not implemented.
 
 ## Limits and delivery
 
@@ -51,8 +53,9 @@ the named original target must remain the recipient.
 
 Restore the disposable VM snapshot to remove native pilot changes. Hub rollback
 removes the new browser operation without changing keys or endpoint configuration.
-Keyboard/mouse control, clipboard reading, browser file transfer/collection and
-two-way chat remain separate unfinished adapters.
+Continuous keyboard/mouse control, clipboard reading and monitor viewport
+selection require the matching browser-control pilot. Official Veyon file
+distribution/collection remain native-only and are not represented by launchers.
 
 ## Browser keys and shortcuts
 

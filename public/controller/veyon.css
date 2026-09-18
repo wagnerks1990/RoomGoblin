@@ -121,3 +121,8 @@ body.rg-veyon header,body.rg-veyon main{width:min(1800px,100%);padding-inline:cl
 .rg-veyon [data-command-phase=failed],.rg-veyon [data-command-phase=unknown]{color:var(--red)}
 
 #communityDialog{width:min(680px,90vw);max-height:80vh;overflow:auto} #communityDialog textarea{display:block;width:100%;box-sizing:border-box} #communityBody pre{overflow-wrap:anywhere}
+#modal.control-active .modalBox{border:3px solid var(--amber)}
+#modal.control-active #liveImg{display:none!important}
+#controlCanvas{display:block;max-width:100%;max-height:100%;background:#000;touch-action:none;cursor:crosshair}
+#controlCanvas:focus{outline:3px solid var(--amber);outline-offset:-3px}
+#remoteClipboard{width:100%;max-height:7rem;resize:vertical;margin-bottom:7px;background:#0a0f14;color:var(--text)}

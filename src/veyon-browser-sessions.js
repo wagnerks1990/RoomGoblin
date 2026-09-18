@@ -1,11 +1,12 @@
 "use strict";
 const {randomUUID}=require("node:crypto");
-const ACTIONS=new Set(["open","close","state","send","roots","list","download","chunk"]);
+const ACTIONS=new Set(["open","close","state","send","roots","list","download","chunk","pointer","key","clipboard"]);
+const CONTROL_KEYS=new Set(["Backspace","Tab","Enter","Escape","Delete","Home","Left","Up","Right","Down","PageUp","PageDown","End","Insert","Shift","Control","Alt","Meta",...Array.from({length:12},(_,i)=>`F${i+1}`)]);
 const fail=message=>{throw Object.assign(Error(message),{status:409})};
 function argumentsFor(action,input={}){
   if(!ACTIONS.has(action))fail("Unsupported browser action");
   if(action==="open"){
-    if(!["chat","files"].includes(input.kind))fail("Choose chat or files");
+    if(!["chat","files","control"].includes(input.kind))fail("Choose chat, files, or control");
     return {kind:input.kind};
   }
   if(action==="send"){
@@ -20,7 +21,19 @@ function argumentsFor(action,input={}){
     if(!Number.isSafeInteger(input.offset)||input.offset<0||input.offset>8*1024*1024)fail("Invalid download offset");
     return {offset:input.offset};
   }
+  if(action==="pointer"){
+    if(!Number.isInteger(input.x)||!Number.isInteger(input.y)||!Number.isInteger(input.buttons)||input.x<0||input.y<0||input.x>16384||input.y>16384||input.buttons<0||input.buttons>7||![undefined,-1,1].includes(input.wheel))fail("Invalid pointer event");
+    return {x:input.x,y:input.y,buttons:input.buttons,...(input.wheel?{wheel:input.wheel}:{}),...inputLease(input)};
+  }
+  if(action==="key"){
+    if(typeof input.key!=="string"||typeof input.pressed!=="boolean"||([...input.key].length!==1&&!CONTROL_KEYS.has(input.key))||input.key.includes("\0"))fail("Unsupported key event");
+    return {key:input.key,pressed:input.pressed,...inputLease(input)};
+  }
   return {};
+}
+function inputLease(input){
+  if(typeof input.lease!=="string"||!/^[0-9a-f-]{36}$/i.test(input.lease)||!Number.isSafeInteger(input.revision)||input.revision<1||!Number.isSafeInteger(input.sequence)||input.sequence<1)fail("Invalid remote input lease");
+  return {lease:input.lease,revision:input.revision,sequence:input.sequence};
 }
 class BrowserSessions{
   constructor({connect,request,identity,now=Date.now}){Object.assign(this,{connect,request,identity,now});this.sessions=new Map();this.opening=new Set()}
@@ -38,10 +51,10 @@ class BrowserSessions{
         const connection=await this.connect(computer.ip);authorize();
         if(!this.identity(computer,connection))fail("Computer identity or connection changed");
         connection.active=(connection.active||0)+1;
-        id=randomUUID();const s={owner,computer:{...computer},connection,kind:args.kind,expires:this.now()+900000,busy:true};
+        id=randomUUID();const s={owner,computer:{...computer},connection,kind:args.kind,expires:this.now()+(args.kind==="control"?600000:900000),busy:true};
         this.sessions.set(id,s);
         const caps=await this.request(s,"capabilities",{});authorize();
-        if(caps?.protocol!==1||caps?.[args.kind!=="files"?"chat":"files"]!==true)fail("Matching native browser bridge is unavailable");
+        if(caps?.protocol!==1||caps?.[args.kind]!==true)fail("Matching native browser bridge is unavailable");
         if(!this.identity(computer,connection))fail("Computer identity or connection changed");
         const result=await this.request(s,"open",{session:id,...args});
         if(result?.ok!==true)fail("Native browser session was refused");
@@ -53,7 +66,8 @@ class BrowserSessions{
     if(!s||s.owner!==owner||s.computer.id!==key)fail("Browser session expired or unavailable");
     if(s.busy)fail("Wait for the current browser request");
     if(!this.identity(s.computer,s.connection)){this.drop(id);fail("Computer identity or connection changed; reopen the tool")}
-    if(s.kind==="chat"&&!["close","state","send"].includes(action)||s.kind==="files"&&action==="send")fail("Action does not match this browser session");
+    const allowed=s.kind==="chat"?["close","state","send"]:s.kind==="files"?["close","state","roots","list","download","chunk"]:["close","state","pointer","key","clipboard"];
+    if(!allowed.includes(action))fail("Action does not match this browser session");
     s.busy=true;
     try{
       authorize();const result=await this.request(s,action,{session:id,...args});
@@ -66,12 +80,22 @@ function project(action,result){
   if(action==="state"){
     const entries=Array.isArray(result.entries)?result.entries:[],messages=Array.isArray(result.messages)?result.messages:[];
     if(entries.length>1000||messages.length>100)fail("Native response exceeds browser limits");
+    const screens=Array.isArray(result.screens)?result.screens:[];
+    if(screens.length>16)fail("Native response exceeds screen limit");
+    const frameWidth=Number(result.frameWidth),frameHeight=Number(result.frameHeight);
+    if((screens.length||result.frameWidth!==undefined)&&(!Number.isInteger(frameWidth)||!Number.isInteger(frameHeight)||frameWidth<1||frameHeight<1||frameWidth>16384||frameHeight>16384))fail("Invalid remote framebuffer dimensions");
+    const lease=/^[0-9a-f-]{36}$/i.test(String(result.lease||""))?String(result.lease):"";
+    const frameRevision=Number(result.frameRevision),topology=/^[0-9a-f]{64}$/.test(String(result.topology||""))?String(result.topology):"";
+    const ready=result.ready===true&&lease.length===36&&Number.isSafeInteger(frameRevision)&&frameRevision>0&&topology.length===64;
     return {ok:true,pending:result.pending===true,complete:result.complete===true,error:String(result.error||"").slice(0,500),
       path:String(result.path||"").slice(0,4096),fileName:String(result.fileName||"").replace(/[\\/\x00-\x1f]/g,"_").slice(0,255),
       size:Number(result.size),received:Number(result.received),
       entries:entries.map(e=>({name:String(e.name||"").slice(0,4096),dir:e.dir===true,size:Number(e.size)||0})),
-      messages:messages.map(m=>({from:String(m.from||"").slice(0,40),text:String(m.text||"").slice(0,2000)}))};
+      messages:messages.map(m=>({from:String(m.from||"").slice(0,40),text:String(m.text||"").slice(0,2000)})),
+      frameWidth,frameHeight,ready,lease,frameRevision,topology,
+      screens:screens.map((s,index)=>({index:Number.isInteger(Number(s.index))?Number(s.index):index,name:String(s.name||`Screen ${index+1}`).slice(0,100),x:Number(s.x),y:Number(s.y),width:Number(s.width),height:Number(s.height)})).filter(s=>[s.x,s.y,s.width,s.height].every(Number.isInteger)&&s.x>=0&&s.y>=0&&s.width>0&&s.height>0&&s.x+s.width<=frameWidth&&s.y+s.height<=frameHeight)};
   }
+  if(action==="clipboard")return {ok:true,pending:result.pending===true,error:String(result.error||"").slice(0,500),text:typeof result.text==="string"&&Buffer.byteLength(result.text,"utf8")<=8192?result.text:""};
   if(action==="chunk"){
     if(typeof result.data!=="string"||result.data.length>174764||!/^[A-Za-z0-9+/]*={0,2}$/.test(result.data))fail("Invalid native file chunk");
     return {ok:true,data:result.data};

@@ -4,7 +4,7 @@ const {BrowserSessions,argumentsFor,project}=require('../src/veyon-browser-sessi
 function fixture(){
   let time=0,valid=true;const connection={active:0},calls=[];
   const computer={id:'sample',ip:'192.0.2.1',hostname:'sample'};
-  const sessions=new BrowserSessions({now:()=>time,connect:async()=>connection,identity:()=>valid,request:async(s,action,data)=>{calls.push({action,data});return action==='capabilities'?{ok:true,protocol:1,chat:true,files:true}:{ok:true}}});
+  const sessions=new BrowserSessions({now:()=>time,connect:async()=>connection,identity:()=>valid,request:async(s,action,data)=>{calls.push({action,data});return action==='capabilities'?{ok:true,protocol:1,chat:true,files:true,control:true}:{ok:true}}});
   const run=(action,input={},owner='teacher')=>sessions.run({owner,computer,action,input,authorize:()=>{}});
   return {sessions,run,connection,calls,setTime:x=>time=x,invalidate:()=>valid=false};
 }
@@ -44,4 +44,26 @@ test('browser responses whitelist fields and bound content, filenames and chunks
   assert.throws(()=>project('state',{entries:Array(1001).fill({})}));
   assert.throws(()=>project('chunk',{data:'data:text/html;bad'}));
   assert.throws(()=>project('chunk',{data:'A'.repeat(174765)}));
+});
+test('control accepts only owner-bound leased input and fixed response fields',async()=>{
+  const f=fixture(),opened=await f.run('open',{kind:'control'}),lease='123e4567-e89b-12d3-a456-426614174000';
+  await f.run('pointer',{session:opened.session,x:10,y:20,buttons:1,lease,revision:4,sequence:1});
+  await f.run('pointer',{session:opened.session,x:10,y:20,buttons:0,wheel:-1,lease,revision:4,sequence:2});
+  await f.run('key',{session:opened.session,key:'é',pressed:true,lease,revision:4,sequence:3});
+  assert.deepEqual(f.calls.slice(-3).map(call=>call.data),[
+    {session:opened.session,x:10,y:20,buttons:1,lease,revision:4,sequence:1},
+    {session:opened.session,x:10,y:20,buttons:0,wheel:-1,lease,revision:4,sequence:2},
+    {session:opened.session,key:'é',pressed:true,lease,revision:4,sequence:3}
+  ]);
+  for(const input of [{x:1,y:1,buttons:32,lease,revision:4,sequence:4},{x:1,y:1,buttons:24,lease,revision:4,sequence:4},{x:1,y:1,buttons:0,wheel:2,lease,revision:4,sequence:4},{x:1,y:1,buttons:0,lease:'bad',revision:4,sequence:4}])assert.throws(()=>argumentsFor('pointer',input));
+  assert.throws(()=>argumentsFor('key',{key:'Unidentified',pressed:true,lease,revision:4,sequence:3}));
+  await assert.rejects(f.run('send',{session:opened.session,text:'wrong kind'}),/does not match/);
+});
+test('control state bounds monitors and clipboard content',()=>{
+  const state=project('state',{frameWidth:1920,frameHeight:1080,ready:true,lease:'123e4567-e89b-12d3-a456-426614174000',frameRevision:7,topology:'a'.repeat(64),screens:[{index:0,name:'Main',x:0,y:0,width:1920,height:1080},{index:1,name:'Outside',x:1920,y:0,width:20,height:20}]});
+  assert.equal(state.ready,true);assert.equal(state.screens.length,1);assert.equal(state.frameRevision,7);assert.equal(state.topology.length,64);
+  assert.equal(project('state',{frameWidth:1920,frameHeight:1080,ready:true,lease:'bad',frameRevision:7,topology:'a'.repeat(64),screens:[]}).ready,false);
+  assert.throws(()=>project('state',{frameWidth:20000,frameHeight:1080,screens:[]}));
+  assert.equal(project('clipboard',{pending:false,text:'hello',private:'discard'}).text,'hello');
+  assert.equal(project('clipboard',{pending:false,text:'é'.repeat(4097)}).text,'');
 });

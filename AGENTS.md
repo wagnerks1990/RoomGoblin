@@ -426,7 +426,8 @@ Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md) and `integration
 The Validate native job builds the entire pinned Linux Veyon tree and publishes
 matching binaries plus all corresponding source. See docs/VEYON-PILOT-BINARIES.md.
 `tools/package-veyon-pilot.sh` uses DESTDIR staging and verifies both community
-plugins with the installed CLI. No production install, service start, key export
+plugins with the installed CLI. Preserve numeric root archive ownership and the
+archive path/link/privileged-metadata policy gate. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
 
@@ -445,5 +446,12 @@ capabilities and community candidates in documentation. Features with actual
 browser adapters may state their required native bridge explicitly.
 
 Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. These are matching native pilot adapters, not stock WebAPI capabilities.
+
+Read docs/VEYON-BROWSER-CONTROL.md before changing remote input. Preserve live
+frame/topology/revision leases, monotonic sequences, native event/queue bounds,
+forced key/button release and sent/unverified wording. Clipboard reads are
+explicit correlated endpoint requests, never VNC-event cache reads or polling.
+Keep official file distribution/collection native-only until an adapter has
+bounded paths/storage and honest endpoint acknowledgement semantics.
 
 Local AI pilot: docs/VEYON-LOCAL-AI.md and integrations/veyon-ai/PROVENANCE.md. Keep the AGPL service separate, exact model hash, fixed loopback endpoint, separate token, explicit single-screen capture, no retention/enforcement, bounded concurrency and export drain. Do not claim the full upstream AI dashboard or verified classroom accuracy.

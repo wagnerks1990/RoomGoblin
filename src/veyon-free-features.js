@@ -2,7 +2,7 @@
 
 const dgram=require("node:dgram");
 
-// Protocol identifiers verified against upstream v4.9.7. Keep this allowlist
+// Protocol identifiers verified against the pinned upstream v4.11.2 baseline. Keep this allowlist
 // separate from discovery: WebAPI advertises local plugins, not endpoint proof.
 const POWER_FEATURES=Object.freeze({
   powerDownNow:"a88039f2-6716-40d8-b4e1-9f5cd48e91ed",
@@ -13,6 +13,8 @@ const POWER_FEATURES=Object.freeze({
 
 const CLIPBOARD_FEATURE="d344032e-70ce-4a83-8cb8-3ebd6d6f6f39";
 const INPUT_FEATURE_UID="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
+const BROWSER_CONTROL_FEATURE_UID="c775285d-ea7e-4c48-a613-a73af94d4be3";
+const CLIPBOARD_READ_FEATURE_UID="9fd323eb-5ae1-4552-8a4c-8b18837b78f7";
 const KEY_SEQUENCES=Object.freeze(["Enter","Tab","Escape","Backspace","Delete","Left","Up","Right","Down","Home","End","PageUp","PageDown","Ctrl+A","Ctrl+C","Ctrl+V"]);
 function keyArguments(args,active=true){
   if(active===false||!KEY_SEQUENCES.includes(args?.sequence))throw Error("Choose a supported key or shortcut.");
@@ -28,6 +30,9 @@ function clipboardArguments(args,active=true){
 }
 function clipboardAdvertised(features){
   return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")==="RoomGoblinClipboardWrite"&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===CLIPBOARD_FEATURE);
+}
+function exactBridgeAdvertised(features,name,uid){
+  return Array.isArray(features)&&features.some(f=>String(f.name||f.Name||"")===name&&String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"").toLowerCase()===uid);
 }
 
 function normalizeMac(value){
@@ -64,10 +69,12 @@ function powerArguments(feature,args={},active=true){
 const CATALOG=Object.freeze([
   ["MonitoringMode","Monitor screens","web","Live previews and live view"],
   ["RemoteView","Remote view","web","Open Live View"],
-  ["RemoteControl","Remote keyboard and mouse","desktop","Full browser remote control is not implemented; explicit shortcuts use the web bridge"],
+  ["RemoteControl","Remote keyboard and mouse","workflow","Use bounded Control in Live View; matching RoomGoblin browser bridge required"],
+  ["RoomGoblinBrowserControl","Browser remote control adapter","web","Live pointer, broad keyboard input and monitor viewport selection with short fresh-frame leases"],
   ["RoomGoblinKeySequence","Send key or shortcut","web","Press and release a fixed shortcut; requires RoomGoblinWebBridge; endpoint delivery unverified"],
   ["RoomGoblinClipboardWrite","Send clipboard text","web","Send clipboard text button; requires RoomGoblinWebBridge on the appliance; endpoint delivery unverified"],
-  ["ClipboardExchange","Clipboard exchange","desktop","Native remote-control window and Veyon clipboard settings"],
+  ["RoomGoblinClipboardRead","Read clipboard text","web","Explicit one-time correlated read in an active browser control session; never polled or retained"],
+  ["ClipboardExchange","Clipboard exchange","workflow","Clipboard writes use Veyon's protocol; explicit reads require the matching RoomGoblin endpoint plugin"],
   ["ClassroomChat","Two-way classroom chat","web","Community chat button; matching native browser bridge and endpoint chat plugin required"],
   ["RemoteFileBrowser","Browse pilot files","web","Community file browser; matching bridge and endpoint plugin, pilot-folder access only"],
   ["Screenshot","Screenshots","web","Download screenshot"],
@@ -88,7 +95,7 @@ const CATALOG=Object.freeze([
   ["UserLogoff","Log off","web","Log off selected computers"],
   ["UserInfo","Signed-in user","web","Device details"],
   ["SessionInfo","Session information","web","Device details"],
-  ["QueryScreens","Monitor selection","desktop","Native remote access; browser monitor selection is not implemented"],
+  ["QueryScreens","Monitor selection","workflow","Live View can crop the combined framebuffer to one reported monitor; it does not switch endpoint output"],
   ["QueryApplicationVersion","Endpoint version query","internal","Internal Veyon protocol; use native diagnostics"],
   ["QueryActiveFeatures","Active feature query","workflow","Lock/broadcast state; action features do not have persistent active state"],
   ["SystemTrayIcon","Student notification icon","configuration","Configure in Veyon Configurator"],
@@ -97,7 +104,8 @@ const CATALOG=Object.freeze([
 ].map(([name,label,provider,detail])=>Object.freeze({name,label,provider,detail})));
 function featureCatalog(advertised){
   const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
-  return CATALOG.filter(row=>["web","workflow"].includes(row.provider)).map(row=>({...row,advertised:row.name==="RoomGoblinKeySequence"?keyAdvertised(advertised):row.name==="RoomGoblinClipboardWrite"?clipboardAdvertised(advertised):names.has(row.name),endpointVerified:false}));
+  const bridgeUids={RoomGoblinKeySequence:INPUT_FEATURE_UID,RoomGoblinClipboardWrite:CLIPBOARD_FEATURE,RoomGoblinBrowserControl:BROWSER_CONTROL_FEATURE_UID,RoomGoblinClipboardRead:CLIPBOARD_READ_FEATURE_UID};
+  return CATALOG.filter(row=>["web","workflow"].includes(row.provider)).map(row=>({...row,advertised:bridgeUids[row.name]?exactBridgeAdvertised(advertised,row.name,bridgeUids[row.name]):names.has(row.name),endpointVerified:false}));
 }
 function normalizeLessonAction(input){
   const name=String(input?.name||"").trim();
@@ -111,4 +119,4 @@ function normalizeLessonAction(input){
   }
   return {name,feature,value};
 }
-module.exports={INPUT_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};
+module.exports={INPUT_FEATURE_UID,BROWSER_CONTROL_FEATURE_UID,CLIPBOARD_READ_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,exactBridgeAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};

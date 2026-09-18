@@ -189,12 +189,39 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonServerInterface& server
 		return false;
 	}
 
-	// Pilot is pinned to its first authenticated teacher for this service lifetime.
-	// Never route an old worker reply to a replacement teacher after disconnect.
+	const auto command=message.command<FeatureCommand>();
+	const auto requestId=message.argument(Argument::RequestId).toUuid();
+	const auto transferId=message.argument(Argument::TransferId).toUuid();
+	if(command!=FeatureCommand::GetDrives && command!=FeatureCommand::ListDirectory &&
+	   command!=FeatureCommand::StartDownload && command!=FeatureCommand::CancelDownload &&
+	   command!=FeatureCommand::StopWorker) return false;
+	if((command==FeatureCommand::GetDrives || command==FeatureCommand::ListDirectory) && requestId.isNull()) return false;
+	if(command==FeatureCommand::StartDownload && transferId.isNull()) return false;
+	if(command==FeatureCommand::CancelDownload && transferId.isNull()) return false;
+	// Pilot is pinned to one active authenticated teacher. Validate before
+	// assigning ownership, and clear generations before a replacement caller.
 	if(!messageContext.ioDevice()) return false;
+	if(m_callerAssigned && !m_masterContext.ioDevice()) {
+		m_requestContexts.clear(); m_transferContexts.clear(); m_masterContext=MessageContext{}; m_callerAssigned=false;
+	}
 	if(m_callerAssigned && m_masterContext.ioDevice()!=messageContext.ioDevice()) return false;
 	m_callerAssigned=true;
 	m_masterContext=messageContext;
+	if((command==FeatureCommand::GetDrives || command==FeatureCommand::ListDirectory) && m_requestContexts.size()>=16) return false;
+	// The session worker owns one QFile. Never replace an in-flight generation
+	// without a terminal reply to its authenticated caller.
+	if(command==FeatureCommand::StartDownload && !m_transferContexts.isEmpty()) return false;
+	if(command==FeatureCommand::GetDrives || command==FeatureCommand::ListDirectory) m_requestContexts.insert(requestId,messageContext);
+	if(command==FeatureCommand::StartDownload) m_transferContexts.insert(transferId,messageContext);
+	if(command==FeatureCommand::CancelDownload && !transferId.isNull()) m_transferContexts.remove(transferId);
+	if(command==FeatureCommand::StopWorker) {
+		server.featureWorkerManager().stopWorker(m_feature.uid());
+		m_requestContexts.clear();
+		m_transferContexts.clear();
+		m_masterContext=MessageContext{};
+		m_callerAssigned=false;
+		return true;
+	}
 
 	// the worker runs in the user's session and therefore sees the user's files
 	server.featureWorkerManager().sendMessageToUnmanagedSessionWorker( message );
@@ -212,8 +239,21 @@ bool RemoteFileBrowserPlugin::handleFeatureMessageFromWorker( VeyonServerInterfa
 		return false;
 	}
 
-	// forward the worker's reply to the master that asked
-	return server.sendFeatureMessageReply( m_masterContext, message );
+	MessageContext context;
+	const auto command=message.command<FeatureCommand>();
+	if(command==FeatureCommand::DriveList || command==FeatureCommand::DirectoryListing) {
+		const auto id=message.argument(Argument::RequestId).toUuid();
+		context=m_requestContexts.take(id);
+	} else if(command==FeatureCommand::DownloadInfo || command==FeatureCommand::DownloadDataChunk || command==FeatureCommand::DownloadFinished) {
+		const auto id=message.argument(Argument::TransferId).toUuid();
+		context=m_transferContexts.value(id);
+		if(command==FeatureCommand::DownloadFinished ||
+		   (command==FeatureCommand::DownloadInfo && !message.argument(Argument::Error).toString().isEmpty()))
+			m_transferContexts.remove(id);
+	} else return false;
+	// Every reply is routed by its unguessable request/transfer generation. A
+	// late reply from a closed teacher has no mapping and cannot reach a new one.
+	return context.ioDevice() && server.sendFeatureMessageReply( context, message );
 }
 
 
@@ -371,7 +411,12 @@ void RemoteFileBrowserPlugin::pumpDownload()
 		return;
 	}
 
-	if(m_downloadFile.pos()>=MaxPilotFileSize && !m_downloadFile.atEnd()) { workerCancelDownload(); return; }
+	if(m_downloadFile.pos()>=MaxPilotFileSize && !m_downloadFile.atEnd()) {
+		m_worker->sendFeatureMessageReply(FeatureMessage(m_feature.uid(),FeatureCommand::DownloadFinished)
+			.addArgument(Argument::TransferId,m_downloadTransferId)
+			.addArgument(Argument::Error,tr("File grew beyond the pilot limit during transfer.")));
+		workerCancelDownload(); return;
+	}
 	const auto data = m_downloadFile.read( qMin(ChunkSize,MaxPilotFileSize-m_downloadFile.pos()) );
 
 	if( data.isEmpty() )
@@ -410,7 +455,8 @@ void RemoteFileBrowserPlugin::workerCancelDownload()
 // ---------------------------------------------------------------------------
 void RemoteFileBrowserPlugin::requestDrives( const ComputerControlInterface::Pointer& computer )
 {
-	computer->sendFeatureMessage( FeatureMessage( m_feature.uid(), FeatureCommand::GetDrives ) );
+	computer->sendFeatureMessage( FeatureMessage( m_feature.uid(), FeatureCommand::GetDrives )
+								  .addArgument( Argument::RequestId, QUuid::createUuid() ) );
 }
 
 
@@ -419,6 +465,7 @@ void RemoteFileBrowserPlugin::requestDirectory( const ComputerControlInterface::
 												const QString& path )
 {
 	computer->sendFeatureMessage( FeatureMessage( m_feature.uid(), FeatureCommand::ListDirectory )
+								  .addArgument( Argument::RequestId, QUuid::createUuid() )
 								  .addArgument( Argument::Path, path ) );
 }
 
@@ -439,4 +486,11 @@ void RemoteFileBrowserPlugin::cancelDownload( const ComputerControlInterface::Po
 {
 	computer->sendFeatureMessage( FeatureMessage( m_feature.uid(), FeatureCommand::CancelDownload )
 								  .addArgument( Argument::TransferId, transferId ) );
+}
+
+
+
+void RemoteFileBrowserPlugin::stopWorker( const ComputerControlInterface::Pointer& computer )
+{
+	computer->sendFeatureMessage( FeatureMessage( m_feature.uid(), FeatureCommand::StopWorker ) );
 }

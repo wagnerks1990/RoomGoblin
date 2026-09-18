@@ -28,7 +28,9 @@ The destination must not exist. Source and submodules are pinned by
 with DESTDIR and verifies both community plugins through the staged CLI. It never
 invokes a service manager or installs into the host root. System libraries are
 not bundled: use matching Ubuntu 24.04 dependencies, compiler architecture and
-Qt generation. Include `libqca-qt6-plugins`: the QCA development package alone
+Qt generation. Binary archive entries are normalized to numeric root ownership
+and rejected if they contain traversal, escaping links or unsafe privileged
+metadata. Include `libqca-qt6-plugins`: the QCA development package alone
 does not supply the RSA provider required at runtime. This is not a portable
 cross-distribution archive.
 
@@ -57,15 +59,17 @@ veyon-cli feature list
 Configure separate test authentication keys and access rules in Veyon Configurator;
 never export production keys for this pilot. Start the pilot Veyon service only
 after configuring access. Register the test student in native Master on the test
-teacher. Native chat/file browsing is launched from Master, not the Hub WebAPI.
+teacher. The matching Hub can launch browser chat, restricted pilot files and
+bounded remote control. Native Master remains useful for native-only workflows.
 
 Test remote view, text messages, screen lock/unlock, demonstration and ordinary
 file transfer. Then test ClassroomChat with one student and a reply to the
 teacher, followed by multiple students. For RemoteFileBrowser, create a
 `RoomGoblin-Pilot` directory in the student's home with ordinary sample files;
 verify listings, retrieved-file hashes and preservation of an existing local file
-after interrupted transfers. Other home directories must be rejected. Restart
-the disposable endpoint service before replacing the first teacher connection.
+after interrupted transfers. Other home directories must be rejected. Close the
+browser/native file session before replacing the authenticated teacher connection;
+the close stops its endpoint worker and clears all reply generations.
 See `docs/VEYON-FREE-FEATURES.md` for the resource limits and remaining acceptance
 checks. CLI discovery proves loading, not interactive classroom functionality.
 
@@ -76,5 +80,7 @@ restore an earlier Veyon/Qt installation.
 ## Browser bridge
 
 The complete Linux build also contains RoomGoblinWebBridge and checks its
-ClipboardWrite feature inventory. See [browser clipboard sending](VEYON-WEB-CLIPBOARD.md)
-for the web workflow, stock-WebAPI limitation and acceptance requirements.
+ClipboardWrite, BrowserControl and ClipboardRead feature inventories. See
+[browser clipboard sending](VEYON-WEB-CLIPBOARD.md) and
+[browser remote control](VEYON-BROWSER-CONTROL.md) for acceptance requirements.
+The archive remains a disposable pilot overlay, not a managed production package.

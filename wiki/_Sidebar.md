@@ -29,6 +29,7 @@
 - [Automation Display Media](Automation-Display-Media)
 - [Veyon and Music Assistant](Veyon-and-Music-Assistant)
 - [Free Veyon features and community pilot](Veyon-Free-Features)
+- [Veyon browser control](Veyon-Browser-Control)
 - [Music Assistant Sendspin](Music-Assistant-Sendspin)
 - [Music Assistant TV Audio Recovery](Music-Assistant-TV-Audio-Recovery)
 - [[ESPHome devices|ESPHome-Devices]] — native enrollment, security boundaries, supported controls, and recovery behavior.

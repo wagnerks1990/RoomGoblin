@@ -30,8 +30,21 @@ class PreparePilotTests(unittest.TestCase):
                     webapi = destination / 'plugins/webapi'
                     webapi.mkdir()
                     (webapi / 'WebApiController.h').write_text('\tResponse getFramebuffer( const Request& request );')
-                    (webapi / 'WebApiHttpServer.cpp').write_text('\tauto success = true;')
+                    (webapi / 'WebApiHttpServer.cpp').write_text('''{
+\tif( response.error == WebApiController::Error::NoError )
+\t{
+\twaDebug() << "[REQ] [POST]"
+\t\t\t  << request.url().toString().toUtf8().constData()
+\t\t\t  << toJson(request.headers()).constData()
+\t\t\t  << request.body().constData();
+\tauto success = true;''')
                     (webapi / 'WebApiController.cpp').write_text('// fixture')
+                    core = destination / 'core/src'
+                    core.mkdir(parents=True)
+                    (core / 'FeatureMessage.cpp').write_text('''\tstream << QStringLiteral("FeatureMessage(%1,%2,%3)")
+\t\t\t\t  .arg(VeyonCore::featureManager().feature(message.featureUid()).name())
+\t\t\t\t  .arg(FeatureMessage::CommandType(message.command()))
+\t\t\t\t  .arg(VeyonCore::stringify(message.arguments())).toUtf8().constData();''')
                     linux = destination / 'plugins/platform/linux'
                     linux.mkdir(parents=True)
                     (linux / 'LinuxServerProcess.cpp').write_text('const auto desktopFile = VeyonCore::applicationsDirectory() + suffix;')
@@ -44,6 +57,10 @@ class PreparePilotTests(unittest.TestCase):
             for name in pilot.PLUGINS:
                 self.assertTrue((destination / 'plugins' / name / 'CMakeLists.txt').is_file())
             self.assertTrue((destination / 'ROOMGOBLIN-PILOT.md').is_file())
+            self.assertEqual((destination / 'plugins/webapi/WebApiHttpServer.cpp').read_text().count('[redacted]'), 2)
+            feature_log = (destination / 'core/src/FeatureMessage.cpp').read_text()
+            self.assertIn('[arguments redacted]', feature_log)
+            self.assertNotIn('stringify(message.arguments())', feature_log)
             self.assertIn('const QString desktopFile', (destination / 'plugins/platform/linux/LinuxServerProcess.cpp').read_text())
             self.assertEqual((destination / '3rdparty/x11vnc/src/userinput.c').read_text(), 'int cnt = 0, iter = 0;')
             commands = [call.args[0] for call in run.call_args_list]

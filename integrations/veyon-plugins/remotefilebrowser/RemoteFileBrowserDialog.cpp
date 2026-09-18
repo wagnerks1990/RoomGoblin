@@ -132,6 +132,10 @@ RemoteFileBrowserDialog::~RemoteFileBrowserDialog()
 	{
 		m_plugin->cancelDownload( m_computer, m_transferId );
 	}
+	if( m_plugin && m_computer )
+	{
+		m_plugin->stopWorker( m_computer );
+	}
 	resetDownload();
 }
 
