@@ -4801,7 +4801,10 @@ async function githubMainCheck({persist=true}={}){
     githubUpdateFetch(`/commits/${encodeURIComponent(TRUSTED_UPDATE_BRANCH)}`)
   ]);
   const currentCommit=String(source.commit||"").toLowerCase(),latestCommit=String(latest.sha||"").toLowerCase();
-  if(source.trackedDirty===true)throw Error("Tracked local source changes are present; main update is blocked until they are reconciled");
+  const trackedChanges=Array.isArray(source.trackedChanges)?source.trackedChanges.map(String):[];
+  const unsupportedTracked=trackedChanges.filter(pathName=>!["config/devices.json","config/hardware.json"].includes(pathName));
+  if(unsupportedTracked.length)throw Error(`Tracked local source changes block main update: ${unsupportedTracked.slice(0,5).join(", ")}`);
+  if(source.trackedDirty===true&&!trackedChanges.length)throw Error("Tracked local source changes are present but could not be classified; main update is blocked");
   if(!/^[0-9a-f]{40}$/.test(currentCommit))throw Error("Current RoomGoblin source commit is unavailable");
   if(!/^[0-9a-f]{40}$/.test(latestCommit))throw Error("GitHub main did not return a valid commit");
   let relation={status:"identical",ahead_by:0,behind_by:0,total_commits:0};
