@@ -161,7 +161,7 @@
   // same Hub origin and verifies every SHA-256 before invoking the bootstrap.
   function powerShellLiteral(value){return `'${String(value).replaceAll("'","''")}'`}
   function nativeEnrollmentCommand(enrollment){
-    const origin=new URL(enrollment.installerUrl,location.href).origin;
+    const origin=enrollment.preferredOrigin||new URL(enrollment.installerUrl,location.href).origin;
     const allowHttp=new URL(origin).protocol==='http:'?' --allow-http':'';
     const files=['RoomGoblinAgent.exe','RoomGoblinSessionAgent.exe','RoomGoblinAgentUpdater.exe','RoomGoblinAgentBootstrap.exe'];
     const expected=files.map(powerShellLiteral).join(',');
@@ -179,7 +179,7 @@
     ].join('; ');
   }
   function nativeEnrollmentFile(enrollment){
-    const origin=new URL(enrollment.installerUrl,location.href).origin;
+    const origin=enrollment.preferredOrigin||new URL(enrollment.installerUrl,location.href).origin;
     return {
       schema:'roomgoblin-native-enrollment-v1',
       hubUrl:origin,
@@ -212,7 +212,10 @@
         const nativeCommand=nativeEnrollmentCommand(enrollment);
         const safe=String(enrollment.agentId||'computer').replace(/[^A-Za-z0-9._-]/g,'-');
         result.style.display='block';
-        result.innerHTML=`<b>Recommended: browser package + native bootstrap for ${esc(enrollment.agentId)}</b><div class="toolbar" style="margin-top:8px"><a class="buttonLink" href="/lab-agent/native/RoomGoblinNativeAgent.zip" download>1. Download native package</a><button type="button" data-native-enrollment-file>2. Download one-time enrollment file</button></div><div class="muted" style="margin-top:8px">On the Windows computer, extract the ZIP, place the downloaded enrollment JSON in the extracted folder, open an elevated Command Prompt or PowerShell there, and run <code>RoomGoblinAgentBootstrap.exe install --enrollment-file roomgoblin-enrollment-${esc(safe)}.json</code>. The bootstrap deletes the plaintext enrollment file immediately after reading it and verifies manifest.json plus all four native executable hashes before installation. Expires ${esc(new Date(enrollment.expiresAt).toLocaleString())}.</div><details style="margin-top:10px"><summary>Automated PowerShell native installer fallback</summary><textarea class="raw" readonly style="width:100%;min-height:190px;margin-top:8px">${esc(nativeCommand)}</textarea><div class="muted">Use only where endpoint-protection policy permits the PowerShell download-and-execute chain. The browser package workflow above is preferred.</div></details><details style="margin-top:10px"><summary>Legacy PowerShell scheduled-task installer</summary><textarea class="raw" readonly style="width:100%;min-height:110px;margin-top:8px">${esc(enrollment.installCommand||'')}</textarea><div class="muted">Compatibility fallback only.</div></details>`;
+        const preferredOrigin=enrollment.preferredOrigin||new URL(enrollment.installerUrl,location.href).origin;
+        const transportNote=new URL(preferredOrigin).protocol==='https:'?`<span class="pill ok">HTTPS / WSS preferred</span>`:`<span class="pill">LAN HTTP fallback</span>`;
+        const fallback=enrollment.fallbackInstallCommand?`<details style="margin-top:10px"><summary>Current-browser/LAN-origin fallback</summary><textarea class="raw" readonly style="width:100%;min-height:120px;margin-top:8px">${esc(enrollment.fallbackInstallCommand)}</textarea><div class="muted">Use only if the preferred HTTPS origin is unavailable from this computer. HTTP fallback requires the agent's explicit insecure-LAN acknowledgement.</div></details>`:'';
+        result.innerHTML=`<b>Recommended: browser package + native bootstrap for ${esc(enrollment.agentId)}</b> ${transportNote}<div class="muted" style="margin-top:6px">Preferred Hub origin: <code>${esc(preferredOrigin)}</code>. HTTPS agents automatically use <code>wss://</code> for the long-lived RoomGoblin control channel.</div><div class="toolbar" style="margin-top:8px"><a class="buttonLink" href="/lab-agent/native/RoomGoblinNativeAgent.zip" download>1. Download native package</a><button type="button" data-native-enrollment-file>2. Download one-time enrollment file</button></div><div class="muted" style="margin-top:8px">On the Windows computer, extract the ZIP, place the downloaded enrollment JSON in the extracted folder, open an elevated Command Prompt or PowerShell there, and run <code>RoomGoblinAgentBootstrap.exe install --enrollment-file roomgoblin-enrollment-${esc(safe)}.json</code>. The bootstrap deletes the plaintext enrollment file immediately after reading it and verifies manifest.json plus all four native executable hashes before installation. Expires ${esc(new Date(enrollment.expiresAt).toLocaleString())}.</div><details style="margin-top:10px"><summary>Automated PowerShell native installer fallback</summary><textarea class="raw" readonly style="width:100%;min-height:190px;margin-top:8px">${esc(nativeCommand)}</textarea><div class="muted">Use only where endpoint-protection policy permits the PowerShell download-and-execute chain. The browser package workflow above is preferred.</div></details>${fallback}<details style="margin-top:10px"><summary>Legacy PowerShell scheduled-task installer</summary><textarea class="raw" readonly style="width:100%;min-height:110px;margin-top:8px">${esc(enrollment.installCommand||'')}</textarea><div class="muted">Compatibility fallback only.</div></details>`;
         result.querySelector('[data-native-enrollment-file]')?.addEventListener('click',()=>downloadNativeEnrollmentFile(enrollment),{once:true});
         await loadLabAgentCredentials();
       }catch(error){notify(error.message,'error')}
