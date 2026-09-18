@@ -120,27 +120,13 @@ If the release changes the database schema, follow release-specific rollback ins
 
 ## Web-managed updates
 
-The Infrastructure & Recovery page can check a configured GitHub repository for approved alpha, beta, or stable semantic-version releases. Draft releases and arbitrary source archives are not eligible. Private-repository read tokens are encrypted in the application database.
+The **System updates** page tracks merged commits on the trusted `main` branch. It does not wait for or select alpha/beta/stable GitHub release tags. **Check GitHub** compares the installed Git commit with the latest `wagnerks1990/RoomGoblin:main` commit and offers an update only when the current checkout can fast-forward cleanly to that exact commit.
 
-The native `classroom-hub-app-update.service` resolves the release tag to a Git commit, repairs the runtime HTTP configuration/filesystem prerequisites, refreshes the Host Agent, pulls the matching immutable RoomGoblin images, force-recreates the Compose services, removes legacy Caddy orphans, and verifies the reported application version across the backend, maintenance service, and Host Agent.
+Installing from the GUI still uses all production safety gates. The native updater re-fetches `origin/main`, verifies ancestry, waits for both exact `sha-<commit>` CI images, checks their embedded revision labels, creates an operational recovery backup, performs selective reconciliation, and verifies application/maintenance/Host Agent health. Missing or failed CI artifacts stop the operation before source/runtime mutation. Automatic updates use the same main-commit flow during the configured maintenance window.
 
-Current update health requirements are:
+The GUI does not accept an arbitrary SHA from the operator. The backend resolves the current latest main commit itself and rechecks it immediately before starting the native transaction. The rollback control restores the previous verified source/image pair and its matching recovery backup.
 
-- backend HTTP `/health` succeeds and reports the expected version;
-- database and scheduler readiness pass;
-- maintenance is healthy and reports the expected version;
-- Host Agent is healthy and reports the expected version;
-- no TLS/Caddy dependency is required.
-
-Every update has a pre-update operational backup. Deployment failure automatically restores the prior commit, exact prior image tag, retained container image IDs, and backup. **Revert Last Upgrade** restores that same known-good set after first preserving the current state; it never resolves a moving channel tag for rollback.
-
-The updater runs from an immutable host-installed copy. It verifies the SHA-256 digest of the pinned revert backup, restores matching data before an older application starts, and resumes a root-journaled request after an unexpected restart.
-
-Do not delete `classroom-control-hub-recovery:*` images while the controller offers **Revert Last Upgrade**. Clear an unneeded stored GitHub credential using the controller action; for this public repository no token is required. Revoke the old credential at GitHub when rotating or responding to exposure.
-
-Container publication requires the exact main commit to pass Validate, Display browser regression and Security gates. Android debug and restrictive-image checks are included in Validate. Semantic release tags promote the already published SHA image pair instead of rebuilding it. A matching VERSION and package version alone are not sufficient.
-
-Automatic updates are off by default and run only during the configured maintenance window. Run `sudo ./install.sh` once when upgrading an older installation to install the native updater service.
+A GitHub read token is optional for the public repository and is stored encrypted when configured. Update history shows the exact deployed/main commit in addition to the application version so commits that share the same prerelease version remain distinguishable.
 
 ## HTTPS reintroduction acceptance
 
