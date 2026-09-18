@@ -197,7 +197,8 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('#terminalInput').fill('Get-Date')
         page.locator('#terminalForm button[type="submit"]').click()
         page.wait_for_timeout(100)
-        page.locator('#terminalClose').click()
+        with page.expect_request('**/api/v1/veyon/computers/student-a/terminal/close'):
+            page.locator('#terminalClose').click()
         self.assertTrue(any(action == 'write' and data.get('text') == 'Get-Date\r\n' for action, data in requests))
         self.assertTrue(any(action == 'close' for action, _ in requests))
         self.assertFalse(errors, errors)
