@@ -434,7 +434,7 @@ schedule references or delete nonempty/custom groups automatically. Follow
 
 ## Free Veyon features and native pilot
 
-Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md), [docs/VEYON-LIVE-TERMINAL.md](docs/VEYON-LIVE-TERMINAL.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The community file adapter is a narrow one-target pilot, not stock WebAPI or official bulk transfer. Arbitrary command content is permitted only in the dedicated administrator-only Veyon terminal route: one saved endpoint, Veyon authenticated feature/worker transport, signed-in-user token, fixed CMD/Windows PowerShell choices, ten-minute expiry, bounded transient input/output, no content audit, no elevation and no uncertain replay. All other internal command surfaces remain prohibited. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no installer, production key change, commercial add-on bypass or unvalidated Windows ABI claim. Internet Guard and terminal process launch are Windows-only source until a matching 4.11.2 Windows build and disposable-endpoint acceptance are complete. Preserve the Linux pilot build gate and operator tests.
+Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md), [docs/VEYON-LIVE-TERMINAL.md](docs/VEYON-LIVE-TERMINAL.md), [docs/VEYON-WINDOWS-PILOT.md](docs/VEYON-WINDOWS-PILOT.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The community file adapter is a narrow one-target pilot, not stock WebAPI or official bulk transfer. Arbitrary command content is permitted only in the dedicated administrator-only Veyon terminal route: one saved endpoint, Veyon authenticated feature/worker transport, signed-in-user token, fixed CMD/Windows PowerShell choices, ten-minute expiry, bounded transient input/output, no content audit, no elevation and no uncertain replay. All other internal command surfaces remain prohibited. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no production key change, commercial add-on bypass or unvalidated Windows ABI claim. Internet Guard and terminal process launch are Windows-only source until a matching 4.11.2 Windows build and disposable-endpoint acceptance are complete. Preserve the Linux pilot build gate and operator tests.
 
 ## Native pilot artifacts
 
@@ -449,6 +449,15 @@ Host-native Ubuntu 26.04/GCC 15 builds require the preparer's `veyon-core`-only
 `-Wno-error=stringop-overflow` guard for the QtConcurrent atomic false positive.
 Keep the warning visible and all other `-Werror` behavior intact; never broaden
 the exception globally.
+
+Windows pilots must be complete upstream-style NSIS packages built by
+`tools/package-veyon-pilot-windows.sh` in a reviewed x86-64 MinGW/Qt environment.
+Never distribute individual community DLLs. RoomGoblin CI must not publish a
+Windows installer until the toolchain image is immutable and reviewed. The
+single-endpoint deployment wrapper requires both installer hashes, a fresh
+evidence directory, an existing configuration export, a known-good rollback
+installer and an explicit disposable-pilot acknowledgement. CLI discovery is
+not live feature acceptance; retain the VM snapshot and test one endpoint first.
 
 Veyon installed-version reporting must use host package inventory, independently
 of pending apt upgrades. Never infer endpoint features from a fixed 4.9.7

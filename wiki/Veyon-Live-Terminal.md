@@ -21,5 +21,8 @@ the first pilot. The endpoint feature is Windows-only. Linux compilation verifie
 registration, but a matching Veyon 4.11.2 Windows build and disposable-VM/live-lab
 acceptance remain required before production rollout.
 
+Use [Veyon Windows endpoint pilot](Veyon-Windows-Pilot) for the complete installer,
+one-computer deployment gate, evidence capture and rollback requirements.
+
 See `docs/VEYON-LIVE-TERMINAL.md` in the repository for the full security, API,
 build, acceptance and recovery contract.

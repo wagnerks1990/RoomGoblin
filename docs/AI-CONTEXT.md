@@ -436,7 +436,7 @@ schedule references or delete nonempty/custom groups automatically. Follow
 
 ## Free Veyon features and native pilot
 
-Read [VEYON-FREE-FEATURES.md](VEYON-FREE-FEATURES.md), [VEYON-LIVE-TERMINAL.md](VEYON-LIVE-TERMINAL.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The pilot file adapter permits only single-target 2 MiB atomic, no-overwrite uploads to `RoomGoblin-Pilot/Inbox`; it is not arbitrary native transfer. The only permitted arbitrary Windows command surface is the dedicated enabled-administrator terminal route: one saved target, authenticated Veyon feature/worker transport, signed-in-user CMD or Windows PowerShell, ten-minute expiry, bounded transient input/output, no content audit/elevation/retry/second agent. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no production key change, commercial add-on or unvalidated Windows ABI claim. InternetGuard and terminal process launch are Windows-only disposable pilots with explicit recovery/acceptance gates. Preserve the Linux pilot build gate and operator tests.
+Read [VEYON-FREE-FEATURES.md](VEYON-FREE-FEATURES.md), [VEYON-LIVE-TERMINAL.md](VEYON-LIVE-TERMINAL.md), [VEYON-WINDOWS-PILOT.md](VEYON-WINDOWS-PILOT.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The pilot file adapter permits only single-target 2 MiB atomic, no-overwrite uploads to `RoomGoblin-Pilot/Inbox`; it is not arbitrary native transfer. The only permitted arbitrary Windows command surface is the dedicated enabled-administrator terminal route: one saved target, authenticated Veyon feature/worker transport, signed-in-user CMD or Windows PowerShell, ten-minute expiry, bounded transient input/output, no content audit/elevation/retry/second agent. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no production key change, commercial add-on or unvalidated Windows ABI claim. InternetGuard and terminal process launch are Windows-only disposable pilots with explicit recovery/acceptance gates. Preserve the Linux pilot build gate and operator tests.
 
 ## Native pilot artifacts
 
@@ -446,6 +446,13 @@ matching binaries plus all corresponding source. See VEYON-PILOT-BINARIES.md.
 plugins with the installed CLI. No production install, service start, key export
 or Windows compatibility claim is allowed. Preserve GPL source distribution and
 require disposable matching Ubuntu desktop VMs for interactive acceptance.
+
+Windows packaging uses the complete upstream NSIS path in a reviewed x86-64
+MinGW/Qt environment, never individual DLLs. CI publication remains disabled
+until that toolchain is immutable and reviewed. One-endpoint deployment requires
+exact pilot/rollback hashes, configuration/evidence backup, explicit disposable
+risk acknowledgement and automatic known-good installer/config rollback on CLI
+failure. Live Windows acceptance remains separate.
 
 
 ## Automation action execution and media-session control
