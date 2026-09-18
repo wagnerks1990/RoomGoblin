@@ -27,6 +27,14 @@ There are no runtime `ports:`, service `networks:`, Docker service-name DNS depe
 
 Core health checks, updater verification, and the maintenance-to-application connection use effective listener ports and bind addresses. `HUB_PORT` and `MAINTENANCE_PORT` must be different. The installer preserves explicit loopback and LAN bindings rather than widening them to `0.0.0.0`.
 
+### Music Assistant host-network Zeroconf guard
+
+Music Assistant is intentionally host-networked for physical-LAN discovery. On multi-interface Linux hosts, Music Assistant 2.9/2.10 can enter dual-stack Zeroconf mode when a global IPv6 address (for example Tailscale) is present, then pass IPv4 addresses from Linux Docker bridges that still have an address even though their `operstate` is `down`. python-zeroconf can then abort startup with `OSError: [Errno 19] No such device`; ports 8095/8097 may remain bound while HTTP is unresponsive.
+
+RoomGoblin-managed Music Assistant recreations write `/data/.roomgoblin-compat/sitecustomize.py` and set `PYTHONPATH=/data/.roomgoblin-compat`. The guard filters only interfaces explicitly reporting Linux `operstate=down` before Music Assistant enumerates adapters. Active/unknown interfaces, including the classroom LAN and Tailscale, are preserved; unreadable state fails open. Do not disable Tailscale IPv6, remove Docker bridge addresses, or reset Music Assistant data as the permanent workaround.
+
+Existing adopted containers are never silently recreated. After upgrading from a pre-guard deployment, explicitly **Recreate/Update** Music Assistant once so the reviewed template is applied. The recreate path must remain usable even when the current Music Assistant API is offline; do not require successful pre-recreate authentication. Verify recovery with an HTTP response from `127.0.0.1:8095`, not merely a running container or listening socket.
+
 ## Saved settings and browser links
 
 When `HUB_NETWORK_MODE=host` (set by Compose), integration URL resolution maps the exact old hostname `host.docker.internal` to `127.0.0.1`. Known integration aliases such as `mosquitto`, `music-assistant-server`, and the old core service names are translated only in their applicable connection context. Remote IPs, school DNS names, ports, and paths remain unchanged. This compatibility layer does not rewrite credentials or the SQLite database. New defaults and controller placeholders use loopback directly.
