@@ -317,6 +317,24 @@ test("managed-service reconciliation executes locally with an exact bounded sche
   assert.equal(rejected.status,400);
 });
 
+test("automatic backup retention keeps three operational and one pre archive",async t=>{
+  const agent=await startAgent(t);
+  const root=path.join(agent.hub,"data","backups");
+  for(let i=1;i<=5;i++)put(path.join(root,`classroom-hub-operational-2026-09-1${i}T00-00-00-000Z.zip`),`legacy-${i}`);
+  for(let i=1;i<=2;i++)put(path.join(root,`manual-operational-2026-09-2${i}T00-00-00-000Z.zip`),`manual-${i}`);
+  for(let i=1;i<=3;i++)put(path.join(root,`pre-host-update-2026-09-2${i}T01-00-00-000Z.zip`),`pre-${i}`);
+  put(path.join(root,"roomgoblin-full-recovery-test.rgbak"),"full-recovery");
+  const pruned=await request(agent,"/backups/retention",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({automaticKeep:3,preKeep:1,confirm:"PRUNE_AUTOMATIC_BACKUPS"})});
+  assert.equal(pruned.status,200,JSON.stringify(pruned.body));
+  assert.equal(pruned.body.automaticKeep,3);
+  assert.equal(pruned.body.preKeep,1);
+  const names=fs.readdirSync(root);
+  assert.equal(names.filter(n=>/^classroom-hub-operational-/.test(n)).length,3);
+  assert.equal(names.filter(n=>/^pre-/.test(n)).length,1);
+  assert.equal(names.filter(n=>/^manual-operational-/.test(n)).length,2,"manual operational exports must never be auto-pruned");
+  assert.ok(names.includes("roomgoblin-full-recovery-test.rgbak"),"Full Recovery archives must never be auto-pruned");
+});
+
 test("configuration-data restore replaces runtime data and verifies application health",async t=>{
   const agent=await startAgent(t);
   put(path.join(agent.hub,"data","media","lesson.txt"),"ORIGINAL_ASSET");
