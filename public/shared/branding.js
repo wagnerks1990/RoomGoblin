@@ -111,7 +111,6 @@
 
   if(!renderer&&location.pathname.startsWith("/controller"))managedDisplaysOverviewLink();
   if(!renderer)injectScript("/shared/integration-setup.js","controlhub-integration-setup");
-  if(!renderer)injectScript("/shared/automation-hotfix.js","controlhub-automation-fix");
   if(!renderer&&location.pathname==="/controller/")injectScript("/controller/automation-v2.js","roomgoblin-automation-v2");
   if(!renderer&&location.pathname.startsWith("/controller"))injectScript("/controller/veyon-keyring-ui.js","roomgoblin-veyon-keyring");
   if(!renderer&&location.pathname.startsWith("/controller"))injectScript("/controller/veyon-update-ui.js","roomgoblin-veyon-lifecycle");
