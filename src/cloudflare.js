@@ -197,8 +197,22 @@ class CloudflareManager{
     let settings=this.save(input);
     settings=this.saved();
     const ctx=await this.resolve(settings);
+    const checkpoint=(ids={},ownership={})=>{
+      const current=this.saved(),persisted={...current,
+        ids:{...(current.ids||{}),accountId:ctx.accountId,zoneId:ctx.zone.id,...ids},
+        ownership:{...(current.ownership||{}),...ownership}};
+      this.storage.setPreference(PREF,persisted);
+      settings=persisted;
+      return persisted;
+    };
     const tunnelResult=await this.ensureTunnel(ctx,settings);
+    checkpoint({tunnelId:tunnelResult.tunnel.id},{
+      tunnel:tunnelResult.created===true?true:(tunnelResult.adopted===true?false:settings.ownership?.tunnel===true)
+    });
     const dnsResult=await this.ensureDns(ctx,settings,tunnelResult.tunnel);
+    checkpoint({dnsRecordId:dnsResult.record?.id||""},{
+      dns:dnsResult.created===true?true:(settings.ownership?.dns===true)
+    });
     const edge={
       alwaysUseHttps:await this.setZoneSetting(ctx,"always_use_https",settings.alwaysUseHttps?"on":"off"),
       automaticHttpsRewrites:await this.setZoneSetting(ctx,"automatic_https_rewrites",settings.automaticHttpsRewrites?"on":"off"),
@@ -207,15 +221,15 @@ class CloudflareManager{
     };
     const edgeWarnings=Object.entries(edge).filter(([,value])=>value?.ok===false).map(([name,value])=>`${name}: ${value.error}`);
     const access=await this.ensureAccess(ctx,settings);
+    const persisted=checkpoint({accessAppId:access.app?.id||"",accessPolicyId:access.policy?.id||""},{
+      accessApp:access.created===true?true:(settings.ownership?.accessApp===true)
+    });
     let connector={installed:false,restartRequired:false};
     if(this.connectorInstaller){
       const token=await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnelResult.tunnel.id}/token`);
       if(typeof token!=="string"||!token)throw failure("Cloudflare did not return a connector token",502);
       connector=await this.connectorInstaller(token);
     }
-    const persisted={...settings,ids:{accountId:ctx.accountId,zoneId:ctx.zone.id,tunnelId:tunnelResult.tunnel.id,dnsRecordId:dnsResult.record?.id||"",accessAppId:access.app?.id||"",accessPolicyId:access.policy?.id||""},
-      ownership:{tunnel:tunnelResult.created,dns:dnsResult.created,accessApp:access.created===true}};
-    this.storage.setPreference(PREF,persisted);
     return {ok:true,settings:publicSettings(persisted,this.storage),zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},
       tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted},
       dns:{id:dnsResult.record?.id,name:settings.hostname,target:`${tunnelResult.tunnel.id}.cfargotunnel.com`,created:dnsResult.created,adopted:dnsResult.adopted},
