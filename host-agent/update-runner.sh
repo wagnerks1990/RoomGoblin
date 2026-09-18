@@ -112,7 +112,7 @@ docker compose exec -T classroom-hub node -e "const port=Number(process.env.PORT
 # Bound automatic pre-* safety archives after a verified host update.
 # Cleanup is best-effort and preserves user-created/full-recovery archives.
 docker compose exec -T maintenance-agent node -e '
-fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backups/retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({keep:10,confirm:"PRUNE_AUTOMATIC_BACKUPS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Automatic backup retention:",JSON.stringify(j))).catch(e=>{console.error("Automatic backup retention warning:",e.message);process.exit(1)})
+fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backups/retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({automaticKeep:3,preKeep:1,confirm:"PRUNE_AUTOMATIC_BACKUPS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Automatic backup retention:",JSON.stringify(j))).catch(e=>{console.error("Automatic backup retention warning:",e.message);process.exit(1)})
 ' || echo "Warning: automatic backup retention cleanup did not complete; host update remains healthy." >&2
 write_state completed "Host update completed successfully." true
 trap - EXIT
