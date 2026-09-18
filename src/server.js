@@ -1752,7 +1752,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   const boundedMaxPasses=Number.isInteger(maxPasses)&&maxPasses>0?Math.min(1000,maxPasses):null;
   const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous,endedReason:null,totalStepExecutions:0,totalResults:0};
   const MAX_RUN_TRACE=200;
-  const pushStep=entry=>{combined.totalStepExecutions++;pushStep(entry);if(combined.steps.length>MAX_RUN_TRACE)combined.steps.splice(0,combined.steps.length-MAX_RUN_TRACE)};
+  const pushStep=entry=>{combined.totalStepExecutions++;combined.steps.push(entry);if(combined.steps.length>MAX_RUN_TRACE)combined.steps.splice(0,combined.steps.length-MAX_RUN_TRACE)};
   const pushResults=rows=>{for(const row of rows||[]){combined.totalResults++;combined.results.push(row)}if(combined.results.length>MAX_RUN_TRACE)combined.results.splice(0,combined.results.length-MAX_RUN_TRACE)};
   let overlayApplied=false;
 
