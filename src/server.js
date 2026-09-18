@@ -7621,7 +7621,7 @@ wss.on("connection", (ws, req) => {
           upsertLabComputer(agentId,{hostname:String(msg.hostname||helloMeta.hostname||agentId).slice(0,120),agentVersion:String(msg.agentVersion||helloMeta.agentVersion||"").slice(0,40),
             ip:helloIp,capabilities,meta:{...helloMeta,capabilities},connectedAt:new Date().toISOString()});
           const privacy=privacyRetentionPolicy();
-          wsSend(ws,{type:"hello.ack",role:"lab-agent",agentId,room:deviceConfig.room||ROOM_NAME,historyEnabled:privacy.browserHistoryEnabled,historyRetentionHours:privacy.browserHistoryHours,heartbeatSeconds:15,historyPollSeconds:privacy.browserHistoryEnabled?30:0,authMode,credential:issuedCredential?.credential||undefined,credentialId:agentCredential?.id||undefined});
+          wsSend(ws,{type:"hello.ack",role:"lab-agent",agentId,room:deviceConfig.room||ROOM_NAME,historyEnabled:privacy.browserHistoryEnabled,historyRetentionHours:privacy.browserHistoryHours,heartbeatSeconds:15,historyPollSeconds:privacy.browserHistoryEnabled?30:0,authMode,credential:issuedCredential?.credential||undefined,credentialId:agentCredential?.id||undefined,preferredHubUrl:configuredPublicHubOrigin()||undefined});
           broadcastControllers({type:"lab.status",computer:publicLabComputer(agentId)});audit({kind:"lab.connected",id:agentId,hostname:msg.hostname||agentId});return;
         }
 
