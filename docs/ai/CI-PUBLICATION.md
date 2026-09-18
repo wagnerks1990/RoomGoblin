@@ -41,7 +41,7 @@ After the exact-SHA gate passes:
 - before mutable alias promotion, verify that `main` still equals the validated SHA so a stale run cannot replace a newer alpha;
 - promote package aliases only, with read-only source permissions; never advance a production/staging/development branch.
 
-If either image fails, pair promotion must fail closed. Semantic releases remain optional for existing GUI release/revert compatibility; a new release tag is not required for CLI main updates.
+If either image fails, pair promotion must fail closed. The administrator GUI and CLI both select updates from trusted `main`; neither requires a semantic release tag. The GUI may offer a merged main commit before its images finish publishing, but the native transaction must fail closed until the exact SHA pair exists. Legacy semantic-release handling may remain only as a compatibility backend path and must not become the normal GUI selection mechanism.
 
 ## Android maintenance-image dependency retries
 
@@ -50,6 +50,8 @@ The maintenance image compiles the Android Agent APK. If a hosted runner sees a 
 This retry is bounded reliability hardening only. Never suppress a deterministic Gradle failure, use mutable dependency versions to make the build pass, or skip APK package/version/checksum verification. If all attempts fail, the maintenance image and therefore the complete pair must remain unpublished.
 
 ## Main update behavior and legacy migration
+
+The System Updates GUI resolves the latest `main` commit through GitHub metadata, compares it with the Host Agent's local checkout, and passes only that exact 40-character commit into the native `published` journal action. The server must reject tracked local changes, divergent/ahead history, stale selections, and arbitrary user-provided SHAs. The native runner remains authoritative for the second ancestry check, image readiness/revision verification, recovery backup, component plan, health verification and rollback.
 
 The historical `deploy/update-production.sh` filename and native `published` journal action remain compatibility identifiers, not production-branch selectors. Install/update paths select main, require trusted main ancestry and the exact immutable image pair, and use the conservative component plan plus native lock/journal/backup/health/rollback protocol. Do not change the default to local builds or an unvalidated main commit. `install.sh --build-local` remains an explicit development/recovery choice only.
 

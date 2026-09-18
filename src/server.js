@@ -4775,25 +4775,55 @@ app.put("/api/v1/internal/maintenance/integrations/:id",requireMaintenanceAgent,
 });
 
 const TRUSTED_UPDATE_REPOSITORY="wagnerks1990/RoomGoblin";
+const TRUSTED_UPDATE_BRANCH="main";
 const LEGACY_TRUSTED_UPDATE_REPOSITORIES=new Set(["wagnerks1990/classroom-control-hub"]);
 function updatePolicy(){
   const saved=dbStore.getPreference("updates.policy",{})||{};
-  return {repository:TRUSTED_UPDATE_REPOSITORY,channel:["alpha","beta","stable"].includes(saved.channel)?saved.channel:"alpha",automatic:!!saved.automatic,checkIntervalHours:Math.max(1,Math.min(168,Number(saved.checkIntervalHours)||24)),maintenanceStart:validTime(saved.maintenanceStart)?saved.maintenanceStart:"02:00",maintenanceEnd:validTime(saved.maintenanceEnd)?saved.maintenanceEnd:"04:00",lastCheckedAt:saved.lastCheckedAt||null,lastAvailable:saved.lastAvailable||null};
+  return {repository:TRUSTED_UPDATE_REPOSITORY,source:"main",branch:TRUSTED_UPDATE_BRANCH,automatic:!!saved.automatic,checkIntervalHours:Math.max(1,Math.min(168,Number(saved.checkIntervalHours)||24)),maintenanceStart:validTime(saved.maintenanceStart)?saved.maintenanceStart:"02:00",maintenanceEnd:validTime(saved.maintenanceEnd)?saved.maintenanceEnd:"04:00",lastCheckedAt:saved.lastCheckedAt||null,lastAvailable:saved.lastAvailable||null};
 }
 function validUpdateRepository(value){const repository=String(value||"");return repository===TRUSTED_UPDATE_REPOSITORY||LEGACY_TRUSTED_UPDATE_REPOSITORIES.has(repository)}
-function releaseVersion(tag){return String(tag||"").replace(/^v/,"")}
-function semverParts(value){const m=releaseVersion(value).match(/^(\d+)\.(\d+)\.(\d+)(?:[-.]([0-9A-Za-z.-]+))?$/);return m?{core:m.slice(1,4).map(Number),pre:m[4]?m[4].split("."):[]}:null}
-function compareVersions(a,b){const x=semverParts(a),y=semverParts(b);if(!x||!y)return 0;for(let i=0;i<3;i++)if(x.core[i]!==y.core[i])return x.core[i]-y.core[i];if(!x.pre.length||!y.pre.length)return x.pre.length?-1:y.pre.length?1:0;for(let i=0;i<Math.max(x.pre.length,y.pre.length);i++){if(x.pre[i]===undefined)return -1;if(y.pre[i]===undefined)return 1;const xn=Number(x.pre[i]),yn=Number(y.pre[i]),numeric=Number.isFinite(xn)&&Number.isFinite(yn);if(x.pre[i]!==y.pre[i])return numeric?xn-yn:String(x.pre[i]).localeCompare(String(y.pre[i]))}return 0}
-function releaseAllowed(release,channel){if(release?.draft)return false;if(channel==="stable")return !release.prerelease;const tag=String(release.tag_name||"").toLowerCase();return release.prerelease&&(channel==="alpha"?tag.includes("alpha"):tag.includes("beta"))}
-async function githubReleaseCheck({persist=true}={}){
-  const policy=updatePolicy();if(!validUpdateRepository(policy.repository))throw Error("Update repository must use owner/name format");
-  const token=String(dbStore.getSecret("github.update.token")||""),headers={accept:"application/vnd.github+json","user-agent":"classroom-control-hub-updater","x-github-api-version":"2022-11-28"};if(token)headers.authorization=`Bearer ${token}`;
-  const response=await fetch(`https://api.github.com/repos/${policy.repository.split("/").map(encodeURIComponent).join("/")}/releases?per_page=30`,{headers,signal:AbortSignal.timeout(15000)});
-  if(!response.ok)throw Error(`GitHub release check failed (${response.status})`);
-  const releases=await response.json(),eligible=(Array.isArray(releases)?releases:[]).filter(x=>releaseAllowed(x,policy.channel)&&semverParts(x.tag_name)).sort((a,b)=>compareVersions(b.tag_name,a.tag_name));
-  const latest=eligible[0]||null,available=latest&&compareVersions(latest.tag_name,APPLICATION_VERSION)>0?{tag:latest.tag_name,version:releaseVersion(latest.tag_name),name:latest.name||latest.tag_name,publishedAt:latest.published_at||null,url:latest.html_url||null,prerelease:!!latest.prerelease}:null;
-  const checkedAt=new Date().toISOString(),result={ok:true,currentVersion:APPLICATION_VERSION,repository:policy.repository,channel:policy.channel,checkedAt,available,latest:latest?{tag:latest.tag_name,version:releaseVersion(latest.tag_name),name:latest.name||latest.tag_name,publishedAt:latest.published_at||null,url:latest.html_url||null}:null};
-  if(persist)dbStore.setPreference("updates.policy",{...policy,lastCheckedAt:checkedAt,lastAvailable:available});return result;
+function githubUpdateHeaders(){
+  const token=String(dbStore.getSecret("github.update.token")||""),headers={accept:"application/vnd.github+json","user-agent":"roomgoblin-main-updater","x-github-api-version":"2022-11-28"};
+  if(token)headers.authorization=`Bearer ${token}`;
+  return headers;
+}
+async function githubUpdateFetch(pathName){
+  const policy=updatePolicy();
+  const response=await fetch(`https://api.github.com/repos/${policy.repository.split("/").map(encodeURIComponent).join("/")}${pathName}`,{headers:githubUpdateHeaders(),signal:AbortSignal.timeout(15000)});
+  if(!response.ok)throw Error(`GitHub main check failed (${response.status})`);
+  return response.json();
+}
+async function githubMainCheck({persist=true}={}){
+  const policy=updatePolicy();
+  if(!validUpdateRepository(policy.repository))throw Error("Update repository is not trusted");
+  const [source,latest]=await Promise.all([
+    maintenanceAgentApi("GET","/app-updates/source",null,30000),
+    githubUpdateFetch(`/commits/${encodeURIComponent(TRUSTED_UPDATE_BRANCH)}`)
+  ]);
+  const currentCommit=String(source.commit||"").toLowerCase(),latestCommit=String(latest.sha||"").toLowerCase();
+  const trackedChanges=Array.isArray(source.trackedChanges)?source.trackedChanges.map(String):[];
+  const unsupportedTracked=trackedChanges.filter(pathName=>!["config/devices.json","config/hardware.json"].includes(pathName));
+  if(unsupportedTracked.length)throw Error(`Tracked local source changes block main update: ${unsupportedTracked.slice(0,5).join(", ")}`);
+  if(source.trackedDirty===true&&!trackedChanges.length)throw Error("Tracked local source changes are present but could not be classified; main update is blocked");
+  if(!/^[0-9a-f]{40}$/.test(currentCommit))throw Error("Current RoomGoblin source commit is unavailable");
+  if(!/^[0-9a-f]{40}$/.test(latestCommit))throw Error("GitHub main did not return a valid commit");
+  let relation={status:"identical",ahead_by:0,behind_by:0,total_commits:0};
+  if(currentCommit!==latestCommit){
+    relation=await githubUpdateFetch(`/compare/${encodeURIComponent(currentCommit)}...${encodeURIComponent(latestCommit)}`);
+    if(!["ahead","identical"].includes(String(relation.status||"")))throw Error(`Installed source is ${relation.status||"not a fast-forward ancestor"} of trusted main; update is blocked`);
+  }
+  const commitInfo=latest.commit||{},commitMessage=String(commitInfo.message||"").split("\n")[0].trim(),commitAt=commitInfo.committer?.date||commitInfo.author?.date||null;
+  const available=currentCommit!==latestCommit?{
+    commit:latestCommit,
+    shortCommit:latestCommit.slice(0,12),
+    name:commitMessage||`main @ ${latestCommit.slice(0,12)}`,
+    mergedAt:commitAt,
+    url:latest.html_url||null,
+    commitsAhead:Number(relation.ahead_by||relation.total_commits||0)
+  }:null;
+  const checkedAt=new Date().toISOString(),result={ok:true,repository:policy.repository,source:"main",branch:TRUSTED_UPDATE_BRANCH,checkedAt,currentVersion:APPLICATION_VERSION,currentCommit,shortCurrentCommit:currentCommit.slice(0,12),currentBranch:source.branch||"",trackedDirty:source.trackedDirty??null,available,latest:{commit:latestCommit,shortCommit:latestCommit.slice(0,12),name:commitMessage||"",mergedAt:commitAt,url:latest.html_url||null},relation:String(relation.status||"identical")};
+  if(persist)dbStore.setPreference("updates.policy",{...policy,lastCheckedAt:checkedAt,lastAvailable:available});
+  return result;
 }
 async function maintenanceAgentApi(method,pathName,body=null,timeoutMs=30000){
   if(!MAINTENANCE_TOKEN)throw Error("Maintenance agent is not configured");const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -4837,17 +4867,27 @@ app.get("/api/v1/recovery-status/:recoveryId",async(req,res)=>{
     return res.json(status);
   }catch{return res.status(503).json({ok:false,error:"Recovery status is temporarily unavailable"})}
 });
-function recordUpdateJob(job){if(!job?.phase)return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
-app.get("/api/v1/admin/app-updates/settings",requireAdmin,(_req,res)=>res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token"),currentVersion:APPLICATION_VERSION,history:dbStore.getPreference("updates.history",[])||[]}));
-app.put("/api/v1/admin/app-updates/settings",requireAdmin,(req,res)=>{try{const current=updatePolicy(),repository=String(req.body?.repository||current.repository).trim(),channel=String(req.body?.channel||current.channel);if(!validUpdateRepository(repository))throw Error(`Updates are restricted to the trusted repository ${TRUSTED_UPDATE_REPOSITORY}`);if(!["alpha","beta","stable"].includes(channel))throw Error("Invalid release channel");const next={...current,repository:TRUSTED_UPDATE_REPOSITORY,channel,automatic:req.body?.automatic===true,checkIntervalHours:Math.max(1,Math.min(168,Number(req.body?.checkIntervalHours)||24)),maintenanceStart:String(req.body?.maintenanceStart||current.maintenanceStart),maintenanceEnd:String(req.body?.maintenanceEnd||current.maintenanceEnd)};if(!validTime(next.maintenanceStart)||!validTime(next.maintenanceEnd))throw Error("Maintenance window times must use valid HH:MM values");dbStore.setPreference("updates.policy",next);if(req.body?.clearToken===true)dbStore.deleteSecret("github.update.token");else if(req.body?.token)dbStore.putSecret("github.update.token",String(req.body.token),{type:"github-release-read-token",repository:TRUSTED_UPDATE_REPOSITORY});audit({kind:"admin.updates.settings",repository:TRUSTED_UPDATE_REPOSITORY,channel,automatic:next.automatic,tokenCleared:req.body?.clearToken===true});res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token")})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/admin/app-updates/check",requireAdmin,async(_req,res)=>{try{res.json(await githubReleaseCheck())}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.get("/api/v1/admin/app-updates/job",requireAdmin,async(_req,res)=>{try{const job=await maintenanceAgentApi("GET","/app-updates/job",null,30000);recordUpdateJob(job);res.json({...job,history:dbStore.getPreference("updates.history",[])||[]})}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.post("/api/v1/admin/app-updates/install",requireAdmin,async(req,res)=>{try{const check=await githubReleaseCheck();if(!check.available||check.available.tag!==String(req.body?.tag||""))return res.status(409).json({ok:false,error:"Selected release is no longer the current approved update"});const result=await maintenanceAgentApi("POST","/app-updates/start",{targetRef:check.available.tag,expectedVersion:check.available.version,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_RELEASE"},30000);audit({kind:"admin.updates.start",tag:check.available.tag,version:check.available.version});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.post("/api/v1/admin/app-updates/revert",requireAdmin,async(req,res)=>{try{if(String(req.body?.confirm||"")!=="REVERT_RELEASE")return res.status(400).json({ok:false,error:"Explicit REVERT_RELEASE confirmation required"});const result=await maintenanceAgentApi("POST","/app-updates/revert",{confirm:"REVERT_RELEASE"},30000);audit({kind:"admin.updates.revert"});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
+function recordUpdateJob(job){if(!job?.phase||job.phase==="idle")return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",targetCommit:job.targetCommit||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",activeCommit:job.activeCommit||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
+const appUpdateReadLimit=rateLimit({
+  windowMs:60_000,limit:120,keyGenerator:()=>"app-update-read",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Application update status/check limit reached; retry later"}
+});
+const appUpdateMutationLimit=rateLimit({
+  windowMs:60_000,limit:12,keyGenerator:()=>"app-update-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Application update operation limit reached; retry later"}
+});
+app.get("/api/v1/admin/app-updates/settings",appUpdateReadLimit,requireAdmin,async(_req,res)=>{try{const source=await maintenanceAgentApi("GET","/app-updates/source",null,30000).catch(()=>({}));res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token"),currentVersion:APPLICATION_VERSION,currentCommit:source.commit||null,currentBranch:source.branch||null,history:dbStore.getPreference("updates.history",[])||[]})}catch(e){res.status(502).json({ok:false,error:e.message})}});
+app.put("/api/v1/admin/app-updates/settings",appUpdateMutationLimit,requireAdmin,(req,res)=>{try{const current=updatePolicy(),repository=String(req.body?.repository||current.repository).trim();if(!validUpdateRepository(repository))throw Error(`Updates are restricted to the trusted repository ${TRUSTED_UPDATE_REPOSITORY}`);const next={...current,repository:TRUSTED_UPDATE_REPOSITORY,source:"main",branch:TRUSTED_UPDATE_BRANCH,automatic:req.body?.automatic===true,checkIntervalHours:Math.max(1,Math.min(168,Number(req.body?.checkIntervalHours)||24)),maintenanceStart:String(req.body?.maintenanceStart||current.maintenanceStart),maintenanceEnd:String(req.body?.maintenanceEnd||current.maintenanceEnd)};if(!validTime(next.maintenanceStart)||!validTime(next.maintenanceEnd))throw Error("Maintenance window times must use valid HH:MM values");dbStore.setPreference("updates.policy",next);if(req.body?.clearToken===true)dbStore.deleteSecret("github.update.token");else if(req.body?.token)dbStore.putSecret("github.update.token",String(req.body.token),{type:"github-main-read-token",repository:TRUSTED_UPDATE_REPOSITORY});audit({kind:"admin.updates.settings",repository:TRUSTED_UPDATE_REPOSITORY,source:"main",automatic:next.automatic,tokenCleared:req.body?.clearToken===true});res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token")})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+app.post("/api/v1/admin/app-updates/check",appUpdateReadLimit,requireAdmin,async(_req,res)=>{try{res.json(await githubMainCheck())}catch(e){res.status(502).json({ok:false,error:e.message})}});
+app.get("/api/v1/admin/app-updates/job",appUpdateReadLimit,requireAdmin,async(_req,res)=>{try{const job=await maintenanceAgentApi("GET","/app-updates/job",null,30000);recordUpdateJob(job);res.json({...job,history:dbStore.getPreference("updates.history",[])||[]})}catch(e){res.status(502).json({ok:false,error:e.message})}});
+app.post("/api/v1/admin/app-updates/install",appUpdateMutationLimit,requireAdmin,async(req,res)=>{try{const check=await githubMainCheck();const selected=String(req.body?.commit||"").toLowerCase();if(!check.available||check.available.commit!==selected)return res.status(409).json({ok:false,error:"Selected main commit is no longer the current approved update"});const result=await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:selected,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"admin.updates.start",source:"main",commit:selected});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
+app.post("/api/v1/admin/app-updates/revert",appUpdateMutationLimit,requireAdmin,async(req,res)=>{try{if(String(req.body?.confirm||"")!=="REVERT_RELEASE")return res.status(400).json({ok:false,error:"Explicit REVERT_RELEASE confirmation required"});const result=await maintenanceAgentApi("POST","/app-updates/revert",{confirm:"REVERT_RELEASE"},30000);audit({kind:"admin.updates.revert"});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
 
 function withinUpdateWindow(policy,date=new Date()){const minutes=s=>{const [h,m]=s.split(":").map(Number);return h*60+m},now=date.getHours()*60+date.getMinutes(),start=minutes(policy.maintenanceStart),end=minutes(policy.maintenanceEnd);return start===end||start<end?(now>=start&&now<end):(now>=start||now<end)}
 let automaticUpdateBusy=false;
-async function automaticUpdateTick(){if(fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubReleaseCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{targetRef:check.available.tag,expectedVersion:check.available.version,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_RELEASE"},30000);audit({kind:"updates.automatic.start",tag:check.available.tag})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
+async function automaticUpdateTick(){if(fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubMainCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:check.available.commit,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"updates.automatic.start",source:"main",commit:check.available.commit})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
 const automaticUpdateTimer=setInterval(()=>automaticUpdateTick(),15*60*1000);automaticUpdateTimer.unref();setTimeout(()=>automaticUpdateTick(),60*1000).unref();
 let updateJobSyncBusy=false;
 async function synchronizeUpdateJob(){if(fullExportFreeze.requested||updateJobSyncBusy)return;updateJobSyncBusy=true;try{recordUpdateJob(await maintenanceAgentApi("GET","/app-updates/job"))}catch{}finally{updateJobSyncBusy=false}}

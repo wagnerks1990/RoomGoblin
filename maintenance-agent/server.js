@@ -163,7 +163,16 @@ app.get("/host/system",async(_req,res)=>{try{res.json(await hostAgentRequest("GE
 app.get("/host/updates",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/updates"))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.get("/host/updates/job",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/updates/job",null,30000))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.get("/app-updates/job",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/app-updates/job",null,30000))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
+app.get("/app-updates/source",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/app-updates/source",null,30000))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.post("/app-updates/start",async(req,res)=>{try{
+  const action=String(req.body?.action||"update");
+  if(action==="published"){
+    if(String(req.body?.confirm||"")!=="INSTALL_MAIN")return res.status(400).json({ok:false,error:"Explicit INSTALL_MAIN confirmation required"});
+    const targetCommit=String(req.body?.targetCommit||"").toLowerCase();
+    if(!/^[0-9a-f]{40}$/.test(targetCommit))return res.status(400).json({ok:false,error:"A full Git commit from trusted main is required"});
+    const result=await hostAgentRequest("POST","/app-updates/start",{action:"published",targetCommit,githubToken:String(req.body?.githubToken||""),confirm:"INSTALL_MAIN"},30000);
+    return res.status(202).json({ok:true,safetyBackup:"creating after image preflight",...result});
+  }
   if(String(req.body?.confirm||"")!=="INSTALL_RELEASE")return res.status(400).json({ok:false,error:"Explicit INSTALL_RELEASE confirmation required"});
   const targetRef=String(req.body?.targetRef||""),expectedVersion=String(req.body?.expectedVersion||"");
   if(!/^v?\d+\.\d+\.\d+(?:[.-][0-9A-Za-z.-]+)?$/.test(targetRef)||!/^v?\d+\.\d+\.\d+(?:[.-][0-9A-Za-z.-]+)?$/.test(expectedVersion))return res.status(400).json({ok:false,error:"A semantic-version GitHub release tag and version are required"});
