@@ -14,9 +14,9 @@ Alpha.82 live-upgrade corrections and acceptance limits are documented in
 `ALPHA82-UPGRADE-RECOVERY.md`. Preserve shared SQLite/ADB access under GID 10001
 and the pre-rebrand Android signing identity during every install and restore.
 
-## Host-network deployment contract
+## Docker network deployment contract
 
-The Linux Hub and maintenance containers, plus reviewed managed add-on templates, now use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
+RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
 This document gives AI assistants a compact operational model of RoomGoblin. `AGENTS.md` is the primary contributor contract; this document expands the technical context.
 
