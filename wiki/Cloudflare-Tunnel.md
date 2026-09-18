@@ -15,6 +15,10 @@ Managed provisioning supports:
 
 Cloudflare Universal SSL and standard proxied-DNS/edge protections are supplied by Cloudflare for eligible active zones.
 
+## Domain activation prerequisite
+
+Cloudflare Free uses a full authoritative DNS setup. Add the apex domain to Cloudflare and delegate the domain at its registrar to the nameservers Cloudflare assigns. If RoomGoblin sees the zone in `pending` state, validation reports those assigned nameservers and stops before provisioning. Retry after Cloudflare reports the zone `active`.
+
 ## Credential choice
 
 Use a scoped API Token whenever possible. Global API Key + account email is a broader legacy alternative.
