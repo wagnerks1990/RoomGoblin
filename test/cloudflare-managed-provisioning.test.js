@@ -150,6 +150,7 @@ test("Cloudflare host integration never places tunnel token in process arguments
   const appUpdater=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
   const hostInstaller=fs.readFileSync("deploy/install-cloudflared-host.sh","utf8");
   assert.match(host,/cloudflare-token-/);assert.match(host,/--token-file/);assert.match(host,/--skip-install/);assert.doesNotMatch(host,/--token['"]/);
+  assert.match(host,/token\+'\\n'/);assert.doesNotMatch(host,/token\+'\\\\n'/);
   assert.match(installer,/chmod 0600/);assert.match(installer,/TRUST_PROXY_HOPS 1/);
   assert.match(installer,/systemctl restart cloudflared-roomgoblin\.service/);
   assert.doesNotMatch(installer,/enable --now cloudflared-roomgoblin\.service/);
