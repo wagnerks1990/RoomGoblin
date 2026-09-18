@@ -53,7 +53,7 @@ test("Veyon lifecycle GUI uses guarded same-origin administration routes",()=>{
   assert.match(maintenance,/\/host\/veyon\/update/);assert.match(maintenance,/pre-veyon-update/);
   assert.match(host,/\/veyon\/update/);assert.match(host,/VEYON_UPDATE_REQUEST_FILE/);
   assert.match(runner,/github\.com\/veyon\/veyon\/releases\/download/);
-  assert.match(runner,/sha256sum -c/);assert.match(runner,/dpkg-deb --field/);
+  assert.match(runner,/sha256sum -c/);assert.match(runner,/dpkg-deb --field/);assert.match(runner,/rc=\$\?; rm -f/);assert.match(host,/Requested Veyon .* is not newer than installed/);
 });
 
 test("startup loads DHCP identity and lifecycle bridges before the server",()=>{
