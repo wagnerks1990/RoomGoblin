@@ -179,8 +179,8 @@ for args in bad:
 test("Host Agent only allows RoomGoblin integration bridge lifecycle commands", () => {
   const source=read("host-agent/server.py");
   assert.match(source,/INTEGRATION_NETWORK = 'roomgoblin-integrations'/);
-  assert.match(source,/network','inspect',INTEGRATION_NETWORK/);
-  assert.match(source,/network','create','--driver','bridge'/);
+  assert.match(source,/tail==\['inspect',INTEGRATION_NETWORK\]/);
+  assert.match(source,/\['create','--driver','bridge','--label',INTEGRATION_NETWORK_LABEL,INTEGRATION_NETWORK\]/);
   assert.match(source,/Only the reviewed RoomGoblin integration bridge may be inspected or created/);
 });
 
