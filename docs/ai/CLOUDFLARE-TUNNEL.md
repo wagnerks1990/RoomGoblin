@@ -14,6 +14,7 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 - The connector service is `cloudflared-roomgoblin.service`; do not take over a generic `cloudflared.service`.
 - The sandboxed Host Agent must retain only the exact Cloudflare write exceptions `/etc/cloudflared` and `/etc/systemd/system/cloudflared-roomgoblin.service`; never broaden this to all of `/etc/systemd/system` or disable `ProtectSystem=full`.
 - Never install `cloudflared` packages from the Host Agent. Root install/update runners own package installation; Host Agent connector provisioning must use `--skip-install` and fail closed if the binary is unavailable or too old.
+- Recover only an exact `/etc/systemd/system/cloudflared-roomgoblin.service -> /dev/null` stale mask. Preserve a regular existing unit file; never overwrite it with an empty placeholder during routine updates and never touch a generic `cloudflared.service` mask.
 - Tunnel ingress exposes only the configured RoomGoblin hostname to `http://127.0.0.1:${PORT:-3000}`, followed by terminal `http_status:404`.
 - Never expose maintenance port 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, arbitrary URLs, or lab subnets.
 - `TRUST_PROXY_HOPS=1` is the reviewed topology. Full Recovery forwarded HTTPS still requires an immediate loopback peer.
