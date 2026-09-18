@@ -752,12 +752,27 @@ nav button{min-width:135px}
 
   <div class="grid2">
     <div class="panel">
-      <h2 class="sectionTitle">Scheduled Events</h2>
-      <div id="automationList" class="muted">Loading…</div>
+      <h2 class="sectionTitle">Scheduled Automations</h2>
+      <div class="muted">Choose an automation. Entries are ordered by resolved run time.</div>
+      <label style="display:block;margin-top:10px">Scheduled automation
+        <select id="automationEventSelect" onchange="selectScheduledAutomation(this.value)" style="width:100%"></select>
+      </label>
+      <div id="automationList" class="muted" style="margin-top:10px">Loading…</div>
+      <div class="toolbar" style="margin-top:10px">
+        <button onclick="editSelectedAutomation()">Edit</button>
+        <button onclick="duplicateSelectedAutomation()">Duplicate</button>
+        <button onclick="runSelectedAutomation()">Run Now</button>
+        <button class="danger" onclick="deleteSelectedAutomation()">Delete</button>
+      </div>
     </div>
 
     <div class="panel">
-      <h2 class="sectionTitle" id="automationEditorTitle">New Scheduled Event</h2>
+      <div class="top" style="position:static;margin:0 0 12px">
+        <div><h2 class="sectionTitle" id="automationEditorTitle">New Scheduled Automation</h2><div class="muted">Edit one time-ordered automation and its action sequence.</div></div>
+        <label style="min-width:min(360px,100%)">Open scheduled automation
+          <select id="automationEditorEventSelect" onchange="selectScheduledAutomation(this.value)" style="width:100%"></select>
+        </label>
+      </div>
       <input id="autoId" type="hidden">
       <div class="grid2">
         <label>Name<input id="autoName" placeholder="Morning welcome"></label>
@@ -813,7 +828,7 @@ nav button{min-width:135px}
       <div id="autoPayload" class="panel" style="box-shadow:none;margin-top:12px"></div>
       <div class="panel" style="box-shadow:none;margin-top:12px">
         <div class="top">
-          <div><b>Additional Actions</b><div class="muted">Actions are resource-isolated: lighting, TV power, AV, timers, and display content affect only their resolved targets. Add Action 2, Action 3, and more here; they run in order.</div></div>
+          <div><b>Actions</b><div class="muted">Actions run in order. After the last action, the sequence returns to Action 1 while any action is still eligible.</div></div>
           <button type="button" onclick="addAutomationStep()">+ Add Action</button>
         </div>
         <div id="autoActionSteps"></div>
