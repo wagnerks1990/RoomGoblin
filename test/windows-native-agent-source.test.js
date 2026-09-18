@@ -85,6 +85,15 @@ test("native bootstrap supports secure fresh enrollment without weakening migrat
   assert.match(bootstrap, /--enrollment-token/);
   assert.match(bootstrap, /--allow-http/);
   assert.match(bootstrap, /HTTP enrollment requires the explicit --allow-http option/);
+  assert.match(bootstrap, /--fallback-hub-url/);
+  assert.match(bootstrap, /--allow-http-fallback/);
+  assert.match(bootstrap, /HTTP fallback requires the explicit --allow-http-fallback option/);
+  const config=read("windows-agent/RoomGoblin.Agent.Service/AgentConfig.cs");
+  const connection=read("windows-agent/RoomGoblin.Agent.Service/AgentWorker.Connection.cs");
+  assert.match(config, /JsonPropertyName\("fallbackHubUrl"\)/);
+  assert.match(connection, /HubCandidates/);
+  assert.match(connection, /ConnectToHubAsync/);
+  assert.match(connection, /TryNormalizePreferredHttpsOrigin/);
   assert.match(bootstrap, /enrollmentTokenProtected = MachineDpapi\.ProtectString/);
   assert.match(bootstrap, /CryptProtectLocalMachine/);
   assert.match(bootstrap, /SYSTEM:\(F\)/);
