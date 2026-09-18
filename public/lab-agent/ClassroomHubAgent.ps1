@@ -46,6 +46,29 @@ function Get-HubOrigin([string]$Value){
   if(!$uri.IsAbsoluteUri -or $uri.Scheme -notin @('http','https') -or !$uri.Host -or $uri.UserInfo){throw 'RoomGoblin hubUrl must be an absolute http:// or https:// URL without embedded credentials'}
   return $uri.GetLeftPart([UriPartial]::Authority)
 }
+function Connect-HubSocket($Config){
+  $origins=New-Object Collections.Generic.List[string]
+  foreach($value in @([string]$Config.hubUrl,[string]$Config.fallbackHubUrl)){
+    if(!$value){continue}
+    $origin=Get-HubOrigin $value
+    if(!$origins.Contains($origin)){$origins.Add($origin)}
+  }
+  if(!$origins.Count){throw 'RoomGoblin agent has no configured Hub origin'}
+  $lastError=$null
+  foreach($origin in $origins){
+    $wsUri=($origin -replace '^https:','wss:' -replace '^http:','ws:')+'/ws'
+    $candidate=[Net.WebSockets.ClientWebSocket]::new();$candidate.Options.KeepAliveInterval=[TimeSpan]::FromSeconds(15)
+    try{
+      $candidate.ConnectAsync([uri]$wsUri,[Threading.CancellationToken]::None).GetAwaiter().GetResult()
+      return @{socket=$candidate;origin=$origin}
+    }catch{
+      $lastError=$_.Exception
+      try{$candidate.Dispose()}catch{}
+    }
+  }
+  if($lastError){throw $lastError}
+  throw 'RoomGoblin agent could not connect to any configured Hub origin'
+}
 function Test-TrustedPublisher($Signature,[string]$Expected){
   if(!$Expected){return $true}
   $expectedHex=($Expected -replace '[^0-9A-Fa-f]','').ToUpperInvariant()
@@ -270,13 +293,13 @@ while($true){
     if(!(Test-Path $ConfigPath)){throw "Agent configuration not found: $ConfigPath"}
     $config=Get-Content -LiteralPath $ConfigPath -Raw|ConvertFrom-Json
     if(!($config.PSObject.Properties.Name -contains 'enrollmentTokenProtected')){$config|Add-Member -MemberType NoteProperty -Name enrollmentTokenProtected -Value ''}
+    if(!($config.PSObject.Properties.Name -contains 'fallbackHubUrl')){$config|Add-Member -MemberType NoteProperty -Name fallbackHubUrl -Value ''}
     $credential=Unprotect-Secret ([string]$config.credentialProtected)
     $enrollment=if($config.enrollmentTokenProtected){Unprotect-Secret ([string]$config.enrollmentTokenProtected)}else{[string]$config.enrollmentToken}
     if($config.enrollmentToken -and !$config.enrollmentTokenProtected){$config.enrollmentTokenProtected=Protect-Secret ([string]$config.enrollmentToken);$config.enrollmentToken='';Save-Config $config}
-    $origin=Get-HubOrigin ([string]$config.hubUrl)
-    $wsUri=($origin -replace '^https:','wss:' -replace '^http:','ws:')+'/ws'
-    $socket=[Net.WebSockets.ClientWebSocket]::new();$script:Socket=$socket;$socket.Options.KeepAliveInterval=[TimeSpan]::FromSeconds(15)
-    $socket.ConnectAsync([uri]$wsUri,[Threading.CancellationToken]::None).GetAwaiter().GetResult()
+    $connection=Connect-HubSocket $config
+    $origin=[string]$connection.origin
+    $socket=$connection.socket;$script:Socket=$socket
     $AgentCapabilities=Get-AgentCapabilities
     $NetworkTelemetry=Get-NetworkTelemetry
     Send-Json $socket @{type='hello';role='lab-agent';agentId=$config.agentId;hostname=$env:COMPUTERNAME;agentVersion=$AgentVersion;credential=$credential;enrollmentToken=$enrollment;capabilities=$AgentCapabilities;meta=@{os=[Environment]::OSVersion.VersionString;ipv4=$NetworkTelemetry.ipv4;interactiveSession=$NetworkTelemetry.interactiveSession;sqliteHistory=$NetworkTelemetry.sqliteHistory}}
@@ -288,13 +311,22 @@ while($true){
       $message=New-Object IO.MemoryStream
       try{$message.Write($buffer,0,$result.Count);while(!$result.EndOfMessage){if($message.Length -ge 4MB){throw 'WebSocket message exceeds 4 MB'};$segment=[ArraySegment[byte]]::new($buffer);$result=$socket.ReceiveAsync($segment,[Threading.CancellationToken]::None).GetAwaiter().GetResult();if($result.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close){break};if($message.Length+$result.Count -gt 4MB){throw 'WebSocket message exceeds 4 MB'};$message.Write($buffer,0,$result.Count)};if($result.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close){break};$json=[Text.Encoding]::UTF8.GetString($message.ToArray())|ConvertFrom-Json}finally{$message.Dispose()}
       if($json.type -eq 'hello.ack'){
-        if($json.credential){$config.credentialProtected=Protect-Secret ([string]$json.credential);$config.enrollmentToken='';$config.enrollmentTokenProtected='';Save-Config $config}
+        $configChanged=$false
+        if($json.credential){$config.credentialProtected=Protect-Secret ([string]$json.credential);$config.enrollmentToken='';$config.enrollmentTokenProtected='';$configChanged=$true}
+        if($json.preferredHubUrl){
+          try{$preferred=Get-HubOrigin ([string]$json.preferredHubUrl);$preferredUri=[uri]$preferred}catch{$preferred=''}
+          if($preferred -and $preferredUri.Scheme -eq 'https' -and $preferred -ne (Get-HubOrigin ([string]$config.hubUrl))){
+            if(!$config.fallbackHubUrl){$config.fallbackHubUrl=Get-HubOrigin ([string]$config.hubUrl)}
+            $config.hubUrl=$preferred;$configChanged=$true
+          }
+        }
+        if($configChanged){Save-Config $config}
         $poll=[Math]::Max(30,[int]($json.historyPollSeconds));$script:NextHistoryPoll=if($json.historyEnabled -eq $false -or !(Find-Sqlite3)){[DateTime]::MaxValue}else{[DateTime]::UtcNow.AddSeconds($poll)}
         Write-AtomicUtf8 (Join-Path (Split-Path -Parent $ConfigPath) 'agent-health.json') (@{version=$AgentVersion;connectedAt=[DateTime]::UtcNow.ToString('o')}|ConvertTo-Json)
       }
       if($json.type -eq 'lab.command'){Invoke-AgentCommand $socket $json.command $config;if($script:ExitForUpdate){return}}
     }
-  }catch{$eventMessage=$_.Exception.Message;if($eventMessage -match 'certificate|trust relationship|SSL|TLS'){$eventMessage+=' Install the RoomGoblin Caddy root CA in Local Computer > Trusted Root Certification Authorities, or use a publicly trusted certificate.'};Write-EventLog -LogName Application -Source 'ClassroomHubAgent' -EntryType Error -EventId 1001 -Message $eventMessage -ErrorAction SilentlyContinue}
+  }catch{$eventMessage=$_.Exception.Message;if($eventMessage -match 'certificate|trust relationship|SSL|TLS'){$eventMessage+=' Verify the configured HTTPS certificate/trust path, or use the explicitly configured LAN fallback.'};Write-EventLog -LogName Application -Source 'ClassroomHubAgent' -EntryType Error -EventId 1001 -Message $eventMessage -ErrorAction SilentlyContinue}
   finally{if($script:Socket){try{$script:Socket.Dispose()}catch{};$script:Socket=$null}}
   Start-Sleep -Seconds 10
 }
