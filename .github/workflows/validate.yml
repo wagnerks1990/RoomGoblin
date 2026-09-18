@@ -158,11 +158,15 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
-      - name: Parse Windows lab-agent scripts
+      - name: Parse Windows PowerShell scripts
         shell: pwsh
         run: |
           $failed = $false
-          Get-ChildItem public/lab-agent/*.ps1 | ForEach-Object {
+          $scripts = @(
+            Get-ChildItem public/lab-agent/*.ps1
+            Get-Item deploy/test-veyon-windows-pilot.ps1
+          )
+          $scripts | ForEach-Object {
             $tokens = $null
             $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
@@ -171,7 +175,7 @@ jobs:
               $errors | ForEach-Object { Write-Error "$($_.Extent.File):$($_.Extent.StartLineNumber): $($_.Message)" }
             }
           }
-          if ($failed) { throw 'Windows lab-agent PowerShell parsing failed.' }
+          if ($failed) { throw 'Windows PowerShell parsing failed.' }
       - name: Build locked native Windows agent
         shell: pwsh
         run: .\windows-agent\scripts\Build-Native-Agent.ps1
@@ -244,7 +248,9 @@ jobs:
             libssl-dev libpam0g-dev libproc2-dev libldap2-dev libsasl2-dev libqca-qt6-dev libqca-qt6-plugins \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
       - name: Verify native pilot preparation
-        run: python3 -m unittest discover -s tools -p 'test_*veyon_pilot*.py'
+        run: |
+          python3 -m unittest discover -s tools -p 'test_*veyon_pilot*.py'
+          python3 -m unittest tools/test_verify_veyon_windows_pe.py
       - name: Build and verify complete community pilot
         run: bash tools/package-veyon-pilot.sh "$RUNNER_TEMP/roomgoblin-native-pilot"
       - name: Upload complete native pilot and corresponding source

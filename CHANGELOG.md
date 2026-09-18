@@ -47,6 +47,13 @@
 
 ### Community Veyon web pilots
 
+- Add a fail-closed complete Windows Veyon 4.11.2 packaging path for the reviewed
+  x86-64 MinGW/Qt environment, including PE architecture checks, required plugin
+  inventory, corresponding GPL source/provenance and SHA-256 manifests.
+- Add a one-disposable-endpoint PowerShell gate that requires verified pilot and
+  rollback installers, exports current configuration/evidence, validates runtime
+  plugin/feature discovery and automatically reapplies the known-good installer
+  and configuration when acceptance fails. Live Windows behavior remains pending.
 - Allow host-native Ubuntu 26.04/GCC 15 pilot builds to pass the QtConcurrent
   atomic optimizer false positive while retaining the warning and all other
   Veyon `-Werror` enforcement.

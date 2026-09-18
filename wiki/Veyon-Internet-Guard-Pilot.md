@@ -9,3 +9,7 @@ advertised. It blocks common Internet ports for at most 15 minutes while the
 plugin process remains alive; it is not complete tunnel prevention and a crash
 can leave named firewall rules. Use a disposable PC and keep the documented
 PowerShell cleanup command ready.
+
+Build and deploy it only through the complete
+[Veyon Windows endpoint pilot](Veyon-Windows-Pilot); individual DLL deployment
+is unsupported.

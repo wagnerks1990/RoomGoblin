@@ -59,7 +59,10 @@ neither is safe diagnostic output.
 Use two disposable Ubuntu 24.04 desktop VMs with snapshots and **no existing
 Veyon installation**. Do not install on the RoomGoblin appliance or mix these
 plugins with Ubuntu's 4.9.7 packages. Windows endpoint interoperability and
-Windows packaging remain unvalidated. Run from the extracted artifact directory:
+Windows packaging remain unvalidated. Separate fail-closed Windows packaging
+tooling now exists, but no Windows artifact or live behavior is accepted until
+the reviewed toolchain build and disposable-endpoint procedure in
+`VEYON-WINDOWS-PILOT.md` pass. Run from the extracted Linux artifact directory:
 
 ```bash
 sha256sum -c SHA256SUMS
@@ -107,6 +110,7 @@ checks their ClipboardWrite, BrowserControl, ClipboardRead, Terminal and
 InternetGuard feature inventories. See
 [browser clipboard sending](VEYON-WEB-CLIPBOARD.md) and
 [browser remote control](VEYON-BROWSER-CONTROL.md) for those acceptance requirements.
-See [Veyon live terminal](VEYON-LIVE-TERMINAL.md) for the separate Windows build,
-privilege and disposable-endpoint acceptance requirements.
+See [Veyon live terminal](VEYON-LIVE-TERMINAL.md) and
+[Veyon Windows endpoint pilot](VEYON-WINDOWS-PILOT.md) for the separate complete
+Windows build, privilege, rollback and disposable-endpoint acceptance requirements.
 The archive remains a disposable pilot overlay, not a managed production package.

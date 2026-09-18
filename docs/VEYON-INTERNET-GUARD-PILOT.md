@@ -31,22 +31,11 @@ below and a disposable endpoint or snapshot.
 
 ## Prepare a matching Windows build
 
-Build the complete pinned pilot on a disposable Windows build VM using the
-official Veyon 4.11.2 Windows dependencies and MinGW/Qt versions; do not copy an
-older Internet Guard DLL into 4.11.2. From the RoomGoblin checkout:
-
-```powershell
-py tools/prepare-veyon-pilot.py C:\Temp\roomgoblin-veyon-4.11.2
-cmake -S C:\Temp\roomgoblin-veyon-4.11.2 -B C:\Temp\roomgoblin-veyon-build `
-  -G Ninja -DCMAKE_BUILD_TYPE=Release -DWITH_TRANSLATIONS=OFF -DWITH_LTO=OFF
-cmake --build C:\Temp\roomgoblin-veyon-build `
-  --target internetguard webbridge remotefilebrowser --parallel 2
-```
-
-Those commands prove source compatibility; they do not create a supported
-installer. Package and deploy the complete matching pilot using Veyon's official
-Windows build/package process, preserving the corresponding source and GPL
-notices. Do not mix individual pilot DLLs into a different Veyon or Qt build.
+Use [Veyon Windows endpoint pilot](VEYON-WINDOWS-PILOT.md). The packaging script
+runs upstream's complete `windows-binaries` and NSIS installer targets in the
+reviewed x86-64 MinGW/Qt environment, verifies all community DLLs and x86-64 PE
+metadata, and ships corresponding source and GPL notices. It deliberately does
+not support building or copying only Internet Guard into another Veyon/Qt tree.
 
 ## Acceptance test
 
