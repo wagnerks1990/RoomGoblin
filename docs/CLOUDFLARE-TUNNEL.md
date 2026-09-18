@@ -85,6 +85,8 @@ The native Host Agent remains systemd-sandboxed with `ProtectSystem=full`. Autom
 
 Package installation is deliberately outside that sandbox. `install.sh` and the verified application-update runner install or verify `cloudflared` as root before the Host Agent is refreshed. The Host Agent then invokes `configure-cloudflare-tunnel.sh --skip-install`, so it never writes `/usr/share/keyrings`, APT sources, dpkg state, or `/usr/bin`.
 
+If an earlier failed attempt left `/etc/systemd/system/cloudflared-roomgoblin.service` masked to `/dev/null`, RoomGoblin removes only that exact stale mask and recreates a regular dedicated unit path. Existing valid RoomGoblin Cloudflare unit files are preserved across updates and are not blanked or replaced until explicit connector provisioning rewrites the dedicated unit.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```
