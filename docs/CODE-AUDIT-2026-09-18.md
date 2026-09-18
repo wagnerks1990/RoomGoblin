@@ -150,3 +150,16 @@ The custom/community Veyon plugin, browser-bridge, terminal, clipboard, Internet
 The live production inventory after alpha.84 showed approximately 21 GiB beneath `data/backups`, dominated by repeated 600-644 MiB `classroom-hub-operational-*.zip` files created during updates. Earlier update runners created those generic names while retention matched only `pre-*`, allowing large automatic archives to accumulate indefinitely.
 
 The corrected policy classifies future update archives as `auto-operational-*`, manual exports as `manual-operational-*`, treats historical `classroom-hub-operational-*` as legacy automatic archives, and automatically keeps 3 operational automatic backups, 1 `pre-*` backup, and 3 migration snapshots. Full Recovery bundles remain protected. Display/lab-agent credential last-used timestamps remain coalesced to reduce SQLite WAL churn, and diagnostic ZIP downloads use temporary storage rather than persistent backup storage.
+
+
+### Live retention follow-up
+
+Live deployment of the first retention build exposed two remaining execution
+mismatches. The outer updater was still running its intentionally stable
+pre-upgrade snapshot, so its final retention call used the previous keep=10
+policy during the same upgrade. In addition, Host Agent migration discovery
+still referenced the obsolete `/opt/classroom-control-hub-backups` path while
+the appliance was configured for `/opt/classroom-hub-backups`.
+
+The corrected design runs 3/1 ZIP retention from the converged installer itself
+and resolves migration/legacy host backup paths from `HOST_BACKUP_DIR`.
