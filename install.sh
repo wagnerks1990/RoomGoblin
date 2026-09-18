@@ -292,7 +292,7 @@ install -D -m 0755 "$TARGET/host-agent/app-update-runner.sh" /usr/local/libexec/
 cat >/etc/systemd/system/classroom-hub-update.service <<UNIT
 [Unit]
 Description=RoomGoblin Native Host Update Runner
-After=network-online.target docker.service classroom-control-hub-host-agent.service
+After=network-online.target docker.service classroom-hub-host-agent.service
 Wants=network-online.target
 ConditionPathExists=$TARGET/host-agent/update-runner.sh
 
@@ -313,7 +313,7 @@ UNIT
 cat >/etc/systemd/system/classroom-hub-app-update.service <<UNIT
 [Unit]
 Description=RoomGoblin Verified Application Update Runner
-After=network-online.target docker.service classroom-control-hub-host-agent.service
+After=network-online.target docker.service classroom-hub-host-agent.service
 Wants=network-online.target
 ConditionPathExists=$TARGET/host-agent/app-update-runner.sh
 
