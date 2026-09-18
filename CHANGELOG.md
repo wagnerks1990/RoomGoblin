@@ -14,6 +14,7 @@
 - Checkpoint Cloudflare tunnel/DNS ownership before local connector installation so a host-side failure can be retried without leaving a newly created tunnel unrecorded.
 - Move `cloudflared` package installation out of the systemd-sandboxed Host Agent and into the normal root install/update path; Host Agent provisioning now requires the already-installed binary with `--skip-install`.
 - Recover a stale `cloudflared-roomgoblin.service -> /dev/null` mask left by failed provisioning without touching generic Cloudflare services, and preserve an existing valid RoomGoblin Cloudflare unit instead of overwriting it during updates.
+- Explicitly restart `cloudflared-roomgoblin.service` after connector token reprovisioning so an already-running process cannot continue using a stale/deleted tunnel token and trigger Cloudflare Error 1033.
 
 ### Scheduled automation sequence rebuild
 
