@@ -16,13 +16,14 @@
     if(status.aptUpdateAvailable){
       return `${current}Package update available: <b>${esc(status.candidateVersion||"newer version")}</b>`;
     }
+    if(status.officialUpdateAvailable&&status.upstream?.version)return `${current}Official Veyon update available: <b>${esc(status.upstream.version)}</b> (configured apt source is behind).`;
     if(status.upstream?.ok&&status.upstream.version)return `${current}No apt update currently offered. Latest upstream release: <b>${esc(status.upstream.version)}</b>.`;
     return `${current}No Veyon package update is currently offered by the configured apt sources.`;
   }
   function detailsLine(status){
     const bits=[];
     if(status.upstream?.ok&&status.upstream.version)bits.push(`Upstream ${status.upstream.version}`);
-    if(status.newerUpstreamThanApt===true)bits.push("configured apt source is behind upstream");
+    if(status.newerUpstreamThanApt===true)bits.push(status.officialUpdateAvailable?"verified official Ubuntu package available":"configured apt source is behind upstream");
     if(status.hostUpdateJob?.running)bits.push("host update is running");
     if(status.rebootRequired)bits.push("reboot required");
     return bits.join(" · ");
@@ -45,16 +46,18 @@
     try{
       const status=await request("/api/v1/admin/veyon-update-status");
       version.innerHTML=versionLine(status);detail.textContent=detailsLine(status);
-      installButton.disabled=!status.aptUpdateAvailable||status.hostUpdateJob?.running===true;
-      panel.dataset.status=JSON.stringify({aptUpdateAvailable:!!status.aptUpdateAvailable,candidateVersion:status.candidateVersion||""});
+      installButton.disabled=!status.installAvailable||status.hostUpdateJob?.running===true;
+      panel.dataset.status=JSON.stringify({installAvailable:!!status.installAvailable,installSource:status.installSource||"",candidateVersion:status.candidateVersion||"",upstreamVersion:status.upstream?.version||""});
     }catch(error){version.textContent=`Veyon update check failed: ${error.message}`;installButton.disabled=true}
     finally{check.disabled=false}
   }
   async function install(){
     const panel=ensurePanel();if(!panel)return;
     const state=(()=>{try{return JSON.parse(panel.dataset.status||"{}")||{}}catch{return {}}})();
-    const suffix=state.candidateVersion?` ${state.candidateVersion}`:"";
-    if(!confirm(`Install the available Veyon${suffix} update using the guarded host package updater? Other pending Ubuntu/third-party package updates may also be installed.`))return;
+    const chosen=state.candidateVersion||state.upstreamVersion||"";
+    const suffix=chosen?` ${chosen}`:"";
+    const note=state.installSource==="official-release"?"The configured PPA is behind, so RoomGoblin will download the exact checksum-pinned official Ubuntu package from the Veyon GitHub release and install it through the guarded host updater.":"The guarded host updater may also install other pending Ubuntu/third-party package updates.";
+    if(!confirm(`Install the available Veyon${suffix} update? ${note}`))return;
     const button=panel.querySelector("#rgVeyonInstall"),version=panel.querySelector("#rgVeyonVersion");button.disabled=true;version.textContent="Starting guarded host update…";
     try{await request("/api/v1/admin/veyon-update",{method:"POST",body:JSON.stringify({confirm:"UPDATE_VEYON_AND_HOST"})});version.textContent="Veyon/host update started. Use Infrastructure & Recovery → Appliance Health for progress.";setTimeout(refresh,3000)}
     catch(error){version.textContent=`Veyon update could not start: ${error.message}`;button.disabled=false}
