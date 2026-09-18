@@ -115,7 +115,7 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('#startBrowserControl').click()
         page.locator('#controlCanvas').wait_for(state='visible')
         page.wait_for_function("document.querySelector('#controlCanvas').dataset.ready === 'true'")
-        page.locator('#controlCanvas').click(position={'x': 10, 'y': 10})
+        page.locator('#controlCanvas').click()
         page.locator('#controlCanvas').press('a')
         page.once('dialog', lambda dialog: dialog.accept())
         page.locator('#readRemoteClipboard').click()

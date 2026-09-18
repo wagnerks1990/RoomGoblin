@@ -202,7 +202,7 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonServerInterface& server
 	// assigning ownership, and clear generations before a replacement caller.
 	if(!messageContext.ioDevice()) return false;
 	if(m_callerAssigned && !m_masterContext.ioDevice()) {
-		m_requestContexts.clear(); m_transferContexts.clear(); m_masterContext={}; m_callerAssigned=false;
+		m_requestContexts.clear(); m_transferContexts.clear(); m_masterContext=MessageContext{}; m_callerAssigned=false;
 	}
 	if(m_callerAssigned && m_masterContext.ioDevice()!=messageContext.ioDevice()) return false;
 	m_callerAssigned=true;
@@ -218,7 +218,7 @@ bool RemoteFileBrowserPlugin::handleFeatureMessage( VeyonServerInterface& server
 		server.featureWorkerManager().stopWorker(m_feature.uid());
 		m_requestContexts.clear();
 		m_transferContexts.clear();
-		m_masterContext={};
+		m_masterContext=MessageContext{};
 		m_callerAssigned=false;
 		return true;
 	}
