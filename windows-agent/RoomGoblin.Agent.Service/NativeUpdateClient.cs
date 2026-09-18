@@ -39,18 +39,46 @@ internal sealed class NativeUpdateClient
             MaxResponseContentBufferSize = 1024 * 1024
         };
 
-        var origin = new Uri(config.HubUrl).GetLeftPart(
-            UriPartial.Authority);
+        var origins = new[] { config.HubUrl, config.FallbackHubUrl }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => new Uri(value.TrimEnd('/')).GetLeftPart(UriPartial.Authority))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
-        var manifestUri =
-            new Uri(origin + "/lab-agent/native/manifest.json");
+        NativeManifest? manifest = null;
+        string? origin = null;
+        Exception? lastConnectionError = null;
+        foreach (var candidate in origins)
+        {
+            try
+            {
+                manifest = await http.GetFromJsonAsync<NativeManifest>(
+                    new Uri(candidate + "/lab-agent/native/manifest.json"),
+                    cancellationToken: ct);
+                if (manifest is null)
+                    throw new InvalidDataException(
+                        "Hub returned an empty native agent manifest.");
+                origin = candidate;
+                break;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (HttpRequestException ex)
+            {
+                lastConnectionError = ex;
+            }
+            catch (TaskCanceledException ex)
+            {
+                lastConnectionError = ex;
+            }
+        }
 
-        var manifest =
-            await http.GetFromJsonAsync<NativeManifest>(
-                manifestUri,
-                cancellationToken: ct)
-            ?? throw new InvalidDataException(
-                "Hub returned an empty native agent manifest.");
+        if (manifest is null || origin is null)
+            throw new HttpRequestException(
+                "Could not retrieve the native agent manifest from any configured Hub origin.",
+                lastConnectionError);
 
         if (!manifest.Ok ||
             string.IsNullOrWhiteSpace(manifest.Version) ||

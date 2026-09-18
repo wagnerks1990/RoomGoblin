@@ -119,6 +119,20 @@ For the simplest Free-plan certificate coverage, prefer a first-level hostname s
 Zone settings are zone-wide. On a dedicated lab domain this is usually desirable, but review the impact before enabling them on a shared production zone.
 
 ### Deliberately not automatic
+### Protected auxiliary HTTPS resources
+
+RoomGoblin can optionally publish **Music Assistant** through the same managed tunnel on a separate hostname. The public hostname routes to the host-local Music Assistant UI/API on port 8095; RoomGoblin's own backend continues to use its local Music Assistant URL and audio streaming/Sendspin remains on the LAN.
+
+Music Assistant publication is fail-closed:
+
+- the hostname must be inside the configured Cloudflare zone and different from the main RoomGoblin hostname;
+- an explicit Cloudflare Access allowed email domain is mandatory even when the main RoomGoblin hostname is not protected by Access;
+- RoomGoblin creates/reuses only the exact Music Assistant hostname, DNS record, Access app and Allow policy it records;
+- disabling publication removes only resources recorded as RoomGoblin-owned and removes the Music Assistant ingress rule;
+- Veyon WebAPI, maintenance, Host Agent, media plane, MQTT, ESPHome, ADB, Android Agent v2 and arbitrary localhost ports are never added as auxiliary ingress rules.
+
+Music Assistant's own **External URL** should be set to the provisioned HTTPS hostname when using reverse-proxy access. Keep the internal/backend URL local. The raw LAN 8095 UI remains a fallback on the trusted network.
+
 
 - **Cloudflare Access** — optional because Access applications are deny-by-default. RoomGoblin requires an allowed email domain before enabling it.
 - **Bot Fight Mode** — not automatically enabled because challenges can interfere with APIs, WebSockets, agents, or managed clients.

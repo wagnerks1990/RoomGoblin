@@ -31,7 +31,14 @@ function normalizeSettings(input={},prior={}){
   if(!["token","global"].includes(authMode))throw failure("Cloudflare authentication mode must be token or global");
   const accessEnabled=input.accessEnabled===undefined?prior.accessEnabled===true:input.accessEnabled===true;
   const accessEmailDomain=input.accessEmailDomain===undefined?cleanText(prior.accessEmailDomain):emailDomain(input.accessEmailDomain);
+  const musicAssistantPublicEnabled=input.musicAssistantPublicEnabled===undefined?prior.musicAssistantPublicEnabled===true:input.musicAssistantPublicEnabled===true;
+  let musicAssistantHostname=input.musicAssistantHostname===undefined?cleanText(prior.musicAssistantHostname):cleanText(input.musicAssistantHostname);
+  if(musicAssistantPublicEnabled&&!musicAssistantHostname&&zone)musicAssistantHostname=`music.${zone}`;
+  if(musicAssistantHostname)musicAssistantHostname=dnsName(musicAssistantHostname,"Music Assistant hostname");
+  if(zone&&musicAssistantHostname&&musicAssistantHostname!==zone&&!musicAssistantHostname.endsWith(`.${zone}`))throw failure("Music Assistant hostname must be inside the selected zone");
+  if(musicAssistantHostname&&musicAssistantHostname===hostname)throw failure("Music Assistant hostname must be different from the RoomGoblin hostname");
   if(accessEnabled&&!accessEmailDomain)throw failure("Cloudflare Access requires an allowed email domain before it can be enabled");
+  if(musicAssistantPublicEnabled&&!accessEmailDomain)throw failure("Publishing Music Assistant requires an Access allowed email domain");
   return {
     enabled:input.enabled===undefined?prior.enabled!==false:input.enabled!==false,
     authMode,
@@ -43,6 +50,7 @@ function normalizeSettings(input={},prior={}){
     http3:input.http3===undefined?prior.http3!==false:input.http3!==false,
     brotli:input.brotli===undefined?prior.brotli!==false:input.brotli!==false,
     accessEnabled,accessEmailDomain,
+    musicAssistantPublicEnabled,musicAssistantHostname,
     replaceConflictingDns:input.replaceConflictingDns===undefined?prior.replaceConflictingDns===true:input.replaceConflictingDns===true,
     adoptExistingTunnel:input.adoptExistingTunnel===undefined?prior.adoptExistingTunnel===true:input.adoptExistingTunnel===true,
     ids:{...(prior.ids||{})},
@@ -171,17 +179,21 @@ class CloudflareManager{
       }
     }
     if(!tunnel?.id)throw failure("Cloudflare did not return a tunnel ID",502);
-    await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress:[
-      {hostname:settings.hostname,service:this.originUrl},
-      {service:"http_status:404"}
-    ]}});
     return {tunnel,created,adopted};
   }
-  async ensureDns(ctx,settings,tunnel){
-    const name=settings.hostname,target=`${tunnel.id}.cfargotunnel.com`;
+  async configureTunnel(ctx,settings,tunnel){
+    const ingress=[];
+    if(settings.musicAssistantPublicEnabled)ingress.push({hostname:settings.musicAssistantHostname,service:"http://127.0.0.1:8095"});
+    ingress.push({hostname:settings.hostname,service:this.originUrl},{service:"http_status:404"});
+    await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress}});
+    return ingress;
+  }
+  async ensureDns(ctx,settings,tunnel,name=settings.hostname,comment="Managed by RoomGoblin Cloudflare provisioning"){
+    name=dnsName(name,"Managed hostname");
+    const target=`${tunnel.id}.cfargotunnel.com`;
     const rows=await ctx.client.get(`/zones/${ctx.zone.id}/dns_records?name=${encodeURIComponent(name)}&per_page=100`);
     const existing=(Array.isArray(rows)?rows:[]).find(x=>String(x.name).toLowerCase()===name);
-    const desired={type:"CNAME",name,content:target,proxied:true,ttl:1,comment:"Managed by RoomGoblin Cloudflare provisioning"};
+    const desired={type:"CNAME",name,content:target,proxied:true,ttl:1,comment};
     if(existing){
       const same=existing.type==="CNAME"&&String(existing.content).toLowerCase()===target.toLowerCase();
       if(!same&&!settings.replaceConflictingDns)throw failure(`DNS ${name} already exists and does not point to the RoomGoblin tunnel. Enable explicit conflicting-record replacement to take ownership.`,409);
@@ -194,21 +206,43 @@ class CloudflareManager{
     try{return {ok:true,result:await ctx.client.patch(`/zones/${ctx.zone.id}/settings/${id}`,{value})}}
     catch(error){return {ok:false,error:error.message}}
   }
-  async ensureAccess(ctx,settings){
-    if(!settings.accessEnabled)return {enabled:false};
+  async ensureAccessForHostname(ctx,hostname,emailDomainValue,label="RoomGoblin"){
+    hostname=dnsName(hostname,"Access hostname");
+    const allowed=emailDomain(emailDomainValue);
+    if(!allowed)throw failure(`${label} public access requires an allowed email domain`,409);
     const apps=await ctx.client.get(`/accounts/${ctx.accountId}/access/apps?per_page=100`);
-    let app=(Array.isArray(apps)?apps:[]).find(x=>String(x.domain||"").toLowerCase()===settings.hostname),created=false;
-    if(!app){app=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps`,{name:`RoomGoblin — ${settings.hostname}`,domain:settings.hostname,type:"self_hosted",session_duration:"12h",app_launcher_visible:false});created=true}
+    let app=(Array.isArray(apps)?apps:[]).find(x=>String(x.domain||"").toLowerCase()===hostname),created=false;
+    if(!app){app=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps`,{name:`${label} - ${hostname}`,domain:hostname,type:"self_hosted",session_duration:"12h",app_launcher_visible:false});created=true}
     const policies=await ctx.client.get(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies?per_page=100`);
-    const pname=`RoomGoblin allow @${settings.accessEmailDomain}`;
+    const pname=`${label} allow @${allowed}`;
     let policy=(Array.isArray(policies)?policies:[]).find(x=>x.name===pname);
-    if(!policy)policy=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies`,{name:pname,decision:"allow",precedence:1,include:[{email_domain:{domain:settings.accessEmailDomain}}]});
+    if(!policy)policy=await ctx.client.post(`/accounts/${ctx.accountId}/access/apps/${app.id}/policies`,{name:pname,decision:"allow",precedence:1,include:[{email_domain:{domain:allowed}}]});
     return {enabled:true,app,policy,created};
   }
+  async ensureAccess(ctx,settings){
+    if(!settings.accessEnabled)return {enabled:false};
+    return this.ensureAccessForHostname(ctx,settings.hostname,settings.accessEmailDomain,"RoomGoblin");
+  }
   async provision(input={}){
+    const previous=this.saved();
     let settings=this.save(input);
     settings=this.saved();
     const ctx=await this.resolve(settings);
+    if(previous.musicAssistantPublicEnabled&&!settings.musicAssistantPublicEnabled){
+      if(previous.ownership?.musicAssistantDns===true&&previous.ids?.musicAssistantDnsRecordId){
+        try{await ctx.client.delete(`/zones/${ctx.zone.id}/dns_records/${previous.ids.musicAssistantDnsRecordId}`)}catch(error){if(error.status!==404)throw error}
+      }
+      if(previous.ownership?.musicAssistantAccessApp===true&&previous.ids?.musicAssistantAccessAppId){
+        try{await ctx.client.delete(`/accounts/${ctx.accountId}/access/apps/${previous.ids.musicAssistantAccessAppId}`)}catch(error){if(error.status!==404)throw error}
+      }
+      const current=this.saved();
+      current.ids={...(current.ids||{}),musicAssistantDnsRecordId:"",musicAssistantAccessAppId:"",musicAssistantAccessPolicyId:""};
+      current.ownership={...(current.ownership||{}),musicAssistantDns:false,musicAssistantAccessApp:false};
+      this.storage.setPreference(PREF,current);settings=current;
+      const ma=this.storage.getPreference("musicassistant.config",{})||{};
+      const previousUrl=previous.musicAssistantHostname?`https://${previous.musicAssistantHostname}/`:"";
+      if(previousUrl&&ma.browserUrl===previousUrl)this.storage.setPreference("musicassistant.config",{...ma,browserUrl:""});
+    }
     const checkpoint=(ids={},ownership={})=>{
       const current=this.saved(),persisted={...current,
         ids:{...(current.ids||{}),accountId:ctx.accountId,zoneId:ctx.zone.id,...ids},
@@ -221,10 +255,28 @@ class CloudflareManager{
     checkpoint({tunnelId:tunnelResult.tunnel.id},{
       tunnel:tunnelResult.created===true?true:(tunnelResult.adopted===true?false:settings.ownership?.tunnel===true)
     });
+
+    let musicAssistantAccess={enabled:false},musicAssistantDns=null;
+    if(settings.musicAssistantPublicEnabled){
+      musicAssistantAccess=await this.ensureAccessForHostname(ctx,settings.musicAssistantHostname,settings.accessEmailDomain,"RoomGoblin Music Assistant");
+      checkpoint({musicAssistantAccessAppId:musicAssistantAccess.app?.id||"",musicAssistantAccessPolicyId:musicAssistantAccess.policy?.id||""},{
+        musicAssistantAccessApp:musicAssistantAccess.created===true?true:(settings.ownership?.musicAssistantAccessApp===true)
+      });
+    }
+
+    const ingress=await this.configureTunnel(ctx,settings,tunnelResult.tunnel);
+
     const dnsResult=await this.ensureDns(ctx,settings,tunnelResult.tunnel);
     checkpoint({dnsRecordId:dnsResult.record?.id||""},{
       dns:dnsResult.created===true?true:(settings.ownership?.dns===true)
     });
+    if(settings.musicAssistantPublicEnabled){
+      musicAssistantDns=await this.ensureDns(ctx,settings,tunnelResult.tunnel,settings.musicAssistantHostname,"Managed by RoomGoblin: Music Assistant HTTPS");
+      checkpoint({musicAssistantDnsRecordId:musicAssistantDns.record?.id||""},{
+        musicAssistantDns:musicAssistantDns.created===true?true:(settings.ownership?.musicAssistantDns===true)
+      });
+    }
+
     const edge={
       alwaysUseHttps:await this.setZoneSetting(ctx,"always_use_https",settings.alwaysUseHttps?"on":"off"),
       automaticHttpsRewrites:await this.setZoneSetting(ctx,"automatic_https_rewrites",settings.automaticHttpsRewrites?"on":"off"),
@@ -236,6 +288,14 @@ class CloudflareManager{
     const persisted=checkpoint({accessAppId:access.app?.id||"",accessPolicyId:access.policy?.id||""},{
       accessApp:access.created===true?true:(settings.ownership?.accessApp===true)
     });
+
+    let musicAssistantPublicUrl=null;
+    if(settings.musicAssistantPublicEnabled){
+      musicAssistantPublicUrl=`https://${settings.musicAssistantHostname}/`;
+      const ma=this.storage.getPreference("musicassistant.config",{})||{};
+      this.storage.setPreference("musicassistant.config",{...ma,browserUrl:musicAssistantPublicUrl});
+    }
+
     let connector={installed:false,restartRequired:false};
     if(this.connectorInstaller){
       const token=await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnelResult.tunnel.id}/token`);
@@ -243,18 +303,24 @@ class CloudflareManager{
       connector=await this.connectorInstaller(token);
     }
     return {ok:true,settings:publicSettings(persisted,this.storage),zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},
-      tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted},
+      tunnel:{id:tunnelResult.tunnel.id,name:tunnelResult.tunnel.name,created:tunnelResult.created,adopted:tunnelResult.adopted,ingress},
       dns:{id:dnsResult.record?.id,name:settings.hostname,target:`${tunnelResult.tunnel.id}.cfargotunnel.com`,created:dnsResult.created,adopted:dnsResult.adopted},
       edge,warnings:edgeWarnings,access:{enabled:access.enabled===true,appId:access.app?.id||null,policyId:access.policy?.id||null},connector,
+      resources:{musicAssistant:{enabled:settings.musicAssistantPublicEnabled===true,hostname:settings.musicAssistantHostname||null,publicUrl:musicAssistantPublicUrl,dnsId:musicAssistantDns?.record?.id||null,accessAppId:musicAssistantAccess.app?.id||null,accessPolicyId:musicAssistantAccess.policy?.id||null}},
       publicUrl:`https://${settings.hostname}/controller/`};
   }
   async liveStatus(){
-    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null,publicUrl:settings.hostname?`https://${settings.hostname}/controller/`:null};
+    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null,publicUrl:settings.hostname?`https://${settings.hostname}/controller/`:null,resources:{musicAssistant:{enabled:settings.musicAssistantPublicEnabled===true,hostname:settings.musicAssistantHostname||null,publicUrl:settings.musicAssistantPublicEnabled&&settings.musicAssistantHostname?`https://${settings.musicAssistantHostname}/`:null,dns:null}}};
     if(!result.configured)return result;
     try{
       const ctx=await this.resolve(settings),tunnel=settings.ids?.tunnelId?await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${settings.ids.tunnelId}`):await this.findTunnel(ctx.client,ctx.accountId,settings.tunnelName);
       const dnsRows=await ctx.client.get(`/zones/${ctx.zone.id}/dns_records?name=${encodeURIComponent(settings.hostname)}&per_page=100`);
       const dns=(Array.isArray(dnsRows)?dnsRows:[]).find(x=>String(x.name).toLowerCase()===settings.hostname)||null;
+      if(settings.musicAssistantPublicEnabled&&settings.musicAssistantHostname){
+        const rows=await ctx.client.get(`/zones/${ctx.zone.id}/dns_records?name=${encodeURIComponent(settings.musicAssistantHostname)}&per_page=100`);
+        const resourceDns=(Array.isArray(rows)?rows:[]).find(x=>String(x.name).toLowerCase()===settings.musicAssistantHostname)||null;
+        result.resources.musicAssistant.dns=resourceDns?{id:resourceDns.id,type:resourceDns.type,name:resourceDns.name,content:resourceDns.content,proxied:resourceDns.proxied}:null;
+      }
       result.cloudflare={zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},tunnel:tunnel?{id:tunnel.id,name:tunnel.name,status:tunnel.status||null}:null,dns:dns?{id:dns.id,type:dns.type,name:dns.name,content:dns.content,proxied:dns.proxied}:null};
     }catch(error){result.ok=false;result.error=error.message}
     return result;

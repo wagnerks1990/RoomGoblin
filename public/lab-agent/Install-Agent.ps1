@@ -1,10 +1,12 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][uri]$HubUrl,
+  [uri]$FallbackHubUrl,
   [Parameter(Mandatory)][ValidatePattern('^[a-zA-Z0-9._-]{1,120}$')][string]$AgentId,
   [Parameter(Mandatory)][string]$EnrollmentToken,
   [string]$TrustedPublisherThumbprint='',
-  [switch]$AllowHttp
+  [switch]$AllowHttp,
+  [switch]$AllowHttpFallback
 )
 $ErrorActionPreference='Stop'
 function Test-TrustedPublisher($Signature,[string]$Expected){
@@ -17,12 +19,17 @@ function Test-TrustedPublisher($Signature,[string]$Expected){
 }
 if(!$HubUrl.IsAbsoluteUri -or !$HubUrl.Host -or $HubUrl.UserInfo -or $HubUrl.Scheme -notin @('http','https')){throw 'HubUrl must be an absolute http:// or https:// URL without embedded credentials.'}
 if($HubUrl.Scheme -eq 'http' -and !$AllowHttp){throw 'HTTP enrollment requires explicit -AllowHttp acknowledgement and must be limited to an isolated trusted classroom network.'}
+if($FallbackHubUrl){
+  if(!$FallbackHubUrl.IsAbsoluteUri -or !$FallbackHubUrl.Host -or $FallbackHubUrl.UserInfo -or $FallbackHubUrl.Scheme -notin @('http','https')){throw 'FallbackHubUrl must be an absolute http:// or https:// URL without embedded credentials.'}
+  if($FallbackHubUrl.Scheme -eq 'http' -and !$AllowHttpFallback){throw 'HTTP fallback requires explicit -AllowHttpFallback acknowledgement and must be limited to an isolated trusted classroom network.'}
+}
 if(!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Run this installer in an elevated PowerShell window.'}
 $root=Join-Path $env:ProgramData 'ClassroomControlHub';New-Item $root -ItemType Directory -Force|Out-Null
 & icacls.exe $root /inheritance:r /grant:r 'SYSTEM:(OI)(CI)(F)' 'Administrators:(OI)(CI)(F)' | Out-Null
 if($LASTEXITCODE -ne 0){throw 'Could not secure the RoomGoblin agent directory.'}
 $agent=Join-Path $root 'ClassroomHubAgent.ps1';$config=Join-Path $root 'lab-agent.json'
 $origin=$HubUrl.GetLeftPart([UriPartial]::Authority)
+$fallbackOrigin=if($FallbackHubUrl){$FallbackHubUrl.GetLeftPart([UriPartial]::Authority)}else{''}
 try{$manifest=Invoke-RestMethod ($origin+'/api/v1/lab-agent/manifest') -TimeoutSec 20}
 catch{
   $detail=$_.Exception.Message
@@ -44,7 +51,7 @@ $tokenBytes=[Text.Encoding]::UTF8.GetBytes($EnrollmentToken)
 $protectedToken=[Convert]::ToBase64String([Security.Cryptography.ProtectedData]::Protect($tokenBytes,$null,[Security.Cryptography.DataProtectionScope]::LocalMachine))
 $configTemp=Join-Path $root ('lab-agent.'+[Guid]::NewGuid().ToString('N')+'.tmp')
 try{
-  $json=@{hubUrl=$origin;agentId=$AgentId;enrollmentToken='';enrollmentTokenProtected=$protectedToken;credentialProtected='';trustedPublisherThumbprint=$TrustedPublisherThumbprint}|ConvertTo-Json
+  $json=@{hubUrl=$origin;fallbackHubUrl=$fallbackOrigin;agentId=$AgentId;enrollmentToken='';enrollmentTokenProtected=$protectedToken;credentialProtected='';trustedPublisherThumbprint=$TrustedPublisherThumbprint}|ConvertTo-Json
   [IO.File]::WriteAllText($configTemp,$json,[Text.UTF8Encoding]::new($false))
   & icacls.exe $configTemp /inheritance:r /grant:r 'SYSTEM:(F)' 'Administrators:(F)' | Out-Null
   if($LASTEXITCODE -ne 0){throw 'Could not secure the staged agent configuration.'}

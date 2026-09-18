@@ -16,6 +16,7 @@ internal sealed partial class AgentWorker
         AgentConfig config,
         CancellationToken ct)
     {
+        var changed = false;
         if (root.TryGetProperty(
                 "credential",
                 out var credentialNode))
@@ -27,11 +28,38 @@ internal sealed partial class AgentWorker
                     MachineDpapi.ProtectString(credential);
                 config.EnrollmentToken = "";
                 config.EnrollmentTokenProtected = "";
-                await config.SaveAtomicAsync(
-                    _configPath,
-                    ct);
+                changed = true;
             }
         }
+
+        var preferredHubUrl = GetString(root, "preferredHubUrl");
+        if (TryNormalizePreferredHttpsOrigin(
+                preferredHubUrl,
+                out var preferredOrigin) &&
+            !string.Equals(
+                config.HubUrl.TrimEnd('/'),
+                preferredOrigin,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(config.FallbackHubUrl) &&
+                TryNormalizeHttpOrigin(config.HubUrl, out var currentOrigin) &&
+                !string.Equals(
+                    currentOrigin,
+                    preferredOrigin,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                config.FallbackHubUrl = currentOrigin;
+            }
+
+            config.HubUrl = preferredOrigin;
+            changed = true;
+            _logger.LogInformation(
+                "RoomGoblin agent promoted authenticated HTTPS Hub origin {Hub}; existing origin remains fallback.",
+                preferredOrigin);
+        }
+
+        if (changed)
+            await config.SaveAtomicAsync(_configPath, ct);
 
         var health = new HealthFile(
             Version: AgentVersion,
@@ -141,6 +169,79 @@ internal sealed partial class AgentWorker
             SqliteHistory: true);
     }
 
+    private async Task<(ClientWebSocket Socket, Uri Uri)> ConnectToHubAsync(
+        AgentConfig config,
+        CancellationToken ct)
+    {
+        Exception? lastError = null;
+        foreach (var hub in HubCandidates(config))
+        {
+            var uri = BuildWebSocketUri(hub);
+            var socket = new ClientWebSocket();
+            socket.Options.KeepAliveInterval = HeartbeatInterval;
+            try
+            {
+                _logger.LogInformation(
+                    "Connecting RoomGoblin native agent to {Hub}.",
+                    uri.GetLeftPart(UriPartial.Authority));
+                await socket.ConnectAsync(uri, ct);
+                return (socket, uri);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                socket.Dispose();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                socket.Dispose();
+                lastError = ex;
+                _logger.LogWarning(
+                    ex,
+                    "RoomGoblin agent could not connect to {Hub}; trying the next configured origin.",
+                    uri.GetLeftPart(UriPartial.Authority));
+            }
+        }
+
+        throw new InvalidOperationException(
+            "RoomGoblin agent could not connect to any configured Hub origin.",
+            lastError);
+    }
+
+    private static IReadOnlyList<string> HubCandidates(AgentConfig config)
+    {
+        var values = new[] { config.HubUrl, config.FallbackHubUrl };
+        return values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim().TrimEnd('/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool TryNormalizeHttpOrigin(string value, out string origin)
+    {
+        origin = "";
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrWhiteSpace(uri.UserInfo) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return false;
+        origin = uri.GetLeftPart(UriPartial.Authority);
+        return true;
+    }
+
+    private static bool TryNormalizePreferredHttpsOrigin(string value, out string origin)
+    {
+        origin = "";
+        if (!TryNormalizeHttpOrigin(value, out var normalized))
+            return false;
+        var uri = new Uri(normalized, UriKind.Absolute);
+        if (uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+        origin = normalized;
+        return true;
+    }
+
     private static Uri BuildWebSocketUri(
         string hubUrl)
     {
@@ -172,15 +273,17 @@ internal sealed partial class AgentWorker
             throw new InvalidDataException(
                 "RoomGoblin agent configuration is missing agentId.");
 
-        if (!Uri.TryCreate(
-                config.HubUrl,
-                UriKind.Absolute,
-                out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp &&
-             uri.Scheme != Uri.UriSchemeHttps))
+        if (!TryNormalizeHttpOrigin(config.HubUrl, out _))
         {
             throw new InvalidDataException(
                 "RoomGoblin agent configuration has an invalid hubUrl.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.FallbackHubUrl) &&
+            !TryNormalizeHttpOrigin(config.FallbackHubUrl, out _))
+        {
+            throw new InvalidDataException(
+                "RoomGoblin agent configuration has an invalid fallbackHubUrl.");
         }
 
         if (string.IsNullOrWhiteSpace(

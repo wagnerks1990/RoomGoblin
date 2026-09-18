@@ -188,10 +188,11 @@ exit 1
 }
 
 async function saveMusicAssistantSettings(settings={}){
-  const url=cleanUrl(settings.url,MUSIC_ASSISTANT_URL),body={url,tvBridgeEnabled:true};
+  const url=cleanUrl(settings.url,MUSIC_ASSISTANT_URL),browserRaw=settings.browserUrl===undefined?undefined:String(settings.browserUrl||"").trim(),browserUrl=browserRaw===undefined?undefined:(browserRaw?cleanUrl(browserRaw,""):"");
+  const body={url,tvBridgeEnabled:true};if(browserUrl!==undefined)body.browserUrl=browserUrl;
   const suppliedToken=String(settings.token||"").trim();if(suppliedToken&&suppliedToken!=="••••••••")body.token=suppliedToken;
   await mainAppJson("PUT","/api/v1/internal/maintenance/music-assistant/config",body,20000);
-  const managed={...settings,url};delete managed.token;await mainAppPut("musicassistant",managed);
+  const managed={...settings,url};if(browserUrl!==undefined)managed.browserUrl=browserUrl;delete managed.token;await mainAppPut("musicassistant",managed);
   const status=await musicStatus();
   if(!status.configured)throw Error("Music Assistant access token is required. Open Music Assistant, create a long-lived token under Settings → Profile, then save it here.");
   if(!status.online)throw Error(`Music Assistant token was saved but API authentication failed: ${status.error||"Music Assistant did not accept the token"}`);
@@ -250,7 +251,7 @@ async function deployAddon(id,settings={},recreate=false){
   const result=await hostAgentRequest(args,180000);
   markRoomGoblinManaged(addon.dataRoot);
   if(id==="musicassistant"){
-    await mainAppPut("musicassistant",{url:cleanUrl(settings.url,MUSIC_ASSISTANT_URL),logLevel:String(settings.logLevel||"info")});
+    await mainAppPut("musicassistant",{url:cleanUrl(settings.url,MUSIC_ASSISTANT_URL),browserUrl:settings.browserUrl?cleanUrl(settings.browserUrl,""):"",logLevel:String(settings.logLevel||"info")});
     const suppliedToken=String(settings.token||"").trim();
     if(suppliedToken){await new Promise(r=>setTimeout(r,2500));await saveMusicAssistantSettings(settings);return {ok:true,id,managed:true,container:addon.container,image:addon.image,output:result.stdout||"",message:"Music Assistant deployed and authenticated successfully."}}
     return {ok:true,id,managed:true,container:addon.container,image:addon.image,setupRequired:true,output:result.stdout||"",message:"Music Assistant server deployed. Open Music Assistant, complete its first-run setup, create a long-lived token under Settings → Profile, then return here and save the token. RoomGoblin will remain setup-required until authentication succeeds."};
@@ -275,7 +276,7 @@ async function augmentModules(body){
   }
   const [native,ma,managed]=await Promise.all([nativeVeyon(),musicStatus(),mainAppManaged()]);
   const maCurrent=byId.get("musicassistant");
-  if(maCurrent&&maCurrent.state!=="not-installed")Object.assign(maCurrent,{configured:ma.configured===true&&ma.online===true,setupRequired:ma.configured!==true||ma.online!==true,health:ma.online?"authenticated":"authentication-required",uiUrl:ma.url||MUSIC_ASSISTANT_URL,configurationMessage:ma.online?`Music Assistant authenticated; ${ma.players?.length||0} player(s) discovered.`:(ma.configured?`Authentication failed: ${ma.error||"token rejected"}`:"Long-lived access token required before this integration is usable.")});
+  if(maCurrent&&maCurrent.state!=="not-installed")Object.assign(maCurrent,{configured:ma.configured===true&&ma.online===true,setupRequired:ma.configured!==true||ma.online!==true,health:ma.online?"authenticated":"authentication-required",uiUrl:ma.browserUrl||ma.url||MUSIC_ASSISTANT_URL,browserUrl:ma.browserUrl||"",configurationMessage:ma.online?`Music Assistant authenticated; ${ma.players?.length||0} player(s) discovered.`:(ma.configured?`Authentication failed: ${ma.error||"token rejected"}`:"Long-lived access token required before this integration is usable.")});
   if(native.installed){
     const current=byId.get("veyonwebapi"),stored=managed.integrations?.modules?.veyonwebapi||{},probe=native.running?await veyonComputers():{ok:false,summary:{}},summary=probe.summary||{};
     Object.assign(current,{state:native.running?"running":"installed",health:native.running?(probe.ok?(summary.authenticated>0?"ready":"reachable-needs-authentication"):(native.webapi?.active||"installed")):"stopped",configured:true,management:"host-managed",hostManaged:true,nativeService:"veyon-webapi.service",companionService:native.service?.name||null,networkMode:"native-host",networkMigrationRequired:false,endpoint:stored.url||NATIVE_VEYON_URL,externalOnly:false,canDeploy:true,canRemove:false,image:null,veyonSummary:summary,configurationMessage:native.running?undefined:"Native Veyon WebAPI is installed but stopped. Start veyon-webapi.service (or veyon.service when the RoomGoblin dependency drop-in is installed).",description:"Native Veyon WebAPI service discovered on the appliance host. Configure Veyon authentication, computer discovery and optional endpoint deployment credentials here; the host service itself is not recreated or removed."});
