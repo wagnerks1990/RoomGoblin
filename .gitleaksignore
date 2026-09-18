@@ -1,6 +1,6 @@
 # Exact false-positive prose findings introduced by the Veyon OEM-only documentation.
 # Keep general secret scanning enabled; these are not credentials.
-8d996a011feb0696e8946d9b5e6e3521913c92b4:AGENTS.md:generic-api-key:445
-8d996a011feb0696e8946d9b5e6e3521913c92b4:docs/AI-CONTEXT.md:generic-api-key:451
-a4cf932224851868846b8689bc814fd62e86a6bd:wiki/Veyon-OEM-Policy.md:generic-api-key:7
-3939e17d70a22f361ace6215be7d0c7c7ee750e1:docs/VEYON-OEM-POLICY.md:generic-api-key:7
+2b2c49c1397c453ef56222b827f77ece551a2fa4:AGENTS.md:generic-api-key:445
+2b2c49c1397c453ef56222b827f77ece551a2fa4:docs/AI-CONTEXT.md:generic-api-key:451
+2b2c49c1397c453ef56222b827f77ece551a2fa4:wiki/Veyon-OEM-Policy.md:generic-api-key:7
+2b2c49c1397c453ef56222b827f77ece551a2fa4:docs/VEYON-OEM-POLICY.md:generic-api-key:7
