@@ -35,6 +35,14 @@ RoomGoblin-managed Music Assistant recreations write `/data/.roomgoblin-compat/s
 
 Existing adopted containers are never silently recreated. A RoomGoblin-owned Music Assistant container can be explicitly **Recreate/Update**d to apply the guard even when its current API is offline; do not require successful pre-recreate authentication. A foreign/adopted container is deliberately refused for recreate until its persistent data has been migrated into the managed services root, because replacing it with the managed template could otherwise switch `/data` to a different host directory. Verify recovery with an HTTP response from `127.0.0.1:8095`, not merely a running container or listening socket.
 
+### 2026-09-18 production validation
+
+The classroom appliance has a pre-RoomGoblin Music Assistant Compose deployment at `/opt/music-assistant/docker-compose.yml` with persistent state bind-mounted from `/opt/music-assistant/data:/data`. After reboot, Tailscale restored its global IPv6 address and Docker restored three addressed bridges with `operstate=down`; Music Assistant again reproduced the dual-stack Zeroconf failure with `OSError: [Errno 19] No such device`, while 8095 remained bound but HTTP timed out.
+
+The existing Compose deployment was repaired in place without moving or recreating its data root: `/opt/music-assistant/data/.roomgoblin-compat/sitecustomize.py` contains the same confirmed-down-interface filter used by the RoomGoblin-managed template, and the service environment includes `PYTHONPATH=/data/.roomgoblin-compat`. With Tailscale IPv6 still enabled and the inactive Docker bridges still down, the recreated Music Assistant container returned HTTP 200 on 8095 and listened normally on 8097 and Sendspin 8927. Existing library/auth/provider state remained in `/opt/music-assistant/data`.
+
+On that validated restart, RoomGoblin's Background Music scheduler reached the Music Assistant API before the configured TV player and SiriusXM provider had fully registered. Scheduled playback now waits for the configured player to be present and available, and transient scheduled start failures back off for 30 seconds instead of issuing volume/play commands every five seconds. Manual playback requests remain immediate and surface errors directly.
+
 ## Saved settings and browser links
 
 When `HUB_NETWORK_MODE=host` (set by Compose), integration URL resolution maps the exact old hostname `host.docker.internal` to `127.0.0.1`. Known integration aliases such as `mosquitto`, `music-assistant-server`, and the old core service names are translated only in their applicable connection context. Remote IPs, school DNS names, ports, and paths remain unchanged. This compatibility layer does not rewrite credentials or the SQLite database. New defaults and controller placeholders use loopback directly.
