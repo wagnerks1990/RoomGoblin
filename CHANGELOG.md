@@ -11,6 +11,7 @@
 - Preserve local classroom availability when Cloudflare, DNS, or Internet access fails; Cloudflare remains outside core health, scheduler, announcement, Background Music, managed-device, update, and rollback readiness.
 - Add mocked Cloudflare API regression coverage plus synchronized operator, Wiki, configuration, and AI/contributor documentation.
 - Fix Host Agent sandbox provisioning so the GUI can write only `/etc/cloudflared` and the dedicated `/etc/systemd/system/cloudflared-roomgoblin.service` file while retaining `ProtectSystem=full`.
+- Checkpoint Cloudflare tunnel/DNS ownership before local connector installation so a host-side failure can be retried without leaving a newly created tunnel unrecorded.
 
 ### Scheduled automation sequence rebuild
 
