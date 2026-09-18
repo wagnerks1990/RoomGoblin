@@ -84,6 +84,14 @@ for (const [id, settings] of [
       assert.match(shim, /_default_route_ipv4/);
       assert.match(shim, /ROOMGOBLIN_MA_LAN_INTERFACE/);
       assert.match(shim, /"br-", "docker", "veth", "tailscale"/);
+      assert.equal(args[args.indexOf("--entrypoint")+1],"/bin/sh");
+      assert.equal(args.at(-1),"/data/.roomgoblin-compat/wait-for-lan.sh");
+      const waitScript=fs.readFileSync(path.join(h.dir,"music-assistant/.roomgoblin-compat/wait-for-lan.sh"),"utf8");
+      assert.match(waitScript,/while \[ "\$i" -lt 60 \]/);
+      assert.match(waitScript,/import ifaddr/);
+      assert.match(waitScript,/exec \/usr\/local\/bin\/entrypoint\.sh --data-dir \/data --cache-dir \/data\/\.cache/);
+      const syntax=spawnSync("sh",["-n",path.join(h.dir,"music-assistant/.roomgoblin-compat/wait-for-lan.sh")],{encoding:"utf8"});
+      assert.equal(syntax.status,0,syntax.stderr);
     }
   });
 }
@@ -162,11 +170,13 @@ label=['--label','org.roomgoblin.deployment-ownership=roomgoblin']
 restart=['--restart','unless-stopped']
 a.validate_docker_run(['run','-d','--network','roomgoblin-integrations','--name','mosquitto',*restart,*label,'-p','127.0.0.1:1883:1883','eclipse-mosquitto:2.0.22'])
 a.validate_docker_run(['run','-d','--network','host','--name','govee2mqtt',*restart,*label,'ghcr.io/wez/govee2mqtt:2025.04.13-17d43d72'])
-a.validate_docker_run(['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'ghcr.io/music-assistant/server:2.9.13'])
+a.validate_docker_run(['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'--entrypoint','/bin/sh','ghcr.io/music-assistant/server:2.9.13','/data/.roomgoblin-compat/wait-for-lan.sh'])
 bad=[
  ['run','-d','--network','host','--name','mosquitto',*restart,*label,'eclipse-mosquitto:2.0.22'],
  ['run','-d','--network','roomgoblin-integrations','--name','govee2mqtt',*restart,*label,'ghcr.io/wez/govee2mqtt:2025.04.13-17d43d72'],
  ['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'-p','127.0.0.1:8095:8095','ghcr.io/music-assistant/server:2.9.13'],
+ ['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'--entrypoint','/bin/bash','ghcr.io/music-assistant/server:2.9.13','/data/.roomgoblin-compat/wait-for-lan.sh'],
+ ['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'--entrypoint','/bin/sh','ghcr.io/music-assistant/server:2.9.13','/tmp/unreviewed.sh'],
  ['run','-d','--network','roomgoblin-integrations','--name','mosquitto',*restart,*label,'-p','0.0.0.0:1883:1883','eclipse-mosquitto:2.0.22'],
 ]
 for args in bad:
