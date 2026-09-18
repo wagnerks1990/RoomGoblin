@@ -18,6 +18,7 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 - After writing a connector token, explicitly restart `cloudflared-roomgoblin.service`; `enable --now` does not reload credentials for an already-running connector and can leave a stale tunnel token active.
 - Host Agent token files must be the exact token plus a real `\n` byte terminator, never a literal backslash + `n` sequence.
 - Controller reload must preserve visible configured/credential/public-URL state independently from live tunnel connectivity.
+- Cloudflare API retries are limited to idempotent GET/PUT/PATCH/DELETE calls. Do not blindly retry POST creates; report the failing method/path without exposing credentials.
 - Tunnel ingress exposes only the configured RoomGoblin hostname to `http://127.0.0.1:${PORT:-3000}`, followed by terminal `http_status:404`.
 - Never expose maintenance port 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, arbitrary URLs, or lab subnets.
 - `TRUST_PROXY_HOPS=1` is the reviewed topology. Full Recovery forwarded HTTPS still requires an immediate loopback peer.
