@@ -16,9 +16,32 @@ function withStore(fn){
 test("database storage is group-shared, database files exclude other users, and migration history is ordered",()=>withStore((store,dir)=>{
   assert.equal(fs.statSync(dir).mode&0o777,0o770);
   assert.equal(fs.statSync(store.dbFile).mode&0o777,0o660);
-  assert.deepEqual(store.validateSchemaMigrations(),{ok:true,version:10,count:10});
+  assert.deepEqual(store.validateSchemaMigrations(),{ok:true,version:11,count:11});
   store.db.prepare("UPDATE schema_migrations SET name='tampered' WHERE version=3").run();
   assert.throws(()=>store.validateSchemaMigrations(),/Invalid or incomplete/);
+}));
+
+
+test("normalized automation storage round-trips schema-v3 execution policy",()=>withStore(store=>{
+  const file=path.join(store.dataDir,"automations.json");
+  const value={version:3,events:[{
+    id:"auto-a",name:"Sequence",enabled:true,time:"07:45",scheduleMode:"weekly",
+    action:"display.media",targets:["tv1"],payload:{storedName:"one.png"},
+    automationSchemaVersion:3,
+    actionSequence:[
+      {id:"auto-a-action-1",action:"display.media",targets:["tv1"],useEventTargets:false,payload:{storedName:"one.png"},delaySeconds:0,executionMode:"once",repeatCount:1,repeatDelaySeconds:0,continueOnError:true},
+      {id:"auto-a-action-2",action:"display.media",targets:["tv1"],useEventTargets:true,payload:{storedName:"two.png"},delaySeconds:5,executionMode:"loop",repeatCount:1,repeatDelaySeconds:2.5,continueOnError:true}
+    ]
+  }]};
+  store.writeJson(file,value);
+  const row=store.db.prepare("SELECT execution_mode,repeat_count,repeat_delay_seconds FROM automation_actions WHERE automation_id=? AND position=1").get("auto-a");
+  assert.deepEqual(row,{execution_mode:"loop",repeat_count:1,repeat_delay_seconds:2.5});
+  const restored=store.readJson(file,{version:0,events:[]});
+  assert.equal(restored.version,3);
+  assert.equal(restored.events[0].actionSequence.length,2);
+  assert.equal(restored.events[0].actionSequence[1].executionMode,"loop");
+  assert.equal(restored.events[0].actionSequence[1].delaySeconds,5);
+  assert.equal(restored.events[0].actionSequence[1].repeatDelaySeconds,2.5);
 }));
 
 test("first administrator setup is atomic and the final effective administrator is protected",()=>withStore(store=>{
