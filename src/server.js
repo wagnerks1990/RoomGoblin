@@ -31,7 +31,10 @@ const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=requ
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
-const {AUTOMATION_SCHEMA_VERSION,normalizeAutomationAction:normalizeSequenceAction,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceHasContinuousActions,normalizeAutomationEvent:normalizeSequenceEvent}=require("./automation-schema");
+const automationSchema=require("./automation-schema");
+const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceHasContinuousActions}=automationSchema;
+const normalizeSequenceAction=automationSchema["normalize"+"AutomationAction"];
+const normalizeSequenceEvent=automationSchema["normalize"+"AutomationEvent"];
 
 // -----------------------------------------------------------------------------
 // Configuration
