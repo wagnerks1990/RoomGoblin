@@ -40,6 +40,7 @@ The managed flow can:
 11. offer a separate Hub restart so `TRUST_PROXY_HOPS=1` becomes active.
 
 Provisioning is repeatable. RoomGoblin stores resource IDs plus creation/adoption metadata in SQLite so later work can distinguish managed resources from unrelated Cloudflare resources.
+Cloudflare-side tunnel and DNS ownership is checkpointed before local connector installation. If host installation fails after Cloudflare resources were created, a later retry reuses the recorded resources instead of treating them as unrelated.
 
 ## Authentication
 
