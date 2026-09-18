@@ -4,6 +4,9 @@
 
 ### Music Assistant host-network recovery
 
+- Live-validate the permanent Zeroconf guard on the production appliance after reboot with Tailscale IPv6 restored and inactive addressed Docker bridges still present; preserve the legacy `/opt/music-assistant/data` bind and confirm HTTP 200 on 8095 plus listeners on 8097/8927.
+- Defer scheduled Background Music until the configured Music Assistant player is registered and available, and apply a 30-second backoff after transient scheduled start failures so provider/player startup does not generate repeated `PlayerUnavailableError`/`MediaNotFoundError` calls.
+
 - Fix Music Assistant startup on hosts that combine Tailscale/global IPv6 with addressed but link-down Docker bridges by filtering only interfaces whose Linux `operstate` is explicitly `down` before Music Assistant Zeroconf enumeration.
 - Keep host networking, LAN multicast discovery, Tailscale IPv6 and persistent Music Assistant data intact; fail open for unreadable/unknown interfaces.
 - Allow an explicit RoomGoblin-owned Music Assistant recreate to repair an offline/dead API instead of requiring successful authentication before container replacement; refuse destructive recreate of foreign/adopted containers until their persistent data is migrated into managed storage; add regression coverage and synchronized host-network/AI documentation.
