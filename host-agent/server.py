@@ -151,6 +151,16 @@ def update_details():
                 if name: pkgs.append({"name":name,"security":bool(re.search(r'security',line,re.I)),"raw":line.strip()[:500]})
         except Exception: pass
     base["packages"]=pkgs[:250]
+    try:
+        os_release={}
+        for line in Path('/etc/os-release').read_text().splitlines():
+            if '=' in line:
+                k,v=line.split('=',1); os_release[k]=v.strip().strip('"')
+        base["osRelease"]={"id":os_release.get("ID",""),"versionId":os_release.get("VERSION_ID","")}
+    except Exception:
+        base["osRelease"]={"id":"","versionId":""}
+    try: base["architecture"]=run(['dpkg','--print-architecture'],5,False).stdout.strip()
+    except Exception: base["architecture"]=""
     # Upgradable rows disappear after an upgrade; query installed packages
     # independently so the GUI never mistakes a candidate for the running host.
     base["veyonInstalledPackages"]=[]
@@ -166,6 +176,7 @@ def update_details():
     return base
 
 UPDATE_STATE_FILE=Path('/var/lib/classroom-hub/update-status.json')
+VEYON_UPDATE_REQUEST_FILE=Path('/var/lib/classroom-hub/veyon-update-request.json')
 UPDATE_SERVICE='classroom-hub-update.service'
 APP_UPDATE_STATE_FILE=Path('/var/lib/classroom-hub/app-update-status.json')
 APP_UPDATE_REQUEST_FILE=Path('/var/lib/classroom-hub/app-update-request.json')
@@ -339,6 +350,37 @@ def start_update_job():
     p=run(['systemctl','start','--no-block',UPDATE_SERVICE],20,False)
     if p.returncode!=0: raise RuntimeError((p.stderr or p.stdout or 'Unable to start host update service').strip())
     return {"ok":True,"started":True,"job":update_job_status(False)}
+
+def start_veyon_release_job(body):
+    current=update_job_status(False)
+    if current.get('running'): raise RuntimeError('A host update job is already running')
+    if VEYON_UPDATE_REQUEST_FILE.exists(): raise RuntimeError('A Veyon release update request is already pending')
+    if str(body.get('confirm') or '')!='INSTALL_VEYON_RELEASE': raise RuntimeError('Explicit INSTALL_VEYON_RELEASE confirmation required')
+    version=str(body.get('version') or '')
+    url=str(body.get('url') or '')
+    sha256=str(body.get('sha256') or '').lower()
+    if not re.fullmatch(r'\d+\.\d+\.\d+',version): raise RuntimeError('Invalid Veyon release version')
+    if not re.fullmatch(r'[0-9a-f]{64}',sha256): raise RuntimeError('Invalid Veyon package checksum')
+    details=update_details(); osr=details.get('osRelease') or {}; arch=str(details.get('architecture') or '')
+    if str(osr.get('id') or '')!='ubuntu' or not re.fullmatch(r'\d{2}\.\d{2}',str(osr.get('versionId') or '')) or arch!='amd64':
+        raise RuntimeError('Official Veyon release fallback is supported only on Ubuntu amd64 appliances')
+    version_id=str(osr['versionId'])
+    name=f'veyon_{version}.0-ubuntu.{version_id}_amd64.deb'
+    expected=f'https://github.com/veyon/veyon/releases/download/v{version}/{name}'
+    if url!=expected: raise RuntimeError('Veyon package URL is outside the exact official release allowlist')
+    audit=run(['dpkg','--audit'],20,False)
+    if audit.stdout.strip() or audit.returncode!=0: raise RuntimeError('dpkg --audit reports package problems')
+    check=run(['apt-get','check'],60,False)
+    if check.returncode!=0: raise RuntimeError('apt-get check failed')
+    request={"version":version,"url":url,"sha256":sha256,"name":name,"architecture":"amd64","versionId":version_id}
+    VEYON_UPDATE_REQUEST_FILE.parent.mkdir(parents=True,exist_ok=True)
+    temp=VEYON_UPDATE_REQUEST_FILE.with_suffix('.tmp'); temp.write_text(json.dumps(request,indent=2)); os.chmod(temp,0o600); temp.replace(VEYON_UPDATE_REQUEST_FILE)
+    p=run(['systemctl','start','--no-block',UPDATE_SERVICE],20,False)
+    if p.returncode!=0:
+        VEYON_UPDATE_REQUEST_FILE.unlink(missing_ok=True)
+        raise RuntimeError((p.stderr or p.stdout or 'Unable to start Veyon update service').strip())
+    return {"ok":True,"started":True,"source":"official-release","version":version,"job":update_job_status(False)}
+
 
 def app_update_job_status(include_log=False):
     state={"phase":"idle","message":"No application update has been started.","ok":None}
@@ -570,6 +612,9 @@ class Handler(BaseHTTPRequestHandler):
             # competing host mutations remain behind the held appliance lock.
             if EXPORT_FREEZE.get("token") and path!='/docker/exec':
                 return self.send_json(423,{"ok":False,"error":"A Full Recovery Export holds the appliance mutation lock"})
+            if path=='/veyon/update':
+                body=self.body()
+                return self.send_json(202,start_veyon_release_job(body))
             if path in ('/updates/apply','/updates/start'):
                 body=self.body()
                 if str(body.get('confirm') or '')!='INSTALL_UPDATES': return self.send_json(400,{"ok":False,"error":"Explicit INSTALL_UPDATES confirmation required"})
