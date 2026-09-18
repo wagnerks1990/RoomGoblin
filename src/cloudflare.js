@@ -91,9 +91,10 @@ class CloudflareClient{
 }
 
 class CloudflareManager{
-  constructor({storage,fetchImpl=globalThis.fetch,connectorInstaller=null}={}){
+  constructor({storage,fetchImpl=globalThis.fetch,connectorInstaller=null,originUrl=null}={}){
     if(!storage)throw Error("CloudflareManager requires storage");
-    this.storage=storage;this.fetchImpl=fetchImpl;this.connectorInstaller=connectorInstaller;
+    const port=Number(process.env.PORT||3000);if(!Number.isInteger(port)||port<1||port>65535)throw Error("Invalid RoomGoblin origin port");
+    this.storage=storage;this.fetchImpl=fetchImpl;this.connectorInstaller=connectorInstaller;this.originUrl=originUrl||`http://127.0.0.1:${port}`;
   }
   saved(){return normalizeSettings({},this.storage.getPreference(PREF,{})||{})}
   status(){return publicSettings(this.saved(),this.storage)}
@@ -136,7 +137,7 @@ class CloudflareManager{
     if(!tunnel){tunnel=await ctx.client.post(`/accounts/${ctx.accountId}/cfd_tunnel`,{name:settings.tunnelName,config_src:"cloudflare"});created=true}
     if(!tunnel?.id)throw failure("Cloudflare did not return a tunnel ID",502);
     await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress:[
-      {hostname:settings.hostname,service:"http://127.0.0.1:3000"},
+      {hostname:settings.hostname,service:this.originUrl},
       {service:"http_status:404"}
     ]}});
     return {tunnel,created};
