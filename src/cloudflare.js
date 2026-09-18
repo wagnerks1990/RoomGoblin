@@ -294,12 +294,17 @@ class CloudflareManager{
       publicUrl:`https://${settings.hostname}/controller/`};
   }
   async liveStatus(){
-    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null,publicUrl:settings.hostname?`https://${settings.hostname}/controller/`:null};
+    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null,publicUrl:settings.hostname?`https://${settings.hostname}/controller/`:null,resources:{musicAssistant:{enabled:settings.musicAssistantPublicEnabled===true,hostname:settings.musicAssistantHostname||null,publicUrl:settings.musicAssistantPublicEnabled&&settings.musicAssistantHostname?`https://${settings.musicAssistantHostname}/`:null,dns:null}}};
     if(!result.configured)return result;
     try{
       const ctx=await this.resolve(settings),tunnel=settings.ids?.tunnelId?await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${settings.ids.tunnelId}`):await this.findTunnel(ctx.client,ctx.accountId,settings.tunnelName);
       const dnsRows=await ctx.client.get(`/zones/${ctx.zone.id}/dns_records?name=${encodeURIComponent(settings.hostname)}&per_page=100`);
       const dns=(Array.isArray(dnsRows)?dnsRows:[]).find(x=>String(x.name).toLowerCase()===settings.hostname)||null;
+      if(settings.musicAssistantPublicEnabled&&settings.musicAssistantHostname){
+        const rows=await ctx.client.get(`/zones/${ctx.zone.id}/dns_records?name=${encodeURIComponent(settings.musicAssistantHostname)}&per_page=100`);
+        const resourceDns=(Array.isArray(rows)?rows:[]).find(x=>String(x.name).toLowerCase()===settings.musicAssistantHostname)||null;
+        result.resources.musicAssistant.dns=resourceDns?{id:resourceDns.id,type:resourceDns.type,name:resourceDns.name,content:resourceDns.content,proxied:resourceDns.proxied}:null;
+      }
       result.cloudflare={zone:{id:ctx.zone.id,name:ctx.zone.name,status:ctx.zone.status},tunnel:tunnel?{id:tunnel.id,name:tunnel.name,status:tunnel.status||null}:null,dns:dns?{id:dns.id,type:dns.type,name:dns.name,content:dns.content,proxied:dns.proxied}:null};
     }catch(error){result.ok=false;result.error=error.message}
     return result;
