@@ -163,6 +163,8 @@
   function nativeEnrollmentCommand(enrollment){
     const origin=enrollment.preferredOrigin||new URL(enrollment.installerUrl,location.href).origin;
     const allowHttp=new URL(origin).protocol==='http:'?' --allow-http':'';
+    const fallbackOrigin=enrollment.requestOrigin&&enrollment.requestOrigin!==origin?new URL(enrollment.requestOrigin,location.href).origin:'';
+    const fallbackArgs=fallbackOrigin?` --fallback-hub-url ${powerShellLiteral(fallbackOrigin)}${new URL(fallbackOrigin).protocol==='http:'?' --allow-http-fallback':''}`:'';
     const files=['RoomGoblinAgent.exe','RoomGoblinSessionAgent.exe','RoomGoblinAgentUpdater.exe','RoomGoblinAgentBootstrap.exe'];
     const expected=files.map(powerShellLiteral).join(',');
     return [
@@ -173,16 +175,19 @@
       `$Expected=@(${expected})`,
       `if(-not $Manifest.ok -or @($Manifest.files).Count -ne $Expected.Count){throw 'Invalid RoomGoblin native manifest.'}`,
       `foreach($Name in $Expected){$Entry=@($Manifest.files|Where-Object {$_.name -eq $Name});if($Entry.Count -ne 1){throw ('Missing or duplicate manifest entry: '+$Name)};$Path=Join-Path $Dir $Name;Invoke-WebRequest -Uri ($Hub+'/lab-agent/native/'+$Name) -OutFile $Path -UseBasicParsing;$Actual=(Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant();if($Actual -ne ([string]$Entry[0].sha256).ToLowerInvariant()){throw ('SHA-256 verification failed: '+$Name)}}`,
-      `& (Join-Path $Dir 'RoomGoblinAgentBootstrap.exe') install --hub-url ${powerShellLiteral(origin)} --agent-id ${powerShellLiteral(enrollment.agentId)} --enrollment-token ${powerShellLiteral(enrollment.token)}${allowHttp}`,
+      `& (Join-Path $Dir 'RoomGoblinAgentBootstrap.exe') install --hub-url ${powerShellLiteral(origin)}${fallbackArgs} --agent-id ${powerShellLiteral(enrollment.agentId)} --enrollment-token ${powerShellLiteral(enrollment.token)}${allowHttp}`,
       `if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}`,
       `Remove-Item $Dir -Recurse -Force -ErrorAction SilentlyContinue`
     ].join('; ');
   }
   function nativeEnrollmentFile(enrollment){
     const origin=enrollment.preferredOrigin||new URL(enrollment.installerUrl,location.href).origin;
+    const fallbackHubUrl=enrollment.requestOrigin&&enrollment.requestOrigin!==origin?new URL(enrollment.requestOrigin,location.href).origin:'';
     return {
       schema:'roomgoblin-native-enrollment-v1',
       hubUrl:origin,
+      fallbackHubUrl,
+      allowHttpFallback:!!fallbackHubUrl&&new URL(fallbackHubUrl).protocol==='http:',
       agentId:String(enrollment.agentId||''),
       enrollmentToken:String(enrollment.token||''),
       allowHttp:new URL(origin).protocol==='http:',
