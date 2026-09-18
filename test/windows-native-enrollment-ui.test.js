@@ -39,3 +39,13 @@ test("controller preserves legacy enrollment as an explicit fallback",()=>{
 test("HTTP native enrollment requires the bootstrap opt-in",()=>{
   assert.match(source,/protocol==='http:'\?' --allow-http':''/);
 });
+
+test("controller carries preferred HTTPS and LAN fallback into native enrollment",()=>{
+  assert.match(source,/enrollment\.preferredOrigin/);
+  assert.match(source,/fallbackHubUrl/);
+  assert.match(source,/allowHttpFallback/);
+  assert.match(source,/--fallback-hub-url/);
+  assert.match(source,/--allow-http-fallback/);
+  assert.match(source,/HTTPS \/ WSS preferred/);
+  assert.match(source,/Current-browser\/LAN-origin fallback/);
+});
