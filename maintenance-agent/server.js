@@ -193,6 +193,16 @@ app.post("/host/updates/apply",async(req,res)=>{try{
   const result=await hostAgentRequest("POST","/updates/start",req.body||{},30000);
   res.status(202).json({ok:true,safetyBackup:safety.name,...result,message:"Native host update job started. RoomGoblin will continue monitoring it."});
 }catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
+app.post("/host/veyon/update",async(req,res)=>{try{
+  if(String(req.body?.confirm||"")!=="INSTALL_VEYON_RELEASE")return res.status(400).json({ok:false,error:"Explicit INSTALL_VEYON_RELEASE confirmation required"});
+  const version=String(req.body?.version||""),url=String(req.body?.url||""),sha256=String(req.body?.sha256||"").toLowerCase();
+  if(!/^\d+\.\d+\.\d+$/.test(version)||!/^[0-9a-f]{64}$/.test(sha256))return res.status(400).json({ok:false,error:"Valid Veyon version and SHA-256 are required"});
+  const expected=new RegExp("^https://github\\.com/veyon/veyon/releases/download/v"+version.replace(/\./g,"\\.")+"/veyon_"+version.replace(/\./g,"\\.")+"\\.0-ubuntu\\.\\d{2}\\.\\d{2}_amd64\\.deb$");
+  if(!expected.test(url))return res.status(400).json({ok:false,error:"Veyon package URL is outside the official release allowlist"});
+  const safety=await createOperationalBackupNamed("pre-veyon-update");
+  const result=await hostAgentRequest("POST","/veyon/update",{confirm:"INSTALL_VEYON_RELEASE",version,url,sha256},30000);
+  res.status(202).json({ok:true,safetyBackup:safety.name,...result,message:"Verified official Veyon update job started."});
+}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.get("/host/migration-snapshots",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/cleanup/migration-snapshots"))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.post("/host/migration-retention",async(req,res)=>{try{res.json(await hostAgentRequest("POST","/cleanup/migration-retention",req.body||{}))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.get("/host/services",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/services"))}catch(e){res.status(e.status||502).json({ok:false,error:e.message})}});
