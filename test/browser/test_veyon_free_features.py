@@ -89,6 +89,44 @@ class VeyonFreeFeaturesTests(unittest.TestCase):
         page.locator('#communityClose').click()
         self.assertFalse(errors, errors)
 
+    def test_community_upload_is_chunked_and_waits_for_endpoint_completion(self):
+        import base64
+        page, errors, state = self.pilot_page()
+        requests = []
+        finished = False
+        def respond(route):
+            nonlocal finished
+            action = route.request.url.rsplit('/', 1)[-1]
+            data = route.request.post_data_json
+            requests.append((action, data))
+            if action == 'uploadFinish':
+                finished = True
+            reply = {'ok': True}
+            if action == 'open':
+                reply.update(session='upload-fixture', kind='files', upload=True)
+            elif action == 'state':
+                reply.update(messages=[], entries=[], path='/home/student/RoomGoblin-Pilot',
+                             pending=False, complete=finished, size=6, fileName='sample.txt', error='')
+            route.fulfill(json=reply)
+        page.route('**/api/v1/veyon/computers/student-a/browser/*', respond)
+        page.locator('#communityFiles').click()
+        page.locator('#communityDialog[open]').wait_for()
+        page.locator('#communityBody input[type="file"]').set_input_files({
+            'name': 'sample.txt', 'mimeType': 'text/plain', 'buffer': b'sample'
+        })
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.get_by_role('button', name='Send file to Pilot Inbox', exact=True).click()
+        page.wait_for_function("document.querySelector('#communityStatus').textContent.includes('uploaded atomically')")
+        starts = [data for action, data in requests if action == 'uploadStart']
+        chunks = [data for action, data in requests if action == 'uploadChunk']
+        self.assertEqual(starts[0]['name'], 'sample.txt')
+        self.assertEqual(starts[0]['size'], 6)
+        self.assertEqual(chunks[0]['offset'], 0)
+        self.assertEqual(base64.b64decode(chunks[0]['data']), b'sample')
+        self.assertTrue(any(action == 'uploadFinish' for action, _ in requests))
+        page.locator('#communityClose').click()
+        self.assertFalse(errors, errors)
+
     def test_browser_control_sends_leased_input_reads_clipboard_and_closes(self):
         page, errors, state = self.pilot_page()
         requests = []

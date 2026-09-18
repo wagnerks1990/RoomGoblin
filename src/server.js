@@ -1,7760 +1,3785 @@
-"use strict";
-
-const express = require("express");
-const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
-const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
-const {VeyonCommandQueue}=require("./veyon-command-queue");
-const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
-const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
-const http = require("http");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const crypto = require("crypto");
-const dgram = require("dgram");
-const net = require("net");
-const { execFile } = require("child_process");
-const { promisify } = require("util");
-const execFileAsync = promisify(execFile);
-const scryptAsync = promisify(crypto.scrypt);
-const multer = require("multer");
-const mqtt = require("mqtt");
-const { WebSocketServer, WebSocket } = require("ws");
-const {rateLimit}=require("express-rate-limit");
-const {sendspinEndpoint, relaySendspin} = require("./music-assistant-sendspin");
-const {parseAllowedHosts:parseDisplayGatewayAllowedHosts,validateAllowedTarget:validateDisplayGatewayTarget}=require("./display-gateway");
-const AdmZip = require("adm-zip");
-const {ClassroomHubStorage,keyForFile} = require("./storage");
-const {ROOMGOBLIN_IDENTITY}=require("./brand-identity");
-const {applicationVersion}=require("./version");
-const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
-const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
-const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
-const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
-
-// -----------------------------------------------------------------------------
-// Configuration
-// -----------------------------------------------------------------------------
-
-const PORT = validPort(process.env.PORT, 3000);
-const BIND_ADDRESS = String(process.env.BIND_ADDRESS || "0.0.0.0").replace(/^\[|\]$/g, "");
-localHttpUrl(PORT, BIND_ADDRESS); // Validate before opening listeners.
-let SCHEDULER_TIMEZONE = String(process.env.SCHEDULER_TIMEZONE || process.env.TZ || "America/New_York").trim() || "America/New_York";
-const SCHEDULER_CATCHUP_MINUTES = Math.max(0, Math.min(60, Number(process.env.SCHEDULER_CATCHUP_MINUTES || 5)));
-process.env.TZ = SCHEDULER_TIMEZONE;
-const ROOM_NAME = String(process.env.ROOM_NAME || "Classroom");
-const APPLICATION_VERSION = applicationVersion();
-
-let MQTT_URL = serviceUrl(process.env.MQTT_URL || "", ["mosquitto"]).trim();
-let MQTT_USERNAME = String(process.env.MQTT_USERNAME || "");
-let MQTT_PASSWORD = String(process.env.MQTT_PASSWORD || "");
-let MQTT_LEGACY_BRIDGE =
-  String(process.env.MQTT_LEGACY_BRIDGE || "true").toLowerCase() === "true";
-let MQTT_JSON_BRIDGE =
-  String(process.env.MQTT_JSON_BRIDGE || "true").toLowerCase() === "true";
-
-// v0.8 direct hardware integrations. Node-RED is no longer required.
-const HARDWARE_CONFIG_FILE = path.join(path.resolve(__dirname, ".."), "config", "hardware.json");
-let PLUTO_URL = String(process.env.PLUTO_URL || "").trim();
-let PLUTO_TIMEOUT_MS = Number(process.env.PLUTO_TIMEOUT_MS || 4000);
-let PLUTO_READ_RETRIES = Number(process.env.PLUTO_READ_RETRIES || 4);
-
-const CONTROL_TOKEN = String(process.env.CONTROL_TOKEN || "");
-const SETUP_TOKEN = String(process.env.SETUP_TOKEN || "");
-const MAINTENANCE_PROXY_ENABLED = String(process.env.MAINTENANCE_PROXY_ENABLED || "false").toLowerCase() === "true";
-const CORS_ALLOWED_ORIGINS = new Set(String(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(x=>x.trim()).filter(Boolean));
-const WS_MAX_PAYLOAD_BYTES = Math.max(1024*1024,Math.min(16*1024*1024,Number(process.env.WS_MAX_PAYLOAD_MB||12)*1024*1024));
-const MAINTENANCE_URL = serviceUrl(process.env.MAINTENANCE_URL || "http://127.0.0.1:3010", ["maintenance-agent", "classroom-control-hub-maintenance"]).replace(/\/$/,"");
-const MAINTENANCE_TOKEN = String(process.env.MAINTENANCE_TOKEN || "");
-const TRUST_PROXY_HOPS = Math.max(0, Math.min(5, Number(process.env.TRUST_PROXY_HOPS || 0)));
-const DISPLAY_GATEWAY_HOSTS=[...parseDisplayGatewayAllowedHosts()].sort();
-const LOGIN_MAX_ATTEMPTS = Math.max(3, Math.min(20, Number(process.env.LOGIN_MAX_ATTEMPTS || 5)));
-const LOGIN_WINDOW_MS = Math.max(60000, Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000));
-const LOGIN_LOCK_MS = Math.max(60000, Number(process.env.LOGIN_LOCK_MS || 15 * 60 * 1000));
-const fullExportFreeze={requested:false,active:false,token:null,activeHttpMutations:0,activeWsMutations:0,activeAsyncMutations:0,startedAt:null,leaseTimer:null};
-function trackFullExportMutation(task){
-  fullExportFreeze.activeAsyncMutations++;
-  return Promise.resolve(task).finally(()=>{fullExportFreeze.activeAsyncMutations=Math.max(0,fullExportFreeze.activeAsyncMutations-1)});
-}
-
-// Veyon becomes the lab-computer control plane in v0.20.0.
-let VEYON_WEBAPI_URL = serviceUrl(process.env.VEYON_WEBAPI_URL || "http://127.0.0.1:11080", ["veyon-webapi"]).replace(/\/$/,"");
-let VEYON_KEY_NAME = String(process.env.VEYON_KEY_NAME || "ClassroomControlHub");
-const VEYON_PRIVATE_KEY_FILE = String(process.env.VEYON_PRIVATE_KEY_FILE || "/run/secrets/veyon-private-key");
-let VEYON_SCAN_SUBNET = String(process.env.VEYON_SCAN_SUBNET || "").replace(/\.$/,"");
-let VEYON_SCAN_START = Math.max(1,Math.min(254,Number(process.env.VEYON_SCAN_START||1)));
-let VEYON_SCAN_END = Math.max(VEYON_SCAN_START,Math.min(254,Number(process.env.VEYON_SCAN_END||254)));
-let VEYON_POOL_MAX = Math.max(4,Math.min(128,Number(process.env.VEYON_POOL_MAX||24)));
-let VEYON_AUTH_RETRIES = Math.max(0,Math.min(5,Number(process.env.VEYON_AUTH_RETRIES||2)));
-let VEYON_THUMBNAIL_CONCURRENCY = Math.max(2,Math.min(24,Number(process.env.VEYON_THUMBNAIL_CONCURRENCY||8)));
-const VEYON_AUTHKEYS_UUID = "0c69b301-81b4-42d6-8fae-128cdd113314";
-const VEYON_FEATURES = Object.freeze({
-  ...POWER_FEATURES,
-  clipboardWrite:CLIPBOARD_FEATURE,
-  keySequence:INPUT_FEATURE_UID,
-  screenLock:"ccb535a2-1d24-4cc1-a709-8b47d2b2ac79",
-  inputLock:"e4a77879-e544-4fec-bc18-e534f33b934c",
-  userLogin:"7310707d-3918-460d-a949-65bd152cb958",
-  userLogoff:"7311d43d-ab53-439e-a03a-8cb25f7ed526",
-  reboot:"4f7d98f0-395a-4fff-b968-e49b8d0f748c",
-  powerDown:"6f5a27a0-0e2f-496e-afcc-7aae62eede10",
-  demoServer:"e4b6e743-1f5b-491d-9364-e091086200f4",
-  fullScreenDemoClient:"7b6231bd-eb89-45d3-af32-f70663b2f878",
-  windowDemoClient:"ae45c3db-dc2e-4204-ae8b-374cdab8c62c",
-  startApp:"da9ca56a-b2ad-4fff-8f8a-929b2927b442",
-  openWebsite:"8a11a75d-b3db-48b6-b9cb-f8422ddd5b0c",
-  textMessage:"e75ae9c8-ac17-4d00-8f0d-019348346208"
-});
-
-const VEYON_COMMAND_POLICY = Object.freeze({
-  powerDownNow:{requiresUser:false}, installUpdatesAndPowerDown:{requiresUser:false},
-  powerDownConfirmed:{requiresUser:false}, powerDownDelayed:{requiresUser:false},
-  reboot:{requiresUser:false}, powerDown:{requiresUser:false}, userLogin:{requiresUser:false},
-  userLogoff:{requiresUser:true}, textMessage:{requiresUser:true}, openWebsite:{requiresUser:true},
-  startApp:{requiresUser:true}, screenLock:{requiresUser:true}, inputLock:{requiresUser:true},
-  demoServer:{requiresUser:true}, fullScreenDemoClient:{requiresUser:true}, windowDemoClient:{requiresUser:true}
-});
-function veyonPolicyFor(feature,active=true){
-  if(active===false&&["screenLock","inputLock","demoServer","fullScreenDemoClient","windowDemoClient"].includes(feature))
-    return {requiresUser:false,recovery:true};
-  return VEYON_COMMAND_POLICY[feature]||{requiresUser:true};
-}
-async function veyonCommandEligibility(rec,feature,active=true){
-  const online=await veyonTcpProbe(rec.ip);
-  if(!online)return {eligible:false,reason:"offline"};
-  if(Object.hasOwn(POWER_FEATURES,feature)){
-    const available=await veyonAvailableFeatures(rec.ip);
-    if(!Array.isArray(available)||!available.some(f=>String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"")===POWER_FEATURES[feature]))return {eligible:false,reason:"feature-not-advertised"};
-  }
-  if(feature==="clipboardWrite"&&!clipboardAdvertised(await veyonAvailableFeatures(rec.ip)))return {eligible:false,reason:"clipboard-bridge-unavailable"};
-  if(feature==="keySequence"&&!keyAdvertised(await veyonAvailableFeatures(rec.ip)))return {eligible:false,reason:"keyboard-bridge-unavailable"};
-  const policy=veyonPolicyFor(feature,active);
-  if(!policy.requiresUser)return {eligible:true};
-  const user=await veyonConnectedJson(rec.ip,"/api/v1/user");
-  if(!String(user?.login||"").trim())return {eligible:false,reason:"no-user-session"};
-  return {eligible:true,user};
-}
-
-const LAB_AGENT_TOKEN = String(process.env.LAB_AGENT_TOKEN || "");
-let LAB_HISTORY_RETENTION_HOURS = Math.max(0, Math.min(24*365, Number(process.env.LAB_HISTORY_RETENTION_HOURS || 0)));
-let LAB_SCREENSHOT_RETENTION_DAYS = Math.max(1, Math.min(365, Number(process.env.LAB_SCREENSHOT_RETENTION_DAYS || 7)));
-const LAB_AI_MONITOR_ENABLED = String(process.env.LAB_AI_MONITOR_ENABLED || "true").toLowerCase() !== "false";
-const LAB_AI_ALERT_COOLDOWN_MINUTES = Math.max(1, Math.min(1440, Number(process.env.LAB_AI_ALERT_COOLDOWN_MINUTES || 10)));
-const DISPLAY_TOKEN = String(process.env.DISPLAY_TOKEN || "");
-const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 500);
-const DEVICE_OFFLINE_SECONDS = Number(process.env.DEVICE_OFFLINE_SECONDS || 45);
-
-const APP_DIR = path.resolve(__dirname, "..");
-const PUBLIC_DIR = path.join(APP_DIR, "public");
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(APP_DIR, "data"));
-const MEDIA_DIR = path.join(DATA_DIR, "media");
-const STATE_FILE = path.join(DATA_DIR, "state.json");
-const AUDIT_FILE = path.join(DATA_DIR, "audit.jsonl");
-const DEVICE_CONFIG_FILE = path.join(APP_DIR, "config", "devices.json");
-const SCENES_FILE = path.join(DATA_DIR, "scenes.json");
-const RUNTIME_CONFIG_FILE = path.join(DATA_DIR, "runtime-config.json");
-const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
-const PLUTO_SCHEDULES_FILE = path.join(DATA_DIR, "pluto-schedules.json");
-const AV_LABELS_FILE = path.join(DATA_DIR, "av-labels.json");
-const MEDIA_LIBRARY_FILE = path.join(DATA_DIR, "media-library.json");
-const AUTOMATIONS_FILE = path.join(DATA_DIR, "automations.json");
-const SCHEDULER_CALENDAR_FILE = path.join(DATA_DIR, "scheduler-calendar.json");
-const MORNING_ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "morning-announcements.json");
-const GOVEE_DISCOVERY_FILE = path.join(DATA_DIR, "govee-discovery.json");
-const GOVEE_RECONCILE_GRACE_MS = 10 * 60 * 1000;
-const PRESENTATIONS_DIR = path.join(DATA_DIR, "presentations");
-const PRESENTATION_UPLOAD_TMP = path.join(DATA_DIR, "presentation-upload-tmp");
-const PRESENTATION_LIBRARY_FILE = path.join(DATA_DIR, "presentation-library.json");
-const PRESENTATION_STATE_FILE = path.join(DATA_DIR, "presentation-state.json");
-const VEYON_COMPUTERS_FILE = path.join(DATA_DIR, "veyon-computers.json");
-const CLASS_SCHEDULES_FILE = path.join(DATA_DIR, "class-schedules.json");
-const LAB_COMPUTERS_FILE = path.join(DATA_DIR, "lab-computers.json");
-const LAB_HISTORY_FILE = path.join(DATA_DIR, "lab-history.json");
-const LAB_SCREENSHOT_DIR = path.join(DATA_DIR, "lab-screenshots");
-const LAB_UPDATE_DIR = path.join(DATA_DIR, "lab-updates");
-const LAB_AI_ALERTS_FILE = path.join(DATA_DIR, "lab-ai-alerts.json");
-const LAB_AI_RULES_FILE = path.join(DATA_DIR, "lab-ai-rules.json");
-fs.mkdirSync(LAB_SCREENSHOT_DIR,{recursive:true});
-fs.mkdirSync(LAB_UPDATE_DIR,{recursive:true});
-const SESSION_EFFECT_INTERVAL_MS = Number(process.env.SESSION_EFFECT_INTERVAL_MS || 4500);
-// The retired participation experience contains classroom-specific targets.
-// Keep it quarantined until it is replaced by database-backed session templates.
-const SESSION_MAX_QUEUE = Number(process.env.SESSION_MAX_QUEUE || 80);
-const SESSION_EFFECT_DURATION_MS = Number(process.env.SESSION_EFFECT_DURATION_MS || 7000);
-const SESSION_CLEAR_GAP_MS = Number(process.env.SESSION_CLEAR_GAP_MS || 1200);
-const SESSION_SPOTLIGHT_ROTATE_MS = Number(process.env.SESSION_SPOTLIGHT_ROTATE_MS || 9000);
-
-fs.mkdirSync(MEDIA_DIR, { recursive: true });
-fs.mkdirSync(PRESENTATIONS_DIR, { recursive: true });
-fs.mkdirSync(PRESENTATION_UPLOAD_TMP, { recursive: true });
-
-const DATABASE_FILE = String(process.env.DATABASE_FILE || path.join(DATA_DIR,"classroom-control-hub.db"));
-const MASTER_KEY_FILE = String(process.env.MASTER_KEY_FILE || "/run/secrets/classroom-control-hub-master-key");
-const LEGACY_JSON_MIRROR = String(process.env.LEGACY_JSON_MIRROR || "false").toLowerCase()==="true";
-const dbStore = new ClassroomHubStorage({dataDir:DATA_DIR,dbFile:DATABASE_FILE,masterKeyFile:MASTER_KEY_FILE,legacyMirror:LEGACY_JSON_MIRROR});
-const schedulerClock=new SchedulerClock({timezone:SCHEDULER_TIMEZONE});
-const automationRunLedger=makeLedger(dbStore);
-let automationSchedulerEnabled=(dbStore.getPreference("automation.scheduler",{enabled:true})||{}).enabled!==false;
-function setAutomationSchedulerEnabled(value){automationSchedulerEnabled=!!value;dbStore.setPreference("automation.scheduler",{enabled:automationSchedulerEnabled,updatedAt:new Date().toISOString()});return automationSchedulerEnabled}
-function automationControlStatus(){const clock=schedulerClock.status(),ledger=automationRunLedger.read();return {enabled:automationSchedulerEnabled,clock,runningOccurrences:typeof automationRunningOccurrences!=="undefined"?automationRunningOccurrences.size:0,recentRuns:ledger.runs.slice(-25).reverse()}}
-
-function normalizedTimezone(value){
-  const timezone=String(value||"").trim();
-  try{new Intl.DateTimeFormat("en-US",{timeZone:timezone}).format(new Date())}catch{throw Error("Timezone must be a valid IANA timezone, for example America/New_York")}
-  return timezone;
-}
-try{
-  const storedTimezone=dbStore.getSetting("site.profile",{})?.timezone;
-  if(storedTimezone)SCHEDULER_TIMEZONE=normalizedTimezone(storedTimezone);
-  process.env.TZ=SCHEDULER_TIMEZONE;
-}catch(error){console.warn(`Stored scheduler timezone ignored: ${error.message}`)}
-function privacyRetentionPolicy(){const p=dbStore.getPreference("privacy.retention",{})||{},rawHistory=p.browserHistoryHours===undefined?LAB_HISTORY_RETENTION_HOURS:Number(p.browserHistoryHours);return {browserHistoryEnabled:p.browserHistoryEnabled===true,browserHistoryHours:Number.isFinite(rawHistory)?Math.max(0,Math.min(24*365,rawHistory)):0,screenshotDays:Math.max(1,Math.min(365,Number(p.screenshotDays)||LAB_SCREENSHOT_RETENTION_DAYS)),alertDays:Math.max(1,Math.min(365,Number(p.alertDays)||30)),auditDays:Math.max(7,Math.min(3650,Number(p.auditDays)||180))}}
-function applyPrivacyRetentionPolicy(){const p=privacyRetentionPolicy();LAB_HISTORY_RETENTION_HOURS=p.browserHistoryHours;LAB_SCREENSHOT_RETENTION_DAYS=p.screenshotDays;return p}
-applyPrivacyRetentionPolicy();
-try{if(MQTT_PASSWORD&&!dbStore.hasSecret("integration.mqtt.password"))dbStore.putSecret("integration.mqtt.password",MQTT_PASSWORD,{type:"integration-password",integration:"mqtt",migratedFrom:"environment"})}catch(err){console.warn(`MQTT password database migration skipped: ${err.message}`)}
-
-function boundedNumber(value,fallback,min,max){const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,Math.trunc(n))):fallback}
-function validHttpEndpoint(value,label,{allowBlank=true}={}){
-  value=String(value||"").trim().replace(/\/$/,"");
-  if(!value&&allowBlank)return "";
-  let url;try{url=new URL(value)}catch{throw Error(`${label} must be a valid HTTP or HTTPS URL`)}
-  if(!["http:","https:"].includes(url.protocol)||url.username||url.password)throw Error(`${label} must be an HTTP(S) URL without embedded credentials`);
-  return value;
-}
-function validMqttEndpoint(value){
-  value=String(value||"").trim();if(!value)return "";
-  let url;try{url=new URL(value)}catch{throw Error("MQTT broker must be a valid mqtt, mqtts, ws, or wss URL")}
-  if(!["mqtt:","mqtts:","ws:","wss:"].includes(url.protocol)||url.username||url.password)throw Error("MQTT broker must use mqtt, mqtts, ws, or wss without embedded credentials");
-  return value;
-}
-function endpointForLog(value){
-  const text=String(value||"").trim();if(!text)return "";
-  try{
-    const url=new URL(text);url.username="";url.password="";url.search="";url.hash="";
-    return url.toString();
-  }catch{return "[configured endpoint]"}
-}
-function normalizedIntegrationConnections(value={},fallback={}){
-  const mqttValue=value.mqtt||{},mqttFallback=fallback.mqtt||{};
-  const plutoValue=value.pluto||{},plutoFallback=fallback.pluto||{};
-  const veyonValue=value.veyon||{},veyonFallback=fallback.veyon||{};
-  const scanSubnet=String(veyonValue.scanSubnet??veyonFallback.scanSubnet??"").trim().replace(/\.$/,"");
-  const subnetParts=scanSubnet.split(".");
-  if(scanSubnet&&(subnetParts.length!==3||subnetParts.some(x=>!/^\d{1,3}$/.test(x)||Number(x)>255)))throw Error("Veyon scan subnet must contain the first three IPv4 octets, for example 192.168.40");
-  const scanStart=boundedNumber(veyonValue.scanStart,Number(veyonFallback.scanStart)||1,1,254);
-  return {
-    mqtt:{url:validMqttEndpoint(serviceUrl(mqttValue.url??mqttFallback.url??"", ["mosquitto"])),username:String(mqttValue.username??mqttFallback.username??"").trim(),jsonBridge:mqttValue.jsonBridge??mqttFallback.jsonBridge??true,legacyBridge:mqttValue.legacyBridge??mqttFallback.legacyBridge??true},
-    pluto:{url:validHttpEndpoint(plutoValue.url??plutoFallback.url??"","Pluto endpoint"),timeoutMs:boundedNumber(plutoValue.timeoutMs,Number(plutoFallback.timeoutMs)||4000,500,30000),readRetries:boundedNumber(plutoValue.readRetries,Number(plutoFallback.readRetries)||4,0,10)},
-    veyon:{url:validHttpEndpoint(serviceUrl(veyonValue.url??veyonFallback.url??"http://127.0.0.1:11080", ["veyon-webapi"]),"Veyon WebAPI endpoint",{allowBlank:false}),keyName:String(veyonValue.keyName??veyonFallback.keyName??"ClassroomControlHub").trim()||"ClassroomControlHub",scanSubnet,scanStart,scanEnd:boundedNumber(veyonValue.scanEnd,Number(veyonFallback.scanEnd)||254,scanStart,254),poolMax:boundedNumber(veyonValue.poolMax,Number(veyonFallback.poolMax)||24,4,128),authRetries:boundedNumber(veyonValue.authRetries,Number(veyonFallback.authRetries)||2,0,5),thumbnailConcurrency:boundedNumber(veyonValue.thumbnailConcurrency,Number(veyonFallback.thumbnailConcurrency)||8,2,24)}
-  };
-}
-function currentIntegrationConnections(){return {mqtt:{url:MQTT_URL,username:MQTT_USERNAME,jsonBridge:MQTT_JSON_BRIDGE,legacyBridge:MQTT_LEGACY_BRIDGE},pluto:{url:PLUTO_URL,timeoutMs:PLUTO_TIMEOUT_MS,readRetries:PLUTO_READ_RETRIES},veyon:{url:VEYON_WEBAPI_URL,keyName:VEYON_KEY_NAME,scanSubnet:VEYON_SCAN_SUBNET,scanStart:VEYON_SCAN_START,scanEnd:VEYON_SCAN_END,poolMax:VEYON_POOL_MAX,authRetries:VEYON_AUTH_RETRIES,thumbnailConcurrency:VEYON_THUMBNAIL_CONCURRENCY}}}
-function applyIntegrationConnections(value){
-  MQTT_URL=value.mqtt.url;MQTT_USERNAME=value.mqtt.username;MQTT_JSON_BRIDGE=value.mqtt.jsonBridge!==false;MQTT_LEGACY_BRIDGE=value.mqtt.legacyBridge!==false;
-  PLUTO_URL=value.pluto.url;PLUTO_TIMEOUT_MS=value.pluto.timeoutMs;PLUTO_READ_RETRIES=value.pluto.readRetries;
-  VEYON_WEBAPI_URL=value.veyon.url;VEYON_KEY_NAME=value.veyon.keyName;VEYON_SCAN_SUBNET=value.veyon.scanSubnet;VEYON_SCAN_START=value.veyon.scanStart;VEYON_SCAN_END=value.veyon.scanEnd;VEYON_POOL_MAX=value.veyon.poolMax;VEYON_AUTH_RETRIES=value.veyon.authRetries;VEYON_THUMBNAIL_CONCURRENCY=value.veyon.thumbnailConcurrency;
-  try{if(dbStore.hasSecret("integration.mqtt.password"))MQTT_PASSWORD=String(dbStore.getSecret("integration.mqtt.password")||"")}catch{}
-}
-function integrationConnectionsView(){return {...currentIntegrationConnections(),mqtt:{...currentIntegrationConnections().mqtt,passwordConfigured:dbStore.hasSecret("integration.mqtt.password")||Boolean(MQTT_PASSWORD)},veyon:{...currentIntegrationConnections().veyon,privateKeyConfigured:dbStore.hasSecret("veyon.private-key")||fs.existsSync(VEYON_PRIVATE_KEY_FILE)}}}
-const storedIntegrationConnections=dbStore.getPreference("integrations.connections",null);
-if(storedIntegrationConnections)applyIntegrationConnections(normalizedIntegrationConnections(storedIntegrationConnections,currentIntegrationConnections()));
-else try{if(dbStore.hasSecret("integration.mqtt.password"))MQTT_PASSWORD=String(dbStore.getSecret("integration.mqtt.password")||"")}catch{}
-
-function databaseBackedFile(file){
-  const resolved=path.resolve(file);
-  return resolved.startsWith(path.resolve(DATA_DIR)+path.sep) || resolved===path.resolve(DEVICE_CONFIG_FILE) || resolved===path.resolve(HARDWARE_CONFIG_FILE);
-}
-function readJson(file, fallback) {
-  if(databaseBackedFile(file))return dbStore.readJson(file,fallback,{namespace:keyForFile(file)});
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    console.warn(`Could not read ${file}: ${err.message}`);
-    return fallback;
-  }
-}
-function persistJson(file,value){
-  if(databaseBackedFile(file))return dbStore.writeJson(file,value,{namespace:keyForFile(file)});
-  fs.writeFileSync(file,JSON.stringify(value,null,2));
-}
-
-const hardwareConfig = readJson(HARDWARE_CONFIG_FILE, {pluto:{},govee:{devices:{},groups:{},sceneFallback:{}}});
-const goveeDevices = hardwareConfig.govee?.devices || {};
-const goveeGroups = hardwareConfig.govee?.groups || {};
-const goveeSceneFallback = hardwareConfig.govee?.sceneFallback || {};
-const goveeStates = {};
-const goveeLiveConfigs = {};
-const goveePresence = {};
-
-let goveeDiscovery = readJson(GOVEE_DISCOVERY_FILE,{version:1,autoAdd:true,devices:{},lastDiscoveryAt:null});
-if(!goveeDiscovery || typeof goveeDiscovery!=="object")goveeDiscovery={version:1,autoAdd:true,devices:{},lastDiscoveryAt:null};
-if(!goveeDiscovery.devices || typeof goveeDiscovery.devices!=="object")goveeDiscovery.devices={};
-if(goveeDiscovery.autoAdd===undefined)goveeDiscovery.autoAdd=true;
-
-function persistGoveeDiscovery(){
-  persistJson(GOVEE_DISCOVERY_FILE,goveeDiscovery);
-}
-function goveeAliasForId(deviceId){
-  const id=normalizeGoveePhysicalId(deviceId);
-  const existing=Object.values(goveeDiscovery.devices).find(x=>normalizeGoveePhysicalId(x?.id)===id);
-  if(existing?.alias)return cleanId(existing.alias);
-  const base=`govee-${id.replace(/[^a-z0-9]/gi,"").slice(-6).toLowerCase()||"device"}`;
-  let alias=cleanId(base),n=2;
-  while(goveeDevices[alias] && goveeDevices[alias].id!==id)alias=cleanId(`${base}-${n++}`);
-  return alias;
-}
-function goveeConfiguredAliasById(deviceId){
-  const needle=normalizeGoveePhysicalId(deviceId);
-  return Object.entries(goveeDevices).find(([,d])=>normalizeGoveePhysicalId(d?.id)===needle)?.[0]||null;
-}
-function goveeExtractMeta(deviceId,cfg={}){
-  const device=cfg?.device&&typeof cfg.device==="object"?cfg.device:{};
-  const name=String(cfg?.name||device?.name||device?.friendly_name||`Govee ${String(deviceId).slice(-6)}`).trim();
-  const sku=String(cfg?.model||device?.model||device?.model_id||cfg?.device_class||"").trim();
-  const ip=String(cfg?.ip||device?.ip||device?.ip_address||"").trim();
-  return {name:name||`Govee ${String(deviceId).slice(-6)}`,sku,ip};
-}
-function goveeMetaFromStatusAttributes(deviceId,attrs={}){
-  const overall=attrs?.overall&&typeof attrs.overall==="object"?attrs.overall:{};
-  const lan=attrs?.lan&&typeof attrs.lan==="object"?attrs.lan:{};
-  const platform=attrs?.platform_metadata&&typeof attrs.platform_metadata==="object"?attrs.platform_metadata:{};
-  const name=String(
-    attrs?.name||
-    attrs?.friendly_name||
-    platform?.name||
-    platform?.device_name||
-    `Govee ${String(deviceId).slice(-6)}`
-  ).trim();
-  const sku=String(
-    attrs?.sku||
-    attrs?.model||
-    platform?.sku||
-    platform?.model||
-    ""
-  ).trim();
-  const ip=String(
-    attrs?.ip||
-    attrs?.ip_address||
-    lan?.ip||
-    lan?.ip_address||
-    platform?.ip||
-    ""
-  ).trim();
-  return {name:name||`Govee ${String(deviceId).slice(-6)}`,sku,ip,overall,lan};
-}
-function normalizeGoveePhysicalId(raw){
-  return String(raw||"").replace(/:/g,"").trim().toUpperCase();
-}
-function isPhysicalGoveeId(raw){
-  return /^[0-9A-F]{16}$/.test(normalizeGoveePhysicalId(raw));
-}
-function isSyntheticGoveeEntity(deviceId,cfg={}){
-  const raw=String(deviceId||"");
-  const name=String(cfg?.name||cfg?.friendly_name||"");
-  if(/-\d+$/.test(raw))return true;
-  if(/^segment\s+\d+/i.test(name))return true;
-  if(/^\d{6,12}$/.test(raw))return true;
-  if(!isPhysicalGoveeId(raw))return true;
-  return false;
-}
-function purgeGoveeAlias(alias){
-  const d=goveeDevices[alias];
-  if(d?.id)delete goveePresence[String(d.id)];
-  if(d?.id)delete goveeStates[d.id];
-  delete goveeDevices[alias];
-  for(const [gid,members] of Object.entries(goveeGroups)){
-    if(Array.isArray(members)){
-      goveeGroups[gid]=members.filter(x=>x!==alias);
-      if(gid!=="all" && goveeGroups[gid].length===0)delete goveeGroups[gid];
-    }
-  }
-  for(const [key,entry] of Object.entries(goveeDiscovery.devices)){
-    if(key===alias || entry?.alias===alias)delete goveeDiscovery.devices[key];
-  }
-}
-function migrateGoveeDiscoveryRegistry(){
-  let removed=0;
-  for(const [key,entry] of Object.entries({...goveeDiscovery.devices})){
-    const id=String(entry?.id||"");
-    if(entry?.discovered && isSyntheticGoveeEntity(id,entry)){
-      purgeGoveeAlias(cleanId(entry.alias||key)); removed++;
-    }
-  }
-  if(removed){persistGoveeDiscovery();audit({kind:"govee.discovery.migrate",removedSynthetic:removed});}
-  return removed;
-}
-function reconcileGoveeDiscovery(nowMs=Date.now(),options={}){
-  const force=!!options.force;
-  let removed=0,offline=0;
-  for(const [key,entry] of Object.entries({...goveeDiscovery.devices})){
-    if(!entry?.discovered)continue;
-    const alias=cleanId(entry.alias||key);
-    const id=String(entry.id||"");
-    if(isSyntheticGoveeEntity(id,entry)){purgeGoveeAlias(alias);removed++;continue;}
-    const seen=Date.parse(goveePresence[id]?.lastSeen||entry.lastSeen||0);
-    if(!Number.isFinite(seen)||seen<=0)continue;
-    const age=nowMs-seen;
-    if((force&&age>60000)||(!force&&age>GOVEE_RECONCILE_GRACE_MS)){purgeGoveeAlias(alias);removed++;}
-    else if(age>60000){goveePresence[id]={status:"offline",lastSeen:new Date(seen).toISOString()};offline++;}
-  }
-  if(removed){persistGoveeDiscovery();audit({kind:"govee.discovery.reconcile",removed,offline,force});broadcastControllers({type:"govee.inventory",reason:force?"manual-reconcile":"reconcile",removed});}
-  return {removed,offline,force};
-}
-function applyGoveeRegistryEntry(entry){
-  if(!entry?.id||!entry?.alias)return;
-  const alias=cleanId(entry.alias);
-  const current=goveeDevices[alias]||{};
-  goveeDevices[alias]={
-    ...current,
-    name:entry.name||current.name||`Govee ${String(entry.id).slice(-6)}`,
-    sku:entry.sku||current.sku||"",
-    id:String(entry.id),
-    ...(entry.ip?{ip:entry.ip}:{}),
-    discovered:entry.discovered!==false,
-    firstSeen:entry.firstSeen||current.firstSeen||null,
-    lastSeen:entry.lastSeen||current.lastSeen||null
-  };
-  if(!Array.isArray(goveeGroups.all))goveeGroups.all=[];
-  if(!goveeGroups.all.includes(alias))goveeGroups.all.push(alias);
-  for(const group of Array.isArray(entry.groups)?entry.groups:[]){
-    const gid=cleanId(group);
-    if(!gid||gid==="all")continue;
-    if(!Array.isArray(goveeGroups[gid]))goveeGroups[gid]=[];
-    if(!goveeGroups[gid].includes(alias))goveeGroups[gid].push(alias);
-  }
-}
-function bootstrapGoveeDiscovery(){
-  for(const [alias,d] of Object.entries(goveeDevices)){
-    if(!d?.id)continue;
-    const existing=Object.values(goveeDiscovery.devices).find(x=>x?.id===String(d.id));
-    if(existing){
-      existing.alias=cleanId(existing.alias||alias);
-      if(existing.name) d.name=existing.name;
-      if(existing.sku) d.sku=existing.sku;
-      if(existing.ip) d.ip=existing.ip;
-    }
-  }
-  for(const entry of Object.values(goveeDiscovery.devices))applyGoveeRegistryEntry(entry);
-}
-bootstrapGoveeDiscovery();
-migrateGoveeDiscoveryRegistry();
-
-function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
-  const id=normalizeGoveePhysicalId(deviceId);
-  if(!id || isSyntheticGoveeEntity(deviceId,cfg))return null;
-  const now=new Date().toISOString();
-  const meta=goveeExtractMeta(id,cfg);
-  let alias=goveeConfiguredAliasById(id)||goveeAliasForId(id);
-  let entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===id);
-
-  // Existing hardware.json devices are known already; create a registry overlay only
-  // when we need discovery metadata or user-editable overrides.
-  if(!entry){
-    entry={
-      id,alias,
-      name:goveeDevices[alias]?.name||meta.name,
-      sku:goveeDevices[alias]?.sku||meta.sku,
-      ip:goveeDevices[alias]?.ip||meta.ip||"",
-      groups:[],
-      discovered:!goveeConfiguredAliasById(id),
-      firstSeen:now,lastSeen:now,source
-    };
-    goveeDiscovery.devices[alias]=entry;
-  }else{
-    alias=cleanId(entry.alias||alias);
-    entry.alias=alias;
-    entry.lastSeen=now;
-    entry.source=source||entry.source;
-    if((!entry.name || /^Govee\s+[0-9a-f]{6}$/i.test(entry.name)) && meta.name)entry.name=meta.name;
-    if(!entry.sku&&meta.sku)entry.sku=meta.sku;
-    if(!entry.ip&&meta.ip)entry.ip=meta.ip;
-  }
-
-  if(goveeDiscovery.autoAdd!==false){
-    applyGoveeRegistryEntry(entry);
-    goveeDiscovery.lastDiscoveryAt=now;
-    persistGoveeDiscovery();
-    audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice:!goveeConfiguredAliasById(id)});
-    broadcastControllers({type:"govee.discovery",deviceId:id,alias,device:goveeDevices[alias]});
-  }
-  return alias;
-}
-function touchGoveePresence(deviceId,status="online"){
-  const id=String(deviceId||"");
-  if(!id)return;
-  const now=new Date().toISOString();
-  goveePresence[id]={status:String(status||"online").toLowerCase(),lastSeen:now};
-  const entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===id);
-  if(entry){
-    entry.lastSeen=now;
-    // Do not persist on every state packet; periodic/stateful UI derives presence in memory.
-    const alias=cleanId(entry.alias);
-    if(goveeDevices[alias])goveeDevices[alias].lastSeen=now;
-  }
-}
-function goveeDeviceOnline(deviceId){
-  const p=goveePresence[String(deviceId||"")];
-  if(!p)return null;
-  if(["offline","unavailable","false","0"].includes(String(p.status).toLowerCase()))return false;
-  return true;
-}
-function updateGoveeDevice(alias,input={}){
-  alias=cleanId(alias);
-  const d=goveeDevices[alias];
-  if(!d)throw new Error("Unknown Govee device");
-  let entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===String(d.id));
-  if(!entry){
-    entry={id:String(d.id),alias,name:d.name||alias,sku:d.sku||"",ip:d.ip||"",groups:[],discovered:false,firstSeen:new Date().toISOString(),lastSeen:null,source:"configured"};
-    goveeDiscovery.devices[alias]=entry;
-  }
-  if(input.name!==undefined){
-    const name=String(input.name||"").trim().slice(0,100);
-    if(!name)throw new Error("Name cannot be blank");
-    entry.name=name;d.name=name;
-  }
-  if(Array.isArray(input.groups)){
-    const groups=[...new Set(input.groups.map(cleanId).filter(x=>x&&x!=="all"))];
-    // Remove the alias from all editable groups, then add requested groups.
-    for(const [gid,members] of Object.entries(goveeGroups)){
-      if(gid==="all"||!Array.isArray(members))continue;
-      goveeGroups[gid]=members.filter(x=>x!==alias);
-      if(!goveeGroups[gid].length && !Object.values(goveeDiscovery.devices).some(x=>(x.groups||[]).includes(gid)))delete goveeGroups[gid];
-    }
-    entry.groups=groups;
-    for(const gid of groups){
-      if(!Array.isArray(goveeGroups[gid]))goveeGroups[gid]=[];
-      if(!goveeGroups[gid].includes(alias))goveeGroups[gid].push(alias);
-    }
-  }
-  applyGoveeRegistryEntry(entry);
-  persistGoveeDiscovery();
-  return {alias,device:goveeDevices[alias],groups:entry.groups||[]};
-}
-
-function makeDefaultPlutoSchedules(){
-  const out={};
-  for(const type of ["hdmi","hdbt"]){
-    for(let index=1;index<=8;index++){
-      out[`${type}:${index}`]={type,index,enabled:false,onTime:"07:30",offTime:"16:00",days:[1,2,3,4,5],lastRun:{},lastExec:{}};
-    }
-  }
-  return out;
-}
-let plutoSchedules=readJson(PLUTO_SCHEDULES_FILE,makeDefaultPlutoSchedules());
-function persistPlutoSchedules(){
-  persistJson(PLUTO_SCHEDULES_FILE,plutoSchedules);
-}
-
-function makeDefaultAvLabels(){
-  return {
-    outputs:Array.from({length:8},(_,i)=>`TV ${i+1}`),
-    inputs:Array.from({length:8},(_,i)=>`Content Source ${i+1}`),
-    sourceEndpoints:Array.from({length:8},(_,i)=>`source${i+1}`)
-  };
-}
-function normalizeAvLabels(value){
-  const d=makeDefaultAvLabels(),v=value&&typeof value==="object"?value:{};
-  const clean=(arr,defaults)=>Array.from({length:8},(_,i)=>{
-    const text=String(Array.isArray(arr)?arr[i]||"":"").trim().slice(0,60);
-    return text||defaults[i];
-  });
-  return {outputs:clean(v.outputs,d.outputs),inputs:clean(v.inputs,d.inputs),sourceEndpoints:clean(v.sourceEndpoints,d.sourceEndpoints)};
-}
-let avLabels=normalizeAvLabels(readJson(AV_LABELS_FILE,makeDefaultAvLabels()));
-function persistAvLabels(){persistJson(AV_LABELS_FILE,avLabels)}
-
-let mediaLibrary=readJson(MEDIA_LIBRARY_FILE,{files:{}});
-if(!mediaLibrary || typeof mediaLibrary!=="object")mediaLibrary={files:{}};
-if(!mediaLibrary.files || typeof mediaLibrary.files!=="object")mediaLibrary.files={};
-
-function persistMediaLibrary(){
-  persistJson(MEDIA_LIBRARY_FILE,mediaLibrary);
-}
-
-let classroomAutomations=readJson(AUTOMATIONS_FILE,{version:1,events:[]});
-if(!classroomAutomations || typeof classroomAutomations!=="object") classroomAutomations={version:1,events:[]};
-if(!Array.isArray(classroomAutomations.events)) classroomAutomations.events=[];
-
-function persistAutomations(){
-  persistJson(AUTOMATIONS_FILE,classroomAutomations);
-}
-function commitAutomations(next){persistJson(AUTOMATIONS_FILE,next);classroomAutomations=next;return next}
-
-function validDateKey(v){
-  const text=String(v||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(text))return false;
-  const [year,month,day]=text.split("-").map(Number),parsed=new Date(Date.UTC(year,month-1,day));
-  return parsed.getUTCFullYear()===year&&parsed.getUTCMonth()===month-1&&parsed.getUTCDate()===day;
-}
-function uniqueDateKeys(values){
-  return [...new Set((Array.isArray(values)?values:[])
-    .map(v=>String(v||"").trim()).filter(validDateKey))].sort();
-}
-function localDateKey(d=new Date()){
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-
-function schedulerLocalTimestamp(d=new Date()){
-  return new Intl.DateTimeFormat("en-US",{
-    timeZone:SCHEDULER_TIMEZONE,year:"numeric",month:"2-digit",day:"2-digit",
-    hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"short"
-  }).format(d);
-}
-function schedulerStatus(){
-  const now=new Date();
-  return {
-    timezone:SCHEDULER_TIMEZONE,
-    catchupMinutes:SCHEDULER_CATCHUP_MINUTES,
-    utcTime:now.toISOString(),
-    localTime:schedulerLocalTimestamp(now),
-    hostTimezone:Intl.DateTimeFormat().resolvedOptions().timeZone||null
-  };
-}
-function dateFromKey(key){
-  if(!validDateKey(key))return null;
-  const [y,m,d]=key.split("-").map(Number);
-  const out=new Date(y,m-1,d,12,0,0,0);
-  return out.getFullYear()===y&&out.getMonth()===m-1&&out.getDate()===d?out:null;
-}
-const DISTRICT_NO_SCHOOL_DATES_2026_2027 = Object.freeze([]);
-
-const DISTRICT_HALF_DAY_DATES_2026_2027 = Object.freeze([]);
-
-function normalizeSchedulerCalendar(input={},existing={}){
-  const noSchoolRequested=input.noSchoolDates??input.excludedDates??existing.noSchoolDates??existing.excludedDates;
-  const noSchoolDates=uniqueDateKeys([
-    ...DISTRICT_NO_SCHOOL_DATES_2026_2027,
-    ...(Array.isArray(noSchoolRequested)?noSchoolRequested:[])
-  ]);
-  const remoteDates=uniqueDateKeys(input.remoteDates===undefined?existing.remoteDates:input.remoteDates).filter(x=>!noSchoolDates.includes(x));
-  const halfRequested=input.halfDayDates===undefined?existing.halfDayDates:input.halfDayDates;
-  const halfDayDates=uniqueDateKeys([...DISTRICT_HALF_DAY_DATES_2026_2027,...(Array.isArray(halfRequested)?halfRequested:[])]).filter(x=>!noSchoolDates.includes(x)&&!remoteDates.includes(x));
-  const twoHourDelayDates=uniqueDateKeys(input.twoHourDelayDates===undefined?existing.twoHourDelayDates:input.twoHourDelayDates).filter(x=>!noSchoolDates.includes(x)&&!remoteDates.includes(x)&&!halfDayDates.includes(x));
-  const oneHourDelayDates=uniqueDateKeys(input.oneHourDelayDates===undefined?existing.oneHourDelayDates:input.oneHourDelayDates).filter(x=>!noSchoolDates.includes(x)&&!remoteDates.includes(x)&&!halfDayDates.includes(x)&&!twoHourDelayDates.includes(x));
-  const anchorDate=String(input.anchorDate||existing.anchorDate||localDateKey(new Date()));
-  if(!validDateKey(anchorDate))throw Error("School-cycle anchor must be a valid YYYY-MM-DD date");
-  return {
-    noSchoolDates,
-    excludedDates:noSchoolDates, // backward-compatible alias
-    halfDayDates,
-    oneHourDelayDates,
-    twoHourDelayDates,
-    remoteDates,
-    anchorDate,
-    anchorCycleDay:String(input.anchorCycleDay||existing.anchorCycleDay||'A'),
-    anchorDayColor:String(input.anchorDayColor||existing.anchorDayColor||'Day A'),
-    updatedAt:new Date().toISOString()
-  };
-}
-let schedulerCalendar=normalizeSchedulerCalendar(
-  readJson(SCHEDULER_CALENDAR_FILE,{excludedDates:[]}),
-  {excludedDates:[],halfDayDates:[],oneHourDelayDates:[],twoHourDelayDates:[],remoteDates:[]}
-);
-function persistSchedulerCalendar(){
-  persistJson(SCHEDULER_CALENDAR_FILE,schedulerCalendar);
-}
-// Persist once at startup so existing installations migrate away from the old
-// federal-holiday toggle and receive the district closure dates automatically.
-persistSchedulerCalendar();
-
-// The active cycle and exception-day behavior is school-configurable. Existing
-// secured appliances receive a compatibility profile once; fresh installations
-// start with a generic two-day school cycle instead of site-specific defaults.
-const storedSchoolScheduleProfile=dbStore.getPreference("school.schedule.profile",null);
-let schoolScheduleProfile=normalizeSchoolScheduleProfile(
-  storedSchoolScheduleProfile||{},
-  storedSchoolScheduleProfile
-    ? defaultSchoolScheduleProfile({anchorDate:schedulerCalendar.anchorDate})
-    : (dbStore.userCount()>0?legacySchoolScheduleProfile(schedulerCalendar):defaultSchoolScheduleProfile({anchorDate:schedulerCalendar.anchorDate}))
-);
-if(!storedSchoolScheduleProfile){schoolScheduleProfile.updatedAt=new Date().toISOString();dbStore.setPreference("school.schedule.profile",schoolScheduleProfile)}
-function setSchoolScheduleProfile(value){schoolScheduleProfile=normalizeSchoolScheduleProfile(value,schoolScheduleProfile);schoolScheduleProfile.updatedAt=new Date().toISOString();dbStore.setPreference("school.schedule.profile",schoolScheduleProfile);return schoolScheduleProfile}
-
-const DEFAULT_MORNING_ANNOUNCEMENTS_URL = String(process.env.MORNING_ANNOUNCEMENTS_URL||"").trim();
-const MORNING_ANNOUNCEMENTS_URL_SECRET="automation.morning-announcements.stream-url";
-const REDACTED_CONFIG_VALUE="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢";
-const MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS=new Set(DISPLAY_GATEWAY_HOSTS);
-if(DEFAULT_MORNING_ANNOUNCEMENTS_URL){
-  try{MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS.add(new URL(DEFAULT_MORNING_ANNOUNCEMENTS_URL).hostname.toLowerCase())}catch{}
-}
-function validateMorningAnnouncementsUrl(value){
-  const text=String(value||"").trim();
-  if(!text)return "";
-  try{return validateDisplayGatewayTarget(text,MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS).toString()}
-  catch(error){throw Error(`Morning Announcements URL is not approved: ${error.message}`)}
-}
-function normalizeMorningAnnouncements(input={},existing={}){
-  const requestedStreamUrl=input.streamUrl===REDACTED_CONFIG_VALUE?existing.streamUrl:input.streamUrl;
-  const streamUrl=validateMorningAnnouncementsUrl(String(requestedStreamUrl??existing.streamUrl??DEFAULT_MORNING_ANNOUNCEMENTS_URL).trim()||DEFAULT_MORNING_ANNOUNCEMENTS_URL);
-  const startCandidate=String(input.startTime??existing.startTime??"07:00"),endCandidate=String(input.endTime??existing.endTime??"08:30");
-  if(!validTime(startCandidate)||!validTime(endCandidate))throw Error("Morning Announcement times must be valid HH:MM values");
-  const startTime=startCandidate,endTime=endCandidate;
-  const finite=(value,fallback,min,max)=>{const n=Number(value);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback};
-  return {
-    enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,
-    streamUrl, startTime, endTime,
-    volumePercent:finite(input.volumePercent??existing.volumePercent,100,0,100),
-    targets:Array.isArray(input.targets)&&input.targets.length?[...new Set(input.targets.map(cleanId).filter(Boolean))]:(Array.isArray(existing.targets)&&existing.targets.length?existing.targets:["all"]),
-    checkIntervalSeconds:finite(input.checkIntervalSeconds??existing.checkIntervalSeconds,15,10,120),
-    offlineConfirmations:finite(input.offlineConfirmations??existing.offlineConfirmations,2,1,8),
-    updatedAt:new Date().toISOString()
-  };
-}
-const storedMorningAnnouncements=readJson(MORNING_ANNOUNCEMENTS_FILE,{});
-let securedMorningAnnouncementsUrl="";
-try{securedMorningAnnouncementsUrl=String(dbStore.getSecret(MORNING_ANNOUNCEMENTS_URL_SECRET)||"")}catch(error){console.warn(`Morning Announcements secret could not be read: ${error.message}`)}
-let morningAnnouncements;
-try{morningAnnouncements=normalizeMorningAnnouncements({...storedMorningAnnouncements,streamUrl:securedMorningAnnouncementsUrl||storedMorningAnnouncements.streamUrl||DEFAULT_MORNING_ANNOUNCEMENTS_URL},{})}
-catch(error){
-  // A legacy URL that predates the outbound allowlist must not crash boot or be
-  // contacted implicitly. Start disabled until an administrator approves its
-  // host through DISPLAY_GATEWAY_ALLOWED_HOSTS and saves it again.
-  console.error(`Morning Announcements disabled: ${error.message}`);
-  morningAnnouncements=normalizeMorningAnnouncements({...storedMorningAnnouncements,enabled:false,streamUrl:""},{});
-}
-function publicMorningAnnouncementsConfig(){
-  return {...morningAnnouncements,streamUrl:morningAnnouncements.streamUrl?REDACTED_CONFIG_VALUE:"",streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
-}
-function persistMorningAnnouncements(){
-  if(morningAnnouncements.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,morningAnnouncements.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
-  else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
-  const {streamUrl:_secret,...stored}=morningAnnouncements;
-  const persisted={...stored,streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
-  persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
-  // readJson imports legacy files into SQLite but intentionally leaves their
-  // source in place. Atomically scrub this one after the encrypted write wins.
-  if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
-    const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${process.pid}`;
-    fs.writeFileSync(staged,JSON.stringify(persisted,null,2),{mode:0o600});
-    fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);
-  }
-}
-// Migrate legacy plaintext/environment configuration into the encrypted store
-// and remove it from the ordinary database-backed JSON object.
-persistMorningAnnouncements();
-const morningAnnouncementsRuntime={live:false,active:false,mode:null,targets:[],lastCheck:null,lastWatcherTick:null,lastLiveAt:null,lastEndedAt:null,lastError:null,probe:null,probeStatus:null,probeDurationMs:null,offlineCount:0,lastAssertAt:0,releaseReconcilePending:false};
-let morningAnnouncementsTimer=null;
-let morningAnnouncementsReleaseRetryTimer=null;
-let morningAnnouncementsLifecycle=Promise.resolve();
-let morningAnnouncementsLifecycleBusy=0;
-function serializeMorningAnnouncementsLifecycle(task){
-  const invoke=async()=>{morningAnnouncementsLifecycleBusy++;try{return await task()}finally{morningAnnouncementsLifecycleBusy=Math.max(0,morningAnnouncementsLifecycleBusy-1)}};
-  const run=morningAnnouncementsLifecycle.then(invoke,invoke);
-  morningAnnouncementsLifecycle=run.catch(()=>{});
-  return run;
-}
-function restartMorningAnnouncementsWatcher(){
-  if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
-  const run=async()=>{try{await serializeMorningAnnouncementsLifecycle(()=>morningAnnouncementsTick())}finally{morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}};
-  morningAnnouncementsTimer=setTimeout(run,2500);morningAnnouncementsTimer.unref();
-}
-const deferredAnnouncementAutomations=new Map();
-function announcementsPlaybackUrl(raw=morningAnnouncements.streamUrl){
-  try{const u=new URL(raw);u.searchParams.set("autoplay","true");u.searchParams.set("mute","false");if(!u.searchParams.get("playOrder"))u.searchParams.set("playOrder","webrtc,hls");return u.toString()}catch{return raw}
-}
-function announcementsCoordinates(raw=morningAnnouncements.streamUrl){
-  try{
-    const u=new URL(raw),parts=u.pathname.split("/").filter(Boolean);
-    const app=parts[0]||"LiveApp",id=u.searchParams.get("id")||"stream";
-    return {
-      origin:u.origin,app,id,hostname:u.hostname,port:u.port||null,protocol:u.protocol,
-      token:u.searchParams.get("token")||null,subscriberId:u.searchParams.get("subscriberId")||null,subscriberCode:u.searchParams.get("subscriberCode")||null
-    };
-  }catch{return null}
-}
-function announcementsWebSocketUrls(c){
-  const proto=c.protocol==="https:"?"wss:":"ws:";
-  const urls=[`${proto}//${c.hostname}${c.port?`:${c.port}`:""}/${c.app}/websocket`];
-  // Keep WebSocket probing on the already validated HTTP(S) origin. Probing a
-  // guessed vendor port would bypass the outbound safe-port policy.
-  return [...new Set(urls)];
-}
-async function probeMorningAnnouncementsWebRtc(c,timeoutMs=3500){
-  const urls=announcementsWebSocketUrls(c),attempts=[];
-  for(const url of urls){
-    const result=await new Promise(resolve=>{
-      let settled=false,ws=null;
-      const finish=(value)=>{if(settled)return;settled=true;clearTimeout(timer);try{if(ws&&ws.readyState===WebSocket.OPEN)ws.close()}catch{};resolve(value)};
-      const timer=setTimeout(()=>finish({live:null,probe:"webrtc",status:"timeout",url}),timeoutMs);
-      try{
-        ws=new WebSocket(url,{handshakeTimeout:timeoutMs});
-        ws.on("open",()=>{
-          const msg={command:"play",streamId:c.id};
-          if(c.token)msg.token=c.token;if(c.subscriberId)msg.subscriberId=c.subscriberId;if(c.subscriberCode)msg.subscriberCode=c.subscriberCode;
-          try{ws.send(JSON.stringify(msg))}catch(e){finish({live:null,probe:"webrtc",status:"send-error",url,error:e.message})}
-        });
-        ws.on("message",data=>{
-          let j=null;try{j=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{return}
-          const command=String(j?.command||"").toLowerCase(),definition=String(j?.definition||j?.error_definition||"").toLowerCase();
-          // A WebRTC offer / play-start notification is definitive evidence that the live stream exists.
-          if(command==="takeconfiguration"||definition==="play_started"||definition==="streaming_started")
-            return finish({live:true,probe:"webrtc",status:definition||command,url});
-          const offlineDefs=["no_stream_exist","stream_not_exist_or_not_streaming","stream_not_exist","not_found"];
-          if(command==="error"&&offlineDefs.some(x=>definition.includes(x)))
-            return finish({live:false,probe:"webrtc",status:definition||"not-streaming",url});
-          if(definition==="webrtc_not_enabled")
-            return finish({live:null,probe:"webrtc",status:definition,url});
-        });
-        ws.on("error",err=>finish({live:null,probe:"webrtc",status:"error",url,error:String(err?.message||err)}));
-        ws.on("close",()=>{if(!settled)finish({live:null,probe:"webrtc",status:"closed",url})});
-      }catch(err){finish({live:null,probe:"webrtc",status:"error",url,error:String(err?.message||err)})}
-    });
-    attempts.push(result);
-    if(result.live===true||result.live===false)return {...result,attempts};
-  }
-  return {live:null,probe:"webrtc",status:"unavailable",attempts};
-}
-async function fetchWithDeadline(url,options={},timeoutMs=3500){
-  const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),timeoutMs);
-  try{
-    let current=validateDisplayGatewayTarget(url,MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS);
-    for(let redirects=0;redirects<=3;redirects++){
-      const response=await fetch(current,{...options,redirect:"manual",signal:ctrl.signal,headers:{"cache-control":"no-cache",...(options.headers||{})}});
-      if(![301,302,303,307,308].includes(response.status))return response;
-      const location=response.headers.get("location");
-      if(!location)throw Error("Morning Announcements probe redirect is missing a location");
-      if(redirects===3)throw Error("Morning Announcements probe exceeded the redirect limit");
-      current=validateDisplayGatewayTarget(new URL(location,current),MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS);
-    }
-    throw Error("Morning Announcements probe redirect failed");
-  }finally{clearTimeout(timer)}
-}
-async function probeMorningAnnouncementsLive(){
-  const c=announcementsCoordinates();
-  if(!c)return {live:false,probe:"hls",status:"invalid-url",error:"Invalid stream URL",durationMs:0,attempts:[]};
-  const started=Date.now(),stamp=started,attempts=[];
-  const primary=`${c.origin}/${c.app}/streams/${encodeURIComponent(c.id)}.m3u8?_=${stamp}`;
-  const adaptive=`${c.origin}/${c.app}/streams/${encodeURIComponent(c.id)}_adaptive.m3u8?_=${stamp}`;
-  for(const [index,url] of [primary,adaptive].entries()){
-    try{
-      const r=await fetchWithDeadline(url,{},3500);
-      if(r.status===404){
-        attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:404,ok:false,url,status:"not-found"});
-        // This Ant Media deployment creates the primary manifest while a publisher
-        // is live and removes it when publishing stops. Primary 404 is authoritative OFFLINE.
-        if(index===0)return {live:false,probe:"hls",status:"404-offline",httpStatus:404,url,durationMs:Date.now()-started,attempts};
-        continue;
-      }
-      if(!r.ok){
-        attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:r.status,ok:false,url,status:`http-${r.status}`});
-        continue;
-      }
-      const text=await r.text();
-      const valid=text.startsWith("#EXTM3U")&&(text.includes("#EXTINF")||text.includes("#EXT-X-STREAM-INF"));
-      attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:r.status,ok:valid,url,status:valid?"playlist":"invalid-playlist"});
-      if(valid){
-        const seq=(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)||[])[1]||null;
-        return {live:true,probe:"hls",status:"playlist",httpStatus:r.status,url,mediaSequence:seq,durationMs:Date.now()-started,attempts};
-      }
-    }catch(err){
-      attempts.push({probe:index===0?"hls":"hls-adaptive",ok:false,url,error:err?.name==='AbortError'?"timeout":String(err?.message||err)});
-    }
-  }
-  // Network/proxy failures are UNKNOWN, not OFFLINE, so they do not consume
-  // the two-confirmation stream-ended guard.
-  return {live:null,probe:"hls",status:"unavailable",error:"HLS probe unavailable",durationMs:Date.now()-started,attempts};
-}
-
-function localMinutesNow(date=new Date()){return date.getHours()*60+date.getMinutes()}
-function minutesFromHHMM(v){const [h,m]=String(v||"00:00").split(":").map(Number);return h*60+m}
-function withinMorningAnnouncementsWindow(now=new Date()){
-  const n=localMinutesNow(now),a=minutesFromHHMM(morningAnnouncements.startTime),b=minutesFromHHMM(morningAnnouncements.endTime);
-  return a<=b?(n>=a&&n<=b):(n>=a||n<=b);
-}
-function morningAnnouncementsSchoolDay(now=new Date()){
-  if(isAutomationSuppressed(now).blocked)return false;
-  return schoolCycleForDate(now).isStudentSchoolDay;
-}
-function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
-function scheduleAnnouncementAudioRetries(targets){
-  for(const delay of [1500,4500,10000,20000])setTimeout(()=>{
-    if(fullExportFreeze.requested)return;
-    if(!morningAnnouncementsRuntime.active)return;
-    if(morningAnnouncementsRuntime.mode!=="manual"&&!morningAnnouncementsRuntime.live)return;
-    trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
-  },delay);
-}
-async function setMorningAnnouncementPriorityTargets(targets,active){
-  for(const id of targets||[]){if(active)backgroundMusicPriorityTargets.add(id);else backgroundMusicPriorityTargets.delete(id)}
-  // Morning Announcements are non-optional priority audio even when ordinary
-  // automation audio pausing has been disabled in the Background Music policy.
-  await backgroundMusicReconcilePriority({force:true});
-}
-async function assertMorningAnnouncements({mode="automatic",targetsOverride=null,urlOverride=null}={}){
-  const targets=Array.isArray(targetsOverride)&&targetsOverride.length?automationDisplayTargets(targetsOverride):announcementTargets();if(!targets.length)return;
-  const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
-  // Acquire both the display and audio priority state before sending any
-  // takeover commands. Otherwise a scheduler tick can overwrite the display,
-  // or Music Assistant can remain audible, while takeover is in flight.
-  morningAnnouncementsRuntime.active=true;morningAnnouncementsRuntime.mode=mode;morningAnnouncementsRuntime.targets=[...targets];morningAnnouncementsRuntime.lastAssertAt=Date.now();morningAnnouncementsRuntime.lastLiveAt=new Date().toISOString();
-  // Start the potentially network-bound Music Assistant pause concurrently so
-  // an unavailable audio service cannot delay urgent announcement video.
-  const priorityTask=setMorningAnnouncementPriorityTargets(targets,true);
-  priorityTask.catch(()=>{});
-  // Treat announcements as an exclusive display takeover. Clear only the target
-  // display content; do not invoke the master classroom clear because that would
-  // pause lesson/session queues beyond the announcement window.
-  try{
-    await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
-    await executeCommand({type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
-    await priorityTask;
-  }catch(error){
-    await priorityTask.catch(()=>{});
-    morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0;
-    await setMorningAnnouncementPriorityTargets(targets,false);
-    throw error;
-  }
-  scheduleAnnouncementAudioRetries(targets);
-  audit({kind:"automation.morning-announcements.start",mode,targets,url,clearedFirst:true});
-}
-function queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes){
-  const occurrenceKey=event.classId||"manual",key=`${storedEvent.id}:${occurrenceKey}:${scheduledMinuteKey}`;
-  if(!deferredAnnouncementAutomations.has(key))deferredAnnouncementAutomations.set(key,{key,storedEventId:storedEvent.id,event:{...event},occurrenceKey,scheduledMinuteKey,dateKey,deltaMinutes,queuedAt:new Date().toISOString()});
-  storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,ok:true,deferred:true,message:"Deferred while Morning Announcements have priority"};
-  return key;
-}
-function automationDeferredDisplayTargets(event){
-  const out=new Set();
-  const collect=(action,targets)=>{
-    const a=String(action||"").toLowerCase();
-    if(!a.startsWith("display."))return;
-    for(const id of automationDisplayTargets(targets||[]))out.add(id);
-  };
-  collect(event.action,event.targets);
-  for(const step of Array.isArray(event.actions)?event.actions:[]){
-    const action=step?.action||event.action;
-    const stepDomain=automationTargetDomain(action),eventDomain=automationTargetDomain(event.action);
-    let targets;
-    if(step?.useEventTargets!==false&&stepDomain===eventDomain)targets=event.targets;
-    else if(["display-content","display-overlay"].includes(stepDomain)&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)targets=event._classDefaultTargets;
-    else if(Array.isArray(step?.targets)&&step.targets.length)targets=step.targets;
-    else if(["display-content","display-overlay"].includes(stepDomain))targets=["all"];
-    else targets=[];
-    collect(action,targets);
-  }
-  const timer=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-  if(timer?.enabled){
-    const targets=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
-      ? event._classDefaultTargets
-      : (timer.useEventTargets!==false?event.targets:(Array.isArray(timer.targets)&&timer.targets.length?timer.targets:event.targets));
-    for(const id of automationDisplayTargets(targets||[]))out.add(id);
-  }
-  return out;
-}
-function automationOccurrenceScheduledMinutes(event){
-  const [h,m]=String(event?.time||"00:00").split(":").map(Number);
-  return (Number.isFinite(h)?h:0)*60+(Number.isFinite(m)?m:0);
-}
-function automationOccurrenceIsCurrentlyApplicable(event,now=new Date()){
-  if(!event||!automationMatchesDate(event,now).match)return false;
-  const scheduled=automationOccurrenceScheduledMinutes(event),current=localMinutesNow(now);
-  if(scheduled>current)return false;
-  if(event._class){
-    const start=Number(event._classStartAt),end=Number(event._classEndAt),stamp=now.getTime();
-    if(Number.isFinite(start)&&stamp<start)return false;
-    if(Number.isFinite(end)&&stamp>=end)return false;
-  }
-  return automationDeferredDisplayTargets(event).size>0;
-}
-function currentAutomationDisplayWinners(now=new Date()){
-  const candidates=[];
-  for(const storedEvent of classroomAutomations.events){
-    if(!storedEvent?.enabled)continue;
-    for(const event of resolveAutomationOccurrences(storedEvent,now)){
-      if(!automationOccurrenceIsCurrentlyApplicable(event,now))continue;
-      const targets=[...automationDeferredDisplayTargets(event)];
-      if(!targets.length)continue;
-      candidates.push({storedEvent,event,targets,scheduledMinutes:automationOccurrenceScheduledMinutes(event)});
-    }
-  }
-  const winnersByTarget=new Map();
-  for(const candidate of candidates){
-    for(const id of candidate.targets){
-      const prior=winnersByTarget.get(id);
-      const cp=Number(candidate.storedEvent.priority||0),pp=Number(prior?.storedEvent?.priority||0);
-      if(!prior||cp>pp||(cp===pp&&candidate.scheduledMinutes>prior.scheduledMinutes)||
-        (cp===pp&&candidate.scheduledMinutes===prior.scheduledMinutes&&String(candidate.storedEvent.id||"").localeCompare(String(prior.storedEvent.id||""))>0)){
-        winnersByTarget.set(id,candidate);
-      }
-    }
-  }
-  const unique=new Map();
-  for(const [target,candidate] of winnersByTarget){
-    const key=`${candidate.storedEvent.id}:${candidate.event.classId||"manual"}:${candidate.event.time}`;
-    if(!unique.has(key))unique.set(key,{...candidate,winningTargets:[]});
-    unique.get(key).winningTargets.push(target);
-  }
-  return [...unique.values()].sort((a,b)=>a.scheduledMinutes-b.scheduledMinutes||String(a.storedEvent.id).localeCompare(String(b.storedEvent.id)));
-}
-
-async function runDisplayAutomationResync(event,winningTargets){
-  event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
-  const allowed=new Set(winningTargets||[]),eventDomain=automationTargetDomain(event.action);
-  const steps=[{id:"primary",action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{},delaySeconds:0},...(Array.isArray(event.actions)?event.actions:[])];
-  const results=[];
-  if(allowed.size)results.push(await executeCommand({type:"display.clear",target:[...allowed],payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
-  for(const step of steps){
-    const action=step?.action||event.action,domain=automationTargetDomain(action);
-    if(!["display-content","display-overlay"].includes(domain))continue;
-    if(Number(step.delaySeconds)>0)await new Promise(resolve=>setTimeout(resolve,Math.min(3600,Number(step.delaySeconds))*1000));
-    const explicit=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
-    let rawTargets;
-    if(step.useEventTargets!==false&&domain===eventDomain)rawTargets=event.targets;
-    else if(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
-    else if(explicit.length)rawTargets=explicit;
-    else rawTargets=["all"];
-    const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
-    if(!targets.length)continue;
-    const output=await runSingleAutomationAction({...event,action,targets,payload:step.payload||{},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
-    results.push(...(output.results||[]));
-  }
-  const timer=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-  if(timer?.enabled){
-    const rawTargets=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
-      ? event._classDefaultTargets
-      : (timer.useEventTargets!==false?event.targets:(Array.isArray(timer.targets)&&timer.targets.length?timer.targets:event.targets));
-    const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
-    if(targets.length){
-      const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync"});
-      if(timerResult?.result)results.push(timerResult.result);
-    }
-  }
-  return {ok:true,results};
-}
-function consumeDeferredAnnouncementAutomations(){
-  const queued=[...deferredAnnouncementAutomations.values()];
-  deferredAnnouncementAutomations.clear();
-  for(const item of queued){
-    const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
-    storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-    storedEvent.lastExecByClass[item.occurrenceKey]=item.scheduledMinuteKey;
-    storedEvent.lastExec=item.scheduledMinuteKey;
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
-    storedEvent.updatedAt=new Date().toISOString();
-  }
-  if(queued.length)persistAutomations();
-  return queued.length;
-}
-async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-ended"){
-  const now=new Date(),winners=currentAutomationDisplayWinners(now),results=[];
-  for(const candidate of winners){
-    const occurrenceKey=candidate.event.classId||"manual";
-    const scheduledMinuteKey=`${localDateKey(now)} ${candidate.event.time}`;
-    try{
-      const result=await runDisplayAutomationResync(candidate.event,candidate.winningTargets);
-      candidate.storedEvent.lastExecByClass=candidate.storedEvent.lastExecByClass||{};
-      candidate.storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;
-      candidate.storedEvent.lastExec=scheduledMinuteKey;
-      candidate.storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:scheduledMinuteKey,resolvedClassId:candidate.event.classId||null,ok:result.ok!==false,resync:true,message:"Re-applied after Morning Announcements ended"};
-      candidate.storedEvent.updatedAt=new Date().toISOString();
-      results.push({automationId:candidate.storedEvent.id,name:candidate.storedEvent.name,classId:candidate.event.classId||null,time:candidate.event.time,targets:candidate.winningTargets,ok:result.ok!==false});
-    }catch(err){
-      results.push({automationId:candidate.storedEvent.id,name:candidate.storedEvent.name,classId:candidate.event.classId||null,time:candidate.event.time,targets:candidate.winningTargets,ok:false,error:err.message});
-      diagnosticError(err,{component:"automation",operation:"announcement-post-resync",data:{automationId:candidate.storedEvent.id,reason}});
-    }
-  }
-  if(winners.length)persistAutomations();
-  audit({kind:"automation.morning-announcements.resync",reason,at:now.toISOString(),winnerCount:winners.length,results});
-  return {winnerCount:winners.length,results};
-}
-function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
-  if(morningAnnouncementsReleaseRetryTimer)return;
-  morningAnnouncementsReleaseRetryTimer=setTimeout(()=>{
-    morningAnnouncementsReleaseRetryTimer=null;
-    if(fullExportFreeze.requested){scheduleMorningAnnouncementsReleaseRetry(targets,reason);return}
-    serializeMorningAnnouncementsLifecycle(async()=>{
-      if(morningAnnouncementsRuntime.active)return;
-      const retry=await resyncCurrentDisplayAutomationsAfterAnnouncements(`${reason}-retry`);
-      if(retry.results.some(item=>item.ok===false))throw new Error("Post-announcement display reconciliation is still incomplete");
-      morningAnnouncementsRuntime.releaseReconcilePending=false;
-      await setMorningAnnouncementPriorityTargets(targets,false);
-      await backgroundMusicTick();
-    }).catch(error=>{
-      morningAnnouncementsRuntime.lastError=error.message;
-      scheduleMorningAnnouncementsReleaseRetry(targets,reason);
-    });
-  },5000);
-  morningAnnouncementsReleaseRetryTimer.unref();
-}
-async function releaseMorningAnnouncements(reason="stream-ended"){
-  if(!morningAnnouncementsRuntime.active)return;
-  const targets=morningAnnouncementsRuntime.targets?.length?[...morningAnnouncementsRuntime.targets]:announcementTargets();
-  let deferredConsumed=0,resync={winnerCount:0,results:[]},releaseError=null;
-  try{if(targets.length)await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-release"}},"morning-announcements")}catch(error){releaseError=error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-clear",data:{reason}})}
-  try{deferredConsumed=consumeDeferredAnnouncementAutomations()}catch(error){releaseError=releaseError||error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-bookkeeping",data:{reason}})}
-  try{resync=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason)}catch(error){releaseError=releaseError||error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-resync",data:{reason}})}
-  const resyncComplete=!releaseError&&!resync.results.some(item=>item.ok===false);
-  try{
-    // Hold the announcement lock through display reconciliation. Display commands
-    // emitted by the resync must not release audio priority early, but a failed
-    // persistence/audit step must never leave the lock stuck forever.
-    morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastEndedAt=new Date().toISOString();morningAnnouncementsRuntime.lastAssertAt=0;
-    if(resyncComplete){morningAnnouncementsRuntime.releaseReconcilePending=false;await setMorningAnnouncementPriorityTargets(targets,false);await backgroundMusicTick()}
-    else{morningAnnouncementsRuntime.releaseReconcilePending=true;scheduleMorningAnnouncementsReleaseRetry(targets,reason)}
-  }catch(error){releaseError=releaseError||error}
-  audit({kind:"automation.morning-announcements.stop",reason,targets,deferredConsumed,resyncWinnerCount:resync.winnerCount,resyncResults:resync.results});
-  if(releaseError)throw releaseError;
-}
-let morningAnnouncementsTickBusy=false;
-async function morningAnnouncementsTick(){
-  if(fullExportFreeze.requested)return;
-  if(morningAnnouncementsTickBusy)return;morningAnnouncementsTickBusy=true;
-  try{
-    const now=new Date();morningAnnouncementsRuntime.lastWatcherTick=now.toISOString();
-    // Manual announcements are operator-controlled and remain locked until Stop / Clear.
-    if(morningAnnouncementsRuntime.active&&morningAnnouncementsRuntime.mode==="manual")return;
-    if(!morningAnnouncements.enabled||!withinMorningAnnouncementsWindow(now)||!morningAnnouncementsSchoolDay(now)){
-      morningAnnouncementsRuntime.live=false;morningAnnouncementsRuntime.offlineCount=0;
-      if(morningAnnouncementsRuntime.active)await releaseMorningAnnouncements(!morningAnnouncements.enabled?"disabled":"outside-window");
-      return;
-    }
-    const probe=await probeMorningAnnouncementsLive();
-    morningAnnouncementsRuntime.lastCheck=new Date().toISOString();morningAnnouncementsRuntime.probe=probe.probe;morningAnnouncementsRuntime.probeStatus=probe.status||null;morningAnnouncementsRuntime.probeDurationMs=probe.durationMs??null;morningAnnouncementsRuntime.lastError=probe.error||null;
-    if(probe.live===true){
-      morningAnnouncementsRuntime.live=true;morningAnnouncementsRuntime.offlineCount=0;
-      // A successful periodic probe observes the existing session; it must not
-      // clear and rebuild the player. Only the offline -> live transition starts it.
-      if(!morningAnnouncementsRuntime.active)await assertMorningAnnouncements({mode:"automatic"});
-    }else if(probe.live===false){
-      morningAnnouncementsRuntime.live=false;morningAnnouncementsRuntime.offlineCount++;
-      if(morningAnnouncementsRuntime.active&&morningAnnouncementsRuntime.offlineCount>=morningAnnouncements.offlineConfirmations)await releaseMorningAnnouncements("stream-ended");
-    }else{
-      morningAnnouncementsRuntime.lastError=probe.error||"HLS probe unavailable";
-    }
-  }catch(err){morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}
-  finally{morningAnnouncementsTickBusy=false}
-}
-function calendarRuleForDate(date=new Date()){
-  const key=localDateKey(date);
-  if((schedulerCalendar.noSchoolDates||schedulerCalendar.excludedDates||[]).includes(key))return {type:'no-school',date:key,label:'District No-School'};
-  if((schedulerCalendar.remoteDates||[]).includes(key))return {type:'remote',date:key,label:'Remote Day'};
-  if((schedulerCalendar.halfDayDates||[]).includes(key))return {type:'half-day',date:key,label:'Half Day'};
-  if((schedulerCalendar.twoHourDelayDates||[]).includes(key))return {type:'2-hour-delay',date:key,label:'2-Hour Delay'};
-  if((schedulerCalendar.oneHourDelayDates||[]).includes(key))return {type:'1-hour-delay',date:key,label:'1-Hour Delay'};
-  return {type:'normal',date:key,label:'Normal Schedule'};
-}
-function isCalendarBlocked(date){
-  const rule=calendarRuleForDate(date);
-  return rule.type==='no-school'?{blocked:true,reason:'District no-school date',rule}:{blocked:false,reason:null,rule};
-}
-function isAutomationSuppressed(date){
-  const rule=calendarRuleForDate(date);
-  if(rule.type==='no-school')return {blocked:true,reason:'District no-school date',rule};
-  if(rule.type==='remote')return {blocked:true,reason:'District remote day',rule};
-  return {blocked:false,reason:null,rule};
-}
-function countEligibleSchoolDays(anchorDate,targetDate){
-  const a=new Date(anchorDate.getFullYear(),anchorDate.getMonth(),anchorDate.getDate(),12);
-  const t=new Date(targetDate.getFullYear(),targetDate.getMonth(),targetDate.getDate(),12);
-  if(a.getTime()===t.getTime())return 0;
-  const step=t>a?1:-1;
-  let count=0;
-  const d=new Date(a);
-  while(d.getTime()!==t.getTime()){
-    d.setDate(d.getDate()+step);
-    const dow=d.getDay();
-    if(dow===0||dow===6)continue;
-    if(isCalendarBlocked(d).blocked)continue;
-    count+=step;
-  }
-  return count;
-}
-
-function schoolCycleAnchor(){return schoolScheduleProfile.anchorDate||schedulerCalendar.anchorDate||localDateKey(new Date())}
-function schoolCycleLetters(){return [...schoolScheduleProfile.cycleDays]}
-function schoolCycleGroup(index){return schoolScheduleProfile.dayGroups[index]||null}
-function alternateGroupLabel(phase="A"){return (schoolCycleGroup(String(phase).toUpperCase()==="B"?1:0)?.label)||schoolCycleLetters()[String(phase).toUpperCase()==="B"?1:0]||String(phase).toUpperCase()}
-function normalizedDayType(value,fallback="Any"){const allowed=new Set(["Any","Mixed",...(schoolScheduleProfile.dayGroups||[]).map(x=>x.label)]);return allowed.has(String(value))?String(value):(allowed.has(String(fallback))?String(fallback):"Any")}
-
-function schoolCycleForDate(date=new Date()){
-  const key=localDateKey(date);
-  const dow=date.getDay();
-  const blocked=isCalendarBlocked(date);
-  const isStudentSchoolDay=dow!==0&&dow!==6&&!blocked.blocked;
-  const anchorKey=schoolCycleAnchor(),anchor=dateFromKey(anchorKey);
-  if(!anchor)return {date:key,isStudentSchoolDay:false,cycleDay:null,dayColor:null,reason:"Invalid school-cycle anchor"};
-
-  const offset=countEligibleSchoolDays(anchor,date);
-  const letters=schoolCycleLetters(),index=((offset%letters.length)+letters.length)%letters.length;
-  const projectedCycleDay=letters[index],projectedGroup=groupForCycleDay(schoolScheduleProfile,projectedCycleDay);
-  const projectedDayColor=projectedGroup?.label||projectedCycleDay;
-  return {
-    date:key,
-    anchorDate:anchorKey,
-    isStudentSchoolDay,
-    cycleDay:isStudentSchoolDay?projectedCycleDay:null,
-    dayColor:isStudentSchoolDay?projectedDayColor:null,
-    projectedCycleDay,
-    projectedDayColor,dayGroup:projectedGroup,
-    index,
-    reason:isStudentSchoolDay?null:(blocked.blocked?blocked.reason:"Weekend")
-  };
-}
-function normalizeCycleDays(value,fallback=[]){
-  const src=Array.isArray(value)?value:fallback;
-  const allowed=schoolCycleLetters();return [...new Set(src.map(x=>String(x||"").trim()).filter(x=>allowed.includes(x)))];
-}
-function periodDefaultCycleDays(period){
-  const p=String(period||"").trim();
-  return [...(schoolScheduleProfile.periodCycleDays[p]||[])];
-}
-function cycleDaysDayColor(cycleDays){
-  const days=normalizeCycleDays(cycleDays);
-  for(const group of schoolScheduleProfile.dayGroups||[])if(days.length&&days.every(x=>group.cycleDays.includes(x)))return group.label;
-  return days.length?"Mixed":"Any";
-}
-function schoolCycleMatches({cycleDays=[],dayType="Any"}={},date=new Date()){
-  const status=schoolCycleForDate(date);
-  if(!status.isStudentSchoolDay)return false;
-  const days=normalizeCycleDays(cycleDays);
-  if(days.length&&!days.includes(status.cycleDay))return false;
-  if(dayType!=="Any"&&dayType!=="Mixed"&&dayType!==status.dayColor)return false;
-  return true;
-}
-
-function automationMatchesDate(event,date){
-  const blocked=isAutomationSuppressed(date);
-  if(blocked.blocked)return {match:false,reason:blocked.reason};
-  const key=localDateKey(date);
-  const mode=String(event.scheduleMode||"weekly");
-
-  if(mode==="dates"){
-    return {match:Array.isArray(event.includeDates)&&event.includeDates.includes(key),reason:"Specific dates"};
-  }
-
-  if(mode==="schoolcycle"){
-    const status=schoolCycleForDate(date);
-    if(!status.isStudentSchoolDay)return {match:false,reason:status.reason||"Not a student school day"};
-    const cycleDays=normalizeCycleDays(event.cycleDays);
-    const dayType=String(event.dayType||"Any");
-    const cycleMatch=!cycleDays.length||cycleDays.includes(status.cycleDay);
-    const colorMatch=dayType==="Any"||dayType==="Mixed"||dayType===status.dayColor;
-    return {match:cycleMatch&&colorMatch,reason:`${status.dayColor} Day â€¢ Cycle ${status.cycleDay}`};
-  }
-
-  if(mode==="alternating"){
-    const status=schoolCycleForDate(date);
-    if(!status.isStudentSchoolDay)return {match:false,reason:status.reason||"Not a student school day"};
-    const phase=classAlternatingPhaseForDate(event.anchorDate,date);
-    return {match:phase===(event.alternatePhase||"A"),reason:`Alternating ${phase} â€¢ Cycle ${status.cycleDay}`};
-  }
-
-  const days=Array.isArray(event.days)?event.days.map(Number):[];
-  return {match:days.includes(date.getDay()),reason:"Weekly"};
-}
-
-const AUTOMATION_ACTIONS=new Set([
-  "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
-  "govee.power","govee.color","govee.brightness","govee.temp","govee.scene"
-]);
-const AUTOMATION_EXECUTION_MODES=new Set(["once","repeat","loop"]);
-function automationExecutionMode(value,action){
-  const mode=String(value||"once").trim().toLowerCase();
-  if(!AUTOMATION_EXECUTION_MODES.has(mode))return "once";
-  // Continuous looping is intentionally native only for media. Reissuing power,
-  // routing, lighting or clear commands forever is unsafe and unnecessary.
-  return mode==="loop"&&action!=="display.media"?"repeat":mode;
-}
-function automationRepeatCount(value){const n=Number(value);return Number.isInteger(n)?Math.max(1,Math.min(100,n)):2}
-function automationRepeatDelaySeconds(value){const n=Number(value);return Number.isFinite(n)?Math.max(0,Math.min(3600,n)):0}
-function finiteTimerOverlayNumber(value,{name,fallback,min,max}){
-  const candidate=value===undefined||value===null||value===""?fallback:Number(value);
-  if(!Number.isFinite(candidate))throw new Error(`Timer overlay ${name} must be a finite number`);
-  return Math.max(min,Math.min(max,candidate));
-}
-function normalizeTimerOverlay(input,existing=null){
-  if(input===null)return null;
-  const value=input===undefined?existing:input;
-  if(value===null||value===undefined)return null;
-  if(typeof value!=="object"||Array.isArray(value))throw new Error("Timer overlay must be an object or null");
-  const prior=existing&&typeof existing==="object"&&!Array.isArray(existing)?existing:{};
-  const merged={...prior,...value};
-  return {
-    enabled:merged.enabled!==false,
-    source:String(merged.source||"duration")==="class-end"?"class-end":"duration",
-    classId:cleanId(merged.classId||""),
-    durationSeconds:finiteTimerOverlayNumber(merged.durationSeconds,{name:"duration",fallback:600,min:0,max:86400}),
-    position:["top","center","bottom"].includes(String(merged.position||"bottom"))?String(merged.position||"bottom"):"bottom",
-    fontSize:finiteTimerOverlayNumber(merged.fontSize,{name:"font size",fallback:64,min:12,max:220}),
-    textColor:String(merged.textColor||"#ffffff").slice(0,80),
-    borderColor:String(merged.borderColor||"#ffffff").slice(0,80),
-    borderWidth:finiteTimerOverlayNumber(merged.borderWidth,{name:"border width",fallback:4,min:0,max:50}),
-    borderRadius:finiteTimerOverlayNumber(merged.borderRadius,{name:"border radius",fallback:18,min:0,max:200}),
-    label:String(merged.label||"Time Remaining").slice(0,200),
-    background:String(merged.background||"rgba(0,0,0,.35)").slice(0,120),
-    useEventTargets:merged.useEventTargets!==false,
-    targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(cleanId).filter(Boolean))]:[],
-    followLinkedClasses:merged.followLinkedClasses!==false,
-    followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120})
-  };
-}
-function normalizeAutomation(input={},existing={}){
-  const id=cleanId(input.id||existing.id||`auto-${crypto.randomUUID()}`);
-  if(!id)throw new Error("A valid automation ID is required");
-  const time=String(input.time||existing.time||"08:00");
-  if(!validTime(time))throw new Error("Time must be a valid HH:MM value");
-  const days=(Array.isArray(input.days)?input.days:existing.days||[1,2,3,4,5])
-    .map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6);
-  const action=String(input.action||existing.action||"").trim();
-  if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action}`);
-  const targets=Array.isArray(input.targets)?input.targets.map(cleanId).filter(Boolean):
-    (Array.isArray(existing.targets)?existing.targets:["tv1"]);
-  const scheduleMode=["weekly","alternating","schoolcycle","dates"].includes(String(input.scheduleMode||existing.scheduleMode||"weekly"))
-    ? String(input.scheduleMode||existing.scheduleMode||"weekly") : "weekly";
-  const alternatePhase=String(input.alternatePhase||existing.alternatePhase||"A").toUpperCase()==="B"?"B":"A";
-  const anchorRaw=input.anchorDate??existing.anchorDate??"";
-  if(anchorRaw&&!validDateKey(anchorRaw))throw new Error("Automation anchor must be a valid YYYY-MM-DD date");
-  const anchorDate=anchorRaw?String(anchorRaw):"";
-  const offsetValue=normalizeIntegerMinutes(input.classTimeOffsetMinutes??existing.classTimeOffsetMinutes??0,{name:"Class time offset",fallback:0,min:-720,max:720});
-  const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
-  return {
-    id,
-    name:String(input.name??existing.name??action).trim().slice(0,120),
-    enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,
-    time,
-    days:[...new Set(days)],
-    scheduleMode,
-    alternatePhase,
-    anchorDate,
-    includeDates,
-    dayType:normalizedDayType(input.dayType??existing.dayType??"Any"),
-    cycleDays:normalizeCycleDays(input.cycleDays===undefined?existing.cycleDays:input.cycleDays),
-    period:String(input.period??existing.period??"").trim().slice(0,40),
-    classIds:[...new Set((Array.isArray(input.classIds)?input.classIds:(Array.isArray(existing.classIds)?existing.classIds:[input.classId??existing.classId].filter(Boolean))).map(String).filter(Boolean))],
-    classId:String((Array.isArray(input.classIds)&&input.classIds.length?input.classIds[0]:(input.classId??existing.classId??""))),
-    classTimeReference:String(input.classTimeReference??existing.classTimeReference??"start")==="end"?"end":"start",
-    classTimeOffsetMinutes:offsetValue,
-    useClassTargets:input.useClassTargets===undefined?(existing.useClassTargets!==false):!!input.useClassTargets,
-    action,
-    targets:[...new Set(targets)],
-    payload:(input.payload&&typeof input.payload==="object")?input.payload:(existing.payload||{}),
-    actions:Array.isArray(input.actions)
-      ? input.actions.map((item,index)=>{
-          const stepAction=String(item?.action||"").trim();
-          if(!AUTOMATION_ACTIONS.has(stepAction))throw new Error(`Unsupported automation action: ${stepAction||"(blank)"}`);
-          const delaySeconds=Number(item?.delaySeconds??0);
-          if(!Number.isFinite(delaySeconds))throw new Error(`Automation step ${index+1} delay must be a finite number`);
-          return {
-          // Action IDs are globally unique in SQLite. Scope them to the
-          // automation instead of reusing generic step-1/step-2 identifiers.
-          id:`${id.slice(0,60)}-step-${index+1}`,
-          action:stepAction,
-          useEventTargets:item?.useEventTargets!==false,
-          targets:(()=>{
-            const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
-            return selected.length||item?.useEventTargets!==false?selected:defaultAutomationActionTargets(stepAction);
-          })(),
-          payload:(item?.payload&&typeof item.payload==="object")?item.payload:{},
-          delaySeconds:Math.max(0,Math.min(3600,delaySeconds)),
-          executionMode:automationExecutionMode(item?.executionMode,stepAction),
-          repeatCount:automationRepeatCount(item?.repeatCount),
-          repeatDelaySeconds:automationRepeatDelaySeconds(item?.repeatDelaySeconds),
-          continueOnError:item?.continueOnError!==false
-        }})
-      : (Array.isArray(existing.actions)?existing.actions:[]),
-    timerOverlay:normalizeTimerOverlay(input.timerOverlay,existing.timerOverlay||null),
-    priority:Math.max(-100,Math.min(100,Number.isFinite(Number(input.priority??existing.priority))?Number(input.priority??existing.priority):0)),
-    revision:Math.max(1,Number(existing.revision||input.revision||1)),
-    lastRun:existing.lastRun||null,
-    lastExec:existing.lastExec||null,
-    lastExecByClass:(existing.lastExecByClass&&typeof existing.lastExecByClass==="object")?existing.lastExecByClass:{},
-    createdAt:existing.createdAt||new Date().toISOString(),
-    updatedAt:new Date().toISOString()
-  };
-}
-
-
-function automationTargetDomain(action){
-  return actionResourceDomain(action);
-}
-
-function defaultAutomationActionTargets(action){
-  return ["display-content","display-overlay","tv-power","lighting"].includes(automationTargetDomain(action))?["all"]:[];
-}
-
-function automationDisplayTargets(targets){
-  return expandDisplayTargets(targets,{devices,displayGroups});
-}
-function announcementLockedDisplayTargets(targets){
-  if(!morningAnnouncementsRuntime.active)return [];
-  const locked=new Set(morningAnnouncementsRuntime.targets||[]);
-  return automationDisplayTargets(targets||[]).filter(id=>locked.has(id));
-}
-function announcementPriorityError(targets){
-  const locked=announcementLockedDisplayTargets(targets);
-  if(!locked.length)return null;
-  const error=new Error(`Morning Announcements have priority on: ${locked.join(", ")}`);
-  error.code="ANNOUNCEMENTS_PRIORITY_ACTIVE";
-  error.targets=locked;
-  return error;
-}
-
-
-function requireAutomationTargets(targets,label="Automation action"){
-  const resolved=automationDisplayTargets(targets);
-  if(!resolved.length)throw new Error(`${label} has no valid display targets`);
-  return resolved;
-}
-function automationVariableContext(event,date=schedulerClock.now()){
-  const cls=event._class||activeAutomationClassAt(event,date)||classScheduleById(event.classId)||activeClassAt(date);
-  const linkedClasses=automationClassIds(event).map(classScheduleById).filter(Boolean);
-  const end=cls?classEndDate(cls,date):null;
-  return {
-    "%date%":date.toLocaleDateString("en-US",{timeZone:SCHEDULER_TIMEZONE}),
-    "%time%":date.toLocaleTimeString("en-US",{timeZone:SCHEDULER_TIMEZONE,hour:"numeric",minute:"2-digit"}),
-    "%day%":date.toLocaleDateString("en-US",{timeZone:SCHEDULER_TIMEZONE,weekday:"long"}),
-    "%class%":cls?.name||"",
-    "%class_short%":cls?.shortName||"",
-    "%classes%":linkedClasses.map(c=>c.name).join(", "),
-    "%classes_short%":linkedClasses.map(c=>c.shortName||c.name).join(", "),
-    "%class_start%":cls?(effectiveClassTimes(cls,date)?.startTime||cls.startTime):"",
-    "%class_end%":cls?(effectiveClassTimes(cls,date)?.endTime||cls.endTime):"",
-    "%minutes_left%":end?String(Math.max(0,Math.ceil((end-date)/60000))):"",
-    "%schedule_day%":schoolCycleForDate(date).dayColor||"",
-    "%day_color%":schoolCycleForDate(date).dayColor||"",
-    "%cycle_day%":schoolCycleForDate(date).cycleDay||"",
-    "%period%":cls?.period||event?.period||"",
-    "%room%":deviceConfig?.room||ROOM_NAME||""
-  };
-}
-function expandAutomationVariables(value,event,date=schedulerClock.now()){
-  if(typeof value!=="string")return value;
-  let out=value;for(const [k,v] of Object.entries(automationVariableContext(event,date)))out=out.split(k).join(String(v));
-  return out;
-}
-function expandAutomationPayload(value,event,date=schedulerClock.now()){
-  if(Array.isArray(value))return value.map(v=>expandAutomationPayload(v,event,date));
-  if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
-  return expandAutomationVariables(value,event,date);
-}
-async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation"}={}){
-  const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
-  const action=event.action;
-  if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action||"(blank)"}`);
-  const outputs={action,targets:event.targets||[],results:[]};
-
-  if(action==="tv.power"){
-    const on=String(p.state||"on").toLowerCase()==="on";
-    const requestedTargets=Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[];
-    const broadcastTarget=p.output===undefined&&requestedTargets.length===1?requestedTargets[0]:null;
-    const broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
-    const tvTargets=expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
-    if(broadcastAction){
-      // Match the proven Room controls path for the explicit all-TV selectors.
-      outputs.results.push(await directPluto({action:broadcastAction,index:on?0:1}));
-    }else{
-      if(p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
-      for(const target of tvTargets){
-        outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
-      }
-    }
-    assertAdapterResults(outputs.results,{action:"TV power"});
-    outputs.tvTargets=tvTargets;
-  }else if(action==="display.timer.class-end"){
-    const ts=automationDisplayTargets(event.targets),cls=event._class||activeAutomationClassAt(event,new Date())||classScheduleById(event.classId)||activeClassAt(new Date());
-    if(!cls)throw new Error("No class schedule is available for the class-end timer");
-    const now=new Date();if(!manual&&!classScheduleMatchesDate(cls,now))throw new Error(`${cls.name} is not scheduled today`);
-    const chain=timerLinkedClassChain(event,cls,now,{followLinkedClasses:true,followGapMinutes:15});
-    const endAt=chain.endAt||resolvedOccurrenceEndDate(event,cls,now),remaining=Math.max(0,Math.floor((endAt-Date.now())/1000));
-    if(remaining<=0)throw new Error(`${cls.name} has already ended`);
-    const labelClass=chain.finalClass||cls;
-    outputs.results.push(await executeCommand({type:"display.timer",target:ts,payload:{
-      visible:true,running:true,mode:"countdown",timerInstanceId:commandId(),durationSeconds:remaining,remainingSeconds:remaining,endAt:endAt.getTime(),startedAt:null,
-      label:String(p.label||`${cls.shortName||cls.name} â€¢ Class Ends`),position:p.position||"bottom",fontSize:Number(p.fontSize||64),
-      textColor:p.textColor||"#ffffff",borderColor:p.borderColor||"#ffffff",borderWidth:Number(p.borderWidth??4),borderRadius:Number(p.borderRadius??18),
-      background:p.background||"rgba(0,0,0,.35)",linkedClassIds:chain.classes.map(c=>c.id),linkedClassNames:chain.classes.map(c=>c.name),finalClassId:labelClass.id
-    }},commandSource));
-  }else if(action==="display.clear"){
-    const ts=requireAutomationTargets(event.targets,"Display clear");
-    outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
-  }else if(action==="display.text"){
-    const ts=requireAutomationTargets(event.targets,"Display text");
-    if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
-    if(p.background)outputs.results.push(await executeCommand({type:"display.background",target:ts,payload:{color:p.background}},commandSource));
-    if(p.title)outputs.results.push(await executeCommand({type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
-    if(p.subtitle)outputs.results.push(await executeCommand({type:"display.subtitle",target:ts,payload:{text:String(p.subtitle),color:p.subtitleColor||"#ffffff",size:Number(p.subtitleSize||40)}},commandSource));
-    outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{
-      text:String(p.text||""),color:p.color||"#ffffff",size:Number(p.size||54),position:p.position||"center"
-    }},commandSource));
-  }else if(action==="display.url"){
-    const ts=requireAutomationTargets(event.targets,"Display URL");
-    if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
-    const url=String(p.url||"").trim();
-    if(!url)throw new Error("URL is required");
-    outputs.results.push(await executeCommand({type:"display.web",target:ts,payload:{url,localDirect:p.localDirect!==false}},commandSource));
-  }else if(action==="display.media"){
-    const ts=requireAutomationTargets(event.targets,"Display media");
-    if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
-    const name=resolveAutomationMediaName(p);
-    const full=path.join(MEDIA_DIR,name);
-    const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
-    const mediaSession={
-      sessionId:String(p.sessionId||`${event._occurrenceId||event.id||"manual"}:${event._stepId||"primary"}:${name}`),
-      volume:Math.max(0,Math.min(1,Number(p.volume??1))),
-      muted:!!p.muted,loop:!!p.loop,
-      startAtSeconds:Math.max(0,Number(p.startAtSeconds||0)),
-      endAtSeconds:Number(p.endAtSeconds)>0?Number(p.endAtSeconds):null,
-      playbackRate:Math.max(.25,Math.min(4,Number(p.playbackRate||1)))
-    };
-    const sourceUrl=automationMediaUrl(name);
-    outputs.media={storedName:name,originalName:rec.originalName||name,type,size:fs.statSync(full).size,url:sourceUrl};
-    if(type==="image"){
-      outputs.results.push(await executeCommand({type:"display.image",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",retry:true}},commandSource));
-    }else if(type==="video"){
-      outputs.results.push(await executeCommand({type:"display.video",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",autoplay:true,muted:!!p.muted,loop:!!p.loop,...mediaSession}},commandSource));
-    }else if(type==="pdf"){
-      outputs.results.push(await executeCommand({type:"display.pdf",target:ts,payload:{url:documentViewerUrl(name,p),sourceUrl:mediaUrl(name)}},commandSource));
-    }else if(type==="presentation"||type==="document"){
-      if(!rec.generatedPdf||!fs.existsSync(path.join(MEDIA_DIR,rec.generatedPdf)))throw new Error("Document conversion is not ready");
-      outputs.results.push(await executeCommand({type:"display.document",target:ts,payload:{
-        url:documentViewerUrl(rec.generatedPdf,p),sourceUrl:mediaUrl(name),pdfUrl:mediaUrl(rec.generatedPdf),originalName:rec.originalName||name
-      }},commandSource));
-    }else throw new Error(`Media type ${type} cannot be displayed`);
-  }else if(action.startsWith("govee.")){
-    const map={power:null,color:"color",brightness:"brightness",temp:"temp",scene:"scene"};
-    const kind=action.split(".")[1];
-    for(const target of event.targets||[]){
-      if(kind==="power")outputs.results.push(await directGoveeCommand(target,String(p.state||"on").toLowerCase()==="on"?"on":"off",p));
-      else outputs.results.push(await directGoveeCommand(target,map[kind],p));
-    }
-  }
-
-
-  // Optional scheduled timer overlay addon.
-  // This runs in addition to the event's primary action.
-  const timerOverlay=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-  if(!skipOverlay&&timerOverlay?.enabled){
-    const timerTargets=automationDisplayTargets(
-      timerOverlay.useEventTargets!==false
-        ? event.targets
-        : (Array.isArray(timerOverlay.targets)?timerOverlay.targets:event.targets)
-    );
-
-    const now=new Date();
-    let remainingSeconds=0;
-    let endAt=null;
-
-    if(timerOverlay.source==="class-end"){
-      const cls=event._class||activeAutomationClassAt(event,now)||classScheduleById(event.classId)||activeClassAt(now);
-      if(cls&&classScheduleMatchesDate(cls,now)){
-        endAt=resolvedOccurrenceEndDate(event,cls,now);
-        remainingSeconds=endAt?Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000)):0;
-      }
-    }else{
-      remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
-      endAt=new Date(Date.now()+remainingSeconds*1000);
-    }
-
-    if(remainingSeconds>0){
-      outputs.results.push(await executeCommand({
-        type:"display.timer",
-        target:timerTargets,
-        payload:{
-          visible:true,
-          running:true,
-          mode:"countdown",
-          timerInstanceId:commandId(),
-          durationSeconds:remainingSeconds,
-          remainingSeconds,
-          endAt:endAt.getTime(),
-          startedAt:null,
-          label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),event,now),
-          position:timerOverlay.position||"bottom",
-          fontSize:Number(timerOverlay.fontSize||64),
-          textColor:timerOverlay.textColor||"#ffffff",
-          borderColor:timerOverlay.borderColor||"#ffffff",
-          borderWidth:Number(timerOverlay.borderWidth??4),
-          borderRadius:Number(timerOverlay.borderRadius??18),
-          background:timerOverlay.background||"rgba(0,0,0,.35)"
-        }
-      },"automation"));
-    }
-  }
-
-  if(!skipAudit)audit({kind:"automation.run",automationId:event.id,name:event.name,manual,action:event.action,targets:event.targets,ok:true});
-  return {ok:true,eventId:event.id,name:event.name,manual,...outputs};
-}
-
-
-function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
-  if(!baseClass)return {classes:[],endAt:null,finalClass:null};
-
-  // Transition pseudo-classes are already the gap being counted. They must end at
-  // their own resolved boundary (for example 13:05 -> 13:13) and must not be
-  // chained into subsequent selected full classes.
-  if(event?._classIsTransition||isTransitionClass(baseClass)){
-    const endAt=resolvedOccurrenceEndDate(event,baseClass,now);
-    return {classes:[baseClass],endAt,finalClass:baseClass,gapMinutes:0,linked:false,transition:true};
-  }
-
-  // Always build the candidate list from the full multi-class selection on the
-  // automation, not merely the occurrence that happened to trigger this run.
-  // resolveAutomationForClass() preserves classIds, but accepting the private
-  // source list as well makes this resilient to future occurrence normalization.
-  const ids=[
-    ...(Array.isArray(event?._automationClassIds)?event._automationClassIds:[]),
-    ...automationClassIds(event),
-    baseClass.id
-  ].filter(Boolean).map(String);
-  const selected=[...new Set(ids)]
-    .map(classScheduleById)
-    .filter(Boolean)
-    .filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,now));
-
-  if(!selected.some(c=>c.id===baseClass.id))selected.push(baseClass);
-
-  const maxGap=Math.max(0,Math.min(120,Number(timerOverlay.followGapMinutes??schoolScheduleProfile.continuation?.maximumGapMinutes??15)));
-  const follow=timerOverlay.followLinkedClasses!==false;
-  const chain=[baseClass];
-  const used=new Set([baseClass.id]);
-  const baseTimes=effectiveClassTimes(baseClass,now);
-  let cursorEnd=timeToMinutes(baseTimes?.endTime||baseClass.endTime);
-
-  if(follow){
-    // Follow the schedule chronologically only through an explicitly linked
-    // continuation (or imported compatibility mapping). The gap threshold is
-    // a secondary guard, never the identity test.
-    while(true){
-      const next=selected
-        .filter(c=>!used.has(c.id))
-        .map(c=>{const t=effectiveClassTimes(c,now);return t?{c,start:timeToMinutes(t.startTime),end:timeToMinutes(t.endTime)}:null})
-        .filter(Boolean)
-        .filter(x=>x.start>=cursorEnd&&x.start-cursorEnd<=maxGap)
-        .filter(x=>isValidTimerContinuation(chain[chain.length-1],x.c))
-        .sort((a,b)=>a.start-b.start||b.end-a.end||String(a.c.name||'').localeCompare(String(b.c.name||'')))[0];
-      if(!next)break;
-      chain.push(next.c);
-      used.add(next.c.id);
-      cursorEnd=Math.max(cursorEnd,next.end);
-    }
-  }
-
-  const final=chain[chain.length-1]||baseClass;
-  return {
-    classes:chain,
-    endAt:final.id===baseClass.id?resolvedOccurrenceEndDate(event,final,now):classEndDate(final,now),
-    finalClass:final,
-    gapMinutes:maxGap,
-    linked:chain.length>1
-  };
-}
-
-async function runAutomationTimerOverlay(event,{manual=false,commandSource="automation"}={}){
-  const timerOverlay=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-  if(!timerOverlay?.enabled)return {ok:true,skipped:true,reason:"disabled"};
-
-  const timerTargetSource=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
-    ? event._classDefaultTargets
-    : (timerOverlay.useEventTargets!==false
-      ? event.targets
-      : (Array.isArray(timerOverlay.targets)&&timerOverlay.targets.length?timerOverlay.targets:event.targets));
-  const timerTargets=automationDisplayTargets(timerTargetSource);
-  if(!timerTargets.length)throw new Error("Timer overlay has no display targets");
-
-  const now=new Date();
-  let remainingSeconds=0,endAt=null,cls=null;
-
-  if(timerOverlay.source==="class-end"){
-    // A resolved class occurrence takes priority so multi-class events follow the class
-    // that actually triggered this occurrence. An explicitly selected timer class is only
-    // used when the event has no resolved class occurrence.
-    cls=event._class
-      || classScheduleById(timerOverlay.classId)
-      || activeAutomationClassAt(event,now)
-      || classScheduleById(event.classId)
-      || (Array.isArray(event.classIds)?event.classIds.map(classScheduleById).find(Boolean):null)
-      || activeClassAt(now);
-
-    if(!cls){
-      throw new Error("Timer overlay is set to Linked Class End Time, but no timer class is selected, the event is not linked to a class, and no class is currently active.");
-    }
-    if(!manual&&!classScheduleMatchesDate(cls,now)){
-      throw new Error(`Timer class "${cls.name}" is not scheduled today.`);
-    }
-
-    const chain=timerLinkedClassChain(event,cls,now,timerOverlay);
-    endAt=chain.endAt||resolvedOccurrenceEndDate(event,cls,now);
-    remainingSeconds=Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000));
-    if(chain.classes.length>1){
-      cls={...cls,_timerChainNames:chain.classes.map(c=>c.name),_timerFinalClass:chain.finalClass};
-    }
-
-    // If Test Now is used after class end, show a terminal 00:00 overlay instead of silently doing nothing.
-    if(remainingSeconds<=0){
-      const result=await executeCommand({
-        type:"display.timer",
-        target:timerTargets,
-        payload:{
-          visible:true,running:false,mode:"countdown",
-          timerInstanceId:commandId(),
-          durationSeconds:0,remainingSeconds:0,endAt:null,startedAt:null,
-          label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),{...event,_class:cls},now),
-          position:timerOverlay.position||"bottom",
-          fontSize:Number(timerOverlay.fontSize||64),
-          textColor:timerOverlay.textColor||"#ffffff",
-          borderColor:timerOverlay.borderColor||"#ffffff",
-          borderWidth:Number(timerOverlay.borderWidth??4),
-          borderRadius:Number(timerOverlay.borderRadius??18),
-          background:timerOverlay.background||"rgba(0,0,0,.35)"
-        }
-      },commandSource);
-      return {ok:true,atZero:true,classId:cls.id,className:cls.name,result};
-    }
-  }else{
-    remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
-    endAt=new Date(Date.now()+remainingSeconds*1000);
-  }
-
-  const contextEvent=cls?{...event,_class:cls}:event;
-  const result=await executeCommand({
-    type:"display.timer",
-    target:timerTargets,
-    payload:{
-      visible:true,running:true,mode:"countdown",
-      timerInstanceId:commandId(),
-      durationSeconds:remainingSeconds,
-      remainingSeconds,
-      endAt:endAt.getTime(),
-      startedAt:null,
-      label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),contextEvent,now),
-      position:timerOverlay.position||"bottom",
-      fontSize:Number(timerOverlay.fontSize||64),
-      textColor:timerOverlay.textColor||"#ffffff",
-      borderColor:timerOverlay.borderColor||"#ffffff",
-      borderWidth:Number(timerOverlay.borderWidth??4),
-      borderRadius:Number(timerOverlay.borderRadius??18),
-      background:timerOverlay.background||"rgba(0,0,0,.35)"
-    }
-  },commandSource);
-
-  return {ok:true,classId:cls?.id||null,className:cls?.name||null,remainingSeconds,endAt:endAt.toISOString(),result};
-}
-
-function automationRunFailures(result={}){
-  const failures=(Array.isArray(result.steps)?result.steps:[])
-    .filter(step=>step?.ok===false)
-    .map(step=>({kind:"action",index:step.index??null,action:step.action||"unknown",error:step.error||"Action failed"}));
-  if(result.timerOverlay?.ok===false)failures.push({kind:"timer-overlay",action:"display.timer",error:result.timerOverlay.error||"Timer overlay failed"});
-  return failures;
-}
-
-async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPriority=false}={}){
-  // Validate legacy/imported records again before the pre-clear or any delivery.
-  event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
-  const additional=Array.isArray(event.actions)?event.actions:[];
-  const steps=[{id:"primary",action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{},delaySeconds:0,executionMode:"once",repeatCount:1,repeatDelaySeconds:0,continueOnError:true},...additional];
-  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[]};
-
-  // Resource isolation: no automation implicitly clears display content. Only an
-  // explicit display.clear or a display content action with clearBefore enabled may
-  // replace its own resolved display targets.
-  for(let i=0;i<steps.length;i++){
-    const step=steps[i]||{};
-    const delay=Math.max(0,Number(step.delaySeconds||0));
-    if(delay)await new Promise(r=>setTimeout(r,delay*1000));
-    if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
-    if(!manual&&event.id){const current=classroomAutomations.events.find(item=>item.id===event.id);if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was waiting"),{code:"AUTOMATION_CONFIGURATION_CHANGED"})}
-    const stepAction=step.action||event.action;
-    const stepDomain=automationTargetDomain(stepAction);
-    const eventDomain=automationTargetDomain(event.action);
-    const explicitTargets=Array.isArray(step.targets)&&step.targets.length ? step.targets : [];
-    let rawTargets=[];
-    if(step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=event.targets||[];
-    // An action's explicit target selection always wins. Class defaults only
-    // supply a target when this cross-domain display step has none of its own.
-    else if(explicitTargets.length)rawTargets=explicitTargets;
-    else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
-    else rawTargets=defaultAutomationActionTargets(stepAction);
-    let resolvedTargets;
-    if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
-    else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
-    else resolvedTargets=[...rawTargets];
-    let lockedTargets=[];
-    if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
-      lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
-      const lockedSet=new Set(lockedTargets);
-      resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
-      if(!resolvedTargets.length&&lockedTargets.length){
-        combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
-        continue;
-      }
-    }
-    const executionMode=automationExecutionMode(step.executionMode,stepAction);
-    const repeatCount=executionMode==="repeat"?automationRepeatCount(step.repeatCount):1;
-    const repeatDelaySeconds=automationRepeatDelaySeconds(step.repeatDelaySeconds);
-    const stepEvent={...event,_stepId:step.id||`step-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(executionMode==="loop"&&stepAction==="display.media"?{loop:true}:{})},targets:resolvedTargets,timerOverlay:null};
-    try{
-      if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-      let lastResult=null;
-      for(let attempt=0;attempt<repeatCount;attempt++){
-        if(attempt&&repeatDelaySeconds)await new Promise(r=>setTimeout(r,repeatDelaySeconds*1000));
-        if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId))throw Object.assign(new Error("Automation run cancelled by operator"),{code:"AUTOMATION_CANCELLED"});
-        lastResult=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
-        combined.results.push(...(lastResult.results||[]));
-      }
-      combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode,repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
-    }catch(err){
-      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-        combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
-        continue;
-      }
-      combined.ok=false;
-      combined.steps.push({index:i+1,id:step.id||`step-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
-      if(step.continueOnError===false)break;
-    }
-  }
-
-  if(event.timerOverlay?.enabled){
-    try{
-      const lockedTimerTargets=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(
-        event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length
-          ? event._classDefaultTargets
-          : (event.timerOverlay.useEventTargets!==false?event.targets:event.timerOverlay.targets)
-      );
-      if(lockedTimerTargets.length){
-        combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
-      }else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
-      if(combined.timerOverlay?.result)combined.results.push(combined.timerOverlay.result);
-    }catch(err){
-      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-        combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
-      }else{
-      combined.ok=false;
-      combined.timerOverlay={ok:false,error:err.message};
-      diagnosticError(err,{component:"automation.timer",operation:"timer-overlay",data:{automationId:event.id,classId:event.timerOverlay?.classId||event.classId||null}});
-      }
-    }
-  }
-
-  audit({kind:"automation.run",automationId:event.id,name:event.name,manual,actions:steps.map(x=>x.action),targets:event.targets,ok:combined.ok});
-  return combined;
-}
-
-function safeStoredName(value){
-  const name=path.basename(String(value||""));
-  if(!name || name==="." || name==="..")throw new Error("Invalid file name");
-  return name;
-}
-function mediaUrl(name){return `/media/${encodeURIComponent(name)}`}
-function resolveAutomationMediaName(payload={}){
-  const candidates=[payload.storedName,payload.media,payload.file,payload.name].map(v=>String(v||"").trim()).filter(Boolean);
-  for(const raw of candidates){
-    const base=path.basename(raw);
-    if(fs.existsSync(path.join(MEDIA_DIR,base)))return base;
-    const byOriginal=Object.entries(mediaLibrary.files||{}).find(([stored,rec])=>String(rec?.originalName||"")===raw&&fs.existsSync(path.join(MEDIA_DIR,stored)));
-    if(byOriginal)return byOriginal[0];
-  }
-  throw new Error(`Media not found: ${candidates[0]||"no media selected"}`);
-}
-function automationMediaUrl(name){
-  const stamp=encodeURIComponent(String(fs.statSync(path.join(MEDIA_DIR,name)).mtimeMs||Date.now()));
-  return `${mediaUrl(name)}?v=${stamp}`;
-}
-function classifyMedia(name,mime=""){
-  const ext=path.extname(name).toLowerCase();
-  if([".png",".jpg",".jpeg",".gif",".webp",".svg",".bmp"].includes(ext)||mime.startsWith("image/"))return "image";
-  if([".mp4",".webm",".mov",".m4v"].includes(ext)||mime.startsWith("video/"))return "video";
-  if(ext===".pdf"||mime==="application/pdf")return "pdf";
-  if([".ppt",".pptx",".odp"].includes(ext))return "presentation";
-  if([".doc",".docx",".odt",".rtf"].includes(ext))return "document";
-  return "file";
-}
-function officeConvertible(name){
-  return ["presentation","document"].includes(classifyMedia(name));
-}
-async function convertOfficeToPdf(storedName){
-  const src=path.join(MEDIA_DIR,safeStoredName(storedName));
-  const stem=path.basename(storedName,path.extname(storedName));
-  const generatedName=`${stem}.display.pdf`;
-  const generatedPath=path.join(MEDIA_DIR,generatedName);
-
-  const tmpDir=path.join(DATA_DIR,"convert-tmp",crypto.randomUUID());
-  fs.mkdirSync(tmpDir,{recursive:true});
-  try{
-    await execFileAsync("libreoffice",[
-      "--headless","--nologo","--nolockcheck","--nodefault","--nofirststartwizard",
-      "--convert-to","pdf","--outdir",tmpDir,src
-    ],{timeout:120000,maxBuffer:4*1024*1024});
-
-    const candidates=fs.readdirSync(tmpDir).filter(x=>x.toLowerCase().endsWith(".pdf"));
-    if(!candidates.length)throw new Error("LibreOffice did not create a PDF");
-    const staged=`${generatedPath}.${crypto.randomUUID()}.tmp`;
-    fs.copyFileSync(path.join(tmpDir,candidates[0]),staged);
-    fs.renameSync(staged,generatedPath);
-    return generatedName;
-  }finally{
-    fs.rmSync(tmpDir,{recursive:true,force:true});
-  }
-}
-function documentViewerUrl(pdfName,opts={}){
-  const q=new URLSearchParams();
-  q.set("file",mediaUrl(pdfName));
-  if(opts.autoAdvanceMs)q.set("auto",String(Math.max(0,Number(opts.autoAdvanceMs)||0)));
-  if(opts.loop!==undefined)q.set("loop",opts.loop?"1":"0");
-  if(opts.page)q.set("page",String(Math.max(1,Number(opts.page)||1)));
-  return `/document-viewer/?${q.toString()}`;
-}
-function libraryRecordFromDisk(name){
-  const full=path.join(MEDIA_DIR,name);
-  if(!fs.existsSync(full))return null;
-  const st=fs.statSync(full);
-  const rec=mediaLibrary.files[name]||{};
-  return {
-    storedName:name,
-    originalName:rec.originalName||name,
-    url:mediaUrl(name),
-    type:rec.type||classifyMedia(name,rec.mime||""),
-    mime:rec.mime||"",
-    size:st.size,
-    modifiedAt:st.mtime.toISOString(),
-    uploadedAt:rec.uploadedAt||st.birthtime.toISOString(),
-    generatedPdf:rec.generatedPdf||null,
-    conversionStatus:rec.conversionStatus||null,
-    conversionError:rec.conversionError||null
-  };
-}
-function listMediaLibrary(){
-  const hidden=new Set();
-  for(const rec of Object.values(mediaLibrary.files||{})){
-    if(rec?.generatedPdf)hidden.add(rec.generatedPdf);
-  }
-  return fs.readdirSync(MEDIA_DIR,{withFileTypes:true})
-    .filter(x=>x.isFile()&&x.name!==".gitkeep"&&!hidden.has(x.name))
-    .map(x=>libraryRecordFromDisk(x.name))
-    .filter(Boolean)
-    .sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));
-}
-
-
-// -----------------------------------------------------------------------------
-// v0.14 Classroom Presentation Mode
-// -----------------------------------------------------------------------------
-
-function cleanPresentationLabel(value,max=120){
-  const v=String(value||"").replace(/[\u0000-\u001f]/g," ").trim();
-  if(!v)throw new Error("Name is required");
-  return v.slice(0,max);
-}
-function presentationId(){
-  return `pres-${crypto.randomUUID()}`;
-}
-function presentationFolderId(){
-  return `folder-${crypto.randomUUID()}`;
-}
-function defaultPresentationLibrary(){
-  return {
-    version:1,
-    folders:{
-      root:{id:"root",name:"Presentations",parentId:null,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}
-    },
-    presentations:{}
-  };
-}
-let presentationLibrary=readJson(PRESENTATION_LIBRARY_FILE,defaultPresentationLibrary());
-if(!presentationLibrary||typeof presentationLibrary!=="object")presentationLibrary=defaultPresentationLibrary();
-if(!presentationLibrary.folders||typeof presentationLibrary.folders!=="object")presentationLibrary.folders={};
-if(!presentationLibrary.folders.root)presentationLibrary.folders.root={id:"root",name:"Presentations",parentId:null,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
-if(!presentationLibrary.presentations||typeof presentationLibrary.presentations!=="object")presentationLibrary.presentations={};
-let recoveredPresentationConversions=false;
-for(const rec of Object.values(presentationLibrary.presentations))if(rec?.conversionStatus==="converting"){
-  rec.conversionStatus=rec.slideCount>0?"ready":"failed";
-  rec.conversionError=rec.slideCount>0?null:"Conversion was interrupted by a service restart; rebuild the presentation.";
-  rec.lastRebuildError="Conversion interrupted by service restart";
-  rec.updatedAt=new Date().toISOString();recoveredPresentationConversions=true;
-}
-
-function persistPresentationLibrary(){
-  persistJson(PRESENTATION_LIBRARY_FILE,presentationLibrary);
-}
-if(recoveredPresentationConversions)persistPresentationLibrary();
-function normalizePresentationFolderId(id){
-  const v=String(id||"root");
-  return presentationLibrary.folders[v]?v:"root";
-}
-function presentationDir(id){
-  const rec=presentationLibrary.presentations[id];
-  if(!rec)throw new Error("Presentation not found");
-  return path.join(PRESENTATIONS_DIR,id);
-}
-function presentationSlideUrl(id,slide){
-  const rec=presentationLibrary.presentations[id];
-  if(!rec)throw new Error("Presentation not found");
-  const n=Math.max(1,Math.min(Number(slide)||1,Number(rec.slideCount)||1));
-  return `/presentations/${encodeURIComponent(id)}/slides/slide-${String(n).padStart(3,"0")}.jpg`;
-}
-function presentationPublicRecord(rec){
-  if(!rec)return null;
-  return {
-    ...rec,
-    originalUrl:rec.originalFile?`/presentations/${encodeURIComponent(rec.id)}/${encodeURIComponent(rec.originalFile)}`:null,
-    pdfUrl:rec.pdfFile?`/presentations/${encodeURIComponent(rec.id)}/${encodeURIComponent(rec.pdfFile)}`:null,
-    firstSlideUrl:rec.slideCount?presentationSlideUrl(rec.id,1):null
-  };
-}
-function presentationDescendantFolderIds(folderId){
-  const out=new Set([folderId]);
-  let changed=true;
-  while(changed){
-    changed=false;
-    for(const f of Object.values(presentationLibrary.folders)){
-      if(f.id!=="root" && out.has(f.parentId) && !out.has(f.id)){out.add(f.id);changed=true;}
-    }
-  }
-  return out;
-}
-function presentationFolderWouldCycle(folderId,newParentId){
-  if(folderId==="root")return true;
-  const descendants=presentationDescendantFolderIds(folderId);
-  return descendants.has(newParentId);
-}
-function deletePresentationFiles(id){
-  const dir=path.join(PRESENTATIONS_DIR,String(id||""));
-  if(fs.existsSync(dir))fs.rmSync(dir,{recursive:true,force:true});
-}
-function deletePresentationRecord(id){
-  const rec=presentationLibrary.presentations[id];
-  if(!rec)return false;
-  deletePresentationFiles(id);
-  delete presentationLibrary.presentations[id];
-  return true;
-}
-function xmlDecodeText(v){
-  return String(v||"")
-    .replace(/&lt;/g,"<").replace(/&gt;/g,">")
-    .replace(/&quot;/g,'"').replace(/&apos;/g,"'")
-    .replace(/&amp;/g,"&");
-}
-function extractPptxSpeakerNotes(file){
-  const ext=path.extname(file).toLowerCase();
-  if(ext!==".pptx")return [];
-  try{
-    const zip=new AdmZip(file);
-    const entries=zip.getEntries()
-      .filter(e=>/^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(e.entryName))
-      .sort((a,b)=>{
-        const an=Number(a.entryName.match(/notesSlide(\d+)/i)?.[1]||0);
-        const bn=Number(b.entryName.match(/notesSlide(\d+)/i)?.[1]||0);
-        return an-bn;
-      });
-    const notes=[];
-    for(const e of entries){
-      const xml=e.getData().toString("utf8");
-      const chunks=[...xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m=>xmlDecodeText(m[1]).trim()).filter(Boolean);
-      const text=chunks.filter(x=>!/^click to edit/i.test(x)).join("\n").trim();
-      const n=Number(e.entryName.match(/notesSlide(\d+)/i)?.[1]||0);
-      if(n>0)notes[n-1]=text;
-    }
-    return notes;
-  }catch(err){
-    audit({kind:"presentation.notes.error",error:err.message,file:path.basename(file)});
-    return [];
-  }
-}
-const presentationBuilds=new Map();
-async function buildPresentationSlidesUnlocked(id){
-  const rec=presentationLibrary.presentations[id];
-  if(!rec)throw new Error("Presentation not found");
-  const dir=presentationDir(id);
-  const original=path.join(dir,rec.originalFile);
-  const renderTmp=path.join(dir,`render-${crypto.randomUUID()}`);
-  const slidesDir=path.join(dir,"slides");
-  const stagedSlides=path.join(renderTmp,"slides");
-  fs.mkdirSync(renderTmp,{recursive:true});
-  fs.mkdirSync(stagedSlides,{recursive:true});
-
-  try{
-    let stagedPdf=path.join(renderTmp,"presentation.pdf");
-    if(path.extname(original).toLowerCase()===".pdf")fs.copyFileSync(original,stagedPdf);
-    else{
-      const convertDir=path.join(renderTmp,"convert");fs.mkdirSync(convertDir,{recursive:true});
-      await execFileAsync("libreoffice",[
-        "--headless","--nologo","--nolockcheck","--nodefault","--nofirststartwizard",
-        "--convert-to","pdf","--outdir",convertDir,original
-      ],{timeout:180000,maxBuffer:8*1024*1024});
-      const candidates=fs.readdirSync(convertDir).filter(x=>x.toLowerCase().endsWith(".pdf"));
-      if(!candidates.length)throw new Error("LibreOffice did not create a presentation PDF");
-      fs.copyFileSync(path.join(convertDir,candidates[0]),stagedPdf);
-    }
-
-    await execFileAsync("pdftoppm",[
-      "-jpeg","-r","144","-jpegopt","quality=90",stagedPdf,path.join(stagedSlides,"raw")
-    ],{timeout:180000,maxBuffer:8*1024*1024});
-
-    const generated=fs.readdirSync(stagedSlides)
-    .filter(x=>/^raw-\d+\.jpg$/i.test(x))
-    .sort((a,b)=>Number(a.match(/(\d+)/)?.[1])-Number(b.match(/(\d+)/)?.[1]));
-    if(!generated.length)throw new Error("No slide images were rendered");
-
-    generated.forEach((name,i)=>fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`)));
-    const oldSlides=path.join(dir,`slides-old-${crypto.randomUUID()}`),finalPdf=path.join(dir,"presentation.pdf"),oldPdf=path.join(dir,`presentation-old-${crypto.randomUUID()}.pdf`);
-    let movedSlides=false,movedPdf=false;
-    try{
-      if(fs.existsSync(slidesDir)){fs.renameSync(slidesDir,oldSlides);movedSlides=true}
-      if(fs.existsSync(finalPdf)){fs.renameSync(finalPdf,oldPdf);movedPdf=true}
-      fs.renameSync(stagedSlides,slidesDir);fs.renameSync(stagedPdf,finalPdf);
-      fs.rmSync(oldSlides,{recursive:true,force:true});fs.rmSync(oldPdf,{force:true});
-    }catch(error){
-      fs.rmSync(slidesDir,{recursive:true,force:true});fs.rmSync(finalPdf,{force:true});
-      if(movedSlides&&fs.existsSync(oldSlides))fs.renameSync(oldSlides,slidesDir);
-      if(movedPdf&&fs.existsSync(oldPdf))fs.renameSync(oldPdf,finalPdf);
-      throw error;
-    }
-
-    rec.pdfFile="presentation.pdf";
-    rec.slideCount=generated.length;
-    rec.notes=extractPptxSpeakerNotes(original);
-    while(rec.notes.length<rec.slideCount)rec.notes.push("");
-    rec.conversionStatus="ready";rec.conversionError=null;rec.lastRebuildError=null;
-    rec.updatedAt=new Date().toISOString();persistPresentationLibrary();return rec;
-  }finally{fs.rmSync(renderTmp,{recursive:true,force:true})}
-}
-function buildPresentationSlides(id){
-  const key=String(id);
-  if(presentationBuilds.has(key))return presentationBuilds.get(key);
-  const task=buildPresentationSlidesUnlocked(key).finally(()=>presentationBuilds.delete(key));
-  presentationBuilds.set(key,task);
-  return task;
-}
-
-function defaultPresentationState(){
-  return {
-    active:false,
-    presentationId:null,
-    slide:1,
-    targets:[],
-    paused:false,
-    black:false,
-    startedAt:null,
-    slideStartedAt:null,
-    autoAdvanceSeconds:0,
-    loop:false,
-    targetSeconds:0,
-    timings:{},
-    sessionId:null,
-    updatedAt:null
-  };
-}
-let presentationState={...defaultPresentationState(),...readJson(PRESENTATION_STATE_FILE,{})};
-if(!presentationState.timings||typeof presentationState.timings!=="object")presentationState.timings={};
-if(!Array.isArray(presentationState.targets))presentationState.targets=[];
-
-function persistPresentationState(){
-  presentationState.updatedAt=new Date().toISOString();
-  persistJson(PRESENTATION_STATE_FILE,presentationState);
-}
-function presentationElapsedSeconds(startValue){
-  const start=Date.parse(startValue||0);
-  if(!start||!Number.isFinite(start))return 0;
-  const end=presentationState.paused&&presentationState.pausedAt?Date.parse(presentationState.pausedAt):Date.now();
-  return Math.max(0,Math.floor((end-start)/1000));
-}
-function presentationStatePublic(){
-  const rec=presentationLibrary.presentations[presentationState.presentationId]||null;
-  return {
-    ...presentationState,
-    presentation: presentationPublicRecord(rec),
-    presentationElapsedSeconds:presentationState.active?presentationElapsedSeconds(presentationState.startedAt):0,
-    slideElapsedSeconds:presentationState.active?presentationElapsedSeconds(presentationState.slideStartedAt):0,
-    currentSlideUrl:rec&&presentationState.active?presentationSlideUrl(rec.id,presentationState.slide):null,
-    nextSlideUrl:rec&&presentationState.active&&presentationState.slide<rec.slideCount?presentationSlideUrl(rec.id,presentationState.slide+1):null,
-    notes:rec?.notes?.[Math.max(0,(presentationState.slide||1)-1)]||""
-  };
-}
-function recordCurrentSlideTiming(){
-  if(!presentationState.active||!presentationState.presentationId)return;
-  const elapsed=presentationElapsedSeconds(presentationState.slideStartedAt);
-  const key=String(presentationState.slide||1);
-  presentationState.timings[key]=Number(presentationState.timings[key]||0)+elapsed;
-}
-async function sendPresentationSlide(){
-  const rec=presentationLibrary.presentations[presentationState.presentationId];
-  if(!rec||!presentationState.active)return;
-  const url=presentationSlideUrl(rec.id,presentationState.slide);
-  await executeCommand({
-    // Use the established display.image command so already-open TV receivers
-    // from earlier Hub versions can present slides without requiring a reload.
-    type:"display.image",
-    target:presentationState.targets,
-    payload:{
-      presentationId:rec.id,
-      presentation:true,
-      name:rec.name,
-      slide:presentationState.slide,
-      slideCount:rec.slideCount,
-      url,
-      fit:"contain",
-      opacity:1
-    }
-  },"presentation");
-  if(presentationState.black){
-    await executeCommand({
-      type:"display.clear",
-      target:presentationState.targets,
-      payload:{presentation:true,black:true}
-    },"presentation");
-  }
-}
-async function presentationGoto(slide,{record=true}={}){
-  const rec=presentationLibrary.presentations[presentationState.presentationId];
-  if(!rec)throw new Error("No active presentation");
-  const next=Math.max(1,Math.min(Number(slide)||1,Number(rec.slideCount)||1));
-  if(record)recordCurrentSlideTiming();
-  presentationState.slide=next;
-  presentationState.slideStartedAt=new Date().toISOString();
-  presentationState.paused=false;
-  presentationState.pausedAt=null;
-  persistPresentationState();
-  await sendPresentationSlide();
-  broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
-  return presentationStatePublic();
-}
-async function stopPresentation({clear=true}={}){
-  const targets=[...presentationState.targets];
-  if(presentationState.active)recordCurrentSlideTiming();
-  const priorId=presentationState.presentationId;
-  presentationState={...defaultPresentationState(),timings:presentationState.timings||{}};
-  persistPresentationState();
-  if(clear&&targets.length){
-    await executeCommand({type:"display.clear",target:targets,payload:{}},"presentation");
-  }
-  audit({kind:"presentation.stop",presentationId:priorId,targets});
-  broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
-  return presentationStatePublic();
-}
-async function controlPresentation(action,body={}){
-  action=String(action||"").toLowerCase();
-  if(action==="stop")return stopPresentation({clear:body.clear!==false});
-  if(!presentationState.active)throw new Error("No active presentation");
-  const rec=presentationLibrary.presentations[presentationState.presentationId];
-  if(!rec)throw new Error("Active presentation is missing");
-
-  if(action==="next"){
-    if(presentationState.slide>=rec.slideCount){
-      if(presentationState.loop)return presentationGoto(1);
-      presentationState.paused=true;
-      presentationState.pausedAt=new Date().toISOString();
-      persistPresentationState();
-      broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
-      return presentationStatePublic();
-    }
-    return presentationGoto(presentationState.slide+1);
-  }
-  if(action==="previous"||action==="back")return presentationGoto(presentationState.slide-1);
-  if(action==="goto")return presentationGoto(body.slide);
-  if(action==="restart-timer"){
-    presentationState.slideStartedAt=new Date().toISOString();
-    presentationState.timings[String(presentationState.slide)]=0;
-    presentationState.paused=false;
-    presentationState.pausedAt=null;
-  }else if(action==="pause"){
-    if(!presentationState.paused){
-      presentationState.paused=true;
-      presentationState.pausedAt=new Date().toISOString();
-    }
-  }else if(action==="resume"){
-    if(presentationState.paused){
-      const pausedAt=Date.parse(presentationState.pausedAt||0);
-      const delta=pausedAt?Date.now()-pausedAt:0;
-      for(const key of ["startedAt","slideStartedAt"]){
-        const t=Date.parse(presentationState[key]||0);
-        if(t&&delta>0)presentationState[key]=new Date(t+delta).toISOString();
-      }
-      presentationState.paused=false;
-      presentationState.pausedAt=null;
-    }
-  }else if(action==="black"||action==="unblack"||action==="toggle-black"){
-    if(action==="black")presentationState.black=true;
-    else if(action==="unblack")presentationState.black=false;
-    else presentationState.black=!presentationState.black;
-
-    if(presentationState.black){
-      // display.clear is understood by all receiver versions and gives us a
-      // dependable black screen without requiring the new presentation command.
-      await executeCommand({
-        type:"display.clear",
-        target:presentationState.targets,
-        payload:{presentation:true,black:true}
-      },"presentation");
-    }else{
-      await sendPresentationSlide();
-    }
-  }else if(action==="set-auto"){
-    presentationState.autoAdvanceSeconds=Math.max(0,Math.min(3600,Number(body.seconds)||0));
-    if(body.loop!==undefined)presentationState.loop=!!body.loop;
-  }else if(action==="set-target"){
-    presentationState.targetSeconds=Math.max(0,Math.min(3600,Number(body.seconds)||0));
-  }else{
-    throw new Error("Unsupported presentation action");
-  }
-  persistPresentationState();
-  broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
-  return presentationStatePublic();
-}
-
-let presentationAutoAdvanceBusy=false;
-const presentationAutoAdvanceTimer=setInterval(async()=>{
-  if(fullExportFreeze.requested)return;
-  if(presentationAutoAdvanceBusy)return;presentationAutoAdvanceBusy=true;
-  try{
-    if(!presentationState.active||presentationState.paused)return;
-    const seconds=Number(presentationState.autoAdvanceSeconds||0);
-    if(seconds<=0)return;
-    if(presentationElapsedSeconds(presentationState.slideStartedAt)>=seconds){
-      await controlPresentation("next",{});
-    }
-  }catch(err){
-    audit({kind:"presentation.auto.error",error:err.message});
-  }finally{presentationAutoAdvanceBusy=false}
-},1000);
-presentationAutoAdvanceTimer.unref();
-
-
-// -----------------------------------------------------------------------------
-// v0.15 Lab Computer Management
-// -----------------------------------------------------------------------------
-function defaultLabComputerStore(){return {version:1,computers:{}}}
-
-
-// -----------------------------------------------------------------------------
-// Classroom class / bell schedule
-// -----------------------------------------------------------------------------
-function defaultClassSchedules(){return {version:1,classes:[]}}
-let classScheduleStore=readJson(CLASS_SCHEDULES_FILE,defaultClassSchedules());
-if(!classScheduleStore||typeof classScheduleStore!=="object")classScheduleStore=defaultClassSchedules();
-if(!Array.isArray(classScheduleStore.classes))classScheduleStore.classes=[];
-
-function persistClassSchedules(){persistJson(CLASS_SCHEDULES_FILE,classScheduleStore)}
-function commitClassSchedules(next){persistJson(CLASS_SCHEDULES_FILE,next);classScheduleStore=next;return next}
-function normalizeClassSchedule(input={},existing={}){
-  const id=existing.id||cleanId(input.id||`class-${crypto.randomUUID()}`);
-  if(!id)throw new Error("A valid class ID is required");
-  const name=String(input.name??existing.name??"Class").trim().slice(0,120);
-  const shortName=String(input.shortName??existing.shortName??name).trim().slice(0,60);
-  const startTime=String(input.startTime??existing.startTime??"08:00"),endTime=String(input.endTime??existing.endTime??"09:00");
-  if(!validTime(startTime)||!validTime(endTime))throw new Error("Class times must be valid HH:MM values");
-  if(timeToMinutes(startTime)>=timeToMinutes(endTime))throw new Error("Class end time must be after its start time");
-  const days=(Array.isArray(input.days)?input.days:(existing.days||[1,2,3,4,5])).map(Number).filter(x=>x>=0&&x<=6);
-  const scheduleMode=["weekly","alternating","schoolcycle"].includes(String(input.scheduleMode??existing.scheduleMode??"schoolcycle"))?String(input.scheduleMode??existing.scheduleMode??"schoolcycle"):"schoolcycle";
-  const alternatePhase=String(input.alternatePhase??existing.alternatePhase??"A").toUpperCase()==="B"?"B":"A";
-  const period=String(input.period??existing.period??"").trim().slice(0,40);
-  const cycleDays=normalizeCycleDays(input.cycleDays===undefined?existing.cycleDays:input.cycleDays,periodDefaultCycleDays(period));
-  const inferredDayType=cycleDaysDayColor(cycleDays);
-  const dayType=normalizedDayType(input.dayType??existing.dayType??inferredDayType,inferredDayType);
-  const anchorRaw=(input.anchorDate??existing.anchorDate??(scheduleMode==="alternating"?schoolCycleAnchor():""));const anchorDate=validDateKey(anchorRaw)?String(anchorRaw):"";
-  const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
-  const excludedDates=uniqueDateKeys(input.excludedDates===undefined?existing.excludedDates:input.excludedDates);
-  const defaultTargets=(Array.isArray(input.defaultTargets)?input.defaultTargets:(existing.defaultTargets||["all"])).map(cleanId).filter(Boolean);
-  const continuationOf=String(input.continuationOf??existing.continuationOf??"").trim().slice(0,80);
-  return {...existing,id,name,shortName,startTime,endTime,days:[...new Set(days)],scheduleMode,alternatePhase,anchorDate,includeDates,excludedDates,period,cycleDays,dayType,continuationOf,phaseALabel:String(input.phaseALabel??existing.phaseALabel??alternateGroupLabel("A")).trim().slice(0,30)||alternateGroupLabel("A"),phaseBLabel:String(input.phaseBLabel??existing.phaseBLabel??alternateGroupLabel("B")).trim().slice(0,30)||alternateGroupLabel("B"),defaultTargets:[...new Set(defaultTargets)],enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,notes:String(input.notes??existing.notes??"").slice(0,500),createdAt:existing.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
-}
-function classScheduleById(id){return classScheduleStore.classes.find(c=>c.id===String(id||""))||null}
-
-function classAlternatingPhaseForDate(anchorDate,date=new Date()){
-  const status=schoolCycleForDate(date);
-  if(!status.isStudentSchoolDay)return null;
-  const anchor=dateFromKey(validDateKey(anchorDate)?anchorDate:schoolCycleAnchor());
-  if(!anchor)return null;
-  const offset=countEligibleSchoolDays(anchor,date);
-  return Math.abs(offset)%2===0?"A":"B";
-}
-
-function classScheduleMatchesDate(cls,date=new Date()){
-  const key=localDateKey(date);
-  if(calendarRuleForDate(date).type==='half-day'&&!effectiveClassTimes(cls,date))return false;
-  if(isCalendarBlocked(date).blocked)return false;
-  if((cls.excludedDates||[]).includes(key))return false;
-  if((cls.includeDates||[]).includes(key))return true;
-
-  if(cls.scheduleMode==="schoolcycle"){
-    const cycleDays=normalizeCycleDays(cls.cycleDays,periodDefaultCycleDays(cls.period));
-    return schoolCycleMatches({cycleDays,dayType:cls.dayType||cycleDaysDayColor(cycleDays)},date);
-  }
-
-  if(!(cls.days||[]).includes(date.getDay()))return false;
-  if(cls.scheduleMode!=="alternating")return true;
-
-  return classAlternatingPhaseForDate(cls.anchorDate,date)===(cls.alternatePhase||"A");
-}
-function classPeriodNumber(cls){
-  const direct=String(cls?.period||'').match(/(?:^|\D)([1-8])(?:$|\D)/);
-  if(direct)return Number(direct[1]);
-  const named=String(cls?.name||'').match(/\bP([1-8])\b/i);
-  return named?Number(named[1]):null;
-}
-function minutesToHHMM(mins){mins=Math.max(0,Math.min(1439,Math.round(mins)));return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`}
-function effectiveClassTimes(cls,date=new Date()){
-  if(!cls)return null;
-  const rule=calendarRuleForDate(date);
-  const effective=effectiveTimesForRule(schoolScheduleProfile,cls,rule.type);
-  return effective?{...effective,rule}:null;
-}
-function classStartDate(cls,date=new Date()){const t=effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.startTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
-function classEndDate(cls,date=new Date()){const t=effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.endTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
-function isTransitionClass(cls){
-  return /transition/i.test(String(cls?.name||"")) || /transition/i.test(String(cls?.shortName||"")) || String(cls?.kind||"").toLowerCase()==="transition";
-}
-function classBasePeriodNumber(cls){
-  if(!cls)return null;
-  const name=String(cls.name||'');
-  // Imported legacy labels encode the originating regular period explicitly.
-  const bison=name.match(/^\s*B[12]\s*-\s*P([1-8])\b/i);
-  if(bison)return Number(bison[1]);
-  const regular=name.match(/^\s*P([1-8])\b/i);
-  if(regular)return Number(regular[1]);
-  return classPeriodNumber(cls);
-}
-function isLegacyContinuationClass(cls){
-  if(!cls)return false;
-  const name=String(cls.name||'');
-  const period=String(cls.period||'');
-  return /^\s*B[12]\b/i.test(name) || /^\s*B[12]\b/i.test(period) || /bison block/i.test(String(cls.notes||''));
-}
-function isValidTimerContinuation(current,next){
-  if(!current||!next||isTransitionClass(current)||isTransitionClass(next))return false;
-  if(next.continuationOf)return String(next.continuationOf)===String(current.id)||String(next.continuationOf)===String(current.period)||String(next.continuationOf)===String(classBasePeriodNumber(current)||"");
-  if(!schoolScheduleProfile.continuation?.legacyBisonCompatibility||!isLegacyContinuationClass(next))return false;
-  const a=classBasePeriodNumber(current),b=classBasePeriodNumber(next);
-  return Number.isInteger(a)&&Number.isInteger(b)&&a===b;
-}
-function resolvedOccurrenceEndDate(event,cls,date=new Date()){
-  const stamp=Number(event?._classEndAt);
-  if(Number.isFinite(stamp)&&stamp>0){
-    const d=new Date(stamp);
-    if(localDateKey(d)===localDateKey(date))return d;
-  }
-  return classEndDate(cls,date);
-}
-function activeClassAt(date=new Date()){return classScheduleStore.classes.filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,date)).find(c=>{const a=classStartDate(c,date),b=classEndDate(c,date);return a&&b&&a<=date&&date<b})||null}
-function activeAutomationClassAt(event,date=new Date()){
-  const ids=automationClassIds(event);
-  if(!ids.length)return null;
-  const active=ids
-    .map(classScheduleById)
-    .filter(Boolean)
-    .filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,date))
-    .map(c=>({c,start:classStartDate(c,date),end:classEndDate(c,date)}))
-    .filter(x=>x.start&&x.end&&x.start<=date&&date<x.end)
-    .sort((a,b)=>b.start-a.start||a.end-b.end);
-  return active[0]?.c||null;
-}
-function nextClassAfter(date=new Date()){
-  const found=[];
-  for(let off=0;off<14&&!found.length;off++){
-    const d=new Date(date);d.setDate(d.getDate()+off);d.setHours(12,0,0,0);
-    for(const c of classScheduleStore.classes){
-      if(c.enabled===false||!classScheduleMatchesDate(c,d))continue;
-      const start=classStartDate(c,d),end=classEndDate(c,d);if(start&&end&&start>date)found.push({...c,startTime:effectiveClassTimes(c,d)?.startTime||c.startTime,endTime:effectiveClassTimes(c,d)?.endTime||c.endTime,nextStartAt:start.toISOString(),nextEndAt:end.toISOString()});
-    }
-  }
-  return found.sort((a,b)=>new Date(a.nextStartAt)-new Date(b.nextStartAt))[0]||null;
-}
-function classStatusPayload(date=new Date()){
-  const a=activeClassAt(date),n=nextClassAfter(date);
-  const at=a?effectiveClassTimes(a,date):null;
-  return {schoolCycle:schoolCycleForDate(date),calendarRule:calendarRuleForDate(date),activeClass:a?{...a,startTime:at?.startTime||a.startTime,endTime:at?.endTime||a.endTime,startAt:classStartDate(a,date).toISOString(),endAt:classEndDate(a,date).toISOString()}:null,nextClass:n};
-}
-function automationClassIds(event){
-  const ids=Array.isArray(event.classIds)?event.classIds.filter(Boolean):[];
-  if(!ids.length&&event.classId)ids.push(event.classId);
-  return [...new Set(ids.map(String))];
-}
-function resolveAutomationForClass(event,classId,date=new Date()){
-  if(!classId)return event;
-  const cls=classScheduleById(classId);if(!cls||cls.enabled===false)return null;
-  if(!classScheduleMatchesDate(cls,date))return null;
-  const effective=effectiveClassTimes(cls,date);if(!effective)return null;
-  const base=event.classTimeReference==="end"?effective.endTime:effective.startTime;
-  const [h,m]=base.split(":").map(Number),rawMinutes=h*60+m+Number(event.classTimeOffsetMinutes||0);
-  const dayOffset=Math.floor(rawMinutes/1440),mins=((rawMinutes%1440)+1440)%1440;
-  const scheduledDate=new Date(date);scheduledDate.setDate(scheduledDate.getDate()+dayOffset);
-  const occurrenceStart=classStartDate(cls,date),occurrenceEnd=classEndDate(cls,date);
-  return {...event,classId:cls.id,time:`${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`,days:[...(cls.days||[])],scheduleMode:cls.scheduleMode||"schoolcycle",alternatePhase:cls.alternatePhase||"A",anchorDate:cls.anchorDate||schoolCycleAnchor(),dayType:cls.dayType||"Any",cycleDays:[...(cls.cycleDays||periodDefaultCycleDays(cls.period))],period:cls.period||"",includeDates:[...(cls.includeDates||[])],targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),_class:cls,_classDefaultTargets:[...(cls.defaultTargets||[])],_automationClassIds:automationClassIds(event),_classStartAt:occurrenceStart?.getTime()||null,_classEndAt:occurrenceEnd?.getTime()||null,_classIsTransition:isTransitionClass(cls),_sourceDateMatched:true,_scheduledDateKey:localDateKey(scheduledDate)};
-}
-function resolveAutomationOccurrences(event,date=new Date()){
-  const ids=automationClassIds(event);
-  if(!ids.length)return [event];
-  return ids.map(id=>resolveAutomationForClass(event,id,date)).filter(Boolean);
-}
-function resolveAutomationFromClass(event,date=new Date()){
-  // Manual/Test Now execution must follow the selected class occurrence that is
-  // actually active now. Falling straight to the first configured class makes
-  // multi-class automations resolve an already-ended period and yields 00:00.
-  const active=activeAutomationClassAt(event,date);
-  if(active){
-    const resolved=resolveAutomationForClass(event,active.id,date);
-    if(resolved)return resolved;
-  }
-  return resolveAutomationOccurrences(event,date)[0]||event;
-}
-function resolveAutomationForManualTest(event,date=new Date()){
-  const resolved=resolveAutomationFromClass(event,date);
-  if(resolved?._class||!automationClassIds(event).length)return resolved;
-  // Test Now must remain useful on a day when none of the linked classes is
-  // scheduled. Use the first enabled linked class as a deterministic test
-  // context without weakening the real scheduler's date/cycle checks.
-  const cls=automationClassIds(event).map(classScheduleById).find(c=>c&&c.enabled!==false);
-  if(!cls)return resolved;
-  const occurrenceStart=classStartDate(cls,date),occurrenceEnd=classEndDate(cls,date);
-  return {
-    ...event,
-    classId:cls.id,
-    targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),
-    _class:cls,
-    _classDefaultTargets:[...(cls.defaultTargets||[])],
-    _automationClassIds:automationClassIds(event),
-    _classStartAt:occurrenceStart?.getTime()||null,
-    _classEndAt:occurrenceEnd?.getTime()||null,
-    _classIsTransition:isTransitionClass(cls),
-    _manualTestOccurrence:true
-  };
-}
-
-// -----------------------------------------------------------------------------
-// Veyon lab computer integration
-// -----------------------------------------------------------------------------
-
-let veyonComputerStore=readJson(VEYON_COMPUTERS_FILE,{version:2,computers:{}});
-if(!veyonComputerStore||typeof veyonComputerStore!=="object")veyonComputerStore={version:2,computers:{}};
-if(!veyonComputerStore.computers||typeof veyonComputerStore.computers!=="object")veyonComputerStore.computers={};
-for(const rec of Object.values(veyonComputerStore?.computers||{})){
-  if(rec.role!=="teacher"&&rec.role!=="student")rec.role="student";
-}
-const veyonConnectionCache=new Map();
-const veyonAuthInFlight=new Map();
-
-function persistVeyonComputers(){
-  persistJson(VEYON_COMPUTERS_FILE,veyonComputerStore);
-}
-try{dbStore.importSecretFile("veyon.private-key",VEYON_PRIVATE_KEY_FILE,{type:"private-key",integration:"veyon",keyName:VEYON_KEY_NAME})}catch(err){console.warn(`Veyon private-key database import skipped: ${err.message}`)}
-function veyonPrivateKey(){
-  try{const v=dbStore.getSecret("veyon.private-key");if(v)return v}catch{}
-  return fs.readFileSync(VEYON_PRIVATE_KEY_FILE,"utf8")
-}
-async function veyonFetch(pathname,options={}){
-  return bufferedVeyonFetch(`${VEYON_WEBAPI_URL}${pathname}`,options);
-}
-async function veyonJson(pathname,options={}){
-  const started=Date.now();
-  try{
-    const response=await veyonFetch(pathname,options);
-    if(!response.ok)throw await veyonResponseError(response);
-    const text=await response.text();let body={};
-    try{body=text?JSON.parse(text):{}}catch{body={raw:text}}
-    audit({kind:"service.action",component:"veyon",operation:String(options.method||"GET"),path:pathname,status:response.status,durationMs:Date.now()-started,ok:true});
-    return body;
-  }catch(err){
-    diagnosticError(err,{component:"veyon",operation:`${options.method||"GET"} ${pathname}`});
-    throw err;
-  }
-}
-async function veyonCloseConnection(host,rec=veyonConnectionCache.get(host)){
-  if(!rec?.uid)return;
-  // An old request must never remove a newer authenticated session.
-  if(veyonConnectionCache.get(host)===rec)veyonConnectionCache.delete(host);
-  try{
-    await veyonJson(`/api/v1/authentication/${encodeURIComponent(host)}`,{
-      method:"DELETE",headers:{"Connection-Uid":rec.uid},timeoutMs:3000
-    });
-  }catch{}
-}
-async function veyonTrimPool(reserve=1){
-  const max=Math.max(1,VEYON_POOL_MAX-reserve);
-  if(veyonConnectionCache.size<=max)return;
-  const victims=[...veyonConnectionCache.entries()].filter(([,rec])=>!rec.active)
-    .sort((a,b)=>Number(a[1].lastUsed||0)-Number(b[1].lastUsed||0))
-    .slice(0,Math.max(0,veyonConnectionCache.size-max));
-  for(const [host,rec] of victims)if(!rec.active)await veyonCloseConnection(host,rec);
-}
-async function veyonCloseIdleConnections(){
-  const now=Date.now();
-  for(const [host,rec] of [...veyonConnectionCache.entries()]){
-    if(!rec.active&&now-Number(rec.lastUsed||0)>45000)await veyonCloseConnection(host,rec);
-  }
-}
-const veyonPoolTimer=setInterval(()=>veyonCloseIdleConnections().catch(()=>{}),15000);
-veyonPoolTimer.unref?.();
-
-async function veyonAuthenticateInternal(host){
-  await veyonTrimPool(1);
-  let keydata;
-  try{keydata=veyonPrivateKey();if(!String(keydata||"").trim())throw Error("empty key")}
-  catch{throw Object.assign(new Error("Veyon private key is unavailable. Import the matching private key in integration settings."),{reason:"key-unavailable",stage:"authentication"})}
-  let lastErr=null;
-  for(let attempt=0;attempt<=VEYON_AUTH_RETRIES;attempt++){
-    try{
-      const result=await veyonJson(`/api/v1/authentication/${encodeURIComponent(host)}`,{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({method:VEYON_AUTHKEYS_UUID,credentials:{keyname:VEYON_KEY_NAME,keydata}})
-      });
-      const uid=result["connection-uid"];
-      if(!uid)throw new Error("Veyon authentication returned no connection UID");
-      veyonConnectionCache.set(host,{uid,validUntil:Number(result.validUntil||0),lastUsed:Date.now(),createdAt:Date.now()});
-      if(typeof veyonCommandQueue!=="undefined")queueMicrotask(()=>veyonCommandQueue.reconcileHost(host));
-      return uid;
-    }catch(err){
-      lastErr=err;
-      if(err.status===429||err.veyonCode===7){
-        const victims=[...veyonConnectionCache.entries()].filter(([,rec])=>!rec.active)
-          .sort((a,b)=>Number(a[1].lastUsed||0)-Number(b[1].lastUsed||0))
-          .slice(0,Math.max(2,Math.ceil(veyonConnectionCache.size/4)));
-        for(const [victim,rec] of victims)if(!rec.active)await veyonCloseConnection(victim,rec);
-        await new Promise(r=>setTimeout(r,200*(attempt+1)));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastErr||new Error("Veyon authentication failed");
-}
-async function veyonAuthenticate(host,force=false){
-  host=String(host||"").trim();if(!host)throw new Error("Veyon host required");
-  if(veyonAuthInFlight.has(host))return veyonAuthInFlight.get(host);
-  const now=Math.floor(Date.now()/1000),cached=veyonConnectionCache.get(host);
-  if(!force&&cached?.uid&&Number(cached.validUntil||0)>now+30&&Date.now()-Number(cached.lastUsed||0)<45000){
-    cached.lastUsed=Date.now();return cached.uid;
-  }
-  // Install single-flight before closing the expired session. Parallel info and
-  // preview requests must not create orphaned connections for the same host.
-  const task=Promise.resolve().then(async()=>{
-    if(cached)await veyonCloseConnection(host,cached);
-    return veyonAuthenticateInternal(host);
-  }).finally(()=>veyonAuthInFlight.delete(host));
-  veyonAuthInFlight.set(host,task);return task;
-}
-async function veyonConnectedRequest(host,pathname,options={},reader=veyonJson,retry=true){
-  let uid;
-  try{uid=await veyonAuthenticate(host,false)}catch(error){error.stage="authentication";throw error}
-  const rec=veyonConnectionCache.get(host);
-  if(rec){rec.lastUsed=Date.now();rec.active=(rec.active||0)+1}
-  let failure;
-  try{
-    return await reader(pathname,{...options,headers:{...(options.headers||{}),"Connection-Uid":uid}});
-  }catch(err){failure=err}
-  finally{if(rec){rec.active=Math.max(0,(rec.active||1)-1);rec.lastUsed=Date.now()}}
-  if(retry&&[2,7,8].includes(Number(failure.veyonCode))){
-    // Only discard the failing UID: other requests may already have renewed it.
-    if(veyonConnectionCache.get(host)===rec)await veyonCloseConnection(host,rec);
-    if(failure.veyonCode===7){await veyonTrimPool(4);await new Promise(r=>setTimeout(r,250))}
-    return veyonConnectedRequest(host,pathname,options,reader,false);
-  }
-  throw failure;
-}
-async function veyonConnectedJson(host,pathname,options={}){
-  return veyonConnectedRequest(host,pathname,options);
-}
-async function veyonAvailableFeatures(host){return veyonConnectedJson(host,"/api/v1/feature")}
-async function veyonFeatureStatus(host,feature){
-  const uid=VEYON_FEATURES[feature]||feature;
-  if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
-  return veyonConnectedJson(host,`/api/v1/feature/${encodeURIComponent(uid)}`);
-}
-async function veyonFeature(host,feature,active=true,args={}){
-  args=feature==="keySequence"?keyArguments(args,active):feature==="clipboardWrite"?clipboardArguments(args,active):powerArguments(feature,args,active);
-  const uid=VEYON_FEATURES[feature]||feature;
-  if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
-  return veyonConnectedRequest(host,`/api/v1/feature/${encodeURIComponent(uid)}`,{
-    method:"PUT",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({active:!!active,arguments:args||{}})
-  },veyonJson,["screenLock","inputLock"].includes(feature));
-}
-function veyonTcpProbe(host,port=11100,timeout=450){
-  return new Promise(resolve=>{
-    const socket=new net.Socket();let done=false;
-    const finish=ok=>{if(done)return;done=true;try{socket.destroy()}catch{}resolve(ok)};
-    socket.setTimeout(timeout);
-    socket.once("connect",()=>finish(true));
-    socket.once("timeout",()=>finish(false));
-    socket.once("error",()=>finish(false));
-    socket.connect(port,host);
-  });
-}
-async function veyonComputerInfo(host){
-  const user=await veyonConnectedJson(host,"/api/v1/user");
-  const [session,screenLock,inputLock]=await Promise.all([
-    veyonConnectedJson(host,"/api/v1/session").catch(()=>({})),
-    veyonFeatureStatus(host,"screenLock").catch(()=>({active:null})),
-    veyonFeatureStatus(host,"inputLock").catch(()=>({active:null}))
-  ]);
-  return {user,session,featureState:{screenLock:typeof screenLock?.active==="boolean"?screenLock.active:null,inputLock:typeof inputLock?.active==="boolean"?inputLock.active:null}};
-}
-function veyonComputerId(ip){return String(ip).replace(/[^a-zA-Z0-9._-]/g,"-")}
-function upsertVeyonComputer(ip,patch={}){
-  const id=veyonComputerId(ip),old=veyonComputerStore.computers[id]||{id,ip,name:patch.name||ip,role:"student",createdAt:new Date().toISOString()};
-  const role=(patch.role==="teacher"||patch.role==="student")?patch.role:(old.role==="teacher"?"teacher":"student");
-  const rec={...old,...patch,role,id,ip:String(ip),updatedAt:new Date().toISOString()};
-  veyonComputerStore.computers[id]=rec;persistVeyonComputers();return rec;
-}
-async function veyonStatusFor(rec,{includeInfo=true}={}){
-  const online=await veyonTcpProbe(rec.ip);
-  let info=null,error=null;
-  if(online&&includeInfo){
-    try{info=await veyonComputerInfo(rec.ip)}
-    catch(err){error=err.message}
-  }
-  const hostname=info?.session?.sessionHostName||rec.hostname||"";
-  if(hostname&&hostname!==rec.hostname){
-    rec=upsertVeyonComputer(rec.ip,{hostname,name:rec.name===rec.ip?hostname:rec.name});
-  }
-  return {...rec,online,authenticated:online&&(includeInfo?!!info:veyonConnectionCache.has(rec.ip))&&!error,user:info?.user||null,session:info?.session||null,
-    featureState:info?.featureState||{screenLock:null,inputLock:null},error};
-}
-async function mapLimit(items,limit,fn){
-  const out=new Array(items.length);let cursor=0;
-  async function worker(){
-    for(;;){
-      const i=cursor++;if(i>=items.length)return;
-      try{out[i]=await fn(items[i],i)}catch(err){out[i]={error:err.message}}
-    }
-  }
-  await Promise.all(Array.from({length:Math.min(limit,items.length||1)},worker));
-  return out;
-}
-const veyonCommandQueue=new VeyonCommandQueue({
-  execute:veyonFeature,readState:veyonFeatureStatus,eligible:veyonCommandEligibility,
-  lookup:id=>veyonComputerStore.computers[id],
-  authorize:owner=>{if(owner==="legacy-control")return !dbStore.authEnabled()&&!!CONTROL_TOKEN;const user=dbStore.listUsers().find(u=>u.id===owner&&u.enabled);return !!user&&hasCapability(user,"lab.control")},
-  readJournal:()=>dbStore.getPreference("veyon.lock-ownership",[]),
-  writeJournal:value=>dbStore.setPreference("veyon.lock-ownership",value),
-  canRun:()=>!fullExportFreeze.requested&&!shuttingDown,
-  begin:()=>{fullExportFreeze.activeAsyncMutations++},
-  end:()=>{fullExportFreeze.activeAsyncMutations=Math.max(0,fullExportFreeze.activeAsyncMutations-1)},
-  safeError:error=>error.reason?safeVeyonFailure(error).error:"Veyon command could not be confirmed."
-});
-
-async function veyonDiscover({start=VEYON_SCAN_START,end=VEYON_SCAN_END}={}){
-  start=Math.max(1,Math.min(254,Number(start)||VEYON_SCAN_START));
-  end=Math.max(start,Math.min(254,Number(end)||VEYON_SCAN_END));
-  const ips=Array.from({length:end-start+1},(_,i)=>`${VEYON_SCAN_SUBNET}.${start+i}`);
-  const probed=await mapLimit(ips,40,async ip=>({ip,open:await veyonTcpProbe(ip)}));
-  const open=probed.filter(x=>x.open).map(x=>x.ip);
-  const details=await mapLimit(open,10,async ip=>{
-    try{
-      const info=await veyonComputerInfo(ip);
-      const hostname=info?.session?.sessionHostName||ip;
-      const rec=upsertVeyonComputer(ip,{hostname,name:veyonComputerStore.computers[veyonComputerId(ip)]?.name||hostname,lastDiscoveredAt:new Date().toISOString()});
-      return {...rec,online:true,authenticated:true,user:info.user,session:info.session};
-    }catch(err){
-      const rec=upsertVeyonComputer(ip,{lastDiscoveredAt:new Date().toISOString()});
-      return {...rec,online:true,authenticated:false,error:err.message};
-    }
-  });
-  return details;
-}
-
-let labComputerStore=readJson(LAB_COMPUTERS_FILE,defaultLabComputerStore());
-if(!labComputerStore||typeof labComputerStore!=="object")labComputerStore=defaultLabComputerStore();
-if(!labComputerStore.computers||typeof labComputerStore.computers!=="object")labComputerStore.computers={};
-let labHistoryStore=readJson(LAB_HISTORY_FILE,{version:1,computers:{}});
-let labAiAlertsStore=readJson(LAB_AI_ALERTS_FILE,{version:1,alerts:[]});
-let labAiRulesStore=readJson(LAB_AI_RULES_FILE,{
-  version:1,
-  enabled:true,
-  domains:[
-    "chatgpt.com","openai.com","claude.ai","anthropic.com","gemini.google.com",
-    "copilot.microsoft.com","perplexity.ai","poe.com","grok.com","x.ai",
-    "deepseek.com","mistral.ai","character.ai"
-  ],
-  keywords:[
-    "chatgpt","openai","claude","anthropic","gemini","copilot","perplexity",
-    "grok","deepseek","mistral","ai chat","artificial intelligence"
-  ],
-  excludeDomains:[]
-});
-if(!labAiAlertsStore||typeof labAiAlertsStore!=="object")labAiAlertsStore={version:1,alerts:[]};
-if(!labAiRulesStore||typeof labAiRulesStore!=="object")labAiRulesStore={version:1,enabled:true,domains:[],keywords:[],excludeDomains:[]};
-if(!Array.isArray(labAiAlertsStore.alerts))labAiAlertsStore.alerts=[];
-if(!Array.isArray(labAiRulesStore.domains))labAiRulesStore.domains=[];
-if(!Array.isArray(labAiRulesStore.keywords))labAiRulesStore.keywords=[];
-if(!Array.isArray(labAiRulesStore.excludeDomains))labAiRulesStore.excludeDomains=[];
-
-if(!labHistoryStore||typeof labHistoryStore!=="object")labHistoryStore={version:1,computers:{}};
-if(!labHistoryStore.computers||typeof labHistoryStore.computers!=="object")labHistoryStore.computers={};
-const labAgentSockets=new Map();
-const LAB_ALLOWED_ACTIONS=new Set(["message","restart","shutdown","cancel-shutdown","logoff","lock","refresh-history","screenshot","run-preset","update-agent","instructor-lock","instructor-unlock","app-lock","app-unlock"]);
-
-function cleanLabAgentId(v){
-  const id=String(v||"").trim().toLowerCase().replace(/[^a-z0-9._-]+/g,"-").replace(/^-+|-+$/g,"");
-  if(!id)throw new Error("Invalid lab agent ID");
-  return id.slice(0,120);
-}
-function persistLabComputers(){persistJson(LAB_COMPUTERS_FILE,labComputerStore)}
-function persistLabHistory(){persistJson(LAB_HISTORY_FILE,labHistoryStore)}
-function persistLabAiAlerts(){persistJson(LAB_AI_ALERTS_FILE,labAiAlertsStore)}
-function persistLabAiRules(){persistJson(LAB_AI_RULES_FILE,labAiRulesStore)}
-function aiRuleMatch(item){
-  if(!LAB_AI_MONITOR_ENABLED||labAiRulesStore.enabled===false)return null;
-  const domain=String(item?.domain||"").toLowerCase();
-  const url=String(item?.url||"").toLowerCase();
-  const title=String(item?.title||"").toLowerCase();
-  if(labAiRulesStore.excludeDomains.some(d=>domain===d||domain.endsWith("."+d)))return null;
-  const domainRule=labAiRulesStore.domains.find(d=>domain===d||domain.endsWith("."+d));
-  if(domainRule)return {kind:"domain",rule:domainRule};
-  const hay=`${domain} ${url} ${title}`;
-  const keywordRule=labAiRulesStore.keywords.find(k=>hay.includes(String(k).toLowerCase()));
-  return keywordRule?{kind:"keyword",rule:keywordRule}:null;
-}
-function aiAlertDuplicate(agentId,item){
-  const cutoff=Date.now()-LAB_AI_ALERT_COOLDOWN_MINUTES*60000;
-  return labAiAlertsStore.alerts.some(a=>
-    a.agentId===agentId &&
-    String(a.profile||"")===String(item.profile||"") &&
-    a.domain===String(item.domain||"") &&
-    Date.parse(a.createdAt||0)>=cutoff &&
-    a.status!=="dismissed"
-  );
-}
-function createAiAlert(agentId,item,match){
-  if(aiAlertDuplicate(agentId,item))return null;
-  const rec=labComputerStore.computers[agentId]||{};
-  const alert={
-    id:crypto.randomUUID(),
-    agentId,
-    hostname:rec.hostname||agentId,
-    computerName:rec.name||rec.hostname||agentId,
-    profile:String(item.profile||""),
-    windowsUser:String(rec.user||""),
-    domain:String(item.domain||""),
-    url:String(item.url||""),
-    title:String(item.title||""),
-    browser:String(item.browser||""),
-    visitTime:item.visitTime||new Date().toISOString(),
-    ruleKind:match.kind,
-    rule:String(match.rule||""),
-    createdAt:new Date().toISOString(),
-    status:"new",
-    screenshotUrl:null,
-    screenshotAt:null
-  };
-  labAiAlertsStore.alerts.unshift(alert);
-  labAiAlertsStore.alerts=labAiAlertsStore.alerts.slice(0,5000);
-  persistLabAiAlerts();
-  if(typeof broadcastControllers==="function")broadcastControllers({type:"lab.ai.alert",alert});
-
-  return alert;
-}
-
-function labOnline(id){
-  const rec=labComputerStore.computers[id],ws=labAgentSockets.get(id),t=Date.parse(rec?.lastSeen||0);
-  return !!rec&&Number.isFinite(t)&&Date.now()-t<45000&&ws?.readyState===WebSocket.OPEN;
-}
-function publicLabComputer(id,{sensitive=false}={}){
-  const rec=labComputerStore.computers[id];if(!rec)return null;
-  const hist=Array.isArray(labHistoryStore.computers[id])?labHistoryStore.computers[id]:[];
-  const result={...rec,online:labOnline(id)};
-  delete result.screenshotFile;delete result.screenshotHistory;delete result.screenshotBytes;
-  if(sensitive){result.latestWebsite=hist[0]||null;result.historyCount=hist.length;result.screenshotUrl=rec.screenshotFile?`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshot?t=${encodeURIComponent(rec.screenshotAt||"")}`:null}
-  return result;
-}
-function publicLabInventory(){
-  const computers=Object.keys(labComputerStore.computers).map(publicLabComputer).filter(Boolean)
-    .sort((a,b)=>String(a.name||a.hostname||a.id).localeCompare(String(b.name||b.hostname||b.id)));
-  return {ok:true,computers,summary:{total:computers.length,online:computers.filter(x=>x.online).length,offline:computers.filter(x=>!x.online).length},
-    retentionHours:LAB_HISTORY_RETENTION_HOURS,configured:dbStore.listLabAgentCredentials().credentials.some(x=>!x.revokedAt)||!!LAB_AGENT_TOKEN};
-}
-function upsertLabComputer(id,patch={}){
-  const now=new Date().toISOString(),cur=labComputerStore.computers[id]||{id,hostname:patch.hostname||id,name:patch.hostname||id,groups:[],firstSeen:now};
-  labComputerStore.computers[id]={...cur,...patch,id,groups:Array.isArray(patch.groups)?patch.groups:(Array.isArray(cur.groups)?cur.groups:[]),lastSeen:now};
-  persistLabComputers();return labComputerStore.computers[id];
-}
-function normalizeLabHistoryItem(raw,agentId){
-  const url=String(raw?.url||"").trim();
-  if(!url)return null;
-
-  let domain="";
-  try{domain=new URL(url).hostname.toLowerCase()}catch{}
-
-  const rawTime=String(raw?.visitTime||raw?.visitedAt||raw?.time||"").trim();
-  const parsed=Date.parse(rawTime);
-  const visitTime=Number.isFinite(parsed)?new Date(parsed).toISOString():new Date().toISOString();
-
-  const stableId=String(
-    raw?.id ||
-    `${raw?.historyFile||""}|${raw?.recordId||""}|${url}|${visitTime}`
-  );
-
-  return {
-    id:String(raw?.id||crypto.createHash("sha1").update(`${agentId}|${stableId}`).digest("hex")),
-    url:url.slice(0,8192),
-    domain:domain.slice(0,255),
-    title:String(raw?.title||"").trim().slice(0,1000),
-    visitTime,
-    visitCount:Number(raw?.visitCount||0)||0,
-    visitedFrom:String(raw?.visitedFrom||"").trim().slice(0,8192),
-    visitType:String(raw?.visitType||"").trim().slice(0,120),
-    visitDuration:String(raw?.visitDuration||"").trim().slice(0,80),
-    browser:String(raw?.browser||raw?.webBrowser||"").trim().slice(0,120),
-    profile:String(raw?.profile||raw?.userProfile||"").trim().slice(0,260),
-    browserProfile:String(raw?.browserProfile||"").trim().slice(0,260),
-    urlLength:Number(raw?.urlLength||url.length)||url.length,
-    typedCount:Number(raw?.typedCount||0)||0,
-    historyFile:String(raw?.historyFile||"").trim().slice(0,2048),
-    recordId:String(raw?.recordId??"").trim().slice(0,120),
-    receivedAt:new Date().toISOString()
-  };
-}
-function ingestLabHistory(agentId,items){
-  const list=Array.isArray(labHistoryStore.computers[agentId])?labHistoryStore.computers[agentId]:[];
-  const policy=privacyRetentionPolicy();
-  if(!policy.browserHistoryEnabled||policy.browserHistoryHours===0)return {added:0,total:0,latest:null,disabled:true};
-  if(!Array.isArray(items)||!items.length)return {added:0,total:list.length,latest:list[0]||null};
-  const byId=new Map(list.map(x=>[x.id,x]));let added=0;
-  const newItems=[];
-  for(const raw of items.slice(0,500)){
-    const item=normalizeLabHistoryItem(raw,agentId);
-    if(!item||byId.has(item.id))continue;
-    byId.set(item.id,item);
-    newItems.push(item);
-    added++;
-  }
-  const cutoff=Date.now()-policy.browserHistoryHours*3600000;
-  const merged=[...byId.values()]
-    .filter(x=>Date.parse(x.visitTime||x.receivedAt||0)>=cutoff)
-    .sort((a,b)=>Date.parse(b.visitTime)-Date.parse(a.visitTime))
-    .slice(0,100000);
-  labHistoryStore.computers[agentId]=merged;
-  if(added)persistLabHistory();
-
-  for(const item of newItems){
-    const match=aiRuleMatch(item);
-    if(match)createAiAlert(agentId,item,match);
-  }
-
-  return {added,total:merged.length,latest:merged[0]||null};
-}
-function labHistoryQuery(agentId,query={}){
-  let list=Array.isArray(labHistoryStore.computers[agentId])?[...labHistoryStore.computers[agentId]]:[];
-
-  const fromMs=query.from?Date.parse(String(query.from)):NaN;
-  const toMs=query.to?Date.parse(String(query.to)):NaN;
-  const hours=Math.max(0,Number(query.hours||0)||0);
-  const search=String(query.search||"").trim().toLowerCase();
-  const browser=String(query.browser||"").trim().toLowerCase();
-  const profile=String(query.profile||"").trim().toLowerCase();
-
-  if(hours>0){
-    const cutoff=Date.now()-hours*3600000;
-    list=list.filter(x=>Date.parse(x.visitTime||0)>=cutoff);
-  }
-  if(Number.isFinite(fromMs))list=list.filter(x=>Date.parse(x.visitTime||0)>=fromMs);
-  if(Number.isFinite(toMs))list=list.filter(x=>Date.parse(x.visitTime||0)<=toMs);
-  if(search){
-    list=list.filter(x=>[
-      x.url,x.domain,x.title,x.visitedFrom,x.visitType,x.browser,x.profile,
-      x.browserProfile,x.historyFile,x.recordId
-    ].some(v=>String(v||"").toLowerCase().includes(search)));
-  }
-  if(browser)list=list.filter(x=>String(x.browser||"").toLowerCase().includes(browser));
-  if(profile)list=list.filter(x=>String(x.profile||"").toLowerCase().includes(profile));
-
-  list.sort((a,b)=>Date.parse(b.visitTime||0)-Date.parse(a.visitTime||0));
-  const total=list.length;
-  const limit=Math.max(1,Math.min(5000,Number(query.limit)||250));
-  const offset=Math.max(0,Number(query.offset)||0);
-  return {total,items:list.slice(offset,offset+limit),offset,limit};
-}
-function labHistoryFor(agentId,limit=100){return labHistoryQuery(agentId,{limit}).items}
-function resolveLabTargets(raw){
-  const requested=Array.isArray(raw)?raw:[raw],out=new Set();
-  for(const item of requested){
-    const v=String(item||"").trim().toLowerCase();if(!v)continue;
-    if(v==="all"){Object.keys(labComputerStore.computers).forEach(id=>out.add(id));continue}
-    if(v==="online"){Object.keys(labComputerStore.computers).filter(labOnline).forEach(id=>out.add(id));continue}
-    if(v.startsWith("group:")){const g=v.slice(6);for(const [id,r] of Object.entries(labComputerStore.computers))if((r.groups||[]).map(x=>String(x).toLowerCase()).includes(g))out.add(id);continue}
-    if(labComputerStore.computers[v])out.add(v);
-  }
-  return [...out];
-}
-function sendLabAgentCommand(targets,action,payload={}){
-  action=String(action||"").toLowerCase();if(!LAB_ALLOWED_ACTIONS.has(action))throw new Error("Unsupported lab command");
-  const ids=resolveLabTargets(targets);if(!ids.length)throw new Error("No lab computers matched the requested targets");
-  const commandId=crypto.randomUUID(),issuedAt=new Date().toISOString(),deliveries=[];
-  for(const id of ids){
-    const ws=labAgentSockets.get(id),online=ws?.readyState===WebSocket.OPEN;
-    if(online)wsSend(ws,{type:"lab.command",command:{id:commandId,action,payload,issuedAt}});
-    deliveries.push({id,online,delivered:!!online});
-    if(labComputerStore.computers[id])labComputerStore.computers[id].lastCommand={id:commandId,action,issuedAt,status:online?"sent":"offline"};
-  }
-  persistLabComputers();audit({kind:"lab.command",commandId,action,targets:ids,deliveries});broadcastControllers({type:"lab.inventory",inventory:publicLabInventory()});
-  return {ok:true,commandId,action,targets:ids,deliveries};
-}
-function markLabSocketDisconnected(ws){
-  if(ws.role!=="lab-agent"||!ws.labAgentId)return;
-  const id=ws.labAgentId;if(labAgentSockets.get(id)===ws)labAgentSockets.delete(id);
-  const rec=labComputerStore.computers[id];if(rec){rec.disconnectedAt=new Date().toISOString();persistLabComputers()}
-  broadcastControllers({type:"lab.status",computer:publicLabComputer(id)});audit({kind:"lab.disconnected",id});
-}
-
-function pruneStudentData(policy=privacyRetentionPolicy()){
-  const screenshotCutoff=Date.now()-policy.screenshotDays*86400000;
-  let changed=false;
-  for(const [id,rec] of Object.entries(labComputerStore.computers)){
-    if(!Array.isArray(rec.screenshotHistory))rec.screenshotHistory=[];
-    const keep=[];
-    for(const item of rec.screenshotHistory){
-      const t=Date.parse(item.capturedAt||0);
-      if(Number.isFinite(t)&&t>=screenshotCutoff){
-        keep.push(item);
-      }else{
-        try{
-          const p=safeScreenshotPath(id,item.file);
-          if(fs.existsSync(p))fs.unlinkSync(p);
-        }catch{}
-        changed=true;
-      }
-    }
-    if(keep.length!==rec.screenshotHistory.length){
-      rec.screenshotHistory=keep;
-      changed=true;
-    }
-  }
-  // Reconcile disk state as well as metadata so interrupted writes, deleted
-  // computers, and records trimmed by older releases cannot leak files forever.
-  if(fs.existsSync(LAB_SCREENSHOT_DIR))for(const entry of fs.readdirSync(LAB_SCREENSHOT_DIR,{withFileTypes:true})){
-    if(!entry.isDirectory())continue;const dir=path.join(LAB_SCREENSHOT_DIR,entry.name),known=labComputerStore.computers[entry.name];
-    if(!known){fs.rmSync(dir,{recursive:true,force:true});continue}
-    for(const file of fs.readdirSync(dir)){const full=path.join(dir,file);try{if(fs.statSync(full).mtimeMs<screenshotCutoff)fs.rmSync(full,{force:true})}catch{}}
-  }
-  for(const [id,rec] of Object.entries(labComputerStore.computers))if(rec.screenshotFile){
-    try{if(!fs.existsSync(safeScreenshotPath(id,rec.screenshotFile))){rec.screenshotFile=null;rec.screenshotAt=null;changed=true}}catch{rec.screenshotFile=null;rec.screenshotAt=null;changed=true}
-  }
-  if(changed)persistLabComputers();
-  const historyCutoff=Date.now()-policy.browserHistoryHours*3600000;let historyChanged=false;
-  for(const [id,list] of Object.entries(labHistoryStore.computers)){if(!Array.isArray(list))continue;const keep=(!policy.browserHistoryEnabled||policy.browserHistoryHours===0)?[]:list.filter(x=>Date.parse(x.visitTime||x.receivedAt||0)>=historyCutoff).slice(0,100000);if(keep.length!==list.length){labHistoryStore.computers[id]=keep;historyChanged=true}}
-  if(historyChanged)persistLabHistory();
-  const alertCutoff=Date.now()-policy.alertDays*86400000,alerts=labAiAlertsStore.alerts.filter(x=>Date.parse(x.createdAt||0)>=alertCutoff);
-  if(alerts.length!==labAiAlertsStore.alerts.length){labAiAlertsStore.alerts=alerts;persistLabAiAlerts()}
-  const auditCutoff=new Date(Date.now()-policy.auditDays*86400000).toISOString();
-  dbStore.db.prepare("DELETE FROM audit_events WHERE at < ?").run(auditCutoff);
-}
-
-const studentDataPruneTimer=setInterval(()=>{if(fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"periodic-prune"})}},10*60*1000);studentDataPruneTimer.unref();
-setTimeout(()=>{if(fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"startup-prune"})}},5000).unref();
-
-const baseDeviceConfig = readJson(DEVICE_CONFIG_FILE, {
-  room: ROOM_NAME,
-  devices: {},
-  displayGroups: {},
-  lightingGroups: []
-});
-const runtimeConfig = readJson(RUNTIME_CONFIG_FILE, {});
-
-let deviceConfig = {
-  ...baseDeviceConfig,
-  ...runtimeConfig,
-  devices: {...(baseDeviceConfig.devices||{}),...(runtimeConfig.devices||{})},
-  displayGroups: {...(baseDeviceConfig.displayGroups||{}),...(runtimeConfig.displayGroups||{})},
-  lightingGroups: runtimeConfig.lightingGroups || baseDeviceConfig.lightingGroups || []
-};
-let devices=deviceConfig.devices||{};
-let displayGroups=deviceConfig.displayGroups||{};
-let lightingGroups=new Set(deviceConfig.lightingGroups||[]);
-// v1.0-alpha.5: the relational devices tables are authoritative. Any legacy
-// runtime-config overlay is merged once at startup and retired.
-try{
-  dbStore.writeNormalized("devices",{room:deviceConfig.room||ROOM_NAME,devices,displayGroups,lightingGroups:[...lightingGroups]});
-  if(dbStore.hasObject("runtime-config")){dbStore.recordMigration("sqlite:object_store/runtime-config","sqlite:normalized/devices",1,{schemaVersion:3});dbStore.deleteObject("runtime-config")}
-}catch(err){console.warn(`Runtime device consolidation failed: ${err.message}`)}
-function persistRuntimeConfig(){
-  deviceConfig={room:deviceConfig.room||ROOM_NAME,devices,displayGroups,lightingGroups:[...lightingGroups]};
-  dbStore.writeNormalized("devices",deviceConfig);
-}
-
-const persistentState = readJson(STATE_FILE, {
-  displays: {},
-  lastCommandAt: null
-});
-let savedScenes = readJson(SCENES_FILE, {
-  welcome:{name:"Welcome",actions:[
-    {type:"display.background",payload:{color:"#0b1220"}},
-    {type:"display.text",payload:{text:"Welcome to the Networking Lab",color:"#ffffff",size:72,position:"center",background:"rgba(0,0,0,0)"}}
-  ]},
-  scenario:{name:"Scenario",actions:[
-    {type:"display.background",payload:{color:"#07111f"}},
-    {type:"display.text",payload:{text:"Troubleshooting Scenario",color:"#ffffff",size:64,position:"top",background:"rgba(0,0,0,.35)"}}
-  ]}
-});
-function persistScenes(){persistJson(SCENES_FILE,savedScenes);}
-
-
-// -----------------------------------------------------------------------------
-// v0.6.1 Classroom Session Engine
-// Coordinates many student clients against one TV and shared room lighting.
-// -----------------------------------------------------------------------------
-
-let classroomSessions = readJson(SESSIONS_FILE, {});
-
-function persistSessions() {
-  try {
-    persistJson(SESSIONS_FILE,classroomSessions);
-  } catch (err) {
-    console.error("Session persistence failed:", err.message);
-  }
-}
-
-function cleanShort(value, max=120) {
-  return String(value ?? "").replace(/[<>]/g, "").trim().slice(0, max);
-}
-
-function csvCell(value){
-  let text=String(value??"");
-  // Spreadsheet applications may execute formula-like cells even when they
-  // are correctly CSV-quoted. Preserve the visible value as literal text.
-  if(/^[\s]*[=+\-@]/.test(text)||/^[\t\r]/.test(text))text="'"+text;
-  return `"${text.replace(/"/g,'""')}"`;
-}
-
-function validHexColor(value) {
-  const v = String(value || "").trim();
-  return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toLowerCase() : "#1769e0";
-}
-
-// Legacy participation templates were site-specific and referenced assets that are
-// not part of the product. Session templates will return as GUI-managed records.
-const OPENING_TOPICS = Object.freeze({});
-
-function allowStudentEvent(session, studentId, minMs=700) {
-  const st=session.students?.[studentId];
-  if (!st) return true;
-  const now=Date.now(),last=Number(st.lastEventAt||0);
-  if (now-last<minMs) return false;
-  st.lastEventAt=now;
-  st.lastSeen=new Date().toISOString();
-  return true;
-}
-
-function getSession(id) {
-  const sid = cleanId(id || "classroom-session");
-  if (!classroomSessions[sid]) {
-    classroomSessions[sid] = {
-      id: sid,
-      name: "Classroom Session",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      paused: false,
-      students: {},
-      responses: {},
-      topicVotes: {},
-      gameScores: {},
-      queue: [],
-      recentEffects: [],
-      currentEffect: null,
-      spotlights: {},
-      spotlightOrder: [],
-      spotlightIndex: 0,
-      spotlightRotation: true,
-      stats: { joins: 0, events: 0 }
-    };
-    persistSessions();
-  }
-  return classroomSessions[sid];
-}
-
-function publicSessionState(session) {
-  const topicTallies = {};
-  for (const topic of Object.values(session.topicVotes || {})) {
-    if (topic) topicTallies[topic] = (topicTallies[topic] || 0) + 1;
-  }
-  return {
-    id: session.id,
-    name: session.name,
-    paused: !!session.paused,
-    studentCount: Object.keys(session.students || {}).length,
-    queueLength: (session.queue || []).length,
-    currentEffect: session.currentEffect || null,
-    spotlightCount: Object.keys(session.spotlights || {}).length,
-    spotlightRotation: session.spotlightRotation !== false,
-    topicTallies,
-    gameScores: session.gameScores || {},
-    stats: session.stats || {},
-    updatedAt: session.updatedAt
-  };
-}
-
-function broadcastSession(sessionId, payload) {
-  for (const ws of wsClients) {
-    if (ws.sessionId === sessionId && ["student","session-teacher"].includes(ws.role)) {
-      wsSend(ws, payload);
-    }
-  }
-}
-
-function enqueueSessionEffect(session, effect) {
-  if (!session.queue) session.queue = [];
-  if (effect.kind === "topic") {
-    session.queue = session.queue.filter(x => !(x.kind === "topic" && x.topic === effect.topic));
-  }
-  if (session.queue.length >= SESSION_MAX_QUEUE) session.queue.shift();
-  session.queue.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...effect });
-  session.updatedAt = new Date().toISOString();
-  persistSessions();
-  broadcastSession(session.id, {type:"session.state", state:publicSessionState(session)});
-}
-
-
-async function clearRoomDisplay() {
-  try {
-    await executeCommand({type:"display.clear",target:"tv1",payload:{}}, "session");
-  } catch {}
-  try {
-    await executeCommand({type:"display.background",target:"tv1",payload:{color:"#000000"}}, "session");
-  } catch {}
-}
-
-async function applySessionLighting(color) {
-  const hex=validHexColor(color);
-  const failures=[];
-
-  // Preferred route: existing Node-RED all-lighting group.
-  try {
-    const result=await executeCommand({type:"lighting.color",target:"all",payload:{color:hex}}, "session");
-    audit({kind:"session.lighting",mode:"group",color:hex,result});
-    return {ok:true,mode:"group"};
-  } catch (err) {
-    failures.push({target:"all",error:err.message});
-  }
-
-  // Fallback route: known classroom Govee aliases.
-  const targets=["services","tv1","tv2","tv3","tv4","tv5","tv6"];
-  let success=0;
-  for (const target of targets) {
-    try {
-      await executeCommand({type:"lighting.color",target,payload:{color:hex}}, "session");
-      success++;
-    } catch (err) {
-      failures.push({target,error:err.message});
-    }
-  }
-
-  audit({kind:"session.lighting",mode:"fallback",color:hex,success,failures});
-  if (!success) throw new Error("No classroom lighting target accepted the color command");
-  return {ok:true,mode:"fallback",success,failures};
-}
-
-function latestPollSummary(session) {
-  const polls=session.responses?.polls || {};
-  const entries=Object.entries(polls);
-  if (!entries.length) return null;
-  const [questionId,answers]=entries[entries.length-1];
-  const tallies={};
-  for (const answer of Object.values(answers || {})) tallies[answer]=(tallies[answer]||0)+1;
-  return {questionId,tallies};
-}
-
-async function showClassDashboard(session) {
-  if (!session) return;
-
-  const studentCount=Object.keys(session.students||{}).length;
-  const spotlightCount=Object.keys(session.spotlights||{}).length;
-  const topicRows=Object.entries(publicSessionState(session).topicTallies||{})
-    .sort((a,b)=>b[1]-a[1]).slice(0,4);
-  const scoreRows=Object.entries(session.gameScores||{})
-    .sort((a,b)=>b[1]-a[1]).slice(0,4);
-  const poll=latestPollSummary(session);
-
-  const lines=[];
-  if (topicRows.length) {
-    lines.push("TOP INTERESTS");
-    topicRows.forEach(([k,v])=>lines.push(`${k}: ${v}`));
-  }
-  if (poll && Object.keys(poll.tallies).length) {
-    if (lines.length) lines.push("");
-    lines.push("LATEST CLASS POLL");
-    Object.entries(poll.tallies).sort((a,b)=>b[1]-a[1]).slice(0,4)
-      .forEach(([k,v])=>lines.push(`${k}: ${v}`));
-  }
-  if (scoreRows.length) {
-    if (lines.length) lines.push("");
-    lines.push("IT SHOWDOWN");
-    scoreRows.forEach(([k,v])=>lines.push(`${k}: ${v}`));
-  }
-  if (!lines.length) lines.push("Waiting for class responsesâ€¦");
-
-  await executeCommand({type:"display.background",target:"tv1",payload:{color:"#07111f"}}, "session");
-  await executeCommand({type:"display.title",target:"tv1",payload:{text:"Classroom CLASS LIVE",color:"#ffffff",size:70}}, "session");
-  await executeCommand({type:"display.subtitle",target:"tv1",payload:{text:`${studentCount} students â€¢ ${spotlightCount} spotlights â€¢ responses update live`,color:"#7dd3fc",size:30}}, "session");
-  await executeCommand({type:"display.text",target:"tv1",payload:{text:lines.join("\n"),color:"#ffffff",size:32,position:"center",background:"rgba(0,0,0,.20)"}}, "session");
-}
-
-async function runRoomEffect(effect) {
-  if (!effect) return;
-
-  if (effect.kind === "topic") {
-    const t = OPENING_TOPICS[effect.topic];
-    if (!t) return;
-    await executeCommand({type:"display.background",target:"tv1",payload:{color:"#07111f"}}, "session");
-    await executeCommand({type:"display.image",target:"tv1",payload:{url:t.image,fit:"contain",opacity:0.45}}, "session");
-    await executeCommand({type:"display.title",target:"tv1",payload:{text:t.title,color:"#ffffff",size:86}}, "session");
-    await executeCommand({type:"display.subtitle",target:"tv1",payload:{text:t.subtitle,color:"#ffffff",size:38}}, "session");
-    await executeCommand({type:"display.text",target:"tv1",payload:{text:t.body,color:"#ffffff",size:34,position:"bottom",background:"rgba(0,0,0,.45)"}}, "session");
-    try { await applySessionLighting(t.color); } catch (err) { audit({kind:"session.lighting.error",error:err.message}); }
-  }
-
-  if (effect.kind === "light-color") {
-    const color = validHexColor(effect.color);
-    await executeCommand({type:"display.background",target:"tv1",payload:{color:"#07111f"}}, "session");
-    await executeCommand({type:"display.title",target:"tv1",payload:{text:"LIGHT LAB",color:"#ffffff",size:80}}, "session");
-    await executeCommand({type:"display.subtitle",target:"tv1",payload:{text:`${cleanShort(effect.name || "A student",40)} chose ${cleanShort(effect.colorName || color,30)}`,color:"#ffffff",size:38}}, "session");
-    await executeCommand({type:"display.text",target:"tv1",payload:{text:"Watch the room react â€” safely and through the shared session queue.",color:"#ffffff",size:32,position:"bottom",background:"rgba(0,0,0,.35)"}}, "session");
-    try { await applySessionLighting(color); } catch (err) { audit({kind:"session.lighting.error",error:err.message}); }
-  }
-
-  if (effect.kind === "student-intro") {
-    const color = validHexColor(effect.color);
-    await executeCommand({type:"display.background",target:"tv1",payload:{color:"#0b1220"}}, "session");
-    await executeCommand({type:"display.title",target:"tv1",payload:{text:`MEET ${cleanShort(effect.name,40).toUpperCase()}`,color:"#ffffff",size:82}}, "session");
-    await executeCommand({type:"display.subtitle",target:"tv1",payload:{text:`Favorite color: ${cleanShort(effect.colorName || color,30)}`,color:"#ffffff",size:36}}, "session");
-    await executeCommand({type:"display.text",target:"tv1",payload:{text:`Favorite activity: ${cleanShort(effect.activity,70)}\nInterested in: ${cleanShort(effect.interest,70)}`,color:"#ffffff",size:38,position:"center",background:"rgba(0,0,0,.25)"}}, "session");
-    try { await applySessionLighting(color); } catch (err) { audit({kind:"session.lighting.error",error:err.message}); }
-  }
-
-  if (effect.kind === "poll") {
-    const rows = Object.entries(effect.tallies || {}).sort((a,b)=>b[1]-a[1]).slice(0,6);
-    const total = rows.reduce((a,[,v])=>a+v,0) || 1;
-    const text = rows.map(([k,v]) => `${k}: ${v} (${Math.round(v/total*100)}%)`).join("\n");
-    await executeCommand({type:"display.background",target:"tv1",payload:{color:"#111827"}}, "session");
-    await executeCommand({type:"display.title",target:"tv1",payload:{text:cleanShort(effect.title,80),color:"#ffffff",size:72}}, "session");
-    await executeCommand({type:"display.text",target:"tv1",payload:{text,color:"#ffffff",size:42,position:"center",background:"rgba(0,0,0,.2)"}}, "session");
-  }
-
-  if (effect.kind === "scoreboard") {
-    const rows = Object.entries(effect.scores || {}).sort((a,b)=>b[1]-a[1]);
-    await executeCommand({type:"display.background",target:"tv1",payload:{color:"#101318"}}, "session");
-    await executeCommand({type:"display.title",target:"tv1",payload:{text:"Classroom IT SHOWDOWN",color:"#ffffff",size:78}}, "session");
-    await executeCommand({type:"display.text",target:"tv1",payload:{text:rows.map(([k,v],i)=>`${i+1}. ${k} â€” ${v}`).join("\n"),color:"#ffffff",size:46,position:"center",background:"rgba(0,0,0,.15)"}}, "session");
-  }
-
-}
-
-let sessionEffectBusy = false;
-const sessionLastSpotlightAt = new Map();
-
-async function nextSessionEffect() {
-  if(fullExportFreeze.requested)return;
-  if (sessionEffectBusy) return;
-
-  const sessions = Object.values(classroomSessions).filter(x => !x.paused);
-  if (!sessions.length) return;
-
-  // 1) Explicit queued work always wins.
-  let session = sessions.find(x => Array.isArray(x.queue) && x.queue.length);
-  let effect = session?.queue?.shift() || null;
-
-  // 2) If nothing is queued, rotate through submitted student spotlights.
-  if (!effect) {
-    const now = Date.now();
-    session = sessions.find(x => {
-      if (x.spotlightRotation === false) return false;
-      if (!Array.isArray(x.spotlightOrder) || !x.spotlightOrder.length) return false;
-      const last=sessionLastSpotlightAt.get(x.id) || 0;
-      return now-last >= SESSION_SPOTLIGHT_ROTATE_MS;
-    });
-
-    if (session) {
-      const idx=Number(session.spotlightIndex||0) % session.spotlightOrder.length;
-      const sid=session.spotlightOrder[idx];
-      const spotlight=session.spotlights?.[sid];
-      session.spotlightIndex=(idx+1) % session.spotlightOrder.length;
-      sessionLastSpotlightAt.set(session.id,now);
-      if (spotlight) {
-        effect={
-          id:crypto.randomUUID(),
-          createdAt:new Date().toISOString(),
-          kind:"student-intro",
-          ...spotlight,
-          rotation:true
-        };
-      }
-    }
-  }
-
-  if (!session || !effect) return;
-
-  sessionEffectBusy = true;
-  session.currentEffect = effect;
-  session.updatedAt = new Date().toISOString();
-  persistSessions();
-  broadcastSession(session.id,{type:"session.effect",effect,state:publicSessionState(session)});
-
-  try {
-    await clearRoomDisplay();
-    await new Promise(r=>setTimeout(r,SESSION_CLEAR_GAP_MS));
-    await runRoomEffect(effect);
-
-    session.recentEffects=[effect,...(session.recentEffects||[])].slice(0,30);
-
-    // Every shared room moment has a TTL. Return to live class totals instead of leaving stale/blank content.
-    await new Promise(r=>setTimeout(r,SESSION_EFFECT_DURATION_MS));
-    await clearRoomDisplay();
-
-    // A master clear/pause must win over any effect that was already running.
-    if (!session.paused) {
-      await new Promise(r=>setTimeout(r,SESSION_CLEAR_GAP_MS));
-      if (!session.paused) await showClassDashboard(session);
-    }
-  } catch (err) {
-    audit({kind:"session.effect.error",sessionId:session.id,error:err.message,effect});
-  } finally {
-    session.currentEffect=null;
-    session.updatedAt=new Date().toISOString();
-    persistSessions();
-    broadcastSession(session.id,{type:"session.state",state:publicSessionState(session)});
-    sessionEffectBusy=false;
-  }
-}
-
-setInterval(nextSessionEffect, SESSION_EFFECT_INTERVAL_MS);
-
-
-function persistState() {
-  try {
-    persistJson(STATE_FILE,persistentState);
-  } catch (err) {
-    console.error("State persistence failed:", err.message);
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Runtime state / audit
-// -----------------------------------------------------------------------------
-
-const runtime = {
-  startedAt: new Date().toISOString(),
-  mqtt: {
-    configured: Boolean(MQTT_URL),
-    connected: false,
-    url: endpointForLog(MQTT_URL),
-    lastError: null,
-    lastConnectAt: null
-  },
-  hardware: {
-    pluto: {configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null,lastSuccessAt:null},
-    govee: {configured:Object.keys(goveeDevices).length>0,lastError:null,lastSuccessAt:null}
-  },
-  displays: {},
-  websocketClients: 0
-};
-
-const recentEvents = [];
-const pendingAuditWrites=[];
-let auditPersistenceLastError=null;
-
-function telemetryKey(entry){
-  const kind=String(entry?.kind||"telemetry");
-  if(kind==="govee.discovery")return `${kind}:${entry.deviceId||entry.alias||"unknown"}`;
-  if(kind==="govee.discovery.reconcile")return `${kind}:inventory`;
-  if(kind==="api.request")return `${kind}:${entry.method||"GET"}:${entry.path||"/"}`;
-  if(kind==="veyon.framebuffer.unavailable")return `${kind}:${entry.path||entry.target||"framebuffer"}`;
-  if(kind==="service.action")return `${kind}:${entry.component||"service"}:${entry.operation||"unknown"}:${entry.path||entry.device||""}`;
-  if(kind==="mqtt.connected")return `${kind}:${entry.url||"broker"}`;
-  return `${kind}:${entry.component||entry.deviceId||entry.target||"state"}`;
-}
-function isTelemetryEvent(entry){
-  const kind=String(entry?.kind||"");
-  if(["govee.discovery","govee.discovery.reconcile","api.request","veyon.framebuffer.unavailable","mqtt.connected"].includes(kind))return true;
-  if(kind==="service.action" && String(entry.operation||"").toUpperCase()==="GET" && entry.ok!==false)return true;
-  return false;
-}
-function redactUrlSecrets(value){
-  const text=String(value??"");
-  return text.replace(/\b(?:https?|mqtts?|wss?):\/\/[^\s<>"']+/gi,candidate=>{
-    let suffix="",raw=candidate;
-    while(/[),.;!?]$/.test(raw)){suffix=raw.slice(-1)+suffix;raw=raw.slice(0,-1)}
-    try{
-      const url=new URL(raw);
-      if(url.username)url.username="redacted";
-      if(url.password)url.password="redacted";
-      for(const key of [...url.searchParams.keys()])url.searchParams.set(key,"[redacted]");
-      url.hash="";
-      return url.toString()+suffix;
-    }catch{return "[redacted-url]"+suffix}
-  });
-}
-function publicProjection(value,depth=0){
-  if(depth>12)return "[max-depth]";
-  if(value===null||value===undefined)return value;
-  if(typeof value==="string")return redactUrlSecrets(value);
-  if(typeof value!=="object")return value;
-  if(Array.isArray(value))return value.map(item=>publicProjection(item,depth+1));
-  const out={};
-  for(const [key,valueAtKey] of Object.entries(value)){
-    if(/password|passwd|secret|token|keydata|privatekey|authorization|credential/i.test(key))out[key]="[redacted]";
-    else out[key]=publicProjection(valueAtKey,depth+1);
-  }
-  return out;
-}
-function audit(event) {
-  const entry = {
-    at: new Date().toISOString(),
-    ...diagnosticSanitize(event),
-    auditId: crypto.randomUUID()
-  };
-  recentEvents.push(entry);
-  if (recentEvents.length > 2000) recentEvents.shift();
-
-  // Delivery has often already completed here. Do not report that command as
-  // failed (and invite a duplicate retry) solely because SQLite auditing is
-  // temporarily unavailable; retain writes and retry them on later events.
-  pendingAuditWrites.push(entry);
-  // Full Recovery Export needs one cross-root point in time. Keep operational
-  // audit events queued in memory while the maintenance agent snapshots SQLite
-  // and the related files, then flush them after thaw.
-  if(fullExportFreeze.requested){
-    if(pendingAuditWrites.length>2000)pendingAuditWrites.splice(0,pendingAuditWrites.length-2000);
-    return entry;
-  }
-  while(pendingAuditWrites.length){
-    const queued=pendingAuditWrites[0];
-    try{
-      if(isTelemetryEvent(queued))dbStore.recordTelemetry(queued,telemetryKey(queued));
-      else dbStore.appendAudit(queued);
-      pendingAuditWrites.shift();
-      auditPersistenceLastError=null;
-    }catch(error){
-      auditPersistenceLastError={at:new Date().toISOString(),message:error.message};
-      console.error(`Audit persistence deferred: ${error.message}`);
-      break;
-    }
-  }
-  if(pendingAuditWrites.length>2000)pendingAuditWrites.splice(0,pendingAuditWrites.length-2000);
-  return entry;
-}
-
-
-function diagnosticSanitize(value,depth=0){
-  if(depth>6)return "[max-depth]";
-  if(value===null||value===undefined)return value;
-  if(Array.isArray(value))return value.slice(0,100).map(v=>diagnosticSanitize(v,depth+1));
-  if(typeof value==="string")return redactUrlSecrets(value);
-  if(typeof value!=="object")return value;
-  const out={};
-  for(const [k,v] of Object.entries(value)){
-    const key=String(k).toLowerCase();
-    if(/password|passwd|secret|token|keydata|privatekey|authorization|credential/.test(key)){
-      out[k]="[redacted]";
-    }else{
-      out[k]=diagnosticSanitize(v,depth+1);
-    }
-  }
-  return out;
-}
-function diagnosticError(error,context={}){
-  return audit({
-    kind:"error",
-    component:context.component||"classroom-hub",
-    operation:context.operation||null,
-    message:error?.message||String(error),
-    name:error?.name||null,
-    code:error?.code||null,
-    status:error?.status||null,
-    stack:String(error?.stack||"").split("\n").slice(0,12).join("\n"),
-    context:diagnosticSanitize(context.data||{})
-  });
-}
-process.on("unhandledRejection",reason=>diagnosticError(reason instanceof Error?reason:new Error(String(reason)),{component:"node",operation:"unhandledRejection"}));
-process.on("uncaughtException",err=>{diagnosticError(err,{component:"node",operation:"uncaughtException"});process.exitCode=1;const timer=setTimeout(()=>process.exit(1),100);timer.unref()});
-
-function diagnosticsFileStatus(file){
-  try{
-    const st=fs.statSync(file);
-    return {path:file,exists:true,size:st.size,modifiedAt:st.mtime.toISOString(),readable:true};
-  }catch(err){
-    return {path:file,exists:false,readable:false,error:err.message};
-  }
-}
-function diagnosticsEventSlice({limit=250,kind=null,errorsOnly=false}={}){
-  let rows=recentEvents;
-  if(kind)rows=rows.filter(e=>String(e.kind||"")===String(kind));
-  if(errorsOnly)rows=rows.filter(e=>
-    e.kind!=="veyon.framebuffer.unavailable" &&
-    (e.kind==="error"||e.ok===false||e.status>=400||String(e.kind||"").includes("error"))
-  );
-  return rows.slice(-Math.max(1,Math.min(2000,Number(limit||250)))).map(event=>diagnosticSanitize(event));
-}
-
-
-function publicDisplayStatus(id) {
-  const now=Date.now();
-  const offlineMs=DEVICE_OFFLINE_SECONDS*1000;
-  const r=runtime.displays[id]||{};
-  const seen=r.lastSeen?Date.parse(r.lastSeen):0;
-  const activeSocket=[...wsClients].some(ws =>
-    ws.role==="display" &&
-    ws.deviceId===id &&
-    ws.readyState===WebSocket.OPEN
-  );
-  return publicProjection({
-    ...r,
-    online:Boolean(activeSocket || (seen && now-seen<=offlineMs))
-  });
-}
-function publicPersistentState(){return publicProjection(persistentState)}
-function physicalDisplayState(id){
-  const state=structuredClone(persistentState.displays[id]||null);
-  if(state?.media?.protectedUrl==="morning-announcements")state.media.url=announcementsPlaybackUrl();
-  return state;
-}
-function previewDisplayState(id){
-  const state=publicProjection(persistentState.displays[id]||null);
-  if(state?.media?.protectedUrl==="morning-announcements")state.media={type:"protected-preview",protectedUrl:"morning-announcements",label:"Morning Announcements / Herd TV is active on this display"};
-  return state;
-}
-
-function publicRuntime() {
-  const now = Date.now();
-  const offlineMs = DEVICE_OFFLINE_SECONDS * 1000;
-
-  const displayStatus = {};
-  for (const id of Object.keys(devices)) {
-    displayStatus[id]=publicDisplayStatus(id);
-  }
-
-  return {
-    startedAt: runtime.startedAt,
-    room: deviceConfig.room || ROOM_NAME,
-    mqtt: runtime.mqtt,
-    hardware: runtime.hardware,
-    websocketClients: runtime.websocketClients,
-    displays: displayStatus,
-    auditPersistence:{pendingWrites:pendingAuditWrites.length,lastError:auditPersistenceLastError}
-  };
-}
-
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
-
-function cleanId(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, "")
-    .slice(0, 80);
-}
-
-function cookieValue(req,name){
-  const raw=String(req.headers?.cookie||"");
-  for(const part of raw.split(";")){const i=part.indexOf("=");if(i<0)continue;const k=part.slice(0,i).trim();if(k===name)return decodeURIComponent(part.slice(i+1).trim())}
-  return "";
-}
-function requestUser(req){
-  if(req.authUser!==undefined)return req.authUser;
-  const token=cookieValue(req,"classroom_hub_session");
-  req.authUser=dbStore.sessionUser(token)||null;
-  return req.authUser;
-}
-function hasRole(user,minRole="operator"){
-  const rank={viewer:1,operator:2,admin:3};return !!user&&(rank[user.role]||0)>=(rank[minRole]||2);
-}
-function userCapabilities(user){
-  if(!user)return [];
-  const profile=(dbStore.listAccessProfiles()||[]).find(x=>x.id===user.profileId&&x.enabled);
-  return capabilitiesFor(user,profile);
-}
-function hasCapability(user,capability){const profile=(dbStore.listAccessProfiles()||[]).find(x=>x.id===user?.profileId&&x.enabled);return profileHasCapability(user,capability,profile)}
-function publicUser(user){return user?{id:user.id,username:user.username,displayName:user.displayName,role:user.role,profileId:user.profileId||null,capabilities:userCapabilities(user)}:null}
-function authenticationUnavailable(res){
-  return res.status(503).json({ok:false,error:"Secure setup is required before this operation is available",setupRequired:dbStore.userCount()===0});
-}
-function requireControl(req, res, next) {
-  if(dbStore.authEnabled()){
-    const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});if(!hasCapability(user,"classroom.control"))return res.status(403).json({ok:false,error:"Permission required: classroom.control"});return next();
-  }
-  if(!CONTROL_TOKEN)return authenticationUnavailable(res);
-  const token=req.get("x-control-token")||"";
-  if(!secureTokenEqual(token,CONTROL_TOKEN))return res.status(401).json({ok:false,error:"Unauthorized"});
-  next();
-}
-function requireAdmin(req,res,next){
-  if(dbStore.authEnabled()){
-    const user=requestUser(req);if(!hasRole(user,"admin")||!hasCapability(user,"*"))return res.status(403).json({ok:false,error:"Enabled administrator profile required"});return next();
-  }
-  return requireControl(req,res,next);
-}
-function requireAuthenticated(req,res,next){
-  if(!dbStore.authEnabled())return requireControl(req,res,next);
-  const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});return next();
-}
-function requireCapability(capability){return (req,res,next)=>{
-  if(!dbStore.authEnabled())return requireControl(req,res,next);
-  const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});
-  if(!hasCapability(user,capability))return res.status(403).json({ok:false,error:`Permission required: ${capability}`});
-  next();
-}}
-function requireClassroomRead(req,res,next){return requireCapability("classroom.read")(req,res,next)}
-
-function requireMaintenanceAgent(req,res,next){
-  if(!MAINTENANCE_TOKEN)return res.status(503).json({ok:false,error:"Maintenance agent is not configured"});
-  if(!secureTokenEqual(req.get("x-maintenance-token")||"",MAINTENANCE_TOKEN))return res.status(401).json({ok:false,error:"Unauthorized maintenance agent"});
-  next();
-}
-
-function resolveDisplayTargets(target) {
-  if (Array.isArray(target)) {
-    return [...new Set(target.flatMap(resolveDisplayTargets))];
-  }
-
-  const t = cleanId(target || "all");
-  if (devices[t] && devices[t].enabled !== false) return [t];
-
-  if (Array.isArray(displayGroups[t])) {
-    return displayGroups[t].filter(
-      (id) => devices[id] && devices[id].enabled !== false
-    );
-  }
-
-  return [];
-}
-
-function commandId() {
-  return crypto.randomUUID();
-}
-
-function normalizeCommand(input, source = "api") {
-  const type = String(input?.type || "").trim();
-  if (!type || type.length > 120) {
-    throw new Error("Command type is required");
-  }
-
-  const target = input?.target ?? "all";
-  const payload =
-    input?.payload && typeof input.payload === "object" && !Array.isArray(input.payload)
-      ? input.payload
-      : {};
-
-  return {
-    version: 1,
-    id: String(input?.id || commandId()),
-    timestamp: Date.now(),
-    source: String(input?.source || source).slice(0, 80),
-    room: String(input?.room || deviceConfig.room || ROOM_NAME).slice(0, 80),
-    target,
-    type,
-    payload
-  };
-}
-
-function setDisplayState(id, patch) {
-  persistentState.displays[id] = {
-    ...(persistentState.displays[id] || {}),
-    ...patch,
-    updatedAt: new Date().toISOString()
-  };
-  persistentState.lastCommandAt = new Date().toISOString();
-}
-
-function updateStateFromCommand(command, targets) {
-  const p = command.payload;
-
-  for (const id of targets) {
-    switch (command.type) {
-      case "display.text":
-        setDisplayState(id, { text: p.text ?? "", textOptions: p });
-        break;
-      case "display.title":
-        setDisplayState(id, { title: p.text ?? "", titleOptions: p });
-        break;
-      case "display.subtitle":
-        setDisplayState(id, { subtitle: p.text ?? "", subtitleOptions: p });
-        break;
-      case "display.background":
-        setDisplayState(id, { background: p });
-        break;
-      case "display.image":
-        setDisplayState(id, { media: { type: "image", ...p } });
-        break;
-      case "display.video":
-        setDisplayState(id, { media: { type: "video", ...p } });
-        break;
-      case "display.web":
-        // Upstream announcement URLs can contain bearer credentials. Persist a
-        // resolvable marker and hydrate it only for authenticated receivers.
-        setDisplayState(id, { media: { type: "web", ...p,...(p.contentKind==="morning-announcements"?{url:REDACTED_CONFIG_VALUE,protectedUrl:"morning-announcements"}:{}) } });
-        break;
-      case "display.pdf":
-      case "display.document":
-        setDisplayState(id, { media: { type: "pdf", ...p } });
-        break;
-      case "display.presentation":
-        setDisplayState(id, { media: { type: "image", ...p }, presentationBlack: false });
-        break;
-      case "display.presentation.black":
-        setDisplayState(id, { presentationBlack: !!p.black });
-        break;
-      case "display.timer":
-        setDisplayState(id, { timer: { ...p } });
-        break;
-      case "display.timer.hide":
-        setDisplayState(id, { timer: { ...(persistentState.displays[id]?.timer || {}), visible: false, running: false } });
-        break;
-      case "display.clear":
-        setDisplayState(id, {
-          text: "",
-          textOptions: { text: "" },
-          title: "",
-          titleOptions: { text: "" },
-          subtitle: "",
-          subtitleOptions: { text: "" },
-          media: null,
-          background: { color: "#000000" },
-          identify: null,
-          presentationBlack: false,
-          timer: { visible: false, running: false }
-        });
-        break;
-      case "display.home":
-        setDisplayState(id, { mode: "home" });
-        break;
-      default:
-        break;
-    }
-  }
-
-  persistState();
-}
-
-function sanitizeText(text, max = 20000) {
-  return String(text ?? "").slice(0, max);
-}
-
-function safeMediaUrl(value) {
-  const url = String(value || "").trim();
-  if (!url) return "";
-  if (
-    url.startsWith("http://") ||
-    url.startsWith("https://") ||
-    url.startsWith("/media/") ||
-    url.startsWith("/document-viewer/") ||
-    url.startsWith("/presentations/")
-  ) {
-    return url;
-  }
-  throw new Error("Media URL must use http://, https://, /media/, /document-viewer/, or /presentations/");
-}
-
-// -----------------------------------------------------------------------------
-// Legacy MQTT translator
-// Preserves the command vocabulary used by the existing LG/Smart-TV receivers.
-// -----------------------------------------------------------------------------
-
-const legacyColorMap = new Map([
-  ["#ff0000", "RED"],
-  ["red", "RED"],
-  ["#ff9900", "AMBER"],
-  ["amber", "AMBER"],
-  ["#0066ff", "BLUE"],
-  ["blue", "BLUE"],
-  ["#008000", "GREEN"],
-  ["green", "GREEN"],
-  ["#7b2cff", "PURPLE"],
-  ["purple", "PURPLE"],
-  ["#ffffff", "WHITE"],
-  ["white", "WHITE"],
-  ["#000000", "BLACK"],
-  ["black", "BLACK"]
-]);
-
-function toLegacyCommand(command) {
-  const p = command.payload || {};
-
-  switch (command.type) {
-    case "display.text":
-      return "MESSAGE:" + sanitizeText(p.text, 8000);
-
-    case "display.background": {
-      const key = String(p.color || "").trim().toLowerCase();
-      return legacyColorMap.get(key) || null;
-    }
-
-    case "display.image":
-      return "IMAGE:" + safeMediaUrl(p.url);
-
-    case "display.video":
-      return (p.muted ? "PLAYMUTED:" : "PLAY:") + safeMediaUrl(p.url);
-
-    case "display.web":
-      return "WEB:" + safeMediaUrl(p.url);
-
-    case "display.pdf":
-      return "PDF:" + safeMediaUrl(p.url);
-
-    case "display.ppt":
-      return "PPT:" + safeMediaUrl(p.url);
-
-    case "display.clear":
-      return "BLANK";
-
-    case "display.home":
-      return "HOME";
-
-    case "display.stop":
-      return "STOP";
-
-    case "display.reload":
-      return "RELOAD";
-
-    case "display.setup":
-      return "SETUP";
-
-    case "voice.speak":
-      return "VOICE:" + sanitizeText(p.text, 8000);
-
-    case "sfx.play":
-      return "SFX:" + sanitizeText(p.kind, 100);
-
-    case "legacy.raw":
-      return sanitizeText(p.command, 12000);
-
-    default:
-      return null;
-  }
-}
-
-// -----------------------------------------------------------------------------
-// MQTT
-// -----------------------------------------------------------------------------
-
-let mqttClient = null;
-
-function mqttPublish(topic, payload, options = {}) {
-  return new Promise((resolve, reject) => {
-    if (!mqttClient || !runtime.mqtt.connected) {
-      return reject(new Error("MQTT is not connected"));
-    }
-
-    mqttClient.publish(
-      topic,
-      typeof payload === "string" ? payload : JSON.stringify(payload),
-      { qos: 0, retain: false, ...options },
-      (err) => (err ? reject(err) : resolve())
-    );
-  });
-}
-
-function connectMqtt() {
-  runtime.mqtt.configured=Boolean(MQTT_URL);
-  runtime.mqtt.url=endpointForLog(MQTT_URL);
-  runtime.mqtt.lastError=null;
-  if (!MQTT_URL) {
-    console.log("MQTT_URL is blank; MQTT bridge disabled.");
-    return;
-  }
-
-  const options = {
-    clientId: "classroom-hub-" + crypto.randomBytes(4).toString("hex"),
-    reconnectPeriod: 2000,
-    connectTimeout: 10000,
-    clean: true
-  };
-
-  if (MQTT_USERNAME) options.username = MQTT_USERNAME;
-  if (MQTT_PASSWORD) options.password = MQTT_PASSWORD;
-
-  mqttClient = mqtt.connect(MQTT_URL, options);
-
-  mqttClient.on("connect", () => {
-    runtime.mqtt.connected = true;
-    runtime.mqtt.lastError = null;
-    runtime.mqtt.lastConnectAt = new Date().toISOString();
-    console.log("MQTT connected:", endpointForLog(MQTT_URL));
-
-    mqttClient.subscribe(
-      [
-        "classroom/v2/display/+/state",
-        "classroom/v2/display/+/presence",
-        "homeassistant/light/+/config",
-        "gv2mqtt/light/+/state",
-        "gv2mqtt/light/+/availability",
-        "gv2mqtt/sensor/+/state",
-        "gv2mqtt/sensor/+/attributes"
-      ],
-      { qos: 0 }
-    );
-
-    audit({ kind: "mqtt.connected", url: runtime.mqtt.url });
-  });
-
-  mqttClient.on("reconnect", () => {
-    runtime.mqtt.connected = false;
-  });
-
-  mqttClient.on("close", () => {
-    runtime.mqtt.connected = false;
-  });
-
-  mqttClient.on("offline", () => {
-    runtime.mqtt.connected = false;
-  });
-
-  mqttClient.on("error", (err) => {
-    runtime.mqtt.lastError = err.message;
-    console.error("MQTT error:", err.message);
-  });
-
-  mqttClient.on("message", (topic, payloadBuffer) => {
-    if(fullExportFreeze.requested)return;
-    const payloadText = payloadBuffer.toString();
-    let payload;
-    try { payload = JSON.parse(payloadText); } catch { payload = {raw:payloadText}; }
-
-    const dm = topic.match(/^classroom\/v2\/display\/([^/]+)\/(state|presence)$/);
-    if (dm) {
-      const id=cleanId(dm[1]);
-      if (!devices[id]) return;
-      runtime.displays[id]={...(runtime.displays[id]||{}),lastSeen:new Date().toISOString(),source:"mqtt",[dm[2]]:payload};
-      broadcastControllers({type:"device.status",deviceId:id,status:publicDisplayStatus(id)});
-      return;
-    }
-
-    const cm=topic.match(/^homeassistant\/light\/gv2mqtt-([^/]+)\/config$/);
-    if(cm){
-      const deviceId=cm[1];
-      goveeLiveConfigs[deviceId]=payload;
-      const alias=enrollGoveeDevice(deviceId,payload,"homeassistant-discovery");
-      touchGoveePresence(deviceId,"online");
-      if(alias)broadcastControllers({type:"govee.inventory",reason:"discovery",alias});
-      return;
-    }
-
-    const sm=topic.match(/^gv2mqtt\/light\/([^/]+)\/state$/);
-    if(sm){
-      const deviceId=sm[1];
-      if(!goveeConfiguredAliasById(deviceId) && goveeDiscovery.autoAdd!==false){
-        enrollGoveeDevice(deviceId,goveeLiveConfigs[deviceId]||{},"light-state");
-      }
-      goveeStates[deviceId]=payload;
-      touchGoveePresence(deviceId,"online");
-      broadcastControllers({type:"govee.status",deviceId,state:payload});
-      return;
-    }
-
-    const am=topic.match(/^gv2mqtt\/light\/([^/]+)\/availability$/);
-    if(am){
-      const deviceId=am[1];
-      if(!goveeConfiguredAliasById(deviceId) && goveeDiscovery.autoAdd!==false){
-        enrollGoveeDevice(deviceId,goveeLiveConfigs[deviceId]||{},"availability");
-      }
-      const raw=String(payload?.raw??payloadText??"").trim().toLowerCase();
-      touchGoveePresence(deviceId,raw||"online");
-      broadcastControllers({type:"govee.presence",deviceId,status:raw||"online"});
-      return;
-    }
-
-    const gsm=topic.match(/^gv2mqtt\/sensor\/sensor-([^/]+)-gv2mqtt-status\/state$/);
-    if(gsm){
-      const deviceId=gsm[1];
-      const raw=String(payload?.raw??payloadText??"").trim().toLowerCase();
-      if(!goveeConfiguredAliasById(deviceId) && goveeDiscovery.autoAdd!==false){
-        enrollGoveeDevice(deviceId,goveeLiveConfigs[deviceId]||{},"status-state");
-      }
-      touchGoveePresence(deviceId,["available","online","on","true","1"].includes(raw)?"online":raw||"online");
-      broadcastControllers({type:"govee.presence",deviceId,status:raw||"online"});
-      return;
-    }
-
-    const gam=topic.match(/^gv2mqtt\/sensor\/sensor-([^/]+)-gv2mqtt-status\/attributes$/);
-    if(gam){
-      const deviceId=gam[1];
-      const meta=goveeMetaFromStatusAttributes(deviceId,payload||{});
-      goveeLiveConfigs[deviceId]={...(goveeLiveConfigs[deviceId]||{}),...meta};
-      const alias=enrollGoveeDevice(deviceId,meta,"status-attributes");
-      const overall=meta.overall||{};
-      if(overall && typeof overall==="object"){
-        const st={};
-        if(overall.on!==undefined||overall.light_on!==undefined)st.state=(overall.on??overall.light_on)?"ON":"OFF";
-        if(overall.brightness!==undefined)st.brightness=overall.brightness;
-        if(overall.color)st.color=overall.color;
-        if(overall.scene)st.effect=overall.scene;
-        if(Object.keys(st).length)goveeStates[deviceId]={...(goveeStates[deviceId]||{}),...st};
-      }
-      touchGoveePresence(deviceId,"online");
-      if(alias)broadcastControllers({type:"govee.inventory",reason:"status-attributes",alias});
-      return;
-    }
-  });
-}
-
-function reconnectMqtt(){
-  if(mqttClient){mqttClient.removeAllListeners();mqttClient.end(true);mqttClient=null}
-  runtime.mqtt.connected=false;
-  connectMqtt();
-}
-
-// -----------------------------------------------------------------------------
-// Direct hardware integrations â€” Govee + Pluto Mark I
-// -----------------------------------------------------------------------------
-
-function colorParts(payload) {
-  if (payload.r !== undefined && payload.g !== undefined && payload.b !== undefined) {
-    const vals=[payload.r,payload.g,payload.b].map(Number);
-    if(vals.some(v=>!Number.isFinite(v)||v<0||v>255)) throw new Error("RGB values must be 0-255");
-    return vals.map(Math.round);
-  }
-  const hex=String(payload.color||"").trim();
-  const m=hex.match(/^#?([0-9a-f]{6})$/i);
-  if(!m) throw new Error("Color must be #RRGGBB or r/g/b");
-  const n=parseInt(m[1],16);
-  return [(n>>16)&255,(n>>8)&255,n&255];
-}
-
-function goveeTargets(target){
-  const t=cleanId(target);
-  if(goveeDevices[t]) return [t];
-  if(Array.isArray(goveeGroups[t])) return [...goveeGroups[t]];
-  throw new Error(`Unknown Govee device/group: ${t}`);
-}
-
-async function goveeUdpTemperature(device,kelvin){
-  return new Promise((resolve,reject)=>{
-    const sock=dgram.createSocket("udp4");
-    const packet=Buffer.from(JSON.stringify({msg:{cmd:"colorwc",data:{color:{r:0,g:0,b:0},colorTemInKelvin:kelvin}}}));
-    const done=(err)=>{try{sock.close()}catch{};err?reject(err):resolve({method:"native-udp",ip:device.ip,port:4003})};
-    sock.send(packet,4003,device.ip,done);
-  });
-}
-
-async function goveePublish(alias,payload){
-  const d=goveeDevices[alias];
-  if(!d) throw new Error(`Unknown Govee device ${alias}`);
-  const started=Date.now();
-  try{
-    await mqttPublish(`gv2mqtt/light/${d.id}/command`,payload);
-    runtime.hardware.govee.lastError=null;
-    runtime.hardware.govee.lastSuccessAt=new Date().toISOString();
-    audit({kind:"service.action",component:"govee",operation:"mqttPublish",device:alias,durationMs:Date.now()-started,ok:true});
-    return {device:alias,name:d.name,payload};
-  }catch(err){
-    runtime.hardware.govee.lastError=err.message;
-    diagnosticError(err,{component:"govee",operation:"mqttPublish",data:{device:alias}});
-    throw err;
-  }
-}
-
-async function directGoveeCommand(target,action,p={}){
-  const aliases=goveeTargets(target);
-  const results=[];
-  for(const alias of aliases){
-    const d=goveeDevices[alias];
-    if(action==="on") results.push(await goveePublish(alias,{state:"ON"}));
-    else if(action==="off") results.push(await goveePublish(alias,{state:"OFF"}));
-    else if(action==="brightness"){
-      const level=Math.round(Number(p.level));
-      if(!Number.isFinite(level)||level<1||level>100) throw new Error("Brightness must be 1-100");
-      results.push(await goveePublish(alias,{state:"ON",brightness:level}));
-    } else if(action==="color"){
-      const [r,g,b]=colorParts(p);
-      results.push(await goveePublish(alias,{state:"ON",color:{r,g,b}}));
-    } else if(action==="temp"){
-      const kelvin=Math.round(Number(p.kelvin));
-      if(!Number.isFinite(kelvin)||kelvin<2000||kelvin>9000) throw new Error("Kelvin must be 2000-9000");
-      if(d.sku==="H618G" && d.ip){
-        results.push({device:alias,name:d.name,kelvin,...await goveeUdpTemperature(d,kelvin)});
-      }else{
-        const mired=Math.round(1000000/kelvin);
-        results.push(await goveePublish(alias,{state:"ON",color_temp:mired}));
-      }
-    } else if(action==="scene"){
-      const scene=String(p.scene||"").trim();
-      if(!scene) throw new Error("Scene is required");
-      results.push(await goveePublish(alias,{state:"ON",effect:scene}));
-    } else throw new Error(`Unsupported Govee action ${action}`);
-  }
-  audit({kind:"govee.command",target,action,count:aliases.length});
-  return {ok:true,target,action,count:aliases.length,results};
-}
-
-function goveeInventory(){
-  const states={},presence={},meta={};
-  for(const [alias,d] of Object.entries(goveeDevices)){
-    states[alias]=goveeStates[d.id]||null;
-    const reg=Object.values(goveeDiscovery.devices).find(x=>x?.id===String(d.id));
-    presence[alias]={online:goveeDeviceOnline(d.id),lastSeen:goveePresence[d.id]?.lastSeen||reg?.lastSeen||d.lastSeen||null};
-    meta[alias]={discovered:!!reg?.discovered,source:reg?.source||"configured",groups:reg?.groups||[]};
-  }
-  return {ok:true,direct:true,devices:goveeDevices,groups:goveeGroups,states,presence,meta,discovery:{
-    autoAdd:goveeDiscovery.autoAdd!==false,
-    lastDiscoveryAt:goveeDiscovery.lastDiscoveryAt,
-    discoveredCount:Object.values(goveeDiscovery.devices).filter(x=>x?.discovered&&!isSyntheticGoveeEntity(x?.id,x)).length,
-    totalCount:Object.keys(goveeDevices).length,
-    reconcileGraceSeconds:Math.floor(GOVEE_RECONCILE_GRACE_MS/1000)
-  }};
-}
-
-function goveeScenes(alias){
-  const d=goveeDevices[cleanId(alias)];
-  if(!d) throw new Error("Unknown Govee device");
-  const cfg=goveeLiveConfigs[d.id]||{};
-  const live=Array.isArray(cfg.effect_list)?cfg.effect_list:[];
-  const scenes=live.length?live:(goveeSceneFallback[d.sku]||[]);
-  return {ok:true,device:cleanId(alias),name:d.name,sku:d.sku,source:live.length?"live-mqtt":"verified-fallback",scenes,count:scenes.length};
-}
-
-function plutoBuild(action){
-  const p=action||{};
-  const bit=v=>v?1:0;
-  let body,expected,readOnly=false;
-  switch(p.action){
-    case "videoStatus": body={comhead:"get video status"}; expected="get video status"; readOnly=true; break;
-    case "outputStatus": body={comhead:"get output status"}; expected="get output status"; readOnly=true; break;
-    case "inputStatus": body={comhead:"get input status"}; expected="get input status"; readOnly=true; break;
-    case "cecStatus": body={comhead:"get cec status"}; expected="get cec status"; readOnly=true; break;
-    case "systemStatus": body={comhead:"get system status"}; expected="get system status"; readOnly=true; break;
-    case "networkStatus": body={comhead:"get network"}; expected="get network"; readOnly=true; break;
-    case "route": body={comhead:"video switch",source:[Number(p.input),Number(p.output)]};expected="video switch";break;
-    case "hdmiStream": body={comhead:"hdmi tx stream",out:[Number(p.output),bit(p.state)]};expected="hdmi tx stream";break;
-    case "hdbtStream": body={comhead:"hdbt tx stream",out:[Number(p.output),bit(p.state)]};expected="hdbt tx stream";break;
-    case "hdmiScaler": body={comhead:"video hdmi scaler",value:[Number(p.output),Number(p.mode)]};expected="video hdmi scaler";break;
-    case "hdbtScaler": body={comhead:"video hdbt scaler",value:[Number(p.output),Number(p.mode)]};expected="video hdbt scaler";break;
-    case "txHdcp": body={comhead:"tx hdcp",hdcp:[Number(p.output),bit(p.state)]};expected="tx hdcp";break;
-    case "arc": body={comhead:"set arc",arc:[Number(p.output),bit(p.state)]};expected="set arc";break;
-    case "setInputNames": body={comhead:"set input name",input:p.names};expected="set input name";break;
-    case "setHdmiOutputNames": body={comhead:"set hdmiout name",output:p.names};expected="set hdmiout name";break;
-    case "setHdbtOutputNames": body={comhead:"set hdbtout name",output:p.names};expected="set hdbtout name";break;
-    case "setEdid": body={comhead:"set edid",edid:[Number(p.input),Number(p.profile)]};expected="set edid";break;
-    case "panelLock": body={comhead:"set panel lock",lock:bit(p.state)};expected="set panel lock";break;
-    case "beep": body={comhead:"set beep",beep:bit(p.state)};expected="set beep";break;
-    case "backlight": body={comhead:"set bl mode",mode:Number(p.mode)};expected="set bl mode";break;
-    case "reboot": body={comhead:"reboot",reboot:1};expected="reboot";break;
-    case "cecAllOutputs": body={comhead:"cec command",language:0,object:1,port:new Array(16).fill(1),index:Number(p.index)};expected="cec command";break;
-    case "cecAllHdmi": body={comhead:"cec command",language:0,object:1,port:[1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],index:Number(p.index)};expected="cec command";break;
-    case "cecAllHdbt": body={comhead:"cec command",language:0,object:1,port:[0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1],index:Number(p.index)};expected="cec command";break;
-    case "cecInput":{
-      const ports=new Array(8).fill(0),i=Number(p.input);if(i<1||i>8)throw new Error("Invalid CEC input");
-      ports[i-1]=1;body={comhead:"cec command",language:0,object:0,port:ports,index:Number(p.index)};expected="cec command";break;
-    }
-    case "cecOutput":{
-      const ports=new Array(16).fill(0),o=Number(p.output);if(o<1||o>8)throw new Error("Invalid CEC output");
-      ports[(p.connection==="hdbt"?8:0)+(o-1)]=1;body={comhead:"cec command",language:0,object:1,port:ports,index:Number(p.index)};expected="cec command";break;
-    }
-    case "raw":
-      if(!p.body||typeof p.body!=="object"||!p.body.comhead)throw new Error("Raw body must contain comhead");
-      body=p.body;expected=String(p.body.comhead);break;
-    default: throw new Error(`Unknown Pluto action: ${p.action}`);
-  }
-  return {body,expected,readOnly,meta:p};
-}
-
-async function plutoPostRaw(body){
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PLUTO_TIMEOUT_MS),started=Date.now();
-  try{
-    const r=await fetch(PLUTO_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:controller.signal});
-    const text=await r.text();
-    let data;try{data=JSON.parse(text)}catch{throw new Error(`Pluto returned non-JSON: ${text.slice(0,300)}`)}
-    if(!r.ok)throw new Error(`Pluto HTTP ${r.status}`);
-    audit({kind:"service.action",component:"pluto",operation:String(body?.comhead||"request"),durationMs:Date.now()-started,status:r.status,ok:true});
-    return data;
-  }catch(err){
-    diagnosticError(err,{component:"pluto",operation:String(body?.comhead||"request")});
-    throw err;
-  }finally{clearTimeout(timer)}
-}
-
-async function directPluto(action){
-  const req=plutoBuild(action);
-  let last;
-  const attempts=req.readOnly?Math.max(1,PLUTO_READ_RETRIES+1):1;
-  const delays=[0,120,250,500,900];
-  for(let n=0;n<attempts;n++){
-    if(n && delays[Math.min(n,delays.length-1)]) await new Promise(r=>setTimeout(r,delays[Math.min(n,delays.length-1)]));
-    try{
-      const raw=await plutoPostRaw(req.body);last=raw;
-      if(raw?.comhead===req.expected){
-        runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
-        if(req.readOnly)return {type:action.action,data:raw,retries:n};
-        if(action.action==="raw")return {type:"raw",data:raw};
-        return {type:"ack",action:action.action,result:raw.result,ok:Number(raw.result)===1,raw};
-      }
-      if(!req.readOnly){
-        runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
-        return {type:"ack",action:action.action,ok:true,pendingVerify:true,message:`Write sent; Pluto returned stale ${raw?.comhead||"response"}. Verify on refresh.`,raw};
-      }
-    }catch(err){
-      runtime.hardware.pluto.lastError=err.name==="AbortError"?`Timeout after ${PLUTO_TIMEOUT_MS} ms`:err.message;
-      if(!req.readOnly||n===attempts-1)throw err;
-    }
-  }
-  throw new Error(`Pluto kept returning stale responses. Last: ${last?.comhead||"unknown"}`);
-}
-
-async function runLightingCommand(command){
-  const p=command.payload||{},type=command.type;
-  if(type==="lighting.on")return directGoveeCommand(command.target,"on",p);
-  if(type==="lighting.off")return directGoveeCommand(command.target,"off",p);
-  if(type==="lighting.brightness")return directGoveeCommand(command.target,"brightness",p);
-  if(type==="lighting.color")return directGoveeCommand(command.target,"color",p);
-  if(type==="lighting.temp")return directGoveeCommand(command.target,"temp",p);
-  if(type==="lighting.scene")return directGoveeCommand(command.target,"scene",p);
-  throw new Error(`Unsupported lighting command: ${type}`);
-}
-
-async function runAvCommand(command){
-  const p=command.payload||{};
-  if(command.type==="av.route")return directPluto({action:"route",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),input:Number(p.input)});
-  if(command.type==="av.cecOutput")return directPluto({action:"cecOutput",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)});
-  if(command.type==="av.cecAllOutputs")return directPluto({action:"cecAllOutputs",index:Number(p.index)});
-  if(command.type==="av.cecAllHdmi")return directPluto({action:"cecAllHdmi",index:Number(p.index)});
-  if(command.type==="av.cecAllHdbt")return directPluto({action:"cecAllHdbt",index:Number(p.index)});
-  throw new Error(`Unsupported AV command: ${command.type}`);
-}
-
-// -----------------------------------------------------------------------------
-// WebSocket transport
-// -----------------------------------------------------------------------------
-
-const wsClients = new Set();
-
-function wsSend(ws, message) {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
-  }
-}
-
-function broadcastControllers(message) {
-  for (const ws of wsClients) {
-    if (ws.role === "controller" || ws.role === "admin") {
-      if(dbStore.authEnabled()){
-        const user=ws.sessionToken?dbStore.sessionUser(ws.sessionToken):null;
-        if(!user){try{ws.close(1008,"Session expired or revoked")}catch{};continue}
-        const type=String(message?.type||"");
-        const sensitive=type.startsWith("lab.history")||type.startsWith("lab.screenshot")||type.startsWith("lab.ai.alert");
-        if(sensitive&&!hasCapability(user,"lab.sensitive.read"))continue;
-      }
-      wsSend(ws, publicProjection(message));
-    }
-  }
-}
-
-function broadcastDisplays(targets, message) {
-  // Physical display receivers only. Preview sockets are observers and must never count
-  // as delivery to a classroom display.
-  const wanted = new Set(targets), delivered = new Set();
-  for (const ws of wsClients) {
-    if (ws.role === "display" && wanted.has(ws.deviceId) && ws.readyState === WebSocket.OPEN) {
-      wsSend(ws, message);delivered.add(ws.deviceId);
-    }
-  }
-  return [...delivered];
-}
-function broadcastDisplayPreviews(targets, message) {
-  const wanted = new Set(targets);
-  for (const ws of wsClients) {
-    if (ws.role === "preview" && wanted.has(ws.deviceId) && ws.readyState === WebSocket.OPEN) wsSend(ws, publicProjection(message));
-  }
-}
-
-function markDisplaySeen(ws, extra = {}) {
-  if (!ws.deviceId || !devices[ws.deviceId]) return;
-
-  const previous = runtime.displays[ws.deviceId] || {};
-  const mergedMeta = extra.meta && typeof extra.meta === "object"
-    ? { ...(previous.meta || {}), ...extra.meta }
-    : previous.meta;
-
-  runtime.displays[ws.deviceId] = {
-    ...previous,
-    lastSeen: new Date().toISOString(),
-    source: "websocket",
-    connectionId: ws.connectionId,
-    disconnectedAt: null,
-    ...extra,
-    ...(mergedMeta ? { meta: mergedMeta } : {})
-  };
-
-  broadcastControllers({
-    type: "device.status",
-    deviceId: ws.deviceId,
-    status: publicDisplayStatus(ws.deviceId)
-  });
-}
-
-// -----------------------------------------------------------------------------
-// Core command router
-// -----------------------------------------------------------------------------
-
-async function executeCommand(input, source = "api") {
-  const commandStart=Date.now();
-  try {
-  const command = normalizeCommand(input, source);
-  const result = {
-    ok: true,
-    command,
-    deliveries: {
-      websocket: [],
-      mqttJson: [],
-      mqttLegacy: [],
-      hardware: null
-    },
-    warnings: []
-  };
-
-  const isDisplayCommand =
-    command.type.startsWith("display.") ||
-    command.type.startsWith("voice.") ||
-    command.type.startsWith("sfx.") ||
-    command.type.startsWith("music.assistant.") ||
-    command.type === "legacy.raw";
-
-  if (isDisplayCommand) {
-    const targets = resolveDisplayTargets(command.target);
-    if (!targets.length) {
-      throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
-    }
-    // This final router-level check closes the race where an automation passed
-    // its initial check, awaited a delay/network operation, and then attempted
-    // to overwrite a display after an announcement had acquired priority.
-    if(source==="automation"){
-      const priorityError=announcementPriorityError(targets);
-      if(priorityError)throw priorityError;
-    }
-
-    updateStateFromCommand(command, targets);
-
-    const physicalDeliveries=broadcastDisplays(targets, {type:"command",command});
-    // Keep dashboard previews visually synchronized, but do not treat them as target
-    // receivers and never let the preview selection influence command routing.
-    broadcastDisplayPreviews(targets,{type:"command",command});
-    result.deliveries.websocket = physicalDeliveries;
-    const missingPhysical=targets.filter(id=>!physicalDeliveries.includes(id));
-    if(missingPhysical.length)result.warnings.push(`No live physical display WebSocket for: ${missingPhysical.join(', ')}`);
-
-    if (MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
-      for (const id of targets) {
-        const topic = `classroom/v2/display/${id}/command`;
-        await mqttPublish(topic, command);
-        result.deliveries.mqttJson.push(topic);
-      }
-    } else if (MQTT_JSON_BRIDGE) {
-      result.warnings.push("MQTT JSON bridge enabled but MQTT is not connected");
-    }
-
-    const legacy = toLegacyCommand(command);
-    if (MQTT_LEGACY_BRIDGE && legacy) {
-      if (runtime.mqtt.connected) {
-        const rawTarget = cleanId(command.target);
-
-        if (rawTarget === "all") {
-          await mqttPublish("classroom/all", legacy);
-          result.deliveries.mqttLegacy.push("classroom/all");
-        } else {
-          for (const id of targets) {
-            const topic = devices[id]?.legacyTopic || `classroom/${id}`;
-            await mqttPublish(topic, legacy);
-            result.deliveries.mqttLegacy.push(topic);
-          }
-        }
-      } else {
-        result.warnings.push("Legacy MQTT bridge enabled but MQTT is not connected");
-      }
-    } else if (MQTT_LEGACY_BRIDGE && !legacy) {
-      result.warnings.push(
-        `No legacy receiver translation exists for ${command.type}; modern WebSocket/JSON receivers still receive it`
-      );
-    }
-  } else if (command.type.startsWith("lighting.")) {
-    result.deliveries.hardware = await runLightingCommand(command);
-  } else if (command.type.startsWith("av.")) {
-    result.deliveries.hardware = await runAvCommand(command);
-  } else if (command.type === "system.ping") {
-    // no-op; useful for API diagnostics
-  } else {
-    throw new Error(`Unsupported command type: ${command.type}`);
-  }
-
-  backgroundMusicObserveDisplayCommand(command, source);
-
-  audit({
-    kind: "command",
-    source: command.source,
-    commandId: command.id,
-    commandType: command.type,
-    target: command.target,
-    deliveries: result.deliveries,
-    warnings: result.warnings
-  });
-
-  broadcastControllers({
-    type: "command.executed",
-    command,
-    deliveries: result.deliveries,
-    warnings: result.warnings
-  });
-
-  return result;
-  } catch(err) {
-    diagnosticError(err,{component:"command",operation:String(input?.type||"unknown"),data:{source,target:input?.target}});
-    throw err;
-  }
-}
-
-// -----------------------------------------------------------------------------
-// HTTP API
-// -----------------------------------------------------------------------------
-
-const app = express();
-let shuttingDown=false;
-app.disable("x-powered-by");
-app.set("trust proxy", TRUST_PROXY_HOPS);
-app.use((req,res,next)=>{
-  const mutating=!['GET','HEAD','OPTIONS'].includes(req.method);
-  const freezeControl=req.path==="/api/v1/internal/maintenance/export-freeze"||req.path==="/api/v1/internal/maintenance/export-thaw";
-  const exportProxy=req.path==="/api/v1/maintenance/backup/create";
-  if(!mutating||freezeControl||exportProxy)return next();
-  if(fullExportFreeze.requested)return res.status(423).json({ok:false,error:"A Full Recovery Export is creating a consistent appliance snapshot; changes are temporarily locked"});
-  fullExportFreeze.activeHttpMutations++;
-  let released=false;const release=()=>{if(released)return;released=true;fullExportFreeze.activeHttpMutations=Math.max(0,fullExportFreeze.activeHttpMutations-1)};
-  res.once("finish",release);res.once("close",release);next();
-});
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
-
-// alpha.15 browser/API hardening. Keep the application compatible with the
-// Cloudflare Tunnel deployment while protecting authenticated browser sessions.
-app.use((req,res,next)=>{
-  res.setHeader("X-Content-Type-Options","nosniff");
-  res.setHeader("Referrer-Policy","same-origin");
-  res.setHeader("Permissions-Policy","camera=(), microphone=(), geolocation=()");
-  // Browsers ignore COOP on ordinary LAN HTTP origins. Keep it for HTTPS and
-  // loopback origins; forwarded protocol is trusted only by Express configuration.
-  const originHost=effectiveHost(req),originName=originHost?new URL(`http://${originHost}`).hostname:"";
-  const localOrigin=originName==="localhost"||originName.endsWith(".localhost")||originName==="[::1]"||/^127\.\d+\.\d+\.\d+$/.test(originName);
-  if(req.secure||localOrigin)res.setHeader("Cross-Origin-Opener-Policy","same-origin");
-  // Keep controller execution self-contained. External/injected scripts (including browser
-  // extensions which attempt page-level injection) are intentionally blocked.
-  const mainController=["/controller","/controller/","/controller/index.html"].includes(req.path);
-  const scriptPolicy=mainController?"script-src 'self'; script-src-elem 'self'; script-src-attr 'unsafe-inline'":"script-src 'self' 'unsafe-inline'; script-src-elem 'self' 'unsafe-inline'; script-src-attr 'unsafe-inline'";
-  res.setHeader("Content-Security-Policy",`default-src 'self' data: blob:; base-uri 'self'; object-src 'none'; img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; style-src 'self' 'unsafe-inline'; ${scriptPolicy}; connect-src 'self' http: https: ws: wss:; frame-src 'self' http: https:; frame-ancestors 'self'`);
-  const proto=String(req.get("x-forwarded-proto")||"").toLowerCase();
-  if(req.secure||proto==="https")res.setHeader("Strict-Transport-Security","max-age=15552000; includeSubDomains");
-  next();
-});
-
-function effectiveHost(req){
-  // Caddy preserves the original Host header. Do not trust X-Forwarded-Host:
-  // port 3000 may also be reachable directly on older installations.
-  const raw=String(req.get?.("host")||req.headers?.host||"").trim().toLowerCase();
-  if(!raw||raw.length>255||/[\s\\/'"`;(){}]/.test(raw))return "";
-  try{
-    const parsed=new URL(`http://${raw}`);
-    return parsed.host.toLowerCase()===raw?parsed.host.toLowerCase():"";
-  }catch{return ""}
-}
-function powerShellLiteral(value){return `'${String(value??"").replace(/'/g,"''")}'`}
-function clientAddress(req){return String(req.ip||req.socket?.remoteAddress||"")}
-function browserWebSocketOriginAllowed(req){
-  const origin=String(req.headers?.origin||"").trim();
-  if(!origin)return false;
-  try{const u=new URL(origin);return u.host.toLowerCase()===effectiveHost(req)||CORS_ALLOWED_ORIGINS.has(origin)}catch{return false}
-}
-app.use((req,res,next)=>{
-  if(!dbStore.authEnabled()||!["POST","PUT","PATCH","DELETE"].includes(req.method))return next();
-  if(!cookieValue(req,"classroom_hub_session"))return next();
-  const origin=String(req.get("origin")||"").trim();
-  if(!origin)return next(); // CLI/native clients do not normally send Origin.
-  try{const u=new URL(origin);if(u.host.toLowerCase()!==effectiveHost(req)){audit({kind:"security.csrf.blocked",method:req.method,path:req.path,origin,host:effectiveHost(req),remote:clientAddress(req)});return res.status(403).json({ok:false,error:"Cross-site request blocked"})}}
-  catch{ return res.status(403).json({ok:false,error:"Invalid request origin"}) }
-  next();
-});
-
-const loginAttempts=new Map();
-const LOGIN_ATTEMPT_CACHE_MAX=10000;
-const LOGIN_DUMMY_SALT=crypto.randomBytes(16);
-const LOGIN_DUMMY_HASH=crypto.scryptSync(crypto.randomBytes(32),LOGIN_DUMMY_SALT,64,{N:16384,r:8,p:1});
-function pruneLoginAttempts(now=Date.now()){
-  for(const [key,state] of loginAttempts){if(now-Math.max(Number(state.firstAt||0),Number(state.lockedUntil||0))>Math.max(LOGIN_WINDOW_MS,LOGIN_LOCK_MS))loginAttempts.delete(key)}
-  while(loginAttempts.size>LOGIN_ATTEMPT_CACHE_MAX)loginAttempts.delete(loginAttempts.keys().next().value);
-}
-function loginAttemptKey(req,username){return `${clientAddress(req).slice(0,128)}|${String(username||"").trim().toLowerCase().slice(0,80)}`}
-function loginAddressKey(req){return `${clientAddress(req).slice(0,128)}|*`}
-function loginAttemptState(key){const now=Date.now(),s=loginAttempts.get(key);if(!s)return {count:0,firstAt:now,lockedUntil:0};if(s.lockedUntil>now)return s;if(now-s.firstAt>LOGIN_WINDOW_MS){loginAttempts.delete(key);return {count:0,firstAt:now,lockedUntil:0}}return s}
-function recordLoginFailure(key){const now=Date.now(),s=loginAttemptState(key);s.count+=1;if(s.count>=LOGIN_MAX_ATTEMPTS)s.lockedUntil=now+LOGIN_LOCK_MS;loginAttempts.delete(key);loginAttempts.set(key,s);pruneLoginAttempts(now);return s}
-function clearLoginFailures(key){loginAttempts.delete(key)}
-const loginAttemptCleanupTimer=setInterval(()=>pruneLoginAttempts(),Math.max(60000,Math.min(LOGIN_WINDOW_MS,LOGIN_LOCK_MS)));loginAttemptCleanupTimer.unref();
-
-async function verifyUserAsync(username,password){
-  const row=dbStore.db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE AND enabled=1").get(String(username||"").trim());
-  const salt=row?Buffer.from(row.password_salt,"hex"):LOGIN_DUMMY_SALT;
-  const derived=await scryptAsync(String(password??""),salt,64,{N:16384,r:8,p:1});
-  const expected=row?Buffer.from(row.password_hash,"hex"):LOGIN_DUMMY_HASH,actual=Buffer.from(derived);
-  if(actual.length!==expected.length||!crypto.timingSafeEqual(actual,expected))return null;
-  if(!row)return null;
-  return {id:row.id,username:row.username,displayName:row.display_name,role:row.role,profileId:row.profile_id,enabled:!!row.enabled};
-}
-
-// Diagnostic API access log. Bodies are never persisted here, so credentials,
-// uploaded data and control secrets are not captured.
-const highFrequencyAuditAt=new Map();
-app.use((req,res,next)=>{
-  const started=Date.now();
-  res.on("finish",()=>{
-    if(!req.path.startsWith("/api/"))return;
-    const isFramebuffer=req.path.includes("/api/v1/veyon/computers/")&&req.path.endsWith("/framebuffer");
-    const isBrowserPulse=/\/api\/v1\/veyon\/computers\/[^/]+\/browser\/(?:state|pointer|key|chunk)$/.test(req.path);
-    if((isFramebuffer||isBrowserPulse)&&res.statusCode<400)return;
-    if(isFramebuffer||isBrowserPulse){const key=`${isFramebuffer?"frame":"control"}:${res.statusCode}`;const now=Date.now();if(now-(highFrequencyAuditAt.get(key)||0)<60_000)return;highFrequencyAuditAt.set(key,now)}
-    const transientFramebuffer=isFramebuffer&&[409,429,502,503,504].includes(res.statusCode);
-    const auditPath=req.path.startsWith("/api/v1/recovery-status/")?"/api/v1/recovery-status/:recoveryId":req.path;
-    const event={
-      kind:transientFramebuffer?"veyon.framebuffer.unavailable":(res.statusCode>=400?"api.error":"api.request"),
-      severity:transientFramebuffer?"warning":(res.statusCode>=400?"error":"info"),
-      method:req.method,
-      path:auditPath,
-      status:res.statusCode,
-      durationMs:Date.now()-started,
-      remote:clientAddress(req)||null,
-      ok:res.statusCode<400,
-      transient:transientFramebuffer
-    };
-    audit(event);
-  });
-  next();
-});
-
-
-
-// Classroom Control Hub 1.0 maintenance proxy. The browser never talks to the
-// privileged maintenance agent directly; all requests remain behind the
-// existing Classroom Control Hub control authorization boundary.
-//
-// These internal endpoints run in the opposite direction. They keep the main
-// application as the only process that owns and writes the SQLite database.
-// They are deliberately limited to agent health, audit retention and managed
-// integration deployment state.
-function integrationSecretSetting(key){return /password|token|secret|api.?key|credential/i.test(String(key||""))}
-function integrationSecretName(id,key){return `integration.${id}.${key}`}
-function managedIntegrationsView({resolved=false}={}){
-  const value=dbStore.getManagedIntegrations();
-  for(const [id,cfg] of Object.entries(value.modules||{}))for(const key of Object.keys(cfg||{})){
-    if(!integrationSecretSetting(key))continue;
-    const present=dbStore.hasSecret(integrationSecretName(id,key));
-    cfg[key]=resolved?(present?(dbStore.getSecret(integrationSecretName(id,key))||""):""):(present?"â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢":"");
-  }
-  return value;
-}
-app.get("/api/v1/internal/maintenance/status",requireMaintenanceAgent,(_req,res)=>{
-  try{
-    const total=dbStore.db.prepare("SELECT COUNT(*) c FROM audit_events").get().c;
-    const first=dbStore.db.prepare("SELECT at FROM audit_events ORDER BY at ASC LIMIT 1").get()?.at||null;
-    const last=dbStore.db.prepare("SELECT at FROM audit_events ORDER BY at DESC LIMIT 1").get()?.at||null;
-    const secrets=dbStore.listSecrets();for(const secret of secrets)dbStore.getSecret(secret.name,{asBuffer:true});
-    res.json({ok:true,database:dbStore.databaseInfo(),audit:{total,first,last},secretDecryption:{ok:true,checked:secrets.length}});
-  }catch(error){res.status(503).json({ok:false,error:`Database recovery validation failed: ${error.message}`,secretDecryption:{ok:false}})}
-});
-function clearFullExportFreeze({forced=false}={}){
-  if(fullExportFreeze.leaseTimer)clearTimeout(fullExportFreeze.leaseTimer);
-  fullExportFreeze.requested=false;fullExportFreeze.active=false;fullExportFreeze.token=null;fullExportFreeze.startedAt=null;fullExportFreeze.leaseTimer=null;
-  audit({kind:forced?"recovery.full-export.freeze-expired":"recovery.full-export.thaw",forced});
-}
-app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,async(req,res)=>{
-  if(req.body?.confirm!=="FREEZE_FULL_EXPORT")return res.status(400).json({ok:false,error:"Full-export freeze confirmation required"});
-  if(fullExportFreeze.requested)return res.status(423).json({ok:false,error:"A Full Recovery Export freeze is already active"});
-  const token=crypto.randomBytes(32).toString("base64url"),started=Date.now();
-  fullExportFreeze.requested=true;fullExportFreeze.startedAt=new Date(started).toISOString();
-  try{
-    const drained=()=>fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0&&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy;
-    while(!drained()&&Date.now()-started<30000)await new Promise(resolve=>setTimeout(resolve,25));
-    if(!drained())throw new Error("Timed out waiting for active application mutations to finish");
-    dbStore.db.exec("PRAGMA wal_checkpoint(PASSIVE)");
-    fullExportFreeze.active=true;fullExportFreeze.token=token;
-    fullExportFreeze.leaseTimer=setTimeout(()=>{if(fullExportFreeze.active&&secureTokenEqual(fullExportFreeze.token,token))clearFullExportFreeze({forced:true})},30*60*1000);
-    fullExportFreeze.leaseTimer.unref();
-    return res.json({ok:true,freezeToken:token,startedAt:fullExportFreeze.startedAt,leaseSeconds:1800});
-  }catch(error){
-    fullExportFreeze.requested=false;fullExportFreeze.active=false;fullExportFreeze.token=null;fullExportFreeze.startedAt=null;
-    audit({kind:"recovery.full-export.freeze-failed",error:error.message});
-    return res.status(503).json({ok:false,error:error.message});
-  }
-});
-app.post("/api/v1/internal/maintenance/export-thaw",requireMaintenanceAgent,(req,res)=>{
-  const supplied=String(req.body?.freezeToken||"");
-  if(!fullExportFreeze.active||!fullExportFreeze.token||!secureTokenEqual(supplied,fullExportFreeze.token))return res.status(409).json({ok:false,error:"Full-export freeze token is invalid or already used"});
-  clearFullExportFreeze();
-  res.json({ok:true});
-});
-app.post("/api/v1/internal/maintenance/audit/prune",requireMaintenanceAgent,(req,res)=>{
-  if(req.body?.confirm!==true)return res.status(400).json({ok:false,error:"Confirmation required"});
-  const days=Math.max(7,Math.min(3650,Number(req.body?.days||180))),cutoff=new Date(Date.now()-days*86400000).toISOString();
-  const before=dbStore.db.prepare("SELECT COUNT(*) c FROM audit_events").get().c;
-  const info=dbStore.db.prepare("DELETE FROM audit_events WHERE at < ?").run(cutoff);
-  dbStore.db.exec("PRAGMA wal_checkpoint(PASSIVE)");
-  const after=dbStore.db.prepare("SELECT COUNT(*) c FROM audit_events").get().c;
-  audit({kind:"audit.retention.prune",days,cutoff,removed:info.changes});
-  res.json({ok:true,days,cutoff,removed:info.changes,before,after});
-});
-app.get("/api/v1/internal/maintenance/integrations",requireMaintenanceAgent,(req,res)=>{
-  res.json({ok:true,integrations:managedIntegrationsView({resolved:String(req.query.resolved||"")==="1"})});
-});
-app.put("/api/v1/internal/maintenance/integrations/:id",requireMaintenanceAgent,(req,res)=>{
-  try{
-    const id=String(req.params.id||"").trim();if(!/^[a-z0-9_-]{1,80}$/i.test(id))throw Error("Invalid integration id");
-    const value=dbStore.getManagedIntegrations(),prior={...(value.modules?.[id]||{})};
-    for(const [key,input] of Object.entries(req.body?.settings||{})){
-      if(!/^[A-Za-z0-9_.-]{1,100}$/.test(key)||input==="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢")continue;
-      if(integrationSecretSetting(key)){
-        if(input!==undefined&&input!==null&&String(input)!==""){dbStore.putSecret(integrationSecretName(id,key),String(input),{type:"integration-setting",integration:id,key});prior[key]="__encrypted__"}
-      }else prior[key]=input;
-    }
-    value.modules=value.modules||{};value.modules[id]=prior;dbStore.putManagedIntegrations(value);
-    audit({kind:"admin.integration.configure",integration:id,keys:Object.keys(req.body?.settings||{}).filter(key=>!integrationSecretSetting(key))});
-    res.json({ok:true,id,config:managedIntegrationsView().modules[id]||{},resolved:managedIntegrationsView({resolved:true}).modules[id]||{}});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-const TRUSTED_UPDATE_REPOSITORY="wagnerks1990/RoomGoblin";
-const LEGACY_TRUSTED_UPDATE_REPOSITORIES=new Set(["wagnerks1990/classroom-control-hub"]);
-function updatePolicy(){
-  const saved=dbStore.getPreference("updates.policy",{})||{};
-  return {repository:TRUSTED_UPDATE_REPOSITORY,channel:["alpha","beta","stable"].includes(saved.channel)?saved.channel:"alpha",automatic:!!saved.automatic,checkIntervalHours:Math.max(1,Math.min(168,Number(saved.checkIntervalHours)||24)),maintenanceStart:validTime(saved.maintenanceStart)?saved.maintenanceStart:"02:00",maintenanceEnd:validTime(saved.maintenanceEnd)?saved.maintenanceEnd:"04:00",lastCheckedAt:saved.lastCheckedAt||null,lastAvailable:saved.lastAvailable||null};
-}
-function validUpdateRepository(value){const repository=String(value||"");return repository===TRUSTED_UPDATE_REPOSITORY||LEGACY_TRUSTED_UPDATE_REPOSITORIES.has(repository)}
-function releaseVersion(tag){return String(tag||"").replace(/^v/,"")}
-function semverParts(value){const m=releaseVersion(value).match(/^(\d+)\.(\d+)\.(\d+)(?:[-.]([0-9A-Za-z.-]+))?$/);return m?{core:m.slice(1,4).map(Number),pre:m[4]?m[4].split("."):[]}:null}
-function compareVersions(a,b){const x=semverParts(a),y=semverParts(b);if(!x||!y)return 0;for(let i=0;i<3;i++)if(x.core[i]!==y.core[i])return x.core[i]-y.core[i];if(!x.pre.length||!y.pre.length)return x.pre.length?-1:y.pre.length?1:0;for(let i=0;i<Math.max(x.pre.length,y.pre.length);i++){if(x.pre[i]===undefined)return -1;if(y.pre[i]===undefined)return 1;const xn=Number(x.pre[i]),yn=Number(y.pre[i]),numeric=Number.isFinite(xn)&&Number.isFinite(yn);if(x.pre[i]!==y.pre[i])return numeric?xn-yn:String(x.pre[i]).localeCompare(String(y.pre[i]))}return 0}
-function releaseAllowed(release,channel){if(release?.draft)return false;if(channel==="stable")return !release.prerelease;const tag=String(release.tag_name||"").toLowerCase();return release.prerelease&&(channel==="alpha"?tag.includes("alpha"):tag.includes("beta"))}
-async function githubReleaseCheck({persist=true}={}){
-  const policy=updatePolicy();if(!validUpdateRepository(policy.repository))throw Error("Update repository must use owner/name format");
-  const token=String(dbStore.getSecret("github.update.token")||""),headers={accept:"application/vnd.github+json","user-agent":"classroom-control-hub-updater","x-github-api-version":"2022-11-28"};if(token)headers.authorization=`Bearer ${token}`;
-  const response=await fetch(`https://api.github.com/repos/${policy.repository.split("/").map(encodeURIComponent).join("/")}/releases?per_page=30`,{headers,signal:AbortSignal.timeout(15000)});
-  if(!response.ok)throw Error(`GitHub release check failed (${response.status})`);
-  const releases=await response.json(),eligible=(Array.isArray(releases)?releases:[]).filter(x=>releaseAllowed(x,policy.channel)&&semverParts(x.tag_name)).sort((a,b)=>compareVersions(b.tag_name,a.tag_name));
-  const latest=eligible[0]||null,available=latest&&compareVersions(latest.tag_name,APPLICATION_VERSION)>0?{tag:latest.tag_name,version:releaseVersion(latest.tag_name),name:latest.name||latest.tag_name,publishedAt:latest.published_at||null,url:latest.html_url||null,prerelease:!!latest.prerelease}:null;
-  const checkedAt=new Date().toISOString(),result={ok:true,currentVersion:APPLICATION_VERSION,repository:policy.repository,channel:policy.channel,checkedAt,available,latest:latest?{tag:latest.tag_name,version:releaseVersion(latest.tag_name),name:latest.name||latest.tag_name,publishedAt:latest.published_at||null,url:latest.html_url||null}:null};
-  if(persist)dbStore.setPreference("updates.policy",{...policy,lastCheckedAt:checkedAt,lastAvailable:available});return result;
-}
-async function maintenanceAgentApi(method,pathName,body=null,timeoutMs=30000){
-  if(!MAINTENANCE_TOKEN)throw Error("Maintenance agent is not configured");const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{const response=await fetch(MAINTENANCE_URL+pathName,{method,headers:{"x-maintenance-token":MAINTENANCE_TOKEN,...(body==null?{}:{"content-type":"application/json"})},body:body==null?undefined:JSON.stringify(body),signal:controller.signal});const text=await response.text();let value;try{value=JSON.parse(text||"{}")}catch{value={error:text}}if(!response.ok)throw Error(value.error||`Maintenance agent HTTP ${response.status}`);return value}finally{clearTimeout(timer)}
-}
-
-function fullRecoveryTransportRequired(req){
-  const pathName=String(req.path||"");
-  if(req.method==="POST"&&pathName==="/backup/create")return req.body?.scope==="full";
-  if(req.method==="POST"&&pathName==="/backup/import")return true;
-  if(req.method==="POST"&&pathName.endsWith("/restore-plan"))return req.body?.passphrase!==undefined;
-  if(req.method==="POST"&&pathName.endsWith("/restore"))return req.body?.mode==="full-recovery";
-  if(req.method==="GET"&&/\/backup\/[^/]+\.rgbak$/i.test(pathName))return true;
-  return false;
-}
-function requireFullRecoveryTransport(req,res,next){
-  if(!fullRecoveryTransportRequired(req))return next();
-  const policy=recoveryTransportAllowed(req,{trustProxyHops:TRUST_PROXY_HOPS});
-  if(policy.allowed)return next();
-  audit({kind:"security.recovery.transport-blocked",remote:clientAddress(req),method:req.method,path:req.path});
-  return res.status(426).json({ok:false,error:"Encrypted full recovery requires HTTPS or a browser running directly on the RoomGoblin host."});
-}
-
-app.get("/api/v1/admin/recovery-transport",requireAdmin,(req,res)=>{
-  const policy=recoveryTransportAllowed(req,{trustProxyHops:TRUST_PROXY_HOPS});
-  res.setHeader("Cache-Control","no-store");
-  res.json({ok:true,allowed:policy.allowed,encrypted:policy.encrypted,loopback:policy.loopback,minimumPassphraseLength:16});
-});
-
-// A completed restore can invalidate the administrator session or briefly restart
-// the main service. Possession of the high-entropy recovery id grants access only
-// to this deliberately bounded status projection; the id is redacted from audits.
-app.get("/api/v1/recovery-status/:recoveryId",async(req,res)=>{
-  const recoveryId=String(req.params.recoveryId||"");
-  res.setHeader("Cache-Control","no-store, max-age=0");
-  if(!validRecoveryId(recoveryId))return res.status(404).json({ok:false,error:"Recovery status not found"});
-  try{
-    const upstream=await maintenanceAgentApi("GET","/recovery/full/job",null,10000);
-    const status=boundedRecoveryStatus(upstream,recoveryId);
-    if(!status)return res.status(404).json({ok:false,error:"Recovery status not found"});
-    return res.json(status);
-  }catch{return res.status(503).json({ok:false,error:"Recovery status is temporarily unavailable"})}
-});
-function recordUpdateJob(job){if(!job?.phase)return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
-app.get("/api/v1/admin/app-updates/settings",requireAdmin,(_req,res)=>res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token"),currentVersion:APPLICATION_VERSION,history:dbStore.getPreference("updates.history",[])||[]}));
-app.put("/api/v1/admin/app-updates/settings",requireAdmin,(req,res)=>{try{const current=updatePolicy(),repository=String(req.body?.repository||current.repository).trim(),channel=String(req.body?.channel||current.channel);if(!validUpdateRepository(repository))throw Error(`Updates are restricted to the trusted repository ${TRUSTED_UPDATE_REPOSITORY}`);if(!["alpha","beta","stable"].includes(channel))throw Error("Invalid release channel");const next={...current,repository:TRUSTED_UPDATE_REPOSITORY,channel,automatic:req.body?.automatic===true,checkIntervalHours:Math.max(1,Math.min(168,Number(req.body?.checkIntervalHours)||24)),maintenanceStart:String(req.body?.maintenanceStart||current.maintenanceStart),maintenanceEnd:String(req.body?.maintenanceEnd||current.maintenanceEnd)};if(!validTime(next.maintenanceStart)||!validTime(next.maintenanceEnd))throw Error("Maintenance window times must use valid HH:MM values");dbStore.setPreference("updates.policy",next);if(req.body?.clearToken===true)dbStore.deleteSecret("github.update.token");else if(req.body?.token)dbStore.putSecret("github.update.token",String(req.body.token),{type:"github-release-read-token",repository:TRUSTED_UPDATE_REPOSITORY});audit({kind:"admin.updates.settings",repository:TRUSTED_UPDATE_REPOSITORY,channel,automatic:next.automatic,tokenCleared:req.body?.clearToken===true});res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token")})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/admin/app-updates/check",requireAdmin,async(_req,res)=>{try{res.json(await githubReleaseCheck())}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.get("/api/v1/admin/app-updates/job",requireAdmin,async(_req,res)=>{try{const job=await maintenanceAgentApi("GET","/app-updates/job",null,30000);recordUpdateJob(job);res.json({...job,history:dbStore.getPreference("updates.history",[])||[]})}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.post("/api/v1/admin/app-updates/install",requireAdmin,async(req,res)=>{try{const check=await githubReleaseCheck();if(!check.available||check.available.tag!==String(req.body?.tag||""))return res.status(409).json({ok:false,error:"Selected release is no longer the current approved update"});const result=await maintenanceAgentApi("POST","/app-updates/start",{targetRef:check.available.tag,expectedVersion:check.available.version,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_RELEASE"},30000);audit({kind:"admin.updates.start",tag:check.available.tag,version:check.available.version});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.post("/api/v1/admin/app-updates/revert",requireAdmin,async(req,res)=>{try{if(String(req.body?.confirm||"")!=="REVERT_RELEASE")return res.status(400).json({ok:false,error:"Explicit REVERT_RELEASE confirmation required"});const result=await maintenanceAgentApi("POST","/app-updates/revert",{confirm:"REVERT_RELEASE"},30000);audit({kind:"admin.updates.revert"});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
-
-function withinUpdateWindow(policy,date=new Date()){const minutes=s=>{const [h,m]=s.split(":").map(Number);return h*60+m},now=date.getHours()*60+date.getMinutes(),start=minutes(policy.maintenanceStart),end=minutes(policy.maintenanceEnd);return start===end||start<end?(now>=start&&now<end):(now>=start||now<end)}
-let automaticUpdateBusy=false;
-async function automaticUpdateTick(){if(fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubReleaseCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{targetRef:check.available.tag,expectedVersion:check.available.version,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_RELEASE"},30000);audit({kind:"updates.automatic.start",tag:check.available.tag})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
-const automaticUpdateTimer=setInterval(()=>automaticUpdateTick(),15*60*1000);automaticUpdateTimer.unref();setTimeout(()=>automaticUpdateTick(),60*1000).unref();
-let updateJobSyncBusy=false;
-async function synchronizeUpdateJob(){if(fullExportFreeze.requested||updateJobSyncBusy)return;updateJobSyncBusy=true;try{recordUpdateJob(await maintenanceAgentApi("GET","/app-updates/job"))}catch{}finally{updateJobSyncBusy=false}}
-const updateJobSyncTimer=setInterval(()=>synchronizeUpdateJob(),60*1000);updateJobSyncTimer.unref();setTimeout(()=>synchronizeUpdateJob(),15*1000).unref();
-app.use("/api/v1/maintenance", requireAdmin, requireFullRecoveryTransport, (req,res)=>{
-  if(!MAINTENANCE_PROXY_ENABLED)return res.status(503).json({ok:false,error:"Privileged maintenance proxy is disabled during stabilization"});
-  if(!MAINTENANCE_TOKEN)return res.status(503).json({ok:false,error:"Maintenance agent is not configured"});
-  // This callback is exclusively for the native Host Agent during its locked
-  // recovery transaction. Never expose it through the administrator proxy.
-  if(req.path==="/recovery/reconcile-services")return res.status(404).json({ok:false,error:"Not found"});
-  let target;
-  try{target=new URL(MAINTENANCE_URL + req.originalUrl.replace(/^\/api\/v1\/maintenance/,""))}
-  catch(err){return res.status(500).json({ok:false,error:`Invalid maintenance URL: ${err.message}`})}
-  const headers={...req.headers,host:target.host,"x-maintenance-token":MAINTENANCE_TOKEN};
-  delete headers["content-length"];
-  delete headers.cookie;
-  delete headers["x-control-token"];
-  let buffered=null;
-  const contentType=String(req.headers["content-type"]||"");
-  if((contentType.includes("application/json")||contentType.includes("application/x-www-form-urlencoded")) && req.body && Object.keys(req.body).length){
-    buffered=Buffer.from(contentType.includes("application/json")?JSON.stringify(req.body):new URLSearchParams(req.body).toString());
-    headers["content-length"]=String(buffered.length);
-  }
-  const upstream=http.request({protocol:target.protocol,hostname:target.hostname,port:target.port||80,path:target.pathname+target.search,method:req.method,headers},up=>{
-    res.status(up.statusCode||502);
-    for(const [k,v] of Object.entries(up.headers))if(v!==undefined&&!['connection','transfer-encoding'].includes(k.toLowerCase()))res.setHeader(k,v);
-    up.pipe(res);
-  });
-  upstream.on("error",err=>res.status(502).json({ok:false,error:`Maintenance agent unavailable: ${err.message}`}));
-  if(buffered){upstream.end(buffered)}else{req.pipe(upstream)}
-});
-
-// Closed-lab HTTP application. No HSTS/TLS assumptions.
-app.use((req, res, next) => {
-  res.setHeader("Cache-Control", "no-store");
-  const origin=String(req.get("origin")||"");
-  if(origin&&CORS_ALLOWED_ORIGINS.has(origin)){
-    res.setHeader("Access-Control-Allow-Origin",origin);
-    res.setHeader("Vary","Origin");
-  }
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, X-Control-Token, X-Display-Token, X-Setup-Token"
-  );
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  if(req.method==="OPTIONS"&&origin&&!CORS_ALLOWED_ORIGINS.has(origin))return res.status(403).json({ok:false,error:"Cross-origin request blocked"});
-  if (req.method === "OPTIONS") return res.status(204).end();
-  next();
-});
-
-function persistentAssetAccessKey(){
-  try{
-    let encoded=String(dbStore.getSecret("internal.asset-access-key")||"");
-    if(!/^[A-Za-z0-9_-]{43}$/.test(encoded)){encoded=crypto.randomBytes(32).toString("base64url");dbStore.putSecret("internal.asset-access-key",encoded,{type:"internal-signing-key"})}
-    return Buffer.from(encoded,"base64url");
-  }catch(error){diagnosticError(error,{component:"asset-access",operation:"key-load"});return crypto.randomBytes(32)}
-}
-const assetAccessKey=persistentAssetAccessKey();
-function issueAssetAccessToken(deviceId,credentialId="",ttlSeconds=900){const expires=Math.floor(Date.now()/1000)+ttlSeconds,credential=String(credentialId||"legacy").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,80)||"legacy",payload=`${cleanId(deviceId)}.${expires}.${credential}`,signature=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");return `${payload}.${signature}`}
-function validAssetAccessToken(token){const parts=String(token||"").split(".");if(parts.length!==4||!/^\d+$/.test(parts[1])||Number(parts[1])<Math.floor(Date.now()/1000))return false;const payload=`${parts[0]}.${parts[1]}.${parts[2]}`,expected=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");if(!secureTokenEqual(parts[3],expected)||!devices[cleanId(parts[0])]?.enabled)return false;const policy=dbStore.displayCredentialPolicy();if(parts[2]==="direct")return !policy.authenticationRequired;if(parts[2]==="legacy")return policy.legacySharedTokenAllowed;return dbStore.listDisplayCredentials().credentials.some(item=>item.id===parts[2]&&item.displayId===parts[0]&&!item.revokedAt)}
-function requireAssetAccess(req,res,next){if(requestUser(req)||validAssetAccessToken(req.query.access_token))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
-app.use("/media",requireAssetAccess,(req,res,next)=>path.extname(req.path).toLowerCase()===".svg"?res.status(415).json({ok:false,error:"Active SVG media is not served from the application origin"}):next(),express.static(MEDIA_DIR,{fallthrough:false}));
-app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fallthrough:false}));
-app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","build")));
-app.use("/vendor/hls", express.static(path.join(path.resolve(__dirname,".."),"node_modules","hls.js","dist")));
-
-app.use(express.static(path.join(APP_DIR, "public")));
-
-const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};
-function shortBrandText(value,fallback,max=120){const text=String(value??fallback??"").trim();return (text||String(fallback||"")).slice(0,max)}
-function brandColor(value,fallback){const text=String(value||"").trim();if(text&&!/^#[0-9a-f]{6}$/i.test(text))throw Error("Theme colors must use six-digit hexadecimal values");return text||fallback}
-function normalizedSiteProfile(input={}){
-  const school=shortBrandText(input.school,"Your School");
-  const room=shortBrandText(input.room,"Classroom",80);
-  const mode=["dark","light","system"].includes(input.theme?.mode)?input.theme.mode:"dark";
-  return {school,room,...ROOMGOBLIN_IDENTITY,displayPrefix:shortBrandText(input.displayPrefix,"TV",40),timezone:normalizedTimezone(input.timezone||"America/New_York"),theme:{mode,primary:brandColor(input.theme?.primary,BRAND_THEME_DEFAULTS.primary),accent:brandColor(input.theme?.accent,BRAND_THEME_DEFAULTS.accent),background:brandColor(input.theme?.background,BRAND_THEME_DEFAULTS.background),surface:brandColor(input.theme?.surface,BRAND_THEME_DEFAULTS.surface),text:brandColor(input.theme?.text,BRAND_THEME_DEFAULTS.text)},revision:Math.max(0,Number(input.revision)||0),updatedAt:input.updatedAt||null};
-}
-function publicBranding(){const site=normalizedSiteProfile(dbStore.getAdminConfig().site||{});return {ok:true,branding:site}}
-
-app.get("/api/v1/branding",(_req,res)=>{res.setHeader("Cache-Control","no-store");res.json(publicBranding())});
-
-app.get("/controller", (_req, res) => {
-  res.sendFile(path.join(APP_DIR, "public", "controller", "index.html"));
-});
-app.get("/controller/", (_req, res) => {
-  res.sendFile(path.join(APP_DIR, "public", "controller", "index.html"));
-});
-app.get("/schoology", (_req,res)=>res.sendFile(path.join(APP_DIR,"public","schoology","index.html")));
-app.get("/schoology/", (_req,res)=>res.sendFile(path.join(APP_DIR,"public","schoology","index.html")));
-app.get("/display/:id", (req, res) => {
-  res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma","no-cache");
-  res.setHeader("Expires","0");
-  const id = cleanId(req.params.id);
-  if (!devices[id]) {
-    return res.status(404).type("text/plain").send("Unknown display");
-  }
-  res.sendFile(path.join(APP_DIR, "public", "display", "index.html"));
-});
-
-app.get("/", (_req, res) => {
-  const brand=publicBranding().branding;
-  res.type("text/plain").send(
-    [
-      `${brand.productName} Backend`,
-      `School: ${brand.school}`,
-      `Classroom: ${brand.room}`,
-      `API: http://HOST:${PORT}/api/v1/status`,
-      `WebSocket: ws://HOST:${PORT}/ws`,
-      `Media: http://HOST:${PORT}/media/`
-    ].join("\n")
-  );
-});
-
-app.get("/health", (_req, res) => {
-  const database=dbStore.healthCheck();
-  const invalidClasses=classScheduleStore.classes.filter(item=>!validTime(item.startTime)||!validTime(item.endTime)||timeToMinutes(item.startTime)>=timeToMinutes(item.endTime)).map(item=>item.id);
-  const invalidAutomations=classroomAutomations.events.filter(item=>{
-    if(!validTime(item.time)||!AUTOMATION_ACTIONS.has(item.action)||(item.actions||[]).some(step=>!AUTOMATION_ACTIONS.has(step.action)))return true;
-    try{normalizeTimerOverlay(item.timerOverlay,item.timerOverlay||null);return false}catch{return true}
-  }).map(item=>item.id);
-  const scheduler={ok:invalidClasses.length===0&&invalidAutomations.length===0,timezone:SCHEDULER_TIMEZONE,invalidClasses,invalidAutomations};
-  const ready=!shuttingDown&&database.ok&&scheduler.ok;
-  res.status(ready?200:503).json({
-    ok: ready,
-    ready,
-    service: "classroom-hub-backend",
-    version: APPLICATION_VERSION,
-    checks:{database:{ok:database.ok},scheduler:{ok:scheduler.ok}}
-  });
-});
-
-app.get("/api/v1/status",requireClassroomRead, (_req, res) => {
-  res.json({
-    ok: true,
-    runtime: publicRuntime(),
-    state: publicPersistentState()
-  });
-});
-app.get("/api/v1/lab-agent/manifest",(_req,res)=>{
-  const file=path.join(PUBLIC_DIR,"lab-agent","ClassroomHubAgent.ps1");
-  try{res.json({ok:true,version:APPLICATION_VERSION,file:"ClassroomHubAgent.ps1",sha256:crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")})}
-  catch(error){res.status(500).json({ok:false,error:"Lab agent package is unavailable"})}
-});
-
-app.get("/api/v1/devices",requireClassroomRead, (_req, res) => {
-  res.json({
-    ok: true,
-    room: deviceConfig.room || ROOM_NAME,
-    devices,
-    status: publicRuntime().displays
-  });
-});
-
-app.get("/api/v1/devices/:id",requireClassroomRead, (req, res) => {
-  const id = cleanId(req.params.id);
-  if (!devices[id]) {
-    return res.status(404).json({ ok: false, error: "Unknown device" });
-  }
-
-  res.json({
-    ok: true,
-    id,
-    config: devices[id],
-    state: publicProjection(persistentState.displays[id] || null),
-    status: publicRuntime().displays[id] || null
-  });
-});
-
-app.get("/api/v1/groups",requireClassroomRead, (_req, res) => {
-  res.json({
-    ok: true,
-    displayGroups,
-    lightingGroups: [...lightingGroups]
-  });
-});
-
-app.get("/api/v1/events",requireClassroomRead, (req, res) => {
-  const limit = Math.min(500, Math.max(1, Number(req.query.limit || 100)));
-  res.json({ ok: true, events: recentEvents.slice(-limit).map(event=>diagnosticSanitize(event)) });
-});
-
-app.post("/api/v1/commands", requireControl, async (req, res) => {
-  try {
-    const result = await executeCommand(req.body, "http");
-    res.json(publicProjection(result));
-  } catch (err) {
-    audit({kind:"command.error",error:err.message,commandType:String(req.body?.type||"").slice(0,100),target:req.body?.target});
-    res.status(400).json({ ok: false, error: err.message });
-  }
-});
-
-// Optional native ESPHome connections share the unprivileged application identity.
-// Registry/key writes and asynchronous enrollment/commands participate in export drain.
-const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown});
-registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRead,
-  requireControl:requireCapability("integrations.control"),requireAdmin,
-  isAdmin:req=>!dbStore.authEnabled()||(hasRole(requestUser(req),"admin")&&hasCapability(requestUser(req),"*")),
-  owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
-
-app.get("/api/v1/integrations/check",requireCapability("integrations.control"), async (_req,res)=>{
-  const out={ok:true,mqtt:{configured:runtime.mqtt.configured,connected:runtime.mqtt.connected,lastError:runtime.mqtt.lastError},
-    hardware:{govee:{configured:runtime.hardware.govee.configured,reachable:runtime.mqtt.connected,lastError:runtime.hardware.govee.lastError},
-              pluto:{configured:runtime.hardware.pluto.configured,reachable:false,lastError:runtime.hardware.pluto.lastError}}};
-  try{const p=await directPluto({action:"systemStatus"});out.hardware.pluto.reachable=true;out.hardware.pluto.system=p.data}catch(e){out.ok=false;out.hardware.pluto.lastError=e.message}
-  if(!runtime.mqtt.connected)out.ok=false;
-  res.status(out.ok?200:503).json(out);
-});
-
-
-// v0.9 media library / scenes
-app.get("/api/v1/media",requireClassroomRead, (_req,res)=>{
-  res.json({ok:true,files:listMediaLibrary(),converter:{available:true,engine:"LibreOffice headless"}});
-});
-app.get("/api/v1/scenes",requireClassroomRead,(_req,res)=>res.json({ok:true,scenes:savedScenes}));
-app.post("/api/v1/scenes/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id),actions=Array.isArray(req.body?.actions)?req.body.actions:[];
- if(!id||!actions.length)return res.status(400).json({ok:false,error:"Scene id and actions required"});
- savedScenes[id]={name:String(req.body?.name||id).slice(0,100),actions};persistScenes();res.json({ok:true,id,scene:savedScenes[id]});
-});
-app.post("/api/v1/scenes/:id/run",requireControl,async(req,res)=>{
- try{const id=cleanId(req.params.id),scene=savedScenes[id];if(!scene)return res.status(404).json({ok:false,error:"Scene not found"});
- const results=[];for(const a of scene.actions)results.push(await executeCommand({type:a.type,target:req.body?.target??"all",payload:a.payload||{}},"scene"));
- res.json({ok:true,id,results});}catch(e){res.status(400).json({ok:false,error:e.message})}
-});
-app.get("/api/v1/integrations/govee/:target/scenes",requireClassroomRead,(req,res)=>{
-  try{res.json(goveeScenes(req.params.target))}catch(e){res.status(400).json({ok:false,error:e.message})}
-});
-app.post("/api/v1/integrations/pluto/status",requireCapability("integrations.control"),async(req,res)=>{
-  try{const action=String(req.body?.action||"videoStatus"),allowed=new Set(["videoStatus","outputStatus","inputStatus","cecStatus","systemStatus","networkStatus"]);
-  if(!allowed.has(action))return res.status(400).json({ok:false,error:"Unsupported status action"});
-  res.json(await directPluto({action}));}catch(e){res.status(502).json({ok:false,error:e.message})}
-});
-
-
-
-
-// v0.8 direct Govee APIs
-app.get("/api/v1/govee",requireClassroomRead,(_req,res)=>res.json(goveeInventory()));
-app.put("/api/v1/govee/discovery",requireControl,(req,res)=>{
-  if(req.body?.autoAdd!==undefined)goveeDiscovery.autoAdd=!!req.body.autoAdd;
-  persistGoveeDiscovery();
-  res.json({ok:true,discovery:goveeInventory().discovery});
-});
-app.post("/api/v1/govee/discovery/reconcile",requireControl,(req,res)=>{
-  const migrated=migrateGoveeDiscoveryRegistry();
-  const force=req.body?.force!==false;
-  const result=reconcileGoveeDiscovery(Date.now(),{force});
-  res.json({ok:true,migrated,...result,inventory:goveeInventory()});
-});
-app.put("/api/v1/govee/device/:target",requireControl,(req,res)=>{
-  try{res.json({ok:true,...updateGoveeDevice(req.params.target,req.body||{})})}
-  catch(e){res.status(400).json({ok:false,error:e.message})}
-});
-app.get("/api/v1/govee/:target/status",requireClassroomRead,(req,res)=>{
-  const alias=cleanId(req.params.target),d=goveeDevices[alias];
-  if(!d)return res.status(404).json({ok:false,error:"Unknown Govee device"});
-  res.json({ok:true,device:alias,meta:d,state:goveeStates[d.id]||null});
-});
-app.get("/api/v1/govee/:target/scenes",requireClassroomRead,(req,res)=>{try{res.json(goveeScenes(req.params.target))}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/govee/:target/:action",requireControl,async(req,res)=>{
-  try{res.json(await directGoveeCommand(req.params.target,cleanId(req.params.action),req.body||{}))}catch(e){res.status(400).json({ok:false,error:e.message})}
-});
-
-// v0.8 direct Pluto APIs
-app.post("/api/v1/pluto",requireControl,async(req,res)=>{try{res.json(await directPluto(req.body||{}))}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.get("/api/v1/pluto/status",requireClassroomRead,async(_req,res)=>{
-  const out={ok:true,labels:avLabels};
-  for(const a of ["videoStatus","outputStatus","inputStatus","cecStatus","systemStatus","networkStatus"]){
-    try{out[a]=(await directPluto({action:a})).data}catch(e){out.ok=false;out[a]={error:e.message}}
-  }
-  res.status(out.ok?200:207).json(out);
-});
-app.get("/api/v1/pluto/labels",requireClassroomRead,(_req,res)=>res.json({ok:true,labels:avLabels}));
-app.put("/api/v1/pluto/labels",requireControl,(req,res)=>{
-  avLabels=normalizeAvLabels(req.body||{});persistAvLabels();audit({kind:"admin.config.av-labels",outputs:avLabels.outputs,inputs:avLabels.inputs,sourceEndpoints:avLabels.sourceEndpoints});res.json({ok:true,labels:avLabels});
-});
-app.get("/api/v1/pluto/schedules",requireClassroomRead,(_req,res)=>res.json({ok:true,schedules:plutoSchedules}));
-app.post("/api/v1/pluto/schedules",requireControl,(req,res)=>{
-  const incoming=req.body?.schedules||{},base=makeDefaultPlutoSchedules();
-  for(const [k,v] of Object.entries(incoming)){
-    if(!/^(hdmi|hdbt):[1-8]$/.test(k))continue;
-    if(v?.enabled&&(!validTime(v.onTime)||!validTime(v.offTime)))return res.status(400).json({ok:false,error:`${k} requires valid on/off HH:MM times`});
-    const [type,indexText]=k.split(":"),index=Number(indexText);
-    base[k]={type,index,enabled:!!v.enabled,onTime:validTime(v.onTime)?v.onTime:"07:30",offTime:validTime(v.offTime)?v.offTime:"16:00",
-      days:Array.isArray(v.days)?v.days.map(Number).filter(d=>d>=0&&d<=6):[],lastRun:v.lastRun||{},lastExec:v.lastExec||{}};
-  }
-  plutoSchedules=base;persistPlutoSchedules();res.json({ok:true,schedules:plutoSchedules});
-});
-
-
-
-// v0.10 unified classroom automations
-app.get("/api/v1/automations/morning-announcements",requireClassroomRead,(_req,res)=>{
-  res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime)});
-});
-app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),(req,res)=>{
-  try{morningAnnouncements=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);persistMorningAnnouncements();restartMorningAnnouncementsWatcher();res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime)})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/automations/morning-announcements/check",requireControl,async(_req,res)=>{
-  try{
-    const probe=await probeMorningAnnouncementsLive();
-    morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
-    morningAnnouncementsRuntime.probe=probe.probe||null;
-    morningAnnouncementsRuntime.probeStatus=probe.status||null;
-    morningAnnouncementsRuntime.probeDurationMs=probe.durationMs??null;
-    morningAnnouncementsRuntime.lastError=probe.error||null;
-    if(probe.live===true){
-      morningAnnouncementsRuntime.live=true;
-      morningAnnouncementsRuntime.offlineCount=0;
-      morningAnnouncementsRuntime.lastLiveAt=morningAnnouncementsRuntime.lastCheck;
-    }else if(probe.live===false){
-      morningAnnouncementsRuntime.live=false;
-      if(morningAnnouncementsRuntime.active)morningAnnouncementsRuntime.offlineCount++;
-      else morningAnnouncementsRuntime.offlineCount=0;
-    }
-    res.json(publicProjection({ok:true,...probe,config:publicMorningAnnouncementsConfig(),runtime:morningAnnouncementsRuntime}));
-  }catch(err){
-    morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
-    morningAnnouncementsRuntime.lastError=err.message;
-    res.status(500).json({ok:false,error:err.message,runtime:morningAnnouncementsRuntime});
-  }
-});
-app.post("/api/v1/automations/morning-announcements/start",requireControl,async(req,res)=>{
-  try{
-    const rawTargets=Array.isArray(req.body?.targets)?req.body.targets:[req.body?.targets||"all"];
-    const targets=automationDisplayTargets(rawTargets);
-    await serializeMorningAnnouncementsLifecycle(()=>assertMorningAnnouncements({mode:"manual",targetsOverride:targets,urlOverride:req.body?.url||announcementsPlaybackUrl()}));
-    res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime),targets});
-  }catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/automations/morning-announcements/stop",requireControl,async(req,res)=>{
-  try{await serializeMorningAnnouncementsLifecycle(()=>releaseMorningAnnouncements(String(req.body?.reason||"manual-stop")));res.json({ok:true,runtime:morningAnnouncementsRuntime})}
-  catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-app.get("/api/v1/automations/calendar",requireClassroomRead,(_req,res)=>{
-  res.json({ok:true,calendar:schedulerCalendar,scheduleProfile:schoolScheduleProfile,cycleAnchor:{date:schoolCycleAnchor(),cycleDay:schoolCycleLetters()[0]||null,dayColor:alternateGroupLabel('A')}});
-});
-app.put("/api/v1/automations/calendar",requireCapability("schedule.manage"),(req,res)=>{
-  try{
-    const nextCalendar=normalizeSchedulerCalendar(req.body||{},schedulerCalendar);
-    const nextProfile=req.body?.scheduleProfile?normalizeSchoolScheduleProfile({...req.body.scheduleProfile,anchorDate:req.body.scheduleProfile.anchorDate||nextCalendar.anchorDate},schoolScheduleProfile):schoolScheduleProfile;
-    // Validate the complete request before changing either live object or durable state.
-    if(req.body?.scheduleProfile)nextProfile.updatedAt=new Date().toISOString();
-    dbStore.tx(()=>{
-      if(req.body?.scheduleProfile)dbStore.setPreference("school.schedule.profile",nextProfile);
-      persistJson(SCHEDULER_CALENDAR_FILE,nextCalendar);
-    });
-    schedulerCalendar=nextCalendar;schoolScheduleProfile=nextProfile;
-    audit({kind:"automation.calendar.update",noSchoolDates:schedulerCalendar.noSchoolDates,halfDayDates:schedulerCalendar.halfDayDates,oneHourDelayDates:schedulerCalendar.oneHourDelayDates,twoHourDelayDates:schedulerCalendar.twoHourDelayDates,remoteDates:schedulerCalendar.remoteDates,cycleAnchor:schoolCycleAnchor(),profileId:schoolScheduleProfile.id});
-    res.json({ok:true,calendar:schedulerCalendar,scheduleProfile:schoolScheduleProfile,cycleAnchor:{date:schoolCycleAnchor(),cycleDay:schoolCycleLetters()[0]||null,dayColor:alternateGroupLabel('A')}});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-
-
-function timeToMinutes(value){
-  const [h,m]=String(value||"00:00").split(":").map(Number);
-  return (Number.isFinite(h)?h:0)*60+(Number.isFinite(m)?m:0);
-}
-function classPhaseRank(cls){
-  if(cls?.scheduleMode!=="alternating")return 2;
-  return cls.alternatePhase==="B"?1:0;
-}
-function compareClassSchedules(a,b){
-  return classPhaseRank(a)-classPhaseRank(b)
-    || timeToMinutes(a.startTime)-timeToMinutes(b.startTime)
-    || String(a.name||"").localeCompare(String(b.name||""));
-}
-function automationPrimaryOccurrence(event){
-  const occ=resolveAutomationOccurrences(event);
-  return Array.isArray(occ)&&occ.length
-    ? [...occ].sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time))[0]
-    : resolveAutomationFromClass(event);
-}
-function automationPhaseRank(event){
-  const occ=automationPrimaryOccurrence(event)||event;
-  if(occ?.scheduleMode!=="alternating")return 2;
-  return occ.alternatePhase==="B"?1:0;
-}
-function compareAutomations(a,b){
-  const ao=automationPrimaryOccurrence(a)||a;
-  const bo=automationPrimaryOccurrence(b)||b;
-  return automationPhaseRank(a)-automationPhaseRank(b)
-    || timeToMinutes(ao.time||a.time)-timeToMinutes(bo.time||b.time)
-    || String(a.name||"").localeCompare(String(b.name||""));
-}
-
-// Scheduler APIs may evaluate a full school-year horizon or dispatch hardware. Fixed
-// appliance-wide budgets prevent an authenticated browser from amplifying that work by
-// rotating client addresses or forwarding headers.
-const schedulerReadLimit=rateLimit({
-  windowMs:60_000,limit:240,keyGenerator:()=>"scheduler-read",
-  standardHeaders:"draft-8",legacyHeaders:false,
-  message:{ok:false,error:"Scheduler read limit reached; retry later"}
-});
-const schedulerMutationLimit=rateLimit({
-  windowMs:60_000,limit:60,keyGenerator:()=>"scheduler-mutations",
-  standardHeaders:"draft-8",legacyHeaders:false,
-  message:{ok:false,error:"Scheduler configuration or command limit reached; retry later"}
-});
-
-app.get("/api/v1/school-cycle",schedulerReadLimit,requireClassroomRead,(req,res)=>{
-  const date=req.query.date&&validDateKey(req.query.date)?new Date(`${req.query.date}T12:00:00`):new Date();
-  res.json({ok:true,...schoolCycleForDate(date),calendarRule:calendarRuleForDate(date),automationSuppressed:isAutomationSuppressed(date).blocked,cycle:schoolCycleLetters(),dayGroups:schoolScheduleProfile.dayGroups,scheduleProfileId:schoolScheduleProfile.id});
-});
-
-app.get("/api/v1/class-schedules",schedulerReadLimit,requireClassroomRead,(_req,res)=>{
-  try{
-    const now=new Date();
-    res.json({ok:true,classes:[...classScheduleStore.classes].sort(compareClassSchedules),...classStatusPayload(now),scheduler:schedulerStatus()});
-  }catch(err){
-    res.status(500).json({ok:false,error:err.message,classes:classScheduleStore.classes});
-  }
-});
-function classScheduleConflicts(candidate,classes,{horizonDays=370,startDate=new Date()}={}){
-  if(candidate?.enabled===false)return [];
-  const conflicts=[];
-  const start=new Date(startDate);start.setHours(12,0,0,0);
-  for(let offset=0;offset<horizonDays&&conflicts.length<20;offset++){
-    const day=new Date(start);day.setDate(day.getDate()+offset);
-    if(!classScheduleMatchesDate(candidate,day))continue;
-    const aStart=classStartDate(candidate,day),aEnd=classEndDate(candidate,day);if(!aStart||!aEnd)continue;
-    for(const other of classes||[]){
-      if(!other||other.id===candidate.id||other.enabled===false||!classScheduleMatchesDate(other,day))continue;
-      const bStart=classStartDate(other,day),bEnd=classEndDate(other,day);if(!bStart||!bEnd)continue;
-      if(aStart<bEnd&&bStart<aEnd)conflicts.push({date:localDateKey(day),candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,start:new Date(Math.max(aStart,bStart)).toISOString(),end:new Date(Math.min(aEnd,bEnd)).toISOString()});
-    }
-  }
-  return conflicts;
-}
-function assertClassScheduleConflicts(candidate,classes){
-  const conflicts=classScheduleConflicts(candidate,classes);
-  if(!conflicts.length)return;
-  const first=conflicts[0],error=new Error(`${candidate.name} overlaps ${first.otherName} on ${first.date}. Save it disabled or resolve the class times before enabling.`);error.code="CLASS_SCHEDULE_CONFLICT";error.conflicts=conflicts;throw error;
-}
-app.get("/api/v1/class-schedules/status",schedulerReadLimit,requireClassroomRead,(_req,res)=>{const now=new Date();res.json({ok:true,...classStatusPayload(now),scheduler:schedulerStatus()})});
-app.post("/api/v1/class-schedules",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{try{const cls=normalizeClassSchedule(req.body||{});if(classScheduleStore.classes.some(x=>x.id===cls.id))return res.status(409).json({ok:false,error:"Class ID already exists"});assertClassScheduleConflicts(cls,classScheduleStore.classes);const next={...classScheduleStore,classes:[...classScheduleStore.classes,cls]};commitClassSchedules(next);res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
-app.put("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{try{const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);if(i<0)return res.status(404).json({ok:false,error:"Class not found"});const cls=normalizeClassSchedule(req.body||{},classScheduleStore.classes[i]),classes=[...classScheduleStore.classes];assertClassScheduleConflicts(cls,classes.filter((_,index)=>index!==i));classes[i]=cls;commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,classSchedule:cls})}catch(err){res.status(400).json({ok:false,error:err.message,conflicts:err.conflicts||[]})}});
-app.post("/api/v1/class-schedules/:id/duplicate",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
-  try{
-    const source=classScheduleStore.classes.find(c=>c.id===req.params.id);
-    if(!source)return res.status(404).json({ok:false,error:"Class not found"});
-    const copy=normalizeClassSchedule({
-      ...source,
-      id:undefined,
-      name:String(req.body?.name||`${source.name} - Copy`),
-      shortName:String(req.body?.shortName||source.shortName||source.name),
-      enabled:false,
-      createdAt:undefined,
-      updatedAt:undefined
-    },{});
-    commitClassSchedules({...classScheduleStore,classes:[...classScheduleStore.classes,copy]});
-    audit({kind:"class.duplicate",sourceId:source.id,classId:copy.id,name:copy.name});
-    res.json({ok:true,classSchedule:copy});
-  }catch(err){
-    diagnosticError?.(err,{component:"classes",operation:"duplicate"});
-    res.status(400).json({ok:false,error:err.message});
-  }
-});
-app.delete("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
-  const i=classScheduleStore.classes.findIndex(c=>c.id===req.params.id);
-  if(i<0)return res.status(404).json({ok:false,error:"Class not found"});
-  const references=classroomAutomations.events.filter(event=>automationClassIds(event).includes(req.params.id)||String(event.timerOverlay?.classId||"")===req.params.id).map(event=>({type:"automation",id:event.id,name:event.name}));
-  const continuations=classScheduleStore.classes.filter(item=>String(item.continuationOf||"")===req.params.id).map(item=>({type:"continuation",id:item.id,name:item.name}));
-  references.push(...continuations);
-  if(references.length)return res.status(409).json({ok:false,error:"Class is referenced by automations, timers, or continuation classes",references});
-  try{const classes=[...classScheduleStore.classes],removed=classes.splice(i,1)[0];commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,removed})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-function evaluateAutomationAt(now=schedulerClock.now()){
-  const suppression=isAutomationSuppressed(now),dateKey=localDateKey(now),items=[];
-  for(const stored of classroomAutomations.events){
-    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored];
-    for(const event of occurrences){
-      const match=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
-      items.push({automationId:stored.id,name:stored.name,enabled:stored.enabled!==false,time:event.time,classId:event.classId||null,match:!!match.match,suppressed:!!suppression.blocked,reason:suppression.blocked?suppression.reason:(match.reason||null),targets:event.targets||[],actions:[event.action,...(event.actions||[]).map(step=>step.action)]});
-    }
-  }
-  return {observedAt:new Date().toISOString(),schedulerTime:now.toISOString(),schoolCycle:schoolCycleForDate(now),suppression,items};
-}
-function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
-  const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes(),winners=new Map();
-  for(const stored of classroomAutomations.events){
-    if(stored?.enabled===false)continue;
-    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored].filter(event=>automationMatchesDate(event,now).match);
-    for(const event of occurrences){
-      if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
-      const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;if(scheduled>nowMinutes)continue;
-      const steps=[{action:event.action,targets:event.targets,useEventTargets:true,payload:event.payload||{}},...(event.actions||[])];let elapsed=0;
-      for(const step of steps){elapsed+=Math.max(0,Number(step.delaySeconds||0));const domain=automationTargetDomain(step.action);if(!["tv-power","lighting"].includes(domain))continue;const effectiveMinute=scheduled+Math.floor(elapsed/60);if(effectiveMinute>nowMinutes)continue;let targets=(step.useEventTargets!==false&&domain===automationTargetDomain(event.action))?(event.targets||[]):(step.targets||[]);const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;for(const target of resolved){const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2]))winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target})}}
-    }
-  }
-  return [...winners.values()];
-}
-async function reconcileScheduledAutomationState(reason="operator-resume"){
-  const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
-  if(suppression.blocked)return {ok:true,skipped:true,reason:suppression.reason,schedulerTime:now.toISOString()};
-  if(morningAnnouncementsRuntime.active)return {ok:true,deferred:true,reason:"Morning Announcements have priority",targets:[...(morningAnnouncementsRuntime.targets||[])]};
-  const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
-  for(const winner of currentAutomationNonDisplayWinners(now)){
-    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
-    catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:false,error:error.message})}
-  }
-  await backgroundMusicTick();
-  const ok=!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false);
-  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:resourceResults.length,ok});
-  return {ok,reason,schedulerTime:now.toISOString(),display,resources:resourceResults,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
-}
-app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
-app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
-app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString()});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
-app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
-app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
-app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
-
-function automationResourceKeys(event){
-  const steps=[{action:event.action,targets:event.targets,useEventTargets:true},...(event.actions||[])],keys=[];
-  for(const step of steps){
-    const action=step.action||event.action,domain=automationTargetDomain(action);let targets=[];
-    if(step.useEventTargets!==false&&domain===automationTargetDomain(event.action))targets=event.targets||[];
-    else if(Array.isArray(step.targets))targets=step.targets;
-    if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
-    if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
-    else if(domain==="tv-power")for(const target of expandTvTargets(targets,{devices}))keys.push(`tv-power:${target.connection}:${target.output}`);
-    else if(domain==="lighting")for(const id of targets)keys.push(`lighting:${cleanId(id)}`);
-  }
-  return [...new Set(keys)];
-}
-function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDate=new Date()}={}){
-  if(candidate?.enabled===false)return [];
-  const conflicts=[],start=new Date(startDate);start.setHours(12,0,0,0);
-  for(let off=0;off<horizonDays&&conflicts.length<20;off++){
-    const day=new Date(start);day.setDate(day.getDate()+off);
-    const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
-    for(const occurrence of candidateOccurrences){
-      if(!occurrence||occurrence._scheduledDateKey&&occurrence._scheduledDateKey!==localDateKey(day))continue;
-      const cKeys=new Set(automationResourceKeys(occurrence));if(!cKeys.size)continue;
-      for(const other of events||[]){
-        if(!other||other.id===candidate.id||other.enabled===false)continue;
-        const otherOccurrences=automationClassIds(other).length?resolveAutomationOccurrences(other,day):[other].filter(event=>automationMatchesDate(event,day).match);
-        for(const o of otherOccurrences){
-          if(!o||String(o.time)!==String(occurrence.time))continue;
-          const shared=automationResourceKeys(o).filter(key=>cKeys.has(key));
-          if(shared.length)conflicts.push({date:localDateKey(day),time:occurrence.time,candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,resources:shared});
-        }
-      }
-    }
-  }
-  return conflicts;
-}
-function automationConflictSignature(conflict){
-  return [String(conflict?.otherId||""),String(conflict?.date||""),String(conflict?.time||""),...(conflict?.resources||[]).map(String).sort()].join("|");
-}
-function assertAutomationConflicts(candidate,events,{previous=null,startDate=new Date()}={}){
-  const conflicts=automationConflictDiagnostics(candidate,events,{startDate});
-  if(!conflicts.length)return;
-  // Preserve exact conflicts that already existed before this edit. Conflict
-  // validation was introduced after many installations had valid overlapping
-  // events, and an unrelated edit must not turn those records into a lockout.
-  let blocking=conflicts;
-  if(previous&&previous.enabled!==false){
-    const existing=new Set(automationConflictDiagnostics(previous,events,{startDate}).map(automationConflictSignature));
-    blocking=conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict)));
-  }
-  if(!blocking.length)return;
-  const first=blocking[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=blocking;throw error;
-}
-app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
-  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:[resolved.action,...(resolved.actions||[]).map(step=>step.action)]},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
-});
-app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(req,res)=>{
-  const id=cleanId(req.params.id);
-  if(!id||!devices[id]||devices[id].enabled===false)return res.status(404).json({ok:false,error:"Unknown display"});
-  res.json({ok:true,status:runtime.displays[id]?.mediaSession||null});
-});
-
-app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireControl,async(req,res)=>{
-  try{
-    const id=cleanId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
-    const action=String(req.body?.action||"").trim().toLowerCase();
-    if(!["play","pause","stop","restart","seek","volume","mute","rate"].includes(action))throw new Error("Unsupported media control action");
-    const payload={action};
-    if(action==="seek")payload.positionSeconds=Math.max(0,Number(req.body?.positionSeconds||0));
-    if(action==="volume")payload.volume=Math.max(0,Math.min(1,Number(req.body?.volume??1)));
-    if(action==="mute")payload.muted=req.body?.muted!==false;
-    if(action==="rate")payload.playbackRate=Math.max(.25,Math.min(4,Number(req.body?.playbackRate||1)));
-    const result=await executeCommand({type:"display.media.control",target:[id],payload},"controller");
-    audit({kind:"display.media.control",deviceId:id,action});
-    res.json({ok:true,result});
-  }catch(error){res.status(400).json({ok:false,error:error.message})}
-});
-
-app.post("/api/v1/automations/draft/run",schedulerMutationLimit,requireControl,async(req,res)=>{
-  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),result=await runClassroomAutomation(resolved,{manual:true});audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:[event.action,...(event.actions||[]).map(step=>step.action)]});res.json({...result,draft:true})}catch(error){res.status(400).json({ok:false,error:error.message})}
-});
-app.get("/api/v1/automations",schedulerReadLimit,requireClassroomRead,(_req,res)=>{
-  res.json({ok:true,events:[...classroomAutomations.events].sort(compareAutomations).map(e=>({...e,resolved:resolveAutomationFromClass(e),resolvedOccurrences:resolveAutomationOccurrences(e)})),scheduler:schedulerStatus(),actions:[
-    "tv.power","display.clear","display.text","display.url","display.media","display.timer.class-end",
-    "govee.power","govee.color","govee.brightness","govee.temp","govee.scene"
-  ]});
-});
-
-app.post("/api/v1/automations",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
-  try{
-    const event={...normalizeAutomation(req.body||{}),revision:1};
-    if(classroomAutomations.events.some(x=>x.id===event.id))return res.status(409).json({ok:false,error:"Automation ID already exists"});
-    assertAutomationConflicts(event,classroomAutomations.events);
-    commitAutomations({...classroomAutomations,events:[...classroomAutomations.events,event]});
-    audit({kind:"automation.create",automationId:event.id,name:event.name});
-    res.json({ok:true,event});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.put("/api/v1/automations/:id",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
-  try{
-    const id=cleanId(req.params.id),idx=classroomAutomations.events.findIndex(x=>x.id===id);
-    if(idx<0)return res.status(404).json({ok:false,error:"Automation not found"});
-    const prior=classroomAutomations.events[idx];
-    const event={...normalizeAutomation({...req.body,id},prior),revision:Math.max(1,Number(prior.revision||1)+1)};
-    assertAutomationConflicts(event,classroomAutomations.events.filter((_,index)=>index!==idx),{previous:prior});
-    const events=[...classroomAutomations.events];events[idx]=event;commitAutomations({...classroomAutomations,events});
-    audit({kind:"automation.update",automationId:event.id,name:event.name});
-    res.json({ok:true,event});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.delete("/api/v1/automations/:id",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
-  const id=cleanId(req.params.id),before=classroomAutomations.events.length;
-  const events=classroomAutomations.events.filter(x=>x.id!==id);
-  if(events.length===before)return res.status(404).json({ok:false,error:"Automation not found"});
-  try{commitAutomations({...classroomAutomations,events});audit({kind:"automation.delete",automationId:id});res.json({ok:true,id})}catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/automations/:id/duplicate",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{
-  try{
-    const source=classroomAutomations.events.find(e=>e.id===req.params.id);
-    if(!source)return res.status(404).json({ok:false,error:"Scheduled event not found"});
-
-    const copy=normalizeAutomation({
-      ...source,
-      id:undefined,
-      name:String(req.body?.name||`${source.name} - Copy`),
-      enabled:false,
-      lastRun:null,
-      lastExec:null,
-      createdAt:undefined,
-      updatedAt:undefined
-    },{});
-
-    commitAutomations({...classroomAutomations,events:[...classroomAutomations.events,copy]});
-    audit({kind:"automation.duplicate",sourceId:source.id,automationId:copy.id,name:copy.name});
-    res.json({ok:true,event:copy});
-  }catch(err){
-    diagnosticError?.(err,{component:"automation",operation:"duplicate"});
-    res.status(400).json({ok:false,error:err.message});
-  }
-});
-
-
-app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,async(req,res)=>{
-  let event=null;
-  try{
-    const id=cleanId(req.params.id);event=classroomAutomations.events.find(x=>x.id===id);
-    if(!event)return res.status(404).json({ok:false,error:"Automation not found"});
-    const result=await runClassroomAutomation(resolveAutomationForManualTest(event),{manual:true});
-    event.lastRun={at:new Date().toISOString(),ok:result.ok!==false,manual:true,message:result.ok===false?"Completed with action errors":"Completed",resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(result)}};event.updatedAt=new Date().toISOString();persistAutomations();
-    res.json(result);
-  }catch(err){if(event){event.lastRun={at:new Date().toISOString(),ok:false,manual:true,message:err.message};event.updatedAt=new Date().toISOString();persistAutomations()}res.status(500).json({ok:false,error:err.message})}
-});
-
-
-// v0.5 configuration + diagnostics
-app.get("/api/v1/config",requireClassroomRead,(_req,res)=>res.json({ok:true,room:deviceConfig.room||ROOM_NAME,devices,displayGroups,lightingGroups:[...lightingGroups]}));
-
-app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
- const cur=devices[id],b=req.body||{};
- devices[id]={...cur,
-  name:b.name!==undefined?String(b.name).slice(0,100):cur.name,
-  enabled:b.enabled!==undefined?!!b.enabled:cur.enabled,
-  avOutput:b.avOutput!==undefined?Number(b.avOutput):cur.avOutput,
-  lightingAlias:b.lightingAlias!==undefined?(b.lightingAlias===null?null:cleanId(b.lightingAlias)):cur.lightingAlias,
-  tags:Array.isArray(b.tags)?b.tags.map(cleanId).filter(Boolean):cur.tags
- };
- deviceConfig.devices=devices;persistRuntimeConfig();res.json({ok:true,id,device:devices[id]});
-});
-
-app.post("/api/v1/config/groups/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id),members=Array.isArray(req.body?.members)?req.body.members.map(cleanId).filter(x=>devices[x]):[];
- if(!id)return res.status(400).json({ok:false,error:"Group id required"});
- displayGroups[id]=[...new Set(members)];deviceConfig.displayGroups=displayGroups;persistRuntimeConfig();res.json({ok:true,id,members:displayGroups[id]});
-});
-
-async function buildDiagnosticsSnapshot(){
-  const r=publicRuntime();
-  const now=new Date();
-  let veyonWebApi={ok:false};
-  try{
-    const response=await veyonFetch("/",{timeoutMs:2500});
-    veyonWebApi={ok:true,serviceReachable:true,verification:"reachability-only",httpStatus:response.status,url:VEYON_WEBAPI_URL};
-  }catch(err){
-    veyonWebApi={ok:false,serviceReachable:false,verification:"unreachable",url:VEYON_WEBAPI_URL,error:err.message};
-  }
-
-  const veyonPool=[...veyonConnectionCache.entries()].map(([host,x])=>({
-    host,
-    validUntil:x.validUntil,
-    idleSeconds:Math.max(0,Math.floor((Date.now()-Number(x.lastUsed||0))/1000))
-  }));
-
-  const mem=process.memoryUsage();
-  const errors=diagnosticsEventSlice({limit:100,errorsOnly:true});
-  const actions=diagnosticsEventSlice({limit:250}).filter(e=>
-    ["command","automation.run","automation.create","automation.update","automation.delete","service.action","govee.command"].includes(e.kind)
-  );
-
-  return {
-    ok:true,
-    generatedAt:now.toISOString(),
-    system:{
-      version:APPLICATION_VERSION,
-      node:process.version,
-      platform:process.platform,
-      arch:process.arch,
-      pid:process.pid,
-      processUptimeSeconds:Math.round(process.uptime()),
-      systemUptimeSeconds:Math.round(os.uptime()),
-      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||null,
-      schedulerTimezone:SCHEDULER_TIMEZONE,
-      memory:{
-        rss:mem.rss,heapTotal:mem.heapTotal,heapUsed:mem.heapUsed,external:mem.external,
-        freeSystem:os.freemem(),totalSystem:os.totalmem()
-      },
-      loadAverage:os.loadavg()
-    },
-    services:{
-      classroomHub:{ok:true,startedAt:runtime.startedAt,room:deviceConfig.room||ROOM_NAME},
-      mqtt:{ok:!!runtime.mqtt.connected,...diagnosticSanitize(runtime.mqtt)},
-      pluto:{ok:!runtime.hardware.pluto.lastError,...diagnosticSanitize(runtime.hardware.pluto)},
-      govee:{ok:!runtime.hardware.govee.lastError,...diagnosticSanitize(runtime.hardware.govee),configuredDevices:Object.keys(goveeDevices).length},
-      veyon:{...veyonWebApi,pool:{size:veyonConnectionCache.size,max:VEYON_POOL_MAX,connections:veyonPool}},
-      websocket:{ok:true,clients:runtime.websocketClients},
-      displays:{
-        ok:Object.values(r.displays).some(x=>x.online),
-        configured:Object.keys(devices).length,
-        online:Object.values(r.displays).filter(x=>x.online).length,
-        status:r.displays
-      },
-      scheduler:{ok:true,...schedulerStatus()},
-      database:{ok:true,...dbStore.databaseInfo()}
-    },
-    configuration:{
-      room:deviceConfig.room||ROOM_NAME,
-      mqtt:{url:MQTT_URL,jsonBridge:MQTT_JSON_BRIDGE,legacyBridge:MQTT_LEGACY_BRIDGE},
-      pluto:{configured:Boolean(PLUTO_URL),url:PLUTO_URL,timeoutMs:PLUTO_TIMEOUT_MS,readRetries:PLUTO_READ_RETRIES},
-      veyon:{url:VEYON_WEBAPI_URL,keyName:VEYON_KEY_NAME,keyFileReadable:dbStore.hasSecret("veyon.private-key")||fs.existsSync(VEYON_PRIVATE_KEY_FILE),scanSubnet:VEYON_SCAN_SUBNET,poolMax:VEYON_POOL_MAX},
-      scheduler:schedulerStatus(),
-      displayGroups,
-      lightingGroups:[...lightingGroups]
-    },
-    data:{
-      classes:classScheduleStore.classes.length,
-      automations:classroomAutomations.events.length,
-      mediaFiles:fs.existsSync(MEDIA_DIR)?fs.readdirSync(MEDIA_DIR).length:0,
-      presentationEntries:fs.existsSync(PRESENTATIONS_DIR)?fs.readdirSync(PRESENTATIONS_DIR).length:0,
-      database:dbStore.databaseInfo(),
-      legacyFiles:{
-        audit:diagnosticsFileStatus(AUDIT_FILE),
-        automations:diagnosticsFileStatus(AUTOMATIONS_FILE),
-        classSchedules:diagnosticsFileStatus(CLASS_SCHEDULES_FILE),
-        veyonComputers:diagnosticsFileStatus(VEYON_COMPUTERS_FILE)
-      }
-    },
-    recent:{errors,actions,events:diagnosticsEventSlice({limit:250})}
-  };
-}
-
-
-// Local authentication, users and setup completion.
-function disconnectInvalidUserWebSockets(userId){
-  for(const ws of wsClients){
-    if(ws.readyState!==WebSocket.OPEN||String(ws.authUser?.id||"")!==String(userId||""))continue;
-    if(!ws.sessionToken||!dbStore.sessionUser(ws.sessionToken))ws.close(1008,"Session revoked");
-  }
-}
-app.get("/api/v1/auth/status",(req,res)=>{
-  const user=requestUser(req);res.json({ok:true,authEnabled:dbStore.authEnabled(),setupCompleted:dbStore.setupCompleted(),user:publicUser(user),userCount:dbStore.userCount()});
-});
-app.post("/api/v1/auth/login",async(req,res)=>{
-  const username=String(req.body?.username||"").trim().slice(0,80),key=loginAttemptKey(req,username),addressKey=loginAddressKey(req),state=loginAttemptState(key),addressState=loginAttemptState(addressKey),now=Date.now();
-  if(state.lockedUntil>now||addressState.lockedUntil>now){const retry=Math.max(1,Math.ceil((Math.max(state.lockedUntil,addressState.lockedUntil)-now)/1000));res.setHeader("Retry-After",String(retry));audit({kind:"security.login.rate-limited",username,remote:clientAddress(req),retryAfter:retry});return res.status(429).json({ok:false,error:`Too many failed sign-in attempts. Try again in ${Math.ceil(retry/60)} minute(s).`,retryAfter:retry})}
-  const user=await verifyUserAsync(username,req.body?.password);
-  if(!user){const failed=recordLoginFailure(key),addressFailed=recordLoginFailure(addressKey);audit({kind:"auth.login.failed",username,remote:clientAddress(req),attempt:failed.count});if(Math.max(failed.lockedUntil,addressFailed.lockedUntil)>Date.now()){const retry=Math.ceil((Math.max(failed.lockedUntil,addressFailed.lockedUntil)-Date.now())/1000);res.setHeader("Retry-After",String(retry));return res.status(429).json({ok:false,error:"Too many failed sign-in attempts. This sign-in source is temporarily locked.",retryAfter:retry})}return res.status(401).json({ok:false,error:"Invalid username or password"})}
-  clearLoginFailures(key);clearLoginFailures(addressKey);
-  const policy=dbStore.authPolicy(),ttlHours=req.body?.remember?policy.rememberHours:policy.standardHours,sess=dbStore.createSession(user,{remoteAddr:clientAddress(req),userAgent:req.get("user-agent")||"",ttlHours});
-  const secure=(req.secure||String(req.get("x-forwarded-proto")||"").toLowerCase()==="https")?"; Secure":"";
-  res.setHeader("Set-Cookie",`classroom_hub_session=${encodeURIComponent(sess.token)}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=${Math.round(ttlHours*3600)}`);audit({kind:"auth.login",userId:user.id,username:user.username,role:user.role,remote:clientAddress(req)});res.json({ok:true,user:publicUser(user),expiresAt:sess.expiresAt});
-});
-app.post("/api/v1/auth/logout",(req,res)=>{const token=cookieValue(req,"classroom_hub_session"),user=requestUser(req);dbStore.deleteSession(token);if(user)disconnectInvalidUserWebSockets(user.id);res.setHeader("Set-Cookie","classroom_hub_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");if(user)audit({kind:"auth.logout",userId:user.id,username:user.username});res.json({ok:true})});
-app.get("/api/v1/auth/me",(req,res)=>{const user=requestUser(req);if(dbStore.authEnabled()&&!user)return res.status(401).json({ok:false,error:"Not authenticated"});res.json({ok:true,user:publicUser(user),authEnabled:dbStore.authEnabled()})});
-app.get("/api/v1/auth/sessions",requireAuthenticated,(req,res)=>{const user=requestUser(req);if(!user)return res.json({ok:true,sessions:[]});res.json({ok:true,sessions:dbStore.listUserSessions(user.id).map(x=>({...x,current:x.id===user.sessionId}))})});
-app.delete("/api/v1/auth/sessions/:id",requireAuthenticated,(req,res)=>{const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Not authenticated"});if(req.params.id===user.sessionId)return res.status(400).json({ok:false,error:"Use Logout to end the current session"});const removed=dbStore.deleteUserSession(user.id,req.params.id);disconnectInvalidUserWebSockets(user.id);audit({kind:"auth.session.revoke",userId:user.id,sessionId:req.params.id,removed});res.json({ok:true,removed})});
-app.post("/api/v1/auth/logout-others",requireAuthenticated,(req,res)=>{const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Not authenticated"});const removed=dbStore.deleteAllUserSessions(user.id,{exceptSessionId:user.sessionId});disconnectInvalidUserWebSockets(user.id);audit({kind:"auth.sessions.revoke-others",userId:user.id,removed});res.json({ok:true,removed})});
-app.post("/api/v1/auth/change-password",requireAuthenticated,(req,res)=>{try{const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Not authenticated"});dbStore.changeUserPassword(user.id,req.body?.currentPassword,req.body?.newPassword);dbStore.deleteAllUserSessions(user.id,{exceptSessionId:user.sessionId});disconnectInvalidUserWebSockets(user.id);audit({kind:"auth.password.change",userId:user.id,username:user.username});res.json({ok:true,message:"Password changed. Other sessions were signed out."})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.post("/api/v1/setup/administrator",(req,res)=>{
-  try{
-    if(dbStore.userCount()>0)return res.status(409).json({ok:false,error:"Secure setup is already complete"});
-    if(!SETUP_TOKEN)return res.status(503).json({ok:false,error:"SETUP_TOKEN must be configured before creating the first administrator"});
-    if(!secureTokenEqual(req.get("x-setup-token")||"",SETUP_TOKEN)){
-      audit({kind:"security.setup.denied",remote:clientAddress(req)});
-      return res.status(403).json({ok:false,error:"Invalid setup token"});
-    }
-    const user=dbStore.createFirstAdministrator({id:req.body?.id||crypto.randomUUID(),username:req.body?.username,displayName:req.body?.displayName||req.body?.username},{password:req.body?.password});
-    const policy=dbStore.authPolicy(),sess=dbStore.createSession(user,{remoteAddr:clientAddress(req),userAgent:req.get("user-agent")||"",ttlHours:policy.standardHours});
-    const secure=(req.secure||String(req.get("x-forwarded-proto")||"").toLowerCase()==="https")?"; Secure":"";
-    res.setHeader("Set-Cookie",`classroom_hub_session=${encodeURIComponent(sess.token)}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=${Math.round(policy.standardHours*3600)}`);
-    audit({kind:"setup.administrator",userId:user.id,username:user.username,authEnabled:true,remote:clientAddress(req)});
-    res.status(201).json({ok:true,user:publicUser(user),authEnabled:true,setupCompleted:true});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.get("/api/v1/admin/users",requireAdmin,(_req,res)=>res.json({ok:true,users:dbStore.listUsers(),authEnabled:dbStore.authEnabled(),policy:dbStore.authPolicy(),sessions:dbStore.listAllUserSessions()}));
-app.post("/api/v1/admin/users",requireAdmin,(req,res)=>{try{const user=dbStore.putUser(req.body||{},{password:req.body?.password});audit({kind:"admin.user.create",userId:user.id,username:user.username,role:user.role});res.json({ok:true,user})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.put("/api/v1/admin/users/:id",requireAdmin,(req,res)=>{try{const current=dbStore.listUsers().find(x=>x.id===req.params.id);if(!current)return res.status(404).json({ok:false,error:"User not found"});const enabledAdmins=dbStore.listUsers().filter(x=>x.enabled&&x.role==="admin");if(current.role==="admin"&&enabledAdmins.length<=1&&(req.body?.enabled===false||(req.body?.role&&req.body.role!=="admin")))return res.status(400).json({ok:false,error:"Cannot disable or demote the last enabled administrator"});const profileId=req.body?.profileId||(req.body?.role&&req.body.role!==current.role?{admin:"administrator",operator:"teacher",viewer:"read-only"}[req.body.role]:current.profileId);const user=dbStore.putUser({...current,...req.body,profileId,id:req.params.id},{password:req.body?.password||null});const authorizationChanged=current.role!==user.role||current.profileId!==user.profileId||current.enabled!==user.enabled||Boolean(req.body?.password);let revokedSessions=0;if(authorizationChanged){revokedSessions=dbStore.deleteAllUserSessions(user.id);disconnectInvalidUserWebSockets(user.id)}audit({kind:"admin.user.update",userId:user.id,username:user.username,role:user.role,profileId:user.profileId,enabled:user.enabled,revokedSessions});res.json({ok:true,user,revokedSessions})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/users/:id",requireAdmin,(req,res)=>{const current=dbStore.listUsers().find(x=>x.id===req.params.id);if(!current)return res.status(404).json({ok:false,error:"User not found"});if(current.role==="admin"&&dbStore.listUsers().filter(x=>x.enabled&&x.role==="admin").length<=1)return res.status(400).json({ok:false,error:"Cannot remove the last enabled administrator"});dbStore.deleteUser(req.params.id);disconnectInvalidUserWebSockets(req.params.id);audit({kind:"admin.user.delete",userId:req.params.id,username:current.username});res.json({ok:true})});
-app.put("/api/v1/admin/auth",requireAdmin,(req,res)=>{
-  if(req.body?.enabled!==true)return res.status(400).json({ok:false,error:"Local authentication cannot be disabled on a secured appliance"});
-  const enabled=dbStore.setAuthEnabled(true);audit({kind:"admin.auth.update",enabled});res.json({ok:true,enabled});
-});
-app.post("/api/v1/admin/users/:id/reset-password",requireAdmin,(req,res)=>{try{const user=dbStore.resetUserPassword(req.params.id,req.body?.password);disconnectInvalidUserWebSockets(user.id);audit({kind:"admin.user.password-reset",userId:user.id,username:user.username});res.json({ok:true,user,message:"Password reset. All existing sessions for this user were revoked."})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/sessions/:id",requireAdmin,(req,res)=>{const sess=dbStore.listAllUserSessions().find(x=>x.id===req.params.id);if(!sess)return res.status(404).json({ok:false,error:"Session not found"});const removed=dbStore.deleteUserSession(sess.userId,sess.id);disconnectInvalidUserWebSockets(sess.userId);audit({kind:"admin.session.revoke",sessionId:sess.id,userId:sess.userId,removed});res.json({ok:true,removed})});
-app.put("/api/v1/admin/auth-policy",requireAdmin,(req,res)=>{try{const policy=dbStore.setAuthPolicy(req.body||{});audit({kind:"admin.auth-policy.update",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.get("/api/v1/admin/privacy-retention",requireAdmin,(_req,res)=>res.json({ok:true,policy:privacyRetentionPolicy()}));
-app.put("/api/v1/admin/privacy-retention",requireAdmin,(req,res)=>{try{const current=privacyRetentionPolicy(),hours=req.body?.browserHistoryHours===undefined?current.browserHistoryHours:Number(req.body.browserHistoryHours);if(!Number.isFinite(hours)||hours<0)throw Error("Browser history retention must be zero or a positive number of hours");const next={browserHistoryEnabled:req.body?.browserHistoryEnabled===undefined?current.browserHistoryEnabled:req.body.browserHistoryEnabled===true,browserHistoryHours:Math.max(0,Math.min(24*365,hours)),screenshotDays:Math.max(1,Math.min(365,Number(req.body?.screenshotDays)||current.screenshotDays)),alertDays:Math.max(1,Math.min(365,Number(req.body?.alertDays)||current.alertDays)),auditDays:Math.max(7,Math.min(3650,Number(req.body?.auditDays)||current.auditDays))};if(next.browserHistoryHours===0)next.browserHistoryEnabled=false;dbStore.setPreference("privacy.retention",next);applyPrivacyRetentionPolicy();if(req.body?.applyNow===true||!next.browserHistoryEnabled)pruneStudentData(next);audit({kind:"admin.privacy-retention.update",policy:next,applyNow:req.body?.applyNow===true});res.json({ok:true,policy:next})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.put("/api/v1/admin/setup-state",requireAdmin,(req,res)=>{const completed=dbStore.setSetupCompleted(req.body?.completed!==false);res.json({ok:true,completed})});
-
-// Database-native administration/configuration APIs.
-app.get("/api/v1/admin/health",requireAdmin,(req,res)=>{const u=requestUser(req),db=dbStore.databaseInfo();res.json({ok:true,version:APPLICATION_VERSION,generatedAt:new Date().toISOString(),auth:{enabled:dbStore.authEnabled(),setupCompleted:dbStore.setupCompleted(),user:u?{id:u.id,username:u.username,displayName:u.displayName,role:u.role}:null,policy:dbStore.authPolicy(),activeSessions:dbStore.listAllUserSessions().length},runtime:{room:deviceConfig.room||ROOM_NAME,mqtt:{configured:runtime.mqtt.configured,connected:runtime.mqtt.connected,lastError:runtime.mqtt.lastError,lastConnectAt:runtime.mqtt.lastConnectAt},websocketClients:runtime.websocketClients,onlineDisplays:Object.values(runtime.displays||{}).filter(x=>x&&x.online).length},database:db});});
-app.get("/api/v1/admin/summary",requireAdmin,(_req,res)=>{
-  const cfg=dbStore.getAdminConfig(),db=dbStore.databaseInfo();
-  res.json({ok:true,site:cfg.site,database:db,counts:{
-    displays:Object.keys(cfg.devices?.devices||{}).length,
-    displayGroups:Object.keys(cfg.devices?.displayGroups||{}).length,
-    lightingDevices:Object.keys(cfg.hardware?.govee?.devices||{}).length,
-    lightingGroups:Object.keys(cfg.hardware?.govee?.groups||{}).length,
-    accessProfiles:(cfg.accessProfiles||[]).length
-  }});
-});
-app.get("/api/v1/admin/config",requireAdmin,(_req,res)=>{
-  res.json({ok:true,...dbStore.getAdminConfig(),integrationConnections:integrationConnectionsView(),database:dbStore.databaseInfo()});
-});
-app.put("/api/v1/admin/site",requireAdmin,(req,res)=>{
-  try{
-    const current=normalizedSiteProfile(dbStore.getAdminConfig().site||{}),site=dbStore.putSiteProfile(normalizedSiteProfile({...current,...(req.body||{}),theme:{...current.theme,...(req.body?.theme||{})}}));
-    SCHEDULER_TIMEZONE=site.timezone;process.env.TZ=site.timezone;
-    if(site.room){deviceConfig.room=String(site.room);persistRuntimeConfig()}
-    audit({kind:"admin.config.site",site:{...site}});res.json({ok:true,site});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.put("/api/v1/admin/displays",requireAdmin,(req,res)=>{
-  try{
-    // Old open tabs must not overwrite receiver configuration through the retired editor.
-    if(Object.prototype.hasOwnProperty.call(req.body||{},"topology"))return res.status(409).json({ok:false,error:"Room topology configuration has been retired. Reload RoomGoblin and use the TV Routing Matrix or Settings display editor."});
-    const incoming=req.body||{};
-    const nextDevices=incoming.devices&&typeof incoming.devices==="object"?incoming.devices:devices;
-    const nextGroups=incoming.displayGroups&&typeof incoming.displayGroups==="object"?incoming.displayGroups:displayGroups;
-    for(const [id,d] of Object.entries(nextDevices)){if(!/^[a-z0-9_-]{1,40}$/i.test(id))throw Error(`Invalid display id: ${id}`);if(!d||typeof d!=="object")throw Error(`Invalid display definition: ${id}`)}
-    for(const [name,members] of Object.entries(nextGroups)){if(!Array.isArray(members))throw Error(`Group ${name} members must be an array`);for(const id of members)if(!nextDevices[id])throw Error(`Group ${name} references unknown display ${id}`)}
-    const committedDevices=JSON.parse(JSON.stringify(nextDevices)),committedGroups=JSON.parse(JSON.stringify(nextGroups));
-    dbStore.writeNormalized("devices",{room:deviceConfig.room||ROOM_NAME,devices:committedDevices,displayGroups:committedGroups,lightingGroups:[...lightingGroups]});
-    devices=committedDevices;displayGroups=committedGroups;deviceConfig.devices=devices;deviceConfig.displayGroups=displayGroups;
-    const disconnected=[];for(const ws of wsClients){if(ws.role!=="display"||ws.readyState!==WebSocket.OPEN)continue;const id=String(ws.deviceId||"");if(!devices[id]||devices[id].enabled===false){disconnected.push(id);ws.close(1008,"Display removed or disabled")}}
-    audit({kind:"admin.config.displays",displayCount:Object.keys(devices).length,groupCount:Object.keys(displayGroups).length,disconnected:[...new Set(disconnected)]});res.json({ok:true,devices,displayGroups});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-function displayCredentialAdminView(){
-  const security=dbStore.listDisplayCredentials(),byDisplay={};
-  for(const [id,d] of Object.entries(devices))byDisplay[id]={id,name:d.name||id,enabled:d.enabled!==false,credentials:[],pending:[]};
-  for(const c of security.credentials)if(byDisplay[c.displayId])byDisplay[c.displayId].credentials.push(c);
-  for(const p of security.pending)if(byDisplay[p.displayId])byDisplay[p.displayId].pending.push(p);
-  const values=Object.values(byDisplay),unenrolled=values.filter(d=>d.enabled&&!d.credentials.some(c=>!c.revokedAt)).map(d=>d.id);
-  return {policy:security.policy,coverage:{enabled:values.filter(d=>d.enabled).length,enrolled:values.filter(d=>d.enabled&&d.credentials.some(c=>!c.revokedAt)).length,unenrolled},displays:values};
-}
-function disconnectRevokedDisplayCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="display"&&set.has(String(ws.displayCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display credential revoked")}
-function disconnectRevokedLabAgentCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="lab-agent"&&set.has(String(ws.labAgentCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Lab agent credential revoked")}
-app.get("/api/v1/admin/display-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...displayCredentialAdminView()}));
-app.put("/api/v1/admin/display-credentials/policy",requireAdmin,(req,res)=>{try{const state=displayCredentialAdminView();if(req.body?.authenticationRequired===true&&state.coverage.unenrolled.length&&req.body?.confirmEnableWithoutFullEnrollment!==true)return res.status(409).json({ok:false,error:`Enroll every enabled display before requiring credentials. Missing: ${state.coverage.unenrolled.join(", ")}`,unenrolled:state.coverage.unenrolled});const policy=dbStore.setDisplayCredentialPolicy(req.body||{});if(policy.authenticationRequired)for(const ws of wsClients)if(ws.role==="display"&&ws.displayAuthMode==="configured-display"&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display authentication is now required");audit({kind:"admin.display-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.post("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{try{const displayId=cleanId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{const displayId=cleanId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
-app.delete("/api/v1/admin/display-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeDisplayCredential(id);if(revoked)disconnectRevokedDisplayCredentials([id]);audit({kind:"admin.display-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
-app.get("/api/v1/admin/lab-agent-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...dbStore.listLabAgentCredentials()}));
-app.put("/api/v1/admin/lab-agent-credentials/policy",requireAdmin,(req,res)=>{try{const policy=dbStore.setLabAgentCredentialPolicy(req.body||{});audit({kind:"admin.lab-agent-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.post("/api/v1/admin/lab-agents/:id/enrollment",requireAdmin,(req,res)=>{try{
-  const agentId=cleanLabAgentId(req.params.id),host=effectiveHost(req);if(!host)throw Error("A valid canonical Host header is required");
-  const issued=dbStore.createLabAgentEnrollment(agentId,{ttlMinutes:req.body?.ttlMinutes});
-  const proto=req.secure||req.protocol==="https"?"https":"http",origin=`${proto}://${host}`,script=`${origin}/lab-agent/Install-Agent.ps1`,allowHttp=proto==="https"?"":" -AllowHttp";
-  const command=`$i=Join-Path $env:TEMP 'Install-ClassroomHubAgent.ps1'; irm ${powerShellLiteral(script)} -OutFile $i; & $i -HubUrl ${powerShellLiteral(origin)} -AgentId ${powerShellLiteral(agentId)} -EnrollmentToken ${powerShellLiteral(issued.token)}${allowHttp}`;
-  audit({kind:"admin.lab-agent-enrollment.issue",agentId,expiresAt:issued.expiresAt});res.status(201).json({ok:true,enrollment:{id:issued.id,agentId,token:issued.token,expiresAt:issued.expiresAt,installerUrl:script,installCommand:command}})
-}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/lab-agent-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeLabAgentCredential(id);if(revoked)disconnectRevokedLabAgentCredentials([id]);audit({kind:"admin.lab-agent-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
-app.put("/api/v1/admin/hardware",requireAdmin,(req,res)=>{
-  try{const value=req.body||{};dbStore.writeNormalized("hardware",value);audit({kind:"admin.config.hardware"});res.json({ok:true,hardware:value,restartRecommended:true})}catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.put("/api/v1/admin/integration-connections",requireAdmin,async(req,res)=>{
-  try{
-    const body=req.body||{},next=normalizedIntegrationConnections(body,currentIntegrationConnections());
-    if(body.mqtt?.password){dbStore.putSecret("integration.mqtt.password",String(body.mqtt.password),{type:"integration-password",integration:"mqtt"})}
-    if(body.veyon?.privateKey){
-      const key=String(body.veyon.privateKey).trim();
-      if(!key.includes("BEGIN")||!key.includes("PRIVATE KEY"))throw Error("Veyon private key must be PEM-formatted private-key material");
-      dbStore.putSecret("veyon.private-key",key,{type:"private-key",integration:"veyon",keyName:next.veyon.keyName});
-    }
-    dbStore.setPreference("integrations.connections",next);
-    applyIntegrationConnections(next);
-    runtime.hardware.pluto={...runtime.hardware.pluto,configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null};
-    veyonConnectionCache.clear();veyonAuthInFlight.clear();
-    reconnectMqtt();
-    audit({kind:"admin.integrations.connections",mqttConfigured:Boolean(MQTT_URL),plutoConfigured:Boolean(PLUTO_URL),veyonConfigured:Boolean(VEYON_WEBAPI_URL)});
-    res.json({ok:true,integrationConnections:integrationConnectionsView(),applied:true});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.get("/api/v1/admin/secrets",requireAdmin,(_req,res)=>res.json({ok:true,secrets:dbStore.listSecrets(),certificates:dbStore.listCertificates()}));
-app.put("/api/v1/admin/secrets/:name",requireAdmin,(req,res)=>{
-  try{const name=String(req.params.name||"").trim(),value=req.body?.value;if(!name||value===undefined)return res.status(400).json({ok:false,error:"Secret name and value are required"});dbStore.putSecret(name,String(value),req.body?.metadata||{});audit({kind:"admin.secret.update",name});res.json({ok:true,name})}catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete("/api/v1/admin/secrets/:name",requireAdmin,(req,res)=>{dbStore.deleteSecret(req.params.name);audit({kind:"admin.secret.delete",name:req.params.name});res.json({ok:true})});
-app.put("/api/v1/admin/certificates/:name",requireAdmin,(req,res)=>{
-  try{const pem=String(req.body?.pem||"");if(!pem.includes("BEGIN CERTIFICATE"))throw Error("A PEM certificate is required");dbStore.putCertificate(req.params.name,pem,req.body?.metadata||{});audit({kind:"admin.certificate.update",name:req.params.name});res.json({ok:true,name:req.params.name})}catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.get("/api/v1/admin/access-profiles",requireAdmin,(_req,res)=>res.json({ok:true,profiles:dbStore.listAccessProfiles()}));
-app.put("/api/v1/admin/access-profiles/:id",requireAdmin,(req,res)=>{try{
-  const id=String(req.params.id||""),before=dbStore.listAccessProfiles().find(x=>x.id===id)||null;
-  const profile=dbStore.putAccessProfile({...req.body,id});
-  const authorizationChanged=!before||before.role!==profile.role||before.enabled!==profile.enabled||JSON.stringify(before.config)!==JSON.stringify(profile.config);
-  let revokedSessions=0;
-  if(authorizationChanged){for(const user of dbStore.listUsers().filter(x=>x.profileId===id)){revokedSessions+=dbStore.deleteAllUserSessions(user.id);disconnectInvalidUserWebSockets(user.id)}}
-  audit({kind:"admin.access-profile.update",id,role:profile.role,enabled:profile.enabled,revokedSessions});res.json({ok:true,profile,revokedSessions})
-}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/access-profiles/:id",requireAdmin,(req,res)=>{try{dbStore.deleteAccessProfile(req.params.id);audit({kind:"admin.access-profile.delete",id:req.params.id});res.json({ok:true})}catch(err){res.status(409).json({ok:false,error:err.message})}});
-
-
-// Music Assistant integration - server-side token proxy. The long-lived MA token is
-// encrypted in Classroom Control Hub and is never returned to controller browsers.
-function musicAssistantConfig(){const p=dbStore.getPreference("musicassistant.config",{})||{};const url=serviceUrl(p.url||process.env.MUSIC_ASSISTANT_URL||"http://127.0.0.1:8095", ["music-assistant", "music-assistant-server"]).replace(/\/$/,"");let host="127.0.0.1";try{host=new URL(url).hostname||host}catch{};return {url,tvBridgeEnabled:p.tvBridgeEnabled!==false,sendspinHost:serviceHost(p.sendspinHost||host,["music-assistant","music-assistant-server"]),sendspinPort:p.sendspinPort??8927}}
-function musicAssistantToken(){try{return String(dbStore.getSecret("musicassistant.token")||"")}catch{return ""}}
-
-const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
-function musicAssistantTvDeviceIdFromPlayerId(playerId){const m=/^classroom-hub-(tv\d+)$/i.exec(String(playerId||""));return m?m[1].toLowerCase():null}
-function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
-function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
-function musicAssistantTvAttachPayload(deviceId,issued,extra={}){const audio=musicAssistantTvAudioState(deviceId);return {transport:"authenticated-ma-sendspin-proxy",proxyUrl:musicAssistantProxyPath(issued.ticket),playerId:issued.playerId,sdkVersion:"3.2.1",desiredVolume:audio.volume,desiredMuted:audio.muted,...extra}}
-async function restoreMusicAssistantTvAudioState(deviceId,ws){const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId);for(let attempt=1;attempt<=8;attempt++){if(ws&&ws.readyState!==WebSocket.OPEN)return false;try{await musicAssistantCommand("players/cmd/volume_set",{player_id:playerId,volume_level:desired.volume});await musicAssistantCommand("players/cmd/volume_mute",{player_id:playerId,muted:desired.muted});if(ws)ws.maAudioRestored=true;audit({kind:"musicassistant.tv-audio.restore",deviceId,playerId,volume:desired.volume,muted:desired.muted,attempt});return true}catch(e){if(attempt===8){diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore",deviceId,playerId});return false}await new Promise(r=>setTimeout(r,700))}}return false}
-
-// Persistent Music Assistant WebSocket API client. Music Assistant's WebSocket API is
-// the authoritative realtime control surface; REST remains a compatibility fallback.
-let maApiSocket=null,maApiConnectPromise=null,maApiAuthenticated=false,maApiServerInfo=null,maApiLastError=null,maApiLastConnectedAt=null;
-const maApiPending=new Map();
-function musicAssistantApiWsUrl(){const u=new URL(musicAssistantConfig().url);u.protocol=u.protocol==="https:"?"wss:":"ws:";u.pathname=(u.pathname.replace(/\/$/,"")+"/ws").replace(/\/{2,}/g,"/");u.search="";u.hash="";return u.toString()}
-function musicAssistantApiClose(reason="reset"){const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;if(ws){try{ws.close(1000,reason)}catch{}}for(const [id,p] of maApiPending){clearTimeout(p.timer);p.reject(new Error(`Music Assistant API disconnected: ${reason}`));maApiPending.delete(id)}}
-function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.isBuffer(raw)?raw.toString("utf8"):String(raw))}catch{return}
-  if(msg&&msg.server_id&&msg.schema_version!==undefined&&!msg.message_id){maApiServerInfo=msg;return}
-  const mid=msg?.message_id;if(mid&&maApiPending.has(mid)){const p=maApiPending.get(mid);if(msg.partial){if(Array.isArray(msg.result))p.parts.push(...msg.result);else if(msg.result!==undefined)p.parts.push(msg.result);return}clearTimeout(p.timer);maApiPending.delete(mid);if(msg.error_code!==undefined||msg.error){const detail=msg.details||msg.error?.message||msg.error||`Music Assistant API error ${msg.error_code}`;p.reject(new Error(String(detail)));return}let result=msg.result;if(p.parts.length){if(Array.isArray(result))result=[...p.parts,...result];else if(result!==undefined)result=[...p.parts,result];else result=p.parts}p.resolve(result);return}
-  // Events are intentionally not returned to callers. The status endpoint refreshes player
-  // inventory through this same persistent socket, while the socket stays alive between calls.
-}
-async function musicAssistantApiRawCommand(command,args={},timeoutMs=15000){await ensureMusicAssistantApi();if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{maApiPending.delete(message_id);reject(new Error(`Music Assistant command timed out: ${command}`))},timeoutMs);maApiPending.set(message_id,{resolve,reject,timer,parts:[]});try{maApiSocket.send(JSON.stringify({message_id,command,args}))}catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}})}
-async function ensureMusicAssistantApi(){if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;if(maApiConnectPromise)return maApiConnectPromise;const token=musicAssistantToken();if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in Classroom Control Hub Music settings.");maApiConnectPromise=new Promise((resolve,reject)=>{let settled=false,helloSeen=false;const ws=new WebSocket(musicAssistantApiWsUrl());maApiSocket=ws;const fail=(err)=>{maApiLastError=String(err?.message||err);if(!settled){settled=true;reject(err instanceof Error?err:new Error(String(err)))}musicAssistantApiClose("connection-failed")};const auth=()=>{if(!helloSeen||ws.readyState!==WebSocket.OPEN)return;const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;const timer=setTimeout(()=>{maApiPending.delete(message_id);fail(new Error("Music Assistant authentication timed out"))},10000);maApiPending.set(message_id,{parts:[],timer,resolve:(result)=>{if(!result)return fail(new Error("Music Assistant authentication was rejected"));maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();if(!settled){settled=true;resolve(ws)}},reject:fail});ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))};ws.on("open",()=>{});ws.on("message",data=>{let parsed=null;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{};if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){maApiServerInfo=parsed;helloSeen=true;auth();return}musicAssistantApiHandleMessage(data)});ws.on("error",fail);ws.on("close",(code,reason)=>{maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;maApiLastError=why;for(const [id,p] of maApiPending){clearTimeout(p.timer);p.reject(new Error(`Music Assistant API ${why}`));maApiPending.delete(id)};if(!settled){settled=true;reject(new Error(`Music Assistant WebSocket API ${why}`))}});setTimeout(()=>{if(!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000)}).finally(()=>{maApiConnectPromise=null});return maApiConnectPromise}
-async function musicAssistantHttpCommand(command,args={}){const cfg=musicAssistantConfig(),token=musicAssistantToken();const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(15000)});const text=await r.text();let j;try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned HTTP ${r.status}: ${text.slice(0,500)}`)}if(!r.ok||j.error)throw Error(j.error?.message||j.error||`Music Assistant HTTP ${r.status}`);return j.result!==undefined?j.result:j}
-async function musicAssistantCommand(command,args={}){try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}}}
-
-
-// -----------------------------------------------------------------------------
-// Background Music â€” independent daily scheduler + audio priority arbitration
-// -----------------------------------------------------------------------------
-const BACKGROUND_MUSIC_DEFAULT_SCHEDULE={
-  enabled:false,
-  startTime:"07:00",
-  endTime:"15:00",
-  days:[1,2,3,4,5],
-  schoolDaysOnly:true,
-  playerId:"",
-  favoriteId:"",
-  volume:20,
-  pauseForPriorityAudio:true
-};
-const backgroundMusicRuntime={
-  scheduleActive:false,
-  playing:false,
-  paused:false,
-  pausedForPriority:false,
-  manualStopped:false,
-  startedKey:null,
-  activePlayerId:null,
-  activeFavoriteId:null,
-  lastAction:null,
-  lastActionAt:null,
-  lastError:null
-};
-const backgroundMusicPriorityTargets=new Set();
-let backgroundMusicTickBusy=false;
-
-function normalizeBackgroundMusicSchedule(input={},existing={}){
-  const days=Array.isArray(input.days)?input.days.map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6):(existing.days||BACKGROUND_MUSIC_DEFAULT_SCHEDULE.days);
-  if(input.startTime!==undefined&&!validTime(input.startTime))throw Error("Background Music start time must be a valid HH:MM value");
-  if(input.endTime!==undefined&&!validTime(input.endTime))throw Error("Background Music end time must be a valid HH:MM value");
-  return {
-    ...BACKGROUND_MUSIC_DEFAULT_SCHEDULE,
-    ...existing,
-    enabled:input.enabled===undefined?(existing.enabled===true):!!input.enabled,
-    startTime:validTime(input.startTime)?String(input.startTime):String(existing.startTime||BACKGROUND_MUSIC_DEFAULT_SCHEDULE.startTime),
-    endTime:validTime(input.endTime)?String(input.endTime):String(existing.endTime||BACKGROUND_MUSIC_DEFAULT_SCHEDULE.endTime),
-    days:[...new Set(days)],
-    schoolDaysOnly:input.schoolDaysOnly===undefined?(existing.schoolDaysOnly!==false):!!input.schoolDaysOnly,
-    playerId:String(input.playerId===undefined?(existing.playerId||""):input.playerId||"").trim(),
-    favoriteId:String(input.favoriteId===undefined?(existing.favoriteId||""):input.favoriteId||"").trim(),
-    volume:Math.max(0,Math.min(100,Number(input.volume===undefined?(existing.volume??20):input.volume)||0)),
-    pauseForPriorityAudio:input.pauseForPriorityAudio===undefined?(existing.pauseForPriorityAudio!==false):!!input.pauseForPriorityAudio
-  };
-}
-function backgroundMusicSchedule(){return normalizeBackgroundMusicSchedule({},dbStore.getPreference("musicassistant.background.schedule",{})||{})}
-function backgroundMusicFavorites(){const x=dbStore.getPreference("musicassistant.background.favorites",[])||[];return Array.isArray(x)?x:[]}
-function backgroundMusicFavoriteById(id){return backgroundMusicFavorites().find(x=>String(x.id)===String(id))||null}
-function backgroundMusicWindowActive(cfg,now=new Date()){
-  if(!cfg.enabled)return false;
-  const n=localMinutesNow(now),a=minutesFromHHMM(cfg.startTime),b=minutesFromHHMM(cfg.endTime);
-  const scheduleDate=new Date(now);
-  if(a>b&&n<b)scheduleDate.setDate(scheduleDate.getDate()-1);
-  if(!cfg.days.includes(scheduleDate.getDay()))return false;
-  if(isAutomationSuppressed(scheduleDate).blocked)return false;
-  if(cfg.schoolDaysOnly&&!schoolCycleForDate(scheduleDate).isStudentSchoolDay)return false;
-  return a<=b?(n>=a&&n<b):(n>=a||n<b);
-}
-function backgroundMusicWindowKey(cfg,now=new Date()){
-  // For overnight windows, times after midnight belong to the prior day's start window.
-  const a=minutesFromHHMM(cfg.startTime),b=minutesFromHHMM(cfg.endTime),n=localMinutesNow(now);
-  const d=new Date(now);
-  if(a>b&&n<b)d.setDate(d.getDate()-1);
-  return `${localDateKey(d)}@${cfg.startTime}`;
-}
-function backgroundMusicPriorityState(){return {active:backgroundMusicPriorityTargets.size>0,targets:[...backgroundMusicPriorityTargets]}}
-let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null};
-async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),force=false){
-  const pid=String(cfg.playerId||"").trim();
-  if(!pid)return null;
-  const now=Date.now();
-  if(!force&&backgroundMusicPlayerProbe.playerId===pid&&(now-backgroundMusicPlayerProbe.at)<4000)return backgroundMusicPlayerProbe.state;
-  try{
-    let players=[];
-    try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}
-    players=Array.isArray(players)?players:[];
-    const p=players.find(x=>[x?.player_id,x?.playerId,x?.id,x?.provider_id].filter(Boolean).map(String).includes(pid))||null;
-    const raw=String(p?.state||p?.playback_state||p?.playbackState||"").toLowerCase();
-    const state=p?{found:true,playing:raw==="playing"||p?.is_playing===true||p?.isPlaying===true,paused:raw==="paused",raw,available:p?.available!==false,player:p}: {found:false,playing:false,paused:false,raw:"missing",available:false,player:null};
-    backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null};
-    return state;
-  }catch(e){
-    backgroundMusicPlayerProbe={at:now,playerId:pid,state:null,error:e.message};
-    return null;
-  }
-}
-async function backgroundMusicPause(reason="manual"){
-  const cfg=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
-  await musicAssistantCommand("players/cmd/pause",{player_id:playerId});
-  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=true;backgroundMusicRuntime.lastAction=`pause:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
-}
-async function backgroundMusicResume(reason="resume"){
-  const cfg=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
-  await musicAssistantCommand("players/cmd/play",{player_id:playerId});
-  backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.lastAction=`play:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
-}
-async function backgroundMusicStop(reason="manual",playerIdOverride=null){
-  const cfg=backgroundMusicSchedule(),playerId=String(playerIdOverride||backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(playerId)await musicAssistantCommand("players/cmd/stop",{player_id:playerId});
-  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.activePlayerId=null;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.lastAction=`stop:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
-}
-async function backgroundMusicStart({favoriteId=null,playerId=null,reason="manual"}={}){
-  const cfg=backgroundMusicSchedule(),pid=String(playerId||cfg.playerId||"").trim(),fav=backgroundMusicFavoriteById(favoriteId||cfg.favoriteId);
-  if(!pid)throw new Error("Select a Background Music player first");
-  if(!fav?.uri)throw new Error("Select a saved Background Music favorite first");
-  await musicAssistantCommand("players/cmd/volume_set",{player_id:pid,volume_level:cfg.volume});
-  await musicAssistantCommand("players/cmd/volume_mute",{player_id:pid,muted:false});
-  await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:fav.uri});
-  backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.manualStopped=false;backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav.id;backgroundMusicRuntime.lastAction=`start:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;
-  return {playerId:pid,favorite:fav};
-}
-async function backgroundMusicReconcilePriority({force=false}={}){
-  const cfg=backgroundMusicSchedule();
-  if(!force&&!cfg.pauseForPriorityAudio)return;
-  const priority=backgroundMusicPriorityTargets.size>0;
-  if(priority&&!backgroundMusicRuntime.playing){
-    const actual=await backgroundMusicActualPlayerState(cfg,true);
-    if(actual?.playing){backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.activePlayerId=String(cfg.playerId||"");backgroundMusicRuntime.activeFavoriteId=String(cfg.favoriteId||"")||null}
-  }
-  if(priority&&backgroundMusicRuntime.playing){
-    try{await backgroundMusicPause("priority-audio");backgroundMusicRuntime.pausedForPriority=true}catch(e){backgroundMusicRuntime.lastError=e.message}
-  }else if(!priority&&backgroundMusicRuntime.pausedForPriority&&!backgroundMusicRuntime.manualStopped){
-    try{await backgroundMusicResume("priority-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}
-  }
-}
-function backgroundMusicObserveDisplayCommand(command,source="api"){
-  const src=String(source||command?.source||"");
-  const p=command?.payload||{},kind=String(p.contentKind||"");
-  const eligible=src==="automation"||kind==="morning-announcements";
-  if(!eligible)return;
-  let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{return}
-  const type=String(command.type||"");
-  let startsAudio=false,replacesAudio=false;
-  if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true}
-  else if(type==="display.web"){replacesAudio=true;startsAudio=p.forceAudio===true||p.muted===false||kind==="morning-announcements"}
-  else if(type==="display.web.audio"){startsAudio=p.unmute!==false}
-  else if(type.startsWith("voice.")||type.startsWith("sfx.")){startsAudio=true}
-  else if(["display.clear","display.image","display.pdf","display.document","display.presentation"].includes(type)){replacesAudio=true}
-  if(replacesAudio)for(const id of targets){
-    const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);
-    if(!announcementOwnsTarget)backgroundMusicPriorityTargets.delete(id);
-  }
-  if(startsAudio)for(const id of targets)backgroundMusicPriorityTargets.add(id);
-  trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
-}
-async function backgroundMusicTick(){
-  if(fullExportFreeze.requested)return;
-  if(backgroundMusicTickBusy)return;backgroundMusicTickBusy=true;
-  try{
-    const cfg=backgroundMusicSchedule(),now=new Date(),active=backgroundMusicWindowActive(cfg,now),key=backgroundMusicWindowKey(cfg,now);
-    if(!active){
-      if(backgroundMusicRuntime.scheduleActive||backgroundMusicRuntime.startedKey){try{await backgroundMusicStop("schedule-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}}
-      backgroundMusicRuntime.scheduleActive=false;backgroundMusicRuntime.manualStopped=false;backgroundMusicRuntime.startedKey=null;return;
-    }
-    backgroundMusicRuntime.scheduleActive=true;
-    if(backgroundMusicRuntime.startedKey!==key){backgroundMusicRuntime.startedKey=key;backgroundMusicRuntime.manualStopped=false}
-    if(backgroundMusicRuntime.manualStopped)return;
-    if(cfg.pauseForPriorityAudio&&backgroundMusicPriorityTargets.size){
-      await backgroundMusicReconcilePriority();
-      return;
-    }
-
-    // Reconcile against Music Assistant itself instead of trusting only the
-    // process-local runtime flag. A display/player reconnect can leave MA idle
-    // while Classroom Control Hub still remembers playing=true. This also works when
-    // the configured Background Music player is a MA group rather than the
-    // individual TV player that just reconnected.
-    const actual=await backgroundMusicActualPlayerState(cfg);
-    if(actual?.found){
-      if(actual.playing){
-        backgroundMusicRuntime.playing=true;
-        backgroundMusicRuntime.paused=false;
-        backgroundMusicRuntime.pausedForPriority=false;
-        backgroundMusicRuntime.activePlayerId=String(cfg.playerId||"");
-        backgroundMusicRuntime.activeFavoriteId=String(cfg.favoriteId||"")||null;
-      }else if(!backgroundMusicRuntime.manualStopped&&!backgroundMusicRuntime.pausedForPriority){
-        backgroundMusicRuntime.playing=false;
-        backgroundMusicRuntime.paused=false;
-      }
-    }
-
-    if(!backgroundMusicRuntime.playing&&!backgroundMusicRuntime.paused){
-      await backgroundMusicStart({reason:actual?.found?"schedule-player-idle":"schedule"});
-      backgroundMusicPlayerProbe.at=0;
-    }else if(backgroundMusicRuntime.pausedForPriority){
-      await backgroundMusicResume("priority-ended");
-      backgroundMusicPlayerProbe.at=0;
-    }
-  }catch(e){backgroundMusicRuntime.lastError=e.message;diagnosticError(e,{component:"background-music",operation:"schedule-tick"})}
-  finally{backgroundMusicTickBusy=false}
-}
-
-app.get("/api/v1/music-assistant/background",requireControl,async(_req,res)=>{const cfg=backgroundMusicSchedule();const actualPlayer=await backgroundMusicActualPlayerState(cfg,true).catch(()=>null);res.json({ok:true,schedule:cfg,favorites:backgroundMusicFavorites(),runtime:{...backgroundMusicRuntime,priority:backgroundMusicPriorityState(),actualPlayer,playerProbeError:backgroundMusicPlayerProbe.error}})});
-app.put("/api/v1/music-assistant/background/schedule",requireControl,async(req,res)=>{try{const prior=backgroundMusicSchedule(),cfg=normalizeBackgroundMusicSchedule(req.body||{},prior);dbStore.setPreference("musicassistant.background.schedule",cfg);backgroundMusicRuntime.lastError=null;const identityChanged=prior.playerId!==cfg.playerId||prior.favoriteId!==cfg.favoriteId;if(identityChanged&&(backgroundMusicRuntime.playing||backgroundMusicRuntime.paused)){await backgroundMusicStop("schedule-identity-changed",backgroundMusicRuntime.activePlayerId||prior.playerId);backgroundMusicRuntime.startedKey=null}audit({kind:"musicassistant.background.schedule.update",enabled:cfg.enabled,startTime:cfg.startTime,endTime:cfg.endTime,playerId:cfg.playerId,favoriteId:cfg.favoriteId});await backgroundMusicTick();res.json({ok:true,schedule:cfg})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/music-assistant/background/favorites",requireControl,(req,res)=>{try{const uri=String(req.body?.uri||"").trim(),name=String(req.body?.name||"").trim(),detail=String(req.body?.detail||"").trim();if(!uri||!name)return res.status(400).json({ok:false,error:"Favorite name and media URI are required"});const list=backgroundMusicFavorites(),existing=list.find(x=>x.uri===uri);if(existing){existing.name=name;existing.detail=detail}else list.push({id:`bgm-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,name,uri,detail,createdAt:new Date().toISOString()});dbStore.setPreference("musicassistant.background.favorites",list.slice(-100));res.json({ok:true,favorites:list})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.delete("/api/v1/music-assistant/background/favorites/:id",requireControl,(req,res)=>{const id=String(req.params.id||""),list=backgroundMusicFavorites().filter(x=>String(x.id)!==id);dbStore.setPreference("musicassistant.background.favorites",list);const cfg=backgroundMusicSchedule();if(cfg.favoriteId===id){cfg.favoriteId="";dbStore.setPreference("musicassistant.background.schedule",cfg)}res.json({ok:true,favorites:list})});
-app.post("/api/v1/music-assistant/background/control",requireControl,async(req,res)=>{try{const action=String(req.body?.action||"");if(action==="play"){const r=await backgroundMusicStart({favoriteId:req.body?.favoriteId,playerId:req.body?.playerId,reason:"manual"});return res.json({ok:true,action,...r})}if(action==="pause"){await backgroundMusicPause("manual");backgroundMusicRuntime.manualStopped=true;return res.json({ok:true,action})}if(action==="stop"){await backgroundMusicStop("manual");backgroundMusicRuntime.manualStopped=true;return res.json({ok:true,action})}if(action==="resume"){backgroundMusicRuntime.manualStopped=false;await backgroundMusicResume("manual");return res.json({ok:true,action})}return res.status(400).json({ok:false,error:"Unknown Background Music action"})}catch(e){res.status(502).json({ok:false,error:e.message})}});
-
-// Appliance-wide budgets keep polling separate from configuration/attachment writes.
-// Fixed keys prevent forwarding headers or rotating addresses from multiplying quotas.
-const musicAssistantStatusLimit=rateLimit({
-  windowMs:60_000,limit:120,keyGenerator:()=>"music-assistant-status",
-  standardHeaders:"draft-8",legacyHeaders:false,
-  message:{ok:false,error:"Music Assistant status polling limit reached; retry later"}
-});
-const musicAssistantMutationLimit=rateLimit({
-  windowMs:60_000,limit:30,keyGenerator:()=>"music-assistant-mutations",
-  standardHeaders:"draft-8",legacyHeaders:false,
-  message:{ok:false,error:"Music Assistant configuration/attachment limit reached; retry later"}
-});
-app.get("/api/v1/music-assistant/status",musicAssistantStatusLimit,requireControl,async(_req,res)=>{const cfg=musicAssistantConfig(),configured=!!musicAssistantToken();try{let players=[];if(configured){try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}}players=Array.isArray(players)?players:[];const playerIds=new Set(players.flatMap(p=>[p?.player_id,p?.id,p?.provider_id].filter(Boolean).map(String)));const bridgeStatus=Object.fromEntries(Object.entries(runtime.displays||{}).map(([id,v])=>{const m=v?.musicAssistant||null;if(!m)return [id,null];const keys=[m.clientId].filter(Boolean).map(String);return [id,{...m,registered:keys.some(k=>playerIds.has(k))}]}));res.json({ok:true,configured,url:cfg.url,tvBridgeEnabled:cfg.tvBridgeEnabled,sendspinBaseUrl:sendspinEndpoint(cfg).replace(/^ws:/,"http:").replace(/\/sendspin$/,""),sendspinWebSocket:sendspinEndpoint(cfg),upstreamTransport:"dedicated-sendspin",sdkIdentity:"music-assistant-stable-2.9-compatible-sendspin-js-3.2.1",transport:"authenticated-ma-sendspin-proxy",apiTransport:maApiAuthenticated?"persistent-websocket":"http-fallback",apiServerInfo:maApiServerInfo,apiLastConnectedAt:maApiLastConnectedAt,apiLastError:maApiLastError,attachedTargets:dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[],tvDefaultVolume:MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,tvAudioState:dbStore.getPreference("musicassistant.tvAudioState",{})||{},bridgeStatus,online:configured,players})}catch(e){res.json({ok:true,configured,url:cfg.url,tvBridgeEnabled:cfg.tvBridgeEnabled,online:false,error:e.message,players:[]})}});
-app.put("/api/v1/music-assistant/config",musicAssistantMutationLimit,requireAdmin,(req,res)=>{try{const current=musicAssistantConfig(),url=String(req.body?.url||current.url).trim().replace(/\/$/,"");if(!/^https?:\/\//i.test(url))return res.status(400).json({ok:false,error:"Music Assistant URL must begin with http:// or https://"});const prior=musicAssistantConfig(),next={url,tvBridgeEnabled:req.body?.tvBridgeEnabled!==false,sendspinHost:String(req.body?.sendspinHost??prior.sendspinHost),sendspinPort:req.body?.sendspinPort??prior.sendspinPort??8927};sendspinEndpoint(next);dbStore.setPreference("musicassistant.config",next);if(req.body?.token)dbStore.putSecret("musicassistant.token",String(req.body.token),{integration:"Music Assistant",type:"long-lived-access-token"});musicAssistantApiClose("configuration-changed");audit({kind:"musicassistant.config.update",url});res.json({ok:true,url,tokenStored:!!musicAssistantToken()})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/music-assistant/command",requireControl,async(req,res)=>{try{const command=String(req.body?.command||""),args=req.body?.args||{};const allowed=new Set(["players/all","players/cmd/play_pause","players/cmd/play","players/cmd/pause","players/cmd/stop","players/cmd/volume_set","players/cmd/volume_mute","player_queues/all","player_queues/items","player_queues/play_media","music/search","music/recently_played_items"]);if(!allowed.has(command))return res.status(400).json({ok:false,error:"Music Assistant command is not approved by Classroom Control Hub"});const result=await musicAssistantCommand(command,args);const tvId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);if(tvId&&command==="players/cmd/volume_set")setMusicAssistantTvAudioState(tvId,{volume:args.volume_level});if(tvId&&command==="players/cmd/volume_mute")setMusicAssistantTvAudioState(tvId,{muted:args.muted});audit({kind:"musicassistant.command",command});res.json({ok:true,result})}catch(e){res.status(502).json({ok:false,error:e.message})}});
-const musicAssistantProxyTickets=new Map();
-function issueMusicAssistantProxyTicket(deviceId){const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${cleanId(deviceId)}`;musicAssistantProxyTickets.set(ticket,{deviceId:cleanId(deviceId),playerId,expiresAt:Date.now()+60000});return {ticket,playerId}}
-function consumeMusicAssistantProxyTicket(ticket){const item=musicAssistantProxyTickets.get(String(ticket||""));musicAssistantProxyTickets.delete(String(ticket||""));if(!item||item.expiresAt<Date.now())return null;return item}
-function musicAssistantProxyPath(ticket){return `/music-assistant/sendspin-proxy?ticket=${encodeURIComponent(ticket)}`}
-app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const cfg=musicAssistantConfig(),token=musicAssistantToken();if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);const action=String(req.body?.action||"attach");let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];dbStore.setPreference("musicassistant.tvBridgeTargets",attached);const deliveries=[];if(action==="detach"){const result=await executeCommand({type:"music.assistant.detach",target:targets,payload:{}},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}else{for(const target of targets){const issued=issueMusicAssistantProxyTicket(target);const result=await executeCommand({type:"music.assistant.attach",target,payload:musicAssistantTvAttachPayload(target,issued)},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}}res.json({ok:true,action,attachedTargets:attached,deliveries,musicAssistantUrl:cfg.url,note:"Ticketed Hub bridge: the backend relays raw Sendspin to the dedicated configured endpoint (normally port 8927). The long-lived token is used only by the separate Music Assistant control API."})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.get("/api/v1/database/status",requireAdmin,(_req,res)=>{res.json({ok:true,database:dbStore.databaseInfo(),secrets:dbStore.listSecrets(),certificates:dbStore.listCertificates()})});
-app.get("/api/v1/database/schema",requireAdmin,(_req,res)=>{const info=dbStore.databaseInfo();res.json({ok:true,schemaVersion:info.schemaVersion,normalized:info.normalized,migrations:dbStore.db.prepare("SELECT version,name,applied_at appliedAt FROM schema_migrations ORDER BY version").all()})});
-app.get("/api/v1/database/telemetry",requireAdmin,(req,res)=>{const limit=Math.max(1,Math.min(5000,Number(req.query.limit||500)));res.json({ok:true,count:dbStore.databaseInfo().telemetry||0,telemetry:dbStore.telemetryState(limit)})});
-app.get("/api/v1/database/audit",requireAdmin,(req,res)=>{res.json({ok:true,events:dbStore.recentAudit(req.query.limit||250,{kind:req.query.kind||null}).map(event=>diagnosticSanitize(event))})});
-
-app.get("/api/v1/diagnostics",requireCapability("diagnostics.read"),async(_req,res)=>{
-  try{res.json(await buildDiagnosticsSnapshot())}
-  catch(err){diagnosticError(err,{component:"diagnostics",operation:"snapshot"});res.status(500).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/diagnostics/events",requireCapability("diagnostics.read"),(req,res)=>{
-  res.json({ok:true,events:diagnosticsEventSlice({
-    limit:req.query.limit||500,
-    kind:req.query.kind||null,
-    errorsOnly:String(req.query.errorsOnly||"false")==="true"
-  })});
-});
-
-app.get("/api/v1/diagnostics/export",requireAdmin,async(_req,res)=>{
-  try{
-    const snapshot=await buildDiagnosticsSnapshot();
-    res.setHeader("Content-Disposition",`attachment; filename="classroom-hub-diagnostics-${new Date().toISOString().replace(/[:.]/g,"-")}.json"`);
-    res.type("application/json").send(JSON.stringify(snapshot,null,2));
-  }catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-
-app.post("/api/v1/diagnostics/test",requireCapability("diagnostics.run"),async(req,res)=>{
-  const test=String(req.body?.test||"all");
-  const results={};
-  const perform=async(name,fn)=>{
-    const started=Date.now();
-    try{results[name]={ok:true,durationMs:Date.now()-started,result:diagnosticSanitize(await fn())}}
-    catch(err){results[name]={ok:false,durationMs:Date.now()-started,error:err.message};diagnosticError(err,{component:"diagnostics.test",operation:name})}
-  };
-
-  if(test==="all"||test==="hub")await perform("hub",async()=>({version:APPLICATION_VERSION,uptime:process.uptime()}));
-  if(test==="all"||test==="mqtt")await perform("mqtt",async()=>{
-    if(!runtime.mqtt.connected)throw new Error("MQTT is not connected");
-    return {connected:true,url:MQTT_URL};
-  });
-  if(test==="all"||test==="pluto")await perform("pluto",async()=>directPluto({action:"raw",body:{comhead:"get video status"}}));
-  if(test==="all"||test==="veyon")await perform("veyon",async()=>{
-    const r=await veyonFetch("/",{timeoutMs:3000});
-    return {httpStatus:r.status,url:VEYON_WEBAPI_URL,poolSize:veyonConnectionCache.size,poolMax:VEYON_POOL_MAX};
-  });
-  if(test==="all"||test==="displays")await perform("displays",async()=>{
-    const status=publicRuntime().displays;
-    return {configured:Object.keys(status).length,online:Object.values(status).filter(x=>x.online).length,status};
-  });
-  if(test==="all"||test==="scheduler")await perform("scheduler",async()=>({
-    ...schedulerStatus(),classes:classScheduleStore.classes.length,automations:classroomAutomations.events.length
-  }));
-
-  audit({kind:"diagnostics.test",test,results:diagnosticSanitize(results)});
-  res.json({ok:Object.values(results).every(x=>x.ok),test,results});
-});
-
-
-// -----------------------------------------------------------------------------
-// v0.6 Session API
-// -----------------------------------------------------------------------------
-app.use("/api/v1/sessions",(req,res,next)=>{
-  // The legacy participation API trusted caller-supplied student/session IDs
-  // and is intentionally retired until signed, teacher-created sessions exist.
-  return res.status(410).json({ok:false,error:"Legacy anonymous classroom participation has been retired"});
-});
-app.get("/api/v1/sessions/:id", (req,res) => {
-  const session=getSession(req.params.id);
-  res.json({ok:true,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/join", (req,res) => {
-  const session=getSession(req.params.id);
-  const studentId=cleanId(req.body?.studentId) || crypto.randomUUID();
-  const name=cleanShort(req.body?.name || "Student",40);
-  if (!session.students[studentId]) session.stats.joins=(session.stats.joins||0)+1;
-  session.students[studentId]={
-    id:studentId,
-    name,
-    joinedAt:session.students[studentId]?.joinedAt || new Date().toISOString(),
-    lastSeen:new Date().toISOString()
-  };
-  session.updatedAt=new Date().toISOString();
-  persistSessions();
-  broadcastSession(session.id,{type:"session.state",state:publicSessionState(session)});
-  res.json({ok:true,studentId,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/topic", (req,res) => {
-  const session=getSession(req.params.id),studentId=cleanId(req.body?.studentId),topic=cleanId(req.body?.topic);
-  if (!studentId || !OPENING_TOPICS[topic]) return res.status(400).json({ok:false,error:"studentId and valid topic required"});
-  if (!allowStudentEvent(session,studentId,650)) return res.status(429).json({ok:false,error:"Please wait a moment before sending another room interaction."});
-  session.topicVotes[studentId]=topic;
-  session.stats.events=(session.stats.events||0)+1;
-  session.updatedAt=new Date().toISOString();
-  enqueueSessionEffect(session,{kind:"topic",topic});
-  res.json({ok:true,state:publicSessionState(session),topic:OPENING_TOPICS[topic]});
-});
-
-app.post("/api/v1/sessions/:id/intro", (req,res) => {
-  const session=getSession(req.params.id),studentId=cleanId(req.body?.studentId);
-  if (!studentId) return res.status(400).json({ok:false,error:"studentId required"});
-  if (!allowStudentEvent(session,studentId,1000)) return res.status(429).json({ok:false,error:"Please wait a moment before submitting again."});
-  const intro={
-    preferredName:cleanShort(req.body?.preferredName,40),
-    color:validHexColor(req.body?.color),
-    colorName:cleanShort(req.body?.colorName,30),
-    activity:cleanShort(req.body?.activity,70),
-    interest:cleanShort(req.body?.interest,70),
-    goal:cleanShort(req.body?.goal,160)
-  };
-  session.responses[studentId]={...(session.responses[studentId]||{}),intro};
-  if (!session.spotlights) session.spotlights={};
-  if (!session.spotlightOrder) session.spotlightOrder=[];
-  session.spotlights[studentId]={
-    studentId,
-    name:intro.preferredName || session.students[studentId]?.name || "Student",
-    color:intro.color,
-    colorName:intro.colorName,
-    activity:intro.activity,
-    interest:intro.interest
-  };
-  if (!session.spotlightOrder.includes(studentId)) session.spotlightOrder.push(studentId);
-  session.stats.events=(session.stats.events||0)+1;
-  session.updatedAt=new Date().toISOString();
-  session.queue=(session.queue||[]).filter(x=>!(x.kind==="student-intro"&&x.studentId===studentId));
-  enqueueSessionEffect(session,{kind:"student-intro",...session.spotlights[studentId]});
-  res.json({ok:true,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/poll", (req,res) => {
-  const session=getSession(req.params.id),studentId=cleanId(req.body?.studentId),questionId=cleanId(req.body?.questionId);
-  const answer=cleanShort(req.body?.answer,100),title=cleanShort(req.body?.title || questionId,80);
-  if (!studentId || !questionId || !answer) return res.status(400).json({ok:false,error:"studentId, questionId and answer required"});
-  if (!allowStudentEvent(session,studentId,350)) return res.status(429).json({ok:false,error:"Please wait a moment before answering again."});
-  if (!session.responses.polls) session.responses.polls={};
-  if (!session.responses.polls[questionId]) session.responses.polls[questionId]={};
-  session.responses.polls[questionId][studentId]=answer;
-  const tallies={};
-  for (const a of Object.values(session.responses.polls[questionId])) tallies[a]=(tallies[a]||0)+1;
-  session.stats.events=(session.stats.events||0)+1;
-  session.updatedAt=new Date().toISOString();
-  // Coalesce this question's poll display into one latest queue item.
-  session.queue=(session.queue||[]).filter(x=>!(x.kind==="poll"&&x.questionId===questionId));
-  enqueueSessionEffect(session,{kind:"poll",questionId,title,tallies});
-  res.json({ok:true,tallies,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/light", (req,res) => {
-  const session=getSession(req.params.id),studentId=cleanId(req.body?.studentId);
-  if (!studentId) return res.status(400).json({ok:false,error:"studentId required"});
-  if (!allowStudentEvent(session,studentId,800)) return res.status(429).json({ok:false,error:"Please wait a moment before changing the room color again."});
-  const color=validHexColor(req.body?.color);
-  const colorName=cleanShort(req.body?.colorName || color,30);
-  const name=session.students?.[studentId]?.name || "Student";
-  session.queue=(session.queue||[]).filter(x=>!(x.kind==="light-color"&&x.studentId===studentId));
-  enqueueSessionEffect(session,{kind:"light-color",studentId,name,color,colorName});
-  session.stats.events=(session.stats.events||0)+1;
-  persistSessions();
-  res.json({ok:true,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/game", (req,res) => {
-  const session=getSession(req.params.id),studentId=cleanId(req.body?.studentId),questionId=cleanId(req.body?.questionId);
-  const team=cleanShort(req.body?.team,40),correct=!!req.body?.correct;
-  if (!studentId || !questionId || !team) return res.status(400).json({ok:false,error:"studentId, questionId and team required"});
-  if (!session.responses.game) session.responses.game={};
-  if (!session.responses.game[questionId]) session.responses.game[questionId]={};
-  if (!(studentId in session.responses.game[questionId])) {
-    session.responses.game[questionId][studentId]=correct;
-    if (correct) session.gameScores[team]=(session.gameScores[team]||0)+1;
-  }
-  session.stats.events=(session.stats.events||0)+1;
-  session.queue=(session.queue||[]).filter(x=>x.kind!=="scoreboard");
-  enqueueSessionEffect(session,{kind:"scoreboard",scores:session.gameScores});
-  res.json({ok:true,scores:session.gameScores,state:publicSessionState(session)});
-});
-
-
-app.get("/api/v1/sessions/:id/export.json", requireControl, (req,res) => {
-  const session=getSession(req.params.id);
-  res.setHeader("Content-Disposition", `attachment; filename="${session.id}-session.json"`);
-  res.json({
-    session:{
-      id:session.id,
-      name:session.name,
-      createdAt:session.createdAt,
-      updatedAt:session.updatedAt
-    },
-    students:session.students || {},
-    introductions:Object.fromEntries(
-      Object.entries(session.responses || {})
-        .filter(([k,v]) => k !== "polls" && k !== "game" && v?.intro)
-        .map(([k,v]) => [k,v.intro])
-    ),
-    polls:session.responses?.polls || {},
-    gameResponses:session.responses?.game || {},
-    gameScores:session.gameScores || {},
-    topicVotes:session.topicVotes || {},
-    spotlights:session.spotlights || {},
-    recentEffects:session.recentEffects || []
-  });
-});
-
-app.get("/api/v1/sessions/:id/export.csv", requireControl, (req,res) => {
-  const session=getSession(req.params.id);
-  const rows=[[
-    "student_id","name","preferred_name","favorite_color_hex","favorite_color_name",
-    "favorite_activity","it_interest","learning_goal","joined_at","last_seen","team_score_data"
-  ]];
-  for (const [studentId,student] of Object.entries(session.students || {})) {
-    const intro=session.responses?.[studentId]?.intro || {};
-    rows.push([
-      studentId,
-      student.name || "",
-      intro.preferredName || "",
-      intro.color || "",
-      intro.colorName || "",
-      intro.activity || "",
-      intro.interest || "",
-      intro.goal || "",
-      student.joinedAt || "",
-      student.lastSeen || "",
-      JSON.stringify(session.gameScores || {})
-    ]);
-  }
-  const csv=rows.map(r=>r.map(csvCell).join(",")).join("\n");
-  res.setHeader("Content-Type","text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${session.id}-student-introductions.csv"`);
-  res.send(csv);
-});
-
-app.post("/api/v1/sessions/:id/teacher/light-test", requireControl, async (req,res) => {
-  try {
-    const color=validHexColor(req.body?.color || "#ff0000");
-    const result=await applySessionLighting(color);
-    res.json({ok:true,color,result});
-  } catch (err) {
-    res.status(502).json({ok:false,error:err.message});
-  }
-});
-
-
-app.post("/api/v1/classroom/clear-all", requireControl, async (_req,res) => {
-  try {
-    const clearedSessions=[];
-
-    for (const session of Object.values(classroomSessions)) {
-      session.paused=true;
-      session.queue=[];
-      session.currentEffect=null;
-      session.spotlightRotation=false;
-      session.updatedAt=new Date().toISOString();
-      clearedSessions.push(session.id);
-      broadcastSession(session.id,{type:"session.state",state:publicSessionState(session)});
-    }
-
-    persistSessions();
-
-    // Master classroom clear is an eight-display operation. Resolve the
-    // configured `all` display group at runtime so disabled/renamed devices are
-    // respected and every enabled classroom receiver is blanked immediately.
-    const clearedDisplays=resolveDisplayTargets("all");
-    const displayResult=await executeCommand({type:"display.clear",target:"all",payload:{}}, "classroom-clear");
-
-    audit({
-      kind:"classroom.clear-all",
-      sessions:clearedSessions,
-      targets:clearedDisplays,
-      deliveries:displayResult.deliveries
-    });
-
-    res.json({
-      ok:true,
-      message:`Classroom cleared on ${clearedDisplays.length} display(s); all session queues paused.`,
-      clearedSessions,
-      targets:clearedDisplays,
-      displayResult
-    });
-  } catch (err) {
-    res.status(500).json({ok:false,error:err.message});
-  }
-});
-
-app.post("/api/v1/classroom/resume-sessions", requireControl, (_req,res) => {
-  const resumed=[];
-  for (const session of Object.values(classroomSessions)) {
-    session.paused=false;
-    session.spotlightRotation=true;
-    session.updatedAt=new Date().toISOString();
-    resumed.push(session.id);
-    broadcastSession(session.id,{type:"session.state",state:publicSessionState(session)});
-  }
-  persistSessions();
-  res.json({ok:true,resumed});
-});
-
-app.post("/api/v1/sessions/:id/teacher/topic", requireControl, (req,res) => {
-  const session=getSession(req.params.id),topic=cleanId(req.body?.topic);
-  if (!OPENING_TOPICS[topic]) return res.status(400).json({ok:false,error:"Unknown topic"});
-  enqueueSessionEffect(session,{kind:"topic",topic});
-  res.json({ok:true,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/teacher/effect", requireControl, (req,res) => {
-  const session=getSession(req.params.id);
-  enqueueSessionEffect(session,{kind:"teacher",title:cleanShort(req.body?.title,80),subtitle:cleanShort(req.body?.subtitle,100),body:cleanShort(req.body?.body,500),color:validHexColor(req.body?.color)});
-  res.json({ok:true,state:publicSessionState(session)});
-});
-
-app.post("/api/v1/sessions/:id/teacher/control", requireControl, (req,res) => {
-  const session=getSession(req.params.id),action=cleanId(req.body?.action);
-  if (action==="pause") session.paused=true;
-  else if (action==="resume") session.paused=false;
-  else if (action==="clear") session.queue=[];
-  else if (action==="spotlight-on") session.spotlightRotation=true;
-  else if (action==="spotlight-off") session.spotlightRotation=false;
-  else if (action==="dashboard") {
-    showClassDashboard(session).catch(err=>audit({kind:"session.dashboard.error",error:err.message}));
-  }
-  else if (action==="reset") {
-    classroomSessions[session.id]={...getSession(session.id),students:{},responses:{},topicVotes:{},gameScores:{},queue:[],recentEffects:[],currentEffect:null,spotlights:{},spotlightOrder:[],spotlightIndex:0,spotlightRotation:true,stats:{joins:0,events:0},updatedAt:new Date().toISOString()};
-  }
-  persistSessions();
-  res.json({ok:true,state:publicSessionState(getSession(session.id))});
-});
-
-
-
-// Lab Computer Management API
-
-// Veyon-powered Lab Computers API
-app.get("/api/v1/veyon/status",requireCapability("lab.read"),async(_req,res)=>{
-  try{
-    const response=await veyonFetch("/");
-    res.json({ok:true,webapi:true,serviceReachable:true,verification:"reachability-only",authenticatedConnections:[...veyonConnectionCache.values()].filter(rec=>Number(rec.validUntil)>Date.now()/1000).length,httpStatus:response.status,url:VEYON_WEBAPI_URL,keyName:VEYON_KEY_NAME,keyFileReadable:dbStore.hasSecret("veyon.private-key")||fs.existsSync(VEYON_PRIVATE_KEY_FILE),scanSubnet:VEYON_SCAN_SUBNET,pool:{size:veyonConnectionCache.size,max:VEYON_POOL_MAX}});
-  }catch(err){
-    res.status(503).json({ok:false,webapi:false,serviceReachable:false,verification:"unreachable",authenticatedConnections:0,error:err.message,url:VEYON_WEBAPI_URL,keyName:VEYON_KEY_NAME,keyFileReadable:dbStore.hasSecret("veyon.private-key")||fs.existsSync(VEYON_PRIVATE_KEY_FILE)});
-  }
-});
-app.get("/api/v1/veyon/computers",requireCapability("lab.read"),async(req,res)=>{
-  try{
-    const includeInfo=String(req.query.info||"1")!=="0"&&!veyonCommandQueue.pressure();
-    const records=Object.values(veyonComputerStore.computers);
-    const computers=await mapLimit(records,10,rec=>veyonStatusFor(rec,{includeInfo}));
-    computers.sort((a,b)=>String(a.name||a.ip).localeCompare(String(b.name||b.ip),undefined,{numeric:true}));
-    res.json({ok:true,computers,summary:{
-      total:computers.length,
-      online:computers.filter(x=>x.online).length,
-      authenticated:computers.filter(x=>x.authenticated).length,
-      students:computers.filter(x=>x.role!=="teacher").length,
-      teachers:computers.filter(x=>x.role==="teacher").length
-    }});
-  }catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/veyon/discover",requireCapability("lab.control"),async(req,res)=>{
-  try{
-    const computers=await veyonDiscover(req.body||{});
-    res.json({ok:true,computers,summary:{found:computers.length,authenticated:computers.filter(x=>x.authenticated).length}});
-  }catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/veyon/computers",requireCapability("lab.control"),(req,res)=>{
-  try{
-    const ip=String(req.body?.ip||"").trim();
-    if(!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip))throw new Error("Valid IPv4 address required");
-    const role=req.body?.role==="teacher"?"teacher":"student";
-    res.json({ok:true,computer:upsertVeyonComputer(ip,{name:String(req.body?.name||ip).slice(0,120),hostname:String(req.body?.hostname||"").slice(0,120),role})});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.put("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)=>{
-  try{
-    const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
-    if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-    const patch={name:String(req.body?.name||rec.name).slice(0,120)};
-    if(req.body?.mac!==undefined){patch.mac=normalizeMac(req.body.mac);patch.macHostname=String(rec.hostname||rec.id).toLowerCase();}
-    if(req.body?.role==="teacher"||req.body?.role==="student")patch.role=req.body.role;
-    res.json({ok:true,computer:upsertVeyonComputer(rec.ip,patch)});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.post("/api/v1/veyon/computers/role",requireCapability("lab.control"),(req,res)=>{
-  try{
-    const ids=Array.isArray(req.body?.ids)?req.body.ids:[];
-    const role=req.body?.role;
-    if(!["teacher","student"].includes(role))throw new Error("Role must be teacher or student");
-    const updated=[];
-    for(const rawId of ids){
-      const id=veyonComputerId(rawId),rec=veyonComputerStore.computers[id];
-      if(rec)updated.push(upsertVeyonComputer(rec.ip,{role}));
-    }
-    res.json({ok:true,updated});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)=>{
-  const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
-  if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-  delete veyonComputerStore.computers[id];veyonCloseConnection(rec.ip).catch(()=>{});persistVeyonComputers();
-  res.json({ok:true,id});
-});
-app.get("/api/v1/veyon/computers/:id/info",requireCapability("lab.read"),async(req,res)=>{
-  try{
-    const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-    if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-    res.json({ok:true,computer:await veyonStatusFor(rec,{includeInfo:true})});
-  }catch(err){res.status(502).json({ok:false,error:err.message})}
-});
-app.get("/api/v1/veyon/computers/:id/framebuffer",requireCapability("lab.sensitive.read"),async(req,res)=>{
-  try{
-    const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-    if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-    if(veyonCommandQueue.pressure()){
-      res.setHeader("Retry-After","1");res.setHeader("Cache-Control","no-store");
-      return res.status(503).json({ok:false,error:"Preview paused while classroom commands are being sent.",stage:"framebuffer",reason:"commands-pending"});
-    }
-    const qs=new URLSearchParams();
-    qs.set("format",String(req.query.format||"jpeg")==="png"?"png":"jpeg");
-    if(req.query.width)qs.set("width",String(Math.max(160,Math.min(3840,Number(req.query.width)||480))));
-    if(req.query.height)qs.set("height",String(Math.max(90,Math.min(2160,Number(req.query.height)||270))));
-    if(qs.get("format")==="jpeg")qs.set("quality",String(Math.max(20,Math.min(95,Number(req.query.quality)||60))));
-    const frame=await readVeyonFrame(qs,pathname=>veyonConnectedRequest(rec.ip,pathname,{timeoutMs:10000},async(pathname,options)=>{
-      const response=await veyonFetch(pathname,options);
-      if(!response.ok)throw await veyonResponseError(response);
-      return response;
-    }));
-    res.setHeader("Cache-Control","no-store");
-    res.type(frame.contentType).send(frame.buffer);
-  }catch(err){
-    const status=[400,408,429,503,504].includes(err.status)?err.status:502;
-    res.setHeader("Cache-Control","no-store");
-    res.status(status).json(safeVeyonFailure(err));
-  }
-});
-
-app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),async(req,res)=>{
-  try{
-    const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-    if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-    res.json({ok:true,features:await veyonAvailableFeatures(rec.ip)});
-  }catch(err){res.status(502).json({ok:false,error:err.message})}
-});
-
-// Fixed appliance-wide budgets: forwarded addresses cannot multiply work.
-// Cleanup has its own budget so ordinary writes cannot consume the stop quota.
-const {VeyonAI}=require("./veyon-ai");
-const veyonAI=new VeyonAI({token:String(process.env.VEYON_AI_TOKEN||"")});
-const veyonAILimit=rateLimit({windowMs:60_000,limit:6,keyGenerator:()=>"veyon-ai",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Screen analysis limit reached; wait a minute"}});
-app.post("/api/v1/veyon/computers/:id/analyze",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonAILimit,async(req,res)=>{
-  res.set("Cache-Control","no-store");
-  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
-  if(veyonCommandQueue.pressure())return res.status(503).json({ok:false,error:"Wait for classroom commands to finish"});
-  try{const result=await trackFullExportMutation(veyonAI.analyze(async()=>{
-    const frame=await readVeyonFrame(new URLSearchParams({format:"jpeg",width:"1280",height:"720",quality:"80"}),pathname=>veyonConnectedRequest(computer.ip,pathname,{timeoutMs:10000,maxBytes:4*1024*1024},async(pathname,options)=>{
-      const response=await veyonFetch(pathname,options);if(!response.ok)throw await veyonResponseError(response);return response;
-    }));
-    const user=requestUser(req);
-    if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.sensitive.read")||!hasCapability(user,"lab.control")))throw Error("Permission revoked");
-    if(veyonComputerStore.computers[computer.id]?.ip!==computer.ip)throw Error("Computer identity changed");
-    return frame.buffer;
-  }));audit({kind:"veyon.ai",actor:requestUser(req)?.id||"legacy-control",computer:computer.id,accepted:true,detections:Array.isArray(result.detections)?result.detections.length:0});res.json(result)}catch{res.status(503).json({ok:false,error:"Local screen analysis unavailable. Configure and start the separate AI pilot service."})}
-});
-const {BrowserSessions}=require("./veyon-browser-sessions");
-const veyonBrowserSessions=new BrowserSessions({
-  connect:async host=>{await veyonAuthenticate(host);return veyonConnectionCache.get(host)},
-  identity:(computer,connection)=>{
-    const current=veyonComputerStore.computers[computer.id];
-    return !!current&&current.ip===computer.ip&&current.hostname===computer.hostname&&
-      veyonConnectionCache.get(computer.ip)===connection&&Number(connection.validUntil)>Date.now()/1000+5;
-  },
-  request:async(session,action,data)=>{
-    session.connection.lastUsed=Date.now();
-    try{return await veyonJson(`/api/v1/roomgoblin/${action}`,{method:"POST",headers:{"Content-Type":"application/json","Connection-Uid":session.connection.uid},body:JSON.stringify(data)})}
-    catch{throw Object.assign(Error("Native browser bridge unavailable or response lost; no automatic retry was made."),{status:503})}
-  }
-});
-setInterval(()=>veyonBrowserSessions.prune(),10000).unref();
-const veyonBrowserLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-browser",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser tool limit reached"}});
-const veyonBrowserControlLimit=rateLimit({windowMs:60_000,limit:2400,keyGenerator:()=>"veyon-browser-control",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser control limit reached"}});
-const veyonBrowserCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-browser-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser cleanup limit reached"}});
-const veyonBrowserActionLimit=(req,res,next)=>(req.params.action==="close"?veyonBrowserCleanupLimit:["state","pointer","key","clipboard"].includes(req.params.action)?veyonBrowserControlLimit:veyonBrowserLimit)(req,res,next);
-app.post("/api/v1/veyon/computers/:id/browser/:action",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonBrowserActionLimit,async(req,res)=>{
-  res.set("Cache-Control","no-store");
-  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
-  const authorize=()=>{const user=requestUser(req);if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.control")||!hasCapability(user,"lab.sensitive.read")))throw Object.assign(Error("Browser tool permission revoked"),{status:403})};
-  try{const actor=requestUser(req)?.id||"legacy-control";const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:req.params.action,input:req.body,authorize}));if(["open","close","send","download","clipboard"].includes(req.params.action)&&!(req.params.action==="clipboard"&&result.pending))audit({kind:"veyon.browser",actor,action:req.params.action,sessionKind:req.params.action==="open"?String(req.body?.kind||"").slice(0,20):undefined,computer:computer.id,accepted:true});res.json(result)}
-  catch(error){res.status([403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Browser request failed"})}
-});
-const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
-const veyonFreeWriteLimit=rateLimit({windowMs:60_000,limit:30,keyGenerator:()=>"veyon-free-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool action limit reached; retry later"}});
-const veyonFreeCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon cleanup limit reached; retry later"}});
-app.get("/api/v1/veyon/computers/:id/catalog",requireCapability("lab.read"),veyonFreeReadLimit,async(req,res)=>{
-  const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-  try{res.json({ok:true,features:featureCatalog(await veyonAvailableFeatures(rec.ip)),verification:"proxy-advertisement-only"})}
-  catch(error){res.status(503).json(safeVeyonFailure(error))}
-});
-app.post("/api/v1/veyon/wake",requireCapability("lab.control"),veyonFreeWriteLimit,async(req,res)=>{
-  try{
-    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1â€“64 computers.");
-    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
-    const results=await mapLimit(targets,4,async rec=>{try{if(rec.macHostname!==String(rec.hostname||rec.id).toLowerCase())throw Error("Save the MAC address again after an inventory identity change.");return {id:rec.id,...await wakeComputer(rec.mac)}}catch(error){return {id:rec.id,accepted:false,verified:false,error:error.message}}});
-    audit({kind:"veyon.wake",targets:targets.map(rec=>rec.id),accepted:results.filter(r=>r.accepted).length});
-    res.json({ok:results.every(r=>r.accepted),results});
-  }catch(error){res.status(400).json({ok:false,error:error.message})}
-});
-app.get("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),veyonFreeReadLimit,(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
-app.put("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),veyonFreeWriteLimit,(req,res)=>{
-  try{
-    const inputs=req.body?.actions;if(!Array.isArray(inputs)||inputs.length>40)throw Error("Save at most 40 lesson actions.");
-    const actions=inputs.map(normalizeLessonAction);
-    if(new Set(actions.map(x=>x.name.toLowerCase())).size!==actions.length)throw Error("Lesson action names must be unique.");
-    dbStore.setPreference("veyon.lesson-actions",actions);audit({kind:"veyon.lesson-actions",count:actions.length});res.json({ok:true,actions});
-  }catch(error){res.status(400).json({ok:false,error:error.message})}
-});
-app.get("/api/v1/veyon/computers/:id/feature/:feature",requireCapability("lab.read"),async(req,res)=>{
-  try{
-    const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-    if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-    res.json({ok:true,feature:req.params.feature,...await veyonFeatureStatus(rec.ip,req.params.feature)});
-  }catch(err){res.status(502).json({ok:false,error:err.message})}
-});
-app.get("/api/v1/veyon/connections",requireCapability("lab.read"),(_req,res)=>{
-  const now=Math.floor(Date.now()/1000);
-  res.json({ok:true,max:VEYON_POOL_MAX,size:veyonConnectionCache.size,connections:[...veyonConnectionCache.entries()].map(([host,r])=>({
-    host,validUntil:r.validUntil,secondsRemaining:Math.max(0,Number(r.validUntil||0)-now),idleSeconds:Math.floor((Date.now()-Number(r.lastUsed||0))/1000)
-  }))});
-});
-app.post("/api/v1/veyon/connections/close",requireCapability("lab.control"),async(req,res)=>{
-  try{
-    const ids=Array.isArray(req.body?.ids)?req.body.ids:[];
-    if(!ids.length||ids.includes("all")){
-      for(const [host,rec] of [...veyonConnectionCache.entries()])await veyonCloseConnection(host,rec);
-      return res.json({ok:true,closed:"all",poolSize:veyonConnectionCache.size});
-    }
-    for(const id of ids){const rec=veyonComputerStore.computers[veyonComputerId(id)];if(rec)await veyonCloseConnection(rec.ip)}
-    res.json({ok:true,closed:ids.length,poolSize:veyonConnectionCache.size});
-  }catch(err){res.status(500).json({ok:false,error:err.message})}
-});
-// Broadcast routes preserve teacher-first ordering while sharing the bounded
-// per-computer workers and durable mode cleanup with other classroom commands.
-async function waitForVeyonCommand(job){
-  const deadline=Date.now()+125000;
-  while(job.state!=="completed"&&!fullExportFreeze.requested&&!shuttingDown&&Date.now()<deadline){
-    await new Promise(resolve=>setTimeout(resolve,50));
-    const latest=veyonCommandQueue.get(job.id);
-    if(!latest)return {...job,results:job.results.map(row=>({...row,ok:false,error:"Command history expired; verify the computer state."}))};
-    job=latest;
-  }
-  return job;
-}
-function veyonJobResults(job){return job.results.map(row=>({...row,error:row.error||(!row.ok?row.reason||"Command is still pending; check command history.":undefined)}))}
-// Generation identities contain no broadcast tokens and exist only while a route is active.
-const veyonBroadcastWorkflows=new Map();
-app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),veyonFreeCleanupLimit,async(req,res)=>{
-  const workflows=[];
-  try{
-    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1â€“64 broadcast participants.");
-    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
-    const owner=requestUser(req)?.id||"legacy-control";
-    // Reserve all three jobs before changing workflow intent or yielding.
-    const jobs=veyonCommandQueue.enqueueModeCleanup(targets,owner);
-    for(const rec of targets){const marker={};veyonBroadcastWorkflows.set(rec.ip,marker);workflows.push([rec.ip,marker])}
-    res.status(202).json({ok:true,jobs});
-  }catch(error){res.status(error.status||400).json({ok:false,error:error.message})}
-  finally{for(const [ip,marker] of workflows)if(veyonBroadcastWorkflows.get(ip)===marker)veyonBroadcastWorkflows.delete(ip)}
-});
-app.post("/api/v1/veyon/demo/start",requireCapability("lab.control"),async(req,res)=>{
-  let workflowKey,workflow;
-  try{
-    const teacher=veyonComputerStore.computers[veyonComputerId(req.body?.teacherId||"")];
-    if(!teacher)throw new Error("Teacher computer not found");
-    const ids=Array.isArray(req.body?.studentIds)?req.body.studentIds:[];
-    if(!ids.length||ids.length>512)throw Error("Choose between 1 and 512 student computers.");
-    const students=[...new Map(ids.map(id=>veyonComputerStore.computers[veyonComputerId(id)]).filter(rec=>rec&&rec.id!==teacher.id).map(rec=>[rec.id,rec])).values()];
-    if(!students.length)throw new Error("At least one student computer is required");
-    const mode=req.body?.mode==="window"?"window":"fullscreen",owner=requestUser(req)?.id||"legacy-control";
-    const token=crypto.randomBytes(24).toString("base64url");
-    const queuedTeacher=veyonCommandQueue.enqueue({feature:"demoServer",active:true,targets:[teacher],args:{demoAccessToken:token},owner});
-    workflowKey=teacher.ip;workflow={};veyonBroadcastWorkflows.set(workflowKey,workflow);
-    const superseded=()=>veyonBroadcastWorkflows.get(workflowKey)!==workflow;
-    const supersededResult=()=>res.json({ok:false,superseded:true,teacherId:teacher.id,mode,results:students.map(rec=>({id:rec.id,ip:rec.ip,name:rec.name,ok:false,skipped:true,reason:"superseded",error:"A newer broadcast or stop request superseded this start."}))});
-    const teacherJob=await waitForVeyonCommand(queuedTeacher);
-    // Teacher jobs serialize, but their HTTP waiters can resume out of order.
-    // Never fan out an obsolete token after a newer teacher start or stop.
-    if(superseded())return supersededResult();
-    if(!teacherJob.results.every(row=>row.ok))return res.json({ok:false,teacherId:teacher.id,mode,results:veyonJobResults(teacherJob)});
-    const clientFeature=mode==="window"?"windowDemoClient":"fullScreenDemoClient";
-    const job=await waitForVeyonCommand(veyonCommandQueue.enqueue({feature:clientFeature,active:true,targets:students,args:{demoAccessToken:token,demoServerHost:teacher.ip},owner}));
-    if(superseded())return supersededResult();
-    res.json({ok:job.results.every(row=>row.ok),teacherId:teacher.id,teacherIp:teacher.ip,mode,results:veyonJobResults(job)});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-  finally{if(workflow&&veyonBroadcastWorkflows.get(workflowKey)===workflow)veyonBroadcastWorkflows.delete(workflowKey)}
-});
-app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,res)=>{
-  let workflowKey,workflow;
-  try{
-    const teacher=veyonComputerStore.computers[veyonComputerId(req.body?.teacherId||"")],owner=requestUser(req)?.id||"legacy-control";
-    const ids=Array.isArray(req.body?.studentIds)?req.body.studentIds:[];
-    if(ids.length>512)throw Error("Choose at most 512 student computers.");
-    const students=[...new Map(ids.map(id=>veyonComputerStore.computers[veyonComputerId(id)]).filter(Boolean).map(rec=>[rec.id,rec])).values()];
-    // Invalidate a start still awaiting its teacher before any student fanout.
-    if(teacher){workflowKey=teacher.ip;workflow={};veyonBroadcastWorkflows.set(workflowKey,workflow)}
-    const jobs=[];
-    for(const feature of ["fullScreenDemoClient","windowDemoClient"]){
-      if(students.length)jobs.push(veyonCommandQueue.enqueue({feature,active:false,targets:students,owner}));
-    }
-    if(teacher)jobs.push(veyonCommandQueue.enqueue({feature:"demoServer",active:false,targets:[teacher],owner}));
-    const outcomes=await Promise.all(jobs.map(waitForVeyonCommand)),byComputer=new Map();
-    for(const job of outcomes)for(const row of veyonJobResults(job)){
-      const previous=byComputer.get(row.id);
-      byComputer.set(row.id,{...row,ok:row.ok&&(previous?.ok??true),error:[previous?.error,row.error].filter(Boolean).join("; ")||undefined});
-    }
-    const results=[...byComputer.values()];
-    res.json({ok:results.every(row=>row.ok),results});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-  finally{if(workflow&&veyonBroadcastWorkflows.get(workflowKey)===workflow)veyonBroadcastWorkflows.delete(workflowKey)}
-});
-app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
-app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res,next)=>["clipboardWrite","keySequence"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),(req,res)=>{
-  try{
-    const targets=Array.isArray(req.body?.targets)?req.body.targets:[req.body?.target].filter(Boolean);
-    if(!targets.length||targets.length>512)throw Error("Choose between 1 and 512 targets.");
-    const feature=String(req.body?.feature||"");
-    if(!Object.hasOwn(VEYON_FEATURES,feature))throw Error("Unsupported Veyon feature");
-    let args=powerArguments(feature,req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{},req.body?.active!==false);
-    if(feature==="keySequence"){
-      if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one keyboard target.");
-      args=keyArguments(args,req.body?.active!==false);
-    }
-    if(feature==="clipboardWrite"){
-      if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one clipboard target.");
-      args=clipboardArguments(args,req.body?.active!==false);
-    }
-    if(Buffer.byteLength(JSON.stringify(args))>16384)throw Error("Veyon command arguments are too large");
-    const requestId=String(req.body?.requestId||"");
-    if(requestId&&!/^[a-zA-Z0-9._:-]{1,100}$/.test(requestId))throw Error("Invalid command request ID");
-    const selected=[];
-    for(const target of targets){
-      if(target==="all")selected.push(...Object.values(veyonComputerStore.computers));
-      else{const key=veyonComputerId(target),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");selected.push(rec)}
-    }
-    const uniq=[...new Map(selected.map(rec=>[rec.id,rec])).values()];
-    const job=veyonCommandQueue.enqueue({feature,active:req.body?.active!==false,targets:uniq,args,requestId,expiresAt:feature==="keySequence"?Date.now()+5000:undefined,owner:requestUser(req)?.id||"legacy-control"});
-    res.status(202).json({ok:true,job});
-  }catch(error){res.status([409,429].includes(error.status)?error.status:400).json({ok:false,error:error.message})}
-});
-
-app.get("/api/v1/lab/computers",requireCapability("lab.read"),(_req,res)=>res.json(publicLabInventory()));
-app.get("/api/v1/lab/computers/:id/history",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id);
-    if(!labComputerStore.computers[id])return res.status(404).json({ok:false,error:"Lab computer not found"});
-    const result=labHistoryQuery(id,req.query||{});
-    res.json({ok:true,id,total:result.total,offset:result.offset,limit:result.limit,history:result.items});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/lab/computers/:id/history/export",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id);
-    if(!labComputerStore.computers[id])return res.status(404).json({ok:false,error:"Lab computer not found"});
-    const result=labHistoryQuery(id,{...(req.query||{}),limit:5000,offset:0});
-    const format=String(req.query?.format||"csv").toLowerCase();
-    const safeName=String(labComputerStore.computers[id]?.name||id).replace(/[^a-z0-9._-]+/gi,"-");
-    const stamp=new Date().toISOString().replace(/[:.]/g,"-");
-
-    if(format==="json"){
-      res.setHeader("Content-Type","application/json; charset=utf-8");
-      res.setHeader("Content-Disposition",`attachment; filename="${safeName}-browser-history-${stamp}.json"`);
-      return res.send(JSON.stringify({computer:publicLabComputer(id),exportedAt:new Date().toISOString(),filters:req.query||{},history:result.items},null,2));
-    }
-
-    const cols=[
-      ["URL","url"],["Title","title"],["Visit Time","visitTime"],["Visit Count","visitCount"],
-      ["Visited From","visitedFrom"],["Visit Type","visitType"],["Visit Duration","visitDuration"],
-      ["Web Browser","browser"],["User Profile","profile"],["Browser Profile","browserProfile"],
-      ["URL Length","urlLength"],["Typed Count","typedCount"],["History File","historyFile"],["Record ID","recordId"]
-    ];
-    const lines=[cols.map(c=>csvCell(c[0])).join(",")];
-    for(const row of result.items)lines.push(cols.map(c=>csvCell(row[c[1]])).join(","));
-    res.setHeader("Content-Type","text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition",`attachment; filename="${safeName}-browser-history-${stamp}.csv"`);
-    return res.send("\uFEFF"+lines.join("\r\n"));
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.put("/api/v1/lab/computers/:id",requireCapability("lab.control"),(req,res)=>{
-  try{const id=cleanLabAgentId(req.params.id),rec=labComputerStore.computers[id];if(!rec)return res.status(404).json({ok:false,error:"Lab computer not found"});
-    if(req.body?.name!==undefined)rec.name=String(req.body.name||"").trim().slice(0,120)||rec.hostname||id;
-    if(req.body?.groups!==undefined)rec.groups=[...new Set((Array.isArray(req.body.groups)?req.body.groups:[]).map(x=>String(x).trim().toLowerCase().replace(/[^a-z0-9._-]+/g,"-")).filter(Boolean))].slice(0,20);
-    rec.updatedAt=new Date().toISOString();persistLabComputers();res.json({ok:true,computer:publicLabComputer(id)})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete("/api/v1/lab/computers/:id",requireCapability("lab.control"),(req,res)=>{
-  try{const id=cleanLabAgentId(req.params.id);if(labOnline(id))return res.status(409).json({ok:false,error:"Disconnect/uninstall the agent before removing an online computer"});
-    const accessRevoked=dbStore.revokeLabAgentAccess(id);const socket=labAgentSockets.get(id);if(socket){try{socket.close(1008,"Lab computer removed")}catch{}labAgentSockets.delete(id)}
-    delete labComputerStore.computers[id];delete labHistoryStore.computers[id];labAiAlertsStore.alerts=labAiAlertsStore.alerts.filter(alert=>alert.agentId!==id);fs.rmSync(path.join(LAB_SCREENSHOT_DIR,id),{recursive:true,force:true});persistLabComputers();persistLabHistory();persistLabAiAlerts();audit({kind:"lab.computer.delete",id,accessRevoked});res.json({ok:true,id,accessRevoked})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete("/api/v1/lab/computers/:id/history",requireCapability("lab.control"),(req,res)=>{
-  try{const id=cleanLabAgentId(req.params.id);labHistoryStore.computers[id]=[];persistLabHistory();res.json({ok:true,id})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/lab/command",requireCapability("lab.control"),(req,res)=>{
-  try{const action=String(req.body?.action||"").toLowerCase();let payload=req.body?.payload&&typeof req.body.payload==="object"?req.body.payload:{};
-    if(action==="message"){payload={...payload,text:String(payload.text||"").slice(0,100000),title:String(payload.title||"Classroom Message").slice(0,120)};if(!payload.text.trim())throw new Error("Message text is required")}
-    res.json(sendLabAgentCommand(req.body?.targets||req.body?.target||[],action,payload))}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-
-function safeScreenshotPath(id,rel){
-  const base=path.resolve(LAB_SCREENSHOT_DIR,id);
-  const full=path.resolve(LAB_SCREENSHOT_DIR,rel);
-  if(!full.startsWith(base+path.sep))throw new Error("Invalid screenshot path");
-  return full;
-}
-
-app.get("/api/v1/lab/computers/:id/screenshot",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id),rec=labComputerStore.computers[id];
-    if(!rec?.screenshotFile)return res.status(404).json({ok:false,error:"No screenshot available"});
-    const p=safeScreenshotPath(id,rec.screenshotFile);
-    if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Screenshot file missing"});
-    res.setHeader("Cache-Control","no-store");
-    res.sendFile(p);
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/lab/computers/:id/screenshot/download",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id),rec=labComputerStore.computers[id];
-    if(!rec?.screenshotFile)return res.status(404).json({ok:false,error:"No screenshot available"});
-    const p=safeScreenshotPath(id,rec.screenshotFile);
-    if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Screenshot file missing"});
-    const stamp=(rec.screenshotAt||new Date().toISOString()).replace(/[:.]/g,"-");
-    res.download(p,`${id}-${stamp}.jpg`);
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/lab/computers/:id/screenshots",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id),rec=labComputerStore.computers[id];
-    if(!rec)return res.status(404).json({ok:false,error:"Lab computer not found"});
-    const items=(Array.isArray(rec.screenshotHistory)?rec.screenshotHistory:[])
-      .filter(x=>{
-        try{return fs.existsSync(safeScreenshotPath(id,x.file))}catch{return false}
-      })
-      .slice(0,Math.max(1,Math.min(500,Number(req.query.limit)||100)))
-      .map(x=>({
-        ...x,
-        url:`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshots/file?file=${encodeURIComponent(x.file)}`,
-        downloadUrl:`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshots/download?file=${encodeURIComponent(x.file)}`
-      }));
-    res.json({ok:true,id,retentionDays:LAB_SCREENSHOT_RETENTION_DAYS,screenshots:items});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/lab/computers/:id/screenshots/file",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id),rel=String(req.query.file||"");
-    const p=safeScreenshotPath(id,rel);
-    if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Screenshot file missing"});
-    res.setHeader("Cache-Control","no-store");
-    res.sendFile(p);
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/lab/computers/:id/screenshots/download",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const id=cleanLabAgentId(req.params.id),rel=String(req.query.file||"");
-    const p=safeScreenshotPath(id,rel);
-    if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Screenshot file missing"});
-    res.download(p,`${id}-${path.basename(rel)}`);
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.get("/api/v1/lab/presets",requireCapability("lab.read"),(_req,res)=>res.json({
-  ok:true,
-  presets:[
-    {id:"gpupdate",name:"Group Policy Update",description:"Runs gpupdate /force"},
-    {id:"flushdns",name:"Flush DNS Cache",description:"Runs Clear-DnsClientCache"},
-    {id:"renew-network",name:"Renew DHCP",description:"Releases and renews DHCP"},
-    {id:"restart-explorer",name:"Restart Explorer",description:"Restarts the interactive Explorer shell"},
-    {id:"clear-temp",name:"Clear Temporary Files",description:"Removes Windows temp files that are not in use"},
-    {id:"system-info",name:"Collect System Info",description:"Returns Windows/system/network summary"}
-  ]
-}));
-
-
-app.get("/api/v1/lab/ai-monitor",requireCapability("lab.sensitive.read"),(req,res)=>{
-  try{
-    const status=String(req.query.status||"").trim();
-    const profile=String(req.query.profile||"").trim().toLowerCase();
-    const search=String(req.query.search||"").trim().toLowerCase();
-    const hours=Math.max(0,Number(req.query.hours||0)||0);
-    let alerts=[...labAiAlertsStore.alerts];
-    if(status)alerts=alerts.filter(a=>a.status===status);
-    if(profile)alerts=alerts.filter(a=>String(a.profile||a.windowsUser||"").toLowerCase().includes(profile));
-    if(hours>0){
-      const cutoff=Date.now()-hours*3600000;
-      alerts=alerts.filter(a=>Date.parse(a.createdAt||0)>=cutoff);
-    }
-    if(search)alerts=alerts.filter(a=>[
-      a.profile,a.windowsUser,a.hostname,a.computerName,a.domain,a.url,a.title,a.rule
-    ].some(v=>String(v||"").toLowerCase().includes(search)));
-    const limit=Math.max(1,Math.min(1000,Number(req.query.limit)||200));
-    res.json({
-      ok:true,
-      enabled:LAB_AI_MONITOR_ENABLED&&labAiRulesStore.enabled!==false,
-      cooldownMinutes:LAB_AI_ALERT_COOLDOWN_MINUTES,
-      rules:labAiRulesStore,
-      summary:{
-        total:labAiAlertsStore.alerts.length,
-        new:labAiAlertsStore.alerts.filter(a=>a.status==="new").length,
-        acknowledged:labAiAlertsStore.alerts.filter(a=>a.status==="acknowledged").length
-      },
-      alerts:alerts.slice(0,limit)
-    });
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.put("/api/v1/lab/ai-monitor/rules",requireCapability("lab.control"),(req,res)=>{
-  try{
-    const body=req.body||{};
-    if(typeof body.enabled==="boolean")labAiRulesStore.enabled=body.enabled;
-    for(const key of ["domains","keywords","excludeDomains"]){
-      if(Array.isArray(body[key])){
-        labAiRulesStore[key]=[...new Set(body[key].map(x=>String(x).trim().toLowerCase()).filter(Boolean))].slice(0,500);
-      }
-    }
-    persistLabAiRules();
-    res.json({ok:true,rules:labAiRulesStore});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-
-app.post("/api/v1/lab/ai-monitor/:id/capture",requireCapability("lab.control"),(req,res)=>{
-  try{
-    const alert=labAiAlertsStore.alerts.find(a=>a.id===String(req.params.id));
-    if(!alert)return res.status(404).json({ok:false,error:"Alert not found"});
-    const ws=labAgentSockets.get(alert.agentId);
-    if(!ws||ws.readyState!==WebSocket.OPEN)
-      return res.status(409).json({ok:false,error:"Lab computer is offline"});
-    const command={
-      id:crypto.randomUUID(),
-      action:"screenshot",
-      issuedAt:new Date().toISOString(),
-      payload:{quality:85,save:true,alertId:alert.id}
-    };
-    const rec=labComputerStore.computers[alert.agentId];
-    if(rec){
-      rec.lastCommand={...command,status:"sent"};
-      persistLabComputers();
-    }
-    wsSend(ws,{type:"lab.command",command});
-    res.json({ok:true,commandId:command.id});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.put("/api/v1/lab/ai-monitor/:id",requireCapability("lab.control"),(req,res)=>{
-  try{
-    const alert=labAiAlertsStore.alerts.find(a=>a.id===String(req.params.id));
-    if(!alert)return res.status(404).json({ok:false,error:"Alert not found"});
-    const status=String(req.body?.status||"").trim();
-    if(!["new","acknowledged","dismissed"].includes(status))
-      return res.status(400).json({ok:false,error:"Invalid status"});
-    alert.status=status;
-    alert.updatedAt=new Date().toISOString();
-    persistLabAiAlerts();
-    broadcastControllers({type:"lab.ai.alert.updated",alert});
-    res.json({ok:true,alert});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-
-app.get("/api/v1/lab/lock-presets",requireCapability("lab.read"),(_req,res)=>res.json({
-  ok:true,
-  browsers:[
-    {id:"edge",name:"Microsoft Edge",exe:"msedge.exe"},
-    {id:"chrome",name:"Google Chrome",exe:"chrome.exe"}
-  ],
-  examples:[
-    {name:"Learning Platform",type:"browser",browser:"edge",url:"https://example.edu/"}
-  ]
-}));
-
-// Classroom Presentation Mode API
-const presentationUploadStorage=multer.diskStorage({
-  destination:(_req,_file,cb)=>cb(null,PRESENTATION_UPLOAD_TMP),
-  filename:(_req,file,cb)=>{
-    const ext=path.extname(file.originalname||"").toLowerCase().slice(0,10);
-    cb(null,`${Date.now()}-${crypto.randomUUID()}${ext}`);
-  }
-});
-const presentationUpload=multer({
-  storage:presentationUploadStorage,
-  limits:{fileSize:MAX_UPLOAD_MB*1024*1024},
-  fileFilter:(_req,file,cb)=>{
-    const ext=path.extname(file.originalname||"").toLowerCase();
-    const allowed=new Set([".ppt",".pptx",".odp",".pdf"]);
-    cb(allowed?null:new Error("Presentation Mode accepts .ppt, .pptx, .odp, or .pdf"),allowed.has(ext));
-  }
-});
-
-app.get("/api/v1/presentations",requireClassroomRead,(_req,res)=>{
-  res.json({
-    ok:true,
-    folders:Object.values(presentationLibrary.folders).sort((a,b)=>a.name.localeCompare(b.name)),
-    presentations:Object.values(presentationLibrary.presentations).map(presentationPublicRecord).sort((a,b)=>String(a.name).localeCompare(String(b.name))),
-    state:presentationStatePublic(),
-    displays:Object.entries(devices).filter(([,d])=>d.enabled!==false).map(([id,d])=>({id,name:d.name||id}))
-  });
-});
-app.get("/api/v1/presentations/state",requireClassroomRead,(_req,res)=>res.json({ok:true,state:presentationStatePublic()}));
-
-app.post("/api/v1/presentations/folders",requireCapability("media.manage"),(req,res)=>{
-  try{
-    const name=cleanPresentationLabel(req.body?.name,100);
-    const parentId=normalizePresentationFolderId(req.body?.parentId||"root");
-    const id=presentationFolderId(),now=new Date().toISOString();
-    presentationLibrary.folders[id]={id,name,parentId,createdAt:now,updatedAt:now};
-    persistPresentationLibrary();
-    res.json({ok:true,folder:presentationLibrary.folders[id]});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.put("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(req,res)=>{
-  try{
-    const id=String(req.params.id),folder=presentationLibrary.folders[id];
-    if(!folder||id==="root")return res.status(404).json({ok:false,error:"Folder not found or cannot be changed"});
-    if(req.body?.name!==undefined)folder.name=cleanPresentationLabel(req.body.name,100);
-    if(req.body?.parentId!==undefined){
-      const parentId=normalizePresentationFolderId(req.body.parentId);
-      if(presentationFolderWouldCycle(id,parentId))throw new Error("Folder cannot be moved into itself or a child folder");
-      folder.parentId=parentId;
-    }
-    folder.updatedAt=new Date().toISOString();
-    persistPresentationLibrary();
-    res.json({ok:true,folder});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(req,res)=>{
-  try{
-    const id=String(req.params.id);
-    if(id==="root"||!presentationLibrary.folders[id])return res.status(400).json({ok:false,error:"Root folder cannot be deleted"});
-    const recursive=String(req.query.recursive||"0")==="1";
-    const folders=presentationDescendantFolderIds(id);
-    const pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
-    if(!recursive&&(folders.size>1||pres.length))return res.status(409).json({ok:false,error:"Folder is not empty; use recursive delete"});
-    for(const p of pres)deletePresentationRecord(p.id);
-    for(const fid of folders)delete presentationLibrary.folders[fid];
-    persistPresentationLibrary();
-    res.json({ok:true,removedFolders:[...folders],removedPresentations:pres.map(p=>p.id)});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.post("/api/v1/presentations/upload",requireCapability("media.manage"),presentationUpload.single("presentation"),async(req,res)=>{
-  if(!req.file)return res.status(400).json({ok:false,error:"No presentation uploaded"});
-  const id=presentationId();
-  const dir=path.join(PRESENTATIONS_DIR,id);
-  fs.mkdirSync(dir,{recursive:true});
-  try{
-    const ext=path.extname(req.file.originalname||"").toLowerCase();
-    const originalFile=`original${ext}`;
-    fs.renameSync(req.file.path,path.join(dir,originalFile));
-    const now=new Date().toISOString();
-    const rec={
-      id,
-      name:cleanPresentationLabel(path.basename(req.file.originalname,ext)||"Presentation",140),
-      originalName:req.file.originalname,
-      originalFile,
-      folderId:normalizePresentationFolderId(req.body?.folderId||"root"),
-      mime:req.file.mimetype||"",
-      size:req.file.size||0,
-      slideCount:0,
-      notes:[],
-      pdfFile:null,
-      conversionStatus:"converting",
-      conversionError:null,
-      createdAt:now,
-      updatedAt:now
-    };
-    presentationLibrary.presentations[id]=rec;
-    persistPresentationLibrary();
-    try{
-      await buildPresentationSlides(id);
-      audit({kind:"presentation.upload",id,name:rec.name,slides:rec.slideCount,folderId:rec.folderId});
-      res.json({ok:true,presentation:presentationPublicRecord(rec)});
-    }catch(err){
-      rec.conversionStatus="failed";rec.conversionError=err.message;rec.updatedAt=new Date().toISOString();
-      persistPresentationLibrary();
-      res.status(500).json({ok:false,error:err.message,presentation:presentationPublicRecord(rec)});
-    }
-  }catch(err){
-    fs.rmSync(dir,{recursive:true,force:true});
-    if(fs.existsSync(req.file.path))fs.rmSync(req.file.path,{force:true});
-    res.status(400).json({ok:false,error:err.message});
-  }
-});
-app.post("/api/v1/presentations/:id/rebuild",requireCapability("media.manage"),async(req,res)=>{
-  let rec=null,prior=null;
-  try{
-    const id=String(req.params.id);rec=presentationLibrary.presentations[id];
-    if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
-    prior={conversionStatus:rec.conversionStatus,conversionError:rec.conversionError};
-    rec.conversionStatus="converting";rec.conversionError=null;persistPresentationLibrary();
-    await buildPresentationSlides(id);
-    res.json({ok:true,presentation:presentationPublicRecord(rec)});
-  }catch(err){if(rec){rec.conversionStatus=prior?.conversionStatus||"failed";rec.conversionError=prior?.conversionError||null;rec.lastRebuildError=err.message;rec.updatedAt=new Date().toISOString();persistPresentationLibrary()}res.status(500).json({ok:false,error:err.message,presentation:rec?presentationPublicRecord(rec):null})}
-});
-app.put("/api/v1/presentations/:id",requireCapability("media.manage"),(req,res)=>{
-  try{
-    const id=String(req.params.id),rec=presentationLibrary.presentations[id];
-    if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
-    if(req.body?.name!==undefined)rec.name=cleanPresentationLabel(req.body.name,140);
-    if(req.body?.folderId!==undefined)rec.folderId=normalizePresentationFolderId(req.body.folderId);
-    rec.updatedAt=new Date().toISOString();persistPresentationLibrary();
-    res.json({ok:true,presentation:presentationPublicRecord(rec)});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(req,res)=>{
-  try{
-    const id=String(req.params.id);
-    if(!presentationLibrary.presentations[id])return res.status(404).json({ok:false,error:"Presentation not found"});
-    if(presentationState.active&&presentationState.presentationId===id)await stopPresentation({clear:true});
-    deletePresentationRecord(id);persistPresentationLibrary();
-    audit({kind:"presentation.delete",id});
-    res.json({ok:true,id});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),async(req,res)=>{
-  try{
-    const id=String(req.params.id),rec=presentationLibrary.presentations[id];
-    if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
-    if(rec.conversionStatus!=="ready"||!rec.slideCount)return res.status(409).json({ok:false,error:"Presentation rendering is not ready"});
-    if(presentationState.active)await stopPresentation({clear:false});
-    const targets=resolveDisplayTargets(req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
-    if(!targets.length)throw new Error("Select at least one display");
-    const now=new Date().toISOString();
-    presentationState={
-      ...defaultPresentationState(),
-      active:true,presentationId:id,
-      slide:Math.max(1,Math.min(Number(req.body?.slide)||1,rec.slideCount)),
-      targets,
-      paused:false,black:false,startedAt:now,slideStartedAt:now,
-      autoAdvanceSeconds:Math.max(0,Math.min(3600,Number(req.body?.autoAdvanceSeconds)||0)),
-      loop:!!req.body?.loop,
-      targetSeconds:Math.max(0,Math.min(3600,Number(req.body?.targetSeconds)||0)),
-      timings:{},
-      sessionId:crypto.randomUUID()
-    };
-    persistPresentationState();
-    await sendPresentationSlide();
-    audit({kind:"presentation.start",id,name:rec.name,targets,slide:presentationState.slide});
-    broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
-    res.json({ok:true,state:presentationStatePublic()});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/presentations/control",requireCapability("media.manage"),async(req,res)=>{
-  try{res.json({ok:true,state:await controlPresentation(req.body?.action,req.body||{})})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-// Media Library uploads / documents
-const storage = multer.diskStorage({
-  destination: (_req,_file,cb)=>cb(null,MEDIA_DIR),
-  filename: (_req,file,cb)=>{
-    const ext=path.extname(file.originalname||"").toLowerCase().slice(0,15);
-    const base=path.basename(file.originalname||"media",ext)
-      .replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100);
-    cb(null,`${crypto.randomUUID()}-${base}${ext}`);
-  }
-});
-const upload = multer({
-  storage,
-  limits:{fileSize:MAX_UPLOAD_MB*1024*1024},
-  fileFilter:(_req,file,cb)=>{
-    const mime=String(file.mimetype||"").toLowerCase();
-    const ext=path.extname(file.originalname||"").toLowerCase();
-    const allowedExt=new Set([
-      ".png",".jpg",".jpeg",".gif",".webp",".bmp",
-      ".mp4",".webm",".mov",".m4v",
-      ".pdf",".ppt",".pptx",".odp",".doc",".docx",".odt",".rtf"
-    ]);
-    const allowedMime=
-      mime.startsWith("image/")||mime.startsWith("video/")||
-      mime==="application/pdf"||
-      mime.includes("presentation")||mime.includes("powerpoint")||
-      mime.includes("word")||mime.includes("officedocument")||
-      mime.includes("opendocument")||mime==="application/rtf"||
-      mime==="application/octet-stream";
-    const allowed=allowedExt.has(ext)&&allowedMime;
-    cb(allowed?null:new Error(`Unsupported file type: ${file.originalname} (${mime||"unknown mime"})`),allowed);
-  }
-});
-
-app.post("/api/v1/media",requireCapability("media.manage"),upload.single("media"),async(req,res)=>{
-  if(!req.file)return res.status(400).json({ok:false,error:"No file uploaded"});
-  const stored=req.file.filename,type=classifyMedia(stored,req.file.mimetype);
-  const rec={
-    originalName:req.file.originalname,
-    storedName:stored,
-    mime:req.file.mimetype,
-    type,
-    uploadedAt:new Date().toISOString(),
-    generatedPdf:null,
-    conversionStatus:null,
-    conversionError:null
-  };
-  mediaLibrary.files[stored]=rec;
-  persistMediaLibrary();
-
-  if(officeConvertible(stored)){
-    rec.conversionStatus="converting";
-    persistMediaLibrary();
-    try{
-      rec.generatedPdf=await convertOfficeToPdf(stored);
-      rec.conversionStatus="ready";
-      rec.conversionError=null;
-    }catch(err){
-      rec.conversionStatus="failed";
-      rec.conversionError=err.message;
-    }
-    persistMediaLibrary();
-  }
-
-  audit({kind:"media.upload",name:req.file.originalname,stored,mime:req.file.mimetype,size:req.file.size,type,generatedPdf:rec.generatedPdf});
-  res.json({ok:true,file:libraryRecordFromDisk(stored)});
-});
-
-app.post("/api/v1/media/:name/convert",requireCapability("media.manage"),async(req,res)=>{
-  let rec=null,prior=null,name="";
-  try{
-    name=safeStoredName(req.params.name);rec=mediaLibrary.files[name]||{};
-    if(!fs.existsSync(path.join(MEDIA_DIR,name)))return res.status(404).json({ok:false,error:"File not found"});
-    if(!officeConvertible(name))return res.status(400).json({ok:false,error:"Only Word/PowerPoint/OpenDocument files require conversion"});
-    prior={generatedPdf:rec.generatedPdf,conversionStatus:rec.conversionStatus,conversionError:rec.conversionError};rec.originalName=rec.originalName||name;rec.storedName=name;rec.type=classifyMedia(name);rec.conversionStatus="converting";rec.conversionError=null;
-    mediaLibrary.files[name]=rec;persistMediaLibrary();
-    rec.generatedPdf=await convertOfficeToPdf(name);rec.conversionStatus="ready";persistMediaLibrary();
-    res.json({ok:true,file:libraryRecordFromDisk(name)});
-  }catch(err){if(rec&&name){rec.generatedPdf=prior?.generatedPdf||null;rec.conversionStatus=prior?.generatedPdf?"ready":"failed";rec.conversionError=err.message;mediaLibrary.files[name]=rec;persistMediaLibrary()}res.status(500).json({ok:false,error:err.message})}
-});
-
-app.delete("/api/v1/media/:name",requireCapability("media.manage"),(req,res)=>{
-  try{
-    const name=safeStoredName(req.params.name),rec=mediaLibrary.files[name]||{};
-    const removed=[];
-    for(const n of [name,rec.generatedPdf].filter(Boolean)){
-      const full=path.join(MEDIA_DIR,safeStoredName(n));
-      if(fs.existsSync(full)){fs.rmSync(full,{force:true});removed.push(n)}
-    }
-    delete mediaLibrary.files[name];
-    persistMediaLibrary();
-    audit({kind:"media.delete",name,removed});
-    res.json({ok:true,removed});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.post("/api/v1/media/:name/display",requireCapability("media.manage"),async(req,res)=>{
-  try{
-    const name=safeStoredName(req.params.name),full=path.join(MEDIA_DIR,name);
-    if(!fs.existsSync(full))return res.status(404).json({ok:false,error:"File not found"});
-    const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
-    const target=cleanId(req.body?.target||"tv1");
-    const payload=req.body||{};
-    let command;
-
-    if(type==="image")command={type:"display.image",target,payload:{url:mediaUrl(name),fit:payload.fit||"contain"}};
-    else if(type==="video")command={type:"display.video",target,payload:{url:mediaUrl(name),fit:payload.fit||"contain",autoplay:true,muted:!!payload.muted,loop:!!payload.loop}};
-    else if(type==="pdf"){
-      const viewer=documentViewerUrl(name,payload);
-      command={type:"display.pdf",target,payload:{url:viewer,sourceUrl:mediaUrl(name)}};
-    }else if(type==="presentation"||type==="document"){
-      if(!rec.generatedPdf || !fs.existsSync(path.join(MEDIA_DIR,rec.generatedPdf))){
-        return res.status(409).json({ok:false,error:"Document conversion is not ready",conversionStatus:rec.conversionStatus,conversionError:rec.conversionError});
-      }
-      const viewer=documentViewerUrl(rec.generatedPdf,payload);
-      command={type:"display.document",target,payload:{url:viewer,sourceUrl:mediaUrl(name),pdfUrl:mediaUrl(rec.generatedPdf),originalName:rec.originalName||name}};
-    }else{
-      return res.status(400).json({ok:false,error:"This file type cannot be displayed"});
-    }
-    const result=await executeCommand(command,"media-library");
-    res.json({ok:true,file:libraryRecordFromDisk(name),command,result});
-  }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(400).json({ ok: false, error: err.message || "Request failed" });
-});
-
-// -----------------------------------------------------------------------------
-// HTTP server + WebSocket server
-// -----------------------------------------------------------------------------
-
-const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
-const WS_MAX_CONNECTIONS=Math.max(25,Math.min(5000,Number(process.env.WS_MAX_CONNECTIONS||500)));
-const WS_MAX_CONNECTIONS_PER_IP=Math.max(5,Math.min(250,Number(process.env.WS_MAX_CONNECTIONS_PER_IP||40)));
-
-// TVs connect only to the ticketed Hub proxy. The backend relays raw Sendspin
-// to the configured dedicated endpoint (normally :8927/sendspin), not the MA
-// web-player route on :8095. The long-lived token belongs to API control only.
-const maSendspinProxyWss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
-function boundedWsObject(value,label,maxBytes=64*1024){
-  if(!value||typeof value!=="object"||Array.isArray(value))return {};
-  const encoded=JSON.stringify(value);
-  if(Buffer.byteLength(encoded)>maxBytes)throw Error(`${label} exceeds ${Math.floor(maxBytes/1024)} KB`);
-  return JSON.parse(encoded);
-}
-function websocketMessageAllowed(ws){
-  const now=Date.now(),windowMs=10000,maxMessages=120;
-  if(!ws.messageWindowAt||now-ws.messageWindowAt>=windowMs){ws.messageWindowAt=now;ws.messageWindowCount=0}
-  ws.messageWindowCount=(ws.messageWindowCount||0)+1;
-  return ws.messageWindowCount<=maxMessages;
-}
-server.on("upgrade",(req,socket,head)=>{
-  let pathname="";try{pathname=new URL(req.url||"/","http://classroom-hub.local").pathname}catch{}
-  const target=pathname==="/ws"?wss:pathname==="/music-assistant/sendspin-proxy"?maSendspinProxyWss:null;
-  if(!target){socket.destroy();return}
-  const remote=clientAddress(req),all=[...wss.clients,...maSendspinProxyWss.clients];
-  if(all.length>=WS_MAX_CONNECTIONS||all.filter(client=>client.remoteAddress===remote).length>=WS_MAX_CONNECTIONS_PER_IP){socket.write("HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n");socket.destroy();return}
-  target.handleUpgrade(req,socket,head,ws=>target.emit("connection",ws,req));
-});
-maSendspinProxyWss.on("connection",(client,req)=>{
-  client.remoteAddress=clientAddress(req);
-  client.on("error",()=>{}); // Also cover rejected tickets during the close handshake.
-  const relayId=crypto.randomUUID();
-  const reject=(code,reason)=>{audit({kind:"musicassistant.sendspin.proxy.rejected",relayId,code,reason});if(client.readyState===WebSocket.OPEN)client.close(code,reason)};
-  try{
-    const u=new URL(req.url||"/","http://classroom-hub.local"),ticket=consumeMusicAssistantProxyTicket(u.searchParams.get("ticket"));
-    if(!ticket)return reject(1008,"Invalid or expired Music Assistant bridge ticket");
-    const attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
-    if(!Array.isArray(attached)||!attached.includes(ticket.deviceId))return reject(1008,"Display is not attached to Music Assistant bridge");
-    const cfg=musicAssistantConfig();
-    if(!cfg.tvBridgeEnabled)return reject(1008,"Music Assistant TV bridge is disabled");
-    relaySendspin(client,{
-      WebSocket,config:cfg,maxPayload:WS_MAX_PAYLOAD_BYTES,
-      onConnected:upstreamUrl=>audit({kind:"musicassistant.sendspin.proxy.connected",relayId,deviceId:ticket.deviceId,playerId:ticket.playerId,upstreamUrl}),
-      onClosed:closure=>audit({kind:"musicassistant.sendspin.proxy.closed",relayId,deviceId:ticket.deviceId,playerId:ticket.playerId,...closure}),
-      onError:e=>diagnosticError(e,{component:"music-assistant",operation:"sendspin-proxy",deviceId:ticket.deviceId})
-    });
-  }catch(e){diagnosticError(e,{component:"music-assistant",operation:"sendspin-proxy-setup"});reject(1011,"Music Assistant Sendspin proxy setup failed")}
-});
-
-wss.on("connection", (ws, req) => {
-  ws.connectionId = crypto.randomUUID();
-  ws.role = "unknown";
-  ws.deviceId = "";
-  ws.isAlive = true;
-  ws.sessionToken = "";
-  ws.remoteAddress=clientAddress(req);
-  ws.helloTimer=setTimeout(()=>{if(ws.role==="unknown"&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Authentication timeout")},10000);
-  wsClients.add(ws);
-  runtime.websocketClients = wsClients.size;
-
-  ws.on("pong", () => {
-    ws.isAlive = true;
-    if (ws.role === "display") markDisplaySeen(ws);
-  });
-
-  ws.on("message", async (raw) => {
-    if(!websocketMessageAllowed(ws)){ws.close(1008,"Message rate limit exceeded");return}
-    let msg;
-    try {
-      msg = JSON.parse(String(raw));
-    } catch {
-      return wsSend(ws, { type: "error", error: "Invalid JSON" });
-    }
-    if(fullExportFreeze.requested){
-      if(msg.type==="heartbeat")return wsSend(ws,{type:"heartbeat.ack",at:Date.now(),maintenanceFreeze:true});
-      return wsSend(ws,{type:"maintenance.freeze",reason:"full-recovery-export"});
-    }
-
-    fullExportFreeze.activeWsMutations++;
-    try {
-      if (msg.type === "hello") {
-        if(ws.role!=="unknown")throw new Error("WebSocket identity is already established");
-        const role = cleanId(msg.role);
-
-        if (role === "controller" || role === "admin") {
-          if(!browserWebSocketOriginAllowed(req))throw new Error("Untrusted WebSocket origin");
-          if(dbStore.authEnabled()){
-            const user=requestUser(req);
-            if(role==="admin"?(!hasRole(user,"admin")||!hasCapability(user,"*")):!hasCapability(user,"classroom.control"))throw new Error(role==="admin"?"Enabled administrator profile required":"Permission required: classroom.control");
-            ws.authUser=user;
-            ws.sessionToken=cookieValue(req,"classroom_hub_session");
-          }else if(!CONTROL_TOKEN||!secureTokenEqual(msg.token,CONTROL_TOKEN)){
-            throw new Error("Unauthorized controller");
-          }
-          ws.role = role;
-          clearTimeout(ws.helloTimer);
-          wsSend(ws, {
-            type: "hello.ack",
-            role,
-            room: deviceConfig.room || ROOM_NAME,
-            devices,
-            groups: displayGroups,
-            runtime: publicRuntime(),
-            state: publicPersistentState()
-          });
-          return;
-        }
-
-        if (role === "preview") {
-          if(!browserWebSocketOriginAllowed(req))throw new Error("Untrusted WebSocket origin");
-          if(dbStore.authEnabled()){
-            const user=requestUser(req);if(!hasCapability(user,"classroom.read"))throw new Error("Permission required: classroom.read");
-            ws.authUser=user;ws.sessionToken=cookieValue(req,"classroom_hub_session");
-          }else if(!CONTROL_TOKEN||!secureTokenEqual(msg.token,CONTROL_TOKEN))throw new Error("Unauthorized preview");
-          const deviceId = cleanId(msg.deviceId);
-          if (!devices[deviceId] || devices[deviceId].enabled === false) {
-            throw new Error("Unknown or disabled preview display");
-          }
-
-          ws.role = "preview";
-          ws.deviceId = deviceId;
-          clearTimeout(ws.helloTimer);
-
-          wsSend(ws, {
-            type: "hello.ack",
-            role: "preview",
-            version: APPLICATION_VERSION,
-            deviceId,
-            room: deviceConfig.room || ROOM_NAME,
-            config: devices[deviceId],
-            state: previewDisplayState(deviceId),
-            displayGatewayHosts:DISPLAY_GATEWAY_HOSTS
-          });
-          return;
-        }
-
-        if (role === "display") {
-          const deviceId = cleanId(msg.deviceId);
-          if (!devices[deviceId] || devices[deviceId].enabled === false) {
-            throw new Error("Unknown or disabled display");
-          }
-
-          let displayCredential=dbStore.authenticateDisplay(deviceId,msg.credential||""),issuedCredential=null,authMode="credential";
-          if(!displayCredential&&msg.enrollmentToken){
-            issuedCredential=dbStore.consumeDisplayEnrollment(deviceId,msg.enrollmentToken,{label:String(msg.meta?.userAgent||req.headers["user-agent"]||"Classroom display")});
-            if(issuedCredential)displayCredential={id:issuedCredential.id,displayId:deviceId};
-          }
-          if(!displayCredential){
-            const policy=dbStore.displayCredentialPolicy();
-            if(!policy.authenticationRequired){displayCredential={id:"direct",displayId:deviceId};authMode="configured-display"}
-            else if(policy.legacySharedTokenAllowed&&DISPLAY_TOKEN&&secureTokenEqual(msg.token,DISPLAY_TOKEN))authMode="legacy-shared-token";
-            else throw new Error("Unauthorized display");
-          }else if(issuedCredential)authMode="new-enrollment";
-
-          ws.role = "display";
-          ws.deviceId = deviceId;
-          ws.displayCredentialId=displayCredential?.id||"";
-          ws.displayAuthMode=authMode;
-          clearTimeout(ws.helloTimer);
-          ws.maAudioRestored = false;
-          ws.maAudioRestorePending = false;
-          markDisplaySeen(ws, {
-            userAgent: req.headers["user-agent"] || "",
-            meta: boundedWsObject(msg.meta,"Display metadata")
-          });
-
-          wsSend(ws, {
-            type: "hello.ack",
-            role: "display",
-            version: APPLICATION_VERSION,
-            deviceId,
-            room: deviceConfig.room || ROOM_NAME,
-            config: devices[deviceId],
-            state: physicalDisplayState(deviceId),
-            authMode,
-            credential:issuedCredential?.credential||undefined,
-            credentialId:displayCredential?.id||undefined,
-            assetAccessToken:issueAssetAccessToken(deviceId,displayCredential?.id||""),
-            displayGatewayHosts:DISPLAY_GATEWAY_HOSTS
-          });
-
-          // Re-attach persistent Music Assistant browser player bridge after display reconnect/reload.
-          try{
-            const maTargets=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
-            if(Array.isArray(maTargets)&&maTargets.includes(deviceId)){
-              const maToken=musicAssistantToken();
-              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
-            }
-          }catch{}
-
-          // Server-driven renderer convergence. Older display clients already understand
-          // display.reload even when they do not yet report clientVersion. This makes a
-          // Hub upgrade automatically refresh legacy/stale kiosk browsers without requiring
-          // a manual visit to every TV.
-          const clientVersion=String(msg.clientVersion||msg.meta?.build||"");
-          if(clientVersion!==APPLICATION_VERSION) {
-            audit({kind:"display.renderer.refresh-required",deviceId,clientVersion:clientVersion||null,serverVersion:APPLICATION_VERSION});
-            setTimeout(()=>{
-              if(!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN){
-                wsSend(ws,{type:"command",command:{type:"display.reload",target:deviceId,payload:{reason:"renderer-version-mismatch",serverVersion:APPLICATION_VERSION}}});
-              }
-            },700);
-          }
-
-          audit({ kind: "display.connected", deviceId, clientVersion:clientVersion||null });
-          return;
-        }
-
-        if (role === "lab-agent") {
-          const agentId=cleanLabAgentId(msg.agentId||msg.deviceId||msg.hostname);
-          let agentCredential=dbStore.authenticateLabAgent(agentId,msg.credential||""),issuedCredential=null,authMode="credential";
-          if(!agentCredential&&msg.enrollmentToken){issuedCredential=dbStore.consumeLabAgentEnrollment(agentId,msg.enrollmentToken,{label:String(msg.hostname||req.headers["user-agent"]||"Windows classroom agent")});if(issuedCredential)agentCredential={id:issuedCredential.id,agentId}}
-          if(!agentCredential){const policy=dbStore.labAgentCredentialPolicy();if(policy.legacySharedTokenAllowed&&LAB_AGENT_TOKEN&&secureTokenEqual(msg.token,LAB_AGENT_TOKEN))authMode="legacy-shared-token";else throw new Error("Unauthorized lab agent")}
-          else if(issuedCredential)authMode="new-enrollment";
-          ws.role="lab-agent";ws.labAgentId=agentId;ws.deviceId=agentId;
-          ws.labAgentCredentialId=agentCredential?.id||"";ws.labAgentAuthMode=authMode;
-          clearTimeout(ws.helloTimer);
-          const old=labAgentSockets.get(agentId);if(old&&old!==ws&&old.readyState===WebSocket.OPEN){try{old.close(4001,"Replaced by newer agent connection")}catch{}}
-          labAgentSockets.set(agentId,ws);
-          const helloMeta=boundedWsObject(msg.meta,"Lab agent metadata");
-          const capabilities=[...new Set((Array.isArray(msg.capabilities)?msg.capabilities:Array.isArray(helloMeta.capabilities)?helloMeta.capabilities:[]).map(x=>String(x).slice(0,80)))].slice(0,100);
-          const helloIp=String(msg.ip||helloMeta.ip||(Array.isArray(helloMeta.ipv4)?helloMeta.ipv4[0]:"")||"").slice(0,80);
-          upsertLabComputer(agentId,{hostname:String(msg.hostname||helloMeta.hostname||agentId).slice(0,120),agentVersion:String(msg.agentVersion||helloMeta.agentVersion||"").slice(0,40),
-            ip:helloIp,capabilities,meta:{...helloMeta,capabilities},connectedAt:new Date().toISOString()});
-          const privacy=privacyRetentionPolicy();
-          wsSend(ws,{type:"hello.ack",role:"lab-agent",agentId,room:deviceConfig.room||ROOM_NAME,historyEnabled:privacy.browserHistoryEnabled,historyRetentionHours:privacy.browserHistoryHours,heartbeatSeconds:15,historyPollSeconds:privacy.browserHistoryEnabled?30:0,authMode,credential:issuedCredential?.credential||undefined,credentialId:agentCredential?.id||undefined});
-          broadcastControllers({type:"lab.status",computer:publicLabComputer(agentId)});audit({kind:"lab.connected",id:agentId,hostname:msg.hostname||agentId});return;
-        }
-
-        if (role === "student" || role === "session-teacher") {
-          throw new Error("Legacy anonymous classroom participation has been retired");
-        }
-
-        throw new Error("Role must be controller, admin, preview, display, lab-agent, student, or session-teacher");
-      }
-
-      if (msg.type === "display.media.status" && ws.role === "display") {
-        const previous=runtime.displays[ws.deviceId]||{};
-        runtime.displays[ws.deviceId]={...previous,mediaSession:boundedWsObject(msg.status,"Media session status"),lastSeen:new Date().toISOString()};
-        return;
-      }
-
-      if (msg.type === "display.media.ended" && ws.role === "display") {
-        backgroundMusicPriorityTargets.delete(ws.deviceId);
-        trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
-        audit({kind:"display.media.ended",deviceId:ws.deviceId,mediaType:String(msg.mediaType||"unknown")});
-        return;
-      }
-
-      if (msg.type === "music.assistant.status" && ws.role === "display") {
-        const previous=runtime.displays[ws.deviceId]||{},status=boundedWsObject(msg.status,"Music Assistant status");
-        runtime.displays[ws.deviceId]={...previous,musicAssistant:{...status,desiredAudio:musicAssistantTvAudioState(ws.deviceId),updatedAt:new Date().toISOString()}};
-        broadcastControllers({type:"device.status",deviceId:ws.deviceId,status:publicDisplayStatus(ws.deviceId)});
-        if(status.protocolActive===true&&!ws.maAudioRestored&&!ws.maAudioRestorePending){ws.maAudioRestorePending=true;setTimeout(()=>{if(fullExportFreeze.requested){ws.maAudioRestorePending=false;return}trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws)).finally(()=>{ws.maAudioRestorePending=false})},250)}
-        if(ws.maAudioRestored){const desired=musicAssistantTvAudioState(ws.deviceId),patch={};const n=Number(status.volume);if(Number.isFinite(n)&&Math.max(0,Math.min(100,n))!==desired.volume)patch.volume=n;if(status.muted!==undefined&&!!status.muted!==desired.muted)patch.muted=!!status.muted;if(Object.keys(patch).length)setMusicAssistantTvAudioState(ws.deviceId,patch)}
-
-        // Reconcile scheduled Background Music after a display's persistent
-        // Music Assistant/Sendspin player comes back from a renderer reload or
-        // reconnect. The bridge can be protocol-active but idle; without this
-        // hook the scheduler may not restart the selected favorite promptly.
-        if(status.protocolActive===true){
-          try{
-            const bgCfg=backgroundMusicSchedule();
-            const reportedPlayer=String(status.clientId||status.playerId||`classroom-hub-${ws.deviceId}`);
-            if(bgCfg.enabled&&String(bgCfg.playerId||'')===reportedPlayer&&!backgroundMusicRuntime.manualStopped&&!backgroundMusicPriorityTargets.size&&status.isPlaying!==true){
-              backgroundMusicRuntime.playing=false;
-              if(!backgroundMusicRuntime.pausedForPriority)backgroundMusicRuntime.paused=false;
-            }
-            setTimeout(()=>backgroundMusicTick().catch(()=>{}),500);
-          }catch{}
-        }
-        return;
-      }
-
-      if (msg.type === "music.assistant.reconnect.request" && ws.role === "display") {
-        const attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
-        if(Array.isArray(attached)&&attached.includes(ws.deviceId)&&musicAssistantToken()){
-          ws.maAudioRestored=false;ws.maAudioRestorePending=false;
-          const issued=issueMusicAssistantProxyTicket(ws.deviceId);
-          wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:ws.deviceId,payload:musicAssistantTvAttachPayload(ws.deviceId,issued,{reconnect:true})}});
-          audit({kind:"musicassistant.sendspin.reconnect-issued",deviceId:ws.deviceId});
-        }
-        return;
-      }
-
-      if (msg.type === "heartbeat" && ws.role === "display") {
-        markDisplaySeen(ws, { meta: boundedWsObject(msg.meta,"Display heartbeat metadata") });
-        return wsSend(ws, { type: "heartbeat.ack", at: Date.now(),assetAccessToken:ws.role==="display"?issueAssetAccessToken(ws.deviceId,ws.displayCredentialId):undefined });
-      }
-
-      if (msg.type === "display.state" && ws.role === "display") {
-        const reportedState=boundedWsObject(msg.state,"Display state",256*1024);
-        markDisplaySeen(ws, { state: reportedState });
-        if (msg.state && typeof msg.state === "object") {
-          setDisplayState(ws.deviceId, { reportedState });
-          persistState();
-        }
-        return;
-      }
-
-      if (msg.type === "heartbeat" && ws.role === "lab-agent") {
-        const id=ws.labAgentId,meta=boundedWsObject(msg.meta,"Lab agent heartbeat metadata"),memory=boundedWsObject(msg.memory||meta.memory,"Lab agent memory",8*1024),capabilities=[...new Set((Array.isArray(msg.capabilities)?msg.capabilities:Array.isArray(meta.capabilities)?meta.capabilities:labComputerStore.computers[id]?.capabilities||[]).map(x=>String(x).slice(0,80)))].slice(0,100);upsertLabComputer(id,{hostname:String(msg.hostname||meta.hostname||labComputerStore.computers[id]?.hostname||id).slice(0,120),
-          user:String(msg.user||meta.user||"").slice(0,160),ip:String(msg.ip||meta.ip||(Array.isArray(meta.ipv4)?meta.ipv4[0]:"")||"").slice(0,80),os:String(msg.os||meta.os||"").slice(0,200),capabilities,
-          uptimeSeconds:Number(msg.uptimeSeconds||meta.uptimeSeconds||0)||0,memory,
-          agentVersion:String(msg.agentVersion||meta.agentVersion||labComputerStore.computers[id]?.agentVersion||"").slice(0,40),meta});
-        broadcastControllers({type:"lab.status",computer:publicLabComputer(id)});return wsSend(ws,{type:"heartbeat.ack",at:Date.now()});
-      }
-      if (msg.type === "lab.agent.event" && ws.role === "lab-agent") {
-        const event={category:String(msg.category||"agent").slice(0,80),severity:String(msg.severity||"info").toLowerCase().slice(0,20),message:String(msg.message||"").slice(0,4000),details:boundedWsObject(msg.details||{},"Lab agent event details",32*1024),occurredAt:String(msg.occurredAt||new Date().toISOString()).slice(0,50)};
-        audit({kind:"lab.agent.event",id:ws.labAgentId,...event});broadcastControllers({type:"lab.agent.event",id:ws.labAgentId,event});return wsSend(ws,{type:"lab.agent.event.ack",ok:true});
-      }
-      if (msg.type === "lab.history" && ws.role === "lab-agent") {
-        const result=ingestLabHistory(ws.labAgentId,msg.items||[]);upsertLabComputer(ws.labAgentId,{lastHistoryAt:new Date().toISOString()});
-        if(!result.disabled)broadcastControllers({type:"lab.history",id:ws.labAgentId,latest:result.latest||null,added:result.added});return wsSend(ws,{type:"lab.history.ack",...result});
-      }
-      if (msg.type === "lab.screenshot" && ws.role === "lab-agent") {
-        try{
-          const id=ws.labAgentId;
-          const b64=String(msg.data||"");
-          if(!b64)throw new Error("Empty screenshot");
-          const bytes=Buffer.from(b64,"base64");
-          if(bytes.length<4||bytes[0]!==0xff||bytes[1]!==0xd8||bytes[bytes.length-2]!==0xff||bytes[bytes.length-1]!==0xd9)throw new Error("Screenshot is not a valid JPEG image");
-          if(bytes.length>8*1024*1024)throw new Error("Screenshot exceeds 8 MB");
-
-          const now=new Date();
-          const save=msg.save===true;
-          const alertId=String(msg.alertId||"").trim();
-          const linkedAlert=alertId?labAiAlertsStore.alerts.find(a=>a.id===alertId):null;
-          if(alertId&&(!linkedAlert||linkedAlert.agentId!==id))throw new Error("Alert does not belong to this lab agent");
-          const dir=path.join(LAB_SCREENSHOT_DIR,id);
-          fs.mkdirSync(dir,{recursive:true});
-
-          // Live-view frames always overwrite one transient file.
-          // Explicit screenshots get their own timestamped retained file.
-          const file=save
-            ? `${now.toISOString().replace(/[:.]/g,"-")}.jpg`
-            : `live.jpg`;
-          const rel=path.join(id,file);
-          const full=path.join(dir,file);
-          fs.writeFileSync(full,bytes,{mode:0o600});
-
-          const rec=labComputerStore.computers[id];
-          if(rec){
-            rec.screenshotFile=rel;
-            rec.screenshotAt=now.toISOString();
-            rec.screenshotWidth=Number(msg.width||0)||null;
-            rec.screenshotHeight=Number(msg.height||0)||null;
-            rec.screenshotBytes=bytes.length;
-
-            if(save){
-              if(!Array.isArray(rec.screenshotHistory))rec.screenshotHistory=[];
-              rec.screenshotHistory.unshift({
-                file:rel,
-                capturedAt:now.toISOString(),
-                bytes:bytes.length,
-                width:rec.screenshotWidth,
-                height:rec.screenshotHeight
-              });
-              const dropped=rec.screenshotHistory.slice(500);rec.screenshotHistory=rec.screenshotHistory.slice(0,500);
-              for(const old of dropped){try{fs.rmSync(safeScreenshotPath(id,old.file),{force:true})}catch{}}
-            }
-
-            persistLabComputers();
-          }
-
-          if(alertId){
-            const alert=linkedAlert;
-            if(alert){
-              alert.screenshotUrl=`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshots/file?file=${encodeURIComponent(rel)}`;
-              alert.screenshotAt=now.toISOString();
-              alert.screenshotFile=rel;
-              persistLabAiAlerts();
-              broadcastControllers({type:"lab.ai.alert.updated",alert});
-            }
-          }
-
-          broadcastControllers({
-            type:"lab.screenshot",
-            id,
-            screenshotUrl:`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshot?t=${Date.now()}`
-          });
-
-          return wsSend(ws,{type:"lab.screenshot.ack",ok:true,saved:save});
-        }catch(err){
-          return wsSend(ws,{type:"lab.screenshot.ack",ok:false,error:err.message});
-        }
-      }
-
-      if (msg.type === "lab.command.result" && ws.role === "lab-agent") {
-        const id=ws.labAgentId,rec=labComputerStore.computers[id];if(rec){rec.lastCommand={...(rec.lastCommand||{}),
-          id:String(msg.commandId||rec.lastCommand?.id||""),
-          action:String(msg.action||rec.lastCommand?.action||""),
-          status:msg.ok===false?"failed":"completed",
-          completedAt:new Date().toISOString(),
-          message:String(msg.message||"").slice(0,4000),
-          result:msg.result&&typeof msg.result==="object"?msg.result:null
-        };persistLabComputers()}
-        audit({kind:"lab.command.result",id,commandId:msg.commandId,action:msg.action,ok:msg.ok!==false,message:msg.message||""});broadcastControllers({type:"lab.status",computer:publicLabComputer(id)});return;
-      }
-
-      if (msg.type === "command" && (ws.role === "controller" || ws.role === "admin")) {
-        if(dbStore.authEnabled()){
-          const user=dbStore.sessionUser(ws.sessionToken);
-          if(ws.role==="admin"?(!hasRole(user,"admin")||!hasCapability(user,"*")):!hasCapability(user,"classroom.control"))throw new Error("Session expired, was revoked, or no longer has the required permission");
-        }
-        const result = await executeCommand(msg.command || msg, "websocket");
-        return wsSend(ws, { type: "command.ack", result });
-      }
-
-      if (msg.type === "ping") {
-        return wsSend(ws, { type: "pong", at: Date.now() });
-      }
-
-      throw new Error("Unknown WebSocket message");
-    } catch (err) {
-      wsSend(ws, { type: "error", error: err.message });
-      if(msg?.type==="hello"&&ws.role==="unknown")setTimeout(()=>{try{ws.close(1008,"Authentication failed")}catch{}},25);
-    } finally {
-      fullExportFreeze.activeWsMutations=Math.max(0,fullExportFreeze.activeWsMutations-1);
-    }
-  });
-
-  ws.on("close", () => {
-    clearTimeout(ws.helloTimer);
-    wsClients.delete(ws);
-    runtime.websocketClients = wsClients.size;
-
-    if (ws.role === "lab-agent" && ws.labAgentId) markLabSocketDisconnected(ws);
-
-    if (ws.role === "display" && ws.deviceId) {
-      const current=runtime.displays[ws.deviceId]||{};
-
-      // Ignore stale close events from an older replaced/reconnected socket.
-      if (current.connectionId === ws.connectionId) {
-        runtime.displays[ws.deviceId] = {
-          ...current,
-          disconnectedAt: new Date().toISOString()
-        };
-
-        broadcastControllers({
-          type: "device.status",
-          deviceId: ws.deviceId,
-          status: publicDisplayStatus(ws.deviceId)
-        });
-
-        audit({ kind: "display.disconnected", deviceId: ws.deviceId, connectionId: ws.connectionId });
-      } else {
-        audit({
-          kind: "display.stale-disconnect-ignored",
-          deviceId: ws.deviceId,
-          closingConnectionId: ws.connectionId,
-          currentConnectionId: current.connectionId || null
-        });
-      }
-    }
-  });
-});
-
-const heartbeatTimer = setInterval(() => {
-  for (const ws of wsClients) {
-    if(dbStore.authEnabled()&&["controller","admin","preview"].includes(ws.role)&&(!ws.sessionToken||!dbStore.sessionUser(ws.sessionToken))){ws.close(1008,"Session expired or revoked");continue}
-    if (!ws.isAlive) {
-      ws.terminate();
-      continue;
-    }
-    ws.isAlive = false;
-    ws.ping();
-  }
-}, 15000);
-
-server.on("close", () => clearInterval(heartbeatTimer));
-
-
-// Conditional Morning Announcements watcher. Runs independently from fixed-time events.
-// It only probes during the configured school-day window and releases the displays back to
-// the normal scheduler as soon as the live stream ends (with offline confirmation debounce).
-restartMorningAnnouncementsWatcher();
-
-// Background Music has its own scheduler and is intentionally independent of Classroom Automation.
-const backgroundMusicTimer=setInterval(()=>backgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-tick"})),5000);backgroundMusicTimer.unref();
-const backgroundMusicStartupTimer=setTimeout(()=>backgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-startup"})),3500);backgroundMusicStartupTimer.unref();
-
-// Unified Classroom Automation scheduler
-// Discovery is short/non-blocking. Each due occurrence is durably claimed before
-// execution and may wait independently without blocking other scheduled work.
-let automationSchedulerBusy=false;
-const automationRunningOccurrences=new Map();
-const automationCancelledOccurrences=new Set();
-async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}){
-  const id=occurrenceId(event,dateKey,event.time);
-  automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"running",schedulerTime:schedulerClock.now().toISOString()});
-  try{
-    const runResult=await runClassroomAutomation({...event,_occurrenceId:id});
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(runResult)}};
-    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
-  }catch(err){
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:false,message:err.message};
-    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"failed",schedulerTime:schedulerClock.now().toISOString(),error:err.message});
-    audit({kind:"automation.error",automationId:storedEvent.id,name:storedEvent.name,error:err.message});
-  }finally{
-    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationCancelledOccurrences.delete(id);
-  }
-}
-async function automationSchedulerTick(){
-  if(fullExportFreeze.requested||automationSchedulerBusy||!automationSchedulerEnabled)return;
-  const clockStatus=schedulerClock.status();
-  if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
-  automationSchedulerBusy=true;
-  try{
-    const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
-    if(suppression.blocked)return;
-    const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes();
-    for(const storedEvent of classroomAutomations.events){
-      if(!storedEvent?.enabled)continue;
-      const referenceDates=[-1,0,1].map(offset=>{const d=new Date(now);d.setDate(d.getDate()+offset);return d});
-      const occurrences=automationClassIds(storedEvent).length
-        ? referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(storedEvent,referenceDate)).filter(event=>event._scheduledDateKey===dateKey)
-        : [storedEvent];
-      for(const event of occurrences){
-        const dateMatch=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
-        if(!dateMatch.match||isAutomationSuppressed(now).blocked)continue;
-        const [eventHour,eventMinute]=String(event.time||"00:00").split(":").map(Number);
-        const scheduledMinutes=eventHour*60+eventMinute,deltaMinutes=nowMinutes-scheduledMinutes;
-        if(deltaMinutes<0||deltaMinutes>SCHEDULER_CATCHUP_MINUTES)continue;
-        const occurrenceKey=event.classId||"manual",scheduledMinuteKey=`${dateKey} ${event.time}`;
-        storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-        if(storedEvent.lastExecByClass[occurrenceKey]===scheduledMinuteKey)continue;
-        const id=occurrenceId(event,dateKey,event.time);
-        const claim=automationRunLedger.claim(id,{automationId:storedEvent.id,classId:event.classId||null,schedulerTime:now.toISOString()});
-        if(!claim.claimed)continue;
-        if(morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([...automationDeferredDisplayTargets(event)]).length)queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes);
-        storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;storedEvent.lastExec=scheduledMinuteKey;storedEvent.updatedAt=new Date().toISOString();persistAutomations();
-        const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
-        automationRunningOccurrences.set(id,task);task.catch(()=>{});
-      }
-    }
-  }catch(error){diagnosticError(error,{component:"automation",operation:"scheduler-tick"})}
-  finally{automationSchedulerBusy=false}
-}
-const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
-const automationStartupReconcileTimer=setTimeout(()=>{if(automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation(reconcileScheduledAutomationState("startup-reconcile")).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
-
-// Legacy per-output Pluto schedules retained for migration/backward compatibility.
-// They share the same scheduler policy and Morning Announcements power reservation.
-let legacyPlutoSchedulerBusy=false;
-const legacyPlutoSchedulerTimer=setInterval(async()=>{
-  if(fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
-  const clockStatus=schedulerClock.status();if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
-  legacyPlutoSchedulerBusy=true;
-  try{
-    const now=schedulerClock.now(),hhmm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
-    const day=now.getDay(),minuteKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${hhmm}`;
-    let changed=false;if(isAutomationSuppressed(now).blocked)return;
-    for(const sch of Object.values(plutoSchedules)){
-      if(!sch?.enabled||!Array.isArray(sch.days)||!sch.days.map(Number).includes(day))continue;
-      sch.lastExec=sch.lastExec||{};sch.lastRun=sch.lastRun||{};
-      for(const [kind,time,index] of [["on",sch.onTime,0],["off",sch.offTime,1]]){
-        if(time!==hhmm||sch.lastExec[kind]===minuteKey)continue;
-        const displayId=Object.keys(devices).find(id=>Number(devices[id]?.avOutput)===Number(sch.index));
-        if(displayId&&morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([displayId]).length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${displayId}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
-        sch.lastExec[kind]=minuteKey;
-        try{const result=await directPluto({action:"cecOutput",output:Number(sch.index),connection:sch.type,index});assertAdapterResults([result],{action:"Legacy TV power"});sch.lastRun={text:`${kind==="on"?"On":"Off"} ${now.toLocaleString()}`,stamp:Date.now(),ok:true}}
-        catch(e){sch.lastRun={text:`ERROR ${now.toLocaleString()}: ${e.message}`,stamp:Date.now(),ok:false}}
-        changed=true;
-      }
-    }
-    if(changed)persistPlutoSchedules();
-  }finally{legacyPlutoSchedulerBusy=false}
-},15000);legacyPlutoSchedulerTimer.unref();
-
-connectMqtt();
-
-try{
-  const result=dbStore.importAuditJsonl(AUDIT_FILE,{archive:true});
-  if(result.imported)console.log(`Imported ${result.imported} legacy audit events into SQLite`);
-}catch(err){console.warn(`Legacy audit migration skipped: ${err.message}`)}
-
-server.listen(PORT, BIND_ADDRESS, () => {
-  console.log(`Classroom Control Hub Backend v${APPLICATION_VERSION} listening on ${BIND_ADDRESS}:${PORT}`);
-  console.log(`Scheduler timezone: ${SCHEDULER_TIMEZONE}; local time: ${schedulerLocalTimestamp()}; catch-up: ${SCHEDULER_CATCHUP_MINUTES} minute(s)`);
-  console.log(`Room: ${deviceConfig.room || ROOM_NAME}`);
-  console.log(`MQTT: ${endpointForLog(MQTT_URL) || "disabled"}`);
-  console.log("Node-RED: not required (v0.8 direct hardware mode)");
-});
-const goveeReconcileTimer=setInterval(()=>{if(!fullExportFreeze.requested)reconcileGoveeDiscovery()},60000);
-function gracefulShutdown(signal){
-  if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
-  veyonCommandQueue.stop();
-  esphomeManager.close();
-  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
-  for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
-  try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};
-  const force=setTimeout(()=>process.exit(1),10000);force.unref();
-  server.close(async()=>{while(veyonCommandQueue.running>0)await new Promise(resolve=>setTimeout(resolve,25));try{dbStore.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");dbStore.db.close()}catch{};clearTimeout(force);process.exit(0)});
-}
-process.once("SIGTERM",()=>gracefulShutdown("SIGTERM"));process.once("SIGINT",()=>gracefulShutdown("SIGINT"));
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×Ÿ{ã”èµ©hºÚn¶X§zÍH\ÙHÝšXÝŽÂ‚˜ÛÛœÝ^™\ÜÈH™\]Z\™J™^™\ÜÈŠNÂ˜ÛÛœÝÑTÔÛYSX[˜YÙ\‹™YÚ\Ý\‘TÔÛYT›Ý]\ßO\™\]Z\™J‹‹Ù\ÜÛYHŠNÂ˜ÛÛœÝØY™™\™Y™^[Û‘™]Ú™^[Û”™\ÜÛœÙQ\œ›Ü‹™XY™^[Û‘œ˜[YKØY™U™^[Û‘˜Z[\™_O\™\]Z\™J‹‹Ý™^[Û‹]˜[œÜÜŠNÂ˜ÛÛœÝÕ™^[ÛÛÛ[X[™]Y]Y_O\™\]Z\™J‹‹Ý™^[Û‹XÛÛ[X[™\]Y]YHŠNÂ˜ÛÛœÝÒS”UÑ‘PUT‘WÕRQÙ^P\™Ý[Y[ËÙ^PY™\\ÙYÓT“ÐT‘Ñ‘PUT‘KÛ\›Ø\™\™Ý[Y[ËÛ\›Ø\™Y™\\ÙYS•T“‘UÑÕPT‘Ñ‘PUT‘WÕRQÕÑT—Ñ‘PUT‘TË›Ü›X[^™SXXËØZÙPÛÛ\]\‹ÝÙ\\™Ý[Y[Ë™X]\™PØ][ÙË›Ü›X[^™S\ÜÛÛXÝ[ÛŸO\™\]Z\™J‹‹Ý™^[Û‹Yœ™YKY™X]\™\ÈŠNÂ˜ÛÛœÝÜÙ\šXÙU\›Ù\šXÙRÜÝ˜[YÜØØ[\›HH™\]Z\™J‹‹Û™]ÛÜšÈŠNÂ˜ÛÛœÝH™\]Z\™JšŠNÂ˜ÛÛœÝœÈH™\]Z\™J™œÈŠNÂ˜ÛÛœÝÜÈH™\]Z\™J›ÜÈŠNÂ˜ÛÛœÝ]H™\]Z\™Jœ]ŠNÂ˜ÛÛœÝÜž\ÈH™\]Z\™J˜Üž\ÈŠNÂ˜ÛÛœÝÜ˜[HH™\]Z\™J™Ü˜[HŠNÂ˜ÛÛœÝ™]H™\]Z\™J›™]ŠNÂ˜ÛÛœÝÈ^XÑš[HHH™\]Z\™J˜Ú[Ü›ØÙ\ÜÈŠNÂ˜ÛÛœÝÈ›ÛZ\ÚYžHHH™\]Z\™J][ŠNÂ˜ÛÛœÝ^XÑš[P\Þ[˜ÈH›ÛZ\ÚYžJ^XÑš[JNÂ˜ÛÛœÝØÜž\\Þ[˜ÈH›ÛZ\ÚYžJÜž\ËœØÜž\
+NÂ˜ÛÛœÝ][\ˆH™\]Z\™J›][\ˆŠNÂ˜ÛÛœÝ\]H™\]Z\™J›\]ŠNÂ˜ÛÛœÝÈÙX”ÛØÚÙ]Ù\™\‹ÙX”ÛØÚÙ]HH™\]Z\™JÜÈŠNÂ˜ÛÛœÝÜ˜]S[Z]O\™\]Z\™J™^™\ÜË\˜]K[[Z]ŠNÂ˜ÛÛœÝÜÙ[™Ü[‘[™Ú[™[^TÙ[™Ü[ŸHH™\]Z\™J‹‹Û]\ÚXËX\ÜÚ\Ý[\Ù[™Ü[ˆŠNÂ˜ÛÛœÝÜ\œÙP[ÝÙYÜÝÎœ\œÙQ\Ü^QØ]]Ø^P[ÝÙYÜÝË˜[Y]P[ÝÙY\™Ù]˜[Y]Q\Ü^QØ]]Ø^U\™Ù]O\™\]Z\™J‹‹Ù\Ü^KYØ]]Ø^HŠNÂ˜ÛÛœÝYVš\H™\]Z\™J˜YK^š\ŠNÂ˜ÛÛœÝÐÛ\ÜÜ›ÛÛRX”ÝÜ˜YÙKÙ^Q›Ü‘š[_HH™\]Z\™J‹‹ÜÝÜ˜YÙHŠNÂ˜ÛÛœÝÔ“ÓÓQÓÐ“S—ÒQS•U_O\™\]Z\™J‹‹Øœ˜[™ZY[]HŠNÂ˜ÛÛœÝØ\XØ][Û•™\œÚ[ÛŸO\™\]Z\™J‹‹Ý™\œÚ[ÛˆŠNÂ˜ÛÛœÝÜÙXÝ\™UÚÙ[‘\]X[Ø\Xš[]Y\Ñ›Ü‹\ÐØ\Xš[]Nœ›Ùš[R\ÐØ\Xš[]_O\™\]Z\™J‹‹ÜÙXÝ\š]HŠNÂ˜ÛÛœÝÜ™XÛÝ™\žU˜[œÜÜ[ÝÙY˜[Y™XÛÝ™\žRY›Ý[™Y™XÛÝ™\žTÝ]\ßO\™\]Z\™J‹‹Ü™XÛÝ™\žK]˜[œÜÜ\ÛXÞHŠNÂ˜ÛÛœÝÙY˜][ØÚÛÛØÚY[T›Ùš[KYØXÞTØÚÛÛØÚY[T›Ùš[K›Ü›X[^™TØÚÛÛØÚY[T›Ùš[KY™™XÝ]™U[Y\Ñ›Ü”[KÜ›Ý\›ÜÞXÛQ^K˜[Y[Y_O\™\]Z\™J‹‹ÜØÚÛÛ\ØÚY[HŠNÂ˜ÛÛœÝØXÝ[Û”™\ÛÝ\˜ÙQÛXZ[‹›Ü›X[^™R[YÙ\“Z[]\Ë^[™\Ü^U\™Ù]Ë^[™•\™Ù]Ë\ÜÙ\Y\\”™\Ý[ËØÚY[\ÛØÚËØØÝ\œ™[˜ÙRYXZÙSYÙ\ŸO\™\]Z\™J‹‹Ø]]ÛX][Û‹\[[YHŠNÂ‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈÛÛ™šYÝ\˜][Û‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‚˜ÛÛœÝÔ•H˜[YÜ
+›ØÙ\ÜË™[‹”Ô•Ì
+NÂ˜ÛÛœÝ’S‘ÐQ‘TÔÈHÝš[™Ê›ØÙ\ÜË™[‹’S‘ÐQ‘TÔÈŒŒŒŒŠKœ™\XÙJ×—ßIÙËˆŠNÂ›ØØ[\›
+Ô•’S‘ÐQ‘TÔÊNÈËÈ˜[Y]H™Y›Ü™HÜ[š[™È\Ý[™\œË‚›]ÐÒQST—ÕSQV“Ó‘HHÝš[™Ê›ØÙ\ÜË™[‹”ÐÒQST—ÕSQV“Ó‘H›ØÙ\ÜË™[‹•ˆ[Y\šXØKÓ™]×Ö[ÜšÈŠKš[J
+H[Y\šXØKÓ™]×Ö[ÜšÈŽÂ˜ÛÛœÝÐÒQST—ÐÐUÒTÓRS•UTÈHX]›X^
+X]›Z[ŠŒ[X™\Š›ØÙ\ÜË™[‹”ÐÒQST—ÐÐUÒTÓRS•UTÈJJJNÂœ›ØÙ\ÜË™[‹•ˆHÐÒQST—ÕSQV“Ó‘NÂ˜ÛÛœÝ“ÓÓWÓSQHHÝš[™Ê›ØÙ\ÜË™[‹”“ÓÓWÓSQHÛ\ÜÜ›ÛÛHŠNÂ˜ÛÛœÝTPÐUSÓ—Õ‘T”ÒSÓˆH\XØ][Û•™\œÚ[ÛŠ
+NÂ‚›]TUÕT“HÙ\šXÙU\›
+›ØÙ\ÜË™[‹“TUÕT“ˆ‹È›[ÜÜ]Z]È—JKš[J
+NÂ›]TUÕTÑT“SQHHÝš[™Ê›ØÙ\ÜË™[‹“TUÕTÑT“SQHˆŠNÂ›]TUÔTÔÕÓÔ‘HÝš[™Ê›ØÙ\ÜË™[‹“TUÔTÔÕÓÔ‘ˆŠNÂ›]TUÓQÐPÖWÐ”’QÑHBˆÝš[™Ê›ØÙ\ÜË™[‹“TUÓQÐPÖWÐ”’QÑHYHŠKÓÝÙ\Ø\ÙJ
+HOOHYHŽÂ›]TUÒ”ÓÓ—Ð”’QÑHBˆÝš[™Ê›ØÙ\ÜË™[‹“TUÒ”ÓÓ—Ð”’QÑHYHŠKÓÝÙ\Ø\ÙJ
+HOOHYHŽÂ‚‹ËÈŒŽ\™XÝ\™Ø\™H[YÜ˜][ÛœËˆ›ÙKT‘Q\È›ÈÛ™Ù\ˆ™\]Z\™Y‚˜ÛÛœÝT‘ÐT‘WÐÓÓ‘’Q×Ñ’SHH]š›Ú[Š]œ™\ÛÛ™J×Ù\›˜[YK‹‹ˆŠK˜ÛÛ™šYÈ‹š\™Ø\™KšœÛÛˆŠNÂ›]U×ÕT“HÝš[™Ê›ØÙ\ÜË™[‹”U×ÕT“ˆŠKš[J
+NÂ›]U×ÕSQSÕUÓTÈH[X™\Š›ØÙ\ÜË™[‹”U×ÕSQSÕUÓTÈ
+NÂ›]U×Ô‘PQÔ‘U’QTÈH[X™\Š›ØÙ\ÜË™[‹”U×Ô‘PQÔ‘U’QTÈ
+NÂ‚˜ÛÛœÝÓÓ•“ÓÕÒÑSˆHÝš[™Ê›ØÙ\ÜË™[‹ÓÓ•“ÓÕÒÑSˆˆŠNÂ˜ÛÛœÝÑUTÕÒÑSˆHÝš[™Ê›ØÙ\ÜË™[‹”ÑUTÕÒÑSˆˆŠNÂ˜ÛÛœÝPRS•SSÑWÔ“ÖWÑSP“QHÝš[™Ê›ØÙ\ÜË™[‹“PRS•SSÑWÔ“ÖWÑSP“Q™˜[ÙHŠKÓÝÙ\Ø\ÙJ
+HOOHYHŽÂ˜ÛÛœÝÓÔ”×ÐSÕÑQÓÔ’QÒS”ÈH™]ÈÙ]
+Ýš[™Ê›ØÙ\ÜË™[‹ÓÔ”×ÐSÕÑQÓÔ’QÒS”ÈˆŠKœÜ]
+‹ŠK›X\
+Ožš[J
+JK™š[\Š›ÛÛX[ŠJNÂ˜ÛÛœÝÔ×ÓPVÔVSÐQÐ–UTÈHX]›X^
+L
+ŒLX]›Z[ŠMŠŒL
+ŒL[X™\Š›ØÙ\ÜË™[‹•Ô×ÓPVÔVSÐQÓPŸLŠJŒL
+ŒL
+JNÂ˜ÛÛœÝPRS•SSÑWÕT“HÙ\šXÙU\›
+›ØÙ\ÜË™[‹“PRS•SSÑWÕT“š‹ËÌLËŒŒŒNŒÌL‹È›XZ[[˜[˜ÙKXYÙ[‹˜Û\ÜÜ›ÛÛKXÛÛ›ÛZX‹[XZ[[˜[˜ÙH—JKœ™\XÙJ×ÉËˆŠNÂ˜ÛÛœÝPRS•SSÑWÕÒÑSˆHÝš[™Ê›ØÙ\ÜË™[‹“PRS•SSÑWÕÒÑSˆˆŠNÂ˜ÛÛœÝ•TÕÔ“ÖWÒÔÈHX]›X^
+X]›Z[ŠK[X™\Š›ØÙ\ÜË™[‹••TÕÔ“ÖWÒÔÈ
+JJNÂ˜ÛÛœÝTÔVWÑÐUUÐVWÒÔÕÏVË‹‹œ\œÙQ\Ü^QØ]]Ø^P[ÝÙYÜÝÊ
+WKœÛÜ
+
+NÂ˜ÛÛœÝÑÒS—ÓPVÐUSTÈHX]›X^
+ËX]›Z[ŠŒ[X™\Š›ØÙ\ÜË™[‹“ÑÒS—ÓPVÐUSTÈJJJNÂ˜ÛÛœÝÑÒS—ÕÒS‘Õ×ÓTÈHX]›X^
+Œ[X™\Š›ØÙ\ÜË™[‹“ÑÒS—ÕÒS‘Õ×ÓTÈMH
+ˆŒ
+ˆL
+JNÂ˜ÛÛœÝÑÒS—ÓÐÒ×ÓTÈHX]›X^
+Œ[X™\Š›ØÙ\ÜË™[‹“ÑÒS—ÓÐÒ×ÓTÈMH
+ˆŒ
+ˆL
+JNÂ˜ÛÛœÝ[^Üœ™Y^™O^Ü™\]Y\ÝY™˜[ÙKXÝ]™N™˜[ÙKÚÙ[Ž›[XÝ]™R]]][ÛœÎŒXÝ]™UÜÓ]]][ÛœÎŒXÝ]™P\Þ[˜Ó]]][ÛœÎŒÝ\Y]›[X\ÙU[Y\Ž›[NÂ™[˜Ý[Ûˆ˜XÚÑ[^Ü]]][ÛŠ\ÚÊ^Âˆ[^Üœ™Y^™K˜XÝ]™P\Þ[˜Ó]]][ÛœÊÊÎÂˆ™]\›ˆ›ÛZ\ÙKœ™\ÛÛ™J\ÚÊK™š[˜[J
+
+OOžÙ[^Üœ™Y^™K˜XÝ]™P\Þ[˜Ó]]][ÛœÏSX]›X^
+[^Üœ™Y^™K˜XÝ]™P\Þ[˜Ó]]][ÛœËLJ_JNÂŸB‚‹ËÈ™^[Ûˆ™XÛÛY\ÈHX‹XÛÛ\]\ˆÛÛ›Û[™H[ˆŒŒŒŒ‚›]‘VSÓ—ÕÑPTWÕT“HÙ\šXÙU\›
+›ØÙ\ÜË™[‹•‘VSÓ—ÕÑPTWÕT“š‹ËÌLËŒŒŒNŒLL‹È™^[Û‹]ÙX˜\H—JKœ™\XÙJ×ÉËˆŠNÂ›]‘VSÓ—ÒÑVWÓSQHHÝš[™Ê›ØÙ\ÜË™[‹•‘VSÓ—ÒÑVWÓSQHÛ\ÜÜ›ÛÛPÛÛ›ÛXˆŠNÂ˜ÛÛœÝ‘VSÓ—Ô’UUWÒÑVWÑ’SHHÝš[™Ê›ØÙ\ÜË™[‹•‘VSÓ—Ô’UUWÒÑVWÑ’SH‹Ü[‹ÜÙXÜ™]ËÝ™^[Û‹\š]˜]KZÙ^HŠNÂ›]‘VSÓ—ÔÐÐS—ÔÕP“‘UHÝš[™Ê›ØÙ\ÜË™[‹•‘VSÓ—ÔÐÐS—ÔÕP“‘UˆŠKœ™\XÙJ×‰ËˆŠNÂ›]‘VSÓ—ÔÐÐS—ÔÕT•HX]›X^
+KX]›Z[ŠM[X™\Š›ØÙ\ÜË™[‹•‘VSÓ—ÔÐÐS—ÔÕT•JJJNÂ›]‘VSÓ—ÔÐÐS—ÑS‘HX]›X^
+‘VSÓ—ÔÐÐS—ÔÕT•X]›Z[ŠM[X™\Š›ØÙ\ÜË™[‹•‘VSÓ—ÔÐÐS—ÑS‘M
+JJNÂ›]‘VSÓ—ÔÓÓÓPVHX]›X^
+X]›Z[ŠLŽ[X™\Š›ØÙ\ÜË™[‹•‘VSÓ—ÔÓÓÓPV
+JJNÂ›]‘VSÓ—ÐUUÔ‘U’QTÈHX]›X^
+X]›Z[ŠK[X™\Š›ØÙ\ÜË™[‹•‘VSÓ—ÐUUÔ‘U’QTßŠJJNÂ›]‘VSÓ—ÕSP“RSÐÓÓÕT”‘SÖHHX]›X^
+‹X]›Z[Š[X™\Š›ØÙ\ÜË™[‹•‘VSÓ—ÕSP“RSÐÓÓÕT”‘SÖ_
+JJNÂ˜ÛÛœÝ‘VSÓ—ÐUUÑVT×ÕURQHŒÍŽXŒÌKNXM™‹N˜YKLLŽÙLLÌÌMŽÂ˜ÛÛœÝ‘VSÓ—Ñ‘PUT‘TÈHØš™XÝ™œ™Y^™JÂˆ‹‹”ÕÑT—Ñ‘PUT‘TËˆÛ\›Ø\™Üš]NÓT“ÐT‘Ñ‘PUT‘KˆÙ^TÙ\]Y[˜ÙN’S”UÑ‘PUT‘WÕRQˆ[\›™]ÝX\™’S•T“‘UÑÕPT‘Ñ‘PUT‘WÕRQˆØÜ™Y[“ØÚÎˆ˜ØØLÍXL‹LYMØÌKXMÌKNÙ˜Œ˜XÍÎH‹ˆ[œ]ØÚÎˆ™MMÍÎÎKYMMM™XËX˜ÌNYMLÍŒÌØŽLÍÈ‹ˆ\Ù\“ÙÚ[ŽˆÌÌLÌÙLÎLNMŒXNMKMX™ML˜ØŽMN‹ˆ\Ù\“ÙÛÙ™ŽˆÌÌLYÙXXLËMÎYKXLØKNØŒYÙYLˆ‹ˆ™X›ÛÝˆÙNŒLÎMXKM™™‹XŽMŽYMXŽÍÈ‹ˆÝÙ\‘ÝÛŽˆ™XLØLLL™‹MM™KXY˜ØËMØXYMŒ™YYLL‹ˆ[[ÔÙ\™\Žˆ™M™MÍËLYX‹MLYNLÍYLLLŒŒ‹ˆ[ØÜ™Y[‘[[ÐÛY[ˆØŒŒÌX™YXŽKMYËXYŒÌ‹YÌŒØŒ™ŽÎ‹ˆÚ[™ÝÑ[[ÐÛY[ˆ˜YMXÌÙ‹YÌ™KMŒXYN‹LÍÍÙXŽÍŒ˜È‹ˆÝ\\ˆ™NXØMM˜KXŒ˜YM™™‹NŽKNLŽXŒŽLØˆ‹ˆÜ[•ÙXœÚ]NˆŽLLXMÍYXŒÙ‹M‹XŽXØ‹YŽŒ™XŒÈ‹ˆ^Y\ÜØYÙNˆ™MÍXYNXÎXXÌMËMNŒLNLÍÍŒŒ‚ŸJNÂ‚˜ÛÛœÝ‘VSÓ—ÐÓÓSPS‘ÔÓPÖHHØš™XÝ™œ™Y^™JÂˆÝÙ\‘ÝÛ“›ÝÎžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_K[œÝ[\]\Ð[™ÝÙ\‘ÝÛŽžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_KˆÝÙ\‘ÝÛÛÛ™š\›YYžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_KÝÙ\‘ÝÛ‘[^YYžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_Kˆ™X›ÛÝžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_KÝÙ\‘ÝÛŽžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_K\Ù\“ÙÚ[ŽžÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_Kˆ\Ù\“ÙÛÙ™ŽžÜ™\]Z\™\Õ\Ù\ŽY_K^Y\ÜØYÙNžÜ™\]Z\™\Õ\Ù\ŽY_KÜ[•ÙXœÚ]NžÜ™\]Z\™\Õ\Ù\ŽY_KˆÝ\\žÜ™\]Z\™\Õ\Ù\ŽY_KØÜ™Y[“ØÚÎžÜ™\]Z\™\Õ\Ù\ŽY_K[œ]ØÚÎžÜ™\]Z\™\Õ\Ù\ŽY_Kˆ[[ÔÙ\™\ŽžÜ™\]Z\™\Õ\Ù\ŽY_K[ØÜ™Y[‘[[ÐÛY[žÜ™\]Z\™\Õ\Ù\ŽY_KÚ[™ÝÑ[[ÐÛY[žÜ™\]Z\™\Õ\Ù\ŽY_Kˆ[\›™]ÝX\™žÜ™\]Z\™\Õ\Ù\Ž™˜[Ù_BŸJNÂ™[˜Ý[Ûˆ™^[Û”ÛXÞQ›ÜŠ™X]\™KXÝ]™O]YJ^ÂˆYŠXÝ]™OOOY˜[ÙI‰–ÈœØÜ™Y[“ØÚÈ‹š[œ]ØÚÈ‹™[[ÔÙ\™\ˆ‹™[ØÜ™Y[‘[[ÐÛY[‹Ú[™ÝÑ[[ÐÛY[‹š[\›™]ÝX\™—Kš[˜ÛY\Ê™X]\™JJBˆ™]\›ˆÜ™\]Z\™\Õ\Ù\Ž™˜[ÙK™XÛÝ™\žNY_NÂˆ™]\›ˆ‘VSÓ—ÐÓÓSPS‘ÔÓPÖVÙ™X]\™W_Ü™\]Z\™\Õ\Ù\ŽY_NÂŸB˜\Þ[˜È[˜Ý[Ûˆ™^[ÛÛÛ[X[™[YÚXš[]J™XË™X]\™KXÝ]™O]YJ^ÂˆÛÛœÝÛ›[™OX]ØZ]™^[Û•Ü›Ø™J™XËš\
+NÂˆYŠ[Û›[™J\™]\›ˆÙ[YÚX›N™˜[ÙK™X\ÛÛŽˆ›Ù™›[™HŸNÂˆYŠØš™XÝš\ÓÝÛŠÕÑT—Ñ‘PUT‘TË™X]\™JJ^ÂˆÛÛœÝ]˜Z[X›OX]ØZ]™^[Û]˜Z[X›Q™X]\™\Ê™XËš\
+NÂˆYŠP\œ˜^Kš\Ð\œ˜^J]˜Z[X›J_X]˜Z[X›KœÛÛYJO”Ýš[™Ê‹ZY‹•ZY‹•RQˆŠKœ™\XÙJÖÞßWKÙËˆŠOOOTÕÑT—Ñ‘PUT‘TÖÙ™X]\™WJJ\™]\›ˆÙ[YÚX›N™˜[ÙK™X\ÛÛŽˆ™™X]\™K[›ÝXY™\\ÙYŸNÂˆBˆYŠ™X]\™OOOH˜Û\›Ø\™Üš]H‰‰ˆXÛ\›Ø\™Y™\\ÙY
+]ØZ]™^[Û]˜Z[X›Q™X]\™\Ê™XËš\
+JJ\™]\›ˆÙ[YÚX›N™˜[ÙK™X\ÛÛŽˆ˜Û\›Ø\™XœšYÙK][˜]˜Z[X›HŸNÂˆYŠ™X]\™OOOHšÙ^TÙ\]Y[˜ÙH‰‰ˆZÙ^PY™\\ÙY
+]ØZ]™^[Û]˜Z[X›Q™X]\™\Ê™XËš\
+JJ\™]\›ˆÙ[YÚX›N™˜[ÙK™X\ÛÛŽˆšÙ^X›Ø\™XœšYÙK][˜]˜Z[X›HŸNÂˆÛÛœÝÛXÞO]™^[Û”ÛXÞQ›ÜŠ™X]\™KXÝ]™JNÂˆYŠ\ÛXÞKœ™\]Z\™\Õ\Ù\Š\™]\›ˆÙ[YÚX›NY_NÂˆÛÛœÝ\Ù\X]ØZ]™^[ÛÛÛ›™XÝYœÛÛŠ™XËš\‹Ø\KÝŒKÝ\Ù\ˆŠNÂˆYŠTÝš[™Ê\Ù\Ë›ÙÚ[ŸˆŠKš[J
+J\™]\›ˆÙ[YÚX›N™˜[ÙK™X\ÛÛŽˆ››Ë]\Ù\‹\Ù\ÜÚ[ÛˆŸNÂˆ™]\›ˆÙ[YÚX›NYK\Ù\ŸNÂŸB‚˜ÛÛœÝP—ÐQÑS•ÕÒÑSˆHÝš[™Ê›ØÙ\ÜË™[‹“P—ÐQÑS•ÕÒÑSˆˆŠNÂ›]P—ÒTÕÔ–WÔ‘US•SÓ—ÒÕT”ÈHX]›X^
+X]›Z[Š
+ŒÍK[X™\Š›ØÙ\ÜË™[‹“P—ÒTÕÔ–WÔ‘US•SÓ—ÒÕT”È
+JJNÂ›]P—ÔÐÔ‘QS”ÒÕÔ‘US•SÓ—ÑVTÈHX]›X^
+KX]›Z[ŠÍK[X™\Š›ØÙ\ÜË™[‹“P—ÔÐÔ‘QS”ÒÕÔ‘US•SÓ—ÑVTÈÊJJNÂ˜ÛÛœÝP—ÐRWÓSÓ’UÔ—ÑSP“QHÝš[™Ê›ØÙ\ÜË™[‹“P—ÐRWÓSÓ’UÔ—ÑSP“QYHŠKÓÝÙ\Ø\ÙJ
+HOOH™˜[ÙHŽÂ˜ÛÛœÝP—ÐRWÐST•ÐÓÓÓÕÓ—ÓRS•UTÈHX]›X^
+KX]›Z[ŠM[X™\Š›ØÙ\ÜË™[‹“P—ÐRWÐST•ÐÓÓÓÕÓ—ÓRS•UTÈL
+JJNÂ˜ÛÛœÝTÔVWÕÒÑSˆHÝš[™Ê›ØÙ\ÜË™[‹‘TÔVWÕÒÑSˆˆŠNÂ˜ÛÛœÝPVÕTÐQÓPˆH[X™\Š›ØÙ\ÜË™[‹“PVÕTÐQÓPˆL
+NÂ˜ÛÛœÝU’PÑWÓÑ‘“S‘WÔÑPÓÓ‘ÈH[X™\Š›ØÙ\ÜË™[‹‘U’PÑWÓÑ‘“S‘WÔÑPÓÓ‘ÈJNÂ‚˜ÛÛœÝTÑTˆH]œ™\ÛÛ™J×Ù\›˜[YK‹‹ˆŠNÂ˜ÛÛœÝP“P×ÑTˆH]š›Ú[ŠTÑT‹œX›XÈŠNÂ˜ÛÛœÝUWÑTˆH]œ™\ÛÛ™J›ØÙ\ÜË™[‹‘UWÑTˆ]š›Ú[ŠTÑT‹™]HŠJNÂ˜ÛÛœÝQQPWÑTˆH]š›Ú[ŠUWÑT‹›YYXHŠNÂ˜ÛÛœÝÕUWÑ’SHH]š›Ú[ŠUWÑT‹œÝ]KšœÛÛˆŠNÂ˜ÛÛœÝUQUÑ’SHH]š›Ú[ŠUWÑT‹˜]Y]šœÛÛ›ŠNÂ˜ÛÛœÝU’PÑWÐÓÓ‘’Q×Ñ’SHH]š›Ú[ŠTÑT‹˜ÛÛ™šYÈ‹™]šXÙ\ËšœÛÛˆŠNÂ˜ÛÛœÝÐÑS‘T×Ñ’SHH]š›Ú[ŠUWÑT‹œØÙ[™\ËšœÛÛˆŠNÂ˜ÛÛœÝ•S•SQWÐÓÓ‘’Q×Ñ’SHH]š›Ú[ŠUWÑT‹œ[[YKXÛÛ™šYËšœÛÛˆŠNÂ˜ÛÛœÝÑTÔÒSÓ”×Ñ’SHH]š›Ú[ŠUWÑT‹œÙ\ÜÚ[ÛœËšœÛÛˆŠNÂ˜ÛÛœÝU×ÔÐÒQST×Ñ’SHH]š›Ú[ŠUWÑT‹œ]Ë\ØÚY[\ËšœÛÛˆŠNÂ˜ÛÛœÝU—ÓP‘S×Ñ’SHH]š›Ú[ŠUWÑT‹˜]‹[X™[ËšœÛÛˆŠNÂ˜ÛÛœÝQQPWÓP”T–WÑ’SHH]š›Ú[ŠUWÑT‹›YYXK[Xœ˜\žKšœÛÛˆŠNÂ˜ÛÛœÝUUÓPUSÓ”×Ñ’SHH]š›Ú[ŠUWÑT‹˜]]ÛX][ÛœËšœÛÛˆŠNÂ˜ÛÛœÝÐÒQST—ÐÐSS‘T—Ñ’SHH]š›Ú[ŠUWÑT‹œØÚY[\‹XØ[[™\‹šœÛÛˆŠNÂ˜ÛÛœÝSÔ“’S‘×ÐS““ÕSÑSQS•×Ñ’SHH]š›Ú[ŠUWÑT‹›[Ü›š[™ËX[››Ý[˜Ù[Y[ËšœÛÛˆŠNÂ˜ÛÛœÝÓÕ‘QWÑTÐÓÕ‘T–WÑ’SHH]š›Ú[ŠUWÑT‹™ÛÝ™YKY\ØÛÝ™\žKšœÛÛˆŠNÂ˜ÛÛœÝÓÕ‘QWÔ‘PÓÓÒSWÑÔPÑWÓTÈHL
+ˆŒ
+ˆLÂ˜ÛÛœÝ‘TÑS•USÓ”×ÑTˆH]š›Ú[ŠUWÑT‹œ™\Ù[][ÛœÈŠNÂ˜ÛÛœÝ‘TÑS•USÓ—ÕTÐQÕTH]š›Ú[ŠUWÑT‹œ™\Ù[][Û‹]\ØY]\ŠNÂ˜ÛÛœÝ‘TÑS•USÓ—ÓP”T–WÑ’SHH]š›Ú[ŠUWÑT‹œ™\Ù[][Û‹[Xœ˜\žKšœÛÛˆŠNÂ˜ÛÛœÝ‘TÑS•USÓ—ÔÕUWÑ’SHH]š›Ú[ŠUWÑT‹œ™\Ù[][Û‹\Ý]KšœÛÛˆŠNÂ˜ÛÛœÝ‘VSÓ—ÐÓÓTUT”×Ñ’SHH]š›Ú[ŠUWÑT‹™^[Û‹XÛÛ\]\œËšœÛÛˆŠNÂ˜ÛÛœÝÓTÔ×ÔÐÒQST×Ñ’SHH]š›Ú[ŠUWÑT‹˜Û\ÜË\ØÚY[\ËšœÛÛˆŠNÂ˜ÛÛœÝP—ÐÓÓTUT”×Ñ’SHH]š›Ú[ŠUWÑT‹›X‹XÛÛ\]\œËšœÛÛˆŠNÂ˜ÛÛœÝP—ÒTÕÔ–WÑ’SHH]š›Ú[ŠUWÑT‹›X‹Z\ÝÜžKšœÛÛˆŠNÂ˜ÛÛœÝP—ÔÐÔ‘QS”ÒÕÑTˆH]š›Ú[ŠUWÑT‹›X‹\ØÜ™Y[œÚÝÈŠNÂ˜ÛÛœÝP—ÕTUWÑTˆH]š›Ú[ŠUWÑT‹›X‹]\]\ÈŠNÂ˜ÛÛœÝP—ÐRWÐST•×Ñ’SHH]š›Ú[ŠUWÑT‹›X‹XZKX[\ËšœÛÛˆŠNÂ˜ÛÛœÝP—ÐRWÔ•ST×Ñ’SHH]š›Ú[ŠUWÑT‹›X‹XZK\[\ËšœÛÛˆŠNÂ™œË›ZÙ\”Þ[˜ÊP—ÔÐÔ‘QS”ÒÕÑT‹Ü™XÝ\œÚ]™NY_JNÂ™œË›ZÙ\”Þ[˜ÊP—ÕTUWÑT‹Ü™XÝ\œÚ]™NY_JNÂ˜ÛÛœÝÑTÔÒSÓ—ÑQ‘‘PÕÒS•T•SÓTÈH[X™\Š›ØÙ\ÜË™[‹”ÑTÔÒSÓ—ÑQ‘‘PÕÒS•T•SÓTÈL
+NÂ‹ËÈH™]\™Y\XÚ\][Ûˆ^\šY[˜ÙHÛÛZ[œÈÛ\ÜÜ›ÛÛK\ÜXÚYšXÈ\™Ù]Ë‚‹ËÈÙY\]]X\˜[[™Y[[]\È™\XÙYžH]X˜\ÙKX˜XÚÙYÙ\ÜÚ[Ûˆ[\]\Ë‚˜ÛÛœÝÑTÔÒSÓ—ÓPVÔUQUQHH[X™\Š›ØÙ\ÜË™[‹”ÑTÔÒSÓ—ÓPVÔUQUQH
+NÂ˜ÛÛœÝÑTÔÒSÓ—ÑQ‘‘PÕÑTUSÓ—ÓTÈH[X™\Š›ØÙ\ÜË™[‹”ÑTÔÒSÓ—ÑQ‘‘PÕÑTUSÓ—ÓTÈÌ
+NÂ˜ÛÛœÝÑTÔÒSÓ—ÐÓPT—ÑÐTÓTÈH[X™\Š›ØÙ\ÜË™[‹”ÑTÔÒSÓ—ÐÓPT—ÑÐTÓTÈLŒ
+NÂ˜ÛÛœÝÑTÔÒSÓ—ÔÔÕQÒÔ“ÕUWÓTÈH[X™\Š›ØÙ\ÜË™[‹”ÑTÔÒSÓ—ÔÔÕQÒÔ“ÕUWÓTÈL
+NÂ‚™œË›ZÙ\”Þ[˜ÊQQPWÑT‹È™XÝ\œÚ]™NˆYHJNÂ™œË›ZÙ\”Þ[˜Ê‘TÑS•USÓ”×ÑT‹È™XÝ\œÚ]™NˆYHJNÂ™œË›ZÙ\”Þ[˜Ê‘TÑS•USÓ—ÕTÐQÕTÈ™XÝ\œÚ]™NˆYHJNÂ‚˜ÛÛœÝUPTÑWÑ’SHHÝš[™Ê›ØÙ\ÜË™[‹‘UPTÑWÑ’SH]š›Ú[ŠUWÑT‹˜Û\ÜÜ›ÛÛKXÛÛ›ÛZX‹™ˆŠJNÂ˜ÛÛœÝPTÕT—ÒÑVWÑ’SHHÝš[™Ê›ØÙ\ÜË™[‹“PTÕT—ÒÑVWÑ’SH‹Ü[‹ÜÙXÜ™]ËØÛ\ÜÜ›ÛÛKXÛÛ›ÛZX‹[X\Ý\‹ZÙ^HŠNÂ˜ÛÛœÝQÐPÖWÒ”ÓÓ—ÓRT”“ÔˆHÝš[™Ê›ØÙ\ÜË™[‹“QÐPÖWÒ”ÓÓ—ÓRT”“Ôˆ™˜[ÙHŠKÓÝÙ\Ø\ÙJ
+OOOHYHŽÂ˜ÛÛœÝ”ÝÜ™HH™]ÈÛ\ÜÜ›ÛÛRX”ÝÜ˜YÙJÙ]Q\Ž‘UWÑT‹‘š[N‘UPTÑWÑ’SKX\Ý\’Ù^Qš[N“PTÕT—ÒÑVWÑ’SKYØXÞSZ\œ›ÜŽ“QÐPÖWÒ”ÓÓ—ÓRT”“ÔŸJNÂ˜ÛÛœÝØÚY[\ÛØÚÏ[™]ÈØÚY[\ÛØÚÊÝ[Y^›Û™N”ÐÒQST—ÕSQV“Ó‘_JNÂ˜ÛÛœÝ]]ÛX][Û”[“YÙ\[XZÙSYÙ\Š”ÝÜ™JNÂ›]]]ÛX][Û”ØÚY[\‘[˜X›YJ”ÝÜ™K™Ù]™Y™\™[˜ÙJ˜]]ÛX][Û‹œØÚY[\ˆ‹Ù[˜X›YY_J_ßJK™[˜X›YOOY˜[ÙNÂ™[˜Ý[ÛˆÙ]]]ÛX][Û”ØÚY[\‘[˜X›Y
+˜[YJ^Ø]]ÛX][Û”ØÚY[\‘[˜X›YHH]˜[YNÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ˜]]ÛX][Û‹œØÚY[\ˆ‹Ù[˜X›Y˜]]ÛX][Û”ØÚY[\‘[˜X›Y\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_JNÜ™]\›ˆ]]ÛX][Û”ØÚY[\‘[˜X›YB™[˜Ý[Ûˆ]]ÛX][ÛÛÛ›ÛÝ]\Ê
+^ØÛÛœÝÛØÚÏ\ØÚY[\ÛØÚËœÝ]\Ê
+KYÙ\X]]ÛX][Û”[“YÙ\‹œ™XY
+
+NÜ™]\›ˆÙ[˜X›Y˜]]ÛX][Û”ØÚY[\‘[˜X›YÛØÚË[›š[™ÓØØÝ\œ™[˜Ù\Î\[Ùˆ]]ÛX][Û”[›š[™ÓØØÝ\œ™[˜Ù\ÈOOH[™Yš[™YØ]]ÛX][Û”[›š[™ÓØØÝ\œ™[˜Ù\ËœÚ^™NŒ™XÙ[[œÎ›YÙ\‹œ[œËœÛXÙJLJKœ™]™\œÙJ
+__B‚™[˜Ý[Ûˆ›Ü›X[^™Y[Y^›Û™J˜[YJ^ÂˆÛÛœÝ[Y^›Û™OTÝš[™Ê˜[Y_ˆŠKš[J
+NÂˆž^Û™]È[‘]U[YQ›Ü›X]
+™[‹UTÈ‹Ý[YV›Û™N[Y^›Û™_JK™›Ü›X]
+™]È]J
+J_XØ]ÚÝ›ÝÈ\œ›ÜŠ•[Y^›Û™H]\Ý™HH˜[YPSH[Y^›Û™K›Üˆ^[\H[Y\šXØKÓ™]×Ö[ÜšÈŠ_Bˆ™]\›ˆ[Y^›Û™NÂŸBž^ÂˆÛÛœÝÝÜ™Y[Y^›Û™OY”ÝÜ™K™Ù]Ù][™ÊœÚ]Kœ›Ùš[H‹ßJOË[Y^›Û™NÂˆYŠÝÜ™Y[Y^›Û™JTÐÒQST—ÕSQV“Ó‘O[›Ü›X[^™Y[Y^›Û™JÝÜ™Y[Y^›Û™JNÂˆ›ØÙ\ÜË™[‹•TÐÒQST—ÕSQV“Ó‘NÂŸXØ]Ú
+\œ›ÜŠ^ØÛÛœÛÛKØ\›ŠÝÜ™YØÚY[\ˆ[Y^›Û™HYÛ›Ü™Yˆ	Ù\œ›Ü‹›Y\ÜØYÙ_X
+_B™[˜Ý[Ûˆš]˜XÞT™][[Û”ÛXÞJ
+^ØÛÛœÝY”ÝÜ™K™Ù]™Y™\™[˜ÙJœš]˜XÞKœ™][[Ûˆ‹ßJ_ßK˜]Ò\ÝÜžO\˜œ›ÝÜÙ\’\ÝÜžRÝ\œÏOO][™Yš[™YÓP—ÒTÕÔ–WÔ‘US•SÓ—ÒÕT”Î“[X™\Š˜œ›ÝÜÙ\’\ÝÜžRÝ\œÊNÜ™]\›ˆØœ›ÝÜÙ\’\ÝÜžQ[˜X›Yœ˜œ›ÝÜÙ\’\ÝÜžQ[˜X›YOO]YKœ›ÝÜÙ\’\ÝÜžRÝ\œÎ“[X™\‹š\Ñš[š]J˜]Ò\ÝÜžJOÓX]›X^
+X]›Z[Š
+ŒÍK˜]Ò\ÝÜžJJNŒØÜ™Y[œÚÝ^\Î“X]›X^
+KX]›Z[ŠÍK[X™\ŠœØÜ™Y[œÚÝ^\Ê_P—ÔÐÔ‘QS”ÒÕÔ‘US•SÓ—ÑVTÊJK[\^\Î“X]›X^
+KX]›Z[ŠÍK[X™\Š˜[\^\Ê_Ì
+JK]Y]^\Î“X]›X^
+ËX]›Z[ŠÍL[X™\Š˜]Y]^\Ê_N
+J__B™[˜Ý[Ûˆ\Tš]˜XÞT™][[Û”ÛXÞJ
+^ØÛÛœÝ\š]˜XÞT™][[Û”ÛXÞJ
+NÓP—ÒTÕÔ–WÔ‘US•SÓ—ÒÕT”Ï\˜œ›ÝÜÙ\’\ÝÜžRÝ\œÎÓP—ÔÐÔ‘QS”ÒÕÔ‘US•SÓ—ÑVTÏ\œØÜ™Y[œÚÝ^\ÎÜ™]\›ˆB˜\Tš]˜XÞT™][[Û”ÛXÞJ
+NÂž^ÚYŠTUÔTÔÕÓÔ‘	‰ˆY”ÝÜ™Kš\ÔÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™ŠJY”ÝÜ™Kœ]ÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™‹TUÔTÔÕÓÔ‘Ý\Nˆš[YÜ˜][Û‹\\ÜÝÛÜ™‹[YÜ˜][ÛŽˆ›\]‹ZYÜ˜]Yœ›ÛNˆ™[š\›Û›Y[ŸJ_XØ]Ú
+\œŠ^ØÛÛœÛÛKØ\›ŠTU\ÜÝÛÜ™]X˜\ÙHZYÜ˜][ÛˆÚÚ\Yˆ	Ù\œ‹›Y\ÜØYÙ_X
+_B‚™[˜Ý[Ûˆ›Ý[™Y[X™\Š˜[YK˜[˜XÚËZ[‹X^
+^ØÛÛœÝS[X™\Š˜[YJNÜ™]\›ˆ[X™\‹š\Ñš[š]JŠOÓX]›X^
+Z[‹X]›Z[ŠX^X][˜ÊŠJJN™˜[˜XÚßB™[˜Ý[Ûˆ˜[Y[™Ú[
+˜[YKX™[Ø[ÝÐ›[šÏ]Y_O^ßJ^Âˆ˜[YOTÝš[™Ê˜[Y_ˆŠKš[J
+Kœ™\XÙJ×ÉËˆŠNÂˆYŠ]˜[YI‰˜[ÝÐ›[šÊ\™]\›ˆˆŽÂˆ]\›Ýž^Ý\›[™]ÈT“
+˜[YJ_XØ]ÚÝ›ÝÈ\œ›ÜŠ	ÛX™[H]\Ý™HH˜[YÜˆÈT“
+_BˆYŠVÈšˆ‹šÎˆ—Kš[˜ÛY\Ê\›œ›ÝØÛÛ
+_\›\Ù\›˜[Y_\›œ\ÜÝÛÜ™
+]›ÝÈ\œ›ÜŠ	ÛX™[H]\Ý™H[ˆ
+ÊHT“Ú]Ý][X™YYÜ™Y[X[Ø
+NÂˆ™]\›ˆ˜[YNÂŸB™[˜Ý[Ûˆ˜[Y\][™Ú[
+˜[YJ^Âˆ˜[YOTÝš[™Ê˜[Y_ˆŠKš[J
+NÚYŠ]˜[YJ\™]\›ˆˆŽÂˆ]\›Ýž^Ý\›[™]ÈT“
+˜[YJ_XØ]ÚÝ›ÝÈ\œ›ÜŠ“TUœ›ÚÙ\ˆ]\Ý™HH˜[Y\]\]ËÜËÜˆÜÜÈT“Š_BˆYŠVÈ›\]ˆ‹›\]Îˆ‹ÜÎˆ‹ÜÜÎˆ—Kš[˜ÛY\Ê\›œ›ÝØÛÛ
+_\›\Ù\›˜[Y_\›œ\ÜÝÛÜ™
+]›ÝÈ\œ›ÜŠ“TUœ›ÚÙ\ˆ]\Ý\ÙH\]\]ËÜËÜˆÜÜÈÚ]Ý][X™YYÜ™Y[X[ÈŠNÂˆ™]\›ˆ˜[YNÂŸB™[˜Ý[Ûˆ[™Ú[›Ü“ÙÊ˜[YJ^ÂˆÛÛœÝ^TÝš[™Ê˜[Y_ˆŠKš[J
+NÚYŠ]^
+\™]\›ˆˆŽÂˆž^ÂˆÛÛœÝ\›[™]ÈT“
+^
+NÝ\›\Ù\›˜[YOHˆŽÝ\›œ\ÜÝÛÜ™HˆŽÝ\›œÙX\˜ÚHˆŽÝ\›š\ÚHˆŽÂˆ™]\›ˆ\›ÔÝš[™Ê
+NÂˆXØ]ÚÜ™]\›ˆ–ØÛÛ™šYÝ\™Y[™Ú[HŸBŸB™[˜Ý[Ûˆ›Ü›X[^™Y[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ˜[YO^ßK˜[˜XÚÏ^ßJ^ÂˆÛÛœÝ\]˜[YO]˜[YK›\]ßK\]˜[˜XÚÏY˜[˜XÚË›\]ßNÂˆÛÛœÝ]Õ˜[YO]˜[YKœ]ßßK]Ñ˜[˜XÚÏY˜[˜XÚËœ]ßßNÂˆÛÛœÝ™^[Û•˜[YO]˜[YK™^[ÛŸßK™^[Û‘˜[˜XÚÏY˜[˜XÚË™^[ÛŸßNÂˆÛÛœÝØØ[”ÝX›™]TÝš[™Ê™^[Û•˜[YKœØØ[”ÝX›™]ÏÝ™^[Û‘˜[˜XÚËœØØ[”ÝX›™]ÏÈˆŠKš[J
+Kœ™\XÙJ×‰ËˆŠNÂˆÛÛœÝÝX›™]\Ï\ØØ[”ÝX›™]œÜ]
+‹ˆŠNÂˆYŠØØ[”ÝX›™]	‰ŠÝX›™]\Ë›[™ÝOOLßÝX›™]\ËœÛÛYJOˆK×—ÌKßIË\Ý
+
+_[X™\Š
+OŒMJJJ]›ÝÈ\œ›ÜŠ•™^[ÛˆØØ[ˆÝX›™]]\ÝÛÛZ[ˆHš\œÝ™YHTØÝ]Ë›Üˆ^[\HNL‹ŒMŽŠNÂˆÛÛœÝØØ[”Ý\X›Ý[™Y[X™\Š™^[Û•˜[YKœØØ[”Ý\[X™\Š™^[Û‘˜[˜XÚËœØØ[”Ý\
+_KKM
+NÂˆ™]\›ˆÂˆ\]žÝ\›˜[Y\][™Ú[
+Ù\šXÙU\›
+\]˜[YK\›ÏÛ\]˜[˜XÚË\›ÏÈˆ‹È›[ÜÜ]Z]È—JJK\Ù\›˜[YN”Ýš[™Ê\]˜[YK\Ù\›˜[YOÏÛ\]˜[˜XÚË\Ù\›˜[YOÏÈˆŠKš[J
+KœÛÛœšYÙN›\]˜[YKšœÛÛœšYÙOÏÛ\]˜[˜XÚËšœÛÛœšYÙOÏÝYKYØXÞPœšYÙN›\]˜[YK›YØXÞPœšYÙOÏÛ\]˜[˜XÚË›YØXÞPœšYÙOÏÝY_Kˆ]ÎžÝ\›˜[Y[™Ú[
+]Õ˜[YK\›ÏÜ]Ñ˜[˜XÚË\›ÏÈˆ‹”]È[™Ú[ŠK[Y[Ý]\Î˜›Ý[™Y[X™\Š]Õ˜[YK[Y[Ý]\Ë[X™\Š]Ñ˜[˜XÚË[Y[Ý]\Ê_LÌ
+K™XY™]šY\Î˜›Ý[™Y[X™\Š]Õ˜[YKœ™XY™]šY\Ë[X™\Š]Ñ˜[˜XÚËœ™XY™]šY\Ê_L
+_Kˆ™^[ÛŽžÝ\›˜[Y[™Ú[
+Ù\šXÙU\›
+™^[Û•˜[YK\›ÏÝ™^[Û‘˜[˜XÚË\›ÏÈš‹ËÌLËŒŒŒNŒLL‹È™^[Û‹]ÙX˜\H—JK•™^[ÛˆÙXTH[™Ú[‹Ø[ÝÐ›[šÎ™˜[Ù_JKÙ^S˜[YN”Ýš[™Ê™^[Û•˜[YKšÙ^S˜[YOÏÝ™^[Û‘˜[˜XÚËšÙ^S˜[YOÏÈÛ\ÜÜ›ÛÛPÛÛ›ÛXˆŠKš[J
+_Û\ÜÜ›ÛÛPÛÛ›ÛXˆ‹ØØ[”ÝX›™]ØØ[”Ý\ØØ[‘[™˜›Ý[™Y[X™\Š™^[Û•˜[YKœØØ[‘[™[X™\Š™^[Û‘˜[˜XÚËœØØ[‘[™
+_MØØ[”Ý\M
+KÛÛX^˜›Ý[™Y[X™\Š™^[Û•˜[YKœÛÛX^[X™\Š™^[Û‘˜[˜XÚËœÛÛX^
+_LŽ
+K]]™]šY\Î˜›Ý[™Y[X™\Š™^[Û•˜[YK˜]]™]šY\Ë[X™\Š™^[Û‘˜[˜XÚË˜]]™]šY\Ê_‹JK[X›˜Z[ÛÛ˜Ý\œ™[˜ÞN˜›Ý[™Y[X™\Š™^[Û•˜[YK[X›˜Z[ÛÛ˜Ý\œ™[˜ÞK[X™\Š™^[Û‘˜[˜XÚË[X›˜Z[ÛÛ˜Ý\œ™[˜ÞJ_‹
+_BˆNÂŸB™[˜Ý[ÛˆÝ\œ™[[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ
+^Ü™]\›ˆÛ\]žÝ\›“TUÕT“\Ù\›˜[YN“TUÕTÑT“SQKœÛÛœšYÙN“TUÒ”ÓÓ—Ð”’QÑKYØXÞPœšYÙN“TUÓQÐPÖWÐ”’QÑ_K]ÎžÝ\›”U×ÕT“[Y[Ý]\Î”U×ÕSQSÕUÓTË™XY™]šY\Î”U×Ô‘PQÔ‘U’QTßK™^[ÛŽžÝ\›•‘VSÓ—ÕÑPTWÕT“Ù^S˜[YN•‘VSÓ—ÒÑVWÓSQKØØ[”ÝX›™]•‘VSÓ—ÔÐÐS—ÔÕP“‘UØØ[”Ý\•‘VSÓ—ÔÐÐS—ÔÕT•ØØ[‘[™•‘VSÓ—ÔÐÐS—ÑS‘ÛÛX^•‘VSÓ—ÔÓÓÓPV]]™]šY\Î•‘VSÓ—ÐUUÔ‘U’QTË[X›˜Z[ÛÛ˜Ý\œ™[˜ÞN•‘VSÓ—ÕSP“RSÐÓÓÕT”‘SÖ___B™[˜Ý[Ûˆ\R[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ˜[YJ^ÂˆTUÕT“]˜[YK›\]\›ÓTUÕTÑT“SQO]˜[YK›\]\Ù\›˜[YNÓTUÒ”ÓÓ—Ð”’QÑO]˜[YK›\]šœÛÛœšYÙHOOY˜[ÙNÓTUÓQÐPÖWÐ”’QÑO]˜[YK›\]›YØXÞPœšYÙHOOY˜[ÙNÂˆU×ÕT“]˜[YKœ]Ë\›ÔU×ÕSQSÕUÓTÏ]˜[YKœ]Ë[Y[Ý]\ÎÔU×Ô‘PQÔ‘U’QTÏ]˜[YKœ]Ëœ™XY™]šY\ÎÂˆ‘VSÓ—ÕÑPTWÕT“]˜[YK™^[Û‹\›Õ‘VSÓ—ÒÑVWÓSQO]˜[YK™^[Û‹šÙ^S˜[YNÕ‘VSÓ—ÔÐÐS—ÔÕP“‘U]˜[YK™^[Û‹œØØ[”ÝX›™]Õ‘VSÓ—ÔÐÐS—ÔÕT•]˜[YK™^[Û‹œØØ[”Ý\Õ‘VSÓ—ÔÐÐS—ÑS‘]˜[YK™^[Û‹œØØ[‘[™Õ‘VSÓ—ÔÓÓÓPV]˜[YK™^[Û‹œÛÛX^Õ‘VSÓ—ÐUUÔ‘U’QTÏ]˜[YK™^[Û‹˜]]™]šY\ÎÕ‘VSÓ—ÕSP“RSÐÓÓÕT”‘SÖO]˜[YK™^[Û‹[X›˜Z[ÛÛ˜Ý\œ™[˜ÞNÂˆž^ÚYŠ”ÝÜ™Kš\ÔÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™ŠJSTUÔTÔÕÓÔ‘TÝš[™Ê”ÝÜ™K™Ù]ÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™Š_ˆŠ_XØ]ÚßBŸB™[˜Ý[Ûˆ[YÜ˜][ÛÛÛ›™XÝ[ÛœÕšY]Ê
+^Ü™]\›ˆË‹‹˜Ý\œ™[[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ
+K\]žË‹‹˜Ý\œ™[[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ
+K›\]\ÜÝÛÜ™ÛÛ™šYÝ\™Y™”ÝÜ™Kš\ÔÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™Š_›ÛÛX[ŠTUÔTÔÕÓÔ‘
+_K™^[ÛŽžË‹‹˜Ý\œ™[[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ
+K™^[Û‹š]˜]RÙ^PÛÛ™šYÝ\™Y™”ÝÜ™Kš\ÔÙXÜ™]
+™^[Û‹œš]˜]KZÙ^HŠ_œË™^\ÝÔÞ[˜Ê‘VSÓ—Ô’UUWÒÑVWÑ’SJ___B˜ÛÛœÝÝÜ™Y[YÜ˜][ÛÛÛ›™XÝ[ÛœÏY”ÝÜ™K™Ù]™Y™\™[˜ÙJš[YÜ˜][ÛœË˜ÛÛ›™XÝ[ÛœÈ‹[
+NÂšYŠÝÜ™Y[YÜ˜][ÛÛÛ›™XÝ[ÛœÊX\R[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ›Ü›X[^™Y[YÜ˜][ÛÛÛ›™XÝ[ÛœÊÝÜ™Y[YÜ˜][ÛÛÛ›™XÝ[ÛœËÝ\œ™[[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ
+JJNÂ™[ÙHž^ÚYŠ”ÝÜ™Kš\ÔÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™ŠJSTUÔTÔÕÓÔ‘TÝš[™Ê”ÝÜ™K™Ù]ÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™Š_ˆŠ_XØ]ÚßB‚™[˜Ý[Ûˆ]X˜\ÙP˜XÚÙYš[Jš[J^ÂˆÛÛœÝ™\ÛÛ™Y\]œ™\ÛÛ™Jš[JNÂˆ™]\›ˆ™\ÛÛ™YœÝ\ÕÚ]
+]œ™\ÛÛ™JUWÑTŠJÜ]œÙ\
+H™\ÛÛ™YOO\]œ™\ÛÛ™JU’PÑWÐÓÓ‘’Q×Ñ’SJH™\ÛÛ™YOO\]œ™\ÛÛ™JT‘ÐT‘WÐÓÓ‘’Q×Ñ’SJNÂŸB™[˜Ý[Ûˆ™XYœÛÛŠš[K˜[˜XÚÊHÂˆYŠ]X˜\ÙP˜XÚÙYš[Jš[JJ\™]\›ˆ”ÝÜ™Kœ™XYœÛÛŠš[K˜[˜XÚËÛ˜[Y\ÜXÙNšÙ^Q›Ü‘š[Jš[J_JNÂˆžHÂˆ™]\›ˆ”ÓÓ‹œ\œÙJœËœ™XYš[TÞ[˜Êš[K]ŽŠJNÂˆHØ]Ú
+\œŠHÂˆÛÛœÛÛKØ\›ŠÛÝ[›Ý™XY	Ùš[_Nˆ	Ù\œ‹›Y\ÜØYÙ_X
+NÂˆ™]\›ˆ˜[˜XÚÎÂˆBŸB™[˜Ý[Ûˆ\œÚ\ÝœÛÛŠš[K˜[YJ^ÂˆYŠ]X˜\ÙP˜XÚÙYš[Jš[JJ\™]\›ˆ”ÝÜ™KÜš]RœÛÛŠš[K˜[YKÛ˜[Y\ÜXÙNšÙ^Q›Ü‘š[Jš[J_JNÂˆœËÜš]Qš[TÞ[˜Êš[K”ÓÓ‹œÝš[™ÚYžJ˜[YK[ŠJNÂŸB‚˜ÛÛœÝ\™Ø\™PÛÛ™šYÈH™XYœÛÛŠT‘ÐT‘WÐÓÓ‘’Q×Ñ’SKÜ]ÎžßKÛÝ™YNžÙ]šXÙ\ÎžßKÜ›Ý\ÎžßKØÙ[™Q˜[˜XÚÎžß__JNÂ˜ÛÛœÝÛÝ™YQ]šXÙ\ÈH\™Ø\™PÛÛ™šYË™ÛÝ™YOË™]šXÙ\ÈßNÂ˜ÛÛœÝÛÝ™YQÜ›Ý\ÈH\™Ø\™PÛÛ™šYË™ÛÝ™YOË™Ü›Ý\ÈßNÂ˜ÛÛœÝÛÝ™YTØÙ[™Q˜[˜XÚÈH\™Ø\™PÛÛ™šYË™ÛÝ™YOËœØÙ[™Q˜[˜XÚÈßNÂ˜ÛÛœÝÛÝ™YTÝ]\ÈHßNÂ˜ÛÛœÝÛÝ™YS]™PÛÛ™šYÜÈHßNÂ˜ÛÛœÝÛÝ™YT™\Ù[˜ÙHHßNÂ‚›]ÛÝ™YQ\ØÛÝ™\žHH™XYœÛÛŠÓÕ‘QWÑTÐÓÕ‘T–WÑ’SKÝ™\œÚ[ÛŽŒK]]ÐYYK]šXÙ\ÎžßK\Ý\ØÛÝ™\žP]›[JNÂšYŠYÛÝ™YQ\ØÛÝ™\žH\[ÙˆÛÝ™YQ\ØÛÝ™\žHOOH›Øš™XÝŠYÛÝ™YQ\ØÛÝ™\žO^Ý™\œÚ[ÛŽŒK]]ÐYYK]šXÙ\ÎžßK\Ý\ØÛÝ™\žP]›[NÂšYŠYÛÝ™YQ\ØÛÝ™\žK™]šXÙ\È\[ÙˆÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÈOOH›Øš™XÝŠYÛÝ™YQ\ØÛÝ™\žK™]šXÙ\Ï^ßNÂšYŠÛÝ™YQ\ØÛÝ™\žK˜]]ÐYOO][™Yš[™Y
+YÛÝ™YQ\ØÛÝ™\žK˜]]ÐY]YNÂ‚™[˜Ý[Ûˆ\œÚ\ÝÛÝ™YQ\ØÛÝ™\žJ
+^Âˆ\œÚ\ÝœÛÛŠÓÕ‘QWÑTÐÓÕ‘T–WÑ’SKÛÝ™YQ\ØÛÝ™\žJNÂŸB™[˜Ý[ÛˆÛÝ™YP[X\Ñ›Ü’Y
+]šXÙRY
+^ÂˆÛÛœÝY[›Ü›X[^™QÛÝ™YT\ÚXØ[Y
+]šXÙRY
+NÂˆÛÛœÝ^\Ý[™ÏSØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊK™š[™
+O››Ü›X[^™QÛÝ™YT\ÚXØ[Y
+ËšY
+OOOZY
+NÂˆYŠ^\Ý[™ÏË˜[X\Ê\™]\›ˆÛX[’Y
+^\Ý[™Ë˜[X\ÊNÂˆÛÛœÝ˜\ÙOXÛÝ™YKIÚYœ™\XÙJÖ×˜K^ŒNWKÙÚKˆŠKœÛXÙJMŠKÓÝÙ\Ø\ÙJ
+_™]šXÙHŸXÂˆ][X\ÏXÛX[’Y
+˜\ÙJKLŽÂˆÚ[JÛÝ™YQ]šXÙ\ÖØ[X\×H	‰ˆÛÝ™YQ]šXÙ\ÖØ[X\×KšYOOZY
+X[X\ÏXÛX[’Y
+	Ø˜\Ù_KIÛŠÊßX
+NÂˆ™]\›ˆ[X\ÎÂŸB™[˜Ý[ÛˆÛÝ™YPÛÛ™šYÝ\™Y[X\ÐžRY
+]šXÙRY
+^ÂˆÛÛœÝ™YYO[›Ü›X[^™QÛÝ™YT\ÚXØ[Y
+]šXÙRY
+NÂˆ™]\›ˆØš™XÝ™[šY\ÊÛÝ™YQ]šXÙ\ÊK™š[™
+
+ËJOO››Ü›X[^™QÛÝ™YT\ÚXØ[Y
+ËšY
+OOO[™YYJOË–Ì_[ÂŸB™[˜Ý[ÛˆÛÝ™YQ^˜XÝY]J]šXÙRYÙ™Ï^ßJ^ÂˆÛÛœÝ]šXÙOXÙ™ÏË™]šXÙI‰\[ÙˆÙ™Ë™]šXÙOOOH›Øš™XÝØÙ™Ë™]šXÙNžßNÂˆÛÛœÝ˜[YOTÝš[™ÊÙ™ÏË›˜[Y_]šXÙOË›˜[Y_]šXÙOË™œšY[™WÛ˜[Y_ÛÝ™YH	ÔÝš[™Ê]šXÙRY
+KœÛXÙJMŠ_X
+Kš[J
+NÂˆÛÛœÝÚÝOTÝš[™ÊÙ™ÏË›[Ù[]šXÙOË›[Ù[]šXÙOË›[Ù[ÚYÙ™ÏË™]šXÙWØÛ\ÜßˆŠKš[J
+NÂˆÛÛœÝ\TÝš[™ÊÙ™ÏËš\]šXÙOËš\]šXÙOËš\ØY™\ÜßˆŠKš[J
+NÂˆ™]\›ˆÛ˜[YN›˜[Y_ÛÝ™YH	ÔÝš[™Ê]šXÙRY
+KœÛXÙJMŠ_XÚÝK\NÂŸB™[˜Ý[ÛˆÛÝ™YSY]Qœ›ÛTÝ]\Ð]šX]\Ê]šXÙRY]œÏ^ßJ^ÂˆÛÛœÝÝ™\˜[X]œÏË›Ý™\˜[	‰\[Ùˆ]œË›Ý™\˜[OOH›Øš™XÝØ]œË›Ý™\˜[žßNÂˆÛÛœÝ[X]œÏË›[‰‰\[Ùˆ]œË›[OOH›Øš™XÝØ]œË›[ŽžßNÂˆÛÛœÝ]›Ü›OX]œÏËœ]›Ü›WÛY]Y]I‰\[Ùˆ]œËœ]›Ü›WÛY]Y]OOOH›Øš™XÝØ]œËœ]›Ü›WÛY]Y]NžßNÂˆÛÛœÝ˜[YOTÝš[™Êˆ]œÏË›˜[Y_ˆ]œÏË™œšY[™WÛ˜[Y_ˆ]›Ü›OË›˜[Y_ˆ]›Ü›OË™]šXÙWÛ˜[Y_ˆÛÝ™YH	ÔÝš[™Ê]šXÙRY
+KœÛXÙJMŠ_Xˆ
+Kš[J
+NÂˆÛÛœÝÚÝOTÝš[™Êˆ]œÏËœÚÝ_ˆ]œÏË›[Ù[ˆ]›Ü›OËœÚÝ_ˆ]›Ü›OË›[Ù[ˆˆ‚ˆ
+Kš[J
+NÂˆÛÛœÝ\TÝš[™Êˆ]œÏËš\ˆ]œÏËš\ØY™\Üßˆ[Ëš\ˆ[Ëš\ØY™\Üßˆ]›Ü›OËš\ˆˆ‚ˆ
+Kš[J
+NÂˆ™]\›ˆÛ˜[YN›˜[Y_ÛÝ™YH	ÔÝš[™Ê]šXÙRY
+KœÛXÙJMŠ_XÚÝK\Ý™\˜[[ŸNÂŸB™[˜Ý[Ûˆ›Ü›X[^™QÛÝ™YT\ÚXØ[Y
+˜]Ê^Âˆ™]\›ˆÝš[™Ê˜]ßˆŠKœ™\XÙJÎ‹ÙËˆŠKš[J
+KÕ\\Ø\ÙJ
+NÂŸB™[˜Ý[Ûˆ\Ô\ÚXØ[ÛÝ™YRY
+˜]Ê^Âˆ™]\›ˆ×–ÌNPKQ—^ÌMŸIË\Ý
+›Ü›X[^™QÛÝ™YT\ÚXØ[Y
+˜]ÊJNÂŸB™[˜Ý[Ûˆ\ÔÞ[]XÑÛÝ™YQ[]J]šXÙRYÙ™Ï^ßJ^ÂˆÛÛœÝ˜]ÏTÝš[™Ê]šXÙRYˆŠNÂˆÛÛœÝ˜[YOTÝš[™ÊÙ™ÏË›˜[Y_Ù™ÏË™œšY[™WÛ˜[Y_ˆŠNÂˆYŠËW
+ÉË\Ý
+˜]ÊJ\™]\›ˆYNÂˆYŠ×œÙYÛY[Ê×
+ËÚK\Ý
+˜[YJJ\™]\›ˆYNÂˆYŠ×—Í‹LŸIË\Ý
+˜]ÊJ\™]\›ˆYNÂˆYŠZ\Ô\ÚXØ[ÛÝ™YRY
+˜]ÊJ\™]\›ˆYNÂˆ™]\›ˆ˜[ÙNÂŸB™[˜Ý[Ûˆ\™ÙQÛÝ™YP[X\Ê[X\Ê^ÂˆÛÛœÝYÛÝ™YQ]šXÙ\ÖØ[X\×NÂˆYŠËšY
+Y[]HÛÝ™YT™\Ù[˜ÙVÔÝš[™ÊšY
+WNÂˆYŠËšY
+Y[]HÛÝ™YTÝ]\ÖÙšYNÂˆ[]HÛÝ™YQ]šXÙ\ÖØ[X\×NÂˆ›ÜŠÛÛœÝÙÚYY[X™\œ×HÙˆØš™XÝ™[šY\ÊÛÝ™YQÜ›Ý\ÊJ^ÂˆYŠ\œ˜^Kš\Ð\œ˜^JY[X™\œÊJ^ÂˆÛÝ™YQÜ›Ý\ÖÙÚYO[Y[X™\œË™š[\ŠOžOOX[X\ÊNÂˆYŠÚYOOH˜[ˆ	‰ˆÛÝ™YQÜ›Ý\ÖÙÚYK›[™ÝOOL
+Y[]HÛÝ™YQÜ›Ý\ÖÙÚYNÂˆBˆBˆ›ÜŠÛÛœÝÚÙ^K[žWHÙˆØš™XÝ™[šY\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊJ^ÂˆYŠÙ^OOOX[X\È[žOË˜[X\ÏOOX[X\ÊY[]HÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÖÚÙ^WNÂˆBŸB™[˜Ý[ÛˆZYÜ˜]QÛÝ™YQ\ØÛÝ™\žT™YÚ\ÝžJ
+^Âˆ]™[[Ý™YLÂˆ›ÜŠÛÛœÝÚÙ^K[žWHÙˆØš™XÝ™[šY\ÊË‹‹™ÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ßJJ^ÂˆÛÛœÝYTÝš[™Ê[žOËšYˆŠNÂˆYŠ[žOË™\ØÛÝ™\™Y	‰ˆ\ÔÞ[]XÑÛÝ™YQ[]JY[žJJ^Âˆ\™ÙQÛÝ™YP[X\ÊÛX[’Y
+[žK˜[X\ßÙ^JJNÈ™[[Ý™Y
+ÊÎÂˆBˆBˆYŠ™[[Ý™Y
+^Ü\œÚ\ÝÛÝ™YQ\ØÛÝ™\žJ
+NØ]Y]
+ÚÚ[™ˆ™ÛÝ™YK™\ØÛÝ™\žK›ZYÜ˜]H‹™[[Ý™YÞ[]XÎœ™[[Ý™YJNßBˆ™]\›ˆ™[[Ý™YÂŸB™[˜Ý[Ûˆ™XÛÛ˜Ú[QÛÝ™YQ\ØÛÝ™\žJ›ÝÓ\ÏQ]K››ÝÊ
+KÜ[ÛœÏ^ßJ^ÂˆÛÛœÝ›Ü˜ÙOHH[Ü[ÛœË™›Ü˜ÙNÂˆ]™[[Ý™YLÙ™›[™OLÂˆ›ÜŠÛÛœÝÚÙ^K[žWHÙˆØš™XÝ™[šY\ÊË‹‹™ÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ßJJ^ÂˆYŠY[žOË™\ØÛÝ™\™Y
+XÛÛ[YNÂˆÛÛœÝ[X\ÏXÛX[’Y
+[žK˜[X\ßÙ^JNÂˆÛÛœÝYTÝš[™Ê[žKšYˆŠNÂˆYŠ\ÔÞ[]XÑÛÝ™YQ[]JY[žJJ^Ü\™ÙQÛÝ™YP[X\Ê[X\ÊNÜ™[[Ý™Y
+ÊÎØÛÛ[YNßBˆÛÛœÝÙY[Q]Kœ\œÙJÛÝ™YT™\Ù[˜ÙVÚYOË›\ÝÙY[Ÿ[žK›\ÝÙY[Ÿ
+NÂˆYŠS[X™\‹š\Ñš[š]JÙY[Š_ÙY[L
+XÛÛ[YNÂˆÛÛœÝYÙO[›ÝÓ\Ë\ÙY[ŽÂˆYŠ
+›Ü˜ÙI‰˜YÙOŒ
+_
+Y›Ü˜ÙI‰˜YÙO‘ÓÕ‘QWÔ‘PÓÓÒSWÑÔPÑWÓTÊJ^Ü\™ÙQÛÝ™YP[X\Ê[X\ÊNÜ™[[Ý™Y
+ÊÎßBˆ[ÙHYŠYÙOŒ
+^ÙÛÝ™YT™\Ù[˜ÙVÚYO^ÜÝ]\Îˆ›Ù™›[™H‹\ÝÙY[Ž›™]È]JÙY[ŠKÒTÓÔÝš[™Ê
+_NÛÙ™›[™JÊÎßBˆBˆYŠ™[[Ý™Y
+^Ü\œÚ\ÝÛÝ™YQ\ØÛÝ™\žJ
+NØ]Y]
+ÚÚ[™ˆ™ÛÝ™YK™\ØÛÝ™\žKœ™XÛÛ˜Ú[H‹™[[Ý™YÙ™›[™K›Ü˜Ù_JNØœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ™ÛÝ™YKš[™[ÜžH‹™X\ÛÛŽ™›Ü˜ÙOÈ›X[X[\™XÛÛ˜Ú[HŽˆœ™XÛÛ˜Ú[H‹™[[Ý™YJNßBˆ™]\›ˆÜ™[[Ý™YÙ™›[™K›Ü˜Ù_NÂŸB™[˜Ý[Ûˆ\QÛÝ™YT™YÚ\ÝžQ[žJ[žJ^ÂˆYŠY[žOËšYY[žOË˜[X\Ê\™]\›ŽÂˆÛÛœÝ[X\ÏXÛX[’Y
+[žK˜[X\ÊNÂˆÛÛœÝÝ\œ™[YÛÝ™YQ]šXÙ\ÖØ[X\×_ßNÂˆÛÝ™YQ]šXÙ\ÖØ[X\×O^Âˆ‹‹˜Ý\œ™[ˆ˜[YN™[žK›˜[Y_Ý\œ™[›˜[Y_ÛÝ™YH	ÔÝš[™Ê[žKšY
+KœÛXÙJMŠ_XˆÚÝN™[žKœÚÝ_Ý\œ™[œÚÝ_ˆ‹ˆY”Ýš[™Ê[žKšY
+Kˆ‹‹Š[žKš\ÞÚ\™[žKš\NžßJKˆ\ØÛÝ™\™Y™[žK™\ØÛÝ™\™YOOY˜[ÙKˆš\œÝÙY[Ž™[žK™š\œÝÙY[ŸÝ\œ™[™š\œÝÙY[Ÿ[ˆ\ÝÙY[Ž™[žK›\ÝÙY[ŸÝ\œ™[›\ÝÙY[Ÿ[ˆNÂˆYŠP\œ˜^Kš\Ð\œ˜^JÛÝ™YQÜ›Ý\Ë˜[
+JYÛÝ™YQÜ›Ý\Ë˜[V×NÂˆYŠYÛÝ™YQÜ›Ý\Ë˜[š[˜ÛY\Ê[X\ÊJYÛÝ™YQÜ›Ý\Ë˜[œ\Ú
+[X\ÊNÂˆ›ÜŠÛÛœÝÜ›Ý\Ùˆ\œ˜^Kš\Ð\œ˜^J[žK™Ü›Ý\ÊOÙ[žK™Ü›Ý\Î–×J^ÂˆÛÛœÝÚYXÛX[’Y
+Ü›Ý\
+NÂˆYŠYÚYÚYOOH˜[ŠXÛÛ[YNÂˆYŠP\œ˜^Kš\Ð\œ˜^JÛÝ™YQÜ›Ý\ÖÙÚYJJYÛÝ™YQÜ›Ý\ÖÙÚYOV×NÂˆYŠYÛÝ™YQÜ›Ý\ÖÙÚYKš[˜ÛY\Ê[X\ÊJYÛÝ™YQÜ›Ý\ÖÙÚYKœ\Ú
+[X\ÊNÂˆBŸB™[˜Ý[Ûˆ›ÛÝÝ˜\ÛÝ™YQ\ØÛÝ™\žJ
+^Âˆ›ÜŠÛÛœÝØ[X\ËHÙˆØš™XÝ™[šY\ÊÛÝ™YQ]šXÙ\ÊJ^ÂˆYŠYËšY
+XÛÛ[YNÂˆÛÛœÝ^\Ý[™ÏSØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊK™š[™
+OžËšYOOTÝš[™ÊšY
+JNÂˆYŠ^\Ý[™Ê^Âˆ^\Ý[™Ë˜[X\ÏXÛX[’Y
+^\Ý[™Ë˜[X\ß[X\ÊNÂˆYŠ^\Ý[™Ë›˜[YJH›˜[YOY^\Ý[™Ë›˜[YNÂˆYŠ^\Ý[™ËœÚÝJHœÚÝOY^\Ý[™ËœÚÝNÂˆYŠ^\Ý[™Ëš\
+Hš\Y^\Ý[™Ëš\ÂˆBˆBˆ›ÜŠÛÛœÝ[žHÙˆØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊJX\QÛÝ™YT™YÚ\ÝžQ[žJ[žJNÂŸB˜›ÛÝÝ˜\ÛÝ™YQ\ØÛÝ™\žJ
+NÂ›ZYÜ˜]QÛÝ™YQ\ØÛÝ™\žT™YÚ\ÝžJ
+NÂ‚™[˜Ý[Ûˆ[œ›ÛÛÝ™YQ]šXÙJ]šXÙRYÙ™Ï^ßKÛÝ\˜ÙOH›\]Š^ÂˆÛÛœÝY[›Ü›X[^™QÛÝ™YT\ÚXØ[Y
+]šXÙRY
+NÂˆYŠZY\ÔÞ[]XÑÛÝ™YQ[]J]šXÙRYÙ™ÊJ\™]\›ˆ[ÂˆÛÛœÝ›ÝÏ[™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆÛÛœÝY]OYÛÝ™YQ^˜XÝY]JYÙ™ÊNÂˆ][X\ÏYÛÝ™YPÛÛ™šYÝ\™Y[X\ÐžRY
+Y
+_ÛÝ™YP[X\Ñ›Ü’Y
+Y
+NÂˆ][žOSØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊK™š[™
+OžËšYOOZY
+NÂ‚ˆËÈ^\Ý[™È\™Ø\™KšœÛÛˆ]šXÙ\È\™HÛ›ÝÛˆ[™XYNÈÜ™X]HH™YÚ\ÝžHÝ™\›^HÛ›BˆËÈÚ[ˆÙH™YY\ØÛÝ™\žHY]Y]HÜˆ\Ù\‹YY]X›HÝ™\œšY\Ë‚ˆYŠY[žJ^Âˆ[žO^ÂˆY[X\Ëˆ˜[YN™ÛÝ™YQ]šXÙ\ÖØ[X\×OË›˜[Y_Y]K›˜[YKˆÚÝN™ÛÝ™YQ]šXÙ\ÖØ[X\×OËœÚÝ_Y]KœÚÝKˆ\™ÛÝ™YQ]šXÙ\ÖØ[X\×OËš\Y]Kš\ˆ‹ˆÜ›Ý\Î–×Kˆ\ØÛÝ™\™YˆYÛÝ™YPÛÛ™šYÝ\™Y[X\ÐžRY
+Y
+Kˆš\œÝÙY[Ž››ÝË\ÝÙY[Ž››ÝËÛÝ\˜ÙBˆNÂˆÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÖØ[X\×OY[žNÂˆY[Ù^Âˆ[X\ÏXÛX[’Y
+[žK˜[X\ß[X\ÊNÂˆ[žK˜[X\ÏX[X\ÎÂˆ[žK›\ÝÙY[[›ÝÎÂˆ[žKœÛÝ\˜ÙO\ÛÝ\˜Ù_[žKœÛÝ\˜ÙNÂˆYŠ
+Y[žK›˜[YH×‘ÛÝ™YWÊÖÌNXKY—^ÍŸIÚK\Ý
+[žK›˜[YJJH	‰ˆY]K›˜[YJY[žK›˜[YO[Y]K›˜[YNÂˆYŠY[žKœÚÝI‰›Y]KœÚÝJY[žKœÚÝO[Y]KœÚÝNÂˆYŠY[žKš\	‰›Y]Kš\
+Y[žKš\[Y]Kš\ÂˆB‚ˆYŠÛÝ™YQ\ØÛÝ™\žK˜]]ÐYOOY˜[ÙJ^Âˆ\QÛÝ™YT™YÚ\ÝžQ[žJ[žJNÂˆÛÝ™YQ\ØÛÝ™\žK›\Ý\ØÛÝ™\žP][›ÝÎÂˆ\œÚ\ÝÛÝ™YQ\ØÛÝ™\žJ
+NÂˆ]Y]
+ÚÚ[™ˆ™ÛÝ™YK™\ØÛÝ™\žH‹]šXÙRYšY[X\Ë˜[YN™[žK›˜[YKÛÝ\˜ÙK™]Ñ]šXÙNˆYÛÝ™YPÛÛ™šYÝ\™Y[X\ÐžRY
+Y
+_JNÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ™ÛÝ™YK™\ØÛÝ™\žH‹]šXÙRYšY[X\Ë]šXÙN™ÛÝ™YQ]šXÙ\ÖØ[X\×_JNÂˆBˆ™]\›ˆ[X\ÎÂŸB™[˜Ý[ÛˆÝXÚÛÝ™YT™\Ù[˜ÙJ]šXÙRYÝ]\ÏH›Û›[™HŠ^ÂˆÛÛœÝYTÝš[™Ê]šXÙRYˆŠNÂˆYŠZY
+\™]\›ŽÂˆÛÛœÝ›ÝÏ[™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆÛÝ™YT™\Ù[˜ÙVÚYO^ÜÝ]\Î”Ýš[™ÊÝ]\ß›Û›[™HŠKÓÝÙ\Ø\ÙJ
+K\ÝÙY[Ž››ÝßNÂˆÛÛœÝ[žOSØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊK™š[™
+OžËšYOOZY
+NÂˆYŠ[žJ^Âˆ[žK›\ÝÙY[[›ÝÎÂˆËÈÈ›Ý\œÚ\ÝÛˆ]™\žHÝ]HXÚÙ]È\š[ÙXËÜÝ]Y[RH\š]™\È™\Ù[˜ÙH[ˆY[[ÜžK‚ˆÛÛœÝ[X\ÏXÛX[’Y
+[žK˜[X\ÊNÂˆYŠÛÝ™YQ]šXÙ\ÖØ[X\×JYÛÝ™YQ]šXÙ\ÖØ[X\×K›\ÝÙY[[›ÝÎÂˆBŸB™[˜Ý[ÛˆÛÝ™YQ]šXÙSÛ›[™J]šXÙRY
+^ÂˆÛÛœÝYÛÝ™YT™\Ù[˜ÙVÔÝš[™Ê]šXÙRYˆŠWNÂˆYŠ\
+\™]\›ˆ[ÂˆYŠÈ›Ù™›[™H‹[˜]˜Z[X›H‹™˜[ÙH‹Œ—Kš[˜ÛY\ÊÝš[™ÊœÝ]\ÊKÓÝÙ\Ø\ÙJ
+JJ\™]\›ˆ˜[ÙNÂˆ™]\›ˆYNÂŸB™[˜Ý[Ûˆ\]QÛÝ™YQ]šXÙJ[X\Ë[œ]^ßJ^Âˆ[X\ÏXÛX[’Y
+[X\ÊNÂˆÛÛœÝYÛÝ™YQ]šXÙ\ÖØ[X\×NÂˆYŠY
+]›ÝÈ™]È\œ›ÜŠ•[šÛ›ÝÛˆÛÝ™YH]šXÙHŠNÂˆ][žOSØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊK™š[™
+OžËšYOOTÝš[™ÊšY
+JNÂˆYŠY[žJ^Âˆ[žO^ÚY”Ýš[™ÊšY
+K[X\Ë˜[YN™›˜[Y_[X\ËÚÝN™œÚÝ_ˆ‹\™š\ˆ‹Ü›Ý\Î–×K\ØÛÝ™\™Y™˜[ÙKš\œÝÙY[Ž›™]È]J
+KÒTÓÔÝš[™Ê
+K\ÝÙY[Ž›[ÛÝ\˜ÙNˆ˜ÛÛ™šYÝ\™YŸNÂˆÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÖØ[X\×OY[žNÂˆBˆYŠ[œ]›˜[YHOO][™Yš[™Y
+^ÂˆÛÛœÝ˜[YOTÝš[™Ê[œ]›˜[Y_ˆŠKš[J
+KœÛXÙJL
+NÂˆYŠ[˜[YJ]›ÝÈ™]È\œ›ÜŠ“˜[YHØ[››Ý™H›[šÈŠNÂˆ[žK›˜[YO[˜[YNÙ›˜[YO[˜[YNÂˆBˆYŠ\œ˜^Kš\Ð\œ˜^J[œ]™Ü›Ý\ÊJ^ÂˆÛÛœÝÜ›Ý\ÏVË‹‹›™]ÈÙ]
+[œ]™Ü›Ý\Ë›X\
+ÛX[’Y
+K™š[\ŠOž	‰žOOH˜[ŠJWNÂˆËÈ™[[Ý™HH[X\Èœ›ÛH[Y]X›HÜ›Ý\Ë[ˆY™\]Y\ÝYÜ›Ý\Ë‚ˆ›ÜŠÛÛœÝÙÚYY[X™\œ×HÙˆØš™XÝ™[šY\ÊÛÝ™YQÜ›Ý\ÊJ^ÂˆYŠÚYOOH˜[ŸP\œ˜^Kš\Ð\œ˜^JY[X™\œÊJXÛÛ[YNÂˆÛÝ™YQÜ›Ý\ÖÙÚYO[Y[X™\œË™š[\ŠOžOOX[X\ÊNÂˆYŠYÛÝ™YQÜ›Ý\ÖÙÚYK›[™Ý	‰ˆSØš™XÝ˜[Y\ÊÛÝ™YQ\ØÛÝ™\žK™]šXÙ\ÊKœÛÛYJOŠ™Ü›Ý\ß×JKš[˜ÛY\ÊÚY
+JJY[]HÛÝ™YQÜ›Ý\ÖÙÚYNÂˆBˆ[žK™Ü›Ý\ÏYÜ›Ý\ÎÂˆ›ÜŠÛÛœÝÚYÙˆÜ›Ý\Ê^ÂˆYŠP\œ˜^Kš\Ð\œ˜^JÛÝ™YQÜ›Ý\ÖÙÚYJJYÛÝ™YQÜ›Ý\ÖÙÚYOV×NÂˆYŠYÛÝ™YQÜ›Ý\ÖÙÚYKš[˜ÛY\Ê[X\ÊJYÛÝ™YQÜ›Ý\ÖÙÚYKœ\Ú
+[X\ÊNÂˆBˆBˆ\QÛÝ™YT™YÚ\ÝžQ[žJ[žJNÂˆ\œÚ\ÝÛÝ™YQ\ØÛÝ™\žJ
+NÂˆ™]\›ˆØ[X\Ë]šXÙN™ÛÝ™YQ]šXÙ\ÖØ[X\×KÜ›Ý\Î™[žK™Ü›Ý\ß×_NÂŸB‚™[˜Ý[ÛˆXZÙQY˜][]ÔØÚY[\Ê
+^ÂˆÛÛœÝÝ]^ßNÂˆ›ÜŠÛÛœÝ\HÙˆÈšZH‹š—J^Âˆ›ÜŠ][™^LNÚ[™^NÚ[™^
+ÊÊ^ÂˆÝ]Ø	Ý\_N‰Ú[™^XO^Ý\K[™^[˜X›Y™˜[ÙKÛ•[YNˆŒÎŒÌ‹Ù™•[YNˆŒMŽŒ‹^\Î–ÌK‹ËWK\Ý[ŽžßK\Ý^XÎžß_NÂˆBˆBˆ™]\›ˆÝ]ÂŸB›]]ÔØÚY[\Ï\™XYœÛÛŠU×ÔÐÒQST×Ñ’SKXZÙQY˜][]ÔØÚY[\Ê
+JNÂ™[˜Ý[Ûˆ\œÚ\Ý]ÔØÚY[\Ê
+^Âˆ\œÚ\ÝœÛÛŠU×ÔÐÒQST×Ñ’SK]ÔØÚY[\ÊNÂŸB‚™[˜Ý[ÛˆXZÙQY˜][]“X™[Ê
+^Âˆ™]\›ˆÂˆÝ]]Î\œ˜^K™œ›ÛJÛ[™ÝŽK
+ËJOO˜ˆ	ÚJÌ_X
+Kˆ[œ]Î\œ˜^K™œ›ÛJÛ[™ÝŽK
+ËJOO˜ÛÛ[ÛÝ\˜ÙH	ÚJÌ_X
+KˆÛÝ\˜ÙQ[™Ú[Î\œ˜^K™œ›ÛJÛ[™ÝŽK
+ËJOO˜ÛÝ\˜ÙIÚJÌ_X
+BˆNÂŸB™[˜Ý[Ûˆ›Ü›X[^™P]“X™[Ê˜[YJ^ÂˆÛÛœÝ[XZÙQY˜][]“X™[Ê
+K]˜[YI‰\[Ùˆ˜[YOOOH›Øš™XÝÝ˜[YNžßNÂˆÛÛœÝÛX[J\œ‹Y˜][ÊOO\œ˜^K™œ›ÛJÛ[™ÝŽK
+ËJOOžÂˆÛÛœÝ^TÝš[™Ê\œ˜^Kš\Ð\œ˜^J\œŠOØ\œ–ÚW_ˆŽˆˆŠKš[J
+KœÛXÙJŒ
+NÂˆ™]\›ˆ^Y˜][ÖÚWNÂˆJNÂˆ™]\›ˆÛÝ]]Î˜ÛX[Š‹›Ý]]Ë›Ý]]ÊK[œ]Î˜ÛX[Š‹š[œ]Ëš[œ]ÊKÛÝ\˜ÙQ[™Ú[Î˜ÛX[Š‹œÛÝ\˜ÙQ[™Ú[ËœÛÝ\˜ÙQ[™Ú[Ê_NÂŸB›]]“X™[Ï[›Ü›X[^™P]“X™[Ê™XYœÛÛŠU—ÓP‘S×Ñ’SKXZÙQY˜][]“X™[Ê
+JJNÂ™[˜Ý[Ûˆ\œÚ\Ý]“X™[Ê
+^Ü\œÚ\ÝœÛÛŠU—ÓP‘S×Ñ’SK]“X™[Ê_B‚›]YYXSXœ˜\žO\™XYœÛÛŠQQPWÓP”T–WÑ’SKÙš[\Îžß_JNÂšYŠ[YYXSXœ˜\žH\[ÙˆYYXSXœ˜\žHOOH›Øš™XÝŠ[YYXSXœ˜\žO^Ùš[\Îžß_NÂšYŠ[YYXSXœ˜\žK™š[\È\[ÙˆYYXSXœ˜\žK™š[\ÈOOH›Øš™XÝŠ[YYXSXœ˜\žK™š[\Ï^ßNÂ‚™[˜Ý[Ûˆ\œÚ\ÝYYXSXœ˜\žJ
+^Âˆ\œÚ\ÝœÛÛŠQQPWÓP”T–WÑ’SKYYXSXœ˜\žJNÂŸB‚›]Û\ÜÜ›ÛÛP]]ÛX][ÛœÏ\™XYœÛÛŠUUÓPUSÓ”×Ñ’SKÝ™\œÚ[ÛŽŒK]™[Î–×_JNÂšYŠXÛ\ÜÜ›ÛÛP]]ÛX][ÛœÈ\[ÙˆÛ\ÜÜ›ÛÛP]]ÛX][ÛœÈOOH›Øš™XÝŠHÛ\ÜÜ›ÛÛP]]ÛX][ÛœÏ^Ý™\œÚ[ÛŽŒK]™[Î–×_NÂšYŠP\œ˜^Kš\Ð\œ˜^JÛ\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[ÊJHÛ\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[ÏV×NÂ‚™[˜Ý[Ûˆ\œÚ\Ý]]ÛX][ÛœÊ
+^Âˆ\œÚ\ÝœÛÛŠUUÓPUSÓ”×Ñ’SKÛ\ÜÜ›ÛÛP]]ÛX][ÛœÊNÂŸB™[˜Ý[ÛˆÛÛ[Z]]]ÛX][ÛœÊ™^
+^Ü\œÚ\ÝœÛÛŠUUÓPUSÓ”×Ñ’SK™^
+NØÛ\ÜÜ›ÛÛP]]ÛX][ÛœÏ[™^Ü™]\›ˆ™^B‚™[˜Ý[Ûˆ˜[Y]RÙ^JŠ^ÂˆÛÛœÝ^TÝš[™ÊŸˆŠNÚYŠK×—ÍKWÌŸKWÌŸIË\Ý
+^
+J\™]\›ˆ˜[ÙNÂˆÛÛœÝÞYX\‹[Û^WO]^œÜ]
+‹HŠK›X\
+[X™\ŠK\œÙY[™]È]J]K•UÊYX\‹[ÛLK^JJNÂˆ™]\›ˆ\œÙY™Ù]UÑ[YX\Š
+OOO^YX\‰‰œ\œÙY™Ù]UÓ[Û
+
+OOO[[ÛLI‰œ\œÙY™Ù]UÑ]J
+OOOY^NÂŸB™[˜Ý[Ûˆ[š\]YQ]RÙ^\Ê˜[Y\Ê^Âˆ™]\›ˆË‹‹›™]ÈÙ]
+
+\œ˜^Kš\Ð\œ˜^J˜[Y\ÊOÝ˜[Y\Î–×JBˆ›X\
+O”Ýš[™ÊŸˆŠKš[J
+JK™š[\Š˜[Y]RÙ^JJWKœÛÜ
+
+NÂŸB™[˜Ý[ÛˆØØ[]RÙ^J[™]È]J
+J^Âˆ™]\›ˆ	Ù™Ù][YX\Š
+_KIÔÝš[™Ê™Ù][Û
+
+JÌJKœYÝ\
+‹ŒŠ_KIÔÝš[™Ê™Ù]]J
+JKœYÝ\
+‹ŒŠ_XÂŸB‚™[˜Ý[ÛˆØÚY[\“ØØ[[Y\Ý[\
+[™]È]J
+J^Âˆ™]\›ˆ™]È[‘]U[YQ›Ü›X]
+™[‹UTÈ‹Âˆ[YV›Û™N”ÐÒQST—ÕSQV“Ó‘KYX\Žˆ›[Y\šXÈ‹[ÛˆŒ‹YYÚ]‹^NˆŒ‹YYÚ]‹ˆÝ\ŽˆŒ‹YYÚ]‹Z[]NˆŒ‹YYÚ]‹ÙXÛÛ™ˆŒ‹YYÚ]‹Ý\ŒLŽ™˜[ÙK[YV›Û™S˜[YNˆœÚÜ‚ˆJK™›Ü›X]
+
+NÂŸB™[˜Ý[ÛˆØÚY[\”Ý]\Ê
+^ÂˆÛÛœÝ›ÝÏ[™]È]J
+NÂˆ™]\›ˆÂˆ[Y^›Û™N”ÐÒQST—ÕSQV“Ó‘KˆØ]Ú\Z[]\Î”ÐÒQST—ÐÐUÒTÓRS•UTËˆ]Õ[YN››ÝËÒTÓÔÝš[™Ê
+KˆØØ[[YNœØÚY[\“ØØ[[Y\Ý[\
+›ÝÊKˆÜÝ[Y^›Û™N’[‘]U[YQ›Ü›X]
+
+Kœ™\ÛÛ™YÜ[ÛœÊ
+K[YV›Û™_[ˆNÂŸB™[˜Ý[Ûˆ]Qœ›ÛRÙ^JÙ^J^ÂˆYŠ]˜[Y]RÙ^JÙ^JJ\™]\›ˆ[ÂˆÛÛœÝÞKKOZÙ^KœÜ]
+‹HŠK›X\
+[X™\ŠNÂˆÛÛœÝÝ][™]È]JKKLKL‹
+NÂˆ™]\›ˆÝ]™Ù][YX\Š
+OOO^I‰›Ý]™Ù][Û
+
+OOO[KLI‰›Ý]™Ù]]J
+OOOYÛÝ]›[ÂŸB˜ÛÛœÝTÕ’PÕÓ“×ÔÐÒÓÓÑUT×ÌŒ—ÌŒÈHØš™XÝ™œ™Y^™J×JNÂ‚˜ÛÛœÝTÕ’PÕÒS—ÑVWÑUT×ÌŒ—ÌŒÈHØš™XÝ™œ™Y^™J×JNÂ‚™[˜Ý[Ûˆ›Ü›X[^™TØÚY[\Ø[[™\Š[œ]^ßK^\Ý[™Ï^ßJ^ÂˆÛÛœÝ›ÔØÚÛÛ™\]Y\ÝYZ[œ]››ÔØÚÛÛ]\ÏÏÚ[œ]™^ÛYY]\ÏÏÙ^\Ý[™Ë››ÔØÚÛÛ]\ÏÏÙ^\Ý[™Ë™^ÛYY]\ÎÂˆÛÛœÝ›ÔØÚÛÛ]\Ï][š\]YQ]RÙ^\ÊÂˆ‹‹‘TÕ’PÕÓ“×ÔÐÒÓÓÑUT×ÌŒ—ÌŒËˆ‹‹Š\œ˜^Kš\Ð\œ˜^J›ÔØÚÛÛ™\]Y\ÝY
+OÛ›ÔØÚÛÛ™\]Y\ÝY–×JBˆJNÂˆÛÛœÝ™[[ÝQ]\Ï][š\]YQ]RÙ^\Ê[œ]œ™[[ÝQ]\ÏOO][™Yš[™YÙ^\Ý[™Ëœ™[[ÝQ]\Îš[œ]œ™[[ÝQ]\ÊK™š[\ŠOˆ[›ÔØÚÛÛ]\Ëš[˜ÛY\Ê
+JNÂˆÛÛœÝ[”™\]Y\ÝYZ[œ]š[‘^Q]\ÏOO][™Yš[™YÙ^\Ý[™Ëš[‘^Q]\Îš[œ]š[‘^Q]\ÎÂˆÛÛœÝ[‘^Q]\Ï][š\]YQ]RÙ^\ÊË‹‹‘TÕ’PÕÒS—ÑVWÑUT×ÌŒ—ÌŒË‹‹Š\œ˜^Kš\Ð\œ˜^J[”™\]Y\ÝY
+OÚ[”™\]Y\ÝY–×JWJK™š[\ŠOˆ[›ÔØÚÛÛ]\Ëš[˜ÛY\Ê
+I‰ˆ\™[[ÝQ]\Ëš[˜ÛY\Ê
+JNÂˆÛÛœÝÛÒÝ\‘[^Q]\Ï][š\]YQ]RÙ^\Ê[œ]ÛÒÝ\‘[^Q]\ÏOO][™Yš[™YÙ^\Ý[™ËÛÒÝ\‘[^Q]\Îš[œ]ÛÒÝ\‘[^Q]\ÊK™š[\ŠOˆ[›ÔØÚÛÛ]\Ëš[˜ÛY\Ê
+I‰ˆ\™[[ÝQ]\Ëš[˜ÛY\Ê
+I‰ˆZ[‘^Q]\Ëš[˜ÛY\Ê
+JNÂˆÛÛœÝÛ™RÝ\‘[^Q]\Ï][š\]YQ]RÙ^\Ê[œ]›Û™RÝ\‘[^Q]\ÏOO][™Yš[™YÙ^\Ý[™Ë›Û™RÝ\‘[^Q]\Îš[œ]›Û™RÝ\‘[^Q]\ÊK™š[\ŠOˆ[›ÔØÚÛÛ]\Ëš[˜ÛY\Ê
+I‰ˆ\™[[ÝQ]\Ëš[˜ÛY\Ê
+I‰ˆZ[‘^Q]\Ëš[˜ÛY\Ê
+I‰ˆ]ÛÒÝ\‘[^Q]\Ëš[˜ÛY\Ê
+JNÂˆÛÛœÝ[˜ÚÜ‘]OTÝš[™Ê[œ]˜[˜ÚÜ‘]_^\Ý[™Ë˜[˜ÚÜ‘]_ØØ[]RÙ^J™]È]J
+JJNÂˆYŠ]˜[Y]RÙ^J[˜ÚÜ‘]JJ]›ÝÈ\œ›ÜŠ”ØÚÛÛXÞXÛH[˜ÚÜˆ]\Ý™HH˜[YVVVKSSKQ]HŠNÂˆ™]\›ˆÂˆ›ÔØÚÛÛ]\Ëˆ^ÛYY]\Î››ÔØÚÛÛ]\ËËÈ˜XÚÝØ\™XÛÛ\]X›H[X\Âˆ[‘^Q]\ËˆÛ™RÝ\‘[^Q]\ËˆÛÒÝ\‘[^Q]\Ëˆ™[[ÝQ]\Ëˆ[˜ÚÜ‘]Kˆ[˜ÚÜÞXÛQ^N”Ýš[™Ê[œ]˜[˜ÚÜÞXÛQ^_^\Ý[™Ë˜[˜ÚÜÞXÛQ^_	ÐIÊKˆ[˜ÚÜ‘^PÛÛÜŽ”Ýš[™Ê[œ]˜[˜ÚÜ‘^PÛÛÜŸ^\Ý[™Ë˜[˜ÚÜ‘^PÛÛÜŸ	Ñ^HIÊKˆ\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+BˆNÂŸB›]ØÚY[\Ø[[™\[›Ü›X[^™TØÚY[\Ø[[™\Šˆ™XYœÛÛŠÐÒQST—ÐÐSS‘T—Ñ’SKÙ^ÛYY]\Î–×_JKˆÙ^ÛYY]\Î–×K[‘^Q]\Î–×KÛ™RÝ\‘[^Q]\Î–×KÛÒÝ\‘[^Q]\Î–×K™[[ÝQ]\Î–×_BŠNÂ™[˜Ý[Ûˆ\œÚ\ÝØÚY[\Ø[[™\Š
+^Âˆ\œÚ\ÝœÛÛŠÐÒQST—ÐÐSS‘T—Ñ’SKØÚY[\Ø[[™\ŠNÂŸB‹ËÈ\œÚ\ÝÛ˜ÙH]Ý\\ÛÈ^\Ý[™È[œÝ[][ÛœÈZYÜ˜]H]Ø^Hœ›ÛHHÛ‹ËÈ™Y\˜[ZÛY^HÙÙÛH[™™XÙZ]™HH\ÝšXÝÛÜÝ\™H]\È]]ÛX]XØ[K‚œ\œÚ\ÝØÚY[\Ø[[™\Š
+NÂ‚‹ËÈHXÝ]™HÞXÛH[™^Ù\[Û‹Y^H™Z]š[Üˆ\ÈØÚÛÛXÛÛ™šYÝ\˜X›Kˆ^\Ý[™Â‹ËÈÙXÝ\™Y\X[˜Ù\È™XÙZ]™HHÛÛ\]Xš[]H›Ùš[HÛ˜ÙNÈœ™\Ú[œÝ[][ÛœÂ‹ËÈÝ\Ú]HÙ[™\šXÈÛËY^HØÚÛÛÞXÛH[œÝXYÙˆÚ]K\ÜXÚYšXÈY˜][Ë‚˜ÛÛœÝÝÜ™YØÚÛÛØÚY[T›Ùš[OY”ÝÜ™K™Ù]™Y™\™[˜ÙJœØÚÛÛœØÚY[Kœ›Ùš[H‹[
+NÂ›]ØÚÛÛØÚY[T›Ùš[O[›Ü›X[^™TØÚÛÛØÚY[T›Ùš[JˆÝÜ™YØÚÛÛØÚY[T›Ùš[_ßKˆÝÜ™YØÚÛÛØÚY[T›Ùš[BˆÈY˜][ØÚÛÛØÚY[T›Ùš[JØ[˜ÚÜ‘]NœØÚY[\Ø[[™\‹˜[˜ÚÜ‘]_JBˆˆ
+”ÝÜ™K\Ù\ÛÝ[
+
+OŒÛYØXÞTØÚÛÛØÚY[T›Ùš[JØÚY[\Ø[[™\ŠN™Y˜][ØÚÛÛØÚY[T›Ùš[JØ[˜ÚÜ‘]NœØÚY[\Ø[[™\‹˜[˜ÚÜ‘]_JJBŠNÂšYŠ\ÝÜ™YØÚÛÛØÚY[T›Ùš[J^ÜØÚÛÛØÚY[T›Ùš[K\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJœØÚÛÛœØÚY[Kœ›Ùš[H‹ØÚÛÛØÚY[T›Ùš[J_B™[˜Ý[ÛˆÙ]ØÚÛÛØÚY[T›Ùš[J˜[YJ^ÜØÚÛÛØÚY[T›Ùš[O[›Ü›X[^™TØÚÛÛØÚY[T›Ùš[J˜[YKØÚÛÛØÚY[T›Ùš[JNÜØÚÛÛØÚY[T›Ùš[K\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJœØÚÛÛœØÚY[Kœ›Ùš[H‹ØÚÛÛØÚY[T›Ùš[JNÜ™]\›ˆØÚÛÛØÚY[T›Ùš[_B‚˜ÛÛœÝQUSÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“HÝš[™Ê›ØÙ\ÜË™[‹“SÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“ˆŠKš[J
+NÂ˜ÛÛœÝSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“ÔÑPÔ‘UH˜]]ÛX][Û‹›[Ü›š[™ËX[››Ý[˜Ù[Y[ËœÝ™X[K]\›ŽÂ˜ÛÛœÝ‘QPÕQÐÓÓ‘’Q×ÕSQOH¸ (¸ (¸ (¸ (¸ (¸ (¸ (¸ (ˆŽÂ˜ÛÛœÝSÔ“’S‘×ÐS““ÕSÑSQS•×ÐSÕÑQÒÔÕÏ[™]ÈÙ]
+TÔVWÑÐUUÐVWÒÔÕÊNÂšYŠQUSÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“
+^Âˆž^ÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÐSÕÑQÒÔÕË˜Y
+™]ÈT“
+QUSÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“
+KšÜÝ˜[YKÓÝÙ\Ø\ÙJ
+J_XØ]ÚßBŸB™[˜Ý[Ûˆ˜[Y]S[Ü›š[™Ð[››Ý[˜Ù[Y[Õ\›
+˜[YJ^ÂˆÛÛœÝ^TÝš[™Ê˜[Y_ˆŠKš[J
+NÂˆYŠ]^
+\™]\›ˆˆŽÂˆž^Ü™]\›ˆ˜[Y]Q\Ü^QØ]]Ø^U\™Ù]
+^SÔ“’S‘×ÐS““ÕSÑSQS•×ÐSÕÑQÒÔÕÊKÔÝš[™Ê
+_BˆØ]Ú
+\œ›ÜŠ^Ý›ÝÈ\œ›ÜŠ[Ü›š[™È[››Ý[˜Ù[Y[ÈT“\È›Ý\›Ý™Yˆ	Ù\œ›Ü‹›Y\ÜØYÙ_X
+_BŸB™[˜Ý[Ûˆ›Ü›X[^™S[Ü›š[™Ð[››Ý[˜Ù[Y[Ê[œ]^ßK^\Ý[™Ï^ßJ^ÂˆÛÛœÝ™\]Y\ÝYÝ™X[U\›Z[œ]œÝ™X[U\›OOT‘QPÕQÐÓÓ‘’Q×ÕSQOÙ^\Ý[™ËœÝ™X[U\›š[œ]œÝ™X[U\›ÂˆÛÛœÝÝ™X[U\›]˜[Y]S[Ü›š[™Ð[››Ý[˜Ù[Y[Õ\›
+Ýš[™Ê™\]Y\ÝYÝ™X[U\›ÏÙ^\Ý[™ËœÝ™X[U\›ÏÑQUSÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“
+Kš[J
+_QUSÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“
+NÂˆÛÛœÝÝ\Ø[™Y]OTÝš[™Ê[œ]œÝ\[YOÏÙ^\Ý[™ËœÝ\[YOÏÈŒÎŒŠK[™Ø[™Y]OTÝš[™Ê[œ]™[™[YOÏÙ^\Ý[™Ë™[™[YOÏÈŒŒÌŠNÂˆYŠ]˜[Y[YJÝ\Ø[™Y]J_]˜[Y[YJ[™Ø[™Y]JJ]›ÝÈ\œ›ÜŠ“[Ü›š[™È[››Ý[˜Ù[Y[[Y\È]\Ý™H˜[Y“SH˜[Y\ÈŠNÂˆÛÛœÝÝ\[YO\Ý\Ø[™Y]K[™[YOY[™Ø[™Y]NÂˆÛÛœÝš[š]OJ˜[YK˜[˜XÚËZ[‹X^
+OOžØÛÛœÝS[X™\Š˜[YJNÜ™]\›ˆ[X™\‹š\Ñš[š]JŠOÓX]›X^
+Z[‹X]›Z[ŠX^ŠJN™˜[˜XÚßNÂˆ™]\›ˆÂˆ[˜X›Yš[œ]™[˜X›YOO][™Yš[™YÊ^\Ý[™Ë™[˜X›YOOY˜[ÙJNˆHZ[œ]™[˜X›YˆÝ™X[U\›Ý\[YK[™[YKˆ›Û[YT\˜Ù[™š[š]J[œ]›Û[YT\˜Ù[ÏÙ^\Ý[™Ë›Û[YT\˜Ù[LL
+Kˆ\™Ù]Î\œ˜^Kš\Ð\œ˜^J[œ]\™Ù]ÊI‰š[œ]\™Ù]Ë›[™ÝÖË‹‹›™]ÈÙ]
+[œ]\™Ù]Ë›X\
+ÛX[’Y
+K™š[\Š›ÛÛX[ŠJWNŠ\œ˜^Kš\Ð\œ˜^J^\Ý[™Ë\™Ù]ÊI‰™^\Ý[™Ë\™Ù]Ë›[™ÝÙ^\Ý[™Ë\™Ù]Î–È˜[—JKˆÚXÚÒ[\˜[ÙXÛÛ™Î™š[š]J[œ]˜ÚXÚÒ[\˜[ÙXÛÛ™ÏÏÙ^\Ý[™Ë˜ÚXÚÒ[\˜[ÙXÛÛ™ËMKLLŒ
+KˆÙ™›[™PÛÛ™š\›X][ÛœÎ™š[š]J[œ]›Ù™›[™PÛÛ™š\›X][ÛœÏÏÙ^\Ý[™Ë›Ù™›[™PÛÛ™š\›X][ÛœË‹K
+Kˆ\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+BˆNÂŸB˜ÛÛœÝÝÜ™Y[Ü›š[™Ð[››Ý[˜Ù[Y[Ï\™XYœÛÛŠSÔ“’S‘×ÐS““ÕSÑSQS•×Ñ’SKßJNÂ›]ÙXÝ\™Y[Ü›š[™Ð[››Ý[˜Ù[Y[Õ\›HˆŽÂž^ÜÙXÝ\™Y[Ü›š[™Ð[››Ý[˜Ù[Y[Õ\›TÝš[™Ê”ÝÜ™K™Ù]ÙXÜ™]
+SÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“ÔÑPÔ‘U
+_ˆŠ_XØ]Ú
+\œ›ÜŠ^ØÛÛœÛÛKØ\›Š[Ü›š[™È[››Ý[˜Ù[Y[ÈÙXÜ™]ÛÝ[›Ý™H™XYˆ	Ù\œ›Ü‹›Y\ÜØYÙ_X
+_B›][Ü›š[™Ð[››Ý[˜Ù[Y[ÎÂž^Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ï[›Ü›X[^™S[Ü›š[™Ð[››Ý[˜Ù[Y[ÊË‹‹œÝÜ™Y[Ü›š[™Ð[››Ý[˜Ù[Y[ËÝ™X[U\›œÙXÝ\™Y[Ü›š[™Ð[››Ý[˜Ù[Y[Õ\›ÝÜ™Y[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›QUSÓSÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“KßJ_B˜Ø]Ú
+\œ›ÜŠ^ÂˆËÈHYØXÞHT“]™Y]\ÈHÝ]›Ý[™[ÝÛ\Ý]\Ý›ÝÜ˜\Ú›ÛÝÜˆ™BˆËÈÛÛXÝY[\XÚ]KˆÝ\\ØX›Y[[[ˆYZ[š\Ý˜]Üˆ\›Ý™\È]ÂˆËÈÜÝ›ÝYÚTÔVWÑÐUUÐVWÐSÕÑQÒÔÕÈ[™Ø]™\È]YØZ[‹‚ˆÛÛœÛÛK™\œ›ÜŠ[Ü›š[™È[››Ý[˜Ù[Y[È\ØX›Yˆ	Ù\œ›Ü‹›Y\ÜØYÙ_X
+NÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ï[›Ü›X[^™S[Ü›š[™Ð[››Ý[˜Ù[Y[ÊË‹‹œÝÜ™Y[Ü›š[™Ð[››Ý[˜Ù[Y[Ë[˜X›Y™˜[ÙKÝ™X[U\›ˆˆŸKßJNÂŸB™[˜Ý[ÛˆX›XÓ[Ü›š[™Ð[››Ý[˜Ù[Y[ÐÛÛ™šYÊ
+^Âˆ™]\›ˆË‹‹›[Ü›š[™Ð[››Ý[˜Ù[Y[ËÝ™X[U\››[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›Ô‘QPÕQÐÓÓ‘’Q×ÕSQNˆˆ‹Ý™X[U\›ÛÛ™šYÝ\™Y›ÛÛX[Š[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›
+_NÂŸB™[˜Ý[Ûˆ\œÚ\Ý[Ü›š[™Ð[››Ý[˜Ù[Y[Ê
+^ÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›
+Y”ÝÜ™Kœ]ÙXÜ™]
+SÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“ÔÑPÔ‘U[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›Ý\Nˆ˜]]ÛX][Û‹\Ý™X[K]\›‹]]ÛX][ÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŸJNÂˆ[ÙH”ÝÜ™K™[]TÙXÜ™]
+SÔ“’S‘×ÐS““ÕSÑSQS•×ÕT“ÔÑPÔ‘U
+NÂˆÛÛœÝÜÝ™X[U\›—ÜÙXÜ™]‹‹œÝÜ™YO[[Ü›š[™Ð[››Ý[˜Ù[Y[ÎÂˆÛÛœÝ\œÚ\ÝY^Ë‹‹œÝÜ™YÝ™X[U\›ÛÛ™šYÝ\™Y›ÛÛX[Š[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›
+_NÂˆ\œÚ\ÝœÛÛŠSÔ“’S‘×ÐS““ÕSÑSQS•×Ñ’SK\œÚ\ÝY
+NÂˆËÈ™XYœÛÛˆ[\ÜÈYØXÞHš[\È[ÈÔS]H][[[Û˜[HX]™\ÈZ\‚ˆËÈÛÝ\˜ÙH[ˆXÙKˆ]ÛZXØ[HØÜXˆ\ÈÛ™HY\ˆH[˜Üž\YÜš]HÚ[œË‚ˆYŠœË™^\ÝÔÞ[˜ÊSÔ“’S‘×ÐS““ÕSÑSQS•×Ñ’SJJ^ÂˆÛÛœÝÝYÙYX	ÓSÔ“’S‘×ÐS““ÕSÑSQS•×Ñ’S_Kœ™YXÝYIÜ›ØÙ\ÜËœYXÂˆœËÜš]Qš[TÞ[˜ÊÝYÙY”ÓÓ‹œÝš[™ÚYžJ\œÚ\ÝY[ŠKÛ[ÙNŒÍŒJNÂˆœËœ™[˜[YTÞ[˜ÊÝYÙYSÔ“’S‘×ÐS““ÕSÑSQS•×Ñ’SJNÂˆBŸB‹ËÈZYÜ˜]HYØXÞHZ[^Ù[š\›Û›Y[ÛÛ™šYÝ\˜][Ûˆ[ÈH[˜Üž\YÝÜ™B‹ËÈ[™™[[Ý™H]œ›ÛHHÜ™[˜\žH]X˜\ÙKX˜XÚÙY”ÓÓˆØš™XÝ‚œ\œÚ\Ý[Ü›š[™Ð[››Ý[˜Ù[Y[Ê
+NÂ˜ÛÛœÝ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YO^Û]™N™˜[ÙKXÝ]™N™˜[ÙK[ÙN›[\™Ù]Î–×K\ÝÚXÚÎ›[\ÝØ]Ú\•XÚÎ›[\Ý]™P]›[\Ý[™Y]›[\Ý\œ›ÜŽ›[›Ø™N›[›Ø™TÝ]\Î›[›Ø™Q\˜][Û“\Î›[Ù™›[™PÛÝ[Œ\Ý\ÜÙ\]Œ™[X\ÙT™XÛÛ˜Ú[T[™[™Î™˜[Ù_NÂ›][Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\[[Â›][Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žU[Y\[[Â›][Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛOT›ÛZ\ÙKœ™\ÛÛ™J
+NÂ›][Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛP\ÞOLÂ™[˜Ý[ÛˆÙ\šX[^™S[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛJ\ÚÊ^ÂˆÛÛœÝ[›ÚÙOX\Þ[˜Ê
+OOžÛ[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛP\ÞJÊÎÝž^Ü™]\›ˆ]ØZ]\ÚÊ
+_Yš[˜[^Û[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛP\ÞOSX]›X^
+[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛP\ÞKLJ__NÂˆÛÛœÝ[[[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛK[Š[›ÚÙK[›ÚÙJNÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛO\[‹˜Ø]Ú
+
+
+OOžßJNÂˆ™]\›ˆ[ŽÂŸB™[˜Ý[Ûˆ™\Ý\[Ü›š[™Ð[››Ý[˜Ù[Y[ÕØ]Ú\Š
+^ÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\ŠXÛX\•[Y[Ý]
+[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\ŠNÂˆÛÛœÝ[X\Þ[˜Ê
+OOžÝž^Ø]ØZ]Ù\šX[^™S[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛJ
+
+OO›[Ü›š[™Ð[››Ý[˜Ù[Y[ÕXÚÊ
+J_Yš[˜[^Û[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\\Ù][Y[Ý]
+[‹X]›X^
+L[X™\Š[Ü›š[™Ð[››Ý[˜Ù[Y[Ë˜ÚXÚÒ[\˜[ÙXÛÛ™ßMJJŒL
+JNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\‹[œ™YŠ
+__NÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\\Ù][Y[Ý]
+[‹L
+NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\‹[œ™YŠ
+NÂŸB˜ÛÛœÝY™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœÏ[™]ÈX\
+
+NÂ™[˜Ý[Ûˆ[››Ý[˜Ù[Y[Ô^X˜XÚÕ\›
+˜]Ï[[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›
+^Âˆž^ØÛÛœÝO[™]ÈT“
+˜]ÊNÝKœÙX\˜Ú\˜[\ËœÙ]
+˜]]Ü^H‹YHŠNÝKœÙX\˜Ú\˜[\ËœÙ]
+›]]H‹™˜[ÙHŠNÚYŠ]KœÙX\˜Ú\˜[\Ë™Ù]
+œ^SÜ™\ˆŠJ]KœÙX\˜Ú\˜[\ËœÙ]
+œ^SÜ™\ˆ‹ÙXœËÈŠNÜ™]\›ˆKÔÝš[™Ê
+_XØ]ÚÜ™]\›ˆ˜]ßBŸB™[˜Ý[Ûˆ[››Ý[˜Ù[Y[ÐÛÛÜ™[˜]\Ê˜]Ï[[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ™X[U\›
+^Âˆž^ÂˆÛÛœÝO[™]ÈT“
+˜]ÊK\Ï]Kœ]˜[YKœÜ]
+‹ÈŠK™š[\Š›ÛÛX[ŠNÂˆÛÛœÝ\\\ÖÌ_“]™P\‹Y]KœÙX\˜Ú\˜[\Ë™Ù]
+šYŠ_œÝ™X[HŽÂˆ™]\›ˆÂˆÜšYÚ[ŽK›ÜšYÚ[‹\YÜÝ˜[YNKšÜÝ˜[YKÜKœÜ[›ÝØÛÛKœ›ÝØÛÛˆÚÙ[ŽKœÙX\˜Ú\˜[\Ë™Ù]
+ÚÙ[ˆŠ_[ÝXœØÜšX™\’YKœÙX\˜Ú\˜[\Ë™Ù]
+œÝXœØÜšX™\’YŠ_[ÝXœØÜšX™\ÛÙNKœÙX\˜Ú\˜[\Ë™Ù]
+œÝXœØÜšX™\ÛÙHŠ_[ˆNÂˆXØ]ÚÜ™]\›ˆ[BŸB™[˜Ý[Ûˆ[››Ý[˜Ù[Y[ÕÙX”ÛØÚÙ]\›ÊÊ^ÂˆÛÛœÝ›ÝÏXËœ›ÝØÛÛOOHšÎˆÈÜÜÎˆŽˆÜÎˆŽÂˆÛÛœÝ\›ÏVØ	Ü›ÝßKËÉØËšÜÝ˜[Y_IØËœÜØ‰ØËœÜXˆˆŸKÉØË˜\KÝÙXœÛØÚÙ]NÂˆËÈÙY\ÙX”ÛØÚÙ]›Øš[™ÈÛˆH[™XYH˜[Y]Y
+ÊHÜšYÚ[‹ˆ›Øš[™ÈBˆËÈÝY\ÜÙY™[™ÜˆÜÛÝ[ž\\ÜÈHÝ]›Ý[™ØY™K\ÜÛXÞK‚ˆ™]\›ˆË‹‹›™]ÈÙ]
+\›ÊWNÂŸB˜\Þ[˜È[˜Ý[Ûˆ›Ø™S[Ü›š[™Ð[››Ý[˜Ù[Y[ÕÙX”ÊË[Y[Ý]\ÏLÍL
+^ÂˆÛÛœÝ\›ÏX[››Ý[˜Ù[Y[ÕÙX”ÛØÚÙ]\›ÊÊK][\ÏV×NÂˆ›ÜŠÛÛœÝ\›Ùˆ\›Ê^ÂˆÛÛœÝ™\Ý[X]ØZ]™]È›ÛZ\ÙJ™\ÛÛ™OOžÂˆ]Ù]YY˜[ÙKÜÏ[[ÂˆÛÛœÝš[š\ÚJ˜[YJOOžÚYŠÙ]Y
+\™]\›ŽÜÙ]Y]YNØÛX\•[Y[Ý]
+[Y\ŠNÝž^ÚYŠÜÉ‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ]ÜË˜ÛÜÙJ
+_XØ]ÚßNÜ™\ÛÛ™J˜[YJ_NÂˆÛÛœÝ[Y\\Ù][Y[Ý]
+
+
+OO™š[š\Ú
+Û]™N›[›Ø™NˆÙXœÈ‹Ý]\Îˆ[Y[Ý]‹\›JK[Y[Ý]\ÊNÂˆž^ÂˆÜÏ[™]ÈÙX”ÛØÚÙ]
+\›Ú[™ÚZÙU[Y[Ý][Y[Ý]\ßJNÂˆÜË›ÛŠ›Ü[ˆ‹
+
+OOžÂˆÛÛœÝ\ÙÏ^ØÛÛ[X[™ˆœ^H‹Ý™X[RY˜ËšYNÂˆYŠËÚÙ[Š[\ÙËÚÙ[XËÚÙ[ŽÚYŠËœÝXœØÜšX™\’Y
+[\ÙËœÝXœØÜšX™\’YXËœÝXœØÜšX™\’YÚYŠËœÝXœØÜšX™\ÛÙJ[\ÙËœÝXœØÜšX™\ÛÙOXËœÝXœØÜšX™\ÛÙNÂˆž^ÝÜËœÙ[™
+”ÓÓ‹œÝš[™ÚYžJ\ÙÊJ_XØ]Ú
+J^Ùš[š\Ú
+Û]™N›[›Ø™NˆÙXœÈ‹Ý]\ÎˆœÙ[™Y\œ›Üˆ‹\›\œ›ÜŽ™K›Y\ÜØYÙ_J_BˆJNÂˆÜË›ÛŠ›Y\ÜØYÙH‹]OOžÂˆ][[Ýž^ÚR”ÓÓ‹œ\œÙJY™™\‹š\ÐY™™\Š]JOÙ]KÔÝš[™Ê]ŽŠN”Ýš[™Ê]JJ_XØ]ÚÜ™]\›ŸBˆÛÛœÝÛÛ[X[™TÝš[™ÊË˜ÛÛ[X[™ˆŠKÓÝÙ\Ø\ÙJ
+KYš[š][ÛTÝš[™ÊË™Yš[š][ÛŸË™\œ›Ü—ÙYš[š][ÛŸˆŠKÓÝÙ\Ø\ÙJ
+NÂˆËÈHÙX”•ÈÙ™™\ˆÈ^K\Ý\›ÝYšXØ][Ûˆ\ÈYš[š]]™H]šY[˜ÙH]H]™HÝ™X[H^\ÝË‚ˆYŠÛÛ[X[™OOHZÙXÛÛ™šYÝ\˜][ÛˆŸYš[š][ÛOOHœ^WÜÝ\YŸYš[š][ÛOOHœÝ™X[Z[™×ÜÝ\YŠBˆ™]\›ˆš[š\Ú
+Û]™NYK›Ø™NˆÙXœÈ‹Ý]\Î™Yš[š][ÛŸÛÛ[X[™\›JNÂˆÛÛœÝÙ™›[™QYœÏVÈ››×ÜÝ™X[WÙ^\Ý‹œÝ™X[WÛ›ÝÙ^\ÝÛÜ—Û›ÝÜÝ™X[Z[™È‹œÝ™X[WÛ›ÝÙ^\Ý‹››ÝÙ›Ý[™—NÂˆYŠÛÛ[X[™OOH™\œ›Üˆ‰‰›Ù™›[™QYœËœÛÛYJO™Yš[š][Û‹š[˜ÛY\Ê
+JJBˆ™]\›ˆš[š\Ú
+Û]™N™˜[ÙK›Ø™NˆÙXœÈ‹Ý]\Î™Yš[š][ÛŸ››Ý\Ý™X[Z[™È‹\›JNÂˆYŠYš[š][ÛOOHÙXœ×Û›ÝÙ[˜X›YŠBˆ™]\›ˆš[š\Ú
+Û]™N›[›Ø™NˆÙXœÈ‹Ý]\Î™Yš[š][Û‹\›JNÂˆJNÂˆÜË›ÛŠ™\œ›Üˆ‹\œO™š[š\Ú
+Û]™N›[›Ø™NˆÙXœÈ‹Ý]\Îˆ™\œ›Üˆ‹\›\œ›ÜŽ”Ýš[™Ê\œË›Y\ÜØYÙ_\œŠ_JJNÂˆÜË›ÛŠ˜ÛÜÙH‹
+
+OOžÚYŠ\Ù]Y
+Yš[š\Ú
+Û]™N›[›Ø™NˆÙXœÈ‹Ý]\Îˆ˜ÛÜÙY‹\›J_JNÂˆXØ]Ú
+\œŠ^Ùš[š\Ú
+Û]™N›[›Ø™NˆÙXœÈ‹Ý]\Îˆ™\œ›Üˆ‹\›\œ›ÜŽ”Ýš[™Ê\œË›Y\ÜØYÙ_\œŠ_J_BˆJNÂˆ][\Ëœ\Ú
+™\Ý[
+NÂˆYŠ™\Ý[›]™OOO]Y_™\Ý[›]™OOOY˜[ÙJ\™]\›ˆË‹‹œ™\Ý[][\ßNÂˆBˆ™]\›ˆÛ]™N›[›Ø™NˆÙXœÈ‹Ý]\Îˆ[˜]˜Z[X›H‹][\ßNÂŸB˜\Þ[˜È[˜Ý[Ûˆ™]ÚÚ]XY[™J\›Ü[ÛœÏ^ßK[Y[Ý]\ÏLÍL
+^ÂˆÛÛœÝÝ›[™]ÈX›ÜÛÛ›Û\Š
+K[Y\\Ù][Y[Ý]
+
+
+OO˜Ý›˜X›Ü
+
+K[Y[Ý]\ÊNÂˆž^Âˆ]Ý\œ™[]˜[Y]Q\Ü^QØ]]Ø^U\™Ù]
+\›SÔ“’S‘×ÐS““ÕSÑSQS•×ÐSÕÑQÒÔÕÊNÂˆ›ÜŠ]™Y\™XÝÏLÜ™Y\™XÝÏLÎÜ™Y\™XÝÊÊÊ^ÂˆÛÛœÝ™\ÜÛœÙOX]ØZ]™]Ú
+Ý\œ™[Ë‹‹›Ü[ÛœË™Y\™XÝˆ›X[X[‹ÚYÛ˜[˜Ý›œÚYÛ˜[XY\œÎžÈ˜ØXÚKXÛÛ›ÛŽˆ››ËXØXÚH‹‹‹ŠÜ[ÛœËšXY\œßßJ__JNÂˆYŠVÌÌKÌ‹ÌËÌËÌKš[˜ÛY\Ê™\ÜÛœÙKœÝ]\ÊJ\™]\›ˆ™\ÜÛœÙNÂˆÛÛœÝØØ][Û\™\ÜÛœÙKšXY\œË™Ù]
+›ØØ][ÛˆŠNÂˆYŠ[ØØ][ÛŠ]›ÝÈ\œ›ÜŠ“[Ü›š[™È[››Ý[˜Ù[Y[È›Ø™H™Y\™XÝ\ÈZ\ÜÚ[™ÈHØØ][ÛˆŠNÂˆYŠ™Y\™XÝÏOOLÊ]›ÝÈ\œ›ÜŠ“[Ü›š[™È[››Ý[˜Ù[Y[È›Ø™H^ÙYYYH™Y\™XÝ[Z]ŠNÂˆÝ\œ™[]˜[Y]Q\Ü^QØ]]Ø^U\™Ù]
+™]ÈT“
+ØØ][Û‹Ý\œ™[
+KSÔ“’S‘×ÐS““ÕSÑSQS•×ÐSÕÑQÒÔÕÊNÂˆBˆ›ÝÈ\œ›ÜŠ“[Ü›š[™È[››Ý[˜Ù[Y[È›Ø™H™Y\™XÝ˜Z[YŠNÂˆYš[˜[^ØÛX\•[Y[Ý]
+[Y\Š_BŸB˜\Þ[˜È[˜Ý[Ûˆ›Ø™S[Ü›š[™Ð[››Ý[˜Ù[Y[Ó]™J
+^ÂˆÛÛœÝÏX[››Ý[˜Ù[Y[ÐÛÛÜ™[˜]\Ê
+NÂˆYŠXÊ\™]\›ˆÛ]™N™˜[ÙK›Ø™NˆšÈ‹Ý]\Îˆš[˜[Y]\›‹\œ›ÜŽˆ’[˜[YÝ™X[HT“‹\˜][Û“\ÎŒ][\Î–×_NÂˆÛÛœÝÝ\YQ]K››ÝÊ
+KÝ[\\Ý\Y][\ÏV×NÂˆÛÛœÝš[X\žOX	ØË›ÜšYÚ[ŸKÉØË˜\KÜÝ™X[\ËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+ËšY
+_K›LÝN×ÏIÜÝ[\XÂˆÛÛœÝY\]™OX	ØË›ÜšYÚ[ŸKÉØË˜\KÜÝ™X[\ËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+ËšY
+_WØY\]™K›LÝN×ÏIÜÝ[\XÂˆ›ÜŠÛÛœÝÚ[™^\›HÙˆÜš[X\žKY\]™WK™[šY\Ê
+J^Âˆž^ÂˆÛÛœÝX]ØZ]™]ÚÚ]XY[™J\›ßKÍL
+NÂˆYŠ‹œÝ]\ÏOOM
+^Âˆ][\Ëœ\Ú
+Ü›Ø™Nš[™^OOLÈšÈŽˆšËXY\]™H‹Ý]\ÎÚÎ™˜[ÙK\›Ý]\Îˆ››ÝY›Ý[™ŸJNÂˆËÈ\È[YYXH\Þ[Y[Ü™X]\ÈHš[X\žHX[šY™\ÝÚ[HHX›\Ú\‚ˆËÈ\È]™H[™™[[Ý™\È]Ú[ˆX›\Ú[™ÈÝÜËˆš[X\žH\È]]Üš]]]™HÑ‘“S‘K‚ˆYŠ[™^OOL
+\™]\›ˆÛ]™N™˜[ÙK›Ø™NˆšÈ‹Ý]\Îˆ[Ù™›[™H‹Ý]\Î\›\˜][Û“\Î‘]K››ÝÊ
+K\Ý\Y][\ßNÂˆÛÛ[YNÂˆBˆYŠ\‹›ÚÊ^Âˆ][\Ëœ\Ú
+Ü›Ø™Nš[™^OOLÈšÈŽˆšËXY\]™H‹Ý]\Îœ‹œÝ]\ËÚÎ™˜[ÙK\›Ý]\Î˜IÜ‹œÝ]\ßXJNÂˆÛÛ[YNÂˆBˆÛÛœÝ^X]ØZ]‹^
+
+NÂˆÛÛœÝ˜[Y]^œÝ\ÕÚ]
+ˆÑVLÕHŠI‰Š^š[˜ÛY\ÊˆÑVS‘ˆŠ_^š[˜ÛY\ÊˆÑVVTÕ‘PSKRS‘ˆŠJNÂˆ][\Ëœ\Ú
+Ü›Ø™Nš[™^OOLÈšÈŽˆšËXY\]™H‹Ý]\Îœ‹œÝ]\ËÚÎ˜[Y\›Ý]\Î˜[YÈœ^[\ÝŽˆš[˜[Y\^[\ÝŸJNÂˆYŠ˜[Y
+^ÂˆÛÛœÝÙ\OJ^›X]Ú
+ÈÑVVSQQPKTÑTUQSÑNŠ
+ÊKÊ_×JVÌW_[Âˆ™]\›ˆÛ]™NYK›Ø™NˆšÈ‹Ý]\Îˆœ^[\Ý‹Ý]\Îœ‹œÝ]\Ë\›YYXTÙ\]Y[˜ÙNœÙ\K\˜][Û“\Î‘]K››ÝÊ
+K\Ý\Y][\ßNÂˆBˆXØ]Ú
+\œŠ^Âˆ][\Ëœ\Ú
+Ü›Ø™Nš[™^OOLÈšÈŽˆšËXY\]™H‹ÚÎ™˜[ÙK\›\œ›ÜŽ™\œË›˜[YOOOIÐX›Ü\œ›Ü‰ÏÈ[Y[Ý]Ž”Ýš[™Ê\œË›Y\ÜØYÙ_\œŠ_JNÂˆBˆBˆËÈ™]ÛÜšËÜ›ÞH˜Z[\™\È\™HS’Ó“ÕÓ‹›ÝÑ‘“S‘KÛÈ^HÈ›ÝÛÛœÝ[YBˆËÈHÛËXÛÛ™š\›X][ÛˆÝ™X[KY[™YÝX\™‚ˆ™]\›ˆÛ]™N›[›Ø™NˆšÈ‹Ý]\Îˆ[˜]˜Z[X›H‹\œ›ÜŽˆ’È›Ø™H[˜]˜Z[X›H‹\˜][Û“\Î‘]K››ÝÊ
+K\Ý\Y][\ßNÂŸB‚™[˜Ý[ÛˆØØ[Z[]\Ó›ÝÊ]O[™]È]J
+J^Ü™]\›ˆ]K™Ù]Ý\œÊ
+JŒ
+Ù]K™Ù]Z[]\Ê
+_B™[˜Ý[ÛˆZ[]\Ñœ›ÛRSJŠ^ØÛÛœÝÚWOTÝš[™ÊŸŒŒŠKœÜ]
+ŽˆŠK›X\
+[X™\ŠNÜ™]\›ˆ
+Œ
+Û_B™[˜Ý[ÛˆÚ][“[Ü›š[™Ð[››Ý[˜Ù[Y[ÕÚ[™ÝÊ›ÝÏ[™]È]J
+J^ÂˆÛÛœÝ[ØØ[Z[]\Ó›ÝÊ›ÝÊKO[Z[]\Ñœ›ÛRSJ[Ü›š[™Ð[››Ý[˜Ù[Y[ËœÝ\[YJK[Z[]\Ñœ›ÛRSJ[Ü›š[™Ð[››Ý[˜Ù[Y[Ë™[™[YJNÂˆ™]\›ˆOXÊXI‰›XŠNŠX_XŠNÂŸB™[˜Ý[Ûˆ[Ü›š[™Ð[››Ý[˜Ù[Y[ÔØÚÛÛ^J›ÝÏ[™]È]J
+J^ÂˆYŠ\Ð]]ÛX][Û”Ý\™\ÜÙY
+›ÝÊK˜›ØÚÙY
+\™]\›ˆ˜[ÙNÂˆ™]\›ˆØÚÛÛÞXÛQ›Ü‘]J›ÝÊKš\ÔÝY[ØÚÛÛ^NÂŸB™[˜Ý[Ûˆ[››Ý[˜Ù[Y[\™Ù]Ê
+^Ü™]\›ˆ]]ÛX][Û‘\Ü^U\™Ù]Ê[Ü›š[™Ð[››Ý[˜Ù[Y[Ë\™Ù]ÏË›[™ÝÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ë\™Ù]Î–È˜[—J_B™[˜Ý[ÛˆØÚY[P[››Ý[˜Ù[Y[]Y[Ô™]šY\Ê\™Ù]Ê^Âˆ›ÜŠÛÛœÝ[^HÙˆÌMLLLŒJ\Ù][Y[Ý]
+
+
+OOžÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+\™]\›ŽÂˆYŠ[[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™J\™]\›ŽÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›[ÙHOOH›X[X[‰‰ˆ[[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›]™J\™]\›ŽÂˆ˜XÚÑ[^Ü]]][ÛŠ^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^KÙX‹˜]Y[È‹\™Ù]\™Ù]Ë^[ØYžÝ[›]]N“[X™\Š[Ü›š[™Ð[››Ý[˜Ù[Y[Ë›Û[YT\˜Ù[ÏÌL
+OŒ›Û[YN“X]›X^
+X]›Z[ŠK[X™\Š[Ü›š[™Ð[››Ý[˜Ù[Y[Ë›Û[YT\˜Ù[ÏÌL
+KÌL
+JK™[ØY™˜[ÙKÛÛ[Ú[™ˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŸ_K›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŠJK˜Ø]Ú
+
+
+OOžßJNÂˆK[^JNÂŸB˜\Þ[˜È[˜Ý[ÛˆÙ][Ü›š[™Ð[››Ý[˜Ù[Y[š[Üš]U\™Ù]Ê\™Ù]ËXÝ]™J^Âˆ›ÜŠÛÛœÝYÙˆ\™Ù]ß×J^ÚYŠXÝ]™JX˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]Ë˜Y
+Y
+NÙ[ÙH˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]Ë™[]JY
+_BˆËÈ[Ü›š[™È[››Ý[˜Ù[Y[È\™H›Û‹[Ü[Û˜[š[Üš]H]Y[È]™[ˆÚ[ˆÜ™[˜\žBˆËÈ]]ÛX][Ûˆ]Y[È]\Ú[™È\È™Y[ˆ\ØX›Y[ˆH˜XÚÙÜ›Ý[™]\ÚXÈÛXÞK‚ˆ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ™XÛÛ˜Ú[Tš[Üš]JÙ›Ü˜ÙNY_JNÂŸB˜\Þ[˜È[˜Ý[Ûˆ\ÜÙ\[Ü›š[™Ð[››Ý[˜Ù[Y[ÊÛ[ÙOH˜]]ÛX]XÈ‹\™Ù]ÓÝ™\œšYO[[\›Ý™\œšYO[[O^ßJ^ÂˆÛÛœÝ\™Ù]ÏP\œ˜^Kš\Ð\œ˜^J\™Ù]ÓÝ™\œšYJI‰\™Ù]ÓÝ™\œšYK›[™ÝØ]]ÛX][Û‘\Ü^U\™Ù]Ê\™Ù]ÓÝ™\œšYJN˜[››Ý[˜Ù[Y[\™Ù]Ê
+NÚYŠ]\™Ù]Ë›[™Ý
+\™]\›ŽÂˆÛÛœÝ\›]˜[Y]S[Ü›š[™Ð[››Ý[˜Ù[Y[Õ\›
+Ýš[™Ê\›Ý™\œšY_[››Ý[˜Ù[Y[Ô^X˜XÚÕ\›
+
+JJNÂˆËÈXÜ]Z\™H›ÝH\Ü^H[™]Y[Èš[Üš]HÝ]H™Y›Ü™HÙ[™[™È[žBˆËÈZÙ[Ý™\ˆÛÛ[X[™ËˆÝ\Ú\ÙHHØÚY[\ˆXÚÈØ[ˆÝ™\Üš]HH\Ü^KˆËÈÜˆ]\ÚXÈ\ÜÚ\Ý[Ø[ˆ™[XZ[ˆ]YX›KÚ[HZÙ[Ý™\ˆ\È[ˆ›YÚ‚ˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™O]YNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›[ÙO[[ÙNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]ÏVË‹‹\™Ù]×NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\ÜÙ\]Q]K››ÝÊ
+NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý]™P][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆËÈÝ\HÝ[X[H™]ÛÜšËX›Ý[™]\ÚXÈ\ÜÚ\Ý[]\ÙHÛÛ˜Ý\œ™[HÛÂˆËÈ[ˆ[˜]˜Z[X›H]Y[ÈÙ\šXÙHØ[››Ý[^H\™Ù[[››Ý[˜Ù[Y[šY[Ë‚ˆÛÛœÝš[Üš]U\ÚÏ\Ù][Ü›š[™Ð[››Ý[˜Ù[Y[š[Üš]U\™Ù]Ê\™Ù]ËYJNÂˆš[Üš]U\ÚË˜Ø]Ú
+
+
+OOžßJNÂˆËÈ™X][››Ý[˜Ù[Y[È\È[ˆ^Û\Ú]™H\Ü^HZÙ[Ý™\‹ˆÛX\ˆÛ›HH\™Ù]ˆËÈ\Ü^HÛÛ[ÈÈ›Ý[›ÚÙHHX\Ý\ˆÛ\ÜÜ›ÛÛHÛX\ˆ™XØ]\ÙH]ÛÝ[ˆËÈ]\ÙH\ÜÛÛ‹ÜÙ\ÜÚ[Ûˆ]Y]Y\È™^[Û™H[››Ý[˜Ù[Y[Ú[™ÝË‚ˆž^Âˆ]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]\™Ù]Ë^[ØYžÜ™X\ÛÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë]ZÙ[Ý™\ˆŸ_K›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŠNÂˆ]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^KÙXˆ‹\™Ù]\™Ù]Ë^[ØYžÝ\›š]ˆ˜ÛÝ™\ˆ‹ÜXÚ]NŒKØØ[\™XÝYK›Ü˜ÙP]Y[ÎYK]]Ü^NYK]]Y“[X™\Š[Ü›š[™Ð[››Ý[˜Ù[Y[Ë›Û[YT\˜Ù[ÏÌL
+OL›Û[YN“X]›X^
+X]›Z[ŠK[X™\Š[Ü›š[™Ð[››Ý[˜Ù[Y[Ë›Û[YT\˜Ù[ÏÌL
+KÌL
+JKÛÛ[Ú[™ˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŸ_K›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŠNÂˆ]ØZ]š[Üš]U\ÚÎÂˆXØ]Ú
+\œ›ÜŠ^Âˆ]ØZ]š[Üš]U\ÚË˜Ø]Ú
+
+
+OOžßJNÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™OY˜[ÙNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›[ÙO[[Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]ÏV×NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\ÜÙ\]LÂˆ]ØZ]Ù][Ü›š[™Ð[››Ý[˜Ù[Y[š[Üš]U\™Ù]Ê\™Ù]Ë˜[ÙJNÂˆ›ÝÈ\œ›ÜŽÂˆBˆØÚY[P[››Ý[˜Ù[Y[]Y[Ô™]šY\Ê\™Ù]ÊNÂˆ]Y]
+ÚÚ[™ˆ˜]]ÛX][Û‹›[Ü›š[™ËX[››Ý[˜Ù[Y[ËœÝ\‹[ÙK\™Ù]Ë\›ÛX\™Yš\œÝY_JNÂŸB™[˜Ý[Ûˆ]Y]YP]]ÛX][Û‘\š[™Ð[››Ý[˜Ù[Y[ÊÝÜ™Y]™[]™[]RÙ^KØÚY[YZ[]RÙ^K[SZ[]\Ê^ÂˆÛÛœÝØØÝ\œ™[˜ÙRÙ^OY]™[˜Û\ÜÒY›X[X[‹Ù^OX	ÜÝÜ™Y]™[šYN‰ÛØØÝ\œ™[˜ÙRÙ^_N‰ÜØÚY[YZ[]RÙ^_XÂˆYŠYY™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœËš\ÊÙ^JJYY™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœËœÙ]
+Ù^KÚÙ^KÝÜ™Y]™[YœÝÜ™Y]™[šY]™[žË‹‹™]™[KØØÝ\œ™[˜ÙRÙ^KØÚY[YZ[]RÙ^K]RÙ^K[SZ[]\Ë]Y]YY]›™]È]J
+KÒTÓÔÝš[™Ê
+_JNÂˆÝÜ™Y]™[›\Ý[^Ø]›™]È]J
+KÒTÓÔÝš[™Ê
+KØÚY[Y›ÜŽ˜	Ù]RÙ^_H	Ù]™[[Y_X™\ÛÛ™YÛ\ÜÒY™]™[˜Û\ÜÒY[ÚÎYKY™\œ™YYKY\ÜØYÙNˆ‘Y™\œ™YÚ[H[Ü›š[™È[››Ý[˜Ù[Y[È]™Hš[Üš]HŸNÂˆ™]\›ˆÙ^NÂŸB™[˜Ý[Ûˆ]]ÛX][Û‘Y™\œ™Y\Ü^U\™Ù]Ê]™[
+^ÂˆÛÛœÝÝ][™]ÈÙ]
+
+NÂˆÛÛœÝÛÛXÝJXÝ[Û‹\™Ù]ÊOOžÂˆÛÛœÝOTÝš[™ÊXÝ[ÛŸˆŠKÓÝÙ\Ø\ÙJ
+NÂˆYŠXKœÝ\ÕÚ]
+™\Ü^KˆŠJ\™]\›ŽÂˆ›ÜŠÛÛœÝYÙˆ]]ÛX][Û‘\Ü^U\™Ù]Ê\™Ù]ß×JJ[Ý]˜Y
+Y
+NÂˆNÂˆÛÛXÝ
+]™[˜XÝ[Û‹]™[\™Ù]ÊNÂˆ›ÜŠÛÛœÝÝ\Ùˆ\œ˜^Kš\Ð\œ˜^J]™[˜XÝ[ÛœÊOÙ]™[˜XÝ[ÛœÎ–×J^ÂˆÛÛœÝXÝ[Û\Ý\Ë˜XÝ[ÛŸ]™[˜XÝ[ÛŽÂˆÛÛœÝÝ\ÛXZ[X]]ÛX][Û•\™Ù]ÛXZ[ŠXÝ[ÛŠK]™[ÛXZ[X]]ÛX][Û•\™Ù]ÛXZ[Š]™[˜XÝ[ÛŠNÂˆ]\™Ù]ÎÂˆYŠÝ\Ë\ÙQ]™[\™Ù]ÈOOY˜[ÙI‰œÝ\ÛXZ[OOY]™[ÛXZ[Š]\™Ù]ÏY]™[\™Ù]ÎÂˆ[ÙHYŠÈ™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H—Kš[˜ÛY\ÊÝ\ÛXZ[ŠI‰™]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™Ý
+]\™Ù]ÏY]™[—ØÛ\ÜÑY˜][\™Ù]ÎÂˆ[ÙHYŠ\œ˜^Kš\Ð\œ˜^JÝ\Ë\™Ù]ÊI‰œÝ\\™Ù]Ë›[™Ý
+]\™Ù]Ï\Ý\\™Ù]ÎÂˆ[ÙHYŠÈ™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H—Kš[˜ÛY\ÊÝ\ÛXZ[ŠJ]\™Ù]ÏVÈ˜[—NÂˆ[ÙH\™Ù]ÏV×NÂˆÛÛXÝ
+XÝ[Û‹\™Ù]ÊNÂˆBˆÛÛœÝ[Y\Y]™[[Y\“Ý™\›^I‰\[Ùˆ]™[[Y\“Ý™\›^OOOH›Øš™XÝÙ]™[[Y\“Ý™\›^N›[ÂˆYŠ[Y\Ë™[˜X›Y
+^ÂˆÛÛœÝ\™Ù]ÏJ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™Ý
+BˆÈ]™[—ØÛ\ÜÑY˜][\™Ù]Âˆˆ
+[Y\‹\ÙQ]™[\™Ù]ÈOOY˜[ÙOÙ]™[\™Ù]ÎŠ\œ˜^Kš\Ð\œ˜^J[Y\‹\™Ù]ÊI‰[Y\‹\™Ù]Ë›[™ÝÝ[Y\‹\™Ù]Î™]™[\™Ù]ÊJNÂˆ›ÜŠÛÛœÝYÙˆ]]ÛX][Û‘\Ü^U\™Ù]Ê\™Ù]ß×JJ[Ý]˜Y
+Y
+NÂˆBˆ™]\›ˆÝ]ÂŸB™[˜Ý[Ûˆ]]ÛX][Û“ØØÝ\œ™[˜ÙTØÚY[YZ[]\Ê]™[
+^ÂˆÛÛœÝÚWOTÝš[™Ê]™[Ë[Y_ŒŒŠKœÜ]
+ŽˆŠK›X\
+[X™\ŠNÂˆ™]\›ˆ
+[X™\‹š\Ñš[š]J
+OÚŒ
+JŒ
+Ê[X™\‹š\Ñš[š]JJOÛNŒ
+NÂŸB™[˜Ý[Ûˆ]]ÛX][Û“ØØÝ\œ™[˜ÙR\ÐÝ\œ™[P\XØX›J]™[›ÝÏ[™]È]J
+J^ÂˆYŠY]™[X]]ÛX][Û“X]Ú\Ñ]J]™[›ÝÊK›X]Ú
+\™]\›ˆ˜[ÙNÂˆÛÛœÝØÚY[YX]]ÛX][Û“ØØÝ\œ™[˜ÙTØÚY[YZ[]\Ê]™[
+KÝ\œ™[[ØØ[Z[]\Ó›ÝÊ›ÝÊNÂˆYŠØÚY[Y˜Ý\œ™[
+\™]\›ˆ˜[ÙNÂˆYŠ]™[—ØÛ\ÜÊ^ÂˆÛÛœÝÝ\S[X™\Š]™[—ØÛ\ÜÔÝ\]
+K[™S[X™\Š]™[—ØÛ\ÜÑ[™]
+KÝ[\[›ÝË™Ù][YJ
+NÂˆYŠ[X™\‹š\Ñš[š]JÝ\
+I‰œÝ[\Ý\
+\™]\›ˆ˜[ÙNÂˆYŠ[X™\‹š\Ñš[š]J[™
+I‰œÝ[\Y[™
+\™]\›ˆ˜[ÙNÂˆBˆ™]\›ˆ]]ÛX][Û‘Y™\œ™Y\Ü^U\™Ù]Ê]™[
+KœÚ^™OŒÂŸB™[˜Ý[ÛˆÝ\œ™[]]ÛX][Û‘\Ü^UÚ[›™\œÊ›ÝÏ[™]È]J
+J^ÂˆÛÛœÝØ[™Y]\ÏV×NÂˆ›ÜŠÛÛœÝÝÜ™Y]™[ÙˆÛ\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[Ê^ÂˆYŠ\ÝÜ™Y]™[Ë™[˜X›Y
+XÛÛ[YNÂˆ›ÜŠÛÛœÝ]™[Ùˆ™\ÛÛ™P]]ÛX][Û“ØØÝ\œ™[˜Ù\ÊÝÜ™Y]™[›ÝÊJ^ÂˆYŠX]]ÛX][Û“ØØÝ\œ™[˜ÙR\ÐÝ\œ™[P\XØX›J]™[›ÝÊJXÛÛ[YNÂˆÛÛœÝ\™Ù]ÏVË‹‹˜]]ÛX][Û‘Y™\œ™Y\Ü^U\™Ù]Ê]™[
+WNÂˆYŠ]\™Ù]Ë›[™Ý
+XÛÛ[YNÂˆØ[™Y]\Ëœ\Ú
+ÜÝÜ™Y]™[]™[\™Ù]ËØÚY[YZ[]\Î˜]]ÛX][Û“ØØÝ\œ™[˜ÙTØÚY[YZ[]\Ê]™[
+_JNÂˆBˆBˆÛÛœÝÚ[›™\œÐžU\™Ù][™]ÈX\
+
+NÂˆ›ÜŠÛÛœÝØ[™Y]HÙˆØ[™Y]\Ê^Âˆ›ÜŠÛÛœÝYÙˆØ[™Y]K\™Ù]Ê^ÂˆÛÛœÝš[Ü]Ú[›™\œÐžU\™Ù]™Ù]
+Y
+NÂˆÛÛœÝÜS[X™\ŠØ[™Y]KœÝÜ™Y]™[œš[Üš]_
+KS[X™\Šš[ÜËœÝÜ™Y]™[Ëœš[Üš]_
+NÂˆYŠ\š[ÜŸÜœ
+ÜOO\	‰˜Ø[™Y]KœØÚY[YZ[]\Ïœš[Ü‹œØÚY[YZ[]\Ê_ˆ
+ÜOO\	‰˜Ø[™Y]KœØÚY[YZ[]\ÏOO\š[Ü‹œØÚY[YZ[]\É‰”Ýš[™ÊØ[™Y]KœÝÜ™Y]™[šYˆŠK›ØØ[PÛÛ\\™JÝš[™Êš[Ü‹œÝÜ™Y]™[šYˆŠJOŒ
+J^ÂˆÚ[›™\œÐžU\™Ù]œÙ]
+YØ[™Y]JNÂˆBˆBˆBˆÛÛœÝ[š\]YO[™]ÈX\
+
+NÂˆ›ÜŠÛÛœÝÝ\™Ù]Ø[™Y]WHÙˆÚ[›™\œÐžU\™Ù]
+^ÂˆÛÛœÝÙ^OX	ØØ[™Y]KœÝÜ™Y]™[šYN‰ØØ[™Y]K™]™[˜Û\ÜÒY›X[X[ŸN‰ØØ[™Y]K™]™[[Y_XÂˆYŠ][š\]YKš\ÊÙ^JJ][š\]YKœÙ]
+Ù^KË‹‹˜Ø[™Y]KÚ[›š[™Õ\™Ù]Î–×_JNÂˆ[š\]YK™Ù]
+Ù^JKÚ[›š[™Õ\™Ù]Ëœ\Ú
+\™Ù]
+NÂˆBˆ™]\›ˆË‹‹[š\]YK˜[Y\Ê
+WKœÛÜ
+
+KŠOO˜KœØÚY[YZ[]\ËX‹œØÚY[YZ[]\ßÝš[™ÊKœÝÜ™Y]™[šY
+K›ØØ[PÛÛ\\™JÝš[™Ê‹œÝÜ™Y]™[šY
+JJNÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ[‘\Ü^P]]ÛX][Û”™\Þ[˜Ê]™[Ú[›š[™Õ\™Ù]Ê^Âˆ]™[^Ë‹‹™]™[[Y\“Ý™\›^N››Ü›X[^™U[Y\“Ý™\›^J]™[[Y\“Ý™\›^K]™[[Y\“Ý™\›^_[
+_NÂˆÛÛœÝ[ÝÙY[™]ÈÙ]
+Ú[›š[™Õ\™Ù]ß×JK]™[ÛXZ[X]]ÛX][Û•\™Ù]ÛXZ[Š]™[˜XÝ[ÛŠNÂˆÛÛœÝÝ\ÏVÞÚYˆœš[X\žH‹XÝ[ÛŽ™]™[˜XÝ[Û‹\™Ù]Î™]™[\™Ù]Ë\ÙQ]™[\™Ù]ÎYK^[ØY™]™[œ^[ØYßK[^TÙXÛÛ™ÎŒK‹‹Š\œ˜^Kš\Ð\œ˜^J]™[˜XÝ[ÛœÊOÙ]™[˜XÝ[ÛœÎ–×JWNÂˆÛÛœÝ™\Ý[ÏV×NÂˆYŠ[ÝÙYœÚ^™J\™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]–Ë‹‹˜[ÝÙYK^[ØYžÜ™X\ÛÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™\Þ[˜ÈŸ_K›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™\Þ[˜ÈŠJNÂˆ›ÜŠÛÛœÝÝ\ÙˆÝ\Ê^ÂˆÛÛœÝXÝ[Û\Ý\Ë˜XÝ[ÛŸ]™[˜XÝ[Û‹ÛXZ[X]]ÛX][Û•\™Ù]ÛXZ[ŠXÝ[ÛŠNÂˆYŠVÈ™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H—Kš[˜ÛY\ÊÛXZ[ŠJXÛÛ[YNÂˆYŠ[X™\ŠÝ\™[^TÙXÛÛ™ÊOŒ
+X]ØZ]™]È›ÛZ\ÙJ™\ÛÛ™OOœÙ][Y[Ý]
+™\ÛÛ™KX]›Z[ŠÍŒ[X™\ŠÝ\™[^TÙXÛÛ™ÊJJŒL
+JNÂˆÛÛœÝ^XÚ]P\œ˜^Kš\Ð\œ˜^JÝ\\™Ù]ÊI‰œÝ\\™Ù]Ë›[™ÝÜÝ\\™Ù]Î–×NÂˆ]˜]Õ\™Ù]ÎÂˆYŠÝ\\ÙQ]™[\™Ù]ÈOOY˜[ÙI‰™ÛXZ[OOY]™[ÛXZ[Š\˜]Õ\™Ù]ÏY]™[\™Ù]ÎÂˆ[ÙHYŠ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™Ý
+\˜]Õ\™Ù]ÏY]™[—ØÛ\ÜÑY˜][\™Ù]ÎÂˆ[ÙHYŠ^XÚ]›[™Ý
+\˜]Õ\™Ù]ÏY^XÚ]Âˆ[ÙH˜]Õ\™Ù]ÏVÈ˜[—NÂˆÛÛœÝ\™Ù]ÏX]]ÛX][Û‘\Ü^U\™Ù]Ê˜]Õ\™Ù]ÊK™š[\ŠYO˜[ÝÙYš\ÊY
+JNÂˆYŠ]\™Ù]Ë›[™Ý
+XÛÛ[YNÂˆÛÛœÝÝ]]X]ØZ][”Ú[™ÛP]]ÛX][ÛXÝ[ÛŠË‹‹™]™[XÝ[Û‹\™Ù]Ë^[ØYœÝ\œ^[ØYßK[Y\“Ý™\›^N›[KÛX[X[™˜[ÙKÚÚ\Ý™\›^NYKÚÚ\]Y]YKÛÛ[X[™ÛÝ\˜ÙNˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™\Þ[˜ÈŸJNÂˆ™\Ý[Ëœ\Ú
+‹‹ŠÝ]]œ™\Ý[ß×JJNÂˆBˆÛÛœÝ[Y\Y]™[[Y\“Ý™\›^I‰\[Ùˆ]™[[Y\“Ý™\›^OOOH›Øš™XÝÙ]™[[Y\“Ý™\›^N›[ÂˆYŠ[Y\Ë™[˜X›Y
+^ÂˆÛÛœÝ˜]Õ\™Ù]ÏJ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™Ý
+BˆÈ]™[—ØÛ\ÜÑY˜][\™Ù]Âˆˆ
+[Y\‹\ÙQ]™[\™Ù]ÈOOY˜[ÙOÙ]™[\™Ù]ÎŠ\œ˜^Kš\Ð\œ˜^J[Y\‹\™Ù]ÊI‰[Y\‹\™Ù]Ë›[™ÝÝ[Y\‹\™Ù]Î™]™[\™Ù]ÊJNÂˆÛÛœÝ\™Ù]ÏX]]ÛX][Û‘\Ü^U\™Ù]Ê˜]Õ\™Ù]ÊK™š[\ŠYO˜[ÝÙYš\ÊY
+JNÂˆYŠ\™Ù]Ë›[™Ý
+^ÂˆÛÛœÝ[Y\”™\Ý[X]ØZ][]]ÛX][Û•[Y\“Ý™\›^JË‹‹™]™[\ÙPÛ\ÜÕ\™Ù]Î™˜[ÙK\™Ù]Ë[Y\“Ý™\›^NžË‹‹[Y\‹\ÙQ]™[\™Ù]ÎY__KÛX[X[™˜[ÙKÛÛ[X[™ÛÝ\˜ÙNˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™\Þ[˜ÈŸJNÂˆYŠ[Y\”™\Ý[Ëœ™\Ý[
+\™\Ý[Ëœ\Ú
+[Y\”™\Ý[œ™\Ý[
+NÂˆBˆBˆ™]\›ˆÛÚÎYK™\Ý[ßNÂŸB™[˜Ý[ÛˆÛÛœÝ[YQY™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœÊ
+^ÂˆÛÛœÝ]Y]YYVË‹‹™Y™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœË˜[Y\Ê
+WNÂˆY™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœË˜ÛX\Š
+NÂˆ›ÜŠÛÛœÝ][HÙˆ]Y]YY
+^ÂˆÛÛœÝÝÜ™Y]™[XÛ\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[Ë™š[™
+OžšYOOZ][KœÝÜ™Y]™[Y
+NÚYŠ\ÝÜ™Y]™[
+XÛÛ[YNÂˆÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÏ\ÝÜ™Y]™[›\Ý^XÐžPÛ\ÜßßNÂˆÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÖÚ][K›ØØÝ\œ™[˜ÙRÙ^WOZ][KœØÚY[YZ[]RÙ^NÂˆÝÜ™Y]™[›\Ý^XÏZ][KœØÚY[YZ[]RÙ^NÂˆÝÜ™Y]™[›\Ý[^Ø]›™]È]J
+KÒTÓÔÝš[™Ê
+KØÚY[Y›ÜŽ˜	Ú][K™]RÙ^_H	Ú][K™]™[[Y_X™\ÛÛ™YÛ\ÜÒYš][K™]™[˜Û\ÜÒY[ÚÎYKY™\œ™YYK™\Þ[˜ÙYYKY\ÜØYÙNˆÛÛœÝ[YYžHÜÝX[››Ý[˜Ù[Y[ØÚY[\ˆ™\Þ[˜ÈŸNÂˆÝÜ™Y]™[\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆBˆYŠ]Y]YY›[™Ý
+\\œÚ\Ý]]ÛX][ÛœÊ
+NÂˆ™]\›ˆ]Y]YY›[™ÝÂŸB˜\Þ[˜È[˜Ý[Ûˆ™\Þ[˜ÐÝ\œ™[\Ü^P]]ÛX][ÛœÐY\[››Ý[˜Ù[Y[Ê™X\ÛÛHœÝ™X[KY[™YŠ^ÂˆÛÛœÝ›ÝÏ[™]È]J
+KÚ[›™\œÏXÝ\œ™[]]ÛX][Û‘\Ü^UÚ[›™\œÊ›ÝÊK™\Ý[ÏV×NÂˆ›ÜŠÛÛœÝØ[™Y]HÙˆÚ[›™\œÊ^ÂˆÛÛœÝØØÝ\œ™[˜ÙRÙ^OXØ[™Y]K™]™[˜Û\ÜÒY›X[X[ŽÂˆÛÛœÝØÚY[YZ[]RÙ^OX	ÛØØ[]RÙ^J›ÝÊ_H	ØØ[™Y]K™]™[[Y_XÂˆž^ÂˆÛÛœÝ™\Ý[X]ØZ][‘\Ü^P]]ÛX][Û”™\Þ[˜ÊØ[™Y]K™]™[Ø[™Y]KÚ[›š[™Õ\™Ù]ÊNÂˆØ[™Y]KœÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÏXØ[™Y]KœÝÜ™Y]™[›\Ý^XÐžPÛ\ÜßßNÂˆØ[™Y]KœÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÖÛØØÝ\œ™[˜ÙRÙ^WO\ØÚY[YZ[]RÙ^NÂˆØ[™Y]KœÝÜ™Y]™[›\Ý^XÏ\ØÚY[YZ[]RÙ^NÂˆØ[™Y]KœÝÜ™Y]™[›\Ý[^Ø]›™]È]J
+KÒTÓÔÝš[™Ê
+KØÚY[Y›ÜŽœØÚY[YZ[]RÙ^K™\ÛÛ™YÛ\ÜÒY˜Ø[™Y]K™]™[˜Û\ÜÒY[ÚÎœ™\Ý[›ÚÈOOY˜[ÙK™\Þ[˜ÎYKY\ÜØYÙNˆ”™KX\YYY\ˆ[Ü›š[™È[››Ý[˜Ù[Y[È[™YŸNÂˆØ[™Y]KœÝÜ™Y]™[\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ™\Ý[Ëœ\Ú
+Ø]]ÛX][Û’Y˜Ø[™Y]KœÝÜ™Y]™[šY˜[YN˜Ø[™Y]KœÝÜ™Y]™[›˜[YKÛ\ÜÒY˜Ø[™Y]K™]™[˜Û\ÜÒY[[YN˜Ø[™Y]K™]™[[YK\™Ù]Î˜Ø[™Y]KÚ[›š[™Õ\™Ù]ËÚÎœ™\Ý[›ÚÈOOY˜[Ù_JNÂˆXØ]Ú
+\œŠ^Âˆ™\Ý[Ëœ\Ú
+Ø]]ÛX][Û’Y˜Ø[™Y]KœÝÜ™Y]™[šY˜[YN˜Ø[™Y]KœÝÜ™Y]™[›˜[YKÛ\ÜÒY˜Ø[™Y]K™]™[˜Û\ÜÒY[[YN˜Ø[™Y]K™]™[[YK\™Ù]Î˜Ø[™Y]KÚ[›š[™Õ\™Ù]ËÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆXYÛ›ÜÝXÑ\œ›ÜŠ\œ‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆ˜[››Ý[˜Ù[Y[\ÜÝ\™\Þ[˜È‹]NžØ]]ÛX][Û’Y˜Ø[™Y]KœÝÜ™Y]™[šY™X\ÛÛŸ_JNÂˆBˆBˆYŠÚ[›™\œË›[™Ý
+\\œÚ\Ý]]ÛX][ÛœÊ
+NÂˆ]Y]
+ÚÚ[™ˆ˜]]ÛX][Û‹›[Ü›š[™ËX[››Ý[˜Ù[Y[Ëœ™\Þ[˜È‹™X\ÛÛ‹]››ÝËÒTÓÔÝš[™Ê
+KÚ[›™\ÛÝ[Ú[›™\œË›[™Ý™\Ý[ßJNÂˆ™]\›ˆÝÚ[›™\ÛÝ[Ú[›™\œË›[™Ý™\Ý[ßNÂŸB™[˜Ý[ÛˆØÚY[S[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žJ\™Ù]Ë™X\ÛÛŠ^ÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žU[Y\Š\™]\›ŽÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žU[Y\\Ù][Y[Ý]
+
+
+OOžÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žU[Y\[[ÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+^ÜØÚY[S[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žJ\™Ù]Ë™X\ÛÛŠNÜ™]\›ŸBˆÙ\šX[^™S[Ü›š[™Ð[››Ý[˜Ù[Y[ÓY™XÞXÛJ\Þ[˜Ê
+OOžÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™J\™]\›ŽÂˆÛÛœÝ™]žOX]ØZ]™\Þ[˜ÐÝ\œ™[\Ü^P]]ÛX][ÛœÐY\[››Ý[˜Ù[Y[Ê	Ü™X\ÛÛŸK\™]žX
+NÂˆYŠ™]žKœ™\Ý[ËœÛÛYJ][OOš][K›ÚÏOOY˜[ÙJJ]›ÝÈ™]È\œ›ÜŠ”ÜÝX[››Ý[˜Ù[Y[\Ü^H™XÛÛ˜Ú[X][Ûˆ\ÈÝ[[˜ÛÛ\]HŠNÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YKœ™[X\ÙT™XÛÛ˜Ú[T[™[™ÏY˜[ÙNÂˆ]ØZ]Ù][Ü›š[™Ð[››Ý[˜Ù[Y[š[Üš]U\™Ù]Ê\™Ù]Ë˜[ÙJNÂˆ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+NÂˆJK˜Ø]Ú
+\œ›ÜOžÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\œ›ÜY\œ›Ü‹›Y\ÜØYÙNÂˆØÚY[S[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žJ\™Ù]Ë™X\ÛÛŠNÂˆJNÂˆKL
+NÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žU[Y\‹[œ™YŠ
+NÂŸB˜\Þ[˜È[˜Ý[Ûˆ™[X\ÙS[Ü›š[™Ð[››Ý[˜Ù[Y[Ê™X\ÛÛHœÝ™X[KY[™YŠ^ÂˆYŠ[[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™J\™]\›ŽÂˆÛÛœÝ\™Ù]Ï[[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]ÏË›[™ÝÖË‹‹›[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]×N˜[››Ý[˜Ù[Y[\™Ù]Ê
+NÂˆ]Y™\œ™YÛÛœÝ[YYL™\Þ[˜Ï^ÝÚ[›™\ÛÝ[Œ™\Ý[Î–×_K™[X\ÙQ\œ›Ü[[Âˆž^ÚYŠ\™Ù]Ë›[™Ý
+X]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]\™Ù]Ë^[ØYžÜ™X\ÛÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™[X\ÙHŸ_K›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŠ_XØ]Ú
+\œ›ÜŠ^Ü™[X\ÙQ\œ›ÜY\œ›ÜŽÙXYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™[X\ÙKXÛX\ˆ‹]NžÜ™X\ÛÛŸ_J_Bˆž^ÙY™\œ™YÛÛœÝ[YYXÛÛœÝ[YQY™\œ™Y[››Ý[˜Ù[Y[]]ÛX][ÛœÊ
+_XØ]Ú
+\œ›ÜŠ^Ü™[X\ÙQ\œ›Ü\™[X\ÙQ\œ›ÜŸ\œ›ÜŽÙXYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™[X\ÙKX›ÛÚÚÙY\[™È‹]NžÜ™X\ÛÛŸ_J_Bˆž^Ü™\Þ[˜ÏX]ØZ]™\Þ[˜ÐÝ\œ™[\Ü^P]]ÛX][ÛœÐY\[››Ý[˜Ù[Y[Ê™X\ÛÛŠ_XØ]Ú
+\œ›ÜŠ^Ü™[X\ÙQ\œ›Ü\™[X\ÙQ\œ›ÜŸ\œ›ÜŽÙXYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë\™[X\ÙK\™\Þ[˜È‹]NžÜ™X\ÛÛŸ_J_BˆÛÛœÝ™\Þ[˜ÐÛÛ\]OH\™[X\ÙQ\œ›Ü‰‰ˆ\™\Þ[˜Ëœ™\Ý[ËœÛÛYJ][OOš][K›ÚÏOOY˜[ÙJNÂˆž^ÂˆËÈÛH[››Ý[˜Ù[Y[ØÚÈ›ÝYÚ\Ü^H™XÛÛ˜Ú[X][Û‹ˆ\Ü^HÛÛ[X[™ÂˆËÈ[Z]YžHH™\Þ[˜È]\Ý›Ý™[X\ÙH]Y[Èš[Üš]HX\›K]H˜Z[YˆËÈ\œÚ\Ý[˜ÙKØ]Y]Ý\]\Ý™]™\ˆX]™HHØÚÈÝXÚÈ›Ü™]™\‹‚ˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™OY˜[ÙNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›[ÙO[[Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]ÏV×NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý[™Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\ÜÙ\]LÂˆYŠ™\Þ[˜ÐÛÛ\]J^Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YKœ™[X\ÙT™XÛÛ˜Ú[T[™[™ÏY˜[ÙNØ]ØZ]Ù][Ü›š[™Ð[››Ý[˜Ù[Y[š[Üš]U\™Ù]Ê\™Ù]Ë˜[ÙJNØ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+_Bˆ[Ù^Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YKœ™[X\ÙT™XÛÛ˜Ú[T[™[™Ï]YNÜØÚY[S[Ü›š[™Ð[››Ý[˜Ù[Y[Ô™[X\ÙT™]žJ\™Ù]Ë™X\ÛÛŠ_BˆXØ]Ú
+\œ›ÜŠ^Ü™[X\ÙQ\œ›Ü\™[X\ÙQ\œ›ÜŸ\œ›ÜŸBˆ]Y]
+ÚÚ[™ˆ˜]]ÛX][Û‹›[Ü›š[™ËX[››Ý[˜Ù[Y[ËœÝÜ‹™X\ÛÛ‹\™Ù]ËY™\œ™YÛÛœÝ[YY™\Þ[˜ÕÚ[›™\ÛÝ[œ™\Þ[˜ËÚ[›™\ÛÝ[™\Þ[˜Ô™\Ý[Îœ™\Þ[˜Ëœ™\Ý[ßJNÂˆYŠ™[X\ÙQ\œ›ÜŠ]›ÝÈ™[X\ÙQ\œ›ÜŽÂŸB›][Ü›š[™Ð[››Ý[˜Ù[Y[ÕXÚÐ\ÞOY˜[ÙNÂ˜\Þ[˜È[˜Ý[Ûˆ[Ü›š[™Ð[››Ý[˜Ù[Y[ÕXÚÊ
+^ÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+\™]\›ŽÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[ÕXÚÐ\ÞJ\™]\›ŽÛ[Ü›š[™Ð[››Ý[˜Ù[Y[ÕXÚÐ\ÞO]YNÂˆž^ÂˆÛÛœÝ›ÝÏ[™]È]J
+NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\ÝØ]Ú\•XÚÏ[›ÝËÒTÓÔÝš[™Ê
+NÂˆËÈX[X[[››Ý[˜Ù[Y[È\™HÜ\˜]Ü‹XÛÛ›ÛY[™™[XZ[ˆØÚÙY[[ÝÜÈÛX\‹‚ˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™I‰›[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›[ÙOOOH›X[X[Š\™]\›ŽÂˆYŠ[[Ü›š[™Ð[››Ý[˜Ù[Y[Ë™[˜X›Y]Ú][“[Ü›š[™Ð[››Ý[˜Ù[Y[ÕÚ[™ÝÊ›ÝÊ_[[Ü›š[™Ð[››Ý[˜Ù[Y[ÔØÚÛÛ^J›ÝÊJ^Âˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›]™OY˜[ÙNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›Ù™›[™PÛÝ[LÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™JX]ØZ]™[X\ÙS[Ü›š[™Ð[››Ý[˜Ù[Y[Ê[[Ü›š[™Ð[››Ý[˜Ù[Y[Ë™[˜X›YÈ™\ØX›YŽˆ›Ý]ÚYK]Ú[™ÝÈŠNÂˆ™]\›ŽÂˆBˆÛÛœÝ›Ø™OX]ØZ]›Ø™S[Ü›š[™Ð[››Ý[˜Ù[Y[Ó]™J
+NÂˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\ÝÚXÚÏ[™]È]J
+KÒTÓÔÝš[™Ê
+NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YKœ›Ø™O\›Ø™Kœ›Ø™NÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YKœ›Ø™TÝ]\Ï\›Ø™KœÝ]\ß[Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YKœ›Ø™Q\˜][Û“\Ï\›Ø™K™\˜][Û“\ÏÏÛ[Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\œ›Ü\›Ø™K™\œ›ÜŸ[ÂˆYŠ›Ø™K›]™OOO]YJ^Âˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›]™O]YNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›Ù™›[™PÛÝ[LÂˆËÈHÝXØÙ\ÜÙ[\š[ÙXÈ›Ø™HØœÙ\™\ÈH^\Ý[™ÈÙ\ÜÚ[ÛŽÈ]]\Ý›ÝˆËÈÛX\ˆ[™™XZ[H^Y\‹ˆÛ›HHÙ™›[™HOˆ]™H˜[œÚ][ÛˆÝ\È]‚ˆYŠ[[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™JX]ØZ]\ÜÙ\[Ü›š[™Ð[››Ý[˜Ù[Y[ÊÛ[ÙNˆ˜]]ÛX]XÈŸJNÂˆY[ÙHYŠ›Ø™K›]™OOOY˜[ÙJ^Âˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›]™OY˜[ÙNÛ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›Ù™›[™PÛÝ[
+ÊÎÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™I‰›[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›Ù™›[™PÛÝ[[[Ü›š[™Ð[››Ý[˜Ù[Y[Ë›Ù™›[™PÛÛ™š\›X][ÛœÊX]ØZ]™[X\ÙS[Ü›š[™Ð[››Ý[˜Ù[Y[ÊœÝ™X[KY[™YŠNÂˆY[Ù^Âˆ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\œ›Ü\›Ø™K™\œ›ÜŸ’È›Ø™H[˜]˜Z[X›HŽÂˆBˆXØ]Ú
+\œŠ^Û[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK›\Ý\œ›ÜY\œ‹›Y\ÜØYÙNÙXYÛ›ÜÝXÑ\œ›ÜËŠ\œ‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆ›[Ü›š[™ËX[››Ý[˜Ù[Y[Ë]Ø]ÚŸJ_Bˆš[˜[^Û[Ü›š[™Ð[››Ý[˜Ù[Y[ÕXÚÐ\ÞOY˜[Ù_BŸB™[˜Ý[ÛˆØ[[™\”[Q›Ü‘]J]O[™]È]J
+J^ÂˆÛÛœÝÙ^O[ØØ[]RÙ^J]JNÂˆYŠ
+ØÚY[\Ø[[™\‹››ÔØÚÛÛ]\ßØÚY[\Ø[[™\‹™^ÛYY]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆÝ\N‰Û›Ë\ØÚÛÛ	Ë]NšÙ^KX™[‰Ñ\ÝšXÝ›ËTØÚÛÛ	ßNÂˆYŠ
+ØÚY[\Ø[[™\‹œ™[[ÝQ]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆÝ\N‰Ü™[[ÝIË]NšÙ^KX™[‰Ô™[[ÝH^IßNÂˆYŠ
+ØÚY[\Ø[[™\‹š[‘^Q]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆÝ\N‰Ú[‹Y^IË]NšÙ^KX™[‰Ò[ˆ^IßNÂˆYŠ
+ØÚY[\Ø[[™\‹ÛÒÝ\‘[^Q]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆÝ\N‰Ì‹ZÝ\‹Y[^IË]NšÙ^KX™[‰Ì‹RÝ\ˆ[^IßNÂˆYŠ
+ØÚY[\Ø[[™\‹›Û™RÝ\‘[^Q]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆÝ\N‰ÌKZÝ\‹Y[^IË]NšÙ^KX™[‰ÌKRÝ\ˆ[^IßNÂˆ™]\›ˆÝ\N‰Û›Ü›X[	Ë]NšÙ^KX™[‰Ó›Ü›X[ØÚY[IßNÂŸB™[˜Ý[Ûˆ\ÐØ[[™\›ØÚÙY
+]J^ÂˆÛÛœÝ[OXØ[[™\”[Q›Ü‘]J]JNÂˆ™]\›ˆ[K\OOOIÛ›Ë\ØÚÛÛ	ÏÞØ›ØÚÙYYK™X\ÛÛŽ‰Ñ\ÝšXÝ›Ë\ØÚÛÛ]IË[_NžØ›ØÚÙY™˜[ÙK™X\ÛÛŽ›[[_NÂŸB™[˜Ý[Ûˆ\Ð]]ÛX][Û”Ý\™\ÜÙY
+]J^ÂˆÛÛœÝ[OXØ[[™\”[Q›Ü‘]J]JNÂˆYŠ[K\OOOIÛ›Ë\ØÚÛÛ	Ê\™]\›ˆØ›ØÚÙYYK™X\ÛÛŽ‰Ñ\ÝšXÝ›Ë\ØÚÛÛ]IË[_NÂˆYŠ[K\OOOIÜ™[[ÝIÊ\™]\›ˆØ›ØÚÙYYK™X\ÛÛŽ‰Ñ\ÝšXÝ™[[ÝH^IË[_NÂˆ™]\›ˆØ›ØÚÙY™˜[ÙK™X\ÛÛŽ›[[_NÂŸB™[˜Ý[ÛˆÛÝ[[YÚX›TØÚÛÛ^\Ê[˜ÚÜ‘]K\™Ù]]J^ÂˆÛÛœÝO[™]È]J[˜ÚÜ‘]K™Ù][YX\Š
+K[˜ÚÜ‘]K™Ù][Û
+
+K[˜ÚÜ‘]K™Ù]]J
+KLŠNÂˆÛÛœÝ[™]È]J\™Ù]]K™Ù][YX\Š
+K\™Ù]]K™Ù][Û
+
+K\™Ù]]K™Ù]]J
+KLŠNÂˆYŠK™Ù][YJ
+OOO]™Ù][YJ
+J\™]\›ˆÂˆÛÛœÝÝ\]˜OÌN‹LNÂˆ]ÛÝ[LÂˆÛÛœÝ[™]È]JJNÂˆÚ[J™Ù][YJ
+HOO]™Ù][YJ
+J^ÂˆœÙ]]J™Ù]]J
+JÜÝ\
+NÂˆÛÛœÝÝÏY™Ù]^J
+NÂˆYŠÝÏOOLÝÏOOMŠXÛÛ[YNÂˆYŠ\ÐØ[[™\›ØÚÙY
+
+K˜›ØÚÙY
+XÛÛ[YNÂˆÛÝ[
+Ï\Ý\ÂˆBˆ™]\›ˆÛÝ[ÂŸB‚™[˜Ý[ÛˆØÚÛÛÞXÛP[˜ÚÜŠ
+^Ü™]\›ˆØÚÛÛØÚY[T›Ùš[K˜[˜ÚÜ‘]_ØÚY[\Ø[[™\‹˜[˜ÚÜ‘]_ØØ[]RÙ^J™]È]J
+J_B™[˜Ý[ÛˆØÚÛÛÞXÛS]\œÊ
+^Ü™]\›ˆË‹‹œØÚÛÛØÚY[T›Ùš[K˜ÞXÛQ^\×_B™[˜Ý[ÛˆØÚÛÛÞXÛQÜ›Ý\
+[™^
+^Ü™]\›ˆØÚÛÛØÚY[T›Ùš[K™^QÜ›Ý\ÖÚ[™^_[B™[˜Ý[Ûˆ[\›˜]QÜ›Ý\X™[
+\ÙOHHŠ^Ü™]\›ˆ
+ØÚÛÛÞXÛQÜ›Ý\
+Ýš[™Ê\ÙJKÕ\\Ø\ÙJ
+OOOHˆÌNŒ
+OË›X™[
+_ØÚÛÛÞXÛS]\œÊ
+VÔÝš[™Ê\ÙJKÕ\\Ø\ÙJ
+OOOHˆÌNŒ_Ýš[™Ê\ÙJKÕ\\Ø\ÙJ
+_B™[˜Ý[Ûˆ›Ü›X[^™Y^U\J˜[YK˜[˜XÚÏH[žHŠ^ØÛÛœÝ[ÝÙY[™]ÈÙ]
+È[žH‹“Z^Y‹‹‹ŠØÚÛÛØÚY[T›Ùš[K™^QÜ›Ý\ß×JK›X\
+Ož›X™[
+WJNÜ™]\›ˆ[ÝÙYš\ÊÝš[™Ê˜[YJJOÔÝš[™Ê˜[YJNŠ[ÝÙYš\ÊÝš[™Ê˜[˜XÚÊJOÔÝš[™Ê˜[˜XÚÊNˆ[žHŠ_B‚™[˜Ý[ÛˆØÚÛÛÞXÛQ›Ü‘]J]O[™]È]J
+J^ÂˆÛÛœÝÙ^O[ØØ[]RÙ^J]JNÂˆÛÛœÝÝÏY]K™Ù]^J
+NÂˆÛÛœÝ›ØÚÙYZ\ÐØ[[™\›ØÚÙY
+]JNÂˆÛÛœÝ\ÔÝY[ØÚÛÛ^OYÝÈOOL	‰™ÝÈOOM‰‰ˆX›ØÚÙY˜›ØÚÙYÂˆÛÛœÝ[˜ÚÜ’Ù^O\ØÚÛÛÞXÛP[˜ÚÜŠ
+K[˜ÚÜY]Qœ›ÛRÙ^J[˜ÚÜ’Ù^JNÂˆYŠX[˜ÚÜŠ\™]\›ˆÙ]NšÙ^K\ÔÝY[ØÚÛÛ^N™˜[ÙKÞXÛQ^N›[^PÛÛÜŽ›[™X\ÛÛŽˆ’[˜[YØÚÛÛXÞXÛH[˜ÚÜˆŸNÂ‚ˆÛÛœÝÙ™œÙ]XÛÝ[[YÚX›TØÚÛÛ^\Ê[˜ÚÜ‹]JNÂˆÛÛœÝ]\œÏ\ØÚÛÛÞXÛS]\œÊ
+K[™^J
+Ù™œÙ]	[]\œË›[™Ý
+JÛ]\œË›[™Ý
+I[]\œË›[™ÝÂˆÛÛœÝ›Ú™XÝYÞXÛQ^O[]\œÖÚ[™^K›Ú™XÝYÜ›Ý\YÜ›Ý\›ÜÞXÛQ^JØÚÛÛØÚY[T›Ùš[K›Ú™XÝYÞXÛQ^JNÂˆÛÛœÝ›Ú™XÝY^PÛÛÜ\›Ú™XÝYÜ›Ý\Ë›X™[›Ú™XÝYÞXÛQ^NÂˆ™]\›ˆÂˆ]NšÙ^Kˆ[˜ÚÜ‘]N˜[˜ÚÜ’Ù^Kˆ\ÔÝY[ØÚÛÛ^KˆÞXÛQ^Nš\ÔÝY[ØÚÛÛ^OÜ›Ú™XÝYÞXÛQ^N›[ˆ^PÛÛÜŽš\ÔÝY[ØÚÛÛ^OÜ›Ú™XÝY^PÛÛÜŽ›[ˆ›Ú™XÝYÞXÛQ^Kˆ›Ú™XÝY^PÛÛÜ‹^QÜ›Ý\œ›Ú™XÝYÜ›Ý\ˆ[™^ˆ™X\ÛÛŽš\ÔÝY[ØÚÛÛ^OÛ[Š›ØÚÙY˜›ØÚÙYØ›ØÚÙYœ™X\ÛÛŽˆ•ÙYZÙ[™ŠBˆNÂŸB™[˜Ý[Ûˆ›Ü›X[^™PÞXÛQ^\Ê˜[YK˜[˜XÚÏV×J^ÂˆÛÛœÝÜ˜ÏP\œ˜^Kš\Ð\œ˜^J˜[YJOÝ˜[YN™˜[˜XÚÎÂˆÛÛœÝ[ÝÙY\ØÚÛÛÞXÛS]\œÊ
+NÜ™]\›ˆË‹‹›™]ÈÙ]
+Ü˜Ë›X\
+O”Ýš[™ÊˆŠKš[J
+JK™š[\ŠO˜[ÝÙYš[˜ÛY\Ê
+JJWNÂŸB™[˜Ý[Ûˆ\š[ÙY˜][ÞXÛQ^\Ê\š[Ù
+^ÂˆÛÛœÝTÝš[™Ê\š[ÙˆŠKš[J
+NÂˆ™]\›ˆË‹‹ŠØÚÛÛØÚY[T›Ùš[Kœ\š[ÙÞXÛQ^\ÖÜ_×JWNÂŸB™[˜Ý[ÛˆÞXÛQ^\Ñ^PÛÛÜŠÞXÛQ^\Ê^ÂˆÛÛœÝ^\Ï[›Ü›X[^™PÞXÛQ^\ÊÞXÛQ^\ÊNÂˆ›ÜŠÛÛœÝÜ›Ý\ÙˆØÚÛÛØÚY[T›Ùš[K™^QÜ›Ý\ß×JZYŠ^\Ë›[™Ý	‰™^\Ë™]™\žJO™Ü›Ý\˜ÞXÛQ^\Ëš[˜ÛY\Ê
+JJ\™]\›ˆÜ›Ý\›X™[Âˆ™]\›ˆ^\Ë›[™ÝÈ“Z^YŽˆ[žHŽÂŸB™[˜Ý[ÛˆØÚÛÛÞXÛSX]Ú\ÊØÞXÛQ^\ÏV×K^U\OH[žHŸO^ßK]O[™]È]J
+J^ÂˆÛÛœÝÝ]\Ï\ØÚÛÛÞXÛQ›Ü‘]J]JNÂˆYŠ\Ý]\Ëš\ÔÝY[ØÚÛÛ^J\™]\›ˆ˜[ÙNÂˆÛÛœÝ^\Ï[›Ü›X[^™PÞXÛQ^\ÊÞXÛQ^\ÊNÂˆYŠ^\Ë›[™Ý	‰ˆY^\Ëš[˜ÛY\ÊÝ]\Ë˜ÞXÛQ^JJ\™]\›ˆ˜[ÙNÂˆYŠ^U\HOOH[žH‰‰™^U\HOOH“Z^Y‰‰™^U\HOO\Ý]\Ë™^PÛÛÜŠ\™]\›ˆ˜[ÙNÂˆ™]\›ˆYNÂŸB‚™[˜Ý[Ûˆ]]ÛX][Û“X]Ú\Ñ]J]™[]J^ÂˆÛÛœÝ›ØÚÙYZ\Ð]]ÛX][Û”Ý\™\ÜÙY
+]JNÂˆYŠ›ØÚÙY˜›ØÚÙY
+\™]\›ˆÛX]Ú™˜[ÙK™X\ÛÛŽ˜›ØÚÙYœ™X\ÛÛŸNÂˆÛÛœÝÙ^O[ØØ[]RÙ^J]JNÂˆÛÛœÝ[ÙOTÝš[™Ê]™[œØÚY[S[Ù_ÙYZÛHŠNÂ‚ˆYŠ[ÙOOOH™]\ÈŠ^Âˆ™]\›ˆÛX]Ú\œ˜^Kš\Ð\œ˜^J]™[š[˜ÛYQ]\ÊI‰™]™[š[˜ÛYQ]\Ëš[˜ÛY\ÊÙ^JK™X\ÛÛŽˆ”ÜXÚYšXÈ]\ÈŸNÂˆB‚ˆYŠ[ÙOOOHœØÚÛÛÞXÛHŠ^ÂˆÛÛœÝÝ]\Ï\ØÚÛÛÞXÛQ›Ü‘]J]JNÂˆYŠ\Ý]\Ëš\ÔÝY[ØÚÛÛ^J\™]\›ˆÛX]Ú™˜[ÙK™X\ÛÛŽœÝ]\Ëœ™X\ÛÛŸ“›ÝHÝY[ØÚÛÛ^HŸNÂˆÛÛœÝÞXÛQ^\Ï[›Ü›X[^™PÞXÛQ^\Ê]™[˜ÞXÛQ^\ÊNÂˆÛÛœÝ^U\OTÝš[™Ê]™[™^U\_[žHŠNÂˆÛÛœÝÞXÛSX]ÚHXÞXÛQ^\Ë›[™ÝÞXÛQ^\Ëš[˜ÛY\ÊÝ]\Ë˜ÞXÛQ^JNÂˆÛÛœÝÛÛÜ“X]ÚY^U\OOOH[žHŸ^U\OOOH“Z^YŸ^U\OOO\Ý]\Ë™^PÛÛÜŽÂˆ™]\›ˆÛX]Ú˜ÞXÛSX]Ú	‰˜ÛÛÜ“X]Ú™X\ÛÛŽ˜	ÜÝ]\Ë™^PÛÛÜŸH^H8 (ˆÞXÛH	ÜÝ]\Ë˜ÞXÛQ^_XNÂˆB‚ˆYŠ[ÙOOOH˜[\›˜][™ÈŠ^ÂˆÛÛœÝÝ]\Ï\ØÚÛÛÞXÛQ›Ü‘]J]JNÂˆYŠ\Ý]\Ëš\ÔÝY[ØÚÛÛ^J\™]\›ˆÛX]Ú™˜[ÙK™X\ÛÛŽœÝ]\Ëœ™X\ÛÛŸ“›ÝHÝY[ØÚÛÛ^HŸNÂˆÛÛœÝ\ÙOXÛ\ÜÐ[\›˜][™Ô\ÙQ›Ü‘]J]™[˜[˜ÚÜ‘]K]JNÂˆ™]\›ˆÛX]Úœ\ÙOOOJ]™[˜[\›˜]T\Ù_HŠK™X\ÛÛŽ˜[\›˜][™È	Ü\Ù_H8 (ˆÞXÛH	ÜÝ]\Ë˜ÞXÛQ^_XNÂˆB‚ˆÛÛœÝ^\ÏP\œ˜^Kš\Ð\œ˜^J]™[™^\ÊOÙ]™[™^\Ë›X\
+[X™\ŠN–×NÂˆ™]\›ˆÛX]Ú™^\Ëš[˜ÛY\Ê]K™Ù]^J
+JK™X\ÛÛŽˆ•ÙYZÛHŸNÂŸB‚˜ÛÛœÝUUÓPUSÓ—ÐPÕSÓ”Ï[™]ÈÙ]
+Âˆ‹œÝÙ\ˆ‹™\Ü^K˜ÛX\ˆ‹™\Ü^K^‹™\Ü^K\›‹™\Ü^K›YYXH‹™\Ü^K[Y\‹˜Û\ÜËY[™‹ˆ™ÛÝ™YKœÝÙ\ˆ‹™ÛÝ™YK˜ÛÛÜˆ‹™ÛÝ™YK˜œšYÚ™\ÜÈ‹™ÛÝ™YK[\‹™ÛÝ™YKœØÙ[™H‚—JNÂ˜ÛÛœÝUUÓPUSÓ—ÑVPÕUSÓ—ÓSÑTÏ[™]ÈÙ]
+È›Û˜ÙH‹œ™\X]‹›ÛÜ—JNÂ™[˜Ý[Ûˆ]]ÛX][Û‘^XÝ][Û“[ÙJ˜[YKXÝ[ÛŠ^ÂˆÛÛœÝ[ÙOTÝš[™Ê˜[Y_›Û˜ÙHŠKš[J
+KÓÝÙ\Ø\ÙJ
+NÂˆYŠPUUÓPUSÓ—ÑVPÕUSÓ—ÓSÑTËš\Ê[ÙJJ\™]\›ˆ›Û˜ÙHŽÂˆËÈÛÛ[[Ý\ÈÛÜ[™È\È[[[Û˜[H˜]]™HÛ›H›ÜˆYYXKˆ™Z\ÜÝZ[™ÈÝÙ\‹ˆËÈ›Ý][™ËYÚ[™ÈÜˆÛX\ˆÛÛ[X[™È›Ü™]™\ˆ\È[œØY™H[™[›™XÙ\ÜØ\žK‚ˆ™]\›ˆ[ÙOOOH›ÛÜ‰‰˜XÝ[ÛˆOOH™\Ü^K›YYXHÈœ™\X]Ž›[ÙNÂŸB™[˜Ý[Ûˆ]]ÛX][Û”™\X]ÛÝ[
+˜[YJ^ØÛÛœÝS[X™\Š˜[YJNÜ™]\›ˆ[X™\‹š\Ò[YÙ\ŠŠOÓX]›X^
+KX]›Z[ŠLŠJNŒŸB™[˜Ý[Ûˆ]]ÛX][Û”™\X][^TÙXÛÛ™Ê˜[YJ^ØÛÛœÝS[X™\Š˜[YJNÜ™]\›ˆ[X™\‹š\Ñš[š]JŠOÓX]›X^
+X]›Z[ŠÍŒŠJNŒB™[˜Ý[Ûˆš[š]U[Y\“Ý™\›^S[X™\Š˜[YKÛ˜[YK˜[˜XÚËZ[‹X^J^ÂˆÛÛœÝØ[™Y]O]˜[YOOO][™Yš[™Y˜[YOOO[[˜[YOOOHˆÙ˜[˜XÚÎ“[X™\Š˜[YJNÂˆYŠS[X™\‹š\Ñš[š]JØ[™Y]JJ]›ÝÈ™]È\œ›ÜŠ[Y\ˆÝ™\›^H	Û˜[Y_H]\Ý™HHš[š]H[X™\˜
+NÂˆ™]\›ˆX]›X^
+Z[‹X]›Z[ŠX^Ø[™Y]JJNÂŸB™[˜Ý[Ûˆ›Ü›X[^™U[Y\“Ý™\›^J[œ]^\Ý[™Ï[[
+^ÂˆYŠ[œ]OO[[
+\™]\›ˆ[ÂˆÛÛœÝ˜[YOZ[œ]OO][™Yš[™YÙ^\Ý[™Îš[œ]ÂˆYŠ˜[YOOO[[˜[YOOO][™Yš[™Y
+\™]\›ˆ[ÂˆYŠ\[Ùˆ˜[YHOOH›Øš™XÝŸ\œ˜^Kš\Ð\œ˜^J˜[YJJ]›ÝÈ™]È\œ›ÜŠ•[Y\ˆÝ™\›^H]\Ý™H[ˆØš™XÝÜˆ[ŠNÂˆÛÛœÝš[ÜY^\Ý[™É‰\[Ùˆ^\Ý[™ÏOOH›Øš™XÝ‰‰ˆP\œ˜^Kš\Ð\œ˜^J^\Ý[™ÊOÙ^\Ý[™ÎžßNÂˆÛÛœÝY\™ÙY^Ë‹‹œš[Ü‹‹‹˜[Y_NÂˆ™]\›ˆÂˆ[˜X›Y›Y\™ÙY™[˜X›YOOY˜[ÙKˆÛÝ\˜ÙN”Ýš[™ÊY\™ÙYœÛÝ\˜Ù_™\˜][ÛˆŠOOOH˜Û\ÜËY[™È˜Û\ÜËY[™Žˆ™\˜][Ûˆ‹ˆÛ\ÜÒY˜ÛX[’Y
+Y\™ÙY˜Û\ÜÒYˆŠKˆ\˜][Û”ÙXÛÛ™Î™š[š]U[Y\“Ý™\›^S[X™\ŠY\™ÙY™\˜][Û”ÙXÛÛ™ËÛ˜[YNˆ™\˜][Ûˆ‹˜[˜XÚÎŒZ[ŽŒX^ŽJKˆÜÚ][ÛŽ–ÈÜ‹˜Ù[\ˆ‹˜›ÝÛH—Kš[˜ÛY\ÊÝš[™ÊY\™ÙYœÜÚ][ÛŸ˜›ÝÛHŠJOÔÝš[™ÊY\™ÙYœÜÚ][ÛŸ˜›ÝÛHŠNˆ˜›ÝÛH‹ˆ›ÛÚ^™N™š[š]U[Y\“Ý™\›^S[X™\ŠY\™ÙY™›ÛÚ^™KÛ˜[YNˆ™›ÛÚ^™H‹˜[˜XÚÎZ[ŽŒL‹X^ŒŒŒJKˆ^ÛÛÜŽ”Ýš[™ÊY\™ÙY^ÛÛÜŸˆÙ™™™™™ˆŠKœÛXÙJ
+Kˆ›Ü™\ÛÛÜŽ”Ýš[™ÊY\™ÙY˜›Ü™\ÛÛÜŸˆÙ™™™™™ˆŠKœÛXÙJ
+Kˆ›Ü™\•ÚY™š[š]U[Y\“Ý™\›^S[X™\ŠY\™ÙY˜›Ü™\•ÚYÛ˜[YNˆ˜›Ü™\ˆÚY‹˜[˜XÚÎZ[ŽŒX^LJKˆ›Ü™\”˜Y]\Î™š[š]U[Y\“Ý™\›^S[X™\ŠY\™ÙY˜›Ü™\”˜Y]\ËÛ˜[YNˆ˜›Ü™\ˆ˜Y]\È‹˜[˜XÚÎŒNZ[ŽŒX^ŒŒJKˆX™[”Ýš[™ÊY\™ÙY›X™[•[YH™[XZ[š[™ÈŠKœÛXÙJŒ
+Kˆ˜XÚÙÜ›Ý[™”Ýš[™ÊY\™ÙY˜˜XÚÙÜ›Ý[™œ™Ø˜JŒÍJHŠKœÛXÙJLŒ
+Kˆ\ÙQ]™[\™Ù]Î›Y\™ÙY\ÙQ]™[\™Ù]ÈOOY˜[ÙKˆ\™Ù]Î\œ˜^Kš\Ð\œ˜^JY\™ÙY\™Ù]ÊOÖË‹‹›™]ÈÙ]
+Y\™ÙY\™Ù]Ë›X\
+ÛX[’Y
+K™š[\Š›ÛÛX[ŠJWN–×Kˆ›ÛÝÓ[šÙYÛ\ÜÙ\Î›Y\™ÙY™›ÛÝÓ[šÙYÛ\ÜÙ\ÈOOY˜[ÙKˆ›ÛÝÑØ\Z[]\Î™š[š]U[Y\“Ý™\›^S[X™\ŠY\™ÙY™›ÛÝÑØ\Z[]\ËÛ˜[YNˆ˜ÛÛ[X][ÛˆØ\‹˜[˜XÚÎŒMKZ[ŽŒX^ŒLŒJBˆNÂŸB™[˜Ý[Ûˆ›Ü›X[^™P]]ÛX][ÛŠ[œ]^ßK^\Ý[™Ï^ßJ^ÂˆÛÛœÝYXÛX[’Y
+[œ]šY^\Ý[™ËšY]]ËIØÜž\Ëœ˜[™ÛUURQ
+
+_X
+NÂˆYŠZY
+]›ÝÈ™]È\œ›ÜŠH˜[Y]]ÛX][ÛˆQ\È™\]Z\™YŠNÂˆÛÛœÝ[YOTÝš[™Ê[œ][Y_^\Ý[™Ë[Y_ŒŒŠNÂˆYŠ]˜[Y[YJ[YJJ]›ÝÈ™]È\œ›ÜŠ•[YH]\Ý™HH˜[Y“SH˜[YHŠNÂˆÛÛœÝ^\ÏJ\œ˜^Kš\Ð\œ˜^J[œ]™^\ÊOÚ[œ]™^\Î™^\Ý[™Ë™^\ßÌK‹ËWJBˆ›X\
+[X™\ŠK™š[\ŠO“[X™\‹š\Ò[YÙ\Š
+I‰žL	‰žMŠNÂˆÛÛœÝXÝ[ÛTÝš[™Ê[œ]˜XÝ[ÛŸ^\Ý[™Ë˜XÝ[ÛŸˆŠKš[J
+NÂˆYŠPUUÓPUSÓ—ÐPÕSÓ”Ëš\ÊXÝ[ÛŠJ]›ÝÈ™]È\œ›ÜŠ[œÝ\ÜY]]ÛX][ÛˆXÝ[ÛŽˆ	ØXÝ[ÛŸX
+NÂˆÛÛœÝ\™Ù]ÏP\œ˜^Kš\Ð\œ˜^J[œ]\™Ù]ÊOÚ[œ]\™Ù]Ë›X\
+ÛX[’Y
+K™š[\Š›ÛÛX[ŠN‚ˆ
+\œ˜^Kš\Ð\œ˜^J^\Ý[™Ë\™Ù]ÊOÙ^\Ý[™Ë\™Ù]Î–ÈŒH—JNÂˆÛÛœÝØÚY[S[ÙOVÈÙYZÛH‹˜[\›˜][™È‹œØÚÛÛÞXÛH‹™]\È—Kš[˜ÛY\ÊÝš[™Ê[œ]œØÚY[S[Ù_^\Ý[™ËœØÚY[S[Ù_ÙYZÛHŠJBˆÈÝš[™Ê[œ]œØÚY[S[Ù_^\Ý[™ËœØÚY[S[Ù_ÙYZÛHŠHˆÙYZÛHŽÂˆÛÛœÝ[\›˜]T\ÙOTÝš[™Ê[œ]˜[\›˜]T\Ù_^\Ý[™Ë˜[\›˜]T\Ù_HŠKÕ\\Ø\ÙJ
+OOOHˆÈˆŽˆHŽÂˆÛÛœÝ[˜ÚÜ”˜]ÏZ[œ]˜[˜ÚÜ‘]OÏÙ^\Ý[™Ë˜[˜ÚÜ‘]OÏÈˆŽÂˆYŠ[˜ÚÜ”˜]É‰ˆ]˜[Y]RÙ^J[˜ÚÜ”˜]ÊJ]›ÝÈ™]È\œ›ÜŠ]]ÛX][Ûˆ[˜ÚÜˆ]\Ý™HH˜[YVVVKSSKQ]HŠNÂˆÛÛœÝ[˜ÚÜ‘]OX[˜ÚÜ”˜]ÏÔÝš[™Ê[˜ÚÜ”˜]ÊNˆˆŽÂˆÛÛœÝÙ™œÙ]˜[YO[›Ü›X[^™R[YÙ\“Z[]\Ê[œ]˜Û\ÜÕ[YSÙ™œÙ]Z[]\ÏÏÙ^\Ý[™Ë˜Û\ÜÕ[YSÙ™œÙ]Z[]\ÏÏÌÛ˜[YNˆÛ\ÜÈ[YHÙ™œÙ]‹˜[˜XÚÎŒZ[Ž‹MÌŒX^ÌŒJNÂˆÛÛœÝ[˜ÛYQ]\Ï][š\]YQ]RÙ^\Ê[œ]š[˜ÛYQ]\ÏOO][™Yš[™YÙ^\Ý[™Ëš[˜ÛYQ]\Îš[œ]š[˜ÛYQ]\ÊNÂˆ™]\›ˆÂˆYˆ˜[YN”Ýš[™Ê[œ]›˜[YOÏÙ^\Ý[™Ë›˜[YOÏØXÝ[ÛŠKš[J
+KœÛXÙJLŒ
+Kˆ[˜X›Yš[œ]™[˜X›YOO][™Yš[™YÊ^\Ý[™Ë™[˜X›YOOY˜[ÙJNˆHZ[œ]™[˜X›Yˆ[YKˆ^\Î–Ë‹‹›™]ÈÙ]
+^\ÊWKˆØÚY[S[ÙKˆ[\›˜]T\ÙKˆ[˜ÚÜ‘]Kˆ[˜ÛYQ]\Ëˆ^U\N››Ü›X[^™Y^U\J[œ]™^U\OÏÙ^\Ý[™Ë™^U\OÏÈ[žHŠKˆÞXÛQ^\Î››Ü›X[^™PÞXÛQ^\Ê[œ]˜ÞXÛQ^\ÏOO][™Yš[™YÙ^\Ý[™Ë˜ÞXÛQ^\Îš[œ]˜ÞXÛQ^\ÊKˆ\š[Ù”Ýš[™Ê[œ]œ\š[ÙÏÙ^\Ý[™Ëœ\š[ÙÏÈˆŠKš[J
+KœÛXÙJ
+KˆÛ\ÜÒYÎ–Ë‹‹›™]ÈÙ]
+
+\œ˜^Kš\Ð\œ˜^J[œ]˜Û\ÜÒYÊOÚ[œ]˜Û\ÜÒYÎŠ\œ˜^Kš\Ð\œ˜^J^\Ý[™Ë˜Û\ÜÒYÊOÙ^\Ý[™Ë˜Û\ÜÒYÎ–Ú[œ]˜Û\ÜÒYÏÙ^\Ý[™Ë˜Û\ÜÒYK™š[\Š›ÛÛX[ŠJJK›X\
+Ýš[™ÊK™š[\Š›ÛÛX[ŠJWKˆÛ\ÜÒY”Ýš[™Ê
+\œ˜^Kš\Ð\œ˜^J[œ]˜Û\ÜÒYÊI‰š[œ]˜Û\ÜÒYË›[™ÝÚ[œ]˜Û\ÜÒYÖÌNŠ[œ]˜Û\ÜÒYÏÙ^\Ý[™Ë˜Û\ÜÒYÏÈˆŠJJKˆÛ\ÜÕ[YT™Y™\™[˜ÙN”Ýš[™Ê[œ]˜Û\ÜÕ[YT™Y™\™[˜ÙOÏÙ^\Ý[™Ë˜Û\ÜÕ[YT™Y™\™[˜ÙOÏÈœÝ\ŠOOOH™[™È™[™ŽˆœÝ\‹ˆÛ\ÜÕ[YSÙ™œÙ]Z[]\Î›Ù™œÙ]˜[YKˆ\ÙPÛ\ÜÕ\™Ù]Îš[œ]\ÙPÛ\ÜÕ\™Ù]ÏOO][™Yš[™YÊ^\Ý[™Ë\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙJNˆHZ[œ]\ÙPÛ\ÜÕ\™Ù]ËˆXÝ[Û‹ˆ\™Ù]Î–Ë‹‹›™]ÈÙ]
+\™Ù]ÊWKˆ^[ØYŠ[œ]œ^[ØY	‰\[Ùˆ[œ]œ^[ØYOOH›Øš™XÝŠOÚ[œ]œ^[ØYŠ^\Ý[™Ëœ^[ØYßJKˆXÝ[ÛœÎ\œ˜^Kš\Ð\œ˜^J[œ]˜XÝ[ÛœÊBˆÈ[œ]˜XÝ[ÛœË›X\
+
+][K[™^
+OOžÂˆÛÛœÝÝ\XÝ[ÛTÝš[™Ê][OË˜XÝ[ÛŸˆŠKš[J
+NÂˆYŠPUUÓPUSÓ—ÐPÕSÓ”Ëš\ÊÝ\XÝ[ÛŠJ]›ÝÈ™]È\œ›ÜŠ[œÝ\ÜY]]ÛX][ÛˆXÝ[ÛŽˆ	ÜÝ\XÝ[ÛŸŠ›[šÊHŸX
+NÂˆÛÛœÝ[^TÙXÛÛ™ÏS[X™\Š][OË™[^TÙXÛÛ™ÏÏÌ
+NÂˆYŠS[X™\‹š\Ñš[š]J[^TÙXÛÛ™ÊJ]›ÝÈ™]È\œ›ÜŠ]]ÛX][ÛˆÝ\	Ú[™^
+Ì_H[^H]\Ý™HHš[š]H[X™\˜
+NÂˆ™]\›ˆÂˆËÈXÝ[ÛˆQÈ\™HÛØ˜[H[š\]YH[ˆÔS]KˆØÛÜH[HÈBˆËÈ]]ÛX][Ûˆ[œÝXYÙˆ™]\Ú[™ÈÙ[™\šXÈÝ\LKÜÝ\LˆY[YšY\œË‚ˆY˜	ÚYœÛXÙJŒ
+_K\Ý\IÚ[™^
+Ì_XˆXÝ[ÛŽœÝ\XÝ[Û‹ˆ\ÙQ]™[\™Ù]Îš][OË\ÙQ]™[\™Ù]ÈOOY˜[ÙKˆ\™Ù]ÎŠ
+
+OOžÂˆÛÛœÝÙ[XÝYP\œ˜^Kš\Ð\œ˜^J][OË\™Ù]ÊOÖË‹‹›™]ÈÙ]
+][K\™Ù]Ë›X\
+ÛX[’Y
+K™š[\Š›ÛÛX[ŠJWN–×NÂˆ™]\›ˆÙ[XÝY›[™Ý][OË\ÙQ]™[\™Ù]ÈOOY˜[ÙOÜÙ[XÝY™Y˜][]]ÛX][ÛXÝ[Û•\™Ù]ÊÝ\XÝ[ÛŠNÂˆJJ
+Kˆ^[ØYŠ][OËœ^[ØY	‰\[Ùˆ][Kœ^[ØYOOH›Øš™XÝŠOÚ][Kœ^[ØYžßKˆ[^TÙXÛÛ™Î“X]›X^
+X]›Z[ŠÍŒ[^TÙXÛÛ™ÊJKˆ^XÝ][Û“[ÙN˜]]ÛX][Û‘^XÝ][Û“[ÙJ][OË™^XÝ][Û“[ÙKÝ\XÝ[ÛŠKˆ™\X]ÛÝ[˜]]ÛX][Û”™\X]ÛÝ[
+][OËœ™\X]ÛÝ[
+Kˆ™\X][^TÙXÛÛ™Î˜]]ÛX][Û”™\X][^TÙXÛÛ™Ê][OËœ™\X][^TÙXÛÛ™ÊKˆÛÛ[YSÛ‘\œ›ÜŽš][OË˜ÛÛ[YSÛ‘\œ›ÜˆOOY˜[ÙBˆ_JBˆˆ
+\œ˜^Kš\Ð\œ˜^J^\Ý[™Ë˜XÝ[ÛœÊOÙ^\Ý[™Ë˜XÝ[ÛœÎ–×JKˆ[Y\“Ý™\›^N››Ü›X[^™U[Y\“Ý™\›^J[œ][Y\“Ý™\›^K^\Ý[™Ë[Y\“Ý™\›^_[
+Kˆš[Üš]N“X]›X^
+LLX]›Z[ŠL[X™\‹š\Ñš[š]J[X™\Š[œ]œš[Üš]OÏÙ^\Ý[™Ëœš[Üš]JJOÓ[X™\Š[œ]œš[Üš]OÏÙ^\Ý[™Ëœš[Üš]JNŒ
+JKˆ™]š\Ú[ÛŽ“X]›X^
+K[X™\Š^\Ý[™Ëœ™]š\Ú[ÛŸ[œ]œ™]š\Ú[ÛŸJJKˆ\Ý[Ž™^\Ý[™Ë›\Ý[Ÿ[ˆ\Ý^XÎ™^\Ý[™Ë›\Ý^Xß[ˆ\Ý^XÐžPÛ\ÜÎŠ^\Ý[™Ë›\Ý^XÐžPÛ\ÜÉ‰\[Ùˆ^\Ý[™Ë›\Ý^XÐžPÛ\ÜÏOOH›Øš™XÝŠOÙ^\Ý[™Ë›\Ý^XÐžPÛ\ÜÎžßKˆÜ™X]Y]™^\Ý[™Ë˜Ü™X]Y]™]È]J
+KÒTÓÔÝš[™Ê
+Kˆ\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+BˆNÂŸB‚‚™[˜Ý[Ûˆ]]ÛX][Û•\™Ù]ÛXZ[ŠXÝ[ÛŠ^Âˆ™]\›ˆXÝ[Û”™\ÛÝ\˜ÙQÛXZ[ŠXÝ[ÛŠNÂŸB‚™[˜Ý[ÛˆY˜][]]ÛX][ÛXÝ[Û•\™Ù]ÊXÝ[ÛŠ^Âˆ™]\›ˆÈ™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H‹‹\ÝÙ\ˆ‹›YÚ[™È—Kš[˜ÛY\Ê]]ÛX][Û•\™Ù]ÛXZ[ŠXÝ[ÛŠJOÖÈ˜[—N–×NÂŸB‚™[˜Ý[Ûˆ]]ÛX][Û‘\Ü^U\™Ù]Ê\™Ù]Ê^Âˆ™]\›ˆ^[™\Ü^U\™Ù]Ê\™Ù]ËÙ]šXÙ\Ë\Ü^QÜ›Ý\ßJNÂŸB™[˜Ý[Ûˆ[››Ý[˜Ù[Y[ØÚÙY\Ü^U\™Ù]Ê\™Ù]Ê^ÂˆYŠ[[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™J\™]\›ˆ×NÂˆÛÛœÝØÚÙY[™]ÈÙ]
+[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]ß×JNÂˆ™]\›ˆ]]ÛX][Û‘\Ü^U\™Ù]Ê\™Ù]ß×JK™š[\ŠYO›ØÚÙYš\ÊY
+JNÂŸB™[˜Ý[Ûˆ[››Ý[˜Ù[Y[š[Üš]Q\œ›ÜŠ\™Ù]Ê^ÂˆÛÛœÝØÚÙYX[››Ý[˜Ù[Y[ØÚÙY\Ü^U\™Ù]Ê\™Ù]ÊNÂˆYŠ[ØÚÙY›[™Ý
+\™]\›ˆ[ÂˆÛÛœÝ\œ›Ü[™]È\œ›ÜŠ[Ü›š[™È[››Ý[˜Ù[Y[È]™Hš[Üš]HÛŽˆ	ÛØÚÙYš›Ú[Š‹Š_X
+NÂˆ\œ›Ü‹˜ÛÙOHS““ÕSÑSQS•×Ô’SÔ’UWÐPÕU‘HŽÂˆ\œ›Ü‹\™Ù]Ï[ØÚÙYÂˆ™]\›ˆ\œ›ÜŽÂŸB‚‚™[˜Ý[Ûˆ™\]Z\™P]]ÛX][Û•\™Ù]Ê\™Ù]ËX™[H]]ÛX][ÛˆXÝ[ÛˆŠ^ÂˆÛÛœÝ™\ÛÛ™YX]]ÛX][Û‘\Ü^U\™Ù]Ê\™Ù]ÊNÂˆYŠ\™\ÛÛ™Y›[™Ý
+]›ÝÈ™]È\œ›ÜŠ	ÛX™[H\È›È˜[Y\Ü^H\™Ù]Ø
+NÂˆ™]\›ˆ™\ÛÛ™YÂŸB™[˜Ý[Ûˆ]]ÛX][Û•˜\šXX›PÛÛ^
+]™[]O\ØÚY[\ÛØÚË››ÝÊ
+J^ÂˆÛÛœÝÛÏY]™[—ØÛ\ÜßXÝ]™P]]ÛX][ÛÛ\ÜÐ]
+]™[]J_Û\ÜÔØÚY[PžRY
+]™[˜Û\ÜÒY
+_XÝ]™PÛ\ÜÐ]
+]JNÂˆÛÛœÝ[šÙYÛ\ÜÙ\ÏX]]ÛX][ÛÛ\ÜÒYÊ]™[
+K›X\
+Û\ÜÔØÚY[PžRY
+K™š[\Š›ÛÛX[ŠNÂˆÛÛœÝ[™XÛÏØÛ\ÜÑ[™]JÛË]JN›[Âˆ™]\›ˆÂˆ‰Y]IHŽ™]KÓØØ[Q]TÝš[™Ê™[‹UTÈ‹Ý[YV›Û™N”ÐÒQST—ÕSQV“Ó‘_JKˆ‰][YIHŽ™]KÓØØ[U[YTÝš[™Ê™[‹UTÈ‹Ý[YV›Û™N”ÐÒQST—ÕSQV“Ó‘KÝ\Žˆ›[Y\šXÈ‹Z[]NˆŒ‹YYÚ]ŸJKˆ‰Y^IHŽ™]KÓØØ[Q]TÝš[™Ê™[‹UTÈ‹Ý[YV›Û™N”ÐÒQST—ÕSQV“Ó‘KÙYZÙ^Nˆ›Û™ÈŸJKˆ‰XÛ\ÜÉHŽ˜ÛÏË›˜[Y_ˆ‹ˆ‰XÛ\Ü×ÜÚÜ	HŽ˜ÛÏËœÚÜ˜[Y_ˆ‹ˆ‰XÛ\ÜÙ\ÉHŽ›[šÙYÛ\ÜÙ\Ë›X\
+ÏO˜Ë›˜[YJKš›Ú[Š‹ŠKˆ‰XÛ\ÜÙ\×ÜÚÜ	HŽ›[šÙYÛ\ÜÙ\Ë›X\
+ÏO˜ËœÚÜ˜[Y_Ë›˜[YJKš›Ú[Š‹ŠKˆ‰XÛ\Ü×ÜÝ\	HŽ˜ÛÏÊY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]JOËœÝ\[Y_ÛËœÝ\[YJNˆˆ‹ˆ‰XÛ\Ü×Ù[™	HŽ˜ÛÏÊY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]JOË™[™[Y_ÛË™[™[YJNˆˆ‹ˆ‰[Z[]\×ÛY	HŽ™[™ÔÝš[™ÊX]›X^
+X]˜ÙZ[
+
+[™Y]JKÍŒ
+JJNˆˆ‹ˆ‰\ØÚY[WÙ^IHŽœØÚÛÛÞXÛQ›Ü‘]J]JK™^PÛÛÜŸˆ‹ˆ‰Y^WØÛÛÜ‰HŽœØÚÛÛÞXÛQ›Ü‘]J]JK™^PÛÛÜŸˆ‹ˆ‰XÞXÛWÙ^IHŽœØÚÛÛÞXÛQ›Ü‘]J]JK˜ÞXÛQ^_ˆ‹ˆ‰\\š[Ù	HŽ˜ÛÏËœ\š[Ù]™[Ëœ\š[Ùˆ‹ˆ‰\›ÛÛIHŽ™]šXÙPÛÛ™šYÏËœ›ÛÛ_“ÓÓWÓSQ_ˆ‚ˆNÂŸB™[˜Ý[Ûˆ^[™]]ÛX][Û•˜\šXX›\Ê˜[YK]™[]O\ØÚY[\ÛØÚË››ÝÊ
+J^ÂˆYŠ\[Ùˆ˜[YHOOHœÝš[™ÈŠ\™]\›ˆ˜[YNÂˆ]Ý]]˜[YNÙ›ÜŠÛÛœÝÚË—HÙˆØš™XÝ™[šY\Ê]]ÛX][Û•˜\šXX›PÛÛ^
+]™[]JJJ[Ý][Ý]œÜ]
+ÊKš›Ú[ŠÝš[™ÊŠJNÂˆ™]\›ˆÝ]ÂŸB™[˜Ý[Ûˆ^[™]]ÛX][Û”^[ØY
+˜[YK]™[]O\ØÚY[\ÛØÚË››ÝÊ
+J^ÂˆYŠ\œ˜^Kš\Ð\œ˜^J˜[YJJ\™]\›ˆ˜[YK›X\
+O™^[™]]ÛX][Û”^[ØY
+‹]™[]JJNÂˆYŠ˜[YI‰\[Ùˆ˜[YOOOH›Øš™XÝŠ^ØÛÛœÝÏ^ßNÙ›ÜŠÛÛœÝÚË—HÙˆØš™XÝ™[šY\Ê˜[YJJ[ÖÚ×OY^[™]]ÛX][Û”^[ØY
+‹]™[]JNÜ™]\›ˆßBˆ™]\›ˆ^[™]]ÛX][Û•˜\šXX›\Ê˜[YK]™[]JNÂŸB˜\Þ[˜È[˜Ý[Ûˆ[”Ú[™ÛP]]ÛX][ÛXÝ[ÛŠ]™[ÛX[X[Y˜[ÙKÚÚ\Ý™\›^OY˜[ÙKÚÚ\]Y]Y˜[ÙKÛÛ[X[™ÛÝ\˜ÙOH˜]]ÛX][ÛˆŸO^ßJ^ÂˆÛÛœÝY^[™]]ÛX][Û”^[ØY
+]™[œ^[ØYßK]™[ØÚY[\ÛØÚË››ÝÊ
+JNÂˆÛÛœÝXÝ[ÛY]™[˜XÝ[ÛŽÂˆYŠPUUÓPUSÓ—ÐPÕSÓ”Ëš\ÊXÝ[ÛŠJ]›ÝÈ™]È\œ›ÜŠ[œÝ\ÜY]]ÛX][ÛˆXÝ[ÛŽˆ	ØXÝ[ÛŸŠ›[šÊHŸX
+NÂˆÛÛœÝÝ]]Ï^ØXÝ[Û‹\™Ù]Î™]™[\™Ù]ß×K™\Ý[Î–×_NÂ‚ˆYŠXÝ[ÛOOH‹œÝÙ\ˆŠ^ÂˆÛÛœÝÛTÝš[™ÊœÝ]_›ÛˆŠKÓÝÙ\Ø\ÙJ
+OOOH›ÛˆŽÂˆÛÛœÝ™\]Y\ÝY\™Ù]ÏP\œ˜^Kš\Ð\œ˜^J]™[\™Ù]ÊOÙ]™[\™Ù]Ë›X\
+ÛX[’Y
+K™š[\Š›ÛÛX[ŠN–×NÂˆÛÛœÝœ›ØYØ\Ý\™Ù]\›Ý]]OO][™Yš[™Y	‰œ™\]Y\ÝY\™Ù]Ë›[™ÝOOLOÜ™\]Y\ÝY\™Ù]ÖÌN›[ÂˆÛÛœÝœ›ØYØ\ÝXÝ[Û^Ø[ˆ˜ÙXÐ[Ý]]È‹šZKX[Žˆ˜ÙXÐ[ZH‹šX[Žˆ˜ÙXÐ[ŸVØœ›ØYØ\Ý\™Ù]NÂˆÛÛœÝ•\™Ù]ÏY^[™•\™Ù]Ê™\]Y\ÝY\™Ù]ËÙ]šXÙ\ËÛÛ›™XÝ[ÛŽœ˜ÛÛ›™XÝ[ÛOOHšZHÈšZHŽˆšŸJNÂˆYŠœ›ØYØ\ÝXÝ[ÛŠ^ÂˆËÈX]ÚH›Ý™[ˆ›ÛÛHÛÛ›ÛÈ]›ÜˆH^XÚ][UˆÙ[XÝÜœË‚ˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]\™XÝ]ÊØXÝ[ÛŽ˜œ›ØYØ\ÝXÝ[Û‹[™^›ÛÌŒ_JJNÂˆY[Ù^ÂˆYŠ›Ý]]OO][™Yš[™Y	‰•\™Ù]Ë›[™ÝOOLJ^ØÛÛœÝÝ]]S[X™\Š›Ý]]
+NÚYŠ[X™\‹š\Ò[YÙ\ŠÝ]]
+I‰›Ý]]LI‰›Ý]]N
+]•\™Ù]ÖÌK›Ý]][Ý]]Bˆ›ÜŠÛÛœÝ\™Ù]Ùˆ•\™Ù]Ê^ÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]\™XÝ]ÊØXÝ[ÛŽˆ˜ÙXÓÝ]]‹Ý]]\™Ù]›Ý]]ÛÛ›™XÝ[ÛŽ\™Ù]˜ÛÛ›™XÝ[Û‹[™^›ÛÌŒ_JJNÂˆBˆBˆ\ÜÙ\Y\\”™\Ý[ÊÝ]]Ëœ™\Ý[ËØXÝ[ÛŽˆ•ˆÝÙ\ˆŸJNÂˆÝ]]Ë•\™Ù]Ï]•\™Ù]ÎÂˆY[ÙHYŠXÝ[ÛOOH™\Ü^K[Y\‹˜Û\ÜËY[™Š^ÂˆÛÛœÝÏX]]ÛX][Û‘\Ü^U\™Ù]Ê]™[\™Ù]ÊKÛÏY]™[—ØÛ\ÜßXÝ]™P]]ÛX][ÛÛ\ÜÐ]
+]™[™]È]J
+J_Û\ÜÔØÚY[PžRY
+]™[˜Û\ÜÒY
+_XÝ]™PÛ\ÜÐ]
+™]È]J
+JNÂˆYŠXÛÊ]›ÝÈ™]È\œ›ÜŠ“›ÈÛ\ÜÈØÚY[H\È]˜Z[X›H›ÜˆHÛ\ÜËY[™[Y\ˆŠNÂˆÛÛœÝ›ÝÏ[™]È]J
+NÚYŠ[X[X[	‰ˆXÛ\ÜÔØÚY[SX]Ú\Ñ]JÛË›ÝÊJ]›ÝÈ™]È\œ›ÜŠ	ØÛË›˜[Y_H\È›ÝØÚY[YÙ^X
+NÂˆÛÛœÝÚZ[][Y\“[šÙYÛ\ÜÐÚZ[Š]™[ÛË›ÝËÙ›ÛÝÓ[šÙYÛ\ÜÙ\ÎYK›ÛÝÑØ\Z[]\ÎŒM_JNÂˆÛÛœÝ[™]XÚZ[‹™[™]™\ÛÛ™YØØÝ\œ™[˜ÙQ[™]J]™[ÛË›ÝÊK™[XZ[š[™ÏSX]›X^
+X]™›ÛÜŠ
+[™]Q]K››ÝÊ
+JKÌL
+JNÂˆYŠ™[XZ[š[™ÏL
+]›ÝÈ™]È\œ›ÜŠ	ØÛË›˜[Y_H\È[™XYH[™Y
+NÂˆÛÛœÝX™[Û\ÜÏXÚZ[‹™š[˜[Û\ÜßÛÎÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K[Y\ˆ‹\™Ù]Ë^[ØYžÂˆš\ÚX›NYK[›š[™ÎYK[ÙNˆ˜ÛÝ[ÝÛˆ‹[Y\’[œÝ[˜ÙRY˜ÛÛ[X[™Y
+
+K\˜][Û”ÙXÛÛ™Îœ™[XZ[š[™Ë™[XZ[š[™ÔÙXÛÛ™Îœ™[XZ[š[™Ë[™]™[™]™Ù][YJ
+KÝ\Y]›[ˆX™[”Ýš[™Ê›X™[	ØÛËœÚÜ˜[Y_ÛË›˜[Y_H8 (ˆÛ\ÜÈ[™Ø
+KÜÚ][ÛŽœœÜÚ][ÛŸ˜›ÝÛH‹›ÛÚ^™N“[X™\Š™›ÛÚ^™_
+Kˆ^ÛÛÜŽœ^ÛÛÜŸˆÙ™™™™™ˆ‹›Ü™\ÛÛÜŽœ˜›Ü™\ÛÛÜŸˆÙ™™™™™ˆ‹›Ü™\•ÚY“[X™\Š˜›Ü™\•ÚYÏÍ
+K›Ü™\”˜Y]\Î“[X™\Š˜›Ü™\”˜Y]\ÏÏÌN
+Kˆ˜XÚÙÜ›Ý[™œ˜˜XÚÙÜ›Ý[™œ™Ø˜JŒÍJH‹[šÙYÛ\ÜÒYÎ˜ÚZ[‹˜Û\ÜÙ\Ë›X\
+ÏO˜ËšY
+K[šÙYÛ\ÜÓ˜[Y\Î˜ÚZ[‹˜Û\ÜÙ\Ë›X\
+ÏO˜Ë›˜[YJKš[˜[Û\ÜÒY›X™[Û\ÜËšYˆ_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠXÝ[ÛOOH™\Ü^K˜ÛX\ˆŠ^ÂˆÛÛœÝÏ\™\]Z\™P]]ÛX][Û•\™Ù]Ê]™[\™Ù]Ë‘\Ü^HÛX\ˆŠNÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]Ë^[ØYžß_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠXÝ[ÛOOH™\Ü^K^Š^ÂˆÛÛœÝÏ\™\]Z\™P]]ÛX][Û•\™Ù]Ê]™[\™Ù]Ë‘\Ü^H^ŠNÂˆYŠ˜ÛX\™Y›Ü™HOOY˜[ÙJ[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]Ë^[ØYžß_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆYŠ˜˜XÚÙÜ›Ý[™
+[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜˜XÚÙÜ›Ý[™‹\™Ù]Ë^[ØYžØÛÛÜŽœ˜˜XÚÙÜ›Ý[™_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆYŠ]J[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K]H‹\™Ù]Ë^[ØYžÝ^”Ýš[™Ê]JKÛÛÜŽœ]PÛÛÜŸˆÙ™™™™™ˆ‹Ú^™N“[X™\Š]TÚ^™_ÌŠ__KÛÛ[X[™ÛÝ\˜ÙJJNÂˆYŠœÝX]J[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^KœÝX]H‹\™Ù]Ë^[ØYžÝ^”Ýš[™ÊœÝX]JKÛÛÜŽœœÝX]PÛÛÜŸˆÙ™™™™™ˆ‹Ú^™N“[X™\ŠœÝX]TÚ^™_
+__KÛÛ[X[™ÛÝ\˜ÙJJNÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K^‹\™Ù]Ë^[ØYžÂˆ^”Ýš[™Ê^ˆŠKÛÛÜŽœ˜ÛÛÜŸˆÙ™™™™™ˆ‹Ú^™N“[X™\ŠœÚ^™_M
+KÜÚ][ÛŽœœÜÚ][ÛŸ˜Ù[\ˆ‚ˆ_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠXÝ[ÛOOH™\Ü^K\›Š^ÂˆÛÛœÝÏ\™\]Z\™P]]ÛX][Û•\™Ù]Ê]™[\™Ù]Ë‘\Ü^HT“ŠNÂˆYŠ˜ÛX\™Y›Ü™HOOY˜[ÙJ[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]Ë^[ØYžß_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆÛÛœÝ\›TÝš[™Ê\›ˆŠKš[J
+NÂˆYŠ]\›
+]›ÝÈ™]È\œ›ÜŠ•T“\È™\]Z\™YŠNÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^KÙXˆ‹\™Ù]Ë^[ØYžÝ\›ØØ[\™XÝœ›ØØ[\™XÝOOY˜[Ù__KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠXÝ[ÛOOH™\Ü^K›YYXHŠ^ÂˆÛÛœÝÏ\™\]Z\™P]]ÛX][Û•\™Ù]Ê]™[\™Ù]Ë‘\Ü^HYYXHŠNÂˆYŠ˜ÛX\™Y›Ü™HOOY˜[ÙJ[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]Ë^[ØYžß_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆÛÛœÝ˜[YO\™\ÛÛ™P]]ÛX][Û“YYXS˜[YJ
+NÂˆÛÛœÝ[\]š›Ú[ŠQQPWÑT‹˜[YJNÂˆÛÛœÝ™XÏ[YYXSXœ˜\žK™š[\ÖÛ˜[YW_ßK\O\™XË\_Û\ÜÚYžSYYXJ˜[YK™XË›Z[Y_ˆŠNÂˆÛÛœÝYYXTÙ\ÜÚ[Û^ÂˆÙ\ÜÚ[Û’Y”Ýš[™ÊœÙ\ÜÚ[Û’Y	Ù]™[—ÛØØÝ\œ™[˜ÙRY]™[šY›X[X[ŸN‰Ù]™[—ÜÝ\Yœš[X\žHŸN‰Û˜[Y_X
+Kˆ›Û[YN“X]›X^
+X]›Z[ŠK[X™\Š›Û[YOÏÌJJJKˆ]]YˆH\›]]YÛÜˆH\›ÛÜˆÝ\]ÙXÛÛ™Î“X]›X^
+[X™\ŠœÝ\]ÙXÛÛ™ß
+JKˆ[™]ÙXÛÛ™Î“[X™\Š™[™]ÙXÛÛ™ÊOŒÓ[X™\Š™[™]ÙXÛÛ™ÊN›[ˆ^X˜XÚÔ˜]N“X]›X^
+ŒKX]›Z[Š[X™\Šœ^X˜XÚÔ˜]_JJJBˆNÂˆÛÛœÝÛÝ\˜ÙU\›X]]ÛX][Û“YYXU\›
+˜[YJNÂˆÝ]]Ë›YYXO^ÜÝÜ™Y˜[YN›˜[YKÜšYÚ[˜[˜[YNœ™XË›ÜšYÚ[˜[˜[Y_˜[YK\KÚ^™N™œËœÝ]Þ[˜Ê[
+KœÚ^™K\›œÛÝ\˜ÙU\›NÂˆYŠ\OOOHš[XYÙHŠ^ÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^Kš[XYÙH‹\™Ù]Ë^[ØYžÝ\›œÛÝ\˜ÙU\›š]œ™š]˜ÛÛZ[ˆ‹™]žNY__KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠ\OOOHšY[ÈŠ^ÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^KšY[È‹\™Ù]Ë^[ØYžÝ\›œÛÝ\˜ÙU\›š]œ™š]˜ÛÛZ[ˆ‹]]Ü^NYK]]YˆH\›]]YÛÜˆH\›ÛÜ‹‹›YYXTÙ\ÜÚ[ÛŸ_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠ\OOOHœˆŠ^ÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^Kœˆ‹\™Ù]Ë^[ØYžÝ\›™ØÝ[Y[šY]Ù\•\›
+˜[YK
+KÛÝ\˜ÙU\››YYXU\›
+˜[YJ__KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙHYŠ\OOOHœ™\Ù[][ÛˆŸ\OOOH™ØÝ[Y[Š^ÂˆYŠ\™XË™Ù[™\˜]YŸYœË™^\ÝÔÞ[˜Ê]š›Ú[ŠQQPWÑT‹™XË™Ù[™\˜]YŠJJ]›ÝÈ™]È\œ›ÜŠ‘ØÝ[Y[ÛÛ™\œÚ[Ûˆ\È›Ý™XYHŠNÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K™ØÝ[Y[‹\™Ù]Ë^[ØYžÂˆ\›™ØÝ[Y[šY]Ù\•\›
+™XË™Ù[™\˜]Y‹
+KÛÝ\˜ÙU\››YYXU\›
+˜[YJK•\››YYXU\›
+™XË™Ù[™\˜]YŠKÜšYÚ[˜[˜[YNœ™XË›ÜšYÚ[˜[˜[Y_˜[YBˆ_KÛÛ[X[™ÛÝ\˜ÙJJNÂˆY[ÙH›ÝÈ™]È\œ›ÜŠYYXH\H	Ý\_HØ[››Ý™H\Ü^YY
+NÂˆY[ÙHYŠXÝ[Û‹œÝ\ÕÚ]
+™ÛÝ™YKˆŠJ^ÂˆÛÛœÝX\^ÜÝÙ\Ž›[ÛÛÜŽˆ˜ÛÛÜˆ‹œšYÚ™\ÜÎˆ˜œšYÚ™\ÜÈ‹[\ˆ[\‹ØÙ[™NˆœØÙ[™HŸNÂˆÛÛœÝÚ[™XXÝ[Û‹œÜ]
+‹ˆŠVÌWNÂˆ›ÜŠÛÛœÝ\™Ù]Ùˆ]™[\™Ù]ß×J^ÂˆYŠÚ[™OOHœÝÙ\ˆŠ[Ý]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]\™XÝÛÝ™YPÛÛ[X[™
+\™Ù]Ýš[™ÊœÝ]_›ÛˆŠKÓÝÙ\Ø\ÙJ
+OOOH›ÛˆÈ›ÛˆŽˆ›Ù™ˆ‹
+JNÂˆ[ÙHÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]\™XÝÛÝ™YPÛÛ[X[™
+\™Ù]X\ÚÚ[™K
+JNÂˆBˆB‚‚ˆËÈÜ[Û˜[ØÚY[Y[Y\ˆÝ™\›^HYÛ‹‚ˆËÈ\È[œÈ[ˆY][ÛˆÈH]™[	ÜÈš[X\žHXÝ[Û‹‚ˆÛÛœÝ[Y\“Ý™\›^OY]™[[Y\“Ý™\›^I‰\[Ùˆ]™[[Y\“Ý™\›^OOOH›Øš™XÝÙ]™[[Y\“Ý™\›^N›[ÂˆYŠ\ÚÚ\Ý™\›^I‰[Y\“Ý™\›^OË™[˜X›Y
+^ÂˆÛÛœÝ[Y\•\™Ù]ÏX]]ÛX][Û‘\Ü^U\™Ù]Êˆ[Y\“Ý™\›^K\ÙQ]™[\™Ù]ÈOOY˜[ÙBˆÈ]™[\™Ù]Âˆˆ
+\œ˜^Kš\Ð\œ˜^J[Y\“Ý™\›^K\™Ù]ÊOÝ[Y\“Ý™\›^K\™Ù]Î™]™[\™Ù]ÊBˆ
+NÂ‚ˆÛÛœÝ›ÝÏ[™]È]J
+NÂˆ]™[XZ[š[™ÔÙXÛÛ™ÏLÂˆ][™][[Â‚ˆYŠ[Y\“Ý™\›^KœÛÝ\˜ÙOOOH˜Û\ÜËY[™Š^ÂˆÛÛœÝÛÏY]™[—ØÛ\ÜßXÝ]™P]]ÛX][ÛÛ\ÜÐ]
+]™[›ÝÊ_Û\ÜÔØÚY[PžRY
+]™[˜Û\ÜÒY
+_XÝ]™PÛ\ÜÐ]
+›ÝÊNÂˆYŠÛÉ‰˜Û\ÜÔØÚY[SX]Ú\Ñ]JÛË›ÝÊJ^Âˆ[™]\™\ÛÛ™YØØÝ\œ™[˜ÙQ[™]J]™[ÛË›ÝÊNÂˆ™[XZ[š[™ÔÙXÛÛ™ÏY[™]ÓX]›X^
+X]™›ÛÜŠ
+[™]™Ù][YJ
+KQ]K››ÝÊ
+JKÌL
+JNŒÂˆBˆY[Ù^Âˆ™[XZ[š[™ÔÙXÛÛ™ÏSX]›X^
+[X™\Š[Y\“Ý™\›^K™\˜][Û”ÙXÛÛ™ÏÏÍŒ
+JNÂˆ[™][™]È]J]K››ÝÊ
+JÜ™[XZ[š[™ÔÙXÛÛ™ÊŒL
+NÂˆB‚ˆYŠ™[XZ[š[™ÔÙXÛÛ™ÏŒ
+^ÂˆÝ]]Ëœ™\Ý[Ëœ\Ú
+]ØZ]^XÝ]PÛÛ[X[™
+Âˆ\Nˆ™\Ü^K[Y\ˆ‹ˆ\™Ù][Y\•\™Ù]Ëˆ^[ØYžÂˆš\ÚX›NYKˆ[›š[™ÎYKˆ[ÙNˆ˜ÛÝ[ÝÛˆ‹ˆ[Y\’[œÝ[˜ÙRY˜ÛÛ[X[™Y
+
+Kˆ\˜][Û”ÙXÛÛ™Îœ™[XZ[š[™ÔÙXÛÛ™Ëˆ™[XZ[š[™ÔÙXÛÛ™Ëˆ[™]™[™]™Ù][YJ
+KˆÝ\Y]›[ˆX™[™^[™]]ÛX][Û•˜\šXX›\ÊÝš[™Ê[Y\“Ý™\›^K›X™[•[YH™[XZ[š[™ÈŠK]™[›ÝÊKˆÜÚ][ÛŽ[Y\“Ý™\›^KœÜÚ][ÛŸ˜›ÝÛH‹ˆ›ÛÚ^™N“[X™\Š[Y\“Ý™\›^K™›ÛÚ^™_
+Kˆ^ÛÛÜŽ[Y\“Ý™\›^K^ÛÛÜŸˆÙ™™™™™ˆ‹ˆ›Ü™\ÛÛÜŽ[Y\“Ý™\›^K˜›Ü™\ÛÛÜŸˆÙ™™™™™ˆ‹ˆ›Ü™\•ÚY“[X™\Š[Y\“Ý™\›^K˜›Ü™\•ÚYÏÍ
+Kˆ›Ü™\”˜Y]\Î“[X™\Š[Y\“Ý™\›^K˜›Ü™\”˜Y]\ÏÏÌN
+Kˆ˜XÚÙÜ›Ý[™[Y\“Ý™\›^K˜˜XÚÙÜ›Ý[™œ™Ø˜JŒÍJH‚ˆBˆK˜]]ÛX][ÛˆŠJNÂˆBˆB‚ˆYŠ\ÚÚ\]Y]
+X]Y]
+ÚÚ[™ˆ˜]]ÛX][Û‹œ[ˆ‹]]ÛX][Û’Y™]™[šY˜[YN™]™[›˜[YKX[X[XÝ[ÛŽ™]™[˜XÝ[Û‹\™Ù]Î™]™[\™Ù]ËÚÎY_JNÂˆ™]\›ˆÛÚÎYK]™[Y™]™[šY˜[YN™]™[›˜[YKX[X[‹‹›Ý]]ßNÂŸB‚‚™[˜Ý[Ûˆ[Y\“[šÙYÛ\ÜÐÚZ[Š]™[˜\ÙPÛ\ÜË›ÝÏ[™]È]J
+K[Y\“Ý™\›^O^ßJ^ÂˆYŠX˜\ÙPÛ\ÜÊ\™]\›ˆØÛ\ÜÙ\Î–×K[™]›[š[˜[Û\ÜÎ›[NÂ‚ˆËÈ˜[œÚ][ÛˆÙ]YËXÛ\ÜÙ\È\™H[™XYHHØ\™Z[™ÈÛÝ[Yˆ^H]\Ý[™]ˆËÈZ\ˆÝÛˆ™\ÛÛ™Y›Ý[™\žH
+›Üˆ^[\HLÎŒHOˆLÎŒLÊH[™]\Ý›Ý™BˆËÈÚZ[™Y[ÈÝXœÙ\]Y[Ù[XÝY[Û\ÜÙ\Ë‚ˆYŠ]™[Ë—ØÛ\ÜÒ\Õ˜[œÚ][ÛŸ\Õ˜[œÚ][ÛÛ\ÜÊ˜\ÙPÛ\ÜÊJ^ÂˆÛÛœÝ[™]\™\ÛÛ™YØØÝ\œ™[˜ÙQ[™]J]™[˜\ÙPÛ\ÜË›ÝÊNÂˆ™]\›ˆØÛ\ÜÙ\Î–Ø˜\ÙPÛ\Ü×K[™]š[˜[Û\ÜÎ˜˜\ÙPÛ\ÜËØ\Z[]\ÎŒ[šÙY™˜[ÙK˜[œÚ][ÛŽY_NÂˆB‚ˆËÈ[Ø^\ÈZ[HØ[™Y]H\Ýœ›ÛHH[][KXÛ\ÜÈÙ[XÝ[ÛˆÛˆBˆËÈ]]ÛX][Û‹›ÝY\™[HHØØÝ\œ™[˜ÙH]\[™YÈšYÙÙ\ˆ\È[‹‚ˆËÈ™\ÛÛ™P]]ÛX][Û‘›ÜÛ\ÜÊ
+H™\Ù\™\ÈÛ\ÜÒYË]XØÙ\[™ÈHš]˜]BˆËÈÛÝ\˜ÙH\Ý\ÈÙ[XZÙ\È\È™\Ú[Y[È]\™HØØÝ\œ™[˜ÙH›Ü›X[^˜][Û‹‚ˆÛÛœÝYÏVÂˆ‹‹Š\œ˜^Kš\Ð\œ˜^J]™[Ë—Ø]]ÛX][ÛÛ\ÜÒYÊOÙ]™[—Ø]]ÛX][ÛÛ\ÜÒYÎ–×JKˆ‹‹˜]]ÛX][ÛÛ\ÜÒYÊ]™[
+Kˆ˜\ÙPÛ\ÜËšYˆK™š[\Š›ÛÛX[ŠK›X\
+Ýš[™ÊNÂˆÛÛœÝÙ[XÝYVË‹‹›™]ÈÙ]
+YÊWBˆ›X\
+Û\ÜÔØÚY[PžRY
+Bˆ™š[\Š›ÛÛX[ŠBˆ™š[\ŠÏO˜Ë™[˜X›YOOY˜[ÙI‰˜Û\ÜÔØÚY[SX]Ú\Ñ]JË›ÝÊJNÂ‚ˆYŠ\Ù[XÝYœÛÛYJÏO˜ËšYOOX˜\ÙPÛ\ÜËšY
+J\Ù[XÝYœ\Ú
+˜\ÙPÛ\ÜÊNÂ‚ˆÛÛœÝX^Ø\SX]›X^
+X]›Z[ŠLŒ[X™\Š[Y\“Ý™\›^K™›ÛÝÑØ\Z[]\ÏÏÜØÚÛÛØÚY[T›Ùš[K˜ÛÛ[X][ÛË›X^[][QØ\Z[]\ÏÏÌMJJJNÂˆÛÛœÝ›ÛÝÏ][Y\“Ý™\›^K™›ÛÝÓ[šÙYÛ\ÜÙ\ÈOOY˜[ÙNÂˆÛÛœÝÚZ[VØ˜\ÙPÛ\Ü×NÂˆÛÛœÝ\ÙY[™]ÈÙ]
+Ø˜\ÙPÛ\ÜËšYJNÂˆÛÛœÝ˜\ÙU[Y\ÏYY™™XÝ]™PÛ\ÜÕ[Y\Ê˜\ÙPÛ\ÜË›ÝÊNÂˆ]Ý\œÛÜ‘[™][YUÓZ[]\Ê˜\ÙU[Y\ÏË™[™[Y_˜\ÙPÛ\ÜË™[™[YJNÂ‚ˆYŠ›ÛÝÊ^ÂˆËÈ›ÛÝÈHØÚY[HÚ›Û›ÛÙÚXØ[HÛ›H›ÝYÚ[ˆ^XÚ]H[šÙYˆËÈÛÛ[X][Ûˆ
+Üˆ[\ÜYÛÛ\]Xš[]HX\[™ÊKˆHØ\™\ÚÛ\ÂˆËÈHÙXÛÛ™\žHÝX\™™]™\ˆHY[]H\Ý‚ˆÚ[JYJ^ÂˆÛÛœÝ™^\Ù[XÝYˆ™š[\ŠÏOˆ]\ÙYš\ÊËšY
+JBˆ›X\
+ÏOžØÛÛœÝYY™™XÝ]™PÛ\ÜÕ[Y\ÊË›ÝÊNÜ™]\›ˆÞØËÝ\[YUÓZ[]\ÊœÝ\[YJK[™[YUÓZ[]\Ê™[™[YJ_N›[JBˆ™š[\Š›ÛÛX[ŠBˆ™š[\ŠOžœÝ\XÝ\œÛÜ‘[™	‰žœÝ\XÝ\œÛÜ‘[™[X^Ø\
+Bˆ™š[\ŠOš\Õ˜[Y[Y\ÛÛ[X][ÛŠÚZ[–ØÚZ[‹›[™ÝLWK˜ÊJBˆœÛÜ
+
+KŠOO˜KœÝ\X‹œÝ\‹™[™XK™[™Ýš[™ÊK˜Ë›˜[Y_	ÉÊK›ØØ[PÛÛ\\™JÝš[™Ê‹˜Ë›˜[Y_	ÉÊJJVÌNÂˆYŠ[™^
+Xœ™XZÎÂˆÚZ[‹œ\Ú
+™^˜ÊNÂˆ\ÙY˜Y
+™^˜ËšY
+NÂˆÝ\œÛÜ‘[™SX]›X^
+Ý\œÛÜ‘[™™^™[™
+NÂˆBˆB‚ˆÛÛœÝš[˜[XÚZ[–ØÚZ[‹›[™ÝLW_˜\ÙPÛ\ÜÎÂˆ™]\›ˆÂˆÛ\ÜÙ\Î˜ÚZ[‹ˆ[™]™š[˜[šYOOX˜\ÙPÛ\ÜËšYÜ™\ÛÛ™YØØÝ\œ™[˜ÙQ[™]J]™[š[˜[›ÝÊN˜Û\ÜÑ[™]Jš[˜[›ÝÊKˆš[˜[Û\ÜÎ™š[˜[ˆØ\Z[]\Î›X^Ø\ˆ[šÙY˜ÚZ[‹›[™ÝŒBˆNÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ[]]ÛX][Û•[Y\“Ý™\›^J]™[ÛX[X[Y˜[ÙKÛÛ[X[™ÛÝ\˜ÙOH˜]]ÛX][ÛˆŸO^ßJ^ÂˆÛÛœÝ[Y\“Ý™\›^OY]™[[Y\“Ý™\›^I‰\[Ùˆ]™[[Y\“Ý™\›^OOOH›Øš™XÝÙ]™[[Y\“Ý™\›^N›[ÂˆYŠ][Y\“Ý™\›^OË™[˜X›Y
+\™]\›ˆÛÚÎYKÚÚ\YYK™X\ÛÛŽˆ™\ØX›YŸNÂ‚ˆÛÛœÝ[Y\•\™Ù]ÛÝ\˜ÙOJ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™Ý
+BˆÈ]™[—ØÛ\ÜÑY˜][\™Ù]Âˆˆ
+[Y\“Ý™\›^K\ÙQ]™[\™Ù]ÈOOY˜[ÙBˆÈ]™[\™Ù]Âˆˆ
+\œ˜^Kš\Ð\œ˜^J[Y\“Ý™\›^K\™Ù]ÊI‰[Y\“Ý™\›^K\™Ù]Ë›[™ÝÝ[Y\“Ý™\›^K\™Ù]Î™]™[\™Ù]ÊJNÂˆÛÛœÝ[Y\•\™Ù]ÏX]]ÛX][Û‘\Ü^U\™Ù]Ê[Y\•\™Ù]ÛÝ\˜ÙJNÂˆYŠ][Y\•\™Ù]Ë›[™Ý
+]›ÝÈ™]È\œ›ÜŠ•[Y\ˆÝ™\›^H\È›È\Ü^H\™Ù]ÈŠNÂ‚ˆÛÛœÝ›ÝÏ[™]È]J
+NÂˆ]™[XZ[š[™ÔÙXÛÛ™ÏL[™][[ÛÏ[[Â‚ˆYŠ[Y\“Ý™\›^KœÛÝ\˜ÙOOOH˜Û\ÜËY[™Š^ÂˆËÈH™\ÛÛ™YÛ\ÜÈØØÝ\œ™[˜ÙHZÙ\Èš[Üš]HÛÈ][KXÛ\ÜÈ]™[È›ÛÝÈHÛ\ÜÂˆËÈ]XÝX[HšYÙÙ\™Y\ÈØØÝ\œ™[˜ÙKˆ[ˆ^XÚ]HÙ[XÝY[Y\ˆÛ\ÜÈ\ÈÛ›BˆËÈ\ÙYÚ[ˆH]™[\È›È™\ÛÛ™YÛ\ÜÈØØÝ\œ™[˜ÙK‚ˆÛÏY]™[—ØÛ\ÜÂˆÛ\ÜÔØÚY[PžRY
+[Y\“Ý™\›^K˜Û\ÜÒY
+BˆXÝ]™P]]ÛX][ÛÛ\ÜÐ]
+]™[›ÝÊBˆÛ\ÜÔØÚY[PžRY
+]™[˜Û\ÜÒY
+Bˆ
+\œ˜^Kš\Ð\œ˜^J]™[˜Û\ÜÒYÊOÙ]™[˜Û\ÜÒYË›X\
+Û\ÜÔØÚY[PžRY
+K™š[™
+›ÛÛX[ŠN›[
+BˆXÝ]™PÛ\ÜÐ]
+›ÝÊNÂ‚ˆYŠXÛÊ^Âˆ›ÝÈ™]È\œ›ÜŠ•[Y\ˆÝ™\›^H\ÈÙ]È[šÙYÛ\ÜÈ[™[YK]›È[Y\ˆÛ\ÜÈ\ÈÙ[XÝYH]™[\È›Ý[šÙYÈHÛ\ÜË[™›ÈÛ\ÜÈ\ÈÝ\œ™[HXÝ]™KˆŠNÂˆBˆYŠ[X[X[	‰ˆXÛ\ÜÔØÚY[SX]Ú\Ñ]JÛË›ÝÊJ^Âˆ›ÝÈ™]È\œ›ÜŠ[Y\ˆÛ\ÜÈ‰ØÛË›˜[Y_Hˆ\È›ÝØÚY[YÙ^K˜
+NÂˆB‚ˆÛÛœÝÚZ[][Y\“[šÙYÛ\ÜÐÚZ[Š]™[ÛË›ÝË[Y\“Ý™\›^JNÂˆ[™]XÚZ[‹™[™]™\ÛÛ™YØØÝ\œ™[˜ÙQ[™]J]™[ÛË›ÝÊNÂˆ™[XZ[š[™ÔÙXÛÛ™ÏSX]›X^
+X]™›ÛÜŠ
+[™]™Ù][YJ
+KQ]K››ÝÊ
+JKÌL
+JNÂˆYŠÚZ[‹˜Û\ÜÙ\Ë›[™ÝŒJ^ÂˆÛÏ^Ë‹‹˜ÛËÝ[Y\ÚZ[“˜[Y\Î˜ÚZ[‹˜Û\ÜÙ\Ë›X\
+ÏO˜Ë›˜[YJKÝ[Y\‘š[˜[Û\ÜÎ˜ÚZ[‹™š[˜[Û\ÜßNÂˆB‚ˆËÈYˆ\Ý›ÝÈ\È\ÙYY\ˆÛ\ÜÈ[™ÚÝÈH\›Z[˜[ŒÝ™\›^H[œÝXYÙˆÚ[[HÚ[™È›Ý[™Ë‚ˆYŠ™[XZ[š[™ÔÙXÛÛ™ÏL
+^ÂˆÛÛœÝ™\Ý[X]ØZ]^XÝ]PÛÛ[X[™
+Âˆ\Nˆ™\Ü^K[Y\ˆ‹ˆ\™Ù][Y\•\™Ù]Ëˆ^[ØYžÂˆš\ÚX›NYK[›š[™Î™˜[ÙK[ÙNˆ˜ÛÝ[ÝÛˆ‹ˆ[Y\’[œÝ[˜ÙRY˜ÛÛ[X[™Y
+
+Kˆ\˜][Û”ÙXÛÛ™ÎŒ™[XZ[š[™ÔÙXÛÛ™ÎŒ[™]›[Ý\Y]›[ˆX™[™^[™]]ÛX][Û•˜\šXX›\ÊÝš[™Ê[Y\“Ý™\›^K›X™[•[YH™[XZ[š[™ÈŠKË‹‹™]™[ØÛ\ÜÎ˜ÛßK›ÝÊKˆÜÚ][ÛŽ[Y\“Ý™\›^KœÜÚ][ÛŸ˜›ÝÛH‹ˆ›ÛÚ^™N“[X™\Š[Y\“Ý™\›^K™›ÛÚ^™_
+Kˆ^ÛÛÜŽ[Y\“Ý™\›^K^ÛÛÜŸˆÙ™™™™™ˆ‹ˆ›Ü™\ÛÛÜŽ[Y\“Ý™\›^K˜›Ü™\ÛÛÜŸˆÙ™™™™™ˆ‹ˆ›Ü™\•ÚY“[X™\Š[Y\“Ý™\›^K˜›Ü™\•ÚYÏÍ
+Kˆ›Ü™\”˜Y]\Î“[X™\Š[Y\“Ý™\›^K˜›Ü™\”˜Y]\ÏÏÌN
+Kˆ˜XÚÙÜ›Ý[™[Y\“Ý™\›^K˜˜XÚÙÜ›Ý[™œ™Ø˜JŒÍJH‚ˆBˆKÛÛ[X[™ÛÝ\˜ÙJNÂˆ™]\›ˆÛÚÎYK]™\›ÎYKÛ\ÜÒY˜ÛËšYÛ\ÜÓ˜[YN˜ÛË›˜[YK™\Ý[NÂˆBˆY[Ù^Âˆ™[XZ[š[™ÔÙXÛÛ™ÏSX]›X^
+[X™\Š[Y\“Ý™\›^K™\˜][Û”ÙXÛÛ™ÏÏÍŒ
+JNÂˆ[™][™]È]J]K››ÝÊ
+JÜ™[XZ[š[™ÔÙXÛÛ™ÊŒL
+NÂˆB‚ˆÛÛœÝÛÛ^]™[XÛÏÞË‹‹™]™[ØÛ\ÜÎ˜ÛßN™]™[ÂˆÛÛœÝ™\Ý[X]ØZ]^XÝ]PÛÛ[X[™
+Âˆ\Nˆ™\Ü^K[Y\ˆ‹ˆ\™Ù][Y\•\™Ù]Ëˆ^[ØYžÂˆš\ÚX›NYK[›š[™ÎYK[ÙNˆ˜ÛÝ[ÝÛˆ‹ˆ[Y\’[œÝ[˜ÙRY˜ÛÛ[X[™Y
+
+Kˆ\˜][Û”ÙXÛÛ™Îœ™[XZ[š[™ÔÙXÛÛ™Ëˆ™[XZ[š[™ÔÙXÛÛ™Ëˆ[™]™[™]™Ù][YJ
+KˆÝ\Y]›[ˆX™[™^[™]]ÛX][Û•˜\šXX›\ÊÝš[™Ê[Y\“Ý™\›^K›X™[•[YH™[XZ[š[™ÈŠKÛÛ^]™[›ÝÊKˆÜÚ][ÛŽ[Y\“Ý™\›^KœÜÚ][ÛŸ˜›ÝÛH‹ˆ›ÛÚ^™N“[X™\Š[Y\“Ý™\›^K™›ÛÚ^™_
+Kˆ^ÛÛÜŽ[Y\“Ý™\›^K^ÛÛÜŸˆÙ™™™™™ˆ‹ˆ›Ü™\ÛÛÜŽ[Y\“Ý™\›^K˜›Ü™\ÛÛÜŸˆÙ™™™™™ˆ‹ˆ›Ü™\•ÚY“[X™\Š[Y\“Ý™\›^K˜›Ü™\•ÚYÏÍ
+Kˆ›Ü™\”˜Y]\Î“[X™\Š[Y\“Ý™\›^K˜›Ü™\”˜Y]\ÏÏÌN
+Kˆ˜XÚÙÜ›Ý[™[Y\“Ý™\›^K˜˜XÚÙÜ›Ý[™œ™Ø˜JŒÍJH‚ˆBˆKÛÛ[X[™ÛÝ\˜ÙJNÂ‚ˆ™]\›ˆÛÚÎYKÛ\ÜÒY˜ÛÏËšY[Û\ÜÓ˜[YN˜ÛÏË›˜[Y_[™[XZ[š[™ÔÙXÛÛ™Ë[™]™[™]ÒTÓÔÝš[™Ê
+K™\Ý[NÂŸB‚™[˜Ý[Ûˆ]]ÛX][Û”[‘˜Z[\™\Ê™\Ý[^ßJ^ÂˆÛÛœÝ˜Z[\™\ÏJ\œ˜^Kš\Ð\œ˜^J™\Ý[œÝ\ÊOÜ™\Ý[œÝ\Î–×JBˆ™š[\ŠÝ\OœÝ\Ë›ÚÏOOY˜[ÙJBˆ›X\
+Ý\OŠÚÚ[™ˆ˜XÝ[Ûˆ‹[™^œÝ\š[™^ÏÛ[XÝ[ÛŽœÝ\˜XÝ[ÛŸ[šÛ›ÝÛˆ‹\œ›ÜŽœÝ\™\œ›ÜŸXÝ[Ûˆ˜Z[YŸJJNÂˆYŠ™\Ý[[Y\“Ý™\›^OË›ÚÏOOY˜[ÙJY˜Z[\™\Ëœ\Ú
+ÚÚ[™ˆ[Y\‹[Ý™\›^H‹XÝ[ÛŽˆ™\Ü^K[Y\ˆ‹\œ›ÜŽœ™\Ý[[Y\“Ý™\›^K™\œ›ÜŸ•[Y\ˆÝ™\›^H˜Z[YŸJNÂˆ™]\›ˆ˜Z[\™\ÎÂŸB‚˜\Þ[˜È[˜Ý[Ûˆ[Û\ÜÜ›ÛÛP]]ÛX][ÛŠ]™[ÛX[X[Y˜[ÙKž\\ÜÐ[››Ý[˜Ù[Y[š[Üš]OY˜[Ù_O^ßJ^ÂˆËÈ˜[Y]HYØXÞKÚ[\ÜY™XÛÜ™ÈYØZ[ˆ™Y›Ü™HH™KXÛX\ˆÜˆ[žH[]™\žK‚ˆ]™[^Ë‹‹™]™[[Y\“Ý™\›^N››Ü›X[^™U[Y\“Ý™\›^J]™[[Y\“Ý™\›^K]™[[Y\“Ý™\›^_[
+_NÂˆÛÛœÝY][Û˜[P\œ˜^Kš\Ð\œ˜^J]™[˜XÝ[ÛœÊOÙ]™[˜XÝ[ÛœÎ–×NÂˆÛÛœÝÝ\ÏVÞÚYˆœš[X\žH‹XÝ[ÛŽ™]™[˜XÝ[Û‹\™Ù]Î™]™[\™Ù]Ë\ÙQ]™[\™Ù]ÎYK^[ØY™]™[œ^[ØYßK[^TÙXÛÛ™ÎŒ^XÝ][Û“[ÙNˆ›Û˜ÙH‹™\X]ÛÝ[ŒK™\X][^TÙXÛÛ™ÎŒÛÛ[YSÛ‘\œ›ÜŽY_K‹‹˜Y][Û˜[NÂˆÛÛœÝÛÛXš[™Y^ÛÚÎYK]™[Y™]™[šY˜[YN™]™[›˜[YKX[X[™\Ý[Î–×KÝ\Î–×_NÂ‚ˆËÈ™\ÛÝ\˜ÙH\ÛÛ][ÛŽˆ›È]]ÛX][Ûˆ[\XÚ]HÛX\œÈ\Ü^HÛÛ[ˆÛ›H[‚ˆËÈ^XÚ]\Ü^K˜ÛX\ˆÜˆH\Ü^HÛÛ[XÝ[ÛˆÚ]ÛX\™Y›Ü™H[˜X›YX^BˆËÈ™\XÙH]ÈÝÛˆ™\ÛÛ™Y\Ü^H\™Ù]Ë‚ˆ›ÜŠ]OLÚOÝ\Ë›[™ÝÚJÊÊ^ÂˆÛÛœÝÝ\\Ý\ÖÚW_ßNÂˆÛÛœÝ[^OSX]›X^
+[X™\ŠÝ\™[^TÙXÛÛ™ß
+JNÂˆYŠ[^JX]ØZ]™]È›ÛZ\ÙJOœÙ][Y[Ý]
+‹[^JŒL
+JNÂˆYŠ]™[—ÛØØÝ\œ™[˜ÙRY	‰˜]]ÛX][ÛØ[˜Ù[YØØÝ\œ™[˜Ù\Ëš\Ê]™[—ÛØØÝ\œ™[˜ÙRY
+J]›ÝÈØš™XÝ˜\ÜÚYÛŠ™]È\œ›ÜŠ]]ÛX][Ûˆ[ˆØ[˜Ù[YžHÜ\˜]ÜˆŠKØÛÙNˆUUÓPUSÓ—ÐÐSÑSQŸJNÂˆYŠ[X[X[	‰™]™[šY
+^ØÛÛœÝÝ\œ™[XÛ\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[Ë™š[™
+][OOš][KšYOOY]™[šY
+NÚYŠXÝ\œ™[Ý\œ™[™[˜X›YOOY˜[Ù_[X™\ŠÝ\œ™[œ™]š\Ú[ÛŸJHOOS[X™\Š]™[œ™]š\Ú[ÛŸJJ]›ÝÈØš™XÝ˜\ÜÚYÛŠ™]È\œ›ÜŠ]]ÛX][ÛˆÚ[™ÙYÜˆØ\È\ØX›YÚ[H\È[ˆØ\ÈØZ][™ÈŠKØÛÙNˆUUÓPUSÓ—ÐÓÓ‘’QÕTUSÓ—ÐÒS‘ÑQŸJ_BˆÛÛœÝÝ\XÝ[Û\Ý\˜XÝ[ÛŸ]™[˜XÝ[ÛŽÂˆÛÛœÝÝ\ÛXZ[X]]ÛX][Û•\™Ù]ÛXZ[ŠÝ\XÝ[ÛŠNÂˆÛÛœÝ]™[ÛXZ[X]]ÛX][Û•\™Ù]ÛXZ[Š]™[˜XÝ[ÛŠNÂˆÛÛœÝ^XÚ]\™Ù]ÏP\œ˜^Kš\Ð\œ˜^JÝ\\™Ù]ÊI‰œÝ\\™Ù]Ë›[™ÝÈÝ\\™Ù]Èˆ×NÂˆ]˜]Õ\™Ù]ÏV×NÂˆYŠÝ\\ÙQ]™[\™Ù]ÈOOY˜[ÙI‰œÝ\ÛXZ[OOY]™[ÛXZ[Š\˜]Õ\™Ù]ÏY]™[\™Ù]ß×NÂˆËÈ[ˆXÝ[Û‰ÜÈ^XÚ]\™Ù]Ù[XÝ[Ûˆ[Ø^\ÈÚ[œËˆÛ\ÜÈY˜][ÈÛ›BˆËÈÝ\HH\™Ù]Ú[ˆ\ÈÜ›ÜÜËYÛXZ[ˆ\Ü^HÝ\\È›Û™HÙˆ]ÈÝÛ‹‚ˆ[ÙHYŠ^XÚ]\™Ù]Ë›[™Ý
+\˜]Õ\™Ù]ÏY^XÚ]\™Ù]ÎÂˆ[ÙHYŠ
+Ý\ÛXZ[OOH™\Ü^KXÛÛ[ŸÝ\ÛXZ[OOH™\Ü^K[Ý™\›^HŠI‰™]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™Ý
+\˜]Õ\™Ù]ÏY]™[—ØÛ\ÜÑY˜][\™Ù]ÎÂˆ[ÙH˜]Õ\™Ù]ÏYY˜][]]ÛX][ÛXÝ[Û•\™Ù]ÊÝ\XÝ[ÛŠNÂˆ]™\ÛÛ™Y\™Ù]ÎÂˆYŠÝ\ÛXZ[OOH™\Ü^KXÛÛ[ŸÝ\ÛXZ[OOH™\Ü^K[Ý™\›^HŠ\™\ÛÛ™Y\™Ù]ÏX]]ÛX][Û‘\Ü^U\™Ù]Ê˜]Õ\™Ù]ÊNÂˆ[ÙHYŠÝ\ÛXZ[OOH‹\ÝÙ\ˆŠ\™\ÛÛ™Y\™Ù]ÏY^[™•\™Ù]Ê˜]Õ\™Ù]ËÙ]šXÙ\ËÛÛ›™XÝ[ÛŽœÝ\œ^[ØYË˜ÛÛ›™XÝ[ÛŸšŸJK›X\
+][OOš][KšY
+NÂˆ[ÙH™\ÛÛ™Y\™Ù]ÏVË‹‹œ˜]Õ\™Ù]×NÂˆ]ØÚÙY\™Ù]ÏV×NÂˆYŠ
+Ý\ÛXZ[OOH™\Ü^KXÛÛ[ŸÝ\ÛXZ[OOH™\Ü^K[Ý™\›^HŸÝ\ÛXZ[OOH‹\ÝÙ\ˆŠI‰ˆXž\\ÜÐ[››Ý[˜Ù[Y[š[Üš]J^ÂˆØÚÙY\™Ù]ÏX[››Ý[˜Ù[Y[ØÚÙY\Ü^U\™Ù]Ê™\ÛÛ™Y\™Ù]ÊNÂˆÛÛœÝØÚÙYÙ][™]ÈÙ]
+ØÚÙY\™Ù]ÊNÂˆ™\ÛÛ™Y\™Ù]Ï\™\ÛÛ™Y\™Ù]Ë™š[\ŠYOˆ[ØÚÙYÙ]š\ÊY
+JNÂˆYŠ\™\ÛÛ™Y\™Ù]Ë›[™Ý	‰›ØÚÙY\™Ù]Ë›[™Ý
+^ÂˆÛÛXš[™YœÝ\Ëœ\Ú
+Ú[™^šJÌKYœÝ\šYÝ\IÚJÌ_XXÝ[ÛŽœÝ\XÝ[Û‹\™Ù]Î–×KÚÎYKY™\œ™YYKØÚÙY\™Ù]ßJNÂˆÛÛ[YNÂˆBˆBˆÛÛœÝ^XÝ][Û“[ÙOX]]ÛX][Û‘^XÝ][Û“[ÙJÝ\™^XÝ][Û“[ÙKÝ\XÝ[ÛŠNÂˆÛÛœÝ™\X]ÛÝ[Y^XÝ][Û“[ÙOOOHœ™\X]Ø]]ÛX][Û”™\X]ÛÝ[
+Ý\œ™\X]ÛÝ[
+NŒNÂˆÛÛœÝ™\X][^TÙXÛÛ™ÏX]]ÛX][Û”™\X][^TÙXÛÛ™ÊÝ\œ™\X][^TÙXÛÛ™ÊNÂˆÛÛœÝÝ\]™[^Ë‹‹™]™[ÜÝ\YœÝ\šYÝ\IÚJÌ_XXÝ[ÛŽœÝ\XÝ[Û‹^[ØYžË‹‹ŠÝ\œ^[ØYßJK‹‹Š^XÝ][Û“[ÙOOOH›ÛÜ‰‰œÝ\XÝ[ÛOOH™\Ü^K›YYXHÞÛÛÜY_NžßJ_K\™Ù]Îœ™\ÛÛ™Y\™Ù]Ë[Y\“Ý™\›^N›[NÂˆž^ÂˆYŠÈ™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H‹‹\ÝÙ\ˆ‹›YÚ[™È—Kš[˜ÛY\ÊÝ\ÛXZ[ŠI‰ˆ\Ý\]™[\™Ù]Ë›[™Ý
+]›ÝÈ™]È\œ›ÜŠ	ÜÝ\XÝ[ÛŸH\È›È˜[Y\™Ù]Ø
+NÂˆ]\Ý™\Ý[[[Âˆ›ÜŠ]][\LØ][\™\X]ÛÝ[Ø][\
+ÊÊ^ÂˆYŠ][\	‰œ™\X][^TÙXÛÛ™ÊX]ØZ]™]È›ÛZ\ÙJOœÙ][Y[Ý]
+‹™\X][^TÙXÛÛ™ÊŒL
+JNÂˆYŠ]™[—ÛØØÝ\œ™[˜ÙRY	‰˜]]ÛX][ÛØ[˜Ù[YØØÝ\œ™[˜Ù\Ëš\Ê]™[—ÛØØÝ\œ™[˜ÙRY
+J]›ÝÈØš™XÝ˜\ÜÚYÛŠ™]È\œ›ÜŠ]]ÛX][Ûˆ[ˆØ[˜Ù[YžHÜ\˜]ÜˆŠKØÛÙNˆUUÓPUSÓ—ÐÐSÑSQŸJNÂˆ\Ý™\Ý[X]ØZ][”Ú[™ÛP]]ÛX][ÛXÝ[ÛŠÝ\]™[ÛX[X[ÚÚ\Ý™\›^NYKÚÚ\]Y]Y_JNÂˆÛÛXš[™Yœ™\Ý[Ëœ\Ú
+‹‹Š\Ý™\Ý[œ™\Ý[ß×JJNÂˆBˆÛÛXš[™YœÝ\Ëœ\Ú
+Ú[™^šJÌKYœÝ\šYÝ\IÚJÌ_XXÝ[ÛŽœÝ\]™[˜XÝ[Û‹\™Ù]ÎœÝ\]™[\™Ù]ËÚÎYK^XÝ][Û“[ÙK™\X]ÛÝ[‹‹ŠØÚÙY\™Ù]Ë›[™ÝÞÙY™\œ™YYKØÚÙY\™Ù]ßNžßJ_JNÂˆXØ]Ú
+\œŠ^ÂˆYŠ\œ‹˜ÛÙOOOHS““ÕSÑSQS•×Ô’SÔ’UWÐPÕU‘HŠ^ÂˆÛÛXš[™YœÝ\Ëœ\Ú
+Ú[™^šJÌKYœÝ\šYÝ\IÚJÌ_XXÝ[ÛŽœÝ\]™[˜XÝ[Û‹\™Ù]Î–×KÚÎYKY™\œ™YYKØÚÙY\™Ù]Î™\œ‹\™Ù]ßØÚÙY\™Ù]ßJNÂˆÛÛ[YNÂˆBˆÛÛXš[™Y›ÚÏY˜[ÙNÂˆÛÛXš[™YœÝ\Ëœ\Ú
+Ú[™^šJÌKYœÝ\šYÝ\IÚJÌ_XXÝ[ÛŽœÝ\]™[˜XÝ[Û‹\™Ù]ÎœÝ\]™[\™Ù]ËÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆYŠÝ\˜ÛÛ[YSÛ‘\œ›ÜOOY˜[ÙJXœ™XZÎÂˆBˆB‚ˆYŠ]™[[Y\“Ý™\›^OË™[˜X›Y
+^Âˆž^ÂˆÛÛœÝØÚÙY[Y\•\™Ù]ÏXž\\ÜÐ[››Ý[˜Ù[Y[š[Üš]OÖ×N˜[››Ý[˜Ù[Y[ØÚÙY\Ü^U\™Ù]Êˆ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰\œ˜^Kš\Ð\œ˜^J]™[—ØÛ\ÜÑY˜][\™Ù]ÊI‰™]™[—ØÛ\ÜÑY˜][\™Ù]Ë›[™ÝˆÈ]™[—ØÛ\ÜÑY˜][\™Ù]Âˆˆ
+]™[[Y\“Ý™\›^K\ÙQ]™[\™Ù]ÈOOY˜[ÙOÙ]™[\™Ù]Î™]™[[Y\“Ý™\›^K\™Ù]ÊBˆ
+NÂˆYŠØÚÙY[Y\•\™Ù]Ë›[™Ý
+^ÂˆÛÛXš[™Y[Y\“Ý™\›^O^ÛÚÎYKY™\œ™YYKØÚÙY\™Ù]Î›ØÚÙY[Y\•\™Ù]ßNÂˆY[ÙHÛÛXš[™Y[Y\“Ý™\›^OX]ØZ][]]ÛX][Û•[Y\“Ý™\›^J]™[ÛX[X[JNÂˆYŠÛÛXš[™Y[Y\“Ý™\›^OËœ™\Ý[
+XÛÛXš[™Yœ™\Ý[Ëœ\Ú
+ÛÛXš[™Y[Y\“Ý™\›^Kœ™\Ý[
+NÂˆXØ]Ú
+\œŠ^ÂˆYŠ\œ‹˜ÛÙOOOHS““ÕSÑSQS•×Ô’SÔ’UWÐPÕU‘HŠ^ÂˆÛÛXš[™Y[Y\“Ý™\›^O^ÛÚÎYKY™\œ™YYKØÚÙY\™Ù]Î™\œ‹\™Ù]ß×_NÂˆY[Ù^ÂˆÛÛXš[™Y›ÚÏY˜[ÙNÂˆÛÛXš[™Y[Y\“Ý™\›^O^ÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_NÂˆXYÛ›ÜÝXÑ\œ›ÜŠ\œ‹ØÛÛ\Û™[ˆ˜]]ÛX][Û‹[Y\ˆ‹Ü\˜][ÛŽˆ[Y\‹[Ý™\›^H‹]NžØ]]ÛX][Û’Y™]™[šYÛ\ÜÒY™]™[[Y\“Ý™\›^OË˜Û\ÜÒY]™[˜Û\ÜÒY[_JNÂˆBˆBˆB‚ˆ]Y]
+ÚÚ[™ˆ˜]]ÛX][Û‹œ[ˆ‹]]ÛX][Û’Y™]™[šY˜[YN™]™[›˜[YKX[X[XÝ[ÛœÎœÝ\Ë›X\
+Ož˜XÝ[ÛŠK\™Ù]Î™]™[\™Ù]ËÚÎ˜ÛÛXš[™Y›ÚßJNÂˆ™]\›ˆÛÛXš[™YÂŸB‚™[˜Ý[ÛˆØY™TÝÜ™Y˜[YJ˜[YJ^ÂˆÛÛœÝ˜[YO\]˜˜\Ù[˜[YJÝš[™Ê˜[Y_ˆŠJNÂˆYŠ[˜[YH˜[YOOOH‹ˆˆ˜[YOOOH‹‹ˆŠ]›ÝÈ™]È\œ›ÜŠ’[˜[Yš[H˜[YHŠNÂˆ™]\›ˆ˜[YNÂŸB™[˜Ý[ÛˆYYXU\›
+˜[YJ^Ü™]\›ˆÛYYXKÉÙ[˜ÛÙUT’PÛÛ\Û™[
+˜[YJ_XB™[˜Ý[Ûˆ™\ÛÛ™P]]ÛX][Û“YYXS˜[YJ^[ØY^ßJ^ÂˆÛÛœÝØ[™Y]\ÏVÜ^[ØYœÝÜ™Y˜[YK^[ØY›YYXK^[ØY™š[K^[ØY›˜[YWK›X\
+O”Ýš[™ÊŸˆŠKš[J
+JK™š[\Š›ÛÛX[ŠNÂˆ›ÜŠÛÛœÝ˜]ÈÙˆØ[™Y]\Ê^ÂˆÛÛœÝ˜\ÙO\]˜˜\Ù[˜[YJ˜]ÊNÂˆYŠœË™^\ÝÔÞ[˜Ê]š›Ú[ŠQQPWÑT‹˜\ÙJJJ\™]\›ˆ˜\ÙNÂˆÛÛœÝžSÜšYÚ[˜[SØš™XÝ™[šY\ÊYYXSXœ˜\žK™š[\ßßJK™š[™
+
+ÜÝÜ™Y™X×JOO”Ýš[™Ê™XÏË›ÜšYÚ[˜[˜[Y_ˆŠOOO\˜]É‰™œË™^\ÝÔÞ[˜Ê]š›Ú[ŠQQPWÑT‹ÝÜ™Y
+JJNÂˆYŠžSÜšYÚ[˜[
+\™]\›ˆžSÜšYÚ[˜[ÌNÂˆBˆ›ÝÈ™]È\œ›ÜŠYYXH›Ý›Ý[™ˆ	ØØ[™Y]\ÖÌ_››ÈYYXHÙ[XÝYŸX
+NÂŸB™[˜Ý[Ûˆ]]ÛX][Û“YYXU\›
+˜[YJ^ÂˆÛÛœÝÝ[\Y[˜ÛÙUT’PÛÛ\Û™[
+Ýš[™ÊœËœÝ]Þ[˜Ê]š›Ú[ŠQQPWÑT‹˜[YJJK›][YS\ß]K››ÝÊ
+JJNÂˆ™]\›ˆ	ÛYYXU\›
+˜[YJ_OÝIÜÝ[\XÂŸB™[˜Ý[ÛˆÛ\ÜÚYžSYYXJ˜[YKZ[YOHˆŠ^ÂˆÛÛœÝ^\]™^˜[YJ˜[YJKÓÝÙ\Ø\ÙJ
+NÂˆYŠÈ‹œ™È‹‹šœÈ‹‹šœYÈ‹‹™ÚYˆ‹‹ÙXœ‹‹œÝ™È‹‹˜›\—Kš[˜ÛY\Ê^
+_Z[YKœÝ\ÕÚ]
+š[XYÙKÈŠJ\™]\›ˆš[XYÙHŽÂˆYŠÈ‹›\‹‹ÙX›H‹‹›[Ýˆ‹‹›Mˆ—Kš[˜ÛY\Ê^
+_Z[YKœÝ\ÕÚ]
+šY[ËÈŠJ\™]\›ˆšY[ÈŽÂˆYŠ^OOH‹œˆŸZ[YOOOH˜\XØ][Û‹ÜˆŠ\™]\›ˆœˆŽÂˆYŠÈ‹œ‹‹œ‹‹›Ù—Kš[˜ÛY\Ê^
+J\™]\›ˆœ™\Ù[][ÛˆŽÂˆYŠÈ‹™ØÈ‹‹™ØÞ‹‹›Ù‹‹œˆ—Kš[˜ÛY\Ê^
+J\™]\›ˆ™ØÝ[Y[ŽÂˆ™]\›ˆ™š[HŽÂŸB™[˜Ý[ÛˆÙ™šXÙPÛÛ™\X›J˜[YJ^Âˆ™]\›ˆÈœ™\Ù[][Ûˆ‹™ØÝ[Y[—Kš[˜ÛY\ÊÛ\ÜÚYžSYYXJ˜[YJJNÂŸB˜\Þ[˜È[˜Ý[ÛˆÛÛ™\Ù™šXÙUÔŠÝÜ™Y˜[YJ^ÂˆÛÛœÝÜ˜Ï\]š›Ú[ŠQQPWÑT‹ØY™TÝÜ™Y˜[YJÝÜ™Y˜[YJJNÂˆÛÛœÝÝ[O\]˜˜\Ù[˜[YJÝÜ™Y˜[YK]™^˜[YJÝÜ™Y˜[YJJNÂˆÛÛœÝÙ[™\˜]Y˜[YOX	ÜÝ[_K™\Ü^Kœ˜ÂˆÛÛœÝÙ[™\˜]Y]\]š›Ú[ŠQQPWÑT‹Ù[™\˜]Y˜[YJNÂ‚ˆÛÛœÝ\\\]š›Ú[ŠUWÑT‹˜ÛÛ™\]\‹Üž\Ëœ˜[™ÛUURQ
+
+JNÂˆœË›ZÙ\”Þ[˜Ê\\‹Ü™XÝ\œÚ]™NY_JNÂˆž^Âˆ]ØZ]^XÑš[P\Þ[˜Ê›Xœ™[Ù™šXÙH‹Âˆ‹KZXY\ÜÈ‹‹K[›ÛÙÛÈ‹‹K[›ÛØÚØÚXÚÈ‹‹K[›ÙY˜][‹‹K[›Ùš\œÝÝ\Ú^˜\™‹ˆ‹KXÛÛ™\]È‹œˆ‹‹K[Ý]\ˆ‹\\‹Ü˜ÂˆKÝ[Y[Ý]ŒLŒX^Y™™\Ž
+ŒL
+ŒLJNÂ‚ˆÛÛœÝØ[™Y]\ÏYœËœ™XY\”Þ[˜Ê\\ŠK™š[\ŠOžÓÝÙ\Ø\ÙJ
+K™[™ÕÚ]
+‹œˆŠJNÂˆYŠXØ[™Y]\Ë›[™Ý
+]›ÝÈ™]È\œ›ÜŠ“Xœ™SÙ™šXÙHY›ÝÜ™X]HHˆŠNÂˆÛÛœÝÝYÙYX	ÙÙ[™\˜]Y]K‰ØÜž\Ëœ˜[™ÛUURQ
+
+_K\ÂˆœË˜ÛÜQš[TÞ[˜Ê]š›Ú[Š\\‹Ø[™Y]\ÖÌJKÝYÙY
+NÂˆœËœ™[˜[YTÞ[˜ÊÝYÙYÙ[™\˜]Y]
+NÂˆ™]\›ˆÙ[™\˜]Y˜[YNÂˆYš[˜[^ÂˆœËœ›TÞ[˜Ê\\‹Ü™XÝ\œÚ]™NYK›Ü˜ÙNY_JNÂˆBŸB™[˜Ý[ÛˆØÝ[Y[šY]Ù\•\›
+“˜[YKÜÏ^ßJ^ÂˆÛÛœÝO[™]ÈT“ÙX\˜Ú\˜[\Ê
+NÂˆKœÙ]
+™š[H‹YYXU\›
+“˜[YJJNÂˆYŠÜË˜]]ÐY˜[˜ÙS\Ê\KœÙ]
+˜]]È‹Ýš[™ÊX]›X^
+[X™\ŠÜË˜]]ÐY˜[˜ÙS\Ê_
+JJNÂˆYŠÜË›ÛÜOO][™Yš[™Y
+\KœÙ]
+›ÛÜ‹ÜË›ÛÜÈŒHŽˆŒŠNÂˆYŠÜËœYÙJ\KœÙ]
+œYÙH‹Ýš[™ÊX]›X^
+K[X™\ŠÜËœYÙJ_JJJNÂˆ™]\›ˆÙØÝ[Y[]šY]Ù\‹ÏÉÜKÔÝš[™Ê
+_XÂŸB™[˜Ý[ÛˆXœ˜\žT™XÛÜ™œ›ÛQ\ÚÊ˜[YJ^ÂˆÛÛœÝ[\]š›Ú[ŠQQPWÑT‹˜[YJNÂˆYŠYœË™^\ÝÔÞ[˜Ê[
+J\™]\›ˆ[ÂˆÛÛœÝÝYœËœÝ]Þ[˜Ê[
+NÂˆÛÛœÝ™XÏ[YYXSXœ˜\žK™š[\ÖÛ˜[YW_ßNÂˆ™]\›ˆÂˆÝÜ™Y˜[YN›˜[YKˆÜšYÚ[˜[˜[YNœ™XË›ÜšYÚ[˜[˜[Y_˜[YKˆ\››YYXU\›
+˜[YJKˆ\Nœ™XË\_Û\ÜÚYžSYYXJ˜[YK™XË›Z[Y_ˆŠKˆZ[YNœ™XË›Z[Y_ˆ‹ˆÚ^™NœÝœÚ^™Kˆ[ÙYšYY]œÝ›][YKÒTÓÔÝš[™Ê
+Kˆ\ØYY]œ™XË\ØYY]Ý˜š\[YKÒTÓÔÝš[™Ê
+KˆÙ[™\˜]YŽœ™XË™Ù[™\˜]YŸ[ˆÛÛ™\œÚ[Û”Ý]\Îœ™XË˜ÛÛ™\œÚ[Û”Ý]\ß[ˆÛÛ™\œÚ[Û‘\œ›ÜŽœ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜŸ[ˆNÂŸB™[˜Ý[Ûˆ\ÝYYXSXœ˜\žJ
+^ÂˆÛÛœÝY[[™]ÈÙ]
+
+NÂˆ›ÜŠÛÛœÝ™XÈÙˆØš™XÝ˜[Y\ÊYYXSXœ˜\žK™š[\ßßJJ^ÂˆYŠ™XÏË™Ù[™\˜]YŠZY[‹˜Y
+™XË™Ù[™\˜]YŠNÂˆBˆ™]\›ˆœËœ™XY\”Þ[˜ÊQQPWÑT‹ÝÚ]š[U\\ÎY_JBˆ™š[\ŠOžš\Ñš[J
+I‰ž›˜[YHOOH‹™Ú]ÙY\‰‰ˆZY[‹š\Ê›˜[YJJBˆ›X\
+O›Xœ˜\žT™XÛÜ™œ›ÛQ\ÚÊ›˜[YJJBˆ™š[\Š›ÛÛX[ŠBˆœÛÜ
+
+KŠOO˜‹›[ÙYšYY]›ØØ[PÛÛ\\™JK›[ÙYšYY]
+JNÂŸB‚‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈŒŒMÛ\ÜÜ›ÛÛH™\Ù[][Ûˆ[ÙB‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‚™[˜Ý[ÛˆÛX[”™\Ù[][Û“X™[
+˜[YKX^LLŒ
+^ÂˆÛÛœÝTÝš[™Ê˜[Y_ˆŠKœ™\XÙJÖ×LWLY—KÙËˆŠKš[J
+NÂˆYŠ]Š]›ÝÈ™]È\œ›ÜŠ“˜[YH\È™\]Z\™YŠNÂˆ™]\›ˆ‹œÛXÙJX^
+NÂŸB™[˜Ý[Ûˆ™\Ù[][Û’Y
+
+^Âˆ™]\›ˆ™\ËIØÜž\Ëœ˜[™ÛUURQ
+
+_XÂŸB™[˜Ý[Ûˆ™\Ù[][Û‘›Û\’Y
+
+^Âˆ™]\›ˆ›Û\‹IØÜž\Ëœ˜[™ÛUURQ
+
+_XÂŸB™[˜Ý[ÛˆY˜][™\Ù[][Û“Xœ˜\žJ
+^Âˆ™]\›ˆÂˆ™\œÚ[ÛŽŒKˆ›Û\œÎžÂˆ›ÛÝžÚYˆœ›ÛÝ‹˜[YNˆ”™\Ù[][ÛœÈ‹\™[Y›[Ü™X]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+K\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_BˆKˆ™\Ù[][ÛœÎžßBˆNÂŸB›]™\Ù[][Û“Xœ˜\žO\™XYœÛÛŠ‘TÑS•USÓ—ÓP”T–WÑ’SKY˜][™\Ù[][Û“Xœ˜\žJ
+JNÂšYŠ\™\Ù[][Û“Xœ˜\ž_\[Ùˆ™\Ù[][Û“Xœ˜\žHOOH›Øš™XÝŠ\™\Ù[][Û“Xœ˜\žOYY˜][™\Ù[][Û“Xœ˜\žJ
+NÂšYŠ\™\Ù[][Û“Xœ˜\žK™›Û\œß\[Ùˆ™\Ù[][Û“Xœ˜\žK™›Û\œÈOOH›Øš™XÝŠ\™\Ù[][Û“Xœ˜\žK™›Û\œÏ^ßNÂšYŠ\™\Ù[][Û“Xœ˜\žK™›Û\œËœ›ÛÝ
+\™\Ù[][Û“Xœ˜\žK™›Û\œËœ›ÛÝ^ÚYˆœ›ÛÝ‹˜[YNˆ”™\Ù[][ÛœÈ‹\™[Y›[Ü™X]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+K\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_NÂšYŠ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][Ûœß\[Ùˆ™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÈOOH›Øš™XÝŠ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÏ^ßNÂ›]™XÛÝ™\™Y™\Ù[][ÛÛÛ™\œÚ[ÛœÏY˜[ÙNÂ™›ÜŠÛÛœÝ™XÈÙˆØš™XÝ˜[Y\Ê™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÊJZYŠ™XÏË˜ÛÛ™\œÚ[Û”Ý]\ÏOOH˜ÛÛ™\[™ÈŠ^Âˆ™XË˜ÛÛ™\œÚ[Û”Ý]\Ï\™XËœÛYPÛÝ[ŒÈœ™XYHŽˆ™˜Z[YŽÂˆ™XË˜ÛÛ™\œÚ[Û‘\œ›Ü\™XËœÛYPÛÝ[ŒÛ[ˆÛÛ™\œÚ[ÛˆØ\È[\œ\YžHHÙ\šXÙH™\Ý\È™XZ[H™\Ù[][Û‹ˆŽÂˆ™XË›\Ý™XZ[\œ›ÜHÛÛ™\œÚ[Ûˆ[\œ\YžHÙ\šXÙH™\Ý\ŽÂˆ™XË\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ™XÛÝ™\™Y™\Ù[][ÛÛÛ™\œÚ[ÛœÏ]YNÂŸB‚™[˜Ý[Ûˆ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+^Âˆ\œÚ\ÝœÛÛŠ‘TÑS•USÓ—ÓP”T–WÑ’SK™\Ù[][Û“Xœ˜\žJNÂŸBšYŠ™XÛÝ™\™Y™\Ù[][ÛÛÛ™\œÚ[ÛœÊ\\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂ™[˜Ý[Ûˆ›Ü›X[^™T™\Ù[][Û‘›Û\’Y
+Y
+^ÂˆÛÛœÝTÝš[™ÊYœ›ÛÝŠNÂˆ™]\›ˆ™\Ù[][Û“Xœ˜\žK™›Û\œÖÝ—OÝŽˆœ›ÛÝŽÂŸB™[˜Ý[Ûˆ™\Ù[][Û‘\ŠY
+^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ]›ÝÈ™]È\œ›ÜŠ”™\Ù[][Ûˆ›Ý›Ý[™ŠNÂˆ™]\›ˆ]š›Ú[Š‘TÑS•USÓ”×ÑT‹Y
+NÂŸB™[˜Ý[Ûˆ™\Ù[][Û”ÛYU\›
+YÛYJ^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ]›ÝÈ™]È\œ›ÜŠ”™\Ù[][Ûˆ›Ý›Ý[™ŠNÂˆÛÛœÝSX]›X^
+KX]›Z[Š[X™\ŠÛYJ_K[X™\Š™XËœÛYPÛÝ[
+_JJNÂˆ™]\›ˆÜ™\Ù[][ÛœËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+_KÜÛY\ËÜÛYKIÔÝš[™ÊŠKœYÝ\
+ËŒŠ_KšœØÂŸB™[˜Ý[Ûˆ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊ^ÂˆYŠ\™XÊ\™]\›ˆ[Âˆ™]\›ˆÂˆ‹‹œ™XËˆÜšYÚ[˜[\›œ™XË›ÜšYÚ[˜[š[OØÜ™\Ù[][ÛœËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+™XËšY
+_KÉÙ[˜ÛÙUT’PÛÛ\Û™[
+™XË›ÜšYÚ[˜[š[J_X›[ˆ•\›œ™XËœ‘š[OØÜ™\Ù[][ÛœËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+™XËšY
+_KÉÙ[˜ÛÙUT’PÛÛ\Û™[
+™XËœ‘š[J_X›[ˆš\œÝÛYU\›œ™XËœÛYPÛÝ[Ü™\Ù[][Û”ÛYU\›
+™XËšYJN›[ˆNÂŸB™[˜Ý[Ûˆ™\Ù[][Û‘\ØÙ[™[›Û\’YÊ›Û\’Y
+^ÂˆÛÛœÝÝ][™]ÈÙ]
+Ù›Û\’YJNÂˆ]Ú[™ÙY]YNÂˆÚ[JÚ[™ÙY
+^ÂˆÚ[™ÙYY˜[ÙNÂˆ›ÜŠÛÛœÝˆÙˆØš™XÝ˜[Y\Ê™\Ù[][Û“Xœ˜\žK™›Û\œÊJ^ÂˆYŠ‹šYOOHœ›ÛÝˆ	‰ˆÝ]š\Ê‹œ\™[Y
+H	‰ˆ[Ý]š\Ê‹šY
+J^ÛÝ]˜Y
+‹šY
+NØÚ[™ÙY]YNßBˆBˆBˆ™]\›ˆÝ]ÂŸB™[˜Ý[Ûˆ™\Ù[][Û‘›Û\•ÛÝ[ÞXÛJ›Û\’Y™]Ô\™[Y
+^ÂˆYŠ›Û\’YOOHœ›ÛÝŠ\™]\›ˆYNÂˆÛÛœÝ\ØÙ[™[Ï\™\Ù[][Û‘\ØÙ[™[›Û\’YÊ›Û\’Y
+NÂˆ™]\›ˆ\ØÙ[™[Ëš\Ê™]Ô\™[Y
+NÂŸB™[˜Ý[Ûˆ[]T™\Ù[][Û‘š[\ÊY
+^ÂˆÛÛœÝ\\]š›Ú[Š‘TÑS•USÓ”×ÑT‹Ýš[™ÊYˆŠJNÂˆYŠœË™^\ÝÔÞ[˜Ê\ŠJYœËœ›TÞ[˜Ê\‹Ü™XÝ\œÚ]™NYK›Ü˜ÙNY_JNÂŸB™[˜Ý[Ûˆ[]T™\Ù[][Û”™XÛÜ™
+Y
+^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ\™]\›ˆ˜[ÙNÂˆ[]T™\Ù[][Û‘š[\ÊY
+NÂˆ[]H™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆ™]\›ˆYNÂŸB™[˜Ý[Ûˆ[XÛÙU^
+Š^Âˆ™]\›ˆÝš[™ÊŸˆŠBˆœ™\XÙJÉ›ËÙËŠKœ™\XÙJÉ™ÝËÙËˆŠBˆœ™\XÙJÉœ][ÝËÙË	È‰ÊKœ™\XÙJÉ˜\ÜÎËÙË‰ÈŠBˆœ™\XÙJÉ˜[\ËÙË‰ˆŠNÂŸB™[˜Ý[Ûˆ^˜XÝÜXZÙ\“›Ý\Êš[J^ÂˆÛÛœÝ^\]™^˜[YJš[JKÓÝÙ\Ø\ÙJ
+NÂˆYŠ^OOH‹œŠ\™]\›ˆ×NÂˆž^ÂˆÛÛœÝš\[™]ÈYVš\
+š[JNÂˆÛÛœÝ[šY\Ï^š\™Ù][šY\Ê
+Bˆ™š[\ŠOO‹×œÛ›Ý\ÔÛY\×Û›Ý\ÔÛYW
+×ž[	ÚK\Ý
+K™[žS˜[YJJBˆœÛÜ
+
+KŠOOžÂˆÛÛœÝ[S[X™\ŠK™[žS˜[YK›X]Ú
+Û›Ý\ÔÛYJ
+ÊKÚJOË–ÌW_
+NÂˆÛÛœÝ›S[X™\Š‹™[žS˜[YK›X]Ú
+Û›Ý\ÔÛYJ
+ÊKÚJOË–ÌW_
+NÂˆ™]\›ˆ[‹X›ŽÂˆJNÂˆÛÛœÝ›Ý\ÏV×NÂˆ›ÜŠÛÛœÝHÙˆ[šY\Ê^ÂˆÛÛœÝ[YK™Ù]]J
+KÔÝš[™Ê]ŽŠNÂˆÛÛœÝÚ[šÜÏVË‹‹ž[›X]Ú[
+ÏNŠ×××JÊOØN‹ÙÊWK›X\
+OOž[XÛÙU^
+VÌWJKš[J
+JK™š[\Š›ÛÛX[ŠNÂˆÛÛœÝ^XÚ[šÜË™š[\ŠOˆK×˜ÛXÚÈÈY]ÚK\Ý
+
+JKš›Ú[Š—ˆŠKš[J
+NÂˆÛÛœÝS[X™\ŠK™[žS˜[YK›X]Ú
+Û›Ý\ÔÛYJ
+ÊKÚJOË–ÌW_
+NÂˆYŠŒ
+[›Ý\ÖÛ‹LWO]^ÂˆBˆ™]\›ˆ›Ý\ÎÂˆXØ]Ú
+\œŠ^Âˆ]Y]
+ÚÚ[™ˆœ™\Ù[][Û‹››Ý\Ë™\œ›Üˆ‹\œ›ÜŽ™\œ‹›Y\ÜØYÙKš[Nœ]˜˜\Ù[˜[YJš[J_JNÂˆ™]\›ˆ×NÂˆBŸB˜ÛÛœÝ™\Ù[][ÛZ[Ï[™]ÈX\
+
+NÂ˜\Þ[˜È[˜Ý[ÛˆZ[™\Ù[][Û”ÛY\Õ[›ØÚÙY
+Y
+^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ]›ÝÈ™]È\œ›ÜŠ”™\Ù[][Ûˆ›Ý›Ý[™ŠNÂˆÛÛœÝ\\™\Ù[][Û‘\ŠY
+NÂˆÛÛœÝÜšYÚ[˜[\]š›Ú[Š\‹™XË›ÜšYÚ[˜[š[JNÂˆÛÛœÝ™[™\•\\]š›Ú[Š\‹™[™\‹IØÜž\Ëœ˜[™ÛUURQ
+
+_X
+NÂˆÛÛœÝÛY\Ñ\\]š›Ú[Š\‹œÛY\ÈŠNÂˆÛÛœÝÝYÙYÛY\Ï\]š›Ú[Š™[™\•\œÛY\ÈŠNÂˆœË›ZÙ\”Þ[˜Ê™[™\•\Ü™XÝ\œÚ]™NY_JNÂˆœË›ZÙ\”Þ[˜ÊÝYÙYÛY\ËÜ™XÝ\œÚ]™NY_JNÂ‚ˆž^Âˆ]ÝYÙY\]š›Ú[Š™[™\•\œ™\Ù[][Û‹œˆŠNÂˆYŠ]™^˜[YJÜšYÚ[˜[
+KÓÝÙ\Ø\ÙJ
+OOOH‹œˆŠYœË˜ÛÜQš[TÞ[˜ÊÜšYÚ[˜[ÝYÙYŠNÂˆ[Ù^ÂˆÛÛœÝÛÛ™\\\]š›Ú[Š™[™\•\˜ÛÛ™\ŠNÙœË›ZÙ\”Þ[˜ÊÛÛ™\\‹Ü™XÝ\œÚ]™NY_JNÂˆ]ØZ]^XÑš[P\Þ[˜Ê›Xœ™[Ù™šXÙH‹Âˆ‹KZXY\ÜÈ‹‹K[›ÛÙÛÈ‹‹K[›ÛØÚØÚXÚÈ‹‹K[›ÙY˜][‹‹K[›Ùš\œÝÝ\Ú^˜\™‹ˆ‹KXÛÛ™\]È‹œˆ‹‹K[Ý]\ˆ‹ÛÛ™\\‹ÜšYÚ[˜[ˆKÝ[Y[Ý]ŒNX^Y™™\ŽŽ
+ŒL
+ŒLJNÂˆÛÛœÝØ[™Y]\ÏYœËœ™XY\”Þ[˜ÊÛÛ™\\ŠK™š[\ŠOžÓÝÙ\Ø\ÙJ
+K™[™ÕÚ]
+‹œˆŠJNÂˆYŠXØ[™Y]\Ë›[™Ý
+]›ÝÈ™]È\œ›ÜŠ“Xœ™SÙ™šXÙHY›ÝÜ™X]HH™\Ù[][ÛˆˆŠNÂˆœË˜ÛÜQš[TÞ[˜Ê]š›Ú[ŠÛÛ™\\‹Ø[™Y]\ÖÌJKÝYÙYŠNÂˆB‚ˆ]ØZ]^XÑš[P\Þ[˜ÊœÜH‹Âˆ‹ZœYÈ‹‹\ˆ‹ŒM‹‹ZœYÛÜ‹œ]X[]ONL‹ÝYÙY‹]š›Ú[ŠÝYÙYÛY\Ëœ˜]ÈŠBˆKÝ[Y[Ý]ŒNX^Y™™\ŽŽ
+ŒL
+ŒLJNÂ‚ˆÛÛœÝÙ[™\˜]YYœËœ™XY\”Þ[˜ÊÝYÙYÛY\ÊBˆ™š[\ŠO‹×œ˜]ËW
+×šœÉÚK\Ý
+
+JBˆœÛÜ
+
+KŠOO“[X™\ŠK›X]Ú
+Ê
+ÊKÊOË–ÌWJKS[X™\Š‹›X]Ú
+Ê
+ÊKÊOË–ÌWJJNÂˆYŠYÙ[™\˜]Y›[™Ý
+]›ÝÈ™]È\œ›ÜŠ“›ÈÛYH[XYÙ\ÈÙ\™H™[™\™YŠNÂ‚ˆÙ[™\˜]Y™›Ü‘XXÚ
+
+˜[YKJOO™œËœ™[˜[YTÞ[˜Ê]š›Ú[ŠÝYÙYÛY\Ë˜[YJK]š›Ú[ŠÝYÙYÛY\ËÛYKIÔÝš[™ÊJÌJKœYÝ\
+ËŒŠ_KšœØ
+JJNÂˆÛÛœÝÛÛY\Ï\]š›Ú[Š\‹ÛY\Ë[ÛIØÜž\Ëœ˜[™ÛUURQ
+
+_X
+Kš[˜[\]š›Ú[Š\‹œ™\Ù[][Û‹œˆŠKÛ\]š›Ú[Š\‹™\Ù[][Û‹[ÛIØÜž\Ëœ˜[™ÛUURQ
+
+_Kœ˜
+NÂˆ][Ý™YÛY\ÏY˜[ÙK[Ý™YY˜[ÙNÂˆž^ÂˆYŠœË™^\ÝÔÞ[˜ÊÛY\Ñ\ŠJ^ÙœËœ™[˜[YTÞ[˜ÊÛY\Ñ\‹ÛÛY\ÊNÛ[Ý™YÛY\Ï]Y_BˆYŠœË™^\ÝÔÞ[˜Êš[˜[ŠJ^ÙœËœ™[˜[YTÞ[˜Êš[˜[‹ÛŠNÛ[Ý™Y]Y_BˆœËœ™[˜[YTÞ[˜ÊÝYÙYÛY\ËÛY\Ñ\ŠNÙœËœ™[˜[YTÞ[˜ÊÝYÙY‹š[˜[ŠNÂˆœËœ›TÞ[˜ÊÛÛY\ËÜ™XÝ\œÚ]™NYK›Ü˜ÙNY_JNÙœËœ›TÞ[˜ÊÛ‹Ù›Ü˜ÙNY_JNÂˆXØ]Ú
+\œ›ÜŠ^ÂˆœËœ›TÞ[˜ÊÛY\Ñ\‹Ü™XÝ\œÚ]™NYK›Ü˜ÙNY_JNÙœËœ›TÞ[˜Êš[˜[‹Ù›Ü˜ÙNY_JNÂˆYŠ[Ý™YÛY\É‰™œË™^\ÝÔÞ[˜ÊÛÛY\ÊJYœËœ™[˜[YTÞ[˜ÊÛÛY\ËÛY\Ñ\ŠNÂˆYŠ[Ý™Y‰‰™œË™^\ÝÔÞ[˜ÊÛŠJYœËœ™[˜[YTÞ[˜ÊÛ‹š[˜[ŠNÂˆ›ÝÈ\œ›ÜŽÂˆB‚ˆ™XËœ‘š[OHœ™\Ù[][Û‹œˆŽÂˆ™XËœÛYPÛÝ[YÙ[™\˜]Y›[™ÝÂˆ™XË››Ý\ÏY^˜XÝÜXZÙ\“›Ý\ÊÜšYÚ[˜[
+NÂˆÚ[J™XË››Ý\Ë›[™Ý™XËœÛYPÛÝ[
+\™XË››Ý\Ëœ\Ú
+ˆŠNÂˆ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏHœ™XYHŽÜ™XË˜ÛÛ™\œÚ[Û‘\œ›Ü[[Ü™XË›\Ý™XZ[\œ›Ü[[Âˆ™XË\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÜ™]\›ˆ™XÎÂˆYš[˜[^ÙœËœ›TÞ[˜Ê™[™\•\Ü™XÝ\œÚ]™NYK›Ü˜ÙNY_J_BŸB™[˜Ý[ÛˆZ[™\Ù[][Û”ÛY\ÊY
+^ÂˆÛÛœÝÙ^OTÝš[™ÊY
+NÂˆYŠ™\Ù[][ÛZ[Ëš\ÊÙ^JJ\™]\›ˆ™\Ù[][ÛZ[Ë™Ù]
+Ù^JNÂˆÛÛœÝ\ÚÏXZ[™\Ù[][Û”ÛY\Õ[›ØÚÙY
+Ù^JK™š[˜[J
+
+OOœ™\Ù[][ÛZ[Ë™[]JÙ^JJNÂˆ™\Ù[][ÛZ[ËœÙ]
+Ù^K\ÚÊNÂˆ™]\›ˆ\ÚÎÂŸB‚™[˜Ý[ÛˆY˜][™\Ù[][Û”Ý]J
+^Âˆ™]\›ˆÂˆXÝ]™N™˜[ÙKˆ™\Ù[][Û’Y›[ˆÛYNŒKˆ\™Ù]Î–×Kˆ]\ÙY™˜[ÙKˆ›XÚÎ™˜[ÙKˆÝ\Y]›[ˆÛYTÝ\Y]›[ˆ]]ÐY˜[˜ÙTÙXÛÛ™ÎŒˆÛÜ™˜[ÙKˆ\™Ù]ÙXÛÛ™ÎŒˆ[Z[™ÜÎžßKˆÙ\ÜÚ[Û’Y›[ˆ\]Y]›[ˆNÂŸB›]™\Ù[][Û”Ý]O^Ë‹‹™Y˜][™\Ù[][Û”Ý]J
+K‹‹œ™XYœÛÛŠ‘TÑS•USÓ—ÔÕUWÑ’SKßJ_NÂšYŠ\™\Ù[][Û”Ý]K[Z[™Üß\[Ùˆ™\Ù[][Û”Ý]K[Z[™ÜÈOOH›Øš™XÝŠ\™\Ù[][Û”Ý]K[Z[™ÜÏ^ßNÂšYŠP\œ˜^Kš\Ð\œ˜^J™\Ù[][Û”Ý]K\™Ù]ÊJ\™\Ù[][Û”Ý]K\™Ù]ÏV×NÂ‚™[˜Ý[Ûˆ\œÚ\Ý™\Ù[][Û”Ý]J
+^Âˆ™\Ù[][Û”Ý]K\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ\œÚ\ÝœÛÛŠ‘TÑS•USÓ—ÔÕUWÑ’SK™\Ù[][Û”Ý]JNÂŸB™[˜Ý[Ûˆ™\Ù[][Û‘[\ÙYÙXÛÛ™ÊÝ\˜[YJ^ÂˆÛÛœÝÝ\Q]Kœ\œÙJÝ\˜[Y_
+NÂˆYŠ\Ý\S[X™\‹š\Ñš[š]JÝ\
+J\™]\›ˆÂˆÛÛœÝ[™\™\Ù[][Û”Ý]Kœ]\ÙY	‰œ™\Ù[][Û”Ý]Kœ]\ÙY]Ñ]Kœ\œÙJ™\Ù[][Û”Ý]Kœ]\ÙY]
+N‘]K››ÝÊ
+NÂˆ™]\›ˆX]›X^
+X]™›ÛÜŠ
+[™\Ý\
+KÌL
+JNÂŸB™[˜Ý[Ûˆ™\Ù[][Û”Ý]TX›XÊ
+^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÜ™\Ù[][Û”Ý]Kœ™\Ù[][Û’Y_[Âˆ™]\›ˆÂˆ‹‹œ™\Ù[][Û”Ý]Kˆ™\Ù[][ÛŽˆ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊKˆ™\Ù[][Û‘[\ÙYÙXÛÛ™Îœ™\Ù[][Û”Ý]K˜XÝ]™OÜ™\Ù[][Û‘[\ÙYÙXÛÛ™Ê™\Ù[][Û”Ý]KœÝ\Y]
+NŒˆÛYQ[\ÙYÙXÛÛ™Îœ™\Ù[][Û”Ý]K˜XÝ]™OÜ™\Ù[][Û‘[\ÙYÙXÛÛ™Ê™\Ù[][Û”Ý]KœÛYTÝ\Y]
+NŒˆÝ\œ™[ÛYU\›œ™XÉ‰œ™\Ù[][Û”Ý]K˜XÝ]™OÜ™\Ù[][Û”ÛYU\›
+™XËšY™\Ù[][Û”Ý]KœÛYJN›[ˆ™^ÛYU\›œ™XÉ‰œ™\Ù[][Û”Ý]K˜XÝ]™I‰œ™\Ù[][Û”Ý]KœÛYO™XËœÛYPÛÝ[Ü™\Ù[][Û”ÛYU\›
+™XËšY™\Ù[][Û”Ý]KœÛYJÌJN›[ˆ›Ý\Îœ™XÏË››Ý\ÏË–ÓX]›X^
+
+™\Ù[][Û”Ý]KœÛY_JKLJW_ˆ‚ˆNÂŸB™[˜Ý[Ûˆ™XÛÜ™Ý\œ™[ÛYU[Z[™Ê
+^ÂˆYŠ\™\Ù[][Û”Ý]K˜XÝ]™_\™\Ù[][Û”Ý]Kœ™\Ù[][Û’Y
+\™]\›ŽÂˆÛÛœÝ[\ÙY\™\Ù[][Û‘[\ÙYÙXÛÛ™Ê™\Ù[][Û”Ý]KœÛYTÝ\Y]
+NÂˆÛÛœÝÙ^OTÝš[™Ê™\Ù[][Û”Ý]KœÛY_JNÂˆ™\Ù[][Û”Ý]K[Z[™ÜÖÚÙ^WOS[X™\Š™\Ù[][Û”Ý]K[Z[™ÜÖÚÙ^W_
+JÙ[\ÙYÂŸB˜\Þ[˜È[˜Ý[ÛˆÙ[™™\Ù[][Û”ÛYJ
+^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÜ™\Ù[][Û”Ý]Kœ™\Ù[][Û’YNÂˆYŠ\™Xß\™\Ù[][Û”Ý]K˜XÝ]™J\™]\›ŽÂˆÛÛœÝ\›\™\Ù[][Û”ÛYU\›
+™XËšY™\Ù[][Û”Ý]KœÛYJNÂˆ]ØZ]^XÝ]PÛÛ[X[™
+ÂˆËÈ\ÙHH\ÝX›\ÚY\Ü^Kš[XYÙHÛÛ[X[™ÛÈ[™XYK[Ü[ˆˆ™XÙZ]™\œÂˆËÈœ›ÛHX\›Y\ˆXˆ™\œÚ[ÛœÈØ[ˆ™\Ù[ÛY\ÈÚ]Ý]™\]Z\š[™ÈH™[ØY‚ˆ\Nˆ™\Ü^Kš[XYÙH‹ˆ\™Ù]œ™\Ù[][Û”Ý]K\™Ù]Ëˆ^[ØYžÂˆ™\Ù[][Û’Yœ™XËšYˆ™\Ù[][ÛŽYKˆ˜[YNœ™XË›˜[YKˆÛYNœ™\Ù[][Û”Ý]KœÛYKˆÛYPÛÝ[œ™XËœÛYPÛÝ[ˆ\›ˆš]ˆ˜ÛÛZ[ˆ‹ˆÜXÚ]NŒBˆBˆKœ™\Ù[][ÛˆŠNÂˆYŠ™\Ù[][Û”Ý]K˜›XÚÊ^Âˆ]ØZ]^XÝ]PÛÛ[X[™
+Âˆ\Nˆ™\Ü^K˜ÛX\ˆ‹ˆ\™Ù]œ™\Ù[][Û”Ý]K\™Ù]Ëˆ^[ØYžÜ™\Ù[][ÛŽYK›XÚÎY_BˆKœ™\Ù[][ÛˆŠNÂˆBŸB˜\Þ[˜È[˜Ý[Ûˆ™\Ù[][Û‘ÛÝÊÛYKÜ™XÛÜ™]Y_O^ßJ^ÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÜ™\Ù[][Û”Ý]Kœ™\Ù[][Û’YNÂˆYŠ\™XÊ]›ÝÈ™]È\œ›ÜŠ“›ÈXÝ]™H™\Ù[][ÛˆŠNÂˆÛÛœÝ™^SX]›X^
+KX]›Z[Š[X™\ŠÛYJ_K[X™\Š™XËœÛYPÛÝ[
+_JJNÂˆYŠ™XÛÜ™
+\™XÛÜ™Ý\œ™[ÛYU[Z[™Ê
+NÂˆ™\Ù[][Û”Ý]KœÛYO[™^Âˆ™\Ù[][Û”Ý]KœÛYTÝ\Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ™\Ù[][Û”Ý]Kœ]\ÙYY˜[ÙNÂˆ™\Ù[][Û”Ý]Kœ]\ÙY][[Âˆ\œÚ\Ý™\Ù[][Û”Ý]J
+NÂˆ]ØZ]Ù[™™\Ù[][Û”ÛYJ
+NÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆœ™\Ù[][Û‹œÝ]H‹Ý]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JNÂˆ™]\›ˆ™\Ù[][Û”Ý]TX›XÊ
+NÂŸB˜\Þ[˜È[˜Ý[ÛˆÝÜ™\Ù[][ÛŠØÛX\]Y_O^ßJ^ÂˆÛÛœÝ\™Ù]ÏVË‹‹œ™\Ù[][Û”Ý]K\™Ù]×NÂˆYŠ™\Ù[][Û”Ý]K˜XÝ]™J\™XÛÜ™Ý\œ™[ÛYU[Z[™Ê
+NÂˆÛÛœÝš[Ü’Y\™\Ù[][Û”Ý]Kœ™\Ù[][Û’YÂˆ™\Ù[][Û”Ý]O^Ë‹‹™Y˜][™\Ù[][Û”Ý]J
+K[Z[™ÜÎœ™\Ù[][Û”Ý]K[Z[™Üßß_NÂˆ\œÚ\Ý™\Ù[][Û”Ý]J
+NÂˆYŠÛX\‰‰\™Ù]Ë›[™Ý
+^Âˆ]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]\™Ù]Ë^[ØYžß_Kœ™\Ù[][ÛˆŠNÂˆBˆ]Y]
+ÚÚ[™ˆœ™\Ù[][Û‹œÝÜ‹™\Ù[][Û’Yœš[Ü’Y\™Ù]ßJNÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆœ™\Ù[][Û‹œÝ]H‹Ý]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JNÂˆ™]\›ˆ™\Ù[][Û”Ý]TX›XÊ
+NÂŸB˜\Þ[˜È[˜Ý[ÛˆÛÛ›Û™\Ù[][ÛŠXÝ[Û‹›ÙO^ßJ^ÂˆXÝ[ÛTÝš[™ÊXÝ[ÛŸˆŠKÓÝÙ\Ø\ÙJ
+NÂˆYŠXÝ[ÛOOHœÝÜŠ\™]\›ˆÝÜ™\Ù[][ÛŠØÛX\Ž˜›ÙK˜ÛX\ˆOOY˜[Ù_JNÂˆYŠ\™\Ù[][Û”Ý]K˜XÝ]™J]›ÝÈ™]È\œ›ÜŠ“›ÈXÝ]™H™\Ù[][ÛˆŠNÂˆÛÛœÝ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÜ™\Ù[][Û”Ý]Kœ™\Ù[][Û’YNÂˆYŠ\™XÊ]›ÝÈ™]È\œ›ÜŠXÝ]™H™\Ù[][Ûˆ\ÈZ\ÜÚ[™ÈŠNÂ‚ˆYŠXÝ[ÛOOH›™^Š^ÂˆYŠ™\Ù[][Û”Ý]KœÛYO\™XËœÛYPÛÝ[
+^ÂˆYŠ™\Ù[][Û”Ý]K›ÛÜ
+\™]\›ˆ™\Ù[][Û‘ÛÝÊJNÂˆ™\Ù[][Û”Ý]Kœ]\ÙY]YNÂˆ™\Ù[][Û”Ý]Kœ]\ÙY][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ\œÚ\Ý™\Ù[][Û”Ý]J
+NÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆœ™\Ù[][Û‹œÝ]H‹Ý]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JNÂˆ™]\›ˆ™\Ù[][Û”Ý]TX›XÊ
+NÂˆBˆ™]\›ˆ™\Ù[][Û‘ÛÝÊ™\Ù[][Û”Ý]KœÛYJÌJNÂˆBˆYŠXÝ[ÛOOHœ™]š[Ý\ÈŸXÝ[ÛOOH˜˜XÚÈŠ\™]\›ˆ™\Ù[][Û‘ÛÝÊ™\Ù[][Û”Ý]KœÛYKLJNÂˆYŠXÝ[ÛOOH™ÛÝÈŠ\™]\›ˆ™\Ù[][Û‘ÛÝÊ›ÙKœÛYJNÂˆYŠXÝ[ÛOOHœ™\Ý\][Y\ˆŠ^Âˆ™\Ù[][Û”Ý]KœÛYTÝ\Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ™\Ù[][Û”Ý]K[Z[™ÜÖÔÝš[™Ê™\Ù[][Û”Ý]KœÛYJWOLÂˆ™\Ù[][Û”Ý]Kœ]\ÙYY˜[ÙNÂˆ™\Ù[][Û”Ý]Kœ]\ÙY][[ÂˆY[ÙHYŠXÝ[ÛOOHœ]\ÙHŠ^ÂˆYŠ\™\Ù[][Û”Ý]Kœ]\ÙY
+^Âˆ™\Ù[][Û”Ý]Kœ]\ÙY]YNÂˆ™\Ù[][Û”Ý]Kœ]\ÙY][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆBˆY[ÙHYŠXÝ[ÛOOHœ™\Ý[YHŠ^ÂˆYŠ™\Ù[][Û”Ý]Kœ]\ÙY
+^ÂˆÛÛœÝ]\ÙY]Q]Kœ\œÙJ™\Ù[][Û”Ý]Kœ]\ÙY]
+NÂˆÛÛœÝ[O\]\ÙY]Ñ]K››ÝÊ
+K\]\ÙY]ŒÂˆ›ÜŠÛÛœÝÙ^HÙˆÈœÝ\Y]‹œÛYTÝ\Y]—J^ÂˆÛÛœÝQ]Kœ\œÙJ™\Ù[][Û”Ý]VÚÙ^W_
+NÂˆYŠ	‰™[OŒ
+\™\Ù[][Û”Ý]VÚÙ^WO[™]È]J
+Ù[JKÒTÓÔÝš[™Ê
+NÂˆBˆ™\Ù[][Û”Ý]Kœ]\ÙYY˜[ÙNÂˆ™\Ù[][Û”Ý]Kœ]\ÙY][[ÂˆBˆY[ÙHYŠXÝ[ÛOOH˜›XÚÈŸXÝ[ÛOOH[˜›XÚÈŸXÝ[ÛOOHÙÙÛKX›XÚÈŠ^ÂˆYŠXÝ[ÛOOH˜›XÚÈŠ\™\Ù[][Û”Ý]K˜›XÚÏ]YNÂˆ[ÙHYŠXÝ[ÛOOH[˜›XÚÈŠ\™\Ù[][Û”Ý]K˜›XÚÏY˜[ÙNÂˆ[ÙH™\Ù[][Û”Ý]K˜›XÚÏH\™\Ù[][Û”Ý]K˜›XÚÎÂ‚ˆYŠ™\Ù[][Û”Ý]K˜›XÚÊ^ÂˆËÈ\Ü^K˜ÛX\ˆ\È[™\œÝÛÙžH[™XÙZ]™\ˆ™\œÚ[ÛœÈ[™Ú]™\È\ÈBˆËÈ\[™X›H›XÚÈØÜ™Y[ˆÚ]Ý]™\]Z\š[™ÈH™]È™\Ù[][ÛˆÛÛ[X[™‚ˆ]ØZ]^XÝ]PÛÛ[X[™
+Âˆ\Nˆ™\Ü^K˜ÛX\ˆ‹ˆ\™Ù]œ™\Ù[][Û”Ý]K\™Ù]Ëˆ^[ØYžÜ™\Ù[][ÛŽYK›XÚÎY_BˆKœ™\Ù[][ÛˆŠNÂˆY[Ù^Âˆ]ØZ]Ù[™™\Ù[][Û”ÛYJ
+NÂˆBˆY[ÙHYŠXÝ[ÛOOHœÙ]X]]ÈŠ^Âˆ™\Ù[][Û”Ý]K˜]]ÐY˜[˜ÙTÙXÛÛ™ÏSX]›X^
+X]›Z[ŠÍŒ[X™\Š›ÙKœÙXÛÛ™Ê_
+JNÂˆYŠ›ÙK›ÛÜOO][™Yš[™Y
+\™\Ù[][Û”Ý]K›ÛÜHHX›ÙK›ÛÜÂˆY[ÙHYŠXÝ[ÛOOHœÙ]]\™Ù]Š^Âˆ™\Ù[][Û”Ý]K\™Ù]ÙXÛÛ™ÏSX]›X^
+X]›Z[ŠÍŒ[X™\Š›ÙKœÙXÛÛ™Ê_
+JNÂˆY[Ù^Âˆ›ÝÈ™]È\œ›ÜŠ•[œÝ\ÜY™\Ù[][ÛˆXÝ[ÛˆŠNÂˆBˆ\œÚ\Ý™\Ù[][Û”Ý]J
+NÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆœ™\Ù[][Û‹œÝ]H‹Ý]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JNÂˆ™]\›ˆ™\Ù[][Û”Ý]TX›XÊ
+NÂŸB‚›]™\Ù[][Û]]ÐY˜[˜ÙP\ÞOY˜[ÙNÂ˜ÛÛœÝ™\Ù[][Û]]ÐY˜[˜ÙU[Y\\Ù][\˜[
+\Þ[˜Ê
+OOžÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+\™]\›ŽÂˆYŠ™\Ù[][Û]]ÐY˜[˜ÙP\ÞJ\™]\›ŽÜ™\Ù[][Û]]ÐY˜[˜ÙP\ÞO]YNÂˆž^ÂˆYŠ\™\Ù[][Û”Ý]K˜XÝ]™_™\Ù[][Û”Ý]Kœ]\ÙY
+\™]\›ŽÂˆÛÛœÝÙXÛÛ™ÏS[X™\Š™\Ù[][Û”Ý]K˜]]ÐY˜[˜ÙTÙXÛÛ™ß
+NÂˆYŠÙXÛÛ™ÏL
+\™]\›ŽÂˆYŠ™\Ù[][Û‘[\ÙYÙXÛÛ™Ê™\Ù[][Û”Ý]KœÛYTÝ\Y]
+O\ÙXÛÛ™Ê^Âˆ]ØZ]ÛÛ›Û™\Ù[][ÛŠ›™^‹ßJNÂˆBˆXØ]Ú
+\œŠ^Âˆ]Y]
+ÚÚ[™ˆœ™\Ù[][Û‹˜]]Ë™\œ›Üˆ‹\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆYš[˜[^Ü™\Ù[][Û]]ÐY˜[˜ÙP\ÞOY˜[Ù_BŸKL
+NÂœ™\Ù[][Û]]ÐY˜[˜ÙU[Y\‹[œ™YŠ
+NÂ‚‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈŒŒMHXˆÛÛ\]\ˆX[˜YÙ[Y[‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB™[˜Ý[ÛˆY˜][XÛÛ\]\”ÝÜ™J
+^Ü™]\›ˆÝ™\œÚ[ÛŽŒKÛÛ\]\œÎžß__B‚‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈÛ\ÜÜ›ÛÛHÛ\ÜÈÈ™[ØÚY[B‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB™[˜Ý[ÛˆY˜][Û\ÜÔØÚY[\Ê
+^Ü™]\›ˆÝ™\œÚ[ÛŽŒKÛ\ÜÙ\Î–×__B›]Û\ÜÔØÚY[TÝÜ™O\™XYœÛÛŠÓTÔ×ÔÐÒQST×Ñ’SKY˜][Û\ÜÔØÚY[\Ê
+JNÂšYŠXÛ\ÜÔØÚY[TÝÜ™_\[ÙˆÛ\ÜÔØÚY[TÝÜ™HOOH›Øš™XÝŠXÛ\ÜÔØÚY[TÝÜ™OYY˜][Û\ÜÔØÚY[\Ê
+NÂšYŠP\œ˜^Kš\Ð\œ˜^JÛ\ÜÔØÚY[TÝÜ™K˜Û\ÜÙ\ÊJXÛ\ÜÔØÚY[TÝÜ™K˜Û\ÜÙ\ÏV×NÂ‚™[˜Ý[Ûˆ\œÚ\ÝÛ\ÜÔØÚY[\Ê
+^Ü\œÚ\ÝœÛÛŠÓTÔ×ÔÐÒQST×Ñ’SKÛ\ÜÔØÚY[TÝÜ™J_B™[˜Ý[ÛˆÛÛ[Z]Û\ÜÔØÚY[\Ê™^
+^Ü\œÚ\ÝœÛÛŠÓTÔ×ÔÐÒQST×Ñ’SK™^
+NØÛ\ÜÔØÚY[TÝÜ™O[™^Ü™]\›ˆ™^B™[˜Ý[Ûˆ›Ü›X[^™PÛ\ÜÔØÚY[J[œ]^ßK^\Ý[™Ï^ßJ^ÂˆÛÛœÝYY^\Ý[™ËšYÛX[’Y
+[œ]šYÛ\ÜËIØÜž\Ëœ˜[™ÛUURQ
+
+_X
+NÂˆYŠZY
+]›ÝÈ™]È\œ›ÜŠH˜[YÛ\ÜÈQ\È™\]Z\™YŠNÂˆÛÛœÝ˜[YOTÝš[™Ê[œ]›˜[YOÏÙ^\Ý[™Ë›˜[YOÏÈÛ\ÜÈŠKš[J
+KœÛXÙJLŒ
+NÂˆÛÛœÝÚÜ˜[YOTÝš[™Ê[œ]œÚÜ˜[YOÏÙ^\Ý[™ËœÚÜ˜[YOÏÛ˜[YJKš[J
+KœÛXÙJŒ
+NÂˆÛÛœÝÝ\[YOTÝš[™Ê[œ]œÝ\[YOÏÙ^\Ý[™ËœÝ\[YOÏÈŒŒŠK[™[YOTÝš[™Ê[œ]™[™[YOÏÙ^\Ý[™Ë™[™[YOÏÈŒNŒŠNÂˆYŠ]˜[Y[YJÝ\[YJ_]˜[Y[YJ[™[YJJ]›ÝÈ™]È\œ›ÜŠÛ\ÜÈ[Y\È]\Ý™H˜[Y“SH˜[Y\ÈŠNÂˆYŠ[YUÓZ[]\ÊÝ\[YJO][YUÓZ[]\Ê[™[YJJ]›ÝÈ™]È\œ›ÜŠÛ\ÜÈ[™[YH]\Ý™HY\ˆ]ÈÝ\[YHŠNÂˆÛÛœÝ^\ÏJ\œ˜^Kš\Ð\œ˜^J[œ]™^\ÊOÚ[œ]™^\ÎŠ^\Ý[™Ë™^\ßÌK‹ËWJJK›X\
+[X™\ŠK™š[\ŠOžL	‰žMŠNÂˆÛÛœÝØÚY[S[ÙOVÈÙYZÛH‹˜[\›˜][™È‹œØÚÛÛÞXÛH—Kš[˜ÛY\ÊÝš[™Ê[œ]œØÚY[S[ÙOÏÙ^\Ý[™ËœØÚY[S[ÙOÏÈœØÚÛÛÞXÛHŠJOÔÝš[™Ê[œ]œØÚY[S[ÙOÏÙ^\Ý[™ËœØÚY[S[ÙOÏÈœØÚÛÛÞXÛHŠNˆœØÚÛÛÞXÛHŽÂˆÛÛœÝ[\›˜]T\ÙOTÝš[™Ê[œ]˜[\›˜]T\ÙOÏÙ^\Ý[™Ë˜[\›˜]T\ÙOÏÈHŠKÕ\\Ø\ÙJ
+OOOHˆÈˆŽˆHŽÂˆÛÛœÝ\š[ÙTÝš[™Ê[œ]œ\š[ÙÏÙ^\Ý[™Ëœ\š[ÙÏÈˆŠKš[J
+KœÛXÙJ
+NÂˆÛÛœÝÞXÛQ^\Ï[›Ü›X[^™PÞXÛQ^\Ê[œ]˜ÞXÛQ^\ÏOO][™Yš[™YÙ^\Ý[™Ë˜ÞXÛQ^\Îš[œ]˜ÞXÛQ^\Ë\š[ÙY˜][ÞXÛQ^\Ê\š[Ù
+JNÂˆÛÛœÝ[™™\œ™Y^U\OXÞXÛQ^\Ñ^PÛÛÜŠÞXÛQ^\ÊNÂˆÛÛœÝ^U\O[›Ü›X[^™Y^U\J[œ]™^U\OÏÙ^\Ý[™Ë™^U\OÏÚ[™™\œ™Y^U\K[™™\œ™Y^U\JNÂˆÛÛœÝ[˜ÚÜ”˜]ÏJ[œ]˜[˜ÚÜ‘]OÏÙ^\Ý[™Ë˜[˜ÚÜ‘]OÏÊØÚY[S[ÙOOOH˜[\›˜][™ÈÜØÚÛÛÞXÛP[˜ÚÜŠ
+NˆˆŠJNØÛÛœÝ[˜ÚÜ‘]O]˜[Y]RÙ^J[˜ÚÜ”˜]ÊOÔÝš[™Ê[˜ÚÜ”˜]ÊNˆˆŽÂˆÛÛœÝ[˜ÛYQ]\Ï][š\]YQ]RÙ^\Ê[œ]š[˜ÛYQ]\ÏOO][™Yš[™YÙ^\Ý[™Ëš[˜ÛYQ]\Îš[œ]š[˜ÛYQ]\ÊNÂˆÛÛœÝ^ÛYY]\Ï][š\]YQ]RÙ^\Ê[œ]™^ÛYY]\ÏOO][™Yš[™YÙ^\Ý[™Ë™^ÛYY]\Îš[œ]™^ÛYY]\ÊNÂˆÛÛœÝY˜][\™Ù]ÏJ\œ˜^Kš\Ð\œ˜^J[œ]™Y˜][\™Ù]ÊOÚ[œ]™Y˜][\™Ù]ÎŠ^\Ý[™Ë™Y˜][\™Ù]ßÈ˜[—JJK›X\
+ÛX[’Y
+K™š[\Š›ÛÛX[ŠNÂˆÛÛœÝÛÛ[X][Û“ÙTÝš[™Ê[œ]˜ÛÛ[X][Û“ÙÏÙ^\Ý[™Ë˜ÛÛ[X][Û“ÙÏÈˆŠKš[J
+KœÛXÙJ
+NÂˆ™]\›ˆË‹‹™^\Ý[™ËY˜[YKÚÜ˜[YKÝ\[YK[™[YK^\Î–Ë‹‹›™]ÈÙ]
+^\ÊWKØÚY[S[ÙK[\›˜]T\ÙK[˜ÚÜ‘]K[˜ÛYQ]\Ë^ÛYY]\Ë\š[ÙÞXÛQ^\Ë^U\KÛÛ[X][Û“Ù‹\ÙPSX™[”Ýš[™Ê[œ]œ\ÙPSX™[ÏÙ^\Ý[™Ëœ\ÙPSX™[ÏØ[\›˜]QÜ›Ý\X™[
+HŠJKš[J
+KœÛXÙJÌ
+_[\›˜]QÜ›Ý\X™[
+HŠK\ÙP“X™[”Ýš[™Ê[œ]œ\ÙP“X™[ÏÙ^\Ý[™Ëœ\ÙP“X™[ÏØ[\›˜]QÜ›Ý\X™[
+ˆŠJKš[J
+KœÛXÙJÌ
+_[\›˜]QÜ›Ý\X™[
+ˆŠKY˜][\™Ù]Î–Ë‹‹›™]ÈÙ]
+Y˜][\™Ù]ÊWK[˜X›Yš[œ]™[˜X›YOO][™Yš[™YÊ^\Ý[™Ë™[˜X›YOOY˜[ÙJNˆHZ[œ]™[˜X›Y›Ý\Î”Ýš[™Ê[œ]››Ý\ÏÏÙ^\Ý[™Ë››Ý\ÏÏÈˆŠKœÛXÙJL
+KÜ™X]Y]™^\Ý[™Ë˜Ü™X]Y]™]È]J
+KÒTÓÔÝš[™Ê
+K\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_NÂŸB™[˜Ý[ÛˆÛ\ÜÔØÚY[PžRY
+Y
+^Ü™]\›ˆÛ\ÜÔØÚY[TÝÜ™K˜Û\ÜÙ\Ë™š[™
+ÏO˜ËšYOOTÝš[™ÊYˆŠJ_[B‚™[˜Ý[ÛˆÛ\ÜÐ[\›˜][™Ô\ÙQ›Ü‘]J[˜ÚÜ‘]K]O[™]È]J
+J^ÂˆÛÛœÝÝ]\Ï\ØÚÛÛÞXÛQ›Ü‘]J]JNÂˆYŠ\Ý]\Ëš\ÔÝY[ØÚÛÛ^J\™]\›ˆ[ÂˆÛÛœÝ[˜ÚÜY]Qœ›ÛRÙ^J˜[Y]RÙ^J[˜ÚÜ‘]JOØ[˜ÚÜ‘]NœØÚÛÛÞXÛP[˜ÚÜŠ
+JNÂˆYŠX[˜ÚÜŠ\™]\›ˆ[ÂˆÛÛœÝÙ™œÙ]XÛÝ[[YÚX›TØÚÛÛ^\Ê[˜ÚÜ‹]JNÂˆ™]\›ˆX]˜XœÊÙ™œÙ]
+ILOOLÈHŽˆˆŽÂŸB‚™[˜Ý[ÛˆÛ\ÜÔØÚY[SX]Ú\Ñ]JÛË]O[™]È]J
+J^ÂˆÛÛœÝÙ^O[ØØ[]RÙ^J]JNÂˆYŠØ[[™\”[Q›Ü‘]J]JK\OOOIÚ[‹Y^IÉ‰ˆYY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]JJ\™]\›ˆ˜[ÙNÂˆYŠ\ÐØ[[™\›ØÚÙY
+]JK˜›ØÚÙY
+\™]\›ˆ˜[ÙNÂˆYŠ
+ÛË™^ÛYY]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆ˜[ÙNÂˆYŠ
+ÛËš[˜ÛYQ]\ß×JKš[˜ÛY\ÊÙ^JJ\™]\›ˆYNÂ‚ˆYŠÛËœØÚY[S[ÙOOOHœØÚÛÛÞXÛHŠ^ÂˆÛÛœÝÞXÛQ^\Ï[›Ü›X[^™PÞXÛQ^\ÊÛË˜ÞXÛQ^\Ë\š[ÙY˜][ÞXÛQ^\ÊÛËœ\š[Ù
+JNÂˆ™]\›ˆØÚÛÛÞXÛSX]Ú\ÊØÞXÛQ^\Ë^U\N˜ÛË™^U\_ÞXÛQ^\Ñ^PÛÛÜŠÞXÛQ^\Ê_K]JNÂˆB‚ˆYŠJÛË™^\ß×JKš[˜ÛY\Ê]K™Ù]^J
+JJ\™]\›ˆ˜[ÙNÂˆYŠÛËœØÚY[S[ÙHOOH˜[\›˜][™ÈŠ\™]\›ˆYNÂ‚ˆ™]\›ˆÛ\ÜÐ[\›˜][™Ô\ÙQ›Ü‘]JÛË˜[˜ÚÜ‘]K]JOOOJÛË˜[\›˜]T\Ù_HŠNÂŸB™[˜Ý[ÛˆÛ\ÜÔ\š[Ù[X™\ŠÛÊ^ÂˆÛÛœÝ\™XÝTÝš[™ÊÛÏËœ\š[Ù	ÉÊK›X]Ú
+ÊÎ—Ÿ
+JÌKNJJÎ‰
+KÊNÂˆYŠ\™XÝ
+\™]\›ˆ[X™\Š\™XÝÌWJNÂˆÛÛœÝ˜[YYTÝš[™ÊÛÏË›˜[Y_	ÉÊK›X]Ú
+×”
+ÌKNJW‹ÚJNÂˆ™]\›ˆ˜[YYÓ[X™\Š˜[YYÌWJN›[ÂŸB™[˜Ý[ÛˆZ[]\ÕÒSJZ[œÊ^ÛZ[œÏSX]›X^
+X]›Z[ŠMÎKX]œ›Ý[™
+Z[œÊJJNÜ™]\›ˆ	ÔÝš[™ÊX]™›ÛÜŠZ[œËÍŒ
+JKœYÝ\
+‹	Ì	Ê_N‰ÔÝš[™ÊZ[œÉMŒ
+KœYÝ\
+‹	Ì	Ê_XB™[˜Ý[ÛˆY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]O[™]È]J
+J^ÂˆYŠXÛÊ\™]\›ˆ[ÂˆÛÛœÝ[OXØ[[™\”[Q›Ü‘]J]JNÂˆÛÛœÝY™™XÝ]™OYY™™XÝ]™U[Y\Ñ›Ü”[JØÚÛÛØÚY[T›Ùš[KÛË[K\JNÂˆ™]\›ˆY™™XÝ]™OÞË‹‹™Y™™XÝ]™K[_N›[ÂŸB™[˜Ý[ÛˆÛ\ÜÔÝ\]JÛË]O[™]È]J
+J^ØÛÛœÝYY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]JNÚYŠ]
+\™]\›ˆ[ØÛÛœÝÚWO]œÝ\[YKœÜ]
+ŽˆŠK›X\
+[X™\ŠK[™]È]J]JNÙœÙ]Ý\œÊK
+NÜ™]\›ˆB™[˜Ý[ÛˆÛ\ÜÑ[™]JÛË]O[™]È]J
+J^ØÛÛœÝYY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]JNÚYŠ]
+\™]\›ˆ[ØÛÛœÝÚWO]™[™[YKœÜ]
+ŽˆŠK›X\
+[X™\ŠK[™]È]J]JNÙœÙ]Ý\œÊK
+NÜ™]\›ˆB™[˜Ý[Ûˆ\Õ˜[œÚ][ÛÛ\ÜÊÛÊ^Âˆ™]\›ˆÝ˜[œÚ][Û‹ÚK\Ý
+Ýš[™ÊÛÏË›˜[Y_ˆŠJHÝ˜[œÚ][Û‹ÚK\Ý
+Ýš[™ÊÛÏËœÚÜ˜[Y_ˆŠJHÝš[™ÊÛÏËšÚ[™ˆŠKÓÝÙ\Ø\ÙJ
+OOOH˜[œÚ][ÛˆŽÂŸB™[˜Ý[ÛˆÛ\ÜÐ˜\ÙT\š[Ù[X™\ŠÛÊ^ÂˆYŠXÛÊ\™]\›ˆ[ÂˆÛÛœÝ˜[YOTÝš[™ÊÛË›˜[Y_	ÉÊNÂˆËÈ[\ÜYYØXÞHX™[È[˜ÛÙHHÜšYÚ[˜][™È™YÝ[\ˆ\š[Ù^XÚ]K‚ˆÛÛœÝš\ÛÛ[˜[YK›X]Ú
+×—Ê–ÌL—WÊ‹WÊ”
+ÌKNJW‹ÚJNÂˆYŠš\ÛÛŠ\™]\›ˆ[X™\Šš\ÛÛ–ÌWJNÂˆÛÛœÝ™YÝ[\[˜[YK›X]Ú
+×—Ê”
+ÌKNJW‹ÚJNÂˆYŠ™YÝ[\Š\™]\›ˆ[X™\Š™YÝ[\–ÌWJNÂˆ™]\›ˆÛ\ÜÔ\š[Ù[X™\ŠÛÊNÂŸB™[˜Ý[Ûˆ\ÓYØXÞPÛÛ[X][ÛÛ\ÜÊÛÊ^ÂˆYŠXÛÊ\™]\›ˆ˜[ÙNÂˆÛÛœÝ˜[YOTÝš[™ÊÛË›˜[Y_	ÉÊNÂˆÛÛœÝ\š[ÙTÝš[™ÊÛËœ\š[Ù	ÉÊNÂˆ™]\›ˆ×—Ê–ÌL—W‹ÚK\Ý
+˜[YJH×—Ê–ÌL—W‹ÚK\Ý
+\š[Ù
+HØš\ÛÛˆ›ØÚËÚK\Ý
+Ýš[™ÊÛË››Ý\ß	ÉÊJNÂŸB™[˜Ý[Ûˆ\Õ˜[Y[Y\ÛÛ[X][ÛŠÝ\œ™[™^
+^ÂˆYŠXÝ\œ™[[™^\Õ˜[œÚ][ÛÛ\ÜÊÝ\œ™[
+_\Õ˜[œÚ][ÛÛ\ÜÊ™^
+J\™]\›ˆ˜[ÙNÂˆYŠ™^˜ÛÛ[X][Û“ÙŠ\™]\›ˆÝš[™Ê™^˜ÛÛ[X][Û“ÙŠOOOTÝš[™ÊÝ\œ™[šY
+_Ýš[™Ê™^˜ÛÛ[X][Û“ÙŠOOOTÝš[™ÊÝ\œ™[œ\š[Ù
+_Ýš[™Ê™^˜ÛÛ[X][Û“ÙŠOOOTÝš[™ÊÛ\ÜÐ˜\ÙT\š[Ù[X™\ŠÝ\œ™[
+_ˆŠNÂˆYŠ\ØÚÛÛØÚY[T›Ùš[K˜ÛÛ[X][ÛË›YØXÞPš\ÛÛÛÛ\]Xš[]_Z\ÓYØXÞPÛÛ[X][ÛÛ\ÜÊ™^
+J\™]\›ˆ˜[ÙNÂˆÛÛœÝOXÛ\ÜÐ˜\ÙT\š[Ù[X™\ŠÝ\œ™[
+KXÛ\ÜÐ˜\ÙT\š[Ù[X™\Š™^
+NÂˆ™]\›ˆ[X™\‹š\Ò[YÙ\ŠJI‰“[X™\‹š\Ò[YÙ\ŠŠI‰˜OOOXŽÂŸB™[˜Ý[Ûˆ™\ÛÛ™YØØÝ\œ™[˜ÙQ[™]J]™[ÛË]O[™]È]J
+J^ÂˆÛÛœÝÝ[\S[X™\Š]™[Ë—ØÛ\ÜÑ[™]
+NÂˆYŠ[X™\‹š\Ñš[š]JÝ[\
+I‰œÝ[\Œ
+^ÂˆÛÛœÝ[™]È]JÝ[\
+NÂˆYŠØØ[]RÙ^J
+OOO[ØØ[]RÙ^J]JJ\™]\›ˆÂˆBˆ™]\›ˆÛ\ÜÑ[™]JÛË]JNÂŸB™[˜Ý[ÛˆXÝ]™PÛ\ÜÐ]
+]O[™]È]J
+J^Ü™]\›ˆÛ\ÜÔØÚY[TÝÜ™K˜Û\ÜÙ\Ë™š[\ŠÏO˜Ë™[˜X›YOOY˜[ÙI‰˜Û\ÜÔØÚY[SX]Ú\Ñ]JË]JJK™š[™
+ÏOžØÛÛœÝOXÛ\ÜÔÝ\]JË]JKXÛ\ÜÑ[™]JË]JNÜ™]\›ˆI‰˜‰‰˜OY]I‰™]OŸJ_[B™[˜Ý[ÛˆXÝ]™P]]ÛX][ÛÛ\ÜÐ]
+]™[]O[™]È]J
+J^ÂˆÛÛœÝYÏX]]ÛX][ÛÛ\ÜÒYÊ]™[
+NÂˆYŠZYË›[™Ý
+\™]\›ˆ[ÂˆÛÛœÝXÝ]™OZYÂˆ›X\
+Û\ÜÔØÚY[PžRY
+Bˆ™š[\Š›ÛÛX[ŠBˆ™š[\ŠÏO˜Ë™[˜X›YOOY˜[ÙI‰˜Û\ÜÔØÚY[SX]Ú\Ñ]JË]JJBˆ›X\
+ÏOŠØËÝ\˜Û\ÜÔÝ\]JË]JK[™˜Û\ÜÑ[™]JË]J_JJBˆ™š[\ŠOžœÝ\	‰ž™[™	‰žœÝ\Y]I‰™]O™[™
+BˆœÛÜ
+
+KŠOO˜‹œÝ\XKœÝ\K™[™X‹™[™
+NÂˆ™]\›ˆXÝ]™VÌOË˜ß[ÂŸB™[˜Ý[Ûˆ™^Û\ÜÐY\Š]O[™]È]J
+J^ÂˆÛÛœÝ›Ý[™V×NÂˆ›ÜŠ]Ù™LÛÙ™M	‰ˆY›Ý[™›[™ÝÛÙ™ŠÊÊ^ÂˆÛÛœÝ[™]È]J]JNÙœÙ]]J™Ù]]J
+JÛÙ™ŠNÙœÙ]Ý\œÊL‹
+NÂˆ›ÜŠÛÛœÝÈÙˆÛ\ÜÔØÚY[TÝÜ™K˜Û\ÜÙ\Ê^ÂˆYŠË™[˜X›YOOY˜[Ù_XÛ\ÜÔØÚY[SX]Ú\Ñ]JË
+JXÛÛ[YNÂˆÛÛœÝÝ\XÛ\ÜÔÝ\]JË
+K[™XÛ\ÜÑ[™]JË
+NÚYŠÝ\	‰™[™	‰œÝ\™]JY›Ý[™œ\Ú
+Ë‹‹˜ËÝ\[YN™Y™™XÝ]™PÛ\ÜÕ[Y\ÊË
+OËœÝ\[Y_ËœÝ\[YK[™[YN™Y™™XÝ]™PÛ\ÜÕ[Y\ÊË
+OË™[™[Y_Ë™[™[YK™^Ý\]œÝ\ÒTÓÔÝš[™Ê
+K™^[™]™[™ÒTÓÔÝš[™Ê
+_JNÂˆBˆBˆ™]\›ˆ›Ý[™œÛÜ
+
+KŠOO›™]È]JK›™^Ý\]
+K[™]È]J‹›™^Ý\]
+JVÌ_[ÂŸB™[˜Ý[ÛˆÛ\ÜÔÝ]\Ô^[ØY
+]O[™]È]J
+J^ÂˆÛÛœÝOXXÝ]™PÛ\ÜÐ]
+]JK[™^Û\ÜÐY\Š]JNÂˆÛÛœÝ]XOÙY™™XÝ]™PÛ\ÜÕ[Y\ÊK]JN›[Âˆ™]\›ˆÜØÚÛÛÞXÛNœØÚÛÛÞXÛQ›Ü‘]J]JKØ[[™\”[N˜Ø[[™\”[Q›Ü‘]J]JKXÝ]™PÛ\ÜÎ˜OÞË‹‹˜KÝ\[YN˜]ËœÝ\[Y_KœÝ\[YK[™[YN˜]Ë™[™[Y_K™[™[YKÝ\]˜Û\ÜÔÝ\]JK]JKÒTÓÔÝš[™Ê
+K[™]˜Û\ÜÑ[™]JK]JKÒTÓÔÝš[™Ê
+_N›[™^Û\ÜÎ›ŸNÂŸB™[˜Ý[Ûˆ]]ÛX][ÛÛ\ÜÒYÊ]™[
+^ÂˆÛÛœÝYÏP\œ˜^Kš\Ð\œ˜^J]™[˜Û\ÜÒYÊOÙ]™[˜Û\ÜÒYË™š[\Š›ÛÛX[ŠN–×NÂˆYŠZYË›[™Ý	‰™]™[˜Û\ÜÒY
+ZYËœ\Ú
+]™[˜Û\ÜÒY
+NÂˆ™]\›ˆË‹‹›™]ÈÙ]
+YË›X\
+Ýš[™ÊJWNÂŸB™[˜Ý[Ûˆ™\ÛÛ™P]]ÛX][Û‘›ÜÛ\ÜÊ]™[Û\ÜÒY]O[™]È]J
+J^ÂˆYŠXÛ\ÜÒY
+\™]\›ˆ]™[ÂˆÛÛœÝÛÏXÛ\ÜÔØÚY[PžRY
+Û\ÜÒY
+NÚYŠXÛßÛË™[˜X›YOOY˜[ÙJ\™]\›ˆ[ÂˆYŠXÛ\ÜÔØÚY[SX]Ú\Ñ]JÛË]JJ\™]\›ˆ[ÂˆÛÛœÝY™™XÝ]™OYY™™XÝ]™PÛ\ÜÕ[Y\ÊÛË]JNÚYŠYY™™XÝ]™J\™]\›ˆ[ÂˆÛÛœÝ˜\ÙOY]™[˜Û\ÜÕ[YT™Y™\™[˜ÙOOOH™[™ÙY™™XÝ]™K™[™[YN™Y™™XÝ]™KœÝ\[YNÂˆÛÛœÝÚWOX˜\ÙKœÜ]
+ŽˆŠK›X\
+[X™\ŠK˜]ÓZ[]\ÏZ
+Œ
+ÛJÓ[X™\Š]™[˜Û\ÜÕ[YSÙ™œÙ]Z[]\ß
+NÂˆÛÛœÝ^SÙ™œÙ]SX]™›ÛÜŠ˜]ÓZ[]\ËÌM
+KZ[œÏJ
+˜]ÓZ[]\ÉLM
+JÌM
+ILMÂˆÛÛœÝØÚY[Y]O[™]È]J]JNÜØÚY[Y]KœÙ]]JØÚY[Y]K™Ù]]J
+JÙ^SÙ™œÙ]
+NÂˆÛÛœÝØØÝ\œ™[˜ÙTÝ\XÛ\ÜÔÝ\]JÛË]JKØØÝ\œ™[˜ÙQ[™XÛ\ÜÑ[™]JÛË]JNÂˆ™]\›ˆË‹‹™]™[Û\ÜÒY˜ÛËšY[YN˜	ÔÝš[™ÊX]™›ÛÜŠZ[œËÍŒ
+JKœYÝ\
+‹ŒŠ_N‰ÔÝš[™ÊZ[œÉMŒ
+KœYÝ\
+‹ŒŠ_X^\Î–Ë‹‹ŠÛË™^\ß×JWKØÚY[S[ÙN˜ÛËœØÚY[S[Ù_œØÚÛÛÞXÛH‹[\›˜]T\ÙN˜ÛË˜[\›˜]T\Ù_H‹[˜ÚÜ‘]N˜ÛË˜[˜ÚÜ‘]_ØÚÛÛÞXÛP[˜ÚÜŠ
+K^U\N˜ÛË™^U\_[žH‹ÞXÛQ^\Î–Ë‹‹ŠÛË˜ÞXÛQ^\ß\š[ÙY˜][ÞXÛQ^\ÊÛËœ\š[Ù
+JWK\š[Ù˜ÛËœ\š[Ùˆ‹[˜ÛYQ]\Î–Ë‹‹ŠÛËš[˜ÛYQ]\ß×JWK\™Ù]ÎŠ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰–È™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H—Kš[˜ÛY\Ê]]ÛX][Û•\™Ù]ÛXZ[Š]™[˜XÝ[ÛŠJI‰˜ÛË™Y˜][\™Ù]ÏË›[™Ý
+OÖË‹‹˜ÛË™Y˜][\™Ù]×NŠ]™[\™Ù]ß×JKØÛ\ÜÎ˜ÛËØÛ\ÜÑY˜][\™Ù]Î–Ë‹‹ŠÛË™Y˜][\™Ù]ß×JWKØ]]ÛX][ÛÛ\ÜÒYÎ˜]]ÛX][ÛÛ\ÜÒYÊ]™[
+KØÛ\ÜÔÝ\]›ØØÝ\œ™[˜ÙTÝ\Ë™Ù][YJ
+_[ØÛ\ÜÑ[™]›ØØÝ\œ™[˜ÙQ[™Ë™Ù][YJ
+_[ØÛ\ÜÒ\Õ˜[œÚ][ÛŽš\Õ˜[œÚ][ÛÛ\ÜÊÛÊKÜÛÝ\˜ÙQ]SX]ÚYYKÜØÚY[Y]RÙ^N›ØØ[]RÙ^JØÚY[Y]J_NÂŸB™[˜Ý[Ûˆ™\ÛÛ™P]]ÛX][Û“ØØÝ\œ™[˜Ù\Ê]™[]O[™]È]J
+J^ÂˆÛÛœÝYÏX]]ÛX][ÛÛ\ÜÒYÊ]™[
+NÂˆYŠZYË›[™Ý
+\™]\›ˆÙ]™[NÂˆ™]\›ˆYË›X\
+YOœ™\ÛÛ™P]]ÛX][Û‘›ÜÛ\ÜÊ]™[Y]JJK™š[\Š›ÛÛX[ŠNÂŸB™[˜Ý[Ûˆ™\ÛÛ™P]]ÛX][Û‘œ›ÛPÛ\ÜÊ]™[]O[™]È]J
+J^ÂˆËÈX[X[Õ\Ý›ÝÈ^XÝ][Ûˆ]\Ý›ÛÝÈHÙ[XÝYÛ\ÜÈØØÝ\œ™[˜ÙH]\ÂˆËÈXÝX[HXÝ]™H›ÝËˆ˜[[™ÈÝ˜ZYÚÈHš\œÝÛÛ™šYÝ\™YÛ\ÜÈXZÙ\ÂˆËÈ][KXÛ\ÜÈ]]ÛX][ÛœÈ™\ÛÛ™H[ˆ[™XYKY[™Y\š[Ù[™ZY[ÈŒ‚ˆÛÛœÝXÝ]™OXXÝ]™P]]ÛX][ÛÛ\ÜÐ]
+]™[]JNÂˆYŠXÝ]™J^ÂˆÛÛœÝ™\ÛÛ™Y\™\ÛÛ™P]]ÛX][Û‘›ÜÛ\ÜÊ]™[XÝ]™KšY]JNÂˆYŠ™\ÛÛ™Y
+\™]\›ˆ™\ÛÛ™YÂˆBˆ™]\›ˆ™\ÛÛ™P]]ÛX][Û“ØØÝ\œ™[˜Ù\Ê]™[]JVÌ_]™[ÂŸB™[˜Ý[Ûˆ™\ÛÛ™P]]ÛX][Û‘›Ü“X[X[\Ý
+]™[]O[™]È]J
+J^ÂˆÛÛœÝ™\ÛÛ™Y\™\ÛÛ™P]]ÛX][Û‘œ›ÛPÛ\ÜÊ]™[]JNÂˆYŠ™\ÛÛ™YË—ØÛ\ÜßX]]ÛX][ÛÛ\ÜÒYÊ]™[
+K›[™Ý
+\™]\›ˆ™\ÛÛ™YÂˆËÈ\Ý›ÝÈ]\Ý™[XZ[ˆ\ÙY[ÛˆH^HÚ[ˆ›Û™HÙˆH[šÙYÛ\ÜÙ\È\ÂˆËÈØÚY[Yˆ\ÙHHš\œÝ[˜X›Y[šÙYÛ\ÜÈ\ÈH]\›Z[š\ÝXÈ\ÝˆËÈÛÛ^Ú]Ý]ÙXZÙ[š[™ÈH™X[ØÚY[\‰ÜÈ]KØÞXÛHÚXÚÜË‚ˆÛÛœÝÛÏX]]ÛX][ÛÛ\ÜÒYÊ]™[
+K›X\
+Û\ÜÔØÚY[PžRY
+K™š[™
+ÏO˜É‰˜Ë™[˜X›YOOY˜[ÙJNÂˆYŠXÛÊ\™]\›ˆ™\ÛÛ™YÂˆÛÛœÝØØÝ\œ™[˜ÙTÝ\XÛ\ÜÔÝ\]JÛË]JKØØÝ\œ™[˜ÙQ[™XÛ\ÜÑ[™]JÛË]JNÂˆ™]\›ˆÂˆ‹‹™]™[ˆÛ\ÜÒY˜ÛËšYˆ\™Ù]ÎŠ]™[\ÙPÛ\ÜÕ\™Ù]ÈOOY˜[ÙI‰–È™\Ü^KXÛÛ[‹™\Ü^K[Ý™\›^H—Kš[˜ÛY\Ê]]ÛX][Û•\™Ù]ÛXZ[Š]™[˜XÝ[ÛŠJI‰˜ÛË™Y˜][\™Ù]ÏË›[™Ý
+OÖË‹‹˜ÛË™Y˜][\™Ù]×NŠ]™[\™Ù]ß×JKˆØÛ\ÜÎ˜ÛËˆØÛ\ÜÑY˜][\™Ù]Î–Ë‹‹ŠÛË™Y˜][\™Ù]ß×JWKˆØ]]ÛX][ÛÛ\ÜÒYÎ˜]]ÛX][ÛÛ\ÜÒYÊ]™[
+KˆØÛ\ÜÔÝ\]›ØØÝ\œ™[˜ÙTÝ\Ë™Ù][YJ
+_[ˆØÛ\ÜÑ[™]›ØØÝ\œ™[˜ÙQ[™Ë™Ù][YJ
+_[ˆØÛ\ÜÒ\Õ˜[œÚ][ÛŽš\Õ˜[œÚ][ÛÛ\ÜÊÛÊKˆÛX[X[\ÝØØÝ\œ™[˜ÙNYBˆNÂŸB‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈ™^[ÛˆXˆÛÛ\]\ˆ[YÜ˜][Û‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‚›]™^[ÛÛÛ\]\”ÝÜ™O\™XYœÛÛŠ‘VSÓ—ÐÓÓTUT”×Ñ’SKÝ™\œÚ[ÛŽŒ‹ÛÛ\]\œÎžß_JNÂšYŠ]™^[ÛÛÛ\]\”ÝÜ™_\[Ùˆ™^[ÛÛÛ\]\”ÝÜ™HOOH›Øš™XÝŠ]™^[ÛÛÛ\]\”ÝÜ™O^Ý™\œÚ[ÛŽŒ‹ÛÛ\]\œÎžß_NÂšYŠ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œß\[Ùˆ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÈOOH›Øš™XÝŠ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÏ^ßNÂ™›ÜŠÛÛœÝ™XÈÙˆØš™XÝ˜[Y\Ê™^[ÛÛÛ\]\”ÝÜ™OË˜ÛÛ\]\œßßJJ^ÂˆYŠ™XËœ›ÛHOOHXXÚ\ˆ‰‰œ™XËœ›ÛHOOHœÝY[Š\™XËœ›ÛOHœÝY[ŽÂŸB˜ÛÛœÝ™^[ÛÛÛ›™XÝ[ÛØXÚO[™]ÈX\
+
+NÂ˜ÛÛœÝ™^[Û]][‘›YÚ[™]ÈX\
+
+NÂ‚™[˜Ý[Ûˆ\œÚ\Ý™^[ÛÛÛ\]\œÊ
+^Âˆ\œÚ\ÝœÛÛŠ‘VSÓ—ÐÓÓTUT”×Ñ’SK™^[ÛÛÛ\]\”ÝÜ™JNÂŸBž^Ù”ÝÜ™Kš[\ÜÙXÜ™]š[J™^[Û‹œš]˜]KZÙ^H‹‘VSÓ—Ô’UUWÒÑVWÑ’SKÝ\Nˆœš]˜]KZÙ^H‹[YÜ˜][ÛŽˆ™^[Ûˆ‹Ù^S˜[YN•‘VSÓ—ÒÑVWÓSQ_J_XØ]Ú
+\œŠ^ØÛÛœÛÛKØ\›Š™^[Ûˆš]˜]KZÙ^H]X˜\ÙH[\ÜÚÚ\Yˆ	Ù\œ‹›Y\ÜØYÙ_X
+_B™[˜Ý[Ûˆ™^[Û”š]˜]RÙ^J
+^Âˆž^ØÛÛœÝY”ÝÜ™K™Ù]ÙXÜ™]
+™^[Û‹œš]˜]KZÙ^HŠNÚYŠŠ\™]\›ˆŸXØ]ÚßBˆ™]\›ˆœËœ™XYš[TÞ[˜Ê‘VSÓ—Ô’UUWÒÑVWÑ’SK]ŽŠBŸB˜\Þ[˜È[˜Ý[Ûˆ™^[Û‘™]Ú
+]˜[YKÜ[ÛœÏ^ßJ^Âˆ™]\›ˆY™™\™Y™^[Û‘™]Ú
+	Õ‘VSÓ—ÕÑPTWÕT“IÜ]˜[Y_XÜ[ÛœÊNÂŸB˜\Þ[˜È[˜Ý[Ûˆ™^[Û’œÛÛŠ]˜[YKÜ[ÛœÏ^ßJ^ÂˆÛÛœÝÝ\YQ]K››ÝÊ
+NÂˆž^ÂˆÛÛœÝ™\ÜÛœÙOX]ØZ]™^[Û‘™]Ú
+]˜[YKÜ[ÛœÊNÂˆYŠ\™\ÜÛœÙK›ÚÊ]›ÝÈ]ØZ]™^[Û”™\ÜÛœÙQ\œ›ÜŠ™\ÜÛœÙJNÂˆÛÛœÝ^X]ØZ]™\ÜÛœÙK^
+
+NÛ]›ÙO^ßNÂˆž^Ø›ÙO]^Ò”ÓÓ‹œ\œÙJ^
+Nžß_XØ]ÚØ›ÙO^Ü˜]Î^_Bˆ]Y]
+ÚÚ[™ˆœÙ\šXÙK˜XÝ[Ûˆ‹ÛÛ\Û™[ˆ™^[Ûˆ‹Ü\˜][ÛŽ”Ýš[™ÊÜ[ÛœË›Y]Ù‘ÑUŠK]œ]˜[YKÝ]\Îœ™\ÜÛœÙKœÝ]\Ë\˜][Û“\Î‘]K››ÝÊ
+K\Ý\YÚÎY_JNÂˆ™]\›ˆ›ÙNÂˆXØ]Ú
+\œŠ^ÂˆXYÛ›ÜÝXÑ\œ›ÜŠ\œ‹ØÛÛ\Û™[ˆ™^[Ûˆ‹Ü\˜][ÛŽ˜	ÛÜ[ÛœË›Y]Ù‘ÑUŸH	Ü]˜[Y_XJNÂˆ›ÝÈ\œŽÂˆBŸB˜\Þ[˜È[˜Ý[Ûˆ™^[ÛÛÜÙPÛÛ›™XÝ[ÛŠÜÝ™XÏ]™^[ÛÛÛ›™XÝ[ÛØXÚK™Ù]
+ÜÝ
+J^ÂˆYŠ\™XÏËZY
+\™]\›ŽÂˆËÈ[ˆÛ™\]Y\Ý]\Ý™]™\ˆ™[[Ý™HH™]Ù\ˆ]][XØ]YÙ\ÜÚ[Û‹‚ˆYŠ™^[ÛÛÛ›™XÝ[ÛØXÚK™Ù]
+ÜÝ
+OOO\™XÊ]™^[ÛÛÛ›™XÝ[ÛØXÚK™[]JÜÝ
+NÂˆž^Âˆ]ØZ]™^[Û’œÛÛŠØ\KÝŒKØ]][XØ][Û‹ÉÙ[˜ÛÙUT’PÛÛ\Û™[
+ÜÝ
+_XÂˆY]Ùˆ‘SUH‹XY\œÎžÈÛÛ›™XÝ[Û‹UZYŽœ™XËZYK[Y[Ý]\ÎŒÌˆJNÂˆXØ]ÚßBŸB˜\Þ[˜È[˜Ý[Ûˆ™^[Û•š[TÛÛ
+™\Ù\™OLJ^ÂˆÛÛœÝX^SX]›X^
+K‘VSÓ—ÔÓÓÓPV\™\Ù\™JNÂˆYŠ™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™O[X^
+\™]\›ŽÂˆÛÛœÝšXÝ[\ÏVË‹‹™^[ÛÛÛ›™XÝ[ÛØXÚK™[šY\Ê
+WK™š[\Š
+Ë™X×JOOˆ\™XË˜XÝ]™JBˆœÛÜ
+
+KŠOO“[X™\ŠVÌWK›\Ý\ÙY
+KS[X™\Š–ÌWK›\Ý\ÙY
+JBˆœÛXÙJX]›X^
+™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™K[X^
+JNÂˆ›ÜŠÛÛœÝÚÜÝ™X×HÙˆšXÝ[\ÊZYŠ\™XË˜XÝ]™JX]ØZ]™^[ÛÛÜÙPÛÛ›™XÝ[ÛŠÜÝ™XÊNÂŸB˜\Þ[˜È[˜Ý[Ûˆ™^[ÛÛÜÙRYPÛÛ›™XÝ[ÛœÊ
+^ÂˆÛÛœÝ›ÝÏQ]K››ÝÊ
+NÂˆ›ÜŠÛÛœÝÚÜÝ™X×HÙˆË‹‹™^[ÛÛÛ›™XÝ[ÛØXÚK™[šY\Ê
+WJ^ÂˆYŠ\™XË˜XÝ]™I‰››ÝËS[X™\Š™XË›\Ý\ÙY
+OL
+X]ØZ]™^[ÛÛÜÙPÛÛ›™XÝ[ÛŠÜÝ™XÊNÂˆBŸB˜ÛÛœÝ™^[Û”ÛÛ[Y\\Ù][\˜[
+
+
+OO™^[ÛÛÜÙRYPÛÛ›™XÝ[ÛœÊ
+K˜Ø]Ú
+
+
+OOžßJKML
+NÂ™^[Û”ÛÛ[Y\‹[œ™YËŠ
+NÂ‚˜\Þ[˜È[˜Ý[Ûˆ™^[Û]][XØ]R[\›˜[
+ÜÝ
+^Âˆ]ØZ]™^[Û•š[TÛÛ
+JNÂˆ]Ù^Y]NÂˆž^ÚÙ^Y]O]™^[Û”š]˜]RÙ^J
+NÚYŠTÝš[™ÊÙ^Y]_ˆŠKš[J
+J]›ÝÈ\œ›ÜŠ™[\HÙ^HŠ_BˆØ]ÚÝ›ÝÈØš™XÝ˜\ÜÚYÛŠ™]È\œ›ÜŠ•™^[Ûˆš]˜]HÙ^H\È[˜]˜Z[X›Kˆ[\ÜHX]Ú[™Èš]˜]HÙ^H[ˆ[YÜ˜][ÛˆÙ][™ÜËˆŠKÜ™X\ÛÛŽˆšÙ^K][˜]˜Z[X›H‹ÝYÙNˆ˜]][XØ][ÛˆŸJ_Bˆ]\Ý\œ[[Âˆ›ÜŠ]][\LØ][\U‘VSÓ—ÐUUÔ‘U’QTÎØ][\
+ÊÊ^Âˆž^ÂˆÛÛœÝ™\Ý[X]ØZ]™^[Û’œÛÛŠØ\KÝŒKØ]][XØ][Û‹ÉÙ[˜ÛÙUT’PÛÛ\Û™[
+ÜÝ
+_XÂˆY]Ùˆ”ÔÕ‹XY\œÎžÈÛÛ[U\HŽˆ˜\XØ][Û‹ÚœÛÛˆŸKˆ›ÙN’”ÓÓ‹œÝš[™ÚYžJÛY]Ù•‘VSÓ—ÐUUÑVT×ÕURQÜ™Y[X[ÎžÚÙ^[˜[YN•‘VSÓ—ÒÑVWÓSQKÙ^Y]__JBˆJNÂˆÛÛœÝZY\™\Ý[È˜ÛÛ›™XÝ[Û‹]ZY—NÂˆYŠ]ZY
+]9÷¾9¶‰žËkºwµç]HOOUÙX”ÛØÚÙ]“ÔSŠXÛÛ[YNØÛÛœÝYTÝš[™ÊÜË™]šXÙRYˆŠNÚYŠY]šXÙ\ÖÚY_]šXÙ\ÖÚYK™[˜X›YOOY˜[ÙJ^Ù\ØÛÛ›™XÝYœ\Ú
+Y
+NÝÜË˜ÛÜÙJL‘\Ü^H™[[Ý™YÜˆ\ØX›YŠ__Bˆ]Y]
+ÚÚ[™ˆ˜YZ[‹˜ÛÛ™šYË™\Ü^\È‹\Ü^PÛÝ[“Øš™XÝšÙ^\Ê]šXÙ\ÊK›[™ÝÜ›Ý\ÛÝ[“Øš™XÝšÙ^\Ê\Ü^QÜ›Ý\ÊK›[™Ý\ØÛÛ›™XÝY–Ë‹‹›™]ÈÙ]
+\ØÛÛ›™XÝY
+W_JNÜ™\ËšœÛÛŠÛÚÎYK]šXÙ\Ë\Ü^QÜ›Ý\ßJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ™[˜Ý[Ûˆ\Ü^PÜ™Y[X[YZ[•šY]Ê
+^ÂˆÛÛœÝÙXÝ\š]OY”ÝÜ™K›\Ý\Ü^PÜ™Y[X[Ê
+KžQ\Ü^O^ßNÂˆ›ÜŠÛÛœÝÚYHÙˆØš™XÝ™[šY\Ê]šXÙ\ÊJXžQ\Ü^VÚYO^ÚY˜[YN™›˜[Y_Y[˜X›Y™™[˜X›YOOY˜[ÙKÜ™Y[X[Î–×K[™[™Î–×_NÂˆ›ÜŠÛÛœÝÈÙˆÙXÝ\š]K˜Ü™Y[X[ÊZYŠžQ\Ü^VØË™\Ü^RYJXžQ\Ü^VØË™\Ü^RYK˜Ü™Y[X[Ëœ\Ú
+ÊNÂˆ›ÜŠÛÛœÝÙˆÙXÝ\š]Kœ[™[™ÊZYŠžQ\Ü^VÜ™\Ü^RYJXžQ\Ü^VÜ™\Ü^RYKœ[™[™Ëœ\Ú
+
+NÂˆÛÛœÝ˜[Y\ÏSØš™XÝ˜[Y\ÊžQ\Ü^JK[™[œ›ÛY]˜[Y\Ë™š[\ŠO™™[˜X›Y	‰ˆY˜Ü™Y[X[ËœÛÛYJÏOˆXËœ™]›ÚÙY]
+JK›X\
+O™šY
+NÂˆ™]\›ˆÜÛXÞNœÙXÝ\š]KœÛXÞKÛÝ™\˜YÙNžÙ[˜X›Y˜[Y\Ë™š[\ŠO™™[˜X›Y
+K›[™Ý[œ›ÛY˜[Y\Ë™š[\ŠO™™[˜X›Y	‰™˜Ü™Y[X[ËœÛÛYJÏOˆXËœ™]›ÚÙY]
+JK›[™Ý[™[œ›ÛYK\Ü^\Î˜[Y\ßNÂŸB™[˜Ý[Ûˆ\ØÛÛ›™XÝ™]›ÚÙY\Ü^PÜ™Y[X[ÊYÊ^ØÛÛœÝÙ][™]ÈÙ]
+×K˜ÛÛ˜Ø]
+Yß×JK›X\
+Ýš[™ÊJNÙ›ÜŠÛÛœÝÜÈÙˆÜÐÛY[ÊZYŠÜËœ›ÛOOOH™\Ü^H‰‰œÙ]š\ÊÝš[™ÊÜË™\Ü^PÜ™Y[X[YˆŠJI‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ]ÜË˜ÛÜÙJL‘\Ü^HÜ™Y[X[™]›ÚÙYŠ_B™[˜Ý[Ûˆ\ØÛÛ›™XÝ™]›ÚÙYXYÙ[Ü™Y[X[ÊYÊ^ØÛÛœÝÙ][™]ÈÙ]
+×K˜ÛÛ˜Ø]
+Yß×JK›X\
+Ýš[™ÊJNÙ›ÜŠÛÛœÝÜÈÙˆÜÐÛY[ÊZYŠÜËœ›ÛOOOH›X‹XYÙ[‰‰œÙ]š\ÊÝš[™ÊÜË›XYÙ[Ü™Y[X[YˆŠJI‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ]ÜË˜ÛÜÙJL“XˆYÙ[Ü™Y[X[™]›ÚÙYŠ_B˜\™Ù]
+‹Ø\KÝŒKØYZ[‹Ù\Ü^KXÜ™Y[X[È‹™\]Z\™PYZ[‹
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYK‹‹™\Ü^PÜ™Y[X[YZ[•šY]Ê
+_JJNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹Ù\Ü^KXÜ™Y[X[ËÜÛXÞH‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^ØÛÛœÝÝ]OY\Ü^PÜ™Y[X[YZ[•šY]Ê
+NÚYŠ™\K˜›ÙOË˜]][XØ][Û”™\]Z\™YOO]YI‰œÝ]K˜ÛÝ™\˜YÙK[™[œ›ÛY›[™Ý	‰œ™\K˜›ÙOË˜ÛÛ™š\›Q[˜X›UÚ]Ý][[œ›ÛY[OO]YJ\™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ˜[œ›Û]™\žH[˜X›Y\Ü^H™Y›Ü™H™\]Z\š[™ÈÜ™Y[X[ËˆZ\ÜÚ[™Îˆ	ÜÝ]K˜ÛÝ™\˜YÙK[™[œ›ÛYš›Ú[Š‹Š_X[™[œ›ÛYœÝ]K˜ÛÝ™\˜YÙK[™[œ›ÛYJNØÛÛœÝÛXÞOY”ÝÜ™KœÙ]\Ü^PÜ™Y[X[ÛXÞJ™\K˜›Ù_ßJNÚYŠÛXÞK˜]][XØ][Û”™\]Z\™Y
+Y›ÜŠÛÛœÝÜÈÙˆÜÐÛY[ÊZYŠÜËœ›ÛOOOH™\Ü^H‰‰ÜË™\Ü^P]][ÙOOOH˜ÛÛ™šYÝ\™YY\Ü^H‰‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ]ÜË˜ÛÜÙJL‘\Ü^H]][XØ][Ûˆ\È›ÝÈ™\]Z\™YŠNØ]Y]
+ÚÚ[™ˆ˜YZ[‹™\Ü^KXÜ™Y[X[ËœÛXÞH‹ÛXÞ_JNÜ™\ËšœÛÛŠÛÚÎYKÛXÞ_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J__JNÂ˜\œÜÝ
+‹Ø\KÝŒKØYZ[‹Ù\Ü^\ËÎšYÙ[œ›ÛY[‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^ØÛÛœÝ\Ü^RYXÛX[’Y
+™\Kœ\˜[\ËšY
+K\ÜÝYYY”ÝÜ™K˜Ü™X]Q\Ü^Q[œ›ÛY[
+\Ü^RYÝZ[]\Îœ™\K˜›ÙOËZ[]\ßJNÚYŠ™\K˜›ÙOËœ™]›ÚÙQ^\Ý[™ÏOO]YJ^ØÛÛœÝXÝ]™OY”ÝÜ™K›\Ý\Ü^PÜ™Y[X[Ê
+K˜Ü™Y[X[Ë™š[\ŠOž™\Ü^RYOOY\Ü^RY	‰ˆ^œ™]›ÚÙY]
+K›X\
+OžšY
+NÙ”ÝÜ™Kœ™]›ÚÙQ\Ü^PÜ™Y[X[Ê\Ü^RY
+NÙ\ØÛÛ›™XÝ™]›ÚÙY\Ü^PÜ™Y[X[ÊXÝ]™J_XÛÛœÝ\›XÙ\Ü^KÉÙ[˜ÛÙUT’PÛÛ\Û™[
+\Ü^RY
+_HÙ[œ›ÛY[ÚÙ[IÙ[˜ÛÙUT’PÛÛ\Û™[
+\ÜÝYYÚÙ[Š_XØ]Y]
+ÚÚ[™ˆ˜YZ[‹™\Ü^KY[œ›ÛY[š\ÜÝYH‹\Ü^RY^\™\Ð]š\ÜÝYY™^\™\Ð]™]›ÚÙQ^\Ý[™Îœ™\K˜›ÙOËœ™]›ÚÙQ^\Ý[™ÏOO]Y_JNÜ™\ËœÝ]\ÊŒJKšœÛÛŠÛÚÎYK[œ›ÛY[žÚYš\ÜÝYYšY\Ü^RY\Ü^S˜[YNš\ÜÝYY™\Ü^S˜[YK^\™\Ð]š\ÜÝYY™^\™\Ð]\›_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J__JNÂ˜\™[]J‹Ø\KÝŒKØYZ[‹Ù\Ü^\ËÎšYÙ[œ›ÛY[‹™\]Z\™PYZ[‹
+™\K™\ÊOOžØÛÛœÝ\Ü^RYXÛX[’Y
+™\Kœ\˜[\ËšY
+KØ[˜Ù[YY”ÝÜ™K˜Ø[˜Ù[\Ü^Q[œ›ÛY[Ê\Ü^RY
+NØ]Y]
+ÚÚ[™ˆ˜YZ[‹™\Ü^KY[œ›ÛY[˜Ø[˜Ù[‹\Ü^RYØ[˜Ù[YJNÜ™\ËšœÛÛŠÛÚÎYKØ[˜Ù[YJ_JNÂ˜\™[]J‹Ø\KÝŒKØYZ[‹Ù\Ü^KXÜ™Y[X[ËÎšY‹™\]Z\™PYZ[‹
+™\K™\ÊOOžØÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšYˆŠK™]›ÚÙYY”ÝÜ™Kœ™]›ÚÙQ\Ü^PÜ™Y[X[
+Y
+NÚYŠ™]›ÚÙY
+Y\ØÛÛ›™XÝ™]›ÚÙY\Ü^PÜ™Y[X[ÊÚYJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹™\Ü^KXÜ™Y[X[œ™]›ÚÙH‹Ü™Y[X[YšY™]›ÚÙYJNÜ™\ËœÝ]\Ê™]›ÚÙYÌŒ
+KšœÛÛŠÛÚÎœ™]›ÚÙY\œ›ÜŽœ™]›ÚÙYÝ[™Yš[™YˆXÝ]™HÜ™Y[X[›Ý›Ý[™ŸJ_JNÂ˜\™Ù]
+‹Ø\KÝŒKØYZ[‹ÛX‹XYÙ[XÜ™Y[X[È‹™\]Z\™PYZ[‹
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYK‹‹™”ÝÜ™K›\ÝXYÙ[Ü™Y[X[Ê
+_JJNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹ÛX‹XYÙ[XÜ™Y[X[ËÜÛXÞH‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^ØÛÛœÝÛXÞOY”ÝÜ™KœÙ]XYÙ[Ü™Y[X[ÛXÞJ™\K˜›Ù_ßJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹›X‹XYÙ[XÜ™Y[X[ËœÛXÞH‹ÛXÞ_JNÜ™\ËšœÛÛŠÛÚÎYKÛXÞ_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J__JNÂ˜\œÜÝ
+‹Ø\KÝŒKØYZ[‹ÛX‹XYÙ[ËÎšYÙ[œ›ÛY[‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^ÂˆÛÛœÝYÙ[YXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+KÜÝYY™™XÝ]™RÜÝ
+™\JNÚYŠZÜÝ
+]›ÝÈ\œ›ÜŠH˜[YØ[›ÛšXØ[ÜÝXY\ˆ\È™\]Z\™YŠNÂˆÛÛœÝ\ÜÝYYY”ÝÜ™K˜Ü™X]SXYÙ[[œ›ÛY[
+YÙ[YÝZ[]\Îœ™\K˜›ÙOËZ[]\ßJNÂˆÛÛœÝ›ÝÏ\™\KœÙXÝ\™_™\Kœ›ÝØÛÛOOHšÈÈšÈŽˆš‹ÜšYÚ[X	Ü›ÝßN‹ËÉÚÜÝXØÜš\X	ÛÜšYÚ[ŸKÛX‹XYÙ[Ò[œÝ[PYÙ[œÌX[ÝÒ\›ÝÏOOHšÈÈˆŽˆˆP[ÝÒŽÂˆÛÛœÝÛÛ[X[™X	OR›Ú[‹T]	[Ž•ST	Ò[œÝ[PÛ\ÜÜ›ÛÛRXYÙ[œÌIÎÈ\›H	ÜÝÙ\”Ú[]\˜[
+ØÜš\
+_HSÝ]š[H	NÈ	ˆ	HRX•\›	ÜÝÙ\”Ú[]\˜[
+ÜšYÚ[Š_HPYÙ[Y	ÜÝÙ\”Ú[]\˜[
+YÙ[Y
+_HQ[œ›ÛY[ÚÙ[ˆ	ÜÝÙ\”Ú[]\˜[
+\ÜÝYYÚÙ[Š_IØ[ÝÒXÂˆ]Y]
+ÚÚ[™ˆ˜YZ[‹›X‹XYÙ[Y[œ›ÛY[š\ÜÝYH‹YÙ[Y^\™\Ð]š\ÜÝYY™^\™\Ð]JNÜ™\ËœÝ]\ÊŒJKšœÛÛŠÛÚÎYK[œ›ÛY[žÚYš\ÜÝYYšYYÙ[YÚÙ[Žš\ÜÝYYÚÙ[‹^\™\Ð]š\ÜÝYY™^\™\Ð][œÝ[\•\›œØÜš\[œÝ[ÛÛ[X[™˜ÛÛ[X[™_JBŸXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J__JNÂ˜\™[]J‹Ø\KÝŒKØYZ[‹ÛX‹XYÙ[XÜ™Y[X[ËÎšY‹™\]Z\™PYZ[‹
+™\K™\ÊOOžØÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšYˆŠK™]›ÚÙYY”ÝÜ™Kœ™]›ÚÙSXYÙ[Ü™Y[X[
+Y
+NÚYŠ™]›ÚÙY
+Y\ØÛÛ›™XÝ™]›ÚÙYXYÙ[Ü™Y[X[ÊÚYJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹›X‹XYÙ[XÜ™Y[X[œ™]›ÚÙH‹Ü™Y[X[YšY™]›ÚÙYJNÜ™\ËœÝ]\Ê™]›ÚÙYÌŒ
+KšœÛÛŠÛÚÎœ™]›ÚÙY\œ›ÜŽœ™]›ÚÙYÝ[™Yš[™YˆXÝ]™HÜ™Y[X[›Ý›Ý[™ŸJ_JNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹Ú\™Ø\™H‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÂˆž^ØÛÛœÝ˜[YO\™\K˜›Ù_ßNÙ”ÝÜ™KÜš]S›Ü›X[^™Y
+š\™Ø\™H‹˜[YJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹˜ÛÛ™šYËš\™Ø\™HŸJNÜ™\ËšœÛÛŠÛÚÎYK\™Ø\™N˜[YK™\Ý\™XÛÛ[Y[™YY_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹Ú[YÜ˜][Û‹XÛÛ›™XÝ[ÛœÈ‹™\]Z\™PYZ[‹\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ›ÙO\™\K˜›Ù_ßK™^[›Ü›X[^™Y[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ›ÙKÝ\œ™[[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ
+JNÂˆYŠ›ÙK›\]Ëœ\ÜÝÛÜ™
+^Ù”ÝÜ™Kœ]ÙXÜ™]
+š[YÜ˜][Û‹›\]œ\ÜÝÛÜ™‹Ýš[™Ê›ÙK›\]œ\ÜÝÛÜ™
+KÝ\Nˆš[YÜ˜][Û‹\\ÜÝÛÜ™‹[YÜ˜][ÛŽˆ›\]ŸJ_BˆYŠ›ÙK™^[ÛËœš]˜]RÙ^J^ÂˆÛÛœÝÙ^OTÝš[™Ê›ÙK™^[Û‹œš]˜]RÙ^JKš[J
+NÂˆYŠZÙ^Kš[˜ÛY\Ê‘QÒSˆŠ_ZÙ^Kš[˜ÛY\Ê”’UUHÑVHŠJ]›ÝÈ\œ›ÜŠ•™^[Ûˆš]˜]HÙ^H]\Ý™HSKY›Ü›X]Yš]˜]KZÙ^HX]\šX[ŠNÂˆ”ÝÜ™Kœ]ÙXÜ™]
+™^[Û‹œš]˜]KZÙ^H‹Ù^KÝ\Nˆœš]˜]KZÙ^H‹[YÜ˜][ÛŽˆ™^[Ûˆ‹Ù^S˜[YN›™^™^[Û‹šÙ^S˜[Y_JNÂˆBˆ”ÝÜ™KœÙ]™Y™\™[˜ÙJš[YÜ˜][ÛœË˜ÛÛ›™XÝ[ÛœÈ‹™^
+NÂˆ\R[YÜ˜][ÛÛÛ›™XÝ[ÛœÊ™^
+NÂˆ[[YKš\™Ø\™Kœ]Ï^Ë‹‹œ[[YKš\™Ø\™Kœ]ËÛÛ™šYÝ\™Y›ÛÛX[ŠU×ÕT“
+K\›”U×ÕT“\Ý\œ›ÜŽ›[NÂˆ™^[ÛÛÛ›™XÝ[ÛØXÚK˜ÛX\Š
+NÝ™^[Û]][‘›YÚ˜ÛX\Š
+NÂˆ™XÛÛ›™XÝ\]
+
+NÂˆ]Y]
+ÚÚ[™ˆ˜YZ[‹š[YÜ˜][ÛœË˜ÛÛ›™XÝ[ÛœÈ‹\]ÛÛ™šYÝ\™Y›ÛÛX[ŠTUÕT“
+K]ÐÛÛ™šYÝ\™Y›ÛÛX[ŠU×ÕT“
+K™^[ÛÛÛ™šYÝ\™Y›ÛÛX[Š‘VSÓ—ÕÑPTWÕT“
+_JNÂˆ™\ËšœÛÛŠÛÚÎYK[YÜ˜][ÛÛÛ›™XÝ[ÛœÎš[YÜ˜][ÛÛÛ›™XÝ[ÛœÕšY]Ê
+K\YYY_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKØYZ[‹ÜÙXÜ™]È‹™\]Z\™PYZ[‹
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYKÙXÜ™]Î™”ÝÜ™K›\ÝÙXÜ™]Ê
+KÙ\YšXØ]\Î™”ÝÜ™K›\ÝÙ\YšXØ]\Ê
+_JJNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹ÜÙXÜ™]ËÎ›˜[YH‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÂˆž^ØÛÛœÝ˜[YOTÝš[™Ê™\Kœ\˜[\Ë›˜[Y_ˆŠKš[J
+K˜[YO\™\K˜›ÙOË˜[YNÚYŠ[˜[Y_˜[YOOO][™Yš[™Y
+\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”ÙXÜ™]˜[YH[™˜[YH\™H™\]Z\™YŸJNÙ”ÝÜ™Kœ]ÙXÜ™]
+˜[YKÝš[™Ê˜[YJK™\K˜›ÙOË›Y]Y]_ßJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹œÙXÜ™]\]H‹˜[Y_JNÜ™\ËšœÛÛŠÛÚÎYK˜[Y_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™[]J‹Ø\KÝŒKØYZ[‹ÜÙXÜ™]ËÎ›˜[YH‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÙ”ÝÜ™K™[]TÙXÜ™]
+™\Kœ\˜[\Ë›˜[YJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹œÙXÜ™]™[]H‹˜[YNœ™\Kœ\˜[\Ë›˜[Y_JNÜ™\ËšœÛÛŠÛÚÎY_J_JNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹ØÙ\YšXØ]\ËÎ›˜[YH‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÂˆž^ØÛÛœÝ[OTÝš[™Ê™\K˜›ÙOËœ[_ˆŠNÚYŠ\[Kš[˜ÛY\Ê‘QÒSˆÑT•Q’PÐUHŠJ]›ÝÈ\œ›ÜŠHSHÙ\YšXØ]H\È™\]Z\™YŠNÙ”ÝÜ™Kœ]Ù\YšXØ]J™\Kœ\˜[\Ë›˜[YK[K™\K˜›ÙOË›Y]Y]_ßJNØ]Y]
+ÚÚ[™ˆ˜YZ[‹˜Ù\YšXØ]K\]H‹˜[YNœ™\Kœ\˜[\Ë›˜[Y_JNÜ™\ËšœÛÛŠÛÚÎYK˜[YNœ™\Kœ\˜[\Ë›˜[Y_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKØYZ[‹ØXØÙ\ÜË\›Ùš[\È‹™\]Z\™PYZ[‹
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYK›Ùš[\Î™”ÝÜ™K›\ÝXØÙ\ÜÔ›Ùš[\Ê
+_JJNÂ˜\œ]
+‹Ø\KÝŒKØYZ[‹ØXØÙ\ÜË\›Ùš[\ËÎšY‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšYˆŠK™Y›Ü™OY”ÝÜ™K›\ÝXØÙ\ÜÔ›Ùš[\Ê
+K™š[™
+OžšYOOZY
+_[ÂˆÛÛœÝ›Ùš[OY”ÝÜ™Kœ]XØÙ\ÜÔ›Ùš[JË‹‹œ™\K˜›ÙKYJNÂˆÛÛœÝ]]Üš^˜][ÛÚ[™ÙYHX™Y›Ü™_™Y›Ü™Kœ›ÛHOO\›Ùš[Kœ›Û_™Y›Ü™K™[˜X›YOO\›Ùš[K™[˜X›Y”ÓÓ‹œÝš[™ÚYžJ™Y›Ü™K˜ÛÛ™šYÊHOOR”ÓÓ‹œÝš[™ÚYžJ›Ùš[K˜ÛÛ™šYÊNÂˆ]™]›ÚÙYÙ\ÜÚ[ÛœÏLÂˆYŠ]]Üš^˜][ÛÚ[™ÙY
+^Ù›ÜŠÛÛœÝ\Ù\ˆÙˆ”ÝÜ™K›\Ý\Ù\œÊ
+K™š[\ŠOžœ›Ùš[RYOOZY
+J^Ü™]›ÚÙYÙ\ÜÚ[ÛœÊÏY”ÝÜ™K™[]P[\Ù\”Ù\ÜÚ[ÛœÊ\Ù\‹šY
+NÙ\ØÛÛ›™XÝ[˜[Y\Ù\•ÙX”ÛØÚÙ]Ê\Ù\‹šY
+__Bˆ]Y]
+ÚÚ[™ˆ˜YZ[‹˜XØÙ\ÜË\›Ùš[K\]H‹Y›ÛNœ›Ùš[Kœ›ÛK[˜X›Yœ›Ùš[K™[˜X›Y™]›ÚÙYÙ\ÜÚ[ÛœßJNÜ™\ËšœÛÛŠÛÚÎYK›Ùš[K™]›ÚÙYÙ\ÜÚ[ÛœßJBŸXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J__JNÂ˜\™[]J‹Ø\KÝŒKØYZ[‹ØXØÙ\ÜË\›Ùš[\ËÎšY‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^Ù”ÝÜ™K™[]PXØÙ\ÜÔ›Ùš[J™\Kœ\˜[\ËšY
+NØ]Y]
+ÚÚ[™ˆ˜YZ[‹˜XØÙ\ÜË\›Ùš[K™[]H‹Yœ™\Kœ\˜[\ËšYJNÜ™\ËšœÛÛŠÛÚÎY_J_XØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J__JNÂ‚‚‹ËÈ]\ÚXÈ\ÜÚ\Ý[[YÜ˜][ÛˆHÙ\™\‹\ÚYHÚÙ[ˆ›ÞKˆHÛ™Ë[]™YPHÚÙ[ˆ\Â‹ËÈ[˜Üž\Y[ˆÛ\ÜÜ›ÛÛHÛÛ›ÛXˆ[™\È™]™\ˆ™]\›™YÈÛÛ›Û\ˆœ›ÝÜÙ\œË‚™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+^ØÛÛœÝY”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜ÛÛ™šYÈ‹ßJ_ßNØÛÛœÝ\›\Ù\šXÙU\›
+\››ØÙ\ÜË™[‹“UTÒP×ÐTÔÒTÕS•ÕT“š‹ËÌLËŒŒŒNŽMH‹È›]\ÚXËX\ÜÚ\Ý[‹›]\ÚXËX\ÜÚ\Ý[\Ù\™\ˆ—JKœ™\XÙJ×ÉËˆŠNÛ]ÜÝHŒLËŒŒŒHŽÝž^ÚÜÝ[™]ÈT“
+\›
+KšÜÝ˜[Y_ÜÝXØ]ÚßNÜ™]\›ˆÝ\›œšYÙQ[˜X›YœœšYÙQ[˜X›YOOY˜[ÙKÙ[™Ü[’ÜÝœÙ\šXÙRÜÝ
+œÙ[™Ü[’ÜÝÜÝÈ›]\ÚXËX\ÜÚ\Ý[‹›]\ÚXËX\ÜÚ\Ý[\Ù\™\ˆ—JKÙ[™Ü[”ÜœœÙ[™Ü[”ÜÏÎLß_B™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+^Ýž^Ü™]\›ˆÝš[™Ê”ÝÜ™K™Ù]ÙXÜ™]
+›]\ÚXØ\ÜÚ\Ý[ÚÙ[ˆŠ_ˆŠ_XØ]ÚÜ™]\›ˆˆŸ_B‚˜ÛÛœÝUTÒP×ÐTÔÒTÕS•Õ—ÑQUSÕ“ÓSQOLŒÂ™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[‘]šXÙRYœ›ÛT^Y\’Y
+^Y\’Y
+^ØÛÛœÝOK×˜Û\ÜÜ›ÛÛKZX‹J—
+ÊIÚK™^XÊÝš[™Ê^Y\’YˆŠJNÜ™]\›ˆOÛVÌWKÓÝÙ\Ø\ÙJ
+N›[B™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J]šXÙRY
+^ØÛÛœÝ[Y”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[]Y[ÔÝ]H‹ßJ_ßKØ]™YX[	‰\[Ùˆ[OOH›Øš™XÝØ[ÔÝš[™Ê]šXÙRYˆŠKÓÝÙ\Ø\ÙJ
+W_ßNžßNØÛÛœÝ˜]ÏS[X™\ŠØ]™Y›Û[YJNÜ™]\›ˆÝ›Û[YN“[X™\‹š\Ñš[š]J˜]ÊOÓX]›X^
+X]›Z[ŠL˜]ÊJN“UTÒP×ÐTÔÒTÕS•Õ—ÑQUSÕ“ÓSQK]]YˆH\Ø]™Y›]]Y\]Y]œØ]™Y\]Y][_B™[˜Ý[ÛˆÙ]]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J]šXÙRY]Ú^ßJ^Ù]šXÙRYTÝš[™Ê]šXÙRYˆŠKÓÝÙ\Ø\ÙJ
+NØÛÛœÝ[Y”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[]Y[ÔÝ]H‹ßJ_ßKÝ\œ™[[]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J]šXÙRY
+K™^^Ë‹‹˜Ý\œ™[‹‹œ]Ú\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_NÚYŠ]Ú›Û[YHOO][™Yš[™Y
+^ØÛÛœÝS[X™\Š]Ú›Û[YJNÛ™^›Û[YOS[X™\‹š\Ñš[š]JŠOÓX]›X^
+X]›Z[ŠLŠJN˜Ý\œ™[›Û[Y_ZYŠ]Ú›]]YOO][™Yš[™Y
+[™^›]]YHH\]Ú›]]YÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[]Y[ÔÝ]H‹Ë‹‹Š[	‰\[Ùˆ[OOH›Øš™XÝØ[žßJKÙ]šXÙRYN›™^JNÜ™]\›ˆ™^B™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[]XÚ^[ØY
+]šXÙRY\ÜÝYY^˜O^ßJ^ØÛÛœÝ]Y[Ï[]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J]šXÙRY
+NÜ™]\›ˆÝ˜[œÜÜˆ˜]][XØ]Y[XK\Ù[™Ü[‹\›ÞH‹›ÞU\››]\ÚXÐ\ÜÚ\Ý[›ÞT]
+\ÜÝYYXÚÙ]
+K^Y\’Yš\ÜÝYYœ^Y\’YÙÕ™\œÚ[ÛŽˆŒËŒ‹ŒH‹\Ú\™Y›Û[YN˜]Y[Ë›Û[YK\Ú\™Y]]Y˜]Y[Ë›]]Y‹‹™^˜__B˜\Þ[˜È[˜Ý[Ûˆ™\ÝÜ™S]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J]šXÙRYÜÊ^ØÛÛœÝ^Y\’YXÛ\ÜÜ›ÛÛKZX‹IÙ]šXÙRYX\Ú\™Y[]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J]šXÙRY
+NÙ›ÜŠ]][\LNØ][\NØ][\
+ÊÊ^ÚYŠÜÉ‰ÜËœ™XYTÝ]HOOUÙX”ÛØÚÙ]“ÔSŠ\™]\›ˆ˜[ÙNÝž^Ø]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÝ›Û[YWÜÙ]‹Ü^Y\—ÚYœ^Y\’Y›Û[YWÛ]™[™\Ú\™Y›Û[Y_JNØ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÝ›Û[YWÛ]]H‹Ü^Y\—ÚYœ^Y\’Y]]Y™\Ú\™Y›]]YJNÚYŠÜÊ]ÜË›XP]Y[Ô™\ÝÜ™Y]YNØ]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[‹X]Y[Ëœ™\ÝÜ™H‹]šXÙRY^Y\’Y›Û[YN™\Ú\™Y›Û[YK]]Y™\Ú\™Y›]]Y][\JNÜ™]\›ˆY_XØ]Ú
+J^ÚYŠ][\OON
+^ÙXYÛ›ÜÝXÑ\œ›ÜŠKØÛÛ\Û™[ˆ›]\ÚXËX\ÜÚ\Ý[‹Ü\˜][ÛŽˆ‹X]Y[Ë\™\ÝÜ™H‹]šXÙRY^Y\’YJNÜ™]\›ˆ˜[Ù_X]ØZ]™]È›ÛZ\ÙJOœÙ][Y[Ý]
+‹Ì
+J__\™]\›ˆ˜[Ù_B‚‹ËÈ\œÚ\Ý[]\ÚXÈ\ÜÚ\Ý[ÙX”ÛØÚÙ]THÛY[ˆ]\ÚXÈ\ÜÚ\Ý[	ÜÈÙX”ÛØÚÙ]TH\Â‹ËÈH]]Üš]]]™H™X[[YHÛÛ›ÛÝ\™˜XÙNÈ‘TÕ™[XZ[œÈHÛÛ\]Xš[]H˜[˜XÚË‚›]XP\TÛØÚÙ][[XP\PÛÛ›™XÝ›ÛZ\ÙO[[XP\P]][XØ]YY˜[ÙKXP\TÙ\™\’[™›Ï[[XP\S\Ý\œ›Ü[[XP\S\ÝÛÛ›™XÝY][[Â˜ÛÛœÝXP\T[™[™Ï[™]ÈX\
+
+NÂ™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[\UÜÕ\›
+
+^ØÛÛœÝO[™]ÈT“
+]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+K\›
+NÝKœ›ÝØÛÛ]Kœ›ÝØÛÛOOHšÎˆÈÜÜÎˆŽˆÜÎˆŽÝKœ]˜[YOJKœ]˜[YKœ™\XÙJ×ÉËˆŠJÈ‹ÝÜÈŠKœ™\XÙJ×ÞÌ‹KÙË‹ÈŠNÝKœÙX\˜ÚHˆŽÝKš\ÚHˆŽÜ™]\›ˆKÔÝš[™Ê
+_B™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[\PÛÜÙJ™X\ÛÛHœ™\Ù]Š^ØÛÛœÝÜÏ[XP\TÛØÚÙ]ÛXP\TÛØÚÙ][[ÛXP\P]][XØ]YY˜[ÙNÛXP\PÛÛ›™XÝ›ÛZ\ÙO[[ÚYŠÜÊ^Ýž^ÝÜË˜ÛÜÙJL™X\ÛÛŠ_XØ]Úß_Y›ÜŠÛÛœÝÚYHÙˆXP\T[™[™Ê^ØÛX\•[Y[Ý]
+[Y\ŠNÜœ™Z™XÝ
+™]È\œ›ÜŠ]\ÚXÈ\ÜÚ\Ý[TH\ØÛÛ›™XÝYˆ	Ü™X\ÛÛŸX
+JNÛXP\T[™[™Ë™[]JY
+__B™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[\R[™SY\ÜØYÙJ˜]Ê^Û]\ÙÎÝž^Û\ÙÏR”ÓÓ‹œ\œÙJY™™\‹š\ÐY™™\Š˜]ÊOÜ˜]ËÔÝš[™Ê]ŽŠN”Ýš[™Ê˜]ÊJ_XØ]ÚÜ™]\›ŸBˆYŠ\ÙÉ‰›\ÙËœÙ\™\—ÚY	‰›\ÙËœØÚ[XWÝ™\œÚ[ÛˆOO][™Yš[™Y	‰ˆ[\ÙË›Y\ÜØYÙWÚY
+^ÛXP\TÙ\™\’[™›Ï[\ÙÎÜ™]\›ŸBˆÛÛœÝZY[\ÙÏË›Y\ÜØYÙWÚYÚYŠZY	‰›XP\T[™[™Ëš\ÊZY
+J^ØÛÛœÝ[XP\T[™[™Ë™Ù]
+ZY
+NÚYŠ\ÙËœ\X[
+^ÚYŠ\œ˜^Kš\Ð\œ˜^J\ÙËœ™\Ý[
+J\œ\Ëœ\Ú
+‹‹›\ÙËœ™\Ý[
+NÙ[ÙHYŠ\ÙËœ™\Ý[OO][™Yš[™Y
+\œ\Ëœ\Ú
+\ÙËœ™\Ý[
+NÜ™]\›ŸXÛX\•[Y[Ý]
+[Y\ŠNÛXP\T[™[™Ë™[]JZY
+NÚYŠ\ÙË™\œ›Ü—ØÛÙHOO][™Yš[™Y\ÙË™\œ›ÜŠ^ØÛÛœÝ]Z[[\ÙË™]Z[ß\ÙË™\œ›ÜË›Y\ÜØYÙ_\ÙË™\œ›ÜŸ]\ÚXÈ\ÜÚ\Ý[TH\œ›Üˆ	Û\ÙË™\œ›Ü—ØÛÙ_XÜœ™Z™XÝ
+™]È\œ›ÜŠÝš[™Ê]Z[
+JJNÜ™]\›Ÿ[]™\Ý[[\ÙËœ™\Ý[ÚYŠœ\Ë›[™Ý
+^ÚYŠ\œ˜^Kš\Ð\œ˜^J™\Ý[
+J\™\Ý[VË‹‹œœ\Ë‹‹œ™\Ý[NÙ[ÙHYŠ™\Ý[OO][™Yš[™Y
+\™\Ý[VË‹‹œœ\Ë™\Ý[NÙ[ÙH™\Ý[\œ\ß\œ™\ÛÛ™J™\Ý[
+NÜ™]\›ŸBˆËÈ]™[È\™H[[[Û˜[H›Ý™]\›™YÈØ[\œËˆHÝ]\È[™Ú[™Yœ™\Ú\È^Y\‚ˆËÈ[™[ÜžH›ÝYÚ\ÈØ[YH\œÚ\Ý[ÛØÚÙ]Ú[HHÛØÚÙ]Ý^\È[]™H™]ÙY[ˆØ[Ë‚ŸB˜\Þ[˜È[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[\T˜]ÐÛÛ[X[™
+ÛÛ[X[™\™ÜÏ^ßK[Y[Ý]\ÏLML
+^Ø]ØZ][œÝ\™S]\ÚXÐ\ÜÚ\Ý[\J
+NÚYŠ[XP\TÛØÚÙ]XP\TÛØÚÙ]œ™XYTÝ]HOOUÙX”ÛØÚÙ]“ÔSŠ]›ÝÈ™]È\œ›ÜŠ“]\ÚXÈ\ÜÚ\Ý[ÙX”ÛØÚÙ]TH\È›ÝÛÛ›™XÝYŠNØÛÛœÝY\ÜØYÙWÚYXX‹IÑ]K››ÝÊ
+_KIØÜž\Ëœ˜[™ÛPž]\ÊJKÔÝš[™Êš^Š_XÜ™]\›ˆ™]È›ÛZ\ÙJ
+™\ÛÛ™K™Z™XÝ
+OOžØÛÛœÝ[Y\\Ù][Y[Ý]
+
+
+OOžÛXP\T[™[™Ë™[]JY\ÜØYÙWÚY
+NÜ™Z™XÝ
+™]È\œ›ÜŠ]\ÚXÈ\ÜÚ\Ý[ÛÛ[X[™[YYÝ]ˆ	ØÛÛ[X[™X
+J_K[Y[Ý]\ÊNÛXP\T[™[™ËœÙ]
+Y\ÜØYÙWÚYÜ™\ÛÛ™K™Z™XÝ[Y\‹\Î–×_JNÝž^ÛXP\TÛØÚÙ]œÙ[™
+”ÓÓ‹œÝš[™ÚYžJÛY\ÜØYÙWÚYÛÛ[X[™\™ÜßJJ_XØ]Ú
+J^ØÛX\•[Y[Ý]
+[Y\ŠNÛXP\T[™[™Ë™[]JY\ÜØYÙWÚY
+NÜ™Z™XÝ
+J__J_B˜\Þ[˜È[˜Ý[Ûˆ[œÝ\™S]\ÚXÐ\ÜÚ\Ý[\J
+^ÚYŠXP\TÛØÚÙ]	‰›XP\TÛØÚÙ]œ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔS‰‰›XP\P]][XØ]Y
+\™]\›ˆXP\TÛØÚÙ]ÚYŠXP\PÛÛ›™XÝ›ÛZ\ÙJ\™]\›ˆXP\PÛÛ›™XÝ›ÛZ\ÙNØÛÛœÝÚÙ[[]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+NÚYŠ]ÚÙ[Š]›ÝÈ™]È\œ›ÜŠ“]\ÚXÈ\ÜÚ\Ý[ÚÙ[ˆ\È›ÝÛÛ™šYÝ\™YˆÜ™X]HHÛ™Ë[]™YÚÙ[ˆ[ˆ]\ÚXÈ\ÜÚ\Ý[[™Ø]™H][ˆÛ\ÜÜ›ÛÛHÛÛ›ÛXˆ]\ÚXÈÙ][™ÜËˆŠNÛXP\PÛÛ›™XÝ›ÛZ\ÙO[™]È›ÛZ\ÙJ
+™\ÛÛ™K™Z™XÝ
+OOžÛ]Ù]YY˜[ÙK[ÔÙY[Y˜[ÙNØÛÛœÝÜÏ[™]ÈÙX”ÛØÚÙ]
+]\ÚXÐ\ÜÚ\Ý[\UÜÕ\›
+
+JNÛXP\TÛØÚÙ]]ÜÎØÛÛœÝ˜Z[J\œŠOOžÛXP\S\Ý\œ›ÜTÝš[™Ê\œË›Y\ÜØYÙ_\œŠNÚYŠ\Ù]Y
+^ÜÙ]Y]YNÜ™Z™XÝ
+\œˆ[œÝ[˜Ù[Ùˆ\œ›ÜÙ\œŽ›™]È\œ›ÜŠÝš[™Ê\œŠJJ_[]\ÚXÐ\ÜÚ\Ý[\PÛÜÙJ˜ÛÛ›™XÝ[Û‹Y˜Z[YŠ_NØÛÛœÝ]]J
+OOžÚYŠZ[ÔÙY[ŸÜËœ™XYTÝ]HOOUÙX”ÛØÚÙ]“ÔSŠ\™]\›ŽØÛÛœÝY\ÜØYÙWÚYXX‹X]]IÑ]K››ÝÊ
+_KIØÜž\Ëœ˜[™ÛPž]\Ê
+KÔÝš[™Êš^Š_XØÛÛœÝ[Y\\Ù][Y[Ý]
+
+
+OOžÛXP\T[™[™Ë™[]JY\ÜØYÙWÚY
+NÙ˜Z[
+™]È\œ›ÜŠ“]\ÚXÈ\ÜÚ\Ý[]][XØ][Ûˆ[YYÝ]ŠJ_KL
+NÛXP\T[™[™ËœÙ]
+Y\ÜØYÙWÚYÜ\Î–×K[Y\‹™\ÛÛ™NŠ™\Ý[
+OOžÚYŠ\™\Ý[
+\™]\›ˆ˜Z[
+™]È\œ›ÜŠ“]\ÚXÈ\ÜÚ\Ý[]][XØ][ÛˆØ\È™Z™XÝYŠJNÛXP\P]][XØ]Y]YNÛXP\S\Ý\œ›Ü[[ÛXP\S\ÝÛÛ›™XÝY][™]È]J
+KÒTÓÔÝš[™Ê
+NÚYŠ\Ù]Y
+^ÜÙ]Y]YNÜ™\ÛÛ™JÜÊ__K™Z™XÝ™˜Z[JNÝÜËœÙ[™
+”ÓÓ‹œÝš[™ÚYžJÛY\ÜØYÙWÚYÛÛ[X[™ˆ˜]]‹\™ÜÎžÝÚÙ[Ÿ_JJ_NÝÜË›ÛŠ›Ü[ˆ‹
+
+OOžßJNÝÜË›ÛŠ›Y\ÜØYÙH‹]OOžÛ]\œÙY[[Ýž^Ü\œÙYR”ÓÓ‹œ\œÙJY™™\‹š\ÐY™™\Š]JOÙ]KÔÝš[™Ê]ŽŠN”Ýš[™Ê]JJ_XØ]ÚßNÚYŠ\œÙY	‰œ\œÙYœÙ\™\—ÚY	‰œ\œÙYœØÚ[XWÝ™\œÚ[ÛˆOO][™Yš[™Y	‰ˆ\\œÙY›Y\ÜØYÙWÚY
+^ÛXP\TÙ\™\’[™›Ï\\œÙYÚ[ÔÙY[]YNØ]]
+
+NÜ™]\›Ÿ[]\ÚXÐ\ÜÚ\Ý[\R[™SY\ÜØYÙJ]J_JNÝÜË›ÛŠ™\œ›Üˆ‹˜Z[
+NÝÜË›ÛŠ˜ÛÜÙH‹
+ÛÙK™X\ÛÛŠOOžÛXP\TÛØÚÙ][[ÛXP\P]][XØ]YY˜[ÙNÛXP\PÛÛ›™XÝ›ÛZ\ÙO[[ØÛÛœÝÚOXÛÜÙY	ØÛÙ_IÜ™X\ÛÛË›[™ÝØˆ	Ü™X\ÛÛ‹ÔÝš[™Ê
+_XˆˆŸXÛXP\S\Ý\œ›Ü]ÚNÙ›ÜŠÛÛœÝÚYHÙˆXP\T[™[™Ê^ØÛX\•[Y[Ý]
+[Y\ŠNÜœ™Z™XÝ
+™]È\œ›ÜŠ]\ÚXÈ\ÜÚ\Ý[TH	ÝÚ_X
+JNÛXP\T[™[™Ë™[]JY
+_NÚYŠ\Ù]Y
+^ÜÙ]Y]YNÜ™Z™XÝ
+™]È\œ›ÜŠ]\ÚXÈ\ÜÚ\Ý[ÙX”ÛØÚÙ]TH	ÝÚ_X
+J__JNÜÙ][Y[Ý]
+
+
+OOžÚYŠZ[ÔÙY[‰‰ˆ\Ù]Y
+Y˜Z[
+™]È\œ›ÜŠ“]\ÚXÈ\ÜÚ\Ý[ÙX”ÛØÚÙ]Y›Ý›ÝšYHÙ\™\ˆ[™›Ü›X][ÛˆŠJ_KL
+_JK™š[˜[J
+
+OOžÛXP\PÛÛ›™XÝ›ÛZ\ÙO[[JNÜ™]\›ˆXP\PÛÛ›™XÝ›ÛZ\Ù_B˜\Þ[˜È[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+ÛÛ[X[™\™ÜÏ^ßJ^ØÛÛœÝÙ™Ï[]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+KÚÙ[[]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+NØÛÛœÝX]ØZ]™]Ú
+Ù™Ë\›
+È‹Ø\H‹ÛY]Ùˆ”ÔÕ‹XY\œÎžÈÛÛ[U\HŽˆ˜\XØ][Û‹ÚœÛÛˆ‹]]Üš^˜][ÛˆŽ˜™X\™\ˆ	ÝÚÙ[ŸXK›ÙN’”ÓÓ‹œÝš[™ÚYžJÛY\ÜØYÙWÚY˜X‹IÑ]K››ÝÊ
+_KIÓX]œ˜[™ÛJ
+KÔÝš[™ÊÍŠKœÛXÙJ‹
+_XÛÛ[X[™\™ÜßJKÚYÛ˜[X›ÜÚYÛ˜[[Y[Ý]
+ML
+_JNØÛÛœÝ^X]ØZ]‹^
+
+NÛ]ŽÝž^ÚR”ÓÓ‹œ\œÙJ^
+_XØ]ÚÝ›ÝÈ\œ›ÜŠ]\ÚXÈ\ÜÚ\Ý[™]\›™Y	Ü‹œÝ]\ßNˆ	Ý^œÛXÙJL
+_X
+_ZYŠ\‹›Úß‹™\œ›ÜŠ]›ÝÈ\œ›ÜŠ‹™\œ›ÜË›Y\ÜØYÙ_‹™\œ›ÜŸ]\ÚXÈ\ÜÚ\Ý[	Ü‹œÝ]\ßX
+NÜ™]\›ˆ‹œ™\Ý[OO][™Yš[™YÚ‹œ™\Ý[šŸB˜\Þ[˜È[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+ÛÛ[X[™\™ÜÏ^ßJ^Ýž^Ü™]\›ˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[\T˜]ÐÛÛ[X[™
+ÛÛ[X[™\™ÜÊ_XØ]Ú
+ÜÑ\œŠ^ÙXYÛ›ÜÝXÑ\œ›ÜŠÜÑ\œ‹ØÛÛ\Û™[ˆ›]\ÚXËX\ÜÚ\Ý[‹Ü\˜][ÛŽˆÙXœÛØÚÙ]X\H‹ÛÛ[X[™JNÝž^Ü™]\›ˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+ÛÛ[X[™\™ÜÊ_XØ]Ú
+\œŠ^Ý›ÝÈ™]È\œ›ÜŠ]\ÚXÈ\ÜÚ\Ý[ÛÛ[X[™˜Z[YÝ™\ˆÙX”ÛØÚÙ]
+	ÝÜÑ\œ‹›Y\ÜØYÙ_JH[™
+	Ú\œ‹›Y\ÜØYÙ_JX
+___B‚‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈ˜XÚÙÜ›Ý[™]\ÚXÈ8 %[™\[™[Z[HØÚY[\ˆ
+È]Y[Èš[Üš]H\˜š]˜][Û‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB˜ÛÛœÝPÒÑÔ“ÕS‘ÓUTÒP×ÑQUSÔÐÒQSO^Âˆ[˜X›Y™˜[ÙKˆÝ\[YNˆŒÎŒ‹ˆ[™[YNˆŒMNŒ‹ˆ^\Î–ÌK‹ËWKˆØÚÛÛ^\ÓÛ›NYKˆ^Y\’Yˆˆ‹ˆ˜]›Üš]RYˆˆ‹ˆ›Û[YNŒŒˆ]\ÙQ›Ü”š[Üš]P]Y[ÎYBŸNÂ˜ÛÛœÝ˜XÚÙÜ›Ý[™]\ÚXÔ[[YO^ÂˆØÚY[PXÝ]™N™˜[ÙKˆ^Z[™Î™˜[ÙKˆ]\ÙY™˜[ÙKˆ]\ÙY›Ü”š[Üš]N™˜[ÙKˆX[X[ÝÜY™˜[ÙKˆÝ\YÙ^N›[ˆXÝ]™T^Y\’Y›[ˆXÝ]™Q˜]›Üš]RY›[ˆ\ÝXÝ[ÛŽ›[ˆ\ÝXÝ[Û]›[ˆ\Ý\œ›ÜŽ›[ŸNÂ˜ÛÛœÝ˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]Ï[™]ÈÙ]
+
+NÂ›]˜XÚÙÜ›Ý[™]\ÚXÕXÚÐ\ÞOY˜[ÙNÂ‚™[˜Ý[Ûˆ›Ü›X[^™P˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J[œ]^ßK^\Ý[™Ï^ßJ^ÂˆÛÛœÝ^\ÏP\œ˜^Kš\Ð\œ˜^J[œ]™^\ÊOÚ[œ]™^\Ë›X\
+[X™\ŠK™š[\ŠO“[X™\‹š\Ò[YÙ\Š
+I‰žL	‰žMŠNŠ^\Ý[™Ë™^\ßPÒÑÔ“ÕS‘ÓUTÒP×ÑQUSÔÐÒQSK™^\ÊNÂˆYŠ[œ]œÝ\[YHOO][™Yš[™Y	‰ˆ]˜[Y[YJ[œ]œÝ\[YJJ]›ÝÈ\œ›ÜŠ˜XÚÙÜ›Ý[™]\ÚXÈÝ\[YH]\Ý™HH˜[Y“SH˜[YHŠNÂˆYŠ[œ]™[™[YHOO][™Yš[™Y	‰ˆ]˜[Y[YJ[œ]™[™[YJJ]›ÝÈ\œ›ÜŠ˜XÚÙÜ›Ý[™]\ÚXÈ[™[YH]\Ý™HH˜[Y“SH˜[YHŠNÂˆ™]\›ˆÂˆ‹‹PÒÑÔ“ÕS‘ÓUTÒP×ÑQUSÔÐÒQSKˆ‹‹™^\Ý[™Ëˆ[˜X›Yš[œ]™[˜X›YOO][™Yš[™YÊ^\Ý[™Ë™[˜X›YOO]YJNˆHZ[œ]™[˜X›YˆÝ\[YN˜[Y[YJ[œ]œÝ\[YJOÔÝš[™Ê[œ]œÝ\[YJN”Ýš[™Ê^\Ý[™ËœÝ\[Y_PÒÑÔ“ÕS‘ÓUTÒP×ÑQUSÔÐÒQSKœÝ\[YJKˆ[™[YN˜[Y[YJ[œ]™[™[YJOÔÝš[™Ê[œ]™[™[YJN”Ýš[™Ê^\Ý[™Ë™[™[Y_PÒÑÔ“ÕS‘ÓUTÒP×ÑQUSÔÐÒQSK™[™[YJKˆ^\Î–Ë‹‹›™]ÈÙ]
+^\ÊWKˆØÚÛÛ^\ÓÛ›Nš[œ]œØÚÛÛ^\ÓÛ›OOO][™Yš[™YÊ^\Ý[™ËœØÚÛÛ^\ÓÛ›HOOY˜[ÙJNˆHZ[œ]œØÚÛÛ^\ÓÛ›Kˆ^Y\’Y”Ýš[™Ê[œ]œ^Y\’YOO][™Yš[™YÊ^\Ý[™Ëœ^Y\’YˆŠNš[œ]œ^Y\’YˆŠKš[J
+Kˆ˜]›Üš]RY”Ýš[™Ê[œ]™˜]›Üš]RYOO][™Yš[™YÊ^\Ý[™Ë™˜]›Üš]RYˆŠNš[œ]™˜]›Üš]RYˆŠKš[J
+Kˆ›Û[YN“X]›X^
+X]›Z[ŠL[X™\Š[œ]›Û[YOOO][™Yš[™YÊ^\Ý[™Ë›Û[YOÏÌŒ
+Nš[œ]›Û[YJ_
+JKˆ]\ÙQ›Ü”š[Üš]P]Y[Îš[œ]œ]\ÙQ›Ü”š[Üš]P]Y[ÏOO][™Yš[™YÊ^\Ý[™Ëœ]\ÙQ›Ü”š[Üš]P]Y[ÈOOY˜[ÙJNˆHZ[œ]œ]\ÙQ›Ü”š[Üš]P]Y[ÂˆNÂŸB™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+^Ü™]\›ˆ›Ü›X[^™P˜XÚÙÜ›Ý[™]\ÚXÔØÚY[JßK”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™œØÚY[H‹ßJ_ßJ_B™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]\Ê
+^ØÛÛœÝY”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™™˜]›Üš]\È‹×J_×NÜ™]\›ˆ\œ˜^Kš\Ð\œ˜^J
+OÞ–×_B™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]PžRY
+Y
+^Ü™]\›ˆ˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]\Ê
+K™š[™
+O”Ýš[™ÊšY
+OOOTÝš[™ÊY
+J_[B™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÕÚ[™ÝÐXÝ]™JÙ™Ë›ÝÏ[™]È]J
+J^ÂˆYŠXÙ™Ë™[˜X›Y
+\™]\›ˆ˜[ÙNÂˆÛÛœÝ[ØØ[Z[]\Ó›ÝÊ›ÝÊKO[Z[]\Ñœ›ÛRSJÙ™ËœÝ\[YJK[Z[]\Ñœ›ÛRSJÙ™Ë™[™[YJNÂˆÛÛœÝØÚY[Q]O[™]È]J›ÝÊNÂˆYŠO˜‰‰›Š\ØÚY[Q]KœÙ]]JØÚY[Q]K™Ù]]J
+KLJNÂˆYŠXÙ™Ë™^\Ëš[˜ÛY\ÊØÚY[Q]K™Ù]^J
+JJ\™]\›ˆ˜[ÙNÂˆYŠ\Ð]]ÛX][Û”Ý\™\ÜÙY
+ØÚY[Q]JK˜›ØÚÙY
+\™]\›ˆ˜[ÙNÂˆYŠÙ™ËœØÚÛÛ^\ÓÛ›I‰ˆ\ØÚÛÛÞXÛQ›Ü‘]JØÚY[Q]JKš\ÔÝY[ØÚÛÛ^J\™]\›ˆ˜[ÙNÂˆ™]\›ˆOXÊXI‰›ŠNŠX_ŠNÂŸB™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÕÚ[™ÝÒÙ^JÙ™Ë›ÝÏ[™]È]J
+J^ÂˆËÈ›ÜˆÝ™\›šYÚÚ[™ÝÜË[Y\ÈY\ˆZYšYÚ™[Û™ÈÈHš[Üˆ^IÜÈÝ\Ú[™ÝË‚ˆÛÛœÝO[Z[]\Ñœ›ÛRSJÙ™ËœÝ\[YJK[Z[]\Ñœ›ÛRSJÙ™Ë™[™[YJK[ØØ[Z[]\Ó›ÝÊ›ÝÊNÂˆÛÛœÝ[™]È]J›ÝÊNÂˆYŠO˜‰‰›ŠYœÙ]]J™Ù]]J
+KLJNÂˆ™]\›ˆ	ÛØØ[]RÙ^J
+_P	ØÙ™ËœÝ\[Y_XÂŸB™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]TÝ]J
+^Ü™]\›ˆØXÝ]™N˜˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]ËœÚ^™OŒ\™Ù]Î–Ë‹‹˜˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]×__B›]˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™O^Ø]Œ^Y\’Y›[Ý]N›[\œ›ÜŽ›[NÂ˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÐXÝX[^Y\”Ý]JÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+K›Ü˜ÙOY˜[ÙJ^ÂˆÛÛœÝYTÝš[™ÊÙ™Ëœ^Y\’YˆŠKš[J
+NÂˆYŠ\Y
+\™]\›ˆ[ÂˆÛÛœÝ›ÝÏQ]K››ÝÊ
+NÂˆYŠY›Ü˜ÙI‰˜˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™Kœ^Y\’YOO\Y	‰Š›ÝËX˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™K˜]
+O
+\™]\›ˆ˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™KœÝ]NÂˆž^Âˆ]^Y\œÏV×NÂˆž^Ü^Y\œÏX]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØ[‹Ü™]\›—Ü›ÝØÛÛÜ^Y\œÎY_J_XØ]ÚÜ^Y\œÏX]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØ[‹ßJ_Bˆ^Y\œÏP\œ˜^Kš\Ð\œ˜^J^Y\œÊOÜ^Y\œÎ–×NÂˆÛÛœÝ\^Y\œË™š[™
+O–ÞËœ^Y\—ÚYËœ^Y\’YËšYËœ›ÝšY\—ÚYK™š[\Š›ÛÛX[ŠK›X\
+Ýš[™ÊKš[˜ÛY\ÊY
+J_[ÂˆÛÛœÝ˜]ÏTÝš[™ÊËœÝ]_Ëœ^X˜XÚ×ÜÝ]_Ëœ^X˜XÚÔÝ]_ˆŠKÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝÝ]O\ÞÙ›Ý[™YK^Z[™Îœ˜]ÏOOHœ^Z[™ÈŸËš\×Ü^Z[™ÏOO]Y_Ëš\Ô^Z[™ÏOO]YK]\ÙYœ˜]ÏOOHœ]\ÙY‹˜]Ë]˜Z[X›NœË˜]˜Z[X›HOOY˜[ÙK^Y\ŽœNˆÙ›Ý[™™˜[ÙK^Z[™Î™˜[ÙK]\ÙY™˜[ÙK˜]Îˆ›Z\ÜÚ[™È‹]˜Z[X›N™˜[ÙK^Y\Ž›[NÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™O^Ø]››ÝË^Y\’YœYÝ]K\œ›ÜŽ›[NÂˆ™]\›ˆÝ]NÂˆXØ]Ú
+J^Âˆ˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™O^Ø]››ÝË^Y\’YœYÝ]N›[\œ›ÜŽ™K›Y\ÜØYÙ_NÂˆ™]\›ˆ[ÂˆBŸB˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔ]\ÙJ™X\ÛÛH›X[X[Š^ÂˆÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+K^Y\’YTÝš[™Ê˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’YÙ™Ëœ^Y\’YˆŠKš[J
+NÚYŠ\^Y\’Y
+\™]\›ˆ˜[ÙNÂˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÜ]\ÙH‹Ü^Y\—ÚYœ^Y\’YJNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™ÏY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY]YNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[ÛX]\ÙN‰Ü™X\ÛÛŸXØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[Û][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ™]\›ˆYNÂŸB˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔ™\Ý[YJ™X\ÛÛHœ™\Ý[YHŠ^ÂˆÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+K^Y\’YTÝš[™Ê˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’YÙ™Ëœ^Y\’YˆŠKš[J
+NÚYŠ\^Y\’Y
+\™]\›ˆ˜[ÙNÂˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÜ^H‹Ü^Y\—ÚYœ^Y\’YJNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™Ï]YNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]OY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[ÛX^N‰Ü™X\ÛÛŸXØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[Û][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ™]\›ˆYNÂŸB˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔÝÜ
+™X\ÛÛH›X[X[‹^Y\’YÝ™\œšYO[[
+^ÂˆÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+K^Y\’YTÝš[™Ê^Y\’YÝ™\œšY_˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’YÙ™Ëœ^Y\’YˆŠKš[J
+NÚYŠ^Y\’Y
+X]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÜÝÜ‹Ü^Y\—ÚYœ^Y\’YJNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™ÏY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]OY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’Y[[Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™Q˜]›Üš]RY[[Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[ÛXÝÜ‰Ü™X\ÛÛŸXØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[Û][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ™]\›ˆYNÂŸB˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔÝ\
+Ù˜]›Üš]RY[[^Y\’Y[[™X\ÛÛH›X[X[ŸO^ßJ^ÂˆÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+KYTÝš[™Ê^Y\’YÙ™Ëœ^Y\’YˆŠKš[J
+K˜]X˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]PžRY
+˜]›Üš]RYÙ™Ë™˜]›Üš]RY
+NÂˆYŠ\Y
+]›ÝÈ™]È\œ›ÜŠ”Ù[XÝH˜XÚÙÜ›Ý[™]\ÚXÈ^Y\ˆš\œÝŠNÂˆYŠY˜]Ë\šJ]›ÝÈ™]È\œ›ÜŠ”Ù[XÝHØ]™Y˜XÚÙÜ›Ý[™]\ÚXÈ˜]›Üš]Hš\œÝŠNÂˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÝ›Û[YWÜÙ]‹Ü^Y\—ÚYœY›Û[YWÛ]™[˜Ù™Ë›Û[Y_JNÂˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØÛYÝ›Û[YWÛ]]H‹Ü^Y\—ÚYœY]]Y™˜[Ù_JNÂˆ]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\—Ü]Y]Y\ËÜ^WÛYYXH‹Ü]Y]YWÚYœYYYXN™˜]‹\š_JNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™Ï]YNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]OY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜYY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’Y\YØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™Q˜]›Üš]RYY˜]‹šYØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[ÛXÝ\‰Ü™X\ÛÛŸXØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\ÝXÝ[Û][™]È]J
+KÒTÓÔÝš[™Ê
+NØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\Ý\œ›Ü[[Âˆ™]\›ˆÜ^Y\’YœY˜]›Üš]N™˜]ŸNÂŸB˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÔ™XÛÛ˜Ú[Tš[Üš]JÙ›Ü˜ÙOY˜[Ù_O^ßJ^ÂˆÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+NÂˆYŠY›Ü˜ÙI‰ˆXÙ™Ëœ]\ÙQ›Ü”š[Üš]P]Y[Ê\™]\›ŽÂˆÛÛœÝš[Üš]OX˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]ËœÚ^™OŒÂˆYŠš[Üš]I‰ˆX˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™Ê^ÂˆÛÛœÝXÝX[X]ØZ]˜XÚÙÜ›Ý[™]\ÚXÐXÝX[^Y\”Ý]JÙ™ËYJNÂˆYŠXÝX[Ëœ^Z[™Ê^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™Ï]YNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’YTÝš[™ÊÙ™Ëœ^Y\’YˆŠNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™Q˜]›Üš]RYTÝš[™ÊÙ™Ë™˜]›Üš]RYˆŠ_[BˆBˆYŠš[Üš]I‰˜˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™Ê^Âˆž^Ø]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ]\ÙJœš[Üš]KX]Y[ÈŠNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]O]Y_XØ]Ú
+J^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\Ý\œ›ÜYK›Y\ÜØYÙ_BˆY[ÙHYŠ\š[Üš]I‰˜˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]I‰ˆX˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜY
+^Âˆž^Ø]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ™\Ý[YJœš[Üš]KY[™YŠ_XØ]Ú
+J^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\Ý\œ›ÜYK›Y\ÜØYÙ_BˆBŸB™[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÓØœÙ\™Q\Ü^PÛÛ[X[™
+ÛÛ[X[™ÛÝ\˜ÙOH˜\HŠ^ÂˆÛÛœÝÜ˜ÏTÝš[™ÊÛÝ\˜Ù_ÛÛ[X[™ËœÛÝ\˜Ù_ˆŠNÂˆÛÛœÝXÛÛ[X[™Ëœ^[ØYßKÚ[™TÝš[™Ê˜ÛÛ[Ú[™ˆŠNÂˆÛÛœÝ[YÚX›O\Ü˜ÏOOH˜]]ÛX][ÛˆŸÚ[™OOH›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŽÂˆYŠY[YÚX›J\™]\›ŽÂˆ]\™Ù]ÏV×NÝž^Ý\™Ù]Ï\™\ÛÛ™Q\Ü^U\™Ù]ÊÛÛ[X[™\™Ù]
+_XØ]ÚÜ™]\›ŸBˆÛÛœÝ\OTÝš[™ÊÛÛ[X[™\_ˆŠNÂˆ]Ý\Ð]Y[ÏY˜[ÙK™\XÙ\Ð]Y[ÏY˜[ÙNÂˆYŠ\OOOH™\Ü^KšY[ÈŠ^Ü™\XÙ\Ð]Y[Ï]YNÜÝ\Ð]Y[Ï\›]]YOO]Y_Bˆ[ÙHYŠ\OOOH™\Ü^KÙXˆŠ^Ü™\XÙ\Ð]Y[Ï]YNÜÝ\Ð]Y[Ï\™›Ü˜ÙP]Y[ÏOO]Y_›]]YOOY˜[Ù_Ú[™OOH›[Ü›š[™ËX[››Ý[˜Ù[Y[ÈŸBˆ[ÙHYŠ\OOOH™\Ü^KÙX‹˜]Y[ÈŠ^ÜÝ\Ð]Y[Ï\[›]]HOOY˜[Ù_Bˆ[ÙHYŠ\KœÝ\ÕÚ]
+›ÚXÙKˆŠ_\KœÝ\ÕÚ]
+œÙžˆŠJ^ÜÝ\Ð]Y[Ï]Y_Bˆ[ÙHYŠÈ™\Ü^K˜ÛX\ˆ‹™\Ü^Kš[XYÙH‹™\Ü^Kœˆ‹™\Ü^K™ØÝ[Y[‹™\Ü^Kœ™\Ù[][Ûˆ—Kš[˜ÛY\Ê\JJ^Ü™\XÙ\Ð]Y[Ï]Y_BˆYŠ™\XÙ\Ð]Y[ÊY›ÜŠÛÛœÝYÙˆ\™Ù]Ê^ÂˆÛÛœÝ[››Ý[˜Ù[Y[ÝÛœÕ\™Ù][[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™I‰Š[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK\™Ù]ß×JKš[˜ÛY\ÊY
+NÂˆYŠX[››Ý[˜Ù[Y[ÝÛœÕ\™Ù]
+X˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]Ë™[]JY
+NÂˆBˆYŠÝ\Ð]Y[ÊY›ÜŠÛÛœÝYÙˆ\™Ù]ÊX˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]Ë˜Y
+Y
+NÂˆ˜XÚÑ[^Ü]]][ÛŠ˜XÚÙÜ›Ý[™]\ÚXÔ™XÛÛ˜Ú[Tš[Üš]J
+JK˜Ø]Ú
+
+
+OOžßJNÂŸB˜\Þ[˜È[˜Ý[Ûˆ˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+^ÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+\™]\›ŽÂˆYŠ˜XÚÙÜ›Ý[™]\ÚXÕXÚÐ\ÞJ\™]\›ŽØ˜XÚÙÜ›Ý[™]\ÚXÕXÚÐ\ÞO]YNÂˆž^ÂˆÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+K›ÝÏ[™]È]J
+KXÝ]™OX˜XÚÙÜ›Ý[™]\ÚXÕÚ[™ÝÐXÝ]™JÙ™Ë›ÝÊKÙ^OX˜XÚÙÜ›Ý[™]\ÚXÕÚ[™ÝÒÙ^JÙ™Ë›ÝÊNÂˆYŠXXÝ]™J^ÂˆYŠ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœØÚY[PXÝ]™_˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœÝ\YÙ^J^Ýž^Ø]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔÝÜ
+œØÚY[KY[™YŠ_XØ]Ú
+J^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\Ý\œ›ÜYK›Y\ÜØYÙ__Bˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœØÚY[PXÝ]™OY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜYY˜[ÙNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœÝ\YÙ^O[[Ü™]\›ŽÂˆBˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœØÚY[PXÝ]™O]YNÂˆYŠ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœÝ\YÙ^HOOZÙ^J^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœÝ\YÙ^OZÙ^NØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜYY˜[Ù_BˆYŠ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜY
+\™]\›ŽÂˆYŠÙ™Ëœ]\ÙQ›Ü”š[Üš]P]Y[É‰˜˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]ËœÚ^™J^Âˆ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ™XÛÛ˜Ú[Tš[Üš]J
+NÂˆ™]\›ŽÂˆB‚ˆËÈ™XÛÛ˜Ú[HYØZ[œÝ]\ÚXÈ\ÜÚ\Ý[]Ù[ˆ[œÝXYÙˆ\Ý[™ÈÛ›HBˆËÈ›ØÙ\ÜË[ØØ[[[YH›YËˆH\Ü^KÜ^Y\ˆ™XÛÛ›™XÝØ[ˆX]™HPHYBˆËÈÚ[HÛ\ÜÜ›ÛÛHÛÛ›ÛXˆÝ[™[Y[X™\œÈ^Z[™Ï]YKˆ\È[ÛÈÛÜšÜÈÚ[‚ˆËÈHÛÛ™šYÝ\™Y˜XÚÙÜ›Ý[™]\ÚXÈ^Y\ˆ\ÈHPHÜ›Ý\˜]\ˆ[ˆBˆËÈ[™]šYX[ˆ^Y\ˆ]\Ý™XÛÛ›™XÝY‚ˆÛÛœÝXÝX[X]ØZ]˜XÚÙÜ›Ý[™]\ÚXÐXÝX[^Y\”Ý]JÙ™ÊNÂˆYŠXÝX[Ë™›Ý[™
+^ÂˆYŠXÝX[œ^Z[™Ê^Âˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™Ï]YNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]OY˜[ÙNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’YTÝš[™ÊÙ™Ëœ^Y\’YˆŠNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™Q˜]›Üš]RYTÝš[™ÊÙ™Ë™˜]›Üš]RYˆŠ_[ÂˆY[ÙHYŠX˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜY	‰ˆX˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]J^Âˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™ÏY˜[ÙNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNÂˆBˆB‚ˆYŠX˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™É‰ˆX˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY
+^Âˆ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔÝ\
+Ü™X\ÛÛŽ˜XÝX[Ë™›Ý[™ÈœØÚY[K\^Y\‹ZYHŽˆœØÚY[HŸJNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™K˜]LÂˆY[ÙHYŠ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]J^Âˆ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ™\Ý[YJœš[Üš]KY[™YŠNÂˆ˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™K˜]LÂˆBˆXØ]Ú
+J^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\Ý\œ›ÜYK›Y\ÜØYÙNÙXYÛ›ÜÝXÑ\œ›ÜŠKØÛÛ\Û™[ˆ˜˜XÚÙÜ›Ý[™[]\ÚXÈ‹Ü\˜][ÛŽˆœØÚY[K]XÚÈŸJ_Bˆš[˜[^Ø˜XÚÙÜ›Ý[™]\ÚXÕXÚÐ\ÞOY˜[Ù_BŸB‚˜\™Ù]
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[Ø˜XÚÙÜ›Ý[™‹™\]Z\™PÛÛ›Û\Þ[˜ÊÜ™\K™\ÊOOžØÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+NØÛÛœÝXÝX[^Y\X]ØZ]˜XÚÙÜ›Ý[™]\ÚXÐXÝX[^Y\”Ý]JÙ™ËYJK˜Ø]Ú
+
+
+OO›[
+NÜ™\ËšœÛÛŠÛÚÎYKØÚY[N˜Ù™Ë˜]›Üš]\Î˜˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]\Ê
+K[[YNžË‹‹˜˜XÚÙÜ›Ý[™]\ÚXÔ[[YKš[Üš]N˜˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]TÝ]J
+KXÝX[^Y\‹^Y\”›Ø™Q\œ›ÜŽ˜˜XÚÙÜ›Ý[™]\ÚXÔ^Y\”›Ø™K™\œ›ÜŸ_J_JNÂ˜\œ]
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[Ø˜XÚÙÜ›Ý[™ÜØÚY[H‹™\]Z\™PÛÛ›Û\Þ[˜Ê™\K™\ÊOOžÝž^ØÛÛœÝš[ÜX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+KÙ™Ï[›Ü›X[^™P˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J™\K˜›Ù_ßKš[ÜŠNÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™œØÚY[H‹Ù™ÊNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›\Ý\œ›Ü[[ØÛÛœÝY[]PÚ[™ÙY\š[Ü‹œ^Y\’YOOXÙ™Ëœ^Y\’Yš[Ü‹™˜]›Üš]RYOOXÙ™Ë™˜]›Üš]RYÚYŠY[]PÚ[™ÙY	‰Š˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™ß˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY
+J^Ø]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔÝÜ
+œØÚY[KZY[]KXÚ[™ÙY‹˜XÚÙÜ›Ý[™]\ÚXÔ[[YK˜XÝ]™T^Y\’Yš[Ü‹œ^Y\’Y
+NØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœÝ\YÙ^O[[X]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™œØÚY[K\]H‹[˜X›Y˜Ù™Ë™[˜X›YÝ\[YN˜Ù™ËœÝ\[YK[™[YN˜Ù™Ë™[™[YK^Y\’Y˜Ù™Ëœ^Y\’Y˜]›Üš]RY˜Ù™Ë™˜]›Üš]RYJNØ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+NÜ™\ËšœÛÛŠÛÚÎYKØÚY[N˜Ù™ßJ_XØ]Ú
+J^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙ_J__JNÂ˜\œÜÝ
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[Ø˜XÚÙÜ›Ý[™Ù˜]›Üš]\È‹™\]Z\™PÛÛ›Û
+™\K™\ÊOOžÝž^ØÛÛœÝ\šOTÝš[™Ê™\K˜›ÙOË\š_ˆŠKš[J
+K˜[YOTÝš[™Ê™\K˜›ÙOË›˜[Y_ˆŠKš[J
+K]Z[TÝš[™Ê™\K˜›ÙOË™]Z[ˆŠKš[J
+NÚYŠ]\š_[˜[YJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘˜]›Üš]H˜[YH[™YYXHT’H\™H™\]Z\™YŸJNØÛÛœÝ\ÝX˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]\Ê
+K^\Ý[™Ï[\Ý™š[™
+Ož\šOOO]\šJNÚYŠ^\Ý[™Ê^Ù^\Ý[™Ë›˜[YO[˜[YNÙ^\Ý[™Ë™]Z[Y]Z[Y[ÙH\Ýœ\Ú
+ÚY˜™ÛKIÑ]K››ÝÊ
+_KIØÜž\Ëœ˜[™ÛPž]\ÊÊKÔÝš[™Êš^Š_X˜[YK\šK]Z[Ü™X]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_JNÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™™˜]›Üš]\È‹\ÝœÛXÙJLL
+JNÜ™\ËšœÛÛŠÛÚÎYK˜]›Üš]\Î›\ÝJ_XØ]Ú
+J^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙ_J__JNÂ˜\™[]J‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[Ø˜XÚÙÜ›Ý[™Ù˜]›Üš]\ËÎšY‹™\]Z\™PÛÛ›Û
+™\K™\ÊOOžØÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšYˆŠK\ÝX˜XÚÙÜ›Ý[™]\ÚXÑ˜]›Üš]\Ê
+K™š[\ŠO”Ýš[™ÊšY
+HOOZY
+NÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™™˜]›Üš]\È‹\Ý
+NØÛÛœÝÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+NÚYŠÙ™Ë™˜]›Üš]RYOOZY
+^ØÙ™Ë™˜]›Üš]RYHˆŽÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜˜XÚÙÜ›Ý[™œØÚY[H‹Ù™Ê_\™\ËšœÛÛŠÛÚÎYK˜]›Üš]\Î›\ÝJ_JNÂ˜\œÜÝ
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[Ø˜XÚÙÜ›Ý[™ØÛÛ›Û‹™\]Z\™PÛÛ›Û\Þ[˜Ê™\K™\ÊOOžÝž^ØÛÛœÝXÝ[ÛTÝš[™Ê™\K˜›ÙOË˜XÝ[ÛŸˆŠNÚYŠXÝ[ÛOOHœ^HŠ^ØÛÛœÝX]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔÝ\
+Ù˜]›Üš]RYœ™\K˜›ÙOË™˜]›Üš]RY^Y\’Yœ™\K˜›ÙOËœ^Y\’Y™X\ÛÛŽˆ›X[X[ŸJNÜ™]\›ˆ™\ËšœÛÛŠÛÚÎYKXÝ[Û‹‹‹œŸJ_ZYŠXÝ[ÛOOHœ]\ÙHŠ^Ø]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ]\ÙJ›X[X[ŠNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜY]YNÜ™]\›ˆ™\ËšœÛÛŠÛÚÎYKXÝ[ÛŸJ_ZYŠXÝ[ÛOOHœÝÜŠ^Ø]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔÝÜ
+›X[X[ŠNØ˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜY]YNÜ™]\›ˆ™\ËšœÛÛŠÛÚÎYKXÝ[ÛŸJ_ZYŠXÝ[ÛOOHœ™\Ý[YHŠ^Ø˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜYY˜[ÙNØ]ØZ]˜XÚÙÜ›Ý[™]\ÚXÔ™\Ý[YJ›X[X[ŠNÜ™]\›ˆ™\ËšœÛÛŠÛÚÎYKXÝ[ÛŸJ_\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ•[šÛ›ÝÛˆ˜XÚÙÜ›Ý[™]\ÚXÈXÝ[ÛˆŸJ_XØ]Ú
+J^Ü™\ËœÝ]\ÊLŠKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙ_J__JNÂ‚‹ËÈ\X[˜ÙK]ÚYHYÙ]ÈÙY\Û[™ÈÙ\\˜]Hœ›ÛHÛÛ™šYÝ\˜][Û‹Ø]XÚY[Üš]\Ë‚‹ËÈš^YÙ^\È™]™[›ÜØ\™[™ÈXY\œÈÜˆ›Ý][™ÈY™\ÜÙ\Èœ›ÛH][\Z[™È][Ý\Ë‚˜ÛÛœÝ]\ÚXÐ\ÜÚ\Ý[Ý]\Ó[Z]\˜]S[Z]
+ÂˆÚ[™ÝÓ\ÎŒÌ[Z]ŒLŒÙ^QÙ[™\˜]ÜŽŠ
+OOˆ›]\ÚXËX\ÜÚ\Ý[\Ý]\È‹ˆÝ[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKˆY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆ“]\ÚXÈ\ÜÚ\Ý[Ý]\ÈÛ[™È[Z]™XXÚYÈ™]žH]\ˆŸBŸJNÂ˜ÛÛœÝ]\ÚXÐ\ÜÚ\Ý[]]][Û“[Z]\˜]S[Z]
+ÂˆÚ[™ÝÓ\ÎŒÌ[Z]ŒÌÙ^QÙ[™\˜]ÜŽŠ
+OOˆ›]\ÚXËX\ÜÚ\Ý[[]]][ÛœÈ‹ˆÝ[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKˆY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆ“]\ÚXÈ\ÜÚ\Ý[ÛÛ™šYÝ\˜][Û‹Ø]XÚY[[Z]™XXÚYÈ™]žH]\ˆŸBŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[ÜÝ]\È‹]\ÚXÐ\ÜÚ\Ý[Ý]\Ó[Z]™\]Z\™PÛÛ›Û\Þ[˜ÊÜ™\K™\ÊOOžØÛÛœÝÙ™Ï[]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+KÛÛ™šYÝ\™YHH[]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+NÝž^Û]^Y\œÏV×NÚYŠÛÛ™šYÝ\™Y
+^Ýž^Ü^Y\œÏX]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØ[‹Ü™]\›—Ü›ÝØÛÛÜ^Y\œÎY_J_XØ]ÚÜ^Y\œÏX]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+œ^Y\œËØ[‹ßJ__\^Y\œÏP\œ˜^Kš\Ð\œ˜^J^Y\œÊOÜ^Y\œÎ–×NØÛÛœÝ^Y\’YÏ[™]ÈÙ]
+^Y\œË™›]X\
+O–ÜËœ^Y\—ÚYËšYËœ›ÝšY\—ÚYK™š[\Š›ÛÛX[ŠK›X\
+Ýš[™ÊJJNØÛÛœÝœšYÙTÝ]\ÏSØš™XÝ™œ›ÛQ[šY\ÊØš™XÝ™[šY\Ê[[YK™\Ü^\ßßJK›X\
+
+ÚY—JOOžØÛÛœÝO]Ë›]\ÚXÐ\ÜÚ\Ý[[ÚYŠ[J\™]\›ˆÚY[NØÛÛœÝÙ^\ÏVÛK˜ÛY[YK™š[\Š›ÛÛX[ŠK›X\
+Ýš[™ÊNÜ™]\›ˆÚYË‹‹›K™YÚ\Ý\™YšÙ^\ËœÛÛYJÏOœ^Y\’YËš\ÊÊJ_W_JJNÜ™\ËšœÛÛŠÛÚÎYKÛÛ™šYÝ\™Y\›˜Ù™Ë\›œšYÙQ[˜X›Y˜Ù™ËœšYÙQ[˜X›YÙ[™Ü[˜\ÙU\›œÙ[™Ü[‘[™Ú[
+Ù™ÊKœ™\XÙJ×ÜÎ‹ËšˆŠKœ™\XÙJ×ÜÙ[™Ü[‰ËˆŠKÙ[™Ü[•ÙX”ÛØÚÙ]œÙ[™Ü[‘[™Ú[
+Ù™ÊK\Ý™X[U˜[œÜÜˆ™YXØ]Y\Ù[™Ü[ˆ‹ÙÒY[]Nˆ›]\ÚXËX\ÜÚ\Ý[\ÝX›KL‹ŽKXÛÛ\]X›K\Ù[™Ü[‹ZœËLËŒ‹ŒH‹˜[œÜÜˆ˜]][XØ]Y[XK\Ù[™Ü[‹\›ÞH‹\U˜[œÜÜ›XP\P]][XØ]YÈœ\œÚ\Ý[]ÙXœÛØÚÙ]ŽˆšY˜[˜XÚÈ‹\TÙ\™\’[™›Î›XP\TÙ\™\’[™›Ë\S\ÝÛÛ›™XÝY]›XP\S\ÝÛÛ›™XÝY]\S\Ý\œ›ÜŽ›XP\S\Ý\œ›Ü‹]XÚY\™Ù]Î™”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[œšYÙU\™Ù]È‹×J_×K‘Y˜][›Û[YN“UTÒP×ÐTÔÒTÕS•Õ—ÑQUSÕ“ÓSQK]Y[ÔÝ]N™”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[]Y[ÔÝ]H‹ßJ_ßKœšYÙTÝ]\ËÛ›[™N˜ÛÛ™šYÝ\™Y^Y\œßJ_XØ]Ú
+J^Ü™\ËšœÛÛŠÛÚÎYKÛÛ™šYÝ\™Y\›˜Ù™Ë\›œšYÙQ[˜X›Y˜Ù™ËœšYÙQ[˜X›YÛ›[™N™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙK^Y\œÎ–×_J__JNÂ˜\œ]
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[ØÛÛ™šYÈ‹]\ÚXÐ\ÜÚ\Ý[]]][Û“[Z]™\]Z\™PYZ[‹
+™\K™\ÊOOžÝž^ØÛÛœÝÝ\œ™[[]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+K\›TÝš[™Ê™\K˜›ÙOË\›Ý\œ™[\›
+Kš[J
+Kœ™\XÙJ×ÉËˆŠNÚYŠK×šÏÎ—×ËÚK\Ý
+\›
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“]\ÚXÈ\ÜÚ\Ý[T“]\Ý™YÚ[ˆÚ]‹ËÈÜˆÎ‹ËÈŸJNØÛÛœÝš[Ü[]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+K™^^Ý\›œšYÙQ[˜X›Yœ™\K˜›ÙOËœšYÙQ[˜X›YOOY˜[ÙKÙ[™Ü[’ÜÝ”Ýš[™Ê™\K˜›ÙOËœÙ[™Ü[’ÜÝÏÜš[Ü‹œÙ[™Ü[’ÜÝ
+KÙ[™Ü[”Üœ™\K˜›ÙOËœÙ[™Ü[”ÜÏÜš[Ü‹œÙ[™Ü[”ÜÏÎLßNÜÙ[™Ü[‘[™Ú[
+™^
+NÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[˜ÛÛ™šYÈ‹™^
+NÚYŠ™\K˜›ÙOËÚÙ[ŠY”ÝÜ™Kœ]ÙXÜ™]
+›]\ÚXØ\ÜÚ\Ý[ÚÙ[ˆ‹Ýš[™Ê™\K˜›ÙKÚÙ[ŠKÚ[YÜ˜][ÛŽˆ“]\ÚXÈ\ÜÚ\Ý[‹\Nˆ›Û™Ë[]™YXXØÙ\ÜË]ÚÙ[ˆŸJNÛ]\ÚXÐ\ÜÚ\Ý[\PÛÜÙJ˜ÛÛ™šYÝ\˜][Û‹XÚ[™ÙYŠNØ]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[˜ÛÛ™šYË\]H‹\›JNÜ™\ËšœÛÛŠÛÚÎYK\›ÚÙ[”ÝÜ™YˆH[]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+_J_XØ]Ú
+J^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙ_J__JNÂ˜\œÜÝ
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[ØÛÛ[X[™‹™\]Z\™PÛÛ›Û\Þ[˜Ê™\K™\ÊOOžÝž^ØÛÛœÝÛÛ[X[™TÝš[™Ê™\K˜›ÙOË˜ÛÛ[X[™ˆŠK\™ÜÏ\™\K˜›ÙOË˜\™ÜßßNØÛÛœÝ[ÝÙY[™]ÈÙ]
+Èœ^Y\œËØ[‹œ^Y\œËØÛYÜ^WÜ]\ÙH‹œ^Y\œËØÛYÜ^H‹œ^Y\œËØÛYÜ]\ÙH‹œ^Y\œËØÛYÜÝÜ‹œ^Y\œËØÛYÝ›Û[YWÜÙ]‹œ^Y\œËØÛYÝ›Û[YWÛ]]H‹œ^Y\—Ü]Y]Y\ËØ[‹œ^Y\—Ü]Y]Y\ËÚ][\È‹œ^Y\—Ü]Y]Y\ËÜ^WÛYYXH‹›]\ÚXËÜÙX\˜Ú‹›]\ÚXËÜ™XÙ[WÜ^YYÚ][\È—JNÚYŠX[ÝÙYš\ÊÛÛ[X[™
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“]\ÚXÈ\ÜÚ\Ý[ÛÛ[X[™\È›Ý\›Ý™YžHÛ\ÜÜ›ÛÛHÛÛ›ÛXˆŸJNØÛÛœÝ™\Ý[X]ØZ]]\ÚXÐ\ÜÚ\Ý[ÛÛ[X[™
+ÛÛ[X[™\™ÜÊNØÛÛœÝ’Y[]\ÚXÐ\ÜÚ\Ý[‘]šXÙRYœ›ÛT^Y\’Y
+\™ÜËœ^Y\—ÚY
+NÚYŠ’Y	‰˜ÛÛ[X[™OOHœ^Y\œËØÛYÝ›Û[YWÜÙ]Š\Ù]]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J’YÝ›Û[YN˜\™ÜË›Û[YWÛ]™[JNÚYŠ’Y	‰˜ÛÛ[X[™OOHœ^Y\œËØÛYÝ›Û[YWÛ]]HŠ\Ù]]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]J’YÛ]]Y˜\™ÜË›]]YJNØ]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[˜ÛÛ[X[™‹ÛÛ[X[™JNÜ™\ËšœÛÛŠÛÚÎYK™\Ý[J_XØ]Ú
+J^Ü™\ËœÝ]\ÊLŠKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙ_J__JNÂ˜ÛÛœÝ]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]Ï[™]ÈX\
+
+NÂ™[˜Ý[Ûˆ\ÜÝYS]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]
+]šXÙRY
+^ØÛÛœÝXÚÙ]XÜž\Ëœ˜[™ÛPž]\Ê
+KÔÝš[™Ê˜˜\ÙM\›ŠK^Y\’YXÛ\ÜÜ›ÛÛKZX‹IØÛX[’Y
+]šXÙRY
+_XÛ]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]ËœÙ]
+XÚÙ]Ù]šXÙRY˜ÛX[’Y
+]šXÙRY
+K^Y\’Y^\™\Ð]‘]K››ÝÊ
+JÍŒJNÜ™]\›ˆÝXÚÙ]^Y\’Y_B™[˜Ý[ÛˆÛÛœÝ[YS]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]
+XÚÙ]
+^ØÛÛœÝ][O[]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]Ë™Ù]
+Ýš[™ÊXÚÙ]ˆŠJNÛ]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]Ë™[]JÝš[™ÊXÚÙ]ˆŠJNÚYŠZ][_][K™^\™\Ð]]K››ÝÊ
+J\™]\›ˆ[Ü™]\›ˆ][_B™[˜Ý[Ûˆ]\ÚXÐ\ÜÚ\Ý[›ÞT]
+XÚÙ]
+^Ü™]\›ˆÛ]\ÚXËX\ÜÚ\Ý[ÜÙ[™Ü[‹\›ÞOÝXÚÙ]IÙ[˜ÛÙUT’PÛÛ\Û™[
+XÚÙ]
+_XB˜\œÜÝ
+‹Ø\KÝŒKÛ]\ÚXËX\ÜÚ\Ý[Ý‹XœšYÙH‹]\ÚXÐ\ÜÚ\Ý[]]][Û“[Z]™\]Z\™PÛÛ›Û\Þ[˜Ê™\K™\ÊOOžÝž^ØÛÛœÝÙ™Ï[]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+KÚÙ[[]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+NÚYŠ]ÚÙ[Š\™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ™šYÝ\™HH]\ÚXÈ\ÜÚ\Ý[ÚÙ[ˆš\œÝŸJNØÛÛœÝ\™Ù]Ï\™\ÛÛ™Q\Ü^U\™Ù]Ê™\K˜›ÙOË\™Ù]ß™\K˜›ÙOË\™Ù]×JNØÛÛœÝXÝ[ÛTÝš[™Ê™\K˜›ÙOË˜XÝ[ÛŸ˜]XÚŠNÛ]]XÚYY”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[œšYÙU\™Ù]È‹×J_×NØ]XÚYP\œ˜^Kš\Ð\œ˜^J]XÚY
+OØ]XÚY–×NÚYŠXÝ[ÛOOH™]XÚŠX]XÚYX]XÚY™š[\ŠOˆ]\™Ù]Ëš[˜ÛY\Ê
+JNÙ[ÙH]XÚYVË‹‹›™]ÈÙ]
+Ë‹‹˜]XÚY‹‹\™Ù]×JWNÙ”ÝÜ™KœÙ]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[œšYÙU\™Ù]È‹]XÚY
+NØÛÛœÝ[]™\šY\ÏV×NÚYŠXÝ[ÛOOH™]XÚŠ^ØÛÛœÝ™\Ý[X]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ›]\ÚXË˜\ÜÚ\Ý[™]XÚ‹\™Ù]\™Ù]Ë^[ØYžß_K›]\ÚXËX\ÜÚ\Ý[XœšYÙHŠNÙ[]™\šY\Ëœ\Ú
+‹‹Š™\Ý[™[]™\šY\ÏËÙXœÛØÚÙ]×JJ_Y[Ù^Ù›ÜŠÛÛœÝ\™Ù]Ùˆ\™Ù]Ê^ØÛÛœÝ\ÜÝYYZ\ÜÝYS]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]
+\™Ù]
+NØÛÛœÝ™\Ý[X]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ›]\ÚXË˜\ÜÚ\Ý[˜]XÚ‹\™Ù]^[ØY›]\ÚXÐ\ÜÚ\Ý[]XÚ^[ØY
+\™Ù]\ÜÝYY
+_K›]\ÚXËX\ÜÚ\Ý[XœšYÙHŠNÙ[]™\šY\Ëœ\Ú
+‹‹Š™\Ý[™[]™\šY\ÏËÙXœÛØÚÙ]×JJ__\™\ËšœÛÛŠÛÚÎYKXÝ[Û‹]XÚY\™Ù]Î˜]XÚY[]™\šY\Ë]\ÚXÐ\ÜÚ\Ý[\›˜Ù™Ë\››ÝNˆ•XÚÙ]YXˆœšYÙNˆH˜XÚÙ[™™[^\È˜]ÈÙ[™Ü[ˆÈHYXØ]YÛÛ™šYÝ\™Y[™Ú[
+›Ü›X[HÜLÊKˆHÛ™Ë[]™YÚÙ[ˆ\È\ÙYÛ›HžHHÙ\\˜]H]\ÚXÈ\ÜÚ\Ý[ÛÛ›ÛTKˆŸJ_XØ]Ú
+J^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™K›Y\ÜØYÙ_J__JNÂ˜\™Ù]
+‹Ø\KÝŒKÙ]X˜\ÙKÜÝ]\È‹™\]Z\™PYZ[‹
+Ü™\K™\ÊOOžÜ™\ËšœÛÛŠÛÚÎYK]X˜\ÙN™”ÝÜ™K™]X˜\ÙR[™›Ê
+KÙXÜ™]Î™”ÝÜ™K›\ÝÙXÜ™]Ê
+KÙ\YšXØ]\Î™”ÝÜ™K›\ÝÙ\YšXØ]\Ê
+_J_JNÂ˜\™Ù]
+‹Ø\KÝŒKÙ]X˜\ÙKÜØÚ[XH‹™\]Z\™PYZ[‹
+Ü™\K™\ÊOOžØÛÛœÝ[™›ÏY”ÝÜ™K™]X˜\ÙR[™›Ê
+NÜ™\ËšœÛÛŠÛÚÎYKØÚ[XU™\œÚ[ÛŽš[™›ËœØÚ[XU™\œÚ[Û‹›Ü›X[^™Yš[™›Ë››Ü›X[^™YZYÜ˜][ÛœÎ™”ÝÜ™K™‹œ™\\™J”ÑSPÕ™\œÚ[Û‹˜[YK\YYØ]\YY]”“ÓHØÚ[XWÛZYÜ˜][ÛœÈÔ‘Tˆ–H™\œÚ[ÛˆŠK˜[
+
+_J_JNÂ˜\™Ù]
+‹Ø\KÝŒKÙ]X˜\ÙKÝ[[Y]žH‹™\]Z\™PYZ[‹
+™\K™\ÊOOžØÛÛœÝ[Z]SX]›X^
+KX]›Z[ŠL[X™\Š™\Kœ]Y\žK›[Z]L
+JJNÜ™\ËšœÛÛŠÛÚÎYKÛÝ[™”ÝÜ™K™]X˜\ÙR[™›Ê
+K[[Y]ž_[[Y]žN™”ÝÜ™K[[Y]žTÝ]J[Z]
+_J_JNÂ˜\™Ù]
+‹Ø\KÝŒKÙ]X˜\ÙKØ]Y]‹™\]Z\™PYZ[‹
+™\K™\ÊOOžÜ™\ËšœÛÛŠÛÚÎYK]™[Î™”ÝÜ™Kœ™XÙ[]Y]
+™\Kœ]Y\žK›[Z]LÚÚ[™œ™\Kœ]Y\žKšÚ[™[JK›X\
+]™[O™XYÛ›ÜÝXÔØ[š]^™J]™[
+J_J_JNÂ‚˜\™Ù]
+‹Ø\KÝŒKÙXYÛ›ÜÝXÜÈ‹™\]Z\™PØ\Xš[]J™XYÛ›ÜÝXÜËœ™XYŠK\Þ[˜ÊÜ™\K™\ÊOOžÂˆž^Ü™\ËšœÛÛŠ]ØZ]Z[XYÛ›ÜÝXÜÔÛ˜\ÚÝ
+
+J_BˆØ]Ú
+\œŠ^ÙXYÛ›ÜÝXÑ\œ›ÜŠ\œ‹ØÛÛ\Û™[ˆ™XYÛ›ÜÝXÜÈ‹Ü\˜][ÛŽˆœÛ˜\ÚÝŸJNÜ™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÙXYÛ›ÜÝXÜËÙ]™[È‹™\]Z\™PØ\Xš[]J™XYÛ›ÜÝXÜËœ™XYŠK
+™\K™\ÊOOžÂˆ™\ËšœÛÛŠÛÚÎYK]™[Î™XYÛ›ÜÝXÜÑ]™[ÛXÙJÂˆ[Z]œ™\Kœ]Y\žK›[Z]LˆÚ[™œ™\Kœ]Y\žKšÚ[™[ˆ\œ›ÜœÓÛ›N”Ýš[™Ê™\Kœ]Y\žK™\œ›ÜœÓÛ›_™˜[ÙHŠOOOHYH‚ˆJ_JNÂŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÙXYÛ›ÜÝXÜËÙ^Ü‹™\]Z\™PYZ[‹\Þ[˜ÊÜ™\K™\ÊOOžÂˆž^ÂˆÛÛœÝÛ˜\ÚÝX]ØZ]Z[XYÛ›ÜÝXÜÔÛ˜\ÚÝ
+
+NÂˆ™\ËœÙ]XY\ŠÛÛ[Q\ÜÜÚ][Ûˆ‹]XÚY[Èš[[˜[YOH˜Û\ÜÜ›ÛÛKZX‹YXYÛ›ÜÝXÜËIÛ™]È]J
+KÒTÓÔÝš[™Ê
+Kœ™\XÙJÖÎ‹—KÙË‹HŠ_KšœÛÛˆ˜
+NÂˆ™\Ë\J˜\XØ][Û‹ÚœÛÛˆŠKœÙ[™
+”ÓÓ‹œÝš[™ÚYžJÛ˜\ÚÝ[ŠJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÙXYÛ›ÜÝXÜËÝ\Ý‹™\]Z\™PØ\Xš[]J™XYÛ›ÜÝXÜËœ[ˆŠK\Þ[˜Ê™\K™\ÊOOžÂˆÛÛœÝ\ÝTÝš[™Ê™\K˜›ÙOË\Ý˜[ŠNÂˆÛÛœÝ™\Ý[Ï^ßNÂˆÛÛœÝ\™›Ü›OX\Þ[˜Ê˜[YK›ŠOOžÂˆÛÛœÝÝ\YQ]K››ÝÊ
+NÂˆž^Ü™\Ý[ÖÛ˜[YWO^ÛÚÎYK\˜][Û“\Î‘]K››ÝÊ
+K\Ý\Y™\Ý[™XYÛ›ÜÝXÔØ[š]^™J]ØZ]›Š
+J__BˆØ]Ú
+\œŠ^Ü™\Ý[ÖÛ˜[YWO^ÛÚÎ™˜[ÙK\˜][Û“\Î‘]K››ÝÊ
+K\Ý\Y\œ›ÜŽ™\œ‹›Y\ÜØYÙ_NÙXYÛ›ÜÝXÑ\œ›ÜŠ\œ‹ØÛÛ\Û™[ˆ™XYÛ›ÜÝXÜË\Ý‹Ü\˜][ÛŽ›˜[Y_J_BˆNÂ‚ˆYŠ\ÝOOH˜[Ÿ\ÝOOHšXˆŠX]ØZ]\™›Ü›JšXˆ‹\Þ[˜Ê
+OOŠÝ™\œÚ[ÛŽTPÐUSÓ—Õ‘T”ÒSÓ‹\[YNœ›ØÙ\ÜË\[YJ
+_JJNÂˆYŠ\ÝOOH˜[Ÿ\ÝOOH›\]ŠX]ØZ]\™›Ü›J›\]‹\Þ[˜Ê
+OOžÂˆYŠ\[[YK›\]˜ÛÛ›™XÝY
+]›ÝÈ™]È\œ›ÜŠ“TU\È›ÝÛÛ›™XÝYŠNÂˆ™]\›ˆØÛÛ›™XÝYYK\›“TUÕT“NÂˆJNÂˆYŠ\ÝOOH˜[Ÿ\ÝOOHœ]ÈŠX]ØZ]\™›Ü›Jœ]È‹\Þ[˜Ê
+OO™\™XÝ]ÊØXÝ[ÛŽˆœ˜]È‹›ÙNžØÛÛZXYˆ™Ù]šY[ÈÝ]\ÈŸ_JJNÂˆYŠ\ÝOOH˜[Ÿ\ÝOOH™^[ÛˆŠX]ØZ]\™›Ü›J™^[Ûˆ‹\Þ[˜Ê
+OOžÂˆÛÛœÝX]ØZ]™^[Û‘™]Ú
+‹È‹Ý[Y[Ý]\ÎŒÌJNÂˆ™]\›ˆÚÝ]\Îœ‹œÝ]\Ë\›•‘VSÓ—ÕÑPTWÕT“ÛÛÚ^™N™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™KÛÛX^•‘VSÓ—ÔÓÓÓPVNÂˆJNÂˆYŠ\ÝOOH˜[Ÿ\ÝOOH™\Ü^\ÈŠX]ØZ]\™›Ü›J™\Ü^\È‹\Þ[˜Ê
+OOžÂˆÛÛœÝÝ]\Ï\X›XÔ[[YJ
+K™\Ü^\ÎÂˆ™]\›ˆØÛÛ™šYÝ\™Y“Øš™XÝšÙ^\ÊÝ]\ÊK›[™ÝÛ›[™N“Øš™XÝ˜[Y\ÊÝ]\ÊK™š[\ŠOž›Û›[™JK›[™ÝÝ]\ßNÂˆJNÂˆYŠ\ÝOOH˜[Ÿ\ÝOOHœØÚY[\ˆŠX]ØZ]\™›Ü›JœØÚY[\ˆ‹\Þ[˜Ê
+OOŠÂˆ‹‹œØÚY[\”Ý]\Ê
+KÛ\ÜÙ\Î˜Û\ÜÔØÚY[TÝÜ™K˜Û\ÜÙ\Ë›[™Ý]]ÛX][ÛœÎ˜Û\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[Ë›[™ÝˆJJNÂ‚ˆ]Y]
+ÚÚ[™ˆ™XYÛ›ÜÝXÜË\Ý‹\Ý™\Ý[Î™XYÛ›ÜÝXÔØ[š]^™J™\Ý[Ê_JNÂˆ™\ËšœÛÛŠÛÚÎ“Øš™XÝ˜[Y\Ê™\Ý[ÊK™]™\žJOž›ÚÊK\Ý™\Ý[ßJNÂŸJNÂ‚‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈŒˆÙ\ÜÚ[ÛˆTB‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB˜\\ÙJ‹Ø\KÝŒKÜÙ\ÜÚ[ÛœÈ‹
+™\K™\Ë™^
+OOžÂˆËÈHYØXÞH\XÚ\][ÛˆTH\ÝYØ[\‹\Ý\YYÝY[ÜÙ\ÜÚ[ÛˆQÂˆËÈ[™\È[[[Û˜[H™]\™Y[[ÚYÛ™YXXÚ\‹XÜ™X]YÙ\ÜÚ[ÛœÈ^\Ý‚ˆ™]\›ˆ™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“YØXÞH[›Ûž[[Ý\ÈÛ\ÜÜ›ÛÛH\XÚ\][Ûˆ\È™Y[ˆ™]\™YŸJNÂŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšY‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+NÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÚ›Ú[ˆ‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+NÂˆÛÛœÝÝY[YXÛX[’Y
+™\K˜›ÙOËœÝY[Y
+HÜž\Ëœ˜[™ÛUURQ
+
+NÂˆÛÛœÝ˜[YOXÛX[”ÚÜ
+™\K˜›ÙOË›˜[YH”ÝY[‹
+NÂˆYˆ
+\Ù\ÜÚ[Û‹œÝY[ÖÜÝY[YJHÙ\ÜÚ[Û‹œÝ]Ëš›Ú[œÏJÙ\ÜÚ[Û‹œÝ]Ëš›Ú[œß
+JÌNÂˆÙ\ÜÚ[Û‹œÝY[ÖÜÝY[YO^ÂˆYœÝY[Yˆ˜[YKˆ›Ú[™Y]œÙ\ÜÚ[Û‹œÝY[ÖÜÝY[YOËš›Ú[™Y]™]È]J
+KÒTÓÔÝš[™Ê
+Kˆ\ÝÙY[Ž›™]È]J
+KÒTÓÔÝš[™Ê
+BˆNÂˆÙ\ÜÚ[Û‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ\œÚ\ÝÙ\ÜÚ[ÛœÊ
+NÂˆœ›ØYØ\ÝÙ\ÜÚ[ÛŠÙ\ÜÚ[Û‹šYÝ\NˆœÙ\ÜÚ[Û‹œÝ]H‹Ý]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂˆ™\ËšœÛÛŠÛÚÎYKÝY[YÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÝÜXÈ‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KÝY[YXÛX[’Y
+™\K˜›ÙOËœÝY[Y
+KÜXÏXÛX[’Y
+™\K˜›ÙOËÜXÊNÂˆYˆ
+\ÝY[YSÔS’S‘×ÕÔPÔÖÝÜX×JH™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆœÝY[Y[™˜[YÜXÈ™\]Z\™YŸJNÂˆYˆ
+X[ÝÔÝY[]™[
+Ù\ÜÚ[Û‹ÝY[YL
+JH™]\›ˆ™\ËœÝ]\ÊŽJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”X\ÙHØZ]H[ÛY[™Y›Ü™HÙ[™[™È[›Ý\ˆ›ÛÛH[\˜XÝ[Û‹ˆŸJNÂˆÙ\ÜÚ[Û‹ÜXÕ›Ý\ÖÜÝY[YO]ÜXÎÂˆÙ\ÜÚ[Û‹œÝ]Ë™]™[ÏJÙ\ÜÚ[Û‹œÝ]Ë™]™[ß
+JÌNÂˆÙ\ÜÚ[Û‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆÜXÈ‹ÜXßJNÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠKÜXÎ“ÔS’S‘×ÕÔPÔÖÝÜX×_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÚ[›È‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KÝY[YXÛX[’Y
+™\K˜›ÙOËœÝY[Y
+NÂˆYˆ
+\ÝY[Y
+H™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆœÝY[Y™\]Z\™YŸJNÂˆYˆ
+X[ÝÔÝY[]™[
+Ù\ÜÚ[Û‹ÝY[YL
+JH™]\›ˆ™\ËœÝ]\ÊŽJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”X\ÙHØZ]H[ÛY[™Y›Ü™HÝX›Z][™ÈYØZ[‹ˆŸJNÂˆÛÛœÝ[›Ï^Âˆ™Y™\œ™Y˜[YN˜ÛX[”ÚÜ
+™\K˜›ÙOËœ™Y™\œ™Y˜[YK
+KˆÛÛÜŽ˜[Y^ÛÛÜŠ™\K˜›ÙOË˜ÛÛÜŠKˆÛÛÜ“˜[YN˜ÛX[”ÚÜ
+™\K˜›ÙOË˜ÛÛÜ“˜[YKÌ
+KˆXÝ]š]N˜ÛX[”ÚÜ
+™\K˜›ÙOË˜XÝ]š]KÌ
+Kˆ[\™\Ý˜ÛX[”ÚÜ
+™\K˜›ÙOËš[\™\ÝÌ
+KˆÛØ[˜ÛX[”ÚÜ
+™\K˜›ÙOË™ÛØ[MŒ
+BˆNÂˆÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ÖÜÝY[YO^Ë‹‹ŠÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ÖÜÝY[Y_ßJK[›ßNÂˆYˆ
+\Ù\ÜÚ[Û‹œÜÝYÚÊHÙ\ÜÚ[Û‹œÜÝYÚÏ^ßNÂˆYˆ
+\Ù\ÜÚ[Û‹œÜÝYÚÜ™\ŠHÙ\ÜÚ[Û‹œÜÝYÚÜ™\V×NÂˆÙ\ÜÚ[Û‹œÜÝYÚÖÜÝY[YO^ÂˆÝY[Yˆ˜[YNš[›Ëœ™Y™\œ™Y˜[YHÙ\ÜÚ[Û‹œÝY[ÖÜÝY[YOË›˜[YH”ÝY[‹ˆÛÛÜŽš[›Ë˜ÛÛÜ‹ˆÛÛÜ“˜[YNš[›Ë˜ÛÛÜ“˜[YKˆXÝ]š]Nš[›Ë˜XÝ]š]Kˆ[\™\Ýš[›Ëš[\™\ÝˆNÂˆYˆ
+\Ù\ÜÚ[Û‹œÜÝYÚÜ™\‹š[˜ÛY\ÊÝY[Y
+JHÙ\ÜÚ[Û‹œÜÝYÚÜ™\‹œ\Ú
+ÝY[Y
+NÂˆÙ\ÜÚ[Û‹œÝ]Ë™]™[ÏJÙ\ÜÚ[Û‹œÝ]Ë™]™[ß
+JÌNÂˆÙ\ÜÚ[Û‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆÙ\ÜÚ[Û‹œ]Y]YOJÙ\ÜÚ[Û‹œ]Y]Y_×JK™š[\ŠOˆJšÚ[™OOHœÝY[Z[›È‰‰žœÝY[YOO\ÝY[Y
+JNÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆœÝY[Z[›È‹‹‹œÙ\ÜÚ[Û‹œÜÝYÚÖÜÝY[Y_JNÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÜÛ‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KÝY[YXÛX[’Y
+™\K˜›ÙOËœÝY[Y
+K]Y\Ý[Û’YXÛX[’Y
+™\K˜›ÙOËœ]Y\Ý[Û’Y
+NÂˆÛÛœÝ[œÝÙ\XÛX[”ÚÜ
+™\K˜›ÙOË˜[œÝÙ\‹L
+K]OXÛX[”ÚÜ
+™\K˜›ÙOË]H]Y\Ý[Û’Y
+NÂˆYˆ
+\ÝY[Y\]Y\Ý[Û’YX[œÝÙ\ŠH™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆœÝY[Y]Y\Ý[Û’Y[™[œÝÙ\ˆ™\]Z\™YŸJNÂˆYˆ
+X[ÝÔÝY[]™[
+Ù\ÜÚ[Û‹ÝY[YÍL
+JH™]\›ˆ™\ËœÝ]\ÊŽJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”X\ÙHØZ]H[ÛY[™Y›Ü™H[œÝÙ\š[™ÈYØZ[‹ˆŸJNÂˆYˆ
+\Ù\ÜÚ[Û‹œ™\ÜÛœÙ\ËœÛÊHÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ËœÛÏ^ßNÂˆYˆ
+\Ù\ÜÚ[Û‹œ™\ÜÛœÙ\ËœÛÖÜ]Y\Ý[Û’YJHÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ËœÛÖÜ]Y\Ý[Û’YO^ßNÂˆÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ËœÛÖÜ]Y\Ý[Û’YVÜÝY[YOX[œÝÙ\ŽÂˆÛÛœÝ[Y\Ï^ßNÂˆ›Üˆ
+ÛÛœÝHÙˆØš™XÝ˜[Y\ÊÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ËœÛÖÜ]Y\Ý[Û’YJJH[Y\ÖØWOJ[Y\ÖØW_
+JÌNÂˆÙ\ÜÚ[Û‹œÝ]Ë™]™[ÏJÙ\ÜÚ[Û‹œÝ]Ë™]™[ß
+JÌNÂˆÙ\ÜÚ[Û‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆËÈÛØ[\ØÙH\È]Y\Ý[Û‰ÜÈÛ\Ü^H[ÈÛ™H]\Ý]Y]YH][K‚ˆÙ\ÜÚ[Û‹œ]Y]YOJÙ\ÜÚ[Û‹œ]Y]Y_×JK™š[\ŠOˆJšÚ[™OOHœÛ‰‰žœ]Y\Ý[Û’YOO\]Y\Ý[Û’Y
+JNÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆœÛ‹]Y\Ý[Û’Y]K[Y\ßJNÂˆ™\ËšœÛÛŠÛÚÎYK[Y\ËÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÛYÚ‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KÝY[YXÛX[’Y
+™\K˜›ÙOËœÝY[Y
+NÂˆYˆ
+\ÝY[Y
+H™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆœÝY[Y™\]Z\™YŸJNÂˆYˆ
+X[ÝÔÝY[]™[
+Ù\ÜÚ[Û‹ÝY[Y
+JH™]\›ˆ™\ËœÝ]\ÊŽJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”X\ÙHØZ]H[ÛY[™Y›Ü™HÚ[™Ú[™ÈH›ÛÛHÛÛÜˆYØZ[‹ˆŸJNÂˆÛÛœÝÛÛÜ]˜[Y^ÛÛÜŠ™\K˜›ÙOË˜ÛÛÜŠNÂˆÛÛœÝÛÛÜ“˜[YOXÛX[”ÚÜ
+™\K˜›ÙOË˜ÛÛÜ“˜[YHÛÛÜ‹Ì
+NÂˆÛÛœÝ˜[YO\Ù\ÜÚ[Û‹œÝY[ÏË–ÜÝY[YOË›˜[YH”ÝY[ŽÂˆÙ\ÜÚ[Û‹œ]Y]YOJÙ\ÜÚ[Û‹œ]Y]Y_×JK™š[\ŠOˆJšÚ[™OOH›YÚXÛÛÜˆ‰‰žœÝY[YOO\ÝY[Y
+JNÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆ›YÚXÛÛÜˆ‹ÝY[Y˜[YKÛÛÜ‹ÛÛÜ“˜[Y_JNÂˆÙ\ÜÚ[Û‹œÝ]Ë™]™[ÏJÙ\ÜÚ[Û‹œÝ]Ë™]™[ß
+JÌNÂˆ\œÚ\ÝÙ\ÜÚ[ÛœÊ
+NÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÙØ[YH‹
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KÝY[YXÛX[’Y
+™\K˜›ÙOËœÝY[Y
+K]Y\Ý[Û’YXÛX[’Y
+™\K˜›ÙOËœ]Y\Ý[Û’Y
+NÂˆÛÛœÝX[OXÛX[”ÚÜ
+™\K˜›ÙOËX[K
+KÛÜœ™XÝHH\™\K˜›ÙOË˜ÛÜœ™XÝÂˆYˆ
+\ÝY[Y\]Y\Ý[Û’Y]X[JH™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆœÝY[Y]Y\Ý[Û’Y[™X[H™\]Z\™YŸJNÂˆYˆ
+\Ù\ÜÚ[Û‹œ™\ÜÛœÙ\Ë™Ø[YJHÙ\ÜÚ[Û‹œ™\ÜÛœÙ\Ë™Ø[YO^ßNÂˆYˆ
+\Ù\ÜÚ[Û‹œ™\ÜÛœÙ\Ë™Ø[YVÜ]Y\Ý[Û’YJHÙ\ÜÚ[Û‹œ™\ÜÛœÙ\Ë™Ø[YVÜ]Y\Ý[Û’YO^ßNÂˆYˆ
+JÝY[Y[ˆÙ\ÜÚ[Û‹œ™\ÜÛœÙ\Ë™Ø[YVÜ]Y\Ý[Û’YJJHÂˆÙ\ÜÚ[Û‹œ™\ÜÛœÙ\Ë™Ø[YVÜ]Y\Ý[Û’YVÜÝY[YOXÛÜœ™XÝÂˆYˆ
+ÛÜœ™XÝ
+HÙ\ÜÚ[Û‹™Ø[YTØÛÜ™\ÖÝX[WOJÙ\ÜÚ[Û‹™Ø[YTØÛÜ™\ÖÝX[W_
+JÌNÂˆBˆÙ\ÜÚ[Û‹œÝ]Ë™]™[ÏJÙ\ÜÚ[Û‹œÝ]Ë™]™[ß
+JÌNÂˆÙ\ÜÚ[Û‹œ]Y]YOJÙ\ÜÚ[Û‹œ]Y]Y_×JK™š[\ŠOžšÚ[™OOHœØÛÜ™X›Ø\™ŠNÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆœØÛÜ™X›Ø\™‹ØÛÜ™\ÎœÙ\ÜÚ[Û‹™Ø[YTØÛÜ™\ßJNÂˆ™\ËšœÛÛŠÛÚÎYKØÛÜ™\ÎœÙ\ÜÚ[Û‹™Ø[YTØÛÜ™\ËÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚‚˜\™Ù]
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÙ^ÜšœÛÛˆ‹™\]Z\™PÛÛ›Û
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+NÂˆ™\ËœÙ]XY\ŠÛÛ[Q\ÜÜÚ][Ûˆ‹]XÚY[Èš[[˜[YOH‰ÜÙ\ÜÚ[Û‹šYK\Ù\ÜÚ[Û‹šœÛÛˆ˜
+NÂˆ™\ËšœÛÛŠÂˆÙ\ÜÚ[ÛŽžÂˆYœÙ\ÜÚ[Û‹šYˆ˜[YNœÙ\ÜÚ[Û‹›˜[YKˆÜ™X]Y]œÙ\ÜÚ[Û‹˜Ü™X]Y]ˆ\]Y]œÙ\ÜÚ[Û‹\]Y]ˆKˆÝY[ÎœÙ\ÜÚ[Û‹œÝY[ÈßKˆ[›ÙXÝ[ÛœÎ“Øš™XÝ™œ›ÛQ[šY\ÊˆØš™XÝ™[šY\ÊÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ÈßJBˆ™š[\Š
+ÚË—JHOˆÈOOHœÛÈˆ	‰ˆÈOOH™Ø[YHˆ	‰ˆËš[›ÊBˆ›X\
+
+ÚË—JHOˆÚË‹š[›×JBˆ
+KˆÛÎœÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ÏËœÛÈßKˆØ[YT™\ÜÛœÙ\ÎœÙ\ÜÚ[Û‹œ™\ÜÛœÙ\ÏË™Ø[YHßKˆØ[YTØÛÜ™\ÎœÙ\ÜÚ[Û‹™Ø[YTØÛÜ™\ÈßKˆÜXÕ›Ý\ÎœÙ\ÜÚ[Û‹ÜXÕ›Ý\ÈßKˆÜÝYÚÎœÙ\ÜÚ[Û‹œÜÝYÚÈßKˆ™XÙ[Y™™XÝÎœÙ\ÜÚ[Û‹œ™XÙ[Y™™XÝÈ×BˆJNÂŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÙ^Ü˜ÜÝˆ‹™\]Z\™PÛÛ›Û
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+NÂˆÛÛœÝ›ÝÜÏVÖÂˆœÝY[ÚY‹›˜[YH‹œ™Y™\œ™YÛ˜[YH‹™˜]›Üš]WØÛÛÜ—Ú^‹™˜]›Üš]WØÛÛÜ—Û˜[YH‹ˆ™˜]›Üš]WØXÝ]š]H‹š]Ú[\™\Ý‹›X\›š[™×ÙÛØ[‹š›Ú[™YØ]‹›\ÝÜÙY[ˆ‹X[WÜØÛÜ™WÙ]H‚ˆWNÂˆ›Üˆ
+ÛÛœÝÜÝY[YÝY[HÙˆØš™XÝ™[šY\ÊÙ\ÜÚ[Û‹œÝY[ÈßJJHÂˆÛÛœÝ[›Ï\Ù\ÜÚ[Û‹œ™\ÜÛœÙ\ÏË–ÜÝY[YOËš[›ÈßNÂˆ›ÝÜËœ\Ú
+ÂˆÝY[YˆÝY[›˜[YHˆ‹ˆ[›Ëœ™Y™\œ™Y˜[YHˆ‹ˆ[›Ë˜ÛÛÜˆˆ‹ˆ[›Ë˜ÛÛÜ“˜[YHˆ‹ˆ[›Ë˜XÝ]š]Hˆ‹ˆ[›Ëš[\™\Ýˆ‹ˆ[›Ë™ÛØ[ˆ‹ˆÝY[š›Ú[™Y]ˆ‹ˆÝY[›\ÝÙY[ˆˆ‹ˆ”ÓÓ‹œÝš[™ÚYžJÙ\ÜÚ[Û‹™Ø[YTØÛÜ™\ÈßJBˆJNÂˆBˆÛÛœÝÜÝ\›ÝÜË›X\
+Oœ‹›X\
+ÜÝÙ[
+Kš›Ú[Š‹ŠJKš›Ú[Š—ˆŠNÂˆ™\ËœÙ]XY\ŠÛÛ[U\H‹^ØÜÝŽÈÚ\œÙ]]]‹NŠNÂˆ™\ËœÙ]XY\ŠÛÛ[Q\ÜÜÚ][Ûˆ‹]XÚY[Èš[[˜[YOH‰ÜÙ\ÜÚ[Û‹šYK\ÝY[Z[›ÙXÝ[ÛœË˜ÜÝˆ˜
+NÂˆ™\ËœÙ[™
+ÜÝŠNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÝXXÚ\‹ÛYÚ]\Ý‹™\]Z\™PÛÛ›Û\Þ[˜È
+™\K™\ÊHOˆÂˆžHÂˆÛÛœÝÛÛÜ]˜[Y^ÛÛÜŠ™\K˜›ÙOË˜ÛÛÜˆˆÙ™ŒŠNÂˆÛÛœÝ™\Ý[X]ØZ]\TÙ\ÜÚ[Û“YÚ[™ÊÛÛÜŠNÂˆ™\ËšœÛÛŠÛÚÎYKÛÛÜ‹™\Ý[JNÂˆHØ]Ú
+\œŠHÂˆ™\ËœÝ]\ÊLŠKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆBŸJNÂ‚‚˜\œÜÝ
+‹Ø\KÝŒKØÛ\ÜÜ›ÛÛKØÛX\‹X[‹™\]Z\™PÛÛ›Û\Þ[˜È
+Ü™\K™\ÊHOˆÂˆžHÂˆÛÛœÝÛX\™YÙ\ÜÚ[ÛœÏV×NÂ‚ˆ›Üˆ
+ÛÛœÝÙ\ÜÚ[ÛˆÙˆØš™XÝ˜[Y\ÊÛ\ÜÜ›ÛÛTÙ\ÜÚ[ÛœÊJHÂˆÙ\ÜÚ[Û‹œ]\ÙY]YNÂˆÙ\ÜÚ[Û‹œ]Y]YOV×NÂˆÙ\ÜÚ[Û‹˜Ý\œ™[Y™™XÝ[[ÂˆÙ\ÜÚ[Û‹œÜÝYÚ›Ý][ÛY˜[ÙNÂˆÙ\ÜÚ[Û‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆÛX\™YÙ\ÜÚ[ÛœËœ\Ú
+Ù\ÜÚ[Û‹šY
+NÂˆœ›ØYØ\ÝÙ\ÜÚ[ÛŠÙ\ÜÚ[Û‹šYÝ\NˆœÙ\ÜÚ[Û‹œÝ]H‹Ý]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂˆB‚ˆ\œÚ\ÝÙ\ÜÚ[ÛœÊ
+NÂ‚ˆËÈX\Ý\ˆÛ\ÜÜ›ÛÛHÛX\ˆ\È[ˆZYÚY\Ü^HÜ\˜][Û‹ˆ™\ÛÛ™HBˆËÈÛÛ™šYÝ\™Y[\Ü^HÜ›Ý\][[YHÛÈ\ØX›YÜ™[˜[YY]šXÙ\È\™BˆËÈ™\ÜXÝY[™]™\žH[˜X›YÛ\ÜÜ›ÛÛH™XÙZ]™\ˆ\È›[šÙY[[YYX][K‚ˆÛÛœÝÛX\™Y\Ü^\Ï\™\ÛÛ™Q\Ü^U\™Ù]Ê˜[ŠNÂˆÛÛœÝ\Ü^T™\Ý[X]ØZ]^XÝ]PÛÛ[X[™
+Ý\Nˆ™\Ü^K˜ÛX\ˆ‹\™Ù]ˆ˜[‹^[ØYžß_K˜Û\ÜÜ›ÛÛKXÛX\ˆŠNÂ‚ˆ]Y]
+ÂˆÚ[™ˆ˜Û\ÜÜ›ÛÛK˜ÛX\‹X[‹ˆÙ\ÜÚ[ÛœÎ˜ÛX\™YÙ\ÜÚ[ÛœËˆ\™Ù]Î˜ÛX\™Y\Ü^\Ëˆ[]™\šY\Î™\Ü^T™\Ý[™[]™\šY\ÂˆJNÂ‚ˆ™\ËšœÛÛŠÂˆÚÎYKˆY\ÜØYÙN˜Û\ÜÜ›ÛÛHÛX\™YÛˆ	ØÛX\™Y\Ü^\Ë›[™ÝH\Ü^JÊNÈ[Ù\ÜÚ[Ûˆ]Y]Y\È]\ÙY˜ˆÛX\™YÙ\ÜÚ[ÛœËˆ\™Ù]Î˜ÛX\™Y\Ü^\Ëˆ\Ü^T™\Ý[ˆJNÂˆHØ]Ú
+\œŠHÂˆ™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆBŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKØÛ\ÜÜ›ÛÛKÜ™\Ý[YK\Ù\ÜÚ[ÛœÈ‹™\]Z\™PÛÛ›Û
+Ü™\K™\ÊHOˆÂˆÛÛœÝ™\Ý[YYV×NÂˆ›Üˆ
+ÛÛœÝÙ\ÜÚ[ÛˆÙˆØš™XÝ˜[Y\ÊÛ\ÜÜ›ÛÛTÙ\ÜÚ[ÛœÊJHÂˆÙ\ÜÚ[Û‹œ]\ÙYY˜[ÙNÂˆÙ\ÜÚ[Û‹œÜÝYÚ›Ý][Û]YNÂˆÙ\ÜÚ[Û‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ™\Ý[YYœ\Ú
+Ù\ÜÚ[Û‹šY
+NÂˆœ›ØYØ\ÝÙ\ÜÚ[ÛŠÙ\ÜÚ[Û‹šYÝ\NˆœÙ\ÜÚ[Û‹œÝ]H‹Ý]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂˆBˆ\œÚ\ÝÙ\ÜÚ[ÛœÊ
+NÂˆ™\ËšœÛÛŠÛÚÎYK™\Ý[YYJNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÝXXÚ\‹ÝÜXÈ‹™\]Z\™PÛÛ›Û
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KÜXÏXÛX[’Y
+™\K˜›ÙOËÜXÊNÂˆYˆ
+SÔS’S‘×ÕÔPÔÖÝÜX×JH™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ•[šÛ›ÝÛˆÜXÈŸJNÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆÜXÈ‹ÜXßJNÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÝXXÚ\‹ÙY™™XÝ‹™\]Z\™PÛÛ›Û
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+NÂˆ[œ]Y]YTÙ\ÜÚ[Û‘Y™™XÝ
+Ù\ÜÚ[Û‹ÚÚ[™ˆXXÚ\ˆ‹]N˜ÛX[”ÚÜ
+™\K˜›ÙOË]K
+KÝX]N˜ÛX[”ÚÜ
+™\K˜›ÙOËœÝX]KL
+K›ÙN˜ÛX[”ÚÜ
+™\K˜›ÙOË˜›ÙKL
+KÛÛÜŽ˜[Y^ÛÛÜŠ™\K˜›ÙOË˜ÛÛÜŠ_JNÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ\ÜÚ[ÛŠ_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜÙ\ÜÚ[ÛœËÎšYÝXXÚ\‹ØÛÛ›Û‹™\]Z\™PÛÛ›Û
+™\K™\ÊHOˆÂˆÛÛœÝÙ\ÜÚ[ÛYÙ]Ù\ÜÚ[ÛŠ™\Kœ\˜[\ËšY
+KXÝ[ÛXÛX[’Y
+™\K˜›ÙOË˜XÝ[ÛŠNÂˆYˆ
+XÝ[ÛOOHœ]\ÙHŠHÙ\ÜÚ[Û‹œ]\ÙY]YNÂˆ[ÙHYˆ
+XÝ[ÛOOHœ™\Ý[YHŠHÙ\ÜÚ[Û‹œ]\ÙYY˜[ÙNÂˆ[ÙHYˆ
+XÝ[ÛOOH˜ÛX\ˆŠHÙ\ÜÚ[Û‹œ]Y]YOV×NÂˆ[ÙHYˆ
+XÝ[ÛOOHœÜÝYÚ[ÛˆŠHÙ\ÜÚ[Û‹œÜÝYÚ›Ý][Û]YNÂˆ[ÙHYˆ
+XÝ[ÛOOHœÜÝYÚ[Ù™ˆŠHÙ\ÜÚ[Û‹œÜÝYÚ›Ý][ÛY˜[ÙNÂˆ[ÙHYˆ
+XÝ[ÛOOH™\Ú›Ø\™ŠHÂˆÚÝÐÛ\ÜÑ\Ú›Ø\™
+Ù\ÜÚ[ÛŠK˜Ø]Ú
+\œO˜]Y]
+ÚÚ[™ˆœÙ\ÜÚ[Û‹™\Ú›Ø\™™\œ›Üˆ‹\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JJNÂˆBˆ[ÙHYˆ
+XÝ[ÛOOHœ™\Ù]ŠHÂˆÛ\ÜÜ›ÛÛTÙ\ÜÚ[ÛœÖÜÙ\ÜÚ[Û‹šYO^Ë‹‹™Ù]Ù\ÜÚ[ÛŠÙ\ÜÚ[Û‹šY
+KÝY[ÎžßK™\ÜÛœÙ\ÎžßKÜXÕ›Ý\ÎžßKØ[YTØÛÜ™\ÎžßK]Y]YN–×K™XÙ[Y™™XÝÎ–×KÝ\œ™[Y™™XÝ›[ÜÝYÚÎžßKÜÝYÚÜ™\Ž–×KÜÝYÚ[™^ŒÜÝYÚ›Ý][ÛŽYKÝ]ÎžÚ›Ú[œÎŒ]™[ÎŒK\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+_NÂˆBˆ\œÚ\ÝÙ\ÜÚ[ÛœÊ
+NÂˆ™\ËšœÛÛŠÛÚÎYKÝ]NœX›XÔÙ\ÜÚ[Û”Ý]JÙ]Ù\ÜÚ[ÛŠÙ\ÜÚ[Û‹šY
+J_JNÂŸJNÂ‚‚‚‹ËÈXˆÛÛ\]\ˆX[˜YÙ[Y[TB‚‹ËÈ™^[Û‹\ÝÙ\™YXˆÛÛ\]\œÈTB˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ÜÝ]\È‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK\Þ[˜ÊÜ™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ™\ÜÛœÙOX]ØZ]™^[Û‘™]Ú
+‹ÈŠNÂˆ™\ËšœÛÛŠÛÚÎYKÙX˜\NYKÙ\šXÙT™XXÚX›NYK™\šYšXØ][ÛŽˆœ™XXÚXš[]K[Û›H‹]][XØ]YÛÛ›™XÝ[ÛœÎ–Ë‹‹™^[ÛÛÛ›™XÝ[ÛØXÚK˜[Y\Ê
+WK™š[\Š™XÏO“[X™\Š™XË˜[Y[[
+O‘]K››ÝÊ
+KÌL
+K›[™ÝÝ]\Îœ™\ÜÛœÙKœÝ]\Ë\›•‘VSÓ—ÕÑPTWÕT“Ù^S˜[YN•‘VSÓ—ÒÑVWÓSQKÙ^Qš[T™XYX›N™”ÝÜ™Kš\ÔÙXÜ™]
+™^[Û‹œš]˜]KZÙ^HŠ_œË™^\ÝÔÞ[˜Ê‘VSÓ—Ô’UUWÒÑVWÑ’SJKØØ[”ÝX›™]•‘VSÓ—ÔÐÐS—ÔÕP“‘UÛÛžÜÚ^™N™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™KX^•‘VSÓ—ÔÓÓÓPV_JNÂˆXØ]Ú
+\œŠ^Âˆ™\ËœÝ]\ÊLÊKšœÛÛŠÛÚÎ™˜[ÙKÙX˜\N™˜[ÙKÙ\šXÙT™XXÚX›N™˜[ÙK™\šYšXØ][ÛŽˆ[œ™XXÚX›H‹]][XØ]YÛÛ›™XÝ[ÛœÎŒ\œ›ÜŽ™\œ‹›Y\ÜØYÙK\›•‘VSÓ—ÕÑPTWÕT“Ù^S˜[YN•‘VSÓ—ÒÑVWÓSQKÙ^Qš[T™XYX›N™”ÝÜ™Kš\ÔÙXÜ™]
+™^[Û‹œš]˜]KZÙ^HŠ_œË™^\ÝÔÞ[˜Ê‘VSÓ—Ô’UUWÒÑVWÑ’SJ_JNÂˆBŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œÈ‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ[˜ÛYR[™›ÏTÝš[™Ê™\Kœ]Y\žKš[™›ßŒHŠHOOHŒ‰‰ˆ]™^[ÛÛÛ[X[™]Y]YKœ™\ÜÝ\™J
+NÂˆÛÛœÝ™XÛÜ™ÏSØš™XÝ˜[Y\Ê™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÊNÂˆÛÛœÝÛÛ\]\œÏX]ØZ]X\[Z]
+™XÛÜ™ËL™XÏO™^[Û”Ý]\Ñ›ÜŠ™XËÚ[˜ÛYR[™›ßJJNÂˆÛÛ\]\œËœÛÜ
+
+KŠOO”Ýš[™ÊK›˜[Y_Kš\
+K›ØØ[PÛÛ\\™JÝš[™Ê‹›˜[Y_‹š\
+K[™Yš[™YÛ[Y\šXÎY_JJNÂˆ™\ËšœÛÛŠÛÚÎYKÛÛ\]\œËÝ[[X\žNžÂˆÝ[˜ÛÛ\]\œË›[™ÝˆÛ›[™N˜ÛÛ\]\œË™š[\ŠOž›Û›[™JK›[™Ýˆ]][XØ]Y˜ÛÛ\]\œË™š[\ŠOž˜]][XØ]Y
+K›[™ÝˆÝY[Î˜ÛÛ\]\œË™š[\ŠOžœ›ÛHOOHXXÚ\ˆŠK›[™ÝˆXXÚ\œÎ˜ÛÛ\]\œË™š[\ŠOžœ›ÛOOOHXXÚ\ˆŠK›[™Ýˆ_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹Ù\ØÛÝ™\ˆ‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝÛÛ\]\œÏX]ØZ]™^[Û‘\ØÛÝ™\Š™\K˜›Ù_ßJNÂˆ™\ËšœÛÛŠÛÚÎYKÛÛ\]\œËÝ[[X\žNžÙ›Ý[™˜ÛÛ\]\œË›[™Ý]][XØ]Y˜ÛÛ\]\œË™š[\ŠOž˜]][XØ]Y
+K›[™Ý_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œÈ‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ\TÝš[™Ê™\K˜›ÙOËš\ˆŠKš[J
+NÂˆYŠK×—ÌKßJÎ——ÌKßJ^ÌßIË\Ý
+\
+J]›ÝÈ™]È\œ›ÜŠ•˜[YTY™\ÜÈ™\]Z\™YŠNÂˆÛÛœÝ›ÛO\™\K˜›ÙOËœ›ÛOOOHXXÚ\ˆÈXXÚ\ˆŽˆœÝY[ŽÂˆ™\ËšœÛÛŠÛÚÎYKÛÛ\]\Ž\Ù\™^[ÛÛÛ\]\Š\Û˜[YN”Ýš[™Ê™\K˜›ÙOË›˜[Y_\
+KœÛXÙJLŒ
+KÜÝ˜[YN”Ýš[™Ê™\K˜›ÙOËšÜÝ˜[Y_ˆŠKœÛXÙJLŒ
+K›Û_J_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œ]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšY‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝY]™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+K™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆÛÛœÝ]Ú^Û˜[YN”Ýš[™Ê™\K˜›ÙOË›˜[Y_™XË›˜[YJKœÛXÙJLŒ
+_NÂˆYŠ™\K˜›ÙOË›XXÈOO][™Yš[™Y
+^Ü]Ú›XXÏ[›Ü›X[^™SXXÊ™\K˜›ÙK›XXÊNÜ]Ú›XXÒÜÝ˜[YOTÝš[™Ê™XËšÜÝ˜[Y_™XËšY
+KÓÝÙ\Ø\ÙJ
+NßBˆYŠ™\K˜›ÙOËœ›ÛOOOHXXÚ\ˆŸ™\K˜›ÙOËœ›ÛOOOHœÝY[Š\]Úœ›ÛO\™\K˜›ÙKœ›ÛNÂˆ™\ËšœÛÛŠÛÚÎYKÛÛ\]\Ž\Ù\™^[ÛÛÛ\]\Š™XËš\]Ú
+_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÜ›ÛH‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYÏP\œ˜^Kš\Ð\œ˜^J™\K˜›ÙOËšYÊOÜ™\K˜›ÙKšYÎ–×NÂˆÛÛœÝ›ÛO\™\K˜›ÙOËœ›ÛNÂˆYŠVÈXXÚ\ˆ‹œÝY[—Kš[˜ÛY\Ê›ÛJJ]›ÝÈ™]È\œ›ÜŠ”›ÛH]\Ý™HXXÚ\ˆÜˆÝY[ŠNÂˆÛÛœÝ\]YV×NÂˆ›ÜŠÛÛœÝ˜]ÒYÙˆYÊ^ÂˆÛÛœÝY]™^[ÛÛÛ\]\’Y
+˜]ÒY
+K™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ™XÊ]\]Yœ\Ú
+\Ù\™^[ÛÛÛ\]\Š™XËš\Ü›Û_JJNÂˆBˆ™\ËšœÛÛŠÛÚÎYK\]YJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™[]J‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšY‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆÛÛœÝY]™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+K™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆ[]H™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÝ™^[ÛÛÜÙPÛÛ›™XÝ[ÛŠ™XËš\
+K˜Ø]Ú
+
+
+OOžßJNÜ\œÚ\Ý™^[ÛÛÛ\]\œÊ
+NÂˆ™\ËšœÛÛŠÛÚÎYKYJNÂŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYÚ[™›È‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆ™\ËšœÛÛŠÛÚÎYKÛÛ\]\Ž˜]ØZ]™^[Û”Ý]\Ñ›ÜŠ™XËÚ[˜ÛYR[™›ÎY_J_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊLŠKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYÙœ˜[YXY™™\ˆ‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆYŠ™^[ÛÛÛ[X[™]Y]YKœ™\ÜÝ\™J
+J^Âˆ™\ËœÙ]XY\Š”™]žKPY\ˆ‹ŒHŠNÜ™\ËœÙ]XY\ŠØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆ™]\›ˆ™\ËœÝ]\ÊLÊKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”™]šY]È]\ÙYÚ[HÛ\ÜÜ›ÛÛHÛÛ[X[™È\™H™Z[™ÈÙ[ˆ‹ÝYÙNˆ™œ˜[YXY™™\ˆ‹™X\ÛÛŽˆ˜ÛÛ[X[™Ë\[™[™ÈŸJNÂˆBˆÛÛœÝ\Ï[™]ÈT“ÙX\˜Ú\˜[\Ê
+NÂˆ\ËœÙ]
+™›Ü›X]‹Ýš[™Ê™\Kœ]Y\žK™›Ü›X]šœYÈŠOOOHœ™ÈÈœ™ÈŽˆšœYÈŠNÂˆYŠ™\Kœ]Y\žKÚY
+\\ËœÙ]
+ÚY‹Ýš[™ÊX]›X^
+MŒX]›Z[ŠÎ[X™\Š™\Kœ]Y\žKÚY
+_
+JJJNÂˆYŠ™\Kœ]Y\žKšZYÚ
+\\ËœÙ]
+šZYÚ‹Ýš[™ÊX]›X^
+LX]›Z[ŠŒMŒ[X™\Š™\Kœ]Y\žKšZYÚ
+_Ì
+JJJNÂˆYŠ\Ë™Ù]
+™›Ü›X]ŠOOOHšœYÈŠ\\ËœÙ]
+œ]X[]H‹Ýš[™ÊX]›X^
+ŒX]›Z[ŠMK[X™\Š™\Kœ]Y\žKœ]X[]J_Œ
+JJJNÂˆÛÛœÝœ˜[YOX]ØZ]™XY™^[Û‘œ˜[YJ\Ë]˜[YOO™^[ÛÛÛ›™XÝY™\]Y\Ý
+™XËš\]˜[YKÝ[Y[Ý]\ÎŒLK\Þ[˜Ê]˜[YKÜ[ÛœÊOOžÂˆÛÛœÝ™\ÜÛœÙOX]ØZ]™^[Û‘™]Ú
+]˜[YKÜ[ÛœÊNÂˆYŠ\™\ÜÛœÙK›ÚÊ]›ÝÈ]ØZ]™^[Û”™\ÜÛœÙQ\œ›ÜŠ™\ÜÛœÙJNÂˆ™]\›ˆ™\ÜÛœÙNÂˆJJNÂˆ™\ËœÙ]XY\ŠØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆ™\Ë\Jœ˜[YK˜ÛÛ[\JKœÙ[™
+œ˜[YK˜Y™™\ŠNÂˆXØ]Ú
+\œŠ^ÂˆÛÛœÝÝ]\ÏVÍŽKLËLKš[˜ÛY\Ê\œ‹œÝ]\ÊOÙ\œ‹œÝ]\ÎLŽÂˆ™\ËœÙ]XY\ŠØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆ™\ËœÝ]\ÊÝ]\ÊKšœÛÛŠØY™U™^[Û‘˜Z[\™J\œŠJNÂˆBŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYÙ™X]\™\È‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆ™\ËšœÛÛŠÛÚÎYK™X]\™\Î˜]ØZ]™^[Û]˜Z[X›Q™X]\™\Ê™XËš\
+_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊLŠKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚‹ËÈš^Y\X[˜ÙK]ÚYHYÙ]Îˆ›ÜØ\™YY™\ÜÙ\ÈØ[››Ý][\HÛÜšË‚‹ËÈÛX[\\È]ÈÝÛˆYÙ]ÛÈÜ™[˜\žHÜš]\ÈØ[››ÝÛÛœÝ[YHHÝÜ][ÝK‚˜ÛÛœÝÕ™^[ÛR_O\™\]Z\™J‹‹Ý™^[Û‹XZHŠNÂ˜ÛÛœÝ™^[ÛRO[™]È™^[ÛRJÝÚÙ[Ž”Ýš[™Ê›ØÙ\ÜË™[‹•‘VSÓ—ÐRWÕÒÑSŸˆŠ_JNÂ˜ÛÛœÝ™^[ÛRS[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]‹Ù^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹XZH‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆ”ØÜ™Y[ˆ[˜[\Ú\È[Z]™XXÚYÈØZ]HZ[]HŸ_JNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYØ[˜[^™H‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK™^[ÛRS[Z]\Þ[˜Ê™\K™\ÊOOžÂˆ™\ËœÙ]
+ØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆÛÛœÝÛÛ\]\]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠXÛÛ\]\Š\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆYŠ™^[ÛÛÛ[X[™]Y]YKœ™\ÜÝ\™J
+J\™]\›ˆ™\ËœÝ]\ÊLÊKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ•ØZ]›ÜˆÛ\ÜÜ›ÛÛHÛÛ[X[™ÈÈš[š\ÚŸJNÂˆž^ØÛÛœÝ™\Ý[X]ØZ]˜XÚÑ[^Ü]]][ÛŠ™^[ÛRK˜[˜[^™J\Þ[˜Ê
+OOžÂˆÛÛœÝœ˜[YOX]ØZ]™XY™^[Û‘œ˜[YJ™]ÈT“ÙX\˜Ú\˜[\ÊÙ›Ü›X]ˆšœYÈ‹ÚYˆŒLŽ‹ZYÚˆÌŒ‹]X[]NˆŽŸJK]˜[YOO™^[ÛÛÛ›™XÝY™\]Y\Ý
+ÛÛ\]\‹š\]˜[YKÝ[Y[Ý]\ÎŒLX^ž]\Î
+ŒL
+ŒLK\Þ[˜Ê]˜[YKÜ[ÛœÊOOžÂˆÛÛœÝ™\ÜÛœÙOX]ØZ]™^[Û‘™]Ú
+]˜[YKÜ[ÛœÊNÚYŠ\™\ÜÛœÙK›ÚÊ]›ÝÈ]ØZ]™^[Û”™\ÜÛœÙQ\œ›ÜŠ™\ÜÛœÙJNÜ™]\›ˆ™\ÜÛœÙNÂˆJJNÂˆÛÛœÝ\Ù\\™\]Y\Ý\Ù\Š™\JNÂˆYŠ”ÝÜ™K˜]][˜X›Y
+
+I‰Š]\Ù\ŸZ\ÐØ\Xš[]J\Ù\‹›X‹œÙ[œÚ]]™Kœ™XYŠ_Z\ÐØ\Xš[]J\Ù\‹›X‹˜ÛÛ›ÛŠJJ]›ÝÈ\œ›ÜŠ”\›Z\ÜÚ[Ûˆ™]›ÚÙYŠNÂˆYŠ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖØÛÛ\]\‹šYOËš\OOXÛÛ\]\‹š\
+]›ÝÈ\œ›ÜŠÛÛ\]\ˆY[]HÚ[™ÙYŠNÂˆ™]\›ˆœ˜[YK˜Y™™\ŽÂˆJJNØ]Y]
+ÚÚ[™ˆ™^[Û‹˜ZH‹XÝÜŽœ™\]Y\Ý\Ù\Š™\JOËšY›YØXÞKXÛÛ›Û‹ÛÛ\]\Ž˜ÛÛ\]\‹šYXØÙ\YYK]XÝ[ÛœÎ\œ˜^Kš\Ð\œ˜^J™\Ý[™]XÝ[ÛœÊOÜ™\Ý[™]XÝ[ÛœË›[™ÝŒJNÜ™\ËšœÛÛŠ™\Ý[
+_XØ]ÚÜ™\ËœÝ]\ÊLÊKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“ØØ[ØÜ™Y[ˆ[˜[\Ú\È[˜]˜Z[X›KˆÛÛ™šYÝ\™H[™Ý\HÙ\\˜]HRH[ÝÙ\šXÙKˆŸJ_BŸJNÂ˜ÛÛœÝÐœ›ÝÜÙ\”Ù\ÜÚ[ÛœßO\™\]Z\™J‹‹Ý™^[Û‹Xœ›ÝÜÙ\‹\Ù\ÜÚ[ÛœÈŠNÂ˜ÛÛœÝ™^[Ûœ›ÝÜÙ\”Ù\ÜÚ[ÛœÏ[™]Èœ›ÝÜÙ\”Ù\ÜÚ[ÛœÊÂˆÛÛ›™XÝ˜\Þ[˜ÈÜÝOžØ]ØZ]™^[Û]][XØ]JÜÝ
+NÜ™]\›ˆ™^[ÛÛÛ›™XÝ[ÛØXÚK™Ù]
+ÜÝ
+_KˆY[]NŠÛÛ\]\‹ÛÛ›™XÝ[ÛŠOOžÂˆÛÛœÝÝ\œ™[]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖØÛÛ\]\‹šYNÂˆ™]\›ˆHXÝ\œ™[	‰˜Ý\œ™[š\OOXÛÛ\]\‹š\	‰˜Ý\œ™[šÜÝ˜[YOOOXÛÛ\]\‹šÜÝ˜[YI‰‚ˆ™^[ÛÛÛ›™XÝ[ÛØXÚK™Ù]
+ÛÛ\]\‹š\
+OOOXÛÛ›™XÝ[Û‰‰“[X™\ŠÛÛ›™XÝ[Û‹˜[Y[[
+O‘]K››ÝÊ
+KÌL
+ÍNÂˆKˆ™\]Y\Ý˜\Þ[˜ÊÙ\ÜÚ[Û‹XÝ[Û‹]JOOžÂˆÙ\ÜÚ[Û‹˜ÛÛ›™XÝ[Û‹›\Ý\ÙYQ]K››ÝÊ
+NÂˆž^Ü™]\›ˆ]ØZ]™^[Û’œÛÛŠØ\KÝŒKÜ›ÛÛYÛØ›[‹ÉØXÝ[ÛŸXÛY]Ùˆ”ÔÕ‹XY\œÎžÈÛÛ[U\HŽˆ˜\XØ][Û‹ÚœÛÛˆ‹ÛÛ›™XÝ[Û‹UZYŽœÙ\ÜÚ[Û‹˜ÛÛ›™XÝ[Û‹ZYK›ÙN’”ÓÓ‹œÝš[™ÚYžJ]J_J_BˆØ]ÚÝ›ÝÈØš™XÝ˜\ÜÚYÛŠ\œ›ÜŠ“˜]]™Hœ›ÝÜÙ\ˆœšYÙH[˜]˜Z[X›HÜˆ™\ÜÛœÙHÜÝÈ›È]]ÛX]XÈ™]žHØ\ÈXYKˆŠKÜÝ]\ÎLßJ_BˆBŸJNÂœÙ][\˜[
+
+
+OO™^[Ûœ›ÝÜÙ\”Ù\ÜÚ[ÛœËœ[™J
+KL
+K[œ™YŠ
+NÂ˜ÛÛœÝ™^[Ûœ›ÝÜÙ\“[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]ŒÙ^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹Xœ›ÝÜÙ\ˆ‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆœ›ÝÜÙ\ˆÛÛ[Z]™XXÚYŸ_JNÂ˜ÛÛœÝ™^[Ûœ›ÝÜÙ\ÛÛ›Û[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]ŒÙ^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹Xœ›ÝÜÙ\‹XÛÛ›Û‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆœ›ÝÜÙ\ˆÛÛ›Û[Z]™XXÚYŸ_JNÂ˜ÛÛœÝ™^[Ûœ›ÝÜÙ\ÛX[\[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]ŒÙ^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹Xœ›ÝÜÙ\‹XÛX[\‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆœ›ÝÜÙ\ˆÛX[\[Z]™XXÚYŸ_JNÂ˜ÛÛœÝ™^[Ûœ›ÝÜÙ\XÝ[Û“[Z]J™\K™\Ë™^
+OOŠ™\Kœ\˜[\Ë˜XÝ[ÛOOH˜ÛÜÙHÝ™^[Ûœ›ÝÜÙ\ÛX[\[Z]–ÈœÝ]H‹œÚ[\ˆ‹šÙ^H‹˜Û\›Ø\™—Kš[˜ÛY\Ê™\Kœ\˜[\Ë˜XÝ[ÛŠOÝ™^[Ûœ›ÝÜÙ\ÛÛ›Û[Z]™^[Ûœ›ÝÜÙ\“[Z]
+J™\K™\Ë™^
+NÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYØœ›ÝÜÙ\‹Î˜XÝ[Ûˆ‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK™^[Ûœ›ÝÜÙ\XÝ[Û“[Z]\Þ[˜Ê™\K™\ÊOOžÂˆ™\ËœÙ]
+ØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆÛÛœÝÛÛ\]\]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠXÛÛ\]\Š\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆÛÛœÝ]]Üš^™OJ
+OOžØÛÛœÝ\Ù\\™\]Y\Ý\Ù\Š™\JNÚYŠ”ÝÜ™K˜]][˜X›Y
+
+I‰Š]\Ù\ŸZ\ÐØ\Xš[]J\Ù\‹›X‹˜ÛÛ›ÛŠ_Z\ÐØ\Xš[]J\Ù\‹›X‹œÙ[œÚ]]™Kœ™XYŠJJ]›ÝÈØš™XÝ˜\ÜÚYÛŠ\œ›ÜŠœ›ÝÜÙ\ˆÛÛ\›Z\ÜÚ[Ûˆ™]›ÚÙYŠKÜÝ]\ÎßJ_NÂˆž^ØÛÛœÝXÝÜ\™\]Y\Ý\Ù\Š™\JOËšY›YØXÞKXÛÛ›ÛŽØÛÛœÝ™\Ý[X]ØZ]˜XÚÑ[^Ü]]][ÛŠ™^[Ûœ›ÝÜÙ\”Ù\ÜÚ[ÛœËœ[ŠÛÝÛ™\Ž˜XÝÜ‹ÛÛ\]\‹XÝ[ÛŽœ™\Kœ\˜[\Ë˜XÝ[Û‹[œ]œ™\K˜›ÙK]]Üš^™_JJNÚYŠÈ›Ü[ˆ‹˜ÛÜÙH‹œÙ[™‹™ÝÛ›ØY‹\ØYÝ\‹\ØYš[š\Ú‹˜Û\›Ø\™—Kš[˜ÛY\Ê™\Kœ\˜[\Ë˜XÝ[ÛŠI‰ˆJ™\Kœ\˜[\Ë˜XÝ[ÛOOH˜Û\›Ø\™‰‰œ™\Ý[œ[™[™ÊJX]Y]
+ÚÚ[™ˆ™^[Û‹˜œ›ÝÜÙ\ˆ‹XÝÜ‹XÝ[ÛŽœ™\Kœ\˜[\Ë˜XÝ[Û‹Ù\ÜÚ[Û’Ú[™œ™\Kœ\˜[\Ë˜XÝ[ÛOOH›Ü[ˆÔÝš[™Ê™\K˜›ÙOËšÚ[™ˆŠKœÛXÙJŒ
+N[™Yš[™YÛÛ\]\Ž˜ÛÛ\]\‹šYXØÙ\YY_JNÜ™\ËšœÛÛŠ™\Ý[
+_BˆØ]Ú
+\œ›ÜŠ^Ü™\ËœÝ]\ÊÍËKL×Kš[˜ÛY\Ê\œ›Ü‹œÝ]\ÊOÙ\œ›Ü‹œÝ]\ÎLÊKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ›Ü‹œÝ]\ÏÙ\œ›Ü‹›Y\ÜØYÙNˆœ›ÝÜÙ\ˆ™\]Y\Ý˜Z[YŸJ_BŸJNÂ˜ÛÛœÝ™^[Û‘œ™YT™XY[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]ŒÙ^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹Yœ™YK\™XY‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆ•™^[ÛˆÛÛ™XY[Z]™XXÚYÈ™]žH]\ˆŸ_JNÂ˜ÛÛœÝ™^[Û‘œ™YUÜš]S[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]ŒÌÙ^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹Yœ™YK]Üš]H‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆ•™^[ÛˆÛÛXÝ[Ûˆ[Z]™XXÚYÈ™]žH]\ˆŸ_JNÂ˜ÛÛœÝ™^[Û‘œ™YPÛX[\[Z]\˜]S[Z]
+ÝÚ[™ÝÓ\ÎŒÌ[Z]ŒÙ^QÙ[™\˜]ÜŽŠ
+OOˆ™^[Û‹Yœ™YKXÛX[\‹Ý[™\™XY\œÎˆ™˜YN‹YØXÞRXY\œÎ™˜[ÙKY\ÜØYÙNžÛÚÎ™˜[ÙK\œ›ÜŽˆ•™^[ÛˆÛX[\[Z]™XXÚYÈ™]žH]\ˆŸ_JNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYØØ][ÙÈ‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK™^[Û‘œ™YT™XY[Z]\Þ[˜Ê™\K™\ÊOOžÂˆÛÛœÝ™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆž^Ü™\ËšœÛÛŠÛÚÎYK™X]\™\Î™™X]\™PØ][ÙÊ]ØZ]™^[Û]˜Z[X›Q™X]\™\Ê™XËš\
+JK™\šYšXØ][ÛŽˆœ›ÞKXY™\\Ù[Y[[Û›HŸJ_BˆØ]Ú
+\œ›ÜŠ^Ü™\ËœÝ]\ÊLÊKšœÛÛŠØY™U™^[Û‘˜Z[\™J\œ›ÜŠJ_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹ÝØZÙH‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK™^[Û‘œ™YUÜš]S[Z]\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYÏ\™\K˜›ÙOË\™Ù]ÎÚYŠP\œ˜^Kš\Ð\œ˜^JYÊ_ZYË›[™ÝYË›[™Ý
+]›ÝÈ\œ›ÜŠÚÛÜÙHx $ÍÛÛ\]\œËˆŠNÂˆÛÛœÝ\™Ù]ÏVË‹‹›™]ÈÙ]
+YÊWK›X\
+YOžØÛÛœÝÙ^O]™^[ÛÛÛ\]\’Y
+Y
+K™XÏSØš™XÝš\ÓÝÛŠ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œËÙ^JOÝ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚÙ^WN›[ÚYŠ\™XÊ]›ÝÈ\œ›ÜŠÛÛ\]\ˆ›Ý›Ý[™ŠNÜ™]\›ˆ™XßJNÂˆÛÛœÝ™\Ý[ÏX]ØZ]X\[Z]
+\™Ù]Ë\Þ[˜È™XÏOžÝž^ÚYŠ™XË›XXÒÜÝ˜[YHOOTÝš[™Ê™XËšÜÝ˜[Y_™XËšY
+KÓÝÙ\Ø\ÙJ
+J]›ÝÈ\œ›ÜŠ”Ø]™HHPPÈY™\ÜÈYØZ[ˆY\ˆ[ˆ[™[ÜžHY[]HÚ[™ÙKˆŠNÜ™]\›ˆÚYœ™XËšY‹‹˜]ØZ]ØZÙPÛÛ\]\Š™XË›XXÊ__XØ]Ú
+\œ›ÜŠ^Ü™]\›ˆÚYœ™XËšYXØÙ\Y™˜[ÙK™\šYšYY™˜[ÙK\œ›ÜŽ™\œ›Ü‹›Y\ÜØYÙ___JNÂˆ]Y]
+ÚÚ[™ˆ™^[Û‹ØZÙH‹\™Ù]Î\™Ù]Ë›X\
+™XÏOœ™XËšY
+KXØÙ\Yœ™\Ý[Ë™š[\ŠOœ‹˜XØÙ\Y
+K›[™ÝJNÂˆ™\ËšœÛÛŠÛÚÎœ™\Ý[Ë™]™\žJOœ‹˜XØÙ\Y
+K™\Ý[ßJNÂˆXØ]Ú
+\œ›ÜŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ›Ü‹›Y\ÜØYÙ_J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹Û\ÜÛÛ‹XXÝ[ÛœÈ‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK™^[Û‘œ™YT™XY[Z]
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYKXÝ[ÛœÎ™”ÝÜ™K™Ù]™Y™\™[˜ÙJ™^[Û‹›\ÜÛÛ‹XXÝ[ÛœÈ‹×J_JJNÂ˜\œ]
+‹Ø\KÝŒKÝ™^[Û‹Û\ÜÛÛ‹XXÝ[ÛœÈ‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK™^[Û‘œ™YUÜš]S[Z]
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ[œ]Ï\™\K˜›ÙOË˜XÝ[ÛœÎÚYŠP\œ˜^Kš\Ð\œ˜^J[œ]Ê_[œ]Ë›[™Ý
+]›ÝÈ\œ›ÜŠ”Ø]™H][ÜÝ\ÜÛÛˆXÝ[ÛœËˆŠNÂˆÛÛœÝXÝ[ÛœÏZ[œ]Ë›X\
+›Ü›X[^™S\ÜÛÛXÝ[ÛŠNÂˆYŠ™]ÈÙ]
+XÝ[ÛœË›X\
+Ož›˜[YKÓÝÙ\Ø\ÙJ
+JJKœÚ^™HOOXXÝ[ÛœË›[™Ý
+]›ÝÈ\œ›ÜŠ“\ÜÛÛˆXÝ[Ûˆ˜[Y\È]\Ý™H[š\]YKˆŠNÂˆ”ÝÜ™KœÙ]™Y™\™[˜ÙJ™^[Û‹›\ÜÛÛ‹XXÝ[ÛœÈ‹XÝ[ÛœÊNØ]Y]
+ÚÚ[™ˆ™^[Û‹›\ÜÛÛ‹XXÝ[ÛœÈ‹ÛÝ[˜XÝ[ÛœË›[™ÝJNÜ™\ËšœÛÛŠÛÚÎYKXÝ[ÛœßJNÂˆXØ]Ú
+\œ›ÜŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ›Ü‹›Y\ÜØYÙ_J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ\]\œËÎšYÙ™X]\™KÎ™™X]\™H‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\Kœ\˜[\ËšY
+WNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆ™\ËšœÛÛŠÛÚÎYK™X]\™Nœ™\Kœ\˜[\Ë™™X]\™K‹‹˜]ØZ]™^[Û‘™X]\™TÝ]\Ê™XËš\™\Kœ\˜[\Ë™™X]\™J_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊLŠKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ›™XÝ[ÛœÈ‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK
+Ü™\K™\ÊOOžÂˆÛÛœÝ›ÝÏSX]™›ÛÜŠ]K››ÝÊ
+KÌL
+NÂˆ™\ËšœÛÛŠÛÚÎYKX^•‘VSÓ—ÔÓÓÓPVÚ^™N™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™KÛÛ›™XÝ[ÛœÎ–Ë‹‹™^[ÛÛÛ›™XÝ[ÛØXÚK™[šY\Ê
+WK›X\
+
+ÚÜÝ—JOOŠÂˆÜÝ˜[Y[[œ‹˜[Y[[ÙXÛÛ™Ô™[XZ[š[™Î“X]›X^
+[X™\Š‹˜[Y[[
+K[›ÝÊKYTÙXÛÛ™Î“X]™›ÛÜŠ
+]K››ÝÊ
+KS[X™\Š‹›\Ý\ÙY
+JKÌL
+BˆJJ_JNÂŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹ØÛÛ›™XÝ[ÛœËØÛÜÙH‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYÏP\œ˜^Kš\Ð\œ˜^J™\K˜›ÙOËšYÊOÜ™\K˜›ÙKšYÎ–×NÂˆYŠZYË›[™ÝYËš[˜ÛY\Ê˜[ŠJ^Âˆ›ÜŠÛÛœÝÚÜÝ™X×HÙˆË‹‹™^[ÛÛÛ›™XÝ[ÛØXÚK™[šY\Ê
+WJX]ØZ]™^[ÛÛÜÙPÛÛ›™XÝ[ÛŠÜÝ™XÊNÂˆ™]\›ˆ™\ËšœÛÛŠÛÚÎYKÛÜÙYˆ˜[‹ÛÛÚ^™N™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™_JNÂˆBˆ›ÜŠÛÛœÝYÙˆYÊ^ØÛÛœÝ™XÏ]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+Y
+WNÚYŠ™XÊX]ØZ]™^[ÛÛÜÙPÛÛ›™XÝ[ÛŠ™XËš\
+_Bˆ™\ËšœÛÛŠÛÚÎYKÛÜÙYšYË›[™ÝÛÛÚ^™N™^[ÛÛÛ›™XÝ[ÛØXÚKœÚ^™_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‹ËÈœ›ØYØ\Ý›Ý]\È™\Ù\™HXXÚ\‹Yš\œÝÜ™\š[™ÈÚ[HÚ\š[™ÈH›Ý[™Y‹ËÈ\‹XÛÛ\]\ˆÛÜšÙ\œÈ[™\˜X›H[ÙHÛX[\Ú]Ý\ˆÛ\ÜÜ›ÛÛHÛÛ[X[™Ë‚˜\Þ[˜È[˜Ý[ÛˆØZ]›Ü•™^[ÛÛÛ[X[™
+›ØŠ^ÂˆÛÛœÝXY[™OQ]K››ÝÊ
+JÌLLÂˆÚ[J›Ø‹œÝ]HOOH˜ÛÛ\]Y‰‰ˆY[^Üœ™Y^™Kœ™\]Y\ÝY	‰ˆ\Ú][™ÑÝÛ‰‰‘]K››ÝÊ
+OXY[™J^Âˆ]ØZ]™]È›ÛZ\ÙJ™\ÛÛ™OOœÙ][Y[Ý]
+™\ÛÛ™KL
+JNÂˆÛÛœÝ]\Ý]™^[ÛÛÛ[X[™]Y]YK™Ù]
+›Ø‹šY
+NÂˆYŠ[]\Ý
+\™]\›ˆË‹‹š›Ø‹™\Ý[Îš›Ø‹œ™\Ý[Ë›X\
+›ÝÏOŠË‹‹œ›ÝËÚÎ™˜[ÙK\œ›ÜŽˆÛÛ[X[™\ÝÜžH^\™YÈ™\šYžHHÛÛ\]\ˆÝ]KˆŸJJ_NÂˆ›Ø[]\ÝÂˆBˆ™]\›ˆ›ØŽÂŸB™[˜Ý[Ûˆ™^[Û’›Ø”™\Ý[Ê›ØŠ^Ü™]\›ˆ›Ø‹œ™\Ý[Ë›X\
+›ÝÏOŠË‹‹œ›ÝË\œ›ÜŽœ›ÝË™\œ›ÜŸ
+\›ÝË›ÚÏÜ›ÝËœ™X\ÛÛŸÛÛ[X[™\ÈÝ[[™[™ÎÈÚXÚÈÛÛ[X[™\ÝÜžKˆŽ[™Yš[™Y
+_JJ_B‹ËÈÙ[™\˜][ÛˆY[]Y\ÈÛÛZ[ˆ›Èœ›ØYØ\ÝÚÙ[œÈ[™^\ÝÛ›HÚ[HH›Ý]H\ÈXÝ]™K‚˜ÛÛœÝ™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜÏ[™]ÈX\
+
+NÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹Ù[[ËÜÝÜ\Ù[XÝY‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK™^[Û‘œ™YPÛX[\[Z]\Þ[˜Ê™\K™\ÊOOžÂˆÛÛœÝÛÜšÙ›ÝÜÏV×NÂˆž^ÂˆÛÛœÝYÏ\™\K˜›ÙOË\™Ù]ÎÚYŠP\œ˜^Kš\Ð\œ˜^JYÊ_ZYË›[™ÝYË›[™Ý
+]›ÝÈ\œ›ÜŠÚÛÜÙHx $Íœ›ØYØ\Ý\XÚ\[ËˆŠNÂˆÛÛœÝ\™Ù]ÏVË‹‹›™]ÈÙ]
+YÊWK›X\
+YOžØÛÛœÝÙ^O]™^[ÛÛÛ\]\’Y
+Y
+K™XÏSØš™XÝš\ÓÝÛŠ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œËÙ^JOÝ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚÙ^WN›[ÚYŠ\™XÊ]›ÝÈ\œ›ÜŠÛÛ\]\ˆ›Ý›Ý[™ŠNÜ™]\›ˆ™XßJNÂˆÛÛœÝÝÛ™\\™\]Y\Ý\Ù\Š™\JOËšY›YØXÞKXÛÛ›ÛŽÂˆËÈ™\Ù\™H[™YH›ØœÈ™Y›Ü™HÚ[™Ú[™ÈÛÜšÙ›ÝÈ[[ÜˆZY[[™Ë‚ˆÛÛœÝ›ØœÏ]™^[ÛÛÛ[X[™]Y]YK™[œ]Y]YS[ÙPÛX[\
+\™Ù]ËÝÛ™\ŠNÂˆ›ÜŠÛÛœÝ™XÈÙˆ\™Ù]Ê^ØÛÛœÝX\šÙ\^ßNÝ™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜËœÙ]
+™XËš\X\šÙ\ŠNÝÛÜšÙ›ÝÜËœ\Ú
+Ü™XËš\X\šÙ\—J_Bˆ™\ËœÝ]\ÊŒŠKšœÛÛŠÛÚÎYK›ØœßJNÂˆXØ]Ú
+\œ›ÜŠ^Ü™\ËœÝ]\Ê\œ›Ü‹œÝ]\ß
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ›Ü‹›Y\ÜØYÙ_J_Bˆš[˜[^Ù›ÜŠÛÛœÝÚ\X\šÙ\—HÙˆÛÜšÙ›ÝÜÊZYŠ™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™Ù]
+\
+OOO[X\šÙ\Š]™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™[]J\
+_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹Ù[[ËÜÝ\‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK\Þ[˜Ê™\K™\ÊOOžÂˆ]ÛÜšÙ›ÝÒÙ^KÛÜšÙ›ÝÎÂˆž^ÂˆÛÛœÝXXÚ\]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\K˜›ÙOËXXÚ\’YˆŠWNÂˆYŠ]XXÚ\Š]›ÝÈ™]È\œ›ÜŠ•XXÚ\ˆÛÛ\]\ˆ›Ý›Ý[™ŠNÂˆÛÛœÝYÏP\œ˜^Kš\Ð\œ˜^J™\K˜›ÙOËœÝY[YÊOÜ™\K˜›ÙKœÝY[YÎ–×NÂˆYŠZYË›[™ÝYË›[™ÝLLŠ]›ÝÈ\œ›ÜŠÚÛÜÙH™]ÙY[ˆH[™LLˆÝY[ÛÛ\]\œËˆŠNÂˆÛÛœÝÝY[ÏVË‹‹›™]ÈX\
+YË›X\
+YO™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+Y
+WJK™š[\Š™XÏOœ™XÉ‰œ™XËšYOO]XXÚ\‹šY
+K›X\
+™XÏO–Ü™XËšY™X×JJK˜[Y\Ê
+WNÂˆYŠ\ÝY[Ë›[™Ý
+]›ÝÈ™]È\œ›ÜŠ]X\ÝÛ™HÝY[ÛÛ\]\ˆ\È™\]Z\™YŠNÂˆÛÛœÝ[ÙO\™\K˜›ÙOË›[ÙOOOHÚ[™ÝÈÈÚ[™ÝÈŽˆ™[ØÜ™Y[ˆ‹ÝÛ™\\™\]Y\Ý\Ù\Š™\JOËšY›YØXÞKXÛÛ›ÛŽÂˆÛÛœÝÚÙ[XÜž\Ëœ˜[™ÛPž]\Ê
+KÔÝš[™Ê˜˜\ÙM\›ŠNÂˆÛÛœÝ]Y]YYXXÚ\]™^[ÛÛÛ[X[™]Y]YK™[œ]Y]YJÙ™X]\™Nˆ™[[ÔÙ\™\ˆ‹XÝ]™NYK\™Ù]Î–ÝXXÚ\—K\™ÜÎžÙ[[ÐXØÙ\ÜÕÚÙ[ŽÚÙ[ŸKÝÛ™\ŸJNÂˆÛÜšÙ›ÝÒÙ^O]XXÚ\‹š\ÝÛÜšÙ›ÝÏ^ßNÝ™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜËœÙ]
+ÛÜšÙ›ÝÒÙ^KÛÜšÙ›ÝÊNÂˆÛÛœÝÝ\\œÙYYJ
+OO™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™Ù]
+ÛÜšÙ›ÝÒÙ^JHOO]ÛÜšÙ›ÝÎÂˆÛÛœÝÝ\\œÙYY™\Ý[J
+OOœ™\ËšœÛÛŠÛÚÎ™˜[ÙKÝ\\œÙYYYKXXÚ\’YXXÚ\‹šY[ÙK™\Ý[ÎœÝY[Ë›X\
+™XÏOŠÚYœ™XËšY\œ™XËš\˜[YNœ™XË›˜[YKÚÎ™˜[ÙKÚÚ\YYK™X\ÛÛŽˆœÝ\\œÙYY‹\œ›ÜŽˆH™]Ù\ˆœ›ØYØ\ÝÜˆÝÜ™\]Y\ÝÝ\\œÙYY\ÈÝ\ˆŸJJ_JNÂˆÛÛœÝXXÚ\’›ØX]ØZ]ØZ]›Ü•™^[ÛÛÛ[X[™
+]Y]YYXXÚ\ŠNÂˆËÈXXÚ\ˆ›ØœÈÙ\šX[^™K]Z\ˆØZ]\œÈØ[ˆ™\Ý[YHÝ]ÙˆÜ™\‹‚ˆËÈ™]™\ˆ˜[ˆÝ][ˆØœÛÛ]HÚÙ[ˆY\ˆH™]Ù\ˆXXÚ\ˆÝ\ÜˆÝÜ‚ˆYŠÝ\\œÙYY
+
+J\™]\›ˆÝ\\œÙYY™\Ý[
+
+NÂˆYŠ]XXÚ\’›Ø‹œ™\Ý[Ë™]™\žJ›ÝÏOœ›ÝË›ÚÊJ\™]\›ˆ™\ËšœÛÛŠÛÚÎ™˜[ÙKXXÚ\’YXXÚ\‹šY[ÙK™\Ý[Î™^[Û’›Ø”™\Ý[ÊXXÚ\’›ØŠ_JNÂˆÛÛœÝÛY[™X]\™O[[ÙOOOHÚ[™ÝÈÈÚ[™ÝÑ[[ÐÛY[Žˆ™[ØÜ™Y[‘[[ÐÛY[ŽÂˆÛÛœÝ›ØX]ØZ]ØZ]›Ü•™^[ÛÛÛ[X[™
+™^[ÛÛÛ[X[™]Y]YK™[œ]Y]YJÙ™X]\™N˜ÛY[™X]\™KXÝ]™NYK\™Ù]ÎœÝY[Ë\™ÜÎžÙ[[ÐXØÙ\ÜÕÚÙ[ŽÚÙ[‹[[ÔÙ\™\’ÜÝXXÚ\‹š\KÝÛ™\ŸJJNÂˆYŠÝ\\œÙYY
+
+J\™]\›ˆÝ\\œÙYY™\Ý[
+
+NÂˆ™\ËšœÛÛŠÛÚÎš›Ø‹œ™\Ý[Ë™]™\žJ›ÝÏOœ›ÝË›ÚÊKXXÚ\’YXXÚ\‹šYXXÚ\’\XXÚ\‹š\[ÙK™\Ý[Î™^[Û’›Ø”™\Ý[Ê›ØŠ_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_Bˆš[˜[^ÚYŠÛÜšÙ›ÝÉ‰™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™Ù]
+ÛÜšÙ›ÝÒÙ^JOOO]ÛÜšÙ›ÝÊ]™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™[]JÛÜšÙ›ÝÒÙ^J_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹Ù[[ËÜÝÜ‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK\Þ[˜Ê™\K™\ÊOOžÂˆ]ÛÜšÙ›ÝÒÙ^KÛÜšÙ›ÝÎÂˆž^ÂˆÛÛœÝXXÚ\]™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+™\K˜›ÙOËXXÚ\’YˆŠWKÝÛ™\\™\]Y\Ý\Ù\Š™\JOËšY›YØXÞKXÛÛ›ÛŽÂˆÛÛœÝYÏP\œ˜^Kš\Ð\œ˜^J™\K˜›ÙOËœÝY[YÊOÜ™\K˜›ÙKœÝY[YÎ–×NÂˆYŠYË›[™ÝLLŠ]›ÝÈ\œ›ÜŠÚÛÜÙH][ÜÝLLˆÝY[ÛÛ\]\œËˆŠNÂˆÛÛœÝÝY[ÏVË‹‹›™]ÈX\
+YË›X\
+YO™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÝ™^[ÛÛÛ\]\’Y
+Y
+WJK™š[\Š›ÛÛX[ŠK›X\
+™XÏO–Ü™XËšY™X×JJK˜[Y\Ê
+WNÂˆËÈ[˜[Y]HHÝ\Ý[]ØZ][™È]ÈXXÚ\ˆ™Y›Ü™H[žHÝY[˜[›Ý]‚ˆYŠXXÚ\Š^ÝÛÜšÙ›ÝÒÙ^O]XXÚ\‹š\ÝÛÜšÙ›ÝÏ^ßNÝ™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜËœÙ]
+ÛÜšÙ›ÝÒÙ^KÛÜšÙ›ÝÊ_BˆÛÛœÝ›ØœÏV×NÂˆ›ÜŠÛÛœÝ™X]\™HÙˆÈ™[ØÜ™Y[‘[[ÐÛY[‹Ú[™ÝÑ[[ÐÛY[—J^ÂˆYŠÝY[Ë›[™Ý
+Z›ØœËœ\Ú
+™^[ÛÛÛ[X[™]Y]YK™[œ]Y]YJÙ™X]\™KXÝ]™N™˜[ÙK\™Ù]ÎœÝY[ËÝÛ™\ŸJJNÂˆBˆYŠXXÚ\ŠZ›ØœËœ\Ú
+™^[ÛÛÛ[X[™]Y]YK™[œ]Y]YJÙ™X]\™Nˆ™[[ÔÙ\™\ˆ‹XÝ]™N™˜[ÙK\™Ù]Î–ÝXXÚ\—KÝÛ™\ŸJJNÂˆÛÛœÝÝ]ÛÛY\ÏX]ØZ]›ÛZ\ÙK˜[
+›ØœË›X\
+ØZ]›Ü•™^[ÛÛÛ[X[™
+JKžPÛÛ\]\[™]ÈX\
+
+NÂˆ›ÜŠÛÛœÝ›ØˆÙˆÝ]ÛÛY\ÊY›ÜŠÛÛœÝ›ÝÈÙˆ™^[Û’›Ø”™\Ý[Ê›ØŠJ^ÂˆÛÛœÝ™]š[Ý\ÏXžPÛÛ\]\‹™Ù]
+›ÝËšY
+NÂˆžPÛÛ\]\‹œÙ]
+›ÝËšYË‹‹œ›ÝËÚÎœ›ÝË›ÚÉ‰Š™]š[Ý\ÏË›ÚÏÏÝYJK\œ›ÜŽ–Ü™]š[Ý\ÏË™\œ›Ü‹›ÝË™\œ›Ü—K™š[\Š›ÛÛX[ŠKš›Ú[ŠŽÈŠ_[™Yš[™YJNÂˆBˆÛÛœÝ™\Ý[ÏVË‹‹˜žPÛÛ\]\‹˜[Y\Ê
+WNÂˆ™\ËšœÛÛŠÛÚÎœ™\Ý[Ë™]™\žJ›ÝÏOœ›ÝË›ÚÊK™\Ý[ßJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_Bˆš[˜[^ÚYŠÛÜšÙ›ÝÉ‰™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™Ù]
+ÛÜšÙ›ÝÒÙ^JOOO]ÛÜšÙ›ÝÊ]™^[Ûœ›ØYØ\ÝÛÜšÙ›ÝÜË™[]JÛÜšÙ›ÝÒÙ^J_BŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹Ú›ØœÈ‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYK›ØœÎ™^[ÛÛÛ[X[™]Y]YK›\Ý
+
+KÝÛ™YØÚÜÎ™^[ÛÛÛ[X[™]Y]YK›ÝÛ™YØÚÜÊ
+_JJNÂ˜\™Ù]
+‹Ø\KÝŒKÝ™^[Û‹Ú›ØœËÎšY‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK
+™\K™\ÊOOžØÛÛœÝ›Ø]™^[ÛÛÛ[X[™]Y]YK™Ù]
+™\Kœ\˜[\ËšY
+NÜ™\ËœÝ]\Ê›ØÌŒ
+KšœÛÛŠ›ØÞÛÚÎYK›ØŸNžÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ[X[™›Øˆ›Ý›Ý[™ŸJ_JNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹Ú›ØœËÎšYØØ[˜Ù[‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžØÛÛœÝ›Ø]™^[ÛÛÛ[X[™]Y]YK˜Ø[˜Ù[
+™\Kœ\˜[\ËšY
+NÜ™\ËœÝ]\Ê›ØÌŒ
+KšœÛÛŠ›ØÞÛÚÎYK›ØŸNžÛÚÎ™˜[ÙK\œ›ÜŽˆÛÛ[X[™›Øˆ›Ý›Ý[™ŸJ_JNÂ˜\œÜÝ
+‹Ø\KÝŒKÝ™^[Û‹Ù™X]\™H‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\Ë™^
+OO–È˜Û\›Ø\™Üš]H‹šÙ^TÙ\]Y[˜ÙH‹š[\›™]ÝX\™—Kš[˜ÛY\Ê™\K˜›ÙOË™™X]\™JOÝ™^[Û‘œ™YUÜš]S[Z]
+™\K™\Ë™^
+N›™^
+
+K
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ\™Ù]ÏP\œ˜^Kš\Ð\œ˜^J™\K˜›ÙOË\™Ù]ÊOÜ™\K˜›ÙK\™Ù]Î–Ü™\K˜›ÙOË\™Ù]K™š[\Š›ÛÛX[ŠNÂˆYŠ]\™Ù]Ë›[™Ý\™Ù]Ë›[™ÝLLŠ]›ÝÈ\œ›ÜŠÚÛÜÙH™]ÙY[ˆH[™LLˆ\™Ù]ËˆŠNÂˆÛÛœÝ™X]\™OTÝš[™Ê™\K˜›ÙOË™™X]\™_ˆŠNÂˆYŠSØš™XÝš\ÓÝÛŠ‘VSÓ—Ñ‘PUT‘TË™X]\™JJ]›ÝÈ\œ›ÜŠ•[œÝ\ÜY™^[Ûˆ™X]\™HŠNÂˆYŠ™X]\™OOOHš[\›™]ÝX\™‰‰\™Ù]Ë›[™Ý
+]›ÝÈ\œ›ÜŠÚÛÜÙH][ÜÝ[\›™]ÝX\™\™Ù]ËˆŠNÂˆ]\™ÜÏ\ÝÙ\\™Ý[Y[Ê™X]\™K™\K˜›ÙOË˜\™Ý[Y[É‰\[Ùˆ™\K˜›ÙK˜\™Ý[Y[ÏOOH›Øš™XÝ‰‰ˆP\œ˜^Kš\Ð\œ˜^J™\K˜›ÙK˜\™Ý[Y[ÊOÜ™\K˜›ÙK˜\™Ý[Y[ÎžßK™\K˜›ÙOË˜XÝ]™HOOY˜[ÙJNÂˆYŠ™X]\™OOOHšÙ^TÙ\]Y[˜ÙHŠ^ÂˆYŠ\™Ù]Ë›[™ÝOOL_\™Ù]ÖÌOOOH˜[Š]›ÝÈ\œ›ÜŠÚÛÜÙH^XÝHÛ™HÙ^X›Ø\™\™Ù]ˆŠNÂˆ\™ÜÏZÙ^P\™Ý[Y[Ê\™ÜË™\K˜›ÙOË˜XÝ]™HOOY˜[ÙJNÂˆBˆYŠ™X]\™OOOH˜Û\›Ø\™Üš]HŠ^ÂˆYŠ\™Ù]Ë›[™ÝOOL_\™Ù]ÖÌOOOH˜[Š]›ÝÈ\œ›ÜŠÚÛÜÙH^XÝHÛ™HÛ\›Ø\™\™Ù]ˆŠNÂˆ\™ÜÏXÛ\›Ø\™\™Ý[Y[Ê\™ÜË™\K˜›ÙOË˜XÝ]™HOOY˜[ÙJNÂˆBˆYŠ™X]\™OOOHš[\›™]ÝX\™ŠX\™ÜÏ^ßNÂˆYŠY™™\‹˜ž]S[™Ý
+”ÓÓ‹œÝš[™ÚYžJ\™ÜÊJOŒMŒÎ
+]›ÝÈ\œ›ÜŠ•™^[ÛˆÛÛ[X[™\™Ý[Y[È\™HÛÈ\™ÙHŠNÂˆÛÛœÝ™\]Y\ÝYTÝš[™Ê™\K˜›ÙOËœ™\]Y\ÝYˆŠNÂˆYŠ™\]Y\ÝY	‰ˆK×–ØK^KVŒNK—Î‹W^ÌKLIË\Ý
+™\]Y\ÝY
+J]›ÝÈ\œ›ÜŠ’[˜[YÛÛ[X[™™\]Y\ÝQŠNÂˆÛÛœÝÙ[XÝYV×NÂˆ›ÜŠÛÛœÝ\™Ù]Ùˆ\™Ù]Ê^ÂˆYŠ\™Ù]OOH˜[Š\Ù[XÝYœ\Ú
+‹‹“Øš™XÝ˜[Y\Ê™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÊJNÂˆ[Ù^ØÛÛœÝÙ^O]™^[ÛÛÛ\]\’Y
+\™Ù]
+K™XÏSØš™XÝš\ÓÝÛŠ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œËÙ^JOÝ™^[ÛÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚÙ^WN›[ÚYŠ\™XÊ]›ÝÈ\œ›ÜŠÛÛ\]\ˆ›Ý›Ý[™ŠNÜÙ[XÝYœ\Ú
+™XÊ_BˆBˆÛÛœÝ[š\OVË‹‹›™]ÈX\
+Ù[XÝY›X\
+™XÏO–Ü™XËšY™X×JJK˜[Y\Ê
+WNÂˆÛÛœÝ›Ø]™^[ÛÛÛ[X[™]Y]YK™[œ]Y]YJÙ™X]\™KXÝ]™Nœ™\K˜›ÙOË˜XÝ]™HOOY˜[ÙK\™Ù]Î[š\K\™ÜË™\]Y\ÝY^\™\Ð]™™X]\™OOOHšÙ^TÙ\]Y[˜ÙHÑ]K››ÝÊ
+JÍL[™Yš[™YÝÛ™\Žœ™\]Y\Ý\Ù\Š™\JOËšY›YØXÞKXÛÛ›ÛŸJNÂˆ™\ËœÝ]\ÊŒŠKšœÛÛŠÛÚÎYK›ØŸJNÂˆXØ]Ú
+\œ›ÜŠ^Ü™\ËœÝ]\ÊÍKŽWKš[˜ÛY\Ê\œ›Ü‹œÝ]\ÊOÙ\œ›Ü‹œÝ]\Î
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ›Ü‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œÈ‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK
+Ü™\K™\ÊOOœ™\ËšœÛÛŠX›XÓX’[™[ÜžJ
+JJNÂ˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÚ\ÝÜžH‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+NÂˆYŠ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“XˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆÛÛœÝ™\Ý[[X’\ÝÜžT]Y\žJY™\Kœ]Y\ž_ßJNÂˆ™\ËšœÛÛŠÛÚÎYKYÝ[œ™\Ý[Ý[Ù™œÙ]œ™\Ý[›Ù™œÙ][Z]œ™\Ý[›[Z]\ÝÜžNœ™\Ý[š][\ßJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÚ\ÝÜžKÙ^Ü‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+NÂˆYŠ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“XˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆÛÛœÝ™\Ý[[X’\ÝÜžT]Y\žJYË‹‹Š™\Kœ]Y\ž_ßJK[Z]LÙ™œÙ]ŒJNÂˆÛÛœÝ›Ü›X]TÝš[™Ê™\Kœ]Y\žOË™›Ü›X]˜ÜÝˆŠKÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝØY™S˜[YOTÝš[™ÊXÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYOË›˜[Y_Y
+Kœ™\XÙJÖ×˜K^ŒNK—ËWJËÙÚK‹HŠNÂˆÛÛœÝÝ[\[™]È]J
+KÒTÓÔÝš[™Ê
+Kœ™\XÙJÖÎ‹—KÙË‹HŠNÂ‚ˆYŠ›Ü›X]OOHšœÛÛˆŠ^Âˆ™\ËœÙ]XY\ŠÛÛ[U\H‹˜\XØ][Û‹ÚœÛÛŽÈÚ\œÙ]]]‹NŠNÂˆ™\ËœÙ]XY\ŠÛÛ[Q\ÜÜÚ][Ûˆ‹]XÚY[Èš[[˜[YOH‰ÜØY™S˜[Y_KXœ›ÝÜÙ\‹Z\ÝÜžKIÜÝ[\KšœÛÛˆ˜
+NÂˆ™]\›ˆ™\ËœÙ[™
+”ÓÓ‹œÝš[™ÚYžJØÛÛ\]\ŽœX›XÓXÛÛ\]\ŠY
+K^ÜY]›™]È]J
+KÒTÓÔÝš[™Ê
+Kš[\œÎœ™\Kœ]Y\ž_ßK\ÝÜžNœ™\Ý[š][\ßK[ŠJNÂˆB‚ˆÛÛœÝÛÛÏVÂˆÈ•T“‹\›—KÈ•]H‹]H—KÈ•š\Ú][YH‹š\Ú][YH—KÈ•š\Ú]ÛÝ[‹š\Ú]ÛÝ[—KˆÈ•š\Ú]Yœ›ÛH‹š\Ú]Yœ›ÛH—KÈ•š\Ú]\H‹š\Ú]\H—KÈ•š\Ú]\˜][Ûˆ‹š\Ú]\˜][Ûˆ—KˆÈ•ÙXˆœ›ÝÜÙ\ˆ‹˜œ›ÝÜÙ\ˆ—KÈ•\Ù\ˆ›Ùš[H‹œ›Ùš[H—KÈœ›ÝÜÙ\ˆ›Ùš[H‹˜œ›ÝÜÙ\”›Ùš[H—KˆÈ•T“[™Ý‹\›[™Ý—KÈ•\YÛÝ[‹\YÛÝ[—KÈ’\ÝÜžHš[H‹š\ÝÜžQš[H—KÈ”™XÛÜ™Q‹œ™XÛÜ™Y—BˆNÂˆÛÛœÝ[™\ÏVØÛÛË›X\
+ÏO˜ÜÝÙ[
+ÖÌJJKš›Ú[Š‹ŠWNÂˆ›ÜŠÛÛœÝ›ÝÈÙˆ™\Ý[š][\Ê[[™\Ëœ\Ú
+ÛÛË›X\
+ÏO˜ÜÝÙ[
+›ÝÖØÖÌWWJJKš›Ú[Š‹ŠJNÂˆ™\ËœÙ]XY\ŠÛÛ[U\H‹^ØÜÝŽÈÚ\œÙ]]]‹NŠNÂˆ™\ËœÙ]XY\ŠÛÛ[Q\ÜÜÚ][Ûˆ‹]XÚY[Èš[[˜[YOH‰ÜØY™S˜[Y_KXœ›ÝÜÙ\‹Z\ÝÜžKIÜÝ[\K˜ÜÝˆ˜
+NÂˆ™]\›ˆ™\ËœÙ[™
+—Q‘Q‘ˆŠÛ[™\Ëš›Ú[Š——ˆŠJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œ]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšY‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ØÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+K™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÚYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“XˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆYŠ™\K˜›ÙOË›˜[YHOO][™Yš[™Y
+\™XË›˜[YOTÝš[™Ê™\K˜›ÙK›˜[Y_ˆŠKš[J
+KœÛXÙJLŒ
+_™XËšÜÝ˜[Y_YÂˆYŠ™\K˜›ÙOË™Ü›Ý\ÈOO][™Yš[™Y
+\™XË™Ü›Ý\ÏVË‹‹›™]ÈÙ]
+
+\œ˜^Kš\Ð\œ˜^J™\K˜›ÙK™Ü›Ý\ÊOÜ™\K˜›ÙK™Ü›Ý\Î–×JK›X\
+O”Ýš[™Ê
+Kš[J
+KÓÝÙ\Ø\ÙJ
+Kœ™\XÙJÖ×˜K^ŒNK—ËWJËÙË‹HŠJK™š[\Š›ÛÛX[ŠJWKœÛXÙJŒ
+NÂˆ™XË\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ\œÚ\ÝXÛÛ\]\œÊ
+NÜ™\ËšœÛÛŠÛÚÎYKÛÛ\]\ŽœX›XÓXÛÛ\]\ŠY
+_J_BˆØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™[]J‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšY‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ØÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+NÚYŠX“Û›[™JY
+J\™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘\ØÛÛ›™XÝÝ[š[œÝ[HYÙ[™Y›Ü™H™[[Ýš[™È[ˆÛ›[™HÛÛ\]\ˆŸJNÂˆÛÛœÝXØÙ\ÜÔ™]›ÚÙYY”ÝÜ™Kœ™]›ÚÙSXYÙ[XØÙ\ÜÊY
+NØÛÛœÝÛØÚÙ][XYÙ[ÛØÚÙ]Ë™Ù]
+Y
+NÚYŠÛØÚÙ]
+^Ýž^ÜÛØÚÙ]˜ÛÜÙJL“XˆÛÛ\]\ˆ™[[Ý™YŠ_XØ]Úß[XYÙ[ÛØÚÙ]Ë™[]JY
+_Bˆ[]HXÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÙ[]HX’\ÝÜžTÝÜ™K˜ÛÛ\]\œÖÚYNÛXZP[\ÔÝÜ™K˜[\Ï[XZP[\ÔÝÜ™K˜[\Ë™š[\Š[\O˜[\˜YÙ[YOOZY
+NÙœËœ›TÞ[˜Ê]š›Ú[ŠP—ÔÐÔ‘QS”ÒÕÑT‹Y
+KÜ™XÝ\œÚ]™NYK›Ü˜ÙNY_JNÜ\œÚ\ÝXÛÛ\]\œÊ
+NÜ\œÚ\ÝX’\ÝÜžJ
+NÜ\œÚ\ÝXZP[\Ê
+NØ]Y]
+ÚÚ[™ˆ›X‹˜ÛÛ\]\‹™[]H‹YXØÙ\ÜÔ™]›ÚÙYJNÜ™\ËšœÛÛŠÛÚÎYKYXØÙ\ÜÔ™]›ÚÙYJ_BˆØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™[]J‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÚ\ÝÜžH‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ØÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+NÛX’\ÝÜžTÝÜ™K˜ÛÛ\]\œÖÚYOV×NÜ\œÚ\ÝX’\ÝÜžJ
+NÜ™\ËšœÛÛŠÛÚÎYKYJ_BˆØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÛX‹ØÛÛ[X[™‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ØÛÛœÝXÝ[ÛTÝš[™Ê™\K˜›ÙOË˜XÝ[ÛŸˆŠKÓÝÙ\Ø\ÙJ
+NÛ]^[ØY\™\K˜›ÙOËœ^[ØY	‰\[Ùˆ™\K˜›ÙKœ^[ØYOOH›Øš™XÝÜ™\K˜›ÙKœ^[ØYžßNÂˆYŠXÝ[ÛOOH›Y\ÜØYÙHŠ^Ü^[ØY^Ë‹‹œ^[ØY^”Ýš[™Ê^[ØY^ˆŠKœÛXÙJL
+K]N”Ýš[™Ê^[ØY]_Û\ÜÜ›ÛÛHY\ÜØYÙHŠKœÛXÙJLŒ
+_NÚYŠ\^[ØY^š[J
+J]›ÝÈ™]È\œ›ÜŠ“Y\ÜØYÙH^\È™\]Z\™YŠ_Bˆ™\ËšœÛÛŠÙ[™XYÙ[ÛÛ[X[™
+™\K˜›ÙOË\™Ù]ß™\K˜›ÙOË\™Ù]×KXÝ[Û‹^[ØY
+J_BˆØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚‚™[˜Ý[ÛˆØY™TØÜ™Y[œÚÝ]
+Y™[
+^ÂˆÛÛœÝ˜\ÙO\]œ™\ÛÛ™JP—ÔÐÔ‘QS”ÒÕÑT‹Y
+NÂˆÛÛœÝ[\]œ™\ÛÛ™JP—ÔÐÔ‘QS”ÒÕÑT‹™[
+NÂˆYŠY[œÝ\ÕÚ]
+˜\ÙJÜ]œÙ\
+J]›ÝÈ™]È\œ›ÜŠ’[˜[YØÜ™Y[œÚÝ]ŠNÂˆ™]\›ˆ[ÂŸB‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÜØÜ™Y[œÚÝ‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+K™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ\™XÏËœØÜ™Y[œÚÝš[J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“›ÈØÜ™Y[œÚÝ]˜Z[X›HŸJNÂˆÛÛœÝ\ØY™TØÜ™Y[œÚÝ]
+Y™XËœØÜ™Y[œÚÝš[JNÂˆYŠYœË™^\ÝÔÞ[˜Ê
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”ØÜ™Y[œÚÝš[HZ\ÜÚ[™ÈŸJNÂˆ™\ËœÙ]XY\ŠØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆ™\ËœÙ[™š[J
+NÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÜØÜ™Y[œÚÝÙÝÛ›ØY‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+K™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ\™XÏËœØÜ™Y[œÚÝš[J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“›ÈØÜ™Y[œÚÝ]˜Z[X›HŸJNÂˆÛÛœÝ\ØY™TØÜ™Y[œÚÝ]
+Y™XËœØÜ™Y[œÚÝš[JNÂˆYŠYœË™^\ÝÔÞ[˜Ê
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”ØÜ™Y[œÚÝš[HZ\ÜÚ[™ÈŸJNÂˆÛÛœÝÝ[\J™XËœØÜ™Y[œÚÝ]™]È]J
+KÒTÓÔÝš[™Ê
+JKœ™\XÙJÖÎ‹—KÙË‹HŠNÂˆ™\Ë™ÝÛ›ØY
+	ÚYKIÜÝ[\KšœØ
+NÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÜØÜ™Y[œÚÝÈ‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+K™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“XˆÛÛ\]\ˆ›Ý›Ý[™ŸJNÂˆÛÛœÝ][\ÏJ\œ˜^Kš\Ð\œ˜^J™XËœØÜ™Y[œÚÝ\ÝÜžJOÜ™XËœØÜ™Y[œÚÝ\ÝÜžN–×JBˆ™š[\ŠOžÂˆž^Ü™]\›ˆœË™^\ÝÔÞ[˜ÊØY™TØÜ™Y[œÚÝ]
+Y™š[JJ_XØ]ÚÜ™]\›ˆ˜[Ù_BˆJBˆœÛXÙJX]›X^
+KX]›Z[ŠL[X™\Š™\Kœ]Y\žK›[Z]
+_L
+JJBˆ›X\
+OŠÂˆ‹‹žˆ\›˜Ø\KÝŒKÛX‹ØÛÛ\]\œËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+_KÜØÜ™Y[œÚÝËÙš[OÙš[OIÙ[˜ÛÙUT’PÛÛ\Û™[
+™š[J_XˆÝÛ›ØY\›˜Ø\KÝŒKÛX‹ØÛÛ\]\œËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+_KÜØÜ™Y[œÚÝËÙÝÛ›ØYÙš[OIÙ[˜ÛÙUT’PÛÛ\Û™[
+™š[J_XˆJJNÂˆ™\ËšœÛÛŠÛÚÎYKY™][[Û‘^\Î“P—ÔÐÔ‘QS”ÒÕÔ‘US•SÓ—ÑVTËØÜ™Y[œÚÝÎš][\ßJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÜØÜ™Y[œÚÝËÙš[H‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+K™[TÝš[™Ê™\Kœ]Y\žK™š[_ˆŠNÂˆÛÛœÝ\ØY™TØÜ™Y[œÚÝ]
+Y™[
+NÂˆYŠYœË™^\ÝÔÞ[˜Ê
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”ØÜ™Y[œÚÝš[HZ\ÜÚ[™ÈŸJNÂˆ™\ËœÙ]XY\ŠØXÚKPÛÛ›Û‹››Ë\ÝÜ™HŠNÂˆ™\ËœÙ[™š[J
+NÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØÛÛ\]\œËÎšYÜØÜ™Y[œÚÝËÙÝÛ›ØY‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYXÛX[“XYÙ[Y
+™\Kœ\˜[\ËšY
+K™[TÝš[™Ê™\Kœ]Y\žK™š[_ˆŠNÂˆÛÛœÝ\ØY™TØÜ™Y[œÚÝ]
+Y™[
+NÂˆYŠYœË™^\ÝÔÞ[˜Ê
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”ØÜ™Y[œÚÝš[HZ\ÜÚ[™ÈŸJNÂˆ™\Ë™ÝÛ›ØY
+	ÚYKIÜ]˜˜\Ù[˜[YJ™[
+_X
+NÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÛX‹Ü™\Ù]È‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÂˆÚÎYKˆ™\Ù]Î–ÂˆÚYˆ™Ü\]H‹˜[YNˆ‘Ü›Ý\ÛXÞH\]H‹\ØÜš\[ÛŽˆ”[œÈÜ\]HÙ›Ü˜ÙHŸKˆÚYˆ™›\ÚœÈ‹˜[YNˆ‘›\Ú”ÈØXÚH‹\ØÜš\[ÛŽˆ”[œÈÛX\‹QœÐÛY[ØXÚHŸKˆÚYˆœ™[™]Ë[™]ÛÜšÈ‹˜[YNˆ”™[™]ÈÔ‹\ØÜš\[ÛŽˆ”™[X\Ù\È[™™[™]ÜÈÔŸKˆÚYˆœ™\Ý\Y^Ü™\ˆ‹˜[YNˆ”™\Ý\^Ü™\ˆ‹\ØÜš\[ÛŽˆ”™\Ý\ÈH[\˜XÝ]™H^Ü™\ˆÚ[ŸKˆÚYˆ˜ÛX\‹][\‹˜[YNˆÛX\ˆ[\Ü˜\žHš[\È‹\ØÜš\[ÛŽˆ”™[[Ý™\ÈÚ[™ÝÜÈ[\š[\È]\™H›Ý[ˆ\ÙHŸKˆÚYˆœÞ\Ý[KZ[™›È‹˜[YNˆÛÛXÝÞ\Ý[H[™›È‹\ØÜš\[ÛŽˆ”™]\›œÈÚ[™ÝÜËÜÞ\Ý[KÛ™]ÛÜšÈÝ[[X\žHŸBˆBŸJJNÂ‚‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ØZK[[Ûš]Üˆ‹™\]Z\™PØ\Xš[]J›X‹œÙ[œÚ]]™Kœ™XYŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝÝ]\ÏTÝš[™Ê™\Kœ]Y\žKœÝ]\ßˆŠKš[J
+NÂˆÛÛœÝ›Ùš[OTÝš[™Ê™\Kœ]Y\žKœ›Ùš[_ˆŠKš[J
+KÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝÙX\˜ÚTÝš[™Ê™\Kœ]Y\žKœÙX\˜ÚˆŠKš[J
+KÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝÝ\œÏSX]›X^
+[X™\Š™\Kœ]Y\žKšÝ\œß
+_
+NÂˆ][\ÏVË‹‹›XZP[\ÔÝÜ™K˜[\×NÂˆYŠÝ]\ÊX[\ÏX[\Ë™š[\ŠOO˜KœÝ]\ÏOO\Ý]\ÊNÂˆYŠ›Ùš[JX[\ÏX[\Ë™š[\ŠOO”Ýš[™ÊKœ›Ùš[_KÚ[™ÝÜÕ\Ù\ŸˆŠKÓÝÙ\Ø\ÙJ
+Kš[˜ÛY\Ê›Ùš[JJNÂˆYŠÝ\œÏŒ
+^ÂˆÛÛœÝÝ]Ù™Q]K››ÝÊ
+KZÝ\œÊŒÍŒÂˆ[\ÏX[\Ë™š[\ŠOO‘]Kœ\œÙJK˜Ü™X]Y]
+OXÝ]Ù™ŠNÂˆBˆYŠÙX\˜Ú
+X[\ÏX[\Ë™š[\ŠOO–ÂˆKœ›Ùš[KKÚ[™ÝÜÕ\Ù\‹KšÜÝ˜[YKK˜ÛÛ\]\“˜[YKK™ÛXZ[‹K\›K]KKœ[BˆKœÛÛYJO”Ýš[™ÊŸˆŠKÓÝÙ\Ø\ÙJ
+Kš[˜ÛY\ÊÙX\˜Ú
+JJNÂˆÛÛœÝ[Z]SX]›X^
+KX]›Z[ŠL[X™\Š™\Kœ]Y\žK›[Z]
+_Œ
+JNÂˆ™\ËšœÛÛŠÂˆÚÎYKˆ[˜X›Y“P—ÐRWÓSÓ’UÔ—ÑSP“Q	‰›XZT[\ÔÝÜ™K™[˜X›YOOY˜[ÙKˆÛÛÛÝÛ“Z[]\Î“P—ÐRWÐST•ÐÓÓÓÕÓ—ÓRS•UTËˆ[\Î›XZT[\ÔÝÜ™KˆÝ[[X\žNžÂˆÝ[›XZP[\ÔÝÜ™K˜[\Ë›[™Ýˆ™]Î›XZP[\ÔÝÜ™K˜[\Ë™š[\ŠOO˜KœÝ]\ÏOOH›™]ÈŠK›[™ÝˆXÚÛ›ÝÛYÙY›XZP[\ÔÝÜ™K˜[\Ë™š[\ŠOO˜KœÝ]\ÏOOH˜XÚÛ›ÝÛYÙYŠK›[™ÝˆKˆ[\Î˜[\ËœÛXÙJ[Z]
+BˆJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\œ]
+‹Ø\KÝŒKÛX‹ØZK[[Ûš]Ü‹Ü[\È‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ›ÙO\™\K˜›Ù_ßNÂˆYŠ\[Ùˆ›ÙK™[˜X›YOOH˜›ÛÛX[ˆŠ[XZT[\ÔÝÜ™K™[˜X›YX›ÙK™[˜X›YÂˆ›ÜŠÛÛœÝÙ^HÙˆÈ™ÛXZ[œÈ‹šÙ^]ÛÜ™È‹™^ÛYQÛXZ[œÈ—J^ÂˆYŠ\œ˜^Kš\Ð\œ˜^J›ÙVÚÙ^WJJ^ÂˆXZT[\ÔÝÜ™VÚÙ^WOVË‹‹›™]ÈÙ]
+›ÙVÚÙ^WK›X\
+O”Ýš[™Ê
+Kš[J
+KÓÝÙ\Ø\ÙJ
+JK™š[\Š›ÛÛX[ŠJWKœÛXÙJL
+NÂˆBˆBˆ\œÚ\ÝXZT[\Ê
+NÂˆ™\ËšœÛÛŠÛÚÎYK[\Î›XZT[\ÔÝÜ™_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚‚˜\œÜÝ
+‹Ø\KÝŒKÛX‹ØZK[[Ûš]Ü‹ÎšYØØ\\™H‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ[\[XZP[\ÔÝÜ™K˜[\Ë™š[™
+OO˜KšYOOTÝš[™Ê™\Kœ\˜[\ËšY
+JNÂˆYŠX[\
+\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ[\›Ý›Ý[™ŸJNÂˆÛÛœÝÜÏ[XYÙ[ÛØÚÙ]Ë™Ù]
+[\˜YÙ[Y
+NÂˆYŠ]ÜßÜËœ™XYTÝ]HOOUÙX”ÛØÚÙ]“ÔSŠBˆ™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“XˆÛÛ\]\ˆ\ÈÙ™›[™HŸJNÂˆÛÛœÝÛÛ[X[™^ÂˆY˜Üž\Ëœ˜[™ÛUURQ
+
+KˆXÝ[ÛŽˆœØÜ™Y[œÚÝ‹ˆ\ÜÝYY]›™]È]J
+KÒTÓÔÝš[™Ê
+Kˆ^[ØYžÜ]X[]NŽKØ]™NYK[\Y˜[\šYBˆNÂˆÛÛœÝ™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖØ[\˜YÙ[YNÂˆYŠ™XÊ^Âˆ™XË›\ÝÛÛ[X[™^Ë‹‹˜ÛÛ[X[™Ý]\ÎˆœÙ[ŸNÂˆ\œÚ\ÝXÛÛ\]\œÊ
+NÂˆBˆÜÔÙ[™
+ÜËÝ\Nˆ›X‹˜ÛÛ[X[™‹ÛÛ[X[™JNÂˆ™\ËšœÛÛŠÛÚÎYKÛÛ[X[™Y˜ÛÛ[X[™šYJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\œ]
+‹Ø\KÝŒKÛX‹ØZK[[Ûš]Ü‹ÎšY‹™\]Z\™PØ\Xš[]J›X‹˜ÛÛ›ÛŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ[\[XZP[\ÔÝÜ™K˜[\Ë™š[™
+OO˜KšYOOTÝš[™Ê™\Kœ\˜[\ËšY
+JNÂˆYŠX[\
+\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ[\›Ý›Ý[™ŸJNÂˆÛÛœÝÝ]\ÏTÝš[™Ê™\K˜›ÙOËœÝ]\ßˆŠKš[J
+NÂˆYŠVÈ›™]È‹˜XÚÛ›ÝÛYÙY‹™\ÛZ\ÜÙY—Kš[˜ÛY\ÊÝ]\ÊJBˆ™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ’[˜[YÝ]\ÈŸJNÂˆ[\œÝ]\Ï\Ý]\ÎÂˆ[\\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ\œÚ\ÝXZP[\Ê
+NÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹˜ZK˜[\\]Y‹[\JNÂˆ™\ËšœÛÛŠÛÚÎYK[\JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚‚˜\™Ù]
+‹Ø\KÝŒKÛX‹ÛØÚË\™\Ù]È‹™\]Z\™PØ\Xš[]J›X‹œ™XYŠK
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÂˆÚÎYKˆœ›ÝÜÙ\œÎ–ÂˆÚYˆ™YÙH‹˜[YNˆ“ZXÜ›ÜÛÙYÙH‹^Nˆ›\ÙYÙK™^HŸKˆÚYˆ˜Ú›ÛYH‹˜[YNˆ‘ÛÛÙÛHÚ›ÛYH‹^Nˆ˜Ú›ÛYK™^HŸBˆKˆ^[\\Î–ÂˆÛ˜[YNˆ“X\›š[™È]›Ü›H‹\Nˆ˜œ›ÝÜÙ\ˆ‹œ›ÝÜÙ\Žˆ™YÙH‹\›ˆšÎ‹ËÙ^[\K™YKÈŸBˆBŸJJNÂ‚‹ËÈÛ\ÜÜ›ÛÛH™\Ù[][Ûˆ[ÙHTB˜ÛÛœÝ™\Ù[][Û•\ØYÝÜ˜YÙO[][\‹™\ÚÔÝÜ˜YÙJÂˆ\Ý[˜][ÛŽŠÜ™\KÙš[KØŠOO˜ØŠ[‘TÑS•USÓ—ÕTÐQÕT
+Kˆš[[˜[YNŠÜ™\Kš[KØŠOOžÂˆÛÛœÝ^\]™^˜[YJš[K›ÜšYÚ[˜[˜[Y_ˆŠKÓÝÙ\Ø\ÙJ
+KœÛXÙJL
+NÂˆØŠ[	Ñ]K››ÝÊ
+_KIØÜž\Ëœ˜[™ÛUURQ
+
+_IÙ^X
+NÂˆBŸJNÂ˜ÛÛœÝ™\Ù[][Û•\ØY[][\ŠÂˆÝÜ˜YÙNœ™\Ù[][Û•\ØYÝÜ˜YÙKˆ[Z]ÎžÙš[TÚ^™N“PVÕTÐQÓPŠŒL
+ŒLKˆš[Qš[\ŽŠÜ™\Kš[KØŠOOžÂˆÛÛœÝ^\]™^˜[YJš[K›ÜšYÚ[˜[˜[Y_ˆŠKÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝ[ÝÙY[™]ÈÙ]
+È‹œ‹‹œ‹‹›Ù‹‹œˆ—JNÂˆØŠ[ÝÙYÛ[›™]È\œ›ÜŠ”™\Ù[][Ûˆ[ÙHXØÙ\Èœœ›ÙÜˆœˆŠK[ÝÙYš\Ê^
+JNÂˆBŸJNÂ‚˜\™Ù]
+‹Ø\KÝŒKÜ™\Ù[][ÛœÈ‹™\]Z\™PÛ\ÜÜ›ÛÛT™XY
+Ü™\K™\ÊOOžÂˆ™\ËšœÛÛŠÂˆÚÎYKˆ›Û\œÎ“Øš™XÝ˜[Y\Ê™\Ù[][Û“Xœ˜\žK™›Û\œÊKœÛÜ
+
+KŠOO˜K›˜[YK›ØØ[PÛÛ\\™J‹›˜[YJJKˆ™\Ù[][ÛœÎ“Øš™XÝ˜[Y\Ê™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÊK›X\
+™\Ù[][Û”X›XÔ™XÛÜ™
+KœÛÜ
+
+KŠOO”Ýš[™ÊK›˜[YJK›ØØ[PÛÛ\\™JÝš[™Ê‹›˜[YJJJKˆÝ]Nœ™\Ù[][Û”Ý]TX›XÊ
+Kˆ\Ü^\Î“Øš™XÝ™[šY\Ê]šXÙ\ÊK™š[\Š
+ËJOO™™[˜X›YOOY˜[ÙJK›X\
+
+ÚYJOOŠÚY˜[YN™›˜[Y_YJJBˆJNÂŸJNÂ˜\™Ù]
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÜÝ]H‹™\]Z\™PÛ\ÜÜ›ÛÛT™XY
+Ü™\K™\ÊOOœ™\ËšœÛÛŠÛÚÎYKÝ]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÙ›Û\œÈ‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ˜[YOXÛX[”™\Ù[][Û“X™[
+™\K˜›ÙOË›˜[YKL
+NÂˆÛÛœÝ\™[Y[›Ü›X[^™T™\Ù[][Û‘›Û\’Y
+™\K˜›ÙOËœ\™[Yœ›ÛÝŠNÂˆÛÛœÝY\™\Ù[][Û‘›Û\’Y
+
+K›ÝÏ[™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ™\Ù[][Û“Xœ˜\žK™›Û\œÖÚYO^ÚY˜[YK\™[YÜ™X]Y]››ÝË\]Y]››ÝßNÂˆ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ™\ËšœÛÛŠÛÚÎYK›Û\Žœ™\Ù[][Û“Xœ˜\žK™›Û\œÖÚY_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œ]
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÙ›Û\œËÎšY‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšY
+K›Û\\™\Ù[][Û“Xœ˜\žK™›Û\œÖÚYNÂˆYŠY›Û\ŸYOOHœ›ÛÝŠ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘›Û\ˆ›Ý›Ý[™ÜˆØ[››Ý™HÚ[™ÙYŸJNÂˆYŠ™\K˜›ÙOË›˜[YHOO][™Yš[™Y
+Y›Û\‹›˜[YOXÛX[”™\Ù[][Û“X™[
+™\K˜›ÙK›˜[YKL
+NÂˆYŠ™\K˜›ÙOËœ\™[YOO][™Yš[™Y
+^ÂˆÛÛœÝ\™[Y[›Ü›X[^™T™\Ù[][Û‘›Û\’Y
+™\K˜›ÙKœ\™[Y
+NÂˆYŠ™\Ù[][Û‘›Û\•ÛÝ[ÞXÛJY\™[Y
+J]›ÝÈ™]È\œ›ÜŠ‘›Û\ˆØ[››Ý™H[Ý™Y[È]Ù[ˆÜˆHÚ[›Û\ˆŠNÂˆ›Û\‹œ\™[Y\\™[YÂˆBˆ›Û\‹\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ™\ËšœÛÛŠÛÚÎYK›Û\ŸJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™[]J‹Ø\KÝŒKÜ™\Ù[][ÛœËÙ›Û\œËÎšY‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšY
+NÂˆYŠYOOHœ›ÛÝŸ\™\Ù[][Û“Xœ˜\žK™›Û\œÖÚYJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”›ÛÝ›Û\ˆØ[››Ý™H[]YŸJNÂˆÛÛœÝ™XÝ\œÚ]™OTÝš[™Ê™\Kœ]Y\žKœ™XÝ\œÚ]™_ŒŠOOOHŒHŽÂˆÛÛœÝ›Û\œÏ\™\Ù[][Û‘\ØÙ[™[›Û\’YÊY
+NÂˆÛÛœÝ™\ÏSØš™XÝ˜[Y\Ê™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÊK™š[\ŠO™›Û\œËš\Ê™›Û\’Y
+JNÂˆYŠ\™XÝ\œÚ]™I‰Š›Û\œËœÚ^™OŒ_™\Ë›[™Ý
+J\™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘›Û\ˆ\È›Ý[\NÈ\ÙH™XÝ\œÚ]™H[]HŸJNÂˆ›ÜŠÛÛœÝÙˆ™\ÊY[]T™\Ù[][Û”™XÛÜ™
+šY
+NÂˆ›ÜŠÛÛœÝšYÙˆ›Û\œÊY[]H™\Ù[][Û“Xœ˜\žK™›Û\œÖÙšYNÂˆ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ™\ËšœÛÛŠÛÚÎYK™[[Ý™Y›Û\œÎ–Ë‹‹™›Û\œ×K™[[Ý™Y™\Ù[][ÛœÎœ™\Ë›X\
+OœšY
+_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÝ\ØY‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK™\Ù[][Û•\ØYœÚ[™ÛJœ™\Ù[][ÛˆŠK\Þ[˜Ê™\K™\ÊOOžÂˆYŠ\™\K™š[J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“›È™\Ù[][Ûˆ\ØYYŸJNÂˆÛÛœÝY\™\Ù[][Û’Y
+
+NÂˆÛÛœÝ\\]š›Ú[Š‘TÑS•USÓ”×ÑT‹Y
+NÂˆœË›ZÙ\”Þ[˜Ê\‹Ü™XÝ\œÚ]™NY_JNÂˆž^ÂˆÛÛœÝ^\]™^˜[YJ™\K™š[K›ÜšYÚ[˜[˜[Y_ˆŠKÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝÜšYÚ[˜[š[OXÜšYÚ[˜[	Ù^XÂˆœËœ™[˜[YTÞ[˜Ê™\K™š[Kœ]]š›Ú[Š\‹ÜšYÚ[˜[š[JJNÂˆÛÛœÝ›ÝÏ[™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆÛÛœÝ™XÏ^ÂˆYˆ˜[YN˜ÛX[”™\Ù[][Û“X™[
+]˜˜\Ù[˜[YJ™\K™š[K›ÜšYÚ[˜[˜[YK^
+_”™\Ù[][Ûˆ‹M
+KˆÜšYÚ[˜[˜[YNœ™\K™š[K›ÜšYÚ[˜[˜[YKˆÜšYÚ[˜[š[Kˆ›Û\’Y››Ü›X[^™T™\Ù[][Û‘›Û\’Y
+™\K˜›ÙOË™›Û\’Yœ›ÛÝŠKˆZ[YNœ™\K™š[K›Z[Y]\_ˆ‹ˆÚ^™Nœ™\K™š[KœÚ^™_ˆÛYPÛÝ[Œˆ›Ý\Î–×Kˆ‘š[N›[ˆÛÛ™\œÚ[Û”Ý]\Îˆ˜ÛÛ™\[™È‹ˆÛÛ™\œÚ[Û‘\œ›ÜŽ›[ˆÜ™X]Y]››ÝËˆ\]Y]››ÝÂˆNÂˆ™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYO\™XÎÂˆ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆž^Âˆ]ØZ]Z[™\Ù[][Û”ÛY\ÊY
+NÂˆ]Y]
+ÚÚ[™ˆœ™\Ù[][Û‹\ØY‹Y˜[YNœ™XË›˜[YKÛY\Îœ™XËœÛYPÛÝ[›Û\’Yœ™XË™›Û\’YJNÂˆ™\ËšœÛÛŠÛÚÎYK™\Ù[][ÛŽœ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊ_JNÂˆXØ]Ú
+\œŠ^Âˆ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏH™˜Z[YŽÜ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜY\œ‹›Y\ÜØYÙNÜ™XË\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙK™\Ù[][ÛŽœ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊ_JNÂˆBˆXØ]Ú
+\œŠ^ÂˆœËœ›TÞ[˜Ê\‹Ü™XÝ\œÚ]™NYK›Ü˜ÙNY_JNÂˆYŠœË™^\ÝÔÞ[˜Ê™\K™š[Kœ]
+JYœËœ›TÞ[˜Ê™\K™š[Kœ]Ù›Ü˜ÙNY_JNÂˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆBŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÎšYÜ™XZ[‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\Þ[˜Ê™\K™\ÊOOžÂˆ]™XÏ[[š[Ü[[Âˆž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšY
+NÜ™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”™\Ù[][Ûˆ›Ý›Ý[™ŸJNÂˆš[Ü^ØÛÛ™\œÚ[Û”Ý]\Îœ™XË˜ÛÛ™\œÚ[Û”Ý]\ËÛÛ™\œÚ[Û‘\œ›ÜŽœ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜŸNÂˆ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏH˜ÛÛ™\[™ÈŽÜ™XË˜ÛÛ™\œÚ[Û‘\œ›Ü[[Ü\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ]ØZ]Z[™\Ù[][Û”ÛY\ÊY
+NÂˆ™\ËšœÛÛŠÛÚÎYK™\Ù[][ÛŽœ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊ_JNÂˆXØ]Ú
+\œŠ^ÚYŠ™XÊ^Ü™XË˜ÛÛ™\œÚ[Û”Ý]\Ï\š[ÜË˜ÛÛ™\œÚ[Û”Ý]\ß™˜Z[YŽÜ™XË˜ÛÛ™\œÚ[Û‘\œ›Ü\š[ÜË˜ÛÛ™\œÚ[Û‘\œ›ÜŸ[Ü™XË›\Ý™XZ[\œ›ÜY\œ‹›Y\ÜØYÙNÜ™XË\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+_\™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙK™\Ù[][ÛŽœ™XÏÜ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊN›[J_BŸJNÂ˜\œ]
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÎšY‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšY
+K™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”™\Ù[][Ûˆ›Ý›Ý[™ŸJNÂˆYŠ™\K˜›ÙOË›˜[YHOO][™Yš[™Y
+\™XË›˜[YOXÛX[”™\Ù[][Û“X™[
+™\K˜›ÙK›˜[YKM
+NÂˆYŠ™\K˜›ÙOË™›Û\’YOO][™Yš[™Y
+\™XË™›Û\’Y[›Ü›X[^™T™\Ù[][Û‘›Û\’Y
+™\K˜›ÙK™›Û\’Y
+NÂˆ™XË\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ™\ËšœÛÛŠÛÚÎYK™\Ù[][ÛŽœ™\Ù[][Û”X›XÔ™XÛÜ™
+™XÊ_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\™[]J‹Ø\KÝŒKÜ™\Ù[][ÛœËÎšY‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšY
+NÂˆYŠ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”™\Ù[][Ûˆ›Ý›Ý[™ŸJNÂˆYŠ™\Ù[][Û”Ý]K˜XÝ]™I‰œ™\Ù[][Û”Ý]Kœ™\Ù[][Û’YOOZY
+X]ØZ]ÝÜ™\Ù[][ÛŠØÛX\ŽY_JNÂˆ[]T™\Ù[][Û”™XÛÜ™
+Y
+NÜ\œÚ\Ý™\Ù[][Û“Xœ˜\žJ
+NÂˆ]Y]
+ÚÚ[™ˆœ™\Ù[][Û‹™[]H‹YJNÂˆ™\ËšœÛÛŠÛÚÎYKYJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÜ™\Ù[][ÛœËÎšYÜÝ\‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝYTÝš[™Ê™\Kœ\˜[\ËšY
+K™XÏ\™\Ù[][Û“Xœ˜\žKœ™\Ù[][ÛœÖÚYNÂˆYŠ\™XÊ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”™\Ù[][Ûˆ›Ý›Ý[™ŸJNÂˆYŠ™XË˜ÛÛ™\œÚ[Û”Ý]\ÈOOHœ™XYHŸ\™XËœÛYPÛÝ[
+\™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ”™\Ù[][Ûˆ™[™\š[™È\È›Ý™XYHŸJNÂˆYŠ™\Ù[][Û”Ý]K˜XÝ]™JX]ØZ]ÝÜ™\Ù[][ÛŠØÛX\Ž™˜[Ù_JNÂˆÛÛœÝ\™Ù]Ï\™\ÛÛ™Q\Ü^U\™Ù]Ê™\K˜›ÙOË\™Ù]ÏË›[™ÝÜ™\K˜›ÙK\™Ù]ÎŠ™\K˜›ÙOË\™Ù]˜[ŠJNÂˆYŠ]\™Ù]Ë›[™Ý
+]›ÝÈ™]È\œ›ÜŠ”Ù[XÝ]X\ÝÛ™H\Ü^HŠNÂˆÛÛœÝ›ÝÏ[™]È]J
+KÒTÓÔÝš[™Ê
+NÂˆ™\Ù[][Û”Ý]O^Âˆ‹‹™Y˜][™\Ù[][Û”Ý]J
+KˆXÝ]™NYK™\Ù[][Û’YšYˆÛYN“X]›X^
+KX]›Z[Š[X™\Š™\K˜›ÙOËœÛYJ_K™XËœÛYPÛÝ[
+JKˆ\™Ù]Ëˆ]\ÙY™˜[ÙK›XÚÎ™˜[ÙKÝ\Y]››ÝËÛYTÝ\Y]››ÝËˆ]]ÐY˜[˜ÙTÙXÛÛ™Î“X]›X^
+X]›Z[ŠÍŒ[X™\Š™\K˜›ÙOË˜]]ÐY˜[˜ÙTÙXÛÛ™Ê_
+JKˆÛÜˆH\™\K˜›ÙOË›ÛÜˆ\™Ù]ÙXÛÛ™Î“X]›X^
+X]›Z[ŠÍŒ[X™\Š™\K˜›ÙOË\™Ù]ÙXÛÛ™Ê_
+JKˆ[Z[™ÜÎžßKˆÙ\ÜÚ[Û’Y˜Üž\Ëœ˜[™ÛUURQ
+
+BˆNÂˆ\œÚ\Ý™\Ù[][Û”Ý]J
+NÂˆ]ØZ]Ù[™™\Ù[][Û”ÛYJ
+NÂˆ]Y]
+ÚÚ[™ˆœ™\Ù[][Û‹œÝ\‹Y˜[YNœ™XË›˜[YK\™Ù]ËÛYNœ™\Ù[][Û”Ý]KœÛY_JNÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆœ™\Ù[][Û‹œÝ]H‹Ý]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JNÂˆ™\ËšœÛÛŠÛÚÎYKÝ]Nœ™\Ù[][Û”Ý]TX›XÊ
+_JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ˜\œÜÝ
+‹Ø\KÝŒKÜ™\Ù[][ÛœËØÛÛ›Û‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^Ü™\ËšœÛÛŠÛÚÎYKÝ]N˜]ØZ]ÛÛ›Û™\Ù[][ÛŠ™\K˜›ÙOË˜XÝ[Û‹™\K˜›Ù_ßJ_J_BˆØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚‹ËÈYYXHXœ˜\žH\ØYÈÈØÝ[Y[Â˜ÛÛœÝÝÜ˜YÙHH][\‹™\ÚÔÝÜ˜YÙJÂˆ\Ý[˜][ÛŽˆ
+Ü™\KÙš[KØŠOO˜ØŠ[QQPWÑTŠKˆš[[˜[YNˆ
+Ü™\Kš[KØŠOOžÂˆÛÛœÝ^\]™^˜[YJš[K›ÜšYÚ[˜[˜[Y_ˆŠKÓÝÙ\Ø\ÙJ
+KœÛXÙJMJNÂˆÛÛœÝ˜\ÙO\]˜˜\Ù[˜[YJš[K›ÜšYÚ[˜[˜[Y_›YYXH‹^
+Bˆœ™\XÙJÖ×˜K^KVŒNK—ËWKÙË—ÈŠKœÛXÙJL
+NÂˆØŠ[	ØÜž\Ëœ˜[™ÛUURQ
+
+_KIØ˜\Ù_IÙ^X
+NÂˆBŸJNÂ˜ÛÛœÝ\ØYH][\ŠÂˆÝÜ˜YÙKˆ[Z]ÎžÙš[TÚ^™N“PVÕTÐQÓPŠŒL
+ŒLKˆš[Qš[\ŽŠÜ™\Kš[KØŠOOžÂˆÛÛœÝZ[YOTÝš[™Êš[K›Z[Y]\_ˆŠKÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝ^\]™^˜[YJš[K›ÜšYÚ[˜[˜[Y_ˆŠKÓÝÙ\Ø\ÙJ
+NÂˆÛÛœÝ[ÝÙY^[™]ÈÙ]
+Âˆ‹œ™È‹‹šœÈ‹‹šœYÈ‹‹™ÚYˆ‹‹ÙXœ‹‹˜›\‹ˆ‹›\‹‹ÙX›H‹‹›[Ýˆ‹‹›Mˆ‹ˆ‹œˆ‹‹œ‹‹œ‹‹›Ù‹‹™ØÈ‹‹™ØÞ‹‹›Ù‹‹œˆ‚ˆJNÂˆÛÛœÝ[ÝÙYZ[YOBˆZ[YKœÝ\ÕÚ]
+š[XYÙKÈŠ_Z[YKœÝ\ÕÚ]
+šY[ËÈŠ_ˆZ[YOOOH˜\XØ][Û‹ÜˆŸˆZ[YKš[˜ÛY\Êœ™\Ù[][ÛˆŠ_Z[YKš[˜ÛY\ÊœÝÙ\œÚ[Š_ˆZ[YKš[˜ÛY\ÊÛÜ™Š_Z[YKš[˜ÛY\Ê›Ù™šXÙYØÝ[Y[Š_ˆZ[YKš[˜ÛY\Ê›Ü[™ØÝ[Y[Š_Z[YOOOH˜\XØ][Û‹ÜˆŸˆZ[YOOOH˜\XØ][Û‹ÛØÝ]\Ý™X[HŽÂˆÛÛœÝ[ÝÙYX[ÝÙY^š\Ê^
+I‰˜[ÝÙYZ[YNÂˆØŠ[ÝÙYÛ[›™]È\œ›ÜŠ[œÝ\ÜYš[H\Nˆ	Ùš[K›ÜšYÚ[˜[˜[Y_H
+	ÛZ[Y_[šÛ›ÝÛˆZ[YHŸJX
+K[ÝÙY
+NÂˆBŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÛYYXH‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\ØYœÚ[™ÛJ›YYXHŠK\Þ[˜Ê™\K™\ÊOOžÂˆYŠ\™\K™š[J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“›Èš[H\ØYYŸJNÂˆÛÛœÝÝÜ™Y\™\K™š[K™š[[˜[YK\OXÛ\ÜÚYžSYYXJÝÜ™Y™\K™š[K›Z[Y]\JNÂˆÛÛœÝ™XÏ^ÂˆÜšYÚ[˜[˜[YNœ™\K™š[K›ÜšYÚ[˜[˜[YKˆÝÜ™Y˜[YNœÝÜ™YˆZ[YNœ™\K™š[K›Z[Y]\Kˆ\Kˆ\ØYY]›™]È]J
+KÒTÓÔÝš[™Ê
+KˆÙ[™\˜]YŽ›[ˆÛÛ™\œÚ[Û”Ý]\Î›[ˆÛÛ™\œÚ[Û‘\œ›ÜŽ›[ˆNÂˆYYXSXœ˜\žK™š[\ÖÜÝÜ™YO\™XÎÂˆ\œÚ\ÝYYXSXœ˜\žJ
+NÂ‚ˆYŠÙ™šXÙPÛÛ™\X›JÝÜ™Y
+J^Âˆ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏH˜ÛÛ™\[™ÈŽÂˆ\œÚ\ÝYYXSXœ˜\žJ
+NÂˆž^Âˆ™XË™Ù[™\˜]YX]ØZ]ÛÛ™\Ù™šXÙUÔŠÝÜ™Y
+NÂˆ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏHœ™XYHŽÂˆ™XË˜ÛÛ™\œÚ[Û‘\œ›Ü[[ÂˆXØ]Ú
+\œŠ^Âˆ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏH™˜Z[YŽÂˆ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜY\œ‹›Y\ÜØYÙNÂˆBˆ\œÚ\ÝYYXSXœ˜\žJ
+NÂˆB‚ˆ]Y]
+ÚÚ[™ˆ›YYXK\ØY‹˜[YNœ™\K™š[K›ÜšYÚ[˜[˜[YKÝÜ™YZ[YNœ™\K™š[K›Z[Y]\KÚ^™Nœ™\K™š[KœÚ^™K\KÙ[™\˜]YŽœ™XË™Ù[™\˜]YŸJNÂˆ™\ËšœÛÛŠÛÚÎYKš[N›Xœ˜\žT™XÛÜ™œ›ÛQ\ÚÊÝÜ™Y
+_JNÂŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÛYYXKÎ›˜[YKØÛÛ™\‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\Þ[˜Ê™\K™\ÊOOžÂˆ]™XÏ[[š[Ü[[˜[YOHˆŽÂˆž^Âˆ˜[YO\ØY™TÝÜ™Y˜[YJ™\Kœ\˜[\Ë›˜[YJNÜ™XÏ[YYXSXœ˜\žK™š[\ÖÛ˜[YW_ßNÂˆYŠYœË™^\ÝÔÞ[˜Ê]š›Ú[ŠQQPWÑT‹˜[YJJJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘š[H›Ý›Ý[™ŸJNÂˆYŠ[Ù™šXÙPÛÛ™\X›J˜[YJJ\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ“Û›HÛÜ™ÔÝÙ\”Ú[ÓÜ[‘ØÝ[Y[š[\È™\]Z\™HÛÛ™\œÚ[ÛˆŸJNÂˆš[Ü^ÙÙ[™\˜]YŽœ™XË™Ù[™\˜]Y‹ÛÛ™\œÚ[Û”Ý]\Îœ™XË˜ÛÛ™\œÚ[Û”Ý]\ËÛÛ™\œÚ[Û‘\œ›ÜŽœ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜŸNÜ™XË›ÜšYÚ[˜[˜[YO\™XË›ÜšYÚ[˜[˜[Y_˜[YNÜ™XËœÝÜ™Y˜[YO[˜[YNÜ™XË\OXÛ\ÜÚYžSYYXJ˜[YJNÜ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏH˜ÛÛ™\[™ÈŽÜ™XË˜ÛÛ™\œÚ[Û‘\œ›Ü[[ÂˆYYXSXœ˜\žK™š[\ÖÛ˜[YWO\™XÎÜ\œÚ\ÝYYXSXœ˜\žJ
+NÂˆ™XË™Ù[™\˜]YX]ØZ]ÛÛ™\Ù™šXÙUÔŠ˜[YJNÜ™XË˜ÛÛ™\œÚ[Û”Ý]\ÏHœ™XYHŽÜ\œÚ\ÝYYXSXœ˜\žJ
+NÂˆ™\ËšœÛÛŠÛÚÎYKš[N›Xœ˜\žT™XÛÜ™œ›ÛQ\ÚÊ˜[YJ_JNÂˆXØ]Ú
+\œŠ^ÚYŠ™XÉ‰›˜[YJ^Ü™XË™Ù[™\˜]Y\š[ÜË™Ù[™\˜]YŸ[Ü™XË˜ÛÛ™\œÚ[Û”Ý]\Ï\š[ÜË™Ù[™\˜]YÈœ™XYHŽˆ™˜Z[YŽÜ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜY\œ‹›Y\ÜØYÙNÛYYXSXœ˜\žK™š[\ÖÛ˜[YWO\™XÎÜ\œÚ\ÝYYXSXœ˜\žJ
+_\™\ËœÝ]\ÊL
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\™[]J‹Ø\KÝŒKÛYYXKÎ›˜[YH‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK
+™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ˜[YO\ØY™TÝÜ™Y˜[YJ™\Kœ\˜[\Ë›˜[YJK™XÏ[YYXSXœ˜\žK™š[\ÖÛ˜[YW_ßNÂˆÛÛœÝ™[[Ý™YV×NÂˆ›ÜŠÛÛœÝˆÙˆÛ˜[YK™XË™Ù[™\˜]Y—K™š[\Š›ÛÛX[ŠJ^ÂˆÛÛœÝ[\]š›Ú[ŠQQPWÑT‹ØY™TÝÜ™Y˜[YJŠJNÂˆYŠœË™^\ÝÔÞ[˜Ê[
+J^ÙœËœ›TÞ[˜Ê[Ù›Ü˜ÙNY_JNÜ™[[Ý™Yœ\Ú
+Š_BˆBˆ[]HYYXSXœ˜\žK™š[\ÖÛ˜[YWNÂˆ\œÚ\ÝYYXSXœ˜\žJ
+NÂˆ]Y]
+ÚÚ[™ˆ›YYXK™[]H‹˜[YK™[[Ý™YJNÂˆ™\ËšœÛÛŠÛÚÎYK™[[Ý™YJNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\œÜÝ
+‹Ø\KÝŒKÛYYXKÎ›˜[YKÙ\Ü^H‹™\]Z\™PØ\Xš[]J›YYXK›X[˜YÙHŠK\Þ[˜Ê™\K™\ÊOOžÂˆž^ÂˆÛÛœÝ˜[YO\ØY™TÝÜ™Y˜[YJ™\Kœ\˜[\Ë›˜[YJK[\]š›Ú[ŠQQPWÑT‹˜[YJNÂˆYŠYœË™^\ÝÔÞ[˜Ê[
+J\™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘š[H›Ý›Ý[™ŸJNÂˆÛÛœÝ™XÏ[YYXSXœ˜\žK™š[\ÖÛ˜[YW_ßK\O\™XË\_Û\ÜÚYžSYYXJ˜[YK™XË›Z[Y_ˆŠNÂˆÛÛœÝ\™Ù]XÛX[’Y
+™\K˜›ÙOË\™Ù]ŒHŠNÂˆÛÛœÝ^[ØY\™\K˜›Ù_ßNÂˆ]ÛÛ[X[™Â‚ˆYŠ\OOOHš[XYÙHŠXÛÛ[X[™^Ý\Nˆ™\Ü^Kš[XYÙH‹\™Ù]^[ØYžÝ\››YYXU\›
+˜[YJKš]œ^[ØY™š]˜ÛÛZ[ˆŸ_NÂˆ[ÙHYŠ\OOOHšY[ÈŠXÛÛ[X[™^Ý\Nˆ™\Ü^KšY[È‹\™Ù]^[ØYžÝ\››YYXU\›
+˜[YJKš]œ^[ØY™š]˜ÛÛZ[ˆ‹]]Ü^NYK]]YˆH\^[ØY›]]YÛÜˆH\^[ØY›ÛÜ_NÂˆ[ÙHYŠ\OOOHœˆŠ^ÂˆÛÛœÝšY]Ù\YØÝ[Y[šY]Ù\•\›
+˜[YK^[ØY
+NÂˆÛÛ[X[™^Ý\Nˆ™\Ü^Kœˆ‹\™Ù]^[ØYžÝ\›šY]Ù\‹ÛÝ\˜ÙU\››YYXU\›
+˜[YJ__NÂˆY[ÙHYŠ\OOOHœ™\Ù[][ÛˆŸ\OOOH™ØÝ[Y[Š^ÂˆYŠ\™XË™Ù[™\˜]YˆYœË™^\ÝÔÞ[˜Ê]š›Ú[ŠQQPWÑT‹™XË™Ù[™\˜]YŠJJ^Âˆ™]\›ˆ™\ËœÝ]\ÊJKšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ‘ØÝ[Y[ÛÛ™\œÚ[Ûˆ\È›Ý™XYH‹ÛÛ™\œÚ[Û”Ý]\Îœ™XË˜ÛÛ™\œÚ[Û”Ý]\ËÛÛ™\œÚ[Û‘\œ›ÜŽœ™XË˜ÛÛ™\œÚ[Û‘\œ›ÜŸJNÂˆBˆÛÛœÝšY]Ù\YØÝ[Y[šY]Ù\•\›
+™XË™Ù[™\˜]Y‹^[ØY
+NÂˆÛÛ[X[™^Ý\Nˆ™\Ü^K™ØÝ[Y[‹\™Ù]^[ØYžÝ\›šY]Ù\‹ÛÝ\˜ÙU\››YYXU\›
+˜[YJK•\››YYXU\›
+™XË™Ù[™\˜]YŠKÜšYÚ[˜[˜[YNœ™XË›ÜšYÚ[˜[˜[Y_˜[Y__NÂˆY[Ù^Âˆ™]\›ˆ™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽˆ•\Èš[H\HØ[››Ý™H\Ü^YYŸJNÂˆBˆÛÛœÝ™\Ý[X]ØZ]^XÝ]PÛÛ[X[™
+ÛÛ[X[™›YYXK[Xœ˜\žHŠNÂˆ™\ËšœÛÛŠÛÚÎYKš[N›Xœ˜\žT™XÛÜ™œ›ÛQ\ÚÊ˜[YJKÛÛ[X[™™\Ý[JNÂˆXØ]Ú
+\œŠ^Ü™\ËœÝ]\Ê
+KšœÛÛŠÛÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_J_BŸJNÂ‚˜\\ÙJ
+\œ‹Ü™\K™\ËÛ™^
+HOˆÂˆÛÛœÛÛK™\œ›ÜŠ\œŠNÂˆ™\ËœÝ]\Ê
+KšœÛÛŠÈÚÎˆ˜[ÙK\œ›ÜŽˆ\œ‹›Y\ÜØYÙH”™\]Y\Ý˜Z[YˆJNÂŸJNÂ‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‹ËÈÙ\™\ˆ
+ÈÙX”ÛØÚÙ]Ù\™\‚‹ËÈKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKB‚˜ÛÛœÝÙ\™\ˆH˜Ü™X]TÙ\™\Š\
+NÂ˜ÛÛœÝÜÜÈH™]ÈÙX”ÛØÚÙ]Ù\™\ŠÈ›ÔÙ\™\ŽˆYKX^^[ØYˆÔ×ÓPVÔVSÐQÐ–UTÈJNÂ˜ÛÛœÝÔ×ÓPVÐÓÓ“‘PÕSÓ”ÏSX]›X^
+KX]›Z[ŠL[X™\Š›ØÙ\ÜË™[‹•Ô×ÓPVÐÓÓ“‘PÕSÓ”ßL
+JJNÂ˜ÛÛœÝÔ×ÓPVÐÓÓ“‘PÕSÓ”×ÔT—ÒTSX]›X^
+KX]›Z[ŠL[X™\Š›ØÙ\ÜË™[‹•Ô×ÓPVÐÓÓ“‘PÕSÓ”×ÔT—ÒT
+JJNÂ‚‹ËÈœÈÛÛ›™XÝÛ›HÈHXÚÙ]YXˆ›ÞKˆH˜XÚÙ[™™[^\È˜]ÈÙ[™Ü[‚‹ËÈÈHÛÛ™šYÝ\™YYXØ]Y[™Ú[
+›Ü›X[HŽLËÜÙ[™Ü[ŠK›ÝHPB‹ËÈÙX‹\^Y\ˆ›Ý]HÛˆŽMKˆHÛ™Ë[]™YÚÙ[ˆ™[Û™ÜÈÈTHÛÛ›ÛÛ›K‚˜ÛÛœÝXTÙ[™Ü[”›ÞUÜÜÈH™]ÈÙX”ÛØÚÙ]Ù\™\ŠÈ›ÔÙ\™\ŽˆYKX^^[ØYˆÔ×ÓPVÔVSÐQÐ–UTÈJNÂ™[˜Ý[Ûˆ›Ý[™YÜÓØš™XÝ
+˜[YKX™[X^ž]\ÏM
+ŒL
+^ÂˆYŠ]˜[Y_\[Ùˆ˜[YHOOH›Øš™XÝŸ\œ˜^Kš\Ð\œ˜^J˜[YJJ\™]\›ˆßNÂˆÛÛœÝ[˜ÛÙYR”ÓÓ‹œÝš[™ÚYžJ˜[YJNÂˆYŠY™™\‹˜ž]S[™Ý
+[˜ÛÙY
+O›X^ž]\Ê]›ÝÈ\œ›ÜŠ	ÛX™[H^ÙYYÈ	ÓX]™›ÛÜŠX^ž]\ËÌL
+_HÐ˜
+NÂˆ™]\›ˆ”ÓÓ‹œ\œÙJ[˜ÛÙY
+NÂŸB™[˜Ý[ÛˆÙXœÛØÚÙ]Y\ÜØYÙP[ÝÙY
+ÜÊ^ÂˆÛÛœÝ›ÝÏQ]K››ÝÊ
+KÚ[™ÝÓ\ÏLLX^Y\ÜØYÙ\ÏLLŒÂˆYŠ]ÜË›Y\ÜØYÙUÚ[™ÝÐ]›ÝË]ÜË›Y\ÜØYÙUÚ[™ÝÐ]]Ú[™ÝÓ\Ê^ÝÜË›Y\ÜØYÙUÚ[™ÝÐ][›ÝÎÝÜË›Y\ÜØYÙUÚ[™ÝÐÛÝ[LBˆÜË›Y\ÜØYÙUÚ[™ÝÐÛÝ[JÜË›Y\ÜØYÙUÚ[™ÝÐÛÝ[
+JÌNÂˆ™]\›ˆÜË›Y\ÜØYÙUÚ[™ÝÐÛÝ[[X^Y\ÜØYÙ\ÎÂŸBœÙ\™\‹›ÛŠ\Ü˜YH‹
+™\KÛØÚÙ]XY
+OOžÂˆ]]˜[YOHˆŽÝž^Ü]˜[YO[™]ÈT“
+™\K\›‹È‹š‹ËØÛ\ÜÜ›ÛÛKZX‹›ØØ[ŠKœ]˜[Y_XØ]ÚßBˆÛÛœÝ\™Ù]\]˜[YOOOH‹ÝÜÈÝÜÜÎœ]˜[YOOOH‹Û]\ÚXËX\ÜÚ\Ý[ÜÙ[™Ü[‹\›ÞHÛXTÙ[™Ü[”›ÞUÜÜÎ›[ÂˆYŠ]\™Ù]
+^ÜÛØÚÙ]™\Ý›ÞJ
+NÜ™]\›ŸBˆÛÛœÝ™[[ÝOXÛY[Y™\ÜÊ™\JK[VË‹‹ÜÜË˜ÛY[Ë‹‹›XTÙ[™Ü[”›ÞUÜÜË˜ÛY[×NÂˆYŠ[›[™ÝUÔ×ÓPVÐÓÓ“‘PÕSÓ”ß[™š[\ŠÛY[O˜ÛY[œ™[[ÝPY™\ÜÏOO\™[[ÝJK›[™ÝUÔ×ÓPVÐÓÓ“‘PÕSÓ”×ÔT—ÒT
+^ÜÛØÚÙ]Üš]J’ÌKŒHŽHÛÈX[žH™\]Y\Ý×—ÛÛ›™XÝ[ÛŽˆÛÜÙW———ˆŠNÜÛØÚÙ]™\Ý›ÞJ
+NÜ™]\›ŸBˆ\™Ù]š[™U\Ü˜YJ™\KÛØÚÙ]XYÜÏO\™Ù]™[Z]
+˜ÛÛ›™XÝ[Ûˆ‹ÜË™\JJNÂŸJNÂ›XTÙ[™Ü[”›ÞUÜÜË›ÛŠ˜ÛÛ›™XÝ[Ûˆ‹
+ÛY[™\JOOžÂˆÛY[œ™[[ÝPY™\ÜÏXÛY[Y™\ÜÊ™\JNÂˆÛY[›ÛŠ™\œ›Üˆ‹
+
+OOžßJNÈËÈ[ÛÈÛÝ™\ˆ™Z™XÝYXÚÙ]È\š[™ÈHÛÜÙH[™ÚZÙK‚ˆÛÛœÝ™[^RYXÜž\Ëœ˜[™ÛUURQ
+
+NÂˆÛÛœÝ™Z™XÝJÛÙK™X\ÛÛŠOOžØ]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[œÙ[™Ü[‹œ›ÞKœ™Z™XÝY‹™[^RYÛÙK™X\ÛÛŸJNÚYŠÛY[œ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠXÛY[˜ÛÜÙJÛÙK™X\ÛÛŠ_NÂˆž^ÂˆÛÛœÝO[™]ÈT“
+™\K\›‹È‹š‹ËØÛ\ÜÜ›ÛÛKZX‹›ØØ[ŠKXÚÙ]XÛÛœÝ[YS]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]
+KœÙX\˜Ú\˜[\Ë™Ù]
+XÚÙ]ŠJNÂˆYŠ]XÚÙ]
+\™]\›ˆ™Z™XÝ
+L’[˜[YÜˆ^\™Y]\ÚXÈ\ÜÚ\Ý[œšYÙHXÚÙ]ŠNÂˆÛÛœÝ]XÚYY”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[œšYÙU\™Ù]È‹×J_×NÂˆYŠP\œ˜^Kš\Ð\œ˜^J]XÚY
+_X]XÚYš[˜ÛY\ÊXÚÙ]™]šXÙRY
+J\™]\›ˆ™Z™XÝ
+L‘\Ü^H\È›Ý]XÚYÈ]\ÚXÈ\ÜÚ\Ý[œšYÙHŠNÂˆÛÛœÝÙ™Ï[]\ÚXÐ\ÜÚ\Ý[ÛÛ™šYÊ
+NÂˆYŠXÙ™ËœšYÙQ[˜X›Y
+\™]\›ˆ™Z™XÝ
+L“]\ÚXÈ\ÜÚ\Ý[ˆœšYÙH\È\ØX›YŠNÂˆ™[^TÙ[™Ü[ŠÛY[ÂˆÙX”ÛØÚÙ]ÛÛ™šYÎ˜Ù™ËX^^[ØY•Ô×ÓPVÔVSÐQÐ–UTËˆÛÛÛ›™XÝY\Ý™X[U\›O˜]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[œÙ[™Ü[‹œ›ÞK˜ÛÛ›™XÝY‹™[^RY]šXÙRYXÚÙ]™]šXÙRY^Y\’YXÚÙ]œ^Y\’Y\Ý™X[U\›JKˆÛÛÜÙY˜ÛÜÝ\™OO˜]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[œÙ[™Ü[‹œ›ÞK˜ÛÜÙY‹™[^RY]šXÙRYXÚÙ]™]šXÙRY^Y\’YXÚÙ]œ^Y\’Y‹‹˜ÛÜÝ\™_JKˆÛ‘\œ›ÜŽ™OO™XYÛ›ÜÝXÑ\œ›ÜŠKØÛÛ\Û™[ˆ›]\ÚXËX\ÜÚ\Ý[‹Ü\˜][ÛŽˆœÙ[™Ü[‹\›ÞH‹]šXÙRYXÚÙ]™]šXÙRYJBˆJNÂˆXØ]Ú
+J^ÙXYÛ›ÜÝXÑ\œ›ÜŠKØÛÛ\Û™[ˆ›]\ÚXËX\ÜÚ\Ý[‹Ü\˜][ÛŽˆœÙ[™Ü[‹\›ÞK\Ù]\ŸJNÜ™Z™XÝ
+LLK“]\ÚXÈ\ÜÚ\Ý[Ù[™Ü[ˆ›ÞHÙ]\˜Z[YŠ_BŸJNÂ‚ÜÜË›ÛŠ˜ÛÛ›™XÝ[Ûˆ‹
+ÜË™\JHOˆÂˆÜË˜ÛÛ›™XÝ[Û’YHÜž\Ëœ˜[™ÛUURQ
+
+NÂˆÜËœ›ÛHH[šÛ›ÝÛˆŽÂˆÜË™]šXÙRYHˆŽÂˆÜËš\Ð[]™HHYNÂˆÜËœÙ\ÜÚ[Û•ÚÙ[ˆHˆŽÂˆÜËœ™[[ÝPY™\ÜÏXÛY[Y™\ÜÊ™\JNÂˆÜËš[Õ[Y\\Ù][Y[Ý]
+
+
+OOžÚYŠÜËœ›ÛOOOH[šÛ›ÝÛˆ‰‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ]ÜË˜ÛÜÙJL]][XØ][Ûˆ[Y[Ý]Š_KL
+NÂˆÜÐÛY[Ë˜Y
+ÜÊNÂˆ[[YKÙXœÛØÚÙ]ÛY[ÈHÜÐÛY[ËœÚ^™NÂ‚ˆÜË›ÛŠœÛ™È‹
+
+HOˆÂˆÜËš\Ð[]™HHYNÂˆYˆ
+ÜËœ›ÛHOOH™\Ü^HŠHX\šÑ\Ü^TÙY[ŠÜÊNÂˆJNÂ‚ˆÜË›ÛŠ›Y\ÜØYÙH‹\Þ[˜È
+˜]ÊHOˆÂˆYŠ]ÙXœÛØÚÙ]Y\ÜØYÙP[ÝÙY
+ÜÊJ^ÝÜË˜ÛÜÙJL“Y\ÜØYÙH˜]H[Z]^ÙYYYŠNÜ™]\›ŸBˆ]\ÙÎÂˆžHÂˆ\ÙÈH”ÓÓ‹œ\œÙJÝš[™Ê˜]ÊJNÂˆHØ]ÚÂˆ™]\›ˆÜÔÙ[™
+ÜËÈ\Nˆ™\œ›Üˆ‹\œ›ÜŽˆ’[˜[Y”ÓÓˆˆJNÂˆBˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+^ÂˆYŠ\ÙË\OOOHšX\™X]Š\™]\›ˆÜÔÙ[™
+ÜËÝ\NˆšX\™X]˜XÚÈ‹]‘]K››ÝÊ
+KXZ[[˜[˜ÙQœ™Y^™NY_JNÂˆ™]\›ˆÜÔÙ[™
+ÜËÝ\Nˆ›XZ[[˜[˜ÙK™œ™Y^™H‹™X\ÛÛŽˆ™[\™XÛÝ™\žKY^ÜŸJNÂˆB‚ˆ[^Üœ™Y^™K˜XÝ]™UÜÓ]]][ÛœÊÊÎÂˆžHÂˆYˆ
+\ÙË\HOOHš[ÈŠHÂˆYŠÜËœ›ÛHOOH[šÛ›ÝÛˆŠ]›ÝÈ™]È\œ›ÜŠ•ÙX”ÛØÚÙ]Y[]H\È[™XYH\ÝX›\ÚYŠNÂˆÛÛœÝ›ÛHHÛX[’Y
+\ÙËœ›ÛJNÂ‚ˆYˆ
+›ÛHOOH˜ÛÛ›Û\ˆˆ›ÛHOOH˜YZ[ˆŠHÂˆYŠXœ›ÝÜÙ\•ÙX”ÛØÚÙ]ÜšYÚ[[ÝÙY
+™\JJ]›ÝÈ™]È\œ›ÜŠ•[\ÝYÙX”ÛØÚÙ]ÜšYÚ[ˆŠNÂˆYŠ”ÝÜ™K˜]][˜X›Y
+
+J^ÂˆÛÛœÝ\Ù\\™\]Y\Ý\Ù\Š™\JNÂˆYŠ›ÛOOOH˜YZ[ˆÊZ\Ô›ÛJ\Ù\‹˜YZ[ˆŠ_Z\ÐØ\Xš[]J\Ù\‹ŠˆŠJNˆZ\ÐØ\Xš[]J\Ù\‹˜Û\ÜÜ›ÛÛK˜ÛÛ›ÛŠJ]›ÝÈ™]È\œ›ÜŠ›ÛOOOH˜YZ[ˆÈ‘[˜X›YYZ[š\Ý˜]Üˆ›Ùš[H™\]Z\™YŽˆ”\›Z\ÜÚ[Ûˆ™\]Z\™YˆÛ\ÜÜ›ÛÛK˜ÛÛ›ÛŠNÂˆÜË˜]]\Ù\]\Ù\ŽÂˆÜËœÙ\ÜÚ[Û•ÚÙ[XÛÛÚÚYU˜[YJ™\K˜Û\ÜÜ›ÛÛWÚX—ÜÙ\ÜÚ[ÛˆŠNÂˆY[ÙHYŠPÓÓ•“ÓÕÒÑSŸ\ÙXÝ\™UÚÙ[‘\]X[
+\ÙËÚÙ[‹ÓÓ•“ÓÕÒÑSŠJ^Âˆ›ÝÈ™]È\œ›ÜŠ•[˜]]Üš^™YÛÛ›Û\ˆŠNÂˆBˆÜËœ›ÛHH›ÛNÂˆÛX\•[Y[Ý]
+ÜËš[Õ[Y\ŠNÂˆÜÔÙ[™
+ÜËÂˆ\Nˆš[Ë˜XÚÈ‹ˆ›ÛKˆ›ÛÛNˆ]šXÙPÛÛ™šYËœ›ÛÛH“ÓÓWÓSQKˆ]šXÙ\ËˆÜ›Ý\Îˆ\Ü^QÜ›Ý\Ëˆ[[YNˆX›XÔ[[YJ
+KˆÝ]NˆX›XÔ\œÚ\Ý[Ý]J
+BˆJNÂˆ™]\›ŽÂˆB‚ˆYˆ
+›ÛHOOHœ™]šY]ÈŠHÂˆYŠXœ›ÝÜÙ\•ÙX”ÛØÚÙ]ÜšYÚ[[ÝÙY
+™\JJ]›ÝÈ™]È\œ›ÜŠ•[\ÝYÙX”ÛØÚÙ]ÜšYÚ[ˆŠNÂˆYŠ”ÝÜ™K˜]][˜X›Y
+
+J^ÂˆÛÛœÝ\Ù\\™\]Y\Ý\Ù\Š™\JNÚYŠZ\ÐØ\Xš[]J\Ù\‹˜Û\ÜÜ›ÛÛKœ™XYŠJ]›ÝÈ™]È\œ›ÜŠ”\›Z\ÜÚ[Ûˆ™\]Z\™YˆÛ\ÜÜ›ÛÛKœ™XYŠNÂˆÜË˜]]\Ù\]\Ù\ŽÝÜËœÙ\ÜÚ[Û•ÚÙ[XÛÛÚÚYU˜[YJ™\K˜Û\ÜÜ›ÛÛWÚX—ÜÙ\ÜÚ[ÛˆŠNÂˆY[ÙHYŠPÓÓ•“ÓÕÒÑSŸ\ÙXÝ\™UÚÙ[‘\]X[
+\ÙËÚÙ[‹ÓÓ•“ÓÕÒÑSŠJ]›ÝÈ™]È\œ›ÜŠ•[˜]]Üš^™Y™]šY]ÈŠNÂˆÛÛœÝ]šXÙRYHÛX[’Y
+\ÙË™]šXÙRY
+NÂˆYˆ
+Y]šXÙ\ÖÙ]šXÙRYH]šXÙ\ÖÙ]šXÙRYK™[˜X›YOOH˜[ÙJHÂˆ›ÝÈ™]È\œ›ÜŠ•[šÛ›ÝÛˆÜˆ\ØX›Y™]šY]È\Ü^HŠNÂˆB‚ˆÜËœ›ÛHHœ™]šY]ÈŽÂˆÜË™]šXÙRYH]šXÙRYÂˆÛX\•[Y[Ý]
+ÜËš[Õ[Y\ŠNÂ‚ˆÜÔÙ[™
+ÜËÂˆ\Nˆš[Ë˜XÚÈ‹ˆ›ÛNˆœ™]šY]È‹ˆ™\œÚ[ÛŽˆTPÐUSÓ—Õ‘T”ÒSÓ‹ˆ]šXÙRYˆ›ÛÛNˆ]šXÙPÛÛ™šYËœ›ÛÛH“ÓÓWÓSQKˆÛÛ™šYÎˆ]šXÙ\ÖÙ]šXÙRYKˆÝ]Nˆ™]šY]Ñ\Ü^TÝ]J]šXÙRY
+Kˆ\Ü^QØ]]Ø^RÜÝÎ‘TÔVWÑÐUUÐVWÒÔÕÂˆJNÂˆ™]\›ŽÂˆB‚ˆYˆ
+›ÛHOOH™\Ü^HŠHÂˆÛÛœÝ]šXÙRYHÛX[’Y
+\ÙË™]šXÙRY
+NÂˆYˆ
+Y]šXÙ\ÖÙ]šXÙRYH]šXÙ\ÖÙ]šXÙRYK™[˜X›YOOH˜[ÙJHÂˆ›ÝÈ™]È\œ›ÜŠ•[šÛ›ÝÛˆÜˆ\ØX›Y\Ü^HŠNÂˆB‚ˆ]\Ü^PÜ™Y[X[Y”ÝÜ™K˜]][XØ]Q\Ü^J]šXÙRY\ÙË˜Ü™Y[X[ˆŠK\ÜÝYYÜ™Y[X[[[]][ÙOH˜Ü™Y[X[ŽÂˆYŠY\Ü^PÜ™Y[X[	‰›\ÙË™[œ›ÛY[ÚÙ[Š^Âˆ\ÜÝYYÜ™Y[X[Y”ÝÜ™K˜ÛÛœÝ[YQ\Ü^Q[œ›ÛY[
+]šXÙRY\ÙË™[œ›ÛY[ÚÙ[‹ÛX™[”Ýš[™Ê\ÙË›Y]OË\Ù\YÙ[™\KšXY\œÖÈ\Ù\‹XYÙ[—_Û\ÜÜ›ÛÛH\Ü^HŠ_JNÂˆYŠ\ÜÝYYÜ™Y[X[
+Y\Ü^PÜ™Y[X[^ÚYš\ÜÝYYÜ™Y[X[šY\Ü^RY™]šXÙRYNÂˆBˆYŠY\Ü^PÜ™Y[X[
+^ÂˆÛÛœÝÛXÞOY”ÝÜ™K™\Ü^PÜ™Y[X[ÛXÞJ
+NÂˆYŠ\ÛXÞK˜]][XØ][Û”™\]Z\™Y
+^Ù\Ü^PÜ™Y[X[^ÚYˆ™\™XÝ‹\Ü^RY™]šXÙRYNØ]][ÙOH˜ÛÛ™šYÝ\™YY\Ü^HŸBˆ[ÙHYŠÛXÞK›YØXÞTÚ\™YÚÙ[[ÝÙY	‰‘TÔVWÕÒÑS‰‰œÙXÝ\™UÚÙ[‘\]X[
+\ÙËÚÙ[‹TÔVWÕÒÑSŠJX]][ÙOH›YØXÞK\Ú\™Y]ÚÙ[ˆŽÂˆ[ÙH›ÝÈ™]È\œ›ÜŠ•[˜]]Üš^™Y\Ü^HŠNÂˆY[ÙHYŠ\ÜÝYYÜ™Y[X[
+X]][ÙOH›™]ËY[œ›ÛY[ŽÂ‚ˆÜËœ›ÛHH™\Ü^HŽÂˆÜË™]šXÙRYH]šXÙRYÂˆÜË™\Ü^PÜ™Y[X[YY\Ü^PÜ™Y[X[ËšYˆŽÂˆÜË™\Ü^P]][ÙOX]][ÙNÂˆÛX\•[Y[Ý]
+ÜËš[Õ[Y\ŠNÂˆÜË›XP]Y[Ô™\ÝÜ™YH˜[ÙNÂˆÜË›XP]Y[Ô™\ÝÜ™T[™[™ÈH˜[ÙNÂˆX\šÑ\Ü^TÙY[ŠÜËÂˆ\Ù\YÙ[ˆ™\KšXY\œÖÈ\Ù\‹XYÙ[—Hˆ‹ˆY]Nˆ›Ý[™YÜÓØš™XÝ
+\ÙË›Y]K‘\Ü^HY]Y]HŠBˆJNÂ‚ˆÜÔÙ[™
+ÜËÂˆ\Nˆš[Ë˜XÚÈ‹ˆ›ÛNˆ™\Ü^H‹ˆ™\œÚ[ÛŽˆTPÐUSÓ—Õ‘T”ÒSÓ‹ˆ]šXÙRYˆ›ÛÛNˆ]šXÙPÛÛ™šYËœ›ÛÛH“ÓÓWÓSQKˆÛÛ™šYÎˆ]šXÙ\ÖÙ]šXÙRYKˆÝ]Nˆ\ÚXØ[\Ü^TÝ]J]šXÙRY
+Kˆ]][ÙKˆÜ™Y[X[š\ÜÝYYÜ™Y[X[Ë˜Ü™Y[X[[™Yš[™YˆÜ™Y[X[Y™\Ü^PÜ™Y[X[ËšY[™Yš[™Yˆ\ÜÙ]XØÙ\ÜÕÚÙ[Žš\ÜÝYP\ÜÙ]XØÙ\ÜÕÚÙ[Š]šXÙRY\Ü^PÜ™Y[X[ËšYˆŠKˆ\Ü^QØ]]Ø^RÜÝÎ‘TÔVWÑÐUUÐVWÒÔÕÂˆJNÂ‚ˆËÈ™KX]XÚ\œÚ\Ý[]\ÚXÈ\ÜÚ\Ý[œ›ÝÜÙ\ˆ^Y\ˆœšYÙHY\ˆ\Ü^H™XÛÛ›™XÝÜ™[ØY‚ˆž^ÂˆÛÛœÝXU\™Ù]ÏY”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[œšYÙU\™Ù]È‹×J_×NÂˆYŠ\œ˜^Kš\Ð\œ˜^JXU\™Ù]ÊI‰›XU\™Ù]Ëš[˜ÛY\Ê]šXÙRY
+J^ÂˆÛÛœÝXUÚÙ[[]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+NÂˆYŠXUÚÙ[Š^ØÛÛœÝ\ÜÝYYZ\ÜÝYS]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]
+]šXÙRY
+NÜÙ][Y[Ý]
+
+
+OOžÚYŠY[^Üœ™Y^™Kœ™\]Y\ÝY	‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ]ÜÔÙ[™
+ÜËÝ\Nˆ˜ÛÛ[X[™‹ÛÛ[X[™žÝ\Nˆ›]\ÚXË˜\ÜÚ\Ý[˜]XÚ‹\™Ù]™]šXÙRY^[ØY›]\ÚXÐ\ÜÚ\Ý[]XÚ^[ØY
+]šXÙRY\ÜÝYY
+__J_KLŒ
+_NÂˆBˆXØ]ÚßB‚ˆËÈÙ\™\‹Yš]™[ˆ™[™\™\ˆÛÛ™\™Ù[˜ÙKˆÛ\ˆ\Ü^HÛY[È[™XYH[™\œÝ[™ˆËÈ\Ü^Kœ™[ØY]™[ˆÚ[ˆ^HÈ›ÝY]™\ÜÛY[™\œÚ[Û‹ˆ\ÈXZÙ\ÈBˆËÈXˆ\Ü˜YH]]ÛX]XØ[H™Yœ™\ÚYØXÞKÜÝ[HÚ[ÜÚÈœ›ÝÜÙ\œÈÚ]Ý]™\]Z\š[™ÂˆËÈHX[X[š\Ú]È]™\žH‹‚ˆÛÛœÝÛY[™\œÚ[ÛTÝš[™Ê\ÙË˜ÛY[™\œÚ[ÛŸ\ÙË›Y]OË˜Z[ˆŠNÂˆYŠÛY[™\œÚ[ÛˆOOPTPÐUSÓ—Õ‘T”ÒSÓŠHÂˆ]Y]
+ÚÚ[™ˆ™\Ü^Kœ™[™\™\‹œ™Yœ™\Ú\™\]Z\™Y‹]šXÙRYÛY[™\œÚ[ÛŽ˜ÛY[™\œÚ[ÛŸ[Ù\™\•™\œÚ[ÛŽTPÐUSÓ—Õ‘T”ÒSÓŸJNÂˆÙ][Y[Ý]
+
+
+OOžÂˆYŠY[^Üœ™Y^™Kœ™\]Y\ÝY	‰ÜËœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ^ÂˆÜÔÙ[™
+ÜËÝ\Nˆ˜ÛÛ[X[™‹ÛÛ[X[™žÝ\Nˆ™\Ü^Kœ™[ØY‹\™Ù]™]šXÙRY^[ØYžÜ™X\ÛÛŽˆœ™[™\™\‹]™\œÚ[Û‹[Z\ÛX]Ú‹Ù\™\•™\œÚ[ÛŽTPÐUSÓ—Õ‘T”ÒSÓŸ__JNÂˆBˆKÌ
+NÂˆB‚ˆ]Y]
+ÈÚ[™ˆ™\Ü^K˜ÛÛ›™XÝY‹]šXÙRYÛY[™\œÚ[ÛŽ˜ÛY[™\œÚ[ÛŸ[JNÂˆ™]\›ŽÂˆB‚ˆYˆ
+›ÛHOOH›X‹XYÙ[ŠHÂˆÛÛœÝYÙ[YXÛX[“XYÙ[Y
+\ÙË˜YÙ[Y\ÙË™]šXÙRY\ÙËšÜÝ˜[YJNÂˆ]YÙ[Ü™Y[X[Y”ÝÜ™K˜]][XØ]SXYÙ[
+YÙ[Y\ÙË˜Ü™Y[X[ˆŠK\ÜÝYYÜ™Y[X[[[]][ÙOH˜Ü™Y[X[ŽÂˆYŠXYÙ[Ü™Y[X[	‰›\ÙË™[œ›ÛY[ÚÙ[Š^Ú\ÜÝYYÜ™Y[X[Y”ÝÜ™K˜ÛÛœÝ[YSXYÙ[[œ›ÛY[
+YÙ[Y\ÙË™[œ›ÛY[ÚÙ[‹ÛX™[”Ýš[™Ê\ÙËšÜÝ˜[Y_™\KšXY\œÖÈ\Ù\‹XYÙ[—_•Ú[™ÝÜÈÛ\ÜÜ›ÛÛHYÙ[Š_JNÚYŠ\ÜÝYYÜ™Y[X[
+XYÙ[Ü™Y[X[^ÚYš\ÜÝYYÜ™Y[X[šYYÙ[Y_BˆYŠXYÙ[Ü™Y[X[
+^ØÛÛœÝÛXÞOY”ÝÜ™K›XYÙ[Ü™Y[X[ÛXÞJ
+NÚYŠÛXÞK›YØXÞTÚ\™YÚÙ[[ÝÙY	‰“P—ÐQÑS•ÕÒÑS‰‰œÙXÝ\™UÚÙ[‘\]X[
+\ÙËÚÙ[‹P—ÐQÑS•ÕÒÑSŠJX]][ÙOH›YØXÞK\Ú\™Y]ÚÙ[ˆŽÙ[ÙH›ÝÈ™]È\œ›ÜŠ•[˜]]Üš^™YXˆYÙ[Š_Bˆ[ÙHYŠ\ÜÝYYÜ™Y[X[
+X]][ÙOH›™]ËY[œ›ÛY[ŽÂˆÜËœ›ÛOH›X‹XYÙ[ŽÝÜË›XYÙ[YXYÙ[YÝÜË™]šXÙRYXYÙ[YÂˆÜË›XYÙ[Ü™Y[X[YXYÙ[Ü™Y[X[ËšYˆŽÝÜË›XYÙ[]][ÙOX]][ÙNÂˆÛX\•[Y[Ý]
+ÜËš[Õ[Y\ŠNÂˆÛÛœÝÛ[XYÙ[ÛØÚÙ]Ë™Ù]
+YÙ[Y
+NÚYŠÛ	‰›ÛOO]ÜÉ‰›Ûœ™XYTÝ]OOOUÙX”ÛØÚÙ]“ÔSŠ^Ýž^ÛÛ˜ÛÜÙJK”™\XÙYžH™]Ù\ˆYÙ[ÛÛ›™XÝ[ÛˆŠ_XØ]Úß_BˆXYÙ[ÛØÚÙ]ËœÙ]
+YÙ[YÜÊNÂˆÛÛœÝ[ÓY]OX›Ý[™YÜÓØš™XÝ
+\ÙË›Y]K“XˆYÙ[Y]Y]HŠNÂˆÛÛœÝØ\Xš[]Y\ÏVË‹‹›™]ÈÙ]
+
+\œ˜^Kš\Ð\œ˜^J\ÙË˜Ø\Xš[]Y\ÊOÛ\ÙË˜Ø\Xš[]Y\Î\œ˜^Kš\Ð\œ˜^J[ÓY]K˜Ø\Xš[]Y\ÊOÚ[ÓY]K˜Ø\Xš[]Y\Î–×JK›X\
+O”Ýš[™Ê
+KœÛXÙJ
+JJWKœÛXÙJL
+NÂˆÛÛœÝ[Ò\TÝš[™Ê\ÙËš\[ÓY]Kš\
+\œ˜^Kš\Ð\œ˜^J[ÓY]Kš\
+OÚ[ÓY]Kš\ÌNˆˆŠ_ˆŠKœÛXÙJ
+NÂˆ\Ù\XÛÛ\]\ŠYÙ[YÚÜÝ˜[YN”Ýš[™Ê\ÙËšÜÝ˜[Y_[ÓY]KšÜÝ˜[Y_YÙ[Y
+KœÛXÙJLŒ
+KYÙ[™\œÚ[ÛŽ”Ýš[™Ê\ÙË˜YÙ[™\œÚ[ÛŸ[ÓY]K˜YÙ[™\œÚ[ÛŸˆŠKœÛXÙJ
+Kˆ\š[Ò\Ø\Xš[]Y\ËY]NžË‹‹š[ÓY]KØ\Xš[]Y\ßKÛÛ›™XÝY]›™]È]J
+KÒTÓÔÝš[™Ê
+_JNÂˆÛÛœÝš]˜XÞO\š]˜XÞT™][[Û”ÛXÞJ
+NÂˆÜÔÙ[™
+ÜËÝ\Nˆš[Ë˜XÚÈ‹›ÛNˆ›X‹XYÙ[‹YÙ[Y›ÛÛN™]šXÙPÛÛ™šYËœ›ÛÛ_“ÓÓWÓSQK\ÝÜžQ[˜X›Yœš]˜XÞK˜œ›ÝÜÙ\’\ÝÜžQ[˜X›Y\ÝÜžT™][[Û’Ý\œÎœš]˜XÞK˜œ›ÝÜÙ\’\ÝÜžRÝ\œËX\™X]ÙXÛÛ™ÎŒMK\ÝÜžTÛÙXÛÛ™Îœš]˜XÞK˜œ›ÝÜÙ\’\ÝÜžQ[˜X›YÌÌŒ]][ÙKÜ™Y[X[š\ÜÝYYÜ™Y[X[Ë˜Ü™Y[X[[™Yš[™YÜ™Y[X[Y˜YÙ[Ü™Y[X[ËšY[™Yš[™YJNÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹œÝ]\È‹ÛÛ\]\ŽœX›XÓXÛÛ\]\ŠYÙ[Y
+_JNØ]Y]
+ÚÚ[™ˆ›X‹˜ÛÛ›™XÝY‹Y˜YÙ[YÜÝ˜[YN›\ÙËšÜÝ˜[Y_YÙ[YJNÜ™]\›ŽÂˆB‚ˆYˆ
+›ÛHOOHœÝY[ˆ›ÛHOOHœÙ\ÜÚ[Û‹]XXÚ\ˆŠHÂˆ›ÝÈ™]È\œ›ÜŠ“YØXÞH[›Ûž[[Ý\ÈÛ\ÜÜ›ÛÛH\XÚ\][Ûˆ\È™Y[ˆ™]\™YŠNÂˆB‚ˆ›ÝÈ™]È\œ›ÜŠ”›ÛH]\Ý™HÛÛ›Û\‹YZ[‹™]šY]Ë\Ü^KX‹XYÙ[ÝY[ÜˆÙ\ÜÚ[Û‹]XXÚ\ˆŠNÂˆB‚ˆYˆ
+\ÙË\HOOH™\Ü^K›YYXKœÝ]\Èˆ	‰ˆÜËœ›ÛHOOH™\Ü^HŠHÂˆÛÛœÝ™]š[Ý\Ï\[[YK™\Ü^\ÖÝÜË™]šXÙRY_ßNÂˆ[[YK™\Ü^\ÖÝÜË™]šXÙRYO^Ë‹‹œ™]š[Ý\ËYYXTÙ\ÜÚ[ÛŽ˜›Ý[™YÜÓØš™XÝ
+\ÙËœÝ]\Ë“YYXHÙ\ÜÚ[ÛˆÝ]\ÈŠK\ÝÙY[Ž›™]È]J
+KÒTÓÔÝš[™Ê
+_NÂˆ™]\›ŽÂˆB‚ˆYˆ
+\ÙË\HOOH™\Ü^K›YYXK™[™Yˆ	‰ˆÜËœ›ÛHOOH™\Ü^HŠHÂˆ˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]Ë™[]JÜË™]šXÙRY
+NÂˆ˜XÚÑ[^Ü]]][ÛŠ˜XÚÙÜ›Ý[™]\ÚXÔ™XÛÛ˜Ú[Tš[Üš]J
+JK˜Ø]Ú
+
+
+OOžßJNÂˆ]Y]
+ÚÚ[™ˆ™\Ü^K›YYXK™[™Y‹]šXÙRYÜË™]šXÙRYYYXU\N”Ýš[™Ê\ÙË›YYXU\_[šÛ›ÝÛˆŠ_JNÂˆ™]\›ŽÂˆB‚ˆYˆ
+\ÙË\HOOH›]\ÚXË˜\ÜÚ\Ý[œÝ]\Èˆ	‰ˆÜËœ›ÛHOOH™\Ü^HŠHÂˆÛÛœÝ™]š[Ý\Ï\[[YK™\Ü^\ÖÝÜË™]šXÙRY_ßKÝ]\ÏX›Ý[™YÜÓØš™XÝ
+\ÙËœÝ]\Ë“]\ÚXÈ\ÜÚ\Ý[Ý]\ÈŠNÂˆ[[YK™\Ü^\ÖÝÜË™]šXÙRYO^Ë‹‹œ™]š[Ý\Ë]\ÚXÐ\ÜÚ\Ý[žË‹‹œÝ]\Ë\Ú\™Y]Y[Î›]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]JÜË™]šXÙRY
+K\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+__NÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ™]šXÙKœÝ]\È‹]šXÙRYÜË™]šXÙRYÝ]\ÎœX›XÑ\Ü^TÝ]\ÊÜË™]šXÙRY
+_JNÂˆYŠÝ]\Ëœ›ÝØÛÛXÝ]™OOO]YI‰ˆ]ÜË›XP]Y[Ô™\ÝÜ™Y	‰ˆ]ÜË›XP]Y[Ô™\ÝÜ™T[™[™Ê^ÝÜË›XP]Y[Ô™\ÝÜ™T[™[™Ï]YNÜÙ][Y[Ý]
+
+
+OOžÚYŠ[^Üœ™Y^™Kœ™\]Y\ÝY
+^ÝÜË›XP]Y[Ô™\ÝÜ™T[™[™ÏY˜[ÙNÜ™]\›Ÿ]˜XÚÑ[^Ü]]][ÛŠ™\ÝÜ™S]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]JÜË™]šXÙRYÜÊJK™š[˜[J
+
+OOžÝÜË›XP]Y[Ô™\ÝÜ™T[™[™ÏY˜[Ù_J_KL
+_BˆYŠÜË›XP]Y[Ô™\ÝÜ™Y
+^ØÛÛœÝ\Ú\™Y[]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]JÜË™]šXÙRY
+K]Ú^ßNØÛÛœÝS[X™\ŠÝ]\Ë›Û[YJNÚYŠ[X™\‹š\Ñš[š]JŠI‰“X]›X^
+X]›Z[ŠLŠJHOOY\Ú\™Y›Û[YJ\]Ú›Û[YO[ŽÚYŠÝ]\Ë›]]YOO][™Yš[™Y	‰ˆH\Ý]\Ë›]]YOOY\Ú\™Y›]]Y
+\]Ú›]]YHH\Ý]\Ë›]]YÚYŠØš™XÝšÙ^\Ê]Ú
+K›[™Ý
+\Ù]]\ÚXÐ\ÜÚ\Ý[]Y[ÔÝ]JÜË™]šXÙRY]Ú
+_B‚ˆËÈ™XÛÛ˜Ú[HØÚY[Y˜XÚÙÜ›Ý[™]\ÚXÈY\ˆH\Ü^IÜÈ\œÚ\Ý[ˆËÈ]\ÚXÈ\ÜÚ\Ý[ÔÙ[™Ü[ˆ^Y\ˆÛÛY\È˜XÚÈœ›ÛHH™[™\™\ˆ™[ØYÜ‚ˆËÈ™XÛÛ›™XÝˆHœšYÙHØ[ˆ™H›ÝØÛÛXXÝ]™H]YNÈÚ]Ý]\ÂˆËÈÛÚÈHØÚY[\ˆX^H›Ý™\Ý\HÙ[XÝY˜]›Üš]H›Û\K‚ˆYŠÝ]\Ëœ›ÝØÛÛXÝ]™OOO]YJ^Âˆž^ÂˆÛÛœÝ™ÐÙ™ÏX˜XÚÙÜ›Ý[™]\ÚXÔØÚY[J
+NÂˆÛÛœÝ™\ÜY^Y\TÝš[™ÊÝ]\Ë˜ÛY[YÝ]\Ëœ^Y\’YÛ\ÜÜ›ÛÛKZX‹IÝÜË™]šXÙRYX
+NÂˆYŠ™ÐÙ™Ë™[˜X›Y	‰”Ýš[™Ê™ÐÙ™Ëœ^Y\’Y	ÉÊOOO\™\ÜY^Y\‰‰ˆX˜XÚÙÜ›Ý[™]\ÚXÔ[[YK›X[X[ÝÜY	‰ˆX˜XÚÙÜ›Ý[™]\ÚXÔš[Üš]U\™Ù]ËœÚ^™I‰œÝ]\Ëš\Ô^Z[™ÈOO]YJ^Âˆ˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ^Z[™ÏY˜[ÙNÂˆYŠX˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙY›Ü”š[Üš]JX˜XÚÙÜ›Ý[™]\ÚXÔ[[YKœ]\ÙYY˜[ÙNÂˆBˆÙ][Y[Ý]
+
+
+OO˜˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+K˜Ø]Ú
+
+
+OOžßJKL
+NÂˆXØ]ÚßBˆBˆ™]\›ŽÂˆB‚ˆYˆ
+\ÙË\HOOH›]\ÚXË˜\ÜÚ\Ý[œ™XÛÛ›™XÝœ™\]Y\Ýˆ	‰ˆÜËœ›ÛHOOH™\Ü^HŠHÂˆÛÛœÝ]XÚYY”ÝÜ™K™Ù]™Y™\™[˜ÙJ›]\ÚXØ\ÜÚ\Ý[œšYÙU\™Ù]È‹×J_×NÂˆYŠ\œ˜^Kš\Ð\œ˜^J]XÚY
+I‰˜]XÚYš[˜ÛY\ÊÜË™]šXÙRY
+I‰›]\ÚXÐ\ÜÚ\Ý[ÚÙ[Š
+J^ÂˆÜË›XP]Y[Ô™\ÝÜ™YY˜[ÙNÝÜË›XP]Y[Ô™\ÝÜ™T[™[™ÏY˜[ÙNÂˆÛÛœÝ\ÜÝYYZ\ÜÝYS]\ÚXÐ\ÜÚ\Ý[›ÞUXÚÙ]
+ÜË™]šXÙRY
+NÂˆÜÔÙ[™
+ÜËÝ\Nˆ˜ÛÛ[X[™‹ÛÛ[X[™žÝ\Nˆ›]\ÚXË˜\ÜÚ\Ý[˜]XÚ‹\™Ù]ÜË™]šXÙRY^[ØY›]\ÚXÐ\ÜÚ\Ý[]XÚ^[ØY
+ÜË™]šXÙRY\ÜÝYYÜ™XÛÛ›™XÝY_J__JNÂˆ]Y]
+ÚÚ[™ˆ›]\ÚXØ\ÜÚ\Ý[œÙ[™Ü[‹œ™XÛÛ›™XÝZ\ÜÝYY‹]šXÙRYÜË™]šXÙRYJNÂˆBˆ™]\›ŽÂˆB‚ˆYˆ
+\ÙË\HOOHšX\™X]ˆ	‰ˆÜËœ›ÛHOOH™\Ü^HŠHÂˆX\šÑ\Ü^TÙY[ŠÜËÈY]Nˆ›Ý[™YÜÓØš™XÝ
+\ÙË›Y]K‘\Ü^HX\™X]Y]Y]HŠHJNÂˆ™]\›ˆÜÔÙ[™
+ÜËÈ\NˆšX\™X]˜XÚÈ‹]ˆ]K››ÝÊ
+K\ÜÙ]XØÙ\ÜÕÚÙ[ŽÜËœ›ÛOOOH™\Ü^HÚ\ÜÝYP\ÜÙ]XØÙ\ÜÕÚÙ[ŠÜË™]šXÙRYÜË™\Ü^PÜ™Y[X[Y
+N[™Yš[™YJNÂˆB‚ˆYˆ
+\ÙË\HOOH™\Ü^KœÝ]Hˆ	‰ˆÜËœ›ÛHOOH™\Ü^HŠHÂˆÛÛœÝ™\ÜYÝ]OX›Ý[™YÜÓØš™XÝ
+\ÙËœÝ]K‘\Ü^HÝ]H‹MŠŒL
+NÂˆX\šÑ\Ü^TÙY[ŠÜËÈÝ]Nˆ™\ÜYÝ]HJNÂˆYˆ
+\ÙËœÝ]H	‰ˆ\[Ùˆ\ÙËœÝ]HOOH›Øš™XÝŠHÂˆÙ]\Ü^TÝ]JÜË™]šXÙRYÈ™\ÜYÝ]HJNÂˆ\œÚ\ÝÝ]J
+NÂˆBˆ™]\›ŽÂˆB‚ˆYˆ
+\ÙË\HOOHšX\™X]ˆ	‰ˆÜËœ›ÛHOOH›X‹XYÙ[ŠHÂˆÛÛœÝY]ÜË›XYÙ[YY]OX›Ý[™YÜÓØš™XÝ
+\ÙË›Y]K“XˆYÙ[X\™X]Y]Y]HŠKY[[ÜžOX›Ý[™YÜÓØš™XÝ
+\ÙË›Y[[Üž_Y]K›Y[[ÜžK“XˆYÙ[Y[[ÜžH‹
+ŒL
+KØ\Xš[]Y\ÏVË‹‹›™]ÈÙ]
+
+\œ˜^Kš\Ð\œ˜^J\ÙË˜Ø\Xš[]Y\ÊOÛ\ÙË˜Ø\Xš[]Y\Î\œ˜^Kš\Ð\œ˜^JY]K˜Ø\Xš[]Y\ÊOÛY]K˜Ø\Xš[]Y\Î›XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYOË˜Ø\Xš[]Y\ß×JK›X\
+O”Ýš[™Ê
+KœÛXÙJ
+JJWKœÛXÙJL
+NÝ\Ù\XÛÛ\]\ŠYÚÜÝ˜[YN”Ýš[™Ê\ÙËšÜÝ˜[Y_Y]KšÜÝ˜[Y_XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYOËšÜÝ˜[Y_Y
+KœÛXÙJLŒ
+Kˆ\Ù\Ž”Ýš[™Ê\ÙË\Ù\ŸY]K\Ù\ŸˆŠKœÛXÙJMŒ
+K\”Ýš[™Ê\ÙËš\Y]Kš\
+\œ˜^Kš\Ð\œ˜^JY]Kš\
+OÛY]Kš\ÌNˆˆŠ_ˆŠKœÛXÙJ
+KÜÎ”Ýš[™Ê\ÙË›ÜßY]K›ÜßˆŠKœÛXÙJŒ
+KØ\Xš[]Y\Ëˆ\[YTÙXÛÛ™Î“[X™\Š\ÙË\[YTÙXÛÛ™ßY]K\[YTÙXÛÛ™ß
+_Y[[ÜžKˆYÙ[™\œÚ[ÛŽ”Ýš[™Ê\ÙË˜YÙ[™\œÚ[ÛŸY]K˜YÙ[™\œÚ[ÛŸXÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYOË˜YÙ[™\œÚ[ÛŸˆŠKœÛXÙJ
+KY]_JNÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹œÝ]\È‹ÛÛ\]\ŽœX›XÓXÛÛ\]\ŠY
+_JNÜ™]\›ˆÜÔÙ[™
+ÜËÝ\NˆšX\™X]˜XÚÈ‹]‘]K››ÝÊ
+_JNÂˆBˆYˆ
+\ÙË\HOOH›X‹˜YÙ[™]™[ˆ	‰ˆÜËœ›ÛHOOH›X‹XYÙ[ŠHÂˆÛÛœÝ]™[^ØØ]YÛÜžN”Ýš[™Ê\ÙË˜Ø]YÛÜž_˜YÙ[ŠKœÛXÙJ
+KÙ]™\š]N”Ýš[™Ê\ÙËœÙ]™\š]_š[™›ÈŠKÓÝÙ\Ø\ÙJ
+KœÛXÙJŒ
+KY\ÜØYÙN”Ýš[™Ê\ÙË›Y\ÜØYÙ_ˆŠKœÛXÙJ
+K]Z[Î˜›Ý[™YÜÓØš™XÝ
+\ÙË™]Z[ßßK“XˆYÙ[]™[]Z[È‹ÌŠŒL
+KØØÝ\œ™Y]”Ýš[™Ê\ÙË›ØØÝ\œ™Y]™]È]J
+KÒTÓÔÝš[™Ê
+JKœÛXÙJL
+_NÂˆ]Y]
+ÚÚ[™ˆ›X‹˜YÙ[™]™[‹YÜË›XYÙ[Y‹‹™]™[JNØœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹˜YÙ[™]™[‹YÜË›XYÙ[Y]™[JNÜ™]\›ˆÜÔÙ[™
+ÜËÝ\Nˆ›X‹˜YÙ[™]™[˜XÚÈ‹ÚÎY_JNÂˆBˆYˆ
+\ÙË\HOOH›X‹š\ÝÜžHˆ	‰ˆÜËœ›ÛHOOH›X‹XYÙ[ŠHÂˆÛÛœÝ™\Ý[Z[™Ù\ÝX’\ÝÜžJÜË›XYÙ[Y\ÙËš][\ß×JNÝ\Ù\XÛÛ\]\ŠÜË›XYÙ[YÛ\Ý\ÝÜžP]›™]È]J
+KÒTÓÔÝš[™Ê
+_JNÂˆYŠ\™\Ý[™\ØX›Y
+Xœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹š\ÝÜžH‹YÜË›XYÙ[Y]\Ýœ™\Ý[›]\Ý[YYœ™\Ý[˜YYJNÜ™]\›ˆÜÔÙ[™
+ÜËÝ\Nˆ›X‹š\ÝÜžK˜XÚÈ‹‹‹œ™\Ý[JNÂˆBˆYˆ
+\ÙË\HOOH›X‹œØÜ™Y[œÚÝˆ	‰ˆÜËœ›ÛHOOH›X‹XYÙ[ŠHÂˆž^ÂˆÛÛœÝY]ÜË›XYÙ[YÂˆÛÛœÝTÝš[™Ê\ÙË™]_ˆŠNÂˆYŠX
+]›ÝÈ™]È\œ›ÜŠ‘[\HØÜ™Y[œÚÝŠNÂˆÛÛœÝž]\ÏPY™™\‹™œ›ÛJ˜˜\ÙMŠNÂˆYŠž]\Ë›[™Ýž]\ÖÌHOOL™Ÿž]\ÖÌWHOOLž]\ÖØž]\Ë›[™ÝL—HOOL™Ÿž]\ÖØž]\Ë›[™ÝLWHOOLJ]›ÝÈ™]È\œ›ÜŠ”ØÜ™Y[œÚÝ\È›ÝH˜[Y”QÈ[XYÙHŠNÂˆYŠž]\Ë›[™ÝŽ
+ŒL
+ŒL
+]›ÝÈ™]È\œ›ÜŠ”ØÜ™Y[œÚÝ^ÙYYÈPˆŠNÂ‚ˆÛÛœÝ›ÝÏ[™]È]J
+NÂˆÛÛœÝØ]™O[\ÙËœØ]™OOO]YNÂˆÛÛœÝ[\YTÝš[™Ê\ÙË˜[\YˆŠKš[J
+NÂˆÛÛœÝ[šÙY[\X[\YÛXZP[\ÔÝÜ™K˜[\Ë™š[™
+OO˜KšYOOX[\Y
+N›[ÂˆYŠ[\Y	‰Š[[šÙY[\[šÙY[\˜YÙ[YOOZY
+J]›ÝÈ™]È\œ›ÜŠ[\Ù\È›Ý™[Û™ÈÈ\ÈXˆYÙ[ŠNÂˆÛÛœÝ\\]š›Ú[ŠP—ÔÐÔ‘QS”ÒÕÑT‹Y
+NÂˆœË›ZÙ\”Þ[˜Ê\‹Ü™XÝ\œÚ]™NY_JNÂ‚ˆËÈ]™K]šY]Èœ˜[Y\È[Ø^\ÈÝ™\Üš]HÛ™H˜[œÚY[š[K‚ˆËÈ^XÚ]ØÜ™Y[œÚÝÈÙ]Z\ˆÝÛˆ[Y\Ý[\Y™]Z[™Yš[K‚ˆÛÛœÝš[O\Ø]™BˆÈ	Û›ÝËÒTÓÔÝš[™Ê
+Kœ™\XÙJÖÎ‹—KÙË‹HŠ_KšœØˆˆ]™KšœØÂˆÛÛœÝ™[\]š›Ú[ŠYš[JNÂˆÛÛœÝ[\]š›Ú[Š\‹š[JNÂˆœËÜš]Qš[TÞ[˜Ê[ž]\ËÛ[ÙNŒÍŒJNÂ‚ˆÛÛœÝ™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÂˆYŠ™XÊ^Âˆ™XËœØÜ™Y[œÚÝš[O\™[Âˆ™XËœØÜ™Y[œÚÝ][›ÝËÒTÓÔÝš[™Ê
+NÂˆ™XËœØÜ™Y[œÚÝÚYS[X™\Š\ÙËÚY
+_[Âˆ™XËœØÜ™Y[œÚÝZYÚS[X™\Š\ÙËšZYÚ
+_[Âˆ™XËœØÜ™Y[œÚÝž]\ÏXž]\Ë›[™ÝÂ‚ˆYŠØ]™J^ÂˆYŠP\œ˜^Kš\Ð\œ˜^J™XËœØÜ™Y[œÚÝ\ÝÜžJJ\™XËœØÜ™Y[œÚÝ\ÝÜžOV×NÂˆ™XËœØÜ™Y[œÚÝ\ÝÜžK[œÚY
+Âˆš[Nœ™[ˆØ\\™Y]››ÝËÒTÓÔÝš[™Ê
+Kˆž]\Î˜ž]\Ë›[™ÝˆÚYœ™XËœØÜ™Y[œÚÝÚYˆZYÚœ™XËœØÜ™Y[œÚÝZYÚˆJNÂˆÛÛœÝ›ÜY\™XËœØÜ™Y[œÚÝ\ÝÜžKœÛXÙJL
+NÜ™XËœØÜ™Y[œÚÝ\ÝÜžO\™XËœØÜ™Y[œÚÝ\ÝÜžKœÛXÙJL
+NÂˆ›ÜŠÛÛœÝÛÙˆ›ÜY
+^Ýž^ÙœËœ›TÞ[˜ÊØY™TØÜ™Y[œÚÝ]
+YÛ™š[JKÙ›Ü˜ÙNY_J_XØ]Úß_BˆB‚ˆ\œÚ\ÝXÛÛ\]\œÊ
+NÂˆB‚ˆYŠ[\Y
+^ÂˆÛÛœÝ[\[[šÙY[\ÂˆYŠ[\
+^Âˆ[\œØÜ™Y[œÚÝ\›XØ\KÝŒKÛX‹ØÛÛ\]\œËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+_KÜØÜ™Y[œÚÝËÙš[OÙš[OIÙ[˜ÛÙUT’PÛÛ\Û™[
+™[
+_XÂˆ[\œØÜ™Y[œÚÝ][›ÝËÒTÓÔÝš[™Ê
+NÂˆ[\œØÜ™Y[œÚÝš[O\™[Âˆ\œÚ\ÝXZP[\Ê
+NÂˆœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹˜ZK˜[\\]Y‹[\JNÂˆBˆB‚ˆœ›ØYØ\ÝÛÛ›Û\œÊÂˆ\Nˆ›X‹œØÜ™Y[œÚÝ‹ˆYˆØÜ™Y[œÚÝ\›˜Ø\KÝŒKÛX‹ØÛÛ\]\œËÉÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+_KÜØÜ™Y[œÚÝÝIÑ]K››ÝÊ
+_XˆJNÂ‚ˆ™]\›ˆÜÔÙ[™
+ÜËÝ\Nˆ›X‹œØÜ™Y[œÚÝ˜XÚÈ‹ÚÎYKØ]™YœØ]™_JNÂˆXØ]Ú
+\œŠ^Âˆ™]\›ˆÜÔÙ[™
+ÜËÝ\Nˆ›X‹œØÜ™Y[œÚÝ˜XÚÈ‹ÚÎ™˜[ÙK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆBˆB‚ˆYˆ
+\ÙË\HOOH›X‹˜ÛÛ[X[™œ™\Ý[ˆ	‰ˆÜËœ›ÛHOOH›X‹XYÙ[ŠHÂˆÛÛœÝY]ÜË›XYÙ[Y™XÏ[XÛÛ\]\”ÝÜ™K˜ÛÛ\]\œÖÚYNÚYŠ™XÊ^Ü™XË›\ÝÛÛ[X[™^Ë‹‹Š™XË›\ÝÛÛ[X[™ßJKˆY”Ýš[™Ê\ÙË˜ÛÛ[X[™Y™XË›\ÝÛÛ[X[™ËšYˆŠKˆXÝ[ÛŽ”Ýš[™Ê\ÙË˜XÝ[ÛŸ™XË›\ÝÛÛ[X[™Ë˜XÝ[ÛŸˆŠKˆÝ]\Î›\ÙË›ÚÏOOY˜[ÙOÈ™˜Z[YŽˆ˜ÛÛ\]Y‹ˆÛÛ\]Y]›™]È]J
+KÒTÓÔÝš[™Ê
+KˆY\ÜØYÙN”Ýš[™Ê\ÙË›Y\ÜØYÙ_ˆŠKœÛXÙJ
+Kˆ™\Ý[›\ÙËœ™\Ý[	‰\[Ùˆ\ÙËœ™\Ý[OOH›Øš™XÝÛ\ÙËœ™\Ý[›[ˆNÜ\œÚ\ÝXÛÛ\]\œÊ
+_Bˆ]Y]
+ÚÚ[™ˆ›X‹˜ÛÛ[X[™œ™\Ý[‹YÛÛ[X[™Y›\ÙË˜ÛÛ[X[™YXÝ[ÛŽ›\ÙË˜XÝ[Û‹ÚÎ›\ÙË›ÚÈOOY˜[ÙKY\ÜØYÙN›\ÙË›Y\ÜØYÙ_ˆŸJNØœ›ØYØ\ÝÛÛ›Û\œÊÝ\Nˆ›X‹œÝ]\È‹ÛÛ\]\ŽœX›XÓXÛÛ\]\ŠY
+_JNÜ™]\›ŽÂˆB‚ˆYˆ
+\ÙË\HOOH˜ÛÛ[X[™ˆ	‰ˆ
+ÜËœ›ÛHOOH˜ÛÛ›Û\ˆˆÜËœ›ÛHOOH˜YZ[ˆŠJHÂˆYŠ”ÝÜ™K˜]][˜X›Y
+
+J^ÂˆÛÛœÝ\Ù\Y”ÝÜ™KœÙ\ÜÚ[Û•\Ù\ŠÜËœÙ\ÜÚ[Û•ÚÙ[ŠNÂˆYŠÜËœ›ÛOOOH˜YZ[ˆÊZ\Ô›ÛJ\Ù\‹˜YZ[ˆŠ_Z\ÐØ\Xš[]J\Ù\‹ŠˆŠJNˆZ\ÐØ\Xš[]J\Ù\‹˜Û\ÜÜ›ÛÛK˜ÛÛ›ÛŠJ]›ÝÈ™]È\œ›ÜŠ”Ù\ÜÚ[Ûˆ^\™YØ\È™]›ÚÙYÜˆ›ÈÛ™Ù\ˆ\ÈH™\]Z\™Y\›Z\ÜÚ[ÛˆŠNÂˆBˆÛÛœÝ™\Ý[H]ØZ]^XÝ]PÛÛ[X[™
+\ÙË˜ÛÛ[X[™\ÙËÙXœÛØÚÙ]ŠNÂˆ™]\›ˆÜÔÙ[™
+ÜËÈ\Nˆ˜ÛÛ[X[™˜XÚÈ‹™\Ý[JNÂˆB‚ˆYˆ
+\ÙË\HOOHœ[™ÈŠHÂˆ™]\›ˆÜÔÙ[™
+ÜËÈ\NˆœÛ™È‹]ˆ]K››ÝÊ
+HJNÂˆB‚ˆ›ÝÈ™]È\œ›ÜŠ•[šÛ›ÝÛˆÙX”ÛØÚÙ]Y\ÜØYÙHŠNÂˆHØ]Ú
+\œŠHÂˆÜÔÙ[™
+ÜËÈ\Nˆ™\œ›Üˆ‹\œ›ÜŽˆ\œ‹›Y\ÜØYÙHJNÂˆYŠ\ÙÏË\OOOHš[È‰‰ÜËœ›ÛOOOH[šÛ›ÝÛˆŠ\Ù][Y[Ý]
+
+
+OOžÝž^ÝÜË˜ÛÜÙJL]][XØ][Ûˆ˜Z[YŠ_XØ]Úß_KJNÂˆHš[˜[HÂˆ[^Üœ™Y^™K˜XÝ]™UÜÓ]]][ÛœÏSX]›X^
+[^Üœ™Y^™K˜XÝ]™UÜÓ]]][ÛœËLJNÂˆBˆJNÂ‚ˆÜË›ÛŠ˜ÛÜÙH‹
+
+HOˆÂˆÛX\•[Y[Ý]
+ÜËš[Õ[Y\ŠNÂˆÜÐÛY[Ë™[]JÜÊNÂˆ[[YKÙXœÛØÚÙ]ÛY[ÈHÜÐÛY[ËœÚ^™NÂ‚ˆYˆ
+ÜËœ›ÛHOOH›X‹XYÙ[ˆ	‰ˆÜË›XYÙ[Y
+HX\šÓX”ÛØÚÙ]\ØÛÛ›™XÝY
+ÜÊNÂ‚ˆYˆ
+ÜËœ›ÛHOOH™\Ü^Hˆ	‰ˆÜË™]šXÙRY
+HÂˆÛÛœÝÝ\œ™[\[[YK™\Ü^\ÖÝÜË™]šXÙRY_ßNÂ‚ˆËÈYÛ›Ü™HÝ[HÛÜÙH]™[Èœ›ÛH[ˆÛ\ˆ™\XÙYÜ™XÛÛ›™XÝYÛØÚÙ]‚ˆYˆ
+Ý\œ™[˜ÛÛ›™XÝ[Û’YOOHÜË˜ÛÛ›™XÝ[Û’Y
+HÂˆ[[YK™\Ü^\ÖÝÜË™]šXÙRYHHÂˆ‹‹˜Ý\œ™[ˆ\ØÛÛ›™XÝY]ˆ™]È]J
+KÒTÓÔÝš[™Ê
+BˆNÂ‚ˆœ›ØYØ\ÝÛÛ›Û\œÊÂˆ\Nˆ™]šXÙKœÝ]\È‹ˆ]šXÙRYˆÜË™]šXÙRYˆÝ]\ÎˆX›XÑ\Ü^TÝ]\ÊÜË™]šXÙRY
+BˆJNÂ‚ˆ]Y]
+ÈÚ[™ˆ™\Ü^K™\ØÛÛ›™XÝY‹]šXÙRYˆÜË™]šXÙRYÛÛ›™XÝ[Û’YˆÜË˜ÛÛ›™XÝ[Û’YJNÂˆH[ÙHÂˆ]Y]
+ÂˆÚ[™ˆ™\Ü^KœÝ[KY\ØÛÛ›™XÝZYÛ›Ü™Y‹ˆ]šXÙRYˆÜË™]šXÙRYˆÛÜÚ[™ÐÛÛ›™XÝ[Û’YˆÜË˜ÛÛ›™XÝ[Û’YˆÝ\œ™[ÛÛ›™XÝ[Û’YˆÝ\œ™[˜ÛÛ›™XÝ[Û’Y[ˆJNÂˆBˆBˆJNÂŸJNÂ‚˜ÛÛœÝX\™X][Y\ˆHÙ][\˜[
+
+
+HOˆÂˆ›Üˆ
+ÛÛœÝÜÈÙˆÜÐÛY[ÊHÂˆYŠ”ÝÜ™K˜]][˜X›Y
+
+I‰–È˜ÛÛ›Û\ˆ‹˜YZ[ˆ‹œ™]šY]È—Kš[˜ÛY\ÊÜËœ›ÛJI‰Š]ÜËœÙ\ÜÚ[Û•ÚÙ[ŸY”ÝÜ™KœÙ\ÜÚ[Û•\Ù\ŠÜËœÙ\ÜÚ[Û•ÚÙ[ŠJJ^ÝÜË˜ÛÜÙJL”Ù\ÜÚ[Ûˆ^\™YÜˆ™]›ÚÙYŠNØÛÛ[Y_BˆYˆ
+]ÜËš\Ð[]™JHÂˆÜË\›Z[˜]J
+NÂˆÛÛ[YNÂˆBˆÜËš\Ð[]™HH˜[ÙNÂˆÜËœ[™Ê
+NÂˆBŸKML
+NÂ‚œÙ\™\‹›ÛŠ˜ÛÜÙH‹
+
+HOˆÛX\’[\˜[
+X\™X][Y\ŠJNÂ‚‚‹ËÈÛÛ™][Û˜[[Ü›š[™È[››Ý[˜Ù[Y[ÈØ]Ú\‹ˆ[œÈ[™\[™[Hœ›ÛHš^Y][YH]™[Ë‚‹ËÈ]Û›H›Ø™\È\š[™ÈHÛÛ™šYÝ\™YØÚÛÛY^HÚ[™ÝÈ[™™[X\Ù\ÈH\Ü^\È˜XÚÈÂ‹ËÈH›Ü›X[ØÚY[\ˆ\ÈÛÛÛˆ\ÈH]™HÝ™X[H[™È
+Ú]Ù™›[™HÛÛ™š\›X][ÛˆX›Ý[˜ÙJK‚œ™\Ý\[Ü›š[™Ð[››Ý[˜Ù[Y[ÕØ]Ú\Š
+NÂ‚‹ËÈ˜XÚÙÜ›Ý[™]\ÚXÈ\È]ÈÝÛˆØÚY[\ˆ[™\È[[[Û˜[H[™\[™[ÙˆÛ\ÜÜ›ÛÛH]]ÛX][Û‹‚˜ÛÛœÝ˜XÚÙÜ›Ý[™]\ÚXÕ[Y\\Ù][\˜[
+
+
+OO˜˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+K˜Ø]Ú
+\œ›ÜO™XYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ›]\ÚXËX\ÜÚ\Ý[‹Ü\˜][ÛŽˆ˜˜XÚÙÜ›Ý[™[]\ÚXË]XÚÈŸJJKL
+NØ˜XÚÙÜ›Ý[™]\ÚXÕ[Y\‹[œ™YŠ
+NÂ˜ÛÛœÝ˜XÚÙÜ›Ý[™]\ÚXÔÝ\\[Y\\Ù][Y[Ý]
+
+
+OO˜˜XÚÙÜ›Ý[™]\ÚXÕXÚÊ
+K˜Ø]Ú
+\œ›ÜO™XYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ›]\ÚXËX\ÜÚ\Ý[‹Ü\˜][ÛŽˆ˜˜XÚÙÜ›Ý[™[]\ÚXË\Ý\\ŸJJKÍL
+NØ˜XÚÙÜ›Ý[™]\ÚXÔÝ\\[Y\‹[œ™YŠ
+NÂ‚‹ËÈ[šYšYYÛ\ÜÜ›ÛÛH]]ÛX][ÛˆØÚY[\‚‹ËÈ\ØÛÝ™\žH\ÈÚÜÛ›Û‹X›ØÚÚ[™ËˆXXÚYHØØÝ\œ™[˜ÙH\È\˜X›HÛZ[YY™Y›Ü™B‹ËÈ^XÝ][Ûˆ[™X^HØZ][™\[™[HÚ]Ý]›ØÚÚ[™ÈÝ\ˆØÚY[YÛÜšË‚›]]]ÛX][Û”ØÚY[\\ÞOY˜[ÙNÂ˜ÛÛœÝ]]ÛX][Û”[›š[™ÓØØÝ\œ™[˜Ù\Ï[™]ÈX\
+
+NÂ˜ÛÛœÝ]]ÛX][ÛØ[˜Ù[YØØÝ\œ™[˜Ù\Ï[™]ÈÙ]
+
+NÂ˜\Þ[˜È[˜Ý[Ûˆ^XÝ]TØÚY[Y]]ÛX][Û“ØØÝ\œ™[˜ÙJÝÜ™Y]™[]™[Ù]RÙ^KØÚY[YZ[]RÙ^K[SZ[]\ËØØÝ\œ™[˜ÙRÙ^_J^ÂˆÛÛœÝY[ØØÝ\œ™[˜ÙRY
+]™[]RÙ^K]™[[YJNÂˆ]]ÛX][Û”[“YÙ\‹œ™XÛÜ™
+ÛØØÝ\œ™[˜ÙRYšY]]ÛX][Û’YœÝÜ™Y]™[šYÛ\ÜÒY™]™[˜Û\ÜÒY[Ý]\Îˆœ[›š[™È‹ØÚY[\•[YNœØÚY[\ÛØÚË››ÝÊ
+KÒTÓÔÝš[™Ê
+_JNÂˆž^ÂˆÛÛœÝ[”™\Ý[X]ØZ][Û\ÜÜ›ÛÛP]]ÛX][ÛŠË‹‹™]™[ÛØØÝ\œ™[˜ÙRYšYJNÂˆÝÜ™Y]™[›\Ý[^Ø]›™]È]J
+KÒTÓÔÝš[™Ê
+KØÚY[Y›ÜŽ˜	Ù]RÙ^_H	Ù]™[[Y_X™\ÛÛ™YÛ\ÜÒY™]™[˜Û\ÜÒY[[^SZ[]\Î™[SZ[]\ËÚÎœ[”™\Ý[›ÚÈOOY˜[ÙKY\ÜØYÙNœ[”™\Ý[›ÚÏOOY˜[ÙOÈÛÛ\]YÚ]XÝ[Ûˆ\œ›ÜœÈŽŠ[SZ[]\ÏŒØÛÛ\]Y
+	Ù[SZ[]\ßHZ[ˆØ]Ú]\
+XˆÛÛ\]YŠK™\Ý[Ý[[X\žNžØXÝ[ÛŽ™]™[˜XÝ[Û‹XÝ[ÛœÎ–Ù]™[˜XÝ[Û‹‹‹Š]™[˜XÝ[Ûœß×JK›X\
+Ož˜XÝ[ÛŠWK\™Ù]Î™]™[\™Ù]Ë˜Z[\™\Î˜]]ÛX][Û”[‘˜Z[\™\Ê[”™\Ý[
+__NÂˆ]]ÛX][Û”[“YÙ\‹œ™XÛÜ™
+ÛØØÝ\œ™[˜ÙRYšY]]ÛX][Û’YœÝÜ™Y]™[šYÛ\ÜÒY™]™[˜Û\ÜÒY[Ý]\Îœ[”™\Ý[›ÚÏOOY˜[ÙOÈ™˜Z[YŽˆœÝXØÙYYY‹ØÚY[\•[YNœØÚY[\ÛØÚË››ÝÊ
+KÒTÓÔÝš[™Ê
+K˜Z[\™\Î˜]]ÛX][Û”[‘˜Z[\™\Ê[”™\Ý[
+_JNÂˆXØ]Ú
+\œŠ^ÂˆÝÜ™Y]™[›\Ý[^Ø]›™]È]J
+KÒTÓÔÝš[™Ê
+KØÚY[Y›ÜŽ˜	Ù]RÙ^_H	Ù]™[[Y_X™\ÛÛ™YÛ\ÜÒY™]™[˜Û\ÜÒY[[^SZ[]\Î™[SZ[]\ËÚÎ™˜[ÙKY\ÜØYÙN™\œ‹›Y\ÜØYÙ_NÂˆ]]ÛX][Û”[“YÙ\‹œ™XÛÜ™
+ÛØØÝ\œ™[˜ÙRYšY]]ÛX][Û’YœÝÜ™Y]™[šYÛ\ÜÒY™]™[˜Û\ÜÒY[Ý]\Îˆ™˜Z[Y‹ØÚY[\•[YNœØÚY[\ÛØÚË››ÝÊ
+KÒTÓÔÝš[™Ê
+K\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆ]Y]
+ÚÚ[™ˆ˜]]ÛX][Û‹™\œ›Üˆ‹]]ÛX][Û’YœÝÜ™Y]™[šY˜[YNœÝÜ™Y]™[›˜[YK\œ›ÜŽ™\œ‹›Y\ÜØYÙ_JNÂˆYš[˜[^ÂˆÝÜ™Y]™[\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ\œÚ\Ý]]ÛX][ÛœÊ
+NØ]]ÛX][Û”[›š[™ÓØØÝ\œ™[˜Ù\Ë™[]JY
+NØ]]ÛX][ÛØ[˜Ù[YØØÝ\œ™[˜Ù\Ë™[]JY
+NÂˆBŸB˜\Þ[˜È[˜Ý[Ûˆ]]ÛX][Û”ØÚY[\•XÚÊ
+^ÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝY]]ÛX][Û”ØÚY[\\Þ_X]]ÛX][Û”ØÚY[\‘[˜X›Y
+\™]\›ŽÂˆÛÛœÝÛØÚÔÝ]\Ï\ØÚY[\ÛØÚËœÝ]\Ê
+NÂˆYŠÛØÚÔÝ]\Ë˜XÝ]™I‰ˆ\ØÚY[\ÛØÚË˜ÛÛ[X[™Ð[ÝÙY
+
+J\™]\›ŽÂˆ]]ÛX][Û”ØÚY[\\ÞO]YNÂˆž^ÂˆÛÛœÝ›ÝÏ\ØÚY[\ÛØÚË››ÝÊ
+KÝ\™\ÜÚ[ÛZ\Ð]]ÛX][Û”Ý\™\ÜÙY
+›ÝÊNÂˆYŠÝ\™\ÜÚ[Û‹˜›ØÚÙY
+\™]\›ŽÂˆÛÛœÝ]RÙ^O[ØØ[]RÙ^J›ÝÊK›ÝÓZ[]\Ï[›ÝË™Ù]Ý\œÊ
+JŒ
+Û›ÝË™Ù]Z[]\Ê
+NÂˆ›ÜŠÛÛœÝÝÜ™Y]™[ÙˆÛ\ÜÜ›ÛÛP]]ÛX][ÛœË™]™[Ê^ÂˆYŠ\ÝÜ™Y]™[Ë™[˜X›Y
+XÛÛ[YNÂˆÛÛœÝ™Y™\™[˜ÙQ]\ÏVËLKWK›X\
+Ù™œÙ]OžØÛÛœÝ[™]È]J›ÝÊNÙœÙ]]J™Ù]]J
+JÛÙ™œÙ]
+NÜ™]\›ˆJNÂˆÛÛœÝØØÝ\œ™[˜Ù\ÏX]]ÛX][ÛÛ\ÜÒYÊÝÜ™Y]™[
+K›[™ÝˆÈ™Y™\™[˜ÙQ]\Ë™›]X\
+™Y™\™[˜ÙQ]OOœ™\ÛÛ™P]]ÛX][Û“ØØÝ\œ™[˜Ù\ÊÝÜ™Y]™[™Y™\™[˜ÙQ]JJK™š[\Š]™[O™]™[—ÜØÚY[Y]RÙ^OOOY]RÙ^JBˆˆÜÝÜ™Y]™[NÂˆ›ÜŠÛÛœÝ]™[ÙˆØØÝ\œ™[˜Ù\Ê^ÂˆÛÛœÝ]SX]ÚY]™[—ÜÛÝ\˜ÙQ]SX]ÚYÞÛX]ÚYK™X\ÛÛŽˆÛ\ÜÈØØÝ\œ™[˜ÙHŸN˜]]ÛX][Û“X]Ú\Ñ]J]™[›ÝÊNÂˆYŠY]SX]Ú›X]Ú\Ð]]ÛX][Û”Ý\™\ÜÙY
+›ÝÊK˜›ØÚÙY
+XÛÛ[YNÂˆÛÛœÝÙ]™[Ý\‹]™[Z[]WOTÝš[™Ê]™[[Y_ŒŒŠKœÜ]
+ŽˆŠK›X\
+[X™\ŠNÂˆÛÛœÝØÚY[YZ[]\ÏY]™[Ý\ŠŒ
+Ù]™[Z[]K[SZ[]\Ï[›ÝÓZ[]\Ë\ØÚY[YZ[]\ÎÂˆYŠ[SZ[]\Ï[SZ[]\Ï”ÐÒQST—ÐÐUÒTÓRS•UTÊXÛÛ[YNÂˆÛÛœÝØØÝ\œ™[˜ÙRÙ^OY]™[˜Û\ÜÒY›X[X[‹ØÚY[YZ[]RÙ^OX	Ù]RÙ^_H	Ù]™[[Y_XÂˆÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÏ\ÝÜ™Y]™[›\Ý^XÐžPÛ\ÜßßNÂˆYŠÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÖÛØØÝ\œ™[˜ÙRÙ^WOOO\ØÚY[YZ[]RÙ^JXÛÛ[YNÂˆÛÛœÝY[ØØÝ\œ™[˜ÙRY
+]™[]RÙ^K]™[[YJNÂˆÛÛœÝÛZ[OX]]ÛX][Û”[“YÙ\‹˜ÛZ[JYØ]]ÛX][Û’YœÝÜ™Y]™[šYÛ\ÜÒY™]™[˜Û\ÜÒY[ØÚY[\•[YN››ÝËÒTÓÔÝš[™Ê
+_JNÂˆYŠXÛZ[K˜ÛZ[YY
+XÛÛ[YNÂˆYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™I‰˜[››Ý[˜Ù[Y[ØÚÙY\Ü^U\™Ù]ÊË‹‹˜]]ÛX][Û‘Y™\œ™Y\Ü^U\™Ù]Ê]™[
+WJK›[™Ý
+\]Y]YP]]ÛX][Û‘\š[™Ð[››Ý[˜Ù[Y[ÊÝÜ™Y]™[]™[]RÙ^KØÚY[YZ[]RÙ^K[SZ[]\ÊNÂˆÝÜ™Y]™[›\Ý^XÐžPÛ\ÜÖÛØØÝ\œ™[˜ÙRÙ^WO\ØÚY[YZ[]RÙ^NÜÝÜ™Y]™[›\Ý^XÏ\ØÚY[YZ[]RÙ^NÜÝÜ™Y]™[\]Y][™]È]J
+KÒTÓÔÝš[™Ê
+NÜ\œÚ\Ý]]ÛX][ÛœÊ
+NÂˆÛÛœÝ\ÚÏ]˜XÚÑ[^Ü]]][ÛŠ^XÝ]TØÚY[Y]]ÛX][Û“ØØÝ\œ™[˜ÙJÝÜ™Y]™[]™[Ù]RÙ^KØÚY[YZ[]RÙ^K[SZ[]\ËØØÝ\œ™[˜ÙRÙ^_JJNÂˆ]]ÛX][Û”[›š[™ÓØØÝ\œ™[˜Ù\ËœÙ]
+Y\ÚÊNÝ\ÚË˜Ø]Ú
+
+
+OOžßJNÂˆBˆBˆXØ]Ú
+\œ›ÜŠ^ÙXYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆœØÚY[\‹]XÚÈŸJ_Bˆš[˜[^Ø]]ÛX][Û”ØÚY[\\ÞOY˜[Ù_BŸB˜ÛÛœÝ]]ÛX][Û”ØÚY[\•[Y\\Ù][\˜[
+
+
+OO˜]]ÛX][Û”ØÚY[\•XÚÊ
+KML
+NØ]]ÛX][Û”ØÚY[\•[Y\‹[œ™YŠ
+NÂ˜ÛÛœÝ]]ÛX][Û”Ý\\™XÛÛ˜Ú[U[Y\\Ù][Y[Ý]
+
+
+OOžÚYŠ]]ÛX][Û”ØÚY[\‘[˜X›Y	‰ˆ\ØÚY[\ÛØÚËœÝ]\Ê
+K˜XÝ]™J]˜XÚÑ[^Ü]]][ÛŠ™XÛÛ˜Ú[TØÚY[Y]]ÛX][Û”Ý]JœÝ\\\™XÛÛ˜Ú[HŠJK˜Ø]Ú
+\œ›ÜO™XYÛ›ÜÝXÑ\œ›ÜŠ\œ›Ü‹ØÛÛ\Û™[ˆ˜]]ÛX][Ûˆ‹Ü\˜][ÛŽˆœÝ\\\™XÛÛ˜Ú[HŸJJ_KL
+NØ]]ÛX][Û”Ý\\™XÛÛ˜Ú[U[Y\‹[œ™YŠ
+NÂ‚‹ËÈYØXÞH\‹[Ý]]]ÈØÚY[\È™]Z[™Y›ÜˆZYÜ˜][Û‹Ø˜XÚÝØ\™ÛÛ\]Xš[]K‚‹ËÈ^HÚ\™HHØ[YHØÚY[\ˆÛXÞH[™[Ü›š[™È[››Ý[˜Ù[Y[ÈÝÙ\ˆ™\Ù\˜][Û‹‚›]YØXÞT]ÔØÚY[\\ÞOY˜[ÙNÂ˜ÛÛœÝYØXÞT]ÔØÚY[\•[Y\\Ù][\˜[
+\Þ[˜Ê
+OOžÂˆYŠ[^Üœ™Y^™Kœ™\]Y\ÝYYØXÞT]ÔØÚY[\\Þ_X]]ÛX][Û”ØÚY[\‘[˜X›Y
+\™]\›ŽÂˆÛÛœÝÛØÚÔÝ]\Ï\ØÚY[\ÛØÚËœÝ]\Ê
+NÚYŠÛØÚÔÝ]\Ë˜XÝ]™I‰ˆ\ØÚY[\ÛØÚË˜ÛÛ[X[™Ð[ÝÙY
+
+J\™]\›ŽÂˆYØXÞT]ÔØÚY[\\ÞO]YNÂˆž^ÂˆÛÛœÝ›ÝÏ\ØÚY[\ÛØÚË››ÝÊ
+K[OTÝš[™Ê›ÝË™Ù]Ý\œÊ
+JKœYÝ\
+‹ŒŠJÈŽˆŠÔÝš[™Ê›ÝË™Ù]Z[]\Ê
+JKœYÝ\
+‹ŒŠNÂˆÛÛœÝ^O[›ÝË™Ù]^J
+KZ[]RÙ^OX	Û›ÝË™Ù][YX\Š
+_KIÔÝš[™Ê›ÝË™Ù][Û
+
+JÌJKœYÝ\
+‹ŒŠ_KIÔÝš[™Ê›ÝË™Ù]]J
+JKœYÝ\
+‹ŒŠ_H	Ú[_XÂˆ]Ú[™ÙYY˜[ÙNÚYŠ\Ð]]ÛX][Û”Ý\™\ÜÙY
+›ÝÊK˜›ØÚÙY
+\™]\›ŽÂˆ›ÜŠÛÛœÝØÚÙˆØš™XÝ˜[Y\Ê]ÔØÚY[\ÊJ^ÂˆYŠ\ØÚË™[˜X›YP\œ˜^Kš\Ð\œ˜^JØÚ™^\Ê_\ØÚ™^\Ë›X\
+[X™\ŠKš[˜ÛY\Ê^JJXÛÛ[YNÂˆØÚ›\Ý^XÏ\ØÚ›\Ý^XßßNÜØÚ›\Ý[\ØÚ›\Ý[ŸßNÂˆ›ÜŠÛÛœÝÚÚ[™[YK[™^HÙˆÖÈ›Ûˆ‹ØÚ›Û•[YKKÈ›Ù™ˆ‹ØÚ›Ù™•[YKWWJ^ÂˆYŠ[YHOOZ[_ØÚ›\Ý^XÖÚÚ[™OOO[Z[]RÙ^JXÛÛ[YNÂˆÛÛœÝ\Ü^RYSØš™XÝšÙ^\Ê]šXÙ\ÊK™š[™
+YO“[X™\Š]šXÙ\ÖÚYOË˜]“Ý]]
+OOOS[X™\ŠØÚš[™^
+JNÂˆYŠ\Ü^RY	‰›[Ü›š[™Ð[››Ý[˜Ù[Y[Ô[[YK˜XÝ]™I‰˜[››Ý[˜Ù[Y[ØÚÙY\Ü^U\™Ù]ÊÙ\Ü^RYJK›[™Ý
+^ÜØÚ›\Ý[^Ý^˜Y™\œ™Y	ÚÚ[™HÚ[H[Ü›š[™È[››Ý[˜Ù[Y[ÈÝÛˆ	Ù\Ü^RYXÝ[\‘]K››ÝÊ
+KÚÎYKY™\œ™YY_NØÚ[™ÙY]YNØÛÛ[Y_BˆØÚ›\Ý^XÖÚÚ[™O[Z[]RÙ^NÂˆž^ØÛÛœÝ™\Ý[X]ØZ]\™XÝ]ÊØXÝ[ÛŽˆ˜ÙXÓÝ]]‹Ý]]“[X™\ŠØÚš[™^
+KÛÛ›™XÝ[ÛŽœØÚ\K[™^JNØ\ÜÙ\Y\\”™\Ý[ÊÜ™\Ý[KØXÝ[ÛŽˆ“YØXÞHˆÝÙ\ˆŸJNÜØÚ›\Ý[^Ý^˜	ÚÚ[™OOH›ÛˆÈ“ÛˆŽˆ“Ù™ˆŸH	Û›ÝËÓØØ[TÝš[™Ê
+_XÝ[\‘]K››ÝÊ
+KÚÎY__BˆØ]Ú
+J^ÜØÚ›\Ý[^Ý^˜T”“Ôˆ	Û›ÝËÓØØ[TÝš[™Ê
+_Nˆ	ÙK›Y\ÜØYÙ_XÝ[\‘]K››ÝÊ
+KÚÎ™˜[Ù__BˆÚ[™ÙY]YNÂˆBˆBˆYŠÚ[™ÙY
+\\œÚ\Ý]ÔØÚY[\Ê
+NÂˆYš[˜[^ÛYØXÞT]ÔØÚY[\\ÞOY˜[Ù_BŸKML
+NÛYØXÞT]ÔØÚY[\•[Y\‹[œ™YŠ
+NÂ‚˜ÛÛ›™XÝ\]
+
+NÂ‚ž^ÂˆÛÛœÝ™\Ý[Y”ÝÜ™Kš[\Ü]Y]œÛÛ›
+UQUÑ’SKØ\˜Ú]™NY_JNÂˆYŠ™\Ý[š[\ÜY
+XÛÛœÛÛK›ÙÊ[\ÜY	Ü™\Ý[š[\ÜYHYØXÞH]Y]]™[È[ÈÔS]X
+NÂŸXØ]Ú
+\œŠ^ØÛÛœÛÛKØ\›ŠYØXÞH]Y]ZYÜ˜][ÛˆÚÚ\Yˆ	Ù\œ‹›Y\ÜØYÙ_X
+_B‚œÙ\™\‹›\Ý[ŠÔ•’S‘ÐQ‘TÔË
+
+HOˆÂˆÛÛœÛÛK›ÙÊÛ\ÜÜ›ÛÛHÛÛ›ÛXˆ˜XÚÙ[™‰ÐTPÐUSÓ—Õ‘T”ÒSÓŸH\Ý[š[™ÈÛˆ	Ð’S‘ÐQ‘TÔßN‰ÔÔ•X
+NÂˆÛÛœÛÛK›ÙÊØÚY[\ˆ[Y^›Û™Nˆ	ÔÐÒQST—ÕSQV“Ó‘_NÈØØ[[YNˆ	ÜØÚY[\“ØØ[[Y\Ý[\
+
+_NÈØ]Ú]\ˆ	ÔÐÒQST—ÐÐUÒTÓRS•UTßHZ[]JÊX
+NÂˆÛÛœÛÛK›ÙÊ›ÛÛNˆ	Ù]šXÙPÛÛ™šYËœ›ÛÛH“ÓÓWÓSQ_X
+NÂˆÛÛœÛÛK›ÙÊTUˆ	Ù[™Ú[›Ü“ÙÊTUÕT“
+H™\ØX›YŸX
+NÂˆÛÛœÛÛK›ÙÊ“›ÙKT‘Qˆ›Ý™\]Z\™Y
+ŒŽ\™XÝ\™Ø\™H[ÙJHŠNÂŸJNÂ˜ÛÛœÝÛÝ™YT™XÛÛ˜Ú[U[Y\\Ù][\˜[
+
+
+OOžÚYŠY[^Üœ™Y^™Kœ™\]Y\ÝY
+\™XÛÛ˜Ú[QÛÝ™YQ\ØÛÝ™\žJ
+_KŒ
+NÂ™[˜Ý[ÛˆÜ˜XÙY[Ú]ÝÛŠÚYÛ˜[
+^ÂˆYŠÚ][™ÑÝÛŠ\™]\›ŽÜÚ][™ÑÝÛ]YNØÛÛœÛÛK›ÙÊ	ÜÚYÛ˜[H™XÙZ]™YÈ˜Z[š[™ÈÛ\ÜÜ›ÛÛHÛÛ›ÛX˜
+NÂˆ™^[ÛÛÛ[X[™]Y]YKœÝÜ
+
+NÂˆ\ÜÛYSX[˜YÙ\‹˜ÛÜÙJ
+NÂˆÛX\’[\˜[
+X\™X][Y\ŠNØÛX\’[\˜[
+™^[Û”ÛÛ[Y\ŠNØÛX\’[\˜[
+ÛÝ™YT™XÛÛ˜Ú[U[Y\ŠNØÛX\’[\˜[
+]]ÛX][Û”ØÚY[\•[Y\ŠNØÛX\’[\˜[
+YØXÞT]ÔØÚY[\•[Y\ŠNØÛX\•[Y[Ý]
+]]ÛX][Û”Ý\\™XÛÛ˜Ú[U[Y\ŠNØÛX\’[\˜[
+]]ÛX]XÕ\]U[Y\ŠNØÛX\’[\˜[
+\]R›Ø”Þ[˜Õ[Y\ŠNØÛX\’[\˜[
+ÝY[]T[™U[Y\ŠNÚYŠ[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\ŠXÛX\•[Y[Ý]
+[Ü›š[™Ð[››Ý[˜Ù[Y[Õ[Y\ŠNÂˆ›ÜŠÛÛœÝÜÈÙˆÜÐÛY[Ê]ž^ÝÜË˜ÛÜÙJLK”Ù\™\ˆÚ][™ÈÝÛˆŠ_XØ]ÚßNÂˆž^ÝÜÜË˜ÛÜÙJ
+_XØ]ÚßNÝž^ÛXTÙ[™Ü[”›ÞUÜÜË˜ÛÜÙJ
+_XØ]ÚßNÝž^Û]\ÚXÐ\ÜÚ\Ý[\PÛÜÙJœÙ\™\ˆÚ]ÝÛˆŠ_XØ]ÚßNÝž^ÚYŠ\]ÛY[
+[\]ÛY[™[™
+YJ_XØ]ÚßNÂˆÛÛœÝ›Ü˜ÙO\Ù][Y[Ý]
+
+
+OOœ›ØÙ\ÜË™^]
+JKL
+NÙ›Ü˜ÙK[œ™YŠ
+NÂˆÙ\™\‹˜ÛÜÙJ\Þ[˜Ê
+OOžÝÚ[J™^[ÛÛÛ[X[™]Y]YKœ[›š[™ÏŒ
+X]ØZ]™]È›ÛZ\ÙJ™\ÛÛ™OOœÙ][Y[Ý]
+™\ÛÛ™KJJNÝž^Ù”ÝÜ™K™‹™^XÊ”QÓPHØ[ØÚXÚÜÚ[
+•SÐUJHŠNÙ”ÝÜ™K™‹˜ÛÜÙJ
+_XØ]ÚßNØÛX\•[Y[Ý]
+›Ü˜ÙJNÜ›ØÙ\ÜË™^]
+
+_JNÂŸBœ›ØÙ\ÜË›Û˜ÙJ”ÒQÕT“H‹
+
+OO™Ü˜XÙY[Ú]ÝÛŠ”ÒQÕT“HŠJNÜ›ØÙ\ÜË›Û˜ÙJ”ÒQÒS•‹
+
+OO™Ü˜XÙY[Ú]ÝÛŠ”ÒQÒS•ŠJNÂ

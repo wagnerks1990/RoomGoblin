@@ -30,6 +30,17 @@
   bind('wakeComputers',async()=>{const targets=selection();if(!confirm(`Send Wake-on-LAN packets for ${targets.length} selected computers?`))return;const result=await api('/api/v1/veyon/wake',{method:'POST',body:JSON.stringify({targets})});$('commandFeedback').textContent=(result.results||[]).map(r=>`${r.id}: ${r.accepted?'Wake packet sent; startup unverified':r.error||'Failed'}`).join(' · ')});
   bind('deviceInfo',async()=>{const [id]=selection(1);const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/info`),c=x.computer;openInfo('User and session details',`<pre style="white-space:pre-wrap">${esc(JSON.stringify({name:c.name,online:c.online,authenticated:c.authenticated,user:c.user,session:c.session,locks:c.featureState,error:c.error},null,2))}</pre>`)});
   bind('freeCatalog',async()=>{const [id]=selection(1),x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);openInfo('Browser feature coverage',`<p>Only browser workflows are listed. Advertised means the appliance plugin is present; it does not verify the endpoint. Native-only capabilities are documented separately.</p><div style="overflow:auto"><table><thead><tr><th>Feature</th><th>Access</th><th>Appliance</th><th>Use</th></tr></thead><tbody>${x.features.map(f=>`<tr><td>${esc(f.name)}</td><td>${esc(f.provider)}</td><td>${f.advertised?'Advertised':'Not advertised'}</td><td>${esc(f.detail)}</td></tr>`).join('')}</tbody></table></div>`)});
+  async function internetGuard(active){
+    const targets=selection(),catalog=await api(`/api/v1/veyon/computers/${encodeURIComponent(targets[0])}/catalog`);
+    if(!catalog.features.some(f=>f.name==='InternetGuard'&&f.advertised))throw Error('Internet Guard requires the matching RoomGoblin Veyon 4.11.2 Windows pilot plugin on the appliance and endpoints.');
+    const warning=active
+      ? `Temporarily block common Internet ports on ${targets.length} selected Windows pilot computer(s)? This also blocks matching local-network web services. It is not complete VPN/tunnel prevention. Save work and keep the Allow control available.`
+      : `Remove RoomGoblin Internet Guard firewall rules from ${targets.length} selected computer(s)?`;
+    if(!confirm(warning))return;
+    await feature(targets,'internetGuard',active);
+    $('commandFeedback').textContent=active?'Internet block requests accepted; verify each endpoint. Automatic release is limited to the running plugin timer.':'Internet allow requests accepted; verify browsing on each endpoint.';
+  }
+  bind('internetGuardBlock',()=>internetGuard(true));bind('internetGuardAllow',()=>internetGuard(false));
   for(const [id,name,label] of [['powerNow','powerDownNow','shut down immediately'],['powerConfirm','powerDownConfirmed','request shutdown confirmation (shuts down immediately when no user is logged in)'],['powerDelay','powerDownDelayed','schedule shutdown'],['powerUpdates','installUpdatesAndPowerDown','install available updates and shut down']])bind(id,async()=>{
     const targets=selection(),args={};
     if(name==='powerDownDelayed'){const value=prompt('Shutdown delay in seconds (30–3600):','120');if(value===null)return;args.shutdownTimeout=Number(value);if(!Number.isInteger(args.shutdownTimeout)||args.shutdownTimeout<30||args.shutdownTimeout>3600)throw Error('Enter 30–3600 seconds.')}

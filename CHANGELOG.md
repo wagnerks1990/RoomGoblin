@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Community Veyon web pilots
+
+- Add selected-PC browser controls for the reviewed GPL Internet Guard backend, ported to the pinned Veyon 4.11.2 Windows source with named firewall rules, transactional rollback, disabled-firewall refusal, explicit allow and a 15-minute in-process release timer.
+- Add one-target browser uploads to `RoomGoblin-Pilot/Inbox`, limited to 2 MiB and ordered 128 KiB chunks with no intentional overwrite, atomic commit, request correlation and partial-file discard.
+- Document exact provenance, exclusions, Windows build/acceptance requirements and manual firewall recovery; commercial Veyon add-ons remain excluded.
+
 ### Browser-complete Veyon pilot
 
 - Add one-target live browser pointer and broad keyboard control with fresh-frame leases, topology/revision binding, monotonic input sequences, native queue/rate bounds and forced key/button release.

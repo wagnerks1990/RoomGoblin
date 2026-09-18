@@ -419,7 +419,7 @@ schedule references or delete nonempty/custom groups automatically. Follow
 
 ## Free Veyon features and native pilot
 
-Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. Never pretend WebAPI can initialize native file transfer or return successful arbitrary internal commands. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no installer, production key change, commercial add-on or unvalidated Windows ABI claim. Preserve the new Linux pilot build gate and operator tests.
+Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The community file adapter is a narrow one-target pilot, not stock WebAPI or official bulk transfer. Never return successful arbitrary internal commands. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no installer, production key change, commercial add-on bypass or unvalidated Windows ABI claim. Internet Guard is Windows-only source until a matching 4.11.2 Windows build and disposable-endpoint acceptance are complete. Preserve the Linux pilot build gate and operator tests.
 
 ## Native pilot artifacts
 
@@ -445,7 +445,7 @@ download scripts or native-only entries to the web feature catalog. Keep such
 capabilities and community candidates in documentation. Features with actual
 browser adapters may state their required native bridge explicitly.
 
-Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. These are matching native pilot adapters, not stock WebAPI capabilities.
+Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. File uploads are one target, 2 MiB maximum, ordered 128 KiB chunks, Inbox-only, atomic and no-overwrite. These are matching native pilot adapters, not stock WebAPI capabilities.
 
 Read docs/VEYON-BROWSER-CONTROL.md before changing remote input. Preserve live
 frame/topology/revision leases, monotonic sequences, native event/queue bounds,

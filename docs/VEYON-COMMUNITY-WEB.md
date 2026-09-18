@@ -16,8 +16,10 @@ The pinned preparer redacts RoomGoblin bridge request bodies, response maps and
 connection headers from native debug logs.
 
 The file browser lists the student's existing `RoomGoblin-Pilot` folder, opens
-subdirectories and downloads complete files up to 8 MiB. It cannot upload, delete,
-or browse outside that folder. Listing is capped at 1000 entries. Transfers use
+subdirectories and downloads complete files up to 8 MiB. It can send one file up
+to 2 MiB into `RoomGoblin-Pilot/Inbox`; uploads never overwrite an existing name,
+cannot choose another directory, and commit atomically only after the exact byte
+count arrives. It cannot delete, execute, or browse outside the pilot folder. Listing is capped at 1000 entries. Transfers use
 128 KiB chunks, a 60-second native deadline, and exact byte-count verification;
 a Save link appears only after the entire file arrives. This is the community
 file browser, not Veyon's separate distribution/collection workflow. The native
@@ -38,7 +40,8 @@ budget; control state/input/clipboard have a separate 2400/minute budget.
 Authorization runs before that appliance-wide budget. Close has a separate
 cleanup budget so ordinary polling cannot prevent resource release.
 Actions are `open`, `close`, `state`, `send`, `roots`, `list`, `download`, `chunk`,
-`pointer`, `key`, and `clipboard`, with a per-session kind allowlist.
+`uploadStart`, `uploadChunk`, `uploadFinish`, `pointer`, `key`, and `clipboard`,
+with a per-session kind allowlist.
 Payloads are validated and reconstructed; arbitrary native protocol forwarding
 is not exposed. Each session permits only one in-flight request. Asynchronous
 work remains counted for Full Recovery Export even if the HTTP client closes.
@@ -54,16 +57,18 @@ Hub. File listing replies now echo request IDs to reject stale responses.
 ## Acceptance
 
 Automated tests cover ownership, identity changes, revoked authorization,
-expiry, resource release, argument limits, response projection and browser chat
-rendering. Native compilation and browser CI must pass before merge. Automated
+expiry, resource release, upload argument limits, response projection and browser
+rendering. Native compilation and browser CI must pass before publishing a pilot
+artifact; a source-only merge does not prove native compatibility. Automated
 fixtures do not prove real endpoint operation. Test a matching teacher/student
 pair: student replies, close/expiry, wrong caller, refused access, missing plugin,
 empty/multichunk files, checksum equality, out-of-folder rejection, disconnect,
-and interrupted/oversized downloads. Revert the disposable VM snapshot to remove
+interrupted/oversized downloads, zero-byte uploads, multichunk uploads, duplicate
+names, interrupted uploads and atomic partial-file cleanup. Revert the disposable VM snapshot to remove
 the pilot; preserve production packages, keys and authentication rules.
 
 Bounded browser control, explicit clipboard reading and monitor viewport
 selection are described in [Browser remote control](VEYON-BROWSER-CONTROL.md).
-Official distribution/collection remain native-only because stock 4.11.2 has no
-safe, acknowledged WebAPI adapter. The optional separate AI adapter is described
+The pilot upload is a narrow RoomGoblin adapter, not Veyon's official bulk
+distribution workflow. The optional separate AI adapter is described
 in [Local AI pilot](VEYON-LOCAL-AI.md); it is not deployed by a Hub update.

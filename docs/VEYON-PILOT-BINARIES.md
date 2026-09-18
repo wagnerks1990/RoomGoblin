@@ -13,6 +13,8 @@ submodules, GPL terms, provenance, plugin/feature inventories and SHA-256 sums.
 Artifacts expire after 14 days; retain the source alongside any binary you share.
 No paid add-on or trial is activated. The Hub Docker images do not contain these
 native binaries and the production updater does not install them.
+The source archive also carries the Windows-only InternetGuard port, but the
+Linux artifact intentionally does not build or advertise that plugin.
 
 ## Build locally
 
@@ -67,7 +69,8 @@ file transfer. Then test ClassroomChat with one student and a reply to the
 teacher, followed by multiple students. For RemoteFileBrowser, create a
 `RoomGoblin-Pilot` directory in the student's home with ordinary sample files;
 verify listings, retrieved-file hashes and preservation of an existing local file
-after interrupted transfers. Other home directories must be rejected. Close the
+after interrupted transfers. Test atomic Inbox upload with a new small file,
+duplicate-name rejection and interrupted-upload cleanup. Other home directories must be rejected. Close the
 browser/native file session before replacing the authenticated teacher connection;
 the close stops its endpoint worker and clears all reply generations.
 See `docs/VEYON-FREE-FEATURES.md` for the resource limits and remaining acceptance

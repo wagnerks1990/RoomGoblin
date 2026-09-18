@@ -1,7 +1,8 @@
 # Experimental Veyon community sources
 
-These native sources are **GPL-2.0-or-later**, not the MIT license of the
-RoomGoblin web application. See COPYING and the original per-file notices.
+These native sources are GPL-licensed, not the MIT license of the RoomGoblin
+web application. Chat, file browsing and the bridge are GPL-2.0-or-later;
+InternetGuard is GPL-2.0-only. See COPYING and the original per-file notices.
 They are kept in a separate source tree, not linked into or shipped inside the
 Hub application. Redistributed pilot binaries must include their corresponding
 source (including these changes), notices and GPL terms.
@@ -10,6 +11,7 @@ source (including these changes), notices and GPL terms.
 | --- | --- | --- |
 | Two-way classroom chat | https://github.com/mravariya/Veyon | faec6bca623e5425ed3d36597b5b2dd2311c376a, plugins/classroomchat |
 | Remote file browser | https://github.com/0mattsmith/VeyonFork | 233c1b0b04c2a95b9e688246468dd510b71f4cde, plugins/remotefilebrowser |
+| Windows Internet Guard | https://github.com/lellomele/veyon-internet-guard | 90a07f366d7fe311beeee0074022b933b4100e51, GPL-2.0-only |
 | Native build baseline | https://github.com/veyon/veyon | afecfd6cbf78efa34da80acb7ea449001574e8cc (v4.11.2) |
 
 RoomGoblin modifications, September 2026:
@@ -34,6 +36,15 @@ RoomGoblin modifications, September 2026:
   128 KiB; pace chunks; correlate replies to the selected endpoint and exact
   request/transfer generation; allow one transfer; use QSaveFile for atomic saves,
   verify byte counts and write results, and stop the worker on close/timeout.
+  Add browser uploads only to `RoomGoblin-Pilot/Inbox`, limited to 2 MiB,
+  128 KiB ordered chunks and one transfer. New files use QSaveFile atomic commit;
+  existing names are never overwritten and partial files are discarded.
+- Internet Guard: port the GPL Windows backend into the exact pinned Veyon
+  4.11.2 build instead of loading the upstream 4.10-targeted DLL. Do not enable
+  a disabled Windows Firewall profile; apply the eight named rules
+  transactionally or roll all of them back; expose only selected-PC block/allow;
+  and schedule a 15-minute in-process automatic release. This is incomplete
+  tunnel prevention and a crashed service can leave named rules behind.
 
 The file browser pins one authenticated teacher only while its worker session is
 open. Close the browser/native dialog before using a replacement connection;
@@ -43,8 +54,10 @@ its dialog before opening another session. Stock WebAPI does not expose either p
 The test folder is a pilot restriction, not a hardened filesystem sandbox against
 an adversarial local user changing filesystem links concurrently. Test with
 non-sensitive sample files in disposable VMs. Veyon's existing authentication,
-access rules and user-session permissions remain mandatory. No upload, deletion,
-remote shell, firewall manipulation or student monitoring evasion is added.
+access rules and user-session permissions remain mandatory. Upload is restricted
+to the pilot Inbox; no overwrite, deletion, remote shell or execution is added.
+Internet Guard is Windows-only and must be tested on a disposable endpoint with
+the documented manual firewall-rule cleanup available.
 
 Build and runtime compatibility are separate: compiler/Qt/Veyon versions must
 match across the entire native build. Never copy these DLLs into the existing
@@ -64,4 +77,6 @@ Keyboard shortcuts use official VncConnection keyEvent with fixed X11/RFB
 keysyms and complete reverse-order release. No endpoint plugin or held-key
 session is added. Native remote-control disabled-feature policy applies.
 
-Browser session adapter: authenticated typed WebAPI route; user/connection-bound Hub sessions, 15-minute native chat expiry, bounded replies, correlated file listings and 8 MiB browser downloads. Existing native file policy remains unchanged.
+Browser session adapter: authenticated typed WebAPI route; user/connection-bound
+Hub sessions, 15-minute native chat expiry, bounded replies, correlated file
+listings, 8 MiB browser downloads and 2 MiB ordered browser uploads.

@@ -26,6 +26,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [AI Native Windows Lab Agent Context](ai/NATIVE-WINDOWS-LAB-AGENT.md) — Session 0/service boundaries, DPAPI compatibility, one-shot helper security, native update trust, and rollback invariants.
 - [AI Veyon DHCP Inventory Context](ai/VEYON-DHCP-INVENTORY.md) — hostname-stable Veyon identity, DHCP reconciliation, selection safety, and future backend migration boundaries.
 - [AI Veyon Multi-Key Authentication Context](ai/VEYON-MULTI-KEY-AUTH.md) — encrypted named-key storage, per-host key preference, bounded fallback, and credential-handling invariants.
+- [Windows Internet Guard browser pilot](VEYON-INTERNET-GUARD-PILOT.md) — GPL community port, browser controls, limits, endpoint acceptance and firewall recovery.
 - [TV Routing Matrix](TV-ROUTING-MATRIX.md) — restored controls, saving, preserved data and verification.
 - [Retired room topology](ROOM-TOPOLOGY.md) — removal and archived-data compatibility.
 - [CI Workflows](CI-WORKFLOWS.md) — required validation gates, exact-revision image publication, release promotion, and failure handling.

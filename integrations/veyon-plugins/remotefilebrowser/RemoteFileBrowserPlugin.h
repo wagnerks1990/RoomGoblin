@@ -27,6 +27,7 @@
 #include <QFile>
 #include <QHash>
 #include <QPointer>
+#include <QSaveFile>
 #include <QTimer>
 #include <QUuid>
 
@@ -57,6 +58,11 @@ public:
 		DownloadInfo,
 		DownloadDataChunk,
 		DownloadFinished,
+		StartUpload,
+		UploadDataChunk,
+		FinishUpload,
+		CancelUpload,
+		UploadFinished,
 	};
 	Q_ENUM(FeatureCommand)
 
@@ -70,6 +76,7 @@ public:
 		FileSize,
 		DataChunk,
 		Error,
+		Offset,
 	};
 	Q_ENUM(Argument)
 
@@ -83,7 +90,7 @@ public:
 
 	QVersionNumber version() const override
 	{
-		return QVersionNumber(1, 0);
+		return QVersionNumber(1, 1);
 	}
 
 	QString name() const override
@@ -151,7 +158,11 @@ private:
 	bool workerGetDrives( VeyonWorkerInterface& worker, const FeatureMessage& message );
 	bool workerListDirectory( VeyonWorkerInterface& worker, const FeatureMessage& message );
 	bool workerStartDownload( VeyonWorkerInterface& worker, const FeatureMessage& message );
+	bool workerStartUpload( VeyonWorkerInterface& worker, const FeatureMessage& message );
+	bool workerUploadChunk( VeyonWorkerInterface& worker, const FeatureMessage& message );
+	bool workerFinishUpload( VeyonWorkerInterface& worker, const FeatureMessage& message );
 	void workerCancelDownload();
+	void workerCancelUpload();
 	void pumpDownload();
 
 	const Feature m_feature;
@@ -171,6 +182,10 @@ private:
 	QFile m_downloadFile;
 	QUuid m_downloadTransferId;
 	QTimer m_downloadTimer;
+	QSaveFile m_uploadFile;
+	QUuid m_uploadTransferId;
+	qint64 m_uploadExpected{0};
+	qint64 m_uploadReceived{0};
 
 	static constexpr qint64 ChunkSize = 128 * 1024;
 };

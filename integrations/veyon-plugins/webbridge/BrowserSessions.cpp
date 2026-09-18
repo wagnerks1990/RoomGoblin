@@ -17,6 +17,7 @@ const Feature::Uid Chat{"8a9e0f1d-2c3b-4467-a987-654321fedcba"};
 const Feature::Uid Files{"b1d9f27a-4c86-4f1e-9a3d-6e0c85f7b214"};
 const Feature::Uid ClipboardRead{"9fd323eb-5ae1-4552-8a4c-8b18837b78f7"};
 constexpr qint64 MaxFile = 8 * 1024 * 1024;
+constexpr qint64 MaxUpload = 2 * 1024 * 1024;
 FeatureMessage message(Feature::Uid uid, int command) {
     return FeatureMessage{uid, static_cast<FeatureMessage::Command>(command)};
 }
@@ -149,6 +150,7 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
     if (action==QStringLiteral("capabilities"))
         return {{QStringLiteral("ok"),true},{QStringLiteral("protocol"),1},
                 {QStringLiteral("chat"),permitted(Chat)},{QStringLiteral("files"),permitted(Files)},
+                {QStringLiteral("upload"),permitted(Files)},
                 {QStringLiteral("control"),allowed(false)}};
     const auto token=data.value(QStringLiteral("session")).toString();
     if (QUuid{token}.isNull()) return failure(QStringLiteral("Invalid browser session"));
@@ -320,6 +322,37 @@ QVariantMap RoomGoblinWebBridge::browserRequest(ComputerControlInterface::Pointe
         if (!valid || offset<0 || !session.complete || offset>session.bytes.size()) return failure(QStringLiteral("File not complete or invalid offset"));
         return {{QStringLiteral("ok"),true},{QStringLiteral("data"),QString::fromLatin1(session.bytes.mid(offset,128*1024).toBase64())}};
     }
+    if (action==QStringLiteral("uploadStart")) {
+        if (session.pending) return failure(QStringLiteral("Wait for the current file request"));
+        const auto name=data.value(QStringLiteral("name")).toString(); bool sizeOk=false;
+        const auto size=data.value(QStringLiteral("size")).toLongLong(&sizeOk);
+        if (name.isEmpty() || name.size()>255 || name==QStringLiteral(".") || name==QStringLiteral("..") ||
+            name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) || !sizeOk || size<0 || size>MaxUpload)
+            return failure(QStringLiteral("Choose one ordinary file up to 2 MiB"));
+        session.error.clear(); session.complete=false; session.upload=true; session.uploadOffset=0;
+        session.size=size; session.fileName=name; session.transfer=QUuid::createUuid();
+        session.pending=true; session.deadline=now+60000;
+        sendFeatureMessage(message(Files,10).addArgument(3,session.transfer).addArgument(4,name).addArgument(5,size),{client});
+        return {{QStringLiteral("ok"),true},{QStringLiteral("accepted"),true}};
+    }
+    if (action==QStringLiteral("uploadChunk")) {
+        bool offsetOk=false; const auto offset=data.value(QStringLiteral("offset")).toLongLong(&offsetOk);
+        const auto encoded=data.value(QStringLiteral("data")).toString().toLatin1();
+        const auto bytes=QByteArray::fromBase64(encoded,QByteArray::AbortOnBase64DecodingErrors);
+        if (!session.pending || !session.upload || !offsetOk || offset!=session.uploadOffset || bytes.isEmpty() ||
+            bytes.size()>128*1024 || session.uploadOffset+bytes.size()>session.size || encoded.size()>180*1024)
+            return failure(QStringLiteral("Invalid upload chunk"));
+        sendFeatureMessage(message(Files,11).addArgument(3,session.transfer).addArgument(8,offset).addArgument(6,bytes),{client});
+        session.uploadOffset+=bytes.size(); session.deadline=now+60000;
+        return {{QStringLiteral("ok"),true},{QStringLiteral("accepted"),true},{QStringLiteral("received"),session.uploadOffset}};
+    }
+    if (action==QStringLiteral("uploadFinish")) {
+        if (!session.pending || !session.upload || session.uploadOffset!=session.size)
+            return failure(QStringLiteral("Upload is incomplete"));
+        sendFeatureMessage(message(Files,12).addArgument(3,session.transfer),{client});
+        session.deadline=now+60000;
+        return {{QStringLiteral("ok"),true},{QStringLiteral("accepted"),true}};
+    }
     if (session.pending) return failure(QStringLiteral("Wait for the current file request"));
     if (action!=QStringLiteral("roots") && action!=QStringLiteral("list") && action!=QStringLiteral("download"))
         return failure(QStringLiteral("Unsupported browser action"));
@@ -369,7 +402,12 @@ bool RoomGoblinWebBridge::handleFeatureMessage(ComputerControlInterface::Pointer
             return true;
         }
         if (session.transfer.isNull() || msg.argument(3).toUuid()!=session.transfer) continue;
-        if (command==7) {
+        if (command==14 && session.upload) {
+            session.error=msg.argument(7).toString().left(500); session.pending=false;
+            session.complete=session.error.isEmpty(); session.upload=false; session.uploadOffset=0; session.transfer={};
+            if (!session.error.isEmpty()) session.complete=false;
+            return true;
+        } else if (command==7) {
             session.size=msg.argument(5).toLongLong(); session.fileName=msg.argument(4).toString().left(255);
             if (!msg.argument(7).toString().isEmpty() || session.size<0 || session.size>MaxFile)
                 session.error=QStringLiteral("File unavailable or exceeds 8 MiB browser limit");

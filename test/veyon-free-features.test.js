@@ -23,11 +23,16 @@ test('Shutdown arguments are bounded and cannot imply a cancellation',()=>{
 });
 test('Catalog shows browser workflows only and never claims endpoint verification',()=>{
   const rows=helpers.featureCatalog([{name:'FileTransfer'},{name:'RemoteView'},{name:'UnknownNative'},{name:'RoomGoblinBrowserControl',uid:'wrong'},{name:'RoomGoblinClipboardRead',uid:helpers.CLIPBOARD_READ_FEATURE_UID}]);
-  assert.equal(rows.some(r=>['FileTransfer','UnknownNative','DesktopAccessDialog'].includes(r.name)),false);
+  assert.equal(rows.some(r=>['UnknownNative','DesktopAccessDialog'].includes(r.name)),false);
   assert.equal(rows.some(r=>r.name==='RemoteControl'),true);assert.equal(rows.some(r=>r.name==='QueryScreens'),true);
   assert.equal(rows.find(r=>r.name==='RemoteView').advertised,true);
   assert.equal(rows.find(r=>r.name==='RoomGoblinBrowserControl').advertised,false);
   assert.equal(rows.find(r=>r.name==='RoomGoblinClipboardRead').advertised,true);
+  assert.equal(rows.find(r=>r.name==='InternetGuard').advertised,false);
+  const exact=helpers.featureCatalog([{name:'InternetGuard',uid:helpers.INTERNET_GUARD_FEATURE_UID}]);
+  assert.equal(exact.find(r=>r.name==='InternetGuard').advertised,true);
+  assert.equal(helpers.featureCatalog([{name:'InternetGuard',uid:'wrong'}]).find(r=>r.name==='InternetGuard').advertised,false);
+  assert.equal(rows.some(r=>r.name==='FileTransfer'),false);
   assert.equal(rows.some(r=>r.endpointVerified),false);
 });
 test('Lesson actions allow only bounded app/message/http presets and reject URL credentials',()=>{
@@ -111,16 +116,20 @@ test('Clipboard requires an exact native bridge identity and bounds UTF-8 conten
 test('Clipboard command route requires control capability, one saved target and strips extra arguments',()=>{
   const source=fs.readFileSync('src/server.js','utf8'),start=source.indexOf('app.post("/api/v1/veyon/feature"'),end=source.indexOf('app.get("/api/v1/lab/computers"',start);
   let handler,cap,limit;const queued=[];
-  const context={...helpers,Buffer,app:{post(_path,c,l,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:(_req,res)=>{res.limited=true},requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
+  const context={...helpers,Buffer,app:{post(_path,c,l,fn){limit=l;cap=c;handler=fn}},veyonFreeWriteLimit:(_req,res)=>{res.limited=true},requireCapability:c=>c,VEYON_FEATURES:{clipboardWrite:helpers.CLIPBOARD_FEATURE,keySequence:helpers.INPUT_FEATURE_UID,internetGuard:helpers.INTERNET_GUARD_FEATURE_UID},veyonComputerStore:{computers:{one:{id:'one',ip:'192.0.2.1'}}},veyonComputerId:String,requestUser:()=>({id:'teacher'}),veyonCommandQueue:{enqueue:job=>{queued.push(job);return {id:'job'}}}};
   vm.runInNewContext(source.slice(start,end),context);
   const call=body=>{const res={code:200,status(c){this.code=c;return this},json(v){this.body=v;return this}};handler({body},res);return res};
   assert.equal(cap,'lab.control');
   const budget={};let bypassed=0;limit({body:{feature:'clipboardWrite'}},budget,()=>bypassed++);assert.equal(budget.limited,true);
+  const networkBudget={};limit({body:{feature:'internetGuard'}},networkBudget,()=>bypassed++);assert.equal(networkBudget.limited,true);
   limit({body:{feature:'screenLock',active:false}},{},()=>bypassed++);assert.equal(bypassed,1);
   for(const targets of [['all'],['one','one'],['constructor'],['missing']])assert.equal(call({feature:'clipboardWrite',targets,arguments:{clipboardText:'x'}}).code,400);
   assert.equal(queued.length,0);
   assert.equal(call({feature:'clipboardWrite',targets:['one'],arguments:{clipboardText:'x',privateKey:'discard'}}).code,202);
   assert.equal(call({feature:'keySequence',targets:['one'],arguments:{sequence:'Ctrl+V'}}).code,202);
+  assert.equal(call({feature:'internetGuard',targets:['one'],active:true,arguments:{untrusted:'discard'}}).code,202);
+  assert.equal(queued[2].feature,'internetGuard');assert.equal(queued[2].active,true);assert.deepEqual(JSON.parse(JSON.stringify(queued[2].args)),{});
+  assert.equal(call({feature:'internetGuard',targets:Array.from({length:65},(_,i)=>`target-${i}`),active:true}).code,400);
   assert.ok(queued[1].expiresAt>Date.now()&&queued[1].expiresAt<=Date.now()+5000);
   assert.equal(call({feature:'keySequence',targets:['all'],arguments:{sequence:'Enter'}}).code,400);
   assert.equal(queued[0].owner,'teacher');assert.deepEqual(JSON.parse(JSON.stringify(queued[0].args)),{clipboardText:'x'});
@@ -165,4 +174,23 @@ test('Browser audit keeps a stable event kind and separates the session kind',()
   assert.match(block,/audit\(\{kind:"veyon\.browser",actor,action:req\.params\.action,sessionKind:/);
   assert.doesNotMatch(block,/audit\(\{kind:"veyon\.browser"[^}]*,kind:/);
   assert.doesNotMatch(block,/audit\(\{[^}]*\b(session|text|path|lease):/);
+});
+
+test('Community upload and Internet Guard sources preserve pilot safety bounds',()=>{
+  const browser=fs.readFileSync('integrations/veyon-plugins/webbridge/BrowserSessions.cpp','utf8');
+  const filesHeader=fs.readFileSync('integrations/veyon-plugins/remotefilebrowser/RemoteFileBrowserPlugin.h','utf8');
+  const files=fs.readFileSync('integrations/veyon-plugins/remotefilebrowser/RemoteFileBrowserPlugin.cpp','utf8');
+  const firewall=fs.readFileSync('integrations/veyon-plugins/internetguard/WindowsFirewall.cpp','utf8');
+  const guard=fs.readFileSync('integrations/veyon-plugins/internetguard/InternetGuardPlugin.cpp','utf8');
+  const cmake=fs.readFileSync('integrations/veyon-plugins/internetguard/CMakeLists.txt','utf8');
+  assert.match(browser,/MaxUpload\s*=\s*2\s*\*\s*1024\s*\*\s*1024/);
+  assert.match(browser,/bytes\.size\(\)>128\*1024/);
+  assert.match(filesHeader,/QSaveFile/);assert.match(files,/RoomGoblin-Pilot\/Inbox|QStringLiteral\("Inbox"\)/);
+  assert.match(files,/existing\.exists\(\).*uploads never overwrite/s);
+  assert.match(files,/QFileInfo::exists\(m_uploadFile\.fileName\(\)\)/);
+  assert.match(files,/m_uploadFile\.commit\(\)/);assert.match(files,/m_uploadFile\.cancelWriting\(\)/);
+  assert.match(cmake,/if\(NOT VEYON_BUILD_WINDOWS\)[\s\S]*return\(\)/);
+  assert.match(firewall,/activeProfilesAreEnabled/);assert.doesNotMatch(firewall,/put_FirewallEnabled/);
+  assert.match(firewall,/transactional rule application failed; pilot rules rolled back/);
+  assert.match(guard,/15 \* 60 \* 1000/);assert.match(guard,/m_autoReleaseTimer\.start/);
 });

@@ -17,7 +17,7 @@ class RoomGoblinWebBridge : public QObject, public FeatureProviderInterface, pub
 public:
     explicit RoomGoblinWebBridge(QObject* parent = nullptr);
     Plugin::Uid uid() const override { return Plugin::Uid{"1fbe5122-142b-46d0-971b-27539c5e2c73"}; }
-    QVersionNumber version() const override { return QVersionNumber(1, 0); }
+    QVersionNumber version() const override { return QVersionNumber(1, 1); }
     QString name() const override { return QStringLiteral("RoomGoblinWebBridge"); }
     QString description() const override { return tr("Bounded browser clipboard and keyboard commands"); }
     QString vendor() const override { return QStringLiteral("RoomGoblin"); }
@@ -47,6 +47,8 @@ private:
         int pointerX{0}, pointerY{0}, pointerMask{0}, eventCount{0};
         qint64 inputDeadline{0};
         bool pending{false}, complete{false}, clipboardPending{false}, clipboardReady{false};
+        bool upload{false};
+        qint64 uploadOffset{0};
         ComputerControlInterface::UpdateMode previousUpdateMode{ComputerControlInterface::UpdateMode::Basic};
         QMetaObject::Connection frameConnection;
     };
