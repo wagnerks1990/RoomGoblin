@@ -1,6 +1,6 @@
 # RoomGoblin Documentation
 
-See [Free Veyon features and community pilot](VEYON-FREE-FEATURES.md) for web controls, native tools, testing and rollback.
+See [Veyon OEM-only integration policy](VEYON-OEM-POLICY.md) for the supported upstream/OEM Veyon boundary.
 
 **RoomGoblin — Classroom & Lab Management Hub**  
 *Run the room. Manage the lab.*
@@ -12,6 +12,8 @@ The Linux RoomGoblin appliance and maintenance containers, plus reviewed managed
 This directory is the canonical technical documentation set for RoomGoblin. `wiki/` contains the Git-tracked mirror of the GitHub Wiki. Legacy `Classroom Hub` / `Classroom Control Hub` identifiers may remain where they are part of the deployed compatibility contract; see [RoomGoblin Rebrand and Compatibility](ROOMGOBLIN-REBRAND.md).
 
 ## Documentation index
+
+- [Veyon OEM-only integration policy](VEYON-OEM-POLICY.md) — supported upstream/OEM Veyon configuration and add-on boundary; custom plugin pilots are excluded.
 
 - [RoomGoblin Rebrand and Compatibility](ROOMGOBLIN-REBRAND.md) — canonical naming, compatibility boundaries, migration acceptance criteria, and repository audit policy.
 - [RoomGoblin Brand Guide](brand/BRAND-GUIDE.md) — authoritative visual/verbal identity, colors, typography, logo usage, and copy rules.
@@ -28,8 +30,6 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [AI Media Plane Context](ai/MEDIA-PLANE.md) — machine/assistant invariants for port ownership, authorization, CORP, autoplay-safe receiver playback, previews, session controls, and acceptance evidence.
 - [AI Veyon DHCP Inventory Context](ai/VEYON-DHCP-INVENTORY.md) — hostname-stable Veyon identity, DHCP reconciliation, selection safety, and future backend migration boundaries.
 - [AI Veyon Multi-Key Authentication Context](ai/VEYON-MULTI-KEY-AUTH.md) — encrypted named-key storage, per-host key preference, bounded fallback, and credential-handling invariants.
-- [Windows Internet Guard browser pilot](VEYON-INTERNET-GUARD-PILOT.md) — GPL community port, browser controls, limits, endpoint acceptance and firewall recovery.
-- [Veyon Windows endpoint pilot](VEYON-WINDOWS-PILOT.md) — complete matching installer build, one-endpoint deployment gate, runtime acceptance and rollback.
 - [TV Routing Matrix](TV-ROUTING-MATRIX.md) — restored controls, saving, preserved data and verification.
 - [Retired room topology](ROOM-TOPOLOGY.md) — removal and archived-data compatibility.
 - [CI Workflows](CI-WORKFLOWS.md) — required validation gates, exact-revision image publication, release promotion, and failure handling.

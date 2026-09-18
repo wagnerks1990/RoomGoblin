@@ -44,7 +44,6 @@ services:
       LEGACY_JSON_MIRROR: ${LEGACY_JSON_MIRROR:-false}
       MAINTENANCE_TOKEN: ${MAINTENANCE_TOKEN:-}
       VEYON_WEBAPI_URL: ${VEYON_WEBAPI_URL:-http://127.0.0.1:11080}
-      VEYON_AI_TOKEN: ${VEYON_AI_TOKEN:-}
       VEYON_KEY_NAME: ${VEYON_KEY_NAME:-master}
       VEYON_KEY_NAME_FILE: /run/secrets/veyon-key-name
       VEYON_PRIVATE_KEY_FILE: ${VEYON_PRIVATE_KEY_FILE:-/run/secrets/veyon-private-key}

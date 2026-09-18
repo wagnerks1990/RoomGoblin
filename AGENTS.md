@@ -438,57 +438,11 @@ physical matrix routing and power remain independent. Cleanup of empty repeated
 schedule references or delete nonempty/custom groups automatically. Follow
 `docs/TV-ROUTING-MATRIX.md` for recovery and validation details.
 
-## Free Veyon features and native pilot
+## Veyon OEM-only boundary
 
-Read [docs/VEYON-FREE-FEATURES.md](docs/VEYON-FREE-FEATURES.md), [docs/VEYON-LIVE-TERMINAL.md](docs/VEYON-LIVE-TERMINAL.md), [docs/VEYON-WINDOWS-PILOT.md](docs/VEYON-WINDOWS-PILOT.md) and `integrations/veyon-plugins/PROVENANCE.md` before changing free-feature coverage. Keep `src/veyon-free-features.js` and the companion controller script bounded; API advertisement is not endpoint verification. The community file adapter is a narrow one-target pilot, not stock WebAPI or official bulk transfer. Arbitrary command content is permitted only in the dedicated administrator-only Veyon terminal route: one saved endpoint, Veyon authenticated feature/worker transport, signed-in-user token, fixed CMD/Windows PowerShell choices, ten-minute expiry, bounded transient input/output, no content audit, no elevation and no uncertain replay. All other internal command surfaces remain prohibited. MAC identity must fail closed after hostname changes. Cleanup queue admission must reserve all modes before changing intent. Browser recording uses sensitive-read frames with hard time/memory bounds and stops on capture failure/hide. Native GPL community sources are isolated from the MIT Hub, built only against pinned matching upstream in disposable pilots; no production key change, commercial add-on bypass or unvalidated Windows ABI claim. Internet Guard and terminal process launch are Windows-only source until a matching 4.11.2 Windows build and disposable-endpoint acceptance are complete. Preserve the Linux pilot build gate and operator tests.
+RoomGoblin supports the host-managed upstream/OEM Veyon installation, its normal configuration, and upstream/OEM add-ons only. Do not vendor, build, install, restore, or expose custom/community Veyon plugins, RoomGoblin-native Veyon bridges, experimental browser tools, local Veyon analysis services, custom endpoint command shells, or pilot package builders. The Veyon web workspace may use only the reviewed upstream WebAPI operations already mapped in the core command allowlist. Feature discovery is informational and must never auto-enable an unreviewed action.
 
-## Native pilot artifacts
-
-The Validate native job builds the entire pinned Linux Veyon tree and publishes
-matching binaries plus all corresponding source. See docs/VEYON-PILOT-BINARIES.md.
-`tools/package-veyon-pilot.sh` uses DESTDIR staging and verifies both community
-plugins with the installed CLI. Preserve numeric root archive ownership and the
-archive path/link/privileged-metadata policy gate. No production install, service start, key export
-or Windows compatibility claim is allowed. Preserve GPL source distribution and
-require disposable matching Ubuntu desktop VMs for interactive acceptance.
-Host-native Ubuntu 26.04/GCC 15 builds require the preparer's `veyon-core`-only
-`-Wno-error=stringop-overflow` guard for the QtConcurrent atomic false positive.
-Keep the warning visible and all other `-Werror` behavior intact; never broaden
-the exception globally.
-
-Windows pilots must be complete upstream-style NSIS packages built by
-`tools/package-veyon-pilot-windows.sh` in a reviewed x86-64 MinGW/Qt environment.
-Never distribute individual community DLLs. RoomGoblin CI must not publish a
-Windows installer until the toolchain image is immutable and reviewed. The
-single-endpoint deployment wrapper requires both installer hashes, a fresh
-evidence directory, an existing configuration export, a known-good rollback
-installer and an explicit disposable-pilot acknowledgement. CLI discovery is
-not live feature acceptance; retain the VM snapshot and test one endpoint first.
-
-Veyon installed-version reporting must use host package inventory, independently
-of pending apt upgrades. Never infer endpoint features from a fixed 4.9.7
-baseline. See docs/VEYON-LIFECYCLE.md for evidence and browser-adapter boundaries.
-
-Browser clipboard writes use the existing transient command queue and require
-exact RoomGoblinWebBridge advertisement. Read docs/VEYON-WEB-CLIPBOARD.md before
-changing that path. No clipboard payload in logs/journal/job projections, no
-uncertain replay, no arbitrary protocol forwarding, no inferred endpoint success.
-
-The operator already has Veyon Master. Do not add native launcher buttons,
-download scripts or native-only entries to the web feature catalog. Keep such
-capabilities and community candidates in documentation. Features with actual
-browser adapters may state their required native bridge explicitly.
-
-Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. File uploads are one target, 2 MiB maximum, ordered 128 KiB chunks, Inbox-only, atomic and no-overwrite. These are matching native pilot adapters, not stock WebAPI capabilities.
-
-Read docs/VEYON-BROWSER-CONTROL.md before changing remote input. Preserve live
-frame/topology/revision leases, monotonic sequences, native event/queue bounds,
-forced key/button release and sent/unverified wording. Clipboard reads are
-explicit correlated endpoint requests, never VNC-event cache reads or polling.
-Keep official file distribution/collection native-only until an adapter has
-bounded paths/storage and honest endpoint acknowledgement semantics.
-
-Local AI pilot: docs/VEYON-LOCAL-AI.md and integrations/veyon-ai/PROVENANCE.md. Keep the AGPL service separate, exact model hash, fixed loopback endpoint, separate token, explicit single-screen capture, no retention/enforcement, bounded concurrency and export drain. Do not claim the full upstream AI dashboard or verified classroom accuracy.
+Preserve existing Veyon keys, multi-key authentication, inventory/DHCP identity, host package lifecycle, command recovery, standard monitoring/live view, screen/input lock, messaging, website/application launch, login/logoff, reboot/shutdown, and teacher demonstration controls. Upstream/OEM add-ons remain installed/configured by the Veyon/OEM mechanism; RoomGoblin must not synthesize its own replacement plugin or bypass licensing. Read `docs/VEYON-OEM-POLICY.md` before changing Veyon behavior.
 
 ## Automation sequence execution
 

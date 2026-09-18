@@ -31,34 +31,6 @@
       <button id="refreshCommandJobs">Refresh progress</button><div id="commandHistoryError" class="muted" role="status"></div><div id="commandJobs"></div>
     </details>
   </section>
-  <details class="panel" id="freeFeatureTools">
-    <summary><b>Free features and experimental tools</b></summary>
-    <p class="muted">Commands use the current selection, including hidden selections. Clipboard and input tools require the RoomGoblin native bridge.</p>
-    <div class="toolbar">
-      <button id="freeCatalog">Feature coverage</button><button id="deviceInfo">User and session details</button>
-      <button id="analyzeScreen">Analyze screen locally</button><button id="communityChat">Two-way chat</button><button id="communityFiles">Browse pilot files</button><button id="liveTerminal" hidden>Live CMD / PowerShell</button>
-      <button id="sendKey">Send key or shortcut</button><button id="sendClipboard">Send clipboard text</button>
-      <button id="saveMac">Set MAC address</button><button id="wakeComputers">Wake computers</button>
-    </div>
-    <details class="lab-disclosure"><summary>Additional power options</summary>
-      <p class="muted">Shutdown options cannot be cancelled through Veyon. Save student work first. An accepted command is not proof that Windows shut down.</p>
-      <div class="toolbar"><button id="powerNow" class="danger">Immediate shutdown</button><button id="powerConfirm" class="warn">Ask student to shut down</button><button id="powerDelay" class="warn">Delayed shutdown</button><button id="powerUpdates" class="warn">Updates then shutdown</button></div>
-    </details>
-    <details class="lab-disclosure"><summary>Experimental network access</summary>
-      <p class="muted">Windows pilot only. Blocks common web, DNS, encrypted-DNS and proxy ports—not every possible tunnel—and also affects matching services on the local network. The endpoint plugin attempts automatic release after 15 minutes, but a service or machine crash can leave its named firewall rules behind.</p>
-      <div class="toolbar"><button id="internetGuardBlock" class="danger">Block Internet — 15 minutes</button><button id="internetGuardAllow">Allow Internet now</button></div>
-    </details>
-    <details class="lab-disclosure"><summary>Lesson actions and student demonstrations</summary>
-      <div class="toolbar"><button id="lessonActions">Saved lesson actions</button><button id="studentDemoFull">Share a student — fullscreen</button><button id="studentDemoWindow">Share a student — window</button><button id="stopSelectedDemo">Stop selected broadcast participants</button></div>
-      <p class="muted">Select the source and audience before starting a student demonstration. To stop it, select the source and all recipients, including offline participants needing recovery.</p>
-    </details>
-    <details class="lab-disclosure"><summary>Experimental screen recording</summary>
-      <p class="muted">Record 1–4 selected screens as a silent WebM contact sheet, up to five minutes or 32 MiB. Captures are sampled about once per second. Keep this workspace visible; hiding it stops recording. Download the result before leaving.</p>
-      <div class="toolbar"><button id="startRecording">Record selected screens</button><button id="stopRecording" disabled>Stop recording</button><button id="downloadRecording" disabled>Download recording</button><button id="discardRecording" disabled>Discard recording</button></div>
-      <div id="recordingStatus" role="status" aria-live="polite">Not recording</div>
-    </details>
-    <p><a href="https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/VEYON-FREE-FEATURES.md" target="_blank" rel="noopener">Community plugin pilot, installation and recovery instructions</a></p>
-  </details>
   <div class="lab-title-row lab-inventory-heading"><div class="tabs" aria-label="Computer filters"><button id="showStudents" class="active">Students</button><button id="showTeachers">Teachers</button><button id="showAll">All devices</button></div><div class="toolbar"><button id="selectAll">Select visible online</button><button id="clearSel">Clear selection</button></div></div>
   <div class="inventory-tools">
     <label class="device-search">Find a computer<input id="deviceSearch" type="search" placeholder="Name, address or signed-in user" autocomplete="off"></label>
@@ -87,16 +59,10 @@
     <button id="liveActual">1:1</button>
     <button id="liveFullscreen">Full Screen</button>
     <button id="liveResetSize">Reset Size</button>
-    <button id="startBrowserControl">Control</button>
-    <label id="liveScreenLabel" hidden>View monitor<select id="liveScreen"><option value="all">All screens</option></select></label>
-    <button id="readRemoteClipboard" hidden>Read clipboard</button>
-    <button id="stopBrowserControl" class="danger" hidden>Exit control</button>
     <button id="liveRetry">Retry frame</button><button id="closeLive">Close</button>
   </div>
-  <textarea id="remoteClipboard" readonly hidden aria-label="Remote clipboard text"></textarea>
   <div id="liveStatus" class="muted" role="status">Connecting…</div><div id="liveStage" class="liveStage">
     <img id="liveImg" class="liveImg" alt="Live computer screen" hidden>
-    <canvas id="controlCanvas" tabindex="0" aria-label="Controlled remote computer screen" hidden></canvas>
   </div>
 </div></div>
 <div id="infoModal" class="modal" role="dialog" aria-modal="true" aria-label="Computer information"><div class="modalBox">
@@ -111,16 +77,5 @@
     <div class="toolbar"><button type="button" id="cancelLogin">Cancel</button><button type="submit" class="primary">Log In</button></div>
   </form>
 </dialog>
-<dialog id="communityDialog" aria-labelledby="communityTitle">
-  <div class="row"><strong id="communityTitle">Community tools</strong><button id="communityClose" type="button">Close session</button></div>
-  <p id="communityStatus" role="status"></p><div id="communityBody"></div>
-</dialog>
-<dialog id="terminalDialog" aria-labelledby="terminalTitle">
-  <div class="row"><strong id="terminalTitle">Live command session</strong><button id="terminalClose" type="button">Terminate session</button></div>
-  <p class="muted">Administrator-only, one computer, ten-minute maximum. Commands run with the signed-in user's permissions. Commands and output are not saved by RoomGoblin.</p>
-  <pre id="terminalOutput" class="terminal-output" tabindex="0" aria-live="polite"></pre>
-  <form id="terminalForm"><label>Command<input id="terminalInput" maxlength="4096" autocomplete="off" spellcheck="false"></label><button type="submit">Run</button></form>
-  <p id="terminalStatus" role="status"></p>
-</dialog>
-<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/veyon-free-features.js"></script><script src="/controller/veyon-community.js"></script><script src="/controller/veyon-terminal.js"></script><script src="/controller/veyon-control.js"></script><script src="/controller/lab-accessibility.js" defer></script>
+<script src="/controller/veyon.js"></script><script src="/controller/veyon-preview-feedback.js"></script><script src="/controller/veyon-inventory-sync.js"></script><script src="/controller/lab-accessibility.js" defer></script>
 </body></html>

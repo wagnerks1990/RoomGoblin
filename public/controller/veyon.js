@@ -92,7 +92,7 @@ const commandJobs=new Map(),commandSubmissions=new Set(),uncertainLockRequests=n
 let commandOwnedLocks=[],commandSubmissionEpoch=0,commandPollTimer=null,commandPollController=null,commandPollFailures=0;
 const COMMAND_PENDING=new Set(['queued','running','retrying']);
 function commandTitle(job){
- const names={keySequence:'Send key or shortcut',clipboardWrite:'Send clipboard text',internetGuard:job.active?'Block Internet temporarily':'Allow Internet',screenLock:job.active?'Lock screens':'Unlock screens',inputLock:job.active?'Lock input':'Unlock input',textMessage:'Send message',userLogin:'Log in user',userLogoff:'Log off',reboot:'Reboot',powerDown:'Shut down',powerDownNow:'Immediate shutdown',powerDownConfirmed:'Ask student to shut down',powerDownDelayed:'Delayed shutdown',installUpdatesAndPowerDown:'Updates then shutdown',openWebsite:'Open website',startApp:'Start app',demoServer:job.active?'Start teacher broadcast':'Stop teacher broadcast',fullScreenDemoClient:job.active?'Join full-screen broadcast':'Stop full-screen broadcast',windowDemoClient:job.active?'Join window broadcast':'Stop window broadcast'};
+ const names={screenLock:job.active?'Lock screens':'Unlock screens',inputLock:job.active?'Lock input':'Unlock input',textMessage:'Send message',userLogin:job.active?'Log in user':'Log in user',userLogoff:'Log off',reboot:'Reboot',powerDown:'Shut down',openWebsite:'Open website',startApp:'Start app',demoServer:job.active?'Start teacher broadcast':'Stop teacher broadcast',fullScreenDemoClient:job.active?'Join full-screen broadcast':'Stop full-screen broadcast',windowDemoClient:job.active?'Join window broadcast':'Stop window broadcast'};
  return names[job.feature]||job.feature||'Computer command';
 }
 function commandResultLabel(result){return result.state==='succeeded'?(result.verified?'Confirmed':'Accepted'):({queued:'Queued',running:'Running',retrying:'Retrying',failed:'Failed',unknown:'Outcome unknown',skipped:'Skipped',cancelled:result.reason==='superseded'?'Superseded':'Cancelled'}[result.state]||'Unknown')}
@@ -388,16 +388,15 @@ async function queueVisibleThumbnails(){
 }
 function startThumbnailTimer(){clearInterval(thumbTimer);thumbTimer=setInterval(queueVisibleThumbnails,2000)}
 function liveInterval(){return Math.max(250,Number($('liveRefreshMs').value||1000))}
-function startLiveTimer(){clearTimeout(liveTimer);if(liveId&&!window.veyonControlActive)liveTimer=setTimeout(refreshLive,liveFailures?Math.min(30000,2000*2**Math.min(4,liveFailures-1)):liveInterval())}
+function startLiveTimer(){clearTimeout(liveTimer);if(liveId)liveTimer=setTimeout(refreshLive,liveFailures?Math.min(30000,2000*2**Math.min(4,liveFailures-1)):liveInterval())}
 function openLive(id){
   closeLive();liveFailures=0;const c=computers.find(x=>x.id===id);liveId=id;
-  $('startBrowserControl').dataset.id=id;$('startBrowserControl').disabled=false;
   cancelThumbnailRequests();
   $('liveTitle').textContent=`Live View — ${c?.name||c?.ip||id}`;
   $('liveStatus').textContent='Connecting…';$('modal').classList.add('open');fitLive();refreshLive();
 }
 async function refreshLive(){
-  if(!liveId||liveController||window.veyonControlActive)return;
+  if(!liveId||liveController)return;
   if(!previewSurfaceVisible()){startLiveTimer();return}
   const generation=liveGeneration,controller=new AbortController();liveController=controller;
   try{
@@ -409,12 +408,8 @@ async function refreshLive(){
   }catch(error){if(generation===liveGeneration){liveFailures++;$('liveStatus').textContent=`${liveObjectUrl?'Last frame · ':''}${error.message}. Retrying…`}}
   finally{if(generation===liveGeneration){liveController=null;startLiveTimer()}}
 }
-window.pauseVeyonLive=()=>{window.veyonControlActive=true;clearTimeout(liveTimer);liveController?.abort();liveController=null};
-window.resumeVeyonLive=()=>{window.veyonControlActive=false;if(liveId){startLiveTimer();refreshLive()}};
 function closeLive(){
-  window.closeVeyonControl?.('Live view closed');
   liveGeneration++;liveId=null;clearTimeout(liveTimer);liveController?.abort();liveController=null;
-  $('startBrowserControl').dataset.id='';$('startBrowserControl').disabled=true;
   $('modal').classList.remove('open','fullscreen');if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
   $('liveImg').hidden=true;$('liveImg').removeAttribute('src');if(liveObjectUrl)URL.revokeObjectURL(liveObjectUrl);liveObjectUrl=null;
 }

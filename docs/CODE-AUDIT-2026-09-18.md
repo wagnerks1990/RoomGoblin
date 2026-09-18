@@ -54,8 +54,7 @@ Reviewed areas:
 
 ### Veyon and ESPHome
 
-- Redacted authentication payloads and connection identifiers from prepared
-  Veyon pilot diagnostics.
+- Redacted authentication payloads and connection identifiers from Veyon diagnostics.
 - Added collision-resistant hostname identities, atomic DHCP identity changes,
   and cryptographic bounded private-key parsing.
 - Added bounded ESPHome worker restart backoff, including synchronous spawn
@@ -112,11 +111,10 @@ is tracked as an architectural follow-up rather than weakened in this patch.
 
 A post-audit appliance walkthrough exercised the controller screens and controls while a diagnostics snapshot was collected. Core Hub, scheduler, MQTT, configured hardware integrations, Veyon reachability, and managed displays were healthy in that snapshot. The walkthrough identified one reproducible application regression in the current UI path: the Controller generated its own `/test-images/tvN.svg` URL, while backend media validation rejected that path. The fix narrowly permits only the eight shipped test-card assets and adds traversal/out-of-range regression coverage.
 
-The walkthrough also encountered host/configuration-dependent 503 responses from optional Veyon community pilots and a Cloudflare provisioning failure from a runtime started before the latest host-install correction. Those are not treated as evidence of core Veyon or scheduler failure. Optional pilot controls remain dependent on their documented endpoint/service prerequisites, and Cloudflare provisioning must run on an updated appliance where `cloudflared` package installation occurs outside the sandboxed Host Agent.
+The walkthrough also encountered host/configuration-dependent responses from optional Veyon integration paths. The supported configuration is now restricted to the host-managed upstream/OEM Veyon installation and upstream/OEM add-ons; removed custom extension paths are not part of current operation.
 
 The diagnostics database contained substantial historical audit data. Current `main` already coalesces successful high-frequency GET/service polling into `telemetry_state` and provides bounded audit-retention pruning; no second competing retention mechanism was added during this follow-up.
 
-PR validation also exposed a Firefox-only terminal teardown race: the browser Close action was queued behind terminal state/read polling, while Chromium happened to dispatch it before the test assertion. Cleanup now bypasses the polling queue and immediately sends the authenticated terminal close request; the server-side session expiry remains the fallback if transport confirmation fails. The browser regression now waits for that close request explicitly rather than assuming a network-event ordering relative to Playwright's click completion, which differs between Chromium and Firefox.
 
 
 ## Database and local-storage performance follow-up
@@ -140,3 +138,8 @@ The storage-boundary review did not find a reason to move authoritative
 configuration, scheduler, identity or encrypted-setting records out of SQLite.
 Large/generated payloads remain file-backed; high-frequency successful polling
 remains coalesced telemetry; audit rows remain subject to privacy retention.
+
+
+## Veyon OEM-only cleanup follow-up
+
+The custom/community Veyon plugin, browser-bridge, terminal, clipboard, Internet Guard, file/chat pilot and local-analysis source paths were removed. The retained Veyon command/status APIs remain on the upstream/OEM WebAPI boundary and now use explicit appliance-wide status/write rate limits. CI guards assert that the retired extension trees and pilot build/deployment scripts cannot return unnoticed.

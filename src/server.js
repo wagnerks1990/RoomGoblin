@@ -4,14 +4,12 @@ const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
-const {INPUT_FEATURE_UID,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,INTERNET_GUARD_FEATURE_UID,POWER_FEATURES,normalizeMac,wakeComputer,powerArguments,featureCatalog,normalizeLessonAction}=require("./veyon-free-features");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
 const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
-const dgram = require("dgram");
 const net = require("net");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
@@ -94,10 +92,6 @@ let VEYON_AUTH_RETRIES = environmentInteger("VEYON_AUTH_RETRIES",2,0,5);
 let VEYON_THUMBNAIL_CONCURRENCY = environmentInteger("VEYON_THUMBNAIL_CONCURRENCY",8,2,24);
 const VEYON_AUTHKEYS_UUID = "0c69b301-81b4-42d6-8fae-128cdd113314";
 const VEYON_FEATURES = Object.freeze({
-  ...POWER_FEATURES,
-  clipboardWrite:CLIPBOARD_FEATURE,
-  keySequence:INPUT_FEATURE_UID,
-  internetGuard:INTERNET_GUARD_FEATURE_UID,
   screenLock:"ccb535a2-1d24-4cc1-a709-8b47d2b2ac79",
   inputLock:"e4a77879-e544-4fec-bc18-e534f33b934c",
   userLogin:"7310707d-3918-460d-a949-65bd152cb958",
@@ -111,34 +105,20 @@ const VEYON_FEATURES = Object.freeze({
   openWebsite:"8a11a75d-b3db-48b6-b9cb-f8422ddd5b0c",
   textMessage:"e75ae9c8-ac17-4d00-8f0d-019348346208"
 });
-
 const VEYON_COMMAND_POLICY = Object.freeze({
-  powerDownNow:{requiresUser:false}, installUpdatesAndPowerDown:{requiresUser:false},
-  powerDownConfirmed:{requiresUser:false}, powerDownDelayed:{requiresUser:false},
-  reboot:{requiresUser:false}, powerDown:{requiresUser:false}, userLogin:{requiresUser:false},
-  userLogoff:{requiresUser:true}, textMessage:{requiresUser:true}, openWebsite:{requiresUser:true},
-  startApp:{requiresUser:true}, screenLock:{requiresUser:true}, inputLock:{requiresUser:true},
-  demoServer:{requiresUser:true}, fullScreenDemoClient:{requiresUser:true}, windowDemoClient:{requiresUser:true},
-  internetGuard:{requiresUser:false}
+  reboot:{requiresUser:false},powerDown:{requiresUser:false},userLogin:{requiresUser:false},
+  userLogoff:{requiresUser:true},textMessage:{requiresUser:true},openWebsite:{requiresUser:true},
+  startApp:{requiresUser:true},screenLock:{requiresUser:true},inputLock:{requiresUser:true},
+  demoServer:{requiresUser:true},fullScreenDemoClient:{requiresUser:true},windowDemoClient:{requiresUser:true}
 });
 function veyonPolicyFor(feature,active=true){
-  if(active===false&&["screenLock","inputLock","demoServer","fullScreenDemoClient","windowDemoClient","internetGuard"].includes(feature))
-    return {requiresUser:false,recovery:true};
+  if(active===false&&["screenLock","inputLock","demoServer","fullScreenDemoClient","windowDemoClient"].includes(feature))return {requiresUser:false,recovery:true};
   return VEYON_COMMAND_POLICY[feature]||{requiresUser:true};
 }
 async function veyonCommandEligibility(rec,feature,active=true){
-  const online=await veyonTcpProbe(rec.ip);
-  if(!online)return {eligible:false,reason:"offline"};
-  if(Object.hasOwn(POWER_FEATURES,feature)){
-    const available=await veyonAvailableFeatures(rec.ip);
-    if(!Array.isArray(available)||!available.some(f=>String(f.uid||f.Uid||f.UID||"").replace(/[{}]/g,"")===POWER_FEATURES[feature]))return {eligible:false,reason:"feature-not-advertised"};
-  }
-  if(feature==="clipboardWrite"&&!clipboardAdvertised(await veyonAvailableFeatures(rec.ip)))return {eligible:false,reason:"clipboard-bridge-unavailable"};
-  if(feature==="keySequence"&&!keyAdvertised(await veyonAvailableFeatures(rec.ip)))return {eligible:false,reason:"keyboard-bridge-unavailable"};
-  const policy=veyonPolicyFor(feature,active);
-  if(!policy.requiresUser)return {eligible:true};
-  const user=await veyonConnectedJson(rec.ip,"/api/v1/user");
-  if(!String(user?.login||"").trim())return {eligible:false,reason:"no-user-session"};
+  const online=await veyonTcpProbe(rec.ip);if(!online)return {eligible:false,reason:"offline"};
+  const policy=veyonPolicyFor(feature,active);if(!policy.requiresUser)return {eligible:true};
+  const user=await veyonConnectedJson(rec.ip,"/api/v1/user");if(!String(user?.login||"").trim())return {eligible:false,reason:"no-user-session"};
   return {eligible:true,user};
 }
 
@@ -2703,19 +2683,12 @@ async function veyonConnectedJson(host,pathname,options={}){
 }
 async function veyonAvailableFeatures(host){return veyonConnectedJson(host,"/api/v1/feature")}
 async function veyonFeatureStatus(host,feature){
-  const uid=VEYON_FEATURES[feature]||feature;
-  if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
+  const uid=VEYON_FEATURES[feature];if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
   return veyonConnectedJson(host,`/api/v1/feature/${encodeURIComponent(uid)}`);
 }
 async function veyonFeature(host,feature,active=true,args={}){
-  args=feature==="keySequence"?keyArguments(args,active):feature==="clipboardWrite"?clipboardArguments(args,active):powerArguments(feature,args,active);
-  const uid=VEYON_FEATURES[feature]||feature;
-  if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
-  return veyonConnectedRequest(host,`/api/v1/feature/${encodeURIComponent(uid)}`,{
-    method:"PUT",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({active:!!active,arguments:args||{}})
-  },veyonJson,["screenLock","inputLock"].includes(feature));
+  const uid=VEYON_FEATURES[feature];if(!uid)throw new Error(`Unknown Veyon feature: ${feature}`);
+  return veyonConnectedRequest(host,`/api/v1/feature/${encodeURIComponent(uid)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({active:!!active,arguments:args||{}})},veyonJson,["screenLock","inputLock"].includes(feature));
 }
 function veyonTcpProbe(host,port=11100,timeout=450){
   host=validatedVeyonHost(host);
@@ -6538,7 +6511,6 @@ app.put("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)
     const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
     if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
     const patch={name:String(req.body?.name||rec.name).slice(0,120)};
-    if(req.body?.mac!==undefined){patch.mac=normalizeMac(req.body.mac);patch.macHostname=String(rec.hostname||rec.id).toLowerCase();}
     if(req.body?.role==="teacher"||req.body?.role==="student")patch.role=req.body.role;
     res.json({ok:true,computer:upsertVeyonComputer(rec.ip,patch)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
@@ -6605,99 +6577,6 @@ app.get("/api/v1/veyon/computers/:id/features",requireCapability("lab.read"),asy
   }catch(err){res.status(502).json({ok:false,error:err.message})}
 });
 
-// Fixed appliance-wide budgets: forwarded addresses cannot multiply work.
-// Cleanup has its own budget so ordinary writes cannot consume the stop quota.
-const {VeyonAI}=require("./veyon-ai");
-const veyonAI=new VeyonAI({token:String(process.env.VEYON_AI_TOKEN||"")});
-const veyonAILimit=rateLimit({windowMs:60_000,limit:6,keyGenerator:()=>"veyon-ai",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Screen analysis limit reached; wait a minute"}});
-app.post("/api/v1/veyon/computers/:id/analyze",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonAILimit,async(req,res)=>{
-  res.set("Cache-Control","no-store");
-  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
-  if(veyonCommandQueue.pressure())return res.status(503).json({ok:false,error:"Wait for classroom commands to finish"});
-  try{const result=await trackFullExportMutation(veyonAI.analyze(async()=>{
-    const frame=await readVeyonFrame(new URLSearchParams({format:"jpeg",width:"1280",height:"720",quality:"80"}),pathname=>veyonConnectedRequest(computer.ip,pathname,{timeoutMs:10000,maxBytes:4*1024*1024},async(pathname,options)=>{
-      const response=await veyonFetch(pathname,options);if(!response.ok)throw await veyonResponseError(response);return response;
-    }));
-    const user=requestUser(req);
-    if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.sensitive.read")||!hasCapability(user,"lab.control")))throw Error("Permission revoked");
-    if(veyonComputerStore.computers[computer.id]?.ip!==computer.ip)throw Error("Computer identity changed");
-    return frame.buffer;
-  }));audit({kind:"veyon.ai",actor:requestUser(req)?.id||"legacy-control",computer:computer.id,accepted:true,detections:Array.isArray(result.detections)?result.detections.length:0});res.json(result)}catch{res.status(503).json({ok:false,error:"Local screen analysis unavailable. Configure and start the separate AI pilot service."})}
-});
-const {BrowserSessions}=require("./veyon-browser-sessions");
-const veyonBrowserSessions=new BrowserSessions({
-  connect:async host=>{await veyonAuthenticate(host);return veyonConnectionCache.get(host)},
-  identity:(computer,connection)=>{
-    const current=veyonComputerStore.computers[computer.id];
-    return !!current&&current.ip===computer.ip&&current.hostname===computer.hostname&&
-      veyonConnectionCache.get(computer.ip)===connection&&Number(connection.validUntil)>Date.now()/1000+5;
-  },
-  request:async(session,action,data)=>{
-    session.connection.lastUsed=Date.now();
-    try{return await veyonJson(`/api/v1/roomgoblin/${action}`,{method:"POST",headers:{"Content-Type":"application/json","Connection-Uid":session.connection.uid},body:JSON.stringify(data)})}
-    catch{throw Object.assign(Error("Native browser bridge unavailable or response lost; no automatic retry was made."),{status:503})}
-  }
-});
-setInterval(()=>veyonBrowserSessions.prune(),10000).unref();
-const veyonBrowserLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-browser",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser tool limit reached"}});
-const veyonBrowserControlLimit=rateLimit({windowMs:60_000,limit:2400,keyGenerator:()=>"veyon-browser-control",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser control limit reached"}});
-const veyonBrowserCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-browser-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Browser cleanup limit reached"}});
-const veyonBrowserActionLimit=(req,res,next)=>(req.params.action==="close"?veyonBrowserCleanupLimit:["state","pointer","key","clipboard"].includes(req.params.action)?veyonBrowserControlLimit:veyonBrowserLimit)(req,res,next);
-app.post("/api/v1/veyon/computers/:id/browser/:action",requireCapability("lab.control"),requireCapability("lab.sensitive.read"),veyonBrowserActionLimit,async(req,res)=>{
-  res.set("Cache-Control","no-store");
-  if(req.body?.kind==="terminal"||String(req.params.action).startsWith("terminal"))return res.status(403).json({ok:false,error:"Live terminal requires the administrator-only terminal route"});
-  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
-  const authorize=()=>{const user=requestUser(req);if(dbStore.authEnabled()&&(!user||!hasCapability(user,"lab.control")||!hasCapability(user,"lab.sensitive.read")))throw Object.assign(Error("Browser tool permission revoked"),{status:403})};
-  try{const actor=requestUser(req)?.id||"legacy-control";const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:req.params.action,input:req.body,authorize}));if(["open","close","send","download","uploadStart","uploadFinish","clipboard"].includes(req.params.action)&&!(req.params.action==="clipboard"&&result.pending))audit({kind:"veyon.browser",actor,action:req.params.action,sessionKind:req.params.action==="open"?String(req.body?.kind||"").slice(0,20):undefined,computer:computer.id,accepted:true});res.json(result)}
-  catch(error){res.status([403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Browser request failed"})}
-});
-const veyonTerminalLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-terminal",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Terminal request limit reached"}});
-const veyonTerminalCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-terminal-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Terminal cleanup limit reached"}});
-const veyonTerminalActionLimit=(req,res,next)=>(req.params.action==="close"?veyonTerminalCleanupLimit:veyonTerminalLimit)(req,res,next);
-app.post("/api/v1/veyon/computers/:id/terminal/:action",requireAdmin,veyonTerminalActionLimit,async(req,res)=>{
-  res.set("Cache-Control","no-store");
-  const computer=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!computer)return res.status(404).json({ok:false,error:"Computer not found"});
-  const action=String(req.params.action||""),mapped={open:"open",close:"close",state:"state",read:"terminalRead",write:"terminalWrite"}[action];
-  if(!mapped)return res.status(400).json({ok:false,error:"Unsupported terminal action"});
-  const actor=requestUser(req)?.id;
-  const authorize=()=>{const user=requestUser(req);if(!user||!hasRole(user,"admin")||!hasCapability(user,"*"))throw Object.assign(Error("Administrator terminal permission revoked"),{status:403})};
-  const input={...(req.body||{})};if(mapped==="open"){input.kind="terminal";input.shell=String(input.shell||"")}
-  try{
-    const result=await trackFullExportMutation(veyonBrowserSessions.run({owner:actor,computer,action:mapped,input,authorize}));
-    if(action==="open"||action==="close")audit({kind:"veyon.terminal",actor,action,computer:computer.id,shell:action==="open"?String(input.shell).slice(0,20):undefined,accepted:true});
-    res.json(result);
-  }catch(error){res.status([400,403,409,503].includes(error.status)?error.status:503).json({ok:false,error:error.status?error.message:"Terminal request failed"})}
-});
-const veyonFreeReadLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-read",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool read limit reached; retry later"}});
-const veyonFreeWriteLimit=rateLimit({windowMs:60_000,limit:30,keyGenerator:()=>"veyon-free-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon tool action limit reached; retry later"}});
-const veyonFreeCleanupLimit=rateLimit({windowMs:60_000,limit:60,keyGenerator:()=>"veyon-free-cleanup",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon cleanup limit reached; retry later"}});
-app.get("/api/v1/veyon/computers/:id/catalog",requireCapability("lab.read"),veyonFreeReadLimit,async(req,res)=>{
-  const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
-  if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-  try{res.json({ok:true,features:featureCatalog(await veyonAvailableFeatures(rec.ip)),verification:"proxy-advertisement-only"})}
-  catch(error){res.status(503).json(safeVeyonFailure(error))}
-});
-app.post("/api/v1/veyon/wake",requireCapability("lab.control"),veyonFreeWriteLimit,async(req,res)=>{
-  try{
-    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 computers.");
-    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
-    const results=await mapLimit(targets,4,async rec=>{try{if(rec.macHostname!==String(rec.hostname||rec.id).toLowerCase())throw Error("Save the MAC address again after an inventory identity change.");return {id:rec.id,...await wakeComputer(rec.mac)}}catch(error){return {id:rec.id,accepted:false,verified:false,error:error.message}}});
-    audit({kind:"veyon.wake",targets:targets.map(rec=>rec.id),accepted:results.filter(r=>r.accepted).length});
-    res.json({ok:results.every(r=>r.accepted),results});
-  }catch(error){res.status(400).json({ok:false,error:error.message})}
-});
-app.get("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),veyonFreeReadLimit,(_req,res)=>res.json({ok:true,actions:dbStore.getPreference("veyon.lesson-actions",[])}));
-app.put("/api/v1/veyon/lesson-actions",requireCapability("lab.control"),veyonFreeWriteLimit,(req,res)=>{
-  try{
-    const inputs=req.body?.actions;if(!Array.isArray(inputs)||inputs.length>40)throw Error("Save at most 40 lesson actions.");
-    const actions=inputs.map(normalizeLessonAction);
-    if(new Set(actions.map(x=>x.name.toLowerCase())).size!==actions.length)throw Error("Lesson action names must be unique.");
-    dbStore.setPreference("veyon.lesson-actions",actions);audit({kind:"veyon.lesson-actions",count:actions.length});res.json({ok:true,actions});
-  }catch(error){res.status(400).json({ok:false,error:error.message})}
-});
 app.get("/api/v1/veyon/computers/:id/feature/:feature",requireCapability("lab.read"),async(req,res)=>{
   try{
     const rec=veyonComputerStore.computers[veyonComputerId(req.params.id)];
@@ -6722,6 +6601,8 @@ app.post("/api/v1/veyon/connections/close",requireCapability("lab.control"),asyn
     res.json({ok:true,closed:ids.length,poolSize:veyonConnectionCache.size});
   }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
+const veyonCommandStatusLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-command-status",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon command status limit reached; retry later"}});
+const veyonCommandWriteLimit=rateLimit({windowMs:60_000,limit:120,keyGenerator:()=>"veyon-command-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon command action limit reached; retry later"}});
 // Broadcast routes preserve teacher-first ordering while sharing the bounded
 // per-computer workers and durable mode cleanup with other classroom commands.
 async function waitForVeyonCommand(job){
@@ -6737,19 +6618,6 @@ async function waitForVeyonCommand(job){
 function veyonJobResults(job){return job.results.map(row=>({...row,error:row.error||(!row.ok?row.reason||"Command is still pending; check command history.":undefined)}))}
 // Generation identities contain no broadcast tokens and exist only while a route is active.
 const veyonBroadcastWorkflows=new Map();
-app.post("/api/v1/veyon/demo/stop-selected",requireCapability("lab.control"),veyonFreeCleanupLimit,async(req,res)=>{
-  const workflows=[];
-  try{
-    const ids=req.body?.targets;if(!Array.isArray(ids)||!ids.length||ids.length>64)throw Error("Choose 1–64 broadcast participants.");
-    const targets=[...new Set(ids)].map(id=>{const key=veyonComputerId(id),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");return rec});
-    const owner=requestUser(req)?.id||"legacy-control";
-    // Reserve all three jobs before changing workflow intent or yielding.
-    const jobs=veyonCommandQueue.enqueueModeCleanup(targets,owner);
-    for(const rec of targets){const marker={};veyonBroadcastWorkflows.set(rec.ip,marker);workflows.push([rec.ip,marker])}
-    res.status(202).json({ok:true,jobs});
-  }catch(error){res.status(error.status||400).json({ok:false,error:error.message})}
-  finally{for(const [ip,marker] of workflows)if(veyonBroadcastWorkflows.get(ip)===marker)veyonBroadcastWorkflows.delete(ip)}
-});
 app.post("/api/v1/veyon/demo/start",requireCapability("lab.control"),async(req,res)=>{
   let workflowKey,workflow;
   try{
@@ -6801,36 +6669,20 @@ app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,re
   }catch(err){res.status(400).json({ok:false,error:err.message})}
   finally{if(workflow&&veyonBroadcastWorkflows.get(workflowKey)===workflow)veyonBroadcastWorkflows.delete(workflowKey)}
 });
-app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
-app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
-app.post("/api/v1/veyon/feature",requireCapability("lab.control"),(req,res,next)=>["clipboardWrite","keySequence","internetGuard"].includes(req.body?.feature)?veyonFreeWriteLimit(req,res,next):next(),(req,res)=>{
+app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),veyonCommandStatusLimit,(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
+app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),veyonCommandStatusLimit,(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
+app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),veyonCommandWriteLimit,(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
+app.post("/api/v1/veyon/feature",requireCapability("lab.control"),veyonCommandWriteLimit,(req,res)=>{
   try{
     const targets=Array.isArray(req.body?.targets)?req.body.targets:[req.body?.target].filter(Boolean);
     if(!targets.length||targets.length>512)throw Error("Choose between 1 and 512 targets.");
-    const feature=String(req.body?.feature||"");
-    if(!Object.hasOwn(VEYON_FEATURES,feature))throw Error("Unsupported Veyon feature");
-    if(feature==="internetGuard"&&targets.length>64)throw Error("Choose at most 64 Internet Guard targets.");
-    let args=powerArguments(feature,req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{},req.body?.active!==false);
-    if(feature==="keySequence"){
-      if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one keyboard target.");
-      args=keyArguments(args,req.body?.active!==false);
-    }
-    if(feature==="clipboardWrite"){
-      if(targets.length!==1||targets[0]==="all")throw Error("Choose exactly one clipboard target.");
-      args=clipboardArguments(args,req.body?.active!==false);
-    }
-    if(feature==="internetGuard")args={};
+    const feature=String(req.body?.feature||"");if(!Object.hasOwn(VEYON_FEATURES,feature))throw Error("Unsupported Veyon feature");
+    const args=req.body?.arguments&&typeof req.body.arguments==="object"&&!Array.isArray(req.body.arguments)?req.body.arguments:{};
     if(Buffer.byteLength(JSON.stringify(args))>16384)throw Error("Veyon command arguments are too large");
-    const requestId=String(req.body?.requestId||"");
-    if(requestId&&!/^[a-zA-Z0-9._:-]{1,100}$/.test(requestId))throw Error("Invalid command request ID");
-    const selected=[];
-    for(const target of targets){
-      if(target==="all")selected.push(...Object.values(veyonComputerStore.computers));
-      else{const key=veyonComputerId(target),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");selected.push(rec)}
-    }
+    const requestId=String(req.body?.requestId||"");if(requestId&&!/^[a-zA-Z0-9._:-]{1,100}$/.test(requestId))throw Error("Invalid command request ID");
+    const selected=[];for(const target of targets){if(target==="all")selected.push(...Object.values(veyonComputerStore.computers));else{const key=veyonComputerId(target),rec=Object.hasOwn(veyonComputerStore.computers,key)?veyonComputerStore.computers[key]:null;if(!rec)throw Error("Computer not found");selected.push(rec)}}
     const uniq=[...new Map(selected.map(rec=>[rec.id,rec])).values()];
-    const job=veyonCommandQueue.enqueue({feature,active:req.body?.active!==false,targets:uniq,args,requestId,expiresAt:feature==="keySequence"?Date.now()+5000:undefined,owner:requestUser(req)?.id||"legacy-control"});
+    const job=veyonCommandQueue.enqueue({feature,active:req.body?.active!==false,targets:uniq,args,requestId,owner:requestUser(req)?.id||"legacy-control"});
     res.status(202).json({ok:true,job});
   }catch(error){res.status([409,429].includes(error.status)?error.status:400).json({ok:false,error:error.message})}
 });
