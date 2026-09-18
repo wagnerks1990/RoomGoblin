@@ -35,7 +35,9 @@ test("normalized automation storage round-trips schema-v3 execution policy",()=>
   }]};
   store.writeJson(file,value);
   const row=store.db.prepare("SELECT execution_mode,repeat_count,repeat_delay_seconds FROM automation_actions WHERE automation_id=? AND position=1").get("auto-a");
-  assert.deepEqual(row,{execution_mode:"loop",repeat_count:1,repeat_delay_seconds:2.5});
+  assert.equal(row.execution_mode,"loop");
+  assert.equal(row.repeat_count,1);
+  assert.equal(row.repeat_delay_seconds,2.5);
   const restored=store.readJson(file,{version:0,events:[]});
   assert.equal(restored.version,3);
   assert.equal(restored.events[0].actionSequence.length,2);
