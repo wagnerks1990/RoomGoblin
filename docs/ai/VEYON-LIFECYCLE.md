@@ -18,6 +18,11 @@ Treat Veyon as a native host-managed integration, not a RoomGoblin container.
 - Do not download/execute release binaries directly from GitHub.
 - RoomGoblin application rollback does not imply native Veyon package rollback.
 - A root WebAPI HTTP 404 establishes reachability only. Never infer authentication, screenshots, or control success from it.
+- Ubuntu 26.04 host-native pilot builds use GCC 15. Preserve the preparer's
+  `veyon-core`-only `-Wno-error=stringop-overflow` compatibility guard for GNU
+  15+; it keeps the QtConcurrent atomic false positive visible as a warning.
+  Never broaden it into a global warning disable or treat a successful build as
+  production installation or endpoint acceptance.
 
 ## Service-state interpretation
 

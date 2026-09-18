@@ -4,6 +4,9 @@
 
 ### Community Veyon web pilots
 
+- Allow host-native Ubuntu 26.04/GCC 15 pilot builds to pass the QtConcurrent
+  atomic optimizer false positive while retaining the warning and all other
+  Veyon `-Werror` enforcement.
 - Add an original administrator-only live CMD/Windows PowerShell pilot carried
   entirely by the authenticated RoomGoblinWebBridge Veyon feature/worker path.
   Sessions run as the signed-in user, expire after ten minutes, bound transient
