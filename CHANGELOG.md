@@ -9,6 +9,12 @@
 - Preserve recovery backups, native `veyon.service` / `veyon-webapi.service` recovery, APT preference, and rejection of arbitrary package URLs.
 - Add regression coverage and synchronized operator/Wiki/AI lifecycle documentation.
 
+### Automatic backup retention hardening
+
+- Classify update-created operational backups separately from manual operational exports.
+- Automatically retain 3 operational update backups, 1 `pre-*` safety backup, and 3 `migration-*` installer snapshots after successful maintenance.
+- Treat historical `classroom-hub-operational-*` archives as the legacy automatic pool so existing accumulation is pruned, while protecting manual operational exports and encrypted Full Recovery `.rgbak` bundles.
+
 
 ### Veyon OEM-only reset
 
