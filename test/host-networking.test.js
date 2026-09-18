@@ -46,57 +46,78 @@ function addonHarness(t, exists = false, owned = true) {
   vm.runInContext(read("maintenance-agent/extensions.js"), context);
   context.containerExists = async () => exists;
   context.mainAppPut = async (_id, settings) => ({resolved:settings});
-  context.hostAgentRequest = async args => {calls.push(Array.from(args)); if(args[0]==="inspect"&&exists)return {ok:true,stdout:JSON.stringify([{Config:{Labels:owned?{"org.roomgoblin.deployment-ownership":"roomgoblin"}:{}},Mounts:[]}])}; return {ok:true, stdout:"test-container"};};
+  context.hostAgentRequest = async args => {
+    calls.push(Array.from(args));
+    if(args[0]==="network"&&args[1]==="inspect")return {ok:true,stdout:JSON.stringify([{Name:"roomgoblin-integrations",Driver:"bridge"}])};
+    if(args[0]==="inspect"&&exists)return {ok:true,stdout:JSON.stringify([{Config:{Labels:owned?{"org.roomgoblin.deployment-ownership":"roomgoblin"}:{}},Mounts:[]}])};
+    return {ok:true, stdout:"test-container"};
+  };
   return {context, calls, dir};
 }
 
+test("managed Mosquitto uses the RoomGoblin bridge and loopback-only publication", async t => {
+  const h=addonHarness(t);
+  await h.context.deployAddon("mosquitto",{port:2883,username:"classroom-hub",password:"a-test-password-with-16-chars"},false);
+  const args=h.calls.find(args=>args[0]==="run");
+  assert.ok(args);
+  assert.equal(args[args.indexOf("--network")+1],"roomgoblin-integrations");
+  assert.ok(args.includes("127.0.0.1:2883:2883"));
+  assert.match(fs.readFileSync(path.join(h.dir,"mosquitto/config/mosquitto.conf"),"utf8"),/listener 2883\n/);
+  assert.ok(h.calls.some(args=>args[0]==="network"&&args[1]==="inspect"&&args[2]==="roomgoblin-integrations"));
+});
+
 for (const [id, settings] of [
-  ["mosquitto", {port:2883,username:"classroom-hub",password:"a-test-password-with-16-chars"}],
   ["govee2mqtt", {mqttHost:"host.docker.internal",mqttPort:2883}],
   ["musicassistant", {}],
 ]) {
-  test(`managed ${id} deployment uses host networking without published ports`, async t => {
+  test(`managed ${id} retains required host networking without published ports`, async t => {
     const h = addonHarness(t);
     await h.context.deployAddon(id, settings, false);
     const args = h.calls.find(args => args[0] === "run");
     assert.ok(args);
-    assert.equal(args.filter(value => value === "--network").length, 1);
     assert.equal(args[args.indexOf("--network") + 1], "host");
     assert.ok(!args.includes("-p") && !args.includes("--publish"));
-    if (id === "mosquitto") assert.match(fs.readFileSync(path.join(h.dir,"mosquitto/config/mosquitto.conf"),"utf8"), /listener 2883\n/);
     if (id === "govee2mqtt") assert.ok(args.includes("GOVEE_MQTT_HOST=127.0.0.1"));
     if (id === "musicassistant") {
       assert.ok(args.includes("PYTHONPATH=/data/.roomgoblin-compat"));
       const shim = fs.readFileSync(path.join(h.dir, "music-assistant/.roomgoblin-compat/sitecustomize.py"), "utf8");
-      assert.match(shim, /operstate/);
-      assert.match(shim, /state == "down"/);
+      assert.match(shim, /_default_route_ipv4/);
+      assert.match(shim, /ROOMGOBLIN_MA_LAN_INTERFACE/);
+      assert.match(shim, /"br-", "docker", "veth", "tailscale"/);
     }
   });
 }
 
-test("Music Assistant compatibility shim excludes only confirmed-down host adapters", async t => {
+test("Music Assistant compatibility shim pins discovery to the selected LAN adapter", async t => {
   const h = addonHarness(t);
   await h.context.deployAddon("musicassistant", {}, false);
   const compat = path.join(h.dir, "music-assistant/.roomgoblin-compat");
   const stub = path.join(h.dir, "ifaddr-stub");
-  const sys = path.join(h.dir, "sys-class-net");
   fs.mkdirSync(stub, {recursive:true});
   fs.writeFileSync(path.join(stub, "ifaddr.py"), `
+class IP:
+    def __init__(self, value, ipv6=False):
+        self.ip=value
+        self.is_IPv6=ipv6
 class Adapter:
-    def __init__(self, name):
-        self.nice_name = name
+    def __init__(self, name, ips):
+        self.name=name
+        self.nice_name=name
+        self.ips=[IP(x) for x in ips]
 def get_adapters():
-    return [Adapter("enp4s0"), Adapter("docker0"), Adapter("tailscale0"), Adapter("mystery0")]
+    return [
+        Adapter("enp4s0", ["172.16.127.5"]),
+        Adapter("docker0", ["172.17.0.1"]),
+        Adapter("br-deadbeef", ["172.20.0.1"]),
+        Adapter("tailscale0", ["100.120.61.26"]),
+    ]
 `);
-  for (const [name,state] of [["enp4s0","up"],["docker0","down"],["tailscale0","unknown"]]) {
-    const dir = path.join(sys,name); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,"operstate"),state);
-  }
   const result = spawnSync("python3", ["-c", "import ifaddr; print(','.join(a.nice_name for a in ifaddr.get_adapters()))"], {
     encoding:"utf8",
-    env:{...process.env,PYTHONPATH:`${compat}:${stub}`,ROOMGOBLIN_SYS_CLASS_NET:sys},
+    env:{...process.env,PYTHONPATH:`${compat}:${stub}`,ROOMGOBLIN_MA_LAN_INTERFACE:"enp4s0"},
   });
   assert.equal(result.status,0,result.stderr);
-  assert.equal(result.stdout.trim(),"enp4s0,tailscale0,mystery0");
+  assert.equal(result.stdout.trim(),"enp4s0");
 });
 
 test("recreate refuses adopted containers with foreign persistent mounts", async t => {
@@ -131,20 +152,36 @@ test("invalid recreation settings do not remove the existing broker", async t =>
   assert.equal(fs.existsSync(path.join(h.dir,"mosquitto/config/mosquitto.conf")), false);
 });
 
-test("Host Agent rejects bridge defaults and published-port requests before Docker runs", () => {
+test("Host Agent enforces per-integration network policy before Docker runs", () => {
   const result = spawnSync("python3", ["-c", `
 import importlib.util
 spec=importlib.util.spec_from_file_location('agent','host-agent/server.py')
 a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
-base=['run','-d','--name','mosquitto','--restart','unless-stopped','--label','org.roomgoblin.deployment-ownership=roomgoblin']
-image='eclipse-mosquitto:2.0.22'
-a.validate_docker_run(base+['--network','host',image])
-for extra in ([],['--network','bridge'],['--network','host','-p','1883:1883'],['--network','host','--network','host']):
-    try: a.validate_docker_run(base+extra+[image])
+label=['--label','org.roomgoblin.deployment-ownership=roomgoblin']
+restart=['--restart','unless-stopped']
+a.validate_docker_run(['run','-d','--network','roomgoblin-integrations','--name','mosquitto',*restart,*label,'-p','127.0.0.1:1883:1883','eclipse-mosquitto:2.0.22'])
+a.validate_docker_run(['run','-d','--network','host','--name','govee2mqtt',*restart,*label,'ghcr.io/wez/govee2mqtt:2025.04.13-17d43d72'])
+a.validate_docker_run(['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'ghcr.io/music-assistant/server:2.9.13'])
+bad=[
+ ['run','-d','--network','host','--name','mosquitto',*restart,*label,'eclipse-mosquitto:2.0.22'],
+ ['run','-d','--network','roomgoblin-integrations','--name','govee2mqtt',*restart,*label,'ghcr.io/wez/govee2mqtt:2025.04.13-17d43d72'],
+ ['run','-d','--network','host','--name','music-assistant-server',*restart,*label,'-p','127.0.0.1:8095:8095','ghcr.io/music-assistant/server:2.9.13'],
+ ['run','-d','--network','roomgoblin-integrations','--name','mosquitto',*restart,*label,'-p','0.0.0.0:1883:1883','eclipse-mosquitto:2.0.22'],
+]
+for args in bad:
+    try: a.validate_docker_run(args)
     except RuntimeError: continue
-    raise AssertionError('Unsafe network request accepted')
+    raise AssertionError('Unsafe network request accepted: '+repr(args))
 `], {cwd:root, encoding:"utf8"});
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("Host Agent only allows RoomGoblin integration bridge lifecycle commands", () => {
+  const source=read("host-agent/server.py");
+  assert.match(source,/INTEGRATION_NETWORK = 'roomgoblin-integrations'/);
+  assert.match(source,/network','inspect',INTEGRATION_NETWORK/);
+  assert.match(source,/network','create','--driver','bridge'/);
+  assert.match(source,/Only the reviewed RoomGoblin integration bridge may be inspected or created/);
 });
 
 test("rendered Compose preflight rejects stale bridge overrides, exposure and collisions", () => {
