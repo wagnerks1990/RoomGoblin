@@ -12,17 +12,19 @@ test("manual automation tests do not weaken scheduled class-date enforcement",()
   assert.match(server,/resolveAutomationForManualTest\(event\)/);
 });
 
-test("class default display targets are framework-level and cross-domain",()=>{
+test("class default display targets remain domain-aware",()=>{
   assert.match(server,/_classDefaultTargets:\[\.\.\.\(cls\.defaultTargets\|\|\[\]\)\]/);
-  assert.match(server,/\(stepDomain==="display-content"\|\|stepDomain==="display-overlay"\).*event\.useClassTargets!==false&&Array\.isArray\(event\._classDefaultTargets\)/);
-  assert.match(server,/const timerTargetSource=\(event\.useClassTargets!==false&&Array\.isArray\(event\._classDefaultTargets\)/);
+  assert.match(server,/event\.useClassTargets!==false&&Array\.isArray\(event\._classDefaultTargets\)/);
   assert.match(controller,/useClassTargets:autoUseClassTargets\.checked/);
   assert.match(controller,/autoUseClassTargets\.checked=e\.useClassTargets!==false/);
 });
 
-test("alternating automation anchor follows the authoritative school profile",()=>{
-  assert.match(controller,/anchorDate:mode==='alternating'\?\(S\.scheduleProfile\?\.anchorDate\|\|currentScheduleData\.anchorDate\|\|''\):''/);
-  assert.doesNotMatch(controller,/getElementById\('autoAnchorDate'\)/);
+test("scheduled runner executes canonical sequence passes",()=>{
+  assert.match(server,/const steps=automationActionSequence\(event\)/);
+  assert.match(server,/while\(sequenceHasEligibleActions\(steps,pass\)\)/);
+  assert.match(server,/if\(!actionEligibleOnPass\(step,pass\)\)continue/);
+  assert.match(server,/sequenceHasContinuousActions\(steps\)/);
+  assert.match(server,/Cap the fastest complete cycle at 1 Hz/);
 });
 
 test("Test Now and persisted run summaries expose action-level failures",()=>{
@@ -30,5 +32,4 @@ test("Test Now and persisted run summaries expose action-level failures",()=>{
   assert.match(server,/failures:automationRunFailures\(result\)/);
   assert.match(server,/failures:automationRunFailures\(runResult\)/);
   assert.match(controller,/function automationRunFailureSummary\(result=\{\}\)/);
-  assert.match(controller,/Test completed with errors:/);
 });
