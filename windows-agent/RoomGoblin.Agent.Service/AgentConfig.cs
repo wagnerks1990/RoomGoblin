@@ -8,6 +8,9 @@ internal sealed class AgentConfig
     [JsonPropertyName("hubUrl")]
     public string HubUrl { get; set; } = "";
 
+    [JsonPropertyName("fallbackHubUrl")]
+    public string FallbackHubUrl { get; set; } = "";
+
     [JsonPropertyName("agentId")]
     public string AgentId { get; set; } = "";
 
