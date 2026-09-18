@@ -97,6 +97,23 @@ An HTTPS proxy deployment must set the exact `TRUST_PROXY_HOPS` value and block
 direct client access to the backend; forwarded transport headers are not a
 security boundary when port 3000 remains directly reachable.
 
+## Media-plane production invariant
+
+Uploaded video/audio payload delivery is split from the controller/control plane. Port `3000` owns the controller, REST API, scheduler, display WebSockets, telemetry and media-session commands. Port `3020` owns authorized `GET/HEAD /media/*` byte-range delivery.
+
+Preserve these rules:
+
+- never move sustained MP4 transfer back onto port `3000` as a convenience fix;
+- physical receivers keep signed asset authorization while controller/browser media requests may be authorized through the existing authenticated session;
+- `:3020` responses use `Cross-Origin-Resource-Policy: cross-origin` because the receiver page and media listener intentionally use different ports; authorization still happens before bytes are served;
+- Today/controller previews must not create live MP4 decoders; show a lightweight video-active placeholder instead;
+- Display Studio/media-library cards must not instantiate full MP4 `<video>` elements as thumbnails;
+- commanded receiver video starts in an autoplay-safe muted state, then applies the requested audio state after playback starts; if audible autoplay is blocked, continue muted rather than leaving playback stopped;
+- live pause/seek/volume/rate/restart controls use the persistent media session and must not reissue the original media command;
+- a large socket send queue on `:3020` can be healthy during playback if `:3000` remains responsive.
+
+Alpha.84 received live production acceptance on 2026-09-18: playback, volume and live controls worked; both health endpoints were green; video backpressure appeared on `:3020` while normal control connections remained responsive on `:3000`. Read `docs/MEDIA-PLANE.md` and `docs/ai/MEDIA-PLANE.md` before changing this path.
+
 ## Persistent state
 
 Treat these as runtime state, not replaceable source:
@@ -118,7 +135,7 @@ The current master key path is `/etc/classroom-control-hub/master.key`. Upgrades
 
 ## Current known-good baseline
 
-`1.0.0-alpha.82` is the current production-readiness review baseline.
+`1.0.0-alpha.84` is the current production-readiness review baseline.
 
 Production deployment is currently validated only on `amd64` Ubuntu Server
 24.04 LTS. Treat `arm64` as unsupported until both container images and the

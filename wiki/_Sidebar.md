@@ -20,6 +20,7 @@
 - [Morning Announcements Diagnostics](Morning-Announcements-Diagnostics)
 - [Managed Displays Recovery](Managed-Displays-Recovery)
 - [Manual Media Audio](Manual-Media-Audio)
+- [Media Plane](Media-Plane)
 - [Android TV Displays](Android-TV-Displays)
 - [Persistent Android ADB](Persistent-Android-ADB)
 - [Android Agent Control Pilot](Android-Agent-Control-Pilot)

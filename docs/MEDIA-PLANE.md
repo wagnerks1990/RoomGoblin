@@ -103,3 +103,26 @@ curl -i -H 'Range: bytes=0-1048575' 'http://HUB:3020/media/FILE?SIGNED_QUERY' -o
 Expected status: `206 Partial Content`.
 
 During multi-display playback, large media send queues should appear on `:3020`, while `:3000` remains responsive for `/health`, controller requests, WebSockets, and clear/stop commands.
+
+## Production acceptance — 2026-09-18
+
+Alpha.84 was live-tested on the production classroom appliance after the media-plane, autoplay, preview, and CORP fixes.
+
+Observed acceptance evidence:
+
+- the control-plane health endpoint returned ready/healthy with database and scheduler checks passing;
+- the media-plane health endpoint returned healthy on port `3020`;
+- physical MP4 playback started successfully without the browser play-circle stall;
+- live play/pause, volume, seek/scrub, restart/stop, and playback-rate controls worked without reloading the file;
+- controller navigation and command handling remained responsive during playback;
+- the active MP4 stream appeared on `:3020` with multi-megabyte socket backpressure isolated there;
+- normal controller/API/WebSocket connections remained on `:3000` with negligible send queues;
+- the browser console no longer showed the earlier media `401` or `ERR_BLOCKED_BY_RESPONSE.NotSameSite` failures;
+- controller media cards no longer need to decode full MP4 files simply to display thumbnails.
+
+This is the expected production architecture. A large `:3020` send queue during active video is not by itself a failure; it shows that media backpressure is isolated from the control plane. Investigate only if `:3000` responsiveness degrades, media health fails, or playback/control telemetry stops.
+
+### Acceptance invariant
+
+Do not collapse video delivery back onto port `3000` as a workaround for media issues. Fix authorization, response policy, receiver routing, or playback behavior while preserving the control/media split.
+

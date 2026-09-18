@@ -15,6 +15,7 @@
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
 - [Database-First Recovery Contract](Database-First-Recovery)
+- [Media Plane](Media-Plane)
 - [Operations](Operations)
 - [Troubleshooting](Troubleshooting)
 - [Development](Development)
@@ -24,6 +25,8 @@
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
 
 ## Current verified baseline
+
+Alpha.84 media playback received live production acceptance on 2026-09-18. Uploaded MP4 bytes are isolated on port `3020` while the controller/API/WebSocket control plane remains on `3000`. Physical playback, pause/resume, seek, volume, restart/stop and rate controls were verified working; both health endpoints were green; sustained video backpressure remained on `:3020` while `:3000` stayed responsive. See [Media Plane](Media-Plane).
 
 Displays & AV now uses the restored TV Routing Matrix and its TV/source drawers.
 Room topology has been removed; receiver Setup uses count/IDs again and Settings

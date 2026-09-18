@@ -58,6 +58,8 @@
 
 ### Automation action loops and live media sessions
 
+- Alpha.84 media-plane production acceptance on 2026-09-18 verified healthy `:3000` control and `:3020` media listeners, working physical MP4 autoplay and persistent play/pause/seek/volume/rate/restart controls, and multi-megabyte video backpressure isolated from responsive controller/API/WebSocket traffic.
+- Preserve signed/session media authorization while allowing the intentionally separate media port with `Cross-Origin-Resource-Policy: cross-origin`; controller previews and library cards must not decode full MP4 files.
 - Add per-action run-once, bounded-repeat and receiver-native media-loop behavior so looping one video no longer restarts an entire scheduled automation.
 - Keep MP4 playback as a persistent receiver session with live play/pause, stop/restart, seek/scrub, volume/mute and playback-rate controls that do not reload the file.
 - Add configurable video start/end boundaries, clip looping and receiver playback telemetry; expose the same live controls in the Media workspace and document scheduler/announcement/BGM invariants.

@@ -24,6 +24,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [AI CI Publication Context](ai/CI-PUBLICATION.md) — machine/assistant rules for direct-main exact-SHA validation, image publication, bounded Android dependency retry, promotion, and production-branch advancement.
 - [AI Production Shared-Data Context](ai/PRODUCTION-SHARED-DATA.md) — machine/assistant rules for runtime umask, backup readability, permission repair, and updater safety.
 - [AI Native Windows Lab Agent Context](ai/NATIVE-WINDOWS-LAB-AGENT.md) — Session 0/service boundaries, DPAPI compatibility, one-shot helper security, native update trust, and rollback invariants.
+- [AI Media Plane Context](ai/MEDIA-PLANE.md) — machine/assistant invariants for port ownership, authorization, CORP, autoplay-safe receiver playback, previews, session controls, and acceptance evidence.
 - [AI Veyon DHCP Inventory Context](ai/VEYON-DHCP-INVENTORY.md) — hostname-stable Veyon identity, DHCP reconciliation, selection safety, and future backend migration boundaries.
 - [AI Veyon Multi-Key Authentication Context](ai/VEYON-MULTI-KEY-AUTH.md) — encrypted named-key storage, per-host key preference, bounded fallback, and credential-handling invariants.
 - [Windows Internet Guard browser pilot](VEYON-INTERNET-GUARD-PILOT.md) — GPL community port, browser controls, limits, endpoint acceptance and firewall recovery.
@@ -54,6 +55,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Managed Display Gateway](MANAGED-DISPLAY-GATEWAY.md) — configured media relay, header isolation, sandboxing, and verification.
 - [Automation Framework](AUTOMATION-FRAMEWORK.md) — schedule resolution, actions, targets, and execution evidence.
 - [Manual Media Audio](MANUAL-MEDIA-AUDIO.md) — operator video/web volume behavior and limitations.
+- [Media Plane](MEDIA-PLANE.md) — split control/media transport, signed authorization, byte ranges, persistent playback sessions, production acceptance, and recovery guidance.
 - [Veyon and Music Integrations](VEYON-MUSIC-INTEGRATIONS.md) — native Veyon and Music Assistant ownership.
 - [Veyon DHCP Inventory Reconciliation](VEYON-DHCP-INVENTORY.md) — automatic hostname-based identity preservation when Veyon workstation IPs change through DHCP.
 - [Veyon Multi-Key Authentication](VEYON-MULTI-KEY-AUTH.md) — multiple encrypted named private keys, preferred/per-host key selection, bounded authentication fallback, migration compatibility, and acceptance checks.
