@@ -1757,7 +1757,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   const steps=automationActionSequence(event);
   const continuous=sequenceHasContinuousActions(steps);
   const boundedMaxPasses=Number.isInteger(maxPasses)&&maxPasses>0?Math.min(1000,maxPasses):null;
-  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous,endedReason:null};
+  const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous,endedReason:null,totalStepExecutions:0,totalResults:0};
+  const MAX_RUN_TRACE=200;
+  const pushStep=entry=>{combined.totalStepExecutions++;pushStep(entry);if(combined.steps.length>MAX_RUN_TRACE)combined.steps.splice(0,combined.steps.length-MAX_RUN_TRACE)};
+  const pushResults=rows=>{for(const row of rows||[]){combined.totalResults++;combined.results.push(row)}if(combined.results.length>MAX_RUN_TRACE)combined.results.splice(0,combined.results.length-MAX_RUN_TRACE)};
   let overlayApplied=false;
 
   function windowOpen(){
@@ -1792,7 +1795,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       );
       if(lockedTimerTargets.length)combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
       else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
-      if(combined.timerOverlay?.result)combined.results.push(combined.timerOverlay.result);
+      if(combined.timerOverlay?.result)pushResults([combined.timerOverlay.result]);
     }catch(err){
       if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE")combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
       else{
@@ -1840,7 +1843,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
         const lockedSet=new Set(lockedTargets);
         resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
         if(!resolvedTargets.length&&lockedTargets.length){
-          combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
           executed++;
           continue;
         }
@@ -1850,16 +1853,16 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       try{
         if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
         const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
-        combined.results.push(...(result.results||[]));
-        combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
+        pushResults(result.results);
+        pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
       }catch(err){
         if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-          combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
           executed++;
           continue;
         }
         combined.ok=false;
-        combined.steps.push({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
+        pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
         if(step.continueOnError===false){aborted=true;break}
       }
       executed++;
