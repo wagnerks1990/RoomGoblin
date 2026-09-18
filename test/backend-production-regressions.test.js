@@ -52,6 +52,18 @@ test("Background Music controls retain the player that actually started playback
   assert.match(music,/prior\.playerId!==cfg\.playerId\|\|prior\.favoriteId!==cfg\.favoriteId/);
 });
 
+test("scheduled Background Music waits for player readiness and backs off transient starts",()=>{
+  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf("// Appliance-wide budgets"));
+  const tick=music.slice(music.indexOf("async function backgroundMusicTick"),music.indexOf('app.get("/api/v1/music-assistant/background"'));
+  assert.match(music,/retryAfter:0/);
+  assert.match(tick,/if\(!actual\?\.found\|\|actual\.available===false\)/);
+  assert.match(tick,/Background Music player has not registered yet/);
+  assert.match(tick,/Background Music player is temporarily unavailable/);
+  assert.match(tick,/retryAfter\|\|0\)>Date\.now\(\)/);
+  assert.match(tick,/retryAfter=Date\.now\(\)\+30000/);
+  assert.ok(tick.indexOf("if(!actual?.found||actual.available===false)")<tick.indexOf('await backgroundMusicStart({reason:"schedule-player-idle"})'));
+});
+
 test("post-announcement resync applies each candidate only to targets it won",()=>{
   assert.match(server,/for\(const \[target,candidate\] of winnersByTarget\)/);
   assert.match(server,/winningTargets:\[\]/);
