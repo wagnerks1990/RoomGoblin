@@ -6,6 +6,7 @@ LOCK_FILE=/run/classroom-control-hub-appliance-mutation.lock
 HUB_ROOT="${CLASSROOM_HUB_DIR:-/opt/classroom-hub}"
 VEYON_DROPIN_DIR=/etc/systemd/system/veyon.service.d
 VEYON_DROPIN="$VEYON_DROPIN_DIR/roomgoblin-webapi.conf"
+VEYON_REQUEST_FILE=/var/lib/classroom-hub/veyon-update-request.json
 mkdir -p "$STATE_DIR"
 write_state(){
   local phase="$1" message="$2" ok="${3:-null}"
@@ -52,10 +53,55 @@ if unit_loaded veyon.service && unit_loaded veyon-webapi.service; then
   if systemctl is-active --quiet veyon.service || systemctl is-active --quiet veyon-webapi.service; then VEYON_EXPECTED_ACTIVE=true; fi
   ensure_veyon_webapi_lifecycle
 fi
+VEYON_RELEASE_MODE=false
+VEYON_RELEASE_VERSION=""
+VEYON_RELEASE_URL=""
+VEYON_RELEASE_SHA256=""
+VEYON_RELEASE_NAME=""
+if [[ -f "$VEYON_REQUEST_FILE" ]]; then
+  mapfile -t request_fields < <(python3 - "$VEYON_REQUEST_FILE" <<'PY2'
+import json,re,sys
+obj=json.load(open(sys.argv[1]))
+fields=[str(obj.get(k) or "") for k in ("version","url","sha256","name")]
+if not re.fullmatch(r"\d+\.\d+\.\d+",fields[0]): raise SystemExit(2)
+if not re.fullmatch(r"[0-9a-f]{64}",fields[2]): raise SystemExit(3)
+if any("\n" in x or "\r" in x for x in fields): raise SystemExit(4)
+print("\n".join(fields))
+PY2
+  )
+  [[ ${#request_fields[@]} -eq 4 ]] || { echo "Invalid Veyon update request"; exit 33; }
+  VEYON_RELEASE_VERSION="${request_fields[0]}"
+  VEYON_RELEASE_URL="${request_fields[1]}"
+  VEYON_RELEASE_SHA256="${request_fields[2]}"
+  VEYON_RELEASE_NAME="${request_fields[3]}"
+  version_id="$(. /etc/os-release; printf '%s' "$VERSION_ID")"
+  expected_name="veyon_${VEYON_RELEASE_VERSION}.0-ubuntu.${version_id}_amd64.deb"
+  expected_url="https://github.com/veyon/veyon/releases/download/v${VEYON_RELEASE_VERSION}/${expected_name}"
+  [[ "$(dpkg --print-architecture)" == amd64 && "$VEYON_RELEASE_NAME" == "$expected_name" && "$VEYON_RELEASE_URL" == "$expected_url" ]] || { echo "Veyon release request does not match this Ubuntu amd64 appliance"; exit 34; }
+  rm -f -- "$VEYON_REQUEST_FILE"
+  VEYON_RELEASE_MODE=true
+fi
 write_state refreshing "Refreshing Ubuntu package metadata." null
 apt-get update
-write_state installing "Installing available package updates. Automatic autoremove is intentionally disabled." null
-apt-get -y upgrade
+if [[ "$VEYON_RELEASE_MODE" == true ]]; then
+  write_state installing "Downloading and installing verified official Veyon ${VEYON_RELEASE_VERSION} package." null
+  command -v curl >/dev/null || { echo "curl is required for official Veyon release installation"; exit 35; }
+  pkg="$(mktemp --suffix=.deb /tmp/roomgoblin-veyon-XXXXXX)"
+  trap 'rc=$?; rm -f -- "${pkg:-}"; if [ $rc -ne 0 ]; then write_state failed "Host update failed with exit code $rc. Review the update log and run dpkg --audit / apt-get check before retrying." false; fi' EXIT
+  curl --fail --location --proto '=https' --tlsv1.2 --max-filesize 67108864 --output "$pkg" "$VEYON_RELEASE_URL"
+  printf '%s  %s\n' "$VEYON_RELEASE_SHA256" "$pkg" | sha256sum -c -
+  [[ "$(dpkg-deb --field "$pkg" Package)" == "veyon" ]] || { echo "Downloaded package is not Veyon"; exit 36; }
+  [[ "$(dpkg-deb --field "$pkg" Architecture)" == "amd64" ]] || { echo "Downloaded Veyon package architecture mismatch"; exit 37; }
+  package_version="$(dpkg-deb --field "$pkg" Version)"
+  [[ "$package_version" == "$VEYON_RELEASE_VERSION"* ]] || { echo "Downloaded Veyon package version mismatch: $package_version"; exit 38; }
+  apt-get -y install "$pkg"
+  installed_version="$(dpkg-query -W -f='${Version}' veyon)"
+  [[ "$installed_version" == "$VEYON_RELEASE_VERSION"* ]] || { echo "Installed Veyon version mismatch: $installed_version"; exit 39; }
+  rm -f -- "$pkg"; pkg=""
+else
+  write_state installing "Installing available package updates. Automatic autoremove is intentionally disabled." null
+  apt-get -y upgrade
+fi
 write_state verifying "Verifying package database and RoomGoblin health." null
 dpkg --audit
 apt-get check

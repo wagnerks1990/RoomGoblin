@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+
+### Veyon lifecycle official-package fallback
+
+- Fix the Veyon lifecycle install bridge to call the actual guarded host-update endpoint.
+- When the Veyon PPA lags an upstream release, allow only the exact official Ubuntu amd64 Veyon DEB advertised by `veyon/veyon` release metadata, with SHA-256, URL, package-name, architecture, distribution-version and installed-version verification at the Host Agent boundary.
+- Preserve recovery backups, native `veyon.service` / `veyon-webapi.service` recovery, APT preference, anti-downgrade enforcement, and rejection of arbitrary package URLs.
+- Add regression coverage and synchronized operator/Wiki/AI lifecycle documentation.
+
 - Fix retention convergence so full installs immediately enforce the 3 automatic operational / 1 pre-* / 3 migration policy, and make Host Agent migration/legacy cleanup honor `HOST_BACKUP_DIR` instead of the obsolete hardcoded backup path.
 
 ### Automatic backup retention hardening
