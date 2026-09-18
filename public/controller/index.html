@@ -1139,8 +1139,10 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
         <div class="formField"><label for="cfgCloudflareTunnelName">Tunnel name</label><input id="cfgCloudflareTunnelName" placeholder="roomgoblin-roomgoblin.example.org"></div>
         <label><input id="cfgCloudflareHttps" type="checkbox" checked> Always Use HTTPS</label>
         <label><input id="cfgCloudflareRewrites" type="checkbox" checked> Automatic HTTPS Rewrites</label><label><input id="cfgCloudflareHttp3" type="checkbox" checked> HTTP/3</label><label><input id="cfgCloudflareBrotli" type="checkbox" checked> Brotli compression</label>
-        <label><input id="cfgCloudflareAccess" type="checkbox" onchange="cfgCloudflareAccessDomain.disabled=!this.checked"> Protect with Cloudflare Access</label>
-        <div class="formField"><label for="cfgCloudflareAccessDomain">Access allowed email domain</label><input id="cfgCloudflareAccessDomain" placeholder="staff.example.org" disabled></div>
+        <label><input id="cfgCloudflareAccess" type="checkbox" onchange="syncCloudflareAccessDomainState()"> Protect RoomGoblin with Cloudflare Access</label>
+        <div class="formField"><label for="cfgCloudflareAccessDomain">Access allowed email domain</label><input id="cfgCloudflareAccessDomain" placeholder="staff.example.org" disabled><div class="muted">Required when Cloudflare Access protects RoomGoblin or any published auxiliary resource.</div></div>
+        <label><input id="cfgCloudflareMusicAssistant" type="checkbox" onchange="syncCloudflareAccessDomainState()"> Publish Music Assistant as a protected HTTPS resource</label>
+        <div class="formField"><label for="cfgCloudflareMusicHostname">Music Assistant public hostname</label><input id="cfgCloudflareMusicHostname" placeholder="music.example.org"><div class="muted">Uses this same tunnel but routes only this hostname to local Music Assistant port 8095. Cloudflare Access is mandatory.</div></div>
         <label><input id="cfgCloudflareReplaceDns" type="checkbox"> Allow replacement of a conflicting existing DNS record</label><label><input id="cfgCloudflareAdoptTunnel" type="checkbox"> Adopt a same-name existing tunnel and replace its ingress rules</label>
       </div>
       <div class="muted" style="margin-top:8px">The safe preset does not enable Bot Fight Mode or cache authenticated RoomGoblin pages/API traffic. Access is only provisioned when an explicit email-domain allow rule is supplied.</div>
