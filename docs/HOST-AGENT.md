@@ -16,6 +16,8 @@ The service is:
 classroom-hub-host-agent.service
 ```
 
+Update runner units must order themselves after this installed service name. The repository source unit file retains the historical `classroom-control-hub-host-agent.service` filename, but the installer copies it to `/etc/systemd/system/classroom-hub-host-agent.service`; systemd dependencies must therefore reference `classroom-hub-host-agent.service`.
+
 The Host Agent listens only on the Unix socket:
 
 ```text
