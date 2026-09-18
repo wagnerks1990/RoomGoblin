@@ -2,6 +2,23 @@
 
 RoomGoblin's administrator enrollment workflow recommends the native Windows service for new computers while retaining the legacy PowerShell scheduled-task installer as an explicit compatibility fallback.
 
+## Endpoint protection / EDR behavior
+
+A production first-time enrollment on 2026-09-17 triggered a SentinelOne heuristic detection against the interactive PowerShell installer chain. SentinelOne quarantined related copies of the native executables and the self-extracted `e_sqlite3.dll`, then stopped the service.
+
+The RoomGoblin enrollment itself had completed before that intervention: the one-time token had been exchanged for a permanent DPAPI-protected credential, enrollment token fields were cleared, the config ACL remained limited to `SYSTEM` and local `Administrators`, and a fresh native health record had been written. The installed binaries were then verified byte-for-byte against the deployed alpha.83 manifest hashes, the service restarted successfully, and it remained running during stability observation.
+
+Treat this as an endpoint-protection deployment-hardening concern, not a reason to weaken security controls:
+
+- do not disable or stop SentinelOne, Defender, or other EDR products to install RoomGoblin;
+- do not create blanket exclusions for PowerShell, TEMP, Program Files, or the RoomGoblin data directory;
+- prefer the browser package + native bootstrap workflow;
+- where policy requires an exception before Authenticode signing is available, use only administrator-approved exact release hashes from the RoomGoblin manifest;
+- once an approved signing identity is available, prefer publisher-based allow policy over path/process exclusions;
+- if `credentialProtected` is already populated after an EDR interruption, do not issue a second enrollment token; repair the verified package using the existing credential.
+
+Issue #142 tracks the remaining signing/native-library-extraction hardening.
+
 ## Administrator workflow
 
 In the controller's Windows Lab Agent enrollment panel:
@@ -71,4 +88,6 @@ Repository validation must cover all of these surfaces:
 - continued visibility of the legacy fallback;
 - Docker packaging of the exact four native binaries plus manifest.
 
-The production appliance has already been validated serving the native package and migrating an existing enrolled endpoint. Fresh first-time enrollment still requires live endpoint acceptance for each materially changed release build.
+The production appliance has been validated serving the native package, migrating an existing enrolled endpoint, and completing true first-time native enrollment on a computer with no active `lab-agent.json`. During the 2026-09-17 alpha.83 acceptance, the endpoint exchanged the one-time token for a DPAPI-protected permanent credential, cleared enrollment token fields, preserved SYSTEM/Administrators-only ACLs, exactly matched all four installed binaries to the deployed manifest, restarted successfully after the SentinelOne interruption, and remained running during stability observation.
+
+The browser-package workflow introduced after that event still requires live acceptance against SentinelOne/other representative EDR policy before the legacy fallback is retired.
