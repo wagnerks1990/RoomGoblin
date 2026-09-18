@@ -14,11 +14,17 @@ function storage(){
   return storeInstance;
 }
 function maintenanceRequest(method,pathName,body=null,timeoutMs=180000){
-  const port=Number(process.env.MAINTENANCE_PORT||3010),token=String(process.env.MAINTENANCE_TOKEN||"");
+  const token=String(process.env.MAINTENANCE_TOKEN||"");
   if(!token)return Promise.reject(Error("Maintenance service credential is unavailable"));
+  let endpoint;
+  try{endpoint=new URL(String(process.env.MAINTENANCE_URL||"http://127.0.0.1:3010"))}
+  catch{return Promise.reject(Error("Maintenance service URL is invalid"))}
+  if(endpoint.protocol!=="http:"||!["127.0.0.1","localhost","::1"].includes(endpoint.hostname)||endpoint.username||endpoint.password)return Promise.reject(Error("Cloudflare provisioning requires the maintenance API to remain loopback HTTP"));
+  const port=Number(endpoint.port||80);
+  if(!Number.isInteger(port)||port<1||port>65535)return Promise.reject(Error("Maintenance service port is invalid"));
   return new Promise((resolve,reject)=>{
     const raw=body==null?null:Buffer.from(JSON.stringify(body));
-    const req=http.request({host:"127.0.0.1",port,path:pathName,method,headers:{"x-maintenance-token":token,...(raw?{"content-type":"application/json","content-length":raw.length}:{})}},res=>{
+    const req=http.request({host:endpoint.hostname,port,path:pathName,method,headers:{"x-maintenance-token":token,...(raw?{"content-type":"application/json","content-length":raw.length}:{})}},res=>{
       const chunks=[];res.on("data",c=>chunks.push(c));res.on("end",()=>{const text=Buffer.concat(chunks).toString("utf8");let value;try{value=JSON.parse(text||"{}")}catch{value={error:text}}if((res.statusCode||500)>=400||value.ok===false){const e=Error(value.error||`Maintenance HTTP ${res.statusCode}`);e.status=res.statusCode;return reject(e)}resolve(value)})});
     req.on("error",reject);req.setTimeout(timeoutMs,()=>req.destroy(Error("Cloudflare host provisioning timed out")));if(raw)req.write(raw);req.end();
   });
