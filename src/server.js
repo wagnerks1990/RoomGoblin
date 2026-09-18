@@ -5361,6 +5361,50 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
   }
   return [...winners.values()];
 }
+function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerClock.now()){
+  if(!event)return false;
+  const match=event._sourceDateMatched?{match:true}:automationMatchesDate(event,now);
+  if(!match.match)return false;
+  const scheduled=automationOccurrenceScheduledMinutes(event),current=localMinutesNow(now);
+  if(scheduled>current)return false;
+  if(event._class){
+    const start=Number(event._classStartAt),end=Number(event._classEndAt),stamp=now.getTime();
+    if(Number.isFinite(start)&&stamp<start)return false;
+    if(Number.isFinite(end)&&stamp>=end)return false;
+  }
+  return sequenceHasContinuousActions(automationActionSequence(event));
+}
+async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery"){
+  if(!automationSchedulerEnabled||schedulerClock.status().active&&!schedulerClock.commandsAllowed())return {started:0,skipped:true,reason:"scheduler-disabled-or-dry-run"};
+  const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
+  if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
+  const dateKey=localDateKey(now),candidates=[];
+  for(const storedEvent of classroomAutomations.events){
+    if(!storedEvent?.enabled)continue;
+    const occurrences=automationClassIds(storedEvent).length?resolveAutomationOccurrences(storedEvent,now):[storedEvent];
+    for(const event of occurrences){
+      if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
+      if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
+      candidates.push({storedEvent,event});
+    }
+  }
+  candidates.sort((a,b)=>automationOccurrenceScheduledMinutes(a.event)-automationOccurrenceScheduledMinutes(b.event)||Number(a.storedEvent.priority||0)-Number(b.storedEvent.priority||0)||String(a.storedEvent.id).localeCompare(String(b.storedEvent.id)));
+  let started=0;
+  for(const {storedEvent,event} of candidates){
+    const id=occurrenceId(event,dateKey,event.time);
+    if(automationRunningOccurrences.has(id))continue;
+    supersedeOverlappingAutomationRuns(event,id);
+    automationRunningOccurrenceMeta.set(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),recovered:true,reason});
+    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"recovered-running",schedulerTime:now.toISOString(),reason});
+    const occurrenceKey=event.classId||"manual",scheduledMinuteKey=`${dateKey} ${event.time}`,deltaMinutes=Math.max(0,localMinutesNow(now)-automationOccurrenceScheduledMinutes(event));
+    const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
+    automationRunningOccurrences.set(id,task);task.catch(()=>{});
+    started++;
+  }
+  if(started)audit({kind:"automation.continuous.recover",reason,started,schedulerTime:now.toISOString()});
+  return {started,reason};
+}
+
 async function reconcileScheduledAutomationState(reason="operator-resume"){
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {ok:true,skipped:true,reason:suppression.reason,schedulerTime:now.toISOString()};
@@ -5378,7 +5422,7 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
 app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"operator-cancelled");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"operator-cancelled"});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
-app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume");res.json(result)}catch(error){res.status(500).json({ok:false,error:error.message})}});
+app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume"),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery})}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
 
@@ -7853,7 +7897,7 @@ async function automationSchedulerTick(){
   finally{automationSchedulerBusy=false}
 }
 const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
-const automationStartupReconcileTimer=setTimeout(()=>{if(automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation(reconcileScheduledAutomationState("startup-reconcile")).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
+const automationStartupReconcileTimer=setTimeout(()=>{if(automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation((async()=>{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")})()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
 
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.
