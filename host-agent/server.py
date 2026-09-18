@@ -409,7 +409,7 @@ def configure_cloudflare_connector(body):
         try:
             os.write(fd,(token+'\\n').encode('utf-8')); os.fsync(fd)
         finally: os.close(fd)
-        p=run(['bash',str(script),'--root',str(HUB_ROOT),'--token-file',str(temp),'--no-restart'],240,False)
+        p=run(['bash',str(script),'--root',str(HUB_ROOT),'--token-file',str(temp),'--skip-install','--no-restart'],240,False)
         if p.returncode!=0: raise RuntimeError((p.stderr or p.stdout or 'Cloudflare connector provisioning failed').strip())
         return {'ok':True,'installed':True,'restartRequired':True,'service':unit_state('cloudflared-roomgoblin.service')}
     finally:
