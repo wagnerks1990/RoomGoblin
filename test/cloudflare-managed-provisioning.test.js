@@ -90,6 +90,28 @@ test("managed provisioning reconciles tunnel, DNS, HTTPS, Access and host connec
 });
 
 
+test("connector failure checkpoints Cloudflare ownership so retry does not orphan the tunnel",async()=>{
+  const store=new Store(),first=apiFixture();
+  const failing=new CloudflareManager({storage:store,fetchImpl:first.fetch,connectorInstaller:async()=>{throw Error("host connector install failed")}});
+  await assert.rejects(()=>failing.provision({zone:"example.org",hostname:"hub.example.org",tunnelName:"roomgoblin-hub",apiToken:"api-secret-value"}),/host connector install failed/);
+  const saved=store.getPreference("integrations.cloudflare");
+  assert.equal(saved.ids.tunnelId,"tun1");
+  assert.equal(saved.ids.dnsRecordId,"dns1");
+  assert.equal(saved.ownership.tunnel,true);
+  assert.equal(saved.ownership.dns,true);
+
+  const retry=apiFixture({
+    existingTunnel:{id:"tun1",name:"roomgoblin-hub",status:"healthy"},
+    existingDns:{id:"dns1",type:"CNAME",name:"hub.example.org",content:"tun1.cfargotunnel.com",proxied:true}
+  });
+  const manager=new CloudflareManager({storage:store,fetchImpl:retry.fetch,connectorInstaller:async()=>({ok:true,installed:true,restartRequired:true})});
+  const result=await manager.provision({});
+  assert.equal(result.ok,true);
+  assert.equal(result.tunnel.id,"tun1");
+  assert.equal(result.tunnel.adopted,false);
+  assert.equal(store.getPreference("integrations.cloudflare").ownership.tunnel,true);
+});
+
 test("provisioning refuses to overwrite an unrecorded same-name tunnel without explicit adoption",async()=>{
   const store=new Store(),fx=apiFixture({existingTunnel:{id:"foreign1",name:"roomgoblin-hub",status:"healthy"}});
   const manager=new CloudflareManager({storage:store,fetchImpl:fx.fetch,connectorInstaller:async()=>({installed:true})});
