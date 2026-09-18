@@ -16,13 +16,14 @@ class Store{
 }
 
 function response(result,status=200){return Promise.resolve({ok:status>=200&&status<300,status,json:async()=>({success:status<400,result,errors:status>=400?[{message:String(result?.error||"error")}]:[]})})}
-function apiFixture({existingDns=null}={}){
+function apiFixture({existingDns=null,existingTunnel=null}={}){
   const calls=[];
   const fetch=async(url,opts={})=>{
     const u=new URL(url),p=u.pathname+u.search,method=opts.method||"GET",body=opts.body?JSON.parse(opts.body):null;
     calls.push({method,path:p,body,headers:opts.headers});
     if(method==="GET"&&u.pathname==="/client/v4/zones")return response([{id:"zone1",name:"example.org",status:"active",account:{id:"acct1"}}]);
-    if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel")return response([]);
+    if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel")return response(existingTunnel?[existingTunnel]:[]);
+    if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel/tun1")return response({id:"tun1",name:"roomgoblin-hub",status:"healthy"});
     if(method==="POST"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel")return response({id:"tun1",name:body.name,status:"inactive"});
     if(method==="PUT"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel/tun1/configurations")return response({id:"tun1"});
     if(method==="GET"&&u.pathname==="/client/v4/zones/zone1/dns_records")return response(existingDns?[existingDns]:[]);
@@ -75,6 +76,32 @@ test("managed provisioning reconciles tunnel, DNS, HTTPS, Access and host connec
   assert.equal(store.getPreference("integrations.cloudflare").ids.tunnelId,"tun1");
 });
 
+
+test("provisioning refuses to overwrite an unrecorded same-name tunnel without explicit adoption",async()=>{
+  const store=new Store(),fx=apiFixture({existingTunnel:{id:"foreign1",name:"roomgoblin-hub",status:"healthy"}});
+  const manager=new CloudflareManager({storage:store,fetchImpl:fx.fetch,connectorInstaller:async()=>({installed:true})});
+  await assert.rejects(()=>manager.provision({zone:"example.org",hostname:"hub.example.org",tunnelName:"roomgoblin-hub",apiToken:"api-secret-value"}),/explicitly allow adoption/);
+  assert.equal(fx.calls.some(x=>x.method==="PUT"&&x.path.includes("/cfd_tunnel/foreign1/configurations")),false);
+});
+
+test("explicit tunnel adoption replaces only the selected tunnel ingress and records it as adopted",async()=>{
+  const store=new Store(),fx=apiFixture({existingTunnel:{id:"foreign1",name:"roomgoblin-hub",status:"healthy"}});
+  const originalFetch=fx.fetch;
+  fx.fetch=async(url,opts={})=>{
+    const u=new URL(url),method=opts.method||"GET";
+    if(method==="PUT"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel/foreign1/configurations"){
+      const body=JSON.parse(opts.body);fx.calls.push({method,path:u.pathname+u.search,body,headers:opts.headers});return response({id:"foreign1"});
+    }
+    if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel/foreign1/token"){
+      fx.calls.push({method,path:u.pathname+u.search,body:null,headers:opts.headers});return response("connector-secret-token-value");
+    }
+    return originalFetch(url,opts);
+  };
+  const manager=new CloudflareManager({storage:store,fetchImpl:fx.fetch,connectorInstaller:async()=>({installed:true})});
+  const result=await manager.provision({zone:"example.org",hostname:"hub.example.org",tunnelName:"roomgoblin-hub",apiToken:"api-secret-value",adoptExistingTunnel:true});
+  assert.equal(result.tunnel.id,"foreign1");assert.equal(result.tunnel.created,false);assert.equal(result.tunnel.adopted,true);
+  assert.equal(store.getPreference("integrations.cloudflare").ownership.tunnel,false);
+});
 test("provisioning refuses conflicting DNS takeover unless explicitly enabled",async()=>{
   const store=new Store(),fx=apiFixture({existingDns:{id:"existing",type:"A",name:"hub.example.org",content:"192.0.2.10",proxied:true}});
   const manager=new CloudflareManager({storage:store,fetchImpl:fx.fetch,connectorInstaller:async()=>({installed:true})});
