@@ -484,3 +484,10 @@ updates retain the newest ten automatic safety backups while preserving the
 currently pinned revert backup. Automatic retention must never match user-created
 archives or encrypted Full Recovery bundles. Diagnostic downloads are temporary
 and must be removed after transfer.
+
+
+### Database and local-storage hygiene
+
+SQLite remains authoritative for structured RoomGoblin state. Large/generated payloads such as media, screenshots, diagnostics, backups, exports, caches, and temporary staging remain file-backed. High-frequency successful polling belongs in coalesced telemetry rather than append-only audit rows, and non-security last-seen/last-used bookkeeping should be rate-limited.
+
+Automatic backup classification is explicit: update-generated operational archives use `auto-operational-*`, operator-created operational exports use `manual-operational-*`, and historical `classroom-hub-operational-*` archives are legacy automatic backups. Successful maintenance retains 3 automatic operational backups, 1 `pre-*` safety backup, and 3 `migration-*` snapshots. A pinned rollback archive is preferentially retained inside the applicable limit. Never auto-prune `manual-operational-*` or encrypted Full Recovery `.rgbak` bundles. Diagnostic downloads are temporary and must be removed after transfer.
