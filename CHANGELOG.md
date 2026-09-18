@@ -8,6 +8,14 @@
 - Capture the live-validated Chromium Snap requirements: systemd user D-Bus, no inherited tty1 standard file descriptors, Snap-owned profile storage and software browser rendering; retain the host NVIDIA Xorg driver independently.
 - Add `deploy/configure-securly-kiosk.sh`, operational helpers, operator/Wiki/AI documentation, cold-boot acceptance criteria and public-safe secret handling with no production kiosk code in Git.
 
+### Music Assistant LAN startup gate
+
+- Add a managed `/data/.roomgoblin-compat/wait-for-lan.sh` entrypoint gate that waits up to 60 seconds for the already-filtered physical LAN adapter set to expose a usable IPv4 before starting Music Assistant.
+- Preserve the upstream image startup contract by execing `/usr/local/bin/entrypoint.sh --data-dir /data --cache-dir /data/.cache` after the gate succeeds.
+- Extend Host Agent validation to allow only the reviewed `/bin/sh` entrypoint override plus the exact managed wait script for Music Assistant.
+- Cover the generated script, shell syntax, Docker arguments, and rejection of unreviewed entrypoints/post-image commands in regression tests.
+- Document the live reboot evidence that eliminated both Zeroconf `Errno 19` and Streams `IndexError: tuple index out of range`.
+
 ### Docker network least-privilege restoration
 
 - Restore service-specific Docker networking instead of applying host mode to every managed add-on.
