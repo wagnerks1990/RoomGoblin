@@ -5854,14 +5854,16 @@ function configuredPublicHubOrigin(){
     return url.origin;
   }catch{return ""}
 }
-function labAgentInstallPackage(origin,agentId,issued){
+function labAgentInstallPackage(origin,agentId,issued,fallbackOrigin=""){
   const script=`${origin}/lab-agent/Install-Agent.ps1`,allowHttp=new URL(origin).protocol==="https:"?"":" -AllowHttp";
-  return {origin,script,command:`$i=Join-Path $env:TEMP 'Install-ClassroomHubAgent.ps1'; irm ${powerShellLiteral(script)} -OutFile $i; & $i -HubUrl ${powerShellLiteral(origin)} -AgentId ${powerShellLiteral(agentId)} -EnrollmentToken ${powerShellLiteral(issued.token)}${allowHttp}`};
+  const fallback=fallbackOrigin&&fallbackOrigin!==origin?new URL(fallbackOrigin).origin:"";
+  const fallbackArgs=fallback?` -FallbackHubUrl ${powerShellLiteral(fallback)}${new URL(fallback).protocol==="https:"?"":" -AllowHttpFallback"}`:"";
+  return {origin,script,command:`$i=Join-Path $env:TEMP 'Install-ClassroomHubAgent.ps1'; irm ${powerShellLiteral(script)} -OutFile $i; & $i -HubUrl ${powerShellLiteral(origin)}${fallbackArgs} -AgentId ${powerShellLiteral(agentId)} -EnrollmentToken ${powerShellLiteral(issued.token)}${allowHttp}`};
 }
 app.post("/api/v1/admin/lab-agents/:id/enrollment",requireAdmin,(req,res)=>{try{
   const agentId=cleanLabAgentId(req.params.id),host=effectiveHost(req);if(!host)throw Error("A valid canonical Host header is required");
   const issued=dbStore.createLabAgentEnrollment(agentId,{ttlMinutes:req.body?.ttlMinutes});
-  const proto=req.secure||req.protocol==="https"?"https":"http",requestOrigin=`${proto}://${host}`,publicOrigin=configuredPublicHubOrigin(),preferred=labAgentInstallPackage(publicOrigin||requestOrigin,agentId,issued),fallback=publicOrigin&&publicOrigin!==requestOrigin?labAgentInstallPackage(requestOrigin,agentId,issued):null;
+  const proto=req.secure||req.protocol==="https"?"https":"http",requestOrigin=`${proto}://${host}`,publicOrigin=configuredPublicHubOrigin(),preferred=labAgentInstallPackage(publicOrigin||requestOrigin,agentId,issued,publicOrigin&&publicOrigin!==requestOrigin?requestOrigin:""),fallback=publicOrigin&&publicOrigin!==requestOrigin?labAgentInstallPackage(requestOrigin,agentId,issued,publicOrigin):null;
   audit({kind:"admin.lab-agent-enrollment.issue",agentId,expiresAt:issued.expiresAt,preferredOrigin:preferred.origin,publicHttps:Boolean(publicOrigin)});
   res.status(201).json({ok:true,enrollment:{id:issued.id,agentId,token:issued.token,expiresAt:issued.expiresAt,preferredOrigin:preferred.origin,publicOrigin:publicOrigin||null,requestOrigin,installerUrl:preferred.script,installCommand:preferred.command,fallbackInstallerUrl:fallback?.script||null,fallbackInstallCommand:fallback?.command||null}})
 }catch(err){res.status(400).json({ok:false,error:err.message})}});
