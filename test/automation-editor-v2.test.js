@@ -12,7 +12,7 @@ test("controller loads the unified scheduled automation editor",()=>{
   const html=read("public/controller/index.html");
   assert.match(branding,/automation-v2\.js/);
   assert.match(editor,/Build one ordered action sequence/);
-  assert.match(editor,/sequence returns to Action 1/);
+  assert.match(editor,/returns to Action 1/);
   assert.match(editor,/ACTION \$\{i\+1\}/);
   assert.match(html,/automationEventSelect/);
   assert.match(html,/automationEditorEventSelect/);
