@@ -382,9 +382,13 @@ def start_app_update_job(body):
     except Exception: version=''
     request={"action":action,"targetRef":"","targetCommit":"","expectedVersion":"","rollbackCommit":commit,"rollbackVersion":version,"rollbackHubImage":"","rollbackMaintenanceImage":"","rollbackImageTag":"","backupName":str(body.get('backupName') or ''),"backupSha256":str(body.get('backupSha256') or ''),"failureBackupName":str(body.get('failureBackupName') or body.get('backupName') or ''),"failureBackupSha256":str(body.get('failureBackupSha256') or body.get('backupSha256') or ''),"previousHubImage":"","previousMaintenanceImage":"","previousImageTag":"","githubToken":str(body.get('githubToken') or '')}
     if len(request['githubToken'])>1000: raise RuntimeError('GitHub token is too long')
-    if not re.fullmatch(r'[A-Za-z0-9._-]{1,180}',request['backupName']): raise RuntimeError('A valid pre-update backup is required')
-    if not re.fullmatch(r'[0-9a-f]{64}',request['backupSha256']): raise RuntimeError('A valid pre-update backup checksum is required')
-    if not re.fullmatch(r'[0-9a-f]{64}',request['failureBackupSha256']): raise RuntimeError('A valid failure-recovery backup checksum is required')
+    # Main-commit updates own their backup inside the native runner, after image
+    # readiness and source preflight. Release/revert compatibility paths still
+    # require the maintenance-created backup before this handoff.
+    if action!='published':
+        if not re.fullmatch(r'[A-Za-z0-9._-]{1,180}',request['backupName']): raise RuntimeError('A valid pre-update backup is required')
+        if not re.fullmatch(r'[0-9a-f]{64}',request['backupSha256']): raise RuntimeError('A valid pre-update backup checksum is required')
+        if not re.fullmatch(r'[0-9a-f]{64}',request['failureBackupSha256']): raise RuntimeError('A valid failure-recovery backup checksum is required')
     if action=='update':
         ref=str(body.get('targetRef') or ''); version=str(body.get('expectedVersion') or '')
         if not RELEASE_REF_RE.fullmatch(ref): raise RuntimeError('Only semantic-version GitHub release tags are accepted')
