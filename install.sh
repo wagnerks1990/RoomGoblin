@@ -420,7 +420,7 @@ if [[ "$INSTALL_MODE" == pull ]]; then python3 deploy/update-plan.py "$SOURCE_CO
 echo "Verified component convergence: $EXPECTED_VERSION (backend, maintenance, host agent)"
 # A successful full reconciliation no longer needs an unbounded history of
 # migration-* snapshots. Ask the authenticated Host Agent to retain the newest
-# ten migration snapshots only. Cleanup is best-effort and runs after health and
+# three migration snapshots only. Cleanup is best-effort and runs after health and
 # version convergence so it can never interfere with rollback from a failed install.
 docker compose exec -T maintenance-agent node -e '
 fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/host/migration-retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({keep:3,confirm:"PRUNE_MIGRATIONS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Migration snapshot retention:",JSON.stringify(j))).catch(e=>{console.error("Migration snapshot retention warning:",e.message);process.exit(1)})
