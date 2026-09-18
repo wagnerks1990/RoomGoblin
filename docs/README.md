@@ -19,6 +19,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Music Assistant Sendspin](MUSIC-ASSISTANT-SENDSPIN.md) — dedicated audio transport, PR #22 selective review, regression coverage and migration acceptance.
 - [Cloudflare Tunnel](CLOUDFLARE-TUNNEL.md) — optional remotely-managed HTTPS tunnel, token handling, reverse-proxy trust, Access guidance, validation, rollback and failure isolation.
 - [AI Project Context](AI-CONTEXT.md) — compact current architecture, production conventions, behavioral invariants, and AI handoff context.
+- [AI Securly Kiosk Context](ai/SECURLY-KIOSK.md) — host-console kiosk security/session invariants, Snap/Xorg boundaries, and non-regression rules.
 - [AI Cloudflare Tunnel Context](ai/CLOUDFLARE-TUNNEL.md) — machine/assistant invariants for Cloudflare exposure, loopback proxy trust and secret handling.
 - [AI Android TV Context](ai/ANDROID-TV-HARDWARE-VALIDATION.md) — machine/assistant rules derived from physical managed-display validation, including Accessibility navigation and arbitrary-input boundaries.
 - [AI CI Publication Context](ai/CI-PUBLICATION.md) — machine/assistant rules for direct-main exact-SHA validation, image publication, bounded Android dependency retry, promotion, and production-branch advancement.
@@ -36,6 +37,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Deployment](DEPLOYMENT.md) — Docker Compose deployment, persistent storage, host-agent placement, Git updates, backups, and rollback.
 - [Configuration](CONFIGURATION.md) — environment variables, site-specific settings, secrets, displays, integrations, and safe public-repository practices.
 - [Secret URL Handling](SECRET-URL-HANDLING.md) — encrypted URL storage, role-aware projections, physical-display delivery, logging, and regression boundaries.
+- [Securly Pass Kiosk](SECURLY-KIOSK.md) — optional physical-console kiosk, secret URL handling, Chromium Snap/Xorg session model, recovery and validation.
 - [Operations](OPERATIONS.md) — normal classroom operation, automations, announcements, Background Music, display recovery, and maintenance.
 - [Troubleshooting](TROUBLESHOOTING.md) — diagnostic workflow and common failure modes.
 - [Development](DEVELOPMENT.md) — source layout, local validation, release workflow, version convergence, and contribution practices.
@@ -63,7 +65,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 
 ## AI and contributor instructions
 
-`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Cloudflare/reverse-proxy work must also follow `docs/ai/CLOUDFLARE-TUNNEL.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated. CI/release-publication work must also follow `docs/ai/CI-PUBLICATION.md`, production shared-data/backup work must follow `docs/ai/PRODUCTION-SHARED-DATA.md`, native Windows Lab Agent work must follow `docs/ai/NATIVE-WINDOWS-LAB-AGENT.md`, topology/targeting work must follow `docs/ai/ROOM-TOPOLOGY.md`, Veyon DHCP/inventory work must follow `docs/ai/VEYON-DHCP-INVENTORY.md`, and Veyon authentication/keyring work must follow `docs/ai/VEYON-MULTI-KEY-AUTH.md`.
+`/AGENTS.md` is the authoritative operating contract for AI coding assistants and contributors. GitHub Copilot also receives `.github/copilot-instructions.md`. Branding work must also follow `docs/brand/AI-BRAND-CONTEXT.md`. Cloudflare/reverse-proxy work must also follow `docs/ai/CLOUDFLARE-TUNNEL.md`. Android managed-display work must also follow `docs/ai/ANDROID-TV-HARDWARE-VALIDATION.md` so physically observed behavior is not generalized beyond what was actually validated. CI/release-publication work must also follow `docs/ai/CI-PUBLICATION.md`, production shared-data/backup work must follow `docs/ai/PRODUCTION-SHARED-DATA.md`, native Windows Lab Agent work must follow `docs/ai/NATIVE-WINDOWS-LAB-AGENT.md`, topology/targeting work must follow `docs/ai/ROOM-TOPOLOGY.md`, Veyon DHCP/inventory work must follow `docs/ai/VEYON-DHCP-INVENTORY.md`, and Veyon authentication/keyring work must follow `docs/ai/VEYON-MULTI-KEY-AUTH.md`, and Securly host-kiosk work must also follow `docs/ai/SECURLY-KIOSK.md`.
 
 Before changing behavior, an AI assistant should read:
 
