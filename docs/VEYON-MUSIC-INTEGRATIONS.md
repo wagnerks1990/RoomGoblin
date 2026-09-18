@@ -309,6 +309,6 @@ TVs retain PR #27's ticketed, same-Hub socket validation. The backend alone conn
 
 Do not restore the stashed legacy `server.js`, run PR #22 patch scripts, merge its old font-sizing code, or switch receivers to direct MA sockets. No renderer, SDK, autoplay, database, enrollment or Compose changes are part of this migration. See [Music Assistant Sendspin](MUSIC-ASSISTANT-SENDSPIN.md) for the file-by-file review, tests and upgrade acceptance procedure.
 
-## Free controls and community pilot
+## Veyon extension boundary
 
-See [Free Veyon features](VEYON-FREE-FEATURES.md) for the complete web/native feature map, bounded recording, Wake, shutdown variants, lesson actions, and isolated GPL chat/file-browser sources. These additions do not replace the host-managed service or weaken the authentication/recovery contracts above.
+RoomGoblin uses the host-managed upstream/OEM Veyon installation and upstream/OEM add-ons only. Custom/community plugin pilots and experimental browser adapters are not part of the supported integration. Feature discovery remains informational; adding an upstream/OEM add-on does not automatically grant a browser action.
