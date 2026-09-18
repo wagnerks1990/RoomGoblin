@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Scheduled automation sequence rebuild
+
+- Rebuild scheduled automation execution around canonical schema-v3 `actionSequence[]` passes instead of the legacy special primary action plus additional actions runtime.
+- Define per-action participation as Run once, Loop X times, or Loop continually; after the last action the runner returns to Action 1 while any action remains eligible.
+- Make continuous sequences cancellable, class-end-aware, safe against zero-delay command storms, and superseded by newer overlapping scheduled occurrences.
+- Initialize Timer Overlay after the first pass so continuous sequences cannot starve overlays; keep Morning Announcements and Background Music reconciliation invariants.
+- Replace the long Scheduled Events card stack with time-ordered selectors and add an editor selector for direct switching between saved automations.
+- Make uploaded-media settings content-aware so images, videos, and paged documents expose only applicable controls.
+- Retire the browser automation hotfix and fold its required schedule-ordering behavior into the canonical controller.
+
+
 ### Securly physical-console kiosk
 
 - Add an optional Ubuntu Server physical-console Securly Pass kiosk using tty1 autologin, Xorg, Openbox and Chromium Snap while preserving SSH and separate sudo-capable recovery access.
