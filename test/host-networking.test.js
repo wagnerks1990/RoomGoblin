@@ -65,8 +65,47 @@ for (const [id, settings] of [
     assert.ok(!args.includes("-p") && !args.includes("--publish"));
     if (id === "mosquitto") assert.match(fs.readFileSync(path.join(h.dir,"mosquitto/config/mosquitto.conf"),"utf8"), /listener 2883\n/);
     if (id === "govee2mqtt") assert.ok(args.includes("GOVEE_MQTT_HOST=127.0.0.1"));
+    if (id === "musicassistant") {
+      assert.ok(args.includes("PYTHONPATH=/data/.roomgoblin-compat"));
+      const shim = fs.readFileSync(path.join(h.dir, "music-assistant/.roomgoblin-compat/sitecustomize.py"), "utf8");
+      assert.match(shim, /operstate/);
+      assert.match(shim, /state == "down"/);
+    }
   });
 }
+
+test("Music Assistant compatibility shim excludes only confirmed-down host adapters", async t => {
+  const h = addonHarness(t);
+  await h.context.deployAddon("musicassistant", {}, false);
+  const compat = path.join(h.dir, "music-assistant/.roomgoblin-compat");
+  const stub = path.join(h.dir, "ifaddr-stub");
+  const sys = path.join(h.dir, "sys-class-net");
+  fs.mkdirSync(stub, {recursive:true});
+  fs.writeFileSync(path.join(stub, "ifaddr.py"), `
+class Adapter:
+    def __init__(self, name):
+        self.nice_name = name
+def get_adapters():
+    return [Adapter("enp4s0"), Adapter("docker0"), Adapter("tailscale0"), Adapter("mystery0")]
+`);
+  for (const [name,state] of [["enp4s0","up"],["docker0","down"],["tailscale0","unknown"]]) {
+    const dir = path.join(sys,name); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,"operstate"),state);
+  }
+  const result = spawnSync("python3", ["-c", "import ifaddr; print(','.join(a.nice_name for a in ifaddr.get_adapters()))"], {
+    encoding:"utf8",
+    env:{...process.env,PYTHONPATH:`${compat}:${stub}`,ROOMGOBLIN_SYS_CLASS_NET:sys},
+  });
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(result.stdout.trim(),"enp4s0,tailscale0,mystery0");
+});
+
+test("explicit Music Assistant recreate bypasses dead-service authentication preflight", async t => {
+  const h = addonHarness(t, true);
+  h.context.saveMusicAssistantSettings = async () => { throw new Error("dead service preflight must not run"); };
+  await h.context.deployAddon("musicassistant", {}, true);
+  assert.ok(h.calls.some(args => args[0] === "rm" && args[2] === "music-assistant-server"));
+  assert.ok(h.calls.some(args => args[0] === "run"));
+});
 
 test("adoption never removes an existing container or changes its network", async t => {
   const h = addonHarness(t, true);
