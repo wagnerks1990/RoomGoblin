@@ -92,6 +92,41 @@ async function importArchive(agent,name,bytes,passphrase="correct horse battery 
   return request(agent,"/backup/import",{method:"POST",headers:{"content-type":"application/octet-stream","content-length":String(bytes.length),"x-backup-name":name,"x-recovery-passphrase":passphrase},body:bytes});
 }
 
+test("automatic retention keeps 3 operational and 1 pre backup while preserving manual and full recovery",async t=>{
+  const agent=await startAgent(t),backupDir=path.join(agent.hub,"data","backups");
+  const manual=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
+  assert.equal(manual.status,200,JSON.stringify(manual.body));
+  assert.match(manual.body.name,/^manual-operational-/);
+  const automatic=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",automatic:true,confirmSensitiveData:true})});
+  assert.equal(automatic.status,200,JSON.stringify(automatic.body));
+  assert.match(automatic.body.name,/^auto-operational-/);
+
+  const extras=[
+    "classroom-hub-operational-2026-09-01T00-00-00-000Z.zip",
+    "classroom-hub-operational-2026-09-02T00-00-00-000Z.zip",
+    "auto-operational-2026-09-03T00-00-00-000Z.zip",
+    "auto-operational-2026-09-04T00-00-00-000Z.zip",
+    "pre-host-update-2026-09-01T00-00-00-000Z.zip",
+    "pre-host-update-2026-09-02T00-00-00-000Z.zip"
+  ];
+  extras.forEach((name,index)=>{const file=path.join(backupDir,name);put(file,"RETENTION_TEST");const when=new Date(Date.UTC(2026,8,index+1));fs.utimesSync(file,when,when)});
+  put(path.join(backupDir,"manual-operational-protected.zip"),"MANUAL");
+  put(path.join(backupDir,"roomgoblin-full-recovery-protected.rgbak"),"FULL");
+
+  const result=await request(agent,"/backups/retention",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({automaticKeep:3,preKeep:1,confirm:"PRUNE_AUTOMATIC_BACKUPS"})});
+  assert.equal(result.status,200,JSON.stringify(result.body));
+  const names=fs.readdirSync(backupDir);
+  assert.equal(names.filter(name=>/^(?:auto-operational-|classroom-hub-operational-).*\.zip$/.test(name)).length,3);
+  assert.equal(names.filter(name=>/^pre-.*\.zip$/.test(name)).length,1);
+  assert.equal(names.includes(manual.body.name),true);
+  assert.equal(names.includes("manual-operational-protected.zip"),true);
+  assert.equal(names.includes("roomgoblin-full-recovery-protected.rgbak"),true);
+
+  const status=await request(agent,"/backups/retention");
+  assert.equal(status.status,200);
+  assert.deepEqual(status.body.policy,{operationalKeep:3,preKeep:1});
+});
+
 test("one full export contains the database, master key, assets, ADB trust, and managed-service state",async t=>{
   const agent=await startAgent(t);
   put(path.join(agent.hub,".env"),"MAINTENANCE_TOKEN=bootstrap-secret\n");

@@ -143,3 +143,10 @@ remains coalesced telemetry; audit rows remain subject to privacy retention.
 ## Veyon OEM-only cleanup follow-up
 
 The custom/community Veyon plugin, browser-bridge, terminal, clipboard, Internet Guard, file/chat pilot and local-analysis source paths were removed. The retained Veyon command/status APIs remain on the upstream/OEM WebAPI boundary and now use explicit appliance-wide status/write rate limits. CI guards assert that the retired extension trees and pilot build/deployment scripts cannot return unnoticed.
+
+
+## Database and local-storage performance follow-up
+
+The live production inventory after alpha.84 showed approximately 21 GiB beneath `data/backups`, dominated by repeated 600-644 MiB `classroom-hub-operational-*.zip` files created during updates. Earlier update runners created those generic names while retention matched only `pre-*`, allowing large automatic archives to accumulate indefinitely.
+
+The corrected policy classifies future update archives as `auto-operational-*`, manual exports as `manual-operational-*`, treats historical `classroom-hub-operational-*` as legacy automatic archives, and automatically keeps 3 operational automatic backups, 1 `pre-*` backup, and 3 migration snapshots. Full Recovery bundles remain protected. Display/lab-agent credential last-used timestamps remain coalesced to reduce SQLite WAL churn, and diagnostic ZIP downloads use temporary storage rather than persistent backup storage.

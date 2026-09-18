@@ -150,3 +150,33 @@ Retention is intentionally conservative:
 Diagnostic bundles are download artifacts, not recovery points. They are now
 created in maintenance temporary storage and deleted after the HTTP download
 finishes instead of accumulating beneath `data/backups`.
+
+
+### Migration snapshot retention
+
+Full reconciliation may create a host-level
+`/opt/classroom-hub-backups/migration-*` snapshot before installer changes.
+After backend, maintenance, and Host Agent health/version convergence succeeds,
+the installer now invokes the existing authenticated Host Agent migration
+retention operation and keeps the newest **3** migration snapshots. Cleanup is
+best-effort and never runs before successful convergence, so failed-install
+rollback evidence is preserved.
+
+
+### Fixed automatic retention policy
+
+RoomGoblin now distinguishes automatic and manual operational exports. Update
+runners request `automatic:true`, producing `auto-operational-*.zip`; an
+operator-created operational export uses `manual-operational-*.zip`. Historical
+`classroom-hub-operational-*.zip` files are treated as the legacy automatic
+naming scheme because earlier update runners created them.
+
+Automatic cleanup after successful maintenance enforces:
+
+- newest 3 automatic operational archives total (new and legacy names);
+- newest 1 `pre-*` safety archive;
+- newest 3 installer `migration-*` snapshots.
+
+A rollback-pinned archive is preferentially retained inside the applicable
+limit. Manual operational exports and encrypted Full Recovery `.rgbak` bundles
+are excluded from automatic pruning.
