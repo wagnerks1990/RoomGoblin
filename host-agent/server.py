@@ -223,7 +223,10 @@ def allowed_managed_path(value):
     return resolved==SERVICES_ROOT or SERVICES_ROOT in resolved.parents or resolved==HUB_ROOT or HUB_ROOT in resolved.parents
 
 def validate_docker_run(args):
-    if args[-1] not in MANAGED_IMAGES: raise RuntimeError('Integration image is not pinned or allowlisted')
+    image_indexes=[i for i,x in enumerate(args) if x in MANAGED_IMAGES]
+    if len(image_indexes)!=1: raise RuntimeError('Integration image is not pinned or allowlisted')
+    image_index=image_indexes[0]
+    image=args[image_index]
     if args.count('--label') != 1: raise RuntimeError('Managed integrations require exactly one ownership label')
     if args.count('--network') != 1: raise RuntimeError('Managed integrations require exactly one Docker network')
     try:
@@ -233,13 +236,20 @@ def validate_docker_run(args):
         raise RuntimeError('Managed container name and network are required')
     if name not in MANAGED_CONTAINERS: raise RuntimeError('Managed container name required')
 
+    post_image=args[image_index+1:]
+    if name=='music-assistant-server':
+        if post_image not in ([],['/data/.roomgoblin-compat/wait-for-lan.sh']):
+            raise RuntimeError('Unsupported Music Assistant startup command')
+    elif post_image:
+        raise RuntimeError('Post-image Docker arguments are not allowlisted for this integration')
+
     host_required = name in {'music-assistant-server','govee2mqtt','nodered'}
     if host_required and network!='host':
         raise RuntimeError(f'{name} requires host networking for its reviewed deployment')
     if name=='mosquitto' and network!=INTEGRATION_NETWORK:
         raise RuntimeError('Mosquitto must use the RoomGoblin user-defined integration bridge')
 
-    published=[args[i+1] for i,x in enumerate(args[:-1]) if x in ('-p','--publish')]
+    published=[args[i+1] for i,x in enumerate(args[:image_index]) if x in ('-p','--publish')]
     if host_required and published:
         raise RuntimeError('Published ports are not supported for host-networked integrations')
     if name=='mosquitto':
@@ -251,11 +261,11 @@ def validate_docker_run(args):
         raise RuntimeError('Published ports are not allowlisted for this integration')
 
     i=1
-    while i < len(args)-1:
+    while i < image_index:
         option=args[i]
         if option=='-d': i+=1; continue
-        if option in ('--name','--restart','--network','--label','-p','--publish','-v','--volume','-e','--env'):
-            if i+1>=len(args)-1: raise RuntimeError(f'Missing value for Docker option {option}')
+        if option in ('--name','--restart','--network','--label','-p','--publish','-v','--volume','-e','--env','--entrypoint'):
+            if i+1>=image_index: raise RuntimeError(f'Missing value for Docker option {option}')
             value=args[i+1]
             if option=='--name' and value not in MANAGED_CONTAINERS: raise RuntimeError('Managed container name required')
             if option=='--restart' and value!='unless-stopped': raise RuntimeError('Unsupported restart policy')
@@ -264,6 +274,8 @@ def validate_docker_run(args):
             if option in ('-p','--publish') and not re.fullmatch(r'127\.0\.0\.1:[0-9]{1,5}:[0-9]{1,5}',value): raise RuntimeError('Invalid published port')
             if option in ('-v','--volume') and (not allowed_managed_path(value) or 'docker.sock' in value): raise RuntimeError('Volume source is outside the managed roots')
             if option in ('-e','--env') and not re.fullmatch(r'[A-Z][A-Z0-9_]{0,127}=.{0,2048}',value,re.S): raise RuntimeError('Invalid container environment setting')
+            if option=='--entrypoint' and (name!='music-assistant-server' or value!='/bin/sh'):
+                raise RuntimeError('Unsupported integration entrypoint override')
             i+=2; continue
         raise RuntimeError(f'Docker run option is not allowlisted: {option}')
 
