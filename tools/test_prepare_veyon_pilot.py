@@ -41,6 +41,7 @@ class PreparePilotTests(unittest.TestCase):
                     (webapi / 'WebApiController.cpp').write_text('// fixture')
                     core = destination / 'core/src'
                     core.mkdir(parents=True)
+                    (destination / 'core/CMakeLists.txt').write_text('target_compile_options(veyon-core PRIVATE -Wno-parentheses)')
                     (core / 'FeatureMessage.cpp').write_text('''\tstream << QStringLiteral("FeatureMessage(%1,%2,%3)")
 \t\t\t\t  .arg(VeyonCore::featureManager().feature(message.featureUid()).name())
 \t\t\t\t  .arg(FeatureMessage::CommandType(message.command()))
@@ -65,6 +66,10 @@ class PreparePilotTests(unittest.TestCase):
             self.assertIn('[arguments redacted]', feature_log)
             self.assertNotIn('stringify(message.arguments())', feature_log)
             self.assertIn('const QString desktopFile', (destination / 'plugins/platform/linux/LinuxServerProcess.cpp').read_text())
+            core_cmake = (destination / 'core/CMakeLists.txt').read_text()
+            self.assertIn('CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15', core_cmake)
+            self.assertIn('target_compile_options(veyon-core PRIVATE -Wno-error=stringop-overflow)', core_cmake)
+            self.assertNotIn('-Wno-stringop-overflow', core_cmake)
             self.assertEqual((destination / '3rdparty/x11vnc/src/userinput.c').read_text(), 'int cnt = 0, iter = 0;')
             commands = [call.args[0] for call in run.call_args_list]
             self.assertIn(['git', '-C', str(destination), 'checkout', '--detach', pilot.REVISION], commands)
@@ -78,4 +83,14 @@ class PreparePilotTests(unittest.TestCase):
             source.write_text('unexpected upstream code')
             with self.assertRaises(RuntimeError):
                 pilot.patch_linux_string_lifetime(temp)
+            self.assertEqual(source.read_text(), 'unexpected upstream code')
+
+    def test_gcc15_patch_refuses_unknown_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p = Path(temp) / 'core'
+            p.mkdir(parents=True)
+            source = p / 'CMakeLists.txt'
+            source.write_text('unexpected upstream code')
+            with self.assertRaises(RuntimeError):
+                pilot.patch_gcc15_qt_atomic_false_positive(temp)
             self.assertEqual(source.read_text(), 'unexpected upstream code')
