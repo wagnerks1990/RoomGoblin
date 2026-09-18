@@ -61,6 +61,7 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - appliance-wide Docker inventory/lifecycle controls
 - optional managed integration deployment/adoption
 - diagnostics, backup/recovery, and host-management tooling
+- optional attached-monitor Securly Pass kiosk with separate admin/SSH recovery
 
 For browser audio troubleshooting, see [Sendspin close diagnostics](docs/MUSIC-ASSISTANT-SENDSPIN.md#browser-reconnect-diagnostics).
 Use a unique receiver ID on each active display host.
@@ -289,6 +290,7 @@ Start with:
 - [`docs/brand/BRAND-GUIDE.md`](docs/brand/BRAND-GUIDE.md) — authoritative visual and verbal identity
 - [`docs/brand/AI-BRAND-CONTEXT.md`](docs/brand/AI-BRAND-CONTEXT.md) — machine/assistant branding rules
 - [`docs/AI-CONTEXT.md`](docs/AI-CONTEXT.md) — compact technical context for AI assistants
+- [`docs/SECURLY-KIOSK.md`](docs/SECURLY-KIOSK.md) — optional physical-console Securly kiosk setup, recovery and secret-handling contract
 - [`AGENTS.md`](AGENTS.md) — authoritative contributor/AI operating contract
 - [`wiki/`](wiki/) — Git-tracked mirror of the GitHub Wiki
 
