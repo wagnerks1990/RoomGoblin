@@ -8,7 +8,7 @@ Read `docs/HTTPS-ENDPOINT-AUDIT.md` before changing URLs, hostnames, reverse pro
 - The configured Cloudflare RoomGoblin hostname is the preferred browser/admin and authenticated RoomGoblin-agent origin when available.
 - Direct LAN HTTP remains an explicit recovery/fallback path; do not delete it merely because HTTPS exists.
 - Browser/agent HTTPS implies WSS for RoomGoblin WebSockets.
-- Veyon WebAPI `127.0.0.1:11080`, maintenance `127.0.0.1:3010`, Host Agent socket, local AI `127.0.0.1:3025`, MQTT, ESPHome native API, Android Agent v2 `:8765`, and ADB must not be published directly.
+- Veyon WebAPI `127.0.0.1:11080`, maintenance `127.0.0.1:3010`, Host Agent socket, MQTT, ESPHome native API, Android Agent v2 `:8765`, and ADB must not be published directly.
 - Veyon native endpoint transport (normally TCP 11100) is not HTTP and does not become HTTPS; browser Veyon controls travel through the RoomGoblin HTTPS API while the Hub keeps Veyon backend communication local/LAN.
 - Music Assistant backend/API configuration remains the reviewed local service URL. Browser-facing remote access is a separate concern and needs an authenticated/protected proxy or dedicated hostname.
 - Music Assistant Sendspin remains a local/LAN WS upstream; do not point displays directly at a public Sendspin port.
@@ -31,7 +31,6 @@ Read `docs/HTTPS-ENDPOINT-AUDIT.md` before changing URLs, hostnames, reverse pro
 - Maintenance 3010.
 - Host Agent Unix socket.
 - Veyon WebAPI 11080 and native Veyon endpoint transport.
-- Local AI 3025.
 - MQTT 1883.
 - ESPHome 6053.
 - Android Agent v2 8765.
