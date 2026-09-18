@@ -141,6 +141,40 @@ internal sealed partial class AgentWorker
             SqliteHistory: true);
     }
 
+    private static IReadOnlyList<string> HubCandidates(AgentConfig config)
+    {
+        var values = new[] { config.HubUrl, config.FallbackHubUrl };
+        return values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim().TrimEnd('/'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool TryNormalizeHttpOrigin(string value, out string origin)
+    {
+        origin = "";
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            string.IsNullOrWhiteSpace(uri.Host) ||
+            !string.IsNullOrWhiteSpace(uri.UserInfo) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return false;
+        origin = uri.GetLeftPart(UriPartial.Authority);
+        return true;
+    }
+
+    private static bool TryNormalizePreferredHttpsOrigin(string value, out string origin)
+    {
+        origin = "";
+        if (!TryNormalizeHttpOrigin(value, out var normalized))
+            return false;
+        var uri = new Uri(normalized, UriKind.Absolute);
+        if (uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+        origin = normalized;
+        return true;
+    }
+
     private static Uri BuildWebSocketUri(
         string hubUrl)
     {
@@ -172,15 +206,17 @@ internal sealed partial class AgentWorker
             throw new InvalidDataException(
                 "RoomGoblin agent configuration is missing agentId.");
 
-        if (!Uri.TryCreate(
-                config.HubUrl,
-                UriKind.Absolute,
-                out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp &&
-             uri.Scheme != Uri.UriSchemeHttps))
+        if (!TryNormalizeHttpOrigin(config.HubUrl, out _))
         {
             throw new InvalidDataException(
                 "RoomGoblin agent configuration has an invalid hubUrl.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.FallbackHubUrl) &&
+            !TryNormalizeHttpOrigin(config.FallbackHubUrl, out _))
+        {
+            throw new InvalidDataException(
+                "RoomGoblin agent configuration has an invalid fallbackHubUrl.");
         }
 
         if (string.IsNullOrWhiteSpace(
