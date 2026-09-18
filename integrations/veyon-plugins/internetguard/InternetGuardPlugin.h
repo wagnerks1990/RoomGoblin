@@ -41,7 +41,6 @@ public:
 
 private:
 	enum class Command : qint32 { Block = 10, Allow = 11 };
-	Q_ENUM(Command)
 
 	bool isOwnFeature(Feature::Uid featureUid) const;
 	void blockInternet();
