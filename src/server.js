@@ -5511,8 +5511,42 @@ app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireCont
   }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
 
+function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
+  const id=`manual-${cleanId(event.id||"draft")||"draft"}-${crypto.randomUUID()}`;
+  supersedeOverlappingAutomationRuns(event,id);
+  automationRunningOccurrenceMeta.set(id,{automationId:event.id||null,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),manual:true,draft});
+  automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:"manual-running",schedulerTime:schedulerClock.now().toISOString(),draft});
+  const task=trackFullExportMutation((async()=>{
+    try{
+      const runResult=await runClassroomAutomation({...event,_occurrenceId:id},{manual:true});
+      if(storedEvent){
+        storedEvent.lastRun={at:new Date().toISOString(),ok:runResult.ok!==false,manual:true,message:runResult.ok===false?"Completed with action errors":"Completed",resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(runResult)}};
+      }
+      automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult),draft});
+    }catch(err){
+      const cancelled=err.code==="AUTOMATION_CANCELLED";
+      const reason=cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
+      if(storedEvent)storedEvent.lastRun={at:new Date().toISOString(),ok:cancelled,manual:true,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:{})};
+      automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:cancelled?"cancelled":"failed",schedulerTime:schedulerClock.now().toISOString(),draft,...(cancelled?{reason}:{error:err.message})});
+      if(!cancelled)diagnosticError(err,{component:"automation",operation:"manual-continuous-run",data:{automationId:event.id||null,draft}});
+    }finally{
+      if(storedEvent){storedEvent.updatedAt=new Date().toISOString();persistAutomations()}
+      automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
+    }
+  })());
+  automationRunningOccurrences.set(id,task);task.catch(()=>{});
+  audit({kind:"automation.manual.started",automationId:event.id||null,name:event.name,occurrenceId:id,draft,actions:automationActionSequence(event).map(step=>step.action)});
+  return {ok:true,started:true,continuous:true,manual:true,draft,occurrenceId:id,eventId:event.id||null,name:event.name,message:"Continuous automation started. Use Stop Run to cancel it."};
+}
+
 app.post("/api/v1/automations/draft/run",schedulerMutationLimit,requireControl,async(req,res)=>{
-  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),result=await runClassroomAutomation(resolved,{manual:true,maxPasses:sequenceHasContinuousActions(automationActionSequence(resolved))?1:null});audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:automationActionSequence(event).map(step=>step.action)});res.json({...result,draft:true})}catch(error){res.status(400).json({ok:false,error:error.message})}
+  try{
+    const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event);
+    if(sequenceHasContinuousActions(automationActionSequence(resolved)))return res.json(startManagedManualAutomation(resolved,{draft:true}));
+    const result=await runClassroomAutomation(resolved,{manual:true});
+    audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:automationActionSequence(event).map(step=>step.action)});
+    res.json({...result,draft:true});
+  }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
 app.get("/api/v1/automations",schedulerReadLimit,requireClassroomRead,(_req,res)=>{
   res.json({ok:true,events:[...classroomAutomations.events].sort(compareAutomations).map(e=>({...e,resolved:resolveAutomationFromClass(e),resolvedOccurrences:resolveAutomationOccurrences(e)})),scheduler:schedulerStatus(),actions:[
@@ -5582,7 +5616,9 @@ app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,asy
   try{
     const id=cleanId(req.params.id);event=classroomAutomations.events.find(x=>x.id===id);
     if(!event)return res.status(404).json({ok:false,error:"Automation not found"});
-    const resolved=resolveAutomationForManualTest(event);const result=await runClassroomAutomation(resolved,{manual:true,maxPasses:sequenceHasContinuousActions(automationActionSequence(resolved))?1:null});
+    const resolved=resolveAutomationForManualTest(event);
+    if(sequenceHasContinuousActions(automationActionSequence(resolved)))return res.json(startManagedManualAutomation(resolved,{storedEvent:event}));
+    const result=await runClassroomAutomation(resolved,{manual:true});
     event.lastRun={at:new Date().toISOString(),ok:result.ok!==false,manual:true,message:result.ok===false?"Completed with action errors":"Completed",resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(result)}};event.updatedAt=new Date().toISOString();persistAutomations();
     res.json(result);
   }catch(err){if(event){event.lastRun={at:new Date().toISOString(),ok:false,manual:true,message:err.message};event.updatedAt=new Date().toISOString();persistAutomations()}res.status(500).json({ok:false,error:err.message})}
