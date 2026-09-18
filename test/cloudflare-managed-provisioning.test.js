@@ -17,7 +17,7 @@ class Store{
 
 function response(result,status=200){return Promise.resolve({ok:status>=200&&status<300,status,json:async()=>({success:status<400,result,errors:status>=400?[{message:String(result?.error||"error")}]:[]})})}
 function apiFixture({existingDns=null,existingTunnel=null}={}){
-  const calls=[];
+  const calls=[];let dnsCreateCount=0,appCreateCount=0;
   const fetch=async(url,opts={})=>{
     const u=new URL(url),p=u.pathname+u.search,method=opts.method||"GET",body=opts.body?JSON.parse(opts.body):null;
     calls.push({method,path:p,body,headers:opts.headers});
@@ -27,13 +27,15 @@ function apiFixture({existingDns=null,existingTunnel=null}={}){
     if(method==="POST"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel")return response({id:"tun1",name:body.name,status:"inactive"});
     if(method==="PUT"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel/tun1/configurations")return response({id:"tun1"});
     if(method==="GET"&&u.pathname==="/client/v4/zones/zone1/dns_records")return response(existingDns?[existingDns]:[]);
-    if(method==="POST"&&u.pathname==="/client/v4/zones/zone1/dns_records")return response({id:"dns1",...body});
+    if(method==="POST"&&u.pathname==="/client/v4/zones/zone1/dns_records")return response({id:`dns${++dnsCreateCount}`,...body});
     if(method==="PUT"&&u.pathname.startsWith("/client/v4/zones/zone1/dns_records/"))return response({id:"dnsExisting",...body});
+    if(method==="DELETE"&&u.pathname.startsWith("/client/v4/zones/zone1/dns_records/"))return response(null);
     if(method==="PATCH"&&u.pathname.startsWith("/client/v4/zones/zone1/settings/"))return response({id:u.pathname.split("/").at(-1),value:body.value});
     if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/access/apps")return response([]);
-    if(method==="POST"&&u.pathname==="/client/v4/accounts/acct1/access/apps")return response({id:"app1",...body});
-    if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/access/apps/app1/policies")return response([]);
-    if(method==="POST"&&u.pathname==="/client/v4/accounts/acct1/access/apps/app1/policies")return response({id:"policy1",...body});
+    if(method==="POST"&&u.pathname==="/client/v4/accounts/acct1/access/apps")return response({id:`app${++appCreateCount}`,...body});
+    if(method==="DELETE"&&/^\/client\/v4\/accounts\/acct1\/access\/apps\/[^/]+$/.test(u.pathname))return response(null);
+    if(method==="GET"&&/^\/client\/v4\/accounts\/acct1\/access\/apps\/[^/]+\/policies$/.test(u.pathname))return response([]);
+    if(method==="POST"&&/^\/client\/v4\/accounts\/acct1\/access\/apps\/[^/]+\/policies$/.test(u.pathname))return response({id:`policy-${u.pathname.split("/").at(-2)}`,...body});
     if(method==="GET"&&u.pathname==="/client/v4/accounts/acct1/cfd_tunnel/tun1/token")return response("connector-secret-token-value");
     throw Error(`Unexpected fixture request ${method} ${p}`);
   };
@@ -43,6 +45,8 @@ function apiFixture({existingDns=null,existingTunnel=null}={}){
 test("Cloudflare settings validate domain boundaries and Access lockout guard",()=>{
   assert.throws(()=>normalizeSettings({zone:"example.org",hostname:"other.test"}),/inside the selected zone/);
   assert.throws(()=>normalizeSettings({zone:"example.org",hostname:"hub.example.org",accessEnabled:true}),/requires an allowed email domain/);
+  assert.throws(()=>normalizeSettings({zone:"example.org",hostname:"hub.example.org",musicAssistantPublicEnabled:true,musicAssistantHostname:"music.example.org"}),/requires an Access allowed email domain/);
+  assert.throws(()=>normalizeSettings({zone:"example.org",hostname:"hub.example.org",musicAssistantPublicEnabled:true,musicAssistantHostname:"hub.example.org",accessEmailDomain:"staff.example.org"}),/must be different/);
   const s=normalizeSettings({zone:"example.org",hostname:"hub.example.org",accessEnabled:true,accessEmailDomain:"@staff.example.org"});
   assert.equal(s.accessEmailDomain,"staff.example.org");
 });
@@ -107,6 +111,52 @@ test("managed provisioning reconciles tunnel, DNS, HTTPS, Access and host connec
   assert.equal(store.getPreference("integrations.cloudflare").ids.tunnelId,"tun1");
 });
 
+
+test("Music Assistant public HTTPS uses a separate Access-protected hostname and local 8095 origin",async()=>{
+  const store=new Store(),fx=apiFixture();
+  const manager=new CloudflareManager({storage:store,fetchImpl:fx.fetch,connectorInstaller:async()=>({ok:true,installed:true,restartRequired:true})});
+  const result=await manager.provision({
+    zone:"example.org",hostname:"hub.example.org",tunnelName:"roomgoblin-hub",apiToken:"api-secret-value",
+    accessEnabled:false,accessEmailDomain:"staff.example.org",
+    musicAssistantPublicEnabled:true,musicAssistantHostname:"music.example.org"
+  });
+  assert.equal(result.resources.musicAssistant.enabled,true);
+  assert.equal(result.resources.musicAssistant.publicUrl,"https://music.example.org/");
+  const config=fx.calls.find(x=>x.method==="PUT"&&x.path.includes("/configurations"));
+  assert.deepEqual(config.body.config.ingress,[
+    {hostname:"music.example.org",service:"http://127.0.0.1:8095"},
+    {hostname:"hub.example.org",service:"http://127.0.0.1:3000"},
+    {service:"http_status:404"}
+  ]);
+  const dnsCreates=fx.calls.filter(x=>x.method==="POST"&&x.path.includes("/dns_records"));
+  assert.deepEqual(dnsCreates.map(x=>x.body.name),["hub.example.org","music.example.org"]);
+  const appCreate=fx.calls.find(x=>x.method==="POST"&&x.path==="/client/v4/accounts/acct1/access/apps");
+  assert.equal(appCreate.body.domain,"music.example.org");
+  const policy=fx.calls.find(x=>x.method==="POST"&&x.path.endsWith("/policies"));
+  assert.deepEqual(policy.body.include,[{email_domain:{domain:"staff.example.org"}}]);
+  assert.equal(store.getPreference("musicassistant.config").browserUrl,"https://music.example.org/");
+  const saved=store.getPreference("integrations.cloudflare");
+  assert.equal(saved.ownership.musicAssistantDns,true);
+  assert.equal(saved.ownership.musicAssistantAccessApp,true);
+});
+
+test("disabling Music Assistant public HTTPS removes only recorded RoomGoblin-owned DNS and Access app",async()=>{
+  const store=new Store(),fx=apiFixture();
+  const manager=new CloudflareManager({storage:store,fetchImpl:fx.fetch,connectorInstaller:async()=>({ok:true,installed:true,restartRequired:true})});
+  await manager.provision({
+    zone:"example.org",hostname:"hub.example.org",tunnelName:"roomgoblin-hub",apiToken:"api-secret-value",
+    accessEmailDomain:"staff.example.org",musicAssistantPublicEnabled:true,musicAssistantHostname:"music.example.org"
+  });
+  const before=store.getPreference("integrations.cloudflare");
+  const maDnsId=before.ids.musicAssistantDnsRecordId,maAppId=before.ids.musicAssistantAccessAppId;
+  fx.calls.length=0;
+  await manager.provision({musicAssistantPublicEnabled:false});
+  assert.ok(fx.calls.some(x=>x.method==="DELETE"&&x.path===`/client/v4/zones/zone1/dns_records/${maDnsId}`));
+  assert.ok(fx.calls.some(x=>x.method==="DELETE"&&x.path===`/client/v4/accounts/acct1/access/apps/${maAppId}`));
+  const config=fx.calls.find(x=>x.method==="PUT"&&x.path.includes("/configurations"));
+  assert.equal(config.body.config.ingress.some(x=>x.hostname==="music.example.org"),false);
+  assert.equal(store.getPreference("musicassistant.config").browserUrl,"");
+});
 
 test("connector failure checkpoints Cloudflare ownership so retry does not orphan the tunnel",async()=>{
   const store=new Store(),first=apiFixture();
