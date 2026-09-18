@@ -47,6 +47,13 @@ test("Cloudflare settings validate domain boundaries and Access lockout guard",(
   assert.equal(s.accessEmailDomain,"staff.example.org");
 });
 
+test("validation reports registrar nameservers for a pending Cloudflare zone",async()=>{
+  const store=new Store();store.putSecret("integration.cloudflare.api-token","api-secret-value");store.setPreference("integrations.cloudflare",normalizeSettings({zone:"example.org",hostname:"hub.example.org"}));
+  const fetch=async(url)=>{const u=new URL(url);if(u.pathname==="/client/v4/zones")return response([{id:"zone1",name:"example.org",status:"pending",name_servers:["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],account:{id:"acct1"}}]);throw Error("unexpected request")};
+  const manager=new CloudflareManager({storage:store,fetchImpl:fetch});
+  await assert.rejects(()=>manager.validate(),error=>error.status===409&&/ada\.ns\.cloudflare\.com/.test(error.message)&&/registrar/.test(error.message));
+});
+
 test("Cloudflare client preserves 404 for missing-resource reconciliation",async()=>{
   const fetch=async()=>response({error:"not found"},404);
   const client=new CloudflareClient({auth:{mode:"token",token:"token-value"},fetchImpl:fetch});
