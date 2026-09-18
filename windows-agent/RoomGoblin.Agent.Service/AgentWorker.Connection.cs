@@ -16,6 +16,7 @@ internal sealed partial class AgentWorker
         AgentConfig config,
         CancellationToken ct)
     {
+        var changed = false;
         if (root.TryGetProperty(
                 "credential",
                 out var credentialNode))
@@ -27,11 +28,38 @@ internal sealed partial class AgentWorker
                     MachineDpapi.ProtectString(credential);
                 config.EnrollmentToken = "";
                 config.EnrollmentTokenProtected = "";
-                await config.SaveAtomicAsync(
-                    _configPath,
-                    ct);
+                changed = true;
             }
         }
+
+        var preferredHubUrl = GetString(root, "preferredHubUrl");
+        if (TryNormalizePreferredHttpsOrigin(
+                preferredHubUrl,
+                out var preferredOrigin) &&
+            !string.Equals(
+                config.HubUrl.TrimEnd('/'),
+                preferredOrigin,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(config.FallbackHubUrl) &&
+                TryNormalizeHttpOrigin(config.HubUrl, out var currentOrigin) &&
+                !string.Equals(
+                    currentOrigin,
+                    preferredOrigin,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                config.FallbackHubUrl = currentOrigin;
+            }
+
+            config.HubUrl = preferredOrigin;
+            changed = true;
+            _logger.LogInformation(
+                "RoomGoblin agent promoted authenticated HTTPS Hub origin {Hub}; existing origin remains fallback.",
+                preferredOrigin);
+        }
+
+        if (changed)
+            await config.SaveAtomicAsync(_configPath, ct);
 
         var health = new HealthFile(
             Version: AgentVersion,
