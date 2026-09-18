@@ -425,6 +425,12 @@ echo "Verified component convergence: $EXPECTED_VERSION (backend, maintenance, h
 docker compose exec -T maintenance-agent node -e '
 fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/host/migration-retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({keep:3,confirm:"PRUNE_MIGRATIONS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Migration snapshot retention:",JSON.stringify(j))).catch(e=>{console.error("Migration snapshot retention warning:",e.message);process.exit(1)})
 ' || echo "Warning: migration snapshot retention cleanup did not complete; installation remains healthy." >&2
+# Run backup ZIP retention inside the converged installer too. This guarantees
+# the new 3/1 policy applies during the same full-reconciliation update even
+# when the outer updater is executing a stable snapshot from the prior release.
+docker compose exec -T maintenance-agent node -e '
+fetch("http://127.0.0.1:"+(process.env.PORT||3010)+"/backups/retention",{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":process.env.MAINTENANCE_TOKEN},body:JSON.stringify({automaticKeep:3,preKeep:1,confirm:"PRUNE_AUTOMATIC_BACKUPS"}),signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(j=>console.log("Automatic backup retention:",JSON.stringify(j))).catch(e=>{console.error("Automatic backup retention warning:",e.message);process.exit(1)})
+' || echo "Warning: automatic backup retention cleanup did not complete; installation remains healthy." >&2
 
 echo
 echo "RoomGoblin migration completed."
