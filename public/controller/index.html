@@ -1283,9 +1283,9 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
   <details class="panel workspaceDisclosure">
     <summary><h2 class="sectionTitle">Recovery Retention</h2></summary>
     <div class="disclosureBody">
-    <div class="top"><div><div class="muted">Automatic safety backups and installer migration snapshots can accumulate during maintenance. Manual/full recovery backups are never pruned by these controls.</div></div><button onclick="loadRecoveryRetention()">Refresh</button></div>
+    <div class="top"><div><div class="muted">Automatic update backups are pruned continuously: keep 3 operational update backups, 1 pre-* safety backup, and 3 installer migration snapshots. Manual/full recovery backups are never pruned automatically.</div></div><button onclick="loadRecoveryRetention()">Refresh</button></div>
     <div id="recoveryRetention" class="muted">Loading retention status…</div>
-    <div class="grid2" style="margin-top:10px"><label>Keep latest automatic safety backups <input id="keepAutoBackups" type="number" min="2" max="250" value="10"></label><label>Keep latest installer rollback snapshots <input id="keepMigrationSnapshots" type="number" min="2" max="100" value="10"></label></div>
+    <div class="grid2" style="margin-top:10px"><label>Keep latest automatic operational backups <input id="keepAutoBackups" type="number" min="1" max="50" value="3"></label><label>Keep latest installer rollback snapshots <input id="keepMigrationSnapshots" type="number" min="1" max="100" value="3"></label></div><div class="muted" style="margin-top:6px">The pre-* safety-backup allowance is fixed at 1.</div>
     <div class="toolbar" style="margin-top:10px"><button class="danger" onclick="applyRecoveryRetention()">Apply Retention</button></div>
   </div>
   </details>
