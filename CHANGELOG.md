@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Managed Cloudflare remote HTTPS
+
+- Expand the existing host-side Cloudflare Tunnel pilot into first-class Setup and Controller provisioning for an optional remotely managed tunnel, proxied DNS hostname, HTTPS rewrites/enforcement, HTTP/3, Brotli, and optional Cloudflare Access.
+- Store API Tokens / legacy Global API Keys only in encrypted application secret storage; keep the tunnel connector token server-side and preserve the root-only `/etc/cloudflared/roomgoblin.token` runtime boundary.
+- Add fail-closed ownership rules: conflicting DNS replacement and adoption of a same-name unrecorded tunnel require separate explicit administrator choices.
+- Route connector installation through the loopback maintenance API and authenticated Host Agent, invoking only the reviewed Cloudflare installer; keep the Hub restart a separate explicit action.
+- Preserve local classroom availability when Cloudflare, DNS, or Internet access fails; Cloudflare remains outside core health, scheduler, announcement, Background Music, managed-device, update, and rollback readiness.
+- Add mocked Cloudflare API regression coverage plus synchronized operator, Wiki, configuration, and AI/contributor documentation.
+
 ### Scheduled automation sequence rebuild
 
 - Rebuild scheduled automation execution around canonical schema-v3 `actionSequence[]` passes instead of the legacy special primary action plus additional actions runtime.

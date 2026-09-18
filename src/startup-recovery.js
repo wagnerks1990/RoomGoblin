@@ -152,5 +152,6 @@ startMediaPlane();
 require("./veyon-keyring-bridge");
 require("./veyon-dhcp-identity-bridge");
 require("./veyon-update-bridge");
+require("./cloudflare-bridge");
 require("./maintenance-route-bridge");
 require("./server");

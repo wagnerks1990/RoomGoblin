@@ -1,5 +1,11 @@
 # AI Project Context
 
+## Managed Cloudflare remote HTTPS
+
+RoomGoblin has an optional first-class Cloudflare provisioning path. Site-specific domains and Cloudflare resource IDs remain runtime database values; API credentials are encrypted secrets. The connector token is host secret state at `/etc/cloudflared/roomgoblin.token`. Provisioning may manage a remotely managed Tunnel, proxied DNS, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, Brotli, and optional Access. Existing same-name tunnels and conflicting DNS records are fail-closed unless explicit adoption/replacement is selected.
+
+The tunnel exposes only the Hub through same-host loopback and uses `TRUST_PROXY_HOPS=1`; Cloudflare is never allowed to publish maintenance 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, or lab subnets. Cloudflare failure affects remote access only and must not gate Morning Announcements, scheduler recovery, Background Music reconciliation, managed displays/devices, local administration, updates, or recovery. Read `docs/ai/CLOUDFLARE-TUNNEL.md` before changing this feature.
+
 ## Displays & AV restoration
 
 The operator retired room topology. Use the original TV Routing Matrix, TV/source

@@ -60,6 +60,7 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - lab/client management integrations
 - appliance-wide Docker inventory/lifecycle controls
 - optional managed integration deployment/adoption
+- optional managed Cloudflare Tunnel/DNS/HTTPS provisioning for remote administration
 - diagnostics, backup/recovery, and host-management tooling
 - optional attached-monitor Securly Pass kiosk with separate admin/SSH recovery
 
@@ -106,9 +107,9 @@ Native `veyon.service` and `veyon-webapi.service` remain host-managed rather tha
 
 This is intentionally **not** an unrestricted root Docker-command API: new container creation stays restricted to reviewed supported integration images, while existing containers can be discovered/adopted for safe appliance administration.
 
-### Temporary HTTP-only deployment
+### Trusted-LAN HTTP and optional Cloudflare HTTPS
 
-The current appliance exposes RoomGoblin directly on HTTP:
+The appliance continues to expose the local RoomGoblin service directly on the trusted classroom/admin network:
 
 ```text
 http://APPLIANCE-IP:3000/controller/
@@ -122,7 +123,7 @@ HUB_PORT=3000
 TRUST_PROXY_HOPS=0
 ```
 
-The previous Caddy/HTTPS gateway has been removed for now. HTTPS will be reintroduced later as a separately reviewed feature after the base deployment/update path is stable. Until then, restrict port 3000 to a trusted classroom/admin network and do not expose the appliance directly to the public Internet.
+Do not expose port 3000 directly to the public Internet. For optional remote HTTPS, RoomGoblin can provision a dedicated outbound Cloudflare Tunnel and proxied DNS hostname from Setup or **Settings -> Integrations & Hardware**. The same-host connector targets loopback, sets the reviewed `TRUST_PROXY_HOPS=1` topology after explicit provisioning/restart, and remains failure-isolated from local classroom operation. See [Cloudflare managed provisioning](docs/CLOUDFLARE-TUNNEL.md).
 
 ## One-command appliance install
 

@@ -159,6 +159,16 @@ function hostAgentRequest(method,pathName,body=null,timeoutMs=30000){
   })
 }
 app.get("/host/agent/health",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/health"))}catch(e){res.status(502).json({ok:false,error:`Host agent unavailable: ${e.message}`,socket:HOST_AGENT_SOCKET})}});
+app.post("/cloudflare/configure",async(req,res)=>{try{
+  const token=String(req.body?.token||"");
+  if(token.length<20||token.length>4096||/\s/.test(token))return res.status(400).json({ok:false,error:"Invalid Cloudflare tunnel token"});
+  res.json(await hostAgentRequest("POST","/cloudflare/configure",{token},240000));
+}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
+app.post("/cloudflare/restart",async(req,res)=>{try{
+  if(String(req.body?.confirm||"")!=="RESTART_ROOMGOBLIN_FOR_CLOUDFLARE")return res.status(400).json({ok:false,error:"Explicit Cloudflare restart confirmation required"});
+  res.status(202).json(await hostAgentRequest("POST","/cloudflare/restart",{confirm:"RESTART_ROOMGOBLIN_FOR_CLOUDFLARE"},30000));
+}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
+
 app.get("/host/system",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/system"))}catch(e){res.status(502).json({ok:false,error:`Host agent unavailable: ${e.message}`})}});
 app.get("/host/updates",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/updates"))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});
 app.get("/host/updates/job",async(_req,res)=>{try{res.json(await hostAgentRequest("GET","/updates/job",null,30000))}catch(e){res.status(e.status||502).json(e.payload||{ok:false,error:e.message})}});

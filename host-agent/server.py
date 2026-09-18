@@ -40,7 +40,8 @@ def acquire_export_freeze():
 SERVICE_POLICY = {
     "docker.service":{"owner":"core","recommendation":"keep","purpose":"Container runtime for RoomGoblin and managed integrations","protected":True},
     "containerd.service":{"owner":"core","recommendation":"keep","purpose":"Docker container runtime dependency","protected":True},
-    "cloudflared.service":{"owner":"integration","recommendation":"integrate","purpose":"Remote access / Cloudflare Tunnel"},
+    "cloudflared.service":{"owner":"integration","recommendation":"integrate","purpose":"Generic Cloudflare Tunnel service"},
+    "cloudflared-roomgoblin.service":{"owner":"integration","recommendation":"integrate","purpose":"RoomGoblin managed Cloudflare Tunnel connector"},
     "veyon.service":{"owner":"integration","recommendation":"integrate","purpose":"Classroom workstation management"},
     "veyon-webapi.service":{"owner":"integration","recommendation":"integrate","purpose":"Veyon control API used by RoomGoblin"},
     "ollama.service":{"owner":"integration","recommendation":"integrate","purpose":"Local AI runtime"},
@@ -394,6 +395,35 @@ def start_app_update_job(body):
         raise RuntimeError((p.stderr or p.stdout or 'Unable to start application update service').strip())
     return {"ok":True,"started":True,"request":{"action":action,"targetRef":request['targetRef'],"expectedVersion":request['expectedVersion'],"backupName":request['backupName']},"job":app_update_job_status(False)}
 
+def configure_cloudflare_connector(body):
+    token=str(body.get('token') or '')
+    if len(token)<20 or len(token)>4096 or any(ch.isspace() for ch in token):
+        raise RequestError('Invalid Cloudflare tunnel token')
+    script=HUB_ROOT/'deploy'/'configure-cloudflare-tunnel.sh'
+    if not script.is_file() or script.is_symlink():
+        raise RuntimeError('Reviewed Cloudflare connector installer is unavailable')
+    runtime=Path('/run/classroom-control-hub'); runtime.mkdir(parents=True,exist_ok=True)
+    temp=runtime/f'cloudflare-token-{secrets.token_hex(8)}'
+    try:
+        fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        try:
+            os.write(fd,(token+'\\n').encode('utf-8')); os.fsync(fd)
+        finally: os.close(fd)
+        p=run(['bash',str(script),'--root',str(HUB_ROOT),'--token-file',str(temp),'--no-restart'],240,False)
+        if p.returncode!=0: raise RuntimeError((p.stderr or p.stdout or 'Cloudflare connector provisioning failed').strip())
+        return {'ok':True,'installed':True,'restartRequired':True,'service':unit_state('cloudflared-roomgoblin.service')}
+    finally:
+        try: temp.unlink()
+        except FileNotFoundError: pass
+
+def restart_roomgoblin_for_cloudflare():
+    def worker():
+        try:
+            subprocess.run(['docker','compose','up','-d','--force-recreate','classroom-hub'],cwd=str(HUB_ROOT),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180,check=False)
+        except Exception: pass
+    timer=threading.Timer(1.0,worker); timer.daemon=True; timer.start()
+    return {'ok':True,'scheduled':True,'message':'RoomGoblin restart scheduled so TRUST_PROXY_HOPS=1 can take effect.'}
+
 def migration_snapshots():
     base=Path('/opt/classroom-control-hub-backups'); items=[]
     if base.exists():
@@ -551,6 +581,12 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/app-updates/revert':
                 body=self.body()
                 return self.send_json(202,start_app_update_job({**body,"action":"revert"}))
+            if path=='/cloudflare/configure':
+                return self.send_json(200,configure_cloudflare_connector(self.body()))
+            if path=='/cloudflare/restart':
+                body=self.body()
+                if str(body.get('confirm') or '')!='RESTART_ROOMGOBLIN_FOR_CLOUDFLARE': return self.send_json(400,{"ok":False,"error":"Explicit Cloudflare restart confirmation required"})
+                return self.send_json(202,restart_roomgoblin_for_cloudflare())
             if path=='/docker/exec':
                 body=self.body(); return self.send_json(200,managed_docker(body.get('args'),str(body.get('cwd') or '')))
             if path=='/recovery/normalize-data':

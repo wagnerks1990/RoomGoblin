@@ -1,99 +1,174 @@
-# Cloudflare Tunnel integration
+# Cloudflare managed provisioning
 
-RoomGoblin supports an optional **remotely-managed Cloudflare Tunnel** for HTTPS remote access without opening an inbound firewall port to the appliance. This is an optional edge-access layer; it must not become a dependency for local classroom operation, Morning Announcements, Background Music, scheduling, managed displays, maintenance, updates, or recovery.
+RoomGoblin supports optional managed Cloudflare remote HTTPS. The setup wizard and Controller can provision or reconcile a remotely managed Cloudflare Tunnel, a proxied DNS hostname, selected safe Cloudflare Free-plan edge settings, optional Cloudflare Access, and the local `cloudflared-roomgoblin.service` connector.
 
-## Architecture
+Cloudflare remains an optional edge layer. It must never become a dependency for local classroom operation, Morning Announcements, scheduler recovery, Background Music reconciliation, managed displays, maintenance, updates, or rollback.
+
+## Managed architecture
 
 ```text
 Remote administrator
   -> HTTPS / Cloudflare edge
-  -> optional Cloudflare Access policy
+     -> Universal SSL for eligible proxied hostnames
+     -> Cloudflare edge/DDoS protections
+     -> optional Cloudflare Access allow policy
+  -> proxied CNAME <hostname> -> <tunnel-id>.cfargotunnel.com
   -> outbound Cloudflare Tunnel
-  -> cloudflared-roomgoblin.service on the RoomGoblin host
-  -> http://127.0.0.1:3000
+  -> cloudflared-roomgoblin.service on RoomGoblin host
+  -> http://127.0.0.1:3000   # default HUB_PORT
   -> RoomGoblin Hub
 ```
 
-The Hub remains the application authentication and authorization authority. Cloudflare Access is recommended as an additional remote-access gate, not as a replacement for RoomGoblin accounts/capabilities.
+The runtime origin follows `HUB_PORT`; port 3000 above is the default example. Only the Hub HTTP listener is a supported tunnel origin. Never publish maintenance port 3010, the Host Agent socket, Docker, SSH, Veyon, MQTT, Music Assistant, or another appliance-local service.
 
-The tunnel must never expose the maintenance service on `127.0.0.1:3010`, the Host Agent Unix socket, Docker, SSH, Veyon, MQTT, Music Assistant, or other appliance-local integrations.
+## Wizard and Controller
 
-## Why the origin is loopback
+Use either Setup -> **Cloudflare Remote HTTPS** or Controller -> Settings -> **Integrations & Hardware -> Cloudflare Remote HTTPS**.
 
-Full Recovery passphrases have a stricter transport boundary than ordinary RoomGoblin administration. `src/recovery-transport-policy.js` accepts forwarded HTTPS only when:
+The managed flow can:
+
+1. validate the Cloudflare credential and active zone; if the zone is pending, show the Cloudflare-assigned nameservers that must be set at the registrar;
+2. create a dedicated remotely managed tunnel;
+3. reuse RoomGoblin's previously recorded tunnel;
+4. optionally adopt a same-name existing tunnel only after explicit administrator consent;
+5. configure a single RoomGoblin hostname plus a terminal HTTP 404 ingress rule;
+6. create a proxied CNAME to `<tunnel-id>.cfargotunnel.com`;
+7. refuse conflicting DNS takeover unless explicit replacement is selected;
+8. reconcile Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, and Brotli;
+9. optionally create Cloudflare Access with an explicit allowed email-domain policy;
+10. retrieve the connector token server-side and install the local connector without exposing that token to the browser;
+11. offer a separate Hub restart so `TRUST_PROXY_HOPS=1` becomes active.
+
+Provisioning is repeatable. RoomGoblin stores resource IDs plus creation/adoption metadata in SQLite so later work can distinguish managed resources from unrelated Cloudflare resources.
+
+## Authentication
+
+### Scoped API Token — recommended
+
+Prefer an API Token scoped to the intended account and zone. For the full managed feature set, grant only the permissions needed for the selected options:
+
+- Zone Read;
+- DNS Write;
+- Zone Settings Edit/Write;
+- Cloudflare Tunnel / Cloudflare One Connectors Write;
+- Access Apps and Policies Write only when Cloudflare Access is enabled.
+
+Cloudflare's UI/API permission wording can vary slightly. Do not add unrelated Workers, billing, registrar, account-user, email, or broad administrative permissions.
+
+### Global API Key — legacy compatibility
+
+RoomGoblin also supports Cloudflare account email + Global API Key. This is intentionally labeled legacy because it grants substantially broader authority than a scoped token. Use it only when a suitable API Token cannot be used.
+
+## Secret handling
+
+The API Token or Global API Key is stored in RoomGoblin's encrypted SQLite secret store:
+
+- `integration.cloudflare.api-token`
+- `integration.cloudflare.global-key`
+
+Browser APIs expose only configured/not-configured flags; raw API credentials are never returned to the browser.
+
+The tunnel connector token is different. It is retrieved from Cloudflare only during provisioning and moves server-side through:
+
+```text
+administrator route
+ -> loopback maintenance API
+ -> authenticated Host Agent Unix socket
+ -> root-only temporary token file
+ -> deploy/configure-cloudflare-tunnel.sh --token-file ...
+```
+
+The temporary file is deleted after the installer exits. The durable connector token remains only at:
+
+```text
+/etc/cloudflared/roomgoblin.token
+```
+
+with mode `0600`. It must never enter Git, RoomGoblin `.env`, browser state, shell command arguments, application logs, support bundles, or documentation.
+
+## Safe Free-plan preset
+
+RoomGoblin defaults these managed options on:
+
+- Cloudflare Tunnel;
+- proxied DNS;
+- Always Use HTTPS;
+- Automatic HTTPS Rewrites;
+- HTTP/3;
+- Brotli.
+
+Cloudflare also supplies Universal SSL for eligible proxied hostnames and its standard DNS/edge protections according to the active plan. RoomGoblin does not copy edge certificates onto the appliance.
+
+For the simplest Free-plan certificate coverage, prefer a first-level hostname such as `roomgoblin.example.org` when `example.org` is the Cloudflare zone. Deeper hostnames can require different certificate coverage depending on the zone/certificate configuration.
+
+Zone settings are zone-wide. On a dedicated lab domain this is usually desirable, but review the impact before enabling them on a shared production zone.
+
+### Deliberately not automatic
+
+- **Cloudflare Access** — optional because Access applications are deny-by-default. RoomGoblin requires an allowed email domain before enabling it.
+- **Bot Fight Mode** — not automatically enabled because challenges can interfere with APIs, WebSockets, agents, or managed clients.
+- **Cache Everything/authenticated-page caching** — not enabled; cached controller/API content can be stale or user-specific.
+- **HSTS** — not automatic because it is a durable browser policy and can complicate emergency rollback.
+- **WARP/private-network routing** — not part of the public RoomGoblin hostname and would broaden the trust boundary to lab networks.
+- **Arbitrary services/ports** — prohibited by this integration.
+
+## Cloudflare Access
+
+Access is an additional outer gate, never a replacement for RoomGoblin login, capabilities, auditing, or recovery authorization.
+
+When enabled, an allowed email domain is mandatory. RoomGoblin creates or reuses a self-hosted Access application for the exact public hostname and ensures an Allow policy for that domain. Complete Cloudflare Zero Trust onboarding and configure the intended identity provider before relying on Access.
+
+Cloudflare's Zero Trust Free plan has user-count limits; verify the current plan terms for the intended staff population.
+
+## Existing-resource safeguards
+
+### Tunnel
+
+A same-name tunnel is not sufficient evidence of RoomGoblin ownership. If RoomGoblin has no recorded tunnel ID and a same-name tunnel already exists, provisioning stops with HTTP 409. The administrator must choose a different tunnel name or explicitly enable adoption. Adoption replaces that tunnel's ingress configuration, so use it only for a tunnel dedicated to RoomGoblin.
+
+### DNS
+
+If the hostname already has a different DNS record, provisioning stops unless explicit conflicting-record replacement is enabled. An already-correct CNAME is safely adopted.
+
+### Access
+
+RoomGoblin matches the exact application hostname and adds the named RoomGoblin Allow policy; it does not delete unrelated Access policies.
+
+## Reverse-proxy and Full Recovery trust
+
+Full Recovery passphrases have a stricter transport boundary than ordinary administration. `src/recovery-transport-policy.js` accepts forwarded HTTPS only when:
 
 1. `TRUST_PROXY_HOPS` is explicitly enabled; and
 2. the immediate TCP peer is loopback.
 
-A same-host `cloudflared` process connecting to `127.0.0.1:3000` satisfies that model. A direct LAN client cannot spoof `X-Forwarded-Proto` into becoming a trusted recovery transport because its immediate peer is not loopback.
+The same-host `cloudflared` service connects to `127.0.0.1:${HUB_PORT:-3000}`, satisfying the reviewed topology. A LAN client cannot become a trusted recovery transport by spoofing `X-Forwarded-Proto` because its immediate peer is not loopback.
 
-For the Cloudflare connector, use:
+The connector installer sets:
 
 ```env
 TRUST_PROXY_HOPS=1
 ```
 
-Do not increase the hop count unless the topology is deliberately changed and covered by transport-policy tests.
+Do not increase it without a topology/security review and regression tests.
 
-## Cloudflare configuration
+## Manual fallback
 
-Cloudflare recommends remotely-managed tunnels for most deployments. Create a dedicated tunnel for this appliance and configure a public hostname whose origin service is:
-
-```text
-http://127.0.0.1:3000
-```
-
-Do not configure a public hostname for any other local RoomGoblin port.
-
-Recommended controls:
-
-- require Cloudflare Access for the controller/admin hostname;
-- use the organization's normal identity provider and MFA where available;
-- keep RoomGoblin's own authentication enabled;
-- do not cache authenticated controller/API responses;
-- retain WebSocket support;
-- scope Cloudflare administrators and tunnel-management permissions narrowly;
-- enable tunnel-health notifications;
-- rotate the tunnel token if disclosure is suspected.
-
-Cloudflare Tunnel is outbound-only from the appliance. The host must be able to reach Cloudflare; no inbound NAT/port-forward is required.
-
-## Install the connector
-
-Create the remotely-managed tunnel and obtain its tunnel token in Cloudflare. On the RoomGoblin appliance:
+The host-side installer remains supported:
 
 ```bash
 cd /opt/classroom-hub
 sudo bash deploy/configure-cloudflare-tunnel.sh
 ```
 
-The script:
-
-- verifies RoomGoblin is healthy at `127.0.0.1:${HUB_PORT:-3000}`;
-- installs `cloudflared` from Cloudflare's signed Debian/Ubuntu APT repository when missing;
-- requires a `cloudflared` release with `--token-file` support;
-- prompts for the token without echoing it, or accepts `--token-file PATH`;
-- stores the token only at `/etc/cloudflared/roomgoblin.token` with mode `0600`;
-- creates `cloudflared-roomgoblin.service` rather than taking ownership of a generic `cloudflared.service`;
-- sets `TRUST_PROXY_HOPS=1` in the existing runtime `.env` without storing the tunnel token there;
-- force-recreates only the Hub so the trust setting is loaded;
-- verifies both RoomGoblin health and the tunnel connector service.
-
-The token must not be committed, copied into `.env`, placed in shell history, written into documentation, or exposed in diagnostic bundles.
-
-For an already installed current `cloudflared`:
+Useful options:
 
 ```bash
 sudo bash deploy/configure-cloudflare-tunnel.sh --skip-install
-```
-
-To stage configuration without recreating the Hub immediately:
-
-```bash
+sudo bash deploy/configure-cloudflare-tunnel.sh --token-file /root/private-token-file
 sudo bash deploy/configure-cloudflare-tunnel.sh --no-restart
 ```
 
-`TRUST_PROXY_HOPS=1` does not take effect until the Hub is restarted/recreated.
+The installer verifies local health, installs `cloudflared` from Cloudflare's signed APT repository when needed, writes the mode-0600 connector token, creates the dedicated systemd service, sets `TRUST_PROXY_HOPS=1`, and verifies the connector.
 
 ## Verification
 
@@ -106,50 +181,28 @@ systemctl status cloudflared-roomgoblin.service --no-pager
 journalctl -u cloudflared-roomgoblin.service -n 100 --no-pager
 ```
 
-From an authorized remote client, verify:
+Then verify from an authorized remote client:
 
-1. the Cloudflare hostname uses HTTPS;
-2. Cloudflare Access is enforced when configured;
+1. HTTPS works on the selected hostname;
+2. Cloudflare Access is enforced if enabled;
 3. RoomGoblin login still occurs;
-4. controller navigation and WebSockets remain functional;
-5. Full Recovery transport checks accept the HTTPS tunnel path;
-6. direct HTTP access from the LAN does **not** become an accepted remote Full Recovery passphrase path;
-7. displays, announcements, Background Music, scheduler state and managed-device connectivity are unchanged.
+4. controller live updates and WebSockets work;
+5. Full Recovery accepts the secure tunnel/loopback path but not direct remote HTTP;
+6. displays and managed agents remain stable on their intended local paths;
+7. Morning Announcements retain highest priority;
+8. scheduler catch-up/recovery still functions;
+9. Background Music reconciles after higher-priority media;
+10. a Cloudflare outage removes only the remote path.
 
-Do not consider the tunnel production-ready until these checks pass on the actual appliance and hostname.
+## Availability and failure behavior
 
-## LAN access
+Do not add Cloudflare or `cloudflared` state to core `/health`, scheduler readiness, update acceptance, maintenance readiness, installer acceptance, or rollback decisions.
 
-The tunnel does not require removing trusted-LAN access. Keeping `HUB_BIND_ADDRESS=0.0.0.0` allows existing displays, lab agents and trusted administrators to continue using the local service while `cloudflared` connects through loopback.
+If Cloudflare, DNS, the Internet, or the tunnel is unavailable, local RoomGoblin operation, schedules, announcements, Background Music, displays, managed devices, Veyon, and appliance maintenance must continue.
 
-If a deployment intentionally changes the Hub to `127.0.0.1` only, LAN displays and agents will lose direct access. Treat that as a separate architecture change with migration testing rather than a Cloudflare default.
+## Rollback
 
-## Failure behavior
-
-Cloudflare is not part of RoomGoblin's classroom-control availability chain. If the tunnel or Cloudflare edge is unavailable:
-
-- local RoomGoblin operation must continue;
-- schedules continue to run;
-- Morning Announcements priority/recovery remains unchanged;
-- Background Music reconciliation remains unchanged;
-- local managed displays and lab integrations remain unchanged;
-- only the remote Cloudflare access path is unavailable.
-
-Do not add tunnel health to core RoomGoblin `/health`, installer acceptance, updater acceptance, scheduler readiness, maintenance readiness, or rollback decisions.
-
-## Token rotation
-
-Cloudflare tunnel tokens grant the ability to run a connector for that tunnel. Rotate a token in Cloudflare when required, then rerun:
-
-```bash
-sudo bash deploy/configure-cloudflare-tunnel.sh --skip-install
-```
-
-The script replaces `/etc/cloudflared/roomgoblin.token` and restarts the dedicated connector service. If a token is suspected compromised, rotate it in Cloudflare first so the previous token can no longer establish new connections.
-
-## Removal / rollback
-
-To remove only the RoomGoblin Cloudflare connector:
+Disable only the connector:
 
 ```bash
 sudo systemctl disable --now cloudflared-roomgoblin.service
@@ -158,7 +211,7 @@ sudo rm -f /etc/cloudflared/roomgoblin.token
 sudo systemctl daemon-reload
 ```
 
-Then restore the runtime proxy setting if no other reviewed loopback reverse proxy remains:
+If no reviewed loopback reverse proxy remains:
 
 ```bash
 cd /opt/classroom-hub
@@ -166,17 +219,14 @@ sudo sed -i 's/^TRUST_PROXY_HOPS=.*/TRUST_PROXY_HOPS=0/' .env
 sudo docker compose up -d --force-recreate classroom-hub
 ```
 
-Removing the connector does not require uninstalling the `cloudflared` package. Remove the Cloudflare tunnel/DNS/Access configuration separately in Cloudflare when it is no longer needed.
-
-## Upgrades
-
-RoomGoblin source updates must preserve the runtime `.env` and therefore the explicit `TRUST_PROXY_HOPS=1` value. The tunnel token and systemd unit are host state outside the Git checkout and must not be overwritten by application updates.
-
-Cloudflare connector upgrades are independent of RoomGoblin releases. Update `cloudflared` with the operating-system package manager and verify `cloudflared-roomgoblin.service` afterward.
+Remove Cloudflare DNS, Access, and Tunnel resources separately and only after confirming ownership. Do not delete an adopted or unrelated resource merely because its name resembles a RoomGoblin resource.
 
 ## References
 
-- Cloudflare Tunnel get started: <https://developers.cloudflare.com/tunnel/get-started/>
-- Tunnel tokens: <https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/>
-- Tunnel run parameters / `--token-file`: <https://developers.cloudflare.com/tunnel/reference/run-parameters/>
-- Cloudflare Tunnel configuration: <https://developers.cloudflare.com/tunnel/configuration/>
+- Cloudflare Tunnel: <https://developers.cloudflare.com/tunnel/>
+- Cloudflare Tunnel API: <https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/>
+- API token permissions: <https://developers.cloudflare.com/fundamentals/api/reference/permissions/>
+- Cloudflare Access policies: <https://developers.cloudflare.com/cloudflare-one/access-controls/policies/>
+- Universal SSL: <https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/>
+- Always Use HTTPS: <https://developers.cloudflare.com/ssl/edge-certificates/additional-options/always-use-https/>
+- HTTP/3: <https://developers.cloudflare.com/speed/optimization/protocol/http3/>

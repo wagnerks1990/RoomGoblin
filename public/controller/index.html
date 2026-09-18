@@ -1127,6 +1127,35 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
       <div class="card" style="box-shadow:none"><h3>Veyon Classroom Computers</h3><div class="formGrid"><div class="formField"><label>WebAPI URL</label><input id="cfgVeyonUrl" aria-label="Veyon WebAPI URL" placeholder="http://127.0.0.1:11080"></div><div class="formField"><label>Authentication key name</label><input id="cfgVeyonKeyName" aria-label="Veyon authentication key name" placeholder="ClassroomControlHub"></div><div class="formField"><label>Scan subnet</label><input id="cfgVeyonSubnet" aria-label="Veyon scan subnet" placeholder="192.168.40"></div><div class="formField"><label>Scan start / end</label><div class="toolbar"><input id="cfgVeyonScanStart" aria-label="Veyon scan range start" type="number" min="1" max="254"><input id="cfgVeyonScanEnd" aria-label="Veyon scan range end" type="number" min="1" max="254"></div></div><div class="formField"><label>Connection pool maximum</label><input id="cfgVeyonPool" aria-label="Veyon connection pool maximum" type="number" min="4" max="128"></div><div class="formField"><label>Authentication retries</label><input id="cfgVeyonRetries" aria-label="Veyon authentication retries" type="number" min="0" max="5"></div><div class="formField"><label>Thumbnail concurrency</label><input id="cfgVeyonThumbs" aria-label="Veyon thumbnail concurrency" type="number" min="2" max="24"></div><div class="formField"><label>Private key (PEM)</label><textarea id="cfgVeyonPrivateKey" aria-label="Veyon private key" rows="3" autocomplete="off" placeholder="Leave blank to keep the encrypted key"></textarea></div></div></div>
     </div>
     <div class="toolbar" style="margin:12px 0"><button class="primary" onclick="saveIntegrationConnections()">Save & Apply Connection Settings</button><span id="cfgConnectionsMsg" class="muted"></span></div>
+    <div class="card" style="box-shadow:none;margin-top:12px">
+      <div class="top" style="position:static;box-shadow:none;margin:0 0 10px">
+        <div><h3 style="margin:0">Cloudflare Remote HTTPS</h3><div class="muted">Optional remote access through a dedicated Cloudflare Tunnel. Local RoomGoblin operation remains independent of Cloudflare.</div></div>
+        <button onclick="loadCloudflareSettings()">Refresh</button>
+      </div>
+      <div class="formGrid">
+        <div class="formField"><label for="cfgCloudflareAuthMode">Authentication</label><select id="cfgCloudflareAuthMode" onchange="renderCloudflareAuthMode()"><option value="token">Scoped API Token (recommended)</option><option value="global">Global API Key (legacy)</option></select></div>
+        <div class="formField" id="cfgCloudflareTokenField"><label for="cfgCloudflareApiToken">API Token</label><input id="cfgCloudflareApiToken" type="password" autocomplete="new-password" placeholder="Leave blank to keep encrypted token"></div>
+        <div class="formField cfgCloudflareGlobal"><label for="cfgCloudflareApiEmail">Cloudflare account email</label><input id="cfgCloudflareApiEmail" type="email" autocomplete="off"></div>
+        <div class="formField cfgCloudflareGlobal"><label for="cfgCloudflareGlobalKey">Global API Key</label><input id="cfgCloudflareGlobalKey" type="password" autocomplete="new-password" placeholder="Leave blank to keep encrypted key"></div>
+        <div class="formField"><label for="cfgCloudflareZone">Cloudflare zone / domain</label><input id="cfgCloudflareZone" placeholder="example.org"></div>
+        <div class="formField"><label for="cfgCloudflareHostname">RoomGoblin public hostname</label><input id="cfgCloudflareHostname" placeholder="roomgoblin.example.org"></div>
+        <div class="formField"><label for="cfgCloudflareTunnelName">Tunnel name</label><input id="cfgCloudflareTunnelName" placeholder="roomgoblin-roomgoblin.example.org"></div>
+        <label><input id="cfgCloudflareHttps" type="checkbox" checked> Always Use HTTPS</label>
+        <label><input id="cfgCloudflareRewrites" type="checkbox" checked> Automatic HTTPS Rewrites</label><label><input id="cfgCloudflareHttp3" type="checkbox" checked> HTTP/3</label><label><input id="cfgCloudflareBrotli" type="checkbox" checked> Brotli compression</label>
+        <label><input id="cfgCloudflareAccess" type="checkbox" onchange="cfgCloudflareAccessDomain.disabled=!this.checked"> Protect with Cloudflare Access</label>
+        <div class="formField"><label for="cfgCloudflareAccessDomain">Access allowed email domain</label><input id="cfgCloudflareAccessDomain" placeholder="staff.example.org" disabled></div>
+        <label><input id="cfgCloudflareReplaceDns" type="checkbox"> Allow replacement of a conflicting existing DNS record</label><label><input id="cfgCloudflareAdoptTunnel" type="checkbox"> Adopt a same-name existing tunnel and replace its ingress rules</label>
+      </div>
+      <div class="muted" style="margin-top:8px">The safe preset does not enable Bot Fight Mode or cache authenticated RoomGoblin pages/API traffic. Access is only provisioned when an explicit email-domain allow rule is supplied.</div>
+      <div class="toolbar" style="margin-top:10px">
+        <button onclick="saveCloudflareSettings()">Save</button>
+        <button onclick="validateCloudflareSettings()">Validate Cloudflare</button>
+        <button class="primary" onclick="provisionCloudflare()">Provision / Reconcile</button>
+        <button id="cfgCloudflareRestart" onclick="restartRoomGoblinForCloudflare()" disabled>Restart RoomGoblin</button>
+      </div>
+      <div id="cfgCloudflareStatus" class="muted" style="margin-top:10px">Not loaded.</div>
+    </div>
+
     <div id="cfgIntegrationCards" class="grid2"></div>
     <details class="advanced" style="margin-top:14px"><summary>Advanced hardware JSON</summary><div class="muted" style="margin:8px 0">Use this only for integration-specific settings not yet represented by a structured form.</div><textarea id="cfgHardware" aria-label="Advanced hardware JSON" class="raw" style="width:100%;min-height:300px"></textarea><div class="toolbar" style="margin-top:8px"><button class="primary" onclick="saveAdminHardware()">Validate & Save Advanced Hardware</button></div><div id="cfgHardwareMsg" class="muted"></div></details>
   </div>

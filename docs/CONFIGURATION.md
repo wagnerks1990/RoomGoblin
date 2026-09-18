@@ -159,6 +159,14 @@ school, teacher/operator, student/participant, class schedule, and display/TV
 language where it makes the workflow clearer. Do not add a neutral organization
 preset or generic organization/site/space aliases.
 
+## Cloudflare managed remote HTTPS
+
+Cloudflare is configured through Setup or **Settings -> Integrations & Hardware**, not by hard-coding a school domain into source or `.env`. The database stores the selected zone, public hostname, tunnel/resource IDs, feature choices, and ownership metadata. Cloudflare API credentials are stored only in the encrypted secret store and are never returned to the browser.
+
+Prefer a narrowly scoped API Token. Global API Key + account email remains available only as a compatibility path. The tunnel connector token is not application configuration: during provisioning it is passed server-side to the Host Agent and stored only at `/etc/cloudflared/roomgoblin.token` mode 0600.
+
+The reviewed proxy boundary is `TRUST_PROXY_HOPS=1` with same-host `cloudflared` connecting to the Hub through loopback. Do not change this setting merely because Cloudflare is configured in SQLite; it becomes active only after the reviewed connector install and explicit Hub restart. See [Cloudflare managed provisioning](CLOUDFLARE-TUNNEL.md).
+
 ## Integration health
 
 Each integration must report its own health independently.
