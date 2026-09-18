@@ -31,7 +31,14 @@ function normalizeSettings(input={},prior={}){
   if(!["token","global"].includes(authMode))throw failure("Cloudflare authentication mode must be token or global");
   const accessEnabled=input.accessEnabled===undefined?prior.accessEnabled===true:input.accessEnabled===true;
   const accessEmailDomain=input.accessEmailDomain===undefined?cleanText(prior.accessEmailDomain):emailDomain(input.accessEmailDomain);
+  const musicAssistantPublicEnabled=input.musicAssistantPublicEnabled===undefined?prior.musicAssistantPublicEnabled===true:input.musicAssistantPublicEnabled===true;
+  let musicAssistantHostname=input.musicAssistantHostname===undefined?cleanText(prior.musicAssistantHostname):cleanText(input.musicAssistantHostname);
+  if(musicAssistantPublicEnabled&&!musicAssistantHostname&&zone)musicAssistantHostname=`music.${zone}`;
+  if(musicAssistantHostname)musicAssistantHostname=dnsName(musicAssistantHostname,"Music Assistant hostname");
+  if(zone&&musicAssistantHostname&&musicAssistantHostname!==zone&&!musicAssistantHostname.endsWith(`.${zone}`))throw failure("Music Assistant hostname must be inside the selected zone");
+  if(musicAssistantHostname&&musicAssistantHostname===hostname)throw failure("Music Assistant hostname must be different from the RoomGoblin hostname");
   if(accessEnabled&&!accessEmailDomain)throw failure("Cloudflare Access requires an allowed email domain before it can be enabled");
+  if(musicAssistantPublicEnabled&&!accessEmailDomain)throw failure("Publishing Music Assistant requires an Access allowed email domain");
   return {
     enabled:input.enabled===undefined?prior.enabled!==false:input.enabled!==false,
     authMode,
@@ -43,6 +50,7 @@ function normalizeSettings(input={},prior={}){
     http3:input.http3===undefined?prior.http3!==false:input.http3!==false,
     brotli:input.brotli===undefined?prior.brotli!==false:input.brotli!==false,
     accessEnabled,accessEmailDomain,
+    musicAssistantPublicEnabled,musicAssistantHostname,
     replaceConflictingDns:input.replaceConflictingDns===undefined?prior.replaceConflictingDns===true:input.replaceConflictingDns===true,
     adoptExistingTunnel:input.adoptExistingTunnel===undefined?prior.adoptExistingTunnel===true:input.adoptExistingTunnel===true,
     ids:{...(prior.ids||{})},
