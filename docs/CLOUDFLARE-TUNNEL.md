@@ -87,6 +87,8 @@ Package installation is deliberately outside that sandbox. `install.sh` and the 
 
 If an earlier failed attempt left `/etc/systemd/system/cloudflared-roomgoblin.service` masked to `/dev/null`, RoomGoblin removes only that exact stale mask and recreates a regular dedicated unit path. Existing valid RoomGoblin Cloudflare unit files are preserved across updates and are not blanked or replaced until explicit connector provisioning rewrites the dedicated unit.
 
+Connector reprovisioning always restarts `cloudflared-roomgoblin.service` after writing the new token and unit. `systemctl enable --now` alone is insufficient because it does not restart an already-running connector; without the explicit restart, cloudflared can continue using an old in-memory token and Cloudflare may return Error 1033 / `Unauthorized: Tunnel not found`.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```
