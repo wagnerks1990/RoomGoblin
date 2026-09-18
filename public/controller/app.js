@@ -1857,8 +1857,15 @@ function syncScheduledAutomationSelectors(preferredId=null){
   if(window.automationEditorEventSelect)automationEditorEventSelect.value=selected;
 }
 function selectScheduledAutomation(id){
-  if(!id){newAutomation();syncScheduledAutomationSelectors("");return}
-  editAutomation(id);syncScheduledAutomationSelectors(id);
+  if(!id){
+    newAutomation();
+    syncScheduledAutomationSelectors("");
+    if(window.automationList)automationList.innerHTML='<div class="muted">Creating a new scheduled automation.</div>';
+    return;
+  }
+  editAutomation(id);
+  syncScheduledAutomationSelectors(id);
+  renderAutomationList();
 }
 function selectedScheduledAutomation(){return S.automations.find(e=>e.id===selectedScheduledAutomationId())||null}
 function editSelectedAutomation(){const e=selectedScheduledAutomation();if(e)editAutomation(e.id)}
