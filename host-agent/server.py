@@ -368,6 +368,11 @@ def start_veyon_release_job(body):
     name=f'veyon_{version}.0-ubuntu.{version_id}_amd64.deb'
     expected=f'https://github.com/veyon/veyon/releases/download/v{version}/{name}'
     if url!=expected: raise RuntimeError('Veyon package URL is outside the exact official release allowlist')
+    installed=run(['dpkg-query','-W','-f=${Version}','veyon'],5,False)
+    if installed.returncode==0:
+        found=re.search(r'(\d+)\.(\d+)\.(\d+)',installed.stdout or '')
+        if found and tuple(map(int,version.split('.')))<=tuple(map(int,found.groups())):
+            raise RuntimeError(f'Requested Veyon {version} is not newer than installed {found.group(0)}')
     audit=run(['dpkg','--audit'],20,False)
     if audit.stdout.strip() or audit.returncode!=0: raise RuntimeError('dpkg --audit reports package problems')
     check=run(['apt-get','check'],60,False)
