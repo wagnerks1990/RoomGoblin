@@ -444,54 +444,6 @@ RoomGoblin supports the host-managed upstream/OEM Veyon installation, its normal
 
 Preserve existing Veyon keys, multi-key authentication, inventory/DHCP identity, host package lifecycle, command recovery, standard monitoring/live view, screen/input lock, messaging, website/application launch, login/logoff, reboot/shutdown, and teacher demonstration controls. Upstream/OEM add-ons remain installed/configured by the Veyon/OEM mechanism; RoomGoblin must not synthesize its own replacement plugin or bypass licensing. Read `docs/VEYON-OEM-POLICY.md` before changing Veyon behavior.
 
-## Native pilot artifacts
-
-The Validate native job builds the entire pinned Linux Veyon tree and publishes
-matching binaries plus all corresponding source. See docs/VEYON-PILOT-BINARIES.md.
-`tools/package-veyon-pilot.sh` uses DESTDIR staging and verifies both community
-plugins with the installed CLI. Preserve numeric root archive ownership and the
-archive path/link/privileged-metadata policy gate. No production install, service start, key export
-or Windows compatibility claim is allowed. Preserve GPL source distribution and
-require disposable matching Ubuntu desktop VMs for interactive acceptance.
-Host-native Ubuntu 26.04/GCC 15 builds require the preparer's `veyon-core`-only
-`-Wno-error=stringop-overflow` guard for the QtConcurrent atomic false positive.
-Keep the warning visible and all other `-Werror` behavior intact; never broaden
-the exception globally.
-
-Windows pilots must be complete upstream-style NSIS packages built by
-`tools/package-veyon-pilot-windows.sh` in a reviewed x86-64 MinGW/Qt environment.
-Never distribute individual community DLLs. RoomGoblin CI must not publish a
-Windows installer until the toolchain image is immutable and reviewed. The
-single-endpoint deployment wrapper requires both installer hashes, a fresh
-evidence directory, an existing configuration export, a known-good rollback
-installer and an explicit disposable-pilot acknowledgement. CLI discovery is
-not live feature acceptance; retain the VM snapshot and test one endpoint first.
-
-Veyon installed-version reporting must use host package inventory, independently
-of pending apt upgrades. Never infer endpoint features from a fixed 4.9.7
-baseline. See docs/VEYON-LIFECYCLE.md for evidence and browser-adapter boundaries.
-
-Browser clipboard writes use the existing transient command queue and require
-exact RoomGoblinWebBridge advertisement. Read docs/VEYON-WEB-CLIPBOARD.md before
-changing that path. No clipboard payload in logs/journal/job projections, no
-uncertain replay, no arbitrary protocol forwarding, no inferred endpoint success.
-
-The operator already has Veyon Master. Do not add native launcher buttons,
-download scripts or native-only entries to the web feature catalog. Keep such
-capabilities and community candidates in documentation. Features with actual
-browser adapters may state their required native bridge explicitly.
-
-Read docs/VEYON-COMMUNITY-WEB.md before changing browser sessions. Preserve owner/computer/native-connection binding, native expiry, request correlation, bounded buffers, no uncertain replay and asynchronous export drain. File uploads are one target, 2 MiB maximum, ordered 128 KiB chunks, Inbox-only, atomic and no-overwrite. These are matching native pilot adapters, not stock WebAPI capabilities.
-
-Read docs/VEYON-BROWSER-CONTROL.md before changing remote input. Preserve live
-frame/topology/revision leases, monotonic sequences, native event/queue bounds,
-forced key/button release and sent/unverified wording. Clipboard reads are
-explicit correlated endpoint requests, never VNC-event cache reads or polling.
-Keep official file distribution/collection native-only until an adapter has
-bounded paths/storage and honest endpoint acknowledgement semantics.
-
-Local AI pilot: docs/VEYON-LOCAL-AI.md and integrations/veyon-ai/PROVENANCE.md. Keep the AGPL service separate, exact model hash, fixed loopback endpoint, separate token, explicit single-screen capture, no retention/enforcement, bounded concurrency and export drain. Do not claim the full upstream AI dashboard or verified classroom accuracy.
-
 ## Automation sequence execution
 
 Automation runtime is canonical on `actionSequence[]`. Do not special-case Action 1. Every action participates per sequence pass: `once` on pass 1, `repeat` through its configured pass count, and `loop` on every pass. Continuous loops are allowed for all supported action types and must remain cancellable, class-boundary-aware, supersedable by newer overlapping scheduled occurrences, recoverable after process restart/operator Resume, and protected by the zero-delay cycle floor.
