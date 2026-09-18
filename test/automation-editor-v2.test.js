@@ -68,3 +68,12 @@ test("class schedule links stay compact until explicitly edited",()=>{
   assert.match(app,/automationClassSelectionSnapshot/);
   assert.match(app,/updateAutomationClassLinkSummary/);
 });
+
+test("automation editor exposes only Save & Enable and Cancel / New commit controls",()=>{
+  const html=read("public/controller/index.html");
+  assert.match(html,/Save &amp; Enable/);
+  assert.match(html,/Cancel \/ New/);
+  assert.doesNotMatch(html,/Save Draft \/ Changes/);
+  assert.doesNotMatch(html,/Simulate Draft/);
+  assert.doesNotMatch(html,/Run Draft on Real Devices/);
+});
