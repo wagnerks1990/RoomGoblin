@@ -69,11 +69,12 @@ enrollment codes. Both tables store SHA-256 token hashes only. Credentials are
 owned by stable `display_devices` IDs, survive display renames/configuration
 updates, and cascade away when the display itself is deleted.
 
-## Schema versions 8–10
+## Schema versions 8–11
 
 - Schema 8 separates high-volume polling telemetry from durable audit events so routine discovery does not grow the audit table without bound.
 - Schema 9 adds individually revocable Windows lab-agent credentials and expiring enrollment codes. Raw tokens are returned only during enrollment.
 - Schema 10 expands built-in access profiles with granular schedule, automation, media, integration, lab, and diagnostic capabilities.
+- Schema 11 adds first-class per-action automation execution metadata to `automation_actions`: `execution_mode`, `repeat_count`, and `repeat_delay_seconds`. Existing schema-v2 `actionSequence` data is transactionally projected into the normalized action rows; legacy media `payload.loop=true` is retained as continuous execution when no canonical sequence exists.
 
 Migration versions are inserted only after their transaction completes. Startup recovery may repair an incomplete built-in Administrator profile, but it does not rewrite a valid non-empty custom capability list. `DATABASE_FILE` is the authoritative database identity; startup does not silently select a differently named legacy database. Installer reconciliation must stop the app, create SQLite-safe backups, validate `PRAGMA quick_check`, and preserve the prior file for rollback.
 
