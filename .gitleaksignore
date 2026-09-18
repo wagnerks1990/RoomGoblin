@@ -1,4 +1,1 @@
-
-# Public RoomGoblinKeySequence feature UUID, not an authentication key.
-# Exact historical finding only; keep general secret scanning enabled.
-8eba01db7c8711d862165fed59f5d579f1c3490d:src/veyon-free-features.js:generic-api-key:16
+# Keep general secret scanning enabled. No RoomGoblin-specific Veyon feature UUID exceptions are required.
