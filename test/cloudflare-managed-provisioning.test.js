@@ -144,7 +144,7 @@ test("provisioning refuses conflicting DNS takeover unless explicitly enabled",a
   assert.equal(fx.calls.some(x=>x.method==="PUT"&&x.path.includes("/dns_records/existing")),false);
 });
 
-test("Cloudflare host integration never places tunnel token in process arguments or browser state",()=>{
+test("controller reload preserves configured Cloudflare state and HTTPS link",()=>{\n  const app=fs.readFileSync("public/controller/app.js","utf8");\n  const cloudflare=fs.readFileSync("src/cloudflare.js","utf8");\n  assert.match(app,/Credential stored/);\n  assert.match(app,/Open HTTPS URL/);\n  assert.match(app,/j\\?\\.publicUrl/);\n  assert.match(app,/Tunnel \\$\\{esc\\(live\\.tunnel\\.status/);\n  assert.match(cloudflare,/publicUrl:settings\\.hostname/);\n});\n\ntest("Cloudflare host integration never places tunnel token in process arguments or browser state",()=>{
   const host=fs.readFileSync("host-agent/server.py","utf8"),maint=fs.readFileSync("maintenance-agent/server.js","utf8"),bridge=fs.readFileSync("src/cloudflare-bridge.js","utf8"),installer=fs.readFileSync("deploy/configure-cloudflare-tunnel.sh","utf8");
   const unit=fs.readFileSync("host-agent/classroom-control-hub-host-agent.service","utf8");
   const appUpdater=fs.readFileSync("host-agent/app-update-runner.sh","utf8");
