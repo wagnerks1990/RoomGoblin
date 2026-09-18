@@ -553,6 +553,7 @@ test("verified application updater has a durable host job and GUI rollback contr
   assert.match(runner,/merge-base --is-ancestor/);
   assert.match(runner,/docker compose exec -T classroom-hub node -e/);
   assert.match(runner,/restore_safety_backup/);
+  assert.match(runner,/automaticKeep:3,preKeep:1/);
   assert.match(runner,/port=process\.env\.PORT\|\|3010/);
   assert.doesNotMatch(runner,/docker exec[^\n]+-e PORT=/);
   assert.match(runner,/127\.0\.0\.1:\$\{port\}/);
@@ -577,6 +578,8 @@ test("one-command deployment bootstraps a guarded appliance with unique credenti
   }
   assert.match(installer,/SOURCE_REAL.*TARGET_REAL/);
   assert.match(installer,/First-time setup:/);
+  assert.match(installer,/host\/migration-retention/);
+  assert.match(installer,/keep:3,confirm:"PRUNE_MIGRATIONS"/);
   assert.match(compose,/LAB_AGENT_TOKEN:/);
   assert.match(compose,/caddy:2\.11\.2-alpine/);
   assert.match(compose,/HUB_BIND_ADDRESS/);
