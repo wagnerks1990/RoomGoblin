@@ -121,9 +121,14 @@ class CloudflareManager{
     if(!settings.zone)throw failure("Cloudflare zone is required",409);
     if(!settings.hostname)throw failure("Cloudflare hostname is required",409);
     const client=this.client(settings);
-    const zones=await client.get(`/zones?name=${encodeURIComponent(settings.zone)}&status=active&per_page=50`);
+    const zones=await client.get(`/zones?name=${encodeURIComponent(settings.zone)}&per_page=50`);
     const zone=(Array.isArray(zones)?zones:[]).find(z=>String(z.name).toLowerCase()===settings.zone);
-    if(!zone)throw failure("The configured domain was not found as an active Cloudflare zone accessible to this credential",404);
+    if(!zone)throw failure("The configured domain was not found in a Cloudflare account accessible to this credential. Add the domain to Cloudflare first, then retry.",404);
+    if(zone.status!=="active"){
+      const nameservers=(Array.isArray(zone.name_servers)?zone.name_servers:[]).map(x=>cleanText(x,253)).filter(Boolean);
+      const suffix=nameservers.length?` Update the domain at its registrar to use these assigned Cloudflare nameservers: ${nameservers.join(", ")}.`:" Complete Cloudflare's authoritative DNS activation at the domain registrar.";
+      throw failure(`Cloudflare zone ${settings.zone} is ${cleanText(zone.status||"not active",40)}.${suffix} Retry after Cloudflare reports the zone active.`,409);
+    }
     if(!zone.account?.id)throw failure("Cloudflare zone did not include an account identifier",502);
     return {client,zone,accountId:zone.account.id};
   }
