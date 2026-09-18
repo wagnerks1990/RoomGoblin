@@ -104,5 +104,8 @@ test("installer creates the Host Agent state root before restarting systemd serv
   assert.match(unit, /ReadWritePaths=.*\/etc\/classroom-control-hub .*\/etc\/cloudflared .*\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
   assert.match(installer, /^install -d -m 0700 -o root -g root \/etc\/cloudflared$/m);
   assert.match(installer, /^install -m 0644 -o root -g root \/dev\/null \/etc\/systemd\/system\/cloudflared-roomgoblin\.service$/m);
+  assert.match(installer, /bash "\$TARGET\/deploy\/install-cloudflared-host\.sh"/);
+  const appUpdater = fs.readFileSync(path.join(root, "host-agent/app-update-runner.sh"), "utf8");
+  assert.match(appUpdater, /bash "\$HUB_ROOT\/deploy\/install-cloudflared-host\.sh"/);
   assert.match(installer, /ReadWritePaths=\/run\/classroom-control-hub \$TARGET \$SERVICES \$BACKUP_ROOT \/etc\/classroom-control-hub \/etc\/cloudflared \/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
 });
