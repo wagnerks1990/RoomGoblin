@@ -103,7 +103,7 @@ test("recreate refuses adopted containers with foreign persistent mounts", async
   const h = addonHarness(t, true, false);
   await assert.rejects(
     h.context.deployAddon("musicassistant", {}, true),
-    /Refusing to recreate an adopted container/
+    /Refusing to recreate an adopted Music Assistant container/
   );
   assert.ok(!h.calls.some(args => args[0] === "rm"));
   assert.ok(!h.calls.some(args => args[0] === "run"));
