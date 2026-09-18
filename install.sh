@@ -286,6 +286,11 @@ sed -i "s#^Environment=HOST_BACKUP_DIR=.*#Environment=HOST_BACKUP_DIR=$BACKUP_RO
 sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=$DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $TARGET $SERVICES $BACKUP_ROOT /etc/classroom-control-hub /var/lib/classroom-hub $DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 python3 -m py_compile "$TARGET/host-agent/server.py" "$TARGET/host-agent/start.py" "$TARGET/host-agent/full_recovery.py"
+# Older migrations installed the source-unit filename directly. The canonical
+# installed unit is classroom-hub-host-agent.service; retire the stale alias so
+# only one Host Agent can own the Unix socket or appliance mutation lifecycle.
+systemctl disable --now classroom-control-hub-host-agent.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/classroom-control-hub-host-agent.service
 install -d -m 0750 /run/classroom-control-hub
 install -D -m 0755 "$TARGET/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
 install -D -m 0755 "$TARGET/host-agent/app-update-runner.sh" /usr/local/libexec/classroom-control-hub/app-update-runner.sh
