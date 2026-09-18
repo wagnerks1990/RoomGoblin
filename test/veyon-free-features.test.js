@@ -198,6 +198,7 @@ test('Community upload and Internet Guard sources preserve pilot safety bounds',
   const filesHeader=fs.readFileSync('integrations/veyon-plugins/remotefilebrowser/RemoteFileBrowserPlugin.h','utf8');
   const files=fs.readFileSync('integrations/veyon-plugins/remotefilebrowser/RemoteFileBrowserPlugin.cpp','utf8');
   const firewall=fs.readFileSync('integrations/veyon-plugins/internetguard/WindowsFirewall.cpp','utf8');
+  const guardHeader=fs.readFileSync('integrations/veyon-plugins/internetguard/InternetGuardPlugin.h','utf8');
   const guard=fs.readFileSync('integrations/veyon-plugins/internetguard/InternetGuardPlugin.cpp','utf8');
   const cmake=fs.readFileSync('integrations/veyon-plugins/internetguard/CMakeLists.txt','utf8');
   assert.match(browser,/MaxUpload\s*=\s*2\s*\*\s*1024\s*\*\s*1024/);
@@ -209,6 +210,7 @@ test('Community upload and Internet Guard sources preserve pilot safety bounds',
   assert.doesNotMatch(cmake,/if\(NOT VEYON_BUILD_WINDOWS\)[\s\S]*return\(\)/);
   assert.match(cmake,/if\(VEYON_BUILD_WINDOWS\)[\s\S]*target_sources\(internetguard PRIVATE WindowsFirewall\.cpp\)[\s\S]*target_link_libraries\(internetguard PRIVATE ole32 oleaut32\)/);
   assert.match(guard,/#ifdef Q_OS_WIN[\s\S]*#include "WindowsFirewall\.h"[\s\S]*#else[\s\S]*bool blockInternet\(\) \{ return false; \}[\s\S]*bool allowInternet\(\) \{ return false; \}/);
+  assert.doesNotMatch(guardHeader,/Q_ENUM\(Command\)/);
   assert.match(firewall,/activeProfilesAreEnabled/);assert.doesNotMatch(firewall,/put_FirewallEnabled/);
   assert.match(firewall,/transactional rule application failed; pilot rules rolled back/);
   assert.match(guard,/15 \* 60 \* 1000/);assert.match(guard,/m_autoReleaseTimer\.start/);
