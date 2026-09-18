@@ -6,6 +6,10 @@ RoomGoblin has an optional first-class Cloudflare provisioning path. Site-specif
 
 The tunnel exposes only the Hub through same-host loopback and uses `TRUST_PROXY_HOPS=1`; Cloudflare is never allowed to publish maintenance 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, or lab subnets. Cloudflare failure affects remote access only and must not gate Morning Announcements, scheduler recovery, Background Music reconciliation, managed displays/devices, local administration, updates, or recovery. Read `docs/ai/CLOUDFLARE-TUNNEL.md` before changing this feature.
 
+## Runtime click-through regression guard
+
+Controller-owned display test cards are served only from `/test-images/tv1.svg` through `/test-images/tv8.svg`. Media-command URL validation must allow those exact built-in assets while continuing to reject arbitrary same-origin paths, credentialed URLs, backslashes, and traversal-like inputs. The live 2026-09-18 controller click-through exposed this boundary when **Test Image** generated HTTP 400 despite the asset being shipped by RoomGoblin. Keep `test/full-project-audit-regressions.test.js` aligned with this allowlist.
+
 ## Displays & AV restoration
 
 The operator retired room topology. Use the original TV Routing Matrix, TV/source

@@ -3890,9 +3890,9 @@ function safeMediaUrl(value) {
   const url = String(value || "").trim();
   if (!url) return "";
   if(url.includes("\\"))throw new Error("Media URL cannot contain backslashes");
-  if(url.startsWith("/media/")||url.startsWith("/document-viewer/")||url.startsWith("/presentations/"))return url;
+  if(url.startsWith("/media/")||url.startsWith("/document-viewer/")||url.startsWith("/presentations/")||/^\/test-images\/tv[1-8]\.svg$/.test(url))return url;
   try{const parsed=new URL(url);if((parsed.protocol==="http:"||parsed.protocol==="https:")&&!parsed.username&&!parsed.password)return parsed.toString()}catch{}
-  throw new Error("Media URL must use http://, https://, /media/, /document-viewer/, or /presentations/");
+  throw new Error("Media URL must use http://, https://, /media/, /document-viewer/, /presentations/, or a built-in /test-images/tv1.svg through tv8.svg path.");
 }
 
 const URL_BEARING_DISPLAY_COMMANDS=new Set(["display.image","display.video","display.web","display.pdf","display.document","display.ppt","display.presentation"]);

@@ -12,7 +12,9 @@
   };
   async function close(){
     const s=current;if(!s)return;current=null;clearTimeout(s.timer);submit.disabled=true;input.disabled=true;
-    try{await call(s,'close')}catch(e){$('commandFeedback').textContent=`Terminal cleanup could not be confirmed: ${e.message}. The native session expires after ten minutes.`}
+    // Cleanup must not wait behind state/read polling. Dispatch close immediately so
+    // leaving the terminal starts native-session teardown in every browser.
+    try{await api(`/api/v1/veyon/computers/${encodeURIComponent(s.id)}/terminal/close`,{method:'POST',body:JSON.stringify({session:s.session})})}catch(e){$('commandFeedback').textContent=`Terminal cleanup could not be confirmed: ${e.message}. The native session expires after ten minutes.`}
     finally{dialog.close();output.textContent='';status.textContent='';input.value='';input.disabled=false;submit.disabled=false}
   }
   async function poll(s){
