@@ -17,6 +17,7 @@
 - Explicitly restart `cloudflared-roomgoblin.service` after connector token reprovisioning so an already-running process cannot continue using a stale/deleted tunnel token and trigger Cloudflare Error 1033.
 - Fix Host Agent tunnel-token serialization so it writes a real trailing newline instead of the literal characters `\\n`, preventing `Provided Tunnel token is not valid` restart loops.
 - Persist Cloudflare GUI state across reload/reboot with explicit Configured/Credential stored indicators, accurate tunnel health styling, and a reconstructed Open HTTPS URL link.
+- Retry transient network failures for idempotent Cloudflare reconciliation calls and include the failing HTTP method/path in 502 errors; non-idempotent create calls remain single-attempt/fail-closed to avoid duplicate resources.
 
 ### Scheduled automation sequence rebuild
 
