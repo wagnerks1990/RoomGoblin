@@ -28,7 +28,7 @@ function normalizeAutomationAction(input={},index=0,{primaryTargets=[]}={}){
   // Media loop remains receiver-native while the action is active. Schema v3
   // additionally uses executionMode=loop to keep the action eligible on every
   // pass through the ordered automation sequence.
-  if(action==="display.media")payload.loop=executionMode==="loop"||payload.loop===true;
+  if(action==="display.media")payload.loop=executionMode==="loop";
   return {
     id:actionId(input.id,index),
     action,
