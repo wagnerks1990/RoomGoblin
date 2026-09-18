@@ -491,3 +491,14 @@ and must be removed after transfer.
 SQLite remains authoritative for structured RoomGoblin state. Large/generated payloads such as media, screenshots, diagnostics, backups, exports, caches, and temporary staging remain file-backed. High-frequency successful polling belongs in coalesced telemetry rather than append-only audit rows, and non-security last-seen/last-used bookkeeping should be rate-limited.
 
 Automatic backup classification is explicit: update-generated operational archives use `auto-operational-*`, operator-created operational exports use `manual-operational-*`, and historical `classroom-hub-operational-*` archives are legacy automatic backups. Successful maintenance retains 3 automatic operational backups, 1 `pre-*` safety backup, and 3 `migration-*` snapshots. A pinned rollback archive is preferentially retained inside the applicable limit. Never auto-prune `manual-operational-*` or encrypted Full Recovery `.rgbak` bundles. Diagnostic downloads are temporary and must be removed after transfer.
+
+
+### Backup retention runtime invariant
+
+A full reconciliation must invoke retention after health/version convergence
+from the newly installed maintenance layer itself. Do not rely only on the outer
+update runner because that runner intentionally executes a stable snapshot from
+the previous release. Enforce 3 automatic operational backups, 1 pre-* backup,
+and 3 migration snapshots. Host-side migration and legacy cleanup must resolve
+the configured `HOST_BACKUP_DIR` (default `/opt/classroom-hub-backups`) and
+must not reintroduce the obsolete `/opt/classroom-control-hub-backups` path.

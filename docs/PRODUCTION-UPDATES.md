@@ -180,3 +180,16 @@ Automatic cleanup after successful maintenance enforces:
 A rollback-pinned archive is preferentially retained inside the applicable
 limit. Manual operational exports and encrypted Full Recovery `.rgbak` bundles
 are excluded from automatic pruning.
+
+
+### Runtime retention convergence
+
+Full-reconciliation installs apply both retention policies after component
+health/version convergence: 3 automatic operational ZIPs, 1 pre-* safety ZIP,
+and 3 host migration snapshots. The installer performs this cleanup itself so
+the newly installed policy takes effect immediately even when the outer updater
+is running a stable snapshot from the prior release.
+
+Host migration and legacy-archive discovery use the configured
+`HOST_BACKUP_DIR` rather than a hardcoded historical path. The default is
+`/opt/classroom-hub-backups`.

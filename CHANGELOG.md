@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Fix retention convergence so full installs immediately enforce the 3 automatic operational / 1 pre-* / 3 migration policy, and make Host Agent migration/legacy cleanup honor `HOST_BACKUP_DIR` instead of the obsolete hardcoded backup path.
+
 ### Automatic backup retention hardening
 
 - Classify update-created operational backups separately from manual operational exports.
