@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CONFIG_FILE="${SECURLY_KIOSK_CONFIG:-/etc/roomgoblin/securly-kiosk.env}"
-KIOSK_USER="${SECURLY_KIOSK_USER:-kiosk}"
+KIOSK_USER="kiosk"
 ADMIN_USER="${SECURLY_KIOSK_ADMIN_USER:-}"
 URL_FILE="/etc/roomgoblin/securly-kiosk-url"
 
@@ -21,11 +21,12 @@ load_config(){
 ensure_packages(){
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    xorg xinit openbox unclutter x11-xserver-utils dbus-x11 openssh-server chromium-browser
-  if ! command -v chromium >/dev/null 2>&1 && ! command -v /snap/bin/chromium >/dev/null 2>&1; then
-    command -v snap >/dev/null 2>&1 || fail 'Chromium is unavailable and snap is not installed'
+    xorg xinit openbox unclutter x11-xserver-utils dbus-x11 openssh-server chromium-browser pciutils
+  if [[ ! -x /snap/bin/chromium ]]; then
+    command -v snap >/dev/null 2>&1 || fail 'Chromium Snap is unavailable and snap is not installed'
     snap install chromium
   fi
+  [[ -x /snap/bin/chromium ]] || fail 'Chromium Snap did not install at /snap/bin/chromium'
 }
 
 ensure_user(){
