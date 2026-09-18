@@ -120,13 +120,30 @@ If the release changes the database schema, follow release-specific rollback ins
 
 ## Web-managed updates
 
-The **System updates** page tracks merged commits on the trusted `main` branch. It does not wait for or select alpha/beta/stable GitHub release tags. **Check GitHub** compares the installed Git commit with the latest `wagnerks1990/RoomGoblin:main` commit and offers an update only when the current checkout can fast-forward cleanly to that exact commit.
+The **System updates** page tracks merged commits on the trusted `main` branch. It does not wait for or select alpha/beta/stable GitHub release tags. **Check GitHub** compares the installed Git commit with the latest `wagnerks1990/RoomGoblin:main` commit and offers an update only when the current checkout is clean and can fast-forward to that exact commit.
 
-Installing from the GUI still uses all production safety gates. The native updater re-fetches `origin/main`, verifies ancestry, waits for both exact `sha-<commit>` CI images, checks their embedded revision labels, creates an operational recovery backup, performs selective reconciliation, and verifies application/maintenance/Host Agent health. Missing or failed CI artifacts stop the operation before source/runtime mutation. Automatic updates use the same main-commit flow during the configured maintenance window.
+Installing from the GUI still uses the production update transaction rather than a browser-side Git pull. The Hub rechecks the selected main commit immediately before handoff, then the native updater independently fetches `origin/main`, verifies ancestry, waits for both exact `sha-<commit>` CI images, checks their embedded revision labels, creates an operational recovery backup, performs selective reconciliation, and verifies application/maintenance/Host Agent health. Missing or failed CI artifacts stop the operation before source/runtime mutation. Automatic updates use the same main-commit flow during the configured maintenance window.
 
-The GUI does not accept an arbitrary SHA from the operator. The backend resolves the current latest main commit itself and rechecks it immediately before starting the native transaction. The rollback control restores the previous verified source/image pair and its matching recovery backup.
+Current update health requirements remain:
 
-A GitHub read token is optional for the public repository and is stored encrypted when configured. Update history shows the exact deployed/main commit in addition to the application version so commits that share the same prerelease version remain distinguishable.
+- backend HTTP `/health` succeeds and reports the expected version;
+- database and scheduler readiness pass;
+- maintenance is healthy and reports the expected version;
+- Host Agent is healthy and reports the expected version;
+- the exact expected Hub and maintenance image identities are active when those components changed;
+- ADB/runtime storage checks pass;
+- no TLS/Caddy dependency is required by the current direct-HTTP appliance health gate.
+
+The GUI does not accept an arbitrary SHA from the operator. A merge may appear as available before its exact images finish publishing; in that case the native image-readiness gate fails closed without switching source or containers. Retry after the exact-SHA publication completes.
+
+Every mutating update creates a pre-update operational backup after source/image preflight. Deployment failure automatically restores the prior commit, retained container image IDs, environment, Host Agent unit, and matching backup. **Revert Last Upgrade** preserves the current state first and then restores the previous verified set; it never resolves a moving branch/tag for rollback.
+
+The updater runs from a private host-side snapshot so installer replacement cannot corrupt an active transaction. Pending mutation journals survive interruption and are resumed by the Host Agent. Do not manually start `classroom-hub-app-update.service` without a pending request file; that oneshot is an internal transaction runner, not the user-facing update command.
+
+A GitHub read token is optional for the public repository and is stored encrypted when configured. Update history shows the exact deployed/main commit in addition to the application version so commits that share the same prerelease version remain distinguishable. Automatic updates are off by default and run only inside the configured maintenance window.
+
+Container publication requires the exact main commit to pass Validate, Display browser regression and Security gates before the immutable image pair is published. Do not retag another build or bypass this gate. Keep `classroom-control-hub-recovery:*` images while **Revert Last Upgrade** remains available.
+
 
 ## HTTPS reintroduction acceptance
 
