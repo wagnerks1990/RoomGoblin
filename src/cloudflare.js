@@ -237,7 +237,7 @@ class CloudflareManager{
       publicUrl:`https://${settings.hostname}/controller/`};
   }
   async liveStatus(){
-    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null};
+    const settings=this.saved(),result={ok:true,configured:!!settings.zone&&!!settings.hostname,settings:this.status(),cloudflare:null,publicUrl:settings.hostname?`https://${settings.hostname}/controller/`:null};
     if(!result.configured)return result;
     try{
       const ctx=await this.resolve(settings),tunnel=settings.ids?.tunnelId?await ctx.client.get(`/accounts/${ctx.accountId}/cfd_tunnel/${settings.ids.tunnelId}`):await this.findTunnel(ctx.client,ctx.accountId,settings.tunnelName);
