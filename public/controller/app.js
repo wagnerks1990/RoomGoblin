@@ -1835,6 +1835,15 @@ function scheduledAutomationSortKey(e){
 function scheduledAutomationLabel(e){
   return `${scheduledAutomationSortKey(e)} — ${e.name||"Unnamed"}${e.enabled===false?" (Disabled)":""}`;
 }
+function scheduledAutomationDescription(e){
+  const occurrences=Array.isArray(e?.resolvedOccurrences)?e.resolvedOccurrences.filter(Boolean):[];
+  const linked=Array.isArray(e?.classIds)?e.classIds.length>0:!!e?.classId;
+  if(linked&&occurrences.length){
+    return occurrences.slice().sort((a,b)=>String(a?.time||"").localeCompare(String(b?.time||"")))
+      .map(occ=>`${occ.time||e.time} • ${scheduleDescription(occ)}`).join(" | ");
+  }
+  return scheduleDescription(e);
+}
 function selectedScheduledAutomationId(){
   return String(window.automationEventSelect?.value||window.automationEditorEventSelect?.value||autoId?.value||"");
 }
@@ -1864,7 +1873,7 @@ function renderAutomationList(){
   if(!e){automationList.innerHTML='<div class="muted">No scheduled automations yet.</div>';return}
   const last=e.lastRun?`${e.lastRun.ok?'✓':'✕'} ${new Date(e.lastRun.at).toLocaleString()}${e.lastRun.message?' — '+esc(e.lastRun.message):''}`:'Never';
   automationList.innerHTML=`<div><b>${esc(scheduledAutomationLabel(e))}</b> ${e.enabled?'<span class="pill">Enabled</span>':'<span class="pill">Disabled</span>'}</div>
-    <div class="muted">${esc(scheduleDescription(e))}</div>
+    <div class="muted">${esc(scheduledAutomationDescription(e))}</div>
     <div>${esc(describeAutomation(e))}</div>
     <div class="muted">Last run: ${last}</div>`;
 }
