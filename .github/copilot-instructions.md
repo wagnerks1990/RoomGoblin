@@ -1,5 +1,9 @@
 # GitHub Copilot Instructions
 
+## Securly physical-console kiosk
+
+The optional host-console Securly kiosk is independent of RoomGoblin container health. Follow `docs/SECURLY-KIOSK.md` and `docs/ai/SECURLY-KIOSK.md`. Never commit or expose the real kiosk URL/code. Preserve the locked non-sudo kiosk account, separate sudo maintenance access, SSH and the Ctrl+Alt+F2 recovery path. Chromium Snap requires the systemd user D-Bus session and detached tty1 standard file descriptors; do not reintroduce private dbus-launch sessions or arbitrary custom Chromium profile paths.
+
 ## Product identity
 
 The current product name is **RoomGoblin — Classroom & Lab Management Hub**. The tagline is **Run the room. Manage the lab.** Read `/docs/brand/AI-BRAND-CONTEXT.md` before adding or changing user-facing names, colors, logos, icons, setup copy, documentation, or agent presentation.
