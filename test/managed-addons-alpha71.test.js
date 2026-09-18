@@ -28,7 +28,7 @@ test("supported optional integrations can be adopted or Hub-managed",()=>{
   assert.match(ext,/\.roomgoblin-managed/);
   assert.match(ext,/INTEGRATION_NETWORK="roomgoblin-integrations"/);
   assert.match(ext,/const networkMode=id==="mosquitto"\?INTEGRATION_NETWORK:"host"/);
-  assert.match(ext,/PYTHONPATH=\/data\/\.roomgoblin-compat/);
+  assert.match(ext,/PYTHONPATH=\/data\/\$\{path\.basename\(compat\)\}/);
   assert.match(ext,/ROOMGOBLIN_MA_LAN_INTERFACE/);
   assert.match(host,/_adopt_existing/);
   assert.match(host,/docker','inspect'/);
