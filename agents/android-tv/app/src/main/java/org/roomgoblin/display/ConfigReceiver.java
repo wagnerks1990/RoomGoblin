@@ -19,7 +19,9 @@ public class ConfigReceiver extends BroadcastReceiver {
         if(intent.hasExtra("allow_root_tools"))edit.putBoolean("allow_root_tools",intent.getBooleanExtra("allow_root_tools",false));
         if(intent.hasExtra("persistent_adb"))edit.putBoolean("persistent_adb",intent.getBooleanExtra("persistent_adb",false));
         if(intent.hasExtra("target_adb_port"))edit.putInt("target_adb_port",Math.max(1024,Math.min(65535,intent.getIntExtra("target_adb_port",5555))));
-        edit.apply();
+        // The running foreground service reconciles its listener immediately in
+        // onStartCommand, so persist configuration before asking it to restart.
+        if(!edit.commit())return;
         if(prefs.getBoolean("persistent_adb",false)){
             try{
                 Settings.Global.putInt(context.getContentResolver(),"development_settings_enabled",1);

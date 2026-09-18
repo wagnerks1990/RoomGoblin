@@ -153,6 +153,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
       - name: Parse Windows lab-agent scripts
         shell: pwsh
         run: |
@@ -167,6 +170,9 @@ jobs:
             }
           }
           if ($failed) { throw 'Windows lab-agent PowerShell parsing failed.' }
+      - name: Build locked native Windows agent
+        shell: pwsh
+        run: .\windows-agent\scripts\Build-Native-Agent.ps1
       - name: Verify Windows agent contract
         shell: pwsh
         run: |
@@ -199,12 +205,24 @@ jobs:
         working-directory: agents/android-tv
         run: gradle :app:assembleDebug --stacktrace
       - name: Verify APK
-        run: test -s agents/android-tv/app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          set -euo pipefail
+          apk=agents/android-tv/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" | head -n1)"
+          printf '%s\n' "$badging" | grep -Fq "package: name='org.roomgoblin.display'"
+          version_name="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' agents/android-tv/app/build.gradle.kts | head -n1)"
+          version_code="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' agents/android-tv/app/build.gradle.kts | head -n1)"
+          printf '%s\n' "$badging" | grep -Fq "versionCode='$version_code'"
+          printf '%s\n' "$badging" | grep -Fq "versionName='$version_name'"
+          sha256sum "$apk" | tee agents/android-tv/app/build/outputs/apk/debug/app-debug.apk.sha256
       - name: Upload test APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ClassroomHub-Display-Agent-debug
-          path: agents/android-tv/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            agents/android-tv/app/build/outputs/apk/debug/app-debug.apk
+            agents/android-tv/app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -237,6 +255,7 @@ jobs:
 
   veyon-ai:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:

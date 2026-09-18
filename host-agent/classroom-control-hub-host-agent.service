@@ -27,7 +27,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
-ReadWritePaths=/run/classroom-control-hub /opt /etc/classroom-control-hub /var/lib/classroom-hub /var/lib/docker/volumes
+ReadWritePaths=/run/classroom-control-hub /opt/classroom-hub /opt/services /opt/classroom-hub-backups /etc/classroom-control-hub /var/lib/classroom-hub /var/lib/docker/volumes
 
 [Install]
 WantedBy=multi-user.target

@@ -6,6 +6,7 @@ Treat Veyon authentication as a bounded encrypted keyring, not as a single globa
 
 - Preserve the established Veyon compatibility credential path for upgrades.
 - Additional private PEMs belong only in the encrypted `secret_store`; never place PEM contents in preferences, JSON configuration, logs, diagnostics, browser storage, API responses, documentation examples, or tests.
+- Parse imported PEMs with the runtime cryptography implementation and reject malformed or larger-than-64-KiB material before storage.
 - Named key secrets use deterministic hashed secret names (`veyon.private-key.<digest>`). Key names themselves are non-secret metadata.
 - Per-host successful-key memory stores only a key name and is bounded; it never stores private material.
 - Authentication order is: the host's last successful credential, the administrator-preferred credential, the current compatibility credential, then other configured credentials.

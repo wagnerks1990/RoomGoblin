@@ -136,7 +136,7 @@ int Install()
                 "create",
                 serviceName,
                 "binPath=",
-                exe,
+                $"\"{exe}\"",
                 "start=",
                 "delayed-auto",
                 "DisplayName=",
@@ -351,22 +351,17 @@ void VerifyPackageManifest(string[] required)
 void WriteFreshEnrollmentConfigFromFile(string configPath, string enrollmentPath)
 {
     var fullPath = Path.GetFullPath(enrollmentPath);
-    string json;
-    try
-    {
-        json = File.ReadAllText(fullPath);
-    }
-    finally
-    {
-        try
-        {
-            if (File.Exists(fullPath))
-                File.Delete(fullPath);
-        }
-        catch
-        {
-        }
-    }
+    var info = new FileInfo(fullPath);
+    if (!info.Exists || info.Length <= 0 || info.Length > 64 * 1024)
+        throw new InvalidDataException("Enrollment file is missing, empty, or exceeds 64 KiB.");
+    if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+        throw new InvalidDataException("Enrollment file cannot be a reparse point.");
+    var json = File.ReadAllText(fullPath);
+    // This is a one-use bearer secret. Refuse to continue if the source cannot
+    // be consumed, rather than leaving a reusable token on disk.
+    File.Delete(fullPath);
+    if (File.Exists(fullPath))
+        throw new IOException("Enrollment file could not be securely consumed.");
 
     using var document = JsonDocument.Parse(json);
     var root = document.RootElement;

@@ -32,13 +32,15 @@ if (Test-Path $out) {
 New-Item $out -ItemType Directory -Force | Out-Null
 
 foreach ($project in @($serviceProject,$sessionProject,$bootstrapProject,$updaterProject)) {
-  Invoke-DotNet -DotNetArgs @('restore',$project)
+  Invoke-DotNet -DotNetArgs @('restore',$project,'--locked-mode','-p:ContinuousIntegrationBuild=true')
   Invoke-DotNet -DotNetArgs @(
     'publish',
     $project,
     '-c', $Configuration,
     '-r', $Runtime,
     '--self-contained', 'true',
+    '--no-restore',
+    '-p:ContinuousIntegrationBuild=true',
     '-p:PublishSingleFile=true',
     "-p:Version=$roomGoblinVersion",
     "-p:InformationalVersion=$roomGoblinVersion",

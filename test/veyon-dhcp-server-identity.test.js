@@ -4,6 +4,7 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {reconcileMappings,projectRows,resolveBackendId,stableIdForBackend,stableIdForHostname}=require("../src/veyon-inventory-identity");
 const {VeyonKeyring,HOST_KEY_PREF}=require("../src/veyon-keyring");
+const {reconcileBody}=require("../src/veyon-dhcp-identity-bridge");
 
 function row(id,ip,hostname,extra={}){return {id,ip,hostname,name:hostname,role:"student",online:true,authenticated:true,...extra}}
 
@@ -59,6 +60,36 @@ test("projection suppresses stale duplicate rows and prefers the live current re
   assert.equal(projected.length,1);
   assert.equal(projected[0].ip,"192.0.2.44");
   assert.equal(projected[0].id,stableIdForHostname("STUDENT-01"));
+});
+
+test("hostname-derived IDs preserve ordinary compatibility and cannot collide after character cleanup",()=>{
+  assert.equal(stableIdForHostname("STUDENT-01"),"host-student-01");
+  const slash=stableIdForHostname("lab/a"),question=stableIdForHostname("lab?a");
+  assert.match(slash,/^host-lab-a-[a-f0-9]{16}$/);
+  assert.match(question,/^host-lab-a-[a-f0-9]{16}$/);
+  assert.notEqual(slash,question);
+  const uniqueLegacy={"lab/a":{hostname:"lab/a",stableId:"host-lab-a",backendId:"192.0.2.9",ip:"192.0.2.9"}};
+  assert.equal(resolveBackendId(uniqueLegacy,"host-lab-a"),"192.0.2.9","a unique legacy ID remains compatible");
+  const longA="a".repeat(221)+"x",longB="a".repeat(221)+"y";
+  assert.notEqual(stableIdForHostname(longA),stableIdForHostname(longB));
+  const legacy={
+    "lab/a":{hostname:"lab/a",stableId:"host-lab-a",backendId:"192.0.2.10",ip:"192.0.2.10"},
+    "lab?a":{hostname:"lab?a",stableId:"host-lab-a",backendId:"192.0.2.11",ip:"192.0.2.11"}
+  };
+  assert.equal(resolveBackendId(legacy,"host-lab-a"),"host-lab-a","ambiguous legacy IDs must fail closed");
+  const upgraded=reconcileMappings(legacy,[row("192.0.2.10","192.0.2.10","lab/a"),row("192.0.2.11","192.0.2.11","lab?a")]).mapping;
+  assert.notEqual(upgraded["lab/a"].stableId,upgraded["lab?a"].stableId);
+});
+
+test("inventory identity persists before projection or key-affinity side effects",()=>{
+  const body={ok:true,computers:[row("192.0.2.44","192.0.2.44","student-01")]};
+  const existing=reconcileMappings({},[row("192.0.2.10","192.0.2.10","student-01")]).mapping;
+  const events=[];
+  const projected=reconcileBody(body,{read:()=>existing,save:()=>events.push("saved"),migrate:()=>events.push("migrated")});
+  assert.deepEqual(events,["saved","migrated"]);
+  assert.equal(projected.computers[0].id,"host-student-01");
+  assert.throws(()=>reconcileBody(body,{read:()=>existing,save:()=>{throw Error("disk full")},migrate:()=>events.push("unsafe-migration")}),/disk full/);
+  assert.equal(events.includes("unsafe-migration"),false);
 });
 
 test("Veyon key affinity moves to a computer's new DHCP address",()=>{

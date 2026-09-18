@@ -78,18 +78,43 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and publish validated image
+      - name: Build exact publication candidate
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: true
+          load: true
+          push: false
           tags: |
             ${{ matrix.image }}:sha-${{ github.sha }}
             ${{ matrix.legacy_image }}:sha-${{ github.sha }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
-          sbom: true
-          provenance: mode=max
+      - name: Scan exact publication candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:sha-${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+      - name: Smoke exact publication candidate
+        run: |
+          set -euo pipefail
+          image='${{ matrix.image }}:sha-${{ github.sha }}'
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = '${{ github.sha }}'
+          case '${{ matrix.name }}' in
+            hub)
+              docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node "$image" tools/verify-image-permissions.js
+              ;;
+            maintenance)
+              docker run --rm --entrypoint node "$image" -e 'const fs=require("fs"),crypto=require("crypto");const m=JSON.parse(fs.readFileSync("/app/android-agent/agent-build.json"));const p="/app/android-agent/agent-release-unsigned.apk";if(m.package!=="org.roomgoblin.display"||!m.versionName||!Number.isInteger(m.versionCode)||crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex")!==m.unsignedSha256)process.exit(1)'
+              ;;
+          esac
+      - name: Publish the scanned candidate without rebuilding
+        run: |
+          set -euo pipefail
+          docker push '${{ matrix.image }}:sha-${{ github.sha }}'
+          docker push '${{ matrix.legacy_image }}:sha-${{ github.sha }}'
 
   promote:
     permissions:

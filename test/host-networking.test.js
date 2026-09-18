@@ -87,7 +87,7 @@ test("Host Agent rejects bridge defaults and published-port requests before Dock
 import importlib.util
 spec=importlib.util.spec_from_file_location('agent','host-agent/server.py')
 a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
-base=['run','-d','--name','mosquitto','--restart','unless-stopped']
+base=['run','-d','--name','mosquitto','--restart','unless-stopped','--label','org.roomgoblin.deployment-ownership=roomgoblin']
 image='eclipse-mosquitto:2.0.22'
 a.validate_docker_run(base+['--network','host',image])
 for extra in ([],['--network','bridge'],['--network','host','-p','1883:1883'],['--network','host','--network','host']):

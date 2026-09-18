@@ -88,7 +88,7 @@ internal sealed class SessionBridge
             AutoFlush = true
         };
 
-        var authLine = await reader.ReadLineAsync(timeout.Token);
+        var authLine = await ReadLineBoundedAsync(reader,4096,timeout.Token);
         if (authLine is null)
             throw new InvalidDataException("Session helper disconnected before authentication.");
 
@@ -106,7 +106,7 @@ internal sealed class SessionBridge
 
         await writer.WriteLineAsync(JsonSerializer.Serialize(request));
 
-        var responseLine = await reader.ReadLineAsync(timeout.Token);
+        var responseLine = await ReadLineBoundedAsync(reader,10*1024*1024,timeout.Token);
         if (responseLine is null)
             throw new InvalidDataException("Session helper disconnected without a response.");
 
@@ -123,6 +123,26 @@ internal sealed class SessionBridge
         }
 
         return response;
+    }
+
+    private static async Task<string?> ReadLineBoundedAsync(
+        StreamReader reader,
+        int maxChars,
+        CancellationToken ct)
+    {
+        var value=new StringBuilder(Math.Min(maxChars,4096));
+        var buffer=new char[4096];
+        while(true)
+        {
+            var count=await reader.ReadAsync(buffer.AsMemory(0,buffer.Length),ct);
+            if(count==0)return value.Length==0?null:value.ToString();
+            var newline=Array.IndexOf(buffer,'\n',0,count);
+            var appendCount=newline>=0?newline:count;
+            if(value.Length+appendCount>maxChars)
+                throw new InvalidDataException("Session helper response exceeds the safe size limit.");
+            value.Append(buffer,0,appendCount);
+            if(newline>=0)return value.ToString().TrimEnd('\r');
+        }
     }
 
     private static System.Diagnostics.Process LaunchInSession(

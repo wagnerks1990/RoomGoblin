@@ -45,6 +45,30 @@ test("lab computer removal can revoke credentials and pending enrollment atomica
   assert.equal(store.listLabAgentCredentials().pending.length,0);
 }));
 
+test("session validation remains immediate while routine maintenance writes are coalesced",()=>withStore(store=>{
+  const admin=store.createFirstAdministrator({username:"session-admin",displayName:"Session Admin"},{password:"correct-horse-battery"});
+  const issued=store.createSession(admin);
+  const hash=require("node:crypto").createHash("sha256").update(issued.token).digest("hex");
+  store.db.prepare("UPDATE user_sessions SET last_seen_at=? WHERE token_hash=?").run("2020-01-01T00:00:00.000Z",hash);
+
+  const first=store.sessionUser(issued.token);
+  assert.equal(first.id,admin.id);
+  const touched=store.db.prepare("SELECT last_seen_at value FROM user_sessions WHERE token_hash=?").get(hash).value;
+  assert.notEqual(touched,"2020-01-01T00:00:00.000Z");
+
+  store.sessionUser(issued.token);
+  assert.equal(store.db.prepare("SELECT last_seen_at value FROM user_sessions WHERE token_hash=?").get(hash).value,touched);
+
+  const expired="expired-session";
+  store.db.prepare("INSERT INTO user_sessions(id,user_id,token_hash,created_at,expires_at,last_seen_at) VALUES(?,?,?,?,?,?)")
+    .run(expired,admin.id,"expired-token-hash","2020-01-01T00:00:00.000Z","2020-01-01T01:00:00.000Z","2020-01-01T00:00:00.000Z");
+  assert.equal(store.listUserSessions(admin.id).some(row=>row.id===expired),false,"expired sessions stay hidden while cleanup is throttled");
+  assert.equal(store.cleanupSessions({force:true}),1);
+
+  store.deleteSession(issued.token);
+  assert.equal(store.sessionUser(issued.token),null,"revocation is checked on every request");
+}));
+
 test("maintenance backups and restores enforce private files and reject link traversal",()=>{
   const source=fs.readFileSync(path.join(__dirname,"..","maintenance-agent","server.js"),"utf8");
   assert.match(source,/process\.umask\(0o077\)/);

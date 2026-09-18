@@ -74,3 +74,17 @@ test("Windows installer applies ACLs to agent and config separately", () => {
     /Could not secure installed agent file:\s+\$installedFile/
   );
 });
+
+test("legacy Windows agent validates schemes, bounds outputs, and preserves native shared state",()=>{
+  const agent=read("public/lab-agent/ClassroomHubAgent.ps1");
+  const installer=read("public/lab-agent/Install-Agent.ps1");
+  const uninstaller=read("public/lab-agent/Uninstall-Agent.ps1");
+  assert.match(agent,/Scheme -notin @\('http','https'\)/);
+  assert.match(agent,/Substring\(0,65536\)/);
+  assert.doesNotMatch(agent,/Get-Command sqlite3\.exe/);
+  assert.match(agent,/ReparsePoint/);
+  assert.match(installer,/Scheme -notin @\('http','https'\)/);
+  assert.match(installer,/SignerCertificate\.RawData/);
+  assert.match(uninstaller,/Get-Service -Name 'RoomGoblinAgent'/);
+  assert.doesNotMatch(uninstaller,/Remove-Item -LiteralPath \$root -Recurse/);
+});

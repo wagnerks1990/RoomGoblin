@@ -48,7 +48,8 @@ def patch_browser_api(destination):
 \tif( response.error == WebApiController::Error::NoError )
 \t{'''
     response_replacement = '''{
-\tconst bool roomGoblinSensitive = request.path.startsWith(QStringLiteral("roomgoblin/"));
+\tconst bool roomGoblinSensitive = request.path.startsWith(QStringLiteral("roomgoblin/")) ||
+\t\trequest.path.startsWith(QStringLiteral("authentication/"));
 \tif( roomGoblinSensitive && response.error == WebApiController::Error::NoError )
 \t{
 \t\twaDebug() << "[RESP]" << request.path.toUtf8().constData() << "[redacted]";
@@ -62,7 +63,8 @@ def patch_browser_api(destination):
 \t\t\t  << request.url().toString().toUtf8().constData()
 \t\t\t  << toJson(request.headers()).constData()
 \t\t\t  << request.body().constData();'''
-    post_replacement = '''\tif( request.url().path().startsWith(QStringLiteral("/api/v1/roomgoblin/")) )
+    post_replacement = '''\tif( request.url().path().startsWith(QStringLiteral("/api/v1/roomgoblin/")) ||
+\t\trequest.url().path().startsWith(QStringLiteral("/api/v1/authentication/")) )
 \t\twaDebug() << "[REQ] [POST]" << request.url().path().toUtf8().constData() << "[redacted]";
 \telse
 \t\twaDebug() << "[REQ] [POST]"

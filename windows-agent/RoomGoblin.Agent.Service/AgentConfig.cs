@@ -66,6 +66,10 @@ internal sealed class AgentConfig
                     File.Delete(backup);
 
                 File.Replace(temp, path, backup, ignoreMetadataErrors: true);
+                // A prior configuration can contain a legacy plaintext enrollment
+                // token. Do not retain that secret in the replacement backup.
+                if (File.Exists(backup))
+                    File.Delete(backup);
             }
             else
             {

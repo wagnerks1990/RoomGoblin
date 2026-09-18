@@ -12,6 +12,13 @@ Name:             Apollo CAST-1 da3efc
 
 RoomGoblin must correlate these records from Music Assistant's `output_protocols[].output_protocol_id` metadata. It must not deduplicate by display name or assume a particular Universal Player ID format.
 
+Status requests can overlap and Music Assistant can temporarily return a partial
+player inventory. RoomGoblin applies alias snapshots in request-generation order,
+retains previously observed aliases for a bounded five-minute grace period, and
+never lets an older response overwrite a newer mapping. This keeps commands aimed
+at a protocol child routed to the canonical queue during short inventory refreshes
+without retaining removed relationships indefinitely.
+
 For the normal controller:
 
 - `players` contains canonical/user-facing players;

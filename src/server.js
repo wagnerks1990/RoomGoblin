@@ -36,11 +36,12 @@ const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandT
 // Configuration
 // -----------------------------------------------------------------------------
 
+function environmentInteger(name,fallback,min,max){const raw=process.env[name];if(raw==null||raw==="")return fallback;const value=Number(raw);if(!Number.isSafeInteger(value)||value<min||value>max)throw new Error(`${name} must be a whole number from ${min} to ${max}`);return value}
 const PORT = validPort(process.env.PORT, 3000);
 const BIND_ADDRESS = String(process.env.BIND_ADDRESS || "0.0.0.0").replace(/^\[|\]$/g, "");
 localHttpUrl(PORT, BIND_ADDRESS); // Validate before opening listeners.
 let SCHEDULER_TIMEZONE = String(process.env.SCHEDULER_TIMEZONE || process.env.TZ || "America/New_York").trim() || "America/New_York";
-const SCHEDULER_CATCHUP_MINUTES = Math.max(0, Math.min(60, Number(process.env.SCHEDULER_CATCHUP_MINUTES || 5)));
+const SCHEDULER_CATCHUP_MINUTES = environmentInteger("SCHEDULER_CATCHUP_MINUTES",5,0,60);
 process.env.TZ = SCHEDULER_TIMEZONE;
 const ROOM_NAME = String(process.env.ROOM_NAME || "Classroom");
 const APPLICATION_VERSION = applicationVersion();
@@ -56,21 +57,21 @@ let MQTT_JSON_BRIDGE =
 // v0.8 direct hardware integrations. Node-RED is no longer required.
 const HARDWARE_CONFIG_FILE = path.join(path.resolve(__dirname, ".."), "config", "hardware.json");
 let PLUTO_URL = String(process.env.PLUTO_URL || "").trim();
-let PLUTO_TIMEOUT_MS = Number(process.env.PLUTO_TIMEOUT_MS || 4000);
-let PLUTO_READ_RETRIES = Number(process.env.PLUTO_READ_RETRIES || 4);
+let PLUTO_TIMEOUT_MS = environmentInteger("PLUTO_TIMEOUT_MS",4000,500,60000);
+let PLUTO_READ_RETRIES = environmentInteger("PLUTO_READ_RETRIES",4,0,10);
 
 const CONTROL_TOKEN = String(process.env.CONTROL_TOKEN || "");
 const SETUP_TOKEN = String(process.env.SETUP_TOKEN || "");
 const MAINTENANCE_PROXY_ENABLED = String(process.env.MAINTENANCE_PROXY_ENABLED || "false").toLowerCase() === "true";
 const CORS_ALLOWED_ORIGINS = new Set(String(process.env.CORS_ALLOWED_ORIGINS || "").split(",").map(x=>x.trim()).filter(Boolean));
-const WS_MAX_PAYLOAD_BYTES = Math.max(1024*1024,Math.min(16*1024*1024,Number(process.env.WS_MAX_PAYLOAD_MB||12)*1024*1024));
+const WS_MAX_PAYLOAD_BYTES = environmentInteger("WS_MAX_PAYLOAD_MB",12,1,16)*1024*1024;
 const MAINTENANCE_URL = serviceUrl(process.env.MAINTENANCE_URL || "http://127.0.0.1:3010", ["maintenance-agent", "classroom-control-hub-maintenance"]).replace(/\/$/,"");
 const MAINTENANCE_TOKEN = String(process.env.MAINTENANCE_TOKEN || "");
-const TRUST_PROXY_HOPS = Math.max(0, Math.min(5, Number(process.env.TRUST_PROXY_HOPS || 0)));
+const TRUST_PROXY_HOPS = environmentInteger("TRUST_PROXY_HOPS",0,0,5);
 const DISPLAY_GATEWAY_HOSTS=[...parseDisplayGatewayAllowedHosts()].sort();
-const LOGIN_MAX_ATTEMPTS = Math.max(3, Math.min(20, Number(process.env.LOGIN_MAX_ATTEMPTS || 5)));
-const LOGIN_WINDOW_MS = Math.max(60000, Number(process.env.LOGIN_WINDOW_MS || 15 * 60 * 1000));
-const LOGIN_LOCK_MS = Math.max(60000, Number(process.env.LOGIN_LOCK_MS || 15 * 60 * 1000));
+const LOGIN_MAX_ATTEMPTS = environmentInteger("LOGIN_MAX_ATTEMPTS",5,3,20);
+const LOGIN_WINDOW_MS = environmentInteger("LOGIN_WINDOW_MS",15*60*1000,60000,24*60*60*1000);
+const LOGIN_LOCK_MS = environmentInteger("LOGIN_LOCK_MS",15*60*1000,60000,24*60*60*1000);
 const fullExportFreeze={requested:false,active:false,token:null,activeHttpMutations:0,activeWsMutations:0,activeAsyncMutations:0,startedAt:null,leaseTimer:null};
 function trackFullExportMutation(task){
   fullExportFreeze.activeAsyncMutations++;
@@ -82,11 +83,11 @@ let VEYON_WEBAPI_URL = serviceUrl(process.env.VEYON_WEBAPI_URL || "http://127.0.
 let VEYON_KEY_NAME = String(process.env.VEYON_KEY_NAME || "ClassroomControlHub");
 const VEYON_PRIVATE_KEY_FILE = String(process.env.VEYON_PRIVATE_KEY_FILE || "/run/secrets/veyon-private-key");
 let VEYON_SCAN_SUBNET = String(process.env.VEYON_SCAN_SUBNET || "").replace(/\.$/,"");
-let VEYON_SCAN_START = Math.max(1,Math.min(254,Number(process.env.VEYON_SCAN_START||1)));
-let VEYON_SCAN_END = Math.max(VEYON_SCAN_START,Math.min(254,Number(process.env.VEYON_SCAN_END||254)));
-let VEYON_POOL_MAX = Math.max(4,Math.min(128,Number(process.env.VEYON_POOL_MAX||24)));
-let VEYON_AUTH_RETRIES = Math.max(0,Math.min(5,Number(process.env.VEYON_AUTH_RETRIES||2)));
-let VEYON_THUMBNAIL_CONCURRENCY = Math.max(2,Math.min(24,Number(process.env.VEYON_THUMBNAIL_CONCURRENCY||8)));
+let VEYON_SCAN_START = environmentInteger("VEYON_SCAN_START",1,1,254);
+let VEYON_SCAN_END = environmentInteger("VEYON_SCAN_END",254,VEYON_SCAN_START,254);
+let VEYON_POOL_MAX = environmentInteger("VEYON_POOL_MAX",24,4,128);
+let VEYON_AUTH_RETRIES = environmentInteger("VEYON_AUTH_RETRIES",2,0,5);
+let VEYON_THUMBNAIL_CONCURRENCY = environmentInteger("VEYON_THUMBNAIL_CONCURRENCY",8,2,24);
 const VEYON_AUTHKEYS_UUID = "0c69b301-81b4-42d6-8fae-128cdd113314";
 const VEYON_FEATURES = Object.freeze({
   ...POWER_FEATURES,
@@ -138,13 +139,13 @@ async function veyonCommandEligibility(rec,feature,active=true){
 }
 
 const LAB_AGENT_TOKEN = String(process.env.LAB_AGENT_TOKEN || "");
-let LAB_HISTORY_RETENTION_HOURS = Math.max(0, Math.min(24*365, Number(process.env.LAB_HISTORY_RETENTION_HOURS || 0)));
-let LAB_SCREENSHOT_RETENTION_DAYS = Math.max(1, Math.min(365, Number(process.env.LAB_SCREENSHOT_RETENTION_DAYS || 7)));
+let LAB_HISTORY_RETENTION_HOURS = environmentInteger("LAB_HISTORY_RETENTION_HOURS",0,0,24*365);
+let LAB_SCREENSHOT_RETENTION_DAYS = environmentInteger("LAB_SCREENSHOT_RETENTION_DAYS",7,1,365);
 const LAB_AI_MONITOR_ENABLED = String(process.env.LAB_AI_MONITOR_ENABLED || "true").toLowerCase() !== "false";
-const LAB_AI_ALERT_COOLDOWN_MINUTES = Math.max(1, Math.min(1440, Number(process.env.LAB_AI_ALERT_COOLDOWN_MINUTES || 10)));
+const LAB_AI_ALERT_COOLDOWN_MINUTES = environmentInteger("LAB_AI_ALERT_COOLDOWN_MINUTES",10,1,1440);
 const DISPLAY_TOKEN = String(process.env.DISPLAY_TOKEN || "");
-const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 500);
-const DEVICE_OFFLINE_SECONDS = Number(process.env.DEVICE_OFFLINE_SECONDS || 45);
+const MAX_UPLOAD_MB = environmentInteger("MAX_UPLOAD_MB",500,1,2048);
+const DEVICE_OFFLINE_SECONDS = environmentInteger("DEVICE_OFFLINE_SECONDS",45,5,3600);
 
 const APP_DIR = path.resolve(__dirname, "..");
 const PUBLIC_DIR = path.join(APP_DIR, "public");
@@ -178,13 +179,13 @@ const LAB_AI_ALERTS_FILE = path.join(DATA_DIR, "lab-ai-alerts.json");
 const LAB_AI_RULES_FILE = path.join(DATA_DIR, "lab-ai-rules.json");
 fs.mkdirSync(LAB_SCREENSHOT_DIR,{recursive:true});
 fs.mkdirSync(LAB_UPDATE_DIR,{recursive:true});
-const SESSION_EFFECT_INTERVAL_MS = Number(process.env.SESSION_EFFECT_INTERVAL_MS || 4500);
+const SESSION_EFFECT_INTERVAL_MS = environmentInteger("SESSION_EFFECT_INTERVAL_MS",4500,1000,60000);
 // The retired participation experience contains classroom-specific targets.
 // Keep it quarantined until it is replaced by database-backed session templates.
-const SESSION_MAX_QUEUE = Number(process.env.SESSION_MAX_QUEUE || 80);
-const SESSION_EFFECT_DURATION_MS = Number(process.env.SESSION_EFFECT_DURATION_MS || 7000);
-const SESSION_CLEAR_GAP_MS = Number(process.env.SESSION_CLEAR_GAP_MS || 1200);
-const SESSION_SPOTLIGHT_ROTATE_MS = Number(process.env.SESSION_SPOTLIGHT_ROTATE_MS || 9000);
+const SESSION_MAX_QUEUE = environmentInteger("SESSION_MAX_QUEUE",80,1,1000);
+const SESSION_EFFECT_DURATION_MS = environmentInteger("SESSION_EFFECT_DURATION_MS",7000,1000,120000);
+const SESSION_CLEAR_GAP_MS = environmentInteger("SESSION_CLEAR_GAP_MS",1200,0,30000);
+const SESSION_SPOTLIGHT_ROTATE_MS = environmentInteger("SESSION_SPOTLIGHT_ROTATE_MS",9000,1000,600000);
 
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
 fs.mkdirSync(PRESENTATIONS_DIR, { recursive: true });
@@ -209,6 +210,7 @@ try{
   const storedTimezone=dbStore.getSetting("site.profile",{})?.timezone;
   if(storedTimezone)SCHEDULER_TIMEZONE=normalizedTimezone(storedTimezone);
   process.env.TZ=SCHEDULER_TIMEZONE;
+  schedulerClock.timezone=SCHEDULER_TIMEZONE;
 }catch(error){console.warn(`Stored scheduler timezone ignored: ${error.message}`)}
 function privacyRetentionPolicy(){const p=dbStore.getPreference("privacy.retention",{})||{},rawHistory=p.browserHistoryHours===undefined?LAB_HISTORY_RETENTION_HOURS:Number(p.browserHistoryHours);return {browserHistoryEnabled:p.browserHistoryEnabled===true,browserHistoryHours:Number.isFinite(rawHistory)?Math.max(0,Math.min(24*365,rawHistory)):0,screenshotDays:Math.max(1,Math.min(365,Number(p.screenshotDays)||LAB_SCREENSHOT_RETENTION_DAYS)),alertDays:Math.max(1,Math.min(365,Number(p.alertDays)||30)),auditDays:Math.max(7,Math.min(3650,Number(p.auditDays)||180))}}
 function applyPrivacyRetentionPolicy(){const p=privacyRetentionPolicy();LAB_HISTORY_RETENTION_HOURS=p.browserHistoryHours;LAB_SCREENSHOT_RETENTION_DAYS=p.screenshotDays;return p}
@@ -428,7 +430,8 @@ function applyGoveeRegistryEntry(entry){
 function bootstrapGoveeDiscovery(){
   for(const [alias,d] of Object.entries(goveeDevices)){
     if(!d?.id)continue;
-    const existing=Object.values(goveeDiscovery.devices).find(x=>x?.id===String(d.id));
+    d.id=normalizeGoveePhysicalId(d.id);
+    const existing=Object.values(goveeDiscovery.devices).find(x=>normalizeGoveePhysicalId(x?.id)===d.id);
     if(existing){
       existing.alias=cleanId(existing.alias||alias);
       if(existing.name) d.name=existing.name;
@@ -446,8 +449,10 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
   if(!id || isSyntheticGoveeEntity(deviceId,cfg))return null;
   const now=new Date().toISOString();
   const meta=goveeExtractMeta(id,cfg);
-  let alias=goveeConfiguredAliasById(id)||goveeAliasForId(id);
-  let entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===id);
+  const configuredAlias=goveeConfiguredAliasById(id);
+  let alias=configuredAlias||goveeAliasForId(id);
+  let entry=Object.values(goveeDiscovery.devices).find(x=>normalizeGoveePhysicalId(x?.id)===id);
+  const newDevice=!entry&&!configuredAlias;
 
   // Existing hardware.json devices are known already; create a registry overlay only
   // when we need discovery metadata or user-editable overrides.
@@ -458,7 +463,7 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
       sku:goveeDevices[alias]?.sku||meta.sku,
       ip:goveeDevices[alias]?.ip||meta.ip||"",
       groups:[],
-      discovered:!goveeConfiguredAliasById(id),
+      discovered:!configuredAlias,
       firstSeen:now,lastSeen:now,source
     };
     goveeDiscovery.devices[alias]=entry;
@@ -476,17 +481,17 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
     applyGoveeRegistryEntry(entry);
     goveeDiscovery.lastDiscoveryAt=now;
     persistGoveeDiscovery();
-    audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice:!goveeConfiguredAliasById(id)});
+    audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice});
     broadcastControllers({type:"govee.discovery",deviceId:id,alias,device:goveeDevices[alias]});
   }
   return alias;
 }
 function touchGoveePresence(deviceId,status="online"){
-  const id=String(deviceId||"");
+  const id=normalizeGoveePhysicalId(deviceId);
   if(!id)return;
   const now=new Date().toISOString();
   goveePresence[id]={status:String(status||"online").toLowerCase(),lastSeen:now};
-  const entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===id);
+  const entry=Object.values(goveeDiscovery.devices).find(x=>normalizeGoveePhysicalId(x?.id)===id);
   if(entry){
     entry.lastSeen=now;
     // Do not persist on every state packet; periodic/stateful UI derives presence in memory.
@@ -495,7 +500,7 @@ function touchGoveePresence(deviceId,status="online"){
   }
 }
 function goveeDeviceOnline(deviceId){
-  const p=goveePresence[String(deviceId||"")];
+  const p=goveePresence[normalizeGoveePhysicalId(deviceId)];
   if(!p)return null;
   if(["offline","unavailable","false","0"].includes(String(p.status).toLowerCase()))return false;
   return true;
@@ -770,6 +775,8 @@ function announcementsWebSocketUrls(c){
   // guessed vendor port would bypass the outbound safe-port policy.
   return [...new Set(urls)];
 }
+function announcementHlsProbeUrl(c,suffix,stamp){const u=new URL(`/${c.app}/streams/${encodeURIComponent(c.id)}${suffix}.m3u8`,c.origin);u.searchParams.set("_",String(stamp));if(c.token)u.searchParams.set("token",c.token);if(c.subscriberId)u.searchParams.set("subscriberId",c.subscriberId);if(c.subscriberCode)u.searchParams.set("subscriberCode",c.subscriberCode);return u.toString()}
+function publicAnnouncementProbeUrl(value){try{const u=new URL(value);u.search="";u.hash="";return u.toString()}catch{return ""}}
 async function probeMorningAnnouncementsWebRtc(c,timeoutMs=3500){
   const urls=announcementsWebSocketUrls(c),attempts=[];
   for(const url of urls){
@@ -824,31 +831,32 @@ async function probeMorningAnnouncementsLive(){
   const c=announcementsCoordinates();
   if(!c)return {live:false,probe:"hls",status:"invalid-url",error:"Invalid stream URL",durationMs:0,attempts:[]};
   const started=Date.now(),stamp=started,attempts=[];
-  const primary=`${c.origin}/${c.app}/streams/${encodeURIComponent(c.id)}.m3u8?_=${stamp}`;
-  const adaptive=`${c.origin}/${c.app}/streams/${encodeURIComponent(c.id)}_adaptive.m3u8?_=${stamp}`;
+  const primary=announcementHlsProbeUrl(c,"",stamp);
+  const adaptive=announcementHlsProbeUrl(c,"_adaptive",stamp);
   for(const [index,url] of [primary,adaptive].entries()){
+    const publicUrl=publicAnnouncementProbeUrl(url);
     try{
       const r=await fetchWithDeadline(url,{},3500);
       if(r.status===404){
-        attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:404,ok:false,url,status:"not-found"});
+        attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:404,ok:false,url:publicUrl,status:"not-found"});
         // This Ant Media deployment creates the primary manifest while a publisher
         // is live and removes it when publishing stops. Primary 404 is authoritative OFFLINE.
-        if(index===0)return {live:false,probe:"hls",status:"404-offline",httpStatus:404,url,durationMs:Date.now()-started,attempts};
+        if(index===0)return {live:false,probe:"hls",status:"404-offline",httpStatus:404,url:publicUrl,durationMs:Date.now()-started,attempts};
         continue;
       }
       if(!r.ok){
-        attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:r.status,ok:false,url,status:`http-${r.status}`});
+        attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:r.status,ok:false,url:publicUrl,status:`http-${r.status}`});
         continue;
       }
       const text=await r.text();
       const valid=text.startsWith("#EXTM3U")&&(text.includes("#EXTINF")||text.includes("#EXT-X-STREAM-INF"));
-      attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:r.status,ok:valid,url,status:valid?"playlist":"invalid-playlist"});
+      attempts.push({probe:index===0?"hls":"hls-adaptive",httpStatus:r.status,ok:valid,url:publicUrl,status:valid?"playlist":"invalid-playlist"});
       if(valid){
         const seq=(text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/)||[])[1]||null;
-        return {live:true,probe:"hls",status:"playlist",httpStatus:r.status,url,mediaSequence:seq,durationMs:Date.now()-started,attempts};
+        return {live:true,probe:"hls",status:"playlist",httpStatus:r.status,url:publicUrl,mediaSequence:seq,durationMs:Date.now()-started,attempts};
       }
     }catch(err){
-      attempts.push({probe:index===0?"hls":"hls-adaptive",ok:false,url,error:err?.name==='AbortError'?"timeout":String(err?.message||err)});
+      attempts.push({probe:index===0?"hls":"hls-adaptive",ok:false,url:publicUrl,error:err?.name==='AbortError'?"timeout":String(err?.message||err)});
     }
   }
   // Network/proxy failures are UNKNOWN, not OFFLINE, so they do not consume
@@ -2029,19 +2037,22 @@ function extractPptxSpeakerNotes(file){
   const ext=path.extname(file).toLowerCase();
   if(ext!==".pptx")return [];
   try{
+    if(fs.statSync(file).size>100*1024*1024)throw new Error("PPTX is too large for speaker-note extraction");
     const zip=new AdmZip(file);
-    const entries=zip.getEntries()
+    const allEntries=zip.getEntries();if(allEntries.length>10000)throw new Error("PPTX contains too many archive entries");
+    const entries=allEntries
       .filter(e=>/^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(e.entryName))
       .sort((a,b)=>{
         const an=Number(a.entryName.match(/notesSlide(\d+)/i)?.[1]||0);
         const bn=Number(b.entryName.match(/notesSlide(\d+)/i)?.[1]||0);
         return an-bn;
       });
+    if(entries.length>1000||entries.some(e=>Number(e.header?.size||0)>1024*1024)||entries.reduce((sum,e)=>sum+Number(e.header?.size||0),0)>10*1024*1024)throw new Error("PPTX speaker notes exceed extraction limits");
     const notes=[];
     for(const e of entries){
-      const xml=e.getData().toString("utf8");
+      const xml=e.getData().toString("utf8");if(Buffer.byteLength(xml)>1024*1024)throw new Error("PPTX speaker note is too large");
       const chunks=[...xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map(m=>xmlDecodeText(m[1]).trim()).filter(Boolean);
-      const text=chunks.filter(x=>!/^click to edit/i.test(x)).join("\n").trim();
+      const text=chunks.filter(x=>!/^click to edit/i.test(x)).join("\n").trim().slice(0,100000);
       const n=Number(e.entryName.match(/notesSlide(\d+)/i)?.[1]||0);
       if(n>0)notes[n-1]=text;
     }
@@ -2334,7 +2345,7 @@ function normalizeClassSchedule(input={},existing={}){
   const startTime=String(input.startTime??existing.startTime??"08:00"),endTime=String(input.endTime??existing.endTime??"09:00");
   if(!validTime(startTime)||!validTime(endTime))throw new Error("Class times must be valid HH:MM values");
   if(timeToMinutes(startTime)>=timeToMinutes(endTime))throw new Error("Class end time must be after its start time");
-  const days=(Array.isArray(input.days)?input.days:(existing.days||[1,2,3,4,5])).map(Number).filter(x=>x>=0&&x<=6);
+  const days=(Array.isArray(input.days)?input.days:(existing.days||[1,2,3,4,5])).map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6);
   const scheduleMode=["weekly","alternating","schoolcycle"].includes(String(input.scheduleMode??existing.scheduleMode??"schoolcycle"))?String(input.scheduleMode??existing.scheduleMode??"schoolcycle"):"schoolcycle";
   const alternatePhase=String(input.alternatePhase??existing.alternatePhase??"A").toUpperCase()==="B"?"B":"A";
   const period=String(input.period??existing.period??"").trim().slice(0,40);
@@ -2608,7 +2619,7 @@ async function veyonAuthenticateInternal(host){
   throw lastErr||new Error("Veyon authentication failed");
 }
 async function veyonAuthenticate(host,force=false){
-  host=String(host||"").trim();if(!host)throw new Error("Veyon host required");
+  host=validatedVeyonHost(host);
   if(veyonAuthInFlight.has(host))return veyonAuthInFlight.get(host);
   const now=Math.floor(Date.now()/1000),cached=veyonConnectionCache.get(host);
   if(!force&&cached?.uid&&Number(cached.validUntil||0)>now+30&&Date.now()-Number(cached.lastUsed||0)<45000){
@@ -2660,6 +2671,7 @@ async function veyonFeature(host,feature,active=true,args={}){
   },veyonJson,["screenLock","inputLock"].includes(feature));
 }
 function veyonTcpProbe(host,port=11100,timeout=450){
+  host=validatedVeyonHost(host);
   return new Promise(resolve=>{
     const socket=new net.Socket();let done=false;
     const finish=ok=>{if(done)return;done=true;try{socket.destroy()}catch{}resolve(ok)};
@@ -2679,9 +2691,10 @@ async function veyonComputerInfo(host){
   ]);
   return {user,session,featureState:{screenLock:typeof screenLock?.active==="boolean"?screenLock.active:null,inputLock:typeof inputLock?.active==="boolean"?inputLock.active:null}};
 }
-function veyonComputerId(ip){return String(ip).replace(/[^a-zA-Z0-9._-]/g,"-")}
+function validatedVeyonHost(value){const raw=String(value||"").trim(),parts=raw.split(".");if(parts.length!==4||parts.some(x=>!/^\d{1,3}$/.test(x)||Number(x)>255))throw new Error("Veyon computers require a private IPv4 address");const [a,b]=parts.map(Number),privateAddress=a===10||(a===172&&b>=16&&b<=31)||(a===192&&b===168);if(!privateAddress)throw new Error("Veyon computers require an RFC1918 private IPv4 address");return parts.map(x=>String(Number(x))).join(".")}
+function veyonComputerId(ip){return validatedVeyonHost(ip)}
 function upsertVeyonComputer(ip,patch={}){
-  const id=veyonComputerId(ip),old=veyonComputerStore.computers[id]||{id,ip,name:patch.name||ip,role:"student",createdAt:new Date().toISOString()};
+  ip=validatedVeyonHost(ip);const id=veyonComputerId(ip),old=veyonComputerStore.computers[id]||{id,ip,name:patch.name||ip,role:"student",createdAt:new Date().toISOString()};
   const role=(patch.role==="teacher"||patch.role==="student")?patch.role:(old.role==="teacher"?"teacher":"student");
   const rec={...old,...patch,role,id,ip:String(ip),updatedAt:new Date().toISOString()};
   veyonComputerStore.computers[id]=rec;persistVeyonComputers();return rec;
@@ -3092,6 +3105,12 @@ function persistSessions() {
     console.error("Session persistence failed:", err.message);
   }
 }
+// Anonymous classroom sessions are retired. Preserve historical/export data but
+// fail closed on every restart so stale queues can never drive room hardware.
+for(const session of Object.values(classroomSessions)){
+  session.paused=true;session.queue=[];session.currentEffect=null;session.spotlightRotation=false;
+}
+if(Object.keys(classroomSessions).length)persistSessions();
 
 function cleanShort(value, max=120) {
   return String(value ?? "").replace(/[<>]/g, "").trim().slice(0, max);
@@ -3404,7 +3423,7 @@ async function nextSessionEffect() {
   }
 }
 
-setInterval(nextSessionEffect, SESSION_EFFECT_INTERVAL_MS);
+// Deliberately no effect timer: the legacy anonymous session API is retired.
 
 
 function persistState() {
@@ -3722,6 +3741,8 @@ function normalizeCommand(input, source = "api") {
     input?.payload && typeof input.payload === "object" && !Array.isArray(input.payload)
       ? input.payload
       : {};
+  if(Buffer.byteLength(JSON.stringify(payload))>256*1024)throw new Error("Command payload is too large");
+  if(Array.isArray(target)&&target.length>100)throw new Error("Command target list is too large");
 
   return {
     version: 1,
@@ -3821,16 +3842,23 @@ function sanitizeText(text, max = 20000) {
 function safeMediaUrl(value) {
   const url = String(value || "").trim();
   if (!url) return "";
-  if (
-    url.startsWith("http://") ||
-    url.startsWith("https://") ||
-    url.startsWith("/media/") ||
-    url.startsWith("/document-viewer/") ||
-    url.startsWith("/presentations/")
-  ) {
-    return url;
-  }
+  if(url.includes("\\"))throw new Error("Media URL cannot contain backslashes");
+  if(url.startsWith("/media/")||url.startsWith("/document-viewer/")||url.startsWith("/presentations/"))return url;
+  try{const parsed=new URL(url);if((parsed.protocol==="http:"||parsed.protocol==="https:")&&!parsed.username&&!parsed.password)return parsed.toString()}catch{}
   throw new Error("Media URL must use http://, https://, /media/, /document-viewer/, or /presentations/");
+}
+
+const URL_BEARING_DISPLAY_COMMANDS=new Set(["display.image","display.video","display.web","display.pdf","display.document","display.ppt","display.presentation"]);
+function validateCommandForDispatch(command){
+  if(URL_BEARING_DISPLAY_COMMANDS.has(command.type)){
+    const payload={...(command.payload||{}),url:safeMediaUrl(command.payload?.url)};
+    for(const [name,min,max] of [["opacity",0,1],["volume",0,1],["playbackRate",0.25,4],["startAtSeconds",0,86400],["endAtSeconds",0,86400]])if(payload[name]!==undefined&&payload[name]!==null){const n=Number(payload[name]);if(!Number.isFinite(n)||n<min||n>max)throw new Error(`${name} must be a finite number from ${min} to ${max}`);payload[name]=n}
+    if(Number(payload.endAtSeconds)>0&&Number(payload.endAtSeconds)<=Number(payload.startAtSeconds||0))throw new Error("endAtSeconds must be greater than startAtSeconds");
+    command.payload=payload;
+  }
+  if(command.type.startsWith("lighting."))validateGoveeCommand(command.target,command.type.slice("lighting.".length),command.payload||{});
+  if(command.type.startsWith("av."))plutoBuild(plutoActionForCommand(command));
+  return command;
 }
 
 // -----------------------------------------------------------------------------
@@ -4009,7 +4037,7 @@ function connectMqtt() {
 
     const cm=topic.match(/^homeassistant\/light\/gv2mqtt-([^/]+)\/config$/);
     if(cm){
-      const deviceId=cm[1];
+      const deviceId=normalizeGoveePhysicalId(cm[1]);
       goveeLiveConfigs[deviceId]=payload;
       const alias=enrollGoveeDevice(deviceId,payload,"homeassistant-discovery");
       touchGoveePresence(deviceId,"online");
@@ -4019,7 +4047,7 @@ function connectMqtt() {
 
     const sm=topic.match(/^gv2mqtt\/light\/([^/]+)\/state$/);
     if(sm){
-      const deviceId=sm[1];
+      const deviceId=normalizeGoveePhysicalId(sm[1]);
       if(!goveeConfiguredAliasById(deviceId) && goveeDiscovery.autoAdd!==false){
         enrollGoveeDevice(deviceId,goveeLiveConfigs[deviceId]||{},"light-state");
       }
@@ -4031,7 +4059,7 @@ function connectMqtt() {
 
     const am=topic.match(/^gv2mqtt\/light\/([^/]+)\/availability$/);
     if(am){
-      const deviceId=am[1];
+      const deviceId=normalizeGoveePhysicalId(am[1]);
       if(!goveeConfiguredAliasById(deviceId) && goveeDiscovery.autoAdd!==false){
         enrollGoveeDevice(deviceId,goveeLiveConfigs[deviceId]||{},"availability");
       }
@@ -4043,7 +4071,7 @@ function connectMqtt() {
 
     const gsm=topic.match(/^gv2mqtt\/sensor\/sensor-([^/]+)-gv2mqtt-status\/state$/);
     if(gsm){
-      const deviceId=gsm[1];
+      const deviceId=normalizeGoveePhysicalId(gsm[1]);
       const raw=String(payload?.raw??payloadText??"").trim().toLowerCase();
       if(!goveeConfiguredAliasById(deviceId) && goveeDiscovery.autoAdd!==false){
         enrollGoveeDevice(deviceId,goveeLiveConfigs[deviceId]||{},"status-state");
@@ -4055,7 +4083,7 @@ function connectMqtt() {
 
     const gam=topic.match(/^gv2mqtt\/sensor\/sensor-([^/]+)-gv2mqtt-status\/attributes$/);
     if(gam){
-      const deviceId=gam[1];
+      const deviceId=normalizeGoveePhysicalId(gam[1]);
       const meta=goveeMetaFromStatusAttributes(deviceId,payload||{});
       goveeLiveConfigs[deviceId]={...(goveeLiveConfigs[deviceId]||{}),...meta};
       const alias=enrollGoveeDevice(deviceId,meta,"status-attributes");
@@ -4132,7 +4160,7 @@ async function goveePublish(alias,payload){
 }
 
 async function directGoveeCommand(target,action,p={}){
-  const aliases=goveeTargets(target);
+  const aliases=validateGoveeCommand(target,action,p);
   const results=[];
   for(const alias of aliases){
     const d=goveeDevices[alias];
@@ -4164,6 +4192,8 @@ async function directGoveeCommand(target,action,p={}){
   return {ok:true,target,action,count:aliases.length,results};
 }
 
+function validateGoveeCommand(target,action,p={}){const aliases=goveeTargets(target);if(action==="brightness"){const n=Number(p.level);if(!Number.isFinite(n)||n<1||n>100)throw new Error("Brightness must be 1-100")}else if(action==="color")colorParts(p);else if(action==="temp"){const n=Number(p.kelvin);if(!Number.isFinite(n)||n<2000||n>9000)throw new Error("Kelvin must be 2000-9000")}else if(action==="scene"){if(!String(p.scene||"").trim())throw new Error("Scene is required")}else if(!["on","off"].includes(action))throw new Error(`Unsupported Govee action ${action}`);return aliases}
+
 function goveeInventory(){
   const states={},presence={},meta={};
   for(const [alias,d] of Object.entries(goveeDevices)){
@@ -4192,7 +4222,9 @@ function goveeScenes(alias){
 
 function plutoBuild(action){
   const p=action||{};
-  const bit=v=>v?1:0;
+  const integer=(name,min,max)=>{const value=Number(p[name]);if(!Number.isInteger(value)||value<min||value>max)throw new Error(`Pluto ${name} must be a whole number from ${min} to ${max}`);return value};
+  const bit=name=>{const value=p[name];if(value===true||value===1||value==="1")return 1;if(value===false||value===0||value==="0")return 0;throw new Error(`Pluto ${name} must be enabled or disabled`)};
+  const names=name=>{const value=p[name];if(!Array.isArray(value)||value.length!==8||value.some(x=>typeof x!=="string"||!x.trim()||x.length>40))throw new Error(`Pluto ${name} must contain eight names of 1-40 characters`);return value.map(x=>x.trim())};
   let body,expected,readOnly=false;
   switch(p.action){
     case "videoStatus": body={comhead:"get video status"}; expected="get video status"; readOnly=true; break;
@@ -4201,31 +4233,31 @@ function plutoBuild(action){
     case "cecStatus": body={comhead:"get cec status"}; expected="get cec status"; readOnly=true; break;
     case "systemStatus": body={comhead:"get system status"}; expected="get system status"; readOnly=true; break;
     case "networkStatus": body={comhead:"get network"}; expected="get network"; readOnly=true; break;
-    case "route": body={comhead:"video switch",source:[Number(p.input),Number(p.output)]};expected="video switch";break;
-    case "hdmiStream": body={comhead:"hdmi tx stream",out:[Number(p.output),bit(p.state)]};expected="hdmi tx stream";break;
-    case "hdbtStream": body={comhead:"hdbt tx stream",out:[Number(p.output),bit(p.state)]};expected="hdbt tx stream";break;
-    case "hdmiScaler": body={comhead:"video hdmi scaler",value:[Number(p.output),Number(p.mode)]};expected="video hdmi scaler";break;
-    case "hdbtScaler": body={comhead:"video hdbt scaler",value:[Number(p.output),Number(p.mode)]};expected="video hdbt scaler";break;
-    case "txHdcp": body={comhead:"tx hdcp",hdcp:[Number(p.output),bit(p.state)]};expected="tx hdcp";break;
-    case "arc": body={comhead:"set arc",arc:[Number(p.output),bit(p.state)]};expected="set arc";break;
-    case "setInputNames": body={comhead:"set input name",input:p.names};expected="set input name";break;
-    case "setHdmiOutputNames": body={comhead:"set hdmiout name",output:p.names};expected="set hdmiout name";break;
-    case "setHdbtOutputNames": body={comhead:"set hdbtout name",output:p.names};expected="set hdbtout name";break;
-    case "setEdid": body={comhead:"set edid",edid:[Number(p.input),Number(p.profile)]};expected="set edid";break;
-    case "panelLock": body={comhead:"set panel lock",lock:bit(p.state)};expected="set panel lock";break;
-    case "beep": body={comhead:"set beep",beep:bit(p.state)};expected="set beep";break;
-    case "backlight": body={comhead:"set bl mode",mode:Number(p.mode)};expected="set bl mode";break;
+    case "route": body={comhead:"video switch",source:[integer("input",1,8),integer("output",1,8)]};expected="video switch";break;
+    case "hdmiStream": body={comhead:"hdmi tx stream",out:[integer("output",1,8),bit("state")]};expected="hdmi tx stream";break;
+    case "hdbtStream": body={comhead:"hdbt tx stream",out:[integer("output",1,8),bit("state")]};expected="hdbt tx stream";break;
+    case "hdmiScaler": body={comhead:"video hdmi scaler",value:[integer("output",1,8),integer("mode",0,255)]};expected="video hdmi scaler";break;
+    case "hdbtScaler": body={comhead:"video hdbt scaler",value:[integer("output",1,8),integer("mode",0,255)]};expected="video hdbt scaler";break;
+    case "txHdcp": body={comhead:"tx hdcp",hdcp:[integer("output",1,8),bit("state")]};expected="tx hdcp";break;
+    case "arc": body={comhead:"set arc",arc:[integer("output",1,8),bit("state")]};expected="set arc";break;
+    case "setInputNames": body={comhead:"set input name",input:names("names")};expected="set input name";break;
+    case "setHdmiOutputNames": body={comhead:"set hdmiout name",output:names("names")};expected="set hdmiout name";break;
+    case "setHdbtOutputNames": body={comhead:"set hdbtout name",output:names("names")};expected="set hdbtout name";break;
+    case "setEdid": body={comhead:"set edid",edid:[integer("input",1,8),integer("profile",0,255)]};expected="set edid";break;
+    case "panelLock": body={comhead:"set panel lock",lock:bit("state")};expected="set panel lock";break;
+    case "beep": body={comhead:"set beep",beep:bit("state")};expected="set beep";break;
+    case "backlight": body={comhead:"set bl mode",mode:integer("mode",0,1)};expected="set bl mode";break;
     case "reboot": body={comhead:"reboot",reboot:1};expected="reboot";break;
-    case "cecAllOutputs": body={comhead:"cec command",language:0,object:1,port:new Array(16).fill(1),index:Number(p.index)};expected="cec command";break;
-    case "cecAllHdmi": body={comhead:"cec command",language:0,object:1,port:[1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],index:Number(p.index)};expected="cec command";break;
-    case "cecAllHdbt": body={comhead:"cec command",language:0,object:1,port:[0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1],index:Number(p.index)};expected="cec command";break;
+    case "cecAllOutputs": body={comhead:"cec command",language:0,object:1,port:new Array(16).fill(1),index:integer("index",0,255)};expected="cec command";break;
+    case "cecAllHdmi": body={comhead:"cec command",language:0,object:1,port:[1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],index:integer("index",0,255)};expected="cec command";break;
+    case "cecAllHdbt": body={comhead:"cec command",language:0,object:1,port:[0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1],index:integer("index",0,255)};expected="cec command";break;
     case "cecInput":{
-      const ports=new Array(8).fill(0),i=Number(p.input);if(i<1||i>8)throw new Error("Invalid CEC input");
-      ports[i-1]=1;body={comhead:"cec command",language:0,object:0,port:ports,index:Number(p.index)};expected="cec command";break;
+      const ports=new Array(8).fill(0),i=integer("input",1,8);
+      ports[i-1]=1;body={comhead:"cec command",language:0,object:0,port:ports,index:integer("index",0,255)};expected="cec command";break;
     }
     case "cecOutput":{
-      const ports=new Array(16).fill(0),o=Number(p.output);if(o<1||o>8)throw new Error("Invalid CEC output");
-      ports[(p.connection==="hdbt"?8:0)+(o-1)]=1;body={comhead:"cec command",language:0,object:1,port:ports,index:Number(p.index)};expected="cec command";break;
+      const ports=new Array(16).fill(0),o=integer("output",1,8);if(!["hdmi","hdbt"].includes(p.connection))throw new Error("Pluto connection must be hdmi or hdbt");
+      ports[(p.connection==="hdbt"?8:0)+(o-1)]=1;body={comhead:"cec command",language:0,object:1,port:ports,index:integer("index",0,255)};expected="cec command";break;
     }
     case "raw":
       if(!p.body||typeof p.body!=="object"||!p.body.comhead)throw new Error("Raw body must contain comhead");
@@ -4289,14 +4321,9 @@ async function runLightingCommand(command){
 }
 
 async function runAvCommand(command){
-  const p=command.payload||{};
-  if(command.type==="av.route")return directPluto({action:"route",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),input:Number(p.input)});
-  if(command.type==="av.cecOutput")return directPluto({action:"cecOutput",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)});
-  if(command.type==="av.cecAllOutputs")return directPluto({action:"cecAllOutputs",index:Number(p.index)});
-  if(command.type==="av.cecAllHdmi")return directPluto({action:"cecAllHdmi",index:Number(p.index)});
-  if(command.type==="av.cecAllHdbt")return directPluto({action:"cecAllHdbt",index:Number(p.index)});
-  throw new Error(`Unsupported AV command: ${command.type}`);
+  return directPluto(plutoActionForCommand(command));
 }
+function plutoActionForCommand(command){const p=command.payload||{};if(command.type==="av.route")return {action:"route",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),input:Number(p.input)};if(command.type==="av.cecOutput")return {action:"cecOutput",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)};if(command.type==="av.cecAllOutputs")return {action:"cecAllOutputs",index:Number(p.index)};if(command.type==="av.cecAllHdmi")return {action:"cecAllHdmi",index:Number(p.index)};if(command.type==="av.cecAllHdbt")return {action:"cecAllHdbt",index:Number(p.index)};throw new Error(`Unsupported AV command: ${command.type}`)}
 
 // -----------------------------------------------------------------------------
 // WebSocket transport
@@ -4375,7 +4402,7 @@ function markDisplaySeen(ws, extra = {}) {
 async function executeCommand(input, source = "api") {
   const commandStart=Date.now();
   try {
-  const command = normalizeCommand(input, source);
+  const command = validateCommandForDispatch(normalizeCommand(input, source));
   const result = {
     ok: true,
     command,
@@ -4919,11 +4946,13 @@ app.get("/api/v1/lab-agent/manifest",(_req,res)=>{
   catch(error){res.status(500).json({ok:false,error:"Lab agent package is unavailable"})}
 });
 
+function publicDeviceConfig(config={}){return {name:String(config.name||""),enabled:config.enabled!==false,avOutput:Number.isInteger(Number(config.avOutput))?Number(config.avOutput):null,lightingAlias:config.lightingAlias?cleanId(config.lightingAlias):null,tags:Array.isArray(config.tags)?config.tags.map(cleanId).filter(Boolean).slice(0,100):[]}}
+function publicDeviceConfigs(){return Object.fromEntries(Object.entries(devices).map(([id,config])=>[id,publicDeviceConfig(config)]))}
 app.get("/api/v1/devices",requireClassroomRead, (_req, res) => {
   res.json({
     ok: true,
     room: deviceConfig.room || ROOM_NAME,
-    devices,
+    devices:publicDeviceConfigs(),
     status: publicRuntime().displays
   });
 });
@@ -4937,7 +4966,7 @@ app.get("/api/v1/devices/:id",requireClassroomRead, (req, res) => {
   res.json({
     ok: true,
     id,
-    config: devices[id],
+    config: publicDeviceConfig(devices[id]),
     state: publicProjection(persistentState.displays[id] || null),
     status: publicRuntime().displays[id] || null
   });
@@ -4952,7 +4981,7 @@ app.get("/api/v1/groups",requireClassroomRead, (_req, res) => {
 });
 
 app.get("/api/v1/events",requireClassroomRead, (req, res) => {
-  const limit = Math.min(500, Math.max(1, Number(req.query.limit || 100)));
+  const requested=Number(req.query.limit??100),limit=Number.isInteger(requested)&&Number.isFinite(requested)?Math.min(500,Math.max(1,requested)):100;
   res.json({ ok: true, events: recentEvents.slice(-limit).map(event=>diagnosticSanitize(event)) });
 });
 
@@ -4989,14 +5018,13 @@ app.get("/api/v1/media",requireClassroomRead, (_req,res)=>{
   res.json({ok:true,files:listMediaLibrary(),converter:{available:true,engine:"LibreOffice headless"}});
 });
 app.get("/api/v1/scenes",requireClassroomRead,(_req,res)=>res.json({ok:true,scenes:savedScenes}));
+function validatedSceneActions(value,target="all"){if(!Array.isArray(value)||!value.length||value.length>50)throw new Error("Scenes require 1-50 actions");if(Buffer.byteLength(JSON.stringify(value))>256*1024)throw new Error("Scene definition is too large");return value.map(item=>{const command=validateCommandForDispatch(normalizeCommand({type:item?.type,target,payload:item?.payload},"scene-preflight"));return {type:command.type,payload:command.payload}})}
 app.post("/api/v1/scenes/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id),actions=Array.isArray(req.body?.actions)?req.body.actions:[];
- if(!id||!actions.length)return res.status(400).json({ok:false,error:"Scene id and actions required"});
- savedScenes[id]={name:String(req.body?.name||id).slice(0,100),actions};persistScenes();res.json({ok:true,id,scene:savedScenes[id]});
+ try{const id=cleanId(req.params.id);if(!id)throw new Error("Scene id is required");const actions=validatedSceneActions(req.body?.actions,"all");savedScenes[id]={name:String(req.body?.name||id).slice(0,100),actions};persistScenes();res.json({ok:true,id,scene:savedScenes[id]})}catch(e){res.status(400).json({ok:false,error:e.message})}
 });
 app.post("/api/v1/scenes/:id/run",requireControl,async(req,res)=>{
  try{const id=cleanId(req.params.id),scene=savedScenes[id];if(!scene)return res.status(404).json({ok:false,error:"Scene not found"});
- const results=[];for(const a of scene.actions)results.push(await executeCommand({type:a.type,target:req.body?.target??"all",payload:a.payload||{}},"scene"));
+ const target=req.body?.target??"all",actions=validatedSceneActions(scene.actions,target),results=[];for(const a of actions)results.push(await executeCommand({type:a.type,target,payload:a.payload},"scene"));
  res.json({ok:true,id,results});}catch(e){res.status(400).json({ok:false,error:e.message})}
 });
 app.get("/api/v1/integrations/govee/:target/scenes",requireClassroomRead,(req,res)=>{
@@ -5448,7 +5476,7 @@ app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,asy
 
 
 // v0.5 configuration + diagnostics
-app.get("/api/v1/config",requireClassroomRead,(_req,res)=>res.json({ok:true,room:deviceConfig.room||ROOM_NAME,devices,displayGroups,lightingGroups:[...lightingGroups]}));
+app.get("/api/v1/config",requireClassroomRead,(_req,res)=>res.json({ok:true,room:deviceConfig.room||ROOM_NAME,devices:publicDeviceConfigs(),displayGroups,lightingGroups:[...lightingGroups]}));
 
 app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
  const id=cleanId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
@@ -5460,7 +5488,7 @@ app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
   lightingAlias:b.lightingAlias!==undefined?(b.lightingAlias===null?null:cleanId(b.lightingAlias)):cur.lightingAlias,
   tags:Array.isArray(b.tags)?b.tags.map(cleanId).filter(Boolean):cur.tags
  };
- deviceConfig.devices=devices;persistRuntimeConfig();res.json({ok:true,id,device:devices[id]});
+ deviceConfig.devices=devices;persistRuntimeConfig();res.json({ok:true,id,device:publicDeviceConfig(devices[id])});
 });
 
 app.post("/api/v1/config/groups/:id",requireControl,(req,res)=>{
@@ -5629,7 +5657,7 @@ app.get("/api/v1/admin/config",requireAdmin,(_req,res)=>{
 app.put("/api/v1/admin/site",requireAdmin,(req,res)=>{
   try{
     const current=normalizedSiteProfile(dbStore.getAdminConfig().site||{}),site=dbStore.putSiteProfile(normalizedSiteProfile({...current,...(req.body||{}),theme:{...current.theme,...(req.body?.theme||{})}}));
-    SCHEDULER_TIMEZONE=site.timezone;process.env.TZ=site.timezone;
+    SCHEDULER_TIMEZONE=site.timezone;process.env.TZ=site.timezone;schedulerClock.timezone=site.timezone;
     if(site.room){deviceConfig.room=String(site.room);persistRuntimeConfig()}
     audit({kind:"admin.config.site",site:{...site}});res.json({ok:true,site});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
@@ -5718,7 +5746,7 @@ app.delete("/api/v1/admin/access-profiles/:id",requireAdmin,(req,res)=>{try{dbSt
 
 // Music Assistant integration - server-side token proxy. The long-lived MA token is
 // encrypted in Classroom Control Hub and is never returned to controller browsers.
-function musicAssistantConfig(){const p=dbStore.getPreference("musicassistant.config",{})||{};const url=serviceUrl(p.url||process.env.MUSIC_ASSISTANT_URL||"http://127.0.0.1:8095", ["music-assistant", "music-assistant-server"]).replace(/\/$/,"");let host="127.0.0.1";try{host=new URL(url).hostname||host}catch{};return {url,tvBridgeEnabled:p.tvBridgeEnabled!==false,sendspinHost:serviceHost(p.sendspinHost||host,["music-assistant","music-assistant-server"]),sendspinPort:p.sendspinPort??8927}}
+function musicAssistantConfig(){const p=dbStore.getPreference("musicassistant.config",{})||{};const url=serviceUrl(p.url||process.env.MUSIC_ASSISTANT_URL||"http://127.0.0.1:8095",["music-assistant","music-assistant-server"]).replace(/\/$/,""),parsed=new URL(url);if(parsed.username||parsed.password)throw new Error("Music Assistant URL must not contain credentials");return {url:parsed.toString().replace(/\/$/,""),tvBridgeEnabled:p.tvBridgeEnabled!==false,sendspinHost:serviceHost(p.sendspinHost||parsed.hostname||"127.0.0.1",["music-assistant","music-assistant-server"]),sendspinPort:p.sendspinPort??8927}}
 function musicAssistantToken(){try{return String(dbStore.getSecret("musicassistant.token")||"")}catch{return ""}}
 
 const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
@@ -5733,7 +5761,8 @@ async function restoreMusicAssistantTvAudioState(deviceId,ws){const playerId=`cl
 let maApiSocket=null,maApiConnectPromise=null,maApiAuthenticated=false,maApiServerInfo=null,maApiLastError=null,maApiLastConnectedAt=null;
 const maApiPending=new Map();
 function musicAssistantApiWsUrl(){const u=new URL(musicAssistantConfig().url);u.protocol=u.protocol==="https:"?"wss:":"ws:";u.pathname=(u.pathname.replace(/\/$/,"")+"/ws").replace(/\/{2,}/g,"/");u.search="";u.hash="";return u.toString()}
-function musicAssistantApiClose(reason="reset"){const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;if(ws){try{ws.close(1000,reason)}catch{}}for(const [id,p] of maApiPending){clearTimeout(p.timer);p.reject(new Error(`Music Assistant API disconnected: ${reason}`));maApiPending.delete(id)}}
+function rejectMusicAssistantPending(message){const pending=[...maApiPending.values()];maApiPending.clear();for(const p of pending){clearTimeout(p.timer);p.reject(new Error(message))}}
+function musicAssistantApiClose(reason="reset"){const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;if(ws){try{ws.close(1000,reason)}catch{}}rejectMusicAssistantPending(`Music Assistant API disconnected: ${reason}`)}
 function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.isBuffer(raw)?raw.toString("utf8"):String(raw))}catch{return}
   if(msg&&msg.server_id&&msg.schema_version!==undefined&&!msg.message_id){maApiServerInfo=msg;return}
   const mid=msg?.message_id;if(mid&&maApiPending.has(mid)){const p=maApiPending.get(mid);if(msg.partial){if(Array.isArray(msg.result))p.parts.push(...msg.result);else if(msg.result!==undefined)p.parts.push(msg.result);return}clearTimeout(p.timer);maApiPending.delete(mid);if(msg.error_code!==undefined||msg.error){const detail=msg.details||msg.error?.message||msg.error||`Music Assistant API error ${msg.error_code}`;p.reject(new Error(String(detail)));return}let result=msg.result;if(p.parts.length){if(Array.isArray(result))result=[...p.parts,...result];else if(result!==undefined)result=[...p.parts,result];else result=p.parts}p.resolve(result);return}
@@ -5741,7 +5770,7 @@ function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.i
   // inventory through this same persistent socket, while the socket stays alive between calls.
 }
 async function musicAssistantApiRawCommand(command,args={},timeoutMs=15000){await ensureMusicAssistantApi();if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{maApiPending.delete(message_id);reject(new Error(`Music Assistant command timed out: ${command}`))},timeoutMs);maApiPending.set(message_id,{resolve,reject,timer,parts:[]});try{maApiSocket.send(JSON.stringify({message_id,command,args}))}catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}})}
-async function ensureMusicAssistantApi(){if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;if(maApiConnectPromise)return maApiConnectPromise;const token=musicAssistantToken();if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in Classroom Control Hub Music settings.");maApiConnectPromise=new Promise((resolve,reject)=>{let settled=false,helloSeen=false;const ws=new WebSocket(musicAssistantApiWsUrl());maApiSocket=ws;const fail=(err)=>{maApiLastError=String(err?.message||err);if(!settled){settled=true;reject(err instanceof Error?err:new Error(String(err)))}musicAssistantApiClose("connection-failed")};const auth=()=>{if(!helloSeen||ws.readyState!==WebSocket.OPEN)return;const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;const timer=setTimeout(()=>{maApiPending.delete(message_id);fail(new Error("Music Assistant authentication timed out"))},10000);maApiPending.set(message_id,{parts:[],timer,resolve:(result)=>{if(!result)return fail(new Error("Music Assistant authentication was rejected"));maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();if(!settled){settled=true;resolve(ws)}},reject:fail});ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))};ws.on("open",()=>{});ws.on("message",data=>{let parsed=null;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{};if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){maApiServerInfo=parsed;helloSeen=true;auth();return}musicAssistantApiHandleMessage(data)});ws.on("error",fail);ws.on("close",(code,reason)=>{maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;maApiLastError=why;for(const [id,p] of maApiPending){clearTimeout(p.timer);p.reject(new Error(`Music Assistant API ${why}`));maApiPending.delete(id)};if(!settled){settled=true;reject(new Error(`Music Assistant WebSocket API ${why}`))}});setTimeout(()=>{if(!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000)}).finally(()=>{maApiConnectPromise=null});return maApiConnectPromise}
+async function ensureMusicAssistantApi(){if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;if(maApiConnectPromise)return maApiConnectPromise;const token=musicAssistantToken();if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in Classroom Control Hub Music settings.");maApiConnectPromise=new Promise((resolve,reject)=>{let settled=false,helloSeen=false,failed=false;const ws=new WebSocket(musicAssistantApiWsUrl());maApiSocket=ws;const fail=(err)=>{if(failed)return;failed=true;maApiLastError=String(err?.message||err);if(!settled){settled=true;reject(err instanceof Error?err:new Error(String(err)))}musicAssistantApiClose("connection-failed")};const auth=()=>{if(!helloSeen||ws.readyState!==WebSocket.OPEN)return;const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;const timer=setTimeout(()=>{maApiPending.delete(message_id);fail(new Error("Music Assistant authentication timed out"))},10000);maApiPending.set(message_id,{parts:[],timer,resolve:(result)=>{if(!result)return fail(new Error("Music Assistant authentication was rejected"));maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();if(!settled){settled=true;resolve(ws)}},reject:fail});ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))};ws.on("open",()=>{});ws.on("message",data=>{let parsed=null;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{};if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){maApiServerInfo=parsed;helloSeen=true;auth();return}musicAssistantApiHandleMessage(data)});ws.on("error",fail);ws.on("close",(code,reason)=>{maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;maApiLastError=why;rejectMusicAssistantPending(`Music Assistant API ${why}`);if(!settled){settled=true;reject(new Error(`Music Assistant WebSocket API ${why}`))}});setTimeout(()=>{if(!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000)}).finally(()=>{maApiConnectPromise=null});return maApiConnectPromise}
 async function musicAssistantHttpCommand(command,args={}){const cfg=musicAssistantConfig(),token=musicAssistantToken();const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(15000)});const text=await r.text();let j;try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned HTTP ${r.status}: ${text.slice(0,500)}`)}if(!r.ok||j.error)throw Error(j.error?.message||j.error||`Music Assistant HTTP ${r.status}`);return j.result!==undefined?j.result:j}
 async function musicAssistantCommand(command,args={}){try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}}}
 
@@ -5959,11 +5988,13 @@ const musicAssistantMutationLimit=rateLimit({
   message:{ok:false,error:"Music Assistant configuration/attachment limit reached; retry later"}
 });
 app.get("/api/v1/music-assistant/status",musicAssistantStatusLimit,requireControl,async(_req,res)=>{const cfg=musicAssistantConfig(),configured=!!musicAssistantToken();try{let players=[];if(configured){try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}}players=Array.isArray(players)?players:[];const playerIds=new Set(players.flatMap(p=>[p?.player_id,p?.id,p?.provider_id].filter(Boolean).map(String)));const bridgeStatus=Object.fromEntries(Object.entries(runtime.displays||{}).map(([id,v])=>{const m=v?.musicAssistant||null;if(!m)return [id,null];const keys=[m.clientId].filter(Boolean).map(String);return [id,{...m,registered:keys.some(k=>playerIds.has(k))}]}));res.json({ok:true,configured,url:cfg.url,tvBridgeEnabled:cfg.tvBridgeEnabled,sendspinBaseUrl:sendspinEndpoint(cfg).replace(/^ws:/,"http:").replace(/\/sendspin$/,""),sendspinWebSocket:sendspinEndpoint(cfg),upstreamTransport:"dedicated-sendspin",sdkIdentity:"music-assistant-stable-2.9-compatible-sendspin-js-3.2.1",transport:"authenticated-ma-sendspin-proxy",apiTransport:maApiAuthenticated?"persistent-websocket":"http-fallback",apiServerInfo:maApiServerInfo,apiLastConnectedAt:maApiLastConnectedAt,apiLastError:maApiLastError,attachedTargets:dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[],tvDefaultVolume:MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,tvAudioState:dbStore.getPreference("musicassistant.tvAudioState",{})||{},bridgeStatus,online:configured,players})}catch(e){res.json({ok:true,configured,url:cfg.url,tvBridgeEnabled:cfg.tvBridgeEnabled,online:false,error:e.message,players:[]})}});
-app.put("/api/v1/music-assistant/config",musicAssistantMutationLimit,requireAdmin,(req,res)=>{try{const current=musicAssistantConfig(),url=String(req.body?.url||current.url).trim().replace(/\/$/,"");if(!/^https?:\/\//i.test(url))return res.status(400).json({ok:false,error:"Music Assistant URL must begin with http:// or https://"});const prior=musicAssistantConfig(),next={url,tvBridgeEnabled:req.body?.tvBridgeEnabled!==false,sendspinHost:String(req.body?.sendspinHost??prior.sendspinHost),sendspinPort:req.body?.sendspinPort??prior.sendspinPort??8927};sendspinEndpoint(next);dbStore.setPreference("musicassistant.config",next);if(req.body?.token)dbStore.putSecret("musicassistant.token",String(req.body.token),{integration:"Music Assistant",type:"long-lived-access-token"});musicAssistantApiClose("configuration-changed");audit({kind:"musicassistant.config.update",url});res.json({ok:true,url,tokenStored:!!musicAssistantToken()})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+app.put("/api/v1/music-assistant/config",musicAssistantMutationLimit,requireAdmin,(req,res)=>{try{const current=musicAssistantConfig(),url=String(req.body?.url||current.url).trim().replace(/\/$/,"");if(!/^https?:\/\//i.test(url))return res.status(400).json({ok:false,error:"Music Assistant URL must begin with http:// or https://"});const parsed=new URL(url);if(parsed.username||parsed.password)return res.status(400).json({ok:false,error:"Music Assistant URL must not contain credentials"});const safeUrl=parsed.toString().replace(/\/$/,""),prior=musicAssistantConfig(),next={url:safeUrl,tvBridgeEnabled:req.body?.tvBridgeEnabled!==false,sendspinHost:String(req.body?.sendspinHost??prior.sendspinHost),sendspinPort:req.body?.sendspinPort??prior.sendspinPort??8927};sendspinEndpoint(next);dbStore.setPreference("musicassistant.config",next);if(req.body?.token)dbStore.putSecret("musicassistant.token",String(req.body.token),{integration:"Music Assistant",type:"long-lived-access-token"});musicAssistantApiClose("configuration-changed");audit({kind:"musicassistant.config.update",url:safeUrl});res.json({ok:true,url:safeUrl,tokenStored:!!musicAssistantToken()})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 app.post("/api/v1/music-assistant/command",requireControl,async(req,res)=>{try{const command=String(req.body?.command||""),args=req.body?.args||{};const allowed=new Set(["players/all","players/cmd/play_pause","players/cmd/play","players/cmd/pause","players/cmd/stop","players/cmd/volume_set","players/cmd/volume_mute","player_queues/all","player_queues/items","player_queues/play_media","music/search","music/recently_played_items"]);if(!allowed.has(command))return res.status(400).json({ok:false,error:"Music Assistant command is not approved by Classroom Control Hub"});const result=await musicAssistantCommand(command,args);const tvId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);if(tvId&&command==="players/cmd/volume_set")setMusicAssistantTvAudioState(tvId,{volume:args.volume_level});if(tvId&&command==="players/cmd/volume_mute")setMusicAssistantTvAudioState(tvId,{muted:args.muted});audit({kind:"musicassistant.command",command});res.json({ok:true,result})}catch(e){res.status(502).json({ok:false,error:e.message})}});
 const musicAssistantProxyTickets=new Map();
-function issueMusicAssistantProxyTicket(deviceId){const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${cleanId(deviceId)}`;musicAssistantProxyTickets.set(ticket,{deviceId:cleanId(deviceId),playerId,expiresAt:Date.now()+60000});return {ticket,playerId}}
-function consumeMusicAssistantProxyTicket(ticket){const item=musicAssistantProxyTickets.get(String(ticket||""));musicAssistantProxyTickets.delete(String(ticket||""));if(!item||item.expiresAt<Date.now())return null;return item}
+const musicAssistantProxyTicketByDevice=new Map(),MUSIC_ASSISTANT_PROXY_TICKET_MAX=256;
+function pruneMusicAssistantProxyTickets(now=Date.now()){for(const [ticket,item] of musicAssistantProxyTickets){if(item.expiresAt<=now){musicAssistantProxyTickets.delete(ticket);if(musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId)}}while(musicAssistantProxyTickets.size>=MUSIC_ASSISTANT_PROXY_TICKET_MAX){const [ticket,item]=musicAssistantProxyTickets.entries().next().value;musicAssistantProxyTickets.delete(ticket);if(musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId)}}
+function issueMusicAssistantProxyTicket(deviceId){pruneMusicAssistantProxyTickets();deviceId=cleanId(deviceId);const prior=musicAssistantProxyTicketByDevice.get(deviceId);if(prior)musicAssistantProxyTickets.delete(prior);const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${deviceId}`;musicAssistantProxyTickets.set(ticket,{deviceId,playerId,expiresAt:Date.now()+60000});musicAssistantProxyTicketByDevice.set(deviceId,ticket);return {ticket,playerId}}
+function consumeMusicAssistantProxyTicket(ticket){ticket=String(ticket||"");pruneMusicAssistantProxyTickets();const item=musicAssistantProxyTickets.get(ticket);musicAssistantProxyTickets.delete(ticket);if(item&&musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId);return item||null}
 function musicAssistantProxyPath(ticket){return `/music-assistant/sendspin-proxy?ticket=${encodeURIComponent(ticket)}`}
 app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const cfg=musicAssistantConfig(),token=musicAssistantToken();if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);const action=String(req.body?.action||"attach");let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];dbStore.setPreference("musicassistant.tvBridgeTargets",attached);const deliveries=[];if(action==="detach"){const result=await executeCommand({type:"music.assistant.detach",target:targets,payload:{}},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}else{for(const target of targets){const issued=issueMusicAssistantProxyTicket(target);const result=await executeCommand({type:"music.assistant.attach",target,payload:musicAssistantTvAttachPayload(target,issued)},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}}res.json({ok:true,action,attachedTargets:attached,deliveries,musicAssistantUrl:cfg.url,note:"Ticketed Hub bridge: the backend relays raw Sendspin to the dedicated configured endpoint (normally port 8927). The long-lived token is used only by the separate Music Assistant control API."})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 app.get("/api/v1/database/status",requireAdmin,(_req,res)=>{res.json({ok:true,database:dbStore.databaseInfo(),secrets:dbStore.listSecrets(),certificates:dbStore.listCertificates()})});
@@ -6329,8 +6360,7 @@ app.post("/api/v1/veyon/discover",requireCapability("lab.control"),async(req,res
 });
 app.post("/api/v1/veyon/computers",requireCapability("lab.control"),(req,res)=>{
   try{
-    const ip=String(req.body?.ip||"").trim();
-    if(!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip))throw new Error("Valid IPv4 address required");
+    const ip=validatedVeyonHost(req.body?.ip);
     const role=req.body?.role==="teacher"?"teacher":"student";
     res.json({ok:true,computer:upsertVeyonComputer(ip,{name:String(req.body?.name||ip).slice(0,120),hostname:String(req.body?.hostname||"").slice(0,120),role})});
   }catch(err){res.status(400).json({ok:false,error:err.message})}

@@ -14,7 +14,14 @@ const STORE=new JsonStore(ROOT);
 const ADB=String(process.env.ADB_BIN||"adb");
 const MAX_OUTPUT=8*1024*1024;
 const originalListen=express.application.listen;
-const POLICY_INTERVAL_MS=Math.max(15000,Math.min(300000,Number(process.env.ANDROID_TV_POLICY_INTERVAL_MS||60000)));
+function boundedEnvironmentInteger(name,fallback,min,max){
+  const raw=process.env[name];
+  if(raw==null||raw==="")return fallback;
+  const value=Number(raw);
+  if(!Number.isSafeInteger(value)||value<min||value>max)throw Error(`${name} must be a whole number from ${min} to ${max}`);
+  return value;
+}
+const POLICY_INTERVAL_MS=boundedEnvironmentInteger("ANDROID_TV_POLICY_INTERVAL_MS",60000,15000,300000);
 const policyState=new Map();
 let installed=false,policyTimer=null;
 
@@ -131,7 +138,10 @@ function installRoutes(app){if(installed)return;installed=true;
   app.post("/android/devices/:id/action",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);const action=cleanText(req.body?.action,40);if(action==="screenshot"){const e=Error("Use the screenshot endpoint");e.status=400;throw e}d=(await ensureDevice(d,{mdnsAttempts:4})).device;if(action==="reboot"){const result=await rebootDevice(d.serial);policyState.delete(d.id);STORE.upsertDevice({...d,lastStatus:{online:false,rebooting:true,checkedAt:new Date().toISOString()}});res.status(202).json({ok:true,deviceId:d.id,action,...result});return}const result=await adb(adbArgsForAction(d,action,req.body||{}),{timeout:30000});res.json({ok:true,deviceId:d.id,action,stdout:result.stdout,stderr:result.stderr})}));
   app.post("/android/devices/:id/shell",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const command=cleanShell(req.body?.command);const result=await adb(["-s",d.serial,"shell","sh","-c",command],{timeout:Number(req.body?.timeoutMs||30000)});res.json({ok:true,deviceId:d.id,command,stdout:result.stdout,stderr:result.stderr})}));
   app.get("/android/devices/:id/screenshot",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const {stdout}=await execFileAsync(ADB,["-s",d.serial,"exec-out","screencap","-p"],{encoding:"buffer",timeout:30000,maxBuffer:16*1024*1024,env:adbEnv()});res.json({ok:true,deviceId:d.id,contentType:"image/png",base64:Buffer.from(stdout).toString("base64")})}));
-  app.post("/android/devices/:id/agent/install",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const apk=path.resolve(String(req.body?.apkPath||path.join(ROOT,"RoomGoblin-Display-Agent.apk")));if(!(apk===ROOT||apk.startsWith(ROOT+path.sep))||!fs.existsSync(apk)){const e=Error(`Agent APK not found in ${ROOT}. Build/download the signed APK before installation.`);e.status=400;throw e}let removedLegacy=false;try{const probe=await adb(["-s",d.serial,"shell","pm","path","org.classroomhub.display"],{timeout:15000});if(/^package:/m.test(String(probe.stdout||""))){await adb(["-s",d.serial,"uninstall","org.classroomhub.display"],{timeout:60000});removedLegacy=true}}catch(error){if(!/Unknown package|not installed|DELETE_FAILED_INTERNAL_ERROR/i.test(String(error.message||"")))throw error}const r=await adb(["-s",d.serial,"install","-r","-g",apk],{timeout:180000});STORE.upsertDevice({...d,agentPackage:"org.roomgoblin.display"});res.json({ok:true,deviceId:d.id,message:`${removedLegacy?"Old Android app uninstalled. ":""}${String(r.stdout||r.stderr).trim()}`})}));
+  // Retain the old path only as a fail-closed compatibility response. Installing
+  // arbitrary files from the writable Android data root bypassed the protected
+  // artifact certificate and Device Admin transition checks.
+  app.post("/android/devices/:id/agent/install",(_req,res)=>res.status(410).json({ok:false,error:"Legacy APK installation is disabled. Use the verified current-artifact installation route."}));
   app.post("/android/devices/:id/agent/configure",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const pkg=cleanPackage(req.body?.package||d.agentPackage),url=String(req.body?.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url],{timeout:20000});const updated=STORE.upsertDevice({...d,displayUrl:url,agentPackage:pkg});res.json({ok:true,device:publicDevice(updated)})}));
   app.put("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);res.json({ok:true,device:publicDevice(STORE.upsertDevice({...d,...req.body,id:d.id,host:req.body?.host||d.host,serial:req.body?.serial||d.serial}))})}));
   app.delete("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);try{await adb(["disconnect",d.serial],{timeout:10000})}catch{}policyState.delete(d.id);res.json({ok:true,removed:STORE.deleteDevice(d.id),deviceId:d.id})}));

@@ -37,7 +37,24 @@ function Write-AtomicUtf8([string]$Path,[string]$Text){
     else{[IO.File]::Move($temp,$Path);Set-PrivateAcl $Path}
   }finally{Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue}
 }
-function Save-Config($Config){Write-AtomicUtf8 $ConfigPath ($Config|ConvertTo-Json -Depth 8)}
+function Save-Config($Config){
+  Write-AtomicUtf8 $ConfigPath ($Config|ConvertTo-Json -Depth 8)
+  $backup=$ConfigPath+'.bak';if(Test-Path -LiteralPath $backup){Remove-Item -LiteralPath $backup -Force -ErrorAction Stop}
+}
+function Get-HubOrigin([string]$Value){
+  try{$uri=[uri]$Value}catch{throw 'RoomGoblin hubUrl is not a valid absolute URL'}
+  if(!$uri.IsAbsoluteUri -or $uri.Scheme -notin @('http','https') -or !$uri.Host -or $uri.UserInfo){throw 'RoomGoblin hubUrl must be an absolute http:// or https:// URL without embedded credentials'}
+  return $uri.GetLeftPart([UriPartial]::Authority)
+}
+function Test-TrustedPublisher($Signature,[string]$Expected){
+  if(!$Expected){return $true}
+  $expectedHex=($Expected -replace '[^0-9A-Fa-f]','').ToUpperInvariant()
+  if($Signature.Status -ne 'Valid' -or !$Signature.SignerCertificate -or $expectedHex.Length -notin @(40,64)){return $false}
+  if($expectedHex.Length -eq 64){
+    $sha=[Security.Cryptography.SHA256]::Create();try{$actual=([BitConverter]::ToString($sha.ComputeHash($Signature.SignerCertificate.RawData))).Replace('-','')}finally{$sha.Dispose()}
+  }else{$actual=($Signature.SignerCertificate.Thumbprint -replace '[^0-9A-Fa-f]','').ToUpperInvariant()}
+  return $actual -eq $expectedHex
+}
 function Send-Json($Socket,$Value){
   $raw=[Text.Encoding]::UTF8.GetBytes(($Value|ConvertTo-Json -Depth 12 -Compress))
   $segment=[ArraySegment[byte]]::new($raw)
@@ -77,7 +94,8 @@ function Invoke-NativeBounded([string]$FilePath,[string[]]$Arguments=@(),[int]$T
       if([DateTime]::UtcNow -ge $script:NextHeartbeat){Send-Heartbeat}
     }
     $process.WaitForExit();$out=$stdout.GetAwaiter().GetResult();$err=$stderr.GetAwaiter().GetResult()
-    if($process.ExitCode -ne 0){throw "$([IO.Path]::GetFileName($FilePath)) failed with exit code $($process.ExitCode): $($err.Trim())"}
+    if($out.Length -gt 65536){$out=$out.Substring(0,65536)};if($err.Length -gt 65536){$err=$err.Substring(0,65536)}
+    if($process.ExitCode -ne 0){$detail=$err.Trim();if($detail.Length -gt 2048){$detail=$detail.Substring(0,2048)};throw "$([IO.Path]::GetFileName($FilePath)) failed with exit code $($process.ExitCode): $detail"}
     return @{exitCode=$process.ExitCode;stdout=$out;stderr=$err}
   }finally{$process.Dispose()}
 }
@@ -143,22 +161,28 @@ try{`$g.CopyFromScreen(`$b.Left,`$b.Top,0,0,`$i.Size);`$c=[Drawing.Imaging.Image
   }finally{Remove-Item $file -Force -ErrorAction SilentlyContinue;Set-PrivateAcl $work $true}
 }
 function Find-Sqlite3{
-  $cmd=Get-Command sqlite3.exe -ErrorAction SilentlyContinue;if($cmd){return $cmd.Source}
-  foreach($p in @("$env:ProgramFiles\SQLite\sqlite3.exe","$env:ProgramData\ClassroomControlHub\tools\sqlite3.exe")){if(Test-Path $p){return $p}}
+  # Never execute sqlite3 from the service account's PATH. Only fixed,
+  # administrator-controlled locations are eligible for SYSTEM execution.
+  foreach($p in @("$env:ProgramFiles\SQLite\sqlite3.exe","$env:ProgramData\ClassroomControlHub\tools\sqlite3.exe")){
+    if(!$p -or !(Test-Path -LiteralPath $p -PathType Leaf)){continue}
+    $item=Get-Item -LiteralPath $p -Force
+    if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0){return $item.FullName}
+  }
   return ''
 }
 function Collect-BrowserHistory([int]$Limit=500){
+  $Limit=[Math]::Max(1,[Math]::Min(500,$Limit))
   $sqlite=Find-Sqlite3;if(!$sqlite){throw 'Browser history requires sqlite3.exe in PATH or ProgramData\ClassroomControlHub\tools. No browser database was modified.'}
   $items=New-Object Collections.Generic.List[object];$root=Split-Path -Parent $ConfigPath;$tempDir=Join-Path $root 'history-temp'
   if(!(Test-Path $tempDir)){New-Item $tempDir -ItemType Directory -Force|Out-Null};Set-PrivateAcl $tempDir $true
   $profiles=Get-CimInstance Win32_UserProfile|Where-Object{!$_.Special -and $_.LocalPath -and (Test-Path $_.LocalPath)}
   foreach($profile in $profiles){
     $sources=@(
-      @{browser='Chrome';pattern=Join-Path $profile.LocalPath 'AppData\Local\Google\Chrome\User Data\*\History';query="SELECT json_object('url',u.url,'title',u.title,'visitTime',strftime('%Y-%m-%dT%H:%M:%SZ',(v.visit_time/1000000)-11644473600,'unixepoch'),'visitCount',u.visit_count,'typedCount',u.typed_count,'recordId',v.id) FROM visits v JOIN urls u ON u.id=v.url ORDER BY v.visit_time DESC LIMIT $Limit;"},
-      @{browser='Edge';pattern=Join-Path $profile.LocalPath 'AppData\Local\Microsoft\Edge\User Data\*\History';query="SELECT json_object('url',u.url,'title',u.title,'visitTime',strftime('%Y-%m-%dT%H:%M:%SZ',(v.visit_time/1000000)-11644473600,'unixepoch'),'visitCount',u.visit_count,'typedCount',u.typed_count,'recordId',v.id) FROM visits v JOIN urls u ON u.id=v.url ORDER BY v.visit_time DESC LIMIT $Limit;"},
-      @{browser='Firefox';pattern=Join-Path $profile.LocalPath 'AppData\Roaming\Mozilla\Firefox\Profiles\*\places.sqlite';query="SELECT json_object('url',p.url,'title',p.title,'visitTime',strftime('%Y-%m-%dT%H:%M:%SZ',v.visit_date/1000000,'unixepoch'),'visitCount',p.visit_count,'typedCount',0,'recordId',v.id) FROM moz_historyvisits v JOIN moz_places p ON p.id=v.place_id ORDER BY v.visit_date DESC LIMIT $Limit;"}
+      @{browser='Chrome';pattern=Join-Path $profile.LocalPath 'AppData\Local\Google\Chrome\User Data\*\History';query="SELECT json_object('url',substr(u.url,1,4096),'title',substr(u.title,1,1024),'visitTime',strftime('%Y-%m-%dT%H:%M:%SZ',(v.visit_time/1000000)-11644473600,'unixepoch'),'visitCount',u.visit_count,'typedCount',u.typed_count,'recordId',v.id) FROM visits v JOIN urls u ON u.id=v.url ORDER BY v.visit_time DESC LIMIT $Limit;"},
+      @{browser='Edge';pattern=Join-Path $profile.LocalPath 'AppData\Local\Microsoft\Edge\User Data\*\History';query="SELECT json_object('url',substr(u.url,1,4096),'title',substr(u.title,1,1024),'visitTime',strftime('%Y-%m-%dT%H:%M:%SZ',(v.visit_time/1000000)-11644473600,'unixepoch'),'visitCount',u.visit_count,'typedCount',u.typed_count,'recordId',v.id) FROM visits v JOIN urls u ON u.id=v.url ORDER BY v.visit_time DESC LIMIT $Limit;"},
+      @{browser='Firefox';pattern=Join-Path $profile.LocalPath 'AppData\Roaming\Mozilla\Firefox\Profiles\*\places.sqlite';query="SELECT json_object('url',substr(p.url,1,4096),'title',substr(p.title,1,1024),'visitTime',strftime('%Y-%m-%dT%H:%M:%SZ',v.visit_date/1000000,'unixepoch'),'visitCount',p.visit_count,'typedCount',0,'recordId',v.id) FROM moz_historyvisits v JOIN moz_places p ON p.id=v.place_id ORDER BY v.visit_date DESC LIMIT $Limit;"}
     )
-    foreach($source in $sources){foreach($db in Get-ChildItem -Path $source.pattern -File -ErrorAction SilentlyContinue){
+    foreach($source in $sources){foreach($db in Get-ChildItem -Path $source.pattern -File -ErrorAction SilentlyContinue|Where-Object{$_.Length -gt 0 -and $_.Length -le 512MB -and ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0}|Select-Object -First 128){
       $copy=Join-Path $tempDir ([Guid]::NewGuid().ToString('N')+'.sqlite')
       try{
         Copy-Item $db.FullName $copy -Force
@@ -216,21 +240,21 @@ function Invoke-AgentCommand($Socket,$Command,$Config){
       'app-lock' {throw 'Application/site lock requires Windows kiosk or AppLocker policy and is not enabled by this constrained agent. Use Veyon or managed Windows policy.'}
       'app-unlock' {throw 'No agent application lock was applied. Remove the managed kiosk/AppLocker policy through its management system.'}
       'refresh-history' {$count=Send-BrowserHistory;Command-Result $Socket $Command $true "$count browser history records reported"}
-      'screenshot' {$capture=Capture-Screenshot ([int]$Command.payload.quality);Send-Json $Socket @{type='lab.screenshot';data=$capture.data;save=($Command.payload.save -eq $true);alertId=[string]$Command.payload.alertId};Command-Result $Socket $Command $true "Screenshot captured ($($capture.bytes) bytes)"}
+      'screenshot' {$quality=[Math]::Max(25,[Math]::Min(90,[int]$Command.payload.quality));$alertId=[string]$Command.payload.alertId;if($alertId.Length -gt 128){throw 'Screenshot alertId exceeds 128 characters'};$capture=Capture-Screenshot $quality;Send-Json $Socket @{type='lab.screenshot';data=$capture.data;save=($Command.payload.save -eq $true);alertId=$alertId};Command-Result $Socket $Command $true "Screenshot captured ($($capture.bytes) bytes)"}
       'run-preset' {
         switch([string]$Command.payload.preset){'gpupdate' {$r=Invoke-NativeBounded "$env:SystemRoot\System32\gpupdate.exe" @('/force') 120};'flushdns' {$r=Invoke-NativeBounded "$env:SystemRoot\System32\ipconfig.exe" @('/flushdns') 30};'renew-network' {$r=Invoke-NativeBounded "$env:SystemRoot\System32\ipconfig.exe" @('/renew') 90};'system-info' {$r=Invoke-NativeBounded "$env:SystemRoot\System32\systeminfo.exe" @() 60};default {throw 'Unsupported preset'}}
         Command-Result $Socket $Command $true (($r.stdout+$r.stderr).Trim())
       }
       'update-agent' {
         if($script:UpdateInProgress){throw 'An agent update is already in progress'}
-        $origin=([uri]$Config.hubUrl).GetLeftPart([UriPartial]::Authority)
+        $origin=Get-HubOrigin ([string]$Config.hubUrl)
         try{$manifest=Invoke-RestMethod ($origin+'/api/v1/lab-agent/manifest') -TimeoutSec 20}catch{throw "Could not retrieve the agent manifest over trusted TLS: $($_.Exception.Message)"}
         if(!$manifest.sha256 -or $manifest.sha256 -notmatch '^[a-fA-F0-9]{64}$' -or [string]$manifest.version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$'){throw 'Hub returned an invalid lab-agent manifest'}
         $temp=Join-Path $env:TEMP ('ClassroomHubAgent.'+[Guid]::NewGuid().ToString('N')+'.update.ps1')
         try{Invoke-WebRequest ($origin+'/lab-agent/ClassroomHubAgent.ps1') -OutFile $temp -TimeoutSec 30;$actualHash=(Get-FileHash $temp -Algorithm SHA256).Hash
           if($actualHash -ne ([string]$manifest.sha256).ToUpperInvariant()){throw 'Agent update failed SHA-256 verification'}
           $signature=Get-AuthenticodeSignature $temp
-          if($Config.trustedPublisherThumbprint -and (!$signature.SignerCertificate -or $signature.SignerCertificate.Thumbprint -ne $Config.trustedPublisherThumbprint -or $signature.Status -ne 'Valid')){throw 'Agent update does not have the required valid publisher signature'}
+          if(!(Test-TrustedPublisher $signature ([string]$Config.trustedPublisherThumbprint))){throw 'Agent update does not have the required valid publisher signature'}
           Send-AgentEvent 'agent-update' "Agent update to $($manifest.version) verified and is being staged" 'info'
           Start-AgentUpdate $manifest $temp;$script:ExitForUpdate=$true
           try{Command-Result $Socket $Command $true "Agent update to $($manifest.version) staged; restarting"}catch{}
@@ -248,8 +272,9 @@ while($true){
     if(!($config.PSObject.Properties.Name -contains 'enrollmentTokenProtected')){$config|Add-Member -MemberType NoteProperty -Name enrollmentTokenProtected -Value ''}
     $credential=Unprotect-Secret ([string]$config.credentialProtected)
     $enrollment=if($config.enrollmentTokenProtected){Unprotect-Secret ([string]$config.enrollmentTokenProtected)}else{[string]$config.enrollmentToken}
-    if($config.enrollmentToken -and !$config.enrollmentTokenProtected){$config.enrollmentTokenProtected=Protect-Secret ([string]$config.enrollmentToken);$config.enrollmentToken='';Save-Config $config;Remove-Item ($ConfigPath+'.bak') -Force -ErrorAction SilentlyContinue}
-    $wsUri=([string]$config.hubUrl -replace '^https:','wss:' -replace '^http:','ws:').TrimEnd('/')+'/ws'
+    if($config.enrollmentToken -and !$config.enrollmentTokenProtected){$config.enrollmentTokenProtected=Protect-Secret ([string]$config.enrollmentToken);$config.enrollmentToken='';Save-Config $config}
+    $origin=Get-HubOrigin ([string]$config.hubUrl)
+    $wsUri=($origin -replace '^https:','wss:' -replace '^http:','ws:')+'/ws'
     $socket=[Net.WebSockets.ClientWebSocket]::new();$script:Socket=$socket;$socket.Options.KeepAliveInterval=[TimeSpan]::FromSeconds(15)
     $socket.ConnectAsync([uri]$wsUri,[Threading.CancellationToken]::None).GetAwaiter().GetResult()
     $AgentCapabilities=Get-AgentCapabilities

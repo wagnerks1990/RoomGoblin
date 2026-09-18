@@ -88,7 +88,9 @@ static SessionResponse CaptureScreenshot(int quality)
     quality = Math.Clamp(quality <= 0 ? 70 : quality, 25, 90);
 
     var bounds = SystemInformation.VirtualScreen;
-    if (bounds.Width <= 0 || bounds.Height <= 0)
+    if (bounds.Width <= 0 || bounds.Height <= 0 ||
+        bounds.Width > 16384 || bounds.Height > 16384 ||
+        (long)bounds.Width * bounds.Height > 33_554_432)
         return new SessionResponse(false, "Interactive desktop has invalid bounds.");
 
     using var bitmap = new Bitmap(

@@ -10,7 +10,9 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
       windows-agent/RoomGoblin.Agent.Session/RoomGoblin.Agent.Session.csproj \
       windows-agent/RoomGoblin.Agent.Bootstrap/RoomGoblin.Agent.Bootstrap.csproj \
       windows-agent/RoomGoblin.Agent.Updater/RoomGoblin.Agent.Updater.csproj; do \
-      dotnet publish "$project" -c Release -r win-x64 --self-contained true \
+      dotnet restore "$project" --locked-mode -p:ContinuousIntegrationBuild=true -p:EnableWindowsTargeting=true; \
+      dotnet publish "$project" -c Release -r win-x64 --self-contained true --no-restore \
+        -p:ContinuousIntegrationBuild=true \
         -p:PublishSingleFile=true \
         -p:EnableWindowsTargeting=true \
         -p:Version="$RELEASE_VERSION" \

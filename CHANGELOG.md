@@ -8,6 +8,22 @@
 - Add one-target browser uploads to `RoomGoblin-Pilot/Inbox`, limited to 2 MiB and ordered 128 KiB chunks with no intentional overwrite, atomic commit, request correlation and partial-file discard.
 - Document exact provenance, exclusions, Windows build/acceptance requirements and manual firewall recovery; commercial Veyon add-ons remain excluded.
 
+### Repository-wide correctness and security audit
+
+- Review all 538 tracked project files (about 64,600 lines of source, tests,
+  configuration, and documentation) across the Hub, browser clients, recovery
+  services, Veyon/ESPHome integrations, managed-device agents, and CI supply
+  chain.
+- Fail closed on malformed commands, URLs, environment limits, private-network
+  Veyon targets, recovery archives, device-agent requests, enrollment material,
+  and update inputs before persistence or side effects.
+- Repair crash recovery, database-handle replacement, session-write churn,
+  receiver-state races, Music Assistant connection cleanup, and managed-device
+  listener/transport concurrency.
+- Strengthen Android, Windows, PowerShell, Docker, Gradle, NuGet, and image
+  publication boundaries; add regression coverage and synchronized operator
+  documentation. See `docs/CODE-AUDIT-2026-09-18.md` for the audit record.
+
 ### Browser-complete Veyon pilot
 
 - Add one-target live browser pointer and broad keyboard control with fresh-frame leases, topology/revision binding, monotonic input sequences, native queue/rate bounds and forced key/button release.

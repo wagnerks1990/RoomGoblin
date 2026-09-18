@@ -6,6 +6,7 @@
 // so encrypted secrets and live runtime apply logic remain owned by server.js.
 const crypto=require("crypto");
 const express=require("express");
+const fs=require("fs");
 const {DatabaseSync}=require("node:sqlite");
 
 const TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
@@ -24,13 +25,17 @@ function requireMaintenance(req,res,next){
 // when no token was configured, generating repeated WebSocket/HTTP 401 errors.
 // This startup guard preserves the saved schedule and automatically begins
 // normal polling as soon as the encrypted token appears in SQLite.
-let integrationReadDb=null;
+let integrationReadDb=null,integrationReadDbIdentity=null;
+function databaseIdentity(file){const stat=fs.statSync(file);return `${stat.dev}:${stat.ino}`}
+function closeIntegrationReadDb(){if(integrationReadDb){try{integrationReadDb.close()}catch{}}integrationReadDb=null;integrationReadDbIdentity=null}
 function musicAssistantTokenConfigured(){
   const file=String(process.env.DATABASE_FILE||"").trim();if(!file)return false;
   try{
-    if(!integrationReadDb)integrationReadDb=new DatabaseSync(file,{readOnly:true});
+    const identity=databaseIdentity(file);
+    if(integrationReadDb&&integrationReadDbIdentity!==identity)closeIntegrationReadDb();
+    if(!integrationReadDb){integrationReadDb=new DatabaseSync(file,{readOnly:true});integrationReadDbIdentity=identity}
     return !!integrationReadDb.prepare("SELECT 1 FROM secret_store WHERE name='musicassistant.token' LIMIT 1").get();
-  }catch{return false}
+  }catch{closeIntegrationReadDb();return false}
 }
 function isBackgroundMusicTimer(fn,delay){return Number(delay)<=5000&&/backgroundMusicTick/.test(String(fn||""))}
 const nativeSetInterval=global.setInterval,nativeSetTimeout=global.setTimeout;
@@ -47,15 +52,17 @@ global.setTimeout=function(fn,delay,...args){
 // protocol children for the same physical device. RoomGoblin asks for protocol
 // players so diagnostics can still see the transport, but the classroom UI and
 // queue commands must use the Universal Player as the canonical target.
+const MUSIC_ASSISTANT_ALIAS_TTL_MS=5*60*1000;
 const musicAssistantPlayerAliases=new Map();
+let musicAssistantAliasGeneration=0,musicAssistantAliasAppliedGeneration=0;
 function musicAssistantPlayerId(player){return String(player?.player_id||player?.playerId||player?.id||"").trim()}
 function musicAssistantUniversalScore(player){
   const id=musicAssistantPlayerId(player).toLowerCase(),provider=String(player?.provider||player?.provider_id||"").toLowerCase();
   return (id.startsWith("up")?2:0)+(provider.includes("universal")?4:0);
 }
-function musicAssistantNormalizePlayers(players){
+function musicAssistantNormalizePlayers(players,{generation=++musicAssistantAliasGeneration,now=Date.now()}={}){
+  musicAssistantAliasGeneration=Math.max(musicAssistantAliasGeneration,Number(generation)||0);
   const list=Array.isArray(players)?players.filter(Boolean):[],byId=new Map(list.map(player=>[musicAssistantPlayerId(player),player]).filter(([id])=>id));
-  musicAssistantPlayerAliases.clear();
   const candidates=[];
   for(const parent of list){
     const parentId=musicAssistantPlayerId(parent);if(!parentId)continue;
@@ -66,17 +73,24 @@ function musicAssistantNormalizePlayers(players){
     }
   }
   candidates.sort((a,b)=>b.score-a.score);
-  for(const candidate of candidates)if(!musicAssistantPlayerAliases.has(candidate.protocolId))musicAssistantPlayerAliases.set(candidate.protocolId,candidate.parentId);
-  const hidden=new Set(musicAssistantPlayerAliases.keys());
-  return {players:list.filter(player=>!hidden.has(musicAssistantPlayerId(player))),protocolPlayers:list.filter(player=>hidden.has(musicAssistantPlayerId(player))),aliases:Object.fromEntries(musicAssistantPlayerAliases)};
+  const observed=new Map();
+  for(const candidate of candidates)if(!observed.has(candidate.protocolId))observed.set(candidate.protocolId,candidate.parentId);
+  if(generation>=musicAssistantAliasAppliedGeneration){
+    musicAssistantAliasAppliedGeneration=generation;
+    for(const [protocolId,parentId] of observed)musicAssistantPlayerAliases.set(protocolId,{parentId,lastSeenAt:now});
+    for(const [protocolId,entry] of musicAssistantPlayerAliases)if(now-entry.lastSeenAt>MUSIC_ASSISTANT_ALIAS_TTL_MS)musicAssistantPlayerAliases.delete(protocolId);
+  }
+  const hidden=new Set(observed.keys());
+  return {players:list.filter(player=>!hidden.has(musicAssistantPlayerId(player))),protocolPlayers:list.filter(player=>hidden.has(musicAssistantPlayerId(player))),aliases:Object.fromEntries([...musicAssistantPlayerAliases].map(([id,entry])=>[id,entry.parentId]))};
 }
-function musicAssistantCanonicalPlayerId(value){const id=String(value||"").trim();return musicAssistantPlayerAliases.get(id)||id}
+function musicAssistantCanonicalPlayerId(value){const id=String(value||"").trim();return musicAssistantPlayerAliases.get(id)?.parentId||id}
 function wrapMusicAssistantStatusHandler(handler){
   return async function(req,res,next){
+    const generation=++musicAssistantAliasGeneration;
     const json=res.json.bind(res);
     res.json=body=>{
       if(body&&Array.isArray(body.players)){
-        const normalized=musicAssistantNormalizePlayers(body.players);
+        const normalized=musicAssistantNormalizePlayers(body.players,{generation});
         body={...body,players:normalized.players,protocolPlayers:normalized.protocolPlayers,playerAliases:normalized.aliases};
       }
       return json(body);
@@ -165,4 +179,4 @@ express.application.post=function(route,...handlers){
   return originalPost.call(this,route,...handlers);
 };
 
-module.exports={musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId};
+module.exports={musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId,musicAssistantTokenConfigured};

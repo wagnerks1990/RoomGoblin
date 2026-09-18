@@ -52,10 +52,11 @@ function validateCommand(entity,command,admin=false){
 }
 
 class ESPHomeManager{
-  constructor({storage,spawnProcess=spawn,python=process.env.ESPHOME_PYTHON||"/opt/esphome/bin/python",canRun=()=>true,autostart=true}){
+  constructor({storage,spawnProcess=spawn,python=process.env.ESPHOME_PYTHON||"/opt/esphome/bin/python",canRun=()=>true,autostart=true,now=Date.now,restartBaseMs=1000,restartMaxMs=30000}){
     this.storage=storage;this.spawnProcess=spawnProcess;this.python=python;this.canRun=canRun;
     this.child=null;this.pending=new Map();this.live=new Map();this.busy=new Set();this.commands=new Map();
     this.closed=false;this.configHash="";this.syncing=null;this.saving=false;this.lastError="";this.sequence=0;this.lastWorkerAt=0;
+    this.now=now;this.restartBaseMs=restartBaseMs;this.restartMaxMs=restartMaxMs;this.workerFailures=0;this.nextWorkerAt=0;
     this.discoveryCache={at:0,devices:[]};this.discoveryPromise=null;
     this.timer=autostart?setInterval(()=>{this.checkWorker();this.sync().catch(()=>{})},15000):null;this.timer?.unref();
     if(autostart)setImmediate(()=>this.sync().catch(()=>{}));
@@ -73,10 +74,14 @@ class ESPHomeManager{
   worker(){
     if(this.closed)throw failure("ESPHome is stopping.",503);
     if(this.child)return this.child;
-    const child=this.spawnProcess(this.python,["-u",path.join(__dirname,"esphome","worker_entry.py")],{
+    if(this.now()<this.nextWorkerAt)throw failure("ESPHome worker restart is cooling down after a failure.",503);
+    let child;
+    try{child=this.spawnProcess(this.python,["-u",path.join(__dirname,"esphome","worker_entry.py")],{
       stdio:["pipe","pipe","ignore"],env:{PATH:process.env.PATH||"/usr/bin:/bin",LANG:"C.UTF-8",TZ:process.env.TZ||"UTC",PYTHONDONTWRITEBYTECODE:"1"}
-    });
-    this.child=child;this.lastWorkerAt=Date.now();let buffer="";
+    })}catch{
+      this.noteWorkerFailure();throw failure("ESPHome worker is unavailable.",503);
+    }
+    this.child=child;this.lastWorkerAt=this.now();let buffer="";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data",chunk=>{
       if(this.child!==child)return;
@@ -87,12 +92,16 @@ class ESPHomeManager{
         const line=buffer.slice(0,newline);buffer=buffer.slice(newline+1);
         if(Buffer.byteLength(line)>MAX_LINE){this.failWorker(child);return}
         let message;try{message=JSON.parse(line)}catch{this.failWorker(child);return}
-        this.lastWorkerAt=Date.now();
         if(message.event==="device"){
           const d=message.device,r=this.record(d?.id);
-          if(r&&r.generation===d.generation&&Array.isArray(d.entities)&&d.entities.length<=128){this.live.set(d.id,{...d,receivedAt:Date.now()});this.lastError=""}
+          if(r&&r.generation===d.generation&&Array.isArray(d.entities)&&d.entities.length<=128){
+            this.lastWorkerAt=this.now();this.workerFailures=0;this.nextWorkerAt=0;
+            this.live.set(d.id,{...d,receivedAt:Date.now()});this.lastError="";
+          }
         }else{
           const request=this.pending.get(message.requestId);if(!request)continue;
+          if(message.ok!==true&&message.ok!==false){this.failWorker(child);return}
+          this.lastWorkerAt=this.now();this.workerFailures=0;this.nextWorkerAt=0;
           this.pending.delete(message.requestId);clearTimeout(request.timer);
           if(message.ok===true)request.resolve(message);
           else request.reject(failure(`ESPHome: ${/^[a-z-]{1,60}$/.test(message.error)?message.error:"operation-failed"}.`,502));
@@ -103,17 +112,21 @@ class ESPHomeManager{
     child.stdin.on("error",()=>this.failWorker(child));
     return child;
   }
-  checkWorker(){if(this.child&&Date.now()-this.lastWorkerAt>45000)this.failWorker(this.child)}
+  checkWorker(){if(this.child&&this.now()-this.lastWorkerAt>45000)this.failWorker(this.child)}
+  noteWorkerFailure(){
+    this.workerFailures=Math.min(this.workerFailures+1,16);
+    this.nextWorkerAt=this.now()+Math.min(this.restartMaxMs,this.restartBaseMs*2**(this.workerFailures-1));
+  }
   failWorker(child){
     if(this.child!==child)return;
-    this.child=null;this.configHash="";this.lastError="ESPHome worker unavailable; connections will retry. Pending commands are not replayed.";
+    this.child=null;this.configHash="";if(!this.closed)this.noteWorkerFailure();this.lastError="ESPHome worker unavailable; connections will retry. Pending commands are not replayed.";
     for(const [id,state] of this.live)this.live.set(id,{...state,online:false,error:"worker-unavailable"});
     for(const request of this.pending.values()){clearTimeout(request.timer);request.reject(failure("ESPHome connection lost. Command delivery may be unknown; it will not be replayed.",503))}
     this.pending.clear();try{child.kill("SIGKILL")}catch{}
   }
   rpc(op,payload={},timeout=20000){
     if(this.pending.size>=72)return Promise.reject(failure("ESPHome is busy.",429));
-    let child;try{child=this.worker()}catch{return Promise.reject(failure("ESPHome worker is unavailable.",503))}
+    let child;try{child=this.worker()}catch(error){return Promise.reject(error?.status?error:failure("ESPHome worker is unavailable.",503))}
     if(child.stdin.writableLength>MAX_LINE)return Promise.reject(failure("ESPHome is busy.",429));
     const requestId=String(++this.sequence),line=JSON.stringify({op,requestId,...payload})+"\n";
     if(Buffer.byteLength(line)>MAX_LINE)return Promise.reject(failure("ESPHome request is too large.",413));

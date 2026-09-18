@@ -73,7 +73,7 @@ if(location.pathname==="/controller/display.html"&&!document.querySelector('scri
       if(media?.contentKind==="morning-announcements"){
         stream.active=true;stream.key=mediaKey(media);stream.state="playing-or-connecting";
         record("receiver-state-restored",{url:safeTelemetryUrl(media.url)});
-      }
+      }else{stream.active=false;stream.key="";stream.state="idle";record("receiver-state-cleared",{},true)}
       return {suppress:false};
     }
     if(message?.type!=="command")return {suppress:false};

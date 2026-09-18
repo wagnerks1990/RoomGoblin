@@ -24,13 +24,23 @@ function freePort(){
 
 function put(file,contents){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,contents)}
 
-async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,managedMusicRunning=false}={}){
+async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,managedMusicRunning=false,startupFullExportJournal=false,startupLegacyRollback=false}={}){
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-full-recovery-"));
   const hub=path.join(temp,"hub"),services=path.join(temp,"services"),signing=path.join(temp,"signing"),staging=path.join(temp,"host-backups","recovery-staging"),veyon=path.join(temp,"veyon"),bin=path.join(temp,"bin"),master=path.join(temp,"master.key");
   fs.mkdirSync(bin,{recursive:true});fs.mkdirSync(path.join(hub,"data","backups"),{recursive:true});fs.mkdirSync(services,{recursive:true});fs.mkdirSync(signing,{recursive:true});
   put(path.join(hub,"VERSION"),"1.0.0-test\n");
   if(database)put(path.join(hub,"data","classroom-control-hub.db"),"SQLITE_SNAPSHOT_SENTINEL");
   if(masterKey)put(master,"ab".repeat(32));
+  if(startupFullExportJournal)put(path.join(hub,"data","backups",".full-export-quiescence.json"),JSON.stringify({version:1,phase:"quiescing",services:[{id:"music-assistant",container:"music-assistant-server",image:"ghcr.io/music-assistant/server:2.9.13"}]}));
+  if(startupLegacyRollback){
+    put(path.join(hub,"data","classroom-control-hub.db"),"INTERRUPTED_RESTORE_SENTINEL");
+    const safety=new AdmZip();
+    safety.addFile("classroom-hub/data/classroom-control-hub.db",Buffer.from("SAFETY_DATABASE_SENTINEL"));
+    safety.addFile("classroom-hub/data/media/safety.txt",Buffer.from("SAFETY_ASSET_SENTINEL"));
+    safety.addFile("backup-manifest.json",Buffer.from(JSON.stringify({version:4,scope:"operational",capabilities:{configuration:true,database:true,data:true,services:false,secrets:false}})));
+    safety.writeZip(path.join(hub,"data","backups","pre-restore-startup-test.zip"));
+    put(path.join(hub,"data","backups",".legacy-restore-transaction.json"),JSON.stringify({version:1,phase:"mutating",requestedBackup:"interrupted.zip",safetyBackup:"pre-restore-startup-test.zip",mode:"configuration-data"}));
+  }
   const fakeSqlite=path.join(bin,"sqlite3");
   put(fakeSqlite,"#!/usr/bin/env node\nconst fs=require('fs');const command=process.argv[3]||'';const match=command.match(/^\\.backup '(.+)'$/);if(match)fs.copyFileSync(process.argv[2],match[1].replace(/''/g,\"'\"));else if(command==='PRAGMA quick_check;')process.stdout.write('ok\\n');else if(command.includes('schema_migrations'))process.stdout.write('1\\n');else process.exit(2);\n");
   fs.chmodSync(fakeSqlite,0o755);
@@ -188,6 +198,18 @@ test("full export quiesces owned service state and restores its prior running st
   const calls=fs.readFileSync(agent.hostCalls,"utf8").trim().split("\n").map(JSON.parse).filter(item=>item.path==="/docker/exec").map(item=>item.body.args);
   const stopped=calls.findIndex(args=>args?.[0]==="stop"&&args?.[1]==="music-assistant-server"),started=calls.findIndex(args=>args?.[0]==="start"&&args?.[1]==="music-assistant-server");
   assert.ok(stopped>=0&&started>stopped,"owned service must be stopped before copying and restarted after export");
+});
+
+test("maintenance startup reconciles durable export and legacy restore journals before readiness",async t=>{
+  const exportAgent=await startAgent(t,{managedMusicRunning:true,startupFullExportJournal:true});
+  const exportCalls=fs.readFileSync(exportAgent.hostCalls,"utf8").trim().split("\n").map(JSON.parse).filter(item=>item.path==="/docker/exec").map(item=>item.body.args);
+  assert.ok(exportCalls.some(args=>args?.[0]==="start"&&args?.[1]==="music-assistant-server"));
+  assert.equal(fs.existsSync(path.join(exportAgent.hub,"data","backups",".full-export-quiescence.json")),false);
+
+  const restoreAgent=await startAgent(t,{startupLegacyRollback:true});
+  assert.equal(fs.readFileSync(path.join(restoreAgent.hub,"data","classroom-control-hub.db"),"utf8"),"SAFETY_DATABASE_SENTINEL");
+  assert.equal(fs.readFileSync(path.join(restoreAgent.hub,"data","media","safety.txt"),"utf8"),"SAFETY_ASSET_SENTINEL");
+  assert.equal(fs.existsSync(path.join(restoreAgent.hub,"data","backups",".legacy-restore-transaction.json")),false);
 });
 
 test("full exports are single-flight and lock every competing maintenance mutation",async t=>{

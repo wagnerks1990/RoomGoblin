@@ -18,15 +18,25 @@ const app=express();
 const PORT=validPort(process.env.PORT,3010);
 const BIND_ADDRESS="127.0.0.1"; // Never expose the privileged maintenance API to the LAN.
 const TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
+function boundedEnvironmentInteger(name,fallback,min,max){
+  const raw=process.env[name];
+  if(raw==null||raw==="")return fallback;
+  const value=Number(raw);
+  if(!Number.isSafeInteger(value)||value<min||value>max)throw Error(`${name} must be a whole number from ${min} to ${max}`);
+  return value;
+}
 const HUB_ROOT=path.resolve(process.env.MANAGED_HUB_ROOT||"/managed/classroom-hub");
 const Classroom_ROOT=path.resolve(process.env.MANAGED_SERVICES_ROOT||"/managed/services");
 const HOST_AGENT_SOCKET=String(process.env.HOST_AGENT_SOCKET||"/run/classroom-control-hub/host-agent.sock");
 const MAIN_APP_URL=mainAppUrl();
 const APP_CONTAINER=cleanName(process.env.MANAGED_APP_CONTAINER||"classroom-control-hub");
-const RESTORE_HEALTH_TIMEOUT_MS=Math.max(5000,Math.min(300000,Number(process.env.RESTORE_HEALTH_TIMEOUT_MS||60000)));
-const RESTORE_MAX_EXPANDED_BYTES=Math.max(64*1024*1024,Number(process.env.RESTORE_MAX_EXPANDED_MB||4096)*1024*1024);
-const RESTORE_MAX_ARCHIVE_BYTES=Math.max(64*1024*1024,Number(process.env.RESTORE_MAX_ARCHIVE_MB||4096)*1024*1024);
-const RECOVERY_ENVELOPE_MAX_BYTES=Math.max(64*1024*1024,Math.min(512*1024*1024,Number(process.env.RECOVERY_ENVELOPE_MAX_MB||256)*1024*1024,RESTORE_MAX_EXPANDED_BYTES));
+const RESTORE_HEALTH_TIMEOUT_MS=boundedEnvironmentInteger("RESTORE_HEALTH_TIMEOUT_MS",60000,5000,300000);
+const RESTORE_MAX_ARCHIVE_BYTES=boundedEnvironmentInteger("RESTORE_MAX_ARCHIVE_MB",4096,64,16384)*1024*1024;
+const RESTORE_MAX_EXPANDED_BYTES=boundedEnvironmentInteger("RESTORE_MAX_EXPANDED_MB",4096,64,16384)*1024*1024;
+const RECOVERY_ENVELOPE_MAX_BYTES=Math.min(
+  boundedEnvironmentInteger("RECOVERY_ENVELOPE_MAX_MB",256,64,512)*1024*1024,
+  RESTORE_MAX_EXPANDED_BYTES
+);
 const RECOVERY_ENVELOPE_FILE_MAX_BYTES=RECOVERY_ENVELOPE_MAX_BYTES+16*1024;
 // This is a deliberately buffered implementation: the operator-selected cap
 // is also its expanded and single-entry ceiling, so every self-produced bundle
@@ -39,6 +49,8 @@ const SIGNING_ROOT=path.resolve(process.env.ANDROID_AGENT_SIGNING_ROOT||"/signin
 const VEYON_RECOVERY_ROOT=path.resolve(process.env.VEYON_RECOVERY_ROOT||"/veyon-recovery");
 const UPLOAD_DIR=path.resolve(process.env.MAINTENANCE_WORK_DIR||"/work/uploads");
 const RECOVERY_STAGING_ROOT=path.resolve(process.env.RECOVERY_STAGING_ROOT||"/host-backups/recovery-staging");
+const LEGACY_RESTORE_JOURNAL=path.join(BACKUP_DIR,".legacy-restore-transaction.json");
+const FULL_EXPORT_JOURNAL=path.join(BACKUP_DIR,".full-export-quiescence.json");
 fs.mkdirSync(BACKUP_DIR,{recursive:true,mode:0o700});fs.mkdirSync(UPLOAD_DIR,{recursive:true,mode:0o700});
 for(const dir of [BACKUP_DIR,UPLOAD_DIR])try{fs.chmodSync(dir,0o700)}catch{}
 app.use(express.json({limit:"8mb"}));
@@ -54,11 +66,12 @@ app.use(rateLimit({
   skip:req=>["GET","HEAD","OPTIONS"].includes(req.method),
   message:{ok:false,error:"Too many maintenance changes. Retry after the indicated delay."}
 }));
-let recoveryMutationLocked=false,fullExportMutationLocked=false;
+let recoveryMutationLocked=false,fullExportMutationLocked=false,legacyRestoreMutationLocked=false;
 app.use(async(req,res,next)=>{
   const releaseRequestedExportLock=()=>{if(req.fullExportMutationLock){fullExportMutationLocked=false;req.fullExportMutationLock=false}};
   if(["GET","HEAD","OPTIONS"].includes(req.method))return next();
   if(req.path==="/recovery/reconcile-services")return next();
+  if(legacyRestoreMutationLocked)return res.status(423).json({ok:false,error:"A compatibility restore is active; maintenance mutations are locked"});
   if(fullExportMutationLocked)return res.status(423).json({ok:false,error:"A Full Recovery Export is active; maintenance mutations are locked"});
   if(req.method==="POST"&&req.path==="/backup/create"&&req.body?.scope==="full"){fullExportMutationLocked=true;req.fullExportMutationLock=true}
   if(recoveryMutationLocked){
@@ -72,6 +85,19 @@ function cleanName(v){return String(v||"").replace(/[^A-Za-z0-9._-]/g,"-").slice
 function statInfo(p,base){const st=fs.statSync(p);return {name:path.basename(p),path:path.relative(base,p)||".",type:st.isDirectory()?"directory":"file",size:st.size,modifiedAt:st.mtime.toISOString()}}
 function sha256File(p){const hash=crypto.createHash("sha256"),fd=fs.openSync(p,"r"),buf=Buffer.allocUnsafe(1024*1024);try{let n=0,pos=0;while((n=fs.readSync(fd,buf,0,buf.length,pos))>0){hash.update(buf.subarray(0,n));pos+=n}return hash.digest("hex")}finally{fs.closeSync(fd)}}
 function writeZipAtomic(zip,dest){const partial=`${dest}.partial-${process.pid}-${Date.now()}`;try{zip.writeZip(partial);fs.chmodSync(partial,0o600);fs.renameSync(partial,dest);fs.chmodSync(dest,0o600)}finally{fs.rmSync(partial,{force:true})}}
+function writeJsonAtomic(dest,value){
+  const partial=`${dest}.partial-${process.pid}-${Date.now()}`;
+  let fd;
+  try{
+    fd=fs.openSync(partial,"wx",0o600);fs.writeFileSync(fd,`${JSON.stringify(value,null,2)}\n`);fs.fsyncSync(fd);fs.closeSync(fd);fd=undefined;
+    fs.renameSync(partial,dest);fs.chmodSync(dest,0o600);
+    const dir=fs.openSync(path.dirname(dest),fs.constants.O_RDONLY);try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+  }finally{if(fd!==undefined)try{fs.closeSync(fd)}catch{};fs.rmSync(partial,{force:true})}
+}
+function removeDurableFile(file){
+  fs.rmSync(file,{force:true});
+  const dir=fs.openSync(path.dirname(file),fs.constants.O_RDONLY);try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+}
 function applicationVersion(){try{return fs.readFileSync(path.join(HUB_ROOT,"VERSION"),"utf8").trim()}catch{return null}}
 async function run(cmd,args=[],opts={}){if(cmd==="docker")return hostAgentRequest("POST","/docker/exec",{args,cwd:opts.cwd===HUB_ROOT?"hub":""},opts.timeout||180000);const {stdout,stderr}=await execFileAsync(cmd,args,{timeout:opts.timeout||15000,maxBuffer:opts.maxBuffer||8*1024*1024,cwd:opts.cwd||undefined,env:{...process.env,...(opts.env||{})}});return {stdout,stderr}}
 async function mainAppRequest(method,pathName,body=null,timeoutMs=30000){
@@ -254,6 +280,26 @@ async function managedServicesManifest(){
   return rows;
 }
 async function managedContainerRunning(service){const result=await run("docker",["inspect",service.container],{timeout:10000}),inspect=JSON.parse(result.stdout)[0];if(!inspect||inspect.Config?.Image!==service.image||inspect.Config?.Labels?.["org.roomgoblin.deployment-ownership"]!=="roomgoblin")throw Error(`Managed-service identity changed during export: ${service.container}`);return inspect.State?.Running===true}
+async function restoreQuiescedServices(services){
+  const failures=[];
+  for(const service of services){
+    try{
+      const spec=FULL_RECOVERY_SERVICE_SPECS[service.id];
+      if(!spec||service.container!==spec.container||service.image!==spec.image)throw Error("invalid durable service identity");
+      await run("docker",["start",service.container],{timeout:30000});
+      if(!await managedContainerRunning(service))throw Error("container did not return to running state");
+    }catch(error){failures.push(`${service.id}: ${error.message}`)}
+  }
+  if(failures.length)throw Error(`Unable to restore pre-export managed-service state (${failures.join("; ")})`);
+}
+async function recoverInterruptedFullExport(){
+  if(!fs.existsSync(FULL_EXPORT_JOURNAL))return false;
+  const journal=JSON.parse(fs.readFileSync(FULL_EXPORT_JOURNAL,"utf8"));
+  if(journal?.version!==1||journal?.phase!=="quiescing"||!Array.isArray(journal.services))throw Error("Full-export quiescence journal is invalid; manual recovery is required");
+  await restoreQuiescedServices(journal.services);
+  removeDurableFile(FULL_EXPORT_JOURNAL);
+  return true;
+}
 function requiredIdentityFile(file,label){if(!fs.existsSync(file))return null;const stat=fs.lstatSync(file);if(stat.isSymbolicLink()||!stat.isFile()||stat.size<1)throw Error(`${label} must be a non-empty regular file`);return file}
 function optionalVeyonPrivateFile(file){
   if(!fs.existsSync(file))return null;
@@ -358,6 +404,7 @@ async function createFullRecoveryExport(req,res){
     if(check!=="ok")throw Error(`Full Recovery Export database integrity check failed: ${check||"no result"}`);
     const managedServices=await managedServicesManifest(),ownedServices=new Set(managedServices.map(service=>service.id));
     quiesced=managedServices.filter(item=>item.running).sort((a,b)=>(priority[b.id]||0)-(priority[a.id]||0));
+    writeJsonAtomic(FULL_EXPORT_JOURNAL,{version:1,phase:"quiescing",createdAt:new Date().toISOString(),services:quiesced.map(({id,container,image})=>({id,container,image}))});
     for(const service of quiesced){await run("docker",["stop",service.container],{timeout:30000});if(await managedContainerRunning(service))throw Error(`Managed service did not stop for a consistent export: ${service.container}`)}
     const activeName=path.basename(active.source),zip=new AdmZip(),filter=(full,rel,ent)=>{if([activeName,`${activeName}-wal`,`${activeName}-shm`,"classroom-control-hub.db","classroom-control-hub.db-wal","classroom-control-hub.db-shm"].includes(path.posix.basename(rel))&&path.posix.dirname(rel)==="classroom-hub/data")return false;if(["classroom-hub/data/android-tv/.android/adbkey","classroom-hub/data/android-tv/.android/adbkey.pub"].includes(rel))return false;if(rel.startsWith("services/")){const id=rel.split("/")[1];if(!ownedServices.has(id))return false}return backupFilter("full")(full,rel,ent)};
     let sourceBytes=fs.statSync(dbSnapshot).size+fs.statSync(snapshotMaster).size;
@@ -381,7 +428,7 @@ async function createFullRecoveryExport(req,res){
     const encrypted=encryptRecoveryEnvelope(plaintext,passphrase,{metadata:{format:"roomgoblin-full-recovery",manifestVersion:6,createdAt},maxPayloadBytes:RECOVERY_ENVELOPE_MAX_BYTES});
     const stamp=createdAt.replace(/[:.]/g,"-"),name=`roomgoblin-full-recovery-${stamp}.rgbak`;dest=path.join(BACKUP_DIR,name);
     writePrivateBufferAtomic(encrypted,dest);
-    for(const service of [...quiesced].sort((a,b)=>(priority[a.id]||0)-(priority[b.id]||0))){await run("docker",["start",service.container],{timeout:30000});if(!await managedContainerRunning(service))throw Error(`Managed service did not return to its prior running state: ${service.container}`)}quiesced=[];
+    await restoreQuiescedServices([...quiesced].sort((a,b)=>(priority[a.id]||0)-(priority[b.id]||0)));quiesced=[];removeDurableFile(FULL_EXPORT_JOURNAL);
     if(dbSnapshot){fs.rmSync(dbSnapshot,{force:true});dbSnapshot=""}if(identitySnapshotRoot){fs.rmSync(identitySnapshotRoot,{recursive:true,force:true});identitySnapshotRoot=""}
     await mainAppRequest("POST","/api/v1/internal/maintenance/export-thaw",{freezeToken:mainFreezeToken},30000);mainFreezeToken="";
     await hostAgentRequest("POST","/recovery/export/thaw",{freezeToken:hostFreezeToken},10000);hostFreezeToken="";
@@ -389,12 +436,14 @@ async function createFullRecoveryExport(req,res){
     res.json({ok:true,name,size:encrypted.length,sha256:sha256File(dest),download:`/backup/${encodeURIComponent(name)}`,containsSecrets:true,containsSensitiveData:true,encrypted:true,authenticated:true});
   }catch(e){
     if(dest)fs.rmSync(dest,{force:true});
-    for(const service of [...quiesced].sort((a,b)=>(priority[a.id]||0)-(priority[b.id]||0)))try{await run("docker",["start",service.container],{timeout:30000})}catch{}quiesced=[];
+    let restartError=null;
+    if(quiesced.length)try{await restoreQuiescedServices([...quiesced].sort((a,b)=>(priority[a.id]||0)-(priority[b.id]||0)));quiesced=[];removeDurableFile(FULL_EXPORT_JOURNAL)}catch(error){restartError=error}
+    else if(fs.existsSync(FULL_EXPORT_JOURNAL))removeDurableFile(FULL_EXPORT_JOURNAL);
     if(mainFreezeToken)try{await mainAppRequest("POST","/api/v1/internal/maintenance/export-thaw",{freezeToken:mainFreezeToken},30000);mainFreezeToken=""}catch{}
     if(hostFreezeToken)try{await hostAgentRequest("POST","/recovery/export/thaw",{freezeToken:hostFreezeToken},10000);hostFreezeToken=""}catch{}
     if(dbSnapshot){fs.rmSync(dbSnapshot,{force:true});dbSnapshot=""}if(identitySnapshotRoot){fs.rmSync(identitySnapshotRoot,{recursive:true,force:true});identitySnapshotRoot=""}
-    if(!res.headersSent)res.status(400).json({ok:false,error:e.message});
-  }finally{for(const service of [...quiesced].sort((a,b)=>(priority[a.id]||0)-(priority[b.id]||0)))try{await run("docker",["start",service.container],{timeout:30000})}catch{}if(mainFreezeToken)try{await mainAppRequest("POST","/api/v1/internal/maintenance/export-thaw",{freezeToken:mainFreezeToken},30000);mainFreezeToken=""}catch{}if(hostFreezeToken)try{await hostAgentRequest("POST","/recovery/export/thaw",{freezeToken:hostFreezeToken},10000);hostFreezeToken=""}catch{}if(dbSnapshot)fs.rmSync(dbSnapshot,{force:true});if(identitySnapshotRoot)fs.rmSync(identitySnapshotRoot,{recursive:true,force:true});fullExportMutationLocked=false}
+    if(!res.headersSent)res.status(restartError?500:400).json({ok:false,error:restartError?`${e.message}; ${restartError.message}. Recovery will retry when maintenance restarts.`:e.message});
+  }finally{if(mainFreezeToken)try{await mainAppRequest("POST","/api/v1/internal/maintenance/export-thaw",{freezeToken:mainFreezeToken},30000);mainFreezeToken=""}catch{}if(hostFreezeToken)try{await hostAgentRequest("POST","/recovery/export/thaw",{freezeToken:hostFreezeToken},10000);hostFreezeToken=""}catch{}if(dbSnapshot)fs.rmSync(dbSnapshot,{force:true});if(identitySnapshotRoot)fs.rmSync(identitySnapshotRoot,{recursive:true,force:true});fullExportMutationLocked=false}
 }
 app.post("/backup/create",async(req,res)=>{let dbSnapshot="";try{
   const scope=["configuration","quick","operational","diagnostic","full"].includes(req.body?.scope)?req.body.scope:"operational";
@@ -437,7 +486,7 @@ app.get("/backups/catalog",(_req,res)=>{try{
 
 
 app.get("/backups/retention",(_req,res)=>{try{const items=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));const automatic=items.filter(x=>/^pre-/.test(x.name));res.json({ok:true,total:items.length,automatic:automatic.length,automaticBytes:automatic.reduce((a,x)=>a+Number(x.size||0),0),items:automatic})}catch(e){res.status(500).json({ok:false,error:e.message})}});
-app.post("/backups/retention",async(req,res)=>{try{const keep=Math.max(2,Math.min(250,Number(req.body?.keep||10)));if(String(req.body?.confirm||"")!=="PRUNE_AUTOMATIC_BACKUPS")return res.status(400).json({ok:false,error:"Explicit confirmation required"});let pinned="";try{const job=await hostAgentRequest("GET","/app-updates/job");if(job.revertAvailable===true)pinned=String(job.backupName||"")}catch{}const items=fs.readdirSync(BACKUP_DIR).filter(n=>/^pre-.*\.zip$/.test(n)).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));const doomed=items.slice(keep).filter(x=>x.name!==pinned);let bytes=0;for(const x of doomed){const p=path.join(BACKUP_DIR,x.name);bytes+=fs.statSync(p).size;fs.unlinkSync(p)}res.json({ok:true,keep,pinned:pinned||null,removed:doomed.length,bytesFreed:bytes,remaining:items.length-doomed.length})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post("/backups/retention",async(req,res)=>{try{const requestedKeep=Number(req.body?.keep??10);if(!Number.isInteger(requestedKeep)||!Number.isFinite(requestedKeep)||requestedKeep<2||requestedKeep>250)return res.status(400).json({ok:false,error:"Backup retention must be a whole number from 2 to 250"});const keep=requestedKeep;if(String(req.body?.confirm||"")!=="PRUNE_AUTOMATIC_BACKUPS")return res.status(400).json({ok:false,error:"Explicit confirmation required"});let pinned="";try{const job=await hostAgentRequest("GET","/app-updates/job");if(job.revertAvailable===true)pinned=String(job.backupName||"")}catch{}const items=fs.readdirSync(BACKUP_DIR).filter(n=>/^pre-.*\.zip$/.test(n)).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));const doomed=items.slice(keep).filter(x=>x.name!==pinned);let bytes=0;for(const x of doomed){const p=path.join(BACKUP_DIR,x.name);bytes+=fs.statSync(p).size;fs.unlinkSync(p)}res.json({ok:true,keep,pinned:pinned||null,removed:doomed.length,bytesFreed:bytes,remaining:items.length-doomed.length})}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.get("/backup/:name",(req,res)=>{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Backup not found"});res.download(p,name)});
 app.get("/backup/:name/inspect",(req,res)=>{try{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Backup not found"});if(name.endsWith(".rgbak"))return res.status(405).json({ok:false,error:"Encrypted recovery inspection requires the authenticated restore-plan workflow"});const zip=new AdmZip(p),entries=zip.getEntries();let manifest=null;const m=entries.find(e=>e.entryName==="backup-manifest.json");if(m)try{manifest=JSON.parse(m.getData().toString("utf8"))}catch{}res.json({ok:true,name,size:fs.statSync(p).size,manifest,entries:entries.length,preview:entries.slice(0,100).map(e=>({name:e.entryName,size:e.header.size,directory:e.isDirectory}))})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 
@@ -467,7 +516,9 @@ function backupRestorePlan(name,passphrase=""){
   const p=path.join(BACKUP_DIR,safeName);
   if(!fs.existsSync(p))throw Error("Backup not found");
   const encrypted=safeName.endsWith(".rgbak");
-  if(encrypted&&fs.statSync(p).size>RECOVERY_ENVELOPE_FILE_MAX_BYTES)throw Error("Encrypted recovery bundle exceeds the configured envelope limit");
+  const archiveBytes=fs.statSync(p).size;
+  if(encrypted&&archiveBytes>RECOVERY_ENVELOPE_FILE_MAX_BYTES)throw Error("Encrypted recovery bundle exceeds the configured envelope limit");
+  if(!encrypted&&archiveBytes>RESTORE_MAX_ARCHIVE_BYTES)throw Error("Restore archive exceeds the configured archive-size limit");
   const envelope=encrypted?decryptRecoveryEnvelope(fs.readFileSync(p),String(passphrase||""),{maxPayloadBytes:RECOVERY_ENVELOPE_MAX_BYTES}):null;
   const zip=encrypted?new AdmZip(envelope.plaintext):new AdmZip(p),entries=zip.getEntries();
   if(entries.length>100000)throw Error("Restore archive contains too many entries");
@@ -560,6 +611,24 @@ async function waitForMainApplication(){
   throw Error(`RoomGoblin did not become healthy after restore: ${last}`);
 }
 async function extractRestore(name,target){const plan=backupRestorePlan(name),root=path.resolve(target);fs.mkdirSync(root,{recursive:true,mode:0o700});const zip=new AdmZip(plan.path);for(const entry of zip.getEntries()){const normalized=entry.entryName.replace(/\\/g,"/"),dest=path.resolve(root,normalized);if(dest!==root&&!dest.startsWith(root+path.sep))throw Error(`Unsafe archive path: ${normalized}`);if(entry.isDirectory){fs.mkdirSync(dest,{recursive:true,mode:0o700});continue}fs.mkdirSync(path.dirname(dest),{recursive:true,mode:0o700});fs.writeFileSync(dest,entry.getData(),{mode:0o600,flag:"wx"})}return {plan,root,srcRoot:path.join(root,"classroom-hub")}}
+async function recoverInterruptedLegacyRestore(){
+  if(!fs.existsSync(LEGACY_RESTORE_JOURNAL))return false;
+  const journal=JSON.parse(fs.readFileSync(LEGACY_RESTORE_JOURNAL,"utf8"));
+  if(journal?.version!==1||journal?.phase!=="mutating"||typeof journal.safetyBackup!=="string")throw Error("Legacy restore journal is invalid; manual recovery is required");
+  const plan=backupRestorePlan(journal.safetyBackup);
+  if(plan.name!==journal.safetyBackup||!plan.capabilities.data||!plan.capabilities.database)throw Error("Legacy restore safety backup is missing or incomplete");
+  const temp=fs.mkdtempSync(path.join(UPLOAD_DIR,"startup-restore-rollback-"));
+  try{
+    await run("docker",["stop",APP_CONTAINER],{timeout:30000}).catch(()=>null);
+    const extracted=await extractRestore(journal.safetyBackup,temp);
+    await verifyRestoreSource(extracted.srcRoot,{data:true});
+    await replaceRestoreContent(extracted.srcRoot,{data:true});
+    await run("docker",["start",APP_CONTAINER],{timeout:30000});
+    await waitForMainApplication();
+    removeDurableFile(LEGACY_RESTORE_JOURNAL);
+  }finally{fs.rmSync(temp,{recursive:true,force:true})}
+  return true;
+}
 function ensureRecoveryStageCapacity(bytes){
   fs.mkdirSync(RECOVERY_STAGING_ROOT,{recursive:true,mode:0o700});
   const st=fs.lstatSync(RECOVERY_STAGING_ROOT);if(!st.isDirectory()||st.isSymbolicLink())throw Error("Recovery staging root must be a real directory");
@@ -631,6 +700,7 @@ app.post("/backup/:name/restore",async(req,res)=>{
   let stopped=false,temp=null,safety=null,mutationStarted=false;
   try{
     if(String(req.body?.mode||"")==="full-recovery")return await delegateFullRecovery(req,res);
+    legacyRestoreMutationLocked=true;
     if(String(req.body?.confirm||"")!=="RESTORE")return res.status(400).json({ok:false,error:"Restore requires confirm=RESTORE"});
     const mode=String(req.body?.mode||"configuration-data");
     if(!["configuration","data","configuration-data"].includes(mode))throw Error("Invalid restore mode");
@@ -641,10 +711,12 @@ app.post("/backup/:name/restore",async(req,res)=>{
     temp=path.join(UPLOAD_DIR,`restore-${Date.now()}`);fs.mkdirSync(temp,{recursive:true});const extracted=await extractRestore(plan.name,temp),srcRoot=extracted.srcRoot;
     const doData=mode.includes("data"),doDatabase=mode==="configuration";
     await verifyRestoreSource(srcRoot,{data:doData||doDatabase});
-    await run("docker",["stop",APP_CONTAINER],{timeout:30000});stopped=true;mutationStarted=true;
+    writeJsonAtomic(LEGACY_RESTORE_JOURNAL,{version:1,phase:"mutating",createdAt:new Date().toISOString(),requestedBackup:plan.name,safetyBackup:safety.name,mode});mutationStarted=true;
+    await run("docker",["stop",APP_CONTAINER],{timeout:30000});stopped=true;
     const restored=await replaceRestoreContent(srcRoot,{database:doDatabase,data:doData});
     if(!restored.length)throw Error("Selected restore mode has no matching content in this backup");
     await run("docker",["start",APP_CONTAINER],{timeout:30000});stopped=false;await waitForMainApplication();
+    removeDurableFile(LEGACY_RESTORE_JOURNAL);
     res.json({ok:true,name:plan.name,mode,restored,safetyBackup:safety.name,healthVerified:true,message:"Restore completed and the application passed its database health check."});
   }catch(e){
     let rollback={attempted:false,ok:false};
@@ -654,12 +726,12 @@ app.post("/backup/:name/restore",async(req,res)=>{
         if(!stopped){await run("docker",["stop",APP_CONTAINER],{timeout:30000});stopped=true}
         const rollbackDir=path.join(UPLOAD_DIR,`rollback-${Date.now()}`);fs.mkdirSync(rollbackDir,{recursive:true});
         try{const extracted=await extractRestore(safety.name,rollbackDir);await verifyRestoreSource(extracted.srcRoot,{data:true});await replaceRestoreContent(extracted.srcRoot,{data:true})}finally{fs.rmSync(rollbackDir,{recursive:true,force:true})}
-        await run("docker",["start",APP_CONTAINER],{timeout:30000});stopped=false;await waitForMainApplication();rollback={attempted:true,ok:true,backup:safety.name};
+        await run("docker",["start",APP_CONTAINER],{timeout:30000});stopped=false;await waitForMainApplication();removeDurableFile(LEGACY_RESTORE_JOURNAL);rollback={attempted:true,ok:true,backup:safety.name};
       }catch(rollbackError){rollback={attempted:true,ok:false,backup:safety.name,error:rollbackError.message}}
     }
     if(stopped)try{await run("docker",["start",APP_CONTAINER],{timeout:30000});stopped=false}catch{}
     res.status(500).json({ok:false,error:e.message,safetyBackup:safety?.name||null,rollback});
-  }finally{if(temp)try{fs.rmSync(temp,{recursive:true,force:true})}catch{}}
+  }finally{legacyRestoreMutationLocked=false;if(temp)try{fs.rmSync(temp,{recursive:true,force:true})}catch{}}
 });
 app.delete("/backup/:name",(req,res)=>{try{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.json({ok:true,missing:true});fs.unlinkSync(p);res.json({ok:true,name})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 app.get("/audit/status",async(_req,res)=>{try{const status=await mainAppStatus();res.json({ok:true,...status.audit,database:status.database})}catch(e){res.status(e.status||502).json({ok:false,error:e.message})}});
@@ -729,6 +801,15 @@ const safeCommands={
   "docker-ps":["docker",["ps","-a"]],"docker-stats":["docker",["stats","--no-stream"]],"disk-usage":["df",["-h"]],"memory":["free",["-h"]],"network":["ip",["addr"]],"routes":["ip",["route"]],"dns":["cat",["/etc/resolv.conf"]],"compose-status":["docker",["compose","ps"]]
 };
 app.post("/command",async(req,res)=>{try{const preset=String(req.body?.preset||"");if(!preset||!safeCommands[preset])return res.status(403).json({ok:false,error:"Only fixed diagnostic presets are supported"});const [cmd,args]=safeCommands[preset],r=await run(cmd,args,{timeout:30000,maxBuffer:16*1024*1024,cwd:preset==="compose-status"?HUB_ROOT:undefined});return res.json({ok:true,preset,output:(r.stdout||"")+(r.stderr||"")})}catch(e){res.status(500).json({ok:false,error:e.message,output:(e.stdout||"")+(e.stderr||"")})}});
-const server=app.listen(PORT,BIND_ADDRESS,()=>console.log(`RoomGoblin Maintenance Agent listening on ${PORT}`));
-let stopping=false;function stop(signal){if(stopping)return;stopping=true;console.log(`${signal} received; draining maintenance agent`);const force=setTimeout(()=>process.exit(1),10000);force.unref();server.close(()=>{clearTimeout(force);process.exit(0)})}
+let server=null,stopping=false;
+function stop(signal){if(stopping)return;stopping=true;console.log(`${signal} received; draining maintenance agent`);const force=setTimeout(()=>process.exit(1),10000);force.unref();if(!server)return process.exit(0);server.close(()=>{clearTimeout(force);process.exit(0)})}
 process.once("SIGTERM",()=>stop("SIGTERM"));process.once("SIGINT",()=>stop("SIGINT"));
+async function start(){
+  // Durable recovery runs before the privileged API becomes ready. A prior
+  // process/host failure must not expose mutations while an add-on remains
+  // quiesced or application data remains partially replaced.
+  await recoverInterruptedFullExport();
+  await recoverInterruptedLegacyRestore();
+  server=app.listen(PORT,BIND_ADDRESS,()=>console.log(`RoomGoblin Maintenance Agent listening on ${PORT}`));
+}
+start().catch(error=>{console.error(`Maintenance startup recovery failed: ${error.message}`);process.exitCode=1});

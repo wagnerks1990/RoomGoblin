@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace RoomGoblin.Agent.Service;
@@ -35,7 +36,13 @@ internal static class AuthenticodeVerifier
                     X509Certificate.CreateFromSignedFile(path));
 
                 var expected = Normalize(trustedPublisherThumbprint);
-                var actual = Normalize(cert.Thumbprint ?? "");
+                var actual = expected.Length switch
+                {
+                    40 => cert.GetCertHashString(HashAlgorithmName.SHA1),
+                    64 => Convert.ToHexString(SHA256.HashData(cert.RawData)),
+                    _ => throw new InvalidDataException(
+                        "Configured RoomGoblin publisher thumbprint must be SHA-1 or SHA-256.")
+                };
 
                 if (!string.Equals(
                         expected,

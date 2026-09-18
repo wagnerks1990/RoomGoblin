@@ -6,6 +6,7 @@
     {"id":"musicassistant","name":"Music Assistant","type":"docker","image":"ghcr.io/music-assistant/server:2.9.13","optional":true},
     {"id":"nodered","name":"Node-RED","type":"docker","image":"nodered/node-red:4.1.14-22","optional":true},
     {"id":"pluto","name":"HDMI / HDBaseT Matrix","type":"external","optional":true},
-    {"id":"veyon","name":"Veyon Computer Management","type":"external","optional":true}
+    {"id":"veyon","name":"Veyon Computer Management","type":"external","optional":true},
+    {"id":"esphome","name":"ESPHome Native API Devices","type":"external","optional":true}
   ]
 }

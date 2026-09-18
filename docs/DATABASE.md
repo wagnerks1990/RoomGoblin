@@ -76,3 +76,15 @@ updates, and cascade away when the display itself is deleted.
 - Schema 10 expands built-in access profiles with granular schedule, automation, media, integration, lab, and diagnostic capabilities.
 
 Migration versions are inserted only after their transaction completes. Startup recovery may repair an incomplete built-in Administrator profile, but it does not rewrite a valid non-empty custom capability list. `DATABASE_FILE` is the authoritative database identity; startup does not silently select a differently named legacy database. Installer reconciliation must stop the app, create SQLite-safe backups, validate `PRAGMA quick_check`, and preserve the prior file for rollback.
+
+Authentication checks always query the authoritative session row so user disablement,
+expiry, and explicit revocation take effect immediately. Routine requests coalesce the
+`last_seen_at` write to at most once per minute per active session, and expired-row
+cleanup runs at most once per minute except when a new session is created. Session
+list queries independently exclude expired rows, so write throttling does not change
+the maximum-session policy or expose stale sessions.
+
+The maintenance integration guard detects when recovery replaces the configured
+database inode and reopens its read-only credential probe. It also drops a failed
+probe handle so a transient restore or schema transition cannot leave Background
+Music permanently dormant.

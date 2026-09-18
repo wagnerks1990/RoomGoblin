@@ -14,7 +14,7 @@ For authenticated computers with a usable hostname:
 
 - the public inventory ID is a stable hostname-derived ID;
 - discovery records the current backend/IP inventory ID for that hostname;
-- a DHCP address move updates the hostname mapping atomically while the public ID stays unchanged;
+- a DHCP address move persists the hostname mapping before a projected public ID is returned, while the public ID stays unchanged;
 - the previous address is retained only as bounded reconciliation metadata;
 - if an address is reused by a different hostname, the old hostname mapping is marked stale before the address can be targeted through it;
 - duplicate historical rows are suppressed from the public inventory when a current row for the same hostname exists;
@@ -48,10 +48,12 @@ A successful host TCP check alone does not prove discovery is configured. The Ro
 - Discovery continues to use configured `VEYON_SCAN_SUBNET`, `VEYON_SCAN_START`, and `VEYON_SCAN_END` values. No deployment-specific subnet is committed.
 - Existing capability checks remain authoritative for inventory, sensitive previews, and commands.
 - Hostname is used only when it is non-empty and is not merely an IPv4 string.
+- Ordinary DNS/Windows hostnames retain the compatibility ID `host-<normalized-hostname>`. If endpoint-supplied punctuation or excessive length would collapse two different hostnames to the same cleaned ID, a deterministic digest disambiguates them.
 - A hostname change is treated as a different computer identity.
 - A stale hostname whose former IP has been claimed by another hostname does not resolve to that address.
 - Veyon private-key material is never stored in the hostname mapping.
 - Only the successful key name is migrated when a workstation changes address.
+- Mapping persistence fails closed before public projection or key-affinity migration. Key-affinity migration is a follow-on optimization; failure cannot make an unpersisted ID targetable.
 - Native `veyon.service` and `veyon-webapi.service` remain host-managed.
 
 ## Acceptance checks

@@ -47,4 +47,15 @@ const second=bridge.musicAssistantNormalizePlayers([nativeOnly,unknownLink]);
 assert.deepEqual(second.players.map(p=>p.player_id),["native-one","parent-two"]);
 assert.deepEqual(second.protocolPlayers,[]);
 
+// A partial refresh keeps the last observed relationship briefly, and an older
+// overlapping response cannot replace a mapping learned by a newer request.
+const newerParent={...universal,player_id:"newer-parent",output_protocols:[{output_protocol_id:protocol.player_id,protocol_domain:"sendspin"}]};
+bridge.musicAssistantNormalizePlayers([protocol,newerParent],{generation:100,now:10_000});
+bridge.musicAssistantNormalizePlayers([protocol,universal],{generation:99,now:10_001});
+assert.equal(bridge.musicAssistantCanonicalPlayerId(protocol.player_id),"newer-parent");
+const partial=bridge.musicAssistantNormalizePlayers([tv],{generation:101,now:10_002});
+assert.equal(partial.aliases[protocol.player_id],"newer-parent");
+bridge.musicAssistantNormalizePlayers([tv],{generation:102,now:10_000+5*60*1000+1});
+assert.equal(bridge.musicAssistantCanonicalPlayerId(protocol.player_id),protocol.player_id);
+
 console.log("Music Assistant Universal Player normalization regression checks OK");

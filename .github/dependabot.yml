@@ -48,6 +48,15 @@ updates:
         patterns:
           - "*"
 
+  - package-ecosystem: "nuget"
+    directory: "/windows-agent"
+    schedule:
+      interval: "weekly"
+    groups:
+      windows-agent-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: "pip"
     directory: "/src/esphome"
     schedule:

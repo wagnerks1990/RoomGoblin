@@ -498,11 +498,14 @@ async function applyAppLock(){
 
 let currentScreenComputer=null;
 let liveScreenTimer=null;
-let liveScreenBusy=false;
+let liveScreenRequest=null;
+let liveScreenGeneration=0;
 
 async function captureScreenFrame(id,save=false){
-  if(liveScreenBusy&&!save)return;
-  liveScreenBusy=true;
+  const generation=liveScreenGeneration;
+  if(liveScreenRequest?.id===id&&!save)return;
+  const request={id,generation};
+  liveScreenRequest=request;
   try{
     await api('/api/v1/lab/command',{
       method:'POST',
@@ -517,12 +520,13 @@ async function captureScreenFrame(id,save=false){
     // Give the helper time to capture and Hub time to receive the JPEG.
     await new Promise(r=>setTimeout(r,1000));
 
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request)return;
     screenImage.src=`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshot?t=${Date.now()}`;
     screenMeta.textContent=`Live view updated • ${new Date().toLocaleTimeString()}`;
 
-    if(save)await loadScreenHistory();
+    if(save&&currentScreenComputer===id&&liveScreenGeneration===generation)await loadScreenHistory();
   }finally{
-    liveScreenBusy=false;
+    if(liveScreenRequest===request)liveScreenRequest=null;
   }
 }
 
@@ -536,6 +540,7 @@ async function saveSelectedScreenshots(){
 
 async function showScreen(id){
   closeScreenView(false);
+  const generation=liveScreenGeneration;
   currentScreenComputer=id;
   const comp=inventory.computers.find(x=>x.id===id);
   screenTitle.textContent=`Live Screen — ${comp?.name||comp?.hostname||id}`;
@@ -544,7 +549,9 @@ async function showScreen(id){
   liveScreenState.className='pill good';
 
   await captureScreenFrame(id,false);
+  if(currentScreenComputer!==id||liveScreenGeneration!==generation)return;
   await loadScreenHistory();
+  if(currentScreenComputer!==id||liveScreenGeneration!==generation)return;
 
   liveScreenTimer=setInterval(()=>{
     if(currentScreenComputer&&screenDialog.open)
@@ -553,12 +560,13 @@ async function showScreen(id){
 }
 
 function closeScreenView(closeDialog=true){
+  liveScreenGeneration++;
   if(liveScreenTimer){
     clearInterval(liveScreenTimer);
     liveScreenTimer=null;
   }
   currentScreenComputer=null;
-  liveScreenBusy=false;
+  liveScreenRequest=null;
   if(closeDialog&&screenDialog.open)screenDialog.close();
 }
 

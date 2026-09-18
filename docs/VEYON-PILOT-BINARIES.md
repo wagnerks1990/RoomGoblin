@@ -36,6 +36,11 @@ metadata. Include `libqca-qt6-plugins`: the QCA development package alone
 does not supply the RSA provider required at runtime. This is not a portable
 cross-distribution archive.
 
+The source preparer redacts native WebAPI debug logging for both RoomGoblin
+browser-bridge and Veyon authentication routes. Authentication POST bodies carry
+private PEM material and their responses carry private connection identifiers;
+neither is safe diagnostic output.
+
 ## Pilot installation and acceptance
 
 Use two disposable Ubuntu 24.04 desktop VMs with snapshots and **no existing

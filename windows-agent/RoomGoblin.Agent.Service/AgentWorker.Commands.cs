@@ -197,6 +197,7 @@ internal sealed partial class AgentWorker
                                       out var parsedQuality)
                         ? parsedQuality
                         : 70;
+                    quality=Math.Clamp(quality,25,90);
 
                     var response = await _sessionBridge.InvokeAsync(
                         session,
@@ -219,6 +220,11 @@ internal sealed partial class AgentWorker
                     var alertId = payload.ValueKind == JsonValueKind.Object
                         ? GetString(payload, "alertId")
                         : "";
+                    if(alertId.Length>128)
+                        throw new InvalidOperationException("Screenshot alertId exceeds 128 characters.");
+                    if(response.Bytes<=0||response.Bytes>7*1024*1024||
+                       response.Data.Length>10*1024*1024)
+                        throw new InvalidDataException("Session helper returned an oversized screenshot.");
 
                     await SendRawJsonAsync(
                         socket,
