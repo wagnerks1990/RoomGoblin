@@ -87,7 +87,7 @@ if [[ "$VEYON_RELEASE_MODE" == true ]]; then
   write_state installing "Downloading and installing verified official Veyon ${VEYON_RELEASE_VERSION} package." null
   command -v curl >/dev/null || { echo "curl is required for official Veyon release installation"; exit 35; }
   pkg="$(mktemp --suffix=.deb /tmp/roomgoblin-veyon-XXXXXX)"
-  trap 'rm -f -- "${pkg:-}"; rc=$?; if [ $rc -ne 0 ]; then write_state failed "Host update failed with exit code $rc. Review the update log and run dpkg --audit / apt-get check before retrying." false; fi' EXIT
+  trap 'rc=$?; rm -f -- "${pkg:-}"; if [ $rc -ne 0 ]; then write_state failed "Host update failed with exit code $rc. Review the update log and run dpkg --audit / apt-get check before retrying." false; fi' EXIT
   curl --fail --location --proto '=https' --tlsv1.2 --max-filesize 67108864 --output "$pkg" "$VEYON_RELEASE_URL"
   printf '%s  %s\n' "$VEYON_RELEASE_SHA256" "$pkg" | sha256sum -c -
   [[ "$(dpkg-deb --field "$pkg" Package)" == "veyon" ]] || { echo "Downloaded package is not Veyon"; exit 36; }
@@ -95,7 +95,7 @@ if [[ "$VEYON_RELEASE_MODE" == true ]]; then
   package_version="$(dpkg-deb --field "$pkg" Version)"
   [[ "$package_version" == "$VEYON_RELEASE_VERSION"* ]] || { echo "Downloaded Veyon package version mismatch: $package_version"; exit 38; }
   apt-get -y install "$pkg"
-  installed_version="$(dpkg-query -W -f='\${Version}' veyon)"
+  installed_version="$(dpkg-query -W -f='${Version}' veyon)"
   [[ "$installed_version" == "$VEYON_RELEASE_VERSION"* ]] || { echo "Installed Veyon version mismatch: $installed_version"; exit 39; }
   rm -f -- "$pkg"; pkg=""
 else
