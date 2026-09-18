@@ -256,7 +256,8 @@ Dictionary<string, string?> ParseOptions(string[] optionArgs)
         if (!key.StartsWith("--", StringComparison.Ordinal))
             throw new ArgumentException($"Unexpected argument: {key}");
 
-        if (key.Equals("--allow-http", StringComparison.OrdinalIgnoreCase))
+        if (key.Equals("--allow-http", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("--allow-http-fallback", StringComparison.OrdinalIgnoreCase))
         {
             parsed[key] = "true";
             continue;
@@ -275,8 +276,8 @@ bool HasFreshEnrollmentArguments(Dictionary<string, string?> parsed)
 {
     var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "--hub-url", "--agent-id", "--enrollment-token", "--enrollment-file",
-        "--allow-http", "--trusted-publisher-thumbprint"
+        "--hub-url", "--fallback-hub-url", "--agent-id", "--enrollment-token", "--enrollment-file",
+        "--allow-http", "--allow-http-fallback", "--trusted-publisher-thumbprint"
     };
 
     foreach (var key in parsed.Keys)
@@ -394,6 +395,19 @@ void WriteFreshEnrollmentConfigFromFile(string configPath, string enrollmentPath
         parsed["--allow-http"] = "true";
     }
 
+    if (root.TryGetProperty("fallbackHubUrl", out var fallbackHubUrl) &&
+        fallbackHubUrl.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(fallbackHubUrl.GetString()))
+    {
+        parsed["--fallback-hub-url"] = fallbackHubUrl.GetString();
+    }
+
+    if (root.TryGetProperty("allowHttpFallback", out var allowHttpFallback) &&
+        allowHttpFallback.ValueKind == JsonValueKind.True)
+    {
+        parsed["--allow-http-fallback"] = "true";
+    }
+
     if (root.TryGetProperty("trustedPublisherThumbprint", out var publisher) &&
         publisher.ValueKind == JsonValueKind.String &&
         !string.IsNullOrWhiteSpace(publisher.GetString()))
@@ -407,9 +421,13 @@ void WriteFreshEnrollmentConfigFromFile(string configPath, string enrollmentPath
 void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> parsed)
 {
     var hubUrl = RequireOption(parsed, "--hub-url").Trim().TrimEnd('/');
+    var fallbackHubUrl = parsed.TryGetValue("--fallback-hub-url", out var fallbackValue)
+        ? (fallbackValue ?? "").Trim().TrimEnd('/')
+        : "";
     var agentId = RequireOption(parsed, "--agent-id").Trim();
     var enrollmentToken = RequireOption(parsed, "--enrollment-token");
     var allowHttp = parsed.ContainsKey("--allow-http");
+    var allowHttpFallback = parsed.ContainsKey("--allow-http-fallback");
     var publisher = parsed.TryGetValue("--trusted-publisher-thumbprint", out var thumbprint)
         ? Regex.Replace(thumbprint ?? "", "\\s+", "").ToUpperInvariant()
         : "";
@@ -423,6 +441,21 @@ void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> p
 
     if (hubUri.Scheme == Uri.UriSchemeHttp && !allowHttp)
         throw new ArgumentException("HTTP enrollment requires the explicit --allow-http option.");
+
+    Uri? fallbackHubUri = null;
+    if (!string.IsNullOrWhiteSpace(fallbackHubUrl))
+    {
+        if (!Uri.TryCreate(fallbackHubUrl, UriKind.Absolute, out fallbackHubUri) ||
+            string.IsNullOrWhiteSpace(fallbackHubUri.Host) ||
+            !string.IsNullOrWhiteSpace(fallbackHubUri.UserInfo) ||
+            (fallbackHubUri.Scheme != Uri.UriSchemeHttps && fallbackHubUri.Scheme != Uri.UriSchemeHttp))
+        {
+            throw new ArgumentException("--fallback-hub-url must be an absolute http:// or https:// URL without embedded credentials.");
+        }
+
+        if (fallbackHubUri.Scheme == Uri.UriSchemeHttp && !allowHttpFallback)
+            throw new ArgumentException("HTTP fallback requires the explicit --allow-http-fallback option.");
+    }
 
     if (!Regex.IsMatch(agentId, "^[A-Za-z0-9._-]{1,128}$"))
         throw new ArgumentException("--agent-id must contain only letters, digits, period, underscore or hyphen.");
@@ -441,6 +474,7 @@ void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> p
     var configObject = new
     {
         hubUrl = hubUri.GetLeftPart(UriPartial.Authority),
+        fallbackHubUrl = fallbackHubUri?.GetLeftPart(UriPartial.Authority) ?? "",
         agentId,
         enrollmentToken = "",
         enrollmentTokenProtected = MachineDpapi.ProtectString(enrollmentToken),
@@ -614,7 +648,7 @@ bool IsAdministrator()
 int Usage()
 {
     Console.WriteLine(
-        "Usage: RoomGoblinAgentBootstrap.exe [install|repair|uninstall] [--enrollment-file PATH | --hub-url URL --agent-id ID --enrollment-token TOKEN [--allow-http] [--trusted-publisher-thumbprint HEX]]");
+        "Usage: RoomGoblinAgentBootstrap.exe [install|repair|uninstall] [--enrollment-file PATH | --hub-url URL [--fallback-hub-url URL] --agent-id ID --enrollment-token TOKEN [--allow-http] [--allow-http-fallback] [--trusted-publisher-thumbprint HEX]]");
     return 1;
 }
 
