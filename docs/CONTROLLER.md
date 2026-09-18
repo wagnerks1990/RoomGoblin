@@ -45,6 +45,6 @@ An explicit target selected on an additional action overrides the linked class's
 
 ## Scheduled automation workspace
 
-Scheduled automations are selected from time-ordered dropdowns rather than expanded cards. Class-linked automations sort by earliest resolved occurrence. The action editor shows only controls relevant to the selected action and uploaded media type.
+Scheduled automations are selected from one time-ordered dropdown rather than duplicated selectors or expanded cards. Class-linked automations sort by earliest resolved occurrence. The editor follows the automation selected in that single list. Class schedule links stay collapsed into a compact summary; **Edit Links** opens a focused dialog for multi-class selection and applies changes only when **Save Class Links** is chosen. The action editor shows only controls relevant to the selected action and uploaded media type.
 
 Execution is pass-based: Run once participates only on pass 1, Loop X times participates through X passes, and Loop continually participates every pass until the occurrence ends or is superseded/cancelled.

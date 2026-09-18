@@ -42,3 +42,8 @@ test("continuous scheduled automations recover after restart or operator resume"
   assert.match(server,/latest\?\.status==="cancelled"/);
   assert.match(server,/status:cancelled\?"cancelled":"failed"/);
 });
+
+test("automation trace recording appends without recursive helper calls",()=>{
+  assert.match(server,/const pushStep=entry=>\{combined\.totalStepExecutions\+\+;combined\.steps\.push\(entry\)/);
+  assert.doesNotMatch(server,/const pushStep=entry=>\{combined\.totalStepExecutions\+\+;pushStep\(entry\)/);
+});

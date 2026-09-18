@@ -8,7 +8,8 @@
 - Define per-action participation as Run once, Loop X times, or Loop continually; after the last action the runner returns to Action 1 while any action remains eligible.
 - Make continuous sequences cancellable, class-end-aware, safe against zero-delay command storms, superseded by newer overlapping scheduled occurrences, and recoverable after restart/operator Resume when still applicable.
 - Initialize Timer Overlay after the first pass so continuous sequences cannot starve overlays; keep Morning Announcements and Background Music reconciliation invariants.
-- Replace the long Scheduled Events card stack with time-ordered selectors and add an editor selector for direct switching between saved automations.
+- Replace the long Scheduled Events card stack with one time-ordered automation selector; the editor follows that selection instead of rendering a redundant second selector.
+- Collapse class schedule links into a compact summary and move multi-class selection into an explicit Edit Links dialog with Save/Cancel behavior.
 - Make uploaded-media settings content-aware so images, videos, and paged documents expose only applicable controls.
 - Retire the browser automation hotfix and fold its required schedule-ordering behavior into the canonical controller.
 

@@ -988,11 +988,39 @@ function renderClassCurrentStatus(){
 }
 function renderClassScheduleList(){classScheduleList.innerHTML=S.classes.length?[...S.classes].sort(compareClassesByPhaseTime).map(x=>`<div class="card" style="margin-bottom:8px"><div class="top"><div><b>${esc(x.name)}</b><div class="muted">${esc(x.startTime)}–${esc(x.endTime)} • ${esc(classDaySummary(x))} • Displays: ${esc(classTargetSummary(x.defaultTargets))}</div></div><div class="toolbar"><button onclick="editClassSchedule(${inlineJsArg(x.id)})">Edit</button><button onclick="duplicateClassSchedule(${inlineJsArg(x.id)})">Duplicate</button><button class="danger" onclick="deleteClassSchedule(${inlineJsArg(x.id)})">Delete</button></div></div></div>`).join(''):'<div class="muted">No classes configured.</div>'}
 function selectedAutomationClassIds(){return [...document.querySelectorAll('[data-autoclass]:checked')].map(x=>x.dataset.autoclass)}
+let automationClassSelectionSnapshot=[];
+function updateAutomationClassLinkSummary(){
+  const selected=selectedAutomationClassIds().map(id=>S.classes.find(x=>x.id===id)).filter(Boolean);
+  if(window.autoClassSummary)autoClassSummary.textContent=selected.length?(`${selected.length} linked class${selected.length===1?'':'es'} ▾`):'No classes linked ▾';
+  if(window.autoClassLinkSummary)autoClassLinkSummary.textContent=selected.length
+    ? selected.map(cls=>`${cls.name} (${cls.startTime}–${cls.endTime})`).join(' • ')
+    : 'This automation is not linked to a class schedule.';
+}
 function populateAutomationClassSelect(selected=[]){
   if(!window.autoClassIds)return;
   const selectedIds=Array.isArray(selected)?selected:[selected].filter(Boolean);
-  autoClassIds.innerHTML=[...S.classes].sort(compareClassesByPhaseTime).map(cls=>`<label><input type="checkbox" data-autoclass="${esc(cls.id)}" ${selectedIds.includes(cls.id)?'checked':''} onchange="renderAutomationClassBinding()"> ${esc(cls.name)} <span class="muted">(${esc(classDaySummary(cls))} ${esc(cls.startTime)}–${esc(cls.endTime)})</span></label>`).join('')||'<span class="muted">No classes configured.</span>';
+  autoClassIds.innerHTML=[...S.classes].sort(compareClassesByPhaseTime).map(cls=>`<label class="checkItem"><input type="checkbox" data-autoclass="${esc(cls.id)}" ${selectedIds.includes(cls.id)?'checked':''}> <span><b>${esc(cls.name)}</b><br><span class="muted">${esc(classDaySummary(cls))} • ${esc(cls.startTime)}–${esc(cls.endTime)}</span></span></label>`).join('')||'<span class="muted">No classes configured.</span>';
+  updateAutomationClassLinkSummary();
 }
+function openAutomationClassLinker(){
+  if(!window.autoClassModal)return;
+  automationClassSelectionSnapshot=selectedAutomationClassIds();
+  autoClassModal.style.display='flex';
+}
+function closeAutomationClassLinker(save){
+  if(!window.autoClassModal)return;
+  if(!save){
+    const saved=new Set(automationClassSelectionSnapshot);
+    autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=saved.has(box.dataset.autoclass)});
+  }
+  autoClassModal.style.display='none';
+  renderAutomationClassBinding();
+}
+function clearAutomationClassLinks(){
+  if(!window.autoClassIds)return;
+  autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=false});
+}
+
 async function loadClassSchedules(){
   try{
     const x=await api('/api/v1/class-schedules');
@@ -1110,6 +1138,7 @@ function renderAutomationClassBinding(){
   const linked=classes.length>0;
   autoClassBindingFields.style.display=linked?'block':'none';
   autoTime.disabled=linked;autoScheduleMode.disabled=linked;scheduleModeFields.style.opacity=linked?'.45':'1';
+  updateAutomationClassLinkSummary();
   updateAutomationClassPreview();
 }
 function updateAutomationClassPreview(){
@@ -1845,16 +1874,13 @@ function scheduledAutomationDescription(e){
   return scheduleDescription(e);
 }
 function selectedScheduledAutomationId(){
-  return String(window.automationEventSelect?.value||window.automationEditorEventSelect?.value||autoId?.value||"");
+  return String(window.automationEventSelect?.value||autoId?.value||"");
 }
 function syncScheduledAutomationSelectors(preferredId=null){
   const sorted=[...S.automations].sort((a,b)=>scheduledAutomationSortKey(a).localeCompare(scheduledAutomationSortKey(b))||String(a.name||"").localeCompare(String(b.name||"")));
   const selected=preferredId!==null?String(preferredId):(selectedScheduledAutomationId()||sorted[0]?.id||"");
   const html=['<option value="">— New scheduled automation —</option>',...sorted.map(e=>`<option value="${esc(e.id)}" ${e.id===selected?'selected':''}>${esc(scheduledAutomationLabel(e))}</option>`)].join("");
-  if(window.automationEventSelect)automationEventSelect.innerHTML=html;
-  if(window.automationEditorEventSelect)automationEditorEventSelect.innerHTML=html;
-  if(window.automationEventSelect)automationEventSelect.value=selected;
-  if(window.automationEditorEventSelect)automationEditorEventSelect.value=selected;
+  if(window.automationEventSelect){automationEventSelect.innerHTML=html;automationEventSelect.value=selected}
 }
 function selectScheduledAutomation(id){
   if(!id){
