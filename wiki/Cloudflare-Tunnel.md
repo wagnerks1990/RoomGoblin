@@ -53,6 +53,8 @@ The browser never receives the tunnel connector token. RoomGoblin retrieves it s
 
 with mode `0600`.
 
+The native Host Agent remains `ProtectSystem=full`; managed provisioning grants write access only to `/etc/cloudflared` and the dedicated `/etc/systemd/system/cloudflared-roomgoblin.service` file.
+
 The GUI installs the connector without restarting the requesting Hub and then offers a separate **Restart RoomGoblin** action so `TRUST_PROXY_HOPS=1` can take effect cleanly.
 
 ## Availability
