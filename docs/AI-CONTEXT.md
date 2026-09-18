@@ -450,23 +450,6 @@ RoomGoblin supports the host-managed upstream/OEM Veyon installation, its normal
 
 Preserve existing Veyon keys, multi-key authentication, inventory/DHCP identity, host package lifecycle, command recovery, standard monitoring/live view, screen/input lock, messaging, website/application launch, login/logoff, reboot/shutdown, and teacher demonstration controls. Upstream/OEM add-ons remain installed/configured by the Veyon/OEM mechanism; RoomGoblin must not synthesize its own replacement plugin or bypass licensing. Read `docs/VEYON-OEM-POLICY.md` before changing Veyon behavior.
 
-## Native pilot artifacts
-
-The Validate native job builds the entire pinned Linux Veyon tree and publishes
-matching binaries plus all corresponding source. See VEYON-PILOT-BINARIES.md.
-`tools/package-veyon-pilot.sh` uses DESTDIR staging and verifies both community
-plugins with the installed CLI. No production install, service start, key export
-or Windows compatibility claim is allowed. Preserve GPL source distribution and
-require disposable matching Ubuntu desktop VMs for interactive acceptance.
-
-Windows packaging uses the complete upstream NSIS path in a reviewed x86-64
-MinGW/Qt environment, never individual DLLs. CI publication remains disabled
-until that toolchain is immutable and reviewed. One-endpoint deployment requires
-exact pilot/rollback hashes, configuration/evidence backup, explicit disposable
-risk acknowledgement and automatic known-good installer/config rollback on CLI
-failure. Live Windows acceptance remains separate.
-
-
 ## Automation action execution and media-session control
 
 Automation action looping is per-action, never implemented by restarting the whole occurrence. Additional actions persist `executionMode`, `repeatCount`, and `repeatDelaySeconds`; continuous `loop` is native only for `display.media`, while other commands remain bounded repeats. Uploaded video uses a persistent receiver media session. Live play/pause/seek/volume/mute/rate changes use `display.media.control` and must not reissue `display.media`, because replacing the content command restarts playback. Receivers report bounded media-session status for the controller scrubber. Preserve Morning Announcements priority, scheduler winner reconciliation, Background Music recovery, stable receiver IDs and signed media URLs when changing this path.
