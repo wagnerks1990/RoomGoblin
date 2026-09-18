@@ -71,20 +71,26 @@
     const saved=selected&&!allowed.some(f=>f.storedName===selected)?`<option value="${esc(selected)}" selected>${esc(selected)} (saved item)</option>`:"";
     return `${saved}<option value="">— Select uploaded media —</option>${allowed.map(f=>`<option value="${esc(f.storedName)}" ${selected===f.storedName?'selected':''}>${esc(f.originalName||f.storedName)} • ${esc(f.type)}</option>`).join("")}`;
   }
+  function selectedMediaType(storedName=""){
+    return String((S.mediaFiles||[]).find(f=>f.storedName===storedName)?.type||"").toLowerCase();
+  }
   function setPayload(i,key,value){autoSteps[i].payload=autoSteps[i].payload||{};autoSteps[i].payload[key]=value}
   function mediaPayload(step,i){
-    const p=step.payload||{};
-    return `<label>Uploaded Media<select onchange="RoomGoblinAutomationV2.payload(${i},'storedName',this.value)">${mediaOptions(p.storedName||"")}</select></label>
+    const p=step.payload||{},type=selectedMediaType(p.storedName||"");
+    const isVideo=type==="video",isPaged=["pdf","presentation","document"].includes(type),isImage=type==="image";
+    return `<label>Uploaded Media<select onchange="RoomGoblinAutomationV2.payload(${i},'storedName',this.value);RoomGoblinAutomationV2.render()">${mediaOptions(p.storedName||"")}</select></label>
+      ${type?`<div class="muted" style="margin-top:6px">Detected content type: ${esc(type)}</div>`:'<div class="muted" style="margin-top:6px">Select media to show only settings that apply to that content type.</div>'}
       <div class="grid2" style="margin-top:8px">
        <label>Fit<select onchange="RoomGoblinAutomationV2.payload(${i},'fit',this.value)"><option value="contain" ${p.fit!=="cover"?'selected':''}>Contain</option><option value="cover" ${p.fit==="cover"?'selected':''}>Cover</option></select></label>
-       <label>Slide / Page Seconds<input type="number" min="0" max="300" value="${Math.round(Number(p.autoAdvanceMs||10000)/1000)}" onchange="RoomGoblinAutomationV2.payload(${i},'autoAdvanceMs',Number(this.value)*1000)"></label>
-       <label>Start at (seconds)<input type="number" min="0" step="0.1" value="${Number(p.startAtSeconds||0)}" onchange="RoomGoblinAutomationV2.payload(${i},'startAtSeconds',Number(this.value||0))"></label>
+       ${isPaged?`<label>Slide / Page Seconds<input type="number" min="0" max="300" value="${Math.round(Number(p.autoAdvanceMs||10000)/1000)}" onchange="RoomGoblinAutomationV2.payload(${i},'autoAdvanceMs',Number(this.value)*1000)"></label>`:''}
+       ${isVideo?`<label>Start at (seconds)<input type="number" min="0" step="0.1" value="${Number(p.startAtSeconds||0)}" onchange="RoomGoblinAutomationV2.payload(${i},'startAtSeconds',Number(this.value||0))"></label>
        <label>End at (seconds, 0 = file end)<input type="number" min="0" step="0.1" value="${Number(p.endAtSeconds||0)}" onchange="RoomGoblinAutomationV2.payload(${i},'endAtSeconds',Number(this.value||0))"></label>
        <label>Volume %<input type="number" min="0" max="100" value="${Math.round(Number(p.volume??1)*100)}" onchange="RoomGoblinAutomationV2.payload(${i},'volume',Math.max(0,Math.min(1,Number(this.value||0)/100)))"></label>
-       <label>Playback Rate<input type="number" min="0.25" max="4" step="0.25" value="${Number(p.playbackRate||1)}" onchange="RoomGoblinAutomationV2.payload(${i},'playbackRate',Number(this.value||1))"></label>
+       <label>Playback Rate<input type="number" min="0.25" max="4" step="0.25" value="${Number(p.playbackRate||1)}" onchange="RoomGoblinAutomationV2.payload(${i},'playbackRate',Number(this.value||1))"></label>`:''}
       </div>
-      <div class="toolbar"><label><input type="checkbox" ${p.muted?'checked':''} onchange="RoomGoblinAutomationV2.payload(${i},'muted',this.checked)"> Mute video</label><button type="button" onclick="RoomGoblinAutomationV2.previewMedia(${i})">Preview Selected Media</button></div>
-      <div class="muted">Media playback settings apply each time this action participates in a sequence pass. "Loop continually" keeps this action eligible when the sequence returns to it.</div>`;
+      ${isVideo?`<div class="toolbar"><label><input type="checkbox" ${p.muted?'checked':''} onchange="RoomGoblinAutomationV2.payload(${i},'muted',this.checked)"> Mute video</label><button type="button" onclick="RoomGoblinAutomationV2.previewMedia(${i})">Preview Selected Media</button></div>`:
+        (isImage||isPaged)?`<div class="toolbar"><button type="button" onclick="RoomGoblinAutomationV2.previewMedia(${i})">Preview Selected Media</button></div>`:''}
+      <div class="muted">Media-specific controls appear only when they apply to the selected content type.</div>`;
   }
   function payloadHtml(step,i){
     const p=step.payload||{},a=step.action;
@@ -145,8 +151,8 @@
     window.addAutomationStep=()=>{autoSteps.push(normalizeAction({id:uid(),action:"display.clear",targets:[],useEventTargets:autoSteps.length>0,payload:{}},autoSteps.length));render()};
     window.removeAutomationStep=i=>{if(autoSteps.length<=1)return;autoSteps.splice(i,1);autoSteps.forEach((x,n)=>x.useEventTargets=n>0&&x.useEventTargets!==false);render()};
     window.moveAutomationStep=(i,d)=>{const j=i+d;if(j<0||j>=autoSteps.length)return;[autoSteps[i],autoSteps[j]]=[autoSteps[j],autoSteps[i]];autoSteps[0].useEventTargets=false;render()};
-    window.newAutomation=function(){original.newAutomation();autoSteps=[normalizeAction({id:uid(),action:"tv.power",targets:[configuredDisplayTargets(false)[0]?.[0]||"all"],useEventTargets:false,payload:{state:"on"}},0)];hideLegacy();render()};
-    window.editAutomation=function(id){original.editAutomation(id);const event=S.automations.find(x=>x.id===id);if(event)autoSteps=sequenceFromEvent(event);if(!autoSteps.length)autoSteps=[normalizeAction({},0)];autoSteps[0].useEventTargets=false;hideLegacy();render();automationEditorTitle.textContent=`Edit Scheduled Event • schema v${event?.automationSchemaVersion||1}${event?.automationSchemaVersion===2?'':' → will migrate on save'}`};
+    window.newAutomation=function(){original.newAutomation();automationEditorTitle.textContent='New Scheduled Automation';autoSteps=[normalizeAction({id:uid(),action:"tv.power",targets:[configuredDisplayTargets(false)[0]?.[0]||"all"],useEventTargets:false,payload:{state:"on"}},0)];hideLegacy();render()};
+    window.editAutomation=function(id){original.editAutomation(id);const event=S.automations.find(x=>x.id===id);if(event)autoSteps=sequenceFromEvent(event);if(!autoSteps.length)autoSteps=[normalizeAction({},0)];autoSteps[0].useEventTargets=false;hideLegacy();render();automationEditorTitle.textContent='Edit Scheduled Automation';syncScheduledAutomationSelectors?.(event?.id||'')};
     window.editorEvent=v2Event;window.saveAutomation=save;window.simulateAutomationEditor=simulate;window.testAutomationEditor=simulate;window.runAutomationDraft=runDraft;
     window.validateEnableAutomation=async()=>{autoEnabled.value="1";const result=await simulate();if(result?.ok===false)throw Error("Resolve simulation conflicts before enabling.");return save()};
     window.RoomGoblinAutomationV2={
