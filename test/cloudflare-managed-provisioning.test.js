@@ -153,6 +153,8 @@ test("Cloudflare host integration never places tunnel token in process arguments
   assert.match(installer,/chmod 0600/);assert.match(installer,/TRUST_PROXY_HOPS 1/);
   assert.match(unit,/ReadWritePaths=.*\/etc\/cloudflared .*\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
   assert.match(appUpdater,/ReadWritePaths=.*\/etc\/cloudflared .*\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
+  assert.match(hostInstaller,/ROOMGOBLIN_UNIT=\/etc\/systemd\/system\/cloudflared-roomgoblin\.service/);
+  assert.match(hostInstaller,/readlink "\$ROOMGOBLIN_UNIT"\)" == \/dev\/null/);
   assert.match(bridge,/integration\.cloudflare\.api-token/);assert.match(bridge,/\/api\/v1\/admin\/cloudflare\/provision/);
   assert.match(maint,/\/cloudflare\/configure/);
 });
