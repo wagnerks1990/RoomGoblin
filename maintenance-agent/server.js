@@ -460,7 +460,7 @@ app.post("/backup/create",async(req,res)=>{let dbSnapshot="";try{
   if(scope==="full")return await createFullRecoveryExport(req,res);
   const containsSensitiveData=backupContainsSensitiveData(scope);
   if(containsSensitiveData&&req.body?.confirmSensitiveData!==true)return res.status(400).json({ok:false,error:"This recovery backup contains private appliance data. Resubmit with confirmSensitiveData=true."});
-  const stamp=new Date().toISOString().replace(/[:.]/g,"-"),name=`classroom-hub-${scope}-${stamp}.zip`,dest=path.join(BACKUP_DIR,name),zip=new AdmZip();
+  const stamp=new Date().toISOString().replace(/[:.]/g,"-"),automatic=req.body?.automatic===true&&scope==="operational",name=automatic?`auto-operational-${stamp}.zip`:(scope==="operational"?`manual-operational-${stamp}.zip`:`classroom-hub-${scope}-${stamp}.zip`),dest=path.join(BACKUP_DIR,name),zip=new AdmZip();
   const dbPath=path.join(HUB_ROOT,"data","classroom-control-hub.db");dbSnapshot=path.join(UPLOAD_DIR,`db-backup-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.db`);
   let hasDbSnapshot=false;if(!["quick","diagnostic"].includes(scope)&&fs.existsSync(dbPath)){await run("sqlite3",[dbPath,`.backup '${dbSnapshot.replace(/'/g,"''")}'`],{timeout:60000});hasDbSnapshot=fs.existsSync(dbSnapshot)}
   const baseFilter=backupFilter(scope),filter=(full,rel,ent)=>{if(/classroom-hub\.db(?:-wal|-shm)?$/.test(rel))return false;return baseFilter(full,rel,ent)};
@@ -477,7 +477,7 @@ app.post("/backup/create",async(req,res)=>{let dbSnapshot="";try{
   const capabilities={configuration:["configuration","operational","full"].includes(scope),database:hasDbSnapshot,data:["operational","full"].includes(scope)&&hasDbSnapshot,services:hasServiceState,secrets:scope==="full"};
   const manifest=scope==="diagnostic"
     ?{version:4,createdAt:new Date().toISOString(),scope,applicationVersion:applicationVersion(),databaseSnapshot:false,containsSecrets:false,containsSensitiveData:false,requiresMasterKey:false,capabilities}
-    :{version:4,createdAt:new Date().toISOString(),scope,applicationVersion:applicationVersion(),databaseSnapshot:hasDbSnapshot,containsSecrets:false,containsSensitiveData,requiresMasterKey:hasDbSnapshot,capabilities};
+    :{version:4,createdAt:new Date().toISOString(),scope,automatic,applicationVersion:applicationVersion(),databaseSnapshot:hasDbSnapshot,containsSecrets:false,containsSensitiveData,requiresMasterKey:hasDbSnapshot,capabilities};
   zip.addFile("backup-manifest.json",Buffer.from(JSON.stringify(manifest,null,2)));writeZipAtomic(zip,dest);
   res.json({ok:true,name,size:fs.statSync(dest).size,sha256:sha256File(dest),download:`/backup/${encodeURIComponent(name)}`,containsSecrets:scope==="full",containsSensitiveData})
 }catch(e){res.status(500).json({ok:false,error:e.message})}finally{if(dbSnapshot)try{fs.rmSync(dbSnapshot,{force:true})}catch{}}});
@@ -495,8 +495,27 @@ app.get("/backups/catalog",(_req,res)=>{try{
 }catch(e){res.status(500).json({ok:false,error:e.message})}});
 
 
-app.get("/backups/retention",(_req,res)=>{try{const items=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));const automatic=items.filter(x=>/^pre-/.test(x.name));res.json({ok:true,total:items.length,automatic:automatic.length,automaticBytes:automatic.reduce((a,x)=>a+Number(x.size||0),0),items:automatic})}catch(e){res.status(500).json({ok:false,error:e.message})}});
-app.post("/backups/retention",async(req,res)=>{try{const requestedKeep=Number(req.body?.keep??10);if(!Number.isInteger(requestedKeep)||!Number.isFinite(requestedKeep)||requestedKeep<2||requestedKeep>250)return res.status(400).json({ok:false,error:"Backup retention must be a whole number from 2 to 250"});const keep=requestedKeep;if(String(req.body?.confirm||"")!=="PRUNE_AUTOMATIC_BACKUPS")return res.status(400).json({ok:false,error:"Explicit confirmation required"});let pinned="";try{const job=await hostAgentRequest("GET","/app-updates/job");if(job.revertAvailable===true)pinned=String(job.backupName||"")}catch{}const items=fs.readdirSync(BACKUP_DIR).filter(n=>/^pre-.*\.zip$/.test(n)).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));const doomed=items.slice(keep).filter(x=>x.name!==pinned);let bytes=0;for(const x of doomed){const p=path.join(BACKUP_DIR,x.name);bytes+=fs.statSync(p).size;fs.unlinkSync(p)}res.json({ok:true,keep,pinned:pinned||null,removed:doomed.length,bytesFreed:bytes,remaining:items.length-doomed.length})}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.get("/backups/retention",(_req,res)=>{try{
+  const items=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));
+  const pre=items.filter(x=>/^pre-.*\.zip$/.test(x.name));
+  const automaticOperational=items.filter(x=>/^(?:auto-operational-|classroom-hub-operational-).*\.zip$/.test(x.name));
+  const automatic=[...pre,...automaticOperational];
+  res.json({ok:true,total:items.length,automatic:automatic.length,automaticBytes:automatic.reduce((a,x)=>a+Number(x.size||0),0),pre:pre.length,preBytes:pre.reduce((a,x)=>a+Number(x.size||0),0),operationalAutomatic:automaticOperational.length,operationalAutomaticBytes:automaticOperational.reduce((a,x)=>a+Number(x.size||0),0),policy:{operationalKeep:3,preKeep:1},items:automatic.sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt))})
+}catch(e){res.status(500).json({ok:false,error:e.message})}});
+app.post("/backups/retention",async(req,res)=>{try{
+  const automaticKeep=Number(req.body?.automaticKeep??req.body?.keep??3),preKeep=Number(req.body?.preKeep??1);
+  if(!Number.isInteger(automaticKeep)||automaticKeep<1||automaticKeep>50||!Number.isInteger(preKeep)||preKeep<1||preKeep>10)return res.status(400).json({ok:false,error:"Retention requires automaticKeep 1-50 and preKeep 1-10"});
+  if(String(req.body?.confirm||"")!=="PRUNE_AUTOMATIC_BACKUPS")return res.status(400).json({ok:false,error:"Explicit confirmation required"});
+  let pinned="";try{const job=await hostAgentRequest("GET","/app-updates/job");if(job.revertAvailable===true)pinned=String(job.backupName||"")}catch{}
+  const all=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));
+  const pre=all.filter(x=>/^pre-.*\.zip$/.test(x.name));
+  const automatic=all.filter(x=>/^(?:auto-operational-|classroom-hub-operational-).*\.zip$/.test(x.name));
+  const choose=(items,limit)=>{const keep=[];if(pinned){const pin=items.find(x=>x.name===pinned);if(pin)keep.push(pin)}for(const item of items)if(!keep.some(x=>x.name===item.name)&&keep.length<limit)keep.push(item);return new Set(keep.map(x=>x.name))};
+  const keepPre=choose(pre,preKeep),keepAutomatic=choose(automatic,automaticKeep);
+  const doomed=[...pre.filter(x=>!keepPre.has(x.name)),...automatic.filter(x=>!keepAutomatic.has(x.name))];
+  let bytes=0;for(const x of doomed){const p=path.join(BACKUP_DIR,x.name);bytes+=fs.statSync(p).size;fs.unlinkSync(p)}
+  res.json({ok:true,automaticKeep,preKeep,pinned:pinned||null,removed:doomed.length,bytesFreed:bytes,remainingAutomatic:automatic.length-automatic.filter(x=>!keepAutomatic.has(x.name)).length,remainingPre:pre.length-pre.filter(x=>!keepPre.has(x.name)).length})
+}catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.get("/backup/:name",(req,res)=>{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Backup not found"});res.download(p,name)});
 app.get("/backup/:name/inspect",(req,res)=>{try{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Backup not found"});if(name.endsWith(".rgbak"))return res.status(405).json({ok:false,error:"Encrypted recovery inspection requires the authenticated restore-plan workflow"});const zip=new AdmZip(p),entries=zip.getEntries();let manifest=null;const m=entries.find(e=>e.entryName==="backup-manifest.json");if(m)try{manifest=JSON.parse(m.getData().toString("utf8"))}catch{}res.json({ok:true,name,size:fs.statSync(p).size,manifest,entries:entries.length,preview:entries.slice(0,100).map(e=>({name:e.entryName,size:e.header.size,directory:e.isDirectory}))})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 
