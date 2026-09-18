@@ -45,6 +45,12 @@ test("native agent version is repository driven", () => {
   assert.match(build, /-p:InformationalVersion=\$roomGoblinVersion/);
 });
 
+test("native locked restores pin the self-contained runtime patch", () => {
+  const props = read("windows-agent/Directory.Build.props");
+  assert.match(props, /<RestoreLockedMode[^>]*>true<\/RestoreLockedMode>/);
+  assert.match(props, /<RuntimeFrameworkVersion>8\.0\.31<\/RuntimeFrameworkVersion>/);
+});
+
 test("native interactive helper keeps one-use authenticated pipe boundary", () => {
   const bridge = read("windows-agent/RoomGoblin.Agent.Service/SessionBridge.cs");
   assert.match(bridge, /NamedPipeServerStreamAcl\.Create/);

@@ -3,6 +3,8 @@
     <!-- NuGet restores are reproducible and fail CI when lock metadata drifts. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+    <!-- Keep implicit self-contained runtime/ILLink inputs identical across SDK hosts. -->
+    <RuntimeFrameworkVersion>8.0.31</RuntimeFrameworkVersion>
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>moderate</NuGetAuditLevel>
