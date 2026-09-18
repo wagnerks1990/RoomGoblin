@@ -101,5 +101,7 @@ test("installer creates the Host Agent state root before restarting systemd serv
   assert.match(unit, /ReadWritePaths=.*\/var\/lib\/classroom-hub/);
   assert.doesNotMatch(unit, /ReadWritePaths=.*(?:^|\s)\/opt(?:\s|$)/m);
   assert.match(unit, /ReadWritePaths=.*\/opt\/classroom-hub .*\/opt\/services .*\/opt\/classroom-hub-backups/);
-  assert.match(installer, /ReadWritePaths=\/run\/classroom-control-hub \$TARGET \$SERVICES \$BACKUP_ROOT/);
+  assert.match(unit, /ReadWritePaths=.*\/etc\/classroom-control-hub .*\/etc\/cloudflared .*\/etc\/systemd\/system/);
+  assert.match(installer, /^install -d -m 0700 -o root -g root \/etc\/cloudflared$/m);
+  assert.match(installer, /ReadWritePaths=\/run\/classroom-control-hub \$TARGET \$SERVICES \$BACKUP_ROOT \/etc\/classroom-control-hub \/etc\/cloudflared \/etc\/systemd\/system/);
 });
