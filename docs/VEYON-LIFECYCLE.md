@@ -20,7 +20,7 @@ Veyon is installed as a native package, so RoomGoblin deliberately reuses the ap
 
 The **Install available update** action therefore starts the normal guarded host update. It can install other pending Ubuntu or third-party package updates in addition to Veyon. The confirmation dialog states this explicitly.
 
-The lifecycle API prefers apt. If the configured Veyon PPA is behind, it may instead install the exact official `veyon/veyon` GitHub release asset only when the release provides a matching Ubuntu `amd64` DEB with GitHub's SHA-256 digest. The Host Agent independently reconstructs and validates the expected release URL, package filename, distribution version, architecture, checksum, package name, and package version before installation. Arbitrary package URLs are rejected.
+The lifecycle API prefers apt. If the configured Veyon PPA is behind, it may instead install the exact official `veyon/veyon` GitHub release asset only when the release provides a matching Ubuntu `amd64` DEB with GitHub's SHA-256 digest. The Host Agent independently reconstructs and validates the expected release URL, package filename, distribution version, architecture, checksum, package name, and package version before installation. Arbitrary package URLs are rejected. Same-version and downgrade requests are also rejected.
 
 ## Native service recovery
 
