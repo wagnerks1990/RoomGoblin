@@ -190,7 +190,8 @@ test("GitHub main checks are bounded and select only trusted merged commits",()=
   assert.match(fetchHelper[0],/signal\s*:/,"GitHub update requests must pass the timeout signal to fetch");
   assert.match(check[0],/\/commits\/\$\{encodeURIComponent\(TRUSTED_UPDATE_BRANCH\)\}/,"GUI checks must resolve the trusted main head");
   assert.match(check[0],/\/compare\/\$\{encodeURIComponent\(currentCommit\)\}\.\.\.\$\{encodeURIComponent\(latestCommit\)\}/,"GUI checks must verify fast-forward ancestry");
-  assert.match(check[0],/source\.trackedDirty===true/,"tracked local source changes must block GUI updates");
+  assert.match(check[0],/unsupportedTracked/,"unsupported tracked local source changes must block GUI updates");
+  assert.match(check[0],/config\/devices\.json/,"legacy tracked device configuration must remain compatible with native migration");
   assert.match(server,/const TRUSTED_UPDATE_BRANCH="main"/,"main must remain the GUI update branch");
 });
 
