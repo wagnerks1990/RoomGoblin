@@ -339,12 +339,33 @@ def start_update_job():
     if p.returncode!=0: raise RuntimeError((p.stderr or p.stdout or 'Unable to start host update service').strip())
     return {"ok":True,"started":True,"job":update_job_status(False)}
 
+def app_update_source_status():
+    head=run(['git','-C',str(HUB_ROOT),'rev-parse','HEAD'],20)
+    if head.returncode!=0: raise RuntimeError((head.stderr or head.stdout or 'Unable to resolve RoomGoblin source revision').strip())
+    commit=head.stdout.strip()
+    branch=run(['git','-C',str(HUB_ROOT),'symbolic-ref','--quiet','--short','HEAD'],20,False)
+    status=run(['git','-C',str(HUB_ROOT),'status','--porcelain','--untracked-files=no'],20,False)
+    origin=run(['git','-C',str(HUB_ROOT),'remote','get-url','origin'],20,False)
+    return {
+        "commit":commit,
+        "shortCommit":commit[:12],
+        "branch":branch.stdout.strip() if branch.returncode==0 else "",
+        "detached":branch.returncode!=0,
+        "trackedDirty":bool(status.stdout.strip()) if status.returncode==0 else None,
+        "origin":origin.stdout.strip() if origin.returncode==0 else ""
+    }
+
 def app_update_job_status(include_log=False):
     state={"phase":"idle","message":"No application update has been started.","ok":None}
     try:
         if APP_UPDATE_STATE_FILE.exists(): state.update(json.loads(APP_UPDATE_STATE_FILE.read_text()))
     except Exception as e: state['stateReadError']=str(e)
     svc=unit_state(APP_UPDATE_SERVICE); state['service']=svc; state['running']=svc.get('active') in ('active','activating')
+    # Starting the oneshot directly without a durable request is an operator error,
+    # not a failed deployment. Do not leave the GUI permanently red for that case.
+    if not state['running'] and not APP_UPDATE_REQUEST_FILE.exists() and state.get('phase')=='failed' and state.get('message')=='Application update request is missing.':
+        state['lastRejectedStart']={"phase":"failed","message":state.get('message'),"updatedAt":state.get('updatedAt')}
+        state['phase']='idle'; state['message']='No application update is running.'; state['ok']=None
     if include_log:
         p=run(['journalctl','-u',APP_UPDATE_SERVICE,'-n','500','--no-pager','--output=short-iso'],25,False)
         state['log']=((p.stdout or '')+(p.stderr or ''))[-50000:]
@@ -355,7 +376,7 @@ def start_app_update_job(body):
     if current.get('running'): raise RuntimeError('An application update is already running')
     if APP_UPDATE_REQUEST_FILE.exists(): raise RuntimeError('An application update request is already pending')
     action=str(body.get('action') or 'update')
-    if action not in ('update','revert'): raise RuntimeError('Unsupported application update action')
+    if action not in ('update','published','revert'): raise RuntimeError('Unsupported application update action')
     commit=run(['git','-C',str(HUB_ROOT),'rev-parse','HEAD'],20).stdout.strip()
     try: version=(HUB_ROOT/'VERSION').read_text().strip()
     except Exception: version=''
@@ -369,6 +390,10 @@ def start_app_update_job(body):
         if not RELEASE_REF_RE.fullmatch(ref): raise RuntimeError('Only semantic-version GitHub release tags are accepted')
         if not RELEASE_REF_RE.fullmatch(version): raise RuntimeError('Invalid expected release version')
         request.update({"targetRef":ref,"expectedVersion":version})
+    elif action=='published':
+        target=str(body.get('targetCommit') or '').lower()
+        if not re.fullmatch(r'[0-9a-f]{40}',target): raise RuntimeError('A full Git commit from trusted main is required')
+        request.update({"targetCommit":target})
     else:
         if str(body.get('confirm') or '')!='REVERT_RELEASE': raise RuntimeError('Explicit REVERT_RELEASE confirmation required')
         if current.get('revertAvailable') is not True: raise RuntimeError('No unused verified rollback point is available')
@@ -517,6 +542,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/updates': return self.send_json(200,{"ok":True,**update_details(),"job":update_job_status(False)})
             if path=='/updates/job': return self.send_json(200,{"ok":True,**update_job_status(True)})
             if path=='/app-updates/job': return self.send_json(200,{"ok":True,**app_update_job_status(True)})
+            if path=='/app-updates/source': return self.send_json(200,{"ok":True,**app_update_source_status()})
             if path=='/recovery/full/job': return self.send_json(200,{"ok":True,**FULL_RECOVERY.status()})
             if path=='/cleanup/migration-snapshots':
                 items=migration_snapshots(); return self.send_json(200,{"ok":True,"items":items,"count":len(items)})
@@ -546,7 +572,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(202,start_update_job())
             if path=='/app-updates/start':
                 body=self.body()
-                if str(body.get('confirm') or '')!='INSTALL_RELEASE': return self.send_json(400,{"ok":False,"error":"Explicit INSTALL_RELEASE confirmation required"})
+                action=str(body.get('action') or 'update')
+                expected='INSTALL_MAIN' if action=='published' else 'INSTALL_RELEASE'
+                if str(body.get('confirm') or '')!=expected: return self.send_json(400,{"ok":False,"error":f"Explicit {expected} confirmation required"})
                 return self.send_json(202,start_app_update_job(body))
             if path=='/app-updates/revert':
                 body=self.body()
