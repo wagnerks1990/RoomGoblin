@@ -229,10 +229,13 @@ refresh_host_agent(){
   systemctl daemon-reload
   fi
   # Retire the historical installed service name even on a selective Host Agent
-  # refresh so two processes can never contend for the same Unix socket.
-  systemctl disable --now classroom-control-hub-host-agent.service >/dev/null 2>&1 || true
-  rm -f /etc/systemd/system/classroom-control-hub-host-agent.service
-  systemctl daemon-reload
+  # refresh so two processes can never contend for the same Unix socket. Avoid a
+  # needless daemon-reload on already-clean hosts.
+  if [[ -e /etc/systemd/system/classroom-control-hub-host-agent.service ]]; then
+    systemctl disable --now classroom-control-hub-host-agent.service >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/classroom-control-hub-host-agent.service
+    systemctl daemon-reload
+  fi
   systemctl restart classroom-hub-host-agent.service
 }
 
