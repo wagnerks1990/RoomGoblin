@@ -117,3 +117,26 @@ The walkthrough also encountered host/configuration-dependent 503 responses from
 The diagnostics database contained substantial historical audit data. Current `main` already coalesces successful high-frequency GET/service polling into `telemetry_state` and provides bounded audit-retention pruning; no second competing retention mechanism was added during this follow-up.
 
 PR validation also exposed a Firefox-only terminal teardown race: the browser Close action was queued behind terminal state/read polling, while Chromium happened to dispatch it before the test assertion. Cleanup now bypasses the polling queue and immediately sends the authenticated terminal close request; the server-side session expiry remains the fallback if transport confirmation fails. The browser regression now waits for that close request explicitly rather than assuming a network-event ordering relative to Playwright's click completion, which differs between Chromium and Firefox.
+
+
+## Database and local-storage performance follow-up
+
+A post-deployment storage review identified three avoidable persistence costs.
+
+- Display and Windows/lab-agent authentication updated credential
+  `last_used_at` on every successful request. Authentication remains immediate,
+  while the bookkeeping timestamp is now coalesced to five-minute intervals to
+  reduce WAL/write amplification.
+- Diagnostic ZIP downloads were created under persistent `data/backups`.
+  They now use maintenance temporary storage and are removed when the HTTP
+  transfer completes.
+- Application and Ubuntu host updates created automatic `pre-*.zip` recovery
+  points but did not invoke the existing retention facility after success.
+  Verified updates now retain the newest ten automatic safety archives while
+  preserving a currently pinned revert backup and excluding user-created/full
+  recovery archives.
+
+The storage-boundary review did not find a reason to move authoritative
+configuration, scheduler, identity or encrypted-setting records out of SQLite.
+Large/generated payloads remain file-backed; high-frequency successful polling
+remains coalesced telemetry; audit rows remain subject to privacy retention.
