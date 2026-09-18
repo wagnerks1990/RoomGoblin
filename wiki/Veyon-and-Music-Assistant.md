@@ -257,4 +257,4 @@ removes the irrelevant warning without introducing TLS changes or weakening the
 existing CSP, capabilities or framebuffer authentication. COOP warnings do not
 explain a server-side framebuffer 502.
 
-See [Free Veyon features and community pilot](Veyon-Free-Features) for extra controls, native tools, recording and isolated community sources.
+RoomGoblin supports the host-managed upstream/OEM Veyon installation and upstream/OEM add-ons only. Custom/community plugin pilots and experimental browser adapters are not part of the supported integration.
