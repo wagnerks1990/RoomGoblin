@@ -4,6 +4,11 @@
 
 ### Community Veyon web pilots
 
+- Add an original administrator-only live CMD/Windows PowerShell pilot carried
+  entirely by the authenticated RoomGoblinWebBridge Veyon feature/worker path.
+  Sessions run as the signed-in user, expire after ten minutes, bound transient
+  input/output and never audit command/output content; Windows build and endpoint
+  acceptance remain explicit gates.
 - Add selected-PC browser controls for the reviewed GPL Internet Guard backend, ported to the pinned Veyon 4.11.2 Windows source with named firewall rules, transactional rollback, disabled-firewall refusal, explicit allow and a 15-minute in-process release timer.
 - Add one-target browser uploads to `RoomGoblin-Pilot/Inbox`, limited to 2 MiB and ordered 128 KiB chunks with no intentional overwrite, atomic commit, request correlation and partial-file discard.
 - Document exact provenance, exclusions, Windows build/acceptance requirements and manual firewall recovery; commercial Veyon add-ons remain excluded.

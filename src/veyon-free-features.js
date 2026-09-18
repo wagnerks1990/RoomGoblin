@@ -16,6 +16,7 @@ const INPUT_FEATURE_UID="6c33a9b1-8b1f-4c71-bc64-85f7df210cab";
 const BROWSER_CONTROL_FEATURE_UID="c775285d-ea7e-4c48-a613-a73af94d4be3";
 const CLIPBOARD_READ_FEATURE_UID="9fd323eb-5ae1-4552-8a4c-8b18837b78f7";
 const INTERNET_GUARD_FEATURE_UID="a4b3c2d1-e5f6-7890-abcd-ef1234567890";
+const TERMINAL_FEATURE_UID="b6e98d71-41ad-4d2d-8c9e-7624db7a6cb0";
 const KEY_SEQUENCES=Object.freeze(["Enter","Tab","Escape","Backspace","Delete","Left","Up","Right","Down","Home","End","PageUp","PageDown","Ctrl+A","Ctrl+C","Ctrl+V"]);
 function keyArguments(args,active=true){
   if(active===false||!KEY_SEQUENCES.includes(args?.sequence))throw Error("Choose a supported key or shortcut.");
@@ -79,6 +80,7 @@ const CATALOG=Object.freeze([
   ["ClassroomChat","Two-way classroom chat","web","Community chat button; matching native browser bridge and endpoint chat plugin required"],
   ["RemoteFileBrowser","Browse pilot files","web","Community file browser; matching bridge and endpoint plugin, pilot-folder access only"],
   ["InternetGuard","Temporary Internet block","web","Windows-only community pilot; blocks common web/DNS/proxy ports for at most 15 minutes and requires the matching endpoint plugin"],
+  ["RoomGoblinTerminal","Live CMD / PowerShell","web","Administrator-only ten-minute Windows command session through the matching Veyon bridge; user-session privileges only"],
   ["Screenshot","Screenshots","web","Download screenshot"],
   ["Demo","Broadcast","web","Teacher or selected student source, fullscreen or windowed"],
   ...["DemoServer","FullScreenDemo","WindowDemo","ShareOwnScreenFullScreen","ShareOwnScreenWindow","ShareUserScreenFullScreen","ShareUserScreenWindow"].map(name=>[name,"Broadcast component","workflow","Use broadcast controls; these components are coordinated together"]),
@@ -106,7 +108,7 @@ const CATALOG=Object.freeze([
 ].map(([name,label,provider,detail])=>Object.freeze({name,label,provider,detail})));
 function featureCatalog(advertised){
   const names=new Set((Array.isArray(advertised)?advertised:[]).map(f=>String(f.name||f.Name||"")));
-  const exactUids={RoomGoblinKeySequence:INPUT_FEATURE_UID,RoomGoblinClipboardWrite:CLIPBOARD_FEATURE,RoomGoblinBrowserControl:BROWSER_CONTROL_FEATURE_UID,RoomGoblinClipboardRead:CLIPBOARD_READ_FEATURE_UID,InternetGuard:INTERNET_GUARD_FEATURE_UID};
+  const exactUids={RoomGoblinKeySequence:INPUT_FEATURE_UID,RoomGoblinClipboardWrite:CLIPBOARD_FEATURE,RoomGoblinBrowserControl:BROWSER_CONTROL_FEATURE_UID,RoomGoblinClipboardRead:CLIPBOARD_READ_FEATURE_UID,InternetGuard:INTERNET_GUARD_FEATURE_UID,RoomGoblinTerminal:TERMINAL_FEATURE_UID};
   return CATALOG.filter(row=>["web","workflow"].includes(row.provider)).map(row=>({...row,advertised:exactUids[row.name]?exactBridgeAdvertised(advertised,row.name,exactUids[row.name]):names.has(row.name),endpointVerified:false}));
 }
 function normalizeLessonAction(input){
@@ -121,4 +123,4 @@ function normalizeLessonAction(input){
   }
   return {name,feature,value};
 }
-module.exports={INPUT_FEATURE_UID,BROWSER_CONTROL_FEATURE_UID,CLIPBOARD_READ_FEATURE_UID,INTERNET_GUARD_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,exactBridgeAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};
+module.exports={INPUT_FEATURE_UID,BROWSER_CONTROL_FEATURE_UID,CLIPBOARD_READ_FEATURE_UID,INTERNET_GUARD_FEATURE_UID,TERMINAL_FEATURE_UID,KEY_SEQUENCES,keyArguments,keyAdvertised,CLIPBOARD_FEATURE,clipboardArguments,clipboardAdvertised,exactBridgeAdvertised,POWER_FEATURES,normalizeMac,magicPacket,wakeComputer,powerArguments,CATALOG,featureCatalog,normalizeLessonAction};

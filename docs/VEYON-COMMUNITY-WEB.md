@@ -49,6 +49,10 @@ The browser polls while visible, serializes requests, clears sent text and
 renders replies with textContent. Endpoint/private authentication UIDs never
 enter browser responses. A lost response is an uncertain outcome, not a retry.
 
+The administrator live terminal is deliberately not available through this
+teacher browser route. It uses its own `requireAdmin` route and the additional
+native boundaries in [Veyon live terminal](VEYON-LIVE-TERMINAL.md).
+
 The pinned source preparer adds a fixed authenticated WebAPI route and a typed
 plugin interface. It retains upstream checkConnection/lookupConnection and
 worker-thread dispatch. GPL native adapter source remains separate from the MIT

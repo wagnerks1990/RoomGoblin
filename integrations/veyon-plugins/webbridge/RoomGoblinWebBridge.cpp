@@ -20,6 +20,7 @@ const Feature::Uid ExchangeUid{"8fa73e19-3d66-4d59-9783-c2a1bb07e20e"};
 const Feature::Uid ControlUid{"ca00ad68-1709-4abe-85e2-48dff6ccf8a2"};
 const Feature::Uid BrowserControlUid{"c775285d-ea7e-4c48-a613-a73af94d4be3"};
 const Feature::Uid ClipboardReadUid{"9fd323eb-5ae1-4552-8a4c-8b18837b78f7"};
+const Feature::Uid TerminalUid{"b6e98d71-41ad-4d2d-8c9e-7624db7a6cb0"};
 QMutex clipboardContextsMutex;
 QHash<QUuid, QPair<MessageContext,qint64>> clipboardContexts;
 }
@@ -29,6 +30,23 @@ RoomGoblinWebBridge::RoomGoblinWebBridge(QObject* parent) : QObject(parent)
     m_browserSessionTimer.setInterval(500);
     connect(&m_browserSessionTimer, &QTimer::timeout, this, &RoomGoblinWebBridge::pruneBrowserSessions);
     m_browserSessionTimer.start();
+    m_terminalTimer.setSingleShot(true);
+    connect(&m_terminalTimer, &QTimer::timeout, this, [this]() {
+        stopTerminalProcess(tr("Terminal session expired"), true);
+    });
+    connect(&m_terminalProcess, &QProcess::readyReadStandardOutput,
+            this, &RoomGoblinWebBridge::sendTerminalOutput);
+    connect(&m_terminalProcess, &QProcess::readyReadStandardError,
+            this, &RoomGoblinWebBridge::sendTerminalOutput);
+    connect(&m_terminalProcess, qOverload<int,QProcess::ExitStatus>(&QProcess::finished),
+            this, [this](int exitCode, QProcess::ExitStatus) {
+        sendTerminalOutput();
+        if (m_terminalWorker && !m_terminalContext.isNull())
+            m_terminalWorker->sendFeatureMessageReply(
+                FeatureMessage{TerminalUid, static_cast<FeatureMessage::Command>(6)}
+                    .addArgument(0,m_terminalContext).addArgument(4,exitCode));
+        m_terminalTimer.stop(); m_terminalContext={}; m_terminalWorker=nullptr;
+    });
     if (allowed(false))
     {
         m_features.append(Feature{QStringLiteral("RoomGoblinKeySequence"), Feature::Flag::Meta,
@@ -48,6 +66,20 @@ RoomGoblinWebBridge::RoomGoblinWebBridge(QObject* parent) : QObject(parent)
                                   ClipboardReadUid, {}, tr("Read clipboard text"), {},
                                   tr("Return clipboard text only after an explicit correlated request")});
     }
+    if (terminalAllowed())
+    {
+        m_features.append(Feature{QStringLiteral("RoomGoblinTerminal"),
+                                  Feature::Flag::Meta | Feature::Flag::AllComponents,
+                                  TerminalUid, {}, tr("Live command session"), {},
+                                  tr("Open a bounded CMD or Windows PowerShell session through Veyon")});
+    }
+}
+
+bool RoomGoblinWebBridge::terminalAllowed() const
+{
+    for (const auto& value : VeyonCore::config().disabledFeatures())
+        if (Feature::Uid{value} == TerminalUid) return false;
+    return true;
 }
 
 bool RoomGoblinWebBridge::allowed(bool clipboard) const
@@ -109,6 +141,8 @@ bool RoomGoblinWebBridge::controlFeature(Feature::Uid uid, Operation operation,
 bool RoomGoblinWebBridge::handleFeatureMessage(VeyonServerInterface& server, const MessageContext& context,
                                                 const FeatureMessage& message)
 {
+    if (message.featureUid()==TerminalUid)
+        return handleTerminalServer(server,context,message);
     if (message.featureUid()!=ClipboardReadUid || !allowed()) return false;
     const auto request=message.argument(0).toUuid();
     if (message.command<int>()!=1 || request.isNull() || !context.ioDevice()) return false;
@@ -131,6 +165,8 @@ bool RoomGoblinWebBridge::handleFeatureMessage(VeyonServerInterface& server, con
 bool RoomGoblinWebBridge::handleFeatureMessageFromWorker(VeyonServerInterface& server,
                                                           const FeatureMessage& message)
 {
+    if (message.featureUid()==TerminalUid)
+        return handleTerminalWorkerReply(server,message);
     if (message.featureUid()!=ClipboardReadUid || !allowed() || message.command<int>()!=2) return false;
     const auto request=message.argument(0).toUuid();
     MessageContext context;
@@ -145,6 +181,8 @@ bool RoomGoblinWebBridge::handleFeatureMessageFromWorker(VeyonServerInterface& s
 
 bool RoomGoblinWebBridge::handleFeatureMessage(VeyonWorkerInterface& worker, const FeatureMessage& message)
 {
+    if (message.featureUid()==TerminalUid)
+        return handleTerminalWorker(worker,message);
     if (message.featureUid()!=ClipboardReadUid || !allowed() || message.command<int>()!=1) return false;
     const auto request=message.argument(0).toUuid();
     if (request.isNull()) return false;

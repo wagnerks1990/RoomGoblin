@@ -4,7 +4,7 @@ const {BrowserSessions,argumentsFor,project}=require('../src/veyon-browser-sessi
 function fixture(){
   let time=0,valid=true;const connection={active:0},calls=[];
   const computer={id:'sample',ip:'192.0.2.1',hostname:'sample'};
-  const sessions=new BrowserSessions({now:()=>time,connect:async()=>connection,identity:()=>valid,request:async(s,action,data)=>{calls.push({action,data});return action==='capabilities'?{ok:true,protocol:1,chat:true,files:true,upload:true,control:true}:{ok:true}}});
+  const sessions=new BrowserSessions({now:()=>time,connect:async()=>connection,identity:()=>valid,request:async(s,action,data)=>{calls.push({action,data});return action==='capabilities'?{ok:true,protocol:1,chat:true,files:true,upload:true,control:true,terminal:true}:action==='terminalRead'?{ok:true,text:'',cursor:0,ready:true}:{ok:true}}});
   const run=(action,input={},owner='teacher')=>sessions.run({owner,computer,action,input,authorize:()=>{}});
   return {sessions,run,connection,calls,setTime:x=>time=x,invalidate:()=>valid=false};
 }
@@ -82,4 +82,26 @@ test('control state bounds monitors and clipboard content',()=>{
   assert.throws(()=>project('state',{frameWidth:20000,frameHeight:1080,screens:[]}));
   assert.equal(project('clipboard',{pending:false,text:'hello',private:'discard'}).text,'hello');
   assert.equal(project('clipboard',{pending:false,text:'é'.repeat(4097)}).text,'');
+});
+test('terminal sessions allow only typed shells, bounded input and monotonic reads',async()=>{
+  const f=fixture(),opened=await f.run('open',{kind:'terminal',shell:'powershell'});
+  assert.equal(opened.kind,'terminal');
+  await f.run('terminalWrite',{session:opened.session,text:'Get-Process\r\n'});
+  await f.run('terminalRead',{session:opened.session,offset:0});
+  assert.deepEqual(f.calls.slice(-2),[
+    {action:'terminalWrite',data:{session:opened.session,text:'Get-Process\r\n'}},
+    {action:'terminalRead',data:{session:opened.session,offset:0}}
+  ]);
+  assert.throws(()=>argumentsFor('open',{kind:'terminal',shell:'bash'}));
+  assert.throws(()=>argumentsFor('terminalWrite',{text:'x'.repeat(4097)}));
+  assert.throws(()=>argumentsFor('terminalWrite',{text:'bad\0command'}));
+  assert.throws(()=>argumentsFor('terminalRead',{offset:-1}));
+  await assert.rejects(f.run('send',{session:opened.session,text:'wrong'}),/does not match/);
+});
+test('terminal projection strips native fields and bounds streamed output',()=>{
+  assert.deepEqual(project('terminalRead',{text:'hello',cursor:5,reset:false,ready:true,private:'discard'}),
+    {ok:true,text:'hello',cursor:5,reset:false,ready:true,exited:false,error:''});
+  assert.throws(()=>project('terminalRead',{text:'x'.repeat(128*1024+1),cursor:1}));
+  const state=project('state',{shell:'cmd',terminalReady:true,terminalExited:false,terminalBase:0,terminalEnd:12,frameWidth:0,frameHeight:0,screens:[]});
+  assert.equal(state.shell,'cmd');assert.equal(state.terminalReady,true);assert.equal(state.frameWidth,0);
 });

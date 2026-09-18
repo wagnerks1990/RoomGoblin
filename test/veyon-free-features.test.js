@@ -29,6 +29,7 @@ test('Catalog shows browser workflows only and never claims endpoint verificatio
   assert.equal(rows.find(r=>r.name==='RoomGoblinBrowserControl').advertised,false);
   assert.equal(rows.find(r=>r.name==='RoomGoblinClipboardRead').advertised,true);
   assert.equal(rows.find(r=>r.name==='InternetGuard').advertised,false);
+  assert.equal(rows.find(r=>r.name==='RoomGoblinTerminal').advertised,false);
   const exact=helpers.featureCatalog([{name:'InternetGuard',uid:helpers.INTERNET_GUARD_FEATURE_UID}]);
   assert.equal(exact.find(r=>r.name==='InternetGuard').advertised,true);
   assert.equal(helpers.featureCatalog([{name:'InternetGuard',uid:'wrong'}]).find(r=>r.name==='InternetGuard').advertised,false);
@@ -174,6 +175,22 @@ test('Browser audit keeps a stable event kind and separates the session kind',()
   assert.match(block,/audit\(\{kind:"veyon\.browser",actor,action:req\.params\.action,sessionKind:/);
   assert.doesNotMatch(block,/audit\(\{kind:"veyon\.browser"[^}]*,kind:/);
   assert.doesNotMatch(block,/audit\(\{[^}]*\b(session|text|path|lease):/);
+});
+
+test('Live terminal is isolated behind an administrator route and never audits command content',()=>{
+  const source=fs.readFileSync('src/server.js','utf8');
+  const start=source.indexOf('app.post("/api/v1/veyon/computers/:id/terminal/:action"');
+  const block=source.slice(start,source.indexOf('const veyonFreeReadLimit=',start));
+  assert.ok(start>0);assert.match(block,/requireAdmin/);assert.match(block,/kind:"veyon\.terminal"/);
+  assert.match(source,/veyonTerminalActionLimit=.*action==="close"\?veyonTerminalCleanupLimit:veyonTerminalLimit/);
+  assert.doesNotMatch(block,/audit\(\{[^}]*\b(text|command|output):/);
+  const generic=source.slice(source.indexOf('app.post("/api/v1/veyon/computers/:id/browser/:action"'),start);
+  assert.match(generic,/kind==="terminal"[\s\S]*startsWith\("terminal"\)[\s\S]*403/);
+  const native=fs.readFileSync('integrations/veyon-plugins/webbridge/TerminalSession.cpp','utf8');
+  assert.match(native,/TerminalLifetimeMs=10\*60\*1000/);assert.match(native,/MaxInputBytes=4096/);
+  assert.match(native,/128\*1024/);assert.match(native,/#ifndef Q_OS_WIN/);
+  const ui=fs.readFileSync('public/controller/veyon-terminal.js','utf8'),html=fs.readFileSync('public/controller/veyon.html','utf8');
+  assert.match(html,/id="liveTerminal" hidden/);assert.match(ui,/user\?\.role==='admin'&&caps\.includes\('\*'\)/);
 });
 
 test('Community upload and Internet Guard sources preserve pilot safety bounds',()=>{

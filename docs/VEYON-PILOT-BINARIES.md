@@ -14,7 +14,10 @@ Artifacts expire after 14 days; retain the source alongside any binary you share
 No paid add-on or trial is activated. The Hub Docker images do not contain these
 native binaries and the production updater does not install them.
 The source archive also carries the Windows-only InternetGuard port, but the
-Linux artifact intentionally does not build or advertise that plugin.
+Linux artifact intentionally does not build or advertise that plugin. The
+RoomGoblinTerminal feature is compiled and discovered on Linux so its shared
+protocol code stays in the build gate; attempting to start it on a Linux worker
+returns unavailable. Actual CMD/PowerShell process launch remains Windows-only.
 
 ## Build locally
 
@@ -54,7 +57,9 @@ tar -tzf veyon-pilot-linux.tar.gz
 ```
 
 After reviewing the archive, install its complete contents into each disposable
-VM (this writes `/usr` and the upstream systemd unit):
+VM (this writes `/usr` and the upstream systemd unit). Windows endpoint
+interoperability and packaging remain unvalidated, including the live-terminal
+launch path:
 
 ```bash
 sudo tar -xzf veyon-pilot-linux.tar.gz -C /
@@ -88,7 +93,9 @@ restore an earlier Veyon/Qt installation.
 ## Browser bridge
 
 The complete Linux build also contains RoomGoblinWebBridge and checks its
-ClipboardWrite, BrowserControl and ClipboardRead feature inventories. See
+ClipboardWrite, BrowserControl, ClipboardRead and Terminal feature inventories. See
 [browser clipboard sending](VEYON-WEB-CLIPBOARD.md) and
-[browser remote control](VEYON-BROWSER-CONTROL.md) for acceptance requirements.
+[browser remote control](VEYON-BROWSER-CONTROL.md) for those acceptance requirements.
+See [Veyon live terminal](VEYON-LIVE-TERMINAL.md) for the separate Windows build,
+privilege and disposable-endpoint acceptance requirements.
 The archive remains a disposable pilot overlay, not a managed production package.

@@ -13,7 +13,8 @@ WebApiController::Response WebApiController::roomGoblinRequest(const Request& re
     static const QStringList actions{QStringLiteral("capabilities"),QStringLiteral("open"),QStringLiteral("close"),
         QStringLiteral("state"),QStringLiteral("send"),QStringLiteral("roots"),QStringLiteral("list"),
         QStringLiteral("download"),QStringLiteral("chunk"),QStringLiteral("pointer"),
-        QStringLiteral("key"),QStringLiteral("clipboard")};
+        QStringLiteral("key"),QStringLiteral("clipboard"),QStringLiteral("terminalRead"),
+        QStringLiteral("terminalWrite")};
     if (!actions.contains(action)) return Error::InvalidData;
     return runInWorkerThread<Response>([&]() -> Response {
         for (auto* object : VeyonCore::pluginManager().pluginObjects())

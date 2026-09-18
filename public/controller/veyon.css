@@ -121,6 +121,7 @@ body.rg-veyon header,body.rg-veyon main{width:min(1800px,100%);padding-inline:cl
 .rg-veyon [data-command-phase=failed],.rg-veyon [data-command-phase=unknown]{color:var(--red)}
 
 #communityDialog{width:min(680px,90vw);max-height:80vh;overflow:auto} #communityDialog textarea{display:block;width:100%;box-sizing:border-box} #communityBody pre{overflow-wrap:anywhere}
+#terminalDialog{width:min(920px,92vw);max-height:86vh;overflow:auto}.terminal-output{box-sizing:border-box;width:100%;height:min(50vh,480px);overflow:auto;background:#05080d;color:#d8ffe0;border:1px solid #31413a;border-radius:.5rem;padding:.8rem;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace}#terminalForm{display:grid;grid-template-columns:1fr auto;gap:.6rem;align-items:end;margin-top:.8rem}#terminalForm label{min-width:0}#terminalInput{box-sizing:border-box;width:100%;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 #modal.control-active .modalBox{border:3px solid var(--amber)}
 #modal.control-active #liveImg{display:none!important}
 #controlCanvas{display:block;max-width:100%;max-height:100%;background:#000;touch-action:none;cursor:crosshair}

@@ -75,6 +75,22 @@ argument index 1. Keep the native build isolated and package corresponding sourc
 pairs and a five-second Hub queue expiry. Do not add arbitrary held key state or
 retry ambiguous input. This is not continuous remote control.
 
+## Administrator live terminal
+
+The only permitted arbitrary Windows command surface in this integration is the
+dedicated `POST /api/v1/veyon/computers/:id/terminal/:action` route documented in
+`docs/VEYON-LIVE-TERMINAL.md`. Keep it enabled-administrator-only and isolated
+from the normal `lab.control` browser route. Bind sessions to owner, saved target,
+exact Veyon connection and authenticated native `MessageContext`. The endpoint
+must use Veyon's signed-in-user feature worker, with only CMD or Windows
+PowerShell selectable. Do not add WinRM, SSH, a companion agent, elevation,
+persistence, command/output logging, automatic retry or arbitrary program paths.
+Preserve the ten-minute lifetime, 4096-byte input and 128 KiB output bounds.
+
+Linux compilation proves only source/registration compatibility. Do not claim
+Windows operation until a matching 4.11.2 Windows build and disposable endpoint
+acceptance have passed.
+
 ## Browser-only interface policy
 
 Native launchers and their API were removed at the operator's request. Catalog
