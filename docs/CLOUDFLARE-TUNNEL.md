@@ -80,6 +80,8 @@ administrator route
 
 The temporary file is deleted after the installer exits. The durable connector token remains only at:
 
+The native Host Agent remains systemd-sandboxed with `ProtectSystem=full`. Automatic connector provisioning therefore grants write access only to `/etc/cloudflared` and the pre-created `/etc/systemd/system/cloudflared-roomgoblin.service` file; it does not make the rest of `/etc` or `/usr` writable to the Host Agent.
+
 ```text
 /etc/cloudflared/roomgoblin.token
 ```
