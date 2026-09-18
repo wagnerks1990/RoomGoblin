@@ -40,6 +40,8 @@ function normalizeSettings(input={},prior={}){
     tunnelName:tunnelName(input.tunnelName===undefined?prior.tunnelName:input.tunnelName,hostname||zone||"roomgoblin"),
     alwaysUseHttps:input.alwaysUseHttps===undefined?prior.alwaysUseHttps!==false:input.alwaysUseHttps!==false,
     automaticHttpsRewrites:input.automaticHttpsRewrites===undefined?prior.automaticHttpsRewrites!==false:input.automaticHttpsRewrites!==false,
+    http3:input.http3===undefined?prior.http3!==false:input.http3!==false,
+    brotli:input.brotli===undefined?prior.brotli!==false:input.brotli!==false,
     accessEnabled,accessEmailDomain,
     replaceConflictingDns:input.replaceConflictingDns===undefined?prior.replaceConflictingDns===true:input.replaceConflictingDns===true,
     ids:{...(prior.ids||{})},
@@ -178,7 +180,9 @@ class CloudflareManager{
     const dnsResult=await this.ensureDns(ctx,settings,tunnelResult.tunnel);
     const edge={
       alwaysUseHttps:await this.setZoneSetting(ctx,"always_use_https",settings.alwaysUseHttps?"on":"off"),
-      automaticHttpsRewrites:await this.setZoneSetting(ctx,"automatic_https_rewrites",settings.automaticHttpsRewrites?"on":"off")
+      automaticHttpsRewrites:await this.setZoneSetting(ctx,"automatic_https_rewrites",settings.automaticHttpsRewrites?"on":"off"),
+      http3:await this.setZoneSetting(ctx,"http3",settings.http3?"on":"off"),
+      brotli:await this.setZoneSetting(ctx,"brotli",settings.brotli?"on":"off")
     };
     const access=await this.ensureAccess(ctx,settings);
     let connector={installed:false,restartRequired:false};
