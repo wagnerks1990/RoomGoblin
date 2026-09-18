@@ -1326,8 +1326,10 @@ function normalizeAutomation(input={},existing={}){
     if(!AUTOMATION_ACTIONS.has(stepAction))throw new Error(`Unsupported automation action: ${stepAction||"(blank)"}`);
     const delaySeconds=Number(item?.delaySeconds??0);
     if(!Number.isFinite(delaySeconds))throw new Error(`Automation action ${index+1} delay must be a finite number`);
-    let actionId=cleanId(item?.id||`${id.slice(0,60)}-action-${index+1}`);
-    if(!actionId||usedIds.has(actionId))actionId=`${id.slice(0,60)}-action-${index+1}`;
+    const rawActionId=cleanId(item?.id||`action-${index+1}`);
+    let actionId=rawActionId.startsWith(`${id}-`)?rawActionId:`${id.slice(0,60)}-${rawActionId.slice(0,30)||`action-${index+1}`}`;
+    actionId=cleanId(actionId).slice(0,100);
+    if(!actionId||usedIds.has(actionId))actionId=cleanId(`${id.slice(0,60)}-action-${index+1}`).slice(0,100);
     usedIds.add(actionId);
     const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
     const normalized=normalizeAutomationAction({
@@ -5511,7 +5513,7 @@ app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,asy
     const id=cleanId(req.params.id);event=classroomAutomations.events.find(x=>x.id===id);
     if(!event)return res.status(404).json({ok:false,error:"Automation not found"});
     const resolved=resolveAutomationForManualTest(event);const result=await runClassroomAutomation(resolved,{manual:true,maxPasses:sequenceHasContinuousActions(automationActionSequence(resolved))?1:null});
-    event.lastRun={at:new Date().toISOString(),ok:result.ok!==false,manual:true,message:result.ok===false?"Completed with action errors":"Completed",resultSummary:{action:event.action,actions:[event.action,...(event.actions||[]).map(x=>x.action)],targets:event.targets,failures:automationRunFailures(result)}};event.updatedAt=new Date().toISOString();persistAutomations();
+    event.lastRun={at:new Date().toISOString(),ok:result.ok!==false,manual:true,message:result.ok===false?"Completed with action errors":"Completed",resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(result)}};event.updatedAt=new Date().toISOString();persistAutomations();
     res.json(result);
   }catch(err){if(event){event.lastRun={at:new Date().toISOString(),ok:false,manual:true,message:err.message};event.updatedAt=new Date().toISOString();persistAutomations()}res.status(500).json({ok:false,error:err.message})}
 });
