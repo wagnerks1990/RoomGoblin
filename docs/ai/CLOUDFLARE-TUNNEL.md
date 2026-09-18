@@ -30,6 +30,10 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 - Safe managed defaults are proxied DNS, Tunnel, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, and Brotli.
 - Do not automatically enable Bot Fight Mode, Cache Everything/authenticated caching, HSTS, WARP/private-network routing, or arbitrary service publication.
 - Cloudflare status must never become part of core `/health`, scheduler/update/maintenance readiness, or rollback decisions.
+- Auxiliary ingress is allowlisted, never generic. The only currently reviewed auxiliary public resource is Music Assistant UI/API on a separate hostname -> `http://127.0.0.1:8095`.
+- Publishing Music Assistant requires an Access allowed email domain. Never silently publish it without Access.
+- Never add Veyon WebAPI 11080, maintenance 3010, media 3020, local AI 3025, Android Agent 8765, ADB 5555, MQTT 1883, ESPHome 6053, native Veyon 11100, Docker or SSH to tunnel ingress.
+- Main-hostname Cloudflare Access is browser-oriented. Do not assume Windows agents can satisfy an interactive Access challenge; machine-agent public transport needs RoomGoblin agent authentication and an Access-compatible machine policy before enabling that combination.
 - Preserve Morning Announcements priority, scheduler recovery, Background Music reconciliation, display stability, and managed-device compatibility.
 
 ## Host boundary
