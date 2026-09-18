@@ -5845,12 +5845,25 @@ app.delete("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{cons
 app.delete("/api/v1/admin/display-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeDisplayCredential(id);if(revoked)disconnectRevokedDisplayCredentials([id]);audit({kind:"admin.display-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
 app.get("/api/v1/admin/lab-agent-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...dbStore.listLabAgentCredentials()}));
 app.put("/api/v1/admin/lab-agent-credentials/policy",requireAdmin,(req,res)=>{try{const policy=dbStore.setLabAgentCredentialPolicy(req.body||{});audit({kind:"admin.lab-agent-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
+function configuredPublicHubOrigin(){
+  const value=dbStore.getPreference("integrations.cloudflare",{})||{},hostname=String(value.hostname||"").trim().toLowerCase();
+  if(value.enabled===false||!hostname||!value.ids?.tunnelId||!value.ids?.dnsRecordId)return "";
+  try{
+    const url=new URL(`https://${hostname}/`);
+    if(url.username||url.password||url.port||url.protocol!=="https:")return "";
+    return url.origin;
+  }catch{return ""}
+}
+function labAgentInstallPackage(origin,agentId,issued){
+  const script=`${origin}/lab-agent/Install-Agent.ps1`,allowHttp=new URL(origin).protocol==="https:"?"":" -AllowHttp";
+  return {origin,script,command:`$i=Join-Path $env:TEMP 'Install-ClassroomHubAgent.ps1'; irm ${powerShellLiteral(script)} -OutFile $i; & $i -HubUrl ${powerShellLiteral(origin)} -AgentId ${powerShellLiteral(agentId)} -EnrollmentToken ${powerShellLiteral(issued.token)}${allowHttp}`};
+}
 app.post("/api/v1/admin/lab-agents/:id/enrollment",requireAdmin,(req,res)=>{try{
   const agentId=cleanLabAgentId(req.params.id),host=effectiveHost(req);if(!host)throw Error("A valid canonical Host header is required");
   const issued=dbStore.createLabAgentEnrollment(agentId,{ttlMinutes:req.body?.ttlMinutes});
-  const proto=req.secure||req.protocol==="https"?"https":"http",origin=`${proto}://${host}`,script=`${origin}/lab-agent/Install-Agent.ps1`,allowHttp=proto==="https"?"":" -AllowHttp";
-  const command=`$i=Join-Path $env:TEMP 'Install-ClassroomHubAgent.ps1'; irm ${powerShellLiteral(script)} -OutFile $i; & $i -HubUrl ${powerShellLiteral(origin)} -AgentId ${powerShellLiteral(agentId)} -EnrollmentToken ${powerShellLiteral(issued.token)}${allowHttp}`;
-  audit({kind:"admin.lab-agent-enrollment.issue",agentId,expiresAt:issued.expiresAt});res.status(201).json({ok:true,enrollment:{id:issued.id,agentId,token:issued.token,expiresAt:issued.expiresAt,installerUrl:script,installCommand:command}})
+  const proto=req.secure||req.protocol==="https"?"https":"http",requestOrigin=`${proto}://${host}`,publicOrigin=configuredPublicHubOrigin(),preferred=labAgentInstallPackage(publicOrigin||requestOrigin,agentId,issued),fallback=publicOrigin&&publicOrigin!==requestOrigin?labAgentInstallPackage(requestOrigin,agentId,issued):null;
+  audit({kind:"admin.lab-agent-enrollment.issue",agentId,expiresAt:issued.expiresAt,preferredOrigin:preferred.origin,publicHttps:Boolean(publicOrigin)});
+  res.status(201).json({ok:true,enrollment:{id:issued.id,agentId,token:issued.token,expiresAt:issued.expiresAt,preferredOrigin:preferred.origin,publicOrigin:publicOrigin||null,requestOrigin,installerUrl:preferred.script,installCommand:preferred.command,fallbackInstallerUrl:fallback?.script||null,fallbackInstallCommand:fallback?.command||null}})
 }catch(err){res.status(400).json({ok:false,error:err.message})}});
 app.delete("/api/v1/admin/lab-agent-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeLabAgentCredential(id);if(revoked)disconnectRevokedLabAgentCredentials([id]);audit({kind:"admin.lab-agent-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
 app.put("/api/v1/admin/hardware",requireAdmin,(req,res)=>{
