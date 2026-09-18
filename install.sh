@@ -288,7 +288,7 @@ if [[ "$TARGET" != "/opt/classroom-hub" ]]; then sed -i "s#/opt/classroom-hub#$T
 sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=$SERVICES#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^Environment=HOST_BACKUP_DIR=.*#Environment=HOST_BACKUP_DIR=$BACKUP_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=$DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
-sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $TARGET $SERVICES $BACKUP_ROOT /etc/classroom-control-hub /etc/cloudflared /etc/systemd/system /var/lib/classroom-hub $DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
+sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $TARGET $SERVICES $BACKUP_ROOT /etc/classroom-control-hub /etc/cloudflared /etc/systemd/system/cloudflared-roomgoblin.service /var/lib/classroom-hub $DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 python3 -m py_compile "$TARGET/host-agent/server.py" "$TARGET/host-agent/start.py" "$TARGET/host-agent/full_recovery.py"
 install -d -m 0750 /run/classroom-control-hub
 install -D -m 0755 "$TARGET/host-agent/update-runner.sh" /usr/local/libexec/classroom-control-hub/update-runner.sh
