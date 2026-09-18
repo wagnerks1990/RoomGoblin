@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Docker network least-privilege restoration
+
+- Restore service-specific Docker networking instead of applying host mode to every managed add-on.
+- Move RoomGoblin-managed Mosquitto to the named `roomgoblin-integrations` user-defined bridge and publish its configured MQTT port only on `127.0.0.1`.
+- Keep Govee2MQTT and Music Assistant on host networking because their reviewed upstream LAN multicast/discovery requirements depend on it.
+- Make the Host Agent enforce the exact network topology and allow lifecycle operations only for the reviewed named integration bridge.
+- Replace the Music Assistant DOWN-interface workaround with deterministic default-route LAN adapter selection so an UP Docker bridge cannot become the published/discovery interface after reboot.
+- Update controller messaging, operator/Wiki/AI/contributor documentation, and focused network-policy regressions.
+
 ### Music Assistant host-network recovery
 
 - Live-validate the permanent Zeroconf guard on the production appliance after reboot with Tailscale IPv6 restored and inactive addressed Docker bridges still present; preserve the legacy `/opt/music-assistant/data` bind and confirm HTTP 200 on 8095 plus listeners on 8097/8927.
