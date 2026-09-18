@@ -67,50 +67,6 @@ launchers and isolated plugin packages do not satisfy the web-GUI integration
 goal: keyboard/mouse, clipboard, two-way chat and file operations need actual
 authenticated browser/backend/native adapters and endpoint acceptance tests.
 
-## Browser clipboard adapter
+## OEM-only extension boundary
 
-See `docs/VEYON-WEB-CLIPBOARD.md`. `clipboardWrite` is a one-shot queued command,
-not a stateful mode. Require the exact RoomGoblinClipboardWrite name and UUID;
-ClipboardExchange alone is not sufficient. Keep content transient, one target,
-8192 UTF-8 bytes, no automatic replay, no success/verification inflation. The
-GPL RoomGoblinWebBridge plugin emits the official clipboard message using
-argument index 1. Keep the native build isolated and package corresponding source.
-
-`keySequence` uses the same bridge with a fixed keysym allowlist, press/release
-pairs and a five-second Hub queue expiry. Do not add arbitrary held key state or
-retry ambiguous input. This is not continuous remote control.
-
-## Administrator live terminal
-
-The only permitted arbitrary Windows command surface in this integration is the
-dedicated `POST /api/v1/veyon/computers/:id/terminal/:action` route documented in
-`docs/VEYON-LIVE-TERMINAL.md`. Keep it enabled-administrator-only and isolated
-from the normal `lab.control` browser route. Bind sessions to owner, saved target,
-exact Veyon connection and authenticated native `MessageContext`. The endpoint
-must use Veyon's signed-in-user feature worker, with only CMD or Windows
-PowerShell selectable. Do not add WinRM, SSH, a companion agent, elevation,
-persistence, command/output logging, automatic retry or arbitrary program paths.
-Preserve the ten-minute lifetime, 4096-byte input and 128 KiB output bounds.
-
-Linux compilation proves only source/registration compatibility. Do not claim
-Windows operation until a matching 4.11.2 Windows build and disposable endpoint
-acceptance have passed.
-
-The Windows packaging path is `tools/package-veyon-pilot-windows.sh`; it must run
-only in a reviewed x86-64 MinGW/Qt environment and produce the complete upstream
-NSIS package plus corresponding source and hashes. Do not publish it from CI
-until the toolchain image is immutable and reviewed. Never substitute individual
-DLL deployment. `deploy/test-veyon-windows-pilot.ps1` is intentionally limited to
-one disposable endpoint and requires exact pilot/rollback hashes, a new evidence
-directory, configuration export and explicit risk acknowledgement. Runtime CLI
-discovery does not replace terminal, firewall, log-redaction and classroom
-acceptance. Preserve automatic known-good installer/config rollback on failure.
-
-## Browser-only interface policy
-
-Native launchers and their API were removed at the operator's request. Catalog
-projection is limited to implemented web/workflow entries; unknown and native-only
-features remain documentation-only. Do not equate discovering a feature with
-adding a usable browser action. Keep native prerequisites visible for real web
-adapters. Community chat/file browsing still need browser adapters and matching
-endpoint builds; Veyon-detection remains an unintegrated AGPL candidate.
+RoomGoblin must remain on upstream/OEM Veyon configuration and upstream/OEM add-ons. Do not add custom native Veyon plugins, local analysis services, command shells, browser-to-native bridges, pilot installers, or community plugin build jobs. Keep feature discovery informational; only the core reviewed WebAPI feature allowlist may dispatch actions.
