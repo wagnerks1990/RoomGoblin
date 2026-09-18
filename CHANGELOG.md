@@ -15,6 +15,8 @@
 - Move `cloudflared` package installation out of the systemd-sandboxed Host Agent and into the normal root install/update path; Host Agent provisioning now requires the already-installed binary with `--skip-install`.
 - Recover a stale `cloudflared-roomgoblin.service -> /dev/null` mask left by failed provisioning without touching generic Cloudflare services, and preserve an existing valid RoomGoblin Cloudflare unit instead of overwriting it during updates.
 - Explicitly restart `cloudflared-roomgoblin.service` after connector token reprovisioning so an already-running process cannot continue using a stale/deleted tunnel token and trigger Cloudflare Error 1033.
+- Fix Host Agent tunnel-token serialization so it writes a real trailing newline instead of the literal characters `\\n`, preventing `Provided Tunnel token is not valid` restart loops.
+- Persist Cloudflare GUI state across reload/reboot with explicit Configured/Credential stored indicators, accurate tunnel health styling, and a reconstructed Open HTTPS URL link.
 
 ### Scheduled automation sequence rebuild
 
