@@ -110,6 +110,8 @@ music-assistant-server     ghcr.io/music-assistant/server:2.9.13
 
 Native Veyon services remain host-managed. Existing Docker containers may be discovered and adopted for safe lifecycle/diagnostic control. Creation of new containers remains restricted to these pinned reviewed integration images; do not turn the Host Agent into an arbitrary root Docker command API.
 
+Music Assistant host-network compatibility is part of the managed deployment contract: recreated containers must keep `/data/.roomgoblin-compat/sitecustomize.py` on `PYTHONPATH` so interfaces explicitly reporting Linux `operstate=down` are excluded from Music Assistant Zeroconf enumeration. Do not solve this by disabling Tailscale IPv6 or deleting Docker bridge addresses. Adopt-without-recreate remains non-destructive; an administrator-triggered recreate must still work when the existing Music Assistant API is offline.
+
 Persistent/runtime data must survive source updates. Never replace or commit production `.env`, databases, data, uploads, backups, master keys, private keys, credentials, or site-specific secrets.
 
 Supported installers and update runners must not edit tracked files or change tracked executable bits inside the production checkout. Install executable copies into `/usr/local/libexec`; a completed install must leave `git status --short` empty when the checkout was clean beforehand.
