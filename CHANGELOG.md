@@ -2,14 +2,11 @@
 
 ## Unreleased
 
-### HTTPS/public-origin endpoint migration
+### Veyon package-version normalization
 
-- Add a repository-wide endpoint inventory covering RoomGoblin browser/API/WebSocket traffic, Windows agents, displays/media plane, Music Assistant, Veyon, MQTT, ESPHome, Android management, maintenance/Host Agent and auxiliary web UIs.
-- Prefer the recorded managed Cloudflare HTTPS origin for new and existing RoomGoblin Windows agents while retaining an explicit LAN origin fallback; HTTPS automatically upgrades the long-lived control channel to WSS and native self-update follows primary-to-fallback origin selection.
-- Keep Veyon WebAPI/native endpoint traffic private: browser Veyon controls continue through the RoomGoblin HTTPS Controller while the Hub talks to loopback Veyon WebAPI and LAN-native Veyon services.
-- Add an allowlisted protected Music Assistant HTTPS resource on the managed Cloudflare tunnel using a separate hostname routed to local port 8095, mandatory Cloudflare Access policy, ownership-aware DNS/Access cleanup, and a separate persisted browser URL while backend/API and Sendspin/streaming paths remain local/LAN.
-- Stop browser helpers from translating loopback Music Assistant into an unreachable public-host local-port URL; HTTPS sessions require the explicit protected browser URL, while LAN HTTP remains a deliberate fallback.
-- Preserve physical-display HTTP/media-plane behavior until a reviewed HTTPS design retains the dedicated port-3020 large-media path; no privileged local control port is auto-published merely for URL uniformity.
+- Normalize Debian/Ubuntu Veyon package versions such as `4.11.3.0-ubuntu.26.04` to the upstream release version `4.11.3` for lifecycle display and comparisons.
+- Add regression coverage for Ubuntu package suffixes, distro revisions, and Debian epochs so the lifecycle UI no longer reports `11.3.0` after installing Veyon 4.11.3.
+
 
 ### Veyon lifecycle official-package fallback
 

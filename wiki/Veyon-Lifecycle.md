@@ -54,7 +54,7 @@ RoomGoblin application rollback does not downgrade native Veyon packages. If a V
 RoomGoblin reads installed Veyon package versions from the Host Agent's fixed
 `dpkg-query` inventory independently of apt's pending upgrades. The installed
 version remains visible when no upgrade is pending. Mixed package versions are
-reported rather than selecting an arbitrary component. Missing inventory means
+reported rather than selecting an arbitrary component. Debian/Ubuntu package suffixes such as `4.11.3.0-ubuntu.26.04` are normalized to `4.11.3` in the lifecycle UI. Missing inventory means
 unknown, never an assumed 4.9.7 or 4.11.2. This is host package inventory, not
 proof of the loaded WebAPI binary or Windows endpoint version; services may need
 a restart after an external upgrade.
