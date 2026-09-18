@@ -6601,6 +6601,8 @@ app.post("/api/v1/veyon/connections/close",requireCapability("lab.control"),asyn
     res.json({ok:true,closed:ids.length,poolSize:veyonConnectionCache.size});
   }catch(err){res.status(500).json({ok:false,error:err.message})}
 });
+const veyonCommandStatusLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-command-status",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon command status limit reached; retry later"}});
+const veyonCommandWriteLimit=rateLimit({windowMs:60_000,limit:120,keyGenerator:()=>"veyon-command-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon command action limit reached; retry later"}});
 // Broadcast routes preserve teacher-first ordering while sharing the bounded
 // per-computer workers and durable mode cleanup with other classroom commands.
 async function waitForVeyonCommand(job){
@@ -6667,8 +6669,6 @@ app.post("/api/v1/veyon/demo/stop",requireCapability("lab.control"),async(req,re
   }catch(err){res.status(400).json({ok:false,error:err.message})}
   finally{if(workflow&&veyonBroadcastWorkflows.get(workflowKey)===workflow)veyonBroadcastWorkflows.delete(workflowKey)}
 });
-const veyonCommandStatusLimit=rateLimit({windowMs:60_000,limit:600,keyGenerator:()=>"veyon-command-status",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon command status limit reached; retry later"}});
-const veyonCommandWriteLimit=rateLimit({windowMs:60_000,limit:120,keyGenerator:()=>"veyon-command-write",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"Veyon command action limit reached; retry later"}});
 app.get("/api/v1/veyon/jobs",requireCapability("lab.read"),veyonCommandStatusLimit,(_req,res)=>res.json({ok:true,jobs:veyonCommandQueue.list(),ownedLocks:veyonCommandQueue.ownedLocks()}));
 app.get("/api/v1/veyon/jobs/:id",requireCapability("lab.read"),veyonCommandStatusLimit,(req,res)=>{const job=veyonCommandQueue.get(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
 app.post("/api/v1/veyon/jobs/:id/cancel",requireCapability("lab.control"),veyonCommandWriteLimit,(req,res)=>{const job=veyonCommandQueue.cancel(req.params.id);res.status(job?200:404).json(job?{ok:true,job}:{ok:false,error:"Command job not found"})});
