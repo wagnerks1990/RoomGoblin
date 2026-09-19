@@ -17,20 +17,63 @@ function isLoopbackAddress(value){
   return false;
 }
 
+// These headers identify forwarding; none independently proves encryption.
+const FORWARDING_HEADERS=Object.freeze([
+  "forwarded","x-forwarded-for","x-forwarded-host","x-forwarded-port",
+  "x-forwarded-proto","x-real-ip","cf-connecting-ip","cf-visitor",
+  "true-client-ip","via"
+]);
+
+function requestHeader(req,name){
+  const value=req.headers?.[name];
+  return value===undefined?req.get?.(name):value;
+}
+
+function hasForwardingEvidence(req){
+  return FORWARDING_HEADERS.some(name=>{
+    if(Object.prototype.hasOwnProperty.call(req.headers||{},name))return true;
+    const value=requestHeader(req,name);
+    return value!==undefined&&value!==null;
+  });
+}
+
+function loopbackAuthority(value,{origin=false}={}){
+  if(typeof value!=="string"||!value||value.length>1024||/[\s\\]/.test(value))return false;
+  if(!origin&&/[/?#@]/.test(value))return false;
+  try{
+    const url=new URL(origin?value:`http://${value}`);
+    return ["http:","https:"].includes(url.protocol)&&!url.username&&!url.password&&
+      url.pathname==="/"&&!url.search&&!url.hash&&isLoopbackAddress(url.hostname);
+  }catch{return false}
+}
+
+function directLoopbackRequest(req){
+  if(hasForwardingEvidence(req))return false;
+  const host=requestHeader(req,"host");
+  const origin=requestHeader(req,"origin");
+  return (host===undefined||loopbackAuthority(host))&&
+    (origin===undefined||loopbackAuthority(origin,{origin:true}));
+}
+
 function forwardedHttps(req,trustProxyHops=0){
-  if(Number(trustProxyHops)<=0)return false;
-  const values=String(req.get?.("x-forwarded-proto")||req.headers?.["x-forwarded-proto"]||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
-  return values.length>0&&values.slice(-Math.max(1,Number(trustProxyHops)||1)).every(value=>value==="https");
+  const hops=Number(trustProxyHops);
+  if(!Number.isSafeInteger(hops)||hops<1||hops>5)return false;
+  const raw=requestHeader(req,"x-forwarded-proto");
+  if(typeof raw!=="string"||raw.length>128)return false;
+  const values=raw.split(",").map(value=>value.trim().toLowerCase());
+  // Never discard empty entries or an HTTP prefix: either makes the supplied
+  // client-to-proxy protocol evidence unsafe, even if its last entry is HTTPS.
+  return values.length<=hops&&values.every(value=>value==="https");
 }
 
 function recoveryTransportAllowed(req,{trustProxyHops=0}={}){
   const peer=req.socket?.remoteAddress||req.connection?.remoteAddress||"";
   const loopback=isLoopbackAddress(peer);
-  // RoomGoblin's reviewed TLS termination model is a same-host proxy. Requiring
-  // its immediate peer to be loopback prevents a direct client from turning a
-  // trusted-hop setting into an X-Forwarded-Proto spoofing bypass.
+  // A local proxy's socket is not proof that the browser itself is local.
+  // Forwarded traffic needs explicit proxy trust and complete HTTPS evidence.
+  // Proxies must overwrite X-Forwarded-Proto, not pass client input through.
   const encrypted=req.socket?.encrypted===true||(loopback&&forwardedHttps(req,trustProxyHops));
-  return {allowed:encrypted||loopback,encrypted,loopback};
+  return {allowed:encrypted||(loopback&&directLoopbackRequest(req)),encrypted,loopback};
 }
 
 function validRecoveryId(value){return /^[A-Za-z0-9_-]{32,128}$/.test(String(value||""))}

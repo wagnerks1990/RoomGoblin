@@ -2,7 +2,7 @@
 
 ## Host-network deployment contract
 
-The Linux Hub and maintenance containers, plus reviewed managed add-on templates, now use host networking. Maintenance is loopback-only; custom ports are actual listeners. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](docs/HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback. Do not reintroduce Docker service DNS or port-publishing assumptions.
+The Linux Hub and maintenance containers retain host networking; maintenance is loopback-only. Add-ons use reviewed per-service networking: Music Assistant and Govee2MQTT use host networking, while Mosquitto uses the named integration bridge with a loopback-only published listener. Preserve explicit bind addresses, persistent mounts and secrets, and never silently recreate adopted containers. See [Host networking and migration](docs/HOST-NETWORKING.md) for preflight, port inventory, compatibility, acceptance tests and rollback.
 
 RoomGoblin can control real classroom displays, AV equipment, lighting, media, and lab infrastructure. Treat every deployment as an administrative system.
 
@@ -21,12 +21,44 @@ Never commit:
 ## Recommended deployment
 
 - Place the controller behind HTTPS.
-- Enable the built-in authentication/access controls or an authenticated reverse proxy/Zero Trust layer.
+- Require the built-in authentication and capability checks. An authenticated reverse proxy or Zero Trust layer is an additional gate, never a replacement.
 - Use a strong `MAINTENANCE_TOKEN`.
 - Keep the maintenance API unexposed to the public network.
 - Keep the host agent on its local Unix socket.
 - Do not mount the Docker socket into web-facing containers. Maintenance Docker requests cross the local Host Agent and its operation/container/image allowlist.
 - Back up the database and encryption master key separately and securely.
+
+## Full Recovery transport
+
+Full Recovery passphrases require actual socket TLS, reviewed HTTPS termination
+at a trusted same-host loopback proxy, or a direct localhost/SSH-forwarded browser.
+A proxy's loopback socket alone does not make the original client local or secure.
+Known forwarding headers, including empty values, disable the direct-localhost
+exception; a supplied Host or Origin must also identify localhost for that exception.
+
+The proxy must overwrite `X-Forwarded-Proto` from the original client connection.
+The configured trusted hop count must be an integer from 1 through 5; the managed
+Cloudflare topology uses 1. Every supplied protocol entry must be HTTPS, with no
+empty entries and no more entries than trusted hops. HTTP, mixed, missing or
+malformed forwarding evidence must not authorize a recovery operation. A direct
+remote peer cannot gain trust by supplying these headers.
+
+Keep reverse-proxy configuration under administrator control. A proxy that strips
+all forwarding evidence and rewrites Host to localhost is indistinguishable from
+a direct local client; do not deploy that configuration. Ordinary trusted-LAN HTTP
+administration, login/capability checks, recovery encryption, and host-owned
+rollback are unchanged. See [Cloudflare transport](docs/CLOUDFLARE-TUNNEL.md) and
+[recovery architecture](docs/DATABASE-FIRST-RECOVERY.md).
+
+Focused regression command:
+
+```bash
+node --test test/recovery-transport-policy.test.js test/recovery-transport-boundary.test.js
+```
+
+These tests cover the transport decision and real local HTTP header handling, not
+a live Cloudflare tunnel or an appliance restore. Validate those separately on an
+isolated authorized installation using test data, never real passphrases over HTTP.
 
 ## Classroom display credentials
 

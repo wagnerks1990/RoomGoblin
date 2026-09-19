@@ -20,9 +20,13 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 - Controller reload must preserve visible configured/credential/public-URL state independently from live tunnel connectivity.
 - Cloudflare API retries are limited to idempotent GET/PUT/PATCH/DELETE calls. Do not blindly retry POST creates; report the failing method/path without exposing credentials.
 - Tunnel ingress exposes only the configured RoomGoblin hostname to `http://127.0.0.1:${PORT:-3000}`, followed by terminal `http_status:404`.
-- Never expose maintenance port 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, arbitrary URLs, or lab subnets.
+- Never expose maintenance port 3010, Host Agent, Docker, SSH, Veyon, MQTT, arbitrary URLs, or lab subnets. Music Assistant is limited to the explicit protected auxiliary exception below.
 - `TRUST_PROXY_HOPS=1` is the reviewed topology. Full Recovery forwarded HTTPS still requires an immediate loopback peer.
 - Do not weaken `src/recovery-transport-policy.js` to trust arbitrary forwarded headers.
+- A loopback proxy socket is not the direct-localhost recovery exception. Any known forwarding header (including an empty value) disables that exception; supplied Host/Origin values must be loopback authorities. Preserve direct localhost and SSH-forwarded access.
+- Forwarded recovery requires a loopback peer, an explicit integer proxy trust count from 1 to 5, and a bounded complete `X-Forwarded-Proto` chain containing only HTTPS entries, with no empty entries and no more entries than trusted hops. Never discard an HTTP prefix or filter out empty entries to obtain a passing decision.
+- The trusted proxy must overwrite `X-Forwarded-Proto` from the original client connection. A proxy that strips all forwarding metadata and rewrites Host to localhost cannot be distinguished from a direct client; that configuration is unsupported. The transport decision is not a replacement for administrator authentication or recovery authorization.
+- Preserve the existing `{allowed, encrypted, loopback}` response shape. `loopback` describes the immediate peer, not proof that the original browser is local. Routes must enforce `allowed`, not `loopback` alone.
 - Same-name tunnels are not automatically adopted. Explicit adoption is required because RoomGoblin replaces the tunnel ingress configuration.
 - Persist Cloudflare resource IDs/ownership before invoking the host connector installer so a host-side failure remains safely retryable and does not orphan a RoomGoblin-created tunnel.
 - Conflicting DNS takeover requires explicit consent.
@@ -55,7 +59,7 @@ The installer runs with `--no-restart`; the GUI exposes a separate deliberate Hu
 
 ## Review checklist
 
-1. `node --check src/cloudflare.js src/cloudflare-bridge.js`.
+1. Run `node --check src/cloudflare.js`, `node --check src/cloudflare-bridge.js`, and `node --check src/recovery-transport-policy.js` separately.
 2. Cloudflare unit tests use mocked APIs; CI requires no real Cloudflare credential.
 3. `bash -n deploy/configure-cloudflare-tunnel.sh`.
 4. Host Agent Python compiles.
@@ -66,3 +70,4 @@ The installer runs with `--no-restart`; the GUI exposes a separate deliberate Hu
 9. Tunnel ingress remains loopback-only.
 10. Cloudflare remains absent from core availability decisions.
 11. Operator docs, Wiki, AI context, and changelog remain synchronized.
+12. Run `node --test test/recovery-transport-policy.test.js test/recovery-transport-boundary.test.js`. These cover policy decisions and real local HTTP header handling; they do not prove a live Cloudflare tunnel or complete appliance recovery.
