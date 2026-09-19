@@ -23,6 +23,31 @@ The media plane does not create a separate public asset surface.
 
 Never weaken this into anonymous media access merely to solve playback errors.
 
+## Authorization lifecycle invariants (Unreleased)
+
+Build the upstream URL from the fixed loopback control origin plus the validated
+request path/query only. Never inherit URL userinfo, which Node would otherwise
+turn into a Basic Authorization header. Forward only the existing allowed cookie
+alongside fixed probe headers, not arbitrary client Authorization/forwarding
+headers. This is header-boundary hardening, not a demonstrated authentication bypass.
+
+Use a three-second absolute deadline rather than a socket-idle timeout: interim
+HTTP responses must not extend the authorization budget. Bind a pending probe to
+response-close cancellation with an AbortSignal, remove its listener when the
+probe finishes, and check for a destroyed response before file access after awaits.
+Preserve fail-closed 401/403 and transport-error 503 behavior without secret logging.
+An empty file with any byte range is unsatisfiable (416); an ordinary empty GET/HEAD
+remains a valid zero-length 200 response.
+
+`node --test test/media-plane-lifecycle.test.js` exercises the real media process
+against a local authorization fixture. Eight tests passed on Linux/Node 22.16.0
+on 2026-09-19; four failures were reproduced against the original source. Full and
+ranged file-descriptor cleanup already passed the baseline. Do not describe the
+fixture as real Hub authentication or the historical 2026-09-18 acceptance as a
+live test of these changes. Full CI, image publication, and receiver verification
+remain separate gates. No database migration, upload-limit change, public exposure,
+or media-session change is part of this patch; issue #182 remains unresolved.
+
 ## Cross-port browser policy
 
 The receiver page is served from port `3000` and MP4 bytes from port `3020`. Authorized media responses therefore use:

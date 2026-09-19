@@ -31,6 +31,26 @@ The media process resolves requested paths beneath `data/media` and rejects trav
 
 Because the browser receiver is loaded from port `3000` and the media payload is intentionally delivered from port `3020`, media responses use `Cross-Origin-Resource-Policy: cross-origin`. Authorization still occurs before any file bytes are served, so this header permits the already-authorized browser media element to embed the separate-port response; it does not make media anonymous or bypass signed-token/session checks.
 
+## Authorization lifecycle hardening (Unreleased)
+
+The loopback probe copies only the requested path and query into a fresh
+control-plane URL. A client-supplied authority or URL username/password must not
+become an upstream destination or an automatically generated Basic Authorization
+header. The existing session cookie and signed query remain supported; arbitrary
+Authorization and forwarding headers are not copied.
+
+A probe has a three-second wall-clock deadline, including upstream interim
+responses. A disconnected downstream response immediately aborts pending
+authorization, and an abandoned request must not proceed to open its media file.
+Timeouts and transport failures fail closed with HTTP 503 and `Retry-After: 1`
+when the client is still connected. Explicit upstream 401/403 responses remain
+401/403; other unsuccessful statuses remain 403. No error response includes media
+bytes, cookies, credentials, or signed URLs.
+
+This changes request lifecycle only. It does not change ports, upload limits,
+receiver identities, persistent media controls, database schema, or stored media.
+Large/resumable uploads tracked in issue #182 remain separate, unfinished work.
+
 ## Range transport
 
 Browser MP4 playback requires efficient random access. The media plane implements:
@@ -40,7 +60,7 @@ Browser MP4 playback requires efficient random access. The media plane implement
 - suffix ranges such as `bytes=-4096`
 - `206 Partial Content`
 - `Content-Range`
-- `416 Range Not Satisfiable`
+- `416 Range Not Satisfiable`, including suffix ranges on an empty file
 - streaming with `fs.createReadStream()` rather than buffering entire files
 - cancellation of the file stream when the HTTP client aborts
 
@@ -103,6 +123,38 @@ curl -i -H 'Range: bytes=0-1048575' 'http://HUB:3020/media/FILE?SIGNED_QUERY' -o
 Expected status: `206 Partial Content`.
 
 During multi-display playback, large media send queues should appear on `:3020`, while `:3000` remains responsive for `/health`, controller requests, WebSockets, and clear/stop commands.
+
+### Isolated regression verification
+
+From a Node.js 22 checkout:
+
+```bash
+node --check src/media-server.js
+node --check test/media-plane-lifecycle.test.js
+node --test test/media-plane-lifecycle.test.js
+```
+
+The eight tests launch the actual media process and a local authorization fixture.
+They cover full/HEAD/suffix/open-ended/invalid ranges, empty files, signed-query
+and session-cookie transport, credential/header isolation, upstream denial and
+failure, pending-probe cancellation, and a wall-clock timeout despite repeated
+HTTP 102 responses. Linux tests also verify that repeated full and ranged client
+disconnects release file descriptors using `/proc`; other platforms skip those
+two descriptor-accounting tests. This is not a full Hub authentication, browser,
+Cloudflare, Docker, or physical-device test.
+
+On 2026-09-19 these eight tests passed locally on Linux with Node.js 22.16.0.
+Four defects were reproduced against the unchanged baseline before their fixes;
+existing streamed-file descriptor cleanup already passed and was not a confirmed
+leak. The historical live acceptance below does not validate these new changes.
+Required repository CI and a controlled receiver test are still required.
+
+The hardening needs no data migration or new environment variable. Use the
+reviewed exact-image updater and its operational backup/rollback transaction;
+do not deploy an unvalidated source-only change. After an authorized upgrade,
+verify both health endpoints, authorized and rejected media requests, and receiver
+play/pause/seek/stop while the controller remains responsive. Stop testing and use
+the documented updater rollback if health, authorization, or playback regresses.
 
 ## Production acceptance — 2026-09-18
 
