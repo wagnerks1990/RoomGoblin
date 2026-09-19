@@ -35,13 +35,43 @@ The tunnel origin is loopback only:
 http://127.0.0.1:3000
 ```
 
-Port 3000 is the default; RoomGoblin follows the configured `HUB_PORT`. Never publish maintenance 3010, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, or arbitrary lab services.
+Port 3000 is the default; RoomGoblin follows the configured `HUB_PORT`. Never publish maintenance 3010, Host Agent, Docker, SSH, Veyon, MQTT, or arbitrary lab services. Music Assistant is limited to the protected auxiliary exception below.
 
 A same-name existing tunnel is not adopted automatically because adoption replaces its ingress rules. Conflicting DNS is not replaced automatically either. Both require explicit administrator choices.
 
 Cloudflare Access cannot be enabled without an explicit allowed email domain.
 
 The safe preset deliberately avoids Bot Fight Mode, authenticated-page caching, HSTS, and private-network/WARP routing.
+
+## Full Recovery transport
+
+A local connector socket does not make the original browser local or encrypted.
+Known forwarding headers, even empty ones, disable the direct-localhost exception.
+Forwarded recovery requires an immediate loopback peer, explicitly configured
+proxy trust (the managed topology uses `TRUST_PROXY_HOPS=1`), and a complete
+HTTPS-only `X-Forwarded-Proto` chain. Empty entries, HTTP prefixes, mixed protocols,
+and chains longer than the trusted hop count are rejected.
+
+The proxy must overwrite `X-Forwarded-Proto` from the original client connection.
+Stripping every forwarding header makes a proxy indistinguishable from a direct
+local client and is unsupported. Host/Origin alone are not transport identity;
+existing unforwarded loopback API clients and SSH forwards using aliases retain
+their behavior. Browser passphrase submission also requires its own HTTPS/local
+location and the server's `allowed` decision, not merely `loopback: true`.
+
+The unreleased hardening corrects the server-side loopback exception and protocol
+chain validation without changing administrator authorization, encryption,
+recovery data, deployment ports, or ordinary trusted-LAN administration.
+
+```bash
+node --check src/recovery-transport-policy.js
+node --test test/recovery-transport-policy.test.js test/recovery-transport-boundary.test.js
+```
+
+These tests cover policy decisions and local HTTP header handling, not a full
+appliance restore or live tunnel. Verify secure and rejected plaintext paths on
+an isolated authorized installation using only test data; never send a real
+passphrase over an insecure connection to test rejection.
 
 ## Connector secret
 

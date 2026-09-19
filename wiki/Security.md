@@ -48,17 +48,18 @@ unlock/plan, restore start, and encrypted-bundle download even on a trusted LAN.
 
 A loopback proxy socket is not evidence that its browser client is local. A
 request containing known forwarding headers, even empty ones, cannot use the
-direct-localhost exception. Supplied Host and Origin values must identify a
-loopback authority for that exception. Direct localhost and SSH-forwarded browser
-sessions remain supported without changing the configured proxy setting.
+direct-localhost exception. Host and Origin alone do not establish transport
+trust; existing unforwarded loopback API clients using local aliases remain
+supported. Direct localhost and SSH-forwarded browser sessions remain supported
+without changing the configured proxy setting.
 
 For a forwarded request, the immediate peer must be loopback, proxy trust must
 be explicitly configured (the managed topology uses `TRUST_PROXY_HOPS=1`), and
 the complete `X-Forwarded-Proto` value must contain HTTPS entries only. Missing,
 empty, mixed HTTP/HTTPS, malformed or overlong chains are rejected. The proxy
 must overwrite that header from the original client connection, not relay
-client-supplied values. Do not strip all forwarding headers and rewrite Host to
-localhost: that would erase the evidence distinguishing a proxy from a local
+client-supplied values. Do not strip all forwarding headers: that would erase
+the evidence distinguishing a proxy from a local
 browser. Never test these restrictions with a real recovery passphrase.
 
 The transport policy regression command is:

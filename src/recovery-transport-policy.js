@@ -37,25 +37,8 @@ function hasForwardingEvidence(req){
   });
 }
 
-function loopbackAuthority(value,{origin=false}={}){
-  if(typeof value!=="string"||!value||value.length>1024||/[\s\\]/.test(value))return false;
-  if(!origin&&/[/?#@]/.test(value))return false;
-  try{
-    const url=new URL(origin?value:`http://${value}`);
-    return ["http:","https:"].includes(url.protocol)&&!url.username&&!url.password&&
-      url.pathname==="/"&&!url.search&&!url.hash&&isLoopbackAddress(url.hostname);
-  }catch{return false}
-}
-
-function directLoopbackRequest(req){
-  if(hasForwardingEvidence(req))return false;
-  const host=requestHeader(req,"host");
-  const origin=requestHeader(req,"origin");
-  return (host===undefined||loopbackAuthority(host))&&
-    (origin===undefined||loopbackAuthority(origin,{origin:true}));
-}
-
 function forwardedHttps(req,trustProxyHops=0){
+  if(typeof trustProxyHops!=="number"&&typeof trustProxyHops!=="string")return false;
   const hops=Number(trustProxyHops);
   if(!Number.isSafeInteger(hops)||hops<1||hops>5)return false;
   const raw=requestHeader(req,"x-forwarded-proto");
@@ -73,7 +56,7 @@ function recoveryTransportAllowed(req,{trustProxyHops=0}={}){
   // Forwarded traffic needs explicit proxy trust and complete HTTPS evidence.
   // Proxies must overwrite X-Forwarded-Proto, not pass client input through.
   const encrypted=req.socket?.encrypted===true||(loopback&&forwardedHttps(req,trustProxyHops));
-  return {allowed:encrypted||(loopback&&directLoopbackRequest(req)),encrypted,loopback};
+  return {allowed:encrypted||(loopback&&!hasForwardingEvidence(req)),encrypted,loopback};
 }
 
 function validRecoveryId(value){return /^[A-Za-z0-9_-]{32,128}$/.test(String(value||""))}

@@ -27,7 +27,7 @@ for(const name of ["forwarded","x-forwarded-for","x-forwarded-host","x-forwarded
 }
 
 test("recovery does not let loopback bypass disabled or invalid proxy trust",()=>{
-  for(const trust of [0,-1,0.5,6,NaN,Infinity,"invalid"]){
+  for(const trust of [0,-1,0.5,6,NaN,Infinity,"invalid",null,true,{},[],[1]]){
     assert.equal(decision({"x-forwarded-proto":"https"},trust).allowed,false,String(trust));
   }
 });
@@ -56,12 +56,14 @@ test("direct localhost and SSH-forwarded administration remain supported",()=>{
   assert.equal(decision({},1,"::ffff:127.0.0.1").allowed,true);
 });
 
-test("a remote or malformed authority cannot masquerade as direct localhost",()=>{
-  for(const host of ["hub.example.test:3000","localhost.example.test","localhost@hub.example.test","hub.example.test@localhost","localhost/path","localhost?query","localhost#fragment","//localhost",""]){
-    assert.equal(decision({host}).allowed,false,JSON.stringify(host));
-  }
-  for(const origin of ["http://hub.example.test","null","file:///tmp/page.html","http://localhost/path","http://user@localhost"]){
-    assert.equal(decision({host:"localhost:3000",origin}).allowed,false,origin);
+test("unforwarded loopback API access preserves custom Host and Origin compatibility",()=>{
+  // Host/Origin are routing/browser metadata, not transport authentication.
+  // Preserve API clients and SSH forwards using an existing local alias.
+  for(const host of ["hub.example.test:3000","localhost.localdomain:3000","localhost.:3000"]){
+    const headers={host,origin:`http://${host}`};
+    assert.equal(decision(headers).allowed,true,host);
+    assert.equal(decision(headers,1,"192.0.2.20").allowed,false,host);
+    assert.equal(decision({...headers,"x-forwarded-for":"192.0.2.20"}).allowed,false,host);
   }
 });
 
@@ -103,7 +105,7 @@ test("real HTTP requests enforce the recovery policy before a guarded action",{t
     {"x-forwarded-proto":"http, https"},
     {"x-forwarded-for":"192.0.2.20"},
     {"x-forwarded-proto":""},
-    {host:"hub.example.test"},
+    {host:"hub.example.test","x-forwarded-proto":"http"},
   ])assert.equal((await send(headers)).status,403);
   assert.equal(actions,0,"rejected transports must not reach the guarded action");
   assert.equal((await send({})).status,200);

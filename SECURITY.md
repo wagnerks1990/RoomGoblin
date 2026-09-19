@@ -34,7 +34,8 @@ Full Recovery passphrases require actual socket TLS, reviewed HTTPS termination
 at a trusted same-host loopback proxy, or a direct localhost/SSH-forwarded browser.
 A proxy's loopback socket alone does not make the original client local or secure.
 Known forwarding headers, including empty values, disable the direct-localhost
-exception; a supplied Host or Origin must also identify localhost for that exception.
+exception. Host/Origin alone do not authenticate a transport; existing unforwarded
+loopback API access through local aliases remains supported.
 
 The proxy must overwrite `X-Forwarded-Proto` from the original client connection.
 The configured trusted hop count must be an integer from 1 through 5; the managed
@@ -44,7 +45,7 @@ malformed forwarding evidence must not authorize a recovery operation. A direct
 remote peer cannot gain trust by supplying these headers.
 
 Keep reverse-proxy configuration under administrator control. A proxy that strips
-all forwarding evidence and rewrites Host to localhost is indistinguishable from
+all forwarding evidence is indistinguishable from
 a direct local client; do not deploy that configuration. Ordinary trusted-LAN HTTP
 administration, login/capability checks, recovery encryption, and host-owned
 rollback are unchanged. See [Cloudflare transport](docs/CLOUDFLARE-TUNNEL.md) and
