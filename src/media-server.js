@@ -35,22 +35,27 @@ function safeMediaPath(pathname){
   return candidate.startsWith(prefix)?candidate:null;
 }
 
-function authorizeWithControlPlane(reqUrl,clientHeaders={}){
+function authorizeWithControlPlane(reqUrl,clientHeaders={},signal){
   return new Promise((resolve,reject)=>{
-    const upstream=new URL(reqUrl,CONTROL_ORIGIN);
-    upstream.protocol="http:";
-    upstream.hostname="127.0.0.1";
-    upstream.port=String(CONTROL_PORT);
+    // Copy only the resource identity, never a client-supplied authority or userinfo.
+    const requested=new URL(reqUrl,CONTROL_ORIGIN);
+    const upstream=new URL(CONTROL_ORIGIN);
+    upstream.pathname=requested.pathname;
+    upstream.search=requested.search;
     const headers={"user-agent":"RoomGoblin-Media-Plane/1","accept":"*/*"};
     const cookie=String(clientHeaders.cookie||"").trim();
     if(cookie)headers.cookie=cookie;
-    const request=http.request(upstream,{method:"HEAD",headers},response=>{
+    const request=http.request(upstream,{method:"HEAD",headers,signal},response=>{
       let bytes=0;
       response.on("data",chunk=>{bytes+=chunk.length;if(bytes>MAX_AUTH_RESPONSE_BYTES)request.destroy(new Error("authorization response too large"))});
+      response.on("error",reject);
       response.on("end",()=>resolve({ok:response.statusCode>=200&&response.statusCode<300,statusCode:response.statusCode||502}));
       response.resume();
     });
-    request.setTimeout(3000,()=>request.destroy(new Error("authorization timeout")));
+    // Socket inactivity alone is insufficient: interim responses can keep it alive.
+    const deadline=setTimeout(()=>request.destroy(new Error("authorization timeout")),3000);
+    deadline.unref();
+    request.once("close",()=>clearTimeout(deadline));
     request.on("error",reject);
     request.end();
   });
@@ -58,6 +63,7 @@ function authorizeWithControlPlane(reqUrl,clientHeaders={}){
 
 function parseRange(value,size){
   if(!value)return null;
+  if(size===0)return {invalid:true};
   const match=/^bytes=(\d*)-(\d*)$/.exec(String(value).trim());
   if(!match)return {invalid:true};
   let start=match[1]===""?null:Number(match[1]);
@@ -90,14 +96,22 @@ async function handle(req,res){
   const file=safeMediaPath(parsed.pathname);
   if(!file){res.writeHead(404,{"cache-control":"no-store"});res.end();return}
 
+  const authorization=new AbortController();
+  const cancelAuthorization=()=>authorization.abort();
+  res.once("close",cancelAuthorization);
   let auth;
-  try{auth=await authorizeWithControlPlane(req.url,req.headers)}catch{
-    res.writeHead(503,{"cache-control":"no-store","retry-after":"1"});res.end();return;
+  try{auth=await authorizeWithControlPlane(req.url,req.headers,authorization.signal)}catch{
+    if(!res.destroyed){res.writeHead(503,{"cache-control":"no-store","retry-after":"1"});res.end()}
+    return;
+  }finally{
+    res.removeListener("close",cancelAuthorization);
   }
+  if(res.destroyed)return;
   if(!auth.ok){res.writeHead(auth.statusCode===401||auth.statusCode===403?auth.statusCode:403,{"cache-control":"no-store"});res.end();return}
 
   let stat;
   try{stat=await fs.promises.stat(file)}catch{res.writeHead(404,{"cache-control":"no-store"});res.end();return}
+  if(res.destroyed)return;
   if(!stat.isFile()){res.writeHead(404,{"cache-control":"no-store"});res.end();return}
 
   const range=parseRange(req.headers.range,stat.size);

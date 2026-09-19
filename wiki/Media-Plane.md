@@ -19,6 +19,28 @@ Physical displays use short-lived signed asset tokens. Authenticated controller 
 
 Because the browser page runs on port 3000 while video bytes come from port 3020, authorized media responses use `Cross-Origin-Resource-Policy: cross-origin`. This allows the already-authorized browser player to consume the separate-port response; it does not bypass authentication.
 
+## Request lifecycle hardening (Unreleased)
+
+Pending media authorization now cancels when the client disconnects and has a
+three-second absolute timeout even if the upstream sends interim responses.
+The probe copies only the resource path/query into its fixed loopback URL, so
+client URL credentials cannot become an unintended Basic Authorization header.
+Existing signed URLs, session cookies, 401/403 denials, and fail-closed 503
+transport errors remain supported. Empty-file range requests return 416 rather
+than an invalid 206 response; a normal empty-file request still returns 200.
+
+Eight isolated HTTP regression tests passed locally on Linux/Node 22.16.0 on
+2026-09-19. They use the actual media process with an authorization fixture,
+not the full Hub or physical receivers. The earlier live acceptance below does
+not cover this unreleased hardening. Required CI and controlled receiver testing
+remain necessary. No migration, new port, upload-limit increase, or resumable
+upload implementation is included; issue #182 remains open.
+
+Run `node --test test/media-plane-lifecycle.test.js` from the repository for the
+focused suite. See `docs/MEDIA-PLANE.md` for coverage, upgrade and rollback gates.
+This Git-tracked page is published only when the existing Sync Wiki workflow
+successfully pushes it; a prepared PR is not proof of Wiki publication.
+
 ## Video controls
 
 RoomGoblin keeps the receiver's MP4 as a persistent media session. The operator can change playback without reloading the file:
