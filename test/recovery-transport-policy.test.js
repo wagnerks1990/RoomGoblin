@@ -4,7 +4,7 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {isLoopbackAddress,recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("../src/recovery-transport-policy");
 
-function request({peer="192.0.2.20",secure=false,protocol="http",forwarded=""}={}){return {secure,protocol,socket:{remoteAddress:peer,encrypted:secure},headers:{"x-forwarded-proto":forwarded},get(name){return this.headers[String(name).toLowerCase()]||""}}}
+function request({peer="192.0.2.20",secure=false,protocol="http",forwarded=undefined}={}){return {secure,protocol,socket:{remoteAddress:peer,encrypted:secure},headers:forwarded===undefined?{}:{"x-forwarded-proto":forwarded},get(name){return this.headers[String(name).toLowerCase()]}}}
 
 test("full recovery secrets require HTTPS or a direct loopback peer",()=>{
   assert.equal(recoveryTransportAllowed(request()).allowed,false);
