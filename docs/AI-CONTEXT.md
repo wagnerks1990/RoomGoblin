@@ -507,6 +507,6 @@ and 3 migration snapshots. Host-side migration and legacy cleanup must resolve
 the configured `HOST_BACKUP_DIR` (default `/opt/classroom-hub-backups`) and
 must not reintroduce the obsolete `/opt/classroom-control-hub-backups` path.
 
-### Independent automation repeat timing
+### Per-action automation dwell timing
 
-After the initial ordered action pass, repeating and continual automation actions keep independent repeat deadlines. An earlier action with a long repeat delay must not block a later action with a shorter interval. Actions that become due together still dispatch in canonical sequence order. Preserve the one-second floor for zero-delay continual loops and all existing class-end, announcement-priority, timer-overlay, recovery, and cancellation behavior.
+Automation `repeatDelaySeconds` means the dwell/stay time **after an action executes and before advancing to the next eligible action**. `delaySeconds` is a pre-action wait. After the last eligible action, the runner returns to Action 1 while any action remains eligible. Preserve canonical ordering, class-end cancellation, Morning Announcements priority, timer overlays, recovery, and cancellation behavior.
