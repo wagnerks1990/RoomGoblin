@@ -2,11 +2,11 @@
 
 RoomGoblin automations are stored in SQLite and execute through one canonical ordered action sequence. The schedule decides **when** an automation starts; each action decides **whether it participates on each pass** through that sequence.
 
-## Independent repeat and loop timing
+## Per-action dwell timing
 
-Automation actions execute their first pass in canonical order. After each action has completed its first execution, its repeat interval is tracked independently. A long repeat interval on an earlier action must not block a later action whose next execution is due sooner. When two or more actions become due at the same time, RoomGoblin dispatches them in canonical action order.
+Actions execute in canonical order. Each action's `repeatDelaySeconds` is the **stay/dwell time after that action is applied and before RoomGoblin advances to the next eligible action**. `delaySeconds` remains a pre-action wait.
 
-For example, an hourly looping display action followed by a 60-second looping display action executes both once in order, then the second action may run every minute while the first waits for its own hourly deadline. Zero-delay continual loops are still rate-limited to one execution per second to prevent command storms.
+For example, if Action 1 has a 3600-second dwell and Action 2 has a 60-second dwell, RoomGoblin runs Action 1, leaves it active for one hour, runs Action 2, leaves it active for one minute, then returns to Action 1 when the configured execution modes keep the sequence eligible. This applies to text, URLs, media, lighting, TV power, and other automation actions. When the class/event window ends, the sequence stops normally.
 
 ## Schema v3: scheduled automation + ordered actions
 
