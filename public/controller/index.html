@@ -805,7 +805,7 @@ nav button{min-width:135px}
         <div id="autoClassLinkSummary" class="muted" style="margin-top:6px">This automation is not linked to a class schedule.</div>
         <div id="autoClassBindingFields" style="display:none;margin-top:8px">
           <div class="grid2"><label>Run Relative To<select id="autoClassRef" onchange="updateAutomationClassPreview()"><option value="start">Class Start</option><option value="end">Class End</option></select></label><label>Offset Minutes<input id="autoClassOffset" type="number" min="-720" max="720" value="0" onchange="updateAutomationClassPreview()"></label></div>
-          <label style="display:flex;gap:8px;align-items:center"><input id="autoUseClassTargets" type="checkbox" checked> Use class default display targets</label>
+          <label style="display:flex;gap:8px;align-items:center"><input id="autoUseClassTargets" type="checkbox" checked onchange="renderAutomationSteps()"> Use class default display targets</label>
           <div id="autoClassPreview" class="muted"></div>
         </div>
       </div>
