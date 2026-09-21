@@ -55,10 +55,10 @@ NOCTI_DYNAMIC = {
     'background': {'color': '#000000'},
     'title': 'B1 - P5 / IT IV - Workstation/Server OS - 9/21/2026',
     'titleOptions': {'size': 92, 'color': '#ffffff'},
-    'subtitle': 'Mr. Wagner',
+    'subtitle': 'Classroom Instructor',
     'subtitleOptions': {'size': 44, 'color': '#ffffff'},
     'text': ('NOCTI Pre-Test Thursday 10/8/2026\n\n'
-             '*On 10/8 Report to Fowler LGI instead of class.\n\n'
+             '*On 10/8 Report to the Testing Center instead of class.\n\n'
              '*You also should have received email from Nocti with Study Guides.'),
     'textOptions': {'size': 64, 'color': '#ffffff', 'position': 'center'},
     'timer': {'visible': True, 'running': False, 'mode': 'countdown',
