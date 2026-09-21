@@ -348,6 +348,13 @@ class DisplayBrowserTests(unittest.TestCase):
         data=self.measure(page,'club-selection-no-layout-css')
         self.assertGreater(data['parts']['title']['font'],20)
         self.assertGreater(data['parts']['body']['font'],20)
+        for name in ['title','subtitle','body']:
+            self.assertAlmostEqual(data['parts'][name]['box']['x'],18,delta=1)
+            self.assertAlmostEqual(data['parts'][name]['box']['w'],1884,delta=2)
+        title_ranges=[r for r in data['ranges'] if r['name']=='title']
+        subtitle_ranges=[r for r in data['ranges'] if r['name']=='subtitle']
+        self.assertEqual(len(title_ranges),1,'title must shrink to one line instead of wrapping')
+        self.assertEqual(len(subtitle_ranges),1,'subtitle must shrink to one line instead of wrapping')
 
     def test_11_media_url_policy_and_external_frame_isolation(self):
         page=self.page();self.replay(page,P6)
