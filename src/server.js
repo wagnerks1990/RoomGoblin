@@ -1812,6 +1812,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     return sequenceHasEligibleActions(steps,pass+1);
   }
 
+  // Sequence actions are applied exactly as configured; no automation implicitly clears display content.
   // Actions execute in canonical order. repeatDelaySeconds is the dwell/hold
   // time AFTER an action executes: how long its resulting state remains before
   // RoomGoblin advances to the next eligible action. delaySeconds remains a
@@ -1836,8 +1837,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
       const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
       let rawTargets=[];
-      if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
-      else if(explicitTargets.length)rawTargets=explicitTargets;
+      // Explicit target selection always wins. Inherited event/class targets
+      // are only fallbacks when this action has no explicit compatible target.
+      if(explicitTargets.length)rawTargets=explicitTargets;
+      else if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
       else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
 
