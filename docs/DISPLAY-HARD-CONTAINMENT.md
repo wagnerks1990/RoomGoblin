@@ -1,6 +1,6 @@
 # Display Hard Containment
 
-Renderer revision `dynamic-fit-20260921-5` makes containment and dynamic space use joint invariants.
+Renderer revision `dynamic-fit-20260921-6` makes containment and dynamic space use joint invariants.
 
 Title, subtitle, body, and timer are active layout objects rather than permanent fixed-height bands. Title and subtitle are single-line objects with 18px logical edge gutters; they shrink horizontally as needed rather than wrapping. Body content uses the same near-edge-to-edge width and may wrap/preserve intentional line breaks. Empty objects consume no vertical space. The active objects are ordered by content and timer position, then share the usable 1920x1080 logical canvas from the 30px top margin to the 30px bottom margin with 14px gaps.
 
@@ -17,7 +17,7 @@ Timer position is now an ordering rule:
 
 The timer chrome remains content-sized inside its dynamic region. Timer ticks do not trigger global re-layout; the fitter reserves width using a worst-case timer value during the layout pass.
 
-The receiver HTML uses the same `dynamic-fit-20260921-5` cache key for the layout module and stylesheet. Every renderer behavior change must bump this key.
+The receiver HTML uses the same `dynamic-fit-20260921-6` cache key for the layout module and stylesheet. Every renderer behavior change must bump this key.
 
 ## Verification
 
@@ -27,7 +27,7 @@ After deployment and receiver reload, run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected revision: `dynamic-fit-20260921-5`.
+Expected revision: `dynamic-fit-20260921-6`.
 
 Diagnostics should report `dynamic: true`, an `order` array for active objects, and fitted regions. For normal bottom-timer content, the first active region should begin near logical y=30, the final active region should end near y=1050, and neighboring active regions should remain separated by about 14 logical pixels.
 
