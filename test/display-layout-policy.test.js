@@ -10,7 +10,7 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260921-1');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260921-2');
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
   const source = fs.readFileSync(layoutPath, 'utf8');
@@ -22,6 +22,13 @@ test('display renderer uses dynamic content-object layout', async () => {
     'body content should receive otherwise unused vertical space');
   assert.doesNotMatch(source, /titleTop = 30, bodyTop = 270, bodyEnd = 975/,
     'fixed title/body bands must not return');
+  assert.match(source, /const HORIZONTAL_GUTTER = 18/);
+  assert.match(source, /title\.style\.whiteSpace = 'nowrap'/,
+    'title should stay on one line and shrink horizontally instead of wrapping');
+  assert.match(source, /subtitle\.style\.whiteSpace = 'nowrap'/,
+    'subtitle should use the same single-line edge-to-edge fitting');
+  assert.match(source, /text\.style\.padding = '0'/,
+    'body content should get the full dynamic object width');
 });
 
 test('auto-fit can grow to component caps while manual sizing remains a ceiling', () => {
@@ -69,8 +76,8 @@ test('timer overlay remains a compact dynamic object', () => {
 test('receiver cache key and build identity are release-stamped at image build', () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260921-1/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20260921-1/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260921-2/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20260921-2/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),
