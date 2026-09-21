@@ -10,7 +10,7 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260921-6');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260921-7');
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
   const source = fs.readFileSync(layoutPath, 'utf8');
@@ -84,8 +84,8 @@ test('timer overlay remains a compact dynamic object', () => {
 test('receiver cache key and build identity are release-stamped at image build', () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260921-6/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20260921-6/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260921-7/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20260921-7/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),
