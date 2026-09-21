@@ -12,6 +12,10 @@ Use this file whenever changing Hub process startup, media/presentation uploads,
 
 Do not replace this with `0777`, a blanket recursive chmod, or an unknown inherited runtime umask. Secrets, ADB private material, Android signing material, recovery envelopes, and backup artifacts may have intentionally stricter explicit modes and must not be relaxed just to satisfy a generic permission check.
 
+## Resumable upload session permissions
+
+Resumable upload sessions are ordinary shared application data, not secrets. Their root/session directories must be `0750` and chunk/metadata files `0640` so the maintenance container can include an in-progress upload in the mandatory operational backup. Do not use explicit `0700` session directories or `0600` chunk files; those override the runtime umask and make update preflight fail with `EACCES` on `data/media-upload-sessions`.
+
 ## Known failure mode
 
 A large uploaded MP4 was created mode `0600`. The Hub could read it, but maintenance could not read it while creating the mandatory operational safety backup. The production updater correctly stopped before mutating services.
