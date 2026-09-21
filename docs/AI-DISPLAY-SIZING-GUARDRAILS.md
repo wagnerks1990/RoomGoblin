@@ -2,7 +2,7 @@
 
 ## Current policy
 
-Renderer revision: `dynamic-fit-20260921-4`.
+Renderer revision: `dynamic-fit-20260921-5`.
 
 `public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the finished stage.
 
