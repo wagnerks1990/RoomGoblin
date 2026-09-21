@@ -797,3 +797,4 @@ Initial public GitHub/Docker migration of Classroom Control Hub.
 - Added public `.gitignore`, `.dockerignore`, and `.env.example` files.
 - Added GitHub Actions workflows for validation and GHCR container publishing.
 - Preserved the existing modular display, automation, announcement-priority, background-music, AV, lighting, lab, maintenance, and host-agent architecture.
+
