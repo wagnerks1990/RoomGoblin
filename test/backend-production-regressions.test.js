@@ -23,6 +23,15 @@ test("Morning Announcements hold audio priority through display resynchronizatio
   assert.match(start,/await priorityTask/);
 });
 
+test("operator Resume explicitly restores active Morning Announcements after clear or reload",()=>{
+  const reconcile=server.slice(server.indexOf("async function reconcileScheduledAutomationState"),server.indexOf('app.get("/api/v1/automation-control"'));
+  assert.match(reconcile,/if\(morningAnnouncementsRuntime\.active\)/);
+  assert.match(reconcile,/await assertMorningAnnouncements/);
+  assert.match(reconcile,/announcementResumed:true/);
+  const route=server.slice(server.indexOf('app.post("/api/v1/automation-control/resume"'),server.indexOf('app.post("/api/v1/automation-control/simulation"'));
+  assert.match(route,/serializeMorningAnnouncementsLifecycle/);
+});
+
 test("announcement priority is rechecked at delivery time without dropping non-display actions",()=>{
   const router=server.slice(server.indexOf("async function executeCommand"),server.indexOf("// HTTP API"));
   assert.match(router,/source==="automation"/);

@@ -62,6 +62,10 @@ Apply saved announcement volume/unmute state
 Maintain priority lock while live
 ```
 
+The **Announcement Volume** slider in **Morning Announcements • Live Watch** applies to the active announcement immediately and saves the value for future sessions. Moving it must not reload or interrupt the stream.
+
+If **Clear Classroom** or **Reload Displays** removes an active announcement from the receivers, use **Resume Schedule** (Today) or **Resume Scheduled State** (Automation). Because Morning Announcements retain priority while active, either resume action restores the announcement on its targets; otherwise it reconciles the ordinary scheduled state.
+
 Manual `Play Announcements` enters the same priority state.
 
 While announcements are active:

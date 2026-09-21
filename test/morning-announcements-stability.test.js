@@ -46,3 +46,15 @@ test("successful live probes do not rebuild an active announcement player",()=>{
   assert.match(server,/if\(!morningAnnouncementsRuntime\.active\)await assertMorningAnnouncements/);
   assert.doesNotMatch(server,/lastAssertAt>30000/);
 });
+
+test("Live Watch volume control persists and applies changes without rebuilding the player",()=>{
+  const html=read("public/controller/index.html"),controller=read("public/controller/app.js"),server=read("src/server.js");
+  assert.match(html,/oninput="queueMorningWatchVolume\(this\.value\)"/);
+  assert.match(html,/Applies immediately while announcements are playing/);
+  assert.match(controller,/function queueMorningWatchVolume\(value,immediate=false\)/);
+  assert.match(controller,/volumePercent:volume/);
+  const liveApply=server.slice(server.indexOf("async function applyMorningAnnouncementVolume"),server.indexOf("async function setMorningAnnouncementPriorityTargets"));
+  assert.match(liveApply,/type:"display\.web\.audio"/);
+  assert.match(liveApply,/reload:false/);
+  assert.doesNotMatch(liveApply,/display\.clear|display\.web"/);
+});
