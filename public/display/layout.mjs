@@ -177,7 +177,13 @@ export function fitElement(el, box, cap) {
 
 function estimateHeight(item) {
   if (!item.el.textContent.trim()) return 0;
-  const measured = naturalSize(item.el, item.box, item.cap);
+  let measured = naturalSize(item.el, item.box, item.cap);
+  if (item.singleLine && measured) {
+    const a = available(item.box);
+    const widthScale = Math.min(1, a.width / Math.max(1, measured.width));
+    const widthBoundFont = Math.max(1, item.cap * widthScale * 0.995);
+    measured = naturalSize(item.el, item.box, widthBoundFont) || measured;
+  }
   const raw = measured?.height || item.cap * 1.3;
   return Math.max(item.minHeight, raw + (item.name === 'timer' ? 16 : 10));
 }
@@ -241,12 +247,12 @@ export function createDisplayLayout(nodes, getState) {
     if (title.textContent.trim()) items.push({
       name:'title', el:title, box:titleRegion,
       cap:componentCap(titleOpts.size,92,FONT_CAPS.title,titleOpts.autoFit!==false),
-      minHeight:70, weight:1.05
+      minHeight:70, weight:1.05, singleLine:true
     });
     if (subtitle.textContent.trim()) items.push({
       name:'subtitle', el:subtitle, box:subtitleRegion,
       cap:componentCap(subtitleOpts.size,44,FONT_CAPS.subtitle,subtitleOpts.autoFit!==false),
-      minHeight:50, weight:0.8
+      minHeight:50, weight:0.8, singleLine:true
     });
     if (text.textContent.trim()) items.push({
       name:'body', el:text, box:textLayer,
