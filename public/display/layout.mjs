@@ -71,7 +71,7 @@ function naturalSize(el, box, fontSize = null) {
     maxHeight:'none', height:'auto', minWidth:'0', minHeight:'0', flex:'none',
     margin:'0', boxSizing:computed.boxSizing, fontFamily:computed.fontFamily,
     fontWeight:computed.fontWeight, fontStyle:computed.fontStyle,
-    fontSize:`${fontSize ?? parseFloat(computed.fontSize) || 12}px`,
+    fontSize:`${fontSize ?? (parseFloat(computed.fontSize) || 12)}px`,
     lineHeight:computed.lineHeight, letterSpacing:computed.letterSpacing,
     wordSpacing:computed.wordSpacing, whiteSpace:computed.whiteSpace,
     overflowWrap:computed.overflowWrap, wordBreak:computed.wordBreak,
