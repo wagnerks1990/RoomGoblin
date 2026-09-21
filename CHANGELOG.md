@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Morning Announcements live volume
+
+- Apply Live Watch announcement-volume slider changes immediately to the displays owned by an active announcement while persisting the value for future sessions.
+- Keep live volume changes in-place with `display.web.audio`; do not clear, reload, or recreate the announcement player.
+- Make both schedule-resume controls explicitly restore an active Morning Announcements takeover after an operator clears or reloads displays, while preserving observe-only periodic live probes.
+
 ### HTTPS/public-origin endpoint migration
 
 - Add a repository-wide endpoint inventory covering RoomGoblin browser/API/WebSocket traffic, Windows agents, displays/media plane, Music Assistant, Veyon, MQTT, ESPHome, Android management, maintenance/Host Agent and auxiliary web UIs.

@@ -44,6 +44,10 @@ Two confirmed OFFLINE checks are required before ending an active automatic anno
 
 When live status is detected, RoomGoblin pauses Background Music, clears/locks the target displays, starts the local HLS player fullscreen, and applies the saved announcement volume/unmute state.
 
+The **Announcement Volume** slider in **Morning Announcements • Live Watch** applies to the active announcement immediately and saves the value for future sessions without reloading the stream.
+
+If **Clear Classroom** or **Reload Displays** removes an active announcement, **Resume Schedule** / **Resume Scheduled State** restores the still-active priority announcement on its targets. When no announcement is active, the same action reconciles normal scheduled content.
+
 ### Manual announcements
 
 Manual Play Announcements enters the same priority state as automatic Live Watch.

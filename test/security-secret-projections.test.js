@@ -22,6 +22,7 @@ async function waitForServer(){const deadline=Date.now()+15000;while(Date.now()<
 function displayConnection(){return new Promise((resolve,reject)=>{const ws=new WebSocket(wsBase,{headers:{Origin:base}}),timer=setTimeout(()=>reject(Error("display websocket timeout")),4000);ws.on("open",()=>ws.send(JSON.stringify({type:"hello",role:"display",deviceId:"secure-tv",clientVersion:"1.0.0-alpha.80"})));ws.on("message",raw=>{const message=JSON.parse(String(raw));if(message.type==="hello.ack"){clearTimeout(timer);resolve(ws)}else if(message.type==="error"){clearTimeout(timer);reject(Error(message.error))}});ws.on("error",reject)})}
 function browserConnection(role,session){return new Promise((resolve,reject)=>{const ws=new WebSocket(wsBase,{headers:{Origin:base,Cookie:session}}),timer=setTimeout(()=>reject(Error(`${role} websocket timeout`)),4000);ws.on("open",()=>ws.send(JSON.stringify({type:"hello",role,...(role==="preview"?{deviceId:"secure-tv"}:{})})));ws.on("message",raw=>{const message=JSON.parse(String(raw));if(message.type==="hello.ack"){clearTimeout(timer);resolve({ws,ack:message})}else if(message.type==="error"){clearTimeout(timer);reject(Error(message.error))}});ws.on("error",reject)})}
 function nextWebCommand(ws){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error("announcement command timeout")),5000);const onMessage=raw=>{const message=JSON.parse(String(raw));if(message.type==="command"&&message.command?.type==="display.web"){clearTimeout(timer);ws.off("message",onMessage);resolve(message.command)}};ws.on("message",onMessage)})}
+function nextWebAudioCommand(ws){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error("announcement audio command timeout")),5000);const onMessage=raw=>{const message=JSON.parse(String(raw));if(message.type==="command"&&message.command?.type==="display.web.audio"){clearTimeout(timer);ws.off("message",onMessage);resolve(message.command)}};ws.on("message",onMessage)})}
 function nextControllerCommand(ws){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error("controller command timeout")),5000);const onMessage=raw=>{const message=JSON.parse(String(raw));if(message.type==="command.executed"&&message.command?.type==="display.web"){clearTimeout(timer);ws.off("message",onMessage);resolve(message)}};ws.on("message",onMessage)})}
 
 test.before(async()=>{
@@ -65,6 +66,20 @@ test("announcement bearer URL is encrypted, redacted from browser projections, a
   const stored=db.prepare("SELECT value_json FROM object_store WHERE namespace IN ('morning-announcements','state') ORDER BY namespace").all();
   const secret=db.prepare("SELECT cipher_text FROM secret_store WHERE name='automation.morning-announcements.stream-url'").get();
   assert.ok(secret?.cipher_text);assert.doesNotMatch(JSON.stringify(stored),new RegExp(`${token}|${subscriber}`));assert.doesNotMatch(secret.cipher_text,new RegExp(`${token}|${subscriber}`));db.close();
+});
+
+test("active Morning Announcements apply saved volume changes immediately",async()=>{
+  const display=await displayConnection(),delivered=nextWebAudioCommand(display);
+  const result=await request("/api/v1/automations/morning-announcements",{method:"PUT",body:{volumePercent:23}});
+  assert.equal(result.response.status,200,result.text);assert.equal(result.json.liveVolume?.applied,true);assert.deepEqual(result.json.liveVolume?.targets,["secure-tv"]);
+  const command=await delivered;assert.equal(command.payload.volume,0.23);assert.equal(command.payload.unmute,true);assert.equal(command.payload.reload,false);display.close();
+});
+
+test("Resume Scheduled State explicitly restores an active Morning Announcement",async()=>{
+  const display=await displayConnection(),delivered=nextWebCommand(display);
+  const result=await request("/api/v1/automation-control/resume",{method:"POST"});
+  assert.equal(result.response.status,200,result.text);assert.equal(result.json.announcementResumed,true);assert.deepEqual(result.json.targets,["secure-tv"]);
+  const command=await delivered;assert.equal(command.payload.contentKind,"morning-announcements");assert.equal(command.payload.volume,0.23);display.close();
 });
 
 test("failed command secrets are redacted before audit persistence and every read projection",async()=>{

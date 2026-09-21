@@ -1139,7 +1139,7 @@ function paintAutomationControl(j={}){
   automationSimulationBanner.className=`status ${clock.active?(clock.liveCommands?'bad':'warn'):''}`;
 }
 async function toggleAutomationScheduler(){try{const j=await api('/api/v1/automation-control',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:AUTOMATION_CONTROL?.enabled===false})});AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){notify(e.message,'error')}}
-async function resumeScheduledAutomation(){try{const j=await api('/api/v1/automation-control/resume',{method:'POST'});notify(j.deferred?j.reason:'Scheduled state reconciled.',j.ok===false?'error':'success');await Promise.all([loadAutomationControl(),refreshOverview()])}catch(e){notify(e.message,'error')}}
+async function resumeScheduledAutomation(){try{const j=await api('/api/v1/automation-control/resume',{method:'POST'});notify(j.reason||(j.deferred?j.reason:'Scheduled state reconciled.'),j.ok===false?'error':'success');await Promise.all([loadAutomationControl(),refreshOverview()])}catch(e){notify(e.message,'error')}}
 function simulatedIsoFromInput(){const v=automationSimulatedTime.value;if(!v)throw Error('Choose a simulated date and time.');const d=new Date(v);if(Number.isNaN(d.getTime()))throw Error('Simulated date/time is invalid.');return d.toISOString()}
 async function applyAutomationSimulation(){try{const j=await api('/api/v1/automation-control/simulation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({schedulerTime:simulatedIsoFromInput(),liveCommands:automationSimulationLive.value==='1',liveMinutes:15})});AUTOMATION_CONTROL=j;paintAutomationControl(j);paintAutomationEvaluation(j.evaluation)}catch(e){notify(e.message,'error')}}
 async function clearAutomationSimulation(){try{const j=await api('/api/v1/automation-control/simulation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:false})});AUTOMATION_CONTROL=j;paintAutomationControl(j);automationSimulationResults.textContent=''}catch(e){notify(e.message,'error')}}
@@ -1942,6 +1942,20 @@ async function loadMorningWatch(){
     const probeLabel=r.probe?(r.probeStatus?`${r.probe}: ${r.probeStatus}`:r.probe):'not checked';
     morningWatchMsg.textContent=`${probeLabel}${extra}${duration}${r.lastError?' • '+r.lastError:''}`;
   }catch(e){morningWatchMsg.textContent=e.message}
+}
+let morningWatchVolumeTimer=null;
+async function applyMorningWatchVolume(value){
+  const volume=Math.max(0,Math.min(100,Number(value)||0));
+  try{
+    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({volumePercent:volume})});
+    morningWatchMsg.textContent=x.liveVolume?.applied?`Volume ${volume}% applied live`:`Volume ${volume}% saved`;
+  }catch(e){morningWatchMsg.textContent=`Volume update failed: ${e.message}`}
+}
+function queueMorningWatchVolume(value,immediate=false){
+  const volume=Math.max(0,Math.min(100,Number(value)||0));
+  morningWatchVolumeValue.textContent=volume+'%';
+  if(morningWatchVolumeTimer)clearTimeout(morningWatchVolumeTimer);
+  morningWatchVolumeTimer=setTimeout(()=>{morningWatchVolumeTimer=null;applyMorningWatchVolume(volume)},immediate?0:150);
 }
 async function saveMorningWatch(){
   try{

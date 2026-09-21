@@ -867,6 +867,15 @@ function scheduleAnnouncementAudioRetries(targets){
     trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
   },delay);
 }
+async function applyMorningAnnouncementVolume(){
+  if(!morningAnnouncementsRuntime.active)return {active:false,applied:false,targets:[]};
+  const targets=[...(morningAnnouncementsRuntime.targets||[])];
+  if(!targets.length)return {active:true,applied:false,targets:[]};
+  const volume=Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100));
+  await executeCommand({type:"display.web.audio",target:targets,payload:{unmute:volume>0,volume,reload:false,contentKind:"morning-announcements"}},"morning-announcements");
+  audit({kind:"automation.morning-announcements.volume",targets,volumePercent:morningAnnouncements.volumePercent});
+  return {active:true,applied:true,targets};
+}
 async function setMorningAnnouncementPriorityTargets(targets,active){
   for(const id of targets||[]){if(active)backgroundMusicPriorityTargets.add(id);else backgroundMusicPriorityTargets.delete(id)}
   // Morning Announcements are non-optional priority audio even when ordinary
@@ -5118,8 +5127,13 @@ app.post("/api/v1/pluto/schedules",requireControl,(req,res)=>{
 app.get("/api/v1/automations/morning-announcements",requireClassroomRead,(_req,res)=>{
   res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime)});
 });
-app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),(req,res)=>{
-  try{morningAnnouncements=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);persistMorningAnnouncements();restartMorningAnnouncementsWatcher();res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime)})}
+app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),async(req,res)=>{
+  try{
+    const applyLiveVolume=Object.hasOwn(req.body||{},"volumePercent");
+    morningAnnouncements=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);persistMorningAnnouncements();restartMorningAnnouncementsWatcher();
+    const liveVolume=applyLiveVolume?await serializeMorningAnnouncementsLifecycle(()=>applyMorningAnnouncementVolume()):null;
+    res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime),...(liveVolume?{liveVolume}:{})});
+  }
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 app.post("/api/v1/automations/morning-announcements/check",requireControl,async(_req,res)=>{
@@ -5389,7 +5403,11 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
 async function reconcileScheduledAutomationState(reason="operator-resume"){
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {ok:true,skipped:true,reason:suppression.reason,schedulerTime:now.toISOString()};
-  if(morningAnnouncementsRuntime.active)return {ok:true,deferred:true,reason:"Morning Announcements have priority",targets:[...(morningAnnouncementsRuntime.targets||[])]};
+  if(morningAnnouncementsRuntime.active){
+    const targets=[...(morningAnnouncementsRuntime.targets||[])];
+    await assertMorningAnnouncements({mode:morningAnnouncementsRuntime.mode||"automatic",targetsOverride:targets});
+    return {ok:true,announcementResumed:true,reason:"Morning Announcements restored because they have priority",targets,schedulerTime:now.toISOString()};
+  }
   const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
   for(const winner of currentAutomationNonDisplayWinners(now)){
     try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
@@ -5403,7 +5421,7 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
 app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"operator-cancelled");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"operator-cancelled"});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
-app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await reconcileScheduledAutomationState("operator-resume"),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery})}catch(error){res.status(500).json({ok:false,error:error.message})}});
+app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const result=await serializeMorningAnnouncementsLifecycle(()=>reconcileScheduledAutomationState("operator-resume")),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery})}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
 
