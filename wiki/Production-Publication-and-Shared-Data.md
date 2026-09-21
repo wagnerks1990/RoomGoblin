@@ -22,6 +22,10 @@ This gives the owner read/write, shared group read/traverse, and no access to ot
 
 Do not remove `tools/start-roomgoblin.sh`, inherit an unknown runtime umask, use `0777`, or recursively relax secrets/ADB/signing data.
 
+### Resumable upload session permissions
+
+In-progress resumable uploads are included in operational backups. Session directories therefore use `0750` and chunk/metadata files `0640`, matching the shared-data contract. Explicit `0700` directories or `0600` chunk files block maintenance backup traversal and cause production updates to fail safely before mutation.
+
 ## Media upload / backup failure
 
 A large uploaded MP4 was observed as `0600`. The Hub could read it, but maintenance could not include it in the mandatory safety backup. The updater correctly stopped before changing services.
