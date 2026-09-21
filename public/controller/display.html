@@ -368,7 +368,7 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
           </div>
           <div id="dropZone" class="drop" style="margin-top:10px">Drop image/video/PDF here</div>
           <input id="upload" aria-label="Media upload file" type="file" accept="image/*,video/*,application/pdf" style="margin-top:8px">
-          <div class="toolbar"><button onclick="uploadMedia()">Upload</button></div>
+          <div class="toolbar"><button onclick="uploadMedia()">Upload / Resume</button><button id="uploadPause" onclick="pauseMediaUpload()" style="display:none">Pause</button><button id="uploadCancel" onclick="cancelMediaUpload()" class="danger" style="display:none">Cancel</button></div>
           <div id="uploadStatus" class="muted" style="margin-top:6px"></div>
           <div id="mediaGrid" class="mediaGrid" style="margin-top:12px"></div>
 
@@ -486,6 +486,7 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
   </div>
 </div>
 
+<script src="/shared/resumable-upload.js"></script>
 <script type="module">
 import {wsUrl,api} from '/shared/common.js';
 window.el=id=>document.getElementById(id);
@@ -845,11 +846,15 @@ window.routeSelected=async()=>{for(const id of selected)await cmd('av.route',id,
 
 function rgba(hex,a){const n=parseInt(hex.replace('#',''),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
 
+let mediaUploadAbort=null,mediaUploadFile=null;
 async function uploadFile(f){
-  const fd=new FormData();fd.append('media',f);el('uploadStatus').textContent='Uploading…';
-  try{const j=await api('/api/v1/media',{method:'POST',body:fd});el('mediaUrl').value=j.url;el('uploadStatus').textContent='Uploaded: '+j.name;await loadMedia();setResultSummary(`✓ Uploaded ${j.name}`,true,j)}
-  catch(e){el('uploadStatus').textContent=e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}
+  mediaUploadFile=f;mediaUploadAbort=new AbortController();el('uploadPause').style.display='';el('uploadCancel').style.display='';el('uploadStatus').textContent='Preparing upload…';
+  try{const j=await RoomGoblinUpload.upload(f,{signal:mediaUploadAbort.signal,onProgress:p=>{el('uploadStatus').textContent=`Uploading ${p.percent}%`}}),file=j.file;el('mediaUrl').value=file.url;el('uploadStatus').textContent='Uploaded: '+file.originalName;el('uploadCancel').style.display='none';await loadMedia();setResultSummary(`✓ Uploaded ${file.originalName}`,true,j)}
+  catch(e){el('uploadStatus').textContent=e.name==='AbortError'?'Paused — select Upload / Resume to continue':e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}
+  finally{mediaUploadAbort=null;el('uploadPause').style.display='none'}
 }
+window.pauseMediaUpload=()=>mediaUploadAbort?.abort();
+window.cancelMediaUpload=async()=>{mediaUploadAbort?.abort();if(mediaUploadFile)await RoomGoblinUpload.cancel(mediaUploadFile);el('uploadStatus').textContent='Upload cancelled';el('uploadCancel').style.display='none'};
 window.uploadMedia=async()=>{const f=el('upload').files[0];if(f)await uploadFile(f)};
 const dz=el('dropZone');
 dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag')};

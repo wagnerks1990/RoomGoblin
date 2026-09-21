@@ -49,7 +49,19 @@ bytes, cookies, credentials, or signed URLs.
 
 This changes request lifecycle only. It does not change ports, upload limits,
 receiver identities, persistent media controls, database schema, or stored media.
-Large/resumable uploads tracked in issue #182 remain separate, unfinished work.
+Large uploads use resumable sessions on the control plane. The browser sends fixed
+45 MiB `application/octet-stream` chunks, so each request remains below
+Cloudflare's 100 MB edge limit. RoomGoblin accepts files up to 5 GiB by default,
+verifies every chunk and the assembled file with SHA-256, inspects the completed
+file signature, and reclaims incomplete sessions after 24 hours. Upload delivery
+remains separate from the port `3020` playback plane.
+
+Operators may lower `MAX_UPLOAD_MB` (1–5120) or change
+`UPLOAD_SESSION_TTL_HOURS` (1–168), `UPLOAD_ACTIVE_QUOTA_GB` (5–100), or
+`UPLOAD_MIN_FREE_GB` (0–100). Keep Cloudflare Maximum Upload Size at 100 MB;
+raising it is unnecessary. Temporary chunk storage can briefly require roughly
+the uploaded file size plus the assembled file size during finalization, so keep
+at least twice the largest expected upload free beneath the persistent data root.
 
 ## Range transport
 
@@ -177,4 +189,3 @@ This is the expected production architecture. A large `:3020` send queue during 
 ### Acceptance invariant
 
 Do not collapse video delivery back onto port `3000` as a workaround for media issues. Fix authorization, response policy, receiver routing, or playback behavior while preserving the control/media split.
-

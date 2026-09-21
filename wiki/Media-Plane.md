@@ -33,8 +33,11 @@ Eight isolated HTTP regression tests passed locally on Linux/Node 22.16.0 on
 2026-09-19. They use the actual media process with an authorization fixture,
 not the full Hub or physical receivers. The earlier live acceptance below does
 not cover this unreleased hardening. Required CI and controlled receiver testing
-remain necessary. No migration, new port, upload-limit increase, or resumable
-upload implementation is included; issue #182 remains open.
+remain necessary. Uploads now use resumable, owner-isolated sessions with 45 MiB
+requests, a 5 GiB default total-file limit, chunk and final SHA-256 verification,
+content-signature inspection, and 24-hour cleanup of abandoned temporary data.
+Keep Cloudflare's per-request limit at 100 MB. Allow roughly twice the largest
+expected upload as free persistent storage during final assembly.
 
 Run `node --test test/media-plane-lifecycle.test.js` from the repository for the
 focused suite. See `docs/MEDIA-PLANE.md` for coverage, upgrade and rollback gates.

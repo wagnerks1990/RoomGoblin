@@ -531,17 +531,19 @@ async function showMedia(enc){
 }
 async function convertMedia(enc){try{uploadState.textContent='Converting…';await jpost('/api/v1/media/'+enc+'/convert',{});uploadState.textContent='Conversion complete';loadMedia()}catch(e){uploadState.textContent=e.message}}
 async function deleteMedia(enc,label){if(!confirm(`Delete "${label}" from RoomGoblin? This also removes its generated display PDF.`))return;try{await api('/api/v1/media/'+enc,{method:'DELETE'});loadMedia()}catch(e){alert(e.message)}}
-mediaUploadForm.addEventListener('submit',async e=>{
- e.preventDefault();const f=mediaFile.files[0];if(!f)return;
- const fd=new FormData();fd.append('media',f);
- uploadState.textContent='Uploading / converting…';
+let mediaUploadAbort=null;
+async function runMediaUpload(){
+ const f=mediaFile.files[0];if(!f)return;mediaUploadAbort=new AbortController();mediaUploadPause.style.display='';mediaUploadCancel.style.display='';
+ uploadState.textContent='Preparing upload…';
  try{
-  const r=await fetch('/api/v1/media',{method:'POST',body:fd});const j=await r.json();
-  if(!r.ok)throw Error(j.error||'Upload failed');
-  uploadState.textContent=j.file?.conversionStatus==='failed'?'Uploaded; conversion failed':'Ready';
-  mediaFile.value='';loadMedia();
- }catch(err){uploadState.textContent=err.message}
-});
+  const j=await RoomGoblinUpload.upload(f,{signal:mediaUploadAbort.signal,onProgress:p=>{uploadState.textContent=`Uploading ${p.percent}% • ${fmtBytes(p.uploaded)} / ${fmtBytes(p.total)}`}});
+  uploadState.textContent=j.file?.conversionStatus==='failed'?'Uploaded; conversion failed':'Ready';mediaFile.value='';mediaUploadCancel.style.display='none';loadMedia();
+ }catch(err){uploadState.textContent=err.name==='AbortError'?'Paused — select Upload to resume':err.message}
+ finally{mediaUploadAbort=null;mediaUploadPause.style.display='none'}
+}
+mediaUploadForm.addEventListener('submit',async e=>{e.preventDefault();await runMediaUpload()});
+mediaUploadPause.addEventListener('click',()=>mediaUploadAbort?.abort());
+mediaUploadCancel.addEventListener('click',async()=>{const f=mediaFile.files[0];mediaUploadAbort?.abort();if(f)await RoomGoblinUpload.cancel(f);uploadState.textContent='Upload cancelled';mediaUploadCancel.style.display='none'});
 
 async function plutoAction(p,refresh=true){
  try{

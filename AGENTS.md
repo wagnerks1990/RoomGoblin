@@ -259,6 +259,12 @@ Do not silently recreate an externally discovered service during adoption. Destr
 
 Port `3000` is the control plane; port `3020` is the uploaded-media byte plane. Keep large MP4 range traffic off the control/API/WebSocket listener. The media plane remains authorization-gated through the control plane and uses `Cross-Origin-Resource-Policy: cross-origin` only so an already-authorized receiver on port 3000 can consume bytes from port 3020.
 
+Large media uploads use owner-isolated resumable sessions on port `3000` with
+45 MiB chunks and a default 5 GiB total-file ceiling. Preserve exact-size and
+SHA-256 verification for chunks and completed files, server-side file-signature
+inspection, idempotent retries, pause/resume/cancel behavior, and expiry cleanup.
+No individual proxied request may approach Cloudflare's 100 MB limit.
+
 Controller previews and media-library cards must not become extra MP4 decoders. Physical receivers are the playback authority. Start commanded receiver video in an autoplay-safe muted state, then apply requested audio after playback begins; fallback to muted playback instead of stopping when audible autoplay is blocked. Live play/pause/seek/volume/rate/restart must mutate the persistent session and not replace the media command.
 
 Production acceptance on 2026-09-18 verified healthy control/media endpoints, working playback and controls, multi-megabyte backpressure isolated on `:3020`, and responsive `:3000` control traffic. See `docs/MEDIA-PLANE.md` and `docs/ai/MEDIA-PLANE.md`.
