@@ -2,12 +2,12 @@
 
 ## Unreleased
 
-### Automation independent repeat timing
+### Automation action dwell timing
 
-- Fix ordered automation sequences so each repeating or continual action keeps its own repeat deadline after the initial ordered pass.
-- Prevent a long repeat delay on an earlier action from starving later actions with shorter repeat intervals; actions due at the same moment still run in canonical order.
-- Preserve the one-second safety floor for zero-delay continual loops, class-end cancellation, Morning Announcements priority, timer overlays, and active-run recovery.
-
+- Correct automation sequencing so each action's configured timer means how long that action remains active before RoomGoblin advances to the next action.
+- Preserve `delaySeconds` as a pre-action wait and use `repeatDelaySeconds` as the post-action dwell timer on every sequence pass.
+- Expose Action 1 timing in the editor, allow continual sequence participation for all action types, and label action timers by their actual stay/advance behavior.
+- Preserve class-end cancellation, Morning Announcements priority, timer overlays, recovery, and action-level error handling.
 
 ### Morning Announcements live volume
 
