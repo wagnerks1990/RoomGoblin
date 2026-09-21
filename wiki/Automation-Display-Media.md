@@ -50,3 +50,7 @@ Scheduled automations now cycle through their ordered actions. Run once particip
 The sequence returns to Action 1 after its final action while at least one action is still eligible. A newer overlapping scheduled automation cancels an older continuous loop. Class-linked loops stop at the resolved class end. Timer Overlay starts after the first pass.
 
 The controller shows media settings by content type: images do not display video controls; video exposes clip/audio/rate controls; documents and presentations expose page/slide timing.
+
+### Independent automation repeat timing
+
+After the initial ordered action pass, repeating and continual automation actions keep independent repeat deadlines. An earlier action with a long repeat delay must not block a later action with a shorter interval. Actions that become due together still dispatch in canonical sequence order. Preserve the one-second floor for zero-delay continual loops and all existing class-end, announcement-priority, timer-overlay, recovery, and cancellation behavior.
