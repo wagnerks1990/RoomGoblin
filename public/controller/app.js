@@ -1218,6 +1218,71 @@ function insertAutomationVariable(targetId,value){
   field.focus();const pos=start+value.length;try{field.setSelectionRange(pos,pos)}catch{}
   field.dispatchEvent(new Event('change',{bubbles:true}));
 }
+function automationPreviewDisplayId(){
+  const ids=Object.keys(S.displayDevices||{}).filter(id=>S.displayDevices?.[id]?.enabled!==false);
+  return ids[0]||Object.keys(S.displayDevices||{})[0]||'tv1';
+}
+let automationPreviewWidth=1920,automationPreviewHeight=1080;
+function automationTextPreviewState(){
+  return {
+    background:{color:document.getElementById('autoBg')?.value||'#000000'},
+    title:document.getElementById('autoTitle')?.value||'',
+    titleOptions:{size:92,color:'#ffffff',autoFit:true},
+    subtitle:document.getElementById('autoSubtitle')?.value||'',
+    subtitleOptions:{size:44,color:'#ffffff',autoFit:true},
+    text:document.getElementById('autoText')?.value||'',
+    textOptions:{
+      size:Number(document.getElementById('autoTextSize')?.value||54),
+      color:document.getElementById('autoTextColor')?.value||'#ffffff',
+      position:document.getElementById('autoPosition')?.value||'center',
+      background:'transparent',
+      autoFit:true
+    },
+    timer:{visible:false,running:false},
+    media:null,
+    presentationBlack:false
+  };
+}
+function scaleAutomationTextPreview(){
+  const viewport=document.getElementById('autoWysiwygViewport');
+  const frame=document.getElementById('autoWysiwygFrame');
+  if(!viewport||!frame)return;
+  const w=viewport.clientWidth,h=viewport.clientHeight;if(!w||!h)return;
+  const scale=Math.min(w/automationPreviewWidth,h/automationPreviewHeight);
+  const scaledW=automationPreviewWidth*scale,scaledH=automationPreviewHeight*scale;
+  frame.style.width=automationPreviewWidth+'px';
+  frame.style.height=automationPreviewHeight+'px';
+  frame.style.transform=`translate(${Math.max(0,(w-scaledW)/2)}px,${Math.max(0,(h-scaledH)/2)}px) scale(${scale})`;
+}
+function syncAutomationTextPreview(){
+  const frame=document.getElementById('autoWysiwygFrame');
+  if(!frame?.contentWindow)return;
+  frame.contentWindow.postMessage({type:'roomgoblin.preview.state',state:automationTextPreviewState()},location.origin);
+  const status=document.getElementById('autoWysiwygStatus');
+  if(status)status.textContent=`Exact receiver preview • 1920×1080 design canvas • reference ${automationPreviewWidth}×${automationPreviewHeight}`;
+}
+function setAutomationPreviewResolution(value){
+  const m=String(value||'1920x1080').match(/^(\d+)x(\d+)$/);
+  automationPreviewWidth=m?Number(m[1]):1920;
+  automationPreviewHeight=m?Number(m[2]):1080;
+  const viewport=document.getElementById('autoWysiwygViewport');
+  if(viewport)viewport.style.aspectRatio=`${automationPreviewWidth}/${automationPreviewHeight}`;
+  requestAnimationFrame(()=>{scaleAutomationTextPreview();syncAutomationTextPreview()});
+}
+function setupAutomationTextPreview(){
+  const frame=document.getElementById('autoWysiwygFrame');
+  const viewport=document.getElementById('autoWysiwygViewport');
+  if(!frame||!viewport)return;
+  frame.src=`/display/${encodeURIComponent(automationPreviewDisplayId())}?preview=1&automationDraft=1`;
+  frame.onload=()=>requestAnimationFrame(()=>{scaleAutomationTextPreview();syncAutomationTextPreview()});
+  for(const id of ['autoTitle','autoText','autoSubtitle','autoTextColor','autoBg','autoTextSize','autoPosition']){
+    const node=document.getElementById(id);
+    node?.addEventListener('input',syncAutomationTextPreview);
+    node?.addEventListener('change',syncAutomationTextPreview);
+  }
+  if(typeof ResizeObserver!=='undefined')new ResizeObserver(()=>scaleAutomationTextPreview()).observe(viewport);
+}
+
 function renderAutomationFields(payload={}){
   renderAutoTargets(currentEditTargets||[]);
   const action=autoAction.value;
@@ -1230,7 +1295,23 @@ function renderAutomationFields(payload={}){
       payloadInput('Subtitle','autoSubtitle','text',payload.subtitle||'')+variableButtons('autoSubtitle')+
       `<div class="grid2">${payloadInput('Text Color','autoTextColor','color',payload.color||'#ffffff')}${payloadInput('Background','autoBg','color',payload.background||'#000000')}</div>`+
       `<div class="grid2">${payloadInput('Text Size','autoTextSize','number',payload.size||54,'min="12" max="200"')}`+
-      `<label>Position<select id="autoPosition"><option value="center" ${payload.position!=='top'&&payload.position!=='bottom'?'selected':''}>Center</option><option value="top" ${payload.position==='top'?'selected':''}>Top</option><option value="bottom" ${payload.position==='bottom'?'selected':''}>Bottom</option></select></label></div>`;
+      `<label>Position<select id="autoPosition"><option value="center" ${payload.position!=='top'&&payload.position!=='bottom'?'selected':''}>Center</option><option value="top" ${payload.position==='top'?'selected':''}>Top</option><option value="bottom" ${payload.position==='bottom'?'selected':''}>Bottom</option></select></label></div>`+
+      `<div class="panel" style="box-shadow:none;margin-top:12px">
+        <div class="top" style="margin-bottom:8px">
+          <div><b>WYSIWYG display preview</b><div id="autoWysiwygStatus" class="muted">Exact receiver preview • 1920×1080 design canvas</div></div>
+          <label style="margin:0">Reference resolution
+            <select onchange="setAutomationPreviewResolution(this.value)" style="width:auto">
+              <option value="1920x1080">1920×1080</option>
+              <option value="3840x2160">3840×2160</option>
+              <option value="1280x720">1280×720</option>
+            </select>
+          </label>
+        </div>
+        <div id="autoWysiwygViewport" style="position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:#000;border:1px solid var(--border);border-radius:10px">
+          <iframe id="autoWysiwygFrame" title="Scheduled display text WYSIWYG preview" style="position:absolute;left:0;top:0;width:1920px;height:1080px;max-width:none;border:0;transform-origin:0 0;background:#000"></iframe>
+        </div>
+        <div class="muted" style="margin-top:6px">This is the same receiver renderer used on classroom TVs. Editing does not send commands or save the automation.</div>
+      </div>`;
   }else if(action==='display.url'){
     h=payloadInput('Website / URL','autoUrl','url',payload.url||location.origin+'/')+
       `<label style="display:flex;gap:8px;align-items:flex-start;margin:10px 0">
@@ -1273,6 +1354,7 @@ function renderAutomationFields(payload={}){
        <button style="margin-top:8px" onclick="loadAutomationScenes(${inlineJsArg(lookup)})">Load Scenes</button>`;
   }
   autoPayload.innerHTML=h;
+  if(action==='display.text')setTimeout(setupAutomationTextPreview,0);
 }
 
 let currentEditTargets=[];
