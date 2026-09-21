@@ -31,8 +31,8 @@ test('display renderer uses dynamic content-object layout', async () => {
     'body content should get the full dynamic object width');
   assert.match(source, /item\.el\.style\.fontSize = \`\$\{item\.cap\}px\`/,
     'every pass must reset active objects to canonical cap geometry before estimating heights');
-  assert.match(source, /function singleLineHeight\(item\)/,
-    'single-line title and subtitle demand must be measured independently of prior fitted DOM geometry');
+  assert.match(source, /item\.desired = item\.minHeight/,
+    'region allocation must not depend on previously fitted DOM geometry');
 });
 
 test('auto-fit can grow to component caps while manual sizing remains a ceiling', () => {
