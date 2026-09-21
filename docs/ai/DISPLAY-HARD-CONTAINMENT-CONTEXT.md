@@ -1,6 +1,6 @@
 # AI Context: Dynamic Display Layout and Hard Containment
 
-Renderer revision `dynamic-fit-20260921-6` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
+Renderer revision `dynamic-fit-20260921-7` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
 
 Required invariants:
 
