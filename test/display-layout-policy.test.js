@@ -41,8 +41,12 @@ test('auto-fit can grow to component caps while manual sizing remains a ceiling'
 
 test('configured font size can never override hard rendered containment', () => {
   const source = fs.readFileSync(layoutPath, 'utf8');
-  assert.match(source, /function naturalSize\(el, box, fontSize = null\)/,
+  assert.match(source, /function naturalSize\(el, box, fontSize = null, unconstrainedWidth = false\)/,
     'fitter must independently measure unclipped natural wrapping geometry');
+  assert.match(source, /unconstrainedWidth \? true|if \(unconstrainedWidth\)/,
+    'single-line natural sizing must measure intrinsic width rather than current fitted width');
+  assert.match(source, /padding:el\.style\.padding \|\| computed\.padding/,
+    'relative timer padding must be measured from authored em units, not stale fitted pixels');
   assert.match(source, /function renderedContained\(el, box\)/);
   assert.match(source, /range\.getClientRects\(\)/,
     'fitter must validate actual painted text rectangles, not only scroll metrics');
