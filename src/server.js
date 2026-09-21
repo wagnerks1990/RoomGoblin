@@ -1837,7 +1837,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
       const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
       let rawTargets=[];
-      // Explicit target selection always wins. Inherited event/class targets
+      // explicit target selection always wins. Inherited event/class targets
       // are only fallbacks when this action has no explicit compatible target.
       if(explicitTargets.length)rawTargets=explicitTargets;
       else if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
