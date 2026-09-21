@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Linked-class automation targets
+
+- Make each linked class's default displays authoritative for every display action when class-target inheritance is enabled, and show those effective targets read-only without discarding saved manual selections.
+
 ### Automation action dwell timing
 
 - Correct automation sequencing so each action's configured timer means how long that action remains active before RoomGoblin advances to the next action.
