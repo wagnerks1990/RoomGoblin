@@ -27,8 +27,16 @@ test("server backfills saved cross-domain step defaults as well as the editor",(
 });
 
 
-test("explicit cross-domain display targets override linked class defaults",()=>{
+test("linked class defaults override saved per-action display targets when enabled",()=>{
   const run=server.slice(server.indexOf("const explicitTargets=Array.isArray(step.targets)"),server.indexOf("let resolvedTargets",server.indexOf("const explicitTargets=Array.isArray(step.targets)")));
-  assert.ok(run.indexOf("else if(explicitTargets.length)rawTargets=explicitTargets")<run.indexOf("event._classDefaultTargets"));
-  assert.match(run,/explicit target selection always wins/);
+  assert.ok(run.indexOf("event._classDefaultTargets")<run.indexOf("else if(explicitTargets.length)rawTargets=explicitTargets"));
+  assert.match(run,/Linked-class defaults are authoritative for every display action/);
+});
+
+test("automation editor shows linked class display targets as inherited and read-only",()=>{
+  const v2=fs.readFileSync(path.join(__dirname,"..","public","controller","automation-v2.js"),"utf8");
+  assert.match(html,/autoUseClassTargets[^>]+onchange="renderAutomationSteps\(\)"/);
+  assert.match(v2,/useClassDefaults=linkedClasses\.length>0&&autoUseClassTargets\.checked&&domain==="display"/);
+  assert.match(v2,/<fieldset disabled/);
+  assert.match(v2,/classTargetSummary\(cls\.defaultTargets\)/);
 });
