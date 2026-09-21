@@ -10,6 +10,10 @@
 - Add explicit Timer Overlay coverage: default to all display actions, with an Action 1 only compatibility option; reassert overlays after later text/URL/media/clear actions without restarting manual-duration countdowns.
 - Preserve class-end cancellation, Morning Announcements priority, recovery, and action-level error handling.
 
+### Linked-class automation targets
+
+- Make each linked class's default displays authoritative for every display action when class-target inheritance is enabled, and show those effective targets read-only without discarding saved manual selections.
+
 ### Morning Announcements live volume
 
 - Apply Live Watch announcement-volume slider changes immediately to the displays owned by an active announcement while persisting the value for future sessions.

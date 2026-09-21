@@ -108,7 +108,16 @@
   }
   function targetsHtml(step,i){
     const rows=targetRows(step),selected=step.targets?.length?step.targets:[rows[0]?.[0]].filter(Boolean);
-    const canShare=i>0&&actionDomain(step.action)===actionDomain(autoSteps[0]?.action);
+    const domain=actionDomain(step.action),linkedClasses=selectedAutomationClassIds().map(id=>S.classes.find(x=>x.id===id)).filter(Boolean);
+    const useClassDefaults=linkedClasses.length>0&&autoUseClassTargets.checked&&domain==="display";
+    if(useClassDefaults){
+      const inherited=[...new Set(linkedClasses.flatMap(cls=>Array.isArray(cls.defaultTargets)?cls.defaultTargets:[]))];
+      const inheritedSet=new Set(inherited),details=linkedClasses.map(cls=>`<div><b>${esc(cls.name)}</b>: ${esc(classTargetSummary(cls.defaultTargets))}</div>`).join("");
+      return `<div class="muted" style="margin-top:7px">Inherited from each linked class. This display action runs separately for each class using that class's defaults.</div>
+        <fieldset disabled style="border:0;padding:0;margin:7px 0 0;opacity:.65"><div class="toolbar">${rows.map(([id,label])=>`<label><input type="checkbox" ${inheritedSet.has(id)?'checked':''}> ${esc(label)}</label>`).join("")}</div></fieldset>
+        <div class="muted" style="margin-top:7px">${details}</div>`;
+    }
+    const canShare=i>0&&domain===actionDomain(autoSteps[0]?.action);
     return `${canShare?`<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" ${step.useEventTargets!==false?'checked':''} onchange="RoomGoblinAutomationV2.shareTargets(${i},this.checked)"> Use the same targets as Action 1</label>`:''}
       ${!canShare||step.useEventTargets===false?`<div class="toolbar" style="margin-top:7px">${rows.map(([id,label])=>`<label><input type="checkbox" ${selected.includes(id)?'checked':''} onchange="RoomGoblinAutomationV2.target(${i},${inlineJsArg(String(id))},this.checked)"> ${esc(label)}</label>`).join("")}</div>`:`<div class="muted">Targets follow Action 1, including linked-class default display targets.</div>`}`;
   }

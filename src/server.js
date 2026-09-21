@@ -929,9 +929,9 @@ function automationDeferredDisplayTargets(event){
     if(!["display-content","display-overlay"].includes(domain))continue;
     const explicit=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
     let targets=[];
-    if(i>0&&step.useEventTargets!==false&&domain===automationTargetDomain(first.action))targets=first.targets||event.targets||[];
+    if(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)targets=event._classDefaultTargets;
+    else if(i>0&&step.useEventTargets!==false&&domain===automationTargetDomain(first.action))targets=first.targets||event.targets||[];
     else if(explicit.length)targets=explicit;
-    else if(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)targets=event._classDefaultTargets;
     else targets=["all"];
     for(const id of automationDisplayTargets(targets))out.add(id);
   }
@@ -1000,9 +1000,9 @@ async function runDisplayAutomationResync(event,winningTargets){
     if(!["display-content","display-overlay"].includes(domain))continue;
     const explicit=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
     let rawTargets=[];
-    if(i>0&&step.useEventTargets!==false&&domain===automationTargetDomain(first.action))rawTargets=first.targets||event.targets||[];
+    if(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
+    else if(i>0&&step.useEventTargets!==false&&domain===automationTargetDomain(first.action))rawTargets=first.targets||event.targets||[];
     else if(explicit.length)rawTargets=explicit;
-    else if(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
     else rawTargets=["all"];
     const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
     if(!targets.length)continue;
@@ -1837,11 +1837,12 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
       const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
       let rawTargets=[];
-      // explicit target selection always wins. Inherited event/class targets
-      // are only fallbacks when this action has no explicit compatible target.
-      if(explicitTargets.length)rawTargets=explicitTargets;
+      // Linked-class defaults are authoritative for every display action when
+      // the event preference is enabled. Saved manual targets remain intact so
+      // disabling the preference restores the operator's prior selection.
+      if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
       else if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
-      else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
+      else if(explicitTargets.length)rawTargets=explicitTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
 
       let resolvedTargets;
