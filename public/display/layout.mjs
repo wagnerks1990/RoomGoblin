@@ -69,7 +69,7 @@ function available(box) {
   };
 }
 
-function naturalSize(el, box, fontSize = null) {
+function naturalSize(el, box, fontSize = null, unconstrainedWidth = false) {
   if (typeof document === 'undefined' || typeof el?.cloneNode !== 'function') return null;
   const a = available(box);
   if (a.width <= 0) return null;
@@ -92,10 +92,13 @@ function naturalSize(el, box, fontSize = null) {
     letterSpacing:computed.letterSpacing,
     wordSpacing:computed.wordSpacing, whiteSpace:computed.whiteSpace,
     overflowWrap:computed.overflowWrap, wordBreak:computed.wordBreak,
-    textAlign:computed.textAlign, padding:computed.padding,
+    textAlign:computed.textAlign, padding:el.style.padding || computed.padding,
     borderWidth:computed.borderWidth, borderStyle:computed.borderStyle
   });
-  if (el.id === 'timerOverlay') {
+  if (unconstrainedWidth) {
+    probe.style.width = 'max-content';
+    probe.style.maxWidth = 'none';
+  } else if (el.id === 'timerOverlay') {
     probe.style.width = 'max-content';
     probe.style.maxWidth = `${a.width}px`;
   } else {
@@ -184,12 +187,12 @@ export function fitElement(el, box, cap) {
 
 function estimateHeight(item) {
   if (!item.el.textContent.trim()) return 0;
-  let measured = naturalSize(item.el, item.box, item.cap);
+  let measured = naturalSize(item.el, item.box, item.cap, item.singleLine === true);
   if (item.singleLine && measured) {
     const a = available(item.box);
     const widthScale = Math.min(1, a.width / Math.max(1, measured.width));
     const widthBoundFont = Math.max(1, item.cap * widthScale * 0.995);
-    measured = naturalSize(item.el, item.box, widthBoundFont) || measured;
+    measured = naturalSize(item.el, item.box, widthBoundFont, true) || measured;
   }
   const raw = measured?.height || item.cap * 1.3;
   return Math.max(item.minHeight, raw + (item.name === 'timer' ? 16 : 10));
