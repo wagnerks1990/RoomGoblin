@@ -1,11 +1,12 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260921-1';
+export const LAYOUT_REVISION = 'dynamic-fit-20260921-2';
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
 const VERTICAL_MARGIN = 30;
 const COMPONENT_GAP = 14;
+const HORIZONTAL_GUTTER = 18;
 const finite = (value, fallback) => value == null || value === '' || !Number.isFinite(Number(value)) ? fallback : Number(value);
 export const bounded = (value, fallback, min, max) => Math.max(min, Math.min(max, finite(value, fallback)));
 
@@ -18,6 +19,8 @@ function establishStructuralStyles(nodes) {
   const {title, titleRegion, subtitle, subtitleRegion, text, textLayer,
     timerRegion, timerOverlay, timerLabel, timerValue} = nodes;
   for (const box of [titleRegion, subtitleRegion, textLayer, timerRegion]) {
+    box.style.left = `${HORIZONTAL_GUTTER}px`;
+    box.style.right = `${HORIZONTAL_GUTTER}px`;
     box.style.minWidth = '0';
     box.style.minHeight = '0';
     box.style.overflow = 'hidden';
@@ -34,10 +37,19 @@ function establishStructuralStyles(nodes) {
     el.style.overflow = 'visible';
     el.style.margin = '0';
     el.style.lineHeight = '1.2';
-    el.style.whiteSpace = 'break-spaces';
   }
+  title.style.whiteSpace = 'nowrap';
+  title.style.overflowWrap = 'normal';
+  title.style.wordBreak = 'normal';
+  subtitle.style.whiteSpace = 'nowrap';
+  subtitle.style.overflowWrap = 'normal';
+  subtitle.style.wordBreak = 'normal';
+  text.style.whiteSpace = 'break-spaces';
+  text.style.overflowWrap = 'anywhere';
+  text.style.wordBreak = 'break-word';
+  text.style.padding = '0';
   Object.assign(timerRegion.style, {
-    position:'absolute', left:'80px', right:'80px', display:'flex',
+    position:'absolute', display:'flex',
     alignItems:'center', justifyContent:'center', zIndex:'10000', pointerEvents:'none'
   });
   Object.assign(timerOverlay.style, {
