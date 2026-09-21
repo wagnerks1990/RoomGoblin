@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Automation independent repeat timing
+
+- Fix ordered automation sequences so each repeating or continual action keeps its own repeat deadline after the initial ordered pass.
+- Prevent a long repeat delay on an earlier action from starving later actions with shorter repeat intervals; actions due at the same moment still run in canonical order.
+- Preserve the one-second safety floor for zero-delay continual loops, class-end cancellation, Morning Announcements priority, timer overlays, and active-run recovery.
+
+
 ### Morning Announcements live volume
 
 - Apply Live Watch announcement-volume slider changes immediately to the displays owned by an active announcement while persisting the value for future sessions.
