@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Linked-class automation targets
+
+- Make each linked class's default displays authoritative for every display action when class-target inheritance is enabled, and show those effective targets read-only without discarding saved manual selections.
+
 ### Automation action dwell timing
 
 - Correct automation sequencing so each action's configured timer means how long that action remains active before RoomGoblin advances to the next action.
@@ -10,9 +14,18 @@
 - Add explicit Timer Overlay coverage: default to all display actions, with an Action 1 only compatibility option; reassert overlays after later text/URL/media/clear actions without restarting manual-duration countdowns.
 - Preserve class-end cancellation, Morning Announcements priority, recovery, and action-level error handling.
 
-### Linked-class automation targets
+### Dynamic classroom display layout
 
-- Make each linked class's default displays authoritative for every display action when class-target inheritance is enabled, and show those effective targets read-only without discarding saved manual selections.
+- Rebuilt title, subtitle, lesson body, and timer as dynamic layout objects instead of fixed-height bands.
+- Active objects now share the full 1920x1080 logical canvas with active-object height allocation; empty objects consume no layout space.
+- Automatic sizing may grow short content to component safety caps and shrinks dense content until actual painted glyphs fit.
+- Added independent unclipped natural-size probes to catch Chromium/WebView clipping that can look contained through scroll metrics alone.
+- Timer top/center/bottom placement now changes object order rather than reserving a hard-coded 240px band.
+- Added a browser regression fixture matching the reported NOCTI classroom display and verifies full-canvas use, 14px object gaps, and painted-glyph containment.
+- Title and subtitle now use near-edge-to-edge 18px logical gutters and stay on one line by shrinking horizontally instead of wrapping.
+- Body content uses the same near-edge-to-edge width with no font-relative horizontal padding.
+- Added exact-renderer WYSIWYG draft preview to Display Studio; title/subtitle/body/background edits update locally without sending commands to TVs.\n- Added the same exact receiver preview to scheduled automation Display Text editing with reference-resolution controls.\n- Preview drafts are same-origin, parent-only, preview-mode messages and cannot mutate physical displays.\n- Renderer/cache revision: `dynamic-fit-20260921-7`.
+
 
 ### Morning Announcements live volume
 

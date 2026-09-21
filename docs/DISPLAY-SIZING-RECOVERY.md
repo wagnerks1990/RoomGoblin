@@ -10,16 +10,9 @@ The same change forced the timer overlay to `width: 100%`, which turned the hist
 
 `public/display/layout.mjs` remains the only layout owner. The 1920x1080 logical stage remains unchanged and physical TV resolution/DPR remain scaling-only inputs.
 
-Configured scene sizes are again the visual baseline. With automatic fitting enabled, a component may grow by at most 10 percent above its configured size, subject to the existing absolute safety caps. It may always shrink as much as needed to remain inside its assigned logical region. `autoFit:false` continues to use the configured size as a hard ceiling while still shrinking on overflow.
+The current renderer supersedes the fixed-band recovery model. With automatic fitting enabled, configured sizes are starting inputs only; active title, subtitle, body, and timer objects dynamically share the usable canvas and may grow up to reviewed safety caps or shrink as much as required for containment. Empty objects consume no vertical space.
 
-Examples:
-
-- body size 54 -> automatic ceiling 59.4, not 120
-- title size 72 -> automatic ceiling 79.2, not 118
-- subtitle size 40 -> automatic ceiling 44, not 82
-- timer size 75 -> automatic ceiling 82.5, not 132
-
-The timer retains its independent reserved band so timer ticks cannot move the body, but the visible `timerOverlay` is content-sized (`max-content`) and centered inside that band. The white border therefore wraps the label/value rather than stretching across the display.
+The visible timer overlay remains content-sized (`max-content`), but its region is now dynamically allocated and ordered by top/center/bottom placement instead of always reserving a fixed 240px band. Timer ticks still do not trigger global layout changes.
 
 ## Verification
 
@@ -29,9 +22,9 @@ After deploying/rebuilding, reload each receiver and run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected renderer revision: `single-fit-20260911-5`.
+Expected renderer revision: `dynamic-fit-20260921-7`.
 
-For a scene configured approximately as title 72, subtitle 40, body 54 and timer 75, diagnostics should report fitted sizes no larger than approximately 79.2, 44, 59.4 and 82.5 respectively unless the configured values themselves differ. Long content may be smaller.
+Diagnostics should report `dynamic: true`, active-object `order`, and fitted regions that collectively use the available logical canvas without overlap. Font sizes are content-dependent: short content may grow substantially, while long content may shrink.
 
 Visually verify all of the following on the same real classroom state:
 

@@ -1,11 +1,11 @@
 # Display Hard Containment
 
-Renderer `single-fit-20260911-5` treats configured font sizes as preferences, never as permission to overflow.
+Renderer `dynamic-fit-20260921-7` uses dynamic layout objects for title, subtitle, lesson body, and timer.
 
-Title, subtitle, body and timer content are automatically reduced until the browser's actual rendered text rectangles fit inside their assigned regions. This applies even when an automation or operator sends a very large font size.
+Only active objects take vertical space. The renderer measures their content, orders them according to timer placement, allocates the available 1920x1080 logical canvas, and then grows or shrinks each object's text to the largest safe size that remains completely visible.
 
-The renderer checks both normal layout dimensions and painted glyph rectangles because some TV Chromium/WebView builds can under-report overflow through scroll measurements alone. A final bounded scaling fallback protects exceptionally dense content.
+The renderer checks normal dimensions, an unclipped measurement probe, and actual painted text rectangles. This prevents the TV Chromium/WebView failure mode where text is visibly cut off even though the constrained element reports dimensions that appear to fit.
 
-The renderer now establishes its containment-critical structural styles before measurement, so stale or unavailable layout CSS cannot reactivate legacy max-height/flex shrinking and partially clip multiline titles or body text.
+For a bottom timer, active objects normally fill the logical canvas from about y=30 through y=1050 with 14px gaps. Top and center timer modes reorder the timer among the other active objects rather than reserving a fixed timer band.
 
-After updating the Hub, reload receiver pages and verify `window.ClassroomDisplayDiagnostics().revision` reports `single-fit-20260911-5`. The receiver asset cache key is intentionally bumped with each layout behavior change so TVs do not keep stale renderer code.
+After updating the Hub, reload receiver pages and verify `window.ClassroomDisplayDiagnostics()` reports `revision: "dynamic-fit-20260921-7"`, `dynamic: true`, the expected object order, no overlap, and no fit warning for normal classroom content.

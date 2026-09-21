@@ -29,7 +29,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 #identify{display:none;position:absolute;inset:0;z-index:50;background:#1769e0;color:#fff;align-items:center;justify-content:center;font-size:270px;font-weight:900;overflow:hidden}
 #badge{position:fixed;right:8px;bottom:8px;background:#0009;color:#fff;font-size:11px;padding:5px 7px;border-radius:6px;opacity:.35;z-index:60}
 </style>
-<link rel="stylesheet" href="/display/layout.css?v=single-fit-20260911-5">
+<link rel="stylesheet" href="/display/layout.css?v=dynamic-fit-20260921-7">
 </head>
 <body>
 <div id="stage"><div id="media"></div>
@@ -41,7 +41,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 <div id="identify"></div>
 <div id="badge">Starting…</div></div>
 <script type="module">
-import {createDisplayLayout,fitElement,bounded} from '/display/layout.mjs?v=single-fit-20260911-5';
+import {createDisplayLayout,fitElement,bounded} from '/display/layout.mjs?v=dynamic-fit-20260921-7';
 import {authorizeMediaUrl,musicAssistantProxyUrl,identifyDuration,setDisplayGatewayHosts} from '/display/security.mjs?v=single-fit-20260909-4';
 import {wsUrl,getDisplayId} from '/shared/common.js';
 import {SendspinPlayer} from '/display/sendspin.bundle.js';
@@ -96,6 +96,12 @@ function timerSecondsNow(){const now=Date.now();if(timerState.mode==='countup'){
 function paintTimer({refit=false}={}){if(refit){timerOverlay.style.display=timerState.visible?'block':'none';timerLabel.textContent=timerState.label||'';timerLabel.style.display=timerState.label?'block':'none';timerOverlay.style.color=timerState.textColor||'#fff';timerOverlay.style.borderColor=timerState.borderColor||'#fff';timerOverlay.style.borderRadius=`${bounded(timerState.borderRadius,18,0,100)}px`;timerOverlay.style.background=timerState.background||'rgba(0,0,0,.35)';requestDisplayLayout();}if(!timerState.visible)return;const seconds=timerSecondsNow(),formatted=formatTimerSeconds(seconds);if(timerValue.textContent!==formatted)timerValue.textContent=formatted;if(timerState.mode==='countdown'&&timerState.running&&seconds<=0){timerState.running=false;timerState.remainingSeconds=0;timerState.endAt=null;if(timerTick){clearInterval(timerTick);timerTick=null}}}
 function applyTimer(p={}){const incomingInstance=p.timerInstanceId||null,currentInstance=timerState.timerInstanceId||null,freshInstance=!!incomingInstance&&incomingInstance!==currentInstance;if(timerTick){clearInterval(timerTick);timerTick=null}if(freshInstance)timerState={visible:false,running:false,mode:'countdown',durationSeconds:0,remainingSeconds:0,startedAt:null,endAt:null,...p};else timerState={...timerState,...p};if(timerState.mode==='countdown'&&timerState.endAt&&Number(timerState.endAt)<=Date.now()){timerState.running=false;timerState.remainingSeconds=0;timerState.endAt=null}paintTimer({refit:true});if(timerState.visible&&timerState.running)timerTick=setInterval(()=>paintTimer({refit:false}),1000);}
 function applyState(s){if(!s)return;stage.style.background=s.background?.color||'#000';text.textContent=s.text??'';applyTextOptions(s.textOptions||{});applyTitle({...s.titleOptions,text:s.title??''});applySubtitle({...s.subtitleOptions,text:s.subtitle??''});renderMedia(s.media||null);applyTimer(s.timer||{visible:false,running:false});presentationBlack.style.display=s.presentationBlack?'block':'none';requestDisplayLayout();}
+if(preview)window.addEventListener('message',event=>{
+  if(event.origin!==location.origin||event.source!==window.parent)return;
+  const message=event.data;
+  if(!message||message.type!=='roomgoblin.preview.state'||!message.state)return;
+  applyState(message.state);
+});
 let activeWebFrame=null,activeWebSpec=null,webAudioTimers=[];
 function clearWebAudioTimers(){for(const t of webAudioTimers)clearTimeout(t);webAudioTimers=[]}
 function isAntMediaPlayerUrl(value){try{const u=new URL(authorizeAssetUrl(value));return u.pathname.endsWith('/play.html')}catch{return false}}
