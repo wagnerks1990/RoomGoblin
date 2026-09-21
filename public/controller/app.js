@@ -1020,6 +1020,7 @@ function handleAutomationClassPickerToggle(){
   const saved=new Set(automationClassSelectionSnapshot);
   autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=saved.has(box.dataset.autoclass)});
   renderAutomationClassBinding();
+  renderAutomationSteps();
 }
 function closeAutomationClassLinker(save){
   if(!window.autoClassPicker)return;
@@ -1030,11 +1031,13 @@ function closeAutomationClassLinker(save){
   automationClassPickerClosing=true;
   autoClassPicker.open=false;
   renderAutomationClassBinding();
+  renderAutomationSteps();
 }
 function clearAutomationClassLinks(){
   if(!window.autoClassIds)return;
   autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=false});
-  updateAutomationClassLinkSummary();
+  renderAutomationClassBinding();
+  renderAutomationSteps();
 }
 
 async function loadClassSchedules(){
