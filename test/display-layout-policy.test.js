@@ -10,7 +10,7 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260921-4');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260921-5');
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
   const source = fs.readFileSync(layoutPath, 'utf8');
@@ -29,6 +29,8 @@ test('display renderer uses dynamic content-object layout', async () => {
     'subtitle should use the same single-line edge-to-edge fitting');
   assert.match(source, /text\.style\.padding = '0'/,
     'body content should get the full dynamic object width');
+  assert.match(source, /item\.el\.style\.fontSize = \`\\\$\{item\.cap\}px\`/,
+    'every pass must reset active objects to canonical cap geometry before estimating heights');
 });
 
 test('auto-fit can grow to component caps while manual sizing remains a ceiling', () => {
@@ -80,8 +82,8 @@ test('timer overlay remains a compact dynamic object', () => {
 test('receiver cache key and build identity are release-stamped at image build', () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260921-4/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20260921-4/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260921-5/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20260921-5/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),
