@@ -12,7 +12,7 @@ A scheduled event can therefore complete at the automation layer while a display
 
 `Use class default display targets` is a persisted event preference. It must not be silently cleared merely because the primary event action is lighting or another non-display domain.
 
-For linked-class events, the preference is retained so display-domain actions and future cross-domain target resolution can use the class's configured display defaults. Explicit per-action display targets continue to take precedence where configured.
+For linked-class events, the preference is retained so every display-domain action uses the class occurrence's configured display defaults. While enabled, those inherited display targets are authoritative and the action editor shows them read-only. Saved per-action display selections are preserved and become active again if the operator disables class-target inheritance. TV-power and lighting actions keep their independent target selections.
 
 ## Linked automation occurrence metadata
 
@@ -36,7 +36,7 @@ When changing the display runtime, preserve this invariant: dynamic overlays may
 2. Run an automation with `Display -> Show Image / Video / Document`.
 3. Confirm the selected media loads on the display, not merely that the automation reports `Completed`.
 4. Edit a linked-class event, enable `Use class default display targets`, save it, reopen the event, and confirm the checkbox remains enabled.
-5. Verify explicit cross-domain action targets remain unchanged after save/reload.
+5. Confirm every display action shows the linked class targets read-only, runs on those targets, and restores its prior manual selection after class-target inheritance is disabled.
 6. For a multi-class linked automation, confirm the list uses the first resolved class time and shows all resolved occurrence schedules instead of legacy standalone metadata.
 7. Run a multiline `display.text` automation with a timer overlay for at least 30 seconds and confirm title, subtitle, and body font sizes remain visually stable while the countdown changes.
 8. Resize a browser preview or change fullscreen state and confirm a one-time auto-fit still occurs.
