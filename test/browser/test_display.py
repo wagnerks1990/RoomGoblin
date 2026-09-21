@@ -309,14 +309,13 @@ class DisplayBrowserTests(unittest.TestCase):
         self.replay(page,P7)
         self.assertEqual(self.signature(page.evaluate(MEASURE)),self.signature(before))
 
-    def test_07_padding_regression_and_unbroken_words(self):
+    def test_07_edge_to_edge_body_and_unbroken_words(self):
         page=self.page();self.replay(page,P7)
-        old_failure=page.locator('#text').evaluate("""el=>{
-          const box=el.parentElement,s=getComputedStyle(el);
-          return el.scrollWidth > box.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight)+1;
-        }""")
-        self.assertTrue(old_failure, 'fixture must exercise the original double-padding bug')
-        self.measure(page,'padding-regression')
+        padding=page.locator('#text').evaluate("el=>[getComputedStyle(el).paddingLeft,getComputedStyle(el).paddingRight]")
+        self.assertEqual(padding,['0px','0px'])
+        data=self.measure(page,'edge-to-edge-body')
+        self.assertAlmostEqual(data['parts']['body']['box']['x'],18,delta=1)
+        self.assertAlmostEqual(data['parts']['body']['box']['w'],1884,delta=2)
         state=copy.deepcopy(P7);state['text']='X'*1000
         self.replay(page,state);self.measure(page,'unbroken-word')
 
