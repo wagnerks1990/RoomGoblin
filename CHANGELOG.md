@@ -8,6 +8,13 @@
 - Keep live volume changes in-place with `display.web.audio`; do not clear, reload, or recreate the announcement player.
 - Make both schedule-resume controls explicitly restore an active Morning Announcements takeover after an operator clears or reloads displays, while preserving observe-only periodic live probes.
 
+### Resumable media uploads
+
+- Added owner-isolated, resumable media uploads with 45 MiB chunks, a 5 GiB
+  default file limit, retry-safe chunk submission, pause/resume/cancel controls,
+  chunk and final SHA-256 verification, server-side content inspection, and
+  automatic cleanup of abandoned sessions (fixes #182).
+
 ### HTTPS/public-origin endpoint migration
 
 - Add a repository-wide endpoint inventory covering RoomGoblin browser/API/WebSocket traffic, Windows agents, displays/media plane, Music Assistant, Veyon, MQTT, ESPHome, Android management, maintenance/Host Agent and auxiliary web UIs.

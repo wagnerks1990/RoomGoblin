@@ -16,6 +16,7 @@ const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 const scryptAsync = promisify(crypto.scrypt);
 const multer = require("multer");
+const {ResumableUploadStore,ownerKey,inspectUpload,DEFAULT_CHUNK_BYTES}=require("./resumable-upload");
 const mqtt = require("mqtt");
 const { WebSocketServer, WebSocket } = require("ws");
 const {rateLimit}=require("express-rate-limit");
@@ -128,13 +129,17 @@ let LAB_SCREENSHOT_RETENTION_DAYS = environmentInteger("LAB_SCREENSHOT_RETENTION
 const LAB_AI_MONITOR_ENABLED = String(process.env.LAB_AI_MONITOR_ENABLED || "true").toLowerCase() !== "false";
 const LAB_AI_ALERT_COOLDOWN_MINUTES = environmentInteger("LAB_AI_ALERT_COOLDOWN_MINUTES",10,1,1440);
 const DISPLAY_TOKEN = String(process.env.DISPLAY_TOKEN || "");
-const MAX_UPLOAD_MB = environmentInteger("MAX_UPLOAD_MB",500,1,2048);
+const MAX_UPLOAD_MB = environmentInteger("MAX_UPLOAD_MB",5120,1,5120);
+const UPLOAD_SESSION_TTL_HOURS = environmentInteger("UPLOAD_SESSION_TTL_HOURS",24,1,168);
+const UPLOAD_ACTIVE_QUOTA_GB = environmentInteger("UPLOAD_ACTIVE_QUOTA_GB",10,5,100);
+const UPLOAD_MIN_FREE_GB = environmentInteger("UPLOAD_MIN_FREE_GB",1,0,100);
 const DEVICE_OFFLINE_SECONDS = environmentInteger("DEVICE_OFFLINE_SECONDS",45,5,3600);
 
 const APP_DIR = path.resolve(__dirname, "..");
 const PUBLIC_DIR = path.join(APP_DIR, "public");
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(APP_DIR, "data"));
 const MEDIA_DIR = path.join(DATA_DIR, "media");
+const MEDIA_UPLOAD_SESSION_DIR = path.join(DATA_DIR,"media-upload-sessions");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const AUDIT_FILE = path.join(DATA_DIR, "audit.jsonl");
 const DEVICE_CONFIG_FILE = path.join(APP_DIR, "config", "devices.json");
@@ -172,6 +177,7 @@ const SESSION_CLEAR_GAP_MS = environmentInteger("SESSION_CLEAR_GAP_MS",1200,0,30
 const SESSION_SPOTLIGHT_ROTATE_MS = environmentInteger("SESSION_SPOTLIGHT_ROTATE_MS",9000,1000,600000);
 
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
+fs.mkdirSync(MEDIA_UPLOAD_SESSION_DIR,{recursive:true });
 fs.mkdirSync(PRESENTATIONS_DIR, { recursive: true });
 fs.mkdirSync(PRESENTATION_UPLOAD_TMP, { recursive: true });
 
@@ -7137,13 +7143,45 @@ app.post("/api/v1/presentations/control",requireCapability("media.manage"),async
 });
 
 // Media Library uploads / documents
+const resumableUploads=new ResumableUploadStore({
+  root:MEDIA_UPLOAD_SESSION_DIR,
+  maxFileBytes:MAX_UPLOAD_MB*1024*1024,
+  chunkBytes:DEFAULT_CHUNK_BYTES,
+  ttlMs:UPLOAD_SESSION_TTL_HOURS*60*60*1000,
+  maxOwnerBytes:UPLOAD_ACTIVE_QUOTA_GB*1024*1024*1024,
+  minFreeBytes:UPLOAD_MIN_FREE_GB*1024*1024*1024
+});
+const uploadCleanupTimer=setInterval(()=>{
+  try{const removed=resumableUploads.cleanup();if(removed)audit({kind:"media.upload.cleanup",removed})}
+  catch(err){diagnosticError(err,{component:"media-upload",operation:"cleanup"})}
+},60*60*1000);uploadCleanupTimer.unref?.();
+resumableUploads.cleanup();
+
+function mediaStoredName(originalName){
+  const ext=path.extname(originalName||"").toLowerCase().slice(0,15);
+  const base=path.basename(originalName||"media",ext).replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100);
+  return `${crypto.randomUUID()}-${base}${ext}`;
+}
+async function registerUploadedMedia({stored,originalName,mime,size}){
+  const type=classifyMedia(stored,mime),rec={
+    originalName,storedName:stored,mime,type,uploadedAt:new Date().toISOString(),
+    generatedPdf:null,conversionStatus:null,conversionError:null
+  };
+  mediaLibrary.files[stored]=rec;persistMediaLibrary();
+  if(officeConvertible(stored)){
+    rec.conversionStatus="converting";persistMediaLibrary();
+    try{rec.generatedPdf=await convertOfficeToPdf(stored);rec.conversionStatus="ready";rec.conversionError=null}
+    catch(err){rec.conversionStatus="failed";rec.conversionError=err.message}
+    persistMediaLibrary();
+  }
+  audit({kind:"media.upload",name:originalName,stored,mime,size,type,generatedPdf:rec.generatedPdf});
+  return libraryRecordFromDisk(stored);
+}
+
 const storage = multer.diskStorage({
   destination: (_req,_file,cb)=>cb(null,MEDIA_DIR),
   filename: (_req,file,cb)=>{
-    const ext=path.extname(file.originalname||"").toLowerCase().slice(0,15);
-    const base=path.basename(file.originalname||"media",ext)
-      .replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100);
-    cb(null,`${crypto.randomUUID()}-${base}${ext}`);
+    cb(null,mediaStoredName(file.originalname));
   }
 });
 const upload = multer({
@@ -7171,36 +7209,42 @@ const upload = multer({
 
 app.post("/api/v1/media",requireCapability("media.manage"),upload.single("media"),async(req,res)=>{
   if(!req.file)return res.status(400).json({ok:false,error:"No file uploaded"});
-  const stored=req.file.filename,type=classifyMedia(stored,req.file.mimetype);
-  const rec={
-    originalName:req.file.originalname,
-    storedName:stored,
-    mime:req.file.mimetype,
-    type,
-    uploadedAt:new Date().toISOString(),
-    generatedPdf:null,
-    conversionStatus:null,
-    conversionError:null
-  };
-  mediaLibrary.files[stored]=rec;
-  persistMediaLibrary();
+  try{
+    inspectUpload(req.file.path,req.file.originalname);
+    const file=await registerUploadedMedia({stored:req.file.filename,originalName:req.file.originalname,mime:req.file.mimetype,size:req.file.size});
+    res.json({ok:true,file});
+  }catch(err){fs.rmSync(req.file.path,{force:true});throw err}
+});
 
-  if(officeConvertible(stored)){
-    rec.conversionStatus="converting";
-    persistMediaLibrary();
-    try{
-      rec.generatedPdf=await convertOfficeToPdf(stored);
-      rec.conversionStatus="ready";
-      rec.conversionError=null;
-    }catch(err){
-      rec.conversionStatus="failed";
-      rec.conversionError=err.message;
-    }
-    persistMediaLibrary();
-  }
-
-  audit({kind:"media.upload",name:req.file.originalname,stored,mime:req.file.mimetype,size:req.file.size,type,generatedPdf:rec.generatedPdf});
-  res.json({ok:true,file:libraryRecordFromDisk(stored)});
+app.post("/api/v1/media/uploads",requireCapability("media.manage"),(req,res)=>{
+  try{const session=resumableUploads.create({owner:ownerKey(req),name:req.body?.name,size:req.body?.size,mime:req.body?.mime});audit({kind:"media.upload.created",uploadId:session.id,name:session.name,size:session.size});res.status(201).json({ok:true,upload:resumableUploads.public(session),maxFileBytes:MAX_UPLOAD_MB*1024*1024})}
+  catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
+});
+app.get("/api/v1/media/uploads/:id",requireCapability("media.manage"),(req,res)=>{
+  try{res.json({ok:true,upload:resumableUploads.public(resumableUploads.owned(req.params.id,ownerKey(req)))})}
+  catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
+});
+app.put("/api/v1/media/uploads/:id/chunks/:index",requireCapability("media.manage"),async(req,res)=>{
+  try{
+    if(String(req.get("content-type")||"").split(";",1)[0].trim().toLowerCase()!=="application/octet-stream")return res.status(415).json({ok:false,error:"Chunks require application/octet-stream"});
+    const length=Number(req.get("content-length"));if(!Number.isSafeInteger(length))return res.status(411).json({ok:false,error:"Content-Length is required"});
+    const upload=await resumableUploads.putChunk({id:req.params.id,owner:ownerKey(req),index:req.params.index,input:req,contentLength:length,digest:req.get("x-chunk-sha256")});
+    res.json({ok:true,upload});
+  }catch(err){if(!req.readableEnded)req.resume();res.status(err.status||400).json({ok:false,error:err.message})}
+});
+app.post("/api/v1/media/uploads/:id/complete",requireCapability("media.manage"),async(req,res)=>{
+  let destination="";
+  try{
+    const session=resumableUploads.owned(req.params.id,ownerKey(req)),stored=mediaStoredName(session.name);
+    destination=path.join(MEDIA_DIR,stored);
+    const meta=await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination});
+    const file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size});
+    res.json({ok:true,file});
+  }catch(err){if(destination)fs.rmSync(destination,{force:true});res.status(err.status||400).json({ok:false,error:err.message})}
+});
+app.delete("/api/v1/media/uploads/:id",requireCapability("media.manage"),async(req,res)=>{
+  try{await resumableUploads.cancel(req.params.id,ownerKey(req));audit({kind:"media.upload.cancelled",uploadId:req.params.id});res.json({ok:true})}
+  catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 
 app.post("/api/v1/media/:name/convert",requireCapability("media.manage"),async(req,res)=>{

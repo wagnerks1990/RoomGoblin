@@ -117,6 +117,10 @@ Uploaded video/audio payload delivery is split from the controller/control plane
 
 Preserve these rules:
 
+- browser media uploads use owner-isolated resumable sessions and 45 MiB chunks;
+- the default total-file ceiling is 5 GiB, while every proxied request must remain below Cloudflare's 100 MB limit;
+- preserve chunk/final SHA-256 verification, content-signature validation, idempotent retries, cancellation, and abandoned-session cleanup;
+
 - never move sustained MP4 transfer back onto port `3000` as a convenience fix;
 - physical receivers keep signed asset authorization while controller/browser media requests may be authorized through the existing authenticated session;
 - `:3020` responses use `Cross-Origin-Resource-Policy: cross-origin` because the receiver page and media listener intentionally use different ports; authorization still happens before bytes are served;
