@@ -19,17 +19,14 @@ test("class default display targets remain domain-aware",()=>{
   assert.match(controller,/autoUseClassTargets\.checked=e\.useClassTargets!==false/);
 });
 
-test("scheduled runner executes ordered first pass then independent repeat timers",()=>{
-  assert.match(server,/const steps=automationActionSequence\(event\)/);
-  assert.match(server,/First pass stays strictly ordered/);
-  assert.match(server,/repeat\/loop timers are independent/);
-  assert.match(server,/function actionCanRunAgain\(step,executions\)/);
-  assert.match(server,/function actionRepeatDeadline\(step,from=Date\.now\(\)\)/);
-  assert.match(server,/const executions=steps\.map\(\(\)=>0\),nextDue=steps\.map\(\(\)=>Infinity\)/);
-  assert.match(server,/for\(const i of due\)/);
-  assert.match(server,/execute them in canonical/);
-  assert.match(server,/step\.executionMode==="loop"&&delay===0\?1000:delay/);
-  assert.match(server,/sequenceHasContinuousActions\(steps\)/);
+test("scheduled runner treats per-action repeat delay as dwell before advancing",()=>{
+  assert.match(server,/const steps=automationActionSequence\\(event\\)/);
+  assert.match(server,/repeatDelaySeconds is the dwell\\/hold/);
+  assert.match(server,/hasLaterEligibleAction\\(i,pass\\)/);
+  assert.match(server,/const dwell=Math\\.max\\(0,Number\\(step\\.repeatDelaySeconds\\|\\|0\\)\\)/);
+  assert.match(server,/await waitSeconds\\(dwell\\)/);
+  assert.match(server,/sequenceHasEligibleActions\\(steps,pass\\+1\\)/);
+  assert.match(server,/sequenceHasContinuousActions\\(steps\\)/);
 });
 
 test("Test Now and persisted run summaries expose action-level failures",()=>{
