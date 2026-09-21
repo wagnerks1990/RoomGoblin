@@ -42,6 +42,17 @@ test("expired sessions are reclaimed and cancelled sessions disappear",async t=>
  const cancelled=store.create({owner:"user:a",name:"cancel.pdf",size:4,mime:"application/pdf"});await store.cancel(cancelled.id,"user:a");assert.throws(()=>store.read(cancelled.id),/not found/);
 });
 
+
+test("resumable upload session data remains readable by the shared maintenance group",async t=>{
+ const {root,store}=fixture();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const session=store.create({owner:"user:a",name:"lesson.pdf",size:4,mime:"application/pdf"});
+ assert.equal(fs.statSync(root).mode&0o777,0o750);
+ assert.equal(fs.statSync(store.dir(session.id)).mode&0o777,0o750);
+ await put(store,session.id,"user:a",0,Buffer.from("%PDF"));
+ assert.equal(fs.statSync(path.join(store.dir(session.id),"0.part")).mode&0o777,0o640);
+ assert.equal(fs.statSync(store.metaFile(session.id)).mode&0o777,0o640);
+});
+
 test("5 GiB policy accepts a 1.7 GiB session without allocating the file and enforces owner quota",t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-upload-policy-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  const gib=1024*1024*1024,store=new ResumableUploadStore({root,maxFileBytes:5*gib,maxOwnerBytes:2*gib,minFreeBytes:0});
