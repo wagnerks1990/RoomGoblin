@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Resumable upload backup readability
+
+- Create resumable-upload roots and per-upload session directories as `0750` and chunk files as `0640`, matching RoomGoblin's shared-data contract.
+- Prevent operational safety backups from failing with `EACCES` while an upload session exists, without granting world access or weakening secret/ADB/signing permissions.
+
 ### Automation action dwell timing
 
 - Correct automation sequencing so each action's configured timer means how long that action remains active before RoomGoblin advances to the next action.
