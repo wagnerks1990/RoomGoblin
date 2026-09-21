@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Dynamic classroom display layout
+
+- Rebuilt title, subtitle, lesson body, and timer as dynamic layout objects instead of fixed-height bands.
+- Active objects now share the full 1920x1080 logical canvas with content-aware height allocation; empty objects consume no layout space.
+- Automatic sizing may grow short content to component safety caps and shrinks dense content until actual painted glyphs fit.
+- Added independent unclipped natural-size probes to catch Chromium/WebView clipping that can look contained through scroll metrics alone.
+- Timer top/center/bottom placement now changes object order rather than reserving a hard-coded 240px band.
+- Added a browser regression fixture matching the reported NOCTI classroom display and verifies full-canvas use, 14px object gaps, and painted-glyph containment.
+- Renderer/cache revision: `dynamic-fit-20260921-1`.
+
+
 ### Morning Announcements live volume
 
 - Apply Live Watch announcement-volume slider changes immediately to the displays owned by an active announcement while persisting the value for future sessions.
