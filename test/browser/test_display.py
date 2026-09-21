@@ -51,6 +51,22 @@ CLUB_SELECTION = {
               'timerInstanceId': 'fixture-club-selection'},
 }
 
+NOCTI_DYNAMIC = {
+    'background': {'color': '#000000'},
+    'title': 'B1 - P5 / IT IV - Workstation/Server OS - 9/21/2026',
+    'titleOptions': {'size': 92, 'color': '#ffffff'},
+    'subtitle': 'Mr. Wagner',
+    'subtitleOptions': {'size': 44, 'color': '#ffffff'},
+    'text': ('NOCTI Pre-Test Thursday 10/8/2026\n\n'
+             '*On 10/8 Report to Fowler LGI instead of class.\n\n'
+             '*You also should have received email from Nocti with Study Guides.'),
+    'textOptions': {'size': 64, 'color': '#ffffff', 'position': 'center'},
+    'timer': {'visible': True, 'running': False, 'mode': 'countdown',
+              'remainingSeconds': 2091, 'durationSeconds': 3600, 'fontSize': 64,
+              'position': 'bottom', 'label': 'B1 - P5 • Class Ends In',
+              'timerInstanceId': 'fixture-nocti-dynamic'},
+}
+
 TRANSPORT = """(() => {
   window.__now = 1788970000000;
   Date.now = () => window.__now;
@@ -388,6 +404,23 @@ class DisplayBrowserTests(unittest.TestCase):
         self.command(page,'display.clear',{})
         self.assertEqual(page.locator('#identify').evaluate('el=>el.style.display'),'none')
         self.assertFalse(self.errors)
+
+    def test_14_dynamic_objects_use_full_canvas_and_contain_nocti_scene(self):
+        page=self.page()
+        self.replay(page,NOCTI_DYNAMIC)
+        data=self.measure(page,'dynamic-nocti-scene')
+        self.assertTrue(data['diagnostics']['dynamic'])
+        self.assertEqual(data['diagnostics']['order'],['title','subtitle','body','timer'])
+        boxes=[data['parts'][name]['box'] for name in ['title','subtitle','body','timer']]
+        self.assertAlmostEqual(boxes[0]['y'],30,delta=1)
+        self.assertAlmostEqual(boxes[-1]['y']+boxes[-1]['h'],1050,delta=1)
+        for left,right in zip(boxes,boxes[1:]):
+            self.assertAlmostEqual(right['y']-(left['y']+left['h']),14,delta=1)
+        self.assertNotEqual(round(boxes[0]['h']),125)
+        self.assertNotEqual(round(boxes[2]['h']),511)
+        self.assertGreater(data['parts']['title']['font'],20)
+        self.assertGreater(data['parts']['body']['font'],20)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
