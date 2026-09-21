@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Automation action dwell timing
+
+- Correct automation sequencing so each action's configured timer means how long that action remains active before RoomGoblin advances to the next action.
+- Preserve `delaySeconds` as a pre-action wait and use `repeatDelaySeconds` as the post-action dwell timer on every sequence pass.
+- Expose Action 1 timing in the editor, allow continual sequence participation for all action types, and label action timers by their actual stay/advance behavior.
+- Add explicit Timer Overlay coverage: default to all display actions, with an Action 1 only compatibility option; reassert overlays after later text/URL/media/clear actions without restarting manual-duration countdowns.
+- Preserve class-end cancellation, Morning Announcements priority, recovery, and action-level error handling.
+
 ### Dynamic classroom display layout
 
 - Rebuilt title, subtitle, lesson body, and timer as dynamic layout objects instead of fixed-height bands.
