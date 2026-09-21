@@ -10,7 +10,9 @@
 - Added independent unclipped natural-size probes to catch Chromium/WebView clipping that can look contained through scroll metrics alone.
 - Timer top/center/bottom placement now changes object order rather than reserving a hard-coded 240px band.
 - Added a browser regression fixture matching the reported NOCTI classroom display and verifies full-canvas use, 14px object gaps, and painted-glyph containment.
-- Renderer/cache revision: `dynamic-fit-20260921-1`.
+- Title and subtitle now use near-edge-to-edge 18px logical gutters and stay on one line by shrinking horizontally instead of wrapping.
+- Body content uses the same near-edge-to-edge width with no font-relative horizontal padding.
+- Renderer/cache revision: `dynamic-fit-20260921-2`.
 
 
 ### Morning Announcements live volume
