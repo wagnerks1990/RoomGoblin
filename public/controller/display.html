@@ -581,11 +581,50 @@ window.setPreviewSize=size=>{
   localStorage.setItem('classroom-preview-size',size);
   requestAnimationFrame(scalePreview);
 };
+function displayDraftState(){
+  const bodyBackground=rgba(el('textBg').value,Number(el('textBgOpacity').value));
+  return {
+    background:{color:el('bgColor').value},
+    title:el('titleText').value,
+    titleOptions:{size:Number(el('titleSize').value||92),color:el('titleColor').value,autoFit:true},
+    subtitle:el('subtitleText').value,
+    subtitleOptions:{size:Number(el('subtitleSize').value||44),color:el('subtitleColor').value,autoFit:true},
+    text:el('text').value,
+    textOptions:{
+      size:Number(el('fontSize').value||64),
+      color:el('textColor').value,
+      position:el('position').value,
+      background:bodyBackground,
+      autoFit:true
+    },
+    timer:{visible:false,running:false},
+    media:null,
+    presentationBlack:false
+  };
+}
+function syncDraftPreview(){
+  const frame=el('previewFrame');
+  if(!frame?.contentWindow)return;
+  frame.contentWindow.postMessage({type:'roomgoblin.preview.state',state:displayDraftState()},location.origin);
+  const status=el('previewDraftStatus');
+  if(status)status.textContent=`Draft preview • Design canvas 1920×1080 • Reference ${previewLogicalWidth}×${previewLogicalHeight}`;
+}
 function loadPreview(){
   const frame=el('previewFrame');
   const id=el('previewSelect').value||Object.keys(devices)[0];if(!id)return;
   frame.src=`/display/${encodeURIComponent(id)}?preview=1`;
-  frame.onload=()=>requestAnimationFrame(scalePreview);
+  frame.onload=()=>requestAnimationFrame(()=>{scalePreview();syncDraftPreview()});
+}
+const previewDraftFieldIds=[
+  'titleText','subtitleText','titleColor','subtitleColor','titleSize','subtitleSize',
+  'text','textColor','bgColor','textBg','textBgOpacity','fontSize','position'
+];
+for(const id of previewDraftFieldIds){
+  setTimeout(()=>{
+    const node=el(id);
+    node?.addEventListener('input',syncDraftPreview);
+    node?.addEventListener('change',syncDraftPreview);
+  },0);
 }
 new ResizeObserver(()=>scalePreview()).observe(el('previewViewport'));
 window.addEventListener('resize',scalePreview);
