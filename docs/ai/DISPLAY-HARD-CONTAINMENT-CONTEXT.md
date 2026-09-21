@@ -1,10 +1,10 @@
 # AI Context: Dynamic Display Layout and Hard Containment
 
-Renderer revision `dynamic-fit-20260921-1` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
+Renderer revision `dynamic-fit-20260921-2` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
 
 Required invariants:
 
-- Empty text objects consume no vertical layout space.
+- Empty text objects consume no vertical layout space.\n- Title and subtitle are single-line objects; never re-enable wrapping as the default.\n- Title, subtitle, and body use 18px logical horizontal gutters so nearly the full display width is available.
 - Active objects share the full usable 1920x1080 logical canvas with small bounded gaps.
 - Timer top/center/bottom changes object order rather than reserving a permanently fixed band.
 - Automatic fitting may grow content up to reviewed component safety caps.
