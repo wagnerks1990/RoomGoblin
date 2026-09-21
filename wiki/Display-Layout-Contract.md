@@ -51,7 +51,7 @@ JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 
 The report contains renderer revision, CSS viewport, DPR, stage scale, font-load status, layout pass count, fitted logical sizes, region geometry, and containment warnings. It does not expose credentials or the lesson body. Layout telemetry also accompanies receiver heartbeats.
 
-Expected renderer revision: `dynamic-fit-20260921-1`. Title, subtitle, body, and timer are dynamic objects rather than fixed bands. Only active objects consume vertical space; they share the usable logical canvas with bounded gaps, automatic fitting may grow short content to reviewed safety caps, and mandatory shrink-to-fit containment keeps every rendered glyph inside its allocated region.
+Expected renderer revision: `dynamic-fit-20260921-2`. Title, subtitle, body, and timer are dynamic objects rather than fixed bands. Only active objects consume vertical space; they share the usable logical canvas with bounded gaps, automatic fitting may grow short content to reviewed safety caps, and mandatory shrink-to-fit containment keeps every rendered glyph inside its allocated region.
 
 Browser regression tests load the real receiver HTML, layout module, CSS, shared scripts, and fonts. Only transport, the branding API, and the unrelated audio SDK are mocked. Chromium and Firefox coverage includes the captured NOCTI classroom scene, P6/P7 samples, multiline announcements, missing companion stylesheet, 1080p/4K/DPR/narrow viewports, reload/reconnect, timer positions, timer ticks, long labels, manual sizes, long unbroken words, and dense content. Tests measure element/text-range bounds, dynamic object order, full-canvas use, gaps, and non-overlap.
 
