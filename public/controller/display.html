@@ -161,12 +161,13 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
     </aside>
 
     <main class="main" id="displayStudio" tabindex="-1">
-      <details class="panel previewPanel">
+      <details class="panel previewPanel" open>
         <summary>Live preview <span class="muted">Check a screen before sending</span></summary>
         <div class="previewHead">
           <div>
             <h2 style="margin:0">Live Preview</h2>
-            <div class="muted">See the selected display at its actual aspect ratio.</div>
+            <div class="muted">WYSIWYG preview uses the same renderer as the TV. Changes below appear here before anything is sent.</div>
+            <div id="previewDraftStatus" class="muted" style="margin-top:3px">Draft preview • Design canvas 1920×1080</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <select id="previewSelect" aria-label="Preview display" style="max-width:260px"></select>
@@ -202,8 +203,8 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
         </nav>
 
         <section id="display" class="workspace active">
-          <h2>Message</h2>
-          <p class="muted">Send content to the screens selected on the left.</p>
+          <h2>Message <span class="muted">• live WYSIWYG draft</span></h2>
+          <p class="muted">Edit the fields below and the exact receiver preview updates immediately. Nothing is sent to physical displays until you press a Send button.</p>
           <details class="studio-disclosure"><summary>Title &amp; subtitle</summary>
           <div class="grid2">
             <div>
