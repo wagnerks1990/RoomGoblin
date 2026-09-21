@@ -185,17 +185,36 @@ export function fitElement(el, box, cap) {
   return {fontSize, scale, status:fontSize * scale < READABLE_MIN ? 'below-readable-minimum' : 'fit'};
 }
 
+function singleLineHeight(item) {
+  const a = available(item.box);
+  if (a.width <= 0 || typeof document === 'undefined') return item.minHeight;
+  try {
+    const computed = getComputedStyle(item.el);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('no canvas context');
+    context.font = `${computed.fontStyle || 'normal'} ${computed.fontWeight || '400'} ${item.cap}px ${computed.fontFamily || 'sans-serif'}`;
+    const width = Math.max(1, context.measureText(item.el.textContent || '').width);
+    const fitted = Math.max(1, item.cap * Math.min(1, a.width / width) * 0.995);
+    return Math.max(item.minHeight, fitted * 1.2 + 10);
+  } catch {
+    const measured = naturalSize(item.el, item.box, item.cap, true);
+    if (!measured) return item.minHeight;
+    const fitted = Math.max(1, item.cap * Math.min(1, a.width / Math.max(1, measured.width)) * 0.995);
+    return Math.max(item.minHeight, fitted * 1.2 + 10);
+  }
+}
+
 function estimateHeight(item) {
   if (!item.el.textContent.trim()) return 0;
-  let measured = naturalSize(item.el, item.box, item.cap, item.singleLine === true);
-  if (item.singleLine && measured) {
-    const a = available(item.box);
-    const widthScale = Math.min(1, a.width / Math.max(1, measured.width));
-    const widthBoundFont = Math.max(1, item.cap * widthScale * 0.995);
-    measured = naturalSize(item.el, item.box, widthBoundFont, true) || measured;
+  if (item.singleLine) return singleLineHeight(item);
+  if (item.name === 'timer') {
+    const labelLength = item.el.querySelector?.('#timerLabel')?.textContent?.trim().length || 0;
+    return Math.max(item.minHeight, item.minHeight + Math.min(80, labelLength * 0.5));
   }
+  const measured = naturalSize(item.el, item.box, item.cap);
   const raw = measured?.height || item.cap * 1.3;
-  return Math.max(item.minHeight, raw + (item.name === 'timer' ? 16 : 10));
+  return Math.max(item.minHeight, raw + 10);
 }
 
 function allocateHeights(items, availableHeight) {
