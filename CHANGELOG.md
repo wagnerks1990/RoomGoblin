@@ -20,7 +20,7 @@
 - Added a browser regression fixture matching the reported NOCTI classroom display and verifies full-canvas use, 14px object gaps, and painted-glyph containment.
 - Title and subtitle now use near-edge-to-edge 18px logical gutters and stay on one line by shrinking horizontally instead of wrapping.
 - Body content uses the same near-edge-to-edge width with no font-relative horizontal padding.
-- Added exact-renderer WYSIWYG draft preview to Display Studio; title/subtitle/body/background edits update locally without sending commands to TVs.\n- Added the same exact receiver preview to scheduled automation Display Text editing with reference-resolution controls.\n- Preview drafts are same-origin, parent-only, preview-mode messages and cannot mutate physical displays.\n- Renderer/cache revision: `dynamic-fit-20260921-5`.
+- Added exact-renderer WYSIWYG draft preview to Display Studio; title/subtitle/body/background edits update locally without sending commands to TVs.\n- Added the same exact receiver preview to scheduled automation Display Text editing with reference-resolution controls.\n- Preview drafts are same-origin, parent-only, preview-mode messages and cannot mutate physical displays.\n- Renderer/cache revision: `dynamic-fit-20260921-6`.
 
 
 ### Morning Announcements live volume
