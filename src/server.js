@@ -1274,6 +1274,7 @@ function normalizeTimerOverlay(input,existing=null){
     label:String(merged.label||"Time Remaining").slice(0,200),
     background:String(merged.background||"rgba(0,0,0,.35)").slice(0,120),
     useEventTargets:merged.useEventTargets!==false,
+    coverage:String(merged.coverage||"all-display-actions")==="action-1-only"?"action-1-only":"all-display-actions",
     targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(cleanId).filter(Boolean))]:[],
     followLinkedClasses:merged.followLinkedClasses!==false,
     followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120})
@@ -1641,15 +1642,17 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   };
 }
 
-async function runAutomationTimerOverlay(event,{manual=false,commandSource="automation"}={}){
+async function runAutomationTimerOverlay(event,{manual=false,commandSource="automation",targetsOverride=null,endAtOverride=null}={}){
   const timerOverlay=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
   if(!timerOverlay?.enabled)return {ok:true,skipped:true,reason:"disabled"};
 
-  const timerTargetSource=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
-    ? event._classDefaultTargets
-    : (timerOverlay.useEventTargets!==false
-      ? event.targets
-      : (Array.isArray(timerOverlay.targets)&&timerOverlay.targets.length?timerOverlay.targets:event.targets));
+  const timerTargetSource=Array.isArray(targetsOverride)&&targetsOverride.length
+    ? targetsOverride
+    : ((event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
+      ? event._classDefaultTargets
+      : (timerOverlay.useEventTargets!==false
+        ? event.targets
+        : (Array.isArray(timerOverlay.targets)&&timerOverlay.targets.length?timerOverlay.targets:event.targets)));
   const timerTargets=automationDisplayTargets(timerTargetSource);
   if(!timerTargets.length)throw new Error("Timer overlay has no display targets");
 
@@ -1703,8 +1706,8 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
       return {ok:true,atZero:true,classId:cls.id,className:cls.name,result};
     }
   }else{
-    remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
-    endAt=new Date(Date.now()+remainingSeconds*1000);
+    endAt=endAtOverride instanceof Date?new Date(endAtOverride.getTime()):(Number.isFinite(Number(endAtOverride))?new Date(Number(endAtOverride)):new Date(Date.now()+Math.max(0,Number(timerOverlay.durationSeconds??600))*1000));
+    remainingSeconds=Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000));
   }
 
   const contextEvent=cls?{...event,_class:cls}:event;
@@ -1750,6 +1753,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   const pushStep=entry=>{combined.totalStepExecutions++;combined.steps.push(entry);if(combined.steps.length>MAX_RUN_TRACE)combined.steps.splice(0,combined.steps.length-MAX_RUN_TRACE)};
   const pushResults=rows=>{for(const row of rows||[]){combined.totalResults++;combined.results.push(row)}if(combined.results.length>MAX_RUN_TRACE)combined.results.splice(0,combined.results.length-MAX_RUN_TRACE)};
   let overlayApplied=false;
+  const overlayCoverage=event.timerOverlay?.coverage==="action-1-only"?"action-1-only":"all-display-actions";
+  const manualOverlayEndAt=event.timerOverlay?.enabled&&event.timerOverlay?.source!=="class-end"
+    ? new Date(Date.now()+Math.max(0,Number(event.timerOverlay.durationSeconds??600))*1000)
+    : null;
 
   function windowOpen(){
     if(manual)return true;
@@ -1777,17 +1784,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
     return windowOpen();
   }
-  async function applyTimerOverlayOnce(){
-    if(overlayApplied||!event.timerOverlay?.enabled)return;
+  async function applyTimerOverlay({targetsOverride=null,force=false}={}){
+    if(!event.timerOverlay?.enabled)return;
+    if(overlayApplied&&!force)return;
     overlayApplied=true;
     try{
-      const lockedTimerTargets=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(
-        event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length
+      const sourceTargets=Array.isArray(targetsOverride)&&targetsOverride.length
+        ? targetsOverride
+        : (event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length
           ? event._classDefaultTargets
-          : (event.timerOverlay.useEventTargets!==false?event.targets:event.timerOverlay.targets)
-      );
+          : (event.timerOverlay.useEventTargets!==false?event.targets:event.timerOverlay.targets));
+      const lockedTimerTargets=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(sourceTargets);
       if(lockedTimerTargets.length)combined.timerOverlay={ok:true,deferred:true,lockedTargets:lockedTimerTargets};
-      else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual});
+      else combined.timerOverlay=await runAutomationTimerOverlay(event,{manual,targetsOverride:sourceTargets,endAtOverride:manualOverlayEndAt});
       if(combined.timerOverlay?.result)pushResults([combined.timerOverlay.result]);
     }catch(err){
       if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE")combined.timerOverlay={ok:true,deferred:true,lockedTargets:err.targets||[]};
@@ -1798,22 +1807,29 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       }
     }
   }
+  function hasLaterEligibleAction(fromIndex,pass){
+    for(let i=fromIndex+1;i<steps.length;i++)if(actionEligibleOnPass(steps[i],pass))return true;
+    return sequenceHasEligibleActions(steps,pass+1);
+  }
 
-  // Resource isolation: no automation implicitly clears display content; only explicit actions replace content.
+  // Sequence actions are applied exactly as configured; no automation implicitly clears display content.
+  // Actions execute in canonical order. repeatDelaySeconds is the dwell/hold
+  // time AFTER an action executes: how long its resulting state remains before
+  // RoomGoblin advances to the next eligible action. delaySeconds remains a
+  // pre-action wait. After the final eligible action, the sequence returns to
+  // Action 1 while any action is still eligible.
   let pass=1,aborted=false;
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
     if(boundedMaxPasses&&pass>boundedMaxPasses)break;
-    const passStarted=Date.now();
     let executed=0;
     for(let i=0;i<steps.length;i++){
       const step=steps[i]||{};
       if(!actionEligibleOnPass(step,pass))continue;
       assertRunActive();
+
       const firstDelay=Math.max(0,Number(step.delaySeconds||0));
-      const loopDelay=pass>1?Math.max(0,Number(step.repeatDelaySeconds||0)):0;
       if(firstDelay&&!(await waitSeconds(firstDelay))){combined.endedReason="class-ended";aborted=true;break}
-      if(loopDelay&&!(await waitSeconds(loopDelay))){combined.endedReason="class-ended";aborted=true;break}
       assertRunActive();
 
       const stepAction=step.action;
@@ -1821,9 +1837,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
       const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
       let rawTargets=[];
-      if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
-      // An action's explicit target selection always wins over linked-class defaults.
-      else if(explicitTargets.length)rawTargets=explicitTargets;
+      // explicit target selection always wins. Inherited event/class targets
+      // are only fallbacks when this action has no explicit compatible target.
+      if(explicitTargets.length)rawTargets=explicitTargets;
+      else if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
       else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
 
@@ -1840,43 +1857,55 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
         if(!resolvedTargets.length&&lockedTargets.length){
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
           executed++;
-          continue;
+        }else{
+          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+          try{
+            if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
+            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+            pushResults(result.results);
+            pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
+          }catch(err){
+            if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
+              pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
+            }else{
+              combined.ok=false;
+              pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
+              if(step.continueOnError===false){aborted=true;break}
+            }
+          }
+          executed++;
+          if(overlayCoverage==="all-display-actions"&&stepDomain==="display-content")await applyTimerOverlay({targetsOverride:stepEvent.targets,force:true});
         }
+      }else{
+        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+        try{
+          if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
+          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+          pushResults(result.results);
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount});
+        }catch(err){
+          combined.ok=false;
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
+          if(step.continueOnError===false){aborted=true;break}
+        }
+        executed++;
+        if(overlayCoverage==="all-display-actions"&&stepDomain==="display-content")await applyTimerOverlay({targetsOverride:stepEvent.targets,force:true});
       }
 
-      const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
-      try{
-        if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-        const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
-        pushResults(result.results);
-        pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
-      }catch(err){
-        if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
-          executed++;
-          continue;
-        }
-        combined.ok=false;
-        pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
-        if(step.continueOnError===false){aborted=true;break}
+      if(pass===1&&!overlayApplied)await applyTimerOverlay();
+
+      const dwell=Math.max(0,Number(step.repeatDelaySeconds||0));
+      if(dwell&&hasLaterEligibleAction(i,pass)){
+        if(!(await waitSeconds(dwell))){combined.endedReason="class-ended";aborted=true;break}
       }
-      executed++;
     }
     combined.passes=pass;
-    if(pass===1)await applyTimerOverlayOnce();
     if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
     pass++;
-    // A continuous sequence with no configured waits must remain safe for
-    // hardware and the event loop. Cap the fastest complete cycle at 1 Hz.
-    if(continuous){
-      const remaining=Math.max(0,1000-(Date.now()-passStarted));
-      if(remaining&&!(await waitSeconds(remaining/1000))){combined.endedReason="class-ended";break}
-    }
-    if(!executed)break;
+    if(continuous&&executed===0)break;
   }
 
-  await applyTimerOverlayOnce();
-
+  await applyTimerOverlay();
   audit({kind:"automation.run",automationId:event.id,name:event.name,manual,actions:steps.map(x=>x.action),targets:event.targets,passes:combined.passes,continuous,ok:combined.ok});
   return combined;
 }

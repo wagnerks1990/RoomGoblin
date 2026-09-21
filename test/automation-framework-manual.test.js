@@ -6,9 +6,9 @@ const server=fs.readFileSync("src/server.js","utf8");
 const controller=fs.readFileSync("public/controller/app.js","utf8");
 
 test("manual automation tests do not weaken scheduled class-date enforcement",()=>{
-  assert.match(server,/async function runAutomationTimerOverlay\(event,\{manual=false,commandSource="automation"\}=\{\}\)/);
+  assert.match(server,/async function runAutomationTimerOverlay\(event,\{manual=false,commandSource="automation",targetsOverride=null,endAtOverride=null\}=\{\}\)/);
   assert.match(server,/if\(!manual&&!classScheduleMatchesDate\(cls,now\)\)/);
-  assert.match(server,/runAutomationTimerOverlay\(event,\{manual\}\)/);
+  assert.match(server,/runAutomationTimerOverlay\(event,\{manual,targetsOverride:sourceTargets,endAtOverride:manualOverlayEndAt\}\)/);
   assert.match(server,/resolveAutomationForManualTest\(event\)/);
 });
 
@@ -19,12 +19,24 @@ test("class default display targets remain domain-aware",()=>{
   assert.match(controller,/autoUseClassTargets\.checked=e\.useClassTargets!==false/);
 });
 
-test("scheduled runner executes canonical sequence passes",()=>{
+test("scheduled runner treats per-action repeat delay as dwell before advancing",()=>{
   assert.match(server,/const steps=automationActionSequence\(event\)/);
-  assert.match(server,/while\(sequenceHasEligibleActions\(steps,pass\)\)/);
-  assert.match(server,/if\(!actionEligibleOnPass\(step,pass\)\)continue/);
+  assert.match(server,/repeatDelaySeconds is the dwell\/hold/);
+  assert.match(server,/hasLaterEligibleAction\(i,pass\)/);
+  assert.match(server,/const dwell=Math\.max\(0,Number\(step\.repeatDelaySeconds\|\|0\)\)/);
+  assert.match(server,/await waitSeconds\(dwell\)/);
+  assert.match(server,/sequenceHasEligibleActions\(steps,pass\+1\)/);
   assert.match(server,/sequenceHasContinuousActions\(steps\)/);
-  assert.match(server,/Cap the fastest complete cycle at 1 Hz/);
+});
+
+test("timer overlay can persist across every display action without resetting duration",()=>{
+  assert.match(server,/coverage:String\(merged\.coverage\|\|"all-display-actions"\)/);
+  assert.match(server,/overlayCoverage=event\.timerOverlay\?\.coverage==="action-1-only"\?"action-1-only":"all-display-actions"/);
+  assert.match(server,/manualOverlayEndAt=event\.timerOverlay\?\.enabled&&event\.timerOverlay\?\.source!=="class-end"/);
+  assert.match(server,/runAutomationTimerOverlay\(event,\{manual,targetsOverride:sourceTargets,endAtOverride:manualOverlayEndAt\}\)/);
+  assert.match(server,/overlayCoverage==="all-display-actions"&&stepDomain==="display-content"/);
+  assert.match(controller,/autoTimerOverlayCoverage/);
+  assert.match(controller,/coverage:window\.autoTimerOverlayCoverage\?\.value==='action-1-only'\?'action-1-only':'all-display-actions'/);
 });
 
 test("Test Now and persisted run summaries expose action-level failures",()=>{

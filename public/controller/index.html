@@ -918,6 +918,14 @@ nav button{min-width:135px}
             <input id="autoTimerOverlayBackground" value="rgba(0,0,0,.35)">
           </label>
 
+          <label style="display:block;margin-top:8px">Overlay Coverage
+            <select id="autoTimerOverlayCoverage" style="width:100%;margin-top:5px">
+              <option value="all-display-actions">All display actions — keep timer visible across text, URL, media, and clear actions</option>
+              <option value="action-1-only">Action 1 only — do not reapply after later display actions</option>
+            </select>
+          </label>
+          <div class="muted" style="margin-top:5px">All display actions preserves the original countdown deadline; changing actions does not restart the timer.</div>
+
           <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
             <input id="autoTimerOverlayUseEventTargets" type="checkbox" checked>
             Use the same display targets as this scheduled event
