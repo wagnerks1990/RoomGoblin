@@ -20,13 +20,23 @@ test("class default display targets remain domain-aware",()=>{
 });
 
 test("scheduled runner treats per-action repeat delay as dwell before advancing",()=>{
-  assert.match(server,/const steps=automationActionSequence\\(event\\)/);
-  assert.match(server,/repeatDelaySeconds is the dwell\\/hold/);
-  assert.match(server,/hasLaterEligibleAction\\(i,pass\\)/);
-  assert.match(server,/const dwell=Math\\.max\\(0,Number\\(step\\.repeatDelaySeconds\\|\\|0\\)\\)/);
-  assert.match(server,/await waitSeconds\\(dwell\\)/);
-  assert.match(server,/sequenceHasEligibleActions\\(steps,pass\\+1\\)/);
-  assert.match(server,/sequenceHasContinuousActions\\(steps\\)/);
+  assert.match(server,/const steps=automationActionSequence\(event\)/);
+  assert.match(server,/repeatDelaySeconds is the dwell\/hold/);
+  assert.match(server,/hasLaterEligibleAction\(i,pass\)/);
+  assert.match(server,/const dwell=Math\.max\(0,Number\(step\.repeatDelaySeconds\|\|0\)\)/);
+  assert.match(server,/await waitSeconds\(dwell\)/);
+  assert.match(server,/sequenceHasEligibleActions\(steps,pass\+1\)/);
+  assert.match(server,/sequenceHasContinuousActions\(steps\)/);
+});
+
+test("timer overlay can persist across every display action without resetting duration",()=>{
+  assert.match(server,/coverage:String\(merged\.coverage\|\|"all-display-actions"\)/);
+  assert.match(server,/overlayCoverage=event\.timerOverlay\?\.coverage==="action-1-only"\?"action-1-only":"all-display-actions"/);
+  assert.match(server,/manualOverlayEndAt=event\.timerOverlay\?\.enabled&&event\.timerOverlay\?\.source!=="class-end"/);
+  assert.match(server,/runAutomationTimerOverlay\(event,\{manual,targetsOverride:sourceTargets,endAtOverride:manualOverlayEndAt\}\)/);
+  assert.match(server,/overlayCoverage==="all-display-actions"&&stepDomain==="display-content"/);
+  assert.match(controller,/autoTimerOverlayCoverage/);
+  assert.match(controller,/coverage:window\.autoTimerOverlayCoverage\?\.value==='action-1-only'\?'action-1-only':'all-display-actions'/);
 });
 
 test("Test Now and persisted run summaries expose action-level failures",()=>{
