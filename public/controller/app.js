@@ -1353,6 +1353,27 @@ function renderAutomationFields(payload={}){
     h=`<label>Scene<select id="autoScene"><option value="${esc(payload.scene||'')}">${esc(payload.scene||'Select target then Load Scenes')}</option></select></label>
        <button style="margin-top:8px" onclick="loadAutomationScenes(${inlineJsArg(lookup)})">Load Scenes</button>`;
   }
+  h+=`<div class="panel" style="box-shadow:none;margin-top:12px">
+    <b>Action 1 Timing</b>
+    <div class="muted" style="margin:4px 0 8px">Control how long Action 1 stays active before RoomGoblin advances to Action 2.</div>
+    <div class="grid2">
+      <label>Stay on this action
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" min="0" max="86400" step="1" value="${Number(currentPrimaryTiming.repeatDelaySeconds||0)}"
+            onchange="currentPrimaryTiming.repeatDelaySeconds=Math.max(0,Number(this.value||0))">
+          <span class="muted">seconds</span>
+        </div>
+      </label>
+      <label>Sequence participation
+        <select onchange="currentPrimaryTiming.executionMode=this.value">
+          <option value="once" ${currentPrimaryTiming.executionMode==='once'?'selected':''}>Run once</option>
+          <option value="repeat" ${currentPrimaryTiming.executionMode==='repeat'?'selected':''}>Repeat N sequence passes</option>
+          <option value="loop" ${currentPrimaryTiming.executionMode==='loop'?'selected':''}>Loop continually</option>
+        </select>
+      </label>
+      ${currentPrimaryTiming.executionMode==='repeat'?`<label>Repeat Count<input type="number" min="1" max="100" value="${Number(currentPrimaryTiming.repeatCount||2)}" onchange="currentPrimaryTiming.repeatCount=Math.max(1,Math.min(100,Number(this.value||2)))"></label>`:''}
+    </div>
+  </div>`;
   autoPayload.innerHTML=h;
   if(action==='display.text')setTimeout(setupAutomationTextPreview,0);
 }
@@ -1362,6 +1383,7 @@ let currentEditTargets=[];
 
 let autoSteps=[];
 let currentAutomationPayload={};
+let currentPrimaryTiming={executionMode:'once',repeatCount:1,repeatDelaySeconds:0,delaySeconds:0,continueOnError:true};
 const AUTOMATION_ACTION_META={
   'tv.power':{group:'TV',label:'TV → Power On / Off',short:'TV Power'},
   'display.text':{group:'Display',label:'Display → Show Text',short:'Show Text'},
@@ -1649,17 +1671,23 @@ function renderAutomationSteps(){
       </div>
 
       <div class="grid2" style="margin-top:10px">
-        <label>Execution
+        <label>Stay on this action before next action
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" min="0" max="86400" step="1" value="${Number(step.repeatDelaySeconds||0)}"
+              onchange="autoSteps[${i}].repeatDelaySeconds=Math.max(0,Number(this.value||0))">
+            <span class="muted">seconds</span>
+          </div>
+        </label>
+        <label>Sequence participation
           <select onchange="autoSteps[${i}].executionMode=this.value;renderAutomationSteps()">
             <option value="once" ${step.executionMode!=='repeat'&&step.executionMode!=='loop'?'selected':''}>Run once</option>
-            <option value="repeat" ${step.executionMode==='repeat'?'selected':''}>Repeat N times</option>
-            ${step.action==='display.media'?`<option value="loop" ${step.executionMode==='loop'?'selected':''}>Loop media continuously</option>`:''}
+            <option value="repeat" ${step.executionMode==='repeat'?'selected':''}>Repeat N sequence passes</option>
+            <option value="loop" ${step.executionMode==='loop'?'selected':''}>Loop continually</option>
           </select>
         </label>
         ${step.executionMode==='repeat'?`<label>Repeat Count<input type="number" min="1" max="100" value="${Number(step.repeatCount||2)}" onchange="autoSteps[${i}].repeatCount=Math.max(1,Math.min(100,Number(this.value||2)))"></label>`:''}
-        ${step.executionMode==='repeat'?`<label>Seconds Between Repeats<input type="number" min="0" max="3600" step="0.1" value="${Number(step.repeatDelaySeconds||0)}" onchange="autoSteps[${i}].repeatDelaySeconds=Math.max(0,Number(this.value||0))"></label>`:''}
       </div>
-      <div class="muted">Loop is receiver-native for video, so earlier TV, routing, lighting, and setup actions are not restarted.</div>
+      <div class="muted">The stay timer begins after this action is applied. When it expires, RoomGoblin advances to the next eligible action. After the last action, the sequence returns to Action 1 while any action remains eligible.</div>
 
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
         <input type="checkbox" ${step.continueOnError!==false?'checked':''}
@@ -1713,6 +1741,7 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayBorderRadius.value='18';
     autoTimerOverlayLabel.value='%class_short% • Class Ends In';
     autoTimerOverlayBackground.value='rgba(0,0,0,.35)';
+    if(window.autoTimerOverlayCoverage)autoTimerOverlayCoverage.value='all-display-actions';
     autoTimerOverlayUseEventTargets.checked=true;
     autoTimerOverlayFollowLinkedClasses.checked=true;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }else if(data&&typeof data==='object'){
@@ -1728,6 +1757,7 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayBorderRadius.value=String(data.borderRadius??18);
     autoTimerOverlayLabel.value=data.label||'%class_short% • Class Ends In';
     autoTimerOverlayBackground.value=data.background||'rgba(0,0,0,.35)';
+    if(window.autoTimerOverlayCoverage)autoTimerOverlayCoverage.value=data.coverage==='action-1-only'?'action-1-only':'all-display-actions';
     autoTimerOverlayUseEventTargets.checked=data.useEventTargets!==false;
     autoTimerOverlayFollowLinkedClasses.checked=data.followLinkedClasses!==false;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(data.followGapMinutes??S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }
@@ -1754,13 +1784,14 @@ function readTimerOverlay(){
     borderRadius:Number(autoTimerOverlayBorderRadius.value||18),
     label:autoTimerOverlayLabel.value,
     background:autoTimerOverlayBackground.value,
+    coverage:window.autoTimerOverlayCoverage?.value==='action-1-only'?'action-1-only':'all-display-actions',
     useEventTargets:autoTimerOverlayUseEventTargets.checked,
     followLinkedClasses:autoTimerOverlayFollowLinkedClasses.checked,
     followGapMinutes:Number(window.autoTimerOverlayFollowGap?.value??S.scheduleProfile?.continuation?.maximumGapMinutes??15)
   };
 }
 function newAutomation(){
-  currentAutomationPayload={};
+  currentAutomationPayload={};currentPrimaryTiming={executionMode:'once',repeatCount:1,repeatDelaySeconds:0,delaySeconds:0,continueOnError:true};
   autoId.value='';autoName.value='';autoTime.value='07:45';autoAction.value='tv.power';autoEnabled.value='1';autoSteps=[];renderAutomationSteps();renderTimerOverlayFields(null);populateAutomationClassSelect([]);autoClassRef.value='start';autoClassOffset.value='0';autoUseClassTargets.checked=true;
   currentEditTargets=[configuredDisplayTargets(false)[0]?.[0]||'all'];
   currentScheduleData={days:[1,2,3,4,5],scheduleMode:'weekly',alternatePhase:'A',anchorDate:'',includeDates:[]};
@@ -1799,7 +1830,7 @@ function editorEvent(){
     classIds:selectedAutomationClassIds(),classId:selectedAutomationClassIds()[0]||'',classTimeReference:autoClassRef.value,classTimeOffsetMinutes:Number(autoClassOffset.value||0),useClassTargets:autoUseClassTargets.checked,
     action:autoAction.value,
     targets:[...autoTargets.querySelectorAll('[data-autotarget]:checked')].map(x=>x.dataset.autotarget),
-    payload:readAutoPayload(),actions:readAutomationSteps(),timerOverlay:readTimerOverlay()
+    payload:readAutoPayload(),primaryExecutionMode:currentPrimaryTiming.executionMode,primaryRepeatCount:Number(currentPrimaryTiming.repeatCount||1),primaryRepeatDelaySeconds:Number(currentPrimaryTiming.repeatDelaySeconds||0),primaryDelaySeconds:Number(currentPrimaryTiming.delaySeconds||0),continueOnError:currentPrimaryTiming.continueOnError!==false,actions:readAutomationSteps(),timerOverlay:readTimerOverlay()
   };
 }
 async function saveAutomation(){
@@ -1859,7 +1890,7 @@ async function duplicateAutomation(id){
 }
 
 function editAutomation(id){
-  const e=S.automations.find(x=>x.id===id);if(!e)return;currentAutomationPayload=JSON.parse(JSON.stringify(e.payload||{}));
+  const e=S.automations.find(x=>x.id===id);if(!e)return;currentAutomationPayload=JSON.parse(JSON.stringify(e.payload||{}));const primary=(Array.isArray(e.actionSequence)&&e.actionSequence[0])||{};currentPrimaryTiming={executionMode:primary.executionMode||e.primaryExecutionMode||'once',repeatCount:Number(primary.repeatCount??e.primaryRepeatCount??1),repeatDelaySeconds:Number(primary.repeatDelaySeconds??e.primaryRepeatDelaySeconds??0),delaySeconds:Number(primary.delaySeconds??e.primaryDelaySeconds??0),continueOnError:primary.continueOnError??e.continueOnError??true};
   autoId.value=e.id;autoName.value=e.name||'';autoTime.value=e.time;autoAction.value=e.action;autoEnabled.value=e.enabled?'1':'0';populateAutomationClassSelect(Array.isArray(e.classIds)&&e.classIds.length?e.classIds:[e.classId].filter(Boolean));autoClassRef.value=e.classTimeReference||'start';autoClassOffset.value=String(e.classTimeOffsetMinutes||0);autoUseClassTargets.checked=e.useClassTargets!==false;
   currentEditTargets=[...(e.targets||[])];
   currentScheduleData={days:e.days||[1,2,3,4,5],scheduleMode:e.scheduleMode||'weekly',alternatePhase:e.alternatePhase||'A',anchorDate:e.anchorDate||'',includeDates:e.includeDates||[],dayType:e.dayType||'Any',cycleDays:e.cycleDays||[]};
