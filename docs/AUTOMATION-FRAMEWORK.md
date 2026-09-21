@@ -2,6 +2,12 @@
 
 RoomGoblin automations are stored in SQLite and execute through one canonical ordered action sequence. The schedule decides **when** an automation starts; each action decides **whether it participates on each pass** through that sequence.
 
+## Per-action dwell timing
+
+Actions execute in canonical order. Each action's `repeatDelaySeconds` is the **stay/dwell time after that action is applied and before RoomGoblin advances to the next eligible action**. `delaySeconds` remains a pre-action wait.
+
+For example, if Action 1 has a 3600-second dwell and Action 2 has a 60-second dwell, RoomGoblin runs Action 1, leaves it active for one hour, runs Action 2, leaves it active for one minute, then returns to Action 1 when the configured execution modes keep the sequence eligible. This applies to text, URLs, media, lighting, TV power, and other automation actions. When the class/event window ends, the sequence stops normally.
+
 ## Schema v3: scheduled automation + ordered actions
 
 The canonical persisted model is `actionSequence[]`. There is no runtime distinction between a primary action and later actions. Every action has the same fields:
@@ -98,3 +104,7 @@ Changes to automation/scheduler behavior must prove:
 11. Background Music priority recovery remains intact;
 12. SQLite remains authoritative;
 13. legacy saved automations remain migratable without duplicate actions.
+
+### Timer Overlay coverage across action sequences
+
+Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-actions`, which means RoomGoblin reasserts the same countdown after every display-content action (text, URL, media, image/document, or clear) so replacing the base display content does not remove the timer. `action-1-only` preserves the one-time overlay behavior. Reasserting a manual-duration timer must keep the original deadline rather than restarting its duration; class-end timers continue to resolve against the same class-end deadline. Morning Announcements priority still wins.
