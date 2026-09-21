@@ -506,3 +506,7 @@ the previous release. Enforce 3 automatic operational backups, 1 pre-* backup,
 and 3 migration snapshots. Host-side migration and legacy cleanup must resolve
 the configured `HOST_BACKUP_DIR` (default `/opt/classroom-hub-backups`) and
 must not reintroduce the obsolete `/opt/classroom-control-hub-backups` path.
+
+### Independent automation repeat timing
+
+After the initial ordered action pass, repeating and continual automation actions keep independent repeat deadlines. An earlier action with a long repeat delay must not block a later action with a shorter interval. Actions that become due together still dispatch in canonical sequence order. Preserve the one-second floor for zero-delay continual loops and all existing class-end, announcement-priority, timer-overlay, recovery, and cancellation behavior.
