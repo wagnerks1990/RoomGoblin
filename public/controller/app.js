@@ -1659,6 +1659,7 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayBorderRadius.value='18';
     autoTimerOverlayLabel.value='%class_short% • Class Ends In';
     autoTimerOverlayBackground.value='rgba(0,0,0,.35)';
+    if(window.autoTimerOverlayCoverage)autoTimerOverlayCoverage.value='all-display-actions';
     autoTimerOverlayUseEventTargets.checked=true;
     autoTimerOverlayFollowLinkedClasses.checked=true;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }else if(data&&typeof data==='object'){
@@ -1674,6 +1675,7 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayBorderRadius.value=String(data.borderRadius??18);
     autoTimerOverlayLabel.value=data.label||'%class_short% • Class Ends In';
     autoTimerOverlayBackground.value=data.background||'rgba(0,0,0,.35)';
+    if(window.autoTimerOverlayCoverage)autoTimerOverlayCoverage.value=data.coverage==='action-1-only'?'action-1-only':'all-display-actions';
     autoTimerOverlayUseEventTargets.checked=data.useEventTargets!==false;
     autoTimerOverlayFollowLinkedClasses.checked=data.followLinkedClasses!==false;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(data.followGapMinutes??S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }
@@ -1700,6 +1702,7 @@ function readTimerOverlay(){
     borderRadius:Number(autoTimerOverlayBorderRadius.value||18),
     label:autoTimerOverlayLabel.value,
     background:autoTimerOverlayBackground.value,
+    coverage:window.autoTimerOverlayCoverage?.value==='action-1-only'?'action-1-only':'all-display-actions',
     useEventTargets:autoTimerOverlayUseEventTargets.checked,
     followLinkedClasses:autoTimerOverlayFollowLinkedClasses.checked,
     followGapMinutes:Number(window.autoTimerOverlayFollowGap?.value??S.scheduleProfile?.continuation?.maximumGapMinutes??15)
