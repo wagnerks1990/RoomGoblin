@@ -275,8 +275,6 @@ export function createDisplayLayout(nodes, getState) {
       minHeight:105, weight:1
     });
 
-    for (const item of items) item.desired = estimateHeight(item);
-
     const timerPos = ['top','center','bottom'].includes(timer.position) ? timer.position : 'bottom';
     if (timer.visible) {
       const timerItem = items.find(item => item.name === 'timer');
@@ -333,6 +331,14 @@ export function createDisplayLayout(nodes, getState) {
     timerRegion.hidden = !timer.visible;
     timerOverlay.style.display = timer.visible ? 'block' : 'none';
     const items = buildItems(state, timer);
+    // Every layout pass starts from the same canonical font geometry. Without
+    // this reset, a replay/reload can estimate the next layout from a font size
+    // produced by the previous pass, making identical state render differently.
+    for (const item of items) {
+      item.el.style.transform = '';
+      item.el.style.fontSize = `${item.cap}px`;
+      item.desired = estimateHeight(item);
+    }
     applyGeometry(items);
 
     const components = {};
