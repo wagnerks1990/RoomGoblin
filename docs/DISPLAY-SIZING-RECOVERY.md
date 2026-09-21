@@ -22,7 +22,7 @@ After deploying/rebuilding, reload each receiver and run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected renderer revision: `dynamic-fit-20260921-3`.
+Expected renderer revision: `dynamic-fit-20260921-4`.
 
 Diagnostics should report `dynamic: true`, active-object `order`, and fitted regions that collectively use the available logical canvas without overlap. Font sizes are content-dependent: short content may grow substantially, while long content may shrink.
 
