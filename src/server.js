@@ -1768,16 +1768,14 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       if(!current||current.enabled===false||Number(current.revision||1)!==Number(event.revision||1))throw Object.assign(new Error("Automation changed or was disabled while this run was active"),{code:"AUTOMATION_CONFIGURATION_CHANGED"});
     }
   }
-  async function waitUntil(deadline){
+  async function waitSeconds(seconds){
+    const deadline=Date.now()+Math.max(0,Number(seconds||0))*1000;
     while(Date.now()<deadline){
       assertRunActive();
       if(!windowOpen())return false;
       await new Promise(r=>setTimeout(r,Math.min(500,Math.max(1,deadline-Date.now()))));
     }
     return windowOpen();
-  }
-  async function waitSeconds(seconds){
-    return waitUntil(Date.now()+Math.max(0,Number(seconds||0))*1000);
   }
   async function applyTimerOverlayOnce(){
     if(overlayApplied||!event.timerOverlay?.enabled)return;
@@ -1800,112 +1798,97 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       }
     }
   }
-  async function executeStep(i,pass){
-    const step=steps[i]||{};
-    assertRunActive();
-
-    const stepAction=step.action;
-    const stepDomain=automationTargetDomain(stepAction);
-    const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
-    const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
-    let rawTargets=[];
-    if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
-    else if(explicitTargets.length)rawTargets=explicitTargets;
-    else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
-    else rawTargets=defaultAutomationActionTargets(stepAction);
-
-    let resolvedTargets;
-    if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
-    else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
-    else resolvedTargets=[...rawTargets];
-
-    let lockedTargets=[];
-    if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
-      lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
-      const lockedSet=new Set(lockedTargets);
-      resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
-      if(!resolvedTargets.length&&lockedTargets.length){
-        pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
-        return;
-      }
-    }
-
-    const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
-    try{
-      if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-      const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
-      pushResults(result.results);
-      pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
-    }catch(err){
-      if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
-        pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
-        return;
-      }
-      combined.ok=false;
-      pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
-      if(step.continueOnError===false)throw Object.assign(err,{code:err.code||"AUTOMATION_STEP_ABORT"});
-    }
-  }
-  function actionCanRunAgain(step,executions){
-    const nextPass=executions+1;
-    if(boundedMaxPasses&&nextPass>boundedMaxPasses)return false;
-    return actionEligibleOnPass(step,nextPass);
-  }
-  function actionRepeatDeadline(step,from=Date.now()){
-    const delay=Math.max(0,Number(step.repeatDelaySeconds||0))*1000;
-    // A zero-delay continual loop must never become a command storm. Finite
-    // repeats retain their explicit zero-delay semantics.
-    return from+(step.executionMode==="loop"&&delay===0?1000:delay);
+  function hasLaterEligibleAction(fromIndex,pass){
+    for(let i=fromIndex+1;i<steps.length;i++)if(actionEligibleOnPass(steps[i],pass))return true;
+    return sequenceHasEligibleActions(steps,pass+1);
   }
 
-  // First pass stays strictly ordered. Each action's initial delay is honored
-  // before that action, matching the historical Action 1 -> Action N behavior.
-  // After the first pass, repeat/loop timers are independent so a long interval
-  // on an earlier action cannot starve a later action with a shorter interval.
-  const executions=steps.map(()=>0),nextDue=steps.map(()=>Infinity);
-  let aborted=false;
-  for(let i=0;i<steps.length;i++){
-    const step=steps[i]||{};
-    if(!actionEligibleOnPass(step,1))continue;
-    assertRunActive();
-    if(!windowOpen()){combined.endedReason="class-ended";aborted=true;break}
-    const firstDelay=Math.max(0,Number(step.delaySeconds||0));
-    if(firstDelay&&!(await waitSeconds(firstDelay))){combined.endedReason="class-ended";aborted=true;break}
-    try{await executeStep(i,1)}
-    catch(err){if(step.continueOnError===false){aborted=true;break}throw err}
-    executions[i]=1;
-    combined.passes=Math.max(combined.passes,1);
-    if(actionCanRunAgain(step,executions[i]))nextDue[i]=actionRepeatDeadline(step);
-  }
-  await applyTimerOverlayOnce();
-
-  while(!aborted){
-    assertRunActive();
+  // Actions execute in canonical order. repeatDelaySeconds is the dwell/hold
+  // time AFTER an action executes: how long its resulting state remains before
+  // RoomGoblin advances to the next eligible action. delaySeconds remains a
+  // pre-action wait. After the final eligible action, the sequence returns to
+  // Action 1 while any action is still eligible.
+  let pass=1,aborted=false;
+  while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
-    let earliest=Infinity;
-    for(let i=0;i<steps.length;i++)if(actionCanRunAgain(steps[i],executions[i]))earliest=Math.min(earliest,nextDue[i]);
-    if(!Number.isFinite(earliest))break;
-    if(!(await waitUntil(earliest))){combined.endedReason="class-ended";break}
-
-    const now=Date.now();
-    const due=[];
+    if(boundedMaxPasses&&pass>boundedMaxPasses)break;
+    let executed=0;
     for(let i=0;i<steps.length;i++){
-      if(actionCanRunAgain(steps[i],executions[i])&&nextDue[i]<=now)due.push(i);
-    }
-    if(!due.length)continue;
-
-    // When multiple actions become due together, execute them in canonical
-    // sequence order. Their future due times remain independent.
-    for(const i of due){
-      const step=steps[i]||{},pass=executions[i]+1;
+      const step=steps[i]||{};
+      if(!actionEligibleOnPass(step,pass))continue;
       assertRunActive();
-      if(!windowOpen()){combined.endedReason="class-ended";aborted=true;break}
-      try{await executeStep(i,pass)}
-      catch(err){if(step.continueOnError===false){aborted=true;break}throw err}
-      executions[i]=pass;
-      combined.passes=Math.max(combined.passes,pass);
-      nextDue[i]=actionCanRunAgain(step,executions[i])?actionRepeatDeadline(step):Infinity;
+
+      const firstDelay=Math.max(0,Number(step.delaySeconds||0));
+      if(firstDelay&&!(await waitSeconds(firstDelay))){combined.endedReason="class-ended";aborted=true;break}
+      assertRunActive();
+
+      const stepAction=step.action;
+      const stepDomain=automationTargetDomain(stepAction);
+      const eventDomain=automationTargetDomain(steps[0]?.action||event.action);
+      const explicitTargets=Array.isArray(step.targets)&&step.targets.length?step.targets:[];
+      let rawTargets=[];
+      if(i>0&&step.useEventTargets!==false&&stepDomain===eventDomain)rawTargets=steps[0]?.targets||event.targets||[];
+      else if(explicitTargets.length)rawTargets=explicitTargets;
+      else if((stepDomain==="display-content"||stepDomain==="display-overlay")&&event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)rawTargets=event._classDefaultTargets;
+      else rawTargets=defaultAutomationActionTargets(stepAction);
+
+      let resolvedTargets;
+      if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
+      else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
+      else resolvedTargets=[...rawTargets];
+
+      let lockedTargets=[];
+      if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
+        lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
+        const lockedSet=new Set(lockedTargets);
+        resolvedTargets=resolvedTargets.filter(id=>!lockedSet.has(id));
+        if(!resolvedTargets.length&&lockedTargets.length){
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
+          executed++;
+        }else{
+          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+          try{
+            if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
+            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+            pushResults(result.results);
+            pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
+          }catch(err){
+            if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
+              pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:[],ok:true,deferred:true,lockedTargets:err.targets||lockedTargets});
+            }else{
+              combined.ok=false;
+              pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
+              if(step.continueOnError===false){aborted=true;break}
+            }
+          }
+          executed++;
+        }
+      }else{
+        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+        try{
+          if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
+          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+          pushResults(result.results);
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount});
+        }catch(err){
+          combined.ok=false;
+          pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:false,error:err.message});
+          if(step.continueOnError===false){aborted=true;break}
+        }
+        executed++;
+      }
+
+      if(pass===1)await applyTimerOverlayOnce();
+
+      const dwell=Math.max(0,Number(step.repeatDelaySeconds||0));
+      if(dwell&&hasLaterEligibleAction(i,pass)){
+        if(!(await waitSeconds(dwell))){combined.endedReason="class-ended";aborted=true;break}
+      }
     }
+    combined.passes=pass;
+    if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
+    pass++;
+    if(continuous&&executed===0)break;
   }
 
   await applyTimerOverlayOnce();
