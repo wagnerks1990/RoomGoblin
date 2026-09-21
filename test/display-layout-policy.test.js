@@ -29,7 +29,7 @@ test('display renderer uses dynamic content-object layout', async () => {
     'subtitle should use the same single-line edge-to-edge fitting');
   assert.match(source, /text\.style\.padding = '0'/,
     'body content should get the full dynamic object width');
-  assert.match(source, /item\.el\.style\.fontSize = \`\\\$\{item\.cap\}px\`/,
+  assert.match(source, /item\.el\.style\.fontSize = \`\$\{item\.cap\}px\`/,
     'every pass must reset active objects to canonical cap geometry before estimating heights');
 });
 
