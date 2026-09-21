@@ -2,13 +2,13 @@
 
 ## Current policy
 
-Renderer revision: `dynamic-fit-20260921-1`.
+Renderer revision: `dynamic-fit-20260921-2`.
 
 `public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the finished stage.
 
 Title, subtitle, body, and timer are dynamic content objects:
 
-- Empty objects consume no vertical space.
+- Empty objects consume no vertical space.\n- Title and subtitle stay on one line and shrink to fit the near-edge-to-edge width.\n- Title, subtitle, and body use an 18px logical horizontal gutter; do not restore the old 72px/90px gutters.
 - Active objects share the usable logical canvas with bounded gaps.
 - The timer's top/center/bottom setting changes object order.
 - Automatic fitting may grow short content up to the reviewed component safety cap.
