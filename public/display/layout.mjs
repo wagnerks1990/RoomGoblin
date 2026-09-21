@@ -356,7 +356,11 @@ export function createDisplayLayout(nodes, getState) {
     for (const item of items) {
       item.el.style.transform = '';
       item.el.style.fontSize = `${item.cap}px`;
-      item.desired = estimateHeight(item);
+      // Region allocation is intentionally independent of the element's
+      // current fitted DOM geometry. Active headings/timer keep their compact
+      // minimum bands and the body receives otherwise-unused room; the fitter
+      // then solves each object's font size inside that deterministic geometry.
+      item.desired = item.minHeight;
     }
     applyGeometry(items);
 
