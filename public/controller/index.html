@@ -232,6 +232,17 @@ select option{background:#101612;color:#fff}.av40Summary{display:grid;grid-templ
 .groupCard{padding:12px;border:1px solid var(--border);border-radius:14px;background:rgba(0,0,0,.18)}
 .checkGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(85px,1fr));gap:5px;margin-top:8px}
 .checkItem{display:flex;gap:6px;align-items:center;font-size:12px;padding:5px 6px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,.025)}
+.multiSelect{position:relative;margin-top:6px;max-width:100%}
+.multiSelect>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px;padding:8px 12px;border:1px solid var(--border);border-radius:9px;background:var(--brand-surface);color:var(--text);cursor:pointer;list-style:none}
+.multiSelect>summary::-webkit-details-marker{display:none}
+.multiSelect>summary::after{content:'▾';font-size:12px;color:var(--muted);transition:transform .15s ease}
+.multiSelect[open]>summary{border-color:var(--brand-primary);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.multiSelect[open]>summary::after{transform:rotate(180deg)}
+.multiSelectMenu{position:absolute;z-index:30;left:0;right:0;top:100%;padding:8px;border:1px solid var(--brand-primary);border-top:0;border-radius:0 0 9px 9px;background:var(--brand-surface);box-shadow:0 14px 28px rgba(0,0,0,.35)}
+.multiSelectOptions{display:grid;gap:5px;max-height:min(45vh,390px);overflow:auto;margin:0;padding:2px}
+.multiSelectOptions .checkItem{align-items:flex-start;font-size:13px;padding:8px}
+.multiSelectOptions .checkItem input{flex:0 0 auto;margin-top:2px}
+.multiSelectActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
 .integrationCard{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:start;padding:14px;border:1px solid var(--border);border-radius:15px;background:rgba(0,0,0,.18)}
 .integrationState{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .adminHero{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}.adminHero .card{margin:0;box-shadow:none}.adminHero .kpi{font-size:23px}
@@ -778,30 +789,22 @@ nav button{min-width:135px}
 
       <div class="panel" style="box-shadow:none;margin-top:10px">
         <label><b>Linked Class Schedule(s)</b></label>
-        <div class="toolbar" style="margin-top:6px">
-          <button type="button" id="autoClassSummary" onclick="openAutomationClassLinker()" aria-haspopup="dialog">No classes linked ▾</button>
-          <button type="button" onclick="openAutomationClassLinker()">Edit Links</button>
-        </div>
+        <details id="autoClassPicker" class="multiSelect" ontoggle="handleAutomationClassPickerToggle()">
+          <summary id="autoClassSummary" aria-controls="autoClassIds">No classes linked</summary>
+          <div class="multiSelectMenu">
+            <div id="autoClassIds" class="multiSelectOptions" aria-label="Class schedules"></div>
+            <div class="multiSelectActions">
+              <button type="button" class="primary" onclick="closeAutomationClassLinker(true)">Save Class Links</button>
+              <button type="button" onclick="clearAutomationClassLinks()">Clear All</button>
+              <button type="button" onclick="closeAutomationClassLinker(false)">Cancel</button>
+            </div>
+          </div>
+        </details>
         <div id="autoClassLinkSummary" class="muted" style="margin-top:6px">This automation is not linked to a class schedule.</div>
         <div id="autoClassBindingFields" style="display:none;margin-top:8px">
           <div class="grid2"><label>Run Relative To<select id="autoClassRef" onchange="updateAutomationClassPreview()"><option value="start">Class Start</option><option value="end">Class End</option></select></label><label>Offset Minutes<input id="autoClassOffset" type="number" min="-720" max="720" value="0" onchange="updateAutomationClassPreview()"></label></div>
           <label style="display:flex;gap:8px;align-items:center"><input id="autoUseClassTargets" type="checkbox" checked> Use class default display targets</label>
           <div id="autoClassPreview" class="muted"></div>
-        </div>
-      </div>
-
-      <div id="autoClassModal" class="authModal" role="dialog" aria-modal="true" aria-labelledby="autoClassModalTitle">
-        <div class="panel" style="width:min(820px,100%);margin:0">
-          <div class="top" style="position:static;margin:0 0 12px">
-            <div><h2 id="autoClassModalTitle" class="sectionTitle">Link to Class Schedule(s)</h2><div class="muted">Choose one or more classes, then save the links.</div></div>
-            <button type="button" onclick="closeAutomationClassLinker(false)">Close</button>
-          </div>
-          <div id="autoClassIds" class="checkGrid" style="max-height:55vh;overflow:auto"></div>
-          <div class="toolbar" style="margin-top:12px">
-            <button type="button" class="primary" onclick="closeAutomationClassLinker(true)">Save Class Links</button>
-            <button type="button" onclick="clearAutomationClassLinks()">Clear All</button>
-            <button type="button" onclick="closeAutomationClassLinker(false)">Cancel</button>
-          </div>
         </div>
       </div>
 

@@ -59,6 +59,11 @@ one compact strip. Permission-aware shortcuts open display content, lab computer
 and Background Music. Everyday room power controls stay visible; classroom reset
 and display reload operations remain in the maintenance disclosure.
 
+Scheduled Automation uses an inline class-schedule multi-select. Its closed state
+shows the number of linked classes; opening it exposes a scrollable checkbox list
+with schedule details and explicit Save, Clear All and Cancel actions. Closing the
+dropdown without saving restores the previous selection.
+
 On desktop, **Focus workspace** hides the navigation and widens the current tool
 without replacing or reloading its iframe. **Show navigation** restores it.
 The lab's **Open full workspace** link follows the selected Veyon/Windows console.
