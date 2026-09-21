@@ -55,7 +55,7 @@ function establishStructuralStyles(nodes) {
   Object.assign(timerOverlay.style, {
     position:'static', top:'auto', bottom:'auto', transform:'none', minWidth:'0',
     maxWidth:'100%', maxHeight:'none', height:'auto', flex:'0 0 auto', margin:'0',
-    padding:'.18em .55em', overflow:'visible', lineHeight:'1.2', width:'max-content'
+    padding:'.18em .55em', overflow:'visible', lineHeight:'1.2', width:'max-content', boxSizing:'border-box'
   });
   timerLabel.style.lineHeight = '1.2';
   timerValue.style.lineHeight = '1.2';
@@ -129,6 +129,8 @@ export function fits(el, box) {
   if (a.width <= 0 || a.height <= 0) return false;
   if (Math.max(el.scrollWidth, el.offsetWidth) > a.width + 0.5 ||
       Math.max(el.scrollHeight, el.offsetHeight) > a.height + 0.5) return false;
+  if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 0.5) return false;
+  if (el.clientHeight > 0 && el.scrollHeight > el.clientHeight + 0.5) return false;
   const natural = naturalSize(el, box);
   if (natural && (natural.width > a.width + 0.5 || natural.height > a.height + 0.5)) return false;
   return renderedContained(el, box);
