@@ -8,7 +8,7 @@ const controller=fs.readFileSync("public/controller/app.js","utf8");
 test("manual automation tests do not weaken scheduled class-date enforcement",()=>{
   assert.match(server,/async function runAutomationTimerOverlay\(event,\{manual=false,commandSource="automation",targetsOverride=null,endAtOverride=null\}=\{\}\)/);
   assert.match(server,/if\(!manual&&!classScheduleMatchesDate\(cls,now\)\)/);
-  assert.match(server,/runAutomationTimerOverlay\(event,\{manual\}\)/);
+  assert.match(server,/runAutomationTimerOverlay\(event,\{manual,targetsOverride:sourceTargets,endAtOverride:manualOverlayEndAt\}\)/);
   assert.match(server,/resolveAutomationForManualTest\(event\)/);
 });
 
