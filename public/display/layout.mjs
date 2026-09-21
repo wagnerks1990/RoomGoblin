@@ -84,7 +84,12 @@ function naturalSize(el, box, fontSize = null) {
     margin:'0', boxSizing:computed.boxSizing, fontFamily:computed.fontFamily,
     fontWeight:computed.fontWeight, fontStyle:computed.fontStyle,
     fontSize:`${fontSize ?? (parseFloat(computed.fontSize) || 12)}px`,
-    lineHeight:computed.lineHeight, letterSpacing:computed.letterSpacing,
+    // Preserve the unitless author value when available. getComputedStyle()
+    // resolves line-height to pixels based on the element's *previous* fitted
+    // font size, which makes a new dynamic layout depend on command/reload
+    // history instead of only the current content/state.
+    lineHeight:el.style.lineHeight || computed.lineHeight,
+    letterSpacing:computed.letterSpacing,
     wordSpacing:computed.wordSpacing, whiteSpace:computed.whiteSpace,
     overflowWrap:computed.overflowWrap, wordBreak:computed.wordBreak,
     textAlign:computed.textAlign, padding:computed.padding,
