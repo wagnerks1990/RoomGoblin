@@ -16,8 +16,8 @@ test("controller loads the unified scheduled automation editor",()=>{
   assert.match(editor,/ACTION \$\{i\+1\}/);
   assert.match(html,/automationEventSelect/);
   assert.doesNotMatch(html,/automationEditorEventSelect/);
-  assert.match(html,/autoClassModal/);
-  assert.match(html,/Edit Links/);
+  assert.match(html,/autoClassPicker/);
+  assert.match(html,/multiSelectOptions/);
 });
 
 test("every action exposes pass participation controls",()=>{
@@ -57,14 +57,20 @@ test("legacy primary widgets are hidden rather than exposed as a second editor",
   assert.match(editor,/style\.display="none"/);
 });
 
-test("class schedule links stay compact until explicitly edited",()=>{
+test("class schedule links use a compact checkbox dropdown with save and cancel",()=>{
   const app=read("public/controller/app.js");
   const html=read("public/controller/index.html");
   assert.match(html,/Linked Class Schedule\(s\)/);
+  assert.match(html,/id="autoClassPicker" class="multiSelect"/);
   assert.match(html,/autoClassSummary/);
+  assert.match(html,/id="autoClassIds" class="multiSelectOptions"/);
   assert.match(html,/Save Class Links/);
+  assert.match(html,/Clear All/);
+  assert.match(html,/Cancel/);
+  assert.doesNotMatch(html,/id="autoClassModal"/);
   assert.match(app,/openAutomationClassLinker/);
   assert.match(app,/closeAutomationClassLinker/);
+  assert.match(app,/handleAutomationClassPickerToggle/);
   assert.match(app,/automationClassSelectionSnapshot/);
   assert.match(app,/updateAutomationClassLinkSummary/);
 });

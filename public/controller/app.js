@@ -989,9 +989,10 @@ function renderClassCurrentStatus(){
 function renderClassScheduleList(){classScheduleList.innerHTML=S.classes.length?[...S.classes].sort(compareClassesByPhaseTime).map(x=>`<div class="card" style="margin-bottom:8px"><div class="top"><div><b>${esc(x.name)}</b><div class="muted">${esc(x.startTime)}–${esc(x.endTime)} • ${esc(classDaySummary(x))} • Displays: ${esc(classTargetSummary(x.defaultTargets))}</div></div><div class="toolbar"><button onclick="editClassSchedule(${inlineJsArg(x.id)})">Edit</button><button onclick="duplicateClassSchedule(${inlineJsArg(x.id)})">Duplicate</button><button class="danger" onclick="deleteClassSchedule(${inlineJsArg(x.id)})">Delete</button></div></div></div>`).join(''):'<div class="muted">No classes configured.</div>'}
 function selectedAutomationClassIds(){return [...document.querySelectorAll('[data-autoclass]:checked')].map(x=>x.dataset.autoclass)}
 let automationClassSelectionSnapshot=[];
+let automationClassPickerClosing=false;
 function updateAutomationClassLinkSummary(){
   const selected=selectedAutomationClassIds().map(id=>S.classes.find(x=>x.id===id)).filter(Boolean);
-  if(window.autoClassSummary)autoClassSummary.textContent=selected.length?(`${selected.length} linked class${selected.length===1?'':'es'} ▾`):'No classes linked ▾';
+  if(window.autoClassSummary)autoClassSummary.textContent=selected.length?(`${selected.length} linked class${selected.length===1?'':'es'}`):'No classes linked';
   if(window.autoClassLinkSummary)autoClassLinkSummary.textContent=selected.length
     ? selected.map(cls=>`${cls.name} (${cls.startTime}–${cls.endTime})`).join(' • ')
     : 'This automation is not linked to a class schedule.';
@@ -999,26 +1000,39 @@ function updateAutomationClassLinkSummary(){
 function populateAutomationClassSelect(selected=[]){
   if(!window.autoClassIds)return;
   const selectedIds=Array.isArray(selected)?selected:[selected].filter(Boolean);
-  autoClassIds.innerHTML=[...S.classes].sort(compareClassesByPhaseTime).map(cls=>`<label class="checkItem"><input type="checkbox" data-autoclass="${esc(cls.id)}" ${selectedIds.includes(cls.id)?'checked':''}> <span><b>${esc(cls.name)}</b><br><span class="muted">${esc(classDaySummary(cls))} • ${esc(cls.startTime)}–${esc(cls.endTime)}</span></span></label>`).join('')||'<span class="muted">No classes configured.</span>';
+  autoClassIds.innerHTML=[...S.classes].sort(compareClassesByPhaseTime).map(cls=>`<label class="checkItem"><input type="checkbox" data-autoclass="${esc(cls.id)}" ${selectedIds.includes(cls.id)?'checked':''} onchange="updateAutomationClassLinkSummary()"> <span><b>${esc(cls.name)}</b><br><span class="muted">${esc(classDaySummary(cls))} • ${esc(cls.startTime)}–${esc(cls.endTime)}</span></span></label>`).join('')||'<span class="muted">No classes configured.</span>';
   updateAutomationClassLinkSummary();
 }
 function openAutomationClassLinker(){
-  if(!window.autoClassModal)return;
-  automationClassSelectionSnapshot=selectedAutomationClassIds();
-  autoClassModal.style.display='flex';
+  if(!window.autoClassPicker)return;
+  if(!autoClassPicker.open)automationClassSelectionSnapshot=selectedAutomationClassIds();
+  autoClassPicker.open=true;
+}
+function handleAutomationClassPickerToggle(){
+  if(!window.autoClassPicker)return;
+  if(autoClassPicker.open){
+    automationClassSelectionSnapshot=selectedAutomationClassIds();
+    return;
+  }
+  if(automationClassPickerClosing){automationClassPickerClosing=false;return}
+  const saved=new Set(automationClassSelectionSnapshot);
+  autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=saved.has(box.dataset.autoclass)});
+  renderAutomationClassBinding();
 }
 function closeAutomationClassLinker(save){
-  if(!window.autoClassModal)return;
+  if(!window.autoClassPicker)return;
   if(!save){
     const saved=new Set(automationClassSelectionSnapshot);
     autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=saved.has(box.dataset.autoclass)});
   }
-  autoClassModal.style.display='none';
+  automationClassPickerClosing=true;
+  autoClassPicker.open=false;
   renderAutomationClassBinding();
 }
 function clearAutomationClassLinks(){
   if(!window.autoClassIds)return;
   autoClassIds.querySelectorAll('[data-autoclass]').forEach(box=>{box.checked=false});
+  updateAutomationClassLinkSummary();
 }
 
 async function loadClassSchedules(){
