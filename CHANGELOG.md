@@ -7,7 +7,8 @@
 - Correct automation sequencing so each action's configured timer means how long that action remains active before RoomGoblin advances to the next action.
 - Preserve `delaySeconds` as a pre-action wait and use `repeatDelaySeconds` as the post-action dwell timer on every sequence pass.
 - Expose Action 1 timing in the editor, allow continual sequence participation for all action types, and label action timers by their actual stay/advance behavior.
-- Preserve class-end cancellation, Morning Announcements priority, timer overlays, recovery, and action-level error handling.
+- Add explicit Timer Overlay coverage: default to all display actions, with an Action 1 only compatibility option; reassert overlays after later text/URL/media/clear actions without restarting manual-duration countdowns.
+- Preserve class-end cancellation, Morning Announcements priority, recovery, and action-level error handling.
 
 ### Morning Announcements live volume
 
