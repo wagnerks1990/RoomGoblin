@@ -2,6 +2,12 @@
 
 RoomGoblin automations are stored in SQLite and execute through one canonical ordered action sequence. The schedule decides **when** an automation starts; each action decides **whether it participates on each pass** through that sequence.
 
+## Independent repeat and loop timing
+
+Automation actions execute their first pass in canonical order. After each action has completed its first execution, its repeat interval is tracked independently. A long repeat interval on an earlier action must not block a later action whose next execution is due sooner. When two or more actions become due at the same time, RoomGoblin dispatches them in canonical action order.
+
+For example, an hourly looping display action followed by a 60-second looping display action executes both once in order, then the second action may run every minute while the first waits for its own hourly deadline. Zero-delay continual loops are still rate-limited to one execution per second to prevent command storms.
+
 ## Schema v3: scheduled automation + ordered actions
 
 The canonical persisted model is `actionSequence[]`. There is no runtime distinction between a primary action and later actions. Every action has the same fields:
