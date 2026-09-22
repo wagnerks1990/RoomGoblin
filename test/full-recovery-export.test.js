@@ -381,7 +381,7 @@ test("operational backup uses ZIP64 streaming writer instead of AdmZip buffering
   const source=fs.readFileSync(path.join(ROOT,"maintenance-agent","server.js"),"utf8");
   assert.match(source,/async function writeOperationalZipStreaming\(/);
   assert.match(source,/Info-ZIP streams file contents directly/);
-  assert.match(source,/await run\("zip",\["-q","-r","-y",partial/);
+  assert.match(source,/await run\("\/usr\/bin\/zip",\["-q","-r","-y",partial/);
   assert.match(source,/if\(scope==="operational"\)\{[\s\S]*await writeOperationalZipStreaming\(dest,dbSnapshot,manifest\)/);
   assert.match(source,/else if\(scope!=="operational"\)copyIntoZip/);
 });
