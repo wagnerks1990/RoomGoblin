@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Resume scheduled state cancels manual tests
+
+- Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.
+- Prevent a previously tested, currently unscheduled automation from waking after its dwell timer and repainting the display after schedule resume.
+
 ### Resumable upload backup readability
 
 - Create resumable-upload roots and per-upload session directories as `0750` and chunk files as `0640`, matching RoomGoblin's shared-data contract.
