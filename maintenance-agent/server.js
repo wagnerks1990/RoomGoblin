@@ -107,7 +107,7 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
     // ZIP64, avoiding Node/AdmZip's ~2 GiB Buffer ceiling on real appliances.
     const exclusions=[
       "classroom-hub/node_modules/*","classroom-hub/.git/*","classroom-hub/data/backups/*",
-      "classroom-hub/data/legacy/*","classroom-hub/data/file-trash/*","classroom-hub/data/convert-tmp/*",
+      "classroom-hub/data/legacy/*","classroom-hub/data/file-trash/*","classroom-hub/data/media/*","classroom-hub/data/convert-tmp/*",
       "classroom-hub/data/presentation-upload-tmp/*","classroom-hub/.env",
       "classroom-hub/data/classroom-control-hub.db","classroom-hub/data/classroom-control-hub.db-wal","classroom-hub/data/classroom-control-hub.db-shm"
     ];
@@ -407,6 +407,7 @@ function backupFilter(scope){
     if(normalized.includes("/data/backups/")||normalized.endsWith("/data/backups"))return false;
     if(normalized.includes("/data/legacy/")||normalized.endsWith("/data/legacy"))return false;
     if(normalized.includes("/data/file-trash/")||normalized.endsWith("/data/file-trash"))return false;
+    if(scope==="operational"&&(normalized==="classroom-hub/data/media"||normalized.startsWith("classroom-hub/data/media/")))return false;
     if(scope==="configuration"){
       // Configuration backups intentionally omit bulky/ephemeral runtime data;
       // the consistent SQLite snapshot is added separately by backup/create.
