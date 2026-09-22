@@ -20,6 +20,8 @@ Title, subtitle, body, and timer are dynamic content objects:
 - Timer digit changes do not cause global geometry churn.
 
 ## Containment
+Live TV containment note: painted-containment checks must validate text-range rectangles, not reject an intentionally full-width flex child merely because its border box differs from the parent by transformed subpixel geometry. Scroll/offset and independent natural-size checks remain responsible for element-box overflow. This prevents ordinary content from falsely collapsing to 1px on Chromium/TV viewports.
+
 
 Never decide fit from constrained element dimensions alone. Keep all three checks:
 
