@@ -71,7 +71,7 @@ TV8_LIVE_DYNAMIC = {
     'background': {'color': '#000000'},
     'title': 'CareerSafe Certificate of Completion',
     'titleOptions': {'size': 92, 'color': '#ffffff'},
-    'subtitle': 'Mr. Wagner',
+    'subtitle': 'Classroom Instructor',
     'subtitleOptions': {'size': 44, 'color': '#ffffff'},
     'text': ('PD 2 - 5 of 7\n\n'
              'PD 3 - 10 of 18\n\n'
