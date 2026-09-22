@@ -81,22 +81,17 @@ function actionPassLimit(action={}){
 }
 function actionDrivesAnotherPass(action={},nextPass=2){
   if(!actionEligibleOnPass(action,nextPass))return false;
-  const mode=normalizeExecutionMode(action.action,action.executionMode,action.payload||{});
-  // A receiver-native media loop keeps playing after its first dispatch and
-  // therefore must not create sequence passes by itself. It still participates
-  // in later passes when another repeat/loop action drives the sequence.
-  return !(mode==="loop"&&String(action.action)==="display.media");
+  return normalizeExecutionMode(action.action,action.executionMode,action.payload||{})==="repeat";
 }
 function sequenceNeedsAnotherPass(sequence=[],nextPass=2){
   const eligible=sequence.filter(action=>actionEligibleOnPass(action,nextPass));
-  if(eligible.some(action=>actionDrivesAnotherPass(action,nextPass)))return true;
-  // One receiver-native media loop can remain resident without redispatch.
-  // Two or more continual media actions intentionally define an alternating
-  // sequence, so they must keep creating passes.
-  return eligible.filter(action=>
-    normalizeExecutionMode(action.action,action.executionMode,action.payload||{})==="loop"
-    && String(action.action)==="display.media"
-  ).length>1;
+  if(eligible.length===0)return false;
+  // Continual execution is sequence-level. If only one continual action would
+  // remain on the next pass, stop processing instead of reissuing it forever.
+  // A finite repeat is different: its explicit repeatCount may intentionally
+  // drive additional passes even when it is the only eligible action.
+  if(eligible.length===1)return actionDrivesAnotherPass(eligible[0],nextPass);
+  return true;
 }
 function actionEligibleOnPass(action={},pass=1){
   const n=Math.max(1,Math.trunc(Number(pass)||1));
