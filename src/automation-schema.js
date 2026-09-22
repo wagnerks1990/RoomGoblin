@@ -79,6 +79,20 @@ function actionPassLimit(action={}){
   if(mode==="repeat")return Math.max(1,Math.min(100,Math.round(Number(action.repeatCount)||2)));
   return 1;
 }
+function actionDrivesAnotherPass(action={},nextPass=2){
+  if(!actionEligibleOnPass(action,nextPass))return false;
+  return normalizeExecutionMode(action.action,action.executionMode,action.payload||{})==="repeat";
+}
+function sequenceNeedsAnotherPass(sequence=[],nextPass=2){
+  const eligible=sequence.filter(action=>actionEligibleOnPass(action,nextPass));
+  if(eligible.length===0)return false;
+  // Continual execution is sequence-level. If only one continual action would
+  // remain on the next pass, stop processing instead of reissuing it forever.
+  // A finite repeat is different: its explicit repeatCount may intentionally
+  // drive additional passes even when it is the only eligible action.
+  if(eligible.length===1)return actionDrivesAnotherPass(eligible[0],nextPass);
+  return true;
+}
 function actionEligibleOnPass(action={},pass=1){
   const n=Math.max(1,Math.trunc(Number(pass)||1));
   return n<=actionPassLimit(action);
@@ -139,6 +153,8 @@ module.exports={
   actionPassLimit,
   actionEligibleOnPass,
   sequenceHasEligibleActions,
+  actionDrivesAnotherPass,
+  sequenceNeedsAnotherPass,
   sequenceHasContinuousActions,
   normalizeAutomationEvent,
   migrateAutomationStore,

@@ -27,15 +27,15 @@ Legacy `action`, `targets`, `payload`, and `actions[]` fields remain compatibili
 
 ## Sequence-pass execution
 
-The runner proceeds Action 1 → Action 2 → Action 3 → … and then returns to Action 1 while any action remains eligible.
+The runner proceeds Action 1 → Action 2 → Action 3 → … . It starts another pass only when at least two actions remain eligible, or when an explicit finite **Loop X times** action still has passes remaining. If only one **Loop continually** action remains, sequence processing stops and leaves that action's current state in place.
 
 - **Run once**: execute on pass 1, then skip on later passes.
 - **Loop X times**: execute on passes 1 through X, then skip.
-- **Loop continually**: execute on every pass until the occurrence is cancelled, changed, disabled, superseded, or reaches its linked-class end boundary.
+- **Loop continually**: participate on every pass while the ordered sequence still has at least two continual actions eligible. If it becomes the only eligible action, it is not reissued.
 
 Each action keeps its own delay, targets, payload, and error policy. A failed action with `continueOnError=true` does not block the remaining eligible actions on that pass. With `continueOnError=false`, the sequence stops.
 
-A continuous sequence with no configured waits is rate-limited so it cannot spin faster than one complete pass per second. Delays are cancellation-aware and class-boundary-aware.
+A multi-action continuous sequence with no configured waits is rate-limited so it cannot spin faster than one complete pass per second. Delays are cancellation-aware and class-boundary-aware.
 
 ## Scheduling and supersession
 
@@ -94,7 +94,7 @@ Changes to automation/scheduler behavior must prove:
 1. scheduled runs preserve school-calendar/cycle enforcement;
 2. Action 1 and every later action share the same execution semantics;
 3. once/repeat/continuous eligibility is correct on every sequence pass;
-4. finite sequences terminate when no action remains eligible;
+4. finite sequences terminate when no action remains eligible, and continual sequences stop cycling when only one continual action remains;
 5. continuous sequences are cancellation-aware and rate-limited;
 6. newer overlapping scheduled occurrences supersede older loops;
 7. class-linked continuous runs stop at the class boundary;

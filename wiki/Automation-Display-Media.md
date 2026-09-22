@@ -47,13 +47,13 @@ Receivers report bounded `display.media.status` telemetry containing session ID,
 
 Scheduled automations now cycle through their ordered actions. Run once participates only on the first pass, Loop X times participates for the configured number of passes, and Loop continually participates on every pass. This applies to display, TV, and lighting actions.
 
-The sequence returns to Action 1 after its final action while at least one action is still eligible. A newer overlapping scheduled automation cancels an older continuous loop. Class-linked loops stop at the resolved class end. Timer Overlay starts after the first pass.
+The sequence returns to Action 1 after its final action only while at least two actions remain eligible, or while an explicit finite repeat still has passes remaining. If the only remaining eligible action is `Loop continually`, it is not reissued. A newer overlapping scheduled automation cancels an older continuous loop. Class-linked loops stop at the resolved class end. Timer Overlay starts after the first pass.
 
 The controller shows media settings by content type: images do not display video controls; video exposes clip/audio/rate controls; documents and presentations expose page/slide timing.
 
 ### Per-action automation dwell timing
 
-Automation `repeatDelaySeconds` means the dwell/stay time **after an action executes and before advancing to the next eligible action**. `delaySeconds` is a pre-action wait. After the last eligible action, the runner returns to Action 1 while any action remains eligible. Preserve canonical ordering, class-end cancellation, Morning Announcements priority, timer overlays, recovery, and cancellation behavior.
+Automation `repeatDelaySeconds` means the dwell/stay time **after an action executes and before advancing to the next eligible action**. `delaySeconds` is a pre-action wait. After the last eligible action, the runner returns to Action 1 only while at least two actions remain eligible; if only one `Loop continually` action remains, sequence processing stops and leaves that action's current state in place. Preserve canonical ordering, class-end cancellation, Morning Announcements priority, timer overlays, recovery, and cancellation behavior.
 
 ### Timer Overlay coverage across action sequences
 

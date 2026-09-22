@@ -31,7 +31,7 @@ const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
 const automationSchema=require("./automation-schema");
-const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceHasContinuousActions}=automationSchema;
+const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceNeedsAnotherPass,sequenceHasContinuousActions}=automationSchema;
 const normalizeSequenceAction=automationSchema["normalize"+"AutomationAction"];
 const normalizeSequenceEvent=automationSchema["normalize"+"AutomationEvent"];
 
@@ -1809,7 +1809,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   }
   function hasLaterEligibleAction(fromIndex,pass){
     for(let i=fromIndex+1;i<steps.length;i++)if(actionEligibleOnPass(steps[i],pass))return true;
-    return sequenceHasEligibleActions(steps,pass+1);
+    return sequenceNeedsAnotherPass(steps,pass+1);
   }
 
   // Sequence actions are applied exactly as configured; no automation implicitly clears display content.
@@ -1817,7 +1817,8 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // time AFTER an action executes: how long its resulting state remains before
   // RoomGoblin advances to the next eligible action. delaySeconds remains a
   // pre-action wait. After the final eligible action, the sequence returns to
-  // Action 1 while any action is still eligible.
+  // Action 1 only while at least two actions remain eligible, or while
+  // an explicit finite repeat still has passes remaining.
   let pass=1,aborted=false;
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
@@ -1901,7 +1902,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       }
     }
     combined.passes=pass;
-    if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
+    if(aborted||!sequenceNeedsAnotherPass(steps,pass+1))break;
     pass++;
     if(continuous&&executed===0)break;
   }

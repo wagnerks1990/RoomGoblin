@@ -8,7 +8,7 @@ const editor=fs.readFileSync(path.join(root,"public/controller/automation-v2.js"
 test("automation actions persist pass-based execution policy",()=>{
   assert.match(server,/automationActionSequence\(event\)/);
   assert.match(server,/actionEligibleOnPass\(step,pass\)/);
-  assert.match(server,/sequenceHasEligibleActions\(steps,pass\+1\)/);
+  assert.match(server,/sequenceNeedsAnotherPass\(steps,pass\+1\)/);
   assert.match(editor,/Loop continually/);
   assert.match(editor,/repeatDelaySeconds/);
 });
