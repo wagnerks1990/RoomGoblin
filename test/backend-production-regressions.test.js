@@ -181,7 +181,7 @@ test("audit persistence failures cannot convert an already-delivered command int
 
 
 test("manual video/audio playback pauses scheduler, Background Music, and active Music Assistant players",()=>{
-  const source=fs.readFileSync(path.join(ROOT,"src/server.js"),"utf8");
+  const source=fs.readFileSync(path.join(root,"src/server.js"),"utf8");
   assert.match(source,/function manualMediaPriorityCommand\(command,source="api"\)/);
   assert.match(source,/\["http","media-library"\]\.includes\(src\)/);
   assert.match(source,/if\(type==="display\.video"\)return true/);
