@@ -99,17 +99,20 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
     }
   };
   try{
-    const baseFilter=backupFilter("operational"),filter=(full,rel,ent)=>{if(/classroom-hub\.db(?:-wal|-shm)?$/.test(rel))return false;return baseFilter(full,rel,ent)};
+    const isTopLevelDatabase=rel=>path.posix.dirname(rel)==="classroom-hub/data"&&/\.db(?:-wal|-shm)?$/.test(path.posix.basename(rel));\n    const baseFilter=backupFilter("operational"),filter=(full,rel,ent)=>{if(isTopLevelDatabase(rel))return false;return baseFilter(full,rel,ent)};
     validateTree(HUB_ROOT,"classroom-hub",filter);validateTree(Classroom_ROOT,"services",filter);
     fs.mkdirSync(dbStageDir,{recursive:true,mode:0o700});fs.copyFileSync(dbSnapshot,dbStage);fs.chmodSync(dbStage,0o600);
     fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2),{mode:0o600});
     // Info-ZIP streams file contents directly to the destination and supports
     // ZIP64, avoiding Node/AdmZip's ~2 GiB Buffer ceiling on real appliances.
+    const dataRoot=path.join(HUB_ROOT,"data"),databaseExclusions=fs.existsSync(dataRoot)
+      ?fs.readdirSync(dataRoot,{withFileTypes:true}).filter(ent=>ent.isFile()&&/\.db(?:-wal|-shm)?$/.test(ent.name)).map(ent=>`classroom-hub/data/${ent.name}`)
+      :[];
     const exclusions=[
       "classroom-hub/node_modules/*","classroom-hub/.git/*","classroom-hub/data/backups/*",
       "classroom-hub/data/legacy/*","classroom-hub/data/file-trash/*","classroom-hub/data/media/*","classroom-hub/data/convert-tmp/*",
       "classroom-hub/data/presentation-upload-tmp/*","classroom-hub/.env",
-      "classroom-hub/data/classroom-control-hub.db","classroom-hub/data/classroom-control-hub.db-wal","classroom-hub/data/classroom-control-hub.db-shm"
+      ...databaseExclusions
     ];
     await run("/usr/bin/zip",["-q","-r","-y",partial,"classroom-hub",...exclusions.flatMap(x=>["-x",x])],{timeout:900000,cwd:path.dirname(HUB_ROOT),maxBuffer:1024*1024});
     if(fs.existsSync(Classroom_ROOT)&&fs.readdirSync(Classroom_ROOT).length){
