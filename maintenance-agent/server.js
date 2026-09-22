@@ -85,6 +85,37 @@ function cleanName(v){return String(v||"").replace(/[^A-Za-z0-9._-]/g,"-").slice
 function statInfo(p,base){const st=fs.statSync(p);return {name:path.basename(p),path:path.relative(base,p)||".",type:st.isDirectory()?"directory":"file",size:st.size,modifiedAt:st.mtime.toISOString()}}
 function sha256File(p){const hash=crypto.createHash("sha256"),fd=fs.openSync(p,"r"),buf=Buffer.allocUnsafe(1024*1024);try{let n=0,pos=0;while((n=fs.readSync(fd,buf,0,buf.length,pos))>0){hash.update(buf.subarray(0,n));pos+=n}return hash.digest("hex")}finally{fs.closeSync(fd)}}
 function writeZipAtomic(zip,dest){const partial=`${dest}.partial-${process.pid}-${Date.now()}`;try{zip.writeZip(partial);fs.chmodSync(partial,0o600);fs.renameSync(partial,dest);fs.chmodSync(dest,0o600)}finally{fs.rmSync(partial,{force:true})}}
+async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
+  const partial=`${dest}.partial-${process.pid}-${Date.now()}`,stage=fs.mkdtempSync(path.join(UPLOAD_DIR,"operational-zip-"));
+  const manifestPath=path.join(stage,"backup-manifest.json"),dbStageDir=path.join(stage,"classroom-hub","data"),dbStage=path.join(dbStageDir,"classroom-control-hub.db");
+  const validateTree=(src,prefix,filter)=>{
+    if(!fs.existsSync(src))return;
+    for(const ent of fs.readdirSync(src,{withFileTypes:true})){
+      const full=path.join(src,ent.name),rel=path.posix.join(prefix,ent.name);
+      if(filter&&!filter(full,rel,ent))continue;
+      if(ent.isSymbolicLink())throw Error(`Symbolic links are not permitted in recovery sources: ${rel}`);
+      if(ent.isDirectory())validateTree(full,rel,filter);
+      else if(!ent.isFile())throw Error(`Special files are not permitted in recovery sources: ${rel}`);
+    }
+  };
+  try{
+    const baseFilter=backupFilter("operational"),filter=(full,rel,ent)=>{if(/classroom-hub\.db(?:-wal|-shm)?$/.test(rel))return false;return baseFilter(full,rel,ent)};
+    validateTree(HUB_ROOT,"classroom-hub",filter);validateTree(Classroom_ROOT,"services",filter);
+    fs.mkdirSync(dbStageDir,{recursive:true,mode:0o700});fs.copyFileSync(dbSnapshot,dbStage);fs.chmodSync(dbStage,0o600);
+    fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2),{mode:0o600});
+    // Info-ZIP streams file contents directly to the destination and supports
+    // ZIP64, avoiding Node/AdmZip's ~2 GiB Buffer ceiling on real appliances.
+    const exclusions=[
+      "classroom-hub/node_modules/*","classroom-hub/.git/*","classroom-hub/data/backups/*",
+      "classroom-hub/data/legacy/*","classroom-hub/data/file-trash/*","classroom-hub/data/convert-tmp/*",
+      "classroom-hub/data/presentation-upload-tmp/*","classroom-hub/.env",
+      "classroom-hub/data/classroom-control-hub.db","classroom-hub/data/classroom-control-hub.db-wal","classroom-hub/data/classroom-control-hub.db-shm"
+    ];
+    await run("zip",["-q","-r","-y",partial,"classroom-hub","services",...exclusions.flatMap(x=>["-x",x])],{timeout:900000,cwd:path.dirname(HUB_ROOT),maxBuffer:1024*1024});
+    await run("zip",["-q","-r",partial,"classroom-hub","backup-manifest.json"],{timeout:120000,cwd:stage,maxBuffer:1024*1024});
+    fs.chmodSync(partial,0o600);fs.renameSync(partial,dest);fs.chmodSync(dest,0o600);
+  }finally{fs.rmSync(partial,{force:true});fs.rmSync(stage,{recursive:true,force:true})}
+}
 function writeJsonAtomic(dest,value){
   const partial=`${dest}.partial-${process.pid}-${Date.now()}`;
   let fd;
@@ -480,15 +511,23 @@ app.post("/backup/create",async(req,res)=>{let dbSnapshot="";try{
     const documents=diagnosticSupportDocuments({createdAt:new Date().toISOString(),agentVersion:"1.0.0-alpha.81",application,containers,system:{platform:os.platform(),architecture:os.arch(),cpuCount:os.cpus().length,memoryBytes:os.totalmem()}});
     zip.addFile("summary.json",Buffer.from(JSON.stringify(documents.summary,null,2)));
     zip.addFile("docker/containers.json",Buffer.from(JSON.stringify(documents.containers,null,2)));
-  }else copyIntoZip(zip,HUB_ROOT,"classroom-hub",filter);
-  if(hasDbSnapshot)zip.addLocalFile(dbSnapshot,"classroom-hub/data","classroom-control-hub.db");
-  if(scope==="operational")copyIntoZip(zip,Classroom_ROOT,"services",filter);
-  const hasServiceState=zip.getEntries().some(entry=>!entry.isDirectory&&entry.entryName.startsWith("services/"));
+  }else if(scope!=="operational")copyIntoZip(zip,HUB_ROOT,"classroom-hub",filter);
+  if(hasDbSnapshot&&scope!=="operational")zip.addLocalFile(dbSnapshot,"classroom-hub/data","classroom-control-hub.db");
+  if(scope==="operational"){
+    // Streaming writer handles Hub + services + DB snapshot below.
+  }
+  const hasServiceState=scope==="operational"?fs.existsSync(Classroom_ROOT):zip.getEntries().some(entry=>!entry.isDirectory&&entry.entryName.startsWith("services/"));
   const capabilities={configuration:["configuration","operational","full"].includes(scope),database:hasDbSnapshot,data:["operational","full"].includes(scope)&&hasDbSnapshot,services:hasServiceState,secrets:scope==="full"};
   const manifest=scope==="diagnostic"
     ?{version:4,createdAt:new Date().toISOString(),scope,applicationVersion:applicationVersion(),databaseSnapshot:false,containsSecrets:false,containsSensitiveData:false,requiresMasterKey:false,capabilities}
     :{version:4,createdAt:new Date().toISOString(),scope,automatic,applicationVersion:applicationVersion(),databaseSnapshot:hasDbSnapshot,containsSecrets:false,containsSensitiveData,requiresMasterKey:hasDbSnapshot,capabilities};
-  zip.addFile("backup-manifest.json",Buffer.from(JSON.stringify(manifest,null,2)));writeZipAtomic(zip,dest);
+  if(scope==="operational"){
+    // Do not add the multi-gigabyte operational payload to AdmZip: it buffers
+    // entries and eventually exceeds Node's 2 GiB Buffer ceiling.
+    await writeOperationalZipStreaming(dest,dbSnapshot,manifest);
+  }else{
+    zip.addFile("backup-manifest.json",Buffer.from(JSON.stringify(manifest,null,2)));writeZipAtomic(zip,dest);
+  }
   res.json({ok:true,name,size:fs.statSync(dest).size,sha256:sha256File(dest),download:`/backup/${encodeURIComponent(name)}`,containsSecrets:scope==="full",containsSensitiveData})
 }catch(e){res.status(500).json({ok:false,error:e.message})}finally{if(dbSnapshot)try{fs.rmSync(dbSnapshot,{force:true})}catch{}}});
 app.get("/backups",(_req,res)=>{const items=fs.readdirSync(BACKUP_DIR).filter(x=>/\.(?:zip|rgbak)$/.test(x)).map(n=>{const info=statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR);if(n.endsWith(".rgbak"))return {...info,encrypted:true,authenticated:true,containsSensitiveData:true,capabilities:{configuration:true,database:true,data:true,services:true,secrets:true},restoreModes:["full-recovery"]};try{const plan=backupRestorePlan(n);return {...info,containsSensitiveData:plan.containsSensitiveData,capabilities:plan.capabilities,restoreModes:plan.restoreModes}}catch(e){return {...info,restorable:false,error:e.message,capabilities:{}}}}).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));res.json({ok:true,items})});
