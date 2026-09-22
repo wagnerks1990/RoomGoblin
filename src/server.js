@@ -1817,7 +1817,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // time AFTER an action executes: how long its resulting state remains before
   // RoomGoblin advances to the next eligible action. delaySeconds remains a
   // pre-action wait. After the final eligible action, the sequence returns to
-  // Action 1 only while at least two continual actions remain eligible, or while
+  // Action 1 only while at least two actions remain eligible, or while
   // an explicit finite repeat still has passes remaining.
   let pass=1,aborted=false;
   while(sequenceHasEligibleActions(steps,pass)){
