@@ -12,7 +12,7 @@ const SESSION_ID=/^[a-f0-9-]{36}$/;
 
 function atomicJson(file,value){
   const tmp=`${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
-  fs.writeFileSync(tmp,JSON.stringify(value));
+  fs.writeFileSync(tmp,JSON.stringify(value),{mode:0o640});
   fs.renameSync(tmp,file);
 }
 function safeSessionId(value){const id=String(value||"");if(!SESSION_ID.test(id))throw Object.assign(new Error("Invalid upload session"),{status:400});return id}
@@ -51,7 +51,8 @@ class ResumableUploadStore{
   constructor({root,maxFileBytes,chunkBytes=DEFAULT_CHUNK_BYTES,ttlMs=24*60*60*1000,maxOwnerBytes=maxFileBytes*2,minFreeBytes=1024*MIB}){
     this.root=root;this.maxFileBytes=maxFileBytes;this.chunkBytes=Math.min(chunkBytes,ABSOLUTE_CHUNK_BYTES);this.ttlMs=ttlMs;this.maxOwnerBytes=maxOwnerBytes;this.minFreeBytes=minFreeBytes;
     this.locks=new Map();
-    fs.mkdirSync(root,{recursive:true});
+    fs.mkdirSync(root,{recursive:true,mode:0o750});
+    fs.chmodSync(root,0o750);
   }
   async locked(id,task){const prior=this.locks.get(id)||Promise.resolve(),run=prior.catch(()=>{}).then(task);this.locks.set(id,run);try{return await run}finally{if(this.locks.get(id)===run)this.locks.delete(id)}}
   dir(id){return path.join(this.root,safeSessionId(id))}
@@ -69,7 +70,7 @@ class ResumableUploadStore{
     if(freeBytes-activeBytes-size*2<this.minFreeBytes)throw Object.assign(new Error("Not enough free storage to upload and finalize this file"),{status:507});
     const id=crypto.randomUUID(),now=new Date().toISOString(),totalChunks=Math.ceil(size/this.chunkBytes);
     const meta={id,owner,name,size,mime:String(mime||"application/octet-stream").slice(0,160),chunkBytes:this.chunkBytes,totalChunks,received:{},createdAt:now,updatedAt:now};
-    fs.mkdirSync(this.dir(id),{recursive:false,mode:0o700});atomicJson(this.metaFile(id),meta);return meta;
+    fs.mkdirSync(this.dir(id),{recursive:false,mode:0o750});atomicJson(this.metaFile(id),meta);return meta;
   }
   public(meta){return {id:meta.id,name:meta.name,size:meta.size,mime:meta.mime,chunkBytes:meta.chunkBytes,totalChunks:meta.totalChunks,received:Object.keys(meta.received).map(Number).sort((a,b)=>a-b),createdAt:meta.createdAt,updatedAt:meta.updatedAt}}
   async putChunk(args){return this.locked(String(args.id),()=>this._putChunk(args))}
@@ -86,7 +87,7 @@ class ResumableUploadStore{
     const tmp=path.join(this.dir(id),`.${index}.${crypto.randomBytes(6).toString("hex")}.tmp`),target=path.join(this.dir(id),`${index}.part`);
     const hash=crypto.createHash("sha256");let bytes=0;
     input.on("data",chunk=>{bytes+=chunk.length;hash.update(chunk)});
-    try{await pipeline(input,fs.createWriteStream(tmp,{flags:"wx",mode:0o600}));const actual=hash.digest("hex");if(bytes!==expected||actual!==digest)throw Object.assign(new Error("Chunk size or digest verification failed"),{status:400});fs.renameSync(tmp,target)}catch(err){fs.rmSync(tmp,{force:true});throw err}
+    try{await pipeline(input,fs.createWriteStream(tmp,{flags:"wx",mode:0o640}));const actual=hash.digest("hex");if(bytes!==expected||actual!==digest)throw Object.assign(new Error("Chunk size or digest verification failed"),{status:400});fs.renameSync(tmp,target)}catch(err){fs.rmSync(tmp,{force:true});throw err}
     meta.received[index]={size:bytes,sha256:digest};meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(id),meta);return this.public(meta);
   }
   async assemble(args){return this.locked(String(args.id),()=>this._assemble(args))}

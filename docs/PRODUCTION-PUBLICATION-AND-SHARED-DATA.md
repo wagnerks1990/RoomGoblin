@@ -28,6 +28,10 @@ This preserves the intended boundary:
 
 The Hub startup wrapper `tools/start-roomgoblin.sh` establishes the umask before Node starts. Do not remove this wrapper or replace it with a runtime that inherits an unknown host/container umask.
 
+### Resumable upload session permissions
+
+In-progress resumable uploads are included in operational backups. Session directories therefore use `0750` and chunk/metadata files `0640`, matching the shared-data contract. Explicit `0700` directories or `0600` chunk files block maintenance backup traversal and cause production updates to fail safely before mutation.
+
 ### Media-upload incident
 
 A large uploaded MP4 was observed as mode `0600`. The Hub itself could use the file, but the maintenance container could not read it during the mandatory operational safety backup. The update then stopped before service mutation with an apparently generic preflight failure.
