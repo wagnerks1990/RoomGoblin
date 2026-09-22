@@ -81,3 +81,11 @@ test("any manual run replaces overlapping managed manual loops",()=>{
   const saved=server.slice(server.indexOf('app.post("/api/v1/automations/:id/run"'),server.indexOf('// v0.5 configuration',server.indexOf('app.post("/api/v1/automations/:id/run"')));
   assert.match(saved,/await cancelOverlappingManualAutomationRuns\(resolved,"manual-run-replaced"\)/);
 });
+
+
+test("continuous recovery only restarts current winners",()=>{
+  assert.match(server,/function currentContinuousRecoveryWinnerIdentities\(now=schedulerClock\.now\(\)\)/);
+  assert.match(server,/for\(const candidate of currentAutomationDisplayWinners\(now\)\)/);
+  assert.match(server,/for\(const candidate of currentAutomationNonDisplayWinners\(now\)\)/);
+  assert.match(server,/if\(!winnerIdentities\.has\(automationOccurrenceIdentity\(storedEvent,event\)\)\)continue/);
+});
