@@ -355,10 +355,14 @@ test("managed-service reconciliation executes locally with an exact bounded sche
 test("configuration-data restore replaces runtime data and verifies application health",async t=>{
   const agent=await startAgent(t);
   put(path.join(agent.hub,"data","media","lesson.txt"),"ORIGINAL_ASSET");
+  put(path.join(agent.hub,"data","classroom-hub.db"),"STALE_LEGACY_DATABASE");
   put(path.join(agent.hub,"data","presentations","lesson.pdf"),"PRESENTATION_ASSET");
   put(path.join(agent.hub,"data","android-tv",".android","adbkey"),"ARCHIVED_ADB_IDENTITY");
   const created=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
   assert.equal(created.status,200,JSON.stringify(created.body));
+  const operationalZip=new AdmZip(path.join(agent.hub,"data","backups",created.body.name));
+  assert.equal(operationalZip.getEntry("classroom-hub/data/classroom-hub.db"),null,"operational archive must exclude stale top-level database identities");
+  assert.ok(operationalZip.getEntry("classroom-hub/data/classroom-control-hub.db"),"operational archive must contain only the canonical SQLite snapshot");
 
   put(path.join(agent.hub,"data","classroom-control-hub.db"),"MUTATED_DATABASE");
   put(path.join(agent.hub,"data","media","lesson.txt"),"MUTATED_ASSET");
