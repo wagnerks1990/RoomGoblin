@@ -6,6 +6,7 @@ const {
   automationActionSequence,
   actionEligibleOnPass,
   sequenceHasEligibleActions,
+  sequenceNeedsAnotherPass,
   sequenceHasContinuousActions,
   normalizeAutomationEvent,
   migrateAutomationStore,
@@ -49,6 +50,33 @@ test("actions decide participation independently on each sequence pass",()=>{
   assert.equal(actionEligibleOnPass(continuous,1000),true);
   assert.equal(sequenceHasEligibleActions([once,finite],4),false);
   assert.equal(sequenceHasContinuousActions([once,finite,continuous]),true);
+});
+
+test("receiver-native media loop does not create passes by itself",()=>{
+  const mediaLoop={action:"display.media",executionMode:"loop",payload:{storedName:"loop.mp4"}};
+  const once={action:"tv.power",executionMode:"once"};
+  assert.equal(sequenceNeedsAnotherPass([mediaLoop,once],2),false);
+});
+
+test("two continual media actions intentionally keep cycling",()=>{
+  const first={action:"display.media",executionMode:"loop",payload:{storedName:"one.mp4"}};
+  const second={action:"display.media",executionMode:"loop",payload:{storedName:"two.mp4"}};
+  assert.equal(sequenceNeedsAnotherPass([first,second],2),true);
+});
+
+test("another continual action keeps a media loop participating in later passes",()=>{
+  const mediaLoop={action:"display.media",executionMode:"loop",payload:{storedName:"loop.mp4"}};
+  const otherLoop={action:"govee.power",executionMode:"loop"};
+  assert.equal(sequenceNeedsAnotherPass([mediaLoop,otherLoop],2),true);
+  assert.equal(actionEligibleOnPass(mediaLoop,2),true);
+});
+
+test("run-once first action stays out when a later action loops",()=>{
+  const once={action:"display.media",executionMode:"once",payload:{storedName:"intro.mp4"}};
+  const loop={action:"govee.power",executionMode:"loop"};
+  assert.equal(sequenceNeedsAnotherPass([once,loop],2),true);
+  assert.equal(actionEligibleOnPass(once,2),false);
+  assert.equal(actionEligibleOnPass(loop,2),true);
 });
 
 test("continuous loop is available to every action type",()=>{
