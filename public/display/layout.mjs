@@ -1,6 +1,7 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260922-10';
+export const LAYOUT_REVISION = 'dynamic-fit-20260922-11';
+export const AUTO_GROW_FACTOR = 1.10;
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
@@ -62,7 +63,8 @@ function deterministicDesiredHeight(name, configuredSize, minHeight) {
 
 function componentCap(value, fallback, globalCap, autoFit = true) {
   const configured = bounded(value, fallback, 1, 2000);
-  return autoFit === false ? configured : globalCap;
+  if (autoFit === false) return Math.min(configured, globalCap);
+  return Math.min(globalCap, configured * AUTO_GROW_FACTOR);
 }
 
 function establishStructuralStyles(nodes) {
