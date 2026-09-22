@@ -1,6 +1,6 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260921-7';
+export const LAYOUT_REVISION = 'dynamic-fit-20260922-8';
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
@@ -9,6 +9,56 @@ const COMPONENT_GAP = 14;
 const HORIZONTAL_GUTTER = 18;
 const finite = (value, fallback) => value == null || value === '' || !Number.isFinite(Number(value)) ? fallback : Number(value);
 export const bounded = (value, fallback, min, max) => Math.max(min, Math.min(max, finite(value, fallback)));
+
+function authoredLineHeightFactor(el, fallback = 1.2) {
+  const raw = String(el?.style?.lineHeight || '').trim();
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 4 ? n : fallback;
+}
+
+function intrinsicSingleLineWidth(el, fontSize = 100) {
+  if (typeof document === 'undefined' || !el?.textContent) return 0;
+  try {
+    const computed = getComputedStyle(el);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return 0;
+    context.font = `${computed.fontStyle || 'normal'} ${computed.fontWeight || '400'} ${fontSize}px ${computed.fontFamily || 'sans-serif'}`;
+    return context.measureText(el.textContent).width;
+  } catch {
+    return 0;
+  }
+}
+
+function hardFontCeiling(el, box, requestedCap) {
+  const a = available(box);
+  if (a.width <= 0 || a.height <= 0) return Math.max(1, requestedCap);
+  let cap = Math.max(1, requestedCap);
+  const lineFactor = authoredLineHeightFactor(el);
+
+  if (el?.id === 'timerOverlay') {
+    const border = bounded(parseFloat(getComputedStyle(el).borderTopWidth), 4, 0, 24);
+    // Timer chrome contains a label line, value line, label spacing and vertical
+    // em padding. This conservative bound is independent of browser overflow
+    // metrics so a TV Chromium/WebView cannot accept visibly clipped timer text.
+    cap = Math.min(cap, Math.max(1, (a.height - (border * 2)) / 1.98));
+  } else {
+    cap = Math.min(cap, Math.max(1, a.height / lineFactor));
+  }
+
+  if (el?.id === 'title' || el?.id === 'subtitle') {
+    const widthAt100 = intrinsicSingleLineWidth(el, 100);
+    if (widthAt100 > 0) cap = Math.min(cap, Math.max(1, (a.width / widthAt100) * 100 * 0.995));
+  }
+  return cap;
+}
+
+function deterministicDesiredHeight(name, configuredSize, minHeight) {
+  const size = Math.max(1, Number(configuredSize) || 1);
+  if (name === 'timer') return Math.max(minHeight, size * 1.98 + 8);
+  if (name === 'title' || name === 'subtitle') return Math.max(minHeight, size * 1.2 + 10);
+  return minHeight;
+}
 
 function componentCap(value, fallback, globalCap, autoFit = true) {
   const configured = bounded(value, fallback, 1, 2000);
@@ -146,6 +196,7 @@ export function fits(el, box) {
 
 export function fitElement(el, box, cap) {
   cap = bounded(cap, 64, 1, 2000);
+  cap = hardFontCeiling(el, box, cap);
   el.style.transform = '';
   if (!el.textContent.trim()) {
     el.style.fontSize = '12px';
@@ -244,23 +295,29 @@ export function createDisplayLayout(nodes, getState) {
     if (title.textContent.trim()) items.push({
       name:'title', el:title, box:titleRegion,
       cap:componentCap(titleOpts.size,92,FONT_CAPS.title,titleOpts.autoFit!==false),
+      configuredSize:bounded(titleOpts.size,92,1,2000),
       minHeight:70, weight:1.05, singleLine:true
     });
     if (subtitle.textContent.trim()) items.push({
       name:'subtitle', el:subtitle, box:subtitleRegion,
       cap:componentCap(subtitleOpts.size,44,FONT_CAPS.subtitle,subtitleOpts.autoFit!==false),
+      configuredSize:bounded(subtitleOpts.size,44,1,2000),
       minHeight:50, weight:0.8, singleLine:true
     });
     if (text.textContent.trim()) items.push({
       name:'body', el:text, box:textLayer,
       cap:componentCap(textOpts.size,64,FONT_CAPS.body,textOpts.autoFit!==false),
+      configuredSize:bounded(textOpts.size,64,1,2000),
       minHeight:120, weight:2.2
     });
     if (timer.visible) items.push({
       name:'timer', el:timerOverlay, box:timerRegion,
       cap:componentCap(timer.fontSize,64,FONT_CAPS.timer,timer.autoFit!==false),
+      configuredSize:bounded(timer.fontSize,64,1,2000),
       minHeight:105, weight:1
     });
+
+    for (const item of items) item.desired = deterministicDesiredHeight(item.name, item.configuredSize, item.minHeight);
 
     const timerPos = ['top','center','bottom'].includes(timer.position) ? timer.position : 'bottom';
     if (timer.visible) {
@@ -324,11 +381,9 @@ export function createDisplayLayout(nodes, getState) {
     for (const item of items) {
       item.el.style.transform = '';
       item.el.style.fontSize = `${item.cap}px`;
-      // Region allocation is intentionally independent of the element's
-      // current fitted DOM geometry. Active headings/timer keep their compact
-      // minimum bands and the body receives otherwise-unused room; the fitter
-      // then solves each object's font size inside that deterministic geometry.
-      item.desired = item.minHeight;
+      // Region allocation is based only on configured state, never prior DOM
+      // measurements. The fitter then solves each object inside that stable
+      // geometry with independent mathematical hard ceilings.
     }
     applyGeometry(items);
 
