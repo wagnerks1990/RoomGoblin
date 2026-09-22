@@ -27,11 +27,11 @@ Legacy `action`, `targets`, `payload`, and `actions[]` fields remain compatibili
 
 ## Sequence-pass execution
 
-The runner proceeds Action 1 → Action 2 → Action 3 → … . It starts another pass only when at least two continual actions remain eligible, or when an explicit finite **Loop X times** action still has passes remaining. If only one **Loop continually** action remains, sequence processing stops and leaves that action's current state in place.
+The runner proceeds Action 1 → Action 2 → Action 3 → … . It starts another pass only when at least two actions remain eligible, or when an explicit finite **Loop X times** action still has passes remaining. If only one **Loop continually** action remains, sequence processing stops and leaves that action's current state in place.
 
 - **Run once**: execute on pass 1, then skip on later passes.
 - **Loop X times**: execute on passes 1 through X, then skip.
-- **Loop continually**: participate on every pass while the ordered sequence still has at least two continual actions eligible. A lone continual survivor is not reissued.
+- **Loop continually**: participate on every pass while the ordered sequence still has at least two continual actions eligible. If it becomes the only eligible action, it is not reissued.
 
 Each action keeps its own delay, targets, payload, and error policy. A failed action with `continueOnError=true` does not block the remaining eligible actions on that pass. With `continueOnError=false`, the sequence stops.
 
