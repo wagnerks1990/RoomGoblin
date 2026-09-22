@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Manual media audio priority
+
+- Treat operator-started video and explicitly audible web/voice/SFX playback from Display Studio or the Media Library as a classroom media takeover.
+- Pause scheduled automation immediately, request cancellation of active automation occurrences, hold Background Music priority, and pause every currently playing Music Assistant player before/while the media starts.
+- `Resume Scheduled State` releases the manual-media priority lock and reconciles managed Background Music, but deliberately does not auto-resume arbitrary Music Assistant players that the operator may no longer want playing.
+
+
 ### Resume scheduled state cancels manual tests
 
 - Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.
