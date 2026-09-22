@@ -100,6 +100,7 @@ test('receiver cache key and build identity are release-stamped at image build',
 
 
 test("timer natural-size probe must clear inherited positional CSS",()=>{
+  const source = fs.readFileSync(layoutPath, 'utf8');
   assert.match(source,/right:'auto', bottom:'auto'/);
   assert.match(source,/items\.length === 1 && items\[0\]\.name === 'timer'/);
   assert.match(source,/STAGE_HEIGHT - VERTICAL_MARGIN - height/);
