@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Resumable upload backup readability
+
+- Create resumable-upload roots and per-upload session directories as `0750` and chunk files as `0640`, matching RoomGoblin's shared-data contract.
+- Prevent operational safety backups from failing with `EACCES` while an upload session exists, without granting world access or weakening secret/ADB/signing permissions.
+
 ### Linked-class automation targets
 
 - Make each linked class's default displays authoritative for every display action when class-target inheritance is enabled, and show those effective targets read-only without discarding saved manual selections.
