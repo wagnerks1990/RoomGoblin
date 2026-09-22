@@ -408,11 +408,11 @@ nav button{min-width:135px}
     </div>
     <div class="toolbar" style="margin-top:12px;align-items:center">
       <label class="pill"><input id="bgmSchoolDays" type="checkbox" checked> Student school days only</label>
-      <label class="pill"><input id="bgmPausePriority" type="checkbox" checked> Pause for automation / announcement audio</label>
+      <label class="pill"><input id="bgmPausePriority" type="checkbox" checked> Pause Background Music for priority audio / video</label>
     </div>
     <div style="margin-top:10px"><b>Days</b><div id="bgmDays" class="toolbar" style="margin-top:6px"></div></div>
     <div class="toolbar" style="margin-top:12px"><button class="primary" onclick="saveBackgroundMusicSchedule()">Save Background Music</button><span id="bgmSaveMsg" class="muted"></span></div>
-    <div class="muted" style="margin-top:8px">This schedule is separate from Classroom Automation. Slides, timers, websites, presentations, and other silent display content do not interrupt the music. Unmuted automation video/streams and Morning Announcements take audio priority, then Background Music resumes automatically.</div>
+    <div class="muted" style="margin-top:8px">This schedule is separate from Classroom Automation. Slides, timers, websites, presentations, and other silent display content do not interrupt the music. Manual video/audio, unmuted automation video/streams, and Morning Announcements take audio priority. Manual video/audio also pauses scheduled automation and any Music Assistant players that are already playing; arbitrary players stay paused until the operator starts them again.</div>
   </div>
 
   <div class="grid2" style="align-items:start">
