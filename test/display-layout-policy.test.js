@@ -10,16 +10,20 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260922-10');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260922-11');
+  assert.equal(layout.AUTO_GROW_FACTOR, 1.10);
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
   const source = fs.readFileSync(layoutPath, 'utf8');
-  assert.match(source, /function allocateHeights\(items, availableHeight\)/,
-    'active objects must share the available stage dynamically');
+  assert.match(source, /const titleTop = 24/);
+  assert.match(source, /const titleHeight = 110/);
+  assert.match(source, /const subtitleHeight = 70/);
+  assert.match(source, /const timerHeight = 160/);
+  assert.match(source, /const timerEdge = 20/);
   assert.match(source, /items\.map\(item => item\.name\)/,
     'diagnostics must expose dynamic object order');
-  assert.match(source, /bodyIndex >= 0/,
-    'body content should receive otherwise unused vertical space');
+  assert.match(source, /const bodyHeight = Math\.max\(1, STAGE_HEIGHT - bodyTop - bodyBottom\)/,
+    'body must consume only the safe space between header and timer');
   assert.doesNotMatch(source, /titleTop = 30, bodyTop = 270, bodyEnd = 975/,
     'fixed title/body bands must not return');
   assert.match(source, /const HORIZONTAL_GUTTER = 18/);
@@ -41,10 +45,11 @@ test('display renderer uses dynamic content-object layout', async () => {
     'timer must have a conservative two-line vertical ceiling');
 });
 
-test('auto-fit can grow to component caps while manual sizing remains a ceiling', () => {
+test('auto-fit growth is bounded near configured sizes', () => {
   const source = fs.readFileSync(layoutPath, 'utf8');
-  assert.match(source, /autoFit === false \? configured : globalCap/,
-    'automatic sizing must use the dynamic component cap');
+  assert.match(source, /configured \* AUTO_GROW_FACTOR/,
+    'automatic sizing must stay bounded near the configured value');
+  assert.match(source, /Math\.min\(globalCap, configured \* AUTO_GROW_FACTOR\)/);
   assert.match(source, /componentCap\(titleOpts\.size,92,FONT_CAPS\.title,titleOpts\.autoFit!==false\)/);
   assert.match(source, /componentCap\(textOpts\.size,64,FONT_CAPS\.body,textOpts\.autoFit!==false\)/);
 });
@@ -90,8 +95,8 @@ test('timer overlay remains a compact dynamic object', () => {
 test('receiver cache key and build identity are release-stamped at image build', () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260922-10/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20260922-10/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260922-11/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20260922-11/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),
@@ -102,7 +107,7 @@ test('receiver cache key and build identity are release-stamped at image build',
 test("timer natural-size probe must clear inherited positional CSS",()=>{
   const source = fs.readFileSync(layoutPath, 'utf8');
   assert.match(source,/right:'auto', bottom:'auto'/);
-  assert.match(source,/items\.length === 1 && items\[0\]\.name === 'timer'/);
-  assert.match(source,/STAGE_HEIGHT - VERTICAL_MARGIN - height/);
+  assert.match(source,/\['top','center','bottom'\]\.includes\(timer\.position\)/);
+  assert.match(source,/timerRegion\.style\.overflow = 'visible'/);
   assert.match(source,/cap:bounded\(timer\.fontSize,64,1,FONT_CAPS\.timer\)/);
 });

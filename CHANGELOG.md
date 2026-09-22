@@ -1,4 +1,6 @@
 # Changelog
+- Anchor title/subtitle at the top, reserve the remaining center for body text, and give the timer a 160px safe region that preserves top/center/bottom placement without clipping.
+- Bound automatic font growth to 110% of configured size while retaining hard shrink-to-fit containment; renderer/cache revision is now `dynamic-fit-20260922-11`.
 
 ## Unreleased
 

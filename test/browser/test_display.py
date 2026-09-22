@@ -428,19 +428,24 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertEqual(page.locator('#identify').evaluate('el=>el.style.display'),'none')
         self.assertFalse(self.errors)
 
-    def test_14_dynamic_objects_use_full_canvas_and_contain_nocti_scene(self):
+    def test_14_dynamic_objects_use_safe_anchored_regions(self):
         page=self.page()
         self.replay(page,NOCTI_DYNAMIC)
         data=self.measure(page,'dynamic-nocti-scene')
         self.assertTrue(data['diagnostics']['dynamic'])
         self.assertEqual(data['diagnostics']['order'],['title','subtitle','body','timer'])
-        boxes=[data['parts'][name]['box'] for name in ['title','subtitle','body','timer']]
-        self.assertAlmostEqual(boxes[0]['y'],30,delta=1)
-        self.assertAlmostEqual(boxes[-1]['y']+boxes[-1]['h'],1050,delta=1)
-        for left,right in zip(boxes,boxes[1:]):
-            self.assertAlmostEqual(right['y']-(left['y']+left['h']),14,delta=1)
-        self.assertNotEqual(round(boxes[0]['h']),125)
-        self.assertNotEqual(round(boxes[2]['h']),511)
+        title=data['parts']['title']['logicalBox']
+        subtitle=data['parts']['subtitle']['logicalBox']
+        body=data['parts']['body']['logicalBox']
+        timer=data['parts']['timer']['logicalBox']
+        self.assertAlmostEqual(title['y'],24,delta=1)
+        self.assertAlmostEqual(title['h'],110,delta=1)
+        self.assertAlmostEqual(subtitle['y'],138,delta=1)
+        self.assertAlmostEqual(subtitle['h'],70,delta=1)
+        self.assertAlmostEqual(body['y'],222,delta=1)
+        self.assertAlmostEqual(timer['y'],900,delta=1)
+        self.assertAlmostEqual(timer['h'],160,delta=1)
+        self.assertGreaterEqual(timer['y']-(body['y']+body['h']),14)
         self.assertGreater(data['parts']['title']['font'],20)
         self.assertGreater(data['parts']['body']['font'],20)
 
@@ -452,7 +457,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-10')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-11')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -472,19 +477,24 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-10')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-11')
 
 
     def test_17_live_tv8_text_does_not_false_collapse(self):
         page=self.page(1548,1273,1)
         self.replay(page,TV8_LIVE_DYNAMIC)
         data=self.measure(page,'live-tv8-false-containment-regression')
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-10')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-11')
         for name in ['title','subtitle','body']:
             self.assertGreaterEqual(data['parts'][name]['font'],12, name)
             self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
             self.assertEqual(data['diagnostics']['components'][name]['status'],'fit', name)
         self.assertGreaterEqual(data['parts']['timer']['font'],24)
+        self.assertLessEqual(data['parts']['title']['font'],92*1.10+0.5)
+        self.assertLessEqual(data['parts']['subtitle']['font'],44*1.10+0.5)
+        self.assertLessEqual(data['parts']['body']['font'],64*1.10+0.5)
+        self.assertLessEqual(data['parts']['timer']['font'],64*1.10+0.5)
+        self.assertAlmostEqual(data['parts']['timer']['logicalBox']['h'],160,delta=1)
         self.assertNotEqual(data['diagnostics'].get('fitWarning'),'content-too-dense')
 
 
