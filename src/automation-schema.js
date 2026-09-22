@@ -75,6 +75,10 @@ function automationActionSequence(event={}){
 }
 function actionPassLimit(action={}){
   const mode=normalizeExecutionMode(action.action,action.executionMode,action.payload||{});
+  // display.media looping is receiver-native. Dispatch it once and let the
+  // receiver keep the media session looping; reissuing display.media clears and
+  // reloads the display, which causes visible flashing between sequence passes.
+  if(mode==="loop"&&String(action.action)==="display.media")return 1;
   if(mode==="loop")return Infinity;
   if(mode==="repeat")return Math.max(1,Math.min(100,Math.round(Number(action.repeatCount)||2)));
   return 1;
