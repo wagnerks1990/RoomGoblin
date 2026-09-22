@@ -435,7 +435,27 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-8')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-9')
+
+    def test_16_timer_only_overlay_is_visible_and_positioned(self):
+        page=self.page(1548,1266,1)
+        state={
+            'background': {'color':'#000000'},
+            'title':'','subtitle':'','text':'',
+            'titleOptions':{},'subtitleOptions':{},'textOptions':{},
+            'media': {'type':'image','url':'/test-images/tv1.svg','fit':'contain'},
+            'timer': {'visible':True,'running':False,'mode':'countdown',
+                      'remainingSeconds':2944,'durationSeconds':3600,'fontSize':64,
+                      'position':'bottom','label':'Period 1 • Class Ends In',
+                      'timerInstanceId':'fixture-timer-only'}
+        }
+        self.replay(page,state)
+        data=self.measure(page,'timer-only-overlay')
+        timer=data['parts']['timer']
+        self.assertGreaterEqual(timer['font'],24)
+        self.assertGreater(timer['logicalBox']['y'],700)
+        self.assertLess(timer['logicalBox']['h'],250)
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-9')
 
 
 if __name__ == '__main__':

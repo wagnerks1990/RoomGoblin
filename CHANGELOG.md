@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Timer overlay visibility on media-only displays
+
+- Fix all receiver displays where a timer over an image/media scene could collapse to a 1px font and near-zero scale.
+- Clear inherited top/bottom positioning from hidden natural-size probes so timer measurement reflects content rather than the old `.timer-bottom` CSS class.
+- Keep timer-only overlays compact and honor top/center/bottom placement instead of stretching the timer region across the full 1920×1080 stage.
+- Treat configured timer font size as its maximum rather than automatically growing it to the global timer cap.
+- Renderer/cache revision: `dynamic-fit-20260922-9`.
+
 ### Resume scheduled state cancels manual tests
 
 - Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.
