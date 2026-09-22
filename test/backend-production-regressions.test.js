@@ -178,3 +178,17 @@ test("audit persistence failures cannot convert an already-delivered command int
   assert.doesNotMatch(auditBlock,/throw error/);
   assert.match(auditBlock,/pendingAuditWrites\.length>2000/);
 });
+
+
+test("manual video/audio playback pauses scheduler, Background Music, and active Music Assistant players",()=>{
+  const source=fs.readFileSync(path.join(ROOT,"src/server.js"),"utf8");
+  assert.match(source,/function manualMediaPriorityCommand\(command,source="api"\)/);
+  assert.match(source,/\["http","media-library"\]\.includes\(src\)/);
+  assert.match(source,/if\(type==="display\.video"\)return true/);
+  assert.match(source,/players\/cmd\/pause/);
+  assert.match(source,/if\(automationSchedulerEnabled\)setAutomationSchedulerEnabled\(false\)/);
+  assert.match(source,/automationCancellationReasons\.set\(id,"manual-media-priority"\)/);
+  assert.match(source,/backgroundMusicPriorityTargets\.add\(id\)/);
+  assert.match(source,/releaseManualMediaPriority\("schedule-resumed"\)/);
+  assert.match(source,/Do not auto-resume arbitrary Music Assistant players/);
+});
