@@ -22,7 +22,7 @@ After deploying/rebuilding, reload each receiver and run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected renderer revision: `dynamic-fit-20260921-7`.
+Expected renderer revision: `dynamic-fit-20260922-8`.
 
 Diagnostics should report `dynamic: true`, active-object `order`, and fitted regions that collectively use the available logical canvas without overlap. Font sizes are content-dependent: short content may grow substantially, while long content may shrink.
 
@@ -37,3 +37,5 @@ Visually verify all of the following on the same real classroom state:
 ## Regression guardrail
 
 Do not restore global-cap-only auto-growth. Absolute caps are safety limits, not target sizes. Any future readability work must preserve the configured scene size as the primary design input and must retain compact timer chrome unless a separate timer style is explicitly selected.
+
+Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
