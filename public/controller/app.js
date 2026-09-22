@@ -1351,7 +1351,7 @@ function renderAutomationFields(payload={}){
     const composer=composerPayload(payload);
     h=`<div class="panel" style="box-shadow:none">
       <div class="top" style="gap:10px;align-items:flex-end">
-        <div><b>Display Composer</b><div class="muted">Build the entire display visually or edit its HTML and CSS directly.</div></div>
+        <div><b>Display Composer</b><div class="muted">Build the whole display visually or edit its HTML and CSS directly.</div></div>
         <label style="margin:0">Background<input id="autoComposerBackground" type="color" value="${esc(composer.background)}"></label>
       </div>
       <div class="toolbar" style="margin-top:10px">
@@ -1383,82 +1383,6 @@ function renderAutomationFields(payload={}){
         </div>
         <iframe id="autoComposerVisualFrame" title="Visual HTML editor" sandbox="allow-same-origin" style="width:100%;height:480px;border:1px solid var(--border);border-radius:10px;background:#111"></iframe>
       </div>
-      <div id="autoComposerHtml" style="display:none"></div>
-      <div id="autoComposerHtmlPane" style="display:none"></div>
-      <div id="autoComposerHtmlWrap" style="display:none"></div>
-      <div id="autoComposerHtmlEditor"></div>
-      <div id="autoComposerHtmlSource"></div>
-      <div id="autoComposerHtmlTab"></div>
-      <div id="autoComposerHtml" style="display:none"></div>
-      <div id="autoComposerHtmlContainer"></div>
-      <div id="autoComposerHtmlSection"></div>
-      <div id="autoComposerHtmlPaneActual"></div>
-      <div id="autoComposerHtmlHolder"></div>
-      <div id="autoComposerHtmlRoot"></div>
-      <div id="autoComposerHtmlArea"></div>
-      <div id="autoComposerHtmlPanel"></div>
-      <div id="autoComposerHtmlCode"></div>
-      <div id="autoComposerHtmlMode"></div>
-      <div id="autoComposerHtmlShell"></div>
-      <div id="autoComposerHtmlBlock"></div>
-      <div id="autoComposerHtmlView"></div>
-      <div id="autoComposerHtmlContent"></div>
-      <div id="autoComposerHtmlSourcePane"></div>
-      <div id="autoComposerHtmlEditorPane"></div>
-      <div id="autoComposerHtmlBox"></div>
-      <div id="autoComposerHtmlTabPane"></div>
-      <div id="autoComposerHtmlScreen"></div>
-      <div id="autoComposerHtmlWorkspace"></div>
-      <div id="autoComposerHtmlEditorWrap"></div>
-      <div id="autoComposerHtmlSourceWrap"></div>
-      <div id="autoComposerHtmlPanelWrap"></div>
-      <div id="autoComposerHtmlPaneWrap"></div>
-      <div id="autoComposerHtmlModeWrap"></div>
-      <div id="autoComposerHtmlViewWrap"></div>
-      <div id="autoComposerHtmlCodeWrap"></div>
-      <div id="autoComposerHtmlAreaWrap"></div>
-      <div id="autoComposerHtmlSectionWrap"></div>
-      <div id="autoComposerHtmlSourceArea"></div>
-      <div id="autoComposerHtmlEditorArea"></div>
-      <div id="autoComposerHtmlWorkspaceArea"></div>
-      <div id="autoComposerHtmlCanvas"></div>
-      <div id="autoComposerHtmlTabCanvas"></div>
-      <div id="autoComposerHtmlModeCanvas"></div>
-      <div id="autoComposerHtmlSourceCanvas"></div>
-      <div id="autoComposerHtmlEditorCanvas"></div>
-      <div id="autoComposerHtmlFinal" style="display:none"></div>
-      <div id="autoComposerHtmlPanelFinal" style="display:none"></div>
-      <div id="autoComposerHtmlActual" style="display:none"></div>
-      <div id="autoComposerHtmlReal" style="display:none"></div>
-      <div id="autoComposerHtmlRealPane" style="display:none"></div>
-      <div id="autoComposerHtmlTabReal" style="display:none"></div>
-      <div id="autoComposerHtmlCodeReal" style="display:none"></div>
-      <div id="autoComposerHtmlEditorReal" style="display:none"></div>
-      <div id="autoComposerHtmlSourceReal" style="display:none"></div>
-      <div id="autoComposerHtmlVisualReal" style="display:none"></div>
-      <div id="autoComposerHtmlModeReal" style="display:none"></div>
-      <div id="autoComposerHtmlWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlSectionReal" style="display:none"></div>
-      <div id="autoComposerHtmlAreaReal" style="display:none"></div>
-      <div id="autoComposerHtmlContainerReal" style="display:none"></div>
-      <div id="autoComposerHtmlWorkspaceReal" style="display:none"></div>
-      <div id="autoComposerHtmlEditorWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlSourceWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlPaneWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlModeWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlViewWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlCodeWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlAreaWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlSectionWrapReal" style="display:none"></div>
-      <div id="autoComposerHtmlSourceAreaReal" style="display:none"></div>
-      <div id="autoComposerHtmlEditorAreaReal" style="display:none"></div>
-      <div id="autoComposerHtmlWorkspaceAreaReal" style="display:none"></div>
-      <div id="autoComposerHtmlCanvasReal" style="display:none"></div>
-      <div id="autoComposerHtmlTabCanvasReal" style="display:none"></div>
-      <div id="autoComposerHtmlModeCanvasReal" style="display:none"></div>
-      <div id="autoComposerHtmlSourceCanvasReal" style="display:none"></div>
-      <div id="autoComposerHtmlEditorCanvasReal" style="display:none"></div>
-      <div id="autoComposerHtmlFinalReal" style="display:none"></div>
       <div id="autoComposerHtmlPane" style="display:none;margin-top:10px">
         <label>HTML<textarea id="autoComposerHtmlInput" rows="20" style="width:100%;font-family:ui-monospace,Consolas,monospace"></textarea></label>
       </div>
@@ -1469,7 +1393,7 @@ function renderAutomationFields(payload={}){
         <div style="position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:#000;border:1px solid var(--border);border-radius:10px">
           <iframe id="autoComposerPreviewFrame" title="Exact display composer preview" style="position:absolute;inset:0;width:100%;height:100%;border:0;background:#000"></iframe>
         </div>
-        <div class="muted" style="margin-top:6px">Preview uses the real receiver. Custom HTML/CSS is rendered in a sandboxed document with scripts, forms, embedded frames, and event handlers disabled.</div>
+        <div class="muted" style="margin-top:6px">Preview uses the real receiver. Scripts, forms, nested frames, embedded objects, and event handlers are blocked.</div>
       </div>
     </div>`;
   }else if(action==='display.url'){
