@@ -607,7 +607,8 @@ function backupRestorePlan(name,passphrase=""){
   let expandedBytes=0;const seenEntries=new Set(),foldedEntries=new Set();
   for(const entry of entries){
     const normalized=entry.entryName.replace(/\\/g,"/");
-    const pathName=entry.isDirectory&&normalized.endsWith("/")?normalized.slice(0,-1):normalized;\n    const canonical=normalized===entry.entryName&&!pathName.startsWith("/")&&!pathName.includes("//")&&pathName.split("/").every(part=>part&&part!=="."&&part!=="..");
+    const pathName=entry.isDirectory&&normalized.endsWith("/")?normalized.slice(0,-1):normalized;
+    const canonical=normalized===entry.entryName&&!pathName.startsWith("/")&&!pathName.includes("//")&&pathName.split("/").every(part=>part&&part!=="."&&part!=="..");
     if(!canonical)throw Error(`Unsafe or non-canonical archive path: ${entry.entryName}`);
     const folded=normalized.toLowerCase();if(seenEntries.has(normalized)||foldedEntries.has(folded))throw Error(`Restore archive contains a duplicate or case-colliding entry: ${normalized}`);seenEntries.add(normalized);foldedEntries.add(folded);
     const allowed=normalized==="backup-manifest.json"||normalized.startsWith("classroom-hub/")||normalized.startsWith("services/")||normalized.startsWith("recovery-secrets/");
