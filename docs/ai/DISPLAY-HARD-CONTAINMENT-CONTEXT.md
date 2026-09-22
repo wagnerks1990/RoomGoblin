@@ -1,13 +1,22 @@
-# AI Context: Display Hard Containment
+# AI Context: Dynamic Display Layout and Hard Containment
 
-Renderer revision `single-fit-20260911-5` defines a non-negotiable containment rule: configured font sizes are preferences/maxima, not guarantees. Title, subtitle, body and timer text must shrink until every actual rendered text rectangle is inside its assigned region.
+Renderer revision `dynamic-fit-20260922-8` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
 
-Do not regress to trusting only `scrollWidth`/`scrollHeight`. TV Chromium/WebView builds can paint glyphs outside measured boxes because of ascent/descent, preserved whitespace, or rounding. Keep painted-range validation and the bounded fallback shrink/scale path.
+Required invariants:
 
-Do not make natural-height/non-shrinking fitted children or timer-region geometry depend only on the companion stylesheet. The layout module must establish those critical styles before measurement so stale or failed CSS cannot make clipped children appear to fit.
+- Empty text objects consume no vertical layout space.\n- Title and subtitle are single-line objects; never re-enable wrapping as the default.\n- Title, subtitle, and body use 18px logical horizontal gutters so nearly the full display width is available.
+- Active objects share the full usable 1920x1080 logical canvas with small bounded gaps.
+- Timer top/center/bottom changes object order rather than reserving a permanently fixed band.
+- Automatic fitting may grow content up to reviewed component safety caps.
+- Dense content must shrink until every actual rendered glyph remains inside its assigned dynamic region.
+- `autoFit:false` is a manual maximum, never permission to overflow.
+- Timer ticks must not cause global geometry churn.
+- Physical resolution and DPR only scale the finished logical stage.
 
-Do not make `autoFit:false` mean "allow overflow". Manual sizing may suppress growth, but containment still wins.
+Do not trust only `scrollWidth`/`scrollHeight`. Keep the independent unclipped natural-size probe and painted text-range validation because TV Chromium/WebView can visually clip multiline content while constrained element metrics appear to fit.
 
-Any behavioral change to display sizing must bump the receiver's layout module/CSS cache key and `LAYOUT_REVISION` together. A source update without a new asset key can leave deployed TVs running stale cached renderer code.
+Do not make containment-critical structural styles depend only on the companion stylesheet. The layout module must establish them before measurement.
 
-Verification must include extreme configured sizes, multiline text, long timer labels, reload/reconnect, and multiple viewport sizes. Browser tests should assert painted glyph containment as well as component-region non-overlap.
+Behavioral changes require synchronized browser regressions, operator docs, Wiki mirror, AI context, `LAYOUT_REVISION`, and receiver module/CSS cache keys.
+
+Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
