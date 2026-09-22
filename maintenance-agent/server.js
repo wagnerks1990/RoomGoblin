@@ -111,7 +111,8 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
       "classroom-hub/data/presentation-upload-tmp/*","classroom-hub/.env",
       "classroom-hub/data/classroom-control-hub.db","classroom-hub/data/classroom-control-hub.db-wal","classroom-hub/data/classroom-control-hub.db-shm"
     ];
-    await run("zip",["-q","-r","-y",partial,"classroom-hub","services",...exclusions.flatMap(x=>["-x",x])],{timeout:900000,cwd:path.dirname(HUB_ROOT),maxBuffer:1024*1024});
+    const roots=["classroom-hub"];if(fs.existsSync(Classroom_ROOT))roots.push("services");
+    await run("zip",["-q","-r","-y",partial,...roots,...exclusions.flatMap(x=>["-x",x])],{timeout:900000,cwd:path.dirname(HUB_ROOT),maxBuffer:1024*1024});
     await run("zip",["-q","-r",partial,"classroom-hub","backup-manifest.json"],{timeout:120000,cwd:stage,maxBuffer:1024*1024});
     fs.chmodSync(partial,0o600);fs.renameSync(partial,dest);fs.chmodSync(dest,0o600);
   }finally{fs.rmSync(partial,{force:true});fs.rmSync(stage,{recursive:true,force:true})}
