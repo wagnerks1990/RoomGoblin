@@ -6173,8 +6173,9 @@ async function engageManualMediaPriority(command,source="api"){
 }
 async function releaseManualMediaPriority(reason="operator-resume"){
   if(!manualMediaPriorityRuntime.active)return {released:false,pausedPlayers:[]};
-  const targets=[...manualMediaPriorityRuntime.targets],pausedPlayers=[...manualMediaPriorityRuntime.pausedPlayers];
-  manualMediaPriorityRuntime.active=false;manualMediaPriorityRuntime.targets.clear();manualMediaPriorityRuntime.pausedPlayers.clear();
+  const targets=[...manualMediaPriorityRuntime.targets],pausedPlayers=[...manualMediaPriorityRuntime.pausedPlayers],schedulerWasEnabled=manualMediaPriorityRuntime.schedulerWasEnabled;
+  manualMediaPriorityRuntime.active=false;manualMediaPriorityRuntime.targets.clear();manualMediaPriorityRuntime.pausedPlayers.clear();manualMediaPriorityRuntime.schedulerWasEnabled=false;
+  if(schedulerWasEnabled&&!automationSchedulerEnabled)setAutomationSchedulerEnabled(true);
   for(const id of targets){
     const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);
     if(!announcementOwnsTarget)backgroundMusicPriorityTargets.delete(id);
@@ -6183,8 +6184,8 @@ async function releaseManualMediaPriority(reason="operator-resume"){
   // started manually before the video; only the managed Background Music
   // scheduler is safe to reconcile automatically.
   await backgroundMusicReconcilePriority({force:true});
-  audit({kind:"media.manual-priority.stop",reason,targets,pausedPlayers});
-  return {released:true,targets,pausedPlayers};
+  audit({kind:"media.manual-priority.stop",reason,targets,pausedPlayers,schedulerRestored:schedulerWasEnabled});
+  return {released:true,targets,pausedPlayers,schedulerRestored:schedulerWasEnabled};
 }
 
 function backgroundMusicObserveDisplayCommand(command,source="api"){
