@@ -21,6 +21,10 @@
 - Restore browser-independent hard font ceilings and deterministic dynamic region allocation from the TV8 clipping fixes.
 - Restore exact-receiver WYSIWYG previews in Display Studio and scheduled automation Display Text editing.
 
+- Fix a live Chromium/TV false-containment regression where full-width flex child geometry caused title, subtitle, and body text to collapse to 1px despite their painted glyphs fitting the allocated dynamic regions.
+- Keep scroll/offset, independent natural-size, and painted glyph rectangle containment checks; stop treating the full-width child border box as painted content.
+- Add the exact TV8 1548×1273 classroom scene as a browser regression and bump renderer/cache revision to `dynamic-fit-20260922-10`.
+
 ### Resume scheduled state cancels manual tests
 
 - Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.

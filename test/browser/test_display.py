@@ -67,6 +67,23 @@ NOCTI_DYNAMIC = {
               'timerInstanceId': 'fixture-nocti-dynamic'},
 }
 
+TV8_LIVE_DYNAMIC = {
+    'background': {'color': '#000000'},
+    'title': 'CareerSafe Certificate of Completion',
+    'titleOptions': {'size': 92, 'color': '#ffffff'},
+    'subtitle': 'Classroom Instructor',
+    'subtitleOptions': {'size': 44, 'color': '#ffffff'},
+    'text': ('PD 2 - 5 of 7\n\n'
+             'PD 3 - 10 of 18\n\n'
+             'PD  4 - 5 of 10\n\n'
+             'Completed and passed so far!'),
+    'textOptions': {'size': 64, 'color': '#ffffff', 'position': 'center'},
+    'timer': {'visible': True, 'running': False, 'mode': 'countdown',
+              'remainingSeconds': 5063, 'durationSeconds': 5400, 'fontSize': 64,
+              'position': 'bottom', 'label': 'P4 - IT I • Class Ends In',
+              'timerInstanceId': 'fixture-tv8-live-dynamic'},
+}
+
 TRANSPORT = """(() => {
   window.__now = 1788970000000;
   Date.now = () => window.__now;
@@ -435,7 +452,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-9')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-10')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -455,7 +472,20 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-9')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-10')
+
+
+    def test_17_live_tv8_text_does_not_false_collapse(self):
+        page=self.page(1548,1273,1)
+        self.replay(page,TV8_LIVE_DYNAMIC)
+        data=self.measure(page,'live-tv8-false-containment-regression')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-10')
+        for name in ['title','subtitle','body']:
+            self.assertGreaterEqual(data['parts'][name]['font'],12, name)
+            self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
+            self.assertEqual(data['diagnostics']['components'][name]['status'],'fit', name)
+        self.assertGreaterEqual(data['parts']['timer']['font'],24)
+        self.assertNotEqual(data['diagnostics'].get('fitWarning'),'content-too-dense')
 
 
 if __name__ == '__main__':
