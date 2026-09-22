@@ -10,7 +10,8 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260922-10');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260922-11');
+  assert.equal(layout.AUTO_GROW_FACTOR, 1.10);
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
   const source = fs.readFileSync(layoutPath, 'utf8');
@@ -41,10 +42,11 @@ test('display renderer uses dynamic content-object layout', async () => {
     'timer must have a conservative two-line vertical ceiling');
 });
 
-test('auto-fit can grow to component caps while manual sizing remains a ceiling', () => {
+test('auto-fit stays near configured sizes while preserving dynamic layout', () => {
   const source = fs.readFileSync(layoutPath, 'utf8');
-  assert.match(source, /autoFit === false \? configured : globalCap/,
-    'automatic sizing must use the dynamic component cap');
+  assert.match(source, /configured \* AUTO_GROW_FACTOR/,
+    'automatic sizing must stay bounded near the configured value');
+  assert.match(source, /Math\.min\(globalCap, configured \* AUTO_GROW_FACTOR\)/);
   assert.match(source, /componentCap\(titleOpts\.size,92,FONT_CAPS\.title,titleOpts\.autoFit!==false\)/);
   assert.match(source, /componentCap\(textOpts\.size,64,FONT_CAPS\.body,textOpts\.autoFit!==false\)/);
 });
@@ -90,8 +92,8 @@ test('timer overlay remains a compact dynamic object', () => {
 test('receiver cache key and build identity are release-stamped at image build', () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260922-10/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20260922-10/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260922-11/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20260922-11/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),
