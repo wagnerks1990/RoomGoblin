@@ -86,7 +86,7 @@ function statInfo(p,base){const st=fs.statSync(p);return {name:path.basename(p),
 function sha256File(p){const hash=crypto.createHash("sha256"),fd=fs.openSync(p,"r"),buf=Buffer.allocUnsafe(1024*1024);try{let n=0,pos=0;while((n=fs.readSync(fd,buf,0,buf.length,pos))>0){hash.update(buf.subarray(0,n));pos+=n}return hash.digest("hex")}finally{fs.closeSync(fd)}}
 function writeZipAtomic(zip,dest){const partial=`${dest}.partial-${process.pid}-${Date.now()}`;try{zip.writeZip(partial);fs.chmodSync(partial,0o600);fs.renameSync(partial,dest);fs.chmodSync(dest,0o600)}finally{fs.rmSync(partial,{force:true})}}
 async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
-  const partial=`${dest}.partial-${process.pid}-${Date.now()}`,stage=fs.mkdtempSync(path.join(UPLOAD_DIR,"operational-zip-"));
+  const partial=`${dest}.partial-${process.pid}-${Date.now()}.zip`,stage=fs.mkdtempSync(path.join(UPLOAD_DIR,"operational-zip-"));
   const manifestPath=path.join(stage,"backup-manifest.json"),dbStageDir=path.join(stage,"classroom-hub","data"),dbStage=path.join(dbStageDir,"classroom-control-hub.db");
   const validateTree=(src,prefix,filter)=>{
     if(!fs.existsSync(src))return;
