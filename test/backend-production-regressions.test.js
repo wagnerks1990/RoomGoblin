@@ -189,5 +189,7 @@ test("manual video/audio playback pauses scheduler, Background Music, and active
   assert.match(source,/if\(automationSchedulerEnabled\)setAutomationSchedulerEnabled\(false\)/);
   assert.match(source,/automationCancellationReasons\.set\(id,"manual-media-priority"\)/);
   assert.match(source,/backgroundMusicPriorityTargets\.add\(id\)/);
-  assert.match(source,/releaseManualMediaPriority\("schedule-resumed"\)/);\n  assert.match(source,/if\(schedulerWasEnabled&&!automationSchedulerEnabled\)setAutomationSchedulerEnabled\(true\)/);\n  assert.match(source,/Do not auto-resume arbitrary Music Assistant players/);
+  assert.match(source,/releaseManualMediaPriority\("schedule-resumed"\)/);
+  assert.match(source,/if\(schedulerWasEnabled&&!automationSchedulerEnabled\)setAutomationSchedulerEnabled\(true\)/);
+  assert.match(source,/Do not auto-resume arbitrary Music Assistant players/);
 });
