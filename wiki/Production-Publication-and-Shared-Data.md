@@ -63,3 +63,9 @@ Never bypass the mandatory safety backup to force an update through.
 ## AI / contributor rules
 
 Preserve exact-SHA publication gating, the complete Hub+maintenance image pair, bounded Android dependency retries, Hub UID/GID `10001:10001`, runtime umask `0027`, maintenance read access without world access, and the mandatory pre-mutation operational backup. Main is the sole integration/update source; preserve legacy command names without restoring a separate branch-promotion requirement.
+## Large operational archives and restore semantics
+
+Operational backups intentionally exclude `classroom-hub/data/media`; uploaded media is replaceable content and is not part of the mandatory pre-update rollback set. Eligible operational state is streamed with system Info-ZIP/ZIP64 instead of being buffered into a single Node/AdmZip allocation. The archive still carries the SQLite snapshot and recovery manifest and retains the existing path, symlink/special-file, and private-permission protections.
+
+A normal configuration-data restore preserves the appliance's current `data/media` directory because new operational archives do not contain media. Interrupted legacy restore recovery is different: older safety archives may contain media, so startup rollback must restore those archived media entries for backward compatibility.
+
