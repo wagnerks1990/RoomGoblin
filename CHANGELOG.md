@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+### Automation continual-loop termination
+
+- Stop an automation sequence from creating new passes once only one `Loop continually` action remains eligible.
+- Preserve intentional multi-action continual cycling and explicit finite `Loop X times` repeats.
+- Leave the surviving action's current display/device state in place instead of reissuing it, preventing needless display clears/reloads and visible flashing.
+
+
 ### Large operational backup streaming
 
 - Restore the intended operational-backup policy that excludes replaceable media payloads, while retaining disk-streaming Info-ZIP/ZIP64 creation for large non-media operational state.
