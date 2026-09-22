@@ -427,6 +427,16 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreater(data['parts']['title']['font'],20)
         self.assertGreater(data['parts']['body']['font'],20)
 
+    def test_15_live_browser_hard_font_ceilings(self):
+        page=self.page(1548,1266,1)
+        self.replay(page,NOCTI_DYNAMIC)
+        data=self.measure(page,'live-hard-ceilings')
+        title=data['parts']['title'];subtitle=data['parts']['subtitle'];timer=data['parts']['timer']
+        self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
+        self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
+        self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-8')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

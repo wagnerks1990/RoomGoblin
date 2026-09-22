@@ -2,7 +2,7 @@
 
 ## Current policy
 
-Renderer revision: `dynamic-fit-20260921-7`.
+Renderer revision: `dynamic-fit-20260922-8`.
 
 `public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the finished stage.
 
@@ -71,3 +71,5 @@ Browser coverage must include:
 Assert actual text-range containment, dynamic region ordering, bounded gaps, full logical-canvas use, and component non-overlap.
 
 Any behavior change must update `LAYOUT_REVISION`, both receiver cache keys, tests, operator docs, Wiki mirror, and AI context.
+
+Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
