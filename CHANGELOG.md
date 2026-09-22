@@ -4,7 +4,7 @@
 
 ### Large operational backup streaming
 
-- Replace in-memory AdmZip construction for operational backups with disk-streaming Info-ZIP/ZIP64 creation so appliances with more than 2 GiB of media can complete mandatory update safety backups.
+- Restore the intended operational-backup policy that excludes replaceable media payloads, while retaining disk-streaming Info-ZIP/ZIP64 creation for large non-media operational state.
 - Preserve the SQLite snapshot, shared-data filters, symlink/special-file rejection, private backup permissions, and restore manifest contract.
 - Extend update backup/inspection timeouts and print the maintenance error that caused preflight failure instead of returning only a generic failure state.
 
