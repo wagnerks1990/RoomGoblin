@@ -373,3 +373,13 @@ test("configuration-data restore replaces runtime data and verifies application 
   assert.equal(fs.existsSync(path.join(agent.hub,"data","should-disappear.txt")),false);
   assert.equal(fs.existsSync(path.join(agent.hub,"data","backups",created.body.name)),true,"managed backups survive a data restore");
 });
+
+
+test("operational backup uses ZIP64 streaming writer instead of AdmZip buffering",()=>{
+  const source=fs.readFileSync(path.join(ROOT,"maintenance-agent","server.js"),"utf8");
+  assert.match(source,/async function writeOperationalZipStreaming\(/);
+  assert.match(source,/Info-ZIP streams file contents directly/);
+  assert.match(source,/await run\("zip",\["-q","-r","-y",partial/);
+  assert.match(source,/if\(scope==="operational"\)\{[\s\S]*await writeOperationalZipStreaming\(dest,dbSnapshot,manifest\)/);
+  assert.match(source,/else if\(scope!=="operational"\)copyIntoZip/);
+});
