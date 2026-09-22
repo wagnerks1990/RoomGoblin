@@ -509,7 +509,7 @@ must not reintroduce the obsolete `/opt/classroom-control-hub-backups` path.
 
 ### Per-action automation dwell timing
 
-Automation `repeatDelaySeconds` means the dwell/stay time **after an action executes and before advancing to the next eligible action**. `delaySeconds` is a pre-action wait. After the last eligible action, the runner returns to Action 1 only while at least two continual actions remain eligible; if only one `Loop continually` action remains, sequence processing stops and leaves that action's current state in place. Preserve canonical ordering, class-end cancellation, Morning Announcements priority, timer overlays, recovery, and cancellation behavior.
+Automation `repeatDelaySeconds` means the dwell/stay time **after an action executes and before advancing to the next eligible action**. `delaySeconds` is a pre-action wait. After the last eligible action, the runner returns to Action 1 only while at least two actions remain eligible; if only one `Loop continually` action remains, sequence processing stops and leaves that action's current state in place. Preserve canonical ordering, class-end cancellation, Morning Announcements priority, timer overlays, recovery, and cancellation behavior.
 
 ### Timer Overlay coverage across action sequences
 
