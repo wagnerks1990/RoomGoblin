@@ -54,7 +54,7 @@ This directory is the canonical technical documentation set for RoomGoblin. `wik
 - [Persistent Android ADB](PERSISTENT-ANDROID-ADB.md) — trusted-network wireless-debugging recovery and boundaries.
 - [Android TV Support Matrix](ANDROID-TV-SUPPORT-MATRIX.md) — tested, pending, and unsupported physical-device behavior.
 - [Display Access](DISPLAY-ACCESS.md) — one-use receiver enrollment and credential rotation/revocation.
-- [Display Layout Contract](DISPLAY-LAYOUT-CONTRACT.md) — single layout owner, dynamic sizing, hard containment, edge-to-edge content, and compact timers.\n- [WYSIWYG Display Content Editing](DISPLAY-WYSIWYG-EDITOR.md) — exact-receiver draft preview for Display Studio and scheduled display-text automations.
+- [Display Layout Contract](DISPLAY-LAYOUT-CONTRACT.md) — single layout owner, bounded sizing, hard containment, and compact timers.
 - [Managed Display Gateway](MANAGED-DISPLAY-GATEWAY.md) — configured media relay, header isolation, sandboxing, and verification.
 - [Automation Framework](AUTOMATION-FRAMEWORK.md) — schedule resolution, actions, targets, and execution evidence.
 - [Manual Media Audio](MANUAL-MEDIA-AUDIO.md) — operator video/web volume behavior and limitations.
