@@ -59,3 +59,14 @@ test("automation trace recording appends without recursive helper calls",()=>{
   assert.match(server,/const pushStep=entry=>\{combined\.totalStepExecutions\+\+;combined\.steps\.push\(entry\)/);
   assert.doesNotMatch(server,/const pushStep=entry=>\{combined\.totalStepExecutions\+\+;pushStep\(entry\)/);
 });
+
+
+test("resume cancels active manual continuous runs before scheduled reconciliation",()=>{
+  assert.match(server,/async function cancelActiveManualAutomationRuns\(reason="schedule-resumed"\)/);
+  assert.match(server,/if\(!meta\?\.manual\)continue/);
+  assert.match(server,/await Promise\.allSettled\(tasks\)/);
+  assert.match(server,/cancelledManualRuns=await cancelActiveManualAutomationRuns\("schedule-resumed"\)/);
+  const resume=server.slice(server.indexOf('app.post("/api/v1/automation-control/resume"'),server.indexOf('app.post("/api/v1/automation-control/simulation"'));
+  assert.ok(resume.indexOf('cancelActiveManualAutomationRuns')<resume.indexOf('reconcileScheduledAutomationState'),
+    "manual runs must finish cancelling before scheduled state is reasserted");
+});
