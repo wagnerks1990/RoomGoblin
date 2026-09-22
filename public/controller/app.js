@@ -1250,6 +1250,7 @@ function displayComposerTab(tab){
     if(el)el.style.display=name===tab?'block':'none';
     document.querySelectorAll(`[data-composer-tab="${name}"]`).forEach(b=>b.classList.toggle('primary',name===tab));
   }
+  if(tab==='visual')loadComposerVisualFromSource();
   if(tab==='preview')syncDisplayComposerPreview();
 }
 function composerEditorDocument(){
@@ -1365,6 +1366,10 @@ function renderAutomationFields(payload={}){
           <button type="button" onclick="composerCommand('bold')"><b>B</b></button>
           <button type="button" onclick="composerCommand('italic')"><i>I</i></button>
           <button type="button" onclick="composerCommand('underline')"><u>U</u></button>
+          <button type="button" onclick="composerCommand('formatBlock','H1')">H1</button>
+          <button type="button" onclick="composerCommand('formatBlock','H2')">H2</button>
+          <button type="button" onclick="composerCommand('insertUnorderedList')">List</button>
+          <button type="button" onclick="composerCommand('insertHorizontalRule')">Rule</button>
           <button type="button" onclick="composerCommand('justifyLeft')">Left</button>
           <button type="button" onclick="composerCommand('justifyCenter')">Center</button>
           <button type="button" onclick="composerCommand('justifyRight')">Right</button>
