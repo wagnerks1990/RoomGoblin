@@ -1810,7 +1810,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   }
   function hasLaterEligibleAction(fromIndex,pass){
     for(let i=fromIndex+1;i<steps.length;i++)if(actionEligibleOnPass(steps[i],pass))return true;
-    return sequenceHasEligibleActions(steps,pass+1);
+    return sequenceNeedsAnotherPass(steps,pass+1);
   }
 
   // Sequence actions are applied exactly as configured; no automation implicitly clears display content.
@@ -1902,7 +1902,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       }
     }
     combined.passes=pass;
-    if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
+    if(aborted||!sequenceNeedsAnotherPass(steps,pass+1))break;
     pass++;
     if(continuous&&executed===0)break;
   }
@@ -1912,7 +1912,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // alive: runSingleAutomationAction(display.media) clears/reloads the display.
   // Keep the managed occurrence cancellation-aware until class end, supersede,
   // pause, edit/disable, or an explicit manual stop instead.
-  if(!aborted&&!boundedMaxPasses&&persistentMediaLoop&&!sequenceHasEligibleActions(steps,pass+1)){
+  if(!aborted&&!boundedMaxPasses&&persistentMediaLoop&&!sequenceNeedsAnotherPass(steps,pass+1)){
     combined.endedReason="persistent-media-active";
     while(windowOpen()){
       assertRunActive();
