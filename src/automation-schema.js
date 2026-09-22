@@ -75,13 +75,20 @@ function automationActionSequence(event={}){
 }
 function actionPassLimit(action={}){
   const mode=normalizeExecutionMode(action.action,action.executionMode,action.payload||{});
-  // display.media looping is receiver-native. Dispatch it once and let the
-  // receiver keep the media session looping; reissuing display.media clears and
-  // reloads the display, which causes visible flashing between sequence passes.
-  if(mode==="loop"&&String(action.action)==="display.media")return 1;
   if(mode==="loop")return Infinity;
   if(mode==="repeat")return Math.max(1,Math.min(100,Math.round(Number(action.repeatCount)||2)));
   return 1;
+}
+function actionDrivesAnotherPass(action={},nextPass=2){
+  if(!actionEligibleOnPass(action,nextPass))return false;
+  const mode=normalizeExecutionMode(action.action,action.executionMode,action.payload||{});
+  // A receiver-native media loop keeps playing after its first dispatch and
+  // therefore must not create sequence passes by itself. It still participates
+  // in later passes when another repeat/loop action drives the sequence.
+  return !(mode==="loop"&&String(action.action)==="display.media");
+}
+function sequenceNeedsAnotherPass(sequence=[],nextPass=2){
+  return sequence.some(action=>actionDrivesAnotherPass(action,nextPass));
 }
 function actionEligibleOnPass(action={},pass=1){
   const n=Math.max(1,Math.trunc(Number(pass)||1));
@@ -143,6 +150,8 @@ module.exports={
   actionPassLimit,
   actionEligibleOnPass,
   sequenceHasEligibleActions,
+  actionDrivesAnotherPass,
+  sequenceNeedsAnotherPass,
   sequenceHasContinuousActions,
   normalizeAutomationEvent,
   migrateAutomationStore,
