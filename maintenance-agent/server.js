@@ -99,7 +99,8 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
     }
   };
   try{
-    const isTopLevelDatabase=rel=>path.posix.dirname(rel)==="classroom-hub/data"&&/\.db(?:-wal|-shm)?$/.test(path.posix.basename(rel));\n    const baseFilter=backupFilter("operational"),filter=(full,rel,ent)=>{if(isTopLevelDatabase(rel))return false;return baseFilter(full,rel,ent)};
+    const isTopLevelDatabase=rel=>path.posix.dirname(rel)==="classroom-hub/data"&&/\.db(?:-wal|-shm)?$/.test(path.posix.basename(rel));
+    const baseFilter=backupFilter("operational"),filter=(full,rel,ent)=>{if(isTopLevelDatabase(rel))return false;return baseFilter(full,rel,ent)};
     validateTree(HUB_ROOT,"classroom-hub",filter);validateTree(Classroom_ROOT,"services",filter);
     fs.mkdirSync(dbStageDir,{recursive:true,mode:0o700});fs.copyFileSync(dbSnapshot,dbStage);fs.chmodSync(dbStage,0o600);
     fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2),{mode:0o600});
