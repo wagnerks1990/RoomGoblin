@@ -139,7 +139,7 @@
     const targets=document.getElementById("autoTargets")?.parentElement;if(targets)targets.style.display="none";
     const payload=document.getElementById("autoPayload");if(payload)payload.style.display="none";
     const steps=document.getElementById("autoActionSteps"),panel=steps?.closest(".panel");
-    if(panel){const top=panel.querySelector(":scope > .top");if(top){const title=top.querySelector("b");if(title)title.textContent="Actions";const help=top.querySelector(".muted");if(help)help.textContent="Build one ordered action sequence. RoomGoblin starts another pass only while multiple continual actions remain eligible, or a finite repeat still has passes remaining."}}
+    if(panel){const top=panel.querySelector(":scope > .top");if(top){const title=top.querySelector("b");if(title)title.textContent="Actions";const help=top.querySelector(".muted");if(help)help.textContent="Build one ordered action sequence. RoomGoblin starts another pass only while multiple actions remain eligible, or a finite repeat still has passes remaining."}}
   }
   function syncHiddenFirst(){
     const first=normalizeAction(autoSteps[0]||{},0);autoAction.value=first.action;currentEditTargets=[...first.targets];currentAutomationPayload=clone(first.payload||{});renderAutomationFields(first.payload||{});
