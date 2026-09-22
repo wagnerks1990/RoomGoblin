@@ -10,7 +10,7 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260922-11');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20260922-12');
   assert.equal(layout.AUTO_GROW_FACTOR, 1.10);
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
@@ -95,8 +95,8 @@ test('timer overlay remains a compact dynamic object', () => {
 test('receiver cache key and build identity are release-stamped at image build', () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260922-11/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20260922-11/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20260922-12/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20260922-12/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),
@@ -110,4 +110,22 @@ test("timer natural-size probe must clear inherited positional CSS",()=>{
   assert.match(source,/\['top','center','bottom'\]\.includes\(timer\.position\)/);
   assert.match(source,/timerRegion\.style\.overflow = 'visible'/);
   assert.match(source,/cap:bounded\(timer\.fontSize,64,1,FONT_CAPS\.timer\)/);
+});
+
+
+test('transient readable-fit failures are retried and repeated state requests still reconcile geometry', () => {
+  const source = fs.readFileSync(layoutPath, 'utf8');
+  assert.doesNotMatch(source, /if \(key === previousKey\) return;/,
+    'same-content requests must still restore geometry after intermediate clear/hide transitions');
+  assert.match(source, /component\?\.status === 'below-readable-minimum'/,
+    'recovery must be limited to actual visible fit failures');
+  assert.match(source, /item\.box\.clientWidth > 0/);
+  assert.match(source, /item\.box\.clientHeight > 0/);
+  assert.match(source, /recoveryCount < 5/);
+  assert.match(source, /setTimeout\(\(\) => \{/);
+  assert.match(source, /}, 75\)/);
+  assert.match(source, /previousKey = '';/,
+    'recovery must force a fresh canonical layout pass');
+  assert.match(source, /if \(recoveryTimer !== null\) clearTimeout\(recoveryTimer\)/,
+    'disposing the renderer must cancel pending recovery work');
 });
