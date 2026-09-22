@@ -1,6 +1,7 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260922-10';
+export const LAYOUT_REVISION = 'dynamic-fit-20260922-11';
+export const AUTO_GROW_FACTOR = 1.10;
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
@@ -62,7 +63,8 @@ function deterministicDesiredHeight(name, configuredSize, minHeight) {
 
 function componentCap(value, fallback, globalCap, autoFit = true) {
   const configured = bounded(value, fallback, 1, 2000);
-  return autoFit === false ? configured : globalCap;
+  if (autoFit === false) return Math.min(configured, globalCap);
+  return Math.min(globalCap, configured * AUTO_GROW_FACTOR);
 }
 
 function establishStructuralStyles(nodes) {
@@ -100,7 +102,8 @@ function establishStructuralStyles(nodes) {
   text.style.padding = '0';
   Object.assign(timerRegion.style, {
     position:'absolute', display:'flex',
-    alignItems:'center', justifyContent:'center', zIndex:'10000', pointerEvents:'none'
+    alignItems:'center', justifyContent:'center', zIndex:'10000', pointerEvents:'none',
+    overflow:'visible'
   });
   Object.assign(timerOverlay.style, {
     position:'static', top:'auto', bottom:'auto', transform:'none', minWidth:'0',
@@ -339,34 +342,72 @@ export function createDisplayLayout(nodes, getState) {
   }
 
   function applyGeometry(items, timer = {}) {
-    const boxes = {title:titleRegion, subtitle:subtitleRegion, body:textLayer, timer:timerRegion};
+    const boxes = {
+      title:titleRegion,
+      subtitle:subtitleRegion,
+      body:textLayer,
+      timer:timerRegion
+    };
+
     const active = new Set(items.map(item => item.name));
-    for (const [name, box] of Object.entries(boxes)) if (!active.has(name)) region(box, VERTICAL_MARGIN, 1, false);
+    for (const [name, box] of Object.entries(boxes)) {
+      if (!active.has(name)) region(box, 24, 1, false);
+    }
     if (!items.length) return;
 
-    if (items.length === 1 && items[0].name === 'timer') {
-      const item = items[0];
-      const height = Math.min(
-        STAGE_HEIGHT - (VERTICAL_MARGIN * 2),
-        Math.max(item.minHeight, item.desired)
-      );
-      const position = ['top','center','bottom'].includes(timer.position) ? timer.position : 'bottom';
-      const top = position === 'top'
-        ? VERTICAL_MARGIN
-        : position === 'center'
-          ? (STAGE_HEIGHT - height) / 2
-          : STAGE_HEIGHT - VERTICAL_MARGIN - height;
-      region(item.box, top, height, true);
-      return;
+    const hasTitle = active.has('title');
+    const hasSubtitle = active.has('subtitle');
+    const hasBody = active.has('body');
+    const hasTimer = active.has('timer');
+
+    const titleTop = 24;
+    const titleHeight = 110;
+    const subtitleTop = hasTitle ? 138 : 24;
+    const subtitleHeight = 70;
+
+    if (hasTitle) region(titleRegion, titleTop, titleHeight, true);
+    if (hasSubtitle) region(subtitleRegion, subtitleTop, subtitleHeight, true);
+
+    const headerBottom = hasSubtitle
+      ? subtitleTop + subtitleHeight
+      : hasTitle
+        ? titleTop + titleHeight
+        : 24;
+
+    const timerPosition =
+      ['top','center','bottom'].includes(timer.position)
+        ? timer.position
+        : 'bottom';
+
+    const timerHeight = 160;
+    const timerEdge = 20;
+    let bodyTop = headerBottom + COMPONENT_GAP;
+    let bodyBottom = 24;
+
+    if (hasTimer) {
+      let timerTop;
+
+      if (timerPosition === 'top') {
+        timerTop = headerBottom + COMPONENT_GAP;
+        bodyTop = timerTop + timerHeight + COMPONENT_GAP;
+      } else if (timerPosition === 'center') {
+        timerTop = Math.round((STAGE_HEIGHT - timerHeight) / 2);
+        bodyBottom = STAGE_HEIGHT - timerTop + COMPONENT_GAP;
+      } else {
+        timerTop = STAGE_HEIGHT - timerEdge - timerHeight;
+        bodyBottom = timerHeight + timerEdge + 15;
+      }
+
+      region(timerRegion, timerTop, timerHeight, true);
+      timerRegion.style.overflow = 'visible';
+      timerOverlay.style.overflow = 'visible';
+      timerOverlay.style.boxSizing = 'border-box';
     }
 
-    const availableHeight = STAGE_HEIGHT - (VERTICAL_MARGIN * 2) - (COMPONENT_GAP * Math.max(0, items.length - 1));
-    const heights = allocateHeights(items, availableHeight);
-    let top = VERTICAL_MARGIN;
-    items.forEach((item, i) => {
-      region(item.box, top, heights[i], true);
-      top += heights[i] + COMPONENT_GAP;
-    });
+    if (hasBody) {
+      const bodyHeight = Math.max(1, STAGE_HEIGHT - bodyTop - bodyBottom);
+      region(textLayer, bodyTop, bodyHeight, true);
+    }
   }
 
   function fitTimer(timer) {
