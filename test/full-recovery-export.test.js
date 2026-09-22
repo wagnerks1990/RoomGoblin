@@ -354,7 +354,8 @@ test("managed-service reconciliation executes locally with an exact bounded sche
 
 test("configuration-data restore replaces runtime data and verifies application health",async t=>{
   const agent=await startAgent(t);
-  put(path.join(agent.hub,"data","media","lesson.txt"),"ORIGINAL_ASSET");\n  put(path.join(agent.hub,"data","classroom-hub.db"),"STALE_LEGACY_DATABASE");
+  put(path.join(agent.hub,"data","media","lesson.txt"),"ORIGINAL_ASSET");
+  put(path.join(agent.hub,"data","classroom-hub.db"),"STALE_LEGACY_DATABASE");
   put(path.join(agent.hub,"data","presentations","lesson.pdf"),"PRESENTATION_ASSET");
   put(path.join(agent.hub,"data","android-tv",".android","adbkey"),"ARCHIVED_ADB_IDENTITY");
   const created=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
