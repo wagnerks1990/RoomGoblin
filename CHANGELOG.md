@@ -7,14 +7,6 @@
 - Fix `Resume Scheduled State` and startup recovery so an earlier continuous automation is not restarted merely because its scheduled time has passed.
 - Continuous recovery now restarts only occurrences that are current resource winners at the recovery time, preventing a previously tested or superseded automation from resurfacing after the correct scheduled state is restored.
 
-### Timer overlay visibility on media-only displays
-
-- Fix all receiver displays where a timer over an image/media scene could collapse to a 1px font and near-zero scale.
-- Clear inherited top/bottom positioning from hidden natural-size probes so timer measurement reflects content rather than the old `.timer-bottom` CSS class.
-- Keep timer-only overlays compact and honor top/center/bottom placement instead of stretching the timer region across the full 1920×1080 stage.
-- Treat configured timer font size as its maximum rather than automatically growing it to the global timer cap.
-- Renderer/cache revision: `dynamic-fit-20260922-9`.
-
 ### Resume scheduled state cancels manual tests
 
 - Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.
@@ -24,13 +16,6 @@
 
 - Create resumable-upload roots and per-upload session directories as `0750` and chunk files as `0640`, matching RoomGoblin's shared-data contract.
 - Prevent operational safety backups from failing with `EACCES` while an upload session exists, without granting world access or weakening secret/ADB/signing permissions.
-
-### Live display hard ceilings
-
-- Add browser-independent mathematical font ceilings for title, subtitle, and timer objects after live TV8 showed Chromium accepting visibly clipped content at the component caps.
-- Allocate heading/timer region demand from configured state only, preserving deterministic reload/replay geometry while allowing more appropriate space than fixed minimum bands.
-- Add a regression matching the live 1548×1266 receiver viewport and require heading/timer line-height bounds to fit their logical regions.
-- Renderer/cache revision: `dynamic-fit-20260922-8`.
 
 ### Linked-class automation targets
 
@@ -43,19 +28,6 @@
 - Expose Action 1 timing in the editor, allow continual sequence participation for all action types, and label action timers by their actual stay/advance behavior.
 - Add explicit Timer Overlay coverage: default to all display actions, with an Action 1 only compatibility option; reassert overlays after later text/URL/media/clear actions without restarting manual-duration countdowns.
 - Preserve class-end cancellation, Morning Announcements priority, recovery, and action-level error handling.
-
-### Dynamic classroom display layout
-
-- Rebuilt title, subtitle, lesson body, and timer as dynamic layout objects instead of fixed-height bands.
-- Active objects now share the full 1920x1080 logical canvas with active-object height allocation; empty objects consume no layout space.
-- Automatic sizing may grow short content to component safety caps and shrinks dense content until actual painted glyphs fit.
-- Added independent unclipped natural-size probes to catch Chromium/WebView clipping that can look contained through scroll metrics alone.
-- Timer top/center/bottom placement now changes object order rather than reserving a hard-coded 240px band.
-- Added a browser regression fixture matching the reported NOCTI classroom display and verifies full-canvas use, 14px object gaps, and painted-glyph containment.
-- Title and subtitle now use near-edge-to-edge 18px logical gutters and stay on one line by shrinking horizontally instead of wrapping.
-- Body content uses the same near-edge-to-edge width with no font-relative horizontal padding.
-- Added exact-renderer WYSIWYG draft preview to Display Studio; title/subtitle/body/background edits update locally without sending commands to TVs.\n- Added the same exact receiver preview to scheduled automation Display Text editing with reference-resolution controls.\n- Preview drafts are same-origin, parent-only, preview-mode messages and cannot mutate physical displays.\n- Renderer/cache revision: `dynamic-fit-20260921-7`.
-
 
 ### Morning Announcements live volume
 

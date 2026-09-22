@@ -161,13 +161,12 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
     </aside>
 
     <main class="main" id="displayStudio" tabindex="-1">
-      <details class="panel previewPanel" open>
+      <details class="panel previewPanel">
         <summary>Live preview <span class="muted">Check a screen before sending</span></summary>
         <div class="previewHead">
           <div>
             <h2 style="margin:0">Live Preview</h2>
-            <div class="muted">WYSIWYG preview uses the same renderer as the TV. Changes below appear here before anything is sent.</div>
-            <div id="previewDraftStatus" class="muted" style="margin-top:3px">Draft preview • Design canvas 1920×1080</div>
+            <div class="muted">See the selected display at its actual aspect ratio.</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <select id="previewSelect" aria-label="Preview display" style="max-width:260px"></select>
@@ -203,8 +202,8 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
         </nav>
 
         <section id="display" class="workspace active">
-          <h2>Message <span class="muted">• live WYSIWYG draft</span></h2>
-          <p class="muted">Edit the fields below and the exact receiver preview updates immediately. Nothing is sent to physical displays until you press a Send button.</p>
+          <h2>Message</h2>
+          <p class="muted">Send content to the screens selected on the left.</p>
           <details class="studio-disclosure"><summary>Title &amp; subtitle</summary>
           <div class="grid2">
             <div>
@@ -581,50 +580,11 @@ window.setPreviewSize=size=>{
   localStorage.setItem('classroom-preview-size',size);
   requestAnimationFrame(scalePreview);
 };
-function displayDraftState(){
-  const bodyBackground=rgba(el('textBg').value,Number(el('textBgOpacity').value));
-  return {
-    background:{color:el('bgColor').value},
-    title:el('titleText').value,
-    titleOptions:{size:Number(el('titleSize').value||92),color:el('titleColor').value,autoFit:true},
-    subtitle:el('subtitleText').value,
-    subtitleOptions:{size:Number(el('subtitleSize').value||44),color:el('subtitleColor').value,autoFit:true},
-    text:el('text').value,
-    textOptions:{
-      size:Number(el('fontSize').value||64),
-      color:el('textColor').value,
-      position:el('position').value,
-      background:bodyBackground,
-      autoFit:true
-    },
-    timer:{visible:false,running:false},
-    media:null,
-    presentationBlack:false
-  };
-}
-function syncDraftPreview(){
-  const frame=el('previewFrame');
-  if(!frame?.contentWindow)return;
-  frame.contentWindow.postMessage({type:'roomgoblin.preview.state',state:displayDraftState()},location.origin);
-  const status=el('previewDraftStatus');
-  if(status)status.textContent=`Draft preview • Design canvas 1920×1080 • Reference ${previewLogicalWidth}×${previewLogicalHeight}`;
-}
 function loadPreview(){
   const frame=el('previewFrame');
   const id=el('previewSelect').value||Object.keys(devices)[0];if(!id)return;
   frame.src=`/display/${encodeURIComponent(id)}?preview=1`;
-  frame.onload=()=>requestAnimationFrame(()=>{scalePreview();syncDraftPreview()});
-}
-const previewDraftFieldIds=[
-  'titleText','subtitleText','titleColor','subtitleColor','titleSize','subtitleSize',
-  'text','textColor','bgColor','textBg','textBgOpacity','fontSize','position'
-];
-for(const id of previewDraftFieldIds){
-  setTimeout(()=>{
-    const node=el(id);
-    node?.addEventListener('input',syncDraftPreview);
-    node?.addEventListener('change',syncDraftPreview);
-  },0);
+  frame.onload=()=>requestAnimationFrame(scalePreview);
 }
 new ResizeObserver(()=>scalePreview()).observe(el('previewViewport'));
 window.addEventListener('resize',scalePreview);

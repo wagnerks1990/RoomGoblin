@@ -51,22 +51,6 @@ CLUB_SELECTION = {
               'timerInstanceId': 'fixture-club-selection'},
 }
 
-NOCTI_DYNAMIC = {
-    'background': {'color': '#000000'},
-    'title': 'B1 - P5 / IT IV - Workstation/Server OS - 9/21/2026',
-    'titleOptions': {'size': 92, 'color': '#ffffff'},
-    'subtitle': 'Classroom Instructor',
-    'subtitleOptions': {'size': 44, 'color': '#ffffff'},
-    'text': ('NOCTI Pre-Test Thursday 10/8/2026\n\n'
-             '*On 10/8 Report to the Testing Center instead of class.\n\n'
-             '*You also should have received email from Nocti with Study Guides.'),
-    'textOptions': {'size': 64, 'color': '#ffffff', 'position': 'center'},
-    'timer': {'visible': True, 'running': False, 'mode': 'countdown',
-              'remainingSeconds': 2091, 'durationSeconds': 3600, 'fontSize': 64,
-              'position': 'bottom', 'label': 'B1 - P5 • Class Ends In',
-              'timerInstanceId': 'fixture-nocti-dynamic'},
-}
-
 TRANSPORT = """(() => {
   window.__now = 1788970000000;
   Date.now = () => window.__now;
@@ -309,13 +293,14 @@ class DisplayBrowserTests(unittest.TestCase):
         self.replay(page,P7)
         self.assertEqual(self.signature(page.evaluate(MEASURE)),self.signature(before))
 
-    def test_07_edge_to_edge_body_and_unbroken_words(self):
+    def test_07_padding_regression_and_unbroken_words(self):
         page=self.page();self.replay(page,P7)
-        padding=page.locator('#text').evaluate("el=>[getComputedStyle(el).paddingLeft,getComputedStyle(el).paddingRight]")
-        self.assertEqual(padding,['0px','0px'])
-        data=self.measure(page,'edge-to-edge-body')
-        self.assertAlmostEqual(data['parts']['body']['box']['x'],18,delta=1)
-        self.assertAlmostEqual(data['parts']['body']['box']['w'],1884,delta=2)
+        old_failure=page.locator('#text').evaluate("""el=>{
+          const box=el.parentElement,s=getComputedStyle(el);
+          return el.scrollWidth > box.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight)+1;
+        }""")
+        self.assertTrue(old_failure, 'fixture must exercise the original double-padding bug')
+        self.measure(page,'padding-regression')
         state=copy.deepcopy(P7);state['text']='X'*1000
         self.replay(page,state);self.measure(page,'unbroken-word')
 
@@ -347,13 +332,6 @@ class DisplayBrowserTests(unittest.TestCase):
         data=self.measure(page,'club-selection-no-layout-css')
         self.assertGreater(data['parts']['title']['font'],20)
         self.assertGreater(data['parts']['body']['font'],20)
-        for name in ['title','subtitle','body']:
-            self.assertAlmostEqual(data['parts'][name]['box']['x'],18,delta=1)
-            self.assertAlmostEqual(data['parts'][name]['box']['w'],1884,delta=2)
-        title_ranges=[r for r in data['ranges'] if r['name']=='title']
-        subtitle_ranges=[r for r in data['ranges'] if r['name']=='subtitle']
-        self.assertEqual(len(title_ranges),1,'title must shrink to one line instead of wrapping')
-        self.assertEqual(len(subtitle_ranges),1,'subtitle must shrink to one line instead of wrapping')
 
     def test_11_media_url_policy_and_external_frame_isolation(self):
         page=self.page();self.replay(page,P6)
@@ -410,53 +388,6 @@ class DisplayBrowserTests(unittest.TestCase):
         self.command(page,'display.clear',{})
         self.assertEqual(page.locator('#identify').evaluate('el=>el.style.display'),'none')
         self.assertFalse(self.errors)
-
-    def test_14_dynamic_objects_use_full_canvas_and_contain_nocti_scene(self):
-        page=self.page()
-        self.replay(page,NOCTI_DYNAMIC)
-        data=self.measure(page,'dynamic-nocti-scene')
-        self.assertTrue(data['diagnostics']['dynamic'])
-        self.assertEqual(data['diagnostics']['order'],['title','subtitle','body','timer'])
-        boxes=[data['parts'][name]['box'] for name in ['title','subtitle','body','timer']]
-        self.assertAlmostEqual(boxes[0]['y'],30,delta=1)
-        self.assertAlmostEqual(boxes[-1]['y']+boxes[-1]['h'],1050,delta=1)
-        for left,right in zip(boxes,boxes[1:]):
-            self.assertAlmostEqual(right['y']-(left['y']+left['h']),14,delta=1)
-        self.assertNotEqual(round(boxes[0]['h']),125)
-        self.assertNotEqual(round(boxes[2]['h']),511)
-        self.assertGreater(data['parts']['title']['font'],20)
-        self.assertGreater(data['parts']['body']['font'],20)
-
-    def test_15_live_browser_hard_font_ceilings(self):
-        page=self.page(1548,1266,1)
-        self.replay(page,NOCTI_DYNAMIC)
-        data=self.measure(page,'live-hard-ceilings')
-        title=data['parts']['title'];subtitle=data['parts']['subtitle'];timer=data['parts']['timer']
-        self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
-        self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
-        self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-9')
-
-    def test_16_timer_only_overlay_is_visible_and_positioned(self):
-        page=self.page(1548,1266,1)
-        state={
-            'background': {'color':'#000000'},
-            'title':'','subtitle':'','text':'',
-            'titleOptions':{},'subtitleOptions':{},'textOptions':{},
-            'media': {'type':'image','url':'/test-images/tv1.svg','fit':'contain'},
-            'timer': {'visible':True,'running':False,'mode':'countdown',
-                      'remainingSeconds':2944,'durationSeconds':3600,'fontSize':64,
-                      'position':'bottom','label':'Period 1 • Class Ends In',
-                      'timerInstanceId':'fixture-timer-only'}
-        }
-        self.replay(page,state)
-        data=self.measure(page,'timer-only-overlay')
-        timer=data['parts']['timer']
-        self.assertGreaterEqual(timer['font'],24)
-        self.assertGreater(timer['logicalBox']['y'],700)
-        self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-9')
-
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
