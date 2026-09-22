@@ -122,7 +122,7 @@ test('pending journal is preserved when a new main update is requested',t=>{
 
 
 test("update runner surfaces operational backup errors and permits large streaming backups",()=>{
-  const source=fs.readFileSync(path.join(ROOT,"host-agent","app-update-runner.sh"),"utf8");
+  const source=fs.readFileSync(path.join(root,"host-agent","app-update-runner.sh"),"utf8");
   assert.match(source,/AbortSignal\.timeout\(900000\)/);
   assert.match(source,/Operational backup preflight failed:/);
   assert.match(source,/throw Error\(j\.error\|\|"Operational backup failed"\)/);
