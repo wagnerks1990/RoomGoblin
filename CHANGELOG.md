@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Live display hard ceilings
+
+- Add browser-independent mathematical font ceilings for title, subtitle, and timer objects after live TV8 showed Chromium accepting visibly clipped content at the component caps.
+- Allocate heading/timer region demand from configured state only, preserving deterministic reload/replay geometry while allowing more appropriate space than fixed minimum bands.
+- Add a regression matching the live 1548×1266 receiver viewport and require heading/timer line-height bounds to fit their logical regions.
+- Renderer/cache revision: `dynamic-fit-20260922-8`.
+
 ### Linked-class automation targets
 
 - Make each linked class's default displays authoritative for every display action when class-target inheritance is enabled, and show those effective targets read-only without discarding saved manual selections.
