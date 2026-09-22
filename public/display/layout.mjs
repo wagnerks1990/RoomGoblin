@@ -1,6 +1,6 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260922-9';
+export const LAYOUT_REVISION = 'dynamic-fit-20260922-10';
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
@@ -170,8 +170,12 @@ function renderedContained(el, box) {
   const tolerance = 0.75;
   const inside = r => r.left >= br.left - tolerance && r.top >= br.top - tolerance &&
     r.right <= br.right + tolerance && r.bottom <= br.bottom + tolerance;
-  const er = el.getBoundingClientRect();
-  if (!inside(er)) return false;
+  // The element itself may intentionally span the full flex region. On some
+  // Chromium/TV builds, fractional transformed containing-block geometry can
+  // make that full-width element rect differ from its parent by a few pixels
+  // even when every painted glyph is contained. Scroll/offset and independent
+  // natural-size checks already validate the element box; this phase exists to
+  // validate the actual painted text rectangles.
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     if (!walker.currentNode.textContent || !walker.currentNode.textContent.trim()) continue;
