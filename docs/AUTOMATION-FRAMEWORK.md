@@ -108,3 +108,11 @@ Changes to automation/scheduler behavior must prove:
 ### Timer Overlay coverage across action sequences
 
 Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-actions`, which means RoomGoblin reasserts the same countdown after every display-content action (text, URL, media, image/document, or clear) so replacing the base display content does not remove the timer. `action-1-only` preserves the one-time overlay behavior. Reasserting a manual-duration timer must keep the original deadline rather than restarting its duration; class-end timers continue to resolve against the same class-end deadline. Morning Announcements priority still wins.
+
+
+## Manual Run Now isolation on Resume
+
+`Run Now` and live draft tests may start managed continuous automation loops. `Resume Scheduled State` is an explicit return-to-scheduler boundary: it cancels every active manual continuous run, waits for those tasks to observe cancellation and exit, and only then reasserts current scheduled winners and recovers applicable scheduled continuous occurrences. A manual test that is not currently scheduled must never repaint displays after Resume completes.
+
+
+Starting another manual automation on overlapping resources also replaces any active managed manual continuous run before the new one-shot action executes. This applies to both saved **Run Now** and live draft runs, so an older manual loop cannot wake later and overwrite the newer manual test.

@@ -518,3 +518,8 @@ Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-ac
 Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
 
 
+
+
+### Manual automation resume boundary
+
+Treat `Resume Scheduled State` as a hard ownership boundary. Any active manual continuous Run Now/draft automation must be cancelled and drained before scheduled state is reasserted. Do not allow a stale manual test loop to survive Resume and later repaint a display.

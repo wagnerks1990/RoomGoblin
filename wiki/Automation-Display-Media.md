@@ -58,3 +58,8 @@ Automation `repeatDelaySeconds` means the dwell/stay time **after an action exec
 ### Timer Overlay coverage across action sequences
 
 Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-actions`, which means RoomGoblin reasserts the same countdown after every display-content action (text, URL, media, image/document, or clear) so replacing the base display content does not remove the timer. `action-1-only` preserves the one-time overlay behavior. Reasserting a manual-duration timer must keep the original deadline rather than restarting its duration; class-end timers continue to resolve against the same class-end deadline. Morning Announcements priority still wins.
+
+
+### Manual test isolation
+
+`Resume Scheduled State` cancels and drains active manual continuous Run Now/draft runs before restoring current scheduled content. This prevents a test automation from resurfacing after its dwell timer when it is not currently scheduled.

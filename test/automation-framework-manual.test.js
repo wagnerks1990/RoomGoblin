@@ -59,3 +59,25 @@ test("automation trace recording appends without recursive helper calls",()=>{
   assert.match(server,/const pushStep=entry=>\{combined\.totalStepExecutions\+\+;combined\.steps\.push\(entry\)/);
   assert.doesNotMatch(server,/const pushStep=entry=>\{combined\.totalStepExecutions\+\+;pushStep\(entry\)/);
 });
+
+
+test("resume cancels active manual continuous runs before scheduled reconciliation",()=>{
+  assert.match(server,/async function cancelActiveManualAutomationRuns\(reason="schedule-resumed"\)/);
+  assert.match(server,/if\(!meta\?\.manual\)continue/);
+  assert.match(server,/await Promise\.allSettled\(tasks\)/);
+  assert.match(server,/cancelledManualRuns=await cancelActiveManualAutomationRuns\("schedule-resumed"\)/);
+  const resume=server.slice(server.indexOf('app.post("/api/v1/automation-control/resume"'),server.indexOf('app.post("/api/v1/automation-control/simulation"'));
+  assert.ok(resume.indexOf('cancelActiveManualAutomationRuns')<resume.indexOf('reconcileScheduledAutomationState'),
+    "manual runs must finish cancelling before scheduled state is reasserted");
+});
+
+
+test("any manual run replaces overlapping managed manual loops",()=>{
+  assert.match(server,/async function cancelOverlappingManualAutomationRuns\(event,reason="manual-run-replaced"\)/);
+  assert.match(server,/if\(!meta\?\.manual\)continue/);
+  assert.match(server,/if\(!\(meta\.resources\|\|\[\]\)\.some\(key=>resources\.has\(key\)\)\)continue/);
+  const draft=server.slice(server.indexOf('app.post("/api/v1/automations/draft/run"'),server.indexOf('app.get("/api/v1/automations"',server.indexOf('app.post("/api/v1/automations/draft/run"')));
+  assert.match(draft,/await cancelOverlappingManualAutomationRuns\(resolved,"manual-run-replaced"\)/);
+  const saved=server.slice(server.indexOf('app.post("/api/v1/automations/:id/run"'),server.indexOf('// v0.5 configuration',server.indexOf('app.post("/api/v1/automations/:id/run"')));
+  assert.match(saved,/await cancelOverlappingManualAutomationRuns\(resolved,"manual-run-replaced"\)/);
+});
