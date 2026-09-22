@@ -1747,7 +1747,6 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
   const steps=automationActionSequence(event);
   const continuous=sequenceHasContinuousActions(steps);
-  const persistentMediaLoop=steps.some(step=>step?.action==="display.media"&&step?.executionMode==="loop");
   const boundedMaxPasses=Number.isInteger(maxPasses)&&maxPasses>0?Math.min(1000,maxPasses):null;
   const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous,endedReason:null,totalStepExecutions:0,totalResults:0};
   const MAX_RUN_TRACE=200;
@@ -1818,7 +1817,8 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // time AFTER an action executes: how long its resulting state remains before
   // RoomGoblin advances to the next eligible action. delaySeconds remains a
   // pre-action wait. After the final eligible action, the sequence returns to
-  // Action 1 while any action is still eligible.
+  // Action 1 only while at least two continual actions remain eligible, or while
+  // an explicit finite repeat still has passes remaining.
   let pass=1,aborted=false;
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
@@ -1905,19 +1905,6 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     if(aborted||!sequenceNeedsAnotherPass(steps,pass+1))break;
     pass++;
     if(continuous&&executed===0)break;
-  }
-
-  // A looping display.media action is a persistent receiver-side session. Once
-  // dispatched it must not be resent just to keep the automation occurrence
-  // alive: runSingleAutomationAction(display.media) clears/reloads the display.
-  // Keep the managed occurrence cancellation-aware until class end, supersede,
-  // pause, edit/disable, or an explicit manual stop instead.
-  if(!aborted&&!boundedMaxPasses&&persistentMediaLoop&&!sequenceNeedsAnotherPass(steps,pass+1)){
-    combined.endedReason="persistent-media-active";
-    while(windowOpen()){
-      assertRunActive();
-      if(!(await waitSeconds(1))){combined.endedReason="class-ended";break}
-    }
   }
 
   await applyTimerOverlay();
