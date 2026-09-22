@@ -457,7 +457,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-11')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-12')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -477,14 +477,14 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-11')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-12')
 
 
     def test_17_live_tv8_text_does_not_false_collapse(self):
         page=self.page(1548,1273,1)
         self.replay(page,TV8_LIVE_DYNAMIC)
         data=self.measure(page,'live-tv8-false-containment-regression')
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-11')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-12')
         for name in ['title','subtitle','body']:
             self.assertGreaterEqual(data['parts'][name]['font'],12, name)
             self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
@@ -496,6 +496,24 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(data['parts']['timer']['font'],64*1.10+0.5)
         self.assertAlmostEqual(data['parts']['timer']['logicalBox']['h'],160,delta=1)
         self.assertNotEqual(data['diagnostics'].get('fitWarning'),'content-too-dense')
+
+
+    def test_18_repeated_state_after_clear_restores_geometry(self):
+        page=self.page(1548,1273,1)
+        self.replay(page,TV8_LIVE_DYNAMIC)
+        first=self.measure(page,'transition-recovery-first')
+        self.command(page,'display.clear',{})
+        self.replay(page,TV8_LIVE_DYNAMIC)
+        second=self.measure(page,'transition-recovery-second')
+        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20260922-12')
+        self.assertEqual(second['diagnostics']['components']['body']['status'],'fit')
+        self.assertGreaterEqual(second['parts']['body']['font'],12)
+        self.assertGreater(second['diagnostics']['components']['body']['scale'],0.95)
+        self.assertAlmostEqual(second['parts']['body']['logicalBox']['y'],222,delta=1)
+        self.assertAlmostEqual(second['parts']['body']['logicalBox']['h'],663,delta=1)
+        self.assertAlmostEqual(second['parts']['timer']['logicalBox']['y'],900,delta=1)
+        self.assertAlmostEqual(second['parts']['timer']['logicalBox']['h'],160,delta=1)
+        self.assertEqual(self.signature(first),self.signature(second))
 
 
 if __name__ == '__main__':
