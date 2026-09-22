@@ -1747,6 +1747,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
   const steps=automationActionSequence(event);
   const continuous=sequenceHasContinuousActions(steps);
+  const persistentMediaLoop=steps.some(step=>step?.action==="display.media"&&step?.executionMode==="loop");
   const boundedMaxPasses=Number.isInteger(maxPasses)&&maxPasses>0?Math.min(1000,maxPasses):null;
   const combined={ok:true,eventId:event.id,name:event.name,manual,results:[],steps:[],passes:0,continuous,endedReason:null,totalStepExecutions:0,totalResults:0};
   const MAX_RUN_TRACE=200;
@@ -1904,6 +1905,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     if(aborted||!sequenceHasEligibleActions(steps,pass+1))break;
     pass++;
     if(continuous&&executed===0)break;
+  }
+
+  // A looping display.media action is a persistent receiver-side session. Once
+  // dispatched it must not be resent just to keep the automation occurrence
+  // alive: runSingleAutomationAction(display.media) clears/reloads the display.
+  // Keep the managed occurrence cancellation-aware until class end, supersede,
+  // pause, edit/disable, or an explicit manual stop instead.
+  if(!aborted&&!boundedMaxPasses&&persistentMediaLoop&&!sequenceHasEligibleActions(steps,pass+1)){
+    combined.endedReason="persistent-media-active";
+    while(windowOpen()){
+      assertRunActive();
+      if(!(await waitSeconds(1))){combined.endedReason="class-ended";break}
+    }
   }
 
   await applyTimerOverlay();
