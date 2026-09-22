@@ -26,7 +26,7 @@ function put(file,contents){fs.mkdirSync(path.dirname(file),{recursive:true});fs
 
 async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,managedMusicRunning=false,startupFullExportJournal=false,startupLegacyRollback=false}={}){
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-full-recovery-"));
-  const hub=path.join(temp,"hub"),services=path.join(temp,"services"),signing=path.join(temp,"signing"),staging=path.join(temp,"host-backups","recovery-staging"),veyon=path.join(temp,"veyon"),bin=path.join(temp,"bin"),master=path.join(temp,"master.key");
+  const hub=path.join(temp,"classroom-hub"),services=path.join(temp,"services"),signing=path.join(temp,"signing"),staging=path.join(temp,"host-backups","recovery-staging"),veyon=path.join(temp,"veyon"),bin=path.join(temp,"bin"),master=path.join(temp,"master.key");
   fs.mkdirSync(bin,{recursive:true});fs.mkdirSync(path.join(hub,"data","backups"),{recursive:true});fs.mkdirSync(services,{recursive:true});fs.mkdirSync(signing,{recursive:true});
   put(path.join(hub,"VERSION"),"1.0.0-test\n");
   if(database)put(path.join(hub,"data","classroom-control-hub.db"),"SQLITE_SNAPSHOT_SENTINEL");
