@@ -6,7 +6,7 @@
 
 ### Automation continual-loop termination
 
-- Stop an automation sequence from creating new passes once only one `Loop continually` action remains eligible.
+- Stop an automation sequence from creating new passes once only one action remains eligible and it is `Loop continually`.
 - Preserve intentional multi-action continual cycling and explicit finite `Loop X times` repeats.
 - Leave the surviving action's current display/device state in place instead of reissuing it, preventing needless display clears/reloads and visible flashing.
 
