@@ -1,6 +1,6 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260922-11';
+export const LAYOUT_REVISION = 'dynamic-fit-20260922-12';
 export const AUTO_GROW_FACTOR = 1.10;
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
@@ -282,6 +282,7 @@ export function createDisplayLayout(nodes, getState) {
   establishStructuralStyles(nodes);
   let frame = null, previousKey = '', fontEpoch = 0, passCount = 0;
   let fontStatus = 'loading', disposed = false, report = {};
+  let recoveryKey = '', recoveryCount = 0, recoveryTimer = null;
   stage.dataset.renderer = LAYOUT_REVISION;
   stage.dataset.fontStatus = fontStatus;
 
@@ -431,7 +432,8 @@ export function createDisplayLayout(nodes, getState) {
       state.titleOptions, state.subtitleOptions, state.textOptions,
       !!timer.visible, timer.label || '', timer.position || 'bottom', timer.fontSize,
       timer.autoFit, timer.borderWidth, fontEpoch]);
-    if (key === previousKey) return;
+    // Reconcile geometry on every explicit layout request. A repeated action can
+    // restore the same content after an intermediate clear/hide transition.
 
     timerRegion.hidden = !timer.visible;
     timerOverlay.style.display = timer.visible ? 'block' : 'none';
@@ -469,7 +471,43 @@ export function createDisplayLayout(nodes, getState) {
     };
     stage.dataset.layout = items.map(item => `${item.name}:${components[item.name].fontSize || 0}px`).join(';');
     stage.dataset.layoutPasses = String(passCount);
-    stage.dataset.fitWarning = Object.values(components).some(c => c.status === 'below-readable-minimum') ? 'content-too-dense' : '';
+
+    const badVisible = items.some(item => {
+      const component = components[item.name];
+      return component?.status === 'below-readable-minimum' &&
+        item.box.clientWidth > 0 &&
+        item.box.clientHeight > 0;
+    });
+
+    stage.dataset.fitWarning = badVisible ? 'content-too-dense' : '';
+
+    // Some TV Chromium builds can transiently return stale text geometry during
+    // action-to-action replacement. If a visible region falls into the 1px
+    // fallback, retry the complete canonical layout after a short settle delay
+    // instead of leaving the display unreadable.
+    if (badVisible) {
+      if (recoveryKey !== key) {
+        recoveryKey = key;
+        recoveryCount = 0;
+      }
+
+      if (recoveryCount < 5 && recoveryTimer === null) {
+        recoveryCount++;
+        recoveryTimer = setTimeout(() => {
+          recoveryTimer = null;
+          if (disposed) return;
+          previousKey = '';
+          request();
+        }, 75);
+      }
+    } else {
+      recoveryKey = '';
+      recoveryCount = 0;
+      if (recoveryTimer !== null) {
+        clearTimeout(recoveryTimer);
+        recoveryTimer = null;
+      }
+    }
   }
 
   function request() {
@@ -494,6 +532,7 @@ export function createDisplayLayout(nodes, getState) {
     snapshot:() => ({...report, revision:LAYOUT_REVISION, fontStatus, passCount}),
     dispose() {
       disposed = true; clearTimeout(fontTimeout);
+      if (recoveryTimer !== null) clearTimeout(recoveryTimer);
       if (frame !== null) cancelAnimationFrame(frame);
       document.fonts?.removeEventListener?.('loadingdone', fontsChanged);
     }
