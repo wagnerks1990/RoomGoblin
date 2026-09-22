@@ -88,7 +88,15 @@ function actionDrivesAnotherPass(action={},nextPass=2){
   return !(mode==="loop"&&String(action.action)==="display.media");
 }
 function sequenceNeedsAnotherPass(sequence=[],nextPass=2){
-  return sequence.some(action=>actionDrivesAnotherPass(action,nextPass));
+  const eligible=sequence.filter(action=>actionEligibleOnPass(action,nextPass));
+  if(eligible.some(action=>actionDrivesAnotherPass(action,nextPass)))return true;
+  // One receiver-native media loop can remain resident without redispatch.
+  // Two or more continual media actions intentionally define an alternating
+  // sequence, so they must keep creating passes.
+  return eligible.filter(action=>
+    normalizeExecutionMode(action.action,action.executionMode,action.payload||{})==="loop"
+    && String(action.action)==="display.media"
+  ).length>1;
 }
 function actionEligibleOnPass(action={},pass=1){
   const n=Math.max(1,Math.trunc(Number(pass)||1));
