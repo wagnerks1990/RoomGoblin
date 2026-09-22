@@ -25,7 +25,7 @@ test("scheduled runner treats per-action repeat delay as dwell before advancing"
   assert.match(server,/hasLaterEligibleAction\(i,pass\)/);
   assert.match(server,/const dwell=Math\.max\(0,Number\(step\.repeatDelaySeconds\|\|0\)\)/);
   assert.match(server,/await waitSeconds\(dwell\)/);
-  assert.match(server,/sequenceHasEligibleActions\(steps,pass\+1\)/);
+  assert.match(server,/sequenceNeedsAnotherPass\(steps,pass\+1\)/);
   assert.match(server,/sequenceHasContinuousActions\(steps\)/);
 });
 
