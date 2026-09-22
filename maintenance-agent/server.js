@@ -679,7 +679,7 @@ async function replaceRestoreContent(srcRoot,{database=false,data=false,journalF
   journal("preparing");
   if(data){
     const src=path.join(srcRoot,"data"),dst=path.join(HUB_ROOT,"data");fs.mkdirSync(dst,{recursive:true});
-    journal("committing");syncDirectory(src,dst,{preserve:new Set(["backups"])});
+    journal("committing");syncDirectory(src,dst,{preserve:new Set(["backups","media"])});
     for(const suffix of ["-wal","-shm"])fs.rmSync(path.join(dst,"classroom-control-hub.db"+suffix),{force:true});restored.push("data");
   }else if(database){
     const src=path.join(srcRoot,"data","classroom-control-hub.db"),dst=path.join(HUB_ROOT,"data","classroom-control-hub.db");
