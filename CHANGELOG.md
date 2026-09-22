@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Resumable upload backup readability
+
+- Create resumable-upload roots and per-upload session directories as `0750` and chunk files as `0640`, matching RoomGoblin's shared-data contract.
+- Prevent operational safety backups from failing with `EACCES` while an upload session exists, without granting world access or weakening secret/ADB/signing permissions.
+
 ### Live display hard ceilings
 
 - Add browser-independent mathematical font ceilings for title, subtitle, and timer objects after live TV8 showed Chromium accepting visibly clipped content at the component caps.
