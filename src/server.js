@@ -5570,6 +5570,7 @@ app.post("/api/v1/automations/draft/run",schedulerMutationLimit,requireControl,a
   try{
     const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event);
     if(sequenceHasContinuousActions(automationActionSequence(resolved)))return res.json(startManagedManualAutomation(resolved,{draft:true}));
+    await cancelOverlappingManualAutomationRuns(resolved,"manual-run-replaced");
     const result=await runClassroomAutomation(resolved,{manual:true});
     audit({kind:"automation.draft.live-run",automationId:req.body?.id||null,name:event.name,actions:automationActionSequence(event).map(step=>step.action)});
     res.json({...result,draft:true});
@@ -5645,6 +5646,7 @@ app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,asy
     if(!event)return res.status(404).json({ok:false,error:"Automation not found"});
     const resolved=resolveAutomationForManualTest(event);
     if(sequenceHasContinuousActions(automationActionSequence(resolved)))return res.json(startManagedManualAutomation(resolved,{storedEvent:event}));
+    await cancelOverlappingManualAutomationRuns(resolved,"manual-run-replaced");
     const result=await runClassroomAutomation(resolved,{manual:true});
     event.lastRun={at:new Date().toISOString(),ok:result.ok!==false,manual:true,message:result.ok===false?"Completed with action errors":"Completed",resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(result)}};event.updatedAt=new Date().toISOString();persistAutomations();
     res.json(result);
@@ -7865,6 +7867,26 @@ async function cancelActiveManualAutomationRuns(reason="schedule-resumed"){
     // at most every 500 ms during dwell waits. Await their shutdown before
     // reasserting scheduled state so a stale tested automation cannot repaint
     // the display after Resume Scheduled State finishes.
+    await Promise.allSettled(tasks);
+  }
+  return ids;
+}
+async function cancelOverlappingManualAutomationRuns(event,reason="manual-run-replaced"){
+  const resources=new Set(automationResourceKeys(event));
+  if(!resources.size)return [];
+  const ids=[],tasks=[];
+  for(const [runningId,meta] of automationRunningOccurrenceMeta){
+    if(!meta?.manual)continue;
+    if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
+    automationCancelledOccurrences.add(runningId);
+    automationCancellationReasons.set(runningId,reason);
+    automationRunLedger.record({occurrenceId:runningId,automationId:meta.automationId||null,classId:meta.classId||null,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason});
+    ids.push(runningId);
+    const task=automationRunningOccurrences.get(runningId);
+    if(task)tasks.push(Promise.resolve(task));
+  }
+  if(ids.length){
+    audit({kind:"automation.manual.replace",automationId:event.id||null,reason,cancelled:ids});
     await Promise.allSettled(tasks);
   }
   return ids;
