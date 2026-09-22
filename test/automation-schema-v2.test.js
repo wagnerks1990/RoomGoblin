@@ -58,25 +58,26 @@ test("receiver-native media loop does not create passes by itself",()=>{
   assert.equal(sequenceNeedsAnotherPass([mediaLoop,once],2),false);
 });
 
-test("two continual media actions intentionally keep cycling",()=>{
+test("two continual actions intentionally keep cycling",()=>{
   const first={action:"display.media",executionMode:"loop",payload:{storedName:"one.mp4"}};
   const second={action:"display.media",executionMode:"loop",payload:{storedName:"two.mp4"}};
   assert.equal(sequenceNeedsAnotherPass([first,second],2),true);
 });
 
-test("another continual action keeps a media loop participating in later passes",()=>{
-  const mediaLoop={action:"display.media",executionMode:"loop",payload:{storedName:"loop.mp4"}};
-  const otherLoop={action:"govee.power",executionMode:"loop"};
-  assert.equal(sequenceNeedsAnotherPass([mediaLoop,otherLoop],2),true);
-  assert.equal(actionEligibleOnPass(mediaLoop,2),true);
-});
-
-test("run-once first action stays out when a later action loops",()=>{
+test("a sole continual survivor stops sequence processing",()=>{
   const once={action:"display.media",executionMode:"once",payload:{storedName:"intro.mp4"}};
   const loop={action:"govee.power",executionMode:"loop"};
-  assert.equal(sequenceNeedsAnotherPass([once,loop],2),true);
   assert.equal(actionEligibleOnPass(once,2),false);
   assert.equal(actionEligibleOnPass(loop,2),true);
+  assert.equal(sequenceNeedsAnotherPass([once,loop],2),false);
+});
+
+test("finite repeat may continue as the sole eligible action",()=>{
+  const once={action:"tv.power",executionMode:"once"};
+  const repeat={action:"govee.power",executionMode:"repeat",repeatCount:3};
+  assert.equal(sequenceNeedsAnotherPass([once,repeat],2),true);
+  assert.equal(sequenceNeedsAnotherPass([once,repeat],3),true);
+  assert.equal(sequenceNeedsAnotherPass([once,repeat],4),false);
 });
 
 test("continuous loop is available to every action type",()=>{
