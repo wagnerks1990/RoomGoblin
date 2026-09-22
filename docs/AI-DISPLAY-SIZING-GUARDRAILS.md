@@ -2,7 +2,7 @@
 
 ## Current policy
 
-Renderer revision: `dynamic-fit-20260922-8`.
+Renderer revision: `dynamic-fit-20260922-11`.
 
 `public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the finished stage.
 
@@ -13,7 +13,7 @@ Title, subtitle, body, and timer are dynamic content objects:
 - Title, subtitle, and body use an 18px logical horizontal gutter; do not restore the old 72px/90px gutters.
 - Active objects share the usable logical canvas with bounded gaps.
 - The timer's top/center/bottom setting changes object order.
-- Automatic fitting may grow short content up to the reviewed component safety cap.
+- Automatic fitting may grow short content by at most 10 percent above its configured size and never beyond the reviewed component safety cap.
 - Dense content shrinks as far as necessary to prevent clipping.
 - `autoFit:false` uses the configured size as a hard maximum, not permission to overflow.
 - The body is the primary reading surface and receives otherwise-unused vertical room.
@@ -74,4 +74,4 @@ Assert actual text-range containment, dynamic region ordering, bounded gaps, ful
 
 Any behavior change must update `LAYOUT_REVISION`, both receiver cache keys, tests, operator docs, Wiki mirror, and AI context.
 
-Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
+Live-TV containment note: renderer `dynamic-fit-20260922-11` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
