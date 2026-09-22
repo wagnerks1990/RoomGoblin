@@ -1,4 +1,5 @@
 # Changelog
+- Recover transient TV Chromium text-fit failures during action-to-action display transitions by retrying a visible below-readable layout from canonical geometry; repeated same-content state requests now reconcile hidden/collapsed regions. Renderer/cache revision is `dynamic-fit-20260922-12`.
 - Anchor title/subtitle at the top, reserve the remaining center for body text, and give the timer a 160px safe region that preserves top/center/bottom placement without clipping.
 - Bound automatic font growth to 110% of configured size while retaining hard shrink-to-fit containment; renderer/cache revision is now `dynamic-fit-20260922-11`.
 
