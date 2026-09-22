@@ -15,7 +15,7 @@
 - [Installation and Deployment](Installation-and-Deployment)
 - [Configuration](Configuration)
 - [Database-First Recovery Contract](Database-First-Recovery)
-- [Media Plane](Media-Plane)
+- [Media Plane](Media-Plane)\n- [Display WYSIWYG Editor](Display-WYSIWYG-Editor)
 - [Operations](Operations)
 - [Troubleshooting](Troubleshooting)
 - [Development](Development)

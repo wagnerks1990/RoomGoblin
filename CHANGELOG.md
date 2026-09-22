@@ -13,6 +13,14 @@
 - Fix `Resume Scheduled State` and startup recovery so an earlier continuous automation is not restarted merely because its scheduled time has passed.
 - Continuous recovery now restarts only occurrences that are current resource winners at the recovery time, preventing a previously tested or superseded automation from resurfacing after the correct scheduled state is restored.
 
+
+### Restored dynamic display validation
+
+- Reintroduce the pre-revert dynamic display renderer and WYSIWYG editor for controlled physical validation now that production deployment is verified.
+- Restore media-only timer overlay handling from renderer/cache revision `dynamic-fit-20260922-9`, including compact top/center/bottom timer placement and configured timer-size ceilings.
+- Restore browser-independent hard font ceilings and deterministic dynamic region allocation from the TV8 clipping fixes.
+- Restore exact-receiver WYSIWYG previews in Display Studio and scheduled automation Display Text editing.
+
 ### Resume scheduled state cancels manual tests
 
 - Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.

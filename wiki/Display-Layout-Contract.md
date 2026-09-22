@@ -51,9 +51,9 @@ JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 
 The report contains renderer revision, CSS viewport, DPR, stage scale, font-load status, layout pass count, fitted logical sizes, region geometry, and containment warnings. It does not expose credentials or the lesson body. Layout telemetry also accompanies receiver heartbeats.
 
-Expected renderer revision: `single-fit-20260911-5`, released with alpha.78. Configured sizes are the visual baseline; automatic growth is bounded near that baseline, and mandatory shrink-to-fit containment prevents title, subtitle, body, and compact timer overflow.
+Expected renderer revision: `dynamic-fit-20260922-8`. Title, subtitle, body, and timer are dynamic objects rather than fixed bands. Only active objects consume vertical space; they share the usable logical canvas with bounded gaps, automatic fitting may grow short content to reviewed safety caps, and mandatory shrink-to-fit containment keeps every rendered glyph inside its allocated region.
 
-Browser regression tests load the real receiver HTML, layout module, CSS, shared scripts, and fonts. Only transport, the branding API, and the unrelated audio SDK are mocked. Chromium and Firefox CI tests cover P6/P7 samples, the captured multiline club-selection announcement with its companion stylesheet deliberately withheld, 1080p/4K, DPR 1/2, 720p, 1082x1226, reload/reconnect, live commands versus replay, colors, timer ticks/expiry/hour changes, timer positions, long labels, style-only changes, clear, manual sizes, long unbroken words, and dense content. They measure element and text-range bounds and check component overlap. Screenshots and measurement JSON are retained as CI artifacts.
+Browser regression tests load the real receiver HTML, layout module, CSS, shared scripts, and fonts. Only transport, the branding API, and the unrelated audio SDK are mocked. Chromium and Firefox coverage includes the captured NOCTI classroom scene, P6/P7 samples, multiline announcements, missing companion stylesheet, 1080p/4K/DPR/narrow viewports, reload/reconnect, timer positions, timer ticks, long labels, manual sizes, long unbroken words, and dense content. Tests measure element/text-range bounds, dynamic object order, full-canvas use, gaps, and non-overlap.
 
 ```bash
 bash tools/prepare-display-fonts.sh
