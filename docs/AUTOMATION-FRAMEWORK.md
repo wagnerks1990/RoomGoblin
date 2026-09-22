@@ -116,3 +116,8 @@ Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-ac
 
 
 Starting another manual automation on overlapping resources also replaces any active managed manual continuous run before the new one-shot action executes. This applies to both saved **Run Now** and live draft runs, so an older manual loop cannot wake later and overwrite the newer manual test.
+
+
+## Continuous recovery winner filtering
+
+Recovery does not treat every earlier continuous automation as active for the rest of the day. Before restarting a continuous occurrence, RoomGoblin compares it with the current display/non-display winners and only restarts occurrences that still own at least one current winning resource identity. This prevents an older or superseded event from waking after Resume Scheduled State and repainting current content.
