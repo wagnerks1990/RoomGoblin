@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Large operational backup streaming
+
+- Restore the intended operational-backup policy that excludes replaceable media payloads, while retaining disk-streaming Info-ZIP/ZIP64 creation for large non-media operational state.
+- Preserve the SQLite snapshot, shared-data filters, symlink/special-file rejection, private backup permissions, and restore manifest contract.
+- Extend update backup/inspection timeouts and print the maintenance error that caused preflight failure instead of returning only a generic failure state.
+
 ### Continuous recovery winner filtering
 
 - Fix `Resume Scheduled State` and startup recovery so an earlier continuous automation is not restarted merely because its scheduled time has passed.

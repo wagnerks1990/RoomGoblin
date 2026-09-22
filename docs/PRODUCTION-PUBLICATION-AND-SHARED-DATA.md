@@ -84,3 +84,8 @@ Future automated changes must preserve all of the following:
 - compatibility aliases, legacy command/journal names, data identities and the native main updater's recovery contract.
 
 Any change to these behaviors must update this document, `docs/CI-WORKFLOWS.md`, the matching Wiki pages, and AI-maintainer guidance.
+
+
+### Large operational archives
+
+Operational backups intentionally exclude `classroom-hub/data/media`; uploaded media is replaceable content and is not part of the mandatory update rollback set. Other operational state is written with the system Info-ZIP streaming writer and ZIP64 support rather than buffering all entries through AdmZip. The streaming path preserves the backup filters, rejects symlinks/special files before archive creation, adds the SQLite `.backup` snapshot under the canonical database name, writes the recovery manifest, and keeps the final archive mode at `0600`.

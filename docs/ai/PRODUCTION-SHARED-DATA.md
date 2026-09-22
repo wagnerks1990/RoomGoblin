@@ -60,3 +60,8 @@ Keep these synchronized when this contract changes:
 - `wiki/AI-and-Contributor-Guide.md`
 - this file
 - relevant production-image/startup regression tests.
+
+
+### Large operational archives
+
+Operational backups intentionally exclude `classroom-hub/data/media`; uploaded media is replaceable content and is not part of the mandatory update rollback set. Other operational state is written with the system Info-ZIP streaming writer and ZIP64 support rather than buffering all entries through AdmZip. The streaming path preserves the backup filters, rejects symlinks/special files before archive creation, adds the SQLite `.backup` snapshot under the canonical database name, writes the recovery manifest, and keeps the final archive mode at `0600`.

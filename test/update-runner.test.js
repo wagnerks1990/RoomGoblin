@@ -119,3 +119,11 @@ test('pending journal is preserved when a new main update is requested',t=>{
  const f=fixture(t);const pending=JSON.stringify({action:'published',targetCommit:f.base,mutationStarted:'true'});fs.writeFileSync(f.state+'/app-update-request.json',pending);fs.writeFileSync(f.dir+'/events','');
  const r=f.run();assert.notEqual(r.status,0);assert.match(r.stderr,/journal is pending/);assert.equal(fs.readFileSync(f.state+'/app-update-request.json','utf8'),pending);assert.equal(f.git('rev-parse','HEAD'),f.base);assert.equal(r.events,'');
 });
+
+
+test("update runner surfaces operational backup errors and permits large streaming backups",()=>{
+  const source=fs.readFileSync(path.join(root,"host-agent","app-update-runner.sh"),"utf8");
+  assert.match(source,/AbortSignal\.timeout\(900000\)/);
+  assert.match(source,/Operational backup preflight failed:/);
+  assert.match(source,/throw Error\(j\.error\|\|"Operational backup failed"\)/);
+});

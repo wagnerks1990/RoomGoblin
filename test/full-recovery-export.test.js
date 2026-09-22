@@ -26,7 +26,7 @@ function put(file,contents){fs.mkdirSync(path.dirname(file),{recursive:true});fs
 
 async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,managedMusicRunning=false,startupFullExportJournal=false,startupLegacyRollback=false}={}){
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-full-recovery-"));
-  const hub=path.join(temp,"hub"),services=path.join(temp,"services"),signing=path.join(temp,"signing"),staging=path.join(temp,"host-backups","recovery-staging"),veyon=path.join(temp,"veyon"),bin=path.join(temp,"bin"),master=path.join(temp,"master.key");
+  const hub=path.join(temp,"classroom-hub"),services=path.join(temp,"services"),signing=path.join(temp,"signing"),staging=path.join(temp,"host-backups","recovery-staging"),veyon=path.join(temp,"veyon"),bin=path.join(temp,"bin"),master=path.join(temp,"master.key");
   fs.mkdirSync(bin,{recursive:true});fs.mkdirSync(path.join(hub,"data","backups"),{recursive:true});fs.mkdirSync(services,{recursive:true});fs.mkdirSync(signing,{recursive:true});
   put(path.join(hub,"VERSION"),"1.0.0-test\n");
   if(database)put(path.join(hub,"data","classroom-control-hub.db"),"SQLITE_SNAPSHOT_SENTINEL");
@@ -355,6 +355,7 @@ test("managed-service reconciliation executes locally with an exact bounded sche
 test("configuration-data restore replaces runtime data and verifies application health",async t=>{
   const agent=await startAgent(t);
   put(path.join(agent.hub,"data","media","lesson.txt"),"ORIGINAL_ASSET");
+  put(path.join(agent.hub,"data","presentations","lesson.pdf"),"PRESENTATION_ASSET");
   put(path.join(agent.hub,"data","android-tv",".android","adbkey"),"ARCHIVED_ADB_IDENTITY");
   const created=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
   assert.equal(created.status,200,JSON.stringify(created.body));
@@ -368,8 +369,26 @@ test("configuration-data restore replaces runtime data and verifies application 
   assert.equal(restored.body.healthVerified,true);
   assert.deepEqual(restored.body.restored,["data"]);
   assert.equal(fs.readFileSync(path.join(agent.hub,"data","classroom-control-hub.db"),"utf8"),"SQLITE_SNAPSHOT_SENTINEL");
-  assert.equal(fs.readFileSync(path.join(agent.hub,"data","media","lesson.txt"),"utf8"),"ORIGINAL_ASSET");
+  assert.equal(fs.readFileSync(path.join(agent.hub,"data","media","lesson.txt"),"utf8"),"MUTATED_ASSET","operational backups intentionally exclude media");
+  assert.equal(fs.readFileSync(path.join(agent.hub,"data","presentations","lesson.pdf"),"utf8"),"PRESENTATION_ASSET");
   assert.equal(fs.readFileSync(path.join(agent.hub,"data","android-tv",".android","adbkey"),"utf8"),"CURRENT_HOST_ADB_IDENTITY","partial data restore must preserve host ADB trust state");
   assert.equal(fs.existsSync(path.join(agent.hub,"data","should-disappear.txt")),false);
   assert.equal(fs.existsSync(path.join(agent.hub,"data","backups",created.body.name)),true,"managed backups survive a data restore");
+});
+
+
+test("operational backup uses ZIP64 streaming writer instead of AdmZip buffering",()=>{
+  const source=fs.readFileSync(path.join(ROOT,"maintenance-agent","server.js"),"utf8");
+  assert.match(source,/async function writeOperationalZipStreaming\(/);
+  assert.match(source,/Info-ZIP streams file contents directly/);
+  assert.match(source,/await run\("\/usr\/bin\/zip",\["-q","-r","-y",partial/);
+  assert.match(source,/if\(scope==="operational"\)\{[\s\S]*await writeOperationalZipStreaming\(dest,dbSnapshot,manifest\)/);
+  assert.match(source,/else if\(scope!=="operational"\)copyIntoZip/);
+});
+
+
+test("operational backup policy excludes media payloads",()=>{
+  const source=fs.readFileSync(path.join(ROOT,"maintenance-agent","server.js"),"utf8");
+  assert.match(source,/scope==="operational".*classroom-hub\/data\/media/);
+  assert.match(source,/"classroom-hub\/data\/media\/\*"/);
 });
