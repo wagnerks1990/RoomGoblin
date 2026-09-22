@@ -1430,6 +1430,30 @@ function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
+function sanitizeDisplayComposerHtml(value){
+  let html=String(value||"").slice(0,120000);
+  html=html.replace(/<script\b[\s\S]*?<\/script\s*>/gi,"")
+    .replace(/<\/?(?:iframe|object|embed|form|meta|base|link)\b[^>]*>/gi,"")
+    .replace(/\s(?:on[a-z]+|srcdoc|formaction)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,"")
+    .replace(/javascript\s*:/gi,"");
+  return html;
+}
+function sanitizeDisplayComposerCss(value){
+  return String(value||"").slice(0,60000)
+    .replace(/@import\b[^;]*;?/gi,"")
+    .replace(/url\s*\([^)]*\)/gi,"none")
+    .replace(/expression\s*\([^)]*\)/gi,"")
+    .replace(/(?:behavior|-moz-binding)\s*:[^;}]*/gi,"");
+}
+function normalizeDisplayComposer(input){
+  if(!input||typeof input!=="object"||Array.isArray(input)||input.enabled===false)return null;
+  return {
+    enabled:true,
+    html:sanitizeDisplayComposerHtml(input.html),
+    css:sanitizeDisplayComposerCss(input.css),
+    background:String(input.background||"#000000").slice(0,80)
+  };
+}
 async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation"}={}){
   const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
@@ -1473,12 +1497,17 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   }else if(action==="display.text"){
     const ts=requireAutomationTargets(event.targets,"Display text");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
-    if(p.background)outputs.results.push(await executeCommand({type:"display.background",target:ts,payload:{color:p.background}},commandSource));
-    if(p.title)outputs.results.push(await executeCommand({type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
-    if(p.subtitle)outputs.results.push(await executeCommand({type:"display.subtitle",target:ts,payload:{text:String(p.subtitle),color:p.subtitleColor||"#ffffff",size:Number(p.subtitleSize||40)}},commandSource));
-    outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{
-      text:String(p.text||""),color:p.color||"#ffffff",size:Number(p.size||54),position:p.position||"center"
-    }},commandSource));
+    const composer=normalizeDisplayComposer(p.composer);
+    if(composer){
+      outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{text:"",composer}},commandSource));
+    }else{
+      if(p.background)outputs.results.push(await executeCommand({type:"display.background",target:ts,payload:{color:p.background}},commandSource));
+      if(p.title)outputs.results.push(await executeCommand({type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
+      if(p.subtitle)outputs.results.push(await executeCommand({type:"display.subtitle",target:ts,payload:{text:String(p.subtitle),color:p.subtitleColor||"#ffffff",size:Number(p.subtitleSize||40)}},commandSource));
+      outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{
+        text:String(p.text||""),color:p.color||"#ffffff",size:Number(p.size||54),position:p.position||"center"
+      }},commandSource));
+    }
   }else if(action==="display.url"){
     const ts=requireAutomationTargets(event.targets,"Display URL");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
@@ -3836,7 +3865,7 @@ function updateStateFromCommand(command, targets) {
   for (const id of targets) {
     switch (command.type) {
       case "display.text":
-        setDisplayState(id, { text: p.text ?? "", textOptions: p });
+        setDisplayState(id, { text: p.text ?? "", textOptions: p, composer: normalizeDisplayComposer(p.composer) });
         break;
       case "display.title":
         setDisplayState(id, { title: p.text ?? "", titleOptions: p });
@@ -3878,6 +3907,7 @@ function updateStateFromCommand(command, targets) {
         setDisplayState(id, {
           text: "",
           textOptions: { text: "" },
+          composer: null,
           title: "",
           titleOptions: { text: "" },
           subtitle: "",
