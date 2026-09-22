@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Continuous recovery winner filtering
+
+- Fix `Resume Scheduled State` and startup recovery so an earlier continuous automation is not restarted merely because its scheduled time has passed.
+- Continuous recovery now restarts only occurrences that are current resource winners at the recovery time, preventing a previously tested or superseded automation from resurfacing after the correct scheduled state is restored.
+
 ### Resume scheduled state cancels manual tests
 
 - Fix `Resume Scheduled State` so any active manual continuous `Run Now` / draft test is cancelled and fully drained before current scheduled winners are reasserted.
