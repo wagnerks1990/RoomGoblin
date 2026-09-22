@@ -812,4 +812,4 @@ Initial public GitHub/Docker migration of Classroom Control Hub.
 - Moved announcement stream configuration to environment/runtime configuration.
 - Added public `.gitignore`, `.dockerignore`, and `.env.example` files.
 - Added GitHub Actions workflows for validation and GHCR container publishing.
-- Preserved the existing modular display, automation, announcement-priority, background-music, AV, lighting, lab, maintenance, and host-agent architecture.
+- Preserved the existing modular display, automation, announcement-priority, background-music, AV, lighting, lab, maintenance, and host-agent architecture.\n- Exclude every top-level SQLite database identity (`*.db`, `*.db-wal`, `*.db-shm`) from the streaming filesystem pass and add back only the canonical SQLite-safe snapshot, so stale legacy database files cannot fail or contaminate operational backups.
