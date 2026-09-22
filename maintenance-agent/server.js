@@ -661,7 +661,7 @@ async function verifyRestoreSource(srcRoot,{data=false}={}){
     const check=String((await run("sqlite3",[dbPath,"PRAGMA quick_check;"],{timeout:60000})).stdout||"").trim();if(check!=="ok")throw Error(`Backup database integrity check failed: ${check||"no result"}`);
   }
 }
-async function replaceRestoreContent(srcRoot,{database=false,data=false,journalFile=path.join(UPLOAD_DIR,"restore-journal.json")}={}){
+async function replaceRestoreContent(srcRoot,{database=false,data=false,preserveMedia=true,journalFile=path.join(UPLOAD_DIR,"restore-journal.json")}={}){
   const restored=[];
   const journal=phase=>{const partial=`${journalFile}.partial`;fs.writeFileSync(partial,JSON.stringify({version:1,phase,at:new Date().toISOString(),database,data}),{mode:0o600});fs.renameSync(partial,journalFile)};
   const removeTarget=p=>{const st=fs.lstatSync(p);if(st.isSymbolicLink())throw Error(`Symbolic links are not permitted in recovery targets: ${p}`);if(!st.isDirectory()){fs.rmSync(p,{force:true});return}for(const name of fs.readdirSync(p))removeTarget(path.join(p,name));try{fs.rmdirSync(p)}catch(e){if(!["EBUSY","ENOTEMPTY"].includes(e.code))throw e}};
@@ -679,7 +679,7 @@ async function replaceRestoreContent(srcRoot,{database=false,data=false,journalF
   journal("preparing");
   if(data){
     const src=path.join(srcRoot,"data"),dst=path.join(HUB_ROOT,"data");fs.mkdirSync(dst,{recursive:true});
-    journal("committing");syncDirectory(src,dst,{preserve:new Set(["backups","media"])});
+    journal("committing");syncDirectory(src,dst,{preserve:new Set(preserveMedia?["backups","media"]:["backups"])});
     for(const suffix of ["-wal","-shm"])fs.rmSync(path.join(dst,"classroom-control-hub.db"+suffix),{force:true});restored.push("data");
   }else if(database){
     const src=path.join(srcRoot,"data","classroom-control-hub.db"),dst=path.join(HUB_ROOT,"data","classroom-control-hub.db");
@@ -705,7 +705,7 @@ async function recoverInterruptedLegacyRestore(){
     await run("docker",["stop",APP_CONTAINER],{timeout:30000}).catch(()=>null);
     const extracted=await extractRestore(journal.safetyBackup,temp);
     await verifyRestoreSource(extracted.srcRoot,{data:true});
-    await replaceRestoreContent(extracted.srcRoot,{data:true});
+    await replaceRestoreContent(extracted.srcRoot,{data:true,preserveMedia:false});
     await run("docker",["start",APP_CONTAINER],{timeout:30000});
     await waitForMainApplication();
     removeDurableFile(LEGACY_RESTORE_JOURNAL);
