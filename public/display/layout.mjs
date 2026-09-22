@@ -1,6 +1,6 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260922-8';
+export const LAYOUT_REVISION = 'dynamic-fit-20260922-9';
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
@@ -128,7 +128,7 @@ function naturalSize(el, box, fontSize = null, unconstrainedWidth = false) {
   const computed = getComputedStyle(el);
   const probe = el.cloneNode(true);
   Object.assign(probe.style, {
-    position:'absolute', left:'-100000px', top:'0', visibility:'hidden',
+    position:'absolute', left:'-100000px', top:'0', right:'auto', bottom:'auto', visibility:'hidden',
     pointerEvents:'none', transform:'none', transformOrigin:'center center',
     maxHeight:'none', height:'auto', minWidth:'0', minHeight:'0', flex:'none',
     margin:'0', boxSizing:computed.boxSizing, fontFamily:computed.fontFamily,
@@ -312,8 +312,8 @@ export function createDisplayLayout(nodes, getState) {
     });
     if (timer.visible) items.push({
       name:'timer', el:timerOverlay, box:timerRegion,
-      cap:componentCap(timer.fontSize,64,FONT_CAPS.timer,timer.autoFit!==false),
-      configuredSize:bounded(timer.fontSize,64,1,2000),
+      cap:bounded(timer.fontSize,64,1,FONT_CAPS.timer),
+      configuredSize:bounded(timer.fontSize,64,1,FONT_CAPS.timer),
       minHeight:105, weight:1
     });
 
@@ -334,11 +334,27 @@ export function createDisplayLayout(nodes, getState) {
     return items;
   }
 
-  function applyGeometry(items) {
+  function applyGeometry(items, timer = {}) {
     const boxes = {title:titleRegion, subtitle:subtitleRegion, body:textLayer, timer:timerRegion};
     const active = new Set(items.map(item => item.name));
     for (const [name, box] of Object.entries(boxes)) if (!active.has(name)) region(box, VERTICAL_MARGIN, 1, false);
     if (!items.length) return;
+
+    if (items.length === 1 && items[0].name === 'timer') {
+      const item = items[0];
+      const height = Math.min(
+        STAGE_HEIGHT - (VERTICAL_MARGIN * 2),
+        Math.max(item.minHeight, item.desired)
+      );
+      const position = ['top','center','bottom'].includes(timer.position) ? timer.position : 'bottom';
+      const top = position === 'top'
+        ? VERTICAL_MARGIN
+        : position === 'center'
+          ? (STAGE_HEIGHT - height) / 2
+          : STAGE_HEIGHT - VERTICAL_MARGIN - height;
+      region(item.box, top, height, true);
+      return;
+    }
 
     const availableHeight = STAGE_HEIGHT - (VERTICAL_MARGIN * 2) - (COMPONENT_GAP * Math.max(0, items.length - 1));
     const heights = allocateHeights(items, availableHeight);
@@ -385,7 +401,7 @@ export function createDisplayLayout(nodes, getState) {
       // measurements. The fitter then solves each object inside that stable
       // geometry with independent mathematical hard ceilings.
     }
-    applyGeometry(items);
+    applyGeometry(items, timer);
 
     const components = {};
     for (const item of items) {
