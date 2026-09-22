@@ -115,8 +115,10 @@ test("timer natural-size probe must clear inherited positional CSS",()=>{
 
 test('transient readable-fit failures are retried and repeated state requests still reconcile geometry', () => {
   const source = fs.readFileSync(layoutPath, 'utf8');
-  assert.doesNotMatch(source, /if \(key === previousKey\) return;/,
-    'same-content requests must still restore geometry after intermediate clear/hide transitions');
+  assert.match(source, /if \(key === previousKey\) \{/);
+  assert.match(source, /const geometryCurrent = expectedRegions\.every/);
+  assert.match(source, /if \(geometryCurrent\) return;/,
+    'identical requests may skip only when the live region geometry still matches state');
   assert.match(source, /component\?\.status === 'below-readable-minimum'/,
     'recovery must be limited to actual visible fit failures');
   assert.match(source, /item\.box\.clientWidth > 0/);
