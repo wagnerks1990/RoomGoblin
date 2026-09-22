@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Continuous recovery winner filtering
+
+- Fix `Resume Scheduled State` and startup recovery so an earlier continuous automation is not restarted merely because its scheduled time has passed.
+- Continuous recovery now restarts only occurrences that are current resource winners at the recovery time, preventing a previously tested or superseded automation from resurfacing after the correct scheduled state is restored.
+
 ### Timer overlay visibility on media-only displays
 
 - Fix all receiver displays where a timer over an image/media scene could collapse to a 1px font and near-zero scale.

@@ -5402,10 +5402,25 @@ function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerCl
   }
   return sequenceHasContinuousActions(automationActionSequence(event));
 }
+function automationOccurrenceIdentity(storedEvent,event){
+  return `${storedEvent?.id||event?.id||""}|${event?.classId||"manual"}|${event?.time||""}`;
+}
+function currentContinuousRecoveryWinnerIdentities(now=schedulerClock.now()){
+  const winners=new Set();
+  for(const candidate of currentAutomationDisplayWinners(now)){
+    winners.add(automationOccurrenceIdentity(candidate.storedEvent,candidate.event));
+  }
+  for(const candidate of currentAutomationNonDisplayWinners(now)){
+    const storedEvent=classroomAutomations.events.find(item=>item.id===candidate.automationId);
+    if(storedEvent)winners.add(automationOccurrenceIdentity(storedEvent,candidate.event));
+  }
+  return winners;
+}
 async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery"){
   if(!automationSchedulerEnabled||schedulerClock.status().active&&!schedulerClock.commandsAllowed())return {started:0,skipped:true,reason:"scheduler-disabled-or-dry-run"};
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
+  const winnerIdentities=currentContinuousRecoveryWinnerIdentities(now);
   const dateKey=localDateKey(now),candidates=[];
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
@@ -5413,6 +5428,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
+      if(!winnerIdentities.has(automationOccurrenceIdentity(storedEvent,event)))continue;
       const id=occurrenceId(event,dateKey,event.time);
       const latest=[...automationRunLedger.read().runs].reverse().find(run=>run.occurrenceId===id);
       if(latest?.status==="cancelled")continue;

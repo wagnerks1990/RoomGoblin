@@ -523,3 +523,8 @@ Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-indep
 ### Manual automation resume boundary
 
 Treat `Resume Scheduled State` as a hard ownership boundary. Any active manual continuous Run Now/draft automation must be cancelled and drained before scheduled state is reasserted. Do not allow a stale manual test loop to survive Resume and later repaint a display.
+
+
+### Continuous recovery winner filtering
+
+Do not recover every enabled continuous automation whose start time is earlier than now. Recovery must be constrained to current scheduler winners; otherwise an older or manually tested continuous event can be restarted after Resume Scheduled State and overwrite the intended current automation.
