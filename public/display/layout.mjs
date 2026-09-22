@@ -432,8 +432,24 @@ export function createDisplayLayout(nodes, getState) {
       state.titleOptions, state.subtitleOptions, state.textOptions,
       !!timer.visible, timer.label || '', timer.position || 'bottom', timer.fontSize,
       timer.autoFit, timer.borderWidth, fontEpoch]);
-    // Reconcile geometry on every explicit layout request. A repeated action can
-    // restore the same content after an intermediate clear/hide transition.
+    // Skip identical requests only while the live region geometry still
+    // matches that state. An intermediate clear/hide transition can leave the
+    // same content populated inside collapsed regions, which must be rebuilt.
+    if (key === previousKey) {
+      const expectedRegions = [
+        [titleRegion, !!title.textContent.trim()],
+        [subtitleRegion, !!subtitle.textContent.trim()],
+        [textLayer, !!text.textContent.trim()],
+        [timerRegion, !!timer.visible]
+      ];
+      const geometryCurrent = expectedRegions.every(([box, visible]) => {
+        const shown = getComputedStyle(box).display !== 'none';
+        return visible
+          ? shown && box.clientWidth > 0 && box.clientHeight > 1
+          : !shown;
+      });
+      if (geometryCurrent) return;
+    }
 
     timerRegion.hidden = !timer.visible;
     timerOverlay.style.display = timer.visible ? 'block' : 'none';
