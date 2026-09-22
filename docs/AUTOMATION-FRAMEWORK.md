@@ -113,3 +113,6 @@ Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-ac
 ## Manual Run Now isolation on Resume
 
 `Run Now` and live draft tests may start managed continuous automation loops. `Resume Scheduled State` is an explicit return-to-scheduler boundary: it cancels every active manual continuous run, waits for those tasks to observe cancellation and exit, and only then reasserts current scheduled winners and recovers applicable scheduled continuous occurrences. A manual test that is not currently scheduled must never repaint displays after Resume completes.
+
+
+Starting another manual automation on overlapping resources also replaces any active managed manual continuous run before the new one-shot action executes. This applies to both saved **Run Now** and live draft runs, so an older manual loop cannot wake later and overwrite the newer manual test.
