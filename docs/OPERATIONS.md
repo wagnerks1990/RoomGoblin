@@ -119,6 +119,10 @@ the day.
 
 Announcement volume is persistent and independent from Background Music. Current playback uses a locally controlled HTML5/HLS media element so mute and percentage volume controls operate on the actual media element. Reload/unmute recovery should reapply saved volume.
 
+## Manual media takeover
+
+Starting operator video or explicitly audible web/voice/SFX content pauses scheduled automation and all Music Assistant players that are currently playing, including the managed Background Music player. Display playback still proceeds if Music Assistant cannot be reached. Use **Resume Scheduled State** to release the takeover and reconcile scheduled state; arbitrary Music Assistant players remain paused until deliberately restarted.
+
 ## Background Music
 
 Background Music follows its own schedule. Normal visual/silent automation should not interrupt it.
