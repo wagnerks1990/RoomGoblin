@@ -45,6 +45,12 @@ Dependabot covers npm, GitHub Actions, and the Android Agent Gradle build. The
 tracked integration catalog is documentation/discovery metadata; its managed
 image set must stay aligned with the executable maintenance/Host Agent allowlist.
 
+## Manual media audio priority
+
+Operator-started video and explicitly audible web/voice/SFX playback is a classroom takeover. It disables scheduled automation, requests cancellation of active occurrences, asserts Background Music priority, and pauses every Music Assistant player currently playing. Music Assistant pause failure must not block display playback.
+
+`Resume Scheduled State` releases this takeover and reconciles managed Background Music. Do not automatically resume arbitrary Music Assistant players; their prior playback may have been manually initiated. Morning Announcements retain higher priority and their independent recovery contract.
+
 ## Operator workspaces
 
 The GUI uses grouped navigation and native expandable sections to separate daily
