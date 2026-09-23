@@ -20,6 +20,15 @@ test("controller loads the unified scheduled automation editor",()=>{
   assert.match(html,/multiSelectOptions/);
 });
 
+test("controller help does not advertise the retired any-action continuation rule",()=>{
+  const app=read("public/controller/app.js");
+  const html=read("public/controller/index.html");
+  assert.doesNotMatch(app,/returns to Action 1 while any action remains eligible/);
+  assert.doesNotMatch(html,/returns to Action 1 while any action is still eligible/);
+  assert.match(app,/Another pass starts only while multiple actions remain eligible/);
+  assert.match(html,/Another pass starts only while multiple actions remain eligible/);
+});
+
 test("every action exposes pass participation controls",()=>{
   const editor=read("public/controller/automation-v2.js");
   assert.match(editor,/Execution<select/);
