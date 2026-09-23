@@ -20,7 +20,7 @@
     "express": "^5.1.0",
     "express-rate-limit": "8.7.0",
     "hls.js": "^1.7.3",
-    "mqtt": "^5.14.1",
+    "mqtt": "^5.16.0",
     "multer": "^2.4.0",
     "pdfjs-dist": "^6.2.108",
     "ws": "^8.18.3"
