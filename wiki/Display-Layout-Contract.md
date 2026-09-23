@@ -1,59 +1,108 @@
 # Display Layout Contract
 
-## Single layout owner (2026-09-09)
+## Authority
 
-`public/display/layout.mjs` is the only sizing authority. `public/display/index.html` owns content, timer state, transport, media, and viewport scaling; it calls the engine's `request()` method. `public/display/layout.css` makes fitted text natural-height, non-shrinking children in bounded regions.
+`public/display/layout.mjs` is the only title/subtitle/body/timer sizing and region-allocation authority. `public/display/index.html` owns state application, media, timer state, transport, and viewport scaling. `public/display/layout.css` provides the packaged font and matching structural defaults, but the module reasserts containment-critical styles before measurement so a stale or missing stylesheet cannot silently change fit behavior.
 
-The previous inline fitter and branding-injected `display-autofit.js` must not run in parallel. Branding no longer injects layout code. The old helper URL is an inert compatibility stub for cached loaders. Reload already-open receivers after upgrading; executing a new file does not undo an observer already installed by an old page.
+The current renderer revision is `dynamic-fit-20260922-12`.
 
-## Resolution and fonts
+## Logical canvas and scaling
 
-Every receiver uses the same 1920x1080 logical stage. Only the completed stage is scaled with `min(viewportWidth/1920, viewportHeight/1080)`. Physical screen resolution and devicePixelRatio are diagnostics, not inputs to font fitting. A 4K CSS viewport scales the composition by 2; a 1920x1080 CSS viewport at DPR 2 uses scale 1. Both have the same logical layout.
+Every receiver renders one 1920x1080 logical stage. The completed stage is scaled uniformly with `min(viewportWidth / 1920, viewportHeight / 1080)`.
 
-Different aspect ratios use letterboxing, not stretching, cropping, or independently reflowing the logical composition. A narrow operator window therefore displays a smaller complete 16:9 stage; it cannot simultaneously fill that window and preserve the composition's aspect ratio.
+Physical screen resolution and DPR are diagnostics only. They do not alter logical font fitting or region geometry. Different aspect ratios letterbox rather than independently reflowing the logical composition.
 
-The Hub serves a shared Liberation Sans regular/bold font instead of relying on each TV's system-ui font. `tools/prepare-display-fonts.sh` packages fonts already installed by the Dockerfile. There is no runtime CDN dependency. Font loading completes before the first fit; a three-second timeout allows a fallback rather than a permanently blank page. Diagnostics distinguish `ready` from `fallback`. Missing glyphs outside the bundled font's coverage may still require platform fallback.
+The receiver uses the Hub-served Liberation Sans regular/bold font. Font loading completes before fitting when possible; diagnostics report `ready` or `fallback`.
 
-## Four bounded components
+## Current anchored geometry
 
-| Component | Logical region | Automatic font cap |
-| --- | --- | --- |
-| Title | x=72, width=1776, default y=30, height=125 | 118 |
-| Subtitle | x=72, width=1776, default y=155, height=100 | 82 |
-| Body | x=90, width=1740, default y=270; remaining height | 120 |
-| Timer | x=80, width=1760, height=240 when visible | 132 |
+All four logical regions use an 18px horizontal gutter, giving a 1884px region width on the 1920px stage.
 
-Automatic sizing chooses the largest quarter-pixel font that fits the component, up to its cap. The legacy automation size, such as 54, is not an automatic ceiling. Short content grows; longer content shrinks. `autoFit:false` suppresses growth and uses the configured size as a ceiling, but still shrinks on overflow. Containment takes priority over an oversized manual setting.
+With title, subtitle, body, and a bottom timer active:
 
-The timer has its own band rather than a content-dependent height shared with the body. A bottom timer starts at y=805; body content stops at y=781. Without the timer, the body's bottom edge is y=975. A top timer shifts the headings and body down. A centered timer leaves the body in the larger non-overlapping space above or below it. These decisions use logical geometry only.
+| Component | Logical geometry |
+| --- | --- |
+| Title | x=18, y=24, width=1884, height=110 |
+| Subtitle | x=18, y=138, width=1884, height=70 |
+| Body | x=18, y=222, width=1884, height=663 |
+| Timer | x=18, y=900, width=1884, height=160 |
 
-Fitting measures the child's natural height and width, including its padding and border exactly once. Removing max-height and flex compression from the child prevents hidden clipping from masquerading as a successful fit. Line-height reserves glyph ascent/descent, and preserved whitespace wraps rather than hanging outside the region.
+Title and subtitle are stable anchored header regions. The body consumes the safe remaining reading surface between the header and timer. The timer uses a 160px safe region so its border and rounded corners are not clipped by browser rounding.
 
-The layout engine applies those containment-critical structural declarations as inline styles before its first measurement. The companion stylesheet carries the same declarations and the packaged font, but a stale or temporarily unavailable stylesheet cannot leave legacy `max-height` or flex-shrink rules active and cause partially clipped multiline text to be accepted as a fit.
+Empty title/subtitle/body objects are hidden rather than rendered as permanent empty bands. The body start is recomputed from whichever header objects are present.
 
-Extremely dense content is not silently clipped at a 12px minimum. The engine may shrink below the readable threshold; exceptionally large blocks are uniformly contained. `fitWarning=content-too-dense` and component status `below-readable-minimum` flag the result. This is a visibility safeguard, not a promise that arbitrary amounts of text can remain readable. Split dense material into separate screens.
+Timer placement remains state-driven:
 
-## Updates, timers, and state replay
+- `bottom`: timer sits 20px from the stage bottom; body reserves safe space above it.
+- `top`: timer is placed immediately below the active header and the body begins below the timer.
+- `center`: timer is centered vertically and the body is restricted to the non-overlapping space above it.
 
-One animation-frame scheduler owns layout. Content/style changes coalesce; a signature of layout-relevant state prevents identical replay or viewport-only changes from re-fitting. There are no MutationObservers watching rendered styles, timer digits, status badges, or media descendants.
+The timer chrome itself remains content-sized inside its region; the 1884px region is not a full-width timer border.
 
-A normal timer tick changes only digits and expiration state. It never resets fonts, label markup, borders, classes, or body geometry. The timer is measured with a stable digit envelope, including the bounded numeric range, so hour-format transitions and count-up width changes do not resize other components.
+## Font sizing
 
-Full state replay uses the same apply functions as live commands, including title/subtitle colors and body alignment/background. Explicit clear resets text options and hides the timer. Separate network commands can arrive in different frames; their final layout must equal an equivalent complete state replay. The browser does not pretend separate network messages are an atomic scene transaction.
+The configured scene size remains the design input. Automatic fitting may grow only to 110% of the configured size, still subject to the absolute component safety caps:
 
-## Diagnostics and verification
+| Component | Absolute cap |
+| --- | ---: |
+| Title | 220px |
+| Subtitle | 140px |
+| Body | 180px |
+| Timer | 180px |
 
-Run this in a receiver's browser console:
+For example, a configured body size of 64px may auto-grow only to 70.4px before containment ceilings are applied. `autoFit:false` uses the configured value as a ceiling, but containment may still shrink below it.
+
+The fitter searches in quarter-pixel increments and applies browser-independent hard ceilings before binary fitting. Title/subtitle also receive an intrinsic single-line width ceiling. Timer chrome receives a conservative label/value vertical ceiling.
+
+## Containment
+
+Containment has three independent checks:
+
+1. scroll/offset dimensions;
+2. an unclipped natural-size probe at the same logical width;
+3. actual painted text-range rectangles.
+
+The text-range pass validates glyph containment only. It intentionally does not reject a full-width flex child merely because transformed/subpixel browser geometry makes its border box differ slightly from its parent.
+
+Title and subtitle are single-line and shrink horizontally rather than wrap. Body text uses `break-spaces`, preserving authored line breaks and blank lines while allowing wrapping of long content. Authored whitespace must not be normalized merely to make a fit pass.
+
+Extremely dense content may shrink below the 12px readable threshold to preserve containment. Such results report component status `below-readable-minimum` and set `fitWarning=content-too-dense`.
+
+## Transition recovery
+
+Managed TV Chromium builds can transiently report stale text geometry during action-to-action content replacement. A visible component may briefly fall into the 1px fallback even though the same content fits normally once browser layout settles.
+
+The renderer therefore performs bounded recovery:
+
+- only a visible component with a valid non-zero region and status `below-readable-minimum` is considered recoverable;
+- recovery waits 75ms and requests a fresh canonical layout;
+- at most five retries occur for one layout key;
+- successful recovery clears the retry state;
+- pending recovery is cancelled when the renderer is disposed.
+
+The renderer still avoids unnecessary refits. Identical state requests skip only when the live region geometry already matches the expected visible/hidden state. This preserves the invariant that viewport-only resize scales the stage without changing fitted logical geometry, while still repairing repeated content after an intermediate clear/hide transition.
+
+## Timers
+
+Routine timer ticks update digits and expiration state only. They do not trigger global layout, reset fonts, or resize the body. During fitting the timer uses a stable wide digit envelope so ordinary MM:SS / HH:MM:SS changes do not cause geometry churn.
+
+## Diagnostics
+
+Run:
 
 ```js
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-The report contains renderer revision, CSS viewport, DPR, stage scale, font-load status, layout pass count, fitted logical sizes, region geometry, and containment warnings. It does not expose credentials or the lesson body. Layout telemetry also accompanies receiver heartbeats.
+For the current production renderer, expect `revision: dynamic-fit-20260922-12`.
 
-Expected renderer revision: `dynamic-fit-20260922-8`. Title, subtitle, body, and timer are dynamic objects rather than fixed bands. Only active objects consume vertical space; they share the usable logical canvas with bounded gaps, automatic fitting may grow short content to reviewed safety caps, and mandatory shrink-to-fit containment keeps every rendered glyph inside its allocated region.
+Diagnostics include viewport, DPR, logical stage scale, font status, layout pass count, active object order, fitted sizes, region geometry, and containment status.
 
-Browser regression tests load the real receiver HTML, layout module, CSS, shared scripts, and fonts. Only transport, the branding API, and the unrelated audio SDK are mocked. Chromium and Firefox coverage includes the captured NOCTI classroom scene, P6/P7 samples, multiline announcements, missing companion stylesheet, 1080p/4K/DPR/narrow viewports, reload/reconnect, timer positions, timer ticks, long labels, manual sizes, long unbroken words, and dense content. Tests measure element/text-range bounds, dynamic object order, full-canvas use, gaps, and non-overlap.
+A normal successful component should end with `status: "fit"`. On the validated TV8 transition case, the body recovered from the transient 1px fallback to about 70.25px, scale 1, status `fit`.
+
+## Regression verification
+
+Required browser coverage runs the real receiver in Chromium and Firefox and checks anchored geometry, missing components, timer positions, repeated-state recovery, action transitions, timer ticks, dense content, long strings, manual sizing, missing CSS, reload/reconnect, resize-without-refit, cross-resolution scaling, text-range containment, and component non-overlap.
 
 ```bash
 bash tools/prepare-display-fonts.sh
@@ -65,16 +114,16 @@ DISPLAY_TEST_BROWSER=firefox /tmp/display-tests/bin/python -m unittest discover 
 npm test
 ```
 
-For restricted offline development only, `DISPLAY_TEST_INLINE=1` loads identical source/CSS/font bytes into an in-memory document, with a fixture location. CI must run the normal URL/asset-loading path. Neither mode is evidence of testing on physical classroom TVs.
-
 ## Deployment
 
-Take an operational backup, update the source checkout, and rebuild the main `classroom-hub` service so the font assets are packaged. Recreate that service, check health, and reload all receivers. No automation payload edits, database migration, or device re-enrollment is required. Confirm the renderer revision and `fontStatus:ready`, then compare the same state on the actual 1080p and 4K receivers.
+Display renderer changes must bump `LAYOUT_REVISION` and both receiver cache keys. Build/publish the exact main-commit image, update the Hub, verify health, remove any temporary local overlay, reload receivers, and confirm the expected renderer revision in live diagnostics.
 
-## Receiver input safety (PR #27 merge review)
+Do not call a display fix complete based only on source review or container health. Verify the real receiver behavior and, for TV-specific failures, retain the live diagnostics that demonstrate the settled final state.
 
-The receiver validates media URLs in `public/display/security.mjs` before touching the DOM. Only HTTP(S) URLs without embedded credentials are allowed; malformed URLs, executable schemes, control characters and excessive nested document viewers are rejected without replacing the current media. Protected same-origin media/presentation paths receive the asset token; external hosts never receive it. External signage frames are sandboxed without same-origin access, top navigation or popup permissions. Sites requiring cookies/storage or popup login may not work in this isolated frame; use a purpose-built embeddable signage URL. Local built-in document/Ant Media viewers retain their existing behavior.
+## Receiver input safety
 
-Music Assistant browser connections may use only this Hub's `/music-assistant/sendspin-proxy` WebSocket endpoint, matching its host, port and HTTP/TLS-derived socket scheme, with one 32-character base64url ticket. Reject arbitrary socket hosts, paths, credentials and extra parameters. The final destination is rebuilt from the trusted Hub origin and fixed path.
+The receiver validates media URLs in `public/display/security.mjs` before touching the DOM. Only HTTP(S) URLs without embedded credentials are accepted. Protected same-origin assets may receive the Hub asset token; external hosts never do.
 
-Identify overlays last 1–30 seconds (8 seconds by default). Repeated identification replaces the previous timeout/frame; clearing the display cancels both. These changes must not trigger another title/subtitle/body/timer layout engine. Unit policy tests and real-browser rejection/lifecycle tests accompany the rendering tests.
+Music Assistant browser connections may use only this Hub's `/music-assistant/sendspin-proxy` WebSocket endpoint with the trusted Hub origin and fixed path.
+
+Identify overlays are independent of the title/subtitle/body/timer layout engine and must not create a second fitter or layout observer.

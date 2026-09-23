@@ -1,40 +1,62 @@
 # AI Display Runtime Guardrails
 
-Read `docs/DISPLAY-LAYOUT-CONTRACT.md` before editing display or automation rendering. This supersedes the earlier shrink-only and observer-helper descriptions.
+Read `docs/DISPLAY-LAYOUT-CONTRACT.md` before editing display or automation rendering.
 
 ## Authority
 
-- `public/display/layout.mjs` exclusively owns fitted font sizes and the four component regions.
-- `public/display/index.html` owns state, media, timer digits, and viewport scaling. It must not add a second fitter.
-- Branding must not inject display layout code. `public/shared/display-autofit.js` is a deliberately inert compatibility URL.
-- Do not observe style/class mutations, timer text, status badges, or media descendants to trigger global layout.
+- `public/display/layout.mjs` exclusively owns fitted font sizes and title/subtitle/body/timer regions.
+- `public/display/index.html` owns state, media, timer digits, transport, and viewport scaling.
+- Branding must not inject display layout code.
+- Do not add style/class/timer MutationObservers that create a second layout owner.
 
-## Geometry and state
+Current renderer: `dynamic-fit-20260922-12`.
 
-Keep a fixed 1920x1080 logical canvas and one uniform viewport scale. Never multiply fitting dimensions by DPR or use physical screen resolution to choose fonts. Use Hub-served fonts and finish font loading before fitting; report fallback explicitly.
+## Geometry
 
-Measure natural-height, non-shrinking children. Child scroll dimensions already include child padding. Check actual browser text bounds as well as boxes: a line-height that is too tight can clip glyphs even when the element box fits.
+Keep a fixed 1920x1080 logical canvas and one uniform viewport scale. Physical resolution and DPR never choose fonts.
 
-Enforce the containment-critical natural-height/non-shrinking child and timer-region styles from the layout module before measurement. Do not depend only on the companion stylesheet: managed WebViews may execute a new module while retaining or failing an older CSS request.
+Current all-active bottom-timer geometry is title y=24/h=110, subtitle y=138/h=70, body y=222/h=663, timer y=900/h=160, all at x=18/w=1884.
 
-Automatic fitting grows and shrinks up to component caps, not legacy preferred sizes. Manual sizes still yield to containment. Do not hide an overflow error at a minimum font floor; report content that is too dense to be readable.
+The body and timer geometry can differ for top/center timer placement or missing header objects, but active regions must never overlap.
 
-Timer geometry is an independently bounded band. Routine ticks may change digits/expiration state only, never font size, label markup, borders, or layout. Keep MM:SS/HH:MM:SS transitions stable. A different layout-relevant state may request one coalesced pass; identical replay and viewport-only scaling must not create repeated passes.
+## Sizing
 
-Replay must apply colors, alignment, backgrounds, and option defaults exactly as live commands do. Preserve scheduler eligibility, timer-instance freshness, authentication, media authorization, and Morning Announcements priority independently of this renderer.
+Automatic fitting is bounded to 110% of configured size, then by absolute component caps and containment ceilings. Manual sizes still yield to containment.
+
+Preserve body whitespace exactly. `break-spaces` is intentional.
+
+Containment requires scroll/offset checks, an independent natural-size probe, and painted text-range checks. Do not infer successful fit from constrained child dimensions alone.
+
+## Transition recovery
+
+Some TV Chromium builds can transiently return stale geometry during action transitions. The receiver may briefly compute a visible component at 1px / `below-readable-minimum` even though the same content fits at normal size on the next stable pass.
+
+The renderer therefore retries only this pathological visible-state case: 75ms delay, maximum five retries for one layout key. Do not turn this into an unconditional polling loop.
+
+Repeated same-content state may skip only when its live region geometry is already current. This is required so:
+- viewport-only resize scales the stage without refitting;
+- a clear/hide followed by the same content can restore collapsed regions.
+
+## Timer stability
+
+Timer ticks may update digits and expiration state only. They must not force global relayout. Timer fitting uses a stable wide digit envelope.
 
 ## Verification gate
 
-`npm test` includes architectural source guards and unit policy tests; it does not prove visual correctness. The required browser workflow is `.github/workflows/display-browser.yml` with Chromium and Firefox. Run the receiver page through P6/P7 fixtures at 1080p, 4K, HiDPI, 720p, and the narrow captured viewport. Check bounding boxes, glyph ranges, non-overlap, timer stability, replay/reload, long text/labels, and manual/automatic sizing.
+`npm test` provides policy coverage. Required visual validation is `.github/workflows/display-browser.yml` in Chromium and Firefox.
 
-Retain screenshots and measurement JSON. Do not weaken a failing visual assertion merely to make CI green. Do not describe source-text regex checks as cross-resolution browser tests. Distinguish local in-memory tests, CI URL-based tests, and actual physical-TV testing in release reports.
+Retain browser evidence for:
+- action transitions;
+- repeated state after clear;
+- resize without refit;
+- anchored final geometry;
+- timer positions;
+- dense content;
+- long labels/strings;
+- missing stylesheet;
+- reload/reconnect;
+- cross-resolution scaling.
 
-Update this file, the layout contract, and the wiki mirror when rendering behavior changes. Never label a deployment permanently fixed based only on a merge or a successful container health endpoint.
+Do not weaken a failing browser assertion merely to make CI green. Do not call a deployment fixed based only on merge status or container health.
 
-## Receiver input safety (PR #27 merge review)
-
-The receiver validates media URLs in `public/display/security.mjs` before touching the DOM. Only HTTP(S) URLs without embedded credentials are allowed; malformed URLs, executable schemes, control characters and excessive nested document viewers are rejected without replacing the current media. Protected same-origin media/presentation paths receive the asset token; external hosts never receive it. External signage frames are sandboxed without same-origin access, top navigation or popup permissions. Sites requiring cookies/storage or popup login may not work in this isolated frame; use a purpose-built embeddable signage URL. Local built-in document/Ant Media viewers retain their existing behavior.
-
-Music Assistant browser connections may use only this Hub's `/music-assistant/sendspin-proxy` WebSocket endpoint, matching its host, port and HTTP/TLS-derived socket scheme, with one 32-character base64url ticket. Reject arbitrary socket hosts, paths, credentials and extra parameters. The final destination is rebuilt from the trusted Hub origin and fixed path.
-
-Identify overlays last 1–30 seconds (8 seconds by default). Repeated identification replaces the previous timeout/frame; clearing the display cancels both. These changes must not trigger another title/subtitle/body/timer layout engine. Unit policy tests and real-browser rejection/lifecycle tests accompany the rendering tests.
+When renderer behavior changes, update this file, `docs/DISPLAY-LAYOUT-CONTRACT.md`, its Wiki mirror, sizing guardrails, tests, and changelog.

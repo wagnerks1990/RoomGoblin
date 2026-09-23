@@ -2,58 +2,66 @@
 
 ## Current policy
 
-Renderer revision: `dynamic-fit-20260922-8`.
+Renderer revision: `dynamic-fit-20260922-12`.
 
-`public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the finished stage.
+`public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the completed stage.
 
-Title, subtitle, body, and timer are dynamic content objects:
+Current anchored bottom-timer geometry with all components active:
 
-- Empty objects consume no vertical space.
-- Title and subtitle stay on one line and shrink to fit the near-edge-to-edge width.
-- Title, subtitle, and body use an 18px logical horizontal gutter; do not restore the old 72px/90px gutters.
-- Active objects share the usable logical canvas with bounded gaps.
-- The timer's top/center/bottom setting changes object order.
-- Automatic fitting may grow short content up to the reviewed component safety cap.
-- Dense content shrinks as far as necessary to prevent clipping.
-- `autoFit:false` uses the configured size as a hard maximum, not permission to overflow.
-- The body is the primary reading surface and receives otherwise-unused vertical room.
-- Timer digit changes do not cause global geometry churn.
+- title: x=18, y=24, width=1884, height=110;
+- subtitle: x=18, y=138, width=1884, height=70;
+- body: x=18, y=222, width=1884, height=663;
+- timer: x=18, y=900, width=1884, height=160.
+
+Title and subtitle are anchored header regions. The body consumes the safe reading surface that remains. Timer placement can still be top, center, or bottom and body geometry must adapt without overlap.
+
+Automatic growth is bounded to 110% of configured size before absolute caps are applied. Do not restore global-cap-only growth. Configured sizes are the design input; fitting may grow modestly and must shrink as needed for containment. `autoFit:false` prevents growth above the configured size but never permits overflow.
+
+## Whitespace and text
+
+Body text uses `break-spaces`. Preserve authored line breaks and blank lines exactly. Do not normalize trailing or repeated blank lines merely to make content fit.
+
+Title and subtitle remain single-line and use intrinsic-width ceilings rather than wrapping.
 
 ## Containment
-Live TV containment note: painted-containment checks must validate text-range rectangles, not reject an intentionally full-width flex child merely because its border box differs from the parent by transformed subpixel geometry. Scroll/offset and independent natural-size checks remain responsible for element-box overflow. This prevents ordinary content from falsely collapsing to 1px on Chromium/TV viewports.
 
-
-Never decide fit from constrained element dimensions alone. Keep all three checks:
+Keep all three checks:
 
 1. scroll/offset dimensions;
 2. an independent unclipped natural-size probe at the same logical width;
 3. actual painted text-range rectangles.
 
-This is required because Chromium/WebView can clip multiline flex content while the constrained child reports dimensions that appear to fit.
+Painted-containment checks validate glyph ranges only. Do not reject an intentionally full-width flex child because transformed subpixel geometry makes its border box differ slightly from the parent.
 
-A bounded transform fallback may remain for pathological content after font-size reduction. Visibility and non-overlap take precedence over the requested size.
+A bounded transform fallback may remain only after font-size reduction. Visibility and non-overlap take precedence over requested size.
+
+## Transition recovery
+
+TV Chromium can transiently report stale text geometry during action-to-action replacement. A visible component may briefly fall into the 1px fallback even though a later measurement fits normally.
+
+Preserve the bounded self-heal contract:
+
+- recover only visible `below-readable-minimum` components whose regions have positive width/height;
+- wait 75ms;
+- retry at most five times for the same layout key;
+- clear recovery state after success;
+- cancel pending recovery on dispose.
+
+Identical state requests may skip only if the live visible/hidden region geometry already matches state. This keeps viewport-only resize from refitting while still repairing repeated content after an intermediate clear/hide.
 
 ## WYSIWYG editing
 
-Display Studio and the scheduled automation text editor use the real receiver page as their preview surface. Draft state is delivered only to a same-origin preview iframe with the `roomgoblin.preview.state` message. Never replace this with a separately implemented CSS approximation.
+Display Studio and the scheduled automation text editor must use the real receiver page as their preview surface. Draft state is delivered only to a same-origin preview iframe with `roomgoblin.preview.state`.
 
-The preview bridge must remain preview-only:
-
-- only active when the receiver was opened with `preview=1`;
-- only accept messages from `window.parent` with exactly the same origin;
-- never persist draft state or send commands to physical displays;
-- use the same renderer revision and fonts as classroom displays;
-- keep reference-resolution controls scaling the same 1920x1080 logical design canvas.
-
-Do not introduce arbitrary unsanitized HTML as a display protocol. If rich formatting is added later, use a reviewed bounded formatting model or sanitized allowlist and keep the receiver layout engine authoritative.
+Never replace the receiver with a separately implemented CSS approximation. Do not add unsanitized arbitrary HTML to the display protocol.
 
 ## Architecture
 
 Do not add a second MutationObserver/ResizeObserver/branding fitter. The receiver layout module owns sizing.
 
-Do not hard-code the historical 125px title, 100px subtitle, 511px body, or 240px timer bands back into active layout behavior. CSS may provide loading/fallback geometry, but the running renderer must allocate active regions dynamically.
+Do not restore the historical fixed title/subtitle/body/timer bands or the obsolete dynamic allocator that distributed the full vertical canvas by weighted object demand. The current contract is anchored header + safe body + independent timer region.
 
-Do not make containment-critical child styles depend only on `layout.css`; the module establishes them before measurement.
+Do not make containment-critical styles depend only on `layout.css`; the module establishes them before measurement.
 
 ## Regression verification
 
@@ -67,11 +75,12 @@ Browser coverage must include:
 - long unbroken strings;
 - missing companion stylesheet;
 - reload/reconnect;
-- 720p/1080p/4K, DPR changes, and narrow portrait-like viewports;
-- same-origin WYSIWYG draft updates without physical-device command side effects.
+- 720p/1080p/4K, DPR changes, and narrow viewports;
+- viewport resize without logical refit;
+- same-origin WYSIWYG draft updates;
+- clear → same-state geometry restoration;
+- action-to-action transient fit recovery.
 
-Assert actual text-range containment, dynamic region ordering, bounded gaps, full logical-canvas use, and component non-overlap.
+Assert text-range containment, final anchored geometry, timer/body non-overlap, bounded growth, and that normal settled content does not remain at the 1px fallback.
 
-Any behavior change must update `LAYOUT_REVISION`, both receiver cache keys, tests, operator docs, Wiki mirror, and AI context.
-
-Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
+Any rendering behavior change must update `LAYOUT_REVISION`, both receiver cache keys, tests, operator docs, Wiki mirror, and AI context.
