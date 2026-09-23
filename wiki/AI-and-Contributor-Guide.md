@@ -115,4 +115,4 @@ Do not restore the stashed legacy `server.js`, run PR #22 patch scripts, merge i
 
 ## Automation sequence contract
 
-Use the schema-v3 ordered `actionSequence[]` as the execution source of truth. Action 1 is not special. Per-pass once/repeat/continuous participation, cancellation, supersession, class boundaries, announcement priority, and Background Music reconciliation are invariants. The browser compatibility hotfix is retired.
+Use the schema-v3 ordered `actionSequence[]` as the execution source of truth. Action 1 is not special. Per-pass once/repeat/continuous participation, cancellation, supersession, class boundaries, announcement priority, and Background Music reconciliation are invariants. Start another pass only while at least two actions remain eligible, or while a finite repeat still has configured passes remaining; never reissue a lone continual survivor merely to keep the sequence alive. The browser compatibility hotfix is retired.
