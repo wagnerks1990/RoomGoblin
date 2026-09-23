@@ -1,36 +1,55 @@
 # Display Hard Containment
 
-Renderer revision `dynamic-fit-20260922-8` makes containment and dynamic space use joint invariants.
+Current renderer: `dynamic-fit-20260922-12`.
 
-Title, subtitle, body, and timer are active layout objects rather than permanent fixed-height bands. Title and subtitle are single-line objects with 18px logical edge gutters; they shrink horizontally as needed rather than wrapping. Body content uses the same near-edge-to-edge width and may wrap/preserve intentional line breaks. Empty objects consume no vertical space. The active objects are ordered by content and timer position, then share the usable 1920x1080 logical canvas from the 30px top margin to the 30px bottom margin with 14px gaps.
+Containment and readable anchored geometry are joint invariants.
 
-Automatic fitting is allowed to grow short content toward component safety caps and must shrink dense content until every rendered glyph fits. Manual `autoFit:false` keeps the configured font size as a ceiling, but still never permits clipping.
+## Regions
 
-The fitter validates ordinary scroll/offset dimensions, an independent unclipped natural-size probe, and the browser's actual text range rectangles. This protects against Chromium/WebView cases where a constrained flex child reports dimensions that look contained while multiline glyphs are visibly cut off.
+With title, subtitle, body, and a bottom timer active:
 
-The dynamic height allocator starts with minimum readable object bands, keeps headings and timer in compact deterministic minimum bands and gives otherwise-unused room to the body reading surface. This means the screen is not permanently divided into title/subtitle/body/timer rectangles when some content is short or absent.
+- title: x=18, y=24, width=1884, height=110;
+- subtitle: x=18, y=138, width=1884, height=70;
+- body: x=18, y=222, width=1884, height=663;
+- timer: x=18, y=900, width=1884, height=160.
 
-Timer position is now an ordering rule:
-- `top`: timer, title, subtitle, body
-- `center`: title, subtitle, timer, body
-- `bottom`: title, subtitle, body, timer
+Missing header/body objects are hidden. Top/center timer placement recomputes body space without overlap.
 
-The timer chrome remains content-sized inside its dynamic region. Timer ticks do not trigger global re-layout; the fitter reserves width using a worst-case timer value during the layout pass.
+The timer chrome remains content-sized inside the 160px timer region. The region itself is full-width for safe alignment and fitting; the visible timer border is not.
 
-The receiver HTML uses the same `dynamic-fit-20260922-8` cache key for the layout module and stylesheet. Every renderer behavior change must bump this key.
+## Fitting
+
+Automatic growth is limited to 110% of configured size and then further bounded by absolute caps and hard geometry ceilings. `autoFit:false` uses configured size as a maximum.
+
+Title/subtitle are single-line objects. Body text preserves authored whitespace with `break-spaces`.
+
+The fitter validates:
+1. scroll/offset dimensions;
+2. an independent unclipped natural-size probe;
+3. painted text-range rectangles.
+
+Painted containment is intentionally glyph-only. Element-box overflow is already handled by the first two checks.
+
+Dense content may shrink below 12px rather than clip; this sets `below-readable-minimum` and `fitWarning=content-too-dense`.
+
+## Transient TV recovery
+
+TV Chromium may briefly produce stale layout geometry during an action transition and send a visible component to the 1px fallback. A stable re-measurement of the same content can fit normally.
+
+The renderer retries that pathological state after 75ms, at most five times per layout key, only when the component is visible and its region has positive dimensions.
+
+Identical layout state may skip work only when live region geometry is already current. This preserves resize-only scaling while allowing same-content recovery after a clear/hide.
 
 ## Verification
 
-After deployment and receiver reload, run:
+Run:
 
 ```js
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected revision: `dynamic-fit-20260922-8`.
+Expected revision: `dynamic-fit-20260922-12`.
 
-Diagnostics should report `dynamic: true`, an `order` array for active objects, and fitted regions. For normal bottom-timer content, the first active region should begin near logical y=30, the final active region should end near y=1050, and neighboring active regions should remain separated by about 14 logical pixels.
+For normal settled content, visible components should report `status: "fit"`. The validated TV8 action-transition case recovers the body to about 70.25px, scale 1, with the bottom-timer body region restored to y=222/h=663.
 
-No rendered text rectangle may cross its assigned region and no active regions may overlap.
-
-Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
+No rendered text rectangle may cross its region and no active regions may overlap.
