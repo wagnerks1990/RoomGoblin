@@ -70,6 +70,10 @@ currently applicable winner. A failed automation re-run is recorded but must
 not strand the announcement lock or skip Background Music reconciliation. Do
 not restore stale snapshots or replay every earlier event blindly.
 
+## Manual media takeover
+
+Operator-started video or explicitly audible web/voice/SFX content pauses scheduled automation and all currently playing Music Assistant players. **Resume Scheduled State** releases the takeover and reconciles managed Background Music; other players remain paused until deliberately restarted.
+
 ## Background Music
 
 Background Music is independent of ordinary visual automation. Priority audio pauses it. Recovery checks actual Music Assistant player/group state and resumes only after priority release and display resync are complete.

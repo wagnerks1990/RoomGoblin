@@ -4469,6 +4469,7 @@ async function executeCommand(input, source = "api") {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
+  const manualPriority=await engageManualMediaPriority(command,source);
   const result = {
     ok: true,
     command,
@@ -4480,6 +4481,11 @@ async function executeCommand(input, source = "api") {
     },
     warnings: []
   };
+  if(manualPriority){
+    result.manualMediaPriority={active:true,targets:manualPriority.targets,cancelledRuns:manualPriority.cancelledRuns};
+    const audio=await Promise.race([manualPriority.audioTask,new Promise(resolve=>setTimeout(()=>resolve(null),1200))]);
+    if(audio?.error)result.warnings.push(`Manual media started, but Music Assistant pause reported: ${audio.error}`);
+  }
 
   const isDisplayCommand =
     command.type.startsWith("display.") ||
@@ -5474,7 +5480,7 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
 app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"operator-cancelled");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"operator-cancelled"});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
-app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const cancelledManualRuns=await cancelActiveManualAutomationRuns("schedule-resumed"),result=await serializeMorningAnnouncementsLifecycle(()=>reconcileScheduledAutomationState("operator-resume")),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery,cancelledManualRuns})}catch(error){res.status(500).json({ok:false,error:error.message})}});
+app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const manualMediaPriority=await releaseManualMediaPriority("schedule-resumed");const cancelledManualRuns=await cancelActiveManualAutomationRuns("schedule-resumed"),result=await serializeMorningAnnouncementsLifecycle(()=>reconcileScheduledAutomationState("operator-resume")),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery,cancelledManualRuns,manualMediaPriority})}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
 
@@ -6114,6 +6120,54 @@ async function backgroundMusicReconcilePriority({force=false}={}){
   }else if(!priority&&backgroundMusicRuntime.pausedForPriority&&!backgroundMusicRuntime.manualStopped){
     try{await backgroundMusicResume("priority-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}
   }
+}
+const manualMediaPriorityRuntime={active:false,targets:new Set(),pausedPlayers:new Set(),schedulerWasEnabled:false,lastStartedAt:null,lastSource:null,lastCommandType:null,lastError:null};
+function manualMediaPriorityCommand(command,source="api"){
+  const src=String(source||command?.source||"");
+  if(!["http","media-library"].includes(src))return false;
+  const type=String(command?.type||""),payload=command?.payload||{};
+  if(type==="display.video")return true;
+  if(type==="display.web")return payload.forceAudio===true||payload.muted===false;
+  return type.startsWith("voice.")||type.startsWith("sfx.");
+}
+function pauseActiveAutomationRunsForManualMedia(){
+  const ids=[...automationRunningOccurrences.keys()];
+  for(const id of ids){automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"manual-media-priority");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"manual-media-priority"});}
+  return ids;
+}
+async function pausePlayingMusicAssistantPlayersForManualMedia(){
+  let players=[];try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}
+  players=Array.isArray(players)?players:[];
+  const ids=[...new Set(players.filter(player=>{const state=String(player?.state||player?.playback_state||player?.playbackState||"").toLowerCase();return (state==="playing"||player?.is_playing===true||player?.isPlaying===true)&&player?.available!==false}).map(player=>String(player?.player_id||player?.playerId||player?.id||"").trim()).filter(Boolean))];
+  const settled=await Promise.allSettled(ids.map(id=>musicAssistantCommand("players/cmd/pause",{player_id:id})));
+  const paused=[];settled.forEach((result,index)=>{if(result.status==="fulfilled"){paused.push(ids[index]);manualMediaPriorityRuntime.pausedPlayers.add(ids[index])}});
+  return {requested:ids,paused,failed:settled.filter(result=>result.status==="rejected").length};
+}
+async function engageManualMediaPriority(command,source="api"){
+  if(!manualMediaPriorityCommand(command,source))return null;
+  let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{}
+  for(const id of targets)manualMediaPriorityRuntime.targets.add(id);
+  if(!manualMediaPriorityRuntime.active)manualMediaPriorityRuntime.schedulerWasEnabled=automationSchedulerEnabled;
+  manualMediaPriorityRuntime.active=true;manualMediaPriorityRuntime.lastStartedAt=new Date().toISOString();manualMediaPriorityRuntime.lastSource=String(source||"api");manualMediaPriorityRuntime.lastCommandType=String(command?.type||"");manualMediaPriorityRuntime.lastError=null;
+  if(automationSchedulerEnabled)setAutomationSchedulerEnabled(false);
+  const cancelledRuns=pauseActiveAutomationRunsForManualMedia();
+  for(const id of targets)backgroundMusicPriorityTargets.add(id);
+  const audioTask=(async()=>{const players=await pausePlayingMusicAssistantPlayersForManualMedia();await backgroundMusicReconcilePriority({force:true});audit({kind:"media.manual-priority.audio-paused",source,commandType:command.type,targets,players});return players})().catch(error=>{manualMediaPriorityRuntime.lastError=error.message;diagnosticError(error,{component:"media-priority",operation:"pause-music-assistant",data:{source,commandType:command.type,targets}});return {requested:[],paused:[],failed:1,error:error.message}});
+  trackFullExportMutation(audioTask).catch(()=>{});
+  audit({kind:"media.manual-priority.start",source,commandType:command.type,targets,schedulerWasEnabled:manualMediaPriorityRuntime.schedulerWasEnabled,cancelledRuns});
+  return {targets,cancelledRuns,audioTask};
+}
+async function releaseManualMediaPriority(reason="operator-resume"){
+  if(!manualMediaPriorityRuntime.active)return {released:false,pausedPlayers:[]};
+  const targets=[...manualMediaPriorityRuntime.targets],pausedPlayers=[...manualMediaPriorityRuntime.pausedPlayers],schedulerWasEnabled=manualMediaPriorityRuntime.schedulerWasEnabled;
+  manualMediaPriorityRuntime.active=false;manualMediaPriorityRuntime.targets.clear();manualMediaPriorityRuntime.pausedPlayers.clear();manualMediaPriorityRuntime.schedulerWasEnabled=false;
+  if(schedulerWasEnabled&&!automationSchedulerEnabled)setAutomationSchedulerEnabled(true);
+  for(const id of targets){const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);if(!announcementOwnsTarget)backgroundMusicPriorityTargets.delete(id)}
+  // Arbitrary players may have been started manually before the takeover. Keep
+  // them paused; only managed Background Music is safe to reconcile automatically.
+  await backgroundMusicReconcilePriority({force:true});
+  audit({kind:"media.manual-priority.stop",reason,targets,pausedPlayers,schedulerRestored:schedulerWasEnabled});
+  return {released:true,targets,pausedPlayers,schedulerRestored:schedulerWasEnabled};
 }
 function backgroundMusicObserveDisplayCommand(command,source="api"){
   const src=String(source||command?.source||"");
