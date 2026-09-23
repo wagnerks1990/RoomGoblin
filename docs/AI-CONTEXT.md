@@ -460,7 +460,7 @@ Automation action looping is per-action, never implemented by restarting the who
 
 ## Automation sequence runner (schema v3)
 
-Scheduled automation execution is pass-based and canonical on `actionSequence[]`. Every action independently uses `once`, bounded `repeat`, or continuous `loop` participation. The runner walks the ordered sequence and returns to Action 1 while any action remains eligible. Do not restore the old special-primary-action runtime or per-step in-place repeat model.
+Scheduled automation execution is pass-based and canonical on `actionSequence[]`. Every action independently uses `once`, bounded `repeat`, or continuous `loop` participation. The runner starts another pass only while at least two actions remain eligible, or while a bounded `repeat` action still has configured passes remaining. If the only remaining eligible action is `loop`, sequence processing stops and leaves its current state in place rather than reissuing it. Do not restore the old special-primary-action runtime or per-step in-place repeat model.
 
 Continuous loops are valid for every supported action type, not only media. They must be cancellation-aware, class-end-aware, and capped to at most one zero-delay full pass per second. Newer overlapping scheduled occurrences supersede older running loops. Startup reconciliation and operator Resume recover currently applicable continuous occurrences outside the ordinary catch-up window. Manual live draft tests containing a continuous action are bounded to one pass.
 
