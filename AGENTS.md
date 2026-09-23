@@ -301,6 +301,10 @@ Important integrations include MQTT/Govee, Pluto Mark I, Music Assistant, Veyon,
 
 School and classroom identity and theming are stored in the SQLite site profile and exposed to browser surfaces only through presentation-safe responses. This project is intentionally education-only. Keep the Kyle Wagner attribution present on all current user-facing pages.
 
+## System Updates GUI contract
+
+The administrator System Updates page follows the latest merged commit on trusted `main`; it must not use semantic release channels as its normal selection mechanism. A GUI check may discover a newer main commit before CI publication completes, but installation must pass only that exact SHA into the native `published` transaction. Preserve the two-stage trust boundary: the Hub checks GitHub/local fast-forward state and stale selection, then the native runner independently fetches trusted main, verifies ancestry and the exact immutable image pair before any source/runtime mutation. Never add an arbitrary-SHA input, pull source before image preflight, bypass the mutation lock/journal, or create a backup that substitutes for the runner's post-preflight operational backup. Automatic updates use the same path. Keep previous-deployment rollback available and show commit identity in status/history because multiple main commits may share one VERSION string.
+
 ## CI workflow identity contract
 
 The consolidated required workflows are `Validate`, `Display browser regression`, and `Security gates`. Android debug and restrictive-image coverage now live inside Validate; see `docs/CI-WORKFLOWS.md`. Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
