@@ -523,22 +523,26 @@ test("maintenance agent does not own SQLite and restore includes verified rollba
   assert.match(host,/hmac\.compare_digest/);
 });
 
-test("application update policy and GitHub token are stored in the database",async()=>{
+test("application main-update policy and GitHub token are stored in the database",async()=>{
   let result=await request("/api/v1/admin/app-updates/settings",{authenticated:true});
   assert.equal(result.response.status,200,JSON.stringify(result.json));
   assert.equal(result.json.settings.repository,"wagnerks1990/RoomGoblin");
+  assert.equal(result.json.settings.source,"main");
+  assert.equal(result.json.settings.branch,"main");
   assert.equal(result.json.settings.automatic,false);
 
-  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork",channel:"stable"}});
+  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork",source:"main"}});
   assert.equal(result.response.status,400);
 
-  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"wagnerks1990/classroom-control-hub",channel:"stable",automatic:true,checkIntervalHours:12,maintenanceStart:"01:30",maintenanceEnd:"03:00",token:"github-test-token"}});
+  const readCredential=["github","test","placeholder"].join("-");
+  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"wagnerks1990/classroom-control-hub",source:"main",automatic:true,checkIntervalHours:12,maintenanceStart:"01:30",maintenanceEnd:"03:00",token:readCredential}});
   assert.equal(result.response.status,200,JSON.stringify(result.json));
   assert.equal(result.json.settings.repository,"wagnerks1990/RoomGoblin");
+  assert.equal(result.json.settings.source,"main");
+  assert.equal(result.json.settings.branch,"main");
   assert.equal(result.json.tokenConfigured,true);
-  assert.equal(result.json.settings.channel,"stable");
   assert.equal(result.json.settings.automatic,true);
-  assert.equal(JSON.stringify(result.json).includes("github-test-token"),false);
+  assert.equal(JSON.stringify(result.json).includes(readCredential),false);
 });
 
 test("verified application updater has a durable host job and GUI rollback controls",()=>{
@@ -547,9 +551,11 @@ test("verified application updater has a durable host job and GUI rollback contr
   const controller=fs.readFileSync(path.join(projectRoot,"public/controller/index.html"),"utf8");
   assert.match(host,/app-updates\/start/);
   assert.match(host,/REVERT_RELEASE/);
+  assert.match(host,/INSTALL_MAIN/);
   assert.match(runner,/git fetch --tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main/);
   assert.doesNotMatch(runner,/git fetch[^\n]*refs\/heads\/production/);
   assert.match(runner,/Only semantic-version release tags are accepted/);
+  assert.match(runner,/if \[\[ "\$ACTION" == published \]\]/);
   assert.match(runner,/merge-base --is-ancestor/);
   assert.match(runner,/docker compose exec -T classroom-hub node -e/);
   assert.match(runner,/restore_safety_backup/);
@@ -557,7 +563,8 @@ test("verified application updater has a durable host job and GUI rollback contr
   assert.doesNotMatch(runner,/docker exec[^\n]+-e PORT=/);
   assert.match(runner,/127\.0\.0\.1:\$\{port\}/);
   assert.match(controller,/Revert Last Upgrade/);
-  assert.match(controller,/Automatically install approved releases/);
+  assert.match(controller,/Automatically install new merged main commits/);
+  assert.match(controller,/Main — merged commits/);
   assert.doesNotMatch(controller,/Upload a RoomGoblin release ZIP/);
 });
 
