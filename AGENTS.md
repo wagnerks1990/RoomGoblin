@@ -452,6 +452,10 @@ RoomGoblin supports the host-managed upstream/OEM Veyon installation, its normal
 
 Preserve existing Veyon keys, multi-key authentication, inventory and DHCP identity, host package lifecycle, command recovery, standard monitoring/live view, screen/input lock, messaging, website/application launch, login/logoff, reboot/shutdown, and teacher demonstration controls. Upstream/OEM add-ons remain installed/configured by the Veyon/OEM mechanism; RoomGoblin must not synthesize its own replacement plugin or bypass licensing. Read `docs/VEYON-OEM-POLICY.md` before changing Veyon behavior. For lifecycle updates, prefer apt; when the configured PPA lags, the only allowed fallback is the exact official Veyon Ubuntu release asset selected from upstream metadata and revalidated by the Host Agent for URL, SHA-256, distro, architecture, package identity, and version.
 
+## Manual media priority
+
+Operator-started video and explicitly audible web/voice/SFX playback is a classroom takeover: pause scheduled automation, request cancellation of active occurrences, assert Background Music priority, and pause every currently playing Music Assistant player. Resume Scheduled State releases the takeover and reconciles managed Background Music, but must not auto-resume arbitrary players. Morning Announcements remain higher priority.
+
 ## Automation sequence execution
 
 Automation runtime is canonical on `actionSequence[]`. Do not special-case Action 1. Every action participates per sequence pass: `once` on pass 1, `repeat` through its configured pass count, and `loop` on every pass. Continuous loops are allowed for all supported action types and must remain cancellable, class-boundary-aware, supersedable by newer overlapping scheduled occurrences, recoverable after process restart/operator Resume, and protected by the zero-delay cycle floor.
