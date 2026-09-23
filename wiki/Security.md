@@ -12,11 +12,11 @@ RoomGoblin controls real classroom infrastructure and should be treated as an ad
 - Require authentication and authorization for write-capable APIs.
 - Keep logs and diagnostics free of credentials.
 - Back up production state securely.
-- Treat the current HTTP-only transport as temporary and network-restricted.
+- Keep direct HTTP transport restricted to the trusted management network; use reviewed HTTPS for remote access.
 
-## Current HTTP-only boundary
+## Trusted-LAN HTTP and optional remote HTTPS
 
-The current appliance intentionally exposes RoomGoblin directly over HTTP on TCP/3000 while HTTPS/TLS is redesigned. Caddy is not part of the current deployment.
+The appliance retains direct trusted-LAN HTTP on TCP/3000. Optional managed Cloudflare HTTPS terminates through the same-host loopback connector; Caddy is not part of the current deployment.
 
 Default network settings:
 
@@ -28,9 +28,9 @@ TRUST_PROXY_HOPS=0
 
 Because HTTP does not encrypt credentials or session traffic, the appliance must be limited to a trusted classroom/admin LAN or equivalent protected management segment. Do not port-forward TCP/3000 to the Internet and do not expose it to an untrusted guest/student wireless network.
 
-Use host/network firewall rules to limit access to expected management subnets. Keep the maintenance service private inside Docker and keep the Host Agent reachable only through its local Unix socket.
+Use host/network firewall rules to limit access to expected management subnets. Keep the maintenance service bound to loopback and keep the Host Agent reachable only through its local Unix socket.
 
-HTTPS should return later as a separately reviewed feature with certificate trust, DNS/SNI, migration, proxy-trust, cold-start, and rollback coverage. Do not restore Caddy ad hoc on individual appliances.
+Use the reviewed managed Cloudflare flow for remote HTTPS; it remains optional and outside local health and rollback gates. Cloudflare Access supplements rather than replaces RoomGoblin login and capabilities. Do not restore Caddy ad hoc on individual appliances.
 
 ## Full Recovery secrets and transport
 
@@ -46,6 +46,31 @@ configure the exact `TRUST_PROXY_HOPS` count and block direct client access to
 the backend listener. Remote direct HTTP remains forbidden for export, import,
 unlock/plan, restore start, and encrypted-bundle download even on a trusted LAN.
 
+A loopback proxy socket is not evidence that its browser client is local. A
+request containing known forwarding headers, even empty ones, cannot use the
+direct-localhost exception. Host and Origin alone do not establish transport
+trust; existing unforwarded loopback API clients using local aliases remain
+supported. Direct localhost and SSH-forwarded browser sessions remain supported
+without changing the configured proxy setting.
+
+For a forwarded request, the immediate peer must be loopback, proxy trust must
+be explicitly configured (the managed topology uses `TRUST_PROXY_HOPS=1`), and
+the complete `X-Forwarded-Proto` value must contain HTTPS entries only. Missing,
+empty, mixed HTTP/HTTPS, malformed or overlong chains are rejected. The proxy
+must overwrite that header from the original client connection, not relay
+client-supplied values. Do not strip all forwarding headers: that would erase
+the evidence distinguishing a proxy from a local
+browser. Never test these restrictions with a real recovery passphrase.
+
+The transport policy regression command is:
+
+```bash
+node --test test/recovery-transport-policy.test.js test/recovery-transport-boundary.test.js
+```
+
+It covers the decision logic and local HTTP header handling, not a real tunnel
+or a complete appliance restore. Those require separate isolated acceptance.
+
 Decryption/authentication, the exact manifest inventory, archive path/type/
 capacity checks, and the Host Agent's independent staging validation must pass
 before mutation. The Host Agent owns destination paths and restricts ownership
@@ -56,9 +81,9 @@ and do not expose `/var/lib/classroom-hub/full-recovery` or
 
 ## Windows lab-agent transport
 
-Windows agent enrollment over HTTP requires the explicit `-AllowHttp` switch. This acknowledgement must remain while the Hub is HTTP-only because the enrollment exchange is otherwise unencrypted.
+Windows agent enrollment over HTTP requires the explicit `-AllowHttp` switch because that exchange is otherwise unencrypted.
 
-Use `-AllowHttp` only on a trusted, isolated classroom/admin network. When HTTPS/WSS returns, normal enrollment should no longer require this acknowledgement.
+Prefer the configured managed HTTPS/WSS origin. Use `-AllowHttp` only for an explicit trusted, isolated classroom/admin LAN fallback; do not assume agents can satisfy an interactive Cloudflare Access challenge.
 
 ## Secrets
 

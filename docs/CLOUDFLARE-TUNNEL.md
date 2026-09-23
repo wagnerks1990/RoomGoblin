@@ -19,7 +19,7 @@ Remote administrator
   -> RoomGoblin Hub
 ```
 
-The runtime origin follows `HUB_PORT`; port 3000 above is the default example. Only the Hub HTTP listener is a supported tunnel origin. Never publish maintenance port 3010, the Host Agent socket, Docker, SSH, Veyon, MQTT, Music Assistant, or another appliance-local service.
+The runtime origin follows `HUB_PORT`; port 3000 above is the default example. The main hostname routes only to the Hub HTTP listener. Music Assistant is limited to the explicit protected auxiliary exception below. Never publish maintenance port 3010, the Host Agent socket, Docker, SSH, Veyon, MQTT, or arbitrary appliance-local services.
 
 ## Wizard and Controller
 
@@ -167,8 +167,22 @@ RoomGoblin matches the exact application hostname and adds the named RoomGoblin 
 
 Full Recovery passphrases have a stricter transport boundary than ordinary administration. `src/recovery-transport-policy.js` accepts forwarded HTTPS only when:
 
-1. `TRUST_PROXY_HOPS` is explicitly enabled; and
-2. the immediate TCP peer is loopback.
+1. `TRUST_PROXY_HOPS` is explicitly enabled with an integer from 1 through 5;
+2. the immediate TCP peer is loopback; and
+3. the complete `X-Forwarded-Proto` chain contains only HTTPS entries, no empty entries, and no more entries than the trusted hop count. Protocol metadata is bounded to 128 characters.
+
+The proxy must overwrite `X-Forwarded-Proto` from the original client connection,
+not preserve a client-supplied value. A known forwarding header, even if empty,
+disables the direct-loopback exception: HTTP, missing, mixed or malformed
+forwarding metadata cannot be accepted merely because the proxy socket is local.
+Unforwarded loopback API access, including existing local aliases, remains
+supported; Host and Origin are not substitutes for transport authentication.
+A proxy that strips every forwarding header is indistinguishable from a direct
+local client and is not a supported recovery topology.
+
+The browser additionally checks its own HTTPS/localhost location and the server's
+`allowed` decision before transmitting a passphrase. Do not replace that decision
+with the `loopback` response field, which describes only the immediate peer.
 
 The same-host `cloudflared` service connects to `127.0.0.1:${HUB_PORT:-3000}`, satisfying the reviewed topology. A LAN client cannot become a trusted recovery transport by spoofing `X-Forwarded-Proto` because its immediate peer is not loopback.
 
@@ -179,6 +193,26 @@ TRUST_PROXY_HOPS=1
 ```
 
 Do not increase it without a topology/security review and regression tests.
+
+### Unreleased server-side transport hardening
+
+The recovery policy no longer treats every loopback peer as a direct browser or
+discards unsafe prefixes/empty protocol entries. This change preserves the normal
+managed HTTPS path, direct localhost/SSH forwarding, existing response fields,
+and administrator authorization. It does not change encryption, stored data,
+recovery transactions, ordinary trusted-LAN administration, or deployment ports.
+
+Run the focused regressions:
+
+```bash
+node --check src/recovery-transport-policy.js
+node --test test/recovery-transport-policy.test.js test/recovery-transport-boundary.test.js
+```
+
+These exercise policy decisions and real local HTTP header handling, not a complete
+Hub recovery or a live tunnel. On an isolated authorized appliance, verify the
+secure tunnel and direct-localhost paths and reject plaintext forwarding using
+only test data. Never transmit a real passphrase to test an insecure path.
 
 ## Manual fallback
 
