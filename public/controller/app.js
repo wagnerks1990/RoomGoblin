@@ -1690,7 +1690,7 @@ function renderAutomationSteps(){
         </label>
         ${step.executionMode==='repeat'?`<label>Repeat Count<input type="number" min="1" max="100" value="${Number(step.repeatCount||2)}" onchange="autoSteps[${i}].repeatCount=Math.max(1,Math.min(100,Number(this.value||2)))"></label>`:''}
       </div>
-      <div class="muted">The stay timer begins after this action is applied. When it expires, RoomGoblin advances to the next eligible action. After the last action, the sequence returns to Action 1 while any action remains eligible.</div>
+      <div class="muted">The stay timer begins after this action is applied. When it expires, RoomGoblin advances to the next eligible action. Another pass starts only while multiple actions remain eligible, or a finite repeat still has passes remaining; a lone continual action is left in place.</div>
 
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px">
         <input type="checkbox" ${step.continueOnError!==false?'checked':''}
