@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+### Manual media audio priority
+
+- Treat operator-started video and explicitly audible web/voice/SFX playback as a classroom media takeover.
+- Pause scheduled automation, request cancellation of active automation runs, hold Background Music priority, and pause every currently playing Music Assistant player.
+- `Resume Scheduled State` releases the takeover and reconciles managed Background Music without unexpectedly restarting arbitrary players.
+
+
 ### Automation continual-loop termination
 
 - Stop an automation sequence from creating new passes once only one action remains eligible and it is `Loop continually`.
