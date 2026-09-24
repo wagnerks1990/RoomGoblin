@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+### Music Assistant and update recovery
+
+- Accept successful null/raw Music Assistant HTTP command responses and retain bounded diagnostics for malformed responses.
+- Allow bounded provider-loading time for play requests without replaying submitted mutations after a WebSocket timeout or disconnect.
+- Avoid starting duplicate update recovery during a live CLI transaction, and preserve successful status when a delayed recovery start finds no journal.
+- Document the upstream Music Assistant 2.10.4 Apple Music fixes and the backed-up upgrade path for existing external Compose deployments.
+
 ### Manual media audio priority
 
 - Treat operator-started video and explicitly audible web/voice/SFX playback as a classroom media takeover.

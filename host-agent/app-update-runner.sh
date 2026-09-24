@@ -277,7 +277,13 @@ advance_main_source(){
 }
 
 exec 9>"$LOCK_FILE"
-if ! flock -n 9; then echo "Another appliance mutation is already running." >&2; exit 30; fi
+if ! flock -n 9; then
+  # A no-argument systemd start only resumes an existing journal. An active
+  # CLI transaction owns it already; do not turn that healthy update into a
+  # failed unit or overwrite its status. Explicit new updates still fail closed.
+  if (( $# == 0 )); then echo "Appliance mutation is active; recovery deferred."; exit 0; fi
+  echo "Another appliance mutation is already running." >&2; exit 30
+fi
 if [[ "${1:-}" == --published ]]; then
   [[ $EUID -eq 0 && "${2:-}" =~ ^[0-9a-f]{40}$ && ( -z "${3:-}" || "${3:-}" == --full ) ]] || exit 2
   [[ ! -e "$REQUEST_FILE" ]] || { echo "An update journal is pending; recover it before starting another update." >&2; exit 30; }
@@ -290,7 +296,8 @@ with open(p+'.tmp','w') as f: json.dump({'action':'published','targetCommit':sys
 os.chmod(p+'.tmp',0o600);os.replace(p+'.tmp',p)
 PYREQUEST
 fi
-[[ -s "$REQUEST_FILE" ]] || { write_state failed "Application update request is missing." false; exit 31; }
+# The active updater can finish between the Host Agent's check and this start.
+[[ -s "$REQUEST_FILE" ]] || { echo "No application update journal to resume."; exit 0; }
 eval "$(REQUEST_FILE="$REQUEST_FILE" python3 - <<'PY'
 import json,os,shlex
 j=json.load(open(os.environ['REQUEST_FILE']))
