@@ -686,6 +686,24 @@ def socket_hostname():
 class UnixHTTPServer(socketserver.UnixStreamServer):
     allow_reuse_address=True
 
+def resume_interrupted_app_update():
+    """Only resume a journal with no active appliance mutation owner."""
+    if not APP_UPDATE_REQUEST_FILE.exists():
+        return False
+    # Probe the same flock used by the updater and Full Recovery. Release before
+    # starting systemd so the resumed runner can acquire it. The runner also
+    # handles a busy lock/disappearing journal, closing the remaining race.
+    with open(APPLIANCE_MUTATION_LOCK, "a+b") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        pending = APP_UPDATE_REQUEST_FILE.exists()
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+    if not pending:
+        return False
+    return run(['systemctl','start','--no-block',APP_UPDATE_SERVICE],20,False).returncode == 0
+
 def serve():
     global STARTUP_RECOVERY_ACTIVE
     Path(SOCKET_PATH).parent.mkdir(parents=True,exist_ok=True)
@@ -705,9 +723,7 @@ def serve():
         FULL_RECOVERY.startup_recover()
         STARTUP_RECOVERY_ACTIVE=False
         if APP_UPDATE_REQUEST_FILE.exists():
-            def resume_interrupted_update():
-                run(['systemctl','start','--no-block',APP_UPDATE_SERVICE],20,False)
-            threading.Timer(2.0,resume_interrupted_update).start()
+            threading.Timer(2.0,resume_interrupted_app_update).start()
         serving.join()
     finally:
         STARTUP_RECOVERY_ACTIVE=False

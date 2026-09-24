@@ -5979,7 +5979,7 @@ async function restoreMusicAssistantTvAudioState(deviceId,ws){const playerId=`cl
 let maApiSocket=null,maApiConnectPromise=null,maApiAuthenticated=false,maApiServerInfo=null,maApiLastError=null,maApiLastConnectedAt=null;
 const maApiPending=new Map();
 function musicAssistantApiWsUrl(){const u=new URL(musicAssistantConfig().url);u.protocol=u.protocol==="https:"?"wss:":"ws:";u.pathname=(u.pathname.replace(/\/$/,"")+"/ws").replace(/\/{2,}/g,"/");u.search="";u.hash="";return u.toString()}
-function rejectMusicAssistantPending(message){const pending=[...maApiPending.values()];maApiPending.clear();for(const p of pending){clearTimeout(p.timer);p.reject(new Error(message))}}
+function rejectMusicAssistantPending(message){const pending=[...maApiPending.values()];maApiPending.clear();for(const p of pending){clearTimeout(p.timer);const error=new Error(message);error.mayHaveExecuted=!!p.command;p.reject(error)}}
 function musicAssistantApiClose(reason="reset"){const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;if(ws){try{ws.close(1000,reason)}catch{}}rejectMusicAssistantPending(`Music Assistant API disconnected: ${reason}`)}
 function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.isBuffer(raw)?raw.toString("utf8"):String(raw))}catch{return}
   if(msg&&msg.server_id&&msg.schema_version!==undefined&&!msg.message_id){maApiServerInfo=msg;return}
@@ -5987,10 +5987,47 @@ function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.i
   // Events are intentionally not returned to callers. The status endpoint refreshes player
   // inventory through this same persistent socket, while the socket stays alive between calls.
 }
-async function musicAssistantApiRawCommand(command,args={},timeoutMs=15000){await ensureMusicAssistantApi();if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{maApiPending.delete(message_id);reject(new Error(`Music Assistant command timed out: ${command}`))},timeoutMs);maApiPending.set(message_id,{resolve,reject,timer,parts:[]});try{maApiSocket.send(JSON.stringify({message_id,command,args}))}catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}})}
+function musicAssistantCommandTimeout(command){
+  // Loading media can include provider throttling; pause/stop/status stay responsive.
+  return ["players/cmd/play","player_queues/play_media"].includes(command)?60000:15000;
+}
+async function musicAssistantApiRawCommand(command,args={},timeoutMs=musicAssistantCommandTimeout(command)){
+  await ensureMusicAssistantApi();
+  if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");
+  const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      maApiPending.delete(message_id);
+      const error=new Error(`Music Assistant command timed out: ${command}`);
+      error.mayHaveExecuted=true;
+      reject(error);
+    },timeoutMs);
+    maApiPending.set(message_id,{resolve,reject,timer,parts:[],command});
+    try{maApiSocket.send(JSON.stringify({message_id,command,args}))}
+    catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}
+  });
+}
 async function ensureMusicAssistantApi(){if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;if(maApiConnectPromise)return maApiConnectPromise;const token=musicAssistantToken();if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in Classroom Control Hub Music settings.");maApiConnectPromise=new Promise((resolve,reject)=>{let settled=false,helloSeen=false,failed=false;const ws=new WebSocket(musicAssistantApiWsUrl());maApiSocket=ws;const fail=(err)=>{if(failed)return;failed=true;maApiLastError=String(err?.message||err);if(!settled){settled=true;reject(err instanceof Error?err:new Error(String(err)))}musicAssistantApiClose("connection-failed")};const auth=()=>{if(!helloSeen||ws.readyState!==WebSocket.OPEN)return;const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;const timer=setTimeout(()=>{maApiPending.delete(message_id);fail(new Error("Music Assistant authentication timed out"))},10000);maApiPending.set(message_id,{parts:[],timer,resolve:(result)=>{if(!result)return fail(new Error("Music Assistant authentication was rejected"));maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();if(!settled){settled=true;resolve(ws)}},reject:fail});ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))};ws.on("open",()=>{});ws.on("message",data=>{let parsed=null;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{};if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){maApiServerInfo=parsed;helloSeen=true;auth();return}musicAssistantApiHandleMessage(data)});ws.on("error",fail);ws.on("close",(code,reason)=>{maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;maApiLastError=why;rejectMusicAssistantPending(`Music Assistant API ${why}`);if(!settled){settled=true;reject(new Error(`Music Assistant WebSocket API ${why}`))}});setTimeout(()=>{if(!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000)}).finally(()=>{maApiConnectPromise=null});return maApiConnectPromise}
-async function musicAssistantHttpCommand(command,args={}){const cfg=musicAssistantConfig(),token=musicAssistantToken();const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(15000)});const text=await r.text();let j;try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned HTTP ${r.status}: ${text.slice(0,500)}`)}if(!r.ok||j.error)throw Error(j.error?.message||j.error||`Music Assistant HTTP ${r.status}`);return j.result!==undefined?j.result:j}
-async function musicAssistantCommand(command,args={}){try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}}}
+async function musicAssistantHttpCommand(command,args={}){
+  const cfg=musicAssistantConfig(),token=musicAssistantToken();
+  const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(musicAssistantCommandTimeout(command))});
+  const text=await r.text();
+  let j;
+  try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned invalid JSON (HTTP ${r.status})`)}
+  if(!r.ok||j?.error||j?.error_code!==undefined)throw Error(j?.error?.message||j?.error||j?.details||`Music Assistant HTTP ${r.status}`);
+  // The upstream HTTP API returns the command result directly, including null
+  // for successful void commands. Retain wrapped-result compatibility too.
+  return j?.result!==undefined?j.result:j;
+}
+async function musicAssistantCommand(command,args={}){
+  try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){
+    diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});
+    // An unanswered command may still be running upstream. Replaying a mutation
+    // through HTTP can duplicate playback/queue changes and increase provider load.
+    if(wsErr.mayHaveExecuted&&command!=="players/all")throw wsErr;
+    try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}
+  }
+}
 
 
 // -----------------------------------------------------------------------------

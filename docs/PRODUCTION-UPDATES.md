@@ -193,3 +193,20 @@ is running a stable snapshot from the prior release.
 Host migration and legacy-archive discovery use the configured
 `HOST_BACKUP_DIR` rather than a hardcoded historical path. The default is
 `/opt/classroom-hub-backups`.
+
+## Host Agent restart during an active update
+
+Restarting the Host Agent during a CLI update is expected. Startup recovery
+checks the same appliance mutation lock before asking systemd to resume a pending
+journal. If the original transaction owns the lock, it continues uninterrupted.
+The native runner also treats a no-argument recovery start with a busy lock, or
+with a journal already removed by a completed transaction, as a successful no-op.
+It leaves the journal and application status untouched. Explicit new updates
+still fail closed on a busy lock or an existing journal.
+
+An orphaned journal with no lock owner still starts the existing rollback/recovery
+path. No lock, backup, image verification, or rollback checks are bypassed. After
+installing this fix, a stale unit failure from an earlier lock conflict can be
+cleared with `systemctl reset-failed classroom-hub-app-update.service` only after
+confirming the application update completed and no request journal remains. Do
+not start an old updater or delete its journal just to clear a status indicator.
