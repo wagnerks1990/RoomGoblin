@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+### Automation save validation
+
+- Make Save & Enable simulation honor the same existing-conflict policy as saving an enabled automation.
+- Show conflicting automation names, dates, times, and resources, including unchanged overlaps on future exception days.
+
 ### Music Assistant and update recovery
 
 - Accept successful null/raw Music Assistant HTTP command responses and retain bounded diagnostics for malformed responses.

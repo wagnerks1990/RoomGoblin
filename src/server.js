@@ -5522,22 +5522,28 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
 function automationConflictSignature(conflict){
   return [String(conflict?.otherId||""),String(conflict?.date||""),String(conflict?.time||""),...(conflict?.resources||[]).map(String).sort()].join("|");
 }
-function assertAutomationConflicts(candidate,events,{previous=null,startDate=new Date()}={}){
+function automationConflictReview(candidate,events,{previous=null,startDate=new Date()}={}){
   const conflicts=automationConflictDiagnostics(candidate,events,{startDate});
-  if(!conflicts.length)return;
-  // Preserve exact conflicts that already existed before this edit. Conflict
-  // validation was introduced after many installations had valid overlapping
-  // events, and an unrelated edit must not turn those records into a lockout.
-  let blocking=conflicts;
-  if(previous&&previous.enabled!==false){
-    const existing=new Set(automationConflictDiagnostics(previous,events,{startDate}).map(automationConflictSignature));
-    blocking=conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict)));
-  }
-  if(!blocking.length)return;
-  const first=blocking[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=blocking;throw error;
+  const existing=new Set(previous&&previous.enabled!==false
+    ?automationConflictDiagnostics(previous,events,{startDate}).map(automationConflictSignature):[]);
+  return {
+    conflicts:conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict))),
+    existingConflicts:conflicts.filter(conflict=>existing.has(automationConflictSignature(conflict)))
+  };
+}
+function assertAutomationConflicts(candidate,events,options={}){
+  const review=automationConflictReview(candidate,events,options);
+  if(!review.conflicts.length)return review;
+  const first=review.conflicts[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=review.conflicts;throw error;
 }
 app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
-  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:automationActionSequence(resolved).map(step=>step.action)},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
+  try{
+    const id=cleanId(req.body?.id||""),previous=id?classroomAutomations.events.find(item=>item.id===id):null;
+    const event=normalizeAutomation({...req.body,id:id||`draft-${crypto.randomUUID()}`},previous||{});
+    const resolved=resolveAutomationForManualTest(event);
+    const review=automationConflictReview(event,classroomAutomations.events.filter(item=>item.id!==event.id),{previous});
+    res.json({ok:review.conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:automationActionSequence(resolved).map(step=>step.action)},...review,scheduler:evaluateAutomationAt(schedulerClock.now())});
+  }catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
 app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(req,res)=>{
   const id=cleanId(req.params.id);

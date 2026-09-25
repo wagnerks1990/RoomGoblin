@@ -63,3 +63,9 @@ Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-ac
 ### Manual test isolation
 
 `Resume Scheduled State` cancels and drains active manual continuous Run Now/draft runs before restoring current scheduled content. This prevents a test automation from resurfacing after its dwell timer when it is not currently scheduled.
+
+## Save & Enable conflict checks
+
+Simulation and saving use the same conflict policy. Editing an already-enabled automation preserves exact existing overlaps (same other automation, date, time, and resource set). The editor reports those overlaps as warnings with the other automation's name, date, time, and shared targets. New overlaps still block saving; newly created or previously disabled automations must pass the full check before enabling. The saved server record supplies the baseline, never a browser-provided baseline.
+
+Checks include the next 90 days, including exception-day class times. A conflict can therefore refer to a future half-day even when normal class times do not overlap. This warning does not resolve or reschedule the existing overlap.
