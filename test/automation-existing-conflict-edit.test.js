@@ -9,7 +9,7 @@ function fixture(){
   const prior={id:"lesson",name:"Lesson",enabled:true,time:"08:58",targets:["tv1"],dates:["2026-12-23"]};
   const other={...prior,id:"transition",name:"AM transition",targets:[...prior.targets]};
   let simulate;
-  const context=vm.createContext({crypto,cleanId:x=>String(x||"").trim(),
+  const context=vm.createContext({crypto,calendarRuleForDate:()=>({type:"normal",label:"Normal Schedule"}),isAutomationSuppressed:()=>({blocked:false}),cleanId:x=>String(x||"").trim(),
     automationClassIds:()=>[],automationMatchesDate:(e,d)=>({match:e.dates.includes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)}),
     automationResourceKeys:e=>e.targets.map(id=>`display-content:${id}`),
     localDateKey:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
@@ -76,4 +76,41 @@ test("Save & Enable never saves a blocking simulation and reports the conflictin
 test("save routes continue to enforce server-side create and edit validation",()=>{
   assert.match(server,/assertAutomationConflicts\(event,classroomAutomations\.events\);/);
   assert.match(server,/assertAutomationConflicts\(event,classroomAutomations\.events\.filter\(\(_,index\)=>index!==idx\),\{previous:prior\}\)/);
+});
+
+for(const type of ["half-day","1-hour-delay","2-hour-delay"]){
+  test(`${type} overlaps never block new, edited or newly enabled automations`,async()=>{
+    for(const kind of ["new","edit","enable"]){
+      const {context,prior,request}=fixture();context.calendarRuleForDate=()=>({type,label:type});
+      const candidate={...prior,enabled:true};
+      if(kind==="new")candidate.id="new";
+      if(kind==="enable")prior.enabled=false;
+      const {result}=request(candidate);
+      assert.equal(result.ok,true,kind);assert.equal(result.conflicts.length,0);
+      assert.ok(result.specialDayConflicts.length>0);assert.equal(result.specialDayConflicts[0].calendarRule,type);
+      assert.doesNotThrow(()=>context.assertAutomationConflicts(candidate,context.classroomAutomations.events,{previous:kind==="new"?null:prior,startDate:day}));
+      const ui=uiFixture(result);await ui.context.window.validateEnableAutomation();assert.equal(ui.saves(),1);
+      assert.match(ui.context.autoEditorMsg.textContent,/Special-day overlaps \(do not block saving\)/);
+    }
+  });
+}
+test("a full special-day warning list cannot hide a later normal-day conflict",()=>{
+  const {context,prior,other,request}=fixture();
+  const dates=Array.from({length:25},(_,i)=>{const d=new Date(day);d.setDate(d.getDate()+i);return context.localDateKey(d)});
+  prior.dates=dates;other.dates=dates;
+  context.calendarRuleForDate=d=>({type:context.localDateKey(d)===dates.at(-1)?"normal":"half-day"});
+  const {result}=request({...prior,id:"new"});
+  assert.equal(result.ok,false);assert.equal(result.specialDayConflicts.length,20);
+  assert.equal(result.conflicts.length,2);assert.equal(result.conflicts[0].date,dates.at(-1));
+});
+test("no-school and remote days produce neither blockers nor special-day warnings",()=>{
+  for(const type of ["no-school","remote"]){
+    const {context,prior,request}=fixture();context.calendarRuleForDate=()=>({type});context.isAutomationSuppressed=()=>({blocked:true});
+    const {result}=request({...prior,id:"new"});assert.equal(result.ok,true);
+    assert.equal(result.conflicts.length,0);assert.equal(result.specialDayConflicts.length,0);
+  }
+});
+test("a draft cannot label a normal date special to bypass validation",()=>{
+  const {prior,request}=fixture();const {result}=request({...prior,id:"new",calendarRule:"half-day",specialDayConflicts:[]});
+  assert.equal(result.ok,false);assert.equal(result.specialDayConflicts.length,0);
 });

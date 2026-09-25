@@ -7,6 +7,8 @@
 
 ### Automation save validation
 
+- Treat half-day and delayed-start overlaps as non-blocking warnings for both new and existing automations, while preserving separate normal-day conflict checks.
+
 - Make Save & Enable simulation honor the same existing-conflict policy as saving an enabled automation.
 - Show conflicting automation names, dates, times, and resources, including unchanged overlaps on future exception days.
 
