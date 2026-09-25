@@ -1872,11 +1872,14 @@ async function runAutomation(id){
   }
 }
 function automationValidationMessage(result,successMessage){
-  const conflicts=result.ok?result.existingConflicts:result.conflicts;
-  const details=(conflicts||[]).slice(0,3).map(item=>`${item.otherName||"Another automation"} at ${item.time} on ${item.date} (${(item.resources||[]).join(", ")})`).join("; ");
-  const more=(conflicts||[]).length>3?`; plus ${conflicts.length-3} more`:"";
-  if(result.ok)return successMessage+(details?` • Existing overlaps unchanged: ${details}${more}`:"");
-  return result.error||(details?`Resolve new schedule conflicts: ${details}${more}`:"Simulation failed. Review the automation settings.");
+  const describe=conflicts=>{
+    const items=conflicts||[];
+    const details=items.slice(0,3).map(item=>`${item.otherName||"Another automation"} at ${item.time} on ${item.date}${item.calendarRule&&item.calendarRule!=="normal"?` [${item.calendarLabel||item.calendarRule}]`:""} (${(item.resources||[]).join(", ")})`).join("; ");
+    return details+(items.length>3?`; plus ${items.length-3} more`:"");
+  };
+  if(!result.ok)return result.error||(result.conflicts?.length?`Resolve new schedule conflicts: ${describe(result.conflicts)}`:"Simulation failed. Review the automation settings.");
+  const existing=describe(result.existingConflicts),special=describe(result.specialDayConflicts);
+  return successMessage+(existing?` • Existing overlaps unchanged: ${existing}`:"")+(special?` • Special-day overlaps (do not block saving): ${special}`:"");
 }
 async function simulateAutomationEditor(){
   try{const body=editorEvent(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=automationValidationMessage(j,`Simulation OK • ${j.resolved?.resourceKeys?.length||0} resolved resource(s)`);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}

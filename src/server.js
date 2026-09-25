@@ -5497,11 +5497,14 @@ function automationResourceKeys(event){
   }
   return [...new Set(keys)];
 }
-function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDate=new Date()}={}){
+function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDate=new Date(),calendarScope="all"}={}){
   if(candidate?.enabled===false)return [];
   const conflicts=[],start=new Date(startDate);start.setHours(12,0,0,0);
   for(let off=0;off<horizonDays&&conflicts.length<20;off++){
     const day=new Date(start);day.setDate(day.getDate()+off);
+    if(isAutomationSuppressed(day).blocked)continue;
+    const rule=calendarRuleForDate(day),special=["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
+    if(calendarScope==="normal"&&special||calendarScope==="special"&&!special)continue;
     const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
     for(const occurrence of candidateOccurrences){
       if(!occurrence||occurrence._scheduledDateKey&&occurrence._scheduledDateKey!==localDateKey(day))continue;
@@ -5512,7 +5515,7 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
         for(const o of otherOccurrences){
           if(!o||String(o.time)!==String(occurrence.time))continue;
           const shared=automationResourceKeys(o).filter(key=>cKeys.has(key));
-          if(shared.length)conflicts.push({date:localDateKey(day),time:occurrence.time,candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,resources:shared});
+          if(shared.length)conflicts.push({date:localDateKey(day),calendarRule:rule.type,calendarLabel:rule.label,time:occurrence.time,candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,resources:shared});
         }
       }
     }
@@ -5523,12 +5526,16 @@ function automationConflictSignature(conflict){
   return [String(conflict?.otherId||""),String(conflict?.date||""),String(conflict?.time||""),...(conflict?.resources||[]).map(String).sort()].join("|");
 }
 function automationConflictReview(candidate,events,{previous=null,startDate=new Date()}={}){
-  const conflicts=automationConflictDiagnostics(candidate,events,{startDate});
+  // Scan normal days separately so a full page of exception-day warnings cannot
+  // hide a later normal-day conflict behind the diagnostic result limit.
+  const conflicts=automationConflictDiagnostics(candidate,events,{startDate,calendarScope:"normal"});
+  const specialDayConflicts=automationConflictDiagnostics(candidate,events,{startDate,calendarScope:"special"});
   const existing=new Set(previous&&previous.enabled!==false
-    ?automationConflictDiagnostics(previous,events,{startDate}).map(automationConflictSignature):[]);
+    ?automationConflictDiagnostics(previous,events,{startDate,calendarScope:"normal"}).map(automationConflictSignature):[]);
   return {
     conflicts:conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict))),
-    existingConflicts:conflicts.filter(conflict=>existing.has(automationConflictSignature(conflict)))
+    existingConflicts:conflicts.filter(conflict=>existing.has(automationConflictSignature(conflict))),
+    specialDayConflicts
   };
 }
 function assertAutomationConflicts(candidate,events,options={}){
