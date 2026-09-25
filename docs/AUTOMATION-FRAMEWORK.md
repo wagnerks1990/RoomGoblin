@@ -121,3 +121,9 @@ Starting another manual automation on overlapping resources also replaces any ac
 ## Continuous recovery winner filtering
 
 Recovery does not treat every earlier continuous automation as active for the rest of the day. Before restarting a continuous occurrence, RoomGoblin compares it with the current display/non-display winners and only restarts occurrences that still own at least one current winning resource identity. This prevents an older or superseded event from waking after Resume Scheduled State and repainting current content.
+
+## Save & Enable conflict checks
+
+Simulation and saving use the same conflict policy. Editing an already-enabled automation preserves exact existing overlaps (same other automation, date, time, and resource set). The editor reports those overlaps as warnings with the other automation's name, date, time, and shared targets. New overlaps still block saving; newly created or previously disabled automations must pass the full check before enabling. The saved server record supplies the baseline, never a browser-provided baseline.
+
+Checks include the next 90 days, including exception-day class times. A conflict can therefore refer to a future half-day even when normal class times do not overlap. This warning does not resolve or reschedule the existing overlap.

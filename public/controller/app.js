@@ -1871,8 +1871,15 @@ async function runAutomation(id){
     throw e;
   }
 }
+function automationValidationMessage(result,successMessage){
+  const conflicts=result.ok?result.existingConflicts:result.conflicts;
+  const details=(conflicts||[]).slice(0,3).map(item=>`${item.otherName||"Another automation"} at ${item.time} on ${item.date} (${(item.resources||[]).join(", ")})`).join("; ");
+  const more=(conflicts||[]).length>3?`; plus ${conflicts.length-3} more`:"";
+  if(result.ok)return successMessage+(details?` • Existing overlaps unchanged: ${details}${more}`:"");
+  return result.error||(details?`Resolve new schedule conflicts: ${details}${more}`:"Simulation failed. Review the automation settings.");
+}
 async function simulateAutomationEditor(){
-  try{const body=editorEvent(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=j.ok?`Simulation OK • ${j.resolved?.resourceKeys?.length||0} resolved resource(s)`:j.error||`Simulation found ${(j.conflicts||[]).length} conflict(s)`;return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
+  try{const body=editorEvent(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=automationValidationMessage(j,`Simulation OK • ${j.resolved?.resourceKeys?.length||0} resolved resource(s)`);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
 }
 async function runAutomationDraft(){
   if(!confirm('Run the current unsaved editor values on real classroom devices? This does not save or enable the event.'))return;
