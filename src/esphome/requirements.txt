@@ -1,4 +1,4 @@
-aioesphomeapi==46.4.1
+aioesphomeapi==46.6.0
 aiohappyeyeballs==2.7.1
 async_interrupt==1.2.2
 cffi==2.1.1
