@@ -461,3 +461,13 @@ Operator-started video and explicitly audible web/voice/SFX playback is a classr
 Automation runtime is canonical on `actionSequence[]`. Do not special-case Action 1. Every action participates per sequence pass: `once` on pass 1, `repeat` through its configured pass count, and `loop` on every pass while the sequence still needs another pass. Start another pass only when at least two actions remain eligible, or when a finite `repeat` action still has configured passes remaining. If the only remaining eligible action is `loop`, stop sequence processing and leave its current state in place instead of reissuing it. Multi-action continuous loops remain cancellable, class-boundary-aware, supersedable by newer overlapping scheduled occurrences, recoverable after process restart/operator Resume, and protected by the zero-delay cycle floor.
 
 Preserve Morning Announcements priority, scheduler occurrence identity/recovery, Background Music reconciliation, stable targets, and database compatibility. Timer Overlay must initialize after the first pass so a continuous sequence cannot starve it. Keep media controls content-aware in the editor. Do not reintroduce `public/shared/automation-hotfix.js` or a second legacy automation editor.
+
+Playback watchdogs must track media time and, where available, decoded video
+frames independently of network callbacks. Full-buffer/paused freezes require
+bounded resume, live seek, decoder recovery and player-local reattachment. A
+watchdog seek must not reset escalation as apparent playback progress. Retired
+callbacks/retry timers cannot mutate successor HLS sessions. Browser autoplay
+denial must be diagnosed separately and may fall back to muted video; never
+claim JavaScript can manufacture activation or release announcement priority
+because a receiver stalls. See the playback safeguards and physical acceptance
+limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.

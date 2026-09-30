@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+### Morning Announcements playback freeze recovery
+
+- Detect playback/decoded-frame stagnation independently of playlist/fragment downloads, including full-buffer and paused freezes.
+- Escalate bounded player-local resume, live seek, decoder repair and alternate-playlist reconnect without releasing announcement priority.
+- Diagnose audible autoplay denial and preserve muted picture with an explicit audio-blocked message.
+- Update both Hub and maintenance locked transitive `ip-address` dependencies from 10.7.0 to 10.7.2 to clear the existing production audit gate.
+- Add executable recovery regressions and update operator, Wiki and AI recovery documentation.
+
+
 ### Automation save validation
 
 - Treat half-day and delayed-start overlaps as non-blocking warnings for both new and existing automations, while preserving separate normal-day conflict checks.
