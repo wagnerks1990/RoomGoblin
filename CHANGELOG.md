@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+### Presentation start and preview controls
+
+- Clear existing content on selected presentation displays before the first slide.
+- Allow Previous, Next and Go before Start, with the preview selecting the starting slide.
+- Preserve separate preview selection during live-state polling and enforce Morning Announcements priority for presentation commands.
+
 ### Morning Announcements playback freeze recovery
 
 - Detect playback/decoded-frame stagnation independently of playlist/fragment downloads, including full-buffer and paused freezes.
