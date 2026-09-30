@@ -1,5 +1,10 @@
 # AI Project Context
 
+Presentation start clears selected receivers before the first slide; idle Next,
+Previous, Go and thumbnails preview locally and set the starting slide. Polling
+must preserve a separately selected preview deck. See `PRESENTATION-CONTROLS.md`
+for announcement priority, legacy receivers, testing and deployment boundaries.
+
 ## Managed Cloudflare remote HTTPS
 
 RoomGoblin has an optional first-class Cloudflare provisioning path. Site-specific domains and Cloudflare resource IDs remain runtime database values; API credentials are encrypted secrets. The connector token is host secret state at `/etc/cloudflared/roomgoblin.token`. Provisioning may manage a remotely managed Tunnel, proxied DNS, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, Brotli, and optional Access. Existing same-name tunnels and conflicting DNS records are fail-closed unless explicit adoption/replacement is selected.

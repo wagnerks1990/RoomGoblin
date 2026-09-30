@@ -2251,10 +2251,14 @@ function recordCurrentSlideTiming(){
   const key=String(presentationState.slide||1);
   presentationState.timings[key]=Number(presentationState.timings[key]||0)+elapsed;
 }
-async function sendPresentationSlide(){
+async function sendPresentationSlide({clear=false}={}){
   const rec=presentationLibrary.presentations[presentationState.presentationId];
   if(!rec||!presentationState.active)return;
   const url=presentationSlideUrl(rec.id,presentationState.slide);
+  const priorityError=announcementPriorityError(presentationState.targets);
+  if(priorityError)throw priorityError;
+  // Clear overlays through the established command understood by older receivers.
+  if(clear)await executeCommand({type:"display.clear",target:presentationState.targets,payload:{presentation:true}},"presentation");
   await executeCommand({
     // Use the established display.image command so already-open TV receivers
     // from earlier Hub versions can present slides without requiring a reload.
@@ -4502,7 +4506,7 @@ async function executeCommand(input, source = "api") {
     // This final router-level check closes the race where an automation passed
     // its initial check, awaited a delay/network operation, and then attempted
     // to overwrite a display after an announcement had acquired priority.
-    if(source==="automation"){
+    if(source==="automation"||source==="presentation"){
       const priorityError=announcementPriorityError(targets);
       if(priorityError)throw priorityError;
     }
@@ -7267,9 +7271,11 @@ app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),asy
     const id=String(req.params.id),rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
     if(rec.conversionStatus!=="ready"||!rec.slideCount)return res.status(409).json({ok:false,error:"Presentation rendering is not ready"});
-    if(presentationState.active)await stopPresentation({clear:false});
     const targets=resolveDisplayTargets(req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
     if(!targets.length)throw new Error("Select at least one display");
+    const priorityError=announcementPriorityError(targets);
+    if(priorityError)throw priorityError;
+    if(presentationState.active)await stopPresentation({clear:false});
     const now=new Date().toISOString();
     presentationState={
       ...defaultPresentationState(),
@@ -7284,7 +7290,7 @@ app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),asy
       sessionId:crypto.randomUUID()
     };
     persistPresentationState();
-    await sendPresentationSlide();
+    await sendPresentationSlide({clear:true});
     audit({kind:"presentation.start",id,name:rec.name,targets,slide:presentationState.slide});
     broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
     res.json({ok:true,state:presentationStatePublic()});

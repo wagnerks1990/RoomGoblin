@@ -1,5 +1,13 @@
 # AI and Contributor Operating Contract
 
+## Presentation start and preview
+
+Read `docs/PRESENTATION-CONTROLS.md` before changing presentation controls.
+Start clears only selected receivers before sending the first slide using legacy
+compatible commands. Preview navigation must never dispatch live commands or be
+overwritten by polling another deck. Preserve announcement priority at start and
+dispatch, silent-slide Background Music behavior and flash-free live navigation.
+
 ## Securly physical-console kiosk
 
 The optional Securly Pass kiosk is host-side and independent of RoomGoblin application/container health. Read `docs/SECURLY-KIOSK.md` and `docs/ai/SECURLY-KIOSK.md` before changing it. Never commit the production kiosk URL/code. Preserve the password-locked non-sudo `kiosk` account, a separate sudo-capable maintenance account, SSH, and the `Ctrl+Alt+F2` recovery path. Chromium Snap must use the systemd user D-Bus session, must not inherit tty1 standard file descriptors, and must use its Snap-owned profile. Keep kiosk failures from affecting Morning Announcements, scheduler recovery, Background Music, managed displays, Veyon, Docker integrations, or RoomGoblin health.
