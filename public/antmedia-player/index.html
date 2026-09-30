@@ -3,72 +3,120 @@
 <body><video id="player" playsinline autoplay></video><div id="status"></div><script>
 const video=document.getElementById('player'),status=document.getElementById('status');
 const params=new URLSearchParams(location.search),source=params.get('source')||'',initialVolume=Math.max(0,Math.min(1,Number(params.get('volume')??1)));
-let hls=null,candidateIndex=0,lastProgressAt=Date.now(),lastCurrentTime=0,recoveryCount=0,lastTelemetryAt=0;
+let hls=null,candidateIndex=0,lastProgressAt=Date.now(),lastCurrentTime=0,recoveryCount=0,lastTelemetryAt=0,recoveryStage=0,lastRecoveryAt=0,lastFrames=0,lastFrameAt=Date.now(),generation=0,retryTimer=null,playPending=false,audioBlocked=false,requestedVolume=initialVolume,nativeCleanup=null;
 const counters={manifestParsed:0,levelLoaded:0,fragmentLoaded:0,networkErrors:0,mediaErrors:0,otherErrors:0,stalls:0,recoveries:0};
 function safeTelemetryUrl(value){try{const u=new URL(String(value||''));return `${u.origin}${u.pathname}`}catch{return ''}}
 function bufferedAhead(){try{for(let i=0;i<video.buffered.length;i++)if(video.buffered.start(i)<=video.currentTime&&video.buffered.end(i)>=video.currentTime)return Math.max(0,video.buffered.end(i)-video.currentTime)}catch{}return 0}
+function frameCount(){try{const n=video.getVideoPlaybackQuality?.().totalVideoFrames??video.webkitDecodedFrameCount;return Number.isFinite(n)?n:null}catch{return null}}
+function resetProgress(){lastCurrentTime=Number(video.currentTime||0);lastProgressAt=Date.now();lastFrames=frameCount()??0;lastFrameAt=lastProgressAt}
+function stagnantFor(now=Date.now()){return Math.max(now-lastProgressAt,video.videoWidth>0&&frameCount()!==null?now-lastFrameAt:0)}
 function telemetry(event,extra={},force=false){
   const now=Date.now();if(!force&&now-lastTelemetryAt<750&&event==='heartbeat')return;lastTelemetryAt=now;
-  const payload={event,state:video.ended?'ended':video.paused?'paused':video.readyState<3?'buffering':'playing',at:new Date().toISOString(),url:hls?.url||video.currentSrc||'',source,candidateIndex,currentTime:Number(video.currentTime||0),bufferedAhead:Number(bufferedAhead().toFixed(3)),readyState:video.readyState,networkState:video.networkState,paused:video.paused,ended:video.ended,recoveryCount,counters:{...counters},...extra};
+  const payload={event,state:audioBlocked?'autoplay-blocked':stagnantFor(now)>=15000?'stalled':video.ended?'ended':video.paused?'paused':video.readyState<3?'buffering':'playing',at:new Date().toISOString(),url:hls?.url||video.currentSrc||'',source,candidateIndex,currentTime:Number(video.currentTime||0),bufferedAhead:Number(bufferedAhead().toFixed(3)),readyState:video.readyState,networkState:video.networkState,paused:video.paused,ended:video.ended,recoveryCount,recoveryStage,audioBlocked,requestedVolume,muted:video.muted,decodedFrames:frameCount(),playbackStagnantMs:now-lastProgressAt,frameStagnantMs:now-lastFrameAt,counters:{...counters},...extra};
   payload.url=safeTelemetryUrl(payload.url);payload.source=safeTelemetryUrl(payload.source);
   try{parent.postMessage({type:'classroom-hub.antmedia.telemetry',telemetry:payload},location.origin)}catch{}
   try{console.info('[ClassroomHub AntMedia]',event,payload)}catch{}
 }
 function setStatus(text,show=false){status.textContent=text||'';status.style.display=show?'block':'none'}
-function setAudio(volume=initialVolume){const v=Math.max(0,Math.min(1,Number(volume??initialVolume)));video.volume=v;video.muted=v<=0;video.defaultMuted=v<=0;if(v>0)video.removeAttribute('muted');else video.setAttribute('muted','');return v}
+function setAudio(volume=initialVolume){const v=Math.max(0,Math.min(1,Number(volume??initialVolume)));requestedVolume=v;video.volume=v;video.muted=audioBlocked||v<=0;video.defaultMuted=video.muted;if(!video.muted)video.removeAttribute('muted');else video.setAttribute('muted','');return v}
 function hlsCandidates(){try{const u=new URL(source);const id=u.searchParams.get('id');if(!id)throw new Error('Missing stream id');const base=u.pathname.replace(/play\.html$/,'');const enc=encodeURIComponent(id);return [`${u.origin}${base}streams/${enc}.m3u8`,`${u.origin}${base}streams/${enc}_adaptive.m3u8`]}catch{return []}}
-function play(){setAudio(video.volume);const p=video.play();if(p?.catch)p.catch(error=>telemetry('play-rejected',{error:String(error?.message||error)},true))}
+async function play(){
+  if(playPending)return;playPending=true;const token=generation;
+  try{await video.play()}catch(error){
+    if(token!==generation)return;
+    const errorName=String(error?.name||'Error');
+    telemetry('play-rejected',{errorName,error:`Media play rejected: ${errorName}`},true);
+    if(errorName==='NotAllowedError'&&!video.muted){
+      audioBlocked=true;video.muted=true;video.defaultMuted=true;
+      setStatus('Announcement audio blocked by browser. Allow autoplay for this display.',true);
+      telemetry('autoplay-blocked',{errorName},true);
+      try{await video.play()}catch(fallbackError){if(token===generation)telemetry('muted-play-rejected',{errorName:String(fallbackError?.name||'Error')},true)}
+    }
+  }finally{if(token===generation)playPending=false}
+}
+function retryAttach(index,delay){
+  if(retryTimer!==null)return;const token=generation;
+  retryTimer=setTimeout(()=>{retryTimer=null;if(token!==generation)return;const list=hlsCandidates();if(list[index])attach(list[index],index)},delay);
+}
 function destroyHls(){if(hls){try{hls.destroy()}catch{}hls=null}}
 function attach(url,index=0){
-  candidateIndex=index;setStatus('Connecting…');destroyHls();video.removeAttribute('src');video.load();telemetry('attach',{url},true);
+  generation++;if(nativeCleanup){nativeCleanup();nativeCleanup=null}if(retryTimer!==null){clearTimeout(retryTimer);retryTimer=null}playPending=false;resetProgress();candidateIndex=index;setStatus('Connecting…');destroyHls();video.removeAttribute('src');video.load();telemetry('attach',{url},true);
   if(window.Hls&&Hls.isSupported()){
     hls=new Hls({enableWorker:false,lowLatencyMode:true,backBufferLength:30,maxBufferLength:45,maxMaxBufferLength:90,manifestLoadingTimeOut:12000,levelLoadingTimeOut:12000,fragLoadingTimeOut:15000,manifestLoadingMaxRetry:4,levelLoadingMaxRetry:6,fragLoadingMaxRetry:8,fragLoadingRetryDelay:800,levelLoadingRetryDelay:800});
-    hls.loadSource(url);hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED,()=>{counters.manifestParsed++;setStatus('');lastProgressAt=Date.now();telemetry('manifest-parsed',{},true);play()});
-    hls.on(Hls.Events.LEVEL_LOADED,()=>{counters.levelLoaded++;lastProgressAt=Date.now();telemetry('level-loaded')});
-    hls.on(Hls.Events.FRAG_LOADED,()=>{counters.fragmentLoaded++;lastProgressAt=Date.now();if(counters.fragmentLoaded%10===0)telemetry('fragment-progress')});
+    hls.loadSource(url);hls.attachMedia(video);const session=hls;
+    hls.on(Hls.Events.MANIFEST_PARSED,()=>{if(hls!==session)return;counters.manifestParsed++;setStatus('');telemetry('manifest-parsed',{},true);play()});
+    hls.on(Hls.Events.LEVEL_LOADED,()=>{if(hls!==session)return;counters.levelLoaded++;telemetry('level-loaded')});
+    hls.on(Hls.Events.FRAG_LOADED,()=>{if(hls!==session)return;counters.fragmentLoaded++;if(counters.fragmentLoaded%10===0)telemetry('fragment-progress')});
     hls.on(Hls.Events.ERROR,(_event,data)=>{
-      const type=String(data?.type||'unknown'),details=String(data?.details||'unknown'),fatal=!!data?.fatal,error=String(data?.error?.message||data?.reason||details);
+      if(hls!==session)return;const type=String(data?.type||'unknown'),details=String(data?.details||'unknown'),fatal=!!data?.fatal,error=String(data?.error?.message||data?.reason||details);
       if(type===Hls.ErrorTypes.NETWORK_ERROR)counters.networkErrors++;else if(type===Hls.ErrorTypes.MEDIA_ERROR)counters.mediaErrors++;else counters.otherErrors++;
       telemetry(fatal?'hls-fatal-error':'hls-error',{type,details,fatal,error,responseCode:data?.response?.code??null},true);
       if(!fatal)return;
       if(type===Hls.ErrorTypes.NETWORK_ERROR){
+        if(recoveryStage>0||Date.now()-lastRecoveryAt<15000)return;lastRecoveryAt=Date.now();recoveryStage=1;
         counters.recoveries++;recoveryCount++;setStatus('Stream reconnecting…');
         try{hls.startLoad()}catch{}
         return;
       }
       if(type===Hls.ErrorTypes.MEDIA_ERROR){
+        if(recoveryStage>0||Date.now()-lastRecoveryAt<15000)return;lastRecoveryAt=Date.now();recoveryStage=1;
         counters.recoveries++;recoveryCount++;setStatus('Recovering stream…');
         try{hls.recoverMediaError()}catch{}
         return;
       }
       const candidates=hlsCandidates();
-      if(candidateIndex+1<candidates.length){counters.recoveries++;recoveryCount++;setTimeout(()=>attach(candidates[candidateIndex+1],candidateIndex+1),750);return}
+      if(candidateIndex+1<candidates.length){counters.recoveries++;recoveryCount++;retryAttach(candidateIndex+1,750);return}
       setStatus('Morning Announcements HLS unavailable — retrying.',true);
-      setTimeout(()=>{const list=hlsCandidates();if(list.length){counters.recoveries++;recoveryCount++;attach(list[0],0)}},3000);
+      retryAttach(0,3000);
     });
   }else if(video.canPlayType('application/vnd.apple.mpegurl')){
-    video.src=url;video.addEventListener('loadedmetadata',()=>{setStatus('');lastProgressAt=Date.now();telemetry('native-hls-loaded',{},true);play()},{once:true});
-    video.addEventListener('error',()=>{telemetry('native-hls-error',{error:'Native HLS media error'},true);const c=hlsCandidates();if(index+1<c.length)setTimeout(()=>attach(c[index+1],index+1),750);else setTimeout(()=>c.length&&attach(c[0],0),3000)},{once:true});
+    const token=generation;
+    const loaded=()=>{if(token!==generation)return;setStatus('');telemetry('native-hls-loaded',{},true);play()};
+    const failed=()=>{if(token!==generation)return;telemetry('native-hls-error',{error:'Native HLS media error'},true);const c=hlsCandidates();retryAttach(index+1<c.length?index+1:0,index+1<c.length?750:3000)};
+    video.addEventListener('loadedmetadata',loaded,{once:true});video.addEventListener('error',failed,{once:true});
+    nativeCleanup=()=>{video.removeEventListener('loadedmetadata',loaded);video.removeEventListener('error',failed)};
+    video.src=url;
   }else setStatus('This display browser cannot play HLS.',true)
 }
 for(const event of ['playing','waiting','stalled','pause','ended','error','loadedmetadata','canplay'])video.addEventListener(event,()=>{
   if(event==='waiting'||event==='stalled')counters.stalls++;
-  if(event==='playing'){lastProgressAt=Date.now();setStatus('')}
+  if(event==='playing'){if(!video.muted)audioBlocked=false;setStatus(audioBlocked?'Announcement audio blocked by browser. Allow autoplay for this display.':'',audioBlocked)}
   telemetry(`media-${event}`,event==='error'?{error:`HTMLMediaElement error ${video.error?.code||'unknown'}`}:{},true);
 });
-setInterval(()=>{
-  const now=Date.now(),current=Number(video.currentTime||0);
-  if(current>lastCurrentTime+.05){lastCurrentTime=current;lastProgressAt=now}
-  const stagnantMs=now-lastProgressAt;
-  telemetry('heartbeat',{stagnantMs});
-  if(hls&&!video.paused&&!video.ended&&video.readyState<3&&stagnantMs>12000){
-    counters.recoveries++;recoveryCount++;lastProgressAt=now;telemetry('watchdog-recover',{stagnantMs},true);
-    try{hls.startLoad()}catch{}
+function watchdog(){
+  const now=Date.now(),current=Number(video.currentTime||0),frames=frameCount();
+  const timeAdvanced=Math.abs(current-lastCurrentTime)>.05;
+  if(timeAdvanced){lastCurrentTime=current;lastProgressAt=now}
+  const framesAdvanced=frames!==null&&frames>lastFrames;
+  if(framesAdvanced){lastFrames=frames;lastFrameAt=now}else if(frames!==null&&frames<lastFrames)lastFrames=frames;
+  // Network activity and media events are not proof that the decoder is advancing.
+  if(timeAdvanced&&(video.videoWidth===0||frames===null||framesAdvanced)){
+    recoveryStage=0;setStatus(audioBlocked?'Announcement audio blocked by browser. Allow autoplay for this display.':'',audioBlocked);
   }
-},5000);
+  const stagnantMs=stagnantFor(now);telemetry('heartbeat',{stagnantMs});
+  if(stagnantMs<15000||now-lastRecoveryAt<15000||retryTimer!==null)return;
+  // Autoplay denial needs policy/user activation, not repeated decoder rebuilds.
+  if(audioBlocked&&video.paused)return;
+  lastRecoveryAt=now;counters.recoveries++;recoveryCount++;recoveryStage++;
+  telemetry('watchdog-recover',{stagnantMs,stage:recoveryStage},true);
+  setStatus('Announcement stalled — recovering…',true);
+  if(recoveryStage===1){try{hls?.startLoad()}catch{}play();return}
+  if(recoveryStage===2){
+    try{const end=video.seekable.length?video.seekable.end(video.seekable.length-1):0;
+      const start=video.seekable.length?video.seekable.start(video.seekable.length-1):0;
+      const target=Number(hls?.liveSyncPosition);
+      if(end>start)video.currentTime=Number.isFinite(target)&&target>=start&&target<end?target:Math.max(start,end-2);
+      lastCurrentTime=Number(video.currentTime||0); // A watchdog seek is not playback progress.
+    }catch{}play();return;
+  }
+  if(recoveryStage===3&&hls){try{hls.recoverMediaError()}catch{}play();return}
+  // Last resort: rebuild only this player's HLS session, preserving the Hub takeover.
+  const list=hlsCandidates();if(list.length){const index=(candidateIndex+1)%list.length;attach(list[index],index)}
+}
+setInterval(watchdog,5000);
 window.addEventListener('online',()=>telemetry('browser-online',{},true));
 window.addEventListener('offline',()=>telemetry('browser-offline',{},true));
-window.addEventListener('message',e=>{if(e.origin!==location.origin)return;const d=e.data||{};if(d.type==='setVolume'||d.action==='setVolume'){setAudio(d.volume);telemetry('volume-change',{volume:video.volume},true)}if(d.type==='setMuted')setAudio(d.muted?0:(video.volume||initialVolume||1));if(d.type==='unmute'||d.action==='unmute'){if(video.volume<=0)setAudio(initialVolume||1);else{video.muted=false;video.defaultMuted=false}play()}if(d.type==='play')play()});
+window.addEventListener('message',e=>{if(e.origin!==location.origin)return;const d=e.data||{};if(d.type==='setVolume'||d.action==='setVolume'){setAudio(d.volume);telemetry('volume-change',{volume:video.volume},true)}if(d.type==='setMuted')setAudio(d.muted?0:(video.volume||initialVolume||1));if(d.type==='unmute'||d.action==='unmute'){if(!audioBlocked){setAudio(requestedVolume||initialVolume||1);play()}}if(d.type==='play')play()});
+video.addEventListener('click',()=>{audioBlocked=false;setAudio(requestedVolume);play()});
 setAudio();const candidates=hlsCandidates();if(candidates.length)attach(candidates[0],0);else{setStatus('Invalid Morning Announcements stream URL.',true);telemetry('invalid-source',{error:'Unable to derive HLS playlist candidates'},true)}
 </script></body></html>

@@ -534,3 +534,13 @@ Treat `Resume Scheduled State` as a hard ownership boundary. Any active manual c
 ### Continuous recovery winner filtering
 
 Do not recover every enabled continuous automation whose start time is earlier than now. Recovery must be constrained to current scheduler winners; otherwise an older or manually tested continuous event can be restarted after Resume Scheduled State and overwrite the intended current automation.
+
+Playback watchdogs must track media time and, where available, decoded video
+frames independently of network callbacks. Full-buffer/paused freezes require
+bounded resume, live seek, decoder recovery and player-local reattachment. A
+watchdog seek must not reset escalation as apparent playback progress. Retired
+callbacks/retry timers cannot mutate successor HLS sessions. Browser autoplay
+denial must be diagnosed separately and may fall back to muted video; never
+claim JavaScript can manufacture activation or release announcement priority
+because a receiver stalls. See the playback safeguards and physical acceptance
+limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
