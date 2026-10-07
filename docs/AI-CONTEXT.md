@@ -553,6 +553,9 @@ limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
 ## PDF document viewer contract
 
 Uploaded/converted PDF playback lives in `public/document-viewer/index.html`.
+Serve the locked PDF.js `legacy/build` module and worker together through the
+existing `/vendor/pdfjs/` route; kiosk engines may lack new built-in Map methods.
+Do not remove upstream compatibility support or downgrade the dependency as a fix.
 PDF.js 6 accepts `getDocument({url: file})`; the bare-string overload is removed
 and fails before fetching bytes. Preserve the entire nested signed URL and the
 existing protected-media policy. Bind viewer buttons explicitly by element ID

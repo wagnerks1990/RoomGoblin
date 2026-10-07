@@ -4940,7 +4940,8 @@ function validAssetAccessToken(token){const parts=String(token||"").split(".");i
 function requireAssetAccess(req,res,next){if(requestUser(req)||validAssetAccessToken(req.query.access_token))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
 app.use("/media",requireAssetAccess,(req,res,next)=>path.extname(req.path).toLowerCase()===".svg"?res.status(415).json({ok:false,error:"Active SVG media is not served from the application origin"}):next(),express.static(MEDIA_DIR,{fallthrough:false}));
 app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fallthrough:false}));
-app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","build")));
+// Keep PDF.js and its worker on the same upstream compatibility build for kiosk browsers.
+app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","legacy","build")));
 app.use("/vendor/hls", express.static(path.join(path.resolve(__dirname,".."),"node_modules","hls.js","dist")));
 
 app.use(express.static(path.join(APP_DIR, "public")));

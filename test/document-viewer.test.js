@@ -106,3 +106,21 @@ test('document loading failure stays visible and never starts auto advance',asyn
   assert.equal(v.elements.error.hidden,false);
   assert.equal(v.intervals.size,0);
 });
+
+test('Hub serves matching PDF.js compatibility assets for kiosk browsers',()=>{
+  const path=require('node:path');
+  const server=fs.readFileSync('src/server.js','utf8');
+  const route=server.split('\n').find(line=>line.startsWith('app.use("/vendor/pdfjs",'));
+  assert.ok(route,'PDF.js asset route is required');
+  let mounted;
+  vm.runInNewContext(route,{
+    __dirname:path.resolve('src'),path,
+    express:{static:directory=>directory},
+    app:{use:(url,directory)=>{mounted={url,directory}}}
+  });
+  assert.equal(mounted.url,'/vendor/pdfjs');
+  assert.equal(mounted.directory,path.resolve('node_modules/pdfjs-dist/legacy/build'));
+  for(const name of ['pdf.mjs','pdf.worker.mjs']){
+    assert.ok(fs.statSync(path.join(mounted.directory,name)).size>0,name+' must be packaged');
+  }
+});

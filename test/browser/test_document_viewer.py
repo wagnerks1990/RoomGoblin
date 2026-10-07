@@ -77,7 +77,7 @@ class DocumentHandler(BaseHTTPRequestHandler):
             self.send_bytes(b"", "text/javascript")
             return
         if path.startswith("/vendor/pdfjs/"):
-            root = ROOT / "node_modules" / "pdfjs-dist" / "build"
+            root = ROOT / "node_modules" / "pdfjs-dist" / "legacy" / "build"
             relative = path.removeprefix("/vendor/pdfjs/")
         else:
             root = ROOT / "public"
@@ -96,7 +96,7 @@ class DocumentHandler(BaseHTTPRequestHandler):
 class DocumentViewerBrowserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        build = ROOT / "node_modules" / "pdfjs-dist" / "build"
+        build = ROOT / "node_modules" / "pdfjs-dist" / "legacy" / "build"
         if not (build / "pdf.mjs").is_file() or not (build / "pdf.worker.mjs").is_file():
             raise RuntimeError("Run npm ci --ignore-scripts before the document browser tests")
         OUTPUT.mkdir(parents=True, exist_ok=True)

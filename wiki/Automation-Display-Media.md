@@ -85,6 +85,13 @@ before a PDF fetch/parse begins. That error alone does not establish a corrupt
 upload or failed automation schedule. Do not ask operators to re-upload their
 PDFs merely to fix this API mismatch.
 
+The existing `/vendor/pdfjs/` route serves the locked package's `legacy/build`
+module and matching worker. The modern build also fails on Chromium 143 because
+it requires `Map.getOrInsertComputed`; the upstream compatibility build supplies
+its supported polyfills without downgrading PDF.js or requiring a kiosk update.
+Keep the module and worker on the same build/version. This does not promise
+support for every historical browser; Chromium and Firefox are exercised in CI.
+
 The viewer binds Previous, Next and Auto/Pause explicitly by element ID.
 Do not rely on implicit window properties: the old `next` function shadowed the
 button named `next`, leaving the button without a click handler.
