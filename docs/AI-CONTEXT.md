@@ -549,3 +549,19 @@ denial must be diagnosed separately and may fall back to muted video; never
 claim JavaScript can manufacture activation or release announcement priority
 because a receiver stalls. See the playback safeguards and physical acceptance
 limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
+
+## PDF document viewer contract
+
+Uploaded/converted PDF playback lives in `public/document-viewer/index.html`.
+Serve the locked PDF.js `legacy/build` module and worker together through the
+existing `/vendor/pdfjs/` route; kiosk engines may lack new built-in Map methods.
+Do not remove upstream compatibility support or downgrade the dependency as a fix.
+PDF.js 6 accepts `getDocument({url: file})`; the bare-string overload is removed
+and fails before fetching bytes. Preserve the entire nested signed URL and the
+existing protected-media policy. Bind viewer buttons explicitly by element ID
+so the `next` function cannot shadow the Next button. Keep page timing, loop
+semantics, receiver IDs, priority/recovery and stored uploads unchanged.
+See `docs/AUTOMATION-DISPLAY-MEDIA.md` for tests and deployment acceptance.
+`test/document-viewer.test.js` uses a small API fixture; the Chromium/Firefox
+browser gate loads the actual locked PDF.js build/worker and inspects rendered
+pixels. Fixture success is not physical-display or production-auth acceptance.
