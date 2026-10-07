@@ -7,6 +7,8 @@
 
 ### Uploaded PDF automation playback
 
+- Update the Hub and maintenance locked `proxy-addr` dependency from 2.0.7 to 2.0.8 for GHSA-jqcg-44mw-7w3h, which blocks the existing release audit; preserve the configured proxy-trust policy.
+
 - Pass the complete protected PDF URL to PDF.js 6 using its required initialization object, fixing the `getDocument` missing data/range/url error before loading uploaded documents.
 - Bind document navigation buttons explicitly so Next works alongside keyboard and automatic page advancement.
 - Add focused viewer regressions and actual locked-PDF.js rendering/navigation coverage in the Chromium/Firefox browser gate; update operator, Wiki and AI guidance.

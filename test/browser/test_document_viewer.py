@@ -135,6 +135,9 @@ class DocumentViewerBrowserTests(unittest.TestCase):
             file = self.origin + file
         query = urlencode({"file": file, **options})
         self.page.goto(self.origin + "/document-viewer/?" + query)
+        self.page.wait_for_function("document.getElementById('status').textContent !== 'Loading…'")
+        if authorized and self.page.locator("#error").is_visible():
+            self.fail(self.page.locator("#error").inner_text())
 
     def assert_page(self, number):
         expect(self.page.locator("#status")).to_have_text("Page %d / 3" % number)
