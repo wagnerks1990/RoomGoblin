@@ -69,3 +69,48 @@ Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-ac
 Simulation and saving use the same conflict policy. Editing an already-enabled automation preserves exact existing overlaps (same other automation, date, time, and resource set). The editor reports those overlaps as warnings with the other automation's name, date, time, and shared targets. New normal-day overlaps still block saving; newly created or previously disabled automations must pass the normal-day check before enabling. The saved server record supplies the baseline, never a browser-provided baseline.
 
 Checks include the next 90 days. Half-day, one-hour-delay, and two-hour-delay overlaps are separate, non-blocking warnings for every automation: new, edited, or being enabled. Special days use their own timetable and never prevent saving the normal schedule. Normal-day validation is scanned separately so a long list of special-day warnings cannot hide a normal-day conflict. No-school and remote days are suppressed. Warnings do not reschedule events or alter runtime priority.
+
+## Uploaded PDF viewer compatibility
+
+Uploaded PDFs and office documents converted to PDF use
+`/document-viewer/?file=...`. The receiver nests its authorized media URL in
+`file`; preserve that entire value, including encoded filenames, cache version
+and signed access-token query parameters. The existing media authorization
+boundary still applies.
+
+PDF.js 6 requires a document initialization object. The viewer must call
+`getDocument({url: file})`, not the removed bare-string overload. Passing a
+string produces "getDocument - expected either data, range, or url parameter"
+before a PDF fetch/parse begins. That error alone does not establish a corrupt
+upload or failed automation schedule. Do not ask operators to re-upload their
+PDFs merely to fix this API mismatch.
+
+The viewer binds Previous, Next and Auto/Pause explicitly by element ID.
+Do not rely on implicit window properties: the old `next` function shadowed the
+button named `next`, leaving the button without a click handler.
+
+### Regression and deployment verification
+
+- `node --test test/document-viewer.test.js` checks initialization arguments,
+  signed-URL preservation, button/keyboard navigation, loop/stop behavior,
+  pause/resume and loading errors with a small PDF API fixture.
+- After `npm ci --ignore-scripts`, install `test/browser/requirements.txt` and
+  the appropriate Playwright browser. Run
+  `DISPLAY_TEST_BROWSER=chromium python -m unittest discover -s test/browser -p 'test_document_viewer.py' -v`
+  and repeat with `DISPLAY_TEST_BROWSER=firefox`.
+- These browser tests load the actual locked PDF.js module and worker, render a
+  synthetic three-page PDF, inspect canvas pixels, and exercise manual/automatic
+  navigation plus missing/unauthorized asset errors. HTTP authorization is a
+  fixture; this is not production Hub, scheduler or physical-display acceptance.
+- The existing Display browser regression CI gate installs the locked npm
+  dependencies and runs these tests in both browsers. Evidence is under
+  `test-results/documents/` in its browser artifacts.
+
+No upload, database, receiver-identity or automation migration is required.
+Deploy only the exact validated/published Hub and maintenance image pair through
+the normal backed-up updater. Then re-run the existing PDF automation on a
+selected receiver so it opens the updated viewer. Confirm the first page,
+Previous/Next, the configured start page, automatic page timing and loop/stop
+behavior. Verify the actual PDF picture; an automation marked Completed only
+proves command execution. Preserve Morning Announcements priority, scheduler
+recovery and Background Music behavior.

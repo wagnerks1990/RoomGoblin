@@ -22,6 +22,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc='/vendor/pdfjs/pdf.worker.mjs';
 const q=new URLSearchParams(location.search),file=q.get('file'),autoMs=Math.max(0,Number(q.get('auto')||0)),loop=q.get('loop')!=='0';
 let pdf=null,page=Math.max(1,Number(q.get('page')||1)),timer=null,playing=autoMs>0,busy=false;
 const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d'),status=document.getElementById('status'),error=document.getElementById('error');
+const prevButton=document.getElementById('prev'),nextButton=document.getElementById('next'),playButton=document.getElementById('play');
 async function render(){
  if(!pdf||busy)return;busy=true;
  try{
@@ -41,14 +42,14 @@ function next(){
  if(page<pdf.numPages)page++;else if(loop)page=1;else{playing=false;syncTimer();return}
  render();
 }
-function syncTimer(){if(timer)clearInterval(timer);timer=null;if(playing&&autoMs>0)timer=setInterval(next,autoMs);play.textContent=playing?'Pause':'Auto'}
-prev.onclick=()=>{if(page>1)page--;else if(loop&&pdf)page=pdf.numPages;render()};
-next.onclick=next;play.onclick=()=>{playing=!playing;syncTimer()};
+function syncTimer(){if(timer)clearInterval(timer);timer=null;if(playing&&autoMs>0)timer=setInterval(next,autoMs);playButton.textContent=playing?'Pause':'Auto'}
+prevButton.onclick=()=>{if(page>1)page--;else if(loop&&pdf)page=pdf.numPages;render()};
+nextButton.onclick=next;playButton.onclick=()=>{playing=!playing;syncTimer()};
 addEventListener('resize',()=>render());
-addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='PageDown')next();if(e.key==='ArrowLeft'||e.key==='PageUp')prev.click();if(e.key===' ')play.click()});
+addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='PageDown')next();if(e.key==='ArrowLeft'||e.key==='PageUp')prevButton.click();if(e.key===' ')playButton.click()});
 try{
  if(!file)throw Error('No PDF specified');
- pdf=await pdfjsLib.getDocument(file).promise;
+ pdf=await pdfjsLib.getDocument({url:file}).promise;
  await render();syncTimer();
 }catch(e){canvas.hidden=true;error.hidden=false;error.textContent='Unable to display document: '+e.message;status.textContent='Error'}
 </script></body></html>
