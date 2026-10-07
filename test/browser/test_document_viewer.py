@@ -142,9 +142,20 @@ class DocumentViewerBrowserTests(unittest.TestCase):
     def assert_page(self, number):
         expect(self.page.locator("#status")).to_have_text("Page %d / 3" % number)
         expect(self.page.locator("#error")).to_be_hidden()
-        pixel = self.page.locator("#canvas").evaluate(
-            "c => Array.from(c.getContext('2d').getImageData(c.width/2,c.height/2,1,1).data)")
-        self.assertEqual(pixel, {1: [255, 0, 0, 255], 2: [0, 255, 0, 255], 3: [0, 0, 255, 255]}[number])
+        expected_pixel = {1: [255, 0, 0, 255], 2: [0, 255, 0, 255], 3: [0, 0, 255, 255]}[number]
+        # Boundary navigation can repaint the same page without changing its
+        # status label. Wait for the actual pixels, not just the existing label.
+        self.page.wait_for_function(
+            """({status, pixel}) => {
+                const canvas = document.getElementById('canvas');
+                if (document.getElementById('status').textContent !== status ||
+                    !canvas.width || !canvas.height) return false;
+                const actual = canvas.getContext('2d').getImageData(
+                    canvas.width / 2, canvas.height / 2, 1, 1).data;
+                return pixel.every((value, index) => actual[index] === value);
+            }""",
+            arg={"status": "Page %d / 3" % number, "pixel": expected_pixel},
+            timeout=5000)
         self.assertEqual(self.errors, [])
 
     def test_signed_relative_and_absolute_urls_render_with_real_pdfjs(self):
