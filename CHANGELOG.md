@@ -10,6 +10,9 @@
 - Preserve All TVs/HDMI/HDBT selectors through the canonical sequence so scheduled
   shutdown uses the same Pluto broadcast path as manual room controls, rather
   than a second expansion of possibly remapped browser receiver IDs.
+- Preserve aggregate TV intent through startup/resume reconciliation only when
+  one step owns the complete TV winner set; keep per-target precedence and typed
+  transports for partial overrides instead of broadcasting and replaying overrides.
 - Retain typed outputs/transports after Morning Announcements filtering, prohibit
   broadcasts during receiver locks, and ignore stale individual-output metadata
   on aggregate actions without changing stored automation/device configuration.

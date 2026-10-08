@@ -492,3 +492,10 @@ metadata must not narrow an aggregate or redirect its last unlocked target.
 The override is an internal function option, never a persisted/browser field.
 Do not replay uncertain CEC writes. Test the real sequence and single-action
 handler together; helper-only and source-string tests missed this regression.
+
+Startup and Resume Scheduled State must preserve the same aggregate intent.
+Keep per-target winner scoring unchanged; coalesce to one broadcast only when
+the same aggregate step/occurrence owns every current TV winner and its complete
+resolved scope, with no receiver locks. Partial overrides retain individual
+commands and their typed transports; never broadcast then replay the overriding
+TV command. Test real winner selection and reconciliation, not only Run Now.

@@ -5401,17 +5401,47 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
         else targets=defaultAutomationActionTargets(step.action);
-        const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;
+        const tvTargets=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}):null;
+        const resolved=tvTargets?tvTargets.map(item=>item.id):targets;
+        // Shared in-process identity connects winners from this exact step and
+        // occurrence. Do not replace the existing per-target precedence model.
+        const tvPowerIntent=tvTargets?{targets:[...targets],resolvedTargets:tvTargets}:null;
         for(const target of resolved){
           const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
           if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2])){
-            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target});
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(tvPowerIntent?{tvPowerIntent}:{})});
           }
         }
       }
     }
   }
   return [...winners.values()];
+}
+function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
+  const locked=new Set(lockedTargets),tvWinners=winners.filter(winner=>winner.domain==="tv-power");
+  const intent=tvWinners[0]?.tvPowerIntent;
+  const requested=[...new Set((intent?.targets||[]).map(cleanId).filter(Boolean))];
+  const candidate=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+  const selector=["all","hdmi-all","hdbt-all"].includes(candidate)?candidate:null;
+  // A broadcast is safe only when this exact aggregate step owns the complete
+  // TV winner set. Any competing winner (even a remapped alias) keeps dispatch
+  // per-target; never broadcast first and try to repair overridden TVs later.
+  const complete=Boolean(selector&&intent?.resolvedTargets?.length&&
+    tvWinners.every(winner=>winner.tvPowerIntent===intent)&&
+    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.target===target.id)));
+  let emitted=false;
+  return winners.flatMap(winner=>{
+    if(winner.domain!=="tv-power")return [winner];
+    if(locked.has(winner.target))return [{...winner,deferred:true}];
+    const metadata=winner.tvPowerIntent,payload={...(winner.event.payload||{})};
+    if((metadata?.targets||[]).some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete payload.output;
+    if(complete&&!locked.size){
+      if(emitted)return [];
+      emitted=true;
+      return [{...winner,target:selector,event:{...winner.event,targets:[selector],payload},tvTargetsOverride:intent.resolvedTargets}];
+    }
+    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:metadata?.resolvedTargets?.filter(target=>target.id===winner.target)}];
+  });
 }
 function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerClock.now()){
   if(!event)return false;
@@ -5485,13 +5515,15 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
     return {ok:true,announcementResumed:true,reason:"Morning Announcements restored because they have priority",targets,schedulerTime:now.toISOString()};
   }
   const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
-  for(const winner of currentAutomationNonDisplayWinners(now)){
-    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
+  const nonDisplayWinners=currentAutomationNonDisplayWinners(now);
+  for(const winner of planAutomationNonDisplayDispatches(nonDisplayWinners,{lockedTargets:announcementLockedDisplayTargets(["all"])})){
+    if(winner.deferred){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,deferred:true,lockedTargets:[winner.target]});continue}
+    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true,tvTargetsOverride:winner.tvTargetsOverride});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
     catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:false,error:error.message})}
   }
   await backgroundMusicTick();
   const ok=!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false);
-  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:resourceResults.length,ok});
+  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:nonDisplayWinners.length,resourceDispatches:resourceResults.length,ok});
   return {ok,reason,schedulerTime:now.toISOString(),display,resources:resourceResults,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
 }
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));

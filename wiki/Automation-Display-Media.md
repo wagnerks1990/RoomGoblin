@@ -142,3 +142,10 @@ main updater. Verify the existing automation on physical TVs after installation;
 a successful command acknowledgement is not a physical power-state measurement.
 See `docs/TV-POWER-AUTOMATION.md` in the source repository for the detailed contract
 and executable sequence regression command.
+
+Startup and Resume Scheduled State must preserve the same aggregate intent.
+Keep per-target winner scoring unchanged; coalesce to one broadcast only when
+the same aggregate step/occurrence owns every current TV winner and its complete
+resolved scope, with no receiver locks. Partial overrides retain individual
+commands and their typed transports; never broadcast then replay the overriding
+TV command. Test real winner selection and reconciliation, not only Run Now.

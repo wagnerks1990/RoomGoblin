@@ -50,10 +50,30 @@ particularly after uncertain delivery. Run once still participates only on pass
 1. Calendar suppression, class-end handling, occurrence cancellation, timers,
 Morning Announcements ownership and Background Music policy are unchanged.
 
+## Startup and Resume Scheduled State
+
+Recovery first computes the existing per-target winners using scheduled time,
+priority and event identity. Each TV winner retains a shared, in-process marker
+for its original step/occurrence and that step's requested selectors and typed
+output/connection rows. This marker is not persisted and does not change scores.
+
+Only an explicit aggregate that owns every current TV winner and its complete
+resolved target scope can become one broadcast. Any competing TV winner keeps
+execution per-target, including a winner represented by a remapped receiver ID.
+The planner does not broadcast first and then replay overrides. Partial winners
+retain forced HDMI/HDBT transports and discard stale aggregate output metadata.
+Explicit individual selections never become a broadcast merely by covering all
+outputs. Full Morning Announcements restoration keeps its existing early return;
+remaining receiver locks also prohibit broadcasts and defer locked TV writes.
+
+Reconciliation audit keeps the logical `resourceWinners` count and adds
+`resourceDispatches` for the potentially smaller command/result count. A broadcast
+result remains an acknowledgement, not eight physical-state measurements.
+
 ## Executable regression coverage
 
 ```bash
-node --test test/automation-tv-power-sequence.test.js
+node --test test/automation-tv-power-*.test.js
 npm run check
 npm test
 ```
