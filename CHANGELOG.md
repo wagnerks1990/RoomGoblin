@@ -7,6 +7,10 @@
 
 ### Scheduled all-TV power handoff
 
+- Guard actual CEC output ownership for announcement receivers, including named
+  receivers, duplicate mappings and individual-output overrides. Unknown mappings
+  defer TV writes safely; priority is rechecked between individual commands.
+
 - Preserve All TVs/HDMI/HDBT selectors through the canonical sequence so scheduled
   shutdown uses the same Pluto broadcast path as manual room controls, rather
   than a second expansion of possibly remapped browser receiver IDs.

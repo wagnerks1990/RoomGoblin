@@ -167,8 +167,8 @@ test("full announcement ownership defers TV power without sending commands",asyn
 test("an announcement on a non-tvN receiver still prohibits aggregate broadcast",async()=>{
   const h=harness({devices:{screen:{enabled:true}},locked:["screen"]});
   assert.equal((await h.run([power()])).ok,true);
-  assert.ok(h.commands.length>0);
-  assert.ok(h.commands.every(command=>command.action==="cecOutput"));
+  assert.equal(h.commands.length,0);
+  assert.equal((await h.run([power()])).steps[0].deferred,true);
 });
 
 test("the internal announcement bypass retains explicit aggregate semantics",async()=>{
@@ -231,4 +231,69 @@ test("a class-ended occurrence sends no power command",async()=>{
   const result=await h.run([power()],{}, {_classEndAt:new Date("2026-10-08T18:59:00Z").getTime()});
   assert.equal(result.endedReason,"class-ended");
   assert.equal(h.commands.length,0);
+});
+
+
+test("a named announcement receiver protects its physical output during a sequence",async()=>{
+  const devices=Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
+  devices.screen={enabled:true,avOutput:3};
+  const h=harness({devices,locked:["screen"]});
+  const result=await h.run([power()]);
+  assert.equal(result.ok,true);
+  assert.deepEqual(h.commands,outputs("hdbt",1,[3]));
+  assert.equal(result.steps[0].deferred,true);
+  assert.deepEqual(result.steps[0].lockedTargets,["screen"]);
+});
+
+test("a deduplicated locked receiver still protects its shared physical output",async()=>{
+  const devices=Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
+  devices.tv2.avOutput=1;
+  const h=harness({devices,locked:["tv2"]});
+  const result=await h.run([power()]);
+  assert.equal(result.ok,true);
+  assert.deepEqual(h.commands,outputs("hdbt",1,[1,2]));
+  assert.equal(result.steps[0].deferred,true);
+  assert.deepEqual(result.steps[0].lockedTargets,["tv2"]);
+});
+
+test("an individual output override cannot bypass a physical announcement lock",async()=>{
+  const h=harness({locked:["tv3"]});
+  const result=await h.run([power(["tv1"],{state:"off",output:3})]);
+  assert.equal(result.ok,true);
+  assert.equal(result.steps[0].deferred,true);
+  assert.equal(h.commands.length,0);
+});
+
+for(const avOutput of [null,"",0,-1,9,"invalid",true,[]]){
+  test(`untrustworthy announcement output ${JSON.stringify(avOutput)} defers TV writes`,async()=>{
+    const h=harness({devices:{tv1:{enabled:true},screen:{enabled:true,avOutput}},locked:["screen"]});
+    const result=await h.run([power(),lighting()]);
+    assert.equal(result.ok,true);
+    assert.equal(result.steps[0].deferred,true);
+    assert.equal(h.commands.length,0);
+    assert.equal(h.otherCommands.length,1);
+  });
+}
+
+test("physical announcement locks protect both transports conservatively",async()=>{
+  const h=harness({devices:{tv1:{enabled:true,avOutput:3,avConnection:"hdmi"},screen:{enabled:true,avOutput:3,avConnection:"hdbt"}},locked:["screen"]});
+  const result=await h.run([power(["tv1"],{state:"off",connection:"hdmi"})]);
+  assert.equal(result.ok,true);
+  assert.equal(result.steps[0].deferred,true);
+  assert.equal(h.commands.length,0);
+});
+
+test("internal announcement bypass remains explicit for an aliased locked output",async()=>{
+  const h=harness({devices:{tv1:{enabled:true,avOutput:1},screen:{enabled:true,avOutput:1}},locked:["screen"]});
+  assert.equal((await h.run([power()],{bypassAnnouncementPriority:true})).ok,true);
+  assert.deepEqual(h.commands,[{action:"cecAllOutputs",index:1}]);
+});
+
+test("a lock acquired between individual CEC writes protects subsequent outputs",async()=>{
+  const locked=[];
+  const h=harness({locked,reply:()=>{locked.push("tv3");return {ok:true};}});
+  const result=await h.run([power(["tv1","tv3"])]);
+  assert.equal(result.ok,true);
+  assert.equal(result.steps[0].deferred,true);
+  assert.deepEqual(h.commands,[{action:"cecOutput",output:1,connection:"hdbt",index:1}]);
 });

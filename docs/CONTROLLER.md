@@ -53,3 +53,13 @@ Startup and **Resume Scheduled State** preserve aggregate TV-power intent only
 when the aggregate owns the complete current TV winner set. A newer/higher-priority
 individual TV winner prevents a broadcast; its per-target precedence is retained.
 Recovery also preserves forced HDMI/HDBT transports and receiver-lock deferral.
+
+Announcement TV-power protection is enforced again at the shared CEC dispatch
+boundary using every locked receiver's physical `avOutput`, before deduplication
+can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
+port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
+named receivers fail closed: TV power is deferred, not guessed. A protected
+physical port blocks both transports conservatively. Individual payload output
+overrides are checked too, and locks are rechecked between individual writes.
+Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
+this boundary to an ID-only filter or automatically retry deferred CEC writes.

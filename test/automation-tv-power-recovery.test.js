@@ -193,3 +193,42 @@ test("school-calendar suppression prevents all recovery commands",async()=>{
   assert.equal(h.commands.length,0);
   assert.equal(h.musicTicks,0);
 });
+
+
+test("recovery protects the physical output of a named announcement receiver",async()=>{
+  const devices=Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
+  devices.screen={enabled:true,avOutput:3};
+  const h=harness({devices,locked:["screen"]});
+  const result=await h.reconcile([event()]);
+  assert.equal(result.ok,true);
+  assert.deepEqual(h.commands,individual("hdbt",[],[3]));
+  assert.equal(result.resources.find(row=>row.target==="tv3").deferred,true);
+  assert.equal(h.musicTicks,1);
+});
+
+test("recovery protects a locked receiver omitted by physical-output deduplication",async()=>{
+  const devices=Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
+  devices.tv2.avOutput=1;
+  const h=harness({devices,locked:["tv2"]});
+  const result=await h.reconcile([event()]);
+  assert.equal(result.ok,true);
+  assert.deepEqual(h.commands,individual("hdbt",[],[1,2]));
+  assert.equal(result.resources.find(row=>row.target==="tv1").deferred,true);
+});
+
+test("recovery defers physical TV commands when an announcement mapping is unknown",async()=>{
+  const h=harness({devices:{screen:{enabled:true}},locked:["screen"]});
+  const result=await h.reconcile([event()]);
+  assert.equal(result.ok,true);
+  assert.equal(h.commands.length,0);
+  assert.ok(result.resources.every(row=>row.deferred));
+  assert.equal(h.musicTicks,1);
+});
+
+test("recovery output overrides cannot target an announcement-owned physical output",async()=>{
+  const h=harness({locked:["tv3"]});
+  const result=await h.reconcile([event("individual","00:01",power(["tv1"],{state:"off",output:3}))]);
+  assert.equal(result.ok,true);
+  assert.equal(h.commands.length,0);
+  assert.equal(result.resources[0].deferred,true);
+});
