@@ -39,11 +39,11 @@ metadata before filtering so it cannot redirect the last remaining output.
 This option is not accepted as a browser or persisted automation override.
 
 The existing internal announcement-priority bypass remains separate from normal
-scheduled and manual Run Now operation. The last shared CEC dispatch boundary additionally
-resolves all announcement receiver locks to their original physical outputs,
-including named receivers and aliases discarded during target deduplication.
-This uses configured mappings, not physical wiring discovery. It does not change
-stored mappings or the per-target recovery winner scoring model.
+scheduled and manual Run Now operation. The last shared CEC dispatch boundary
+additionally resolves all announcement receiver locks to their original physical
+outputs, including named receivers and aliases discarded during target
+deduplication. This uses configured mappings, not physical wiring discovery. It
+does not change stored mappings or the per-target recovery winner scoring model.
 
 A rejected, missing, pending-verification or thrown adapter result is a failed
 action. Continue-on-error advances only according to the saved action setting;
@@ -54,16 +54,16 @@ Morning Announcements ownership and Background Music policy are unchanged.
 
 ## Physical announcement-output safety
 
-
 Announcement TV-power protection is enforced again at the shared CEC dispatch
-boundary using every locked receiver's physical `avOutput`, before deduplication
-can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
-port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
-named receivers fail closed: TV power is deferred, not guessed. A protected
-physical port blocks both transports conservatively. Individual payload output
-overrides are checked too, and locks are rechecked between individual writes.
-Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
-this boundary to an ID-only filter or automatically retry deferred CEC writes.
+boundary using every locked receiver's physical `avOutput`, independently of the
+deduplicated target list. Known legacy tv1..tv8 IDs may use their implicit
+same-number port only when `avOutput` is absent. Explicit blank/invalid mappings
+and unmapped named receivers fail closed: TV power is deferred, not guessed.
+A protected physical port blocks both transports conservatively. Individual
+payload output overrides are checked too, and locks are rechecked between
+individual writes. Deferral is surfaced as priority ownership, not an adapter
+failure. Do not weaken this boundary to an ID-only filter or automatically retry
+deferred CEC writes.
 
 ## Startup and Resume Scheduled State
 
@@ -108,10 +108,15 @@ startup/operator-resume parity, complete versus partial aggregate ownership,
 same-minute priority, later individual overrides, forced transport, stale output
 metadata, legacy events, disabled/future/unmatched events, school-day suppression,
 announcement restoration and lock deferral. Failure cases verify no uncertain
-write is replayed and Background Music reconciliation still runs. These tests
-inspect the emitted commands rather than merely looking for helper names in source.
+write is replayed and Background Music reconciliation still runs.
 
-These tests do not contact classroom hardware or verify physical panel standby.
+Both harnesses cover named announcement receivers, locked aliases removed by
+output deduplication, unknown/invalid output mappings and individual overrides
+that would otherwise redirect a command onto a protected output. Sequence tests
+also cover a lock acquired between two awaited CEC writes and the explicit
+internal priority bypass. Assertions inspect emitted commands, not only helper
+names or source strings. These tests do not contact classroom hardware or verify
+physical panel standby.
 
 ## Upgrade, acceptance and rollback
 
