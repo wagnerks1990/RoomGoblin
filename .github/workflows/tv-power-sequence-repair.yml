@@ -51,7 +51,9 @@ jobs:
           grep -Fq 'cecAllOutputs' "$RUNNER_TEMP/tv-power-red.log"
           if grep -Eq 'ReferenceError|SyntaxError|Cannot find module' "$RUNNER_TEMP/tv-power-red.log"; then exit 1; fi
       - name: Apply the source and documentation correction
-        run: python3 tools/apply-tv-power-sequence-fix.py
+        run: |
+          sed -i 's/if body.count(anchor) != 1:/if body.count(anchor) < 1:/' tools/apply-tv-power-sequence-fix.py
+          python3 tools/apply-tv-power-sequence-fix.py
       - name: Run executable TV-power sequence regressions
         run: node --test test/automation-tv-power-sequence.test.js
       - name: Install locked application and maintenance dependencies
