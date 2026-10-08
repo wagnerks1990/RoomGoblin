@@ -1430,7 +1430,7 @@ function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
-async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation"}={}){
+async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation",tvTargetsOverride=null,bypassAnnouncementPriority=false}={}){
   const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
   if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action||"(blank)"}`);
@@ -1438,17 +1438,34 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
 
   if(action==="tv.power"){
     const on=String(p.state||"on").toLowerCase()==="on";
-    const requestedTargets=Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[];
-    const broadcastTarget=p.output===undefined&&requestedTargets.length===1?requestedTargets[0]:null;
-    const broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
-    const tvTargets=expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    const requestedTargets=[...new Set(Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[])];
+    // An explicit All selector is intent, not an expanded list of receiver IDs.
+    // Legacy individual-output metadata must not narrow an aggregate command.
+    const broadcastTarget=requestedTargets.includes("all")?"all":requestedTargets.length===1?requestedTargets[0]:null;
+    let broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
+    // Only the in-process sequence runner supplies this typed, lock-filtered
+    // override. Preserve its forced transport instead of expanding IDs again.
+    const tvTargets=Array.isArray(tvTargetsOverride)?tvTargetsOverride.map(target=>({...target})):expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    const aggregate=requestedTargets.some(id=>["all","hdmi-all","hdbt-all"].includes(id));
+    if(!aggregate&&p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
+    const initialLocks=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(["all"]);
+    // Enforce physical ownership at the last shared dispatch boundary, after
+    // individual output overrides and before any CEC write. An alias removed by
+    // target deduplication must still protect its original physical output.
+    if(initialLocks.length)broadcastAction=null;
     if(broadcastAction){
-      // Match the proven Room controls path for the explicit all-TV selectors.
       outputs.results.push(await directPluto({action:broadcastAction,index:on?0:1}));
     }else{
-      if(p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
+      const deferred=new Set();
       for(const target of tvTargets){
+        const locks=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(["all"]);
+        const blocked=automationTvPowerPhysicalLocks(target,locks);
+        if(blocked.length){for(const id of blocked)deferred.add(id);continue}
         outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
+      }
+      if(deferred.size){
+        outputs.deferred=true;outputs.lockedTargets=[...deferred];
+        if(!outputs.results.length){const error=new Error("TV power deferred for Morning Announcements physical output ownership");error.code="ANNOUNCEMENTS_PRIORITY_ACTIVE";error.targets=outputs.lockedTargets;throw error}
       }
     }
     assertAdapterResults(outputs.results,{action:"TV power"});
@@ -1578,6 +1595,20 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   return {ok:true,eventId:event.id,name:event.name,manual,...outputs};
 }
 
+
+function automationTvPowerPhysicalLocks(target,lockedReceivers){
+  const blocked=[];
+  for(const rawId of lockedReceivers){
+    const id=cleanId(rawId),receiver=devices[id];
+    const explicit=receiver&&Object.prototype.hasOwnProperty.call(receiver,"avOutput");
+    const value=explicit?receiver.avOutput:(/^tv[1-8]$/.test(id)?id.slice(2):null);
+    const output=(typeof value==="number"||typeof value==="string"&&value.trim()!=="")?Number(value):NaN;
+    // Do not guess an independent/named receiver's wiring. Unknown or invalid
+    // mappings defer TV writes, and a known port protects both CEC transports.
+    if(!Number.isInteger(output)||output<1||output>8||output===target.output)blocked.push(rawId);
+  }
+  return blocked;
+}
 
 function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   if(!baseClass)return {classes:[],endAt:null,finalClass:null};
@@ -1846,11 +1877,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       else if(explicitTargets.length)rawTargets=explicitTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
 
-      let resolvedTargets;
+      let resolvedTargets,resolvedTvTargets=null;
       if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
-      else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
-      else resolvedTargets=[...rawTargets];
+      else if(stepDomain==="tv-power"){
+        resolvedTvTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"});
+        resolvedTargets=resolvedTvTargets.map(item=>item.id);
+      }else resolvedTargets=[...rawTargets];
 
+      const stepPayload={...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})};
+      if(stepDomain==="tv-power"&&rawTargets.some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete stepPayload.output;
+      // Preserve aggregate intent only when it cannot broaden a filtered
+      // announcement target set. Any active receiver lock prohibits broadcast,
+      // including receivers whose IDs are not part of the legacy tvN inventory.
+      const preserveTvSelectors=stepDomain==="tv-power"&&(bypassAnnouncementPriority||announcementLockedDisplayTargets(["all"]).length===0);
       let lockedTargets=[];
       if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
         lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
@@ -1860,11 +1899,12 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
           executed++;
         }else{
-          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:stepPayload,targets:preserveTvSelectors&&!lockedTargets.length?rawTargets:resolvedTargets,timerOverlay:null};
           try{
             if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true,tvTargetsOverride:resolvedTvTargets?.filter(target=>resolvedTargets.includes(target.id)),bypassAnnouncementPriority});
             pushResults(result.results);
+            if(result.lockedTargets?.length)lockedTargets=[...new Set([...lockedTargets,...result.lockedTargets])];
             pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
           }catch(err){
             if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
@@ -1879,11 +1919,12 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           if(overlayCoverage==="all-display-actions"&&stepDomain==="display-content")await applyTimerOverlay({targetsOverride:stepEvent.targets,force:true});
         }
       }else{
-        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:stepPayload,targets:preserveTvSelectors&&!lockedTargets.length?rawTargets:resolvedTargets,timerOverlay:null};
         try{
           if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true,tvTargetsOverride:resolvedTvTargets?.filter(target=>resolvedTargets.includes(target.id)),bypassAnnouncementPriority});
           pushResults(result.results);
+            if(result.lockedTargets?.length)lockedTargets=[...new Set([...lockedTargets,...result.lockedTargets])];
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount});
         }catch(err){
           combined.ok=false;
@@ -5389,17 +5430,47 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
         else targets=defaultAutomationActionTargets(step.action);
-        const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;
+        const tvTargets=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}):null;
+        const resolved=tvTargets?tvTargets.map(item=>item.id):targets;
+        // Shared in-process identity connects winners from this exact step and
+        // occurrence. Do not replace the existing per-target precedence model.
+        const tvPowerIntent=tvTargets?{targets:[...targets],resolvedTargets:tvTargets}:null;
         for(const target of resolved){
           const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
           if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2])){
-            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target});
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(tvPowerIntent?{tvPowerIntent}:{})});
           }
         }
       }
     }
   }
   return [...winners.values()];
+}
+function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
+  const locked=new Set(lockedTargets),tvWinners=winners.filter(winner=>winner.domain==="tv-power");
+  const intent=tvWinners[0]?.tvPowerIntent;
+  const requested=[...new Set((intent?.targets||[]).map(cleanId).filter(Boolean))];
+  const candidate=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+  const selector=["all","hdmi-all","hdbt-all"].includes(candidate)?candidate:null;
+  // A broadcast is safe only when this exact aggregate step owns the complete
+  // TV winner set. Any competing winner (even a remapped alias) keeps dispatch
+  // per-target; never broadcast first and try to repair overridden TVs later.
+  const complete=Boolean(selector&&intent?.resolvedTargets?.length&&
+    tvWinners.every(winner=>winner.tvPowerIntent===intent)&&
+    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.target===target.id)));
+  let emitted=false;
+  return winners.flatMap(winner=>{
+    if(winner.domain!=="tv-power")return [winner];
+    if(locked.has(winner.target))return [{...winner,deferred:true}];
+    const metadata=winner.tvPowerIntent,payload={...(winner.event.payload||{})};
+    if((metadata?.targets||[]).some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete payload.output;
+    if(complete&&!locked.size){
+      if(emitted)return [];
+      emitted=true;
+      return [{...winner,target:selector,event:{...winner.event,targets:[selector],payload},tvTargetsOverride:intent.resolvedTargets}];
+    }
+    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:metadata?.resolvedTargets?.filter(target=>target.id===winner.target)}];
+  });
 }
 function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerClock.now()){
   if(!event)return false;
@@ -5473,13 +5544,15 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
     return {ok:true,announcementResumed:true,reason:"Morning Announcements restored because they have priority",targets,schedulerTime:now.toISOString()};
   }
   const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
-  for(const winner of currentAutomationNonDisplayWinners(now)){
-    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
-    catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:false,error:error.message})}
+  const nonDisplayWinners=currentAutomationNonDisplayWinners(now);
+  for(const winner of planAutomationNonDisplayDispatches(nonDisplayWinners,{lockedTargets:announcementLockedDisplayTargets(["all"])})){
+    if(winner.deferred){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,deferred:true,lockedTargets:[winner.target]});continue}
+    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true,tvTargetsOverride:winner.tvTargetsOverride});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result,...(result.deferred?{deferred:true,lockedTargets:result.lockedTargets}: {})})}
+    catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,...(error.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"?{ok:true,deferred:true,lockedTargets:error.targets||[]}:{ok:false,error:error.message})})}
   }
   await backgroundMusicTick();
   const ok=!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false);
-  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:resourceResults.length,ok});
+  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:nonDisplayWinners.length,resourceDispatches:resourceResults.length,ok});
   return {ok,reason,schedulerTime:now.toISOString(),display,resources:resourceResults,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
 }
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));

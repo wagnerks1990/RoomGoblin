@@ -121,3 +121,41 @@ Previous/Next, the configured start page, automatic page timing and loop/stop
 behavior. Verify the actual PDF picture; an automation marked Completed only
 proves command execution. Preserve Morning Announcements priority, scheduler
 recovery and Background Music behavior.
+
+## Scheduled TV power
+
+All TVs, All HDMI TVs and All HDBT TVs retain their selectors through the ordered
+action sequence and use the corresponding Pluto broadcast command. This matches
+the manual room controls and does not depend on browser receiver count or duplicate
+receiver-to-output mappings. Existing automations do not need to be recreated.
+Individual selections continue using individual mapped outputs.
+
+Morning Announcements prohibit aggregate broadcasts while any configured receiver
+is locked. Locked targets are deferred; unlocked targets retain their original
+HDMI/HDBT transport. Stale individual output metadata cannot redirect a filtered
+aggregate onto a locked target. Run once, action ordering, cancellation, calendar
+suppression and continue-on-error behavior remain unchanged. Failed or uncertain
+CEC results remain failures and are not automatically replayed.
+
+Deploy the exact validated and published image pair with the normal backed-up
+main updater. Verify the existing automation on physical TVs after installation;
+a successful command acknowledgement is not a physical power-state measurement.
+See `docs/TV-POWER-AUTOMATION.md` in the source repository for the detailed contract
+and executable sequence regression command.
+
+Startup and Resume Scheduled State must preserve the same aggregate intent.
+Keep per-target winner scoring unchanged; coalesce to one broadcast only when
+the same aggregate step/occurrence owns every current TV winner and its complete
+resolved scope, with no receiver locks. Partial overrides retain individual
+commands and their typed transports; never broadcast then replay the overriding
+TV command. Test real winner selection and reconciliation, not only Run Now.
+
+Announcement TV-power protection is enforced again at the shared CEC dispatch
+boundary using every locked receiver's physical `avOutput`, before deduplication
+can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
+port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
+named receivers fail closed: TV power is deferred, not guessed. A protected
+physical port blocks both transports conservatively. Individual payload output
+overrides are checked too, and locks are rechecked between individual writes.
+Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
+this boundary to an ID-only filter or automatically retry deferred CEC writes.

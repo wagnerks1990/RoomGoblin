@@ -39,7 +39,7 @@ Each scheduled action owns a target domain. Display actions select display clien
 
 Additional actions may reuse the main event targets only when both actions use a compatible target domain. Cross-domain actions require explicit targets in the editor. For compatibility, a legacy or empty cross-domain step uses the domain's **All** target at execution time and is written with that default the next time the automation is saved.
 
-An automated TV-power step with **All TVs**, **All HDMI TVs**, or **All HDBT TVs** uses the matching Pluto broadcast CEC command, the same command used by the Room controls. A selected set of TVs continues to use individual output commands.
+An automated TV-power step with **All TVs**, **All HDMI TVs**, or **All HDBT TVs** uses the matching Pluto broadcast CEC command, the same command used by the Room controls. A selected set of TVs continues to use individual output commands. The canonical sequence preserves that selector until dispatch rather than replacing it with browser receiver IDs. During Morning Announcements, broadcasts are prohibited: locked targets are deferred and remaining targets use their original output/connection rows. Legacy individual-output metadata does not narrow an aggregate. See [TV power automation](TV-POWER-AUTOMATION.md) for regression coverage and deployment verification.
 
 An explicit target selected on an additional action overrides the linked class's display defaults. Class defaults are used only when that cross-domain display action has no explicit target of its own.
 
@@ -48,3 +48,18 @@ An explicit target selected on an additional action overrides the linked class's
 Scheduled automations are selected from one time-ordered dropdown rather than duplicated selectors or expanded cards. Class-linked automations sort by earliest resolved occurrence. The editor follows the automation selected in that single list. Class schedule links stay collapsed into a compact summary; **Edit Links** opens a focused dialog for multi-class selection and applies changes only when **Save Class Links** is chosen. The action editor shows only controls relevant to the selected action and uploaded media type.
 
 Execution is pass-based: Run once participates only on pass 1, Loop X times participates through X passes, and Loop continually participates every pass until the occurrence ends or is superseded/cancelled. The editor intentionally exposes only **Save & Enable** and **Cancel / New**: Save & Enable validates the current editor state, persists it, and enables the automation as one operation; Cancel / New discards unsaved editor changes and opens a clean automation.
+
+Startup and **Resume Scheduled State** preserve aggregate TV-power intent only
+when the aggregate owns the complete current TV winner set. A newer/higher-priority
+individual TV winner prevents a broadcast; its per-target precedence is retained.
+Recovery also preserves forced HDMI/HDBT transports and receiver-lock deferral.
+
+Announcement TV-power protection is enforced again at the shared CEC dispatch
+boundary using every locked receiver's physical `avOutput`, before deduplication
+can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
+port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
+named receivers fail closed: TV power is deferred, not guessed. A protected
+physical port blocks both transports conservatively. Individual payload output
+overrides are checked too, and locks are rechecked between individual writes.
+Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
+this boundary to an ID-only filter or automatically retry deferred CEC writes.
