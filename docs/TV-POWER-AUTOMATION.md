@@ -78,7 +78,7 @@ npm run check
 npm test
 ```
 
-The focused harness executes the actual `runClassroomAutomation` and
+The sequence harness executes the actual `runClassroomAutomation` and
 `runSingleAutomationAction` source together with the real schema and target
 helpers. Only appliance dependencies are fixtures. It covers scheduled/manual
 broadcast parity, canonical/legacy events, cross-domain/default/inherited
@@ -86,6 +86,15 @@ targets, remapped/duplicate receiver outputs, explicit individual commands,
 forced transport after partial locks, full deferral, failure handling, no replay,
 Run once, cancellation, pause and class-end boundaries. A helper-only test or
 assertion that the source contains `cecAllOutputs` cannot detect this handoff bug.
+
+The recovery harness executes the actual winner selection, dispatch planner,
+`reconcileScheduledAutomationState` and single-action handler together. It checks
+startup/operator-resume parity, complete versus partial aggregate ownership,
+same-minute priority, later individual overrides, forced transport, stale output
+metadata, legacy events, disabled/future/unmatched events, school-day suppression,
+announcement restoration and lock deferral. Failure cases verify no uncertain
+write is replayed and Background Music reconciliation still runs. These tests
+inspect the emitted commands rather than merely looking for helper names in source.
 
 These tests do not contact classroom hardware or verify physical panel standby.
 
