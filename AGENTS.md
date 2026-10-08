@@ -479,3 +479,16 @@ denial must be diagnosed separately and may fall back to muted video; never
 claim JavaScript can manufacture activation or release announcement priority
 because a receiver stalls. See the playback safeguards and physical acceptance
 limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
+
+## TV-power aggregate intent
+
+Read `docs/TV-POWER-AUTOMATION.md` before changing scheduled TV power. Preserve
+explicit All/HDMI-All/HDBT-All selectors through the canonical action sequence;
+expanded IDs are for resource/priority checks, not a replacement for broadcast
+intent. Never broadcast after announcement filtering or while any configured
+receiver is announcement-locked. Keep typed output/connection rows through
+partial filtering so forced HDMI/HDBT selection survives. Individual output
+metadata must not narrow an aggregate or redirect its last unlocked target.
+The override is an internal function option, never a persisted/browser field.
+Do not replay uncertain CEC writes. Test the real sequence and single-action
+handler together; helper-only and source-string tests missed this regression.

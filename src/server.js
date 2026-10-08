@@ -1430,7 +1430,7 @@ function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
-async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation"}={}){
+async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation",tvTargetsOverride=null}={}){
   const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
   if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action||"(blank)"}`);
@@ -1438,10 +1438,14 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
 
   if(action==="tv.power"){
     const on=String(p.state||"on").toLowerCase()==="on";
-    const requestedTargets=Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[];
-    const broadcastTarget=p.output===undefined&&requestedTargets.length===1?requestedTargets[0]:null;
+    const requestedTargets=[...new Set(Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[])];
+    // An explicit All selector is intent, not an expanded list of receiver IDs.
+    // Legacy individual-output metadata must not narrow an aggregate command.
+    const broadcastTarget=requestedTargets.includes("all")?"all":requestedTargets.length===1?requestedTargets[0]:null;
     const broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
-    const tvTargets=expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    // Only the in-process sequence runner supplies this typed, lock-filtered
+    // override. Preserve its forced transport instead of expanding IDs again.
+    const tvTargets=Array.isArray(tvTargetsOverride)?tvTargetsOverride.map(target=>({...target})):expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
     if(broadcastAction){
       // Match the proven Room controls path for the explicit all-TV selectors.
       outputs.results.push(await directPluto({action:broadcastAction,index:on?0:1}));
@@ -1846,11 +1850,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       else if(explicitTargets.length)rawTargets=explicitTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
 
-      let resolvedTargets;
+      let resolvedTargets,resolvedTvTargets=null;
       if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
-      else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
-      else resolvedTargets=[...rawTargets];
+      else if(stepDomain==="tv-power"){
+        resolvedTvTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"});
+        resolvedTargets=resolvedTvTargets.map(item=>item.id);
+      }else resolvedTargets=[...rawTargets];
 
+      const stepPayload={...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})};
+      if(stepDomain==="tv-power"&&rawTargets.some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete stepPayload.output;
+      // Preserve aggregate intent only when it cannot broaden a filtered
+      // announcement target set. Any active receiver lock prohibits broadcast,
+      // including receivers whose IDs are not part of the legacy tvN inventory.
+      const preserveTvSelectors=stepDomain==="tv-power"&&(bypassAnnouncementPriority||announcementLockedDisplayTargets(["all"]).length===0);
       let lockedTargets=[];
       if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
         lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
@@ -1860,10 +1872,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
           executed++;
         }else{
-          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:stepPayload,targets:preserveTvSelectors&&!lockedTargets.length?rawTargets:resolvedTargets,timerOverlay:null};
           try{
             if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true,tvTargetsOverride:resolvedTvTargets?.filter(target=>resolvedTargets.includes(target.id))});
             pushResults(result.results);
             pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
           }catch(err){
@@ -1879,10 +1891,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           if(overlayCoverage==="all-display-actions"&&stepDomain==="display-content")await applyTimerOverlay({targetsOverride:stepEvent.targets,force:true});
         }
       }else{
-        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:stepPayload,targets:preserveTvSelectors&&!lockedTargets.length?rawTargets:resolvedTargets,timerOverlay:null};
         try{
           if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true,tvTargetsOverride:resolvedTvTargets?.filter(target=>resolvedTargets.includes(target.id))});
           pushResults(result.results);
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount});
         }catch(err){
