@@ -86,11 +86,12 @@ This is a Hub application change; the normal selective updater may retain the
 unchanged maintenance component after its existing input/identity checks.
 
 After deployment, compare the running Hub OCI revision with the selected commit
-and verify `/health` and `/health/ready`. Run the existing shutdown automation in
-an appropriate maintenance period and confirm every intended physical panel,
-including the previously missed panel, enters standby. Then verify manual power
-controls still work. No automation recreation or Android APK reinstall is needed.
-A successful Pluto acknowledgement alone is not proof of physical power state.
+and confirm the updater's application, database and scheduler readiness checks
+pass. Run the existing shutdown automation in an appropriate maintenance period
+and confirm every intended physical panel, including the previously missed
+panel, enters standby. Then verify manual power controls still work. No automation
+recreation or Android APK reinstall is needed. A successful Pluto acknowledgement
+alone is not proof of physical power state.
 
 The updater owns operational backup, health checking and automatic rollback on
 deployment failure. Preserve its saved source/database/environment and image
