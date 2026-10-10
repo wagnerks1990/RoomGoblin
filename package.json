@@ -22,8 +22,8 @@
     "hls.js": "^1.7.3",
     "mqtt": "^5.16.0",
     "multer": "^2.4.0",
-    "pdfjs-dist": "^6.2.108",
-    "ws": "^8.18.3"
+    "pdfjs-dist": "^6.4.299",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "esbuild": "0.28.2"
