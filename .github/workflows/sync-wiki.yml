@@ -40,7 +40,7 @@ jobs:
 
       - name: Clone Wiki
         env:
-          GH_TOKEN: ${{ secrets.WIKI_PUSH_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.WIKI_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" /tmp/wiki
@@ -60,7 +60,7 @@ jobs:
 
       - name: Push Wiki
         env:
-          GH_TOKEN: ${{ secrets.WIKI_PUSH_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.WIKI_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
           cd /tmp/wiki
