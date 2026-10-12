@@ -1,6 +1,6 @@
 # AI Context: Dynamic Display Layout and Hard Containment
 
-Renderer revision `dynamic-fit-20260922-8` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
+Renderer revision `dynamic-fit-20261012-1` treats title, subtitle, body, and timer as dynamic objects. Do not reintroduce fixed title/subtitle/body/timer bands.
 
 Required invariants:
 
@@ -19,4 +19,4 @@ Do not make containment-critical structural styles depend only on the companion 
 
 Behavioral changes require synchronized browser regressions, operator docs, Wiki mirror, AI context, `LAYOUT_REVISION`, and receiver module/CSS cache keys.
 
-Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
+Live-TV containment note: renderer `dynamic-fit-20261012-1` retains a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.

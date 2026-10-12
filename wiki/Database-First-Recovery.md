@@ -188,3 +188,9 @@ during the read, `running:true` conservatively keeps the caller polling; the nex
 poll returns the terminal phase. Never pair an old `quiescing` phase with
 `running:false`. A failed rollback remains `rollback-failed` with its journal
 retained; this status ordering does not alter rollback or cleanup policy.
+
+If a started worker exits without persisting a terminal phase (including early
+configuration/lock failures or a failed status write), polling reports an explicit
+`failed` response with `previousPhase` and `workerExitedWithoutTerminalStatus:true`.
+It does not claim rollback success or rewrite/delete the durable status or journal;
+retain those files for diagnosis and startup recovery.

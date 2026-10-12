@@ -7,6 +7,10 @@
 
 ### Display fallback and recovery status
 
+- Surface an explicit failure when a recovery worker dies before persisting its
+  terminal status; retain its journal and update every active renderer-revision
+  contract and Wiki mirror.
+
 - Fit visible fallback glyph ink against its display region rather than its own
   line box, preventing excessive shrinking when the font stylesheet is missing.
   Keep clipping, natural-size and painted-range containment checks; advance the

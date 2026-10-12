@@ -130,7 +130,8 @@ class FullRecoveryManager:
     def status(self):
         # Probe the worker before reading its durable phase. A worker can finish
         # during the read; retaining running=True then keeps callers polling.
-        # Once running=False is captured, its terminal status is already written.
+        # A finished worker's durable phase is read after the liveness sample;
+        # an exceptional exit with no terminal write is handled explicitly below.
         # Serialize against start() so a replacement job cannot invalidate this
         # ordering. The worker's atomic status writes do not acquire this guard.
         with self._guard:
@@ -142,6 +143,16 @@ class FullRecoveryManager:
             except Exception as exc:
                 value = {"phase": "failed", "running": False, "ok": False, "message": f"Recovery status is unreadable: {exc}"}
             value["running"] = running
+            if self._thread is not None and not running and value.get("phase") not in (
+                    "completed", "failed", "rolled-back", "rollback-failed"):
+                # Configuration/lock failures can stop the worker before its
+                # guarded transaction, and a failed status write can leave an
+                # old phase durable. Report failure without fabricating rollback
+                # success or modifying the journal needed for startup recovery.
+                value = {**value, "phase": "failed", "ok": False,
+                         "previousPhase": value.get("phase"),
+                         "workerExitedWithoutTerminalStatus": True,
+                         "message": "Recovery worker exited without a terminal status; inspect recovery status and any retained journal before retrying."}
             return value
 
     def _status(self, phase, message, ok=None, **extra):

@@ -614,3 +614,9 @@ When adding a new persistent file, contributors must classify it as one of:
 If it is none of those, it should normally be database-backed.
 
 Any non-regenerable state that remains outside SQLite must be added to the Full Recovery Export allowlist/manifest and covered by restore regression tests.
+
+If a started worker exits without persisting a terminal phase (including early
+configuration/lock failures or a failed status write), polling reports an explicit
+`failed` response with `previousPhase` and `workerExitedWithoutTerminalStatus:true`.
+It does not claim rollback success or rewrite/delete the durable status or journal;
+retain those files for diagnosis and startup recovery.
