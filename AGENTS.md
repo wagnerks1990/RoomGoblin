@@ -157,6 +157,13 @@ curl -fsS http://localhost:3000/health
 
 Take a filesystem/database-safe backup before production upgrades.
 
+Existing-appliance `install.sh` invocations must enter the host-owned main updater
+before mutations. Preserve the inherited-lock/private-journal installer admission
+in `deploy/installer-transaction.py`, verified selective deployment identity and
+fresh-bootstrap behavior. Never add a flag that bypasses the native snapshot or
+allow raw `--build-local` to reinstall an existing appliance.
+
+
 Operational backups intentionally exclude `data/media`; uploaded media is replaceable and must not block the mandatory pre-update backup. Top-level `data/*.db`, `*.db-wal`, and `*.db-shm` identities are also excluded from the filesystem pass; the operational archive must contain only the separately created canonical SQLite snapshot, never stale legacy database files. Normal configuration-data restore preserves the live `data/media` directory because current operational archives do not contain it. Interrupted legacy restore recovery is the compatibility exception: older safety archives may contain media, so startup rollback must restore those archived media entries. Preserve the streaming Info-ZIP/ZIP64 path and do not reintroduce whole-archive Node buffering.
 
 The GUI updater accepts only semantic-version GitHub releases and delegates the durable update to `classroom-hub-app-update.service`. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
