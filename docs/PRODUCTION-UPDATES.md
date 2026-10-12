@@ -93,14 +93,17 @@ protected. Use the normal in-checkout command after this first successful update
 
 ## Pull-request settings
 
-Both repository Settings > General > Pull Requests and the main ruleset must allow
-merge commits, squash merges and rebase merges. The default branch is main; keep
-pull requests, required checks, resolved review threads and branch protections.
-Auto-merge is useful only after all required checks/reviews complete. Do not bypass
-checks, add long-lived environment branches or disable security scans to save time.
-Squash is convenient for small fixes; all three methods are permitted by policy.
-An administrator must apply any outstanding ruleset setting; documentation or the
-repository checkboxes do not change a restrictive ruleset by themselves.
+Repository Settings may expose multiple merge methods, but the effective `main`
+ruleset is authoritative. The current ruleset permits squash merges only and
+requires an up-to-date branch, the `validate` and `windows-agent` checks, and resolved
+review threads. Also retain the complete Validate, Display browser regression and
+Security gates workflow requirements. Repository checkboxes do not override the
+ruleset. Do not bypass checks or enable auto-merge without explicit operator
+approval; any change to the ruleset requires a separately reviewed decision.
+
+System Updates quotas apply only after administrator authorization: rejected
+callers cannot exhaust another administrator's appliance-wide polling or mutation
+budget. Forwarded/client addresses do not create independent update budgets.
 
 ## Recovery and limits
 

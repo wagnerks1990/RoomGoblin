@@ -32,9 +32,12 @@ The Host Agent provides allowlisted host inventory and lifecycle functions for s
 
 Application releases run as the separate oneshot unit
 `classroom-hub-app-update.service`. The Host Agent validates and writes a
-root-only transient request; the runner then resolves an approved semantic
-version tag, updates the Git checkout, refreshes the Host Agent, rebuilds the
-Compose services, and performs version-aware health verification. A private
+root-only durable request. The normal GUI/CLI path selects an exact trusted merged
+main SHA for the native `published` transaction; semantic-release handling remains
+compatibility-only. The runner independently validates source ancestry and the
+exact published image pair before backup/source mutation, selectively reconciles
+changed services, and verifies version, database, mounts and image identity with
+rollback on failure. A private
 repository token is sourced from the encrypted application database and exists
 on the host only for the duration of `git fetch`.
 

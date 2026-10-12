@@ -159,7 +159,7 @@ Take a filesystem/database-safe backup before production upgrades.
 
 Operational backups intentionally exclude `data/media`; uploaded media is replaceable and must not block the mandatory pre-update backup. Top-level `data/*.db`, `*.db-wal`, and `*.db-shm` identities are also excluded from the filesystem pass; the operational archive must contain only the separately created canonical SQLite snapshot, never stale legacy database files. Normal configuration-data restore preserves the live `data/media` directory because current operational archives do not contain it. Interrupted legacy restore recovery is the compatibility exception: older safety archives may contain media, so startup rollback must restore those archived media entries. Preserve the streaming Info-ZIP/ZIP64 path and do not reintroduce whole-archive Node buffering.
 
-The GUI updater accepts only semantic-version GitHub releases and delegates the durable update to `classroom-hub-app-update.service`. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
+The GUI updater selects only the latest merged commit on trusted `main` and delegates the exact SHA to the durable `published` transaction in `classroom-hub-app-update.service`; semantic-release handling remains a compatibility backend path. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
 
 Core service recreation is also part of the updater contract. A release can change mounts, read-only/writable paths, environment, or networking without changing an image ID. The updater must therefore force-recreate `maintenance-agent` and `classroom-hub` when deployment inputs/configuration change or when rolling back a release. Published-source selective updates may retain unchanged components only after per-running-image source comparison and a verified deployment-configuration hash; unknown inputs/history must trigger full reconciliation. Read `docs/PRODUCTION-UPDATES.md`. In particular, Managed Displays depends on the dedicated `classroom-control-hub-android-adb` volume mounted at `/managed/classroom-hub/data/android-tv/.android`; the updater must verify this path is writable before declaring the release healthy. Do not replace the force-recreate deployment with a plain `docker compose up -d` unless equivalent tested mount reconciliation exists. See `docs/MANAGED-DISPLAYS-RECOVERY.md`.
 
@@ -311,7 +311,7 @@ School and classroom identity and theming are stored in the SQLite site profile 
 
 ## System Updates GUI contract
 
-The administrator System Updates page follows the latest merged commit on trusted `main`; it must not use semantic release channels as its normal selection mechanism. A GUI check may discover a newer main commit before CI publication completes, but installation must pass only that exact SHA into the native `published` transaction. Preserve the two-stage trust boundary: the Hub checks GitHub/local fast-forward state and stale selection, then the native runner independently fetches trusted main, verifies ancestry and the exact immutable image pair before any source/runtime mutation. Never add an arbitrary-SHA input, pull source before image preflight, bypass the mutation lock/journal, or create a backup that substitutes for the runner's post-preflight operational backup. Automatic updates use the same path. Keep previous-deployment rollback available and show commit identity in status/history because multiple main commits may share one VERSION string.
+The administrator System Updates page follows the latest merged commit on trusted `main`; it must not use semantic release channels as its normal selection mechanism. A GUI check may discover a newer main commit before CI publication completes, but installation must pass only that exact SHA into the native `published` transaction. Preserve the two-stage trust boundary: the Hub checks GitHub/local fast-forward state and stale selection, then the native runner independently fetches trusted main, verifies ancestry and the exact immutable image pair before any source/runtime mutation. Never add an arbitrary-SHA input, pull source before image preflight, bypass the mutation lock/journal, or create a backup that substitutes for the runner's post-preflight operational backup. Automatic updates use the same path. Keep previous-deployment rollback available and show commit identity in status/history because multiple main commits may share one VERSION string. Administrator authorization must precede the fixed appliance-wide read/mutation quotas so rejected callers cannot consume the administrator budget.
 
 ## CI workflow identity contract
 
@@ -327,9 +327,9 @@ Preserve selective reconciliation, the legacy-runner migration, main ancestry,
 image verification, backups and rollback. Keep local branches/commits intact;
 legacy production and detached recovery checkouts transition safely to main.
 See `docs/PRODUCTION-UPDATES.md`; never replace this with an unconditional pull.
-Repository settings and the main PR ruleset must both permit merge, squash and
-rebase methods. Preserve required checks and resolved reviews, and never bypass
-protections or claim an administrative setting changed without verifying it.
+The effective main PR ruleset controls merge methods; it currently permits squash
+only. Preserve required checks, up-to-date branches and resolved reviews. Never
+bypass protections or claim an administrative setting changed without verifying it.
 
 ## Testing before commit/release
 

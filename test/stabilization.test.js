@@ -545,6 +545,28 @@ test("application main-update policy and GitHub token are stored in the database
   assert.equal(JSON.stringify(result.json).includes(readCredential),false);
 });
 
+test("rejected callers cannot consume the administrator update read quota",async()=>{
+  for(const [endpoint,method] of [["settings","GET"],["job","GET"],["check","POST"]]){
+    for(let i=0;i<121;i++){
+      const denied=await request(`/api/v1/admin/app-updates/${endpoint}`,{method});
+      assert.equal(denied.response.status,403,`${method} ${endpoint}: rejected callers must not reach the limiter`);
+    }
+  }
+  const allowed=await request("/api/v1/admin/app-updates/settings",{authenticated:true});
+  assert.equal(allowed.response.status,200,JSON.stringify(allowed.json));
+});
+
+test("rejected callers cannot consume the administrator update mutation quota",async()=>{
+  for(const [endpoint,method] of [["settings","PUT"],["install","POST"],["revert","POST"]]){
+    for(let i=0;i<13;i++){
+      const denied=await request(`/api/v1/admin/app-updates/${endpoint}`,{method,body:{}});
+      assert.equal(denied.response.status,403,`${method} ${endpoint}: rejected callers must not reach the limiter`);
+    }
+  }
+  const allowed=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork"}});
+  assert.equal(allowed.response.status,400,"an administrator must still reach trusted-repository validation");
+});
+
 test("verified application updater has a durable host job and GUI rollback controls",()=>{
   const host=fs.readFileSync(path.join(projectRoot,"host-agent/server.py"),"utf8");
   const runner=fs.readFileSync(path.join(projectRoot,"host-agent/app-update-runner.sh"),"utf8");
@@ -646,4 +668,21 @@ test("matrix configuration ignores archived topology and rejects stale editor wr
   assert.equal(db.prepare("SELECT value_json FROM system_preferences WHERE key='room.topology'").get().value_json,archived);
   assert.equal(JSON.stringify(db.prepare("SELECT * FROM display_credentials ORDER BY id").all()),credentials);
   db.close();
+});
+
+// Exhaust the shared update budget last, after the other administrator fixtures.
+test("administrator update quota remains shared across routes and forwarded addresses",async()=>{
+  let allowed=0,last;
+  for(let i=0;i<13;i++){
+    last=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,
+      body:{repository:"example/untrusted-fork"},headers:{"x-forwarded-for":`198.51.100.${i+1}`}});
+    assert.ok([400,429].includes(last.response.status));
+    if(last.response.status===400)allowed++;
+  }
+  assert.ok(allowed>0&&allowed<=12,"the administrator budget must allow bounded operations");
+  assert.equal(last.response.status,429);
+  assert.ok(Number(last.response.headers.get("retry-after"))>0);
+  const other=await request("/api/v1/admin/app-updates/revert",{method:"POST",authenticated:true,
+    body:{confirm:"invalid"},headers:{"x-forwarded-for":"203.0.113.80"}});
+  assert.equal(other.response.status,429,"another endpoint/address must not create a new mutation budget");
 });

@@ -39,8 +39,10 @@ This document gives AI assistants a compact operational model of RoomGoblin. `AG
 
 RoomGoblin is a centralized classroom/lab control platform. It coordinates browser displays, scheduled automations, AV routing, lighting, Morning Announcements, Background Music, class schedules, school-cycle rules, Veyon lab management, diagnostics, backup/recovery, Docker integrations, Android/Google TV managed displays, and host-management functions.
 
-Production installers and semantic-release updates pull exact CI-built GHCR
-images. Do not reintroduce appliance-local builds as the default. Local compilation
+Production installers and main-based updates pull exact CI-built GHCR images;
+GUI checks select the latest trusted merged main SHA and recheck stale selections
+before the native published transaction. Legacy semantic-release handling remains
+a compatibility backend path. Do not reintroduce appliance-local builds as the default. Local compilation
 is available only through the explicit `install.sh --build-local` development path.
 
 CI treats secret scanning, pull-request dependency review, and high/critical
@@ -332,8 +334,10 @@ Browser displays use enabled stable display IDs without credentials by default. 
 `main` is the only integration/update source during active development. Work on
 short-lived branches, pass PR checks, merge to main, and publish its exact image
 pair. No production/staging/development branch or environment promotion is used.
-Allow merge commits, squash and rebase in both repository settings and the main
-ruleset, without bypassing required checks/reviews. Normal supported update flow:
+Use the merge strategy permitted by the effective main ruleset (currently squash
+only), without bypassing required checks/reviews or up-to-date branch requirements.
+System Updates authorizes administrators before consuming shared read/mutation
+quotas. Normal supported update flow:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh

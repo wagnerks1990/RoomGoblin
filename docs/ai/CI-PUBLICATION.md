@@ -10,7 +10,7 @@ Use this file whenever changing GitHub Actions, release publication, source-upda
 - No workflow creates or advances a separate deployment branch. Retain old branches as history rather than deleting or overwriting their commits.
 - Immutable images are tagged `sha-<40-character commit SHA>` and must carry `org.opencontainers.image.revision=<same SHA>`.
 - Mutable `alpha` aliases are convenience pointers only; update correctness is based on the exact immutable SHA pair.
-- Repository settings and the main ruleset must both allow merge commits, squash and rebase while retaining required checks and resolved reviews. A restrictive ruleset requires an authorized administrative change, not a code-only declaration or protection bypass.
+- Follow the effective main ruleset (currently squash-only), retaining current required checks, up-to-date branches and resolved reviews. Repository-level merge-method checkboxes do not override the ruleset; changes require a separately authorized administrative decision.
 
 ## Required validation gate
 
@@ -71,3 +71,10 @@ operator procedures aligned; a live filesystem copy is not a SQLite-safe backup.
 When publication behavior changes, update the publisher, relevant build logic, `docs/CI-WORKFLOWS.md`, its Wiki mirror, `docs/PRODUCTION-UPDATES.md`, its Wiki mirror, this context, regression tests and `AGENTS.md` together. Preserve the shared-data startup umask and backup-readability contract described in `PRODUCTION-SHARED-DATA.md`.
 
 Never weaken validation, exact-SHA identity, complete-pair publication, backup or recovery gates to make an update appear available sooner.
+
+System Updates administrator quotas must run after `requireAdmin`; unauthorized
+requests must neither consume the read/mutation budget nor reach GitHub or native
+update handoff. Keep fixed appliance-wide keys and the existing limits. Test both
+rejected-caller floods and accepted requests across routes/forwarded addresses.
+The effective main ruleset currently permits squash merges only; do not infer
+allowed merge strategies from repository-level checkboxes.

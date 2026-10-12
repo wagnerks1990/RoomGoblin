@@ -200,12 +200,12 @@ test("System Updates admin routes have appliance-wide rate limits",()=>{
   assert.match(server,/const appUpdateReadLimit=rateLimit/);
   assert.match(server,/const appUpdateMutationLimit=rateLimit/);
   for(const route of [
-    'app.get("/api/v1/admin/app-updates/settings",appUpdateReadLimit,requireAdmin',
-    'app.post("/api/v1/admin/app-updates/check",appUpdateReadLimit,requireAdmin',
-    'app.get("/api/v1/admin/app-updates/job",appUpdateReadLimit,requireAdmin',
-    'app.put("/api/v1/admin/app-updates/settings",appUpdateMutationLimit,requireAdmin',
-    'app.post("/api/v1/admin/app-updates/install",appUpdateMutationLimit,requireAdmin',
-    'app.post("/api/v1/admin/app-updates/revert",appUpdateMutationLimit,requireAdmin'
+    'app.get("/api/v1/admin/app-updates/settings",requireAdmin,appUpdateReadLimit',
+    'app.post("/api/v1/admin/app-updates/check",requireAdmin,appUpdateReadLimit',
+    'app.get("/api/v1/admin/app-updates/job",requireAdmin,appUpdateReadLimit',
+    'app.put("/api/v1/admin/app-updates/settings",requireAdmin,appUpdateMutationLimit',
+    'app.post("/api/v1/admin/app-updates/install",requireAdmin,appUpdateMutationLimit',
+    'app.post("/api/v1/admin/app-updates/revert",requireAdmin,appUpdateMutationLimit'
   ])assert.ok(server.includes(route),`missing updater rate limit: ${route}`);
 });
 
