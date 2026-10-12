@@ -398,15 +398,13 @@ def app_update_source_status():
     index=run(['git','-C',str(HUB_ROOT),'diff','--cached','--name-only','--'],20,False)
     if worktree.returncode!=0 or index.returncode!=0: raise RuntimeError('Unable to inspect tracked RoomGoblin source changes')
     tracked=sorted(set([line.strip() for line in (worktree.stdout+'\n'+index.stdout).splitlines() if line.strip()]))
-    origin=run(['git','-C',str(HUB_ROOT),'remote','get-url','origin'],20,False)
     return {
         "commit":commit,
         "shortCommit":commit[:12],
         "branch":branch.stdout.strip() if branch.returncode==0 else "",
         "detached":branch.returncode!=0,
         "trackedDirty":bool(tracked),
-        "trackedChanges":tracked,
-        "origin":origin.stdout.strip() if origin.returncode==0 else ""
+        "trackedChanges":tracked
     }
 
 def app_update_job_status(include_log=False):

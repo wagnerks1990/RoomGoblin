@@ -163,3 +163,7 @@ and still fail the administrator guard. They cannot exhaust the administrator bu
 strategy allowed by the effective main ruleset (currently squash), with current
 required checks and resolved review threads; repository merge-method checkboxes
 do not override branch rules.
+
+Source identity exposes commit, branch and tracked-change metadata only; do not
+read or return raw Git remote URLs, which may embed credentials. The native
+transaction independently validates the trusted origin before deployment.

@@ -92,3 +92,32 @@ test("install handler rejects stale selections before the exact native handoff",
   assert.equal(handoff.body.action,"published");assert.equal(handoff.body.targetCommit,target);
   assert.equal(handoff.body.confirm,"INSTALL_MAIN");assert.equal(handoff.body.backupName,undefined);
 });
+
+// Execute the actual Python projection without importing or starting the Host Agent.
+test("Host Agent source projection never reads or exposes credential-bearing origins",()=>{
+  const {execFileSync}=require("node:child_process");
+  const script=String.raw`
+import ast,json,sys
+from pathlib import Path
+from types import SimpleNamespace
+source=Path(sys.argv[1]).read_text()
+node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=="app_update_source_status")
+requests=[]
+def run(args,*_args):
+    requests.append(args)
+    if "rev-parse" in args: value="a"*40
+    elif "symbolic-ref" in args: value="main"
+    elif "diff" in args: value=""
+    else: value="https://synthetic-user:synthetic-password@github.com/example/repository.git"
+    return SimpleNamespace(returncode=0,stdout=value,stderr="")
+context={"HUB_ROOT":Path("/synthetic/checkout"),"run":run}
+exec(compile(ast.Module(body=[node],type_ignores=[]),"projection","exec"),context)
+result=context["app_update_source_status"]()
+assert "origin" not in result, "origin credentials must remain server-side"
+assert not any("remote" in args for args in requests), "origin is not needed for source projection"
+assert result["commit"]=="a"*40 and result["branch"]=="main" and result["trackedDirty"] is False
+print(json.dumps({"ok":True,"gitOperations":len(requests)}))
+`;
+  const result=JSON.parse(execFileSync("python3",["-c",script,path.join(__dirname,"..","host-agent","server.py")],{encoding:"utf8"}));
+  assert.equal(result.ok,true);assert.equal(result.gitOperations,4);
+});

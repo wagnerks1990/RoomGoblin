@@ -7,6 +7,8 @@
 
 ### Main-based System Updates
 
+- Keep raw Git origin URLs out of the new source-status projection so embedded credentials cannot reach browser diagnostics; retain native origin verification.
+
 - Charge appliance-wide update quotas only for requests accepted by the shared administrator authorization predicate; add executable trust/ancestry/stale-selection and rejected-caller regressions, and align merge guidance with the effective squash-only main ruleset.
 
 - Change the administrator updater from semantic release-channel polling to the latest merged commit on trusted `main`, while retaining the native exact-SHA image, backup, health and rollback transaction.

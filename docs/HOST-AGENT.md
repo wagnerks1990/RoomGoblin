@@ -68,3 +68,7 @@ If the socket is missing, correct/reinstall the service unit, run `systemctl dae
 ## Security boundary
 
 The Unix socket directory should remain root-owned and not be exposed through a public network share or reverse proxy. Do not replace this boundary by granting the main application or maintenance container unrestricted host privileges, and do not restore `/var/run/docker.sock` to the Compose file.
+
+Source identity exposes commit, branch and tracked-change metadata only; do not
+read or return raw Git remote URLs, which may embed credentials. The native
+transaction independently validates the trusted origin before deployment.

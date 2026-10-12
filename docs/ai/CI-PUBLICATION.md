@@ -79,3 +79,7 @@ nor reach GitHub or native update handoff. Keep fixed appliance-wide keys and th
 rejected-caller floods and accepted requests across routes/forwarded addresses.
 The effective main ruleset currently permits squash merges only; do not infer
 allowed merge strategies from repository-level checkboxes.
+
+Source identity exposes commit, branch and tracked-change metadata only; do not
+read or return raw Git remote URLs, which may embed credentials. The native
+transaction independently validates the trusted origin before deployment.
