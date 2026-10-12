@@ -1,6 +1,6 @@
 # GitHub Actions validation and publication
 
-Six workflows have distinct responsibilities:
+Eight workflows have distinct responsibilities:
 
 | Workflow | Required work |
 | --- | --- |
@@ -10,6 +10,8 @@ Six workflows have distinct responsibilities:
 | Publish Main Images | Start on every `main` push, wait for all three exact-SHA validation workflows, publish exact-revision Hub/maintenance images and refresh alpha aliases without a deployment branch |
 | Publish Containers | Verify semantic version/main ancestry and required checks, then promote the published SHA pair to release tags and create the release |
 | Sync Wiki | Synchronize the tracked mirror on relevant changes or manual dispatch |
+| Windows Native Agent | Additional path-selected Windows build, executable/version checks and downloadable native package |
+| Apply automation convergence hardening | Historical development-branch patch runner; never a main publication or merge gate |
 
 Android debug validation moved into Validate without dropping its APK artifact or
 checksum verification. The restrictive-context build is now the Hub image used
@@ -20,9 +22,28 @@ contract; `npm run check` already includes controller syntax validation.
 
 Semantic release publication no longer repeats Node tests and builds four more
 images. It promotes the existing validated main pair, retaining the published
-manifest's attestations. Main publication still builds with SBOM/provenance after
+manifest identity. Main publication builds and verifies exact candidates after
 validation. Both canonical and legacy compatibility aliases remain. A release
 is created only after both release image aliases have been promoted successfully.
+
+The current main publisher loads Docker candidates locally and pushes those exact
+scanned images; explicit SBOM/provenance output is not configured in the workflow.
+Do not treat attestation availability as established without inspecting the
+published manifests.
+
+## Cache-only optimization audit
+
+The [October 2026 audit](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/CI-OPTIMIZATION-AUDIT.md) inventories every workflow/job,
+live readable rulesets, measured run data, exact retained coverage and deferred
+proposals. The readable main ruleset requires `validate` and `windows-agent`;
+all three full validation workflows remain mandatory publication prerequisites.
+Classic branch protection and Actions-permission settings were inaccessible.
+
+Validate's npm cache key includes both root and maintenance lockfiles. Both native
+Windows build jobs cache global NuGet packages using all four locked dependency
+graphs. Clean npm installs, online audits, locked .NET restores, tests, artifacts,
+browser engines and image scans still run. No path selection or scheduling change
+is implemented, and no existing required check or workflow identity changes.
 
 Obsolete PR runs are cancelled by PR number. Main runs use commit-specific groups
 and are never cancelled by a newer commit while publication waits on them. Jobs
