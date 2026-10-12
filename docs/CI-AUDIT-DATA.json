@@ -1,0 +1,1449 @@
+{
+  "observed_at": "2026-10-12",
+  "baseline_sha": "98c7044f87037102ab6dca1c8cdfe3b0903b3ef7",
+  "method": "Latest ten successful runs per tracked workflow (or fewer available); job timestamps, latest attempt returned by jobs API; skipped jobs excluded from elapsed totals. Historical workflows can differ from current source. Raw minutes, not billed minutes.",
+  "workflows": [
+    {
+      "name": "Validate",
+      "samples": [
+        {
+          "id": 38314060151,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38314060151",
+          "created_at": "2026-10-12T21:59:59Z",
+          "event": "pull_request",
+          "sha": "dd7bad6a217d307f778a7f453e53c62d593e77eb",
+          "attempt": 1,
+          "raw_runner_minutes": 10.2
+        },
+        {
+          "id": 38305447622,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38305447622",
+          "created_at": "2026-10-12T20:37:42Z",
+          "event": "pull_request",
+          "sha": "f7e6c04a70d7cf2610578453be8a671f6437f70f",
+          "attempt": 1,
+          "raw_runner_minutes": 10.8
+        },
+        {
+          "id": 37858910117,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858910117",
+          "created_at": "2026-10-08T23:20:47Z",
+          "event": "push",
+          "sha": "98c7044f87037102ab6dca1c8cdfe3b0903b3ef7",
+          "attempt": 1,
+          "raw_runner_minutes": 9.417
+        },
+        {
+          "id": 37858160777,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858160777",
+          "created_at": "2026-10-08T23:12:57Z",
+          "event": "pull_request",
+          "sha": "dcd0d43b26696e862f38dc34df2e19f2dd2effa3",
+          "attempt": 1,
+          "raw_runner_minutes": 9.083
+        },
+        {
+          "id": 37651373036,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37651373036",
+          "created_at": "2026-10-07T16:21:23Z",
+          "event": "push",
+          "sha": "070481507d183261f36a352805338e375ebbcb7a",
+          "attempt": 1,
+          "raw_runner_minutes": 9.683
+        },
+        {
+          "id": 37650417061,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37650417061",
+          "created_at": "2026-10-07T16:14:03Z",
+          "event": "pull_request",
+          "sha": "4a68cf76c6047937aed029addaf40170aad01cc1",
+          "attempt": 1,
+          "raw_runner_minutes": 9.917
+        },
+        {
+          "id": 37650309336,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37650309336",
+          "created_at": "2026-10-07T16:13:10Z",
+          "event": "pull_request",
+          "sha": "359881b76a907676f62894dc4ab0a3fa9e79abc0",
+          "attempt": 1,
+          "raw_runner_minutes": 9.483
+        },
+        {
+          "id": 37649978716,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37649978716",
+          "created_at": "2026-10-07T16:10:32Z",
+          "event": "push",
+          "sha": "ebcb678bc1916a028af00ccdd53bdc33583ce6f1",
+          "attempt": 1,
+          "raw_runner_minutes": 10.2
+        },
+        {
+          "id": 37648781029,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37648781029",
+          "created_at": "2026-10-07T16:01:44Z",
+          "event": "pull_request",
+          "sha": "974152ab8891500c4aa098452232b86d32b0b877",
+          "attempt": 1,
+          "raw_runner_minutes": 9.75
+        },
+        {
+          "id": 36727452008,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36727452008",
+          "created_at": "2026-09-30T14:13:16Z",
+          "event": "push",
+          "sha": "db234b81ad6ed733b775d072f744bec9fee46ea5",
+          "attempt": 1,
+          "raw_runner_minutes": 10.833
+        }
+      ],
+      "median_raw_runner_minutes": 9.834,
+      "jobs": [
+        {
+          "name": "windows-agent",
+          "n": 10,
+          "median_minutes": 1.158,
+          "min_minutes": 1.0,
+          "max_minutes": 1.317
+        },
+        {
+          "name": "validate",
+          "n": 10,
+          "median_minutes": 6.592,
+          "min_minutes": 5.983,
+          "max_minutes": 7.517
+        },
+        {
+          "name": "android-agent",
+          "n": 10,
+          "median_minutes": 2.175,
+          "min_minutes": 1.683,
+          "max_minutes": 2.317
+        }
+      ],
+      "steps": [
+        {
+          "name": "windows-agent / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "windows-agent / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 6.0
+        },
+        {
+          "name": "windows-agent / Run actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "windows-agent / Parse Windows PowerShell scripts",
+          "median_seconds": 0.5
+        },
+        {
+          "name": "windows-agent / Build locked native Windows agent",
+          "median_seconds": 52.5
+        },
+        {
+          "name": "windows-agent / Verify Windows agent contract",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "windows-agent / Post Run actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "windows-agent / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "windows-agent / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Set up job",
+          "median_seconds": 2.5
+        },
+        {
+          "name": "validate / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "validate / Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "validate / Verify canonical source tree",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Install locked dependencies",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "validate / Audit production dependencies",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Validate application and browser syntax",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "validate / Install locked maintenance dependencies",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "validate / Audit maintenance production dependencies",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Validate maintenance syntax",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Run stabilization regression tests",
+          "median_seconds": 44.0
+        },
+        {
+          "name": "validate / Validate host agent Python",
+          "median_seconds": 0.5
+        },
+        {
+          "name": "validate / Validate installer shell syntax",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Validate Compose configuration",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Build from a private local source context",
+          "median_seconds": 73.0
+        },
+        {
+          "name": "validate / Smoke user-defined integration bridge",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "validate / Verify packaged access without root or runtime mounts",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Build maintenance container",
+          "median_seconds": 163.5
+        },
+        {
+          "name": "validate / Scan main image for high-severity vulnerabilities",
+          "median_seconds": 33.0
+        },
+        {
+          "name": "validate / Scan maintenance image for high-severity vulnerabilities",
+          "median_seconds": 38.0
+        },
+        {
+          "name": "validate / Host-network container smoke test",
+          "median_seconds": 6.5
+        },
+        {
+          "name": "validate / Verify image release stamping",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "validate / Compose direct HTTP smoke test",
+          "median_seconds": 11.5
+        },
+        {
+          "name": "validate / Post Scan maintenance image for high-severity vulnerabilities",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "validate / Post Scan main image for high-severity vulnerabilities",
+          "median_seconds": 2.5
+        },
+        {
+          "name": "validate / Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "validate / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "android-agent / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "android-agent / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "android-agent / Verify Java and Android SDK",
+          "median_seconds": 7.0
+        },
+        {
+          "name": "android-agent / Install Gradle 9.6.0",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "android-agent / Build debug APK",
+          "median_seconds": 113.5
+        },
+        {
+          "name": "android-agent / Verify APK",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "android-agent / Upload test APK",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "android-agent / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "android-agent / Complete job",
+          "median_seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Display browser regression",
+      "samples": [
+        {
+          "id": 38315764069,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38315764069",
+          "created_at": "2026-10-12T22:17:06Z",
+          "event": "pull_request",
+          "sha": "13735ecafc04a760b9c5f2c25415199ab77e752c",
+          "attempt": 1,
+          "raw_runner_minutes": 3.817
+        },
+        {
+          "id": 38314060042,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38314060042",
+          "created_at": "2026-10-12T21:59:59Z",
+          "event": "pull_request",
+          "sha": "dd7bad6a217d307f778a7f453e53c62d593e77eb",
+          "attempt": 1,
+          "raw_runner_minutes": 4.35
+        },
+        {
+          "id": 38305447762,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38305447762",
+          "created_at": "2026-10-12T20:37:42Z",
+          "event": "pull_request",
+          "sha": "f7e6c04a70d7cf2610578453be8a671f6437f70f",
+          "attempt": 1,
+          "raw_runner_minutes": 4.45
+        },
+        {
+          "id": 37858909941,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858909941",
+          "created_at": "2026-10-08T23:20:47Z",
+          "event": "push",
+          "sha": "98c7044f87037102ab6dca1c8cdfe3b0903b3ef7",
+          "attempt": 1,
+          "raw_runner_minutes": 4.067
+        },
+        {
+          "id": 37858160789,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858160789",
+          "created_at": "2026-10-08T23:12:57Z",
+          "event": "pull_request",
+          "sha": "dcd0d43b26696e862f38dc34df2e19f2dd2effa3",
+          "attempt": 1,
+          "raw_runner_minutes": 5.3
+        },
+        {
+          "id": 37857420195,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37857420195",
+          "created_at": "2026-10-08T23:05:15Z",
+          "event": "pull_request",
+          "sha": "b400010a7a6030b1d9aaf51d70ff47240c70072e",
+          "attempt": 1,
+          "raw_runner_minutes": 4.35
+        },
+        {
+          "id": 37857031750,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37857031750",
+          "created_at": "2026-10-08T23:01:16Z",
+          "event": "pull_request",
+          "sha": "ee85fe67bc80f209a1643789c60e1a38e714d635",
+          "attempt": 1,
+          "raw_runner_minutes": 4.367
+        },
+        {
+          "id": 37855968551,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37855968551",
+          "created_at": "2026-10-08T22:50:32Z",
+          "event": "pull_request",
+          "sha": "9b0c3243b7b0246c66cf08623999b7ad3a6d0c05",
+          "attempt": 1,
+          "raw_runner_minutes": 4.117
+        },
+        {
+          "id": 37651373116,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37651373116",
+          "created_at": "2026-10-07T16:21:23Z",
+          "event": "push",
+          "sha": "070481507d183261f36a352805338e375ebbcb7a",
+          "attempt": 2,
+          "raw_runner_minutes": 4.15
+        },
+        {
+          "id": 37650416991,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37650416991",
+          "created_at": "2026-10-07T16:14:03Z",
+          "event": "pull_request",
+          "sha": "4a68cf76c6047937aed029addaf40170aad01cc1",
+          "attempt": 1,
+          "raw_runner_minutes": 4.467
+        }
+      ],
+      "median_raw_runner_minutes": 4.35,
+      "jobs": [
+        {
+          "name": "display-browser (chromium)",
+          "n": 10,
+          "median_minutes": 1.917,
+          "min_minutes": 1.567,
+          "max_minutes": 2.117
+        },
+        {
+          "name": "display-browser (firefox)",
+          "n": 10,
+          "median_minutes": 2.467,
+          "min_minutes": 2.2,
+          "max_minutes": 3.183
+        }
+      ],
+      "steps": [
+        {
+          "name": "display-browser (chromium) / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "display-browser (chromium) / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "display-browser (chromium) / Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "median_seconds": 2.5
+        },
+        {
+          "name": "display-browser (chromium) / Install locked browser dependencies",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "display-browser (chromium) / Prepare browser tests and same-origin fonts",
+          "median_seconds": 26.0
+        },
+        {
+          "name": "display-browser (chromium) / Test receivers, PDF documents and responsive operator workspaces",
+          "median_seconds": 74.5
+        },
+        {
+          "name": "display-browser (chromium) / Retain rendered evidence",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "display-browser (chromium) / Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "display-browser (chromium) / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "display-browser (chromium) / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "display-browser (firefox) / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "display-browser (firefox) / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "display-browser (firefox) / Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "display-browser (firefox) / Install locked browser dependencies",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "display-browser (firefox) / Prepare browser tests and same-origin fonts",
+          "median_seconds": 22.0
+        },
+        {
+          "name": "display-browser (firefox) / Test receivers, PDF documents and responsive operator workspaces",
+          "median_seconds": 115.5
+        },
+        {
+          "name": "display-browser (firefox) / Retain rendered evidence",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "display-browser (firefox) / Post Run actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "display-browser (firefox) / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "display-browser (firefox) / Complete job",
+          "median_seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Security gates",
+      "samples": [
+        {
+          "id": 38315764005,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38315764005",
+          "created_at": "2026-10-12T22:17:06Z",
+          "event": "pull_request",
+          "sha": "13735ecafc04a760b9c5f2c25415199ab77e752c",
+          "attempt": 1,
+          "raw_runner_minutes": 0.3
+        },
+        {
+          "id": 38314060048,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38314060048",
+          "created_at": "2026-10-12T21:59:59Z",
+          "event": "pull_request",
+          "sha": "dd7bad6a217d307f778a7f453e53c62d593e77eb",
+          "attempt": 1,
+          "raw_runner_minutes": 0.267
+        },
+        {
+          "id": 38305447718,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/38305447718",
+          "created_at": "2026-10-12T20:37:42Z",
+          "event": "pull_request",
+          "sha": "f7e6c04a70d7cf2610578453be8a671f6437f70f",
+          "attempt": 1,
+          "raw_runner_minutes": 0.283
+        },
+        {
+          "id": 37858910024,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858910024",
+          "created_at": "2026-10-08T23:20:47Z",
+          "event": "push",
+          "sha": "98c7044f87037102ab6dca1c8cdfe3b0903b3ef7",
+          "attempt": 1,
+          "raw_runner_minutes": 0.15
+        },
+        {
+          "id": 37858160748,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858160748",
+          "created_at": "2026-10-08T23:12:57Z",
+          "event": "pull_request",
+          "sha": "dcd0d43b26696e862f38dc34df2e19f2dd2effa3",
+          "attempt": 1,
+          "raw_runner_minutes": 0.233
+        },
+        {
+          "id": 37857985425,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37857985425",
+          "created_at": "2026-10-08T23:11:06Z",
+          "event": "pull_request",
+          "sha": "32c3fc31baba0dbffe774bd6e828a3332b42c6b0",
+          "attempt": 1,
+          "raw_runner_minutes": 0.3
+        },
+        {
+          "id": 37857943232,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37857943232",
+          "created_at": "2026-10-08T23:10:39Z",
+          "event": "pull_request",
+          "sha": "117e6cbfb80ea27366520921e6ebcdc09ccbade9",
+          "attempt": 1,
+          "raw_runner_minutes": 0.2
+        },
+        {
+          "id": 37857420120,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37857420120",
+          "created_at": "2026-10-08T23:05:15Z",
+          "event": "pull_request",
+          "sha": "b400010a7a6030b1d9aaf51d70ff47240c70072e",
+          "attempt": 1,
+          "raw_runner_minutes": 0.267
+        },
+        {
+          "id": 37857031797,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37857031797",
+          "created_at": "2026-10-08T23:01:16Z",
+          "event": "pull_request",
+          "sha": "ee85fe67bc80f209a1643789c60e1a38e714d635",
+          "attempt": 1,
+          "raw_runner_minutes": 0.317
+        },
+        {
+          "id": 37856952049,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37856952049",
+          "created_at": "2026-10-08T23:00:32Z",
+          "event": "pull_request",
+          "sha": "b3237574fbdb093dec0d60998b690c61d9ce146e",
+          "attempt": 1,
+          "raw_runner_minutes": 0.267
+        }
+      ],
+      "median_raw_runner_minutes": 0.267,
+      "jobs": [
+        {
+          "name": "dependency-review",
+          "n": 9,
+          "median_minutes": 0.117,
+          "min_minutes": 0.067,
+          "max_minutes": 0.133
+        },
+        {
+          "name": "secrets",
+          "n": 10,
+          "median_minutes": 0.158,
+          "min_minutes": 0.133,
+          "max_minutes": 0.183
+        }
+      ],
+      "steps": [
+        {
+          "name": "dependency-review / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "dependency-review / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "dependency-review / Reject newly introduced vulnerable dependencies",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "dependency-review / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "dependency-review / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "secrets / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "secrets / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "secrets / Scan Git history for secrets",
+          "median_seconds": 3.5
+        },
+        {
+          "name": "secrets / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "secrets / Complete job",
+          "median_seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Publish Main Images",
+      "samples": [
+        {
+          "id": 37858909942,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858909942",
+          "created_at": "2026-10-08T23:20:47Z",
+          "event": "push",
+          "sha": "98c7044f87037102ab6dca1c8cdfe3b0903b3ef7",
+          "attempt": 2,
+          "raw_runner_minutes": 14.183
+        },
+        {
+          "id": 37651373031,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37651373031",
+          "created_at": "2026-10-07T16:21:23Z",
+          "event": "push",
+          "sha": "070481507d183261f36a352805338e375ebbcb7a",
+          "attempt": 1,
+          "raw_runner_minutes": 27.267
+        },
+        {
+          "id": 36727452012,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36727452012",
+          "created_at": "2026-09-30T14:13:16Z",
+          "event": "push",
+          "sha": "db234b81ad6ed733b775d072f744bec9fee46ea5",
+          "attempt": 1,
+          "raw_runner_minutes": 16.05
+        },
+        {
+          "id": 36712980937,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36712980937",
+          "created_at": "2026-09-30T12:09:24Z",
+          "event": "push",
+          "sha": "f309093714657d4b9b7ea80136c00297ea327ab6",
+          "attempt": 1,
+          "raw_runner_minutes": 15.033
+        },
+        {
+          "id": 36175790718,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36175790718",
+          "created_at": "2026-09-25T18:48:47Z",
+          "event": "push",
+          "sha": "aa544ddf6ede5548c60ecfcd6e3041729ff5993c",
+          "attempt": 1,
+          "raw_runner_minutes": 14.3
+        },
+        {
+          "id": 36172561731,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36172561731",
+          "created_at": "2026-09-25T18:18:18Z",
+          "event": "push",
+          "sha": "905932c5da7b892fe829a35f5461cc2f9b973fe3",
+          "attempt": 1,
+          "raw_runner_minutes": 15.417
+        },
+        {
+          "id": 35941875800,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35941875800",
+          "created_at": "2026-09-24T01:12:10Z",
+          "event": "push",
+          "sha": "25524e3ea34ad023304aef7b87820c2ee8bbeb1c",
+          "attempt": 1,
+          "raw_runner_minutes": 15.083
+        },
+        {
+          "id": 35860587559,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35860587559",
+          "created_at": "2026-09-23T12:27:32Z",
+          "event": "push",
+          "sha": "27f10dcdd099499222f106608c1756672f99461a",
+          "attempt": 1,
+          "raw_runner_minutes": 15.983
+        },
+        {
+          "id": 35860521737,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35860521737",
+          "created_at": "2026-09-23T12:26:53Z",
+          "event": "push",
+          "sha": "24fd2a64912b7e0c8fa53680b914ade5916a021e",
+          "attempt": 1,
+          "raw_runner_minutes": 15.75
+        },
+        {
+          "id": 35859744210,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35859744210",
+          "created_at": "2026-09-23T12:19:20Z",
+          "event": "push",
+          "sha": "49e6f313fb8ff833e2e9fb97db1065855b3d37d8",
+          "attempt": 1,
+          "raw_runner_minutes": 14.733
+        }
+      ],
+      "median_raw_runner_minutes": 15.25,
+      "jobs": [
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c...",
+          "n": 10,
+          "median_minutes": 4.25,
+          "min_minutes": 3.567,
+          "max_minutes": 4.817
+        },
+        {
+          "name": "gate",
+          "n": 10,
+          "median_minutes": 6.925,
+          "min_minutes": 6.633,
+          "max_minutes": 17.833
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile)",
+          "n": 10,
+          "median_minutes": 3.617,
+          "min_minutes": 3.367,
+          "max_minutes": 4.55
+        },
+        {
+          "name": "promote",
+          "n": 10,
+          "median_minutes": 0.325,
+          "min_minutes": 0.2,
+          "max_minutes": 0.65
+        }
+      ],
+      "steps": [
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Set up job",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "median_seconds": 10.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Run docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Build exact publication candidate",
+          "median_seconds": 180.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Scan exact publication candidate",
+          "median_seconds": 29.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Smoke exact publication candidate",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Publish the scanned candidate without rebuilding",
+          "median_seconds": 25.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Post Scan exact publication candidate",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Post Build exact publication candidate",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Post Run docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Post Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "gate / Set up job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "gate / Wait for every required validation workflow",
+          "median_seconds": 413.0
+        },
+        {
+          "name": "gate / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Set up job",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "median_seconds": 7.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Run docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Build exact publication candidate",
+          "median_seconds": 114.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Scan exact publication candidate",
+          "median_seconds": 36.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Smoke exact publication candidate",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Publish the scanned candidate without rebuilding",
+          "median_seconds": 49.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Post Scan exact publication candidate",
+          "median_seconds": 0.5
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Post Build exact publication candidate",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Post Run docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Post Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "promote / Set up job",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "promote / Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "median_seconds": 7.0
+        },
+        {
+          "name": "promote / Run docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "promote / Promote the validated image pair",
+          "median_seconds": 7.5
+        },
+        {
+          "name": "promote / Post Run docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "promote / Post Run docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "promote / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Run docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+          "median_seconds": 7.0
+        },
+        {
+          "name": "build (hub, ghcr.io/wagnerks1990/roomgoblin, ghcr.io/wagnerks1990/classroom-control-hub, Dockerfile) / Post Run docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Run docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "build (maintenance, ghcr.io/wagnerks1990/roomgoblin-maintenance, ghcr.io/wagnerks1990/classroom-c... / Post Run docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "promote / Run docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+          "median_seconds": 4.0
+        },
+        {
+          "name": "promote / Post Run docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
+          "median_seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Sync Wiki",
+      "samples": [
+        {
+          "id": 37858910063,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37858910063",
+          "created_at": "2026-10-08T23:20:47Z",
+          "event": "push",
+          "sha": "98c7044f87037102ab6dca1c8cdfe3b0903b3ef7",
+          "attempt": 1,
+          "raw_runner_minutes": 0.083
+        },
+        {
+          "id": 37649978383,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/37649978383",
+          "created_at": "2026-10-07T16:10:32Z",
+          "event": "push",
+          "sha": "ebcb678bc1916a028af00ccdd53bdc33583ce6f1",
+          "attempt": 1,
+          "raw_runner_minutes": 0.15
+        },
+        {
+          "id": 36727451931,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36727451931",
+          "created_at": "2026-09-30T14:13:16Z",
+          "event": "push",
+          "sha": "db234b81ad6ed733b775d072f744bec9fee46ea5",
+          "attempt": 1,
+          "raw_runner_minutes": 0.133
+        },
+        {
+          "id": 36712981075,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36712981075",
+          "created_at": "2026-09-30T12:09:24Z",
+          "event": "push",
+          "sha": "f309093714657d4b9b7ea80136c00297ea327ab6",
+          "attempt": 1,
+          "raw_runner_minutes": 0.117
+        },
+        {
+          "id": 36175790676,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36175790676",
+          "created_at": "2026-09-25T18:48:47Z",
+          "event": "push",
+          "sha": "aa544ddf6ede5548c60ecfcd6e3041729ff5993c",
+          "attempt": 1,
+          "raw_runner_minutes": 0.133
+        },
+        {
+          "id": 36172561752,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/36172561752",
+          "created_at": "2026-09-25T18:18:18Z",
+          "event": "push",
+          "sha": "905932c5da7b892fe829a35f5461cc2f9b973fe3",
+          "attempt": 1,
+          "raw_runner_minutes": 0.083
+        },
+        {
+          "id": 35941875836,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35941875836",
+          "created_at": "2026-09-24T01:12:10Z",
+          "event": "push",
+          "sha": "25524e3ea34ad023304aef7b87820c2ee8bbeb1c",
+          "attempt": 1,
+          "raw_runner_minutes": 0.1
+        },
+        {
+          "id": 35860587600,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35860587600",
+          "created_at": "2026-09-23T12:27:32Z",
+          "event": "push",
+          "sha": "27f10dcdd099499222f106608c1756672f99461a",
+          "attempt": 1,
+          "raw_runner_minutes": 0.15
+        },
+        {
+          "id": 35860529087,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35860529087",
+          "created_at": "2026-09-23T12:26:58Z",
+          "event": "push",
+          "sha": "571fe3ae9fd1a155fc91f7bdab9fb16a2b618f52",
+          "attempt": 1,
+          "raw_runner_minutes": 0.117
+        },
+        {
+          "id": 35860521997,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35860521997",
+          "created_at": "2026-09-23T12:26:54Z",
+          "event": "push",
+          "sha": "24fd2a64912b7e0c8fa53680b914ade5916a021e",
+          "attempt": 1,
+          "raw_runner_minutes": 0.15
+        }
+      ],
+      "median_raw_runner_minutes": 0.125,
+      "jobs": [
+        {
+          "name": "sync",
+          "n": 10,
+          "median_minutes": 0.125,
+          "min_minutes": 0.083,
+          "max_minutes": 0.15
+        }
+      ],
+      "steps": [
+        {
+          "name": "sync / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "sync / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "sync / Skip stale mirror snapshots",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "sync / Configure Git identity",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "sync / Clone Wiki",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "sync / Synchronize Wiki mirror",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "sync / Push Wiki",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "sync / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "sync / Complete job",
+          "median_seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Windows Native Agent",
+      "samples": [
+        {
+          "id": 35859784717,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35859784717",
+          "created_at": "2026-09-23T12:19:45Z",
+          "event": "push",
+          "sha": "0181745ac9beb88b7ea34041dfca7a7a663252cc",
+          "attempt": 1,
+          "raw_runner_minutes": 1.783
+        },
+        {
+          "id": 35776949010,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35776949010",
+          "created_at": "2026-09-22T19:55:56Z",
+          "event": "pull_request",
+          "sha": "f1cca4f1d17eefa4ec4845d5f93aa30257c0cbe9",
+          "attempt": 1,
+          "raw_runner_minutes": 1.7
+        },
+        {
+          "id": 35403250430,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35403250430",
+          "created_at": "2026-09-18T22:50:06Z",
+          "event": "push",
+          "sha": "0cbe709265b5095056dbe09367dd20bfdd9963f3",
+          "attempt": 1,
+          "raw_runner_minutes": 2.167
+        },
+        {
+          "id": 35402491843,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35402491843",
+          "created_at": "2026-09-18T22:39:12Z",
+          "event": "pull_request",
+          "sha": "4349ddd9dbf874e71a88bb7acc426034836a5ca1",
+          "attempt": 1,
+          "raw_runner_minutes": 1.75
+        },
+        {
+          "id": 35399003776,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35399003776",
+          "created_at": "2026-09-18T21:53:37Z",
+          "event": "pull_request",
+          "sha": "b55c2f23da0f06fa3ebd85ddbc762a0b945115be",
+          "attempt": 1,
+          "raw_runner_minutes": 1.917
+        },
+        {
+          "id": 35393254899,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35393254899",
+          "created_at": "2026-09-18T20:46:21Z",
+          "event": "pull_request",
+          "sha": "f23aa771e9b94e7b0b14e78281d1e013b382af1d",
+          "attempt": 1,
+          "raw_runner_minutes": 1.917
+        },
+        {
+          "id": 35364867544,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35364867544",
+          "created_at": "2026-09-18T15:50:32Z",
+          "event": "pull_request",
+          "sha": "19902d9d83a443c40d3b9aa23bbe6e738537b034",
+          "attempt": 1,
+          "raw_runner_minutes": 2.383
+        },
+        {
+          "id": 35358457704,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35358457704",
+          "created_at": "2026-09-18T14:47:51Z",
+          "event": "push",
+          "sha": "6944819fb3e6ab9a12d07bf1126dc01d36e41925",
+          "attempt": 1,
+          "raw_runner_minutes": 1.817
+        },
+        {
+          "id": 35355959849,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35355959849",
+          "created_at": "2026-09-18T14:23:47Z",
+          "event": "pull_request",
+          "sha": "3c186e09b888c2a7354b45ec614e5dfe85d33e49",
+          "attempt": 1,
+          "raw_runner_minutes": 2.033
+        },
+        {
+          "id": 35351465778,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/35351465778",
+          "created_at": "2026-09-18T13:39:13Z",
+          "event": "pull_request",
+          "sha": "4154cf55b37f823c9592499f450cbdd2f191ea38",
+          "attempt": 1,
+          "raw_runner_minutes": 1.833
+        }
+      ],
+      "median_raw_runner_minutes": 1.875,
+      "jobs": [
+        {
+          "name": "build",
+          "n": 10,
+          "median_minutes": 1.875,
+          "min_minutes": 1.7,
+          "max_minutes": 2.383
+        }
+      ],
+      "steps": [
+        {
+          "name": "build / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "build / Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 6.0
+        },
+        {
+          "name": "build / Run actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68",
+          "median_seconds": 34.0
+        },
+        {
+          "name": "build / Build native Windows agent",
+          "median_seconds": 49.0
+        },
+        {
+          "name": "build / Verify native artifact set",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "build / Upload native package",
+          "median_seconds": 13.5
+        },
+        {
+          "name": "build / Post Run actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build / Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "build / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "build / Run actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1",
+          "median_seconds": 35.0
+        },
+        {
+          "name": "build / Post Run actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1",
+          "median_seconds": 0.0
+        }
+      ]
+    },
+    {
+      "name": "Publish Containers",
+      "samples": [
+        {
+          "id": 34251324402,
+          "url": "https://github.com/wagnerks1990/RoomGoblin/actions/runs/34251324402",
+          "created_at": "2026-09-08T16:29:05Z",
+          "event": "push",
+          "sha": "ffddeecb45f0076dabec019b3fa9b3d5bc046bb6",
+          "attempt": 1,
+          "raw_runner_minutes": 4.667
+        }
+      ],
+      "median_raw_runner_minutes": 4.667,
+      "jobs": [
+        {
+          "name": "preflight",
+          "n": 1,
+          "median_minutes": 2.267,
+          "min_minutes": 2.267,
+          "max_minutes": 2.267
+        },
+        {
+          "name": "maintenance",
+          "n": 1,
+          "median_minutes": 0.917,
+          "min_minutes": 0.917,
+          "max_minutes": 0.917
+        },
+        {
+          "name": "hub",
+          "n": 1,
+          "median_minutes": 1.4,
+          "min_minutes": 1.4,
+          "max_minutes": 1.4
+        },
+        {
+          "name": "release",
+          "n": 1,
+          "median_minutes": 0.083,
+          "min_minutes": 0.083,
+          "max_minutes": 0.083
+        }
+      ],
+      "steps": [
+        {
+          "name": "preflight / Set up job",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "preflight / Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "preflight / Verify release ref matches application version",
+          "median_seconds": 14.0
+        },
+        {
+          "name": "preflight / Run actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+          "median_seconds": 6.0
+        },
+        {
+          "name": "preflight / Run release-gating validation",
+          "median_seconds": 108.0
+        },
+        {
+          "name": "preflight / Post Run actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "preflight / Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "preflight / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "maintenance / Set up job",
+          "median_seconds": 5.0
+        },
+        {
+          "name": "maintenance / Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "maintenance / Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "median_seconds": 6.0
+        },
+        {
+          "name": "maintenance / Run docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "maintenance / Run docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "maintenance / Run docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+          "median_seconds": 34.0
+        },
+        {
+          "name": "maintenance / Post Run docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "maintenance / Post Run docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "maintenance / Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "maintenance / Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "maintenance / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "hub / Set up job",
+          "median_seconds": 3.0
+        },
+        {
+          "name": "hub / Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "hub / Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "median_seconds": 5.0
+        },
+        {
+          "name": "hub / Run docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "hub / Run docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "hub / Run docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+          "median_seconds": 67.0
+        },
+        {
+          "name": "hub / Post Run docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "hub / Post Run docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "hub / Post Run docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "hub / Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "hub / Complete job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "release / Set up job",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "release / Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 1.0
+        },
+        {
+          "name": "release / Verify tag matches application version",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "release / Create GitHub Release",
+          "median_seconds": 2.0
+        },
+        {
+          "name": "release / Post Run actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "median_seconds": 0.0
+        },
+        {
+          "name": "release / Complete job",
+          "median_seconds": 0.0
+        }
+      ]
+    }
+  ]
+}
