@@ -55,7 +55,7 @@ exit 0`.replace('$BASE',base).replace('$TARGET',target));
  fs.mkdirSync(dir+'/systemd');fs.writeFileSync(dir+'/systemd/classroom-hub-host-agent.service','fixture');fs.mkdirSync(hub+'/host-agent');fs.writeFileSync(hub+'/host-agent/server.py','');
  const runner=path.join(dir,'runner.sh');fs.writeFileSync(runner,script);
  const env={...process.env,PATH:bin+':'+process.env.PATH,CLASSROOM_HUB_DIR:hub,EVENTS:dir+'/events',FIXTURE:dir,DOCKER_VOLUMES_ROOT:dir+'/volumes'};
- return {dir,hub,state,base,target,git,run(extra={},resume=false){const r=spawnSync('bash',[runner,...(resume?[]:['--published',target])],{env:{...env,...extra},encoding:'utf8',timeout:45000});assert.ifError(r.error);return {...r,events:fs.readFileSync(env.EVENTS,'utf8')}}};
+ return {dir,hub,state,base,target,git,run(extra={},resume=false,locked=false){if(!fs.existsSync(env.EVENTS))fs.writeFileSync(env.EVENTS,'');const r=spawnSync(locked?'flock':'bash',[...(locked?[dir+'/lock','bash']:[]),runner,...(resume?[]:['--published',target])],{env:{...env,...extra},encoding:'utf8',timeout:45000});assert.ifError(r.error);return {...r,events:fs.readFileSync(env.EVENTS,'utf8')}}};
 }
 test('native runner pulls/recreates only Hub and journals a verified rollback point',t=>{
  const f=fixture(t),r=f.run();assert.equal(r.status,0,r.stderr+'\n'+r.stdout);assert.equal(f.git('rev-parse','HEAD'),f.target);
@@ -126,4 +126,24 @@ test("update runner surfaces operational backup errors and permits large streami
   assert.match(source,/AbortSignal\.timeout\(900000\)/);
   assert.match(source,/Operational backup preflight failed:/);
   assert.match(source,/throw Error\(j\.error\|\|"Operational backup failed"\)/);
+});
+
+
+test('systemd recovery with an active lock is a no-op while explicit updates fail closed',t=>{
+ const f=fixture(t),pending=JSON.stringify({action:'published',mutationStarted:'true'}),status=JSON.stringify({phase:'deploying'});
+ fs.writeFileSync(f.state+'/app-update-request.json',pending);fs.writeFileSync(f.state+'/app-update-status.json',status);
+ const resumed=f.run({},true,true);
+ assert.equal(resumed.status,0,resumed.stderr);assert.equal(resumed.events,'');
+ assert.equal(fs.readFileSync(f.state+'/app-update-request.json','utf8'),pending);
+ assert.equal(fs.readFileSync(f.state+'/app-update-status.json','utf8'),status);
+ const explicit=f.run({},false,true);assert.equal(explicit.status,30);assert.equal(explicit.events,'');
+ assert.equal(fs.readFileSync(f.state+'/app-update-request.json','utf8'),pending);
+});
+
+test('late systemd recovery after completion preserves successful status without a journal',t=>{
+ const f=fixture(t),status=JSON.stringify({phase:'completed',ok:true});
+ fs.writeFileSync(f.state+'/app-update-status.json',status);
+ const r=f.run({},true);assert.equal(r.status,0,r.stderr);assert.equal(r.events,'');
+ assert.equal(fs.readFileSync(f.state+'/app-update-status.json','utf8'),status);
+ assert.equal(fs.existsSync(f.state+'/app-update-request.json'),false);
 });

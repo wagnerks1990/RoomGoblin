@@ -1,5 +1,13 @@
 # AI and Contributor Operating Contract
 
+## Presentation start and preview
+
+Read `docs/PRESENTATION-CONTROLS.md` before changing presentation controls.
+Start clears only selected receivers before sending the first slide using legacy
+compatible commands. Preview navigation must never dispatch live commands or be
+overwritten by polling another deck. Preserve announcement priority at start and
+dispatch, silent-slide Background Music behavior and flash-free live navigation.
+
 ## Securly physical-console kiosk
 
 The optional Securly Pass kiosk is host-side and independent of RoomGoblin application/container health. Read `docs/SECURLY-KIOSK.md` and `docs/ai/SECURLY-KIOSK.md` before changing it. Never commit the production kiosk URL/code. Preserve the password-locked non-sudo `kiosk` account, a separate sudo-capable maintenance account, SSH, and the `Ctrl+Alt+F2` recovery path. Chromium Snap must use the systemd user D-Bus session, must not inherit tty1 standard file descriptors, and must use its Snap-owned profile. Keep kiosk failures from affecting Morning Announcements, scheduler recovery, Background Music, managed displays, Veyon, Docker integrations, or RoomGoblin health.
@@ -465,3 +473,43 @@ Operator-started video and explicitly audible web/voice/SFX playback is a classr
 Automation runtime is canonical on `actionSequence[]`. Do not special-case Action 1. Every action participates per sequence pass: `once` on pass 1, `repeat` through its configured pass count, and `loop` on every pass while the sequence still needs another pass. Start another pass only when at least two actions remain eligible, or when a finite `repeat` action still has configured passes remaining. If the only remaining eligible action is `loop`, stop sequence processing and leave its current state in place instead of reissuing it. Multi-action continuous loops remain cancellable, class-boundary-aware, supersedable by newer overlapping scheduled occurrences, recoverable after process restart/operator Resume, and protected by the zero-delay cycle floor.
 
 Preserve Morning Announcements priority, scheduler occurrence identity/recovery, Background Music reconciliation, stable targets, and database compatibility. Timer Overlay must initialize after the first pass so a continuous sequence cannot starve it. Keep media controls content-aware in the editor. Do not reintroduce `public/shared/automation-hotfix.js` or a second legacy automation editor.
+
+Playback watchdogs must track media time and, where available, decoded video
+frames independently of network callbacks. Full-buffer/paused freezes require
+bounded resume, live seek, decoder recovery and player-local reattachment. A
+watchdog seek must not reset escalation as apparent playback progress. Retired
+callbacks/retry timers cannot mutate successor HLS sessions. Browser autoplay
+denial must be diagnosed separately and may fall back to muted video; never
+claim JavaScript can manufacture activation or release announcement priority
+because a receiver stalls. See the playback safeguards and physical acceptance
+limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
+
+## TV-power aggregate intent
+
+Read `docs/TV-POWER-AUTOMATION.md` before changing scheduled TV power. Preserve
+explicit All/HDMI-All/HDBT-All selectors through the canonical action sequence;
+expanded IDs are for resource/priority checks, not a replacement for broadcast
+intent. Never broadcast after announcement filtering or while any configured
+receiver is announcement-locked. Keep typed output/connection rows through
+partial filtering so forced HDMI/HDBT selection survives. Individual output
+metadata must not narrow an aggregate or redirect its last unlocked target.
+The override is an internal function option, never a persisted/browser field.
+Do not replay uncertain CEC writes. Test the real sequence and single-action
+handler together; helper-only and source-string tests missed this regression.
+
+Startup and Resume Scheduled State must preserve the same aggregate intent.
+Keep per-target winner scoring unchanged; coalesce to one broadcast only when
+the same aggregate step/occurrence owns every current TV winner and its complete
+resolved scope, with no receiver locks. Partial overrides retain individual
+commands and their typed transports; never broadcast then replay the overriding
+TV command. Test real winner selection and reconciliation, not only Run Now.
+
+Announcement TV-power protection is enforced again at the shared CEC dispatch
+boundary using every locked receiver's physical `avOutput`, before deduplication
+can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
+port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
+named receivers fail closed: TV power is deferred, not guessed. A protected
+physical port blocks both transports conservatively. Individual payload output
+overrides are checked too, and locks are rechecked between individual writes.
+Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
+this boundary to an ID-only filter or automatically retry deferred CEC writes.

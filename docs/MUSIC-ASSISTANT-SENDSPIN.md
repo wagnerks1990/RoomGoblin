@@ -171,3 +171,46 @@ classification, once-only teardown, observer failures, and real upstream 1006
 termination. Physical audio remains operator-verified. Rollback uses the normal
 updater's saved source/images and operational backup; this update has no database
 migration, receiver identity change, or new playback policy.
+
+## Apple Music sync and playback recovery
+
+For an existing externally managed Music Assistant Compose deployment, stable
+**2.10.4** includes the upstream Apple Music fixes reviewed on 2026-09-23:
+
+- [Missing artists on library-playlist tracks](https://github.com/music-assistant/server/pull/5558): use the artist-name fallback when Apple returns an empty artist relationship, and invalidate the old parsed-item cache.
+- [Bounded throttle recovery](https://github.com/music-assistant/server/pull/5333): shorten the first retry delay instead of stalling playback for 15 seconds on a transient throttle.
+- [Batched library synchronization](https://github.com/music-assistant/server/pull/5391): reduce API requests while preserving imported library contents.
+
+The [upstream report](https://github.com/music-assistant/support/issues/5955)
+contains matching rate-limit/playback symptoms. These fixes improve recovery;
+they do not remove Apple's external rate limits. Do not repeatedly force full
+sync, disable IPv6, delete the library, or replace credentials merely because a
+429 appears. Re-authenticate only if the provider reports an authentication error.
+
+Upgrade an externally owned container through its original Compose project.
+Pull the exact `ghcr.io/music-assistant/server:2.10.4` image first. Stop only that
+service, take a private backup of its entire persistent `/data` directory and
+Compose configuration, and retain the previous image ID. Pin the Compose image,
+then recreate that service while preserving its data bind, host networking,
+LAN-selection shim, `PYTHONPATH`, and bounded `wait-for-lan.sh` entrypoint. Check
+API authentication, provider readiness, registered players, and Sendspin before
+declaring success. The 2.10 release removes the local-audio provider: establish
+whether it is in use before upgrading. A downgrade requires the saved pre-upgrade
+data as well as the previous image, since upstream database schemas can migrate.
+
+This procedure is for externally owned Compose deployments. It does not adopt
+or recreate them through RoomGoblin's managed-service/recovery catalog; existing
+managed-service image and recovery identities remain governed by their separate
+allowlist. The core RoomGoblin updater never silently upgrades an adopted add-on.
+
+RoomGoblin's Music Assistant HTTP compatibility path accepts successful raw JSON
+results, including `null`, arrays, and scalar values, as well as wrapped `result`
+responses. Non-JSON errors include the HTTP status without copying arbitrary
+upstream response bodies into diagnostics. Media-load/play commands have a
+bounded 60-second response budget; pause, stop, volume, and status keep their
+15-second budget. If a submitted WebSocket command times out or disconnects,
+RoomGoblin does not blindly repeat the mutation over HTTP. Read-only player
+polling may fall back, and commands that were not sent may use HTTP normally.
+
+Regression tests exercise real fixture HTTP responses and controlled WebSocket
+completion/timeout/disconnect cases. They do not claim physical audio acceptance.

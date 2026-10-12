@@ -72,3 +72,40 @@ credentials. The manual display controller reads the saved stream URL without
 rewriting its configuration and refuses to start when no URL is configured.
 
 See the repository document `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md` for the full diagnostic and acceptance-test contract.
+
+## Playback freeze safeguards
+
+The player samples playback every five seconds. Playlist/segment downloads and
+`playing` events do not reset its progress clock. Fifteen seconds without media
+time progress, or decoded-frame progress when supported on a video track, is
+reported as `stalled`, even if the buffer is full. Audio-only/native browsers
+without frame counters use media time.
+
+Recovery escalates at most once every fifteen seconds: resume/start loading,
+seek to the current live position, recover the HLS decoder, then rebuild this
+player session with the alternate playlist. A recovery seek is not evidence of
+playback. Genuine time/frame progress resets escalation; playlist callbacks do
+not. Rebuilds preserve the Hub announcement priority and never reload the whole
+receiver or release the scheduler/Background Music lock. Retired HLS callbacks
+and pending retry timers cannot act on a replacement session.
+
+`NotAllowedError` is reported separately as `autoplay-blocked`. The player tries
+muted video and shows an audio-blocked message; repeated unmute commands cannot
+force browser permission. Allow autoplay for the display origin through the
+managed Chrome/Edge policy described in `MUSIC-ASSISTANT-SENDSPIN.md`, or click
+the player to retry the requested audio in a user gesture. This fallback can
+preserve picture, but announcements are incomplete without audible audio.
+
+Diagnostics add `playbackStagnantMs`, `frameStagnantMs`, `decodedFrames`,
+`recoveryStage`, `audioBlocked`, `requestedVolume`, `muted` and play rejection
+`errorName`. Live Watch's controller PLAYING status remains the Hub takeover
+state; inspect each receiver's telemetry for actual playback health.
+
+Regression tests simulate a full-buffer freeze with continuing downloads,
+a progressing audio clock with frozen video frames, healthy playback, native
+HLS/paused recovery, autoplay rejection and retired callbacks. Physical PC/TV
+acceptance still requires a live stream test: verify continuous picture/audio,
+interrupt/recover networking, confirm current live playback resumes, and confirm
+release restores the current scheduled state. No physical acceptance is claimed
+by these simulated tests. Roll back through the backed-up previous published
+image/source pair if receiver behavior regresses.

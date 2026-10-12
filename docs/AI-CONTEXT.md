@@ -1,5 +1,10 @@
 # AI Project Context
 
+Presentation start clears selected receivers before the first slide; idle Next,
+Previous, Go and thumbnails preview locally and set the starting slide. Polling
+must preserve a separately selected preview deck. See `PRESENTATION-CONTROLS.md`
+for announcement priority, legacy receivers, testing and deployment boundaries.
+
 ## Managed Cloudflare remote HTTPS
 
 RoomGoblin has an optional first-class Cloudflare provisioning path. Site-specific domains and Cloudflare resource IDs remain runtime database values; API credentials are encrypted secrets. The connector token is host secret state at `/etc/cloudflared/roomgoblin.token`. Provisioning may manage a remotely managed Tunnel, proxied DNS, Always Use HTTPS, Automatic HTTPS Rewrites, HTTP/3, Brotli, and optional Access. Existing same-name tunnels and conflicting DNS records are fail-closed unless explicit adoption/replacement is selected.
@@ -534,3 +539,59 @@ Treat `Resume Scheduled State` as a hard ownership boundary. Any active manual c
 ### Continuous recovery winner filtering
 
 Do not recover every enabled continuous automation whose start time is earlier than now. Recovery must be constrained to current scheduler winners; otherwise an older or manually tested continuous event can be restarted after Resume Scheduled State and overwrite the intended current automation.
+
+Playback watchdogs must track media time and, where available, decoded video
+frames independently of network callbacks. Full-buffer/paused freezes require
+bounded resume, live seek, decoder recovery and player-local reattachment. A
+watchdog seek must not reset escalation as apparent playback progress. Retired
+callbacks/retry timers cannot mutate successor HLS sessions. Browser autoplay
+denial must be diagnosed separately and may fall back to muted video; never
+claim JavaScript can manufacture activation or release announcement priority
+because a receiver stalls. See the playback safeguards and physical acceptance
+limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
+
+## PDF document viewer contract
+
+Uploaded/converted PDF playback lives in `public/document-viewer/index.html`.
+Serve the locked PDF.js `legacy/build` module and worker together through the
+existing `/vendor/pdfjs/` route; kiosk engines may lack new built-in Map methods.
+Do not remove upstream compatibility support or downgrade the dependency as a fix.
+PDF.js 6 accepts `getDocument({url: file})`; the bare-string overload is removed
+and fails before fetching bytes. Preserve the entire nested signed URL and the
+existing protected-media policy. Bind viewer buttons explicitly by element ID
+so the `next` function cannot shadow the Next button. Keep page timing, loop
+semantics, receiver IDs, priority/recovery and stored uploads unchanged.
+See `docs/AUTOMATION-DISPLAY-MEDIA.md` for tests and deployment acceptance.
+`test/document-viewer.test.js` uses a small API fixture; the Chromium/Firefox
+browser gate loads the actual locked PDF.js build/worker and inspects rendered
+pixels. Fixture success is not physical-display or production-auth acceptance.
+
+## TV-power aggregate intent
+
+Read `docs/TV-POWER-AUTOMATION.md` before changing scheduled TV power. Preserve
+explicit All/HDMI-All/HDBT-All selectors through the canonical action sequence;
+expanded IDs are for resource/priority checks, not a replacement for broadcast
+intent. Never broadcast after announcement filtering or while any configured
+receiver is announcement-locked. Keep typed output/connection rows through
+partial filtering so forced HDMI/HDBT selection survives. Individual output
+metadata must not narrow an aggregate or redirect its last unlocked target.
+The override is an internal function option, never a persisted/browser field.
+Do not replay uncertain CEC writes. Test the real sequence and single-action
+handler together; helper-only and source-string tests missed this regression.
+
+Startup and Resume Scheduled State must preserve the same aggregate intent.
+Keep per-target winner scoring unchanged; coalesce to one broadcast only when
+the same aggregate step/occurrence owns every current TV winner and its complete
+resolved scope, with no receiver locks. Partial overrides retain individual
+commands and their typed transports; never broadcast then replay the overriding
+TV command. Test real winner selection and reconciliation, not only Run Now.
+
+Announcement TV-power protection is enforced again at the shared CEC dispatch
+boundary using every locked receiver's physical `avOutput`, before deduplication
+can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
+port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
+named receivers fail closed: TV power is deferred, not guessed. A protected
+physical port blocks both transports conservatively. Individual payload output
+overrides are checked too, and locks are rechecked between individual writes.
+Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
+this boundary to an ID-only filter or automatically retry deferred CEC writes.

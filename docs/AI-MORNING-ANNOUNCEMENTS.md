@@ -59,3 +59,13 @@ configuration during page initialization and must fail closed when no URL exists
 A later monitor may use an Ant Media API/webhook or another authoritative publisher signal. Preserve transition semantics and diagnostics even when the probe mechanism changes. Monitoring and playback are separate concerns: the monitor decides when a session should begin/end; the receiver/player decides how to survive transient playback/network errors while the session remains active.
 
 See `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md` for the operator-facing diagnostic procedure.
+
+Playback watchdogs must track media time and, where available, decoded video
+frames independently of network callbacks. Full-buffer/paused freezes require
+bounded resume, live seek, decoder recovery and player-local reattachment. A
+watchdog seek must not reset escalation as apparent playback progress. Retired
+callbacks/retry timers cannot mutate successor HLS sessions. Browser autoplay
+denial must be diagnosed separately and may fall back to muted video; never
+claim JavaScript can manufacture activation or release announcement priority
+because a receiver stalls. See the playback safeguards and physical acceptance
+limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.

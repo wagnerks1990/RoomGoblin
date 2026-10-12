@@ -13,6 +13,64 @@
 - Correct updater systemd ordering to the canonical `classroom-hub-host-agent.service`, retire the stale old-name unit during install/refresh, and normalize no-request manual oneshot failures without hiding real deployment failures.
 
 
+### Scheduled all-TV power handoff
+
+- Guard actual CEC output ownership for announcement receivers, including named
+  receivers, duplicate mappings and individual-output overrides. Unknown mappings
+  defer TV writes safely; priority is rechecked between individual commands.
+
+- Preserve All TVs/HDMI/HDBT selectors through the canonical sequence so scheduled
+  shutdown uses the same Pluto broadcast path as manual room controls, rather
+  than a second expansion of possibly remapped browser receiver IDs.
+- Preserve aggregate TV intent through startup/resume reconciliation only when
+  one step owns the complete TV winner set; keep per-target precedence and typed
+  transports for partial overrides instead of broadcasting and replaying overrides.
+- Retain typed outputs/transports after Morning Announcements filtering, prohibit
+  broadcasts during receiver locks, and ignore stale individual-output metadata
+  on aggregate actions without changing stored automation/device configuration.
+- Add executable full-sequence regressions for scheduled/manual and legacy runs,
+  remapped receivers, priority filtering, failures, cancellation and Run once;
+  update operator, Wiki and AI documentation. Physical acceptance remains separate.
+
+
+### Uploaded PDF automation playback
+
+- Update the Hub and maintenance locked `proxy-addr` dependency from 2.0.7 to 2.0.8 for GHSA-jqcg-44mw-7w3h, which blocks the existing release audit; preserve the configured proxy-trust policy.
+
+- Pass the complete protected PDF URL to PDF.js 6 using its required initialization object, fixing the `getDocument` missing data/range/url error before loading uploaded documents.
+- Serve PDF.js and its worker from the same upstream compatibility build so kiosk engines lacking `Map.getOrInsertComputed` can render documents.
+- Bind document navigation buttons explicitly so Next works alongside keyboard and automatic page advancement.
+- Add focused viewer regressions and actual locked-PDF.js rendering/navigation coverage in the Chromium/Firefox browser gate; update operator, Wiki and AI guidance.
+
+### Presentation start and preview controls
+
+- Clear existing content on selected presentation displays before the first slide.
+- Allow Previous, Next and Go before Start, with the preview selecting the starting slide.
+- Preserve separate preview selection during live-state polling and enforce Morning Announcements priority for presentation commands.
+
+### Morning Announcements playback freeze recovery
+
+- Detect playback/decoded-frame stagnation independently of playlist/fragment downloads, including full-buffer and paused freezes.
+- Escalate bounded player-local resume, live seek, decoder repair and alternate-playlist reconnect without releasing announcement priority.
+- Diagnose audible autoplay denial and preserve muted picture with an explicit audio-blocked message.
+- Update both Hub and maintenance locked transitive `ip-address` dependencies from 10.7.0 to 10.7.2 to clear the existing production audit gate.
+- Add executable recovery regressions and update operator, Wiki and AI recovery documentation.
+
+
+### Automation save validation
+
+- Treat half-day and delayed-start overlaps as non-blocking warnings for both new and existing automations, while preserving separate normal-day conflict checks.
+
+- Make Save & Enable simulation honor the same existing-conflict policy as saving an enabled automation.
+- Show conflicting automation names, dates, times, and resources, including unchanged overlaps on future exception days.
+
+### Music Assistant and update recovery
+
+- Accept successful null/raw Music Assistant HTTP command responses and retain bounded diagnostics for malformed responses.
+- Allow bounded provider-loading time for play requests without replaying submitted mutations after a WebSocket timeout or disconnect.
+- Avoid starting duplicate update recovery during a live CLI transaction, and preserve successful status when a delayed recovery start finds no journal.
+- Document the upstream Music Assistant 2.10.4 Apple Music fixes and the backed-up upgrade path for existing external Compose deployments.
+
 ### Manual media audio priority
 
 - Treat operator-started video and explicitly audible web/voice/SFX playback as a classroom media takeover.

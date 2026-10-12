@@ -378,7 +378,7 @@ async function deletePresentationFolder(id,name){
 function selectPresentation(id){
  const changed=PRES.selectedId!==id;
  PRES.selectedId=id;
- if(changed)PRES.previewSlide=1;
+ if(changed){PRES.previewSlide=1;presStartSlide.value=1;}
  renderPresentationLibrary();
  renderPresenter();
 }
@@ -423,6 +423,14 @@ async function startSelectedPresentation(){
  }catch(e){alert(e.message)}
 }
 async function presentationControl(action,extra={}){
+ const active=PRES.state?.active&&PRES.state.presentationId===PRES.selectedId;
+ if(['next','previous','back','goto'].includes(action)&&!active){
+  const p=presFile(PRES.selectedId);if(!p)return alert('Select a presentation first.');
+  const current=Number(PRES.previewSlide)||1;
+  const slide=action==='goto'?extra.slide:current+(['previous','back'].includes(action)?-1:1);
+  previewPresentationSlide(slide);
+  return;
+ }
  try{
   const j=await jpost('/api/v1/presentations/control',{action,...extra});
   PRES.state=j.state;if(j.state?.presentationId)PRES.selectedId=j.state.presentationId;renderPresenter();
@@ -435,7 +443,7 @@ function renderPresenter(){
  const p=presFile(PRES.selectedId),st=PRES.state||{};
  const active=st.active&&st.presentationId===PRES.selectedId;
  presSelectedName.textContent=p?`${p.name} • ${p.slideCount||0} slides`:'Select a presentation.';
- presStateBadge.textContent=st.active?(st.paused?'PAUSED':(st.black?'BLACK':'LIVE')):'IDLE';
+ presStateBadge.textContent=active?(st.paused?'PAUSED':(st.black?'BLACK':'LIVE')):(p?'PREVIEW':'IDLE');
  const slide=active
    ? Number(st.slide||1)
    : Math.max(1,Math.min(Number(PRES.previewSlide||1),Number(p?.slideCount||1)));
@@ -447,7 +455,7 @@ function renderPresenter(){
  presLoop.checked=!!st.loop;
  presPauseBtn.textContent=st.paused?'Resume':'Pause';
  presBlackBtn.textContent=st.black?'Return to Slides':'Black Screen';
- presTargetStatus.textContent=active?`Showing on: ${(st.targets||[]).join(', ')}`:'Not currently presenting.';
+ presTargetStatus.textContent=active?`Showing on: ${(st.targets||[]).join(', ')}`:'Preview only. Next, Previous and Go select the slide to start.';
  if(p&&p.slideCount){
    presCurrentImage.src=presentationUrl(p,slide);presCurrentImage.style.display='block';presCurrentEmpty.style.display='none';
    if(slide<p.slideCount){presNextImage.src=presentationUrl(p,slide+1);presNextImage.style.display='block';presNextEmpty.style.display='none'}
@@ -468,6 +476,7 @@ function previewPresentationSlide(n){
  const p=presFile(PRES.selectedId);if(!p)return;
  n=Math.max(1,Math.min(Number(n)||1,p.slideCount||1));
  PRES.previewSlide=n;
+ presStartSlide.value=n;
  presCurrentImage.src=presentationUrl(p,n);presCurrentImage.style.display='block';presCurrentEmpty.style.display='none';
  presSlideMetric.textContent=`${n} / ${p.slideCount}`;presGoto.value=n;presNotes.value=p.notes?.[n-1]||'';
  if(n<p.slideCount){presNextImage.src=presentationUrl(p,n+1);presNextImage.style.display='block';presNextEmpty.style.display='none'}else{presNextImage.style.display='none';presNextEmpty.style.display='inline'}
@@ -485,7 +494,7 @@ setInterval(async()=>{
  if(!document.getElementById('presentations')?.classList.contains('active'))return;
  try{
    const j=await api('/api/v1/presentations/state');
-   PRES.state=j.state;if(j.state?.presentationId)PRES.selectedId=j.state.presentationId;
+   PRES.state=j.state;if(!PRES.selectedId&&j.state?.active&&j.state.presentationId)PRES.selectedId=j.state.presentationId;
    renderPresenter();
  }catch{}
 },1000);
@@ -1871,8 +1880,18 @@ async function runAutomation(id){
     throw e;
   }
 }
+function automationValidationMessage(result,successMessage){
+  const describe=conflicts=>{
+    const items=conflicts||[];
+    const details=items.slice(0,3).map(item=>`${item.otherName||"Another automation"} at ${item.time} on ${item.date}${item.calendarRule&&item.calendarRule!=="normal"?` [${item.calendarLabel||item.calendarRule}]`:""} (${(item.resources||[]).join(", ")})`).join("; ");
+    return details+(items.length>3?`; plus ${items.length-3} more`:"");
+  };
+  if(!result.ok)return result.error||(result.conflicts?.length?`Resolve new schedule conflicts: ${describe(result.conflicts)}`:"Simulation failed. Review the automation settings.");
+  const existing=describe(result.existingConflicts),special=describe(result.specialDayConflicts);
+  return successMessage+(existing?` • Existing overlaps unchanged: ${existing}`:"")+(special?` • Special-day overlaps (do not block saving): ${special}`:"");
+}
 async function simulateAutomationEditor(){
-  try{const body=editorEvent(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=j.ok?`Simulation OK • ${j.resolved?.resourceKeys?.length||0} resolved resource(s)`:j.error||`Simulation found ${(j.conflicts||[]).length} conflict(s)`;return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
+  try{const body=editorEvent(),j=await api('/api/v1/automations/draft/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,id:autoId.value||undefined})});autoEditorMsg.textContent=automationValidationMessage(j,`Simulation OK • ${j.resolved?.resourceKeys?.length||0} resolved resource(s)`);return j}catch(e){autoEditorMsg.textContent=e.message;throw e}
 }
 async function runAutomationDraft(){
   if(!confirm('Run the current unsaved editor values on real classroom devices? This does not save or enable the event.'))return;

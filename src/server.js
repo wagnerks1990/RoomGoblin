@@ -1430,7 +1430,7 @@ function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
-async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation"}={}){
+async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation",tvTargetsOverride=null,bypassAnnouncementPriority=false}={}){
   const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
   if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action||"(blank)"}`);
@@ -1438,17 +1438,34 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
 
   if(action==="tv.power"){
     const on=String(p.state||"on").toLowerCase()==="on";
-    const requestedTargets=Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[];
-    const broadcastTarget=p.output===undefined&&requestedTargets.length===1?requestedTargets[0]:null;
-    const broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
-    const tvTargets=expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    const requestedTargets=[...new Set(Array.isArray(event.targets)?event.targets.map(cleanId).filter(Boolean):[])];
+    // An explicit All selector is intent, not an expanded list of receiver IDs.
+    // Legacy individual-output metadata must not narrow an aggregate command.
+    const broadcastTarget=requestedTargets.includes("all")?"all":requestedTargets.length===1?requestedTargets[0]:null;
+    let broadcastAction={all:"cecAllOutputs","hdmi-all":"cecAllHdmi","hdbt-all":"cecAllHdbt"}[broadcastTarget];
+    // Only the in-process sequence runner supplies this typed, lock-filtered
+    // override. Preserve its forced transport instead of expanding IDs again.
+    const tvTargets=Array.isArray(tvTargetsOverride)?tvTargetsOverride.map(target=>({...target})):expandTvTargets(requestedTargets,{devices,connection:p.connection==="hdmi"?"hdmi":"hdbt"});
+    const aggregate=requestedTargets.some(id=>["all","hdmi-all","hdbt-all"].includes(id));
+    if(!aggregate&&p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
+    const initialLocks=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(["all"]);
+    // Enforce physical ownership at the last shared dispatch boundary, after
+    // individual output overrides and before any CEC write. An alias removed by
+    // target deduplication must still protect its original physical output.
+    if(initialLocks.length)broadcastAction=null;
     if(broadcastAction){
-      // Match the proven Room controls path for the explicit all-TV selectors.
       outputs.results.push(await directPluto({action:broadcastAction,index:on?0:1}));
     }else{
-      if(p.output!==undefined&&tvTargets.length===1){const output=Number(p.output);if(Number.isInteger(output)&&output>=1&&output<=8)tvTargets[0].output=output}
+      const deferred=new Set();
       for(const target of tvTargets){
+        const locks=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(["all"]);
+        const blocked=automationTvPowerPhysicalLocks(target,locks);
+        if(blocked.length){for(const id of blocked)deferred.add(id);continue}
         outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
+      }
+      if(deferred.size){
+        outputs.deferred=true;outputs.lockedTargets=[...deferred];
+        if(!outputs.results.length){const error=new Error("TV power deferred for Morning Announcements physical output ownership");error.code="ANNOUNCEMENTS_PRIORITY_ACTIVE";error.targets=outputs.lockedTargets;throw error}
       }
     }
     assertAdapterResults(outputs.results,{action:"TV power"});
@@ -1578,6 +1595,20 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   return {ok:true,eventId:event.id,name:event.name,manual,...outputs};
 }
 
+
+function automationTvPowerPhysicalLocks(target,lockedReceivers){
+  const blocked=[];
+  for(const rawId of lockedReceivers){
+    const id=cleanId(rawId),receiver=devices[id];
+    const explicit=receiver&&Object.prototype.hasOwnProperty.call(receiver,"avOutput");
+    const value=explicit?receiver.avOutput:(/^tv[1-8]$/.test(id)?id.slice(2):null);
+    const output=(typeof value==="number"||typeof value==="string"&&value.trim()!=="")?Number(value):NaN;
+    // Do not guess an independent/named receiver's wiring. Unknown or invalid
+    // mappings defer TV writes, and a known port protects both CEC transports.
+    if(!Number.isInteger(output)||output<1||output>8||output===target.output)blocked.push(rawId);
+  }
+  return blocked;
+}
 
 function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   if(!baseClass)return {classes:[],endAt:null,finalClass:null};
@@ -1846,11 +1877,19 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       else if(explicitTargets.length)rawTargets=explicitTargets;
       else rawTargets=defaultAutomationActionTargets(stepAction);
 
-      let resolvedTargets;
+      let resolvedTargets,resolvedTvTargets=null;
       if(stepDomain==="display-content"||stepDomain==="display-overlay")resolvedTargets=automationDisplayTargets(rawTargets);
-      else if(stepDomain==="tv-power")resolvedTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id);
-      else resolvedTargets=[...rawTargets];
+      else if(stepDomain==="tv-power"){
+        resolvedTvTargets=expandTvTargets(rawTargets,{devices,connection:step.payload?.connection||"hdbt"});
+        resolvedTargets=resolvedTvTargets.map(item=>item.id);
+      }else resolvedTargets=[...rawTargets];
 
+      const stepPayload={...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})};
+      if(stepDomain==="tv-power"&&rawTargets.some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete stepPayload.output;
+      // Preserve aggregate intent only when it cannot broaden a filtered
+      // announcement target set. Any active receiver lock prohibits broadcast,
+      // including receivers whose IDs are not part of the legacy tvN inventory.
+      const preserveTvSelectors=stepDomain==="tv-power"&&(bypassAnnouncementPriority||announcementLockedDisplayTargets(["all"]).length===0);
       let lockedTargets=[];
       if((stepDomain==="display-content"||stepDomain==="display-overlay"||stepDomain==="tv-power")&&!bypassAnnouncementPriority){
         lockedTargets=announcementLockedDisplayTargets(resolvedTargets);
@@ -1860,11 +1899,12 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepAction,targets:[],ok:true,deferred:true,lockedTargets});
           executed++;
         }else{
-          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+          const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:stepPayload,targets:preserveTvSelectors&&!lockedTargets.length?rawTargets:resolvedTargets,timerOverlay:null};
           try{
             if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+            const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true,tvTargetsOverride:resolvedTvTargets?.filter(target=>resolvedTargets.includes(target.id)),bypassAnnouncementPriority});
             pushResults(result.results);
+            if(result.lockedTargets?.length)lockedTargets=[...new Set([...lockedTargets,...result.lockedTargets])];
             pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount,...(lockedTargets.length?{deferred:true,lockedTargets}:{})});
           }catch(err){
             if(err.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"){
@@ -1879,11 +1919,12 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
           if(overlayCoverage==="all-display-actions"&&stepDomain==="display-content")await applyTimerOverlay({targetsOverride:stepEvent.targets,force:true});
         }
       }else{
-        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:{...(step.payload||{}),...(stepAction==="display.media"?{loop:step.executionMode==="loop"}:{})},targets:resolvedTargets,timerOverlay:null};
+        const stepEvent={...event,_stepId:step.id||`action-${i+1}`,action:stepAction,payload:stepPayload,targets:preserveTvSelectors&&!lockedTargets.length?rawTargets:resolvedTargets,timerOverlay:null};
         try{
           if(["display-content","display-overlay","tv-power","lighting"].includes(stepDomain)&&!stepEvent.targets.length)throw new Error(`${stepAction} has no valid targets`);
-          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true});
+          const result=await runSingleAutomationAction(stepEvent,{manual,skipOverlay:true,skipAudit:true,tvTargetsOverride:resolvedTvTargets?.filter(target=>resolvedTargets.includes(target.id)),bypassAnnouncementPriority});
           pushResults(result.results);
+            if(result.lockedTargets?.length)lockedTargets=[...new Set([...lockedTargets,...result.lockedTargets])];
           pushStep({index:i+1,pass,id:step.id||`action-${i+1}`,action:stepEvent.action,targets:stepEvent.targets,ok:true,executionMode:step.executionMode,repeatCount:step.repeatCount});
         }catch(err){
           combined.ok=false;
@@ -2251,10 +2292,14 @@ function recordCurrentSlideTiming(){
   const key=String(presentationState.slide||1);
   presentationState.timings[key]=Number(presentationState.timings[key]||0)+elapsed;
 }
-async function sendPresentationSlide(){
+async function sendPresentationSlide({clear=false}={}){
   const rec=presentationLibrary.presentations[presentationState.presentationId];
   if(!rec||!presentationState.active)return;
   const url=presentationSlideUrl(rec.id,presentationState.slide);
+  const priorityError=announcementPriorityError(presentationState.targets);
+  if(priorityError)throw priorityError;
+  // Clear overlays through the established command understood by older receivers.
+  if(clear)await executeCommand({type:"display.clear",target:presentationState.targets,payload:{presentation:true}},"presentation");
   await executeCommand({
     // Use the established display.image command so already-open TV receivers
     // from earlier Hub versions can present slides without requiring a reload.
@@ -4502,7 +4547,7 @@ async function executeCommand(input, source = "api") {
     // This final router-level check closes the race where an automation passed
     // its initial check, awaited a delay/network operation, and then attempted
     // to overwrite a display after an announcement had acquired priority.
-    if(source==="automation"){
+    if(source==="automation"||source==="presentation"){
       const priorityError=announcementPriorityError(targets);
       if(priorityError)throw priorityError;
     }
@@ -4976,7 +5021,8 @@ function validAssetAccessToken(token){const parts=String(token||"").split(".");i
 function requireAssetAccess(req,res,next){if(requestUser(req)||validAssetAccessToken(req.query.access_token))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
 app.use("/media",requireAssetAccess,(req,res,next)=>path.extname(req.path).toLowerCase()===".svg"?res.status(415).json({ok:false,error:"Active SVG media is not served from the application origin"}):next(),express.static(MEDIA_DIR,{fallthrough:false}));
 app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fallthrough:false}));
-app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","build")));
+// Keep PDF.js and its worker on the same upstream compatibility build for kiosk browsers.
+app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","legacy","build")));
 app.use("/vendor/hls", express.static(path.join(path.resolve(__dirname,".."),"node_modules","hls.js","dist")));
 
 app.use(express.static(path.join(APP_DIR, "public")));
@@ -5424,17 +5470,47 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
         else targets=defaultAutomationActionTargets(step.action);
-        const resolved=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}).map(item=>item.id):targets;
+        const tvTargets=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}):null;
+        const resolved=tvTargets?tvTargets.map(item=>item.id):targets;
+        // Shared in-process identity connects winners from this exact step and
+        // occurrence. Do not replace the existing per-target precedence model.
+        const tvPowerIntent=tvTargets?{targets:[...targets],resolvedTargets:tvTargets}:null;
         for(const target of resolved){
           const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
           if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2])){
-            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target});
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(tvPowerIntent?{tvPowerIntent}:{})});
           }
         }
       }
     }
   }
   return [...winners.values()];
+}
+function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
+  const locked=new Set(lockedTargets),tvWinners=winners.filter(winner=>winner.domain==="tv-power");
+  const intent=tvWinners[0]?.tvPowerIntent;
+  const requested=[...new Set((intent?.targets||[]).map(cleanId).filter(Boolean))];
+  const candidate=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+  const selector=["all","hdmi-all","hdbt-all"].includes(candidate)?candidate:null;
+  // A broadcast is safe only when this exact aggregate step owns the complete
+  // TV winner set. Any competing winner (even a remapped alias) keeps dispatch
+  // per-target; never broadcast first and try to repair overridden TVs later.
+  const complete=Boolean(selector&&intent?.resolvedTargets?.length&&
+    tvWinners.every(winner=>winner.tvPowerIntent===intent)&&
+    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.target===target.id)));
+  let emitted=false;
+  return winners.flatMap(winner=>{
+    if(winner.domain!=="tv-power")return [winner];
+    if(locked.has(winner.target))return [{...winner,deferred:true}];
+    const metadata=winner.tvPowerIntent,payload={...(winner.event.payload||{})};
+    if((metadata?.targets||[]).some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete payload.output;
+    if(complete&&!locked.size){
+      if(emitted)return [];
+      emitted=true;
+      return [{...winner,target:selector,event:{...winner.event,targets:[selector],payload},tvTargetsOverride:intent.resolvedTargets}];
+    }
+    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:metadata?.resolvedTargets?.filter(target=>target.id===winner.target)}];
+  });
 }
 function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerClock.now()){
   if(!event)return false;
@@ -5508,13 +5584,15 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
     return {ok:true,announcementResumed:true,reason:"Morning Announcements restored because they have priority",targets,schedulerTime:now.toISOString()};
   }
   const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
-  for(const winner of currentAutomationNonDisplayWinners(now)){
-    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result})}
-    catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:false,error:error.message})}
+  const nonDisplayWinners=currentAutomationNonDisplayWinners(now);
+  for(const winner of planAutomationNonDisplayDispatches(nonDisplayWinners,{lockedTargets:announcementLockedDisplayTargets(["all"])})){
+    if(winner.deferred){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,deferred:true,lockedTargets:[winner.target]});continue}
+    try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true,tvTargetsOverride:winner.tvTargetsOverride});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result,...(result.deferred?{deferred:true,lockedTargets:result.lockedTargets}: {})})}
+    catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,...(error.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"?{ok:true,deferred:true,lockedTargets:error.targets||[]}:{ok:false,error:error.message})})}
   }
   await backgroundMusicTick();
   const ok=!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false);
-  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:resourceResults.length,ok});
+  audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:nonDisplayWinners.length,resourceDispatches:resourceResults.length,ok});
   return {ok,reason,schedulerTime:now.toISOString(),display,resources:resourceResults,backgroundMusic:{playing:backgroundMusicRuntime.playing,paused:backgroundMusicRuntime.paused}};
 }
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
@@ -5537,11 +5615,14 @@ function automationResourceKeys(event){
   }
   return [...new Set(keys)];
 }
-function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDate=new Date()}={}){
+function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDate=new Date(),calendarScope="all"}={}){
   if(candidate?.enabled===false)return [];
   const conflicts=[],start=new Date(startDate);start.setHours(12,0,0,0);
   for(let off=0;off<horizonDays&&conflicts.length<20;off++){
     const day=new Date(start);day.setDate(day.getDate()+off);
+    if(isAutomationSuppressed(day).blocked)continue;
+    const rule=calendarRuleForDate(day),special=["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
+    if(calendarScope==="normal"&&special||calendarScope==="special"&&!special)continue;
     const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
     for(const occurrence of candidateOccurrences){
       if(!occurrence||occurrence._scheduledDateKey&&occurrence._scheduledDateKey!==localDateKey(day))continue;
@@ -5552,7 +5633,7 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
         for(const o of otherOccurrences){
           if(!o||String(o.time)!==String(occurrence.time))continue;
           const shared=automationResourceKeys(o).filter(key=>cKeys.has(key));
-          if(shared.length)conflicts.push({date:localDateKey(day),time:occurrence.time,candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,resources:shared});
+          if(shared.length)conflicts.push({date:localDateKey(day),calendarRule:rule.type,calendarLabel:rule.label,time:occurrence.time,candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,resources:shared});
         }
       }
     }
@@ -5562,22 +5643,32 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
 function automationConflictSignature(conflict){
   return [String(conflict?.otherId||""),String(conflict?.date||""),String(conflict?.time||""),...(conflict?.resources||[]).map(String).sort()].join("|");
 }
-function assertAutomationConflicts(candidate,events,{previous=null,startDate=new Date()}={}){
-  const conflicts=automationConflictDiagnostics(candidate,events,{startDate});
-  if(!conflicts.length)return;
-  // Preserve exact conflicts that already existed before this edit. Conflict
-  // validation was introduced after many installations had valid overlapping
-  // events, and an unrelated edit must not turn those records into a lockout.
-  let blocking=conflicts;
-  if(previous&&previous.enabled!==false){
-    const existing=new Set(automationConflictDiagnostics(previous,events,{startDate}).map(automationConflictSignature));
-    blocking=conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict)));
-  }
-  if(!blocking.length)return;
-  const first=blocking[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=blocking;throw error;
+function automationConflictReview(candidate,events,{previous=null,startDate=new Date()}={}){
+  // Scan normal days separately so a full page of exception-day warnings cannot
+  // hide a later normal-day conflict behind the diagnostic result limit.
+  const conflicts=automationConflictDiagnostics(candidate,events,{startDate,calendarScope:"normal"});
+  const specialDayConflicts=automationConflictDiagnostics(candidate,events,{startDate,calendarScope:"special"});
+  const existing=new Set(previous&&previous.enabled!==false
+    ?automationConflictDiagnostics(previous,events,{startDate,calendarScope:"normal"}).map(automationConflictSignature):[]);
+  return {
+    conflicts:conflicts.filter(conflict=>!existing.has(automationConflictSignature(conflict))),
+    existingConflicts:conflicts.filter(conflict=>existing.has(automationConflictSignature(conflict))),
+    specialDayConflicts
+  };
+}
+function assertAutomationConflicts(candidate,events,options={}){
+  const review=automationConflictReview(candidate,events,options);
+  if(!review.conflicts.length)return review;
+  const first=review.conflicts[0],error=new Error(`${candidate.name} conflicts with ${first.otherName} at ${first.time} on ${first.date}. Save it disabled or resolve the shared targets.`);error.code="AUTOMATION_CONFLICT";error.conflicts=review.conflicts;throw error;
 }
 app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroomRead,(req,res)=>{
-  try{const event=normalizeAutomation({...req.body,id:req.body?.id||`draft-${crypto.randomUUID()}`},{}),resolved=resolveAutomationForManualTest(event),conflicts=automationConflictDiagnostics(event,classroomAutomations.events.filter(item=>item.id!==req.body?.id));res.json({ok:conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:automationActionSequence(resolved).map(step=>step.action)},conflicts,scheduler:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
+  try{
+    const id=cleanId(req.body?.id||""),previous=id?classroomAutomations.events.find(item=>item.id===id):null;
+    const event=normalizeAutomation({...req.body,id:id||`draft-${crypto.randomUUID()}`},previous||{});
+    const resolved=resolveAutomationForManualTest(event);
+    const review=automationConflictReview(event,classroomAutomations.events.filter(item=>item.id!==event.id),{previous});
+    res.json({ok:review.conflicts.length===0,dryRun:true,event,resolved:{time:resolved.time,classId:resolved.classId||null,targets:resolved.targets,resourceKeys:automationResourceKeys(resolved),actions:automationActionSequence(resolved).map(step=>step.action)},...review,scheduler:evaluateAutomationAt(schedulerClock.now())});
+  }catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
 app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(req,res)=>{
   const id=cleanId(req.params.id);
@@ -6019,7 +6110,7 @@ async function restoreMusicAssistantTvAudioState(deviceId,ws){const playerId=`cl
 let maApiSocket=null,maApiConnectPromise=null,maApiAuthenticated=false,maApiServerInfo=null,maApiLastError=null,maApiLastConnectedAt=null;
 const maApiPending=new Map();
 function musicAssistantApiWsUrl(){const u=new URL(musicAssistantConfig().url);u.protocol=u.protocol==="https:"?"wss:":"ws:";u.pathname=(u.pathname.replace(/\/$/,"")+"/ws").replace(/\/{2,}/g,"/");u.search="";u.hash="";return u.toString()}
-function rejectMusicAssistantPending(message){const pending=[...maApiPending.values()];maApiPending.clear();for(const p of pending){clearTimeout(p.timer);p.reject(new Error(message))}}
+function rejectMusicAssistantPending(message){const pending=[...maApiPending.values()];maApiPending.clear();for(const p of pending){clearTimeout(p.timer);const error=new Error(message);error.mayHaveExecuted=!!p.command;p.reject(error)}}
 function musicAssistantApiClose(reason="reset"){const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;if(ws){try{ws.close(1000,reason)}catch{}}rejectMusicAssistantPending(`Music Assistant API disconnected: ${reason}`)}
 function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.isBuffer(raw)?raw.toString("utf8"):String(raw))}catch{return}
   if(msg&&msg.server_id&&msg.schema_version!==undefined&&!msg.message_id){maApiServerInfo=msg;return}
@@ -6027,10 +6118,47 @@ function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.i
   // Events are intentionally not returned to callers. The status endpoint refreshes player
   // inventory through this same persistent socket, while the socket stays alive between calls.
 }
-async function musicAssistantApiRawCommand(command,args={},timeoutMs=15000){await ensureMusicAssistantApi();if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{maApiPending.delete(message_id);reject(new Error(`Music Assistant command timed out: ${command}`))},timeoutMs);maApiPending.set(message_id,{resolve,reject,timer,parts:[]});try{maApiSocket.send(JSON.stringify({message_id,command,args}))}catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}})}
+function musicAssistantCommandTimeout(command){
+  // Loading media can include provider throttling; pause/stop/status stay responsive.
+  return ["players/cmd/play","player_queues/play_media"].includes(command)?60000:15000;
+}
+async function musicAssistantApiRawCommand(command,args={},timeoutMs=musicAssistantCommandTimeout(command)){
+  await ensureMusicAssistantApi();
+  if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");
+  const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{
+      maApiPending.delete(message_id);
+      const error=new Error(`Music Assistant command timed out: ${command}`);
+      error.mayHaveExecuted=true;
+      reject(error);
+    },timeoutMs);
+    maApiPending.set(message_id,{resolve,reject,timer,parts:[],command});
+    try{maApiSocket.send(JSON.stringify({message_id,command,args}))}
+    catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}
+  });
+}
 async function ensureMusicAssistantApi(){if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;if(maApiConnectPromise)return maApiConnectPromise;const token=musicAssistantToken();if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in Classroom Control Hub Music settings.");maApiConnectPromise=new Promise((resolve,reject)=>{let settled=false,helloSeen=false,failed=false;const ws=new WebSocket(musicAssistantApiWsUrl());maApiSocket=ws;const fail=(err)=>{if(failed)return;failed=true;maApiLastError=String(err?.message||err);if(!settled){settled=true;reject(err instanceof Error?err:new Error(String(err)))}musicAssistantApiClose("connection-failed")};const auth=()=>{if(!helloSeen||ws.readyState!==WebSocket.OPEN)return;const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;const timer=setTimeout(()=>{maApiPending.delete(message_id);fail(new Error("Music Assistant authentication timed out"))},10000);maApiPending.set(message_id,{parts:[],timer,resolve:(result)=>{if(!result)return fail(new Error("Music Assistant authentication was rejected"));maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();if(!settled){settled=true;resolve(ws)}},reject:fail});ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))};ws.on("open",()=>{});ws.on("message",data=>{let parsed=null;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{};if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){maApiServerInfo=parsed;helloSeen=true;auth();return}musicAssistantApiHandleMessage(data)});ws.on("error",fail);ws.on("close",(code,reason)=>{maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;maApiLastError=why;rejectMusicAssistantPending(`Music Assistant API ${why}`);if(!settled){settled=true;reject(new Error(`Music Assistant WebSocket API ${why}`))}});setTimeout(()=>{if(!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000)}).finally(()=>{maApiConnectPromise=null});return maApiConnectPromise}
-async function musicAssistantHttpCommand(command,args={}){const cfg=musicAssistantConfig(),token=musicAssistantToken();const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(15000)});const text=await r.text();let j;try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned HTTP ${r.status}: ${text.slice(0,500)}`)}if(!r.ok||j.error)throw Error(j.error?.message||j.error||`Music Assistant HTTP ${r.status}`);return j.result!==undefined?j.result:j}
-async function musicAssistantCommand(command,args={}){try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}}}
+async function musicAssistantHttpCommand(command,args={}){
+  const cfg=musicAssistantConfig(),token=musicAssistantToken();
+  const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(musicAssistantCommandTimeout(command))});
+  const text=await r.text();
+  let j;
+  try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned invalid JSON (HTTP ${r.status})`)}
+  if(!r.ok||j?.error||j?.error_code!==undefined)throw Error(j?.error?.message||j?.error||j?.details||`Music Assistant HTTP ${r.status}`);
+  // The upstream HTTP API returns the command result directly, including null
+  // for successful void commands. Retain wrapped-result compatibility too.
+  return j?.result!==undefined?j.result:j;
+}
+async function musicAssistantCommand(command,args={}){
+  try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){
+    diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});
+    // An unanswered command may still be running upstream. Replaying a mutation
+    // through HTTP can duplicate playback/queue changes and increase provider load.
+    if(wsErr.mayHaveExecuted&&command!=="players/all")throw wsErr;
+    try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}
+  }
+}
 
 
 // -----------------------------------------------------------------------------
@@ -7257,9 +7385,11 @@ app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),asy
     const id=String(req.params.id),rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
     if(rec.conversionStatus!=="ready"||!rec.slideCount)return res.status(409).json({ok:false,error:"Presentation rendering is not ready"});
-    if(presentationState.active)await stopPresentation({clear:false});
     const targets=resolveDisplayTargets(req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
     if(!targets.length)throw new Error("Select at least one display");
+    const priorityError=announcementPriorityError(targets);
+    if(priorityError)throw priorityError;
+    if(presentationState.active)await stopPresentation({clear:false});
     const now=new Date().toISOString();
     presentationState={
       ...defaultPresentationState(),
@@ -7274,7 +7404,7 @@ app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),asy
       sessionId:crypto.randomUUID()
     };
     persistPresentationState();
-    await sendPresentationSlide();
+    await sendPresentationSlide({clear:true});
     audit({kind:"presentation.start",id,name:rec.name,targets,slide:presentationState.slide});
     broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
     res.json({ok:true,state:presentationStatePublic()});
