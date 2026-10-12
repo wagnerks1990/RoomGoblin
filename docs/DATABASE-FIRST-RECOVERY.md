@@ -433,6 +433,13 @@ During Host Agent startup, the authenticated Unix socket is served before an
 interrupted transaction recreates health-dependent containers. Host mutation
 requests return `423` until recovery or rollback completes.
 
+Recovery status samples worker liveness before reading the durable phase and
+serializes that snapshot against starting another job. If the worker finishes
+during the read, `running:true` conservatively keeps the caller polling; the next
+poll returns the terminal phase. Never pair an old `quiescing` phase with
+`running:false`. A failed rollback remains `rollback-failed` with its journal
+retained; this status ordering does not alter rollback or cleanup policy.
+
 Restore should automatically:
 
 1. inspect and authenticate/validate the bundle;

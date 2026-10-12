@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 import sys
@@ -242,6 +243,50 @@ class FullRecoveryTests(unittest.TestCase):
         self.assertEqual(status["phase"], "rollback-failed")
         self.assertEqual(status["rollback"]["ok"], False)
         self.assertTrue(self.manager.journal_file.exists())
+
+    def test_status_cannot_pair_a_stale_phase_with_a_finished_worker(self):
+        recovery_id, checksum, _ = self.stage(adb=False)
+        quiescing = threading.Event()
+        finish = threading.Event()
+
+        def execute(*args):
+            self.manager.journal_file.write_text(json.dumps({"phase": "quiescing"}))
+            self.manager._status("quiescing", "Writers paused", recoveryId=recovery_id)
+            quiescing.set()
+            if not finish.wait(2):
+                raise RuntimeError("test did not release worker")
+            raise RuntimeError("health failed")
+
+        self.manager._execute = execute
+        self.manager._rollback = lambda journal: (_ for _ in ()).throw(RuntimeError("writer still active"))
+        self.manager.start({"confirm": "RESTORE_FULL_RECOVERY", "recoveryId": recovery_id, "manifestSha256": checksum})
+        self.manager.release_handoff(recovery_id)
+        original_read = Path.read_text
+
+        def read_at_completion(path, *args, **kwargs):
+            value = original_read(path, *args, **kwargs)
+            if path == self.manager.status_file:
+                # Capture the old phase, then force the actual worker to publish
+                # rollback-failed and exit before status() can return.
+                finish.set()
+                self.manager._thread.join(2)
+                self.assertFalse(self.manager._thread.is_alive())
+            return value
+
+        try:
+            self.assertTrue(quiescing.wait(2))
+            with patch.object(Path, "read_text", read_at_completion):
+                status = self.manager.status()
+            self.assertEqual(status["phase"], "quiescing")
+            self.assertTrue(status["running"], "a captured active phase must keep polling")
+            final = self.manager.status()
+            self.assertEqual(final["phase"], "rollback-failed")
+            self.assertFalse(final["running"])
+            self.assertFalse(final["rollback"]["ok"])
+            self.assertTrue(self.manager.journal_file.exists())
+        finally:
+            finish.set()
+            self.manager._thread.join(2)
 
     def test_committed_cleanup_failure_never_rolls_back_validated_state(self):
         recovery_id, checksum, _ = self.stage(adb=False)

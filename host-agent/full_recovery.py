@@ -128,14 +128,21 @@ class FullRecoveryManager:
         self._handoff = threading.Event()
 
     def status(self):
-        try:
-            value = json.loads(self.status_file.read_text())
-        except FileNotFoundError:
-            value = {"phase": "idle", "running": False, "ok": None, "message": "No full recovery has been started."}
-        except Exception as exc:
-            value = {"phase": "failed", "running": False, "ok": False, "message": f"Recovery status is unreadable: {exc}"}
-        value["running"] = bool(self._thread and self._thread.is_alive())
-        return value
+        # Probe the worker before reading its durable phase. A worker can finish
+        # during the read; retaining running=True then keeps callers polling.
+        # Once running=False is captured, its terminal status is already written.
+        # Serialize against start() so a replacement job cannot invalidate this
+        # ordering. The worker's atomic status writes do not acquire this guard.
+        with self._guard:
+            running = bool(self._thread and self._thread.is_alive())
+            try:
+                value = json.loads(self.status_file.read_text())
+            except FileNotFoundError:
+                value = {"phase": "idle", "running": False, "ok": None, "message": "No full recovery has been started."}
+            except Exception as exc:
+                value = {"phase": "failed", "running": False, "ok": False, "message": f"Recovery status is unreadable: {exc}"}
+            value["running"] = running
+            return value
 
     def _status(self, phase, message, ok=None, **extra):
         value = {"phase": phase, "message": message, "ok": ok, "updatedAt": int(time.time()), **extra}

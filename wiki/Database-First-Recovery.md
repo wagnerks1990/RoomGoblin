@@ -179,3 +179,12 @@ authentication still occurs on every request without forcing a SQLite write on
 every poll. Privacy retention removes expired audit rows periodically; routine
 production operation relies on SQLite page reuse rather than running disruptive
 automatic VACUUM operations.
+
+## Recovery status snapshots
+
+Recovery status samples worker liveness before reading the durable phase and
+serializes that snapshot against starting another job. If the worker finishes
+during the read, `running:true` conservatively keeps the caller polling; the next
+poll returns the terminal phase. Never pair an old `quiescing` phase with
+`running:false`. A failed rollback remains `rollback-failed` with its journal
+retained; this status ordering does not alter rollback or cleanup policy.

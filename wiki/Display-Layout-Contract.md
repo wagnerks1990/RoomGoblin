@@ -4,7 +4,7 @@
 
 `public/display/layout.mjs` is the only title/subtitle/body/timer sizing and region-allocation authority. `public/display/index.html` owns state application, media, timer state, transport, and viewport scaling. `public/display/layout.css` provides the packaged font and matching structural defaults, but the module reasserts containment-critical styles before measurement so a stale or missing stylesheet cannot silently change fit behavior.
 
-The current renderer revision is `dynamic-fit-20260922-12`.
+The current renderer revision is `dynamic-fit-20261012-1`.
 
 ## Logical canvas and scaling
 
@@ -64,6 +64,13 @@ Containment has three independent checks:
 
 The text-range pass validates glyph containment only. It intentionally does not reject a full-width flex child merely because transformed/subpixel browser geometry makes its border box differ slightly from its parent.
 
+Fallback glyphs may extend vertically beyond their own line box. When the child
+uses `overflow-y:visible`, that ink must fit the containing region, not the child's
+line box. Region scroll/offset, natural-size and painted-range checks remain
+mandatory. A child that clips its contents still has to contain its own overflow.
+This prevents a missing font stylesheet from shrinking readable text to 11.5px
+despite ample region space.
+
 Title and subtitle are single-line and shrink horizontally rather than wrap. Body text uses `break-spaces`, preserving authored line breaks and blank lines while allowing wrapping of long content. Authored whitespace must not be normalized merely to make a fit pass.
 
 Extremely dense content may shrink below the 12px readable threshold to preserve containment. Such results report component status `below-readable-minimum` and set `fitWarning=content-too-dense`.
@@ -94,7 +101,7 @@ Run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-For the current production renderer, expect `revision: dynamic-fit-20260922-12`.
+For the current production renderer, expect `revision: dynamic-fit-20261012-1`.
 
 Diagnostics include viewport, DPR, logical stage scale, font status, layout pass count, active object order, fitted sizes, region geometry, and containment status.
 

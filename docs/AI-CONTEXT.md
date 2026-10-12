@@ -595,3 +595,16 @@ physical port blocks both transports conservatively. Individual payload output
 overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
+
+## Display fallback and recovery status snapshots
+
+Renderer `dynamic-fit-20261012-1` allows visible fallback glyph ink outside its
+own line box only when the display region, natural-size probe and painted ranges
+still contain it. Do not replace those region checks with a minimum font size or
+restore child-height clipping for visible text. See `DISPLAY-LAYOUT-CONTRACT.md`.
+
+Full Recovery status samples worker liveness before reading durable status, under
+the job-start guard. A worker finishing during a poll keeps `running:true` until
+the next poll rather than pairing stale `quiescing` with `running:false`. Preserve
+failed-rollback journals and the event-driven completion-boundary regression in
+`host-agent/test_full_recovery.py`; do not mask the race with test sleeps.
