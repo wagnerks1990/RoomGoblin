@@ -44,13 +44,18 @@ test("expired sessions are reclaimed and cancelled sessions disappear",async t=>
 
 
 test("resumable upload session data remains readable by the shared maintenance group",async t=>{
+ const previousUmask=process.umask(0o077);t.after(()=>process.umask(previousUmask));
  const {root,store}=fixture();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
- const session=store.create({owner:"user:a",name:"lesson.pdf",size:4,mime:"application/pdf"});
+ const session=store.create({owner:"user:a",name:"lesson.pdf",size:8,mime:"application/pdf"});
  assert.equal(fs.statSync(root).mode&0o777,0o750);
  assert.equal(fs.statSync(store.dir(session.id)).mode&0o777,0o750);
  await put(store,session.id,"user:a",0,Buffer.from("%PDF"));
  assert.equal(fs.statSync(path.join(store.dir(session.id),"0.part")).mode&0o777,0o640);
  assert.equal(fs.statSync(store.metaFile(session.id)).mode&0o777,0o640);
+ await put(store,session.id,"user:a",1,Buffer.from("-1.7"));
+ const destination=path.join(root,"complete.pdf");
+ await store.assemble({id:session.id,owner:"user:a",digest:digest("%PDF-1.7"),destination});
+ assert.equal(fs.statSync(destination).mode&0o777,0o660);
 });
 
 test("5 GiB policy accepts a 1.7 GiB session without allocating the file and enforces owner quota",t=>{

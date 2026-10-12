@@ -46,6 +46,8 @@ successfully pushes it; a prepared PR is not proof of Wiki publication.
 
 ## Video controls
 
+New resumable session directories use `0750`, newly written metadata and chunks use `0640`, and completed resumable uploads use `0660`, regardless of umask `0077`. Group access assumes the documented production GID and parent-directory permissions; existing sessions are not migrated.
+
 RoomGoblin keeps the receiver's MP4 as a persistent media session. The operator can change playback without reloading the file:
 
 - Play / Pause
