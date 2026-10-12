@@ -39,14 +39,14 @@ content-signature inspection, and 24-hour cleanup of abandoned temporary data.
 Keep Cloudflare's per-request limit at 100 MB. Allow roughly twice the largest
 expected upload as free persistent storage during final assembly.
 
+New resumable session directories use `0750`; metadata, chunks, assembly temporaries and completed media use owner-write/group-read `0640`, regardless of umask `0077`. Temporary descriptors receive this mode before payload writes, and only verified files are atomically published. Group access assumes the documented production GID and parent-directory permissions; existing sessions are not migrated.
+
 Run `node --test test/media-plane-lifecycle.test.js` from the repository for the
 focused suite. See `docs/MEDIA-PLANE.md` for coverage, upgrade and rollback gates.
 This Git-tracked page is published only when the existing Sync Wiki workflow
 successfully pushes it; a prepared PR is not proof of Wiki publication.
 
 ## Video controls
-
-New resumable session directories use `0750`, newly written metadata and chunks use `0640`, and completed resumable uploads use `0660`, regardless of umask `0077`. Group access assumes the documented production GID and parent-directory permissions; existing sessions are not migrated.
 
 RoomGoblin keeps the receiver's MP4 as a persistent media session. The operator can change playback without reloading the file:
 

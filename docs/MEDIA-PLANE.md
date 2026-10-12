@@ -56,7 +56,7 @@ verifies every chunk and the assembled file with SHA-256, inspects the completed
 file signature, and reclaims incomplete sessions after 24 hours. Upload delivery
 remains separate from the port `3020` playback plane.
 
-New resumable session directories use `0750`, newly written metadata and chunks use `0640`, and completed resumable uploads use `0660`, regardless of umask `0077`. Group access assumes the documented production GID and parent-directory permissions; existing sessions are not migrated.
+New resumable session directories use `0750`; metadata, chunks, assembly temporaries and completed media use owner-write/group-read `0640`, regardless of umask `0077`. Temporary descriptors receive this mode before payload writes, and only verified files are atomically published. Group access assumes the documented production GID and parent-directory permissions; existing sessions are not migrated.
 
 Operators may lower `MAX_UPLOAD_MB` (1–5120) or change
 `UPLOAD_SESSION_TTL_HOURS` (1–168), `UPLOAD_ACTIVE_QUOTA_GB` (5–100), or

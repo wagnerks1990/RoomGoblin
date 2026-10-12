@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+### Resumable upload backup readability
+
+- Apply owner-write/group-read `0640` to metadata, chunk and assembly descriptors
+  before writing payloads under restrictive umask; retain atomic publication,
+  ownership isolation, SHA-256/signature verification and `0750` session traversal.
+- Keep completed media read-only for the maintenance group and clean temporary
+  metadata after write failures without losing the last published session state.
+
 ### Scheduled all-TV power handoff
 
 - Guard actual CEC output ownership for announcement receivers, including named
