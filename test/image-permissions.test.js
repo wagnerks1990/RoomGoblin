@@ -26,6 +26,8 @@ test("packaged permissions verifier rejects private, writable and symlinked sour
   try {
     fs.chmodSync(work, 0o755);
     fs.writeFileSync(file, "// non-secret test fixture\n", {mode: 0o644});
+    // Model the image normalization step independently of the caller's umask.
+    fs.chmodSync(file, 0o644);
     verifyPath(work, stat.uid, stat.gid);
     for (const mode of [0o600, 0o666, 0o777]) {
       fs.chmodSync(file, mode);
