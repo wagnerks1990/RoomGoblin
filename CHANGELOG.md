@@ -5,6 +5,35 @@
 
 ## Unreleased
 
+### Scheduled all-TV power handoff
+
+- Guard actual CEC output ownership for announcement receivers, including named
+  receivers, duplicate mappings and individual-output overrides. Unknown mappings
+  defer TV writes safely; priority is rechecked between individual commands.
+
+- Preserve All TVs/HDMI/HDBT selectors through the canonical sequence so scheduled
+  shutdown uses the same Pluto broadcast path as manual room controls, rather
+  than a second expansion of possibly remapped browser receiver IDs.
+- Preserve aggregate TV intent through startup/resume reconciliation only when
+  one step owns the complete TV winner set; keep per-target precedence and typed
+  transports for partial overrides instead of broadcasting and replaying overrides.
+- Retain typed outputs/transports after Morning Announcements filtering, prohibit
+  broadcasts during receiver locks, and ignore stale individual-output metadata
+  on aggregate actions without changing stored automation/device configuration.
+- Add executable full-sequence regressions for scheduled/manual and legacy runs,
+  remapped receivers, priority filtering, failures, cancellation and Run once;
+  update operator, Wiki and AI documentation. Physical acceptance remains separate.
+
+
+### Uploaded PDF automation playback
+
+- Update the Hub and maintenance locked `proxy-addr` dependency from 2.0.7 to 2.0.8 for GHSA-jqcg-44mw-7w3h, which blocks the existing release audit; preserve the configured proxy-trust policy.
+
+- Pass the complete protected PDF URL to PDF.js 6 using its required initialization object, fixing the `getDocument` missing data/range/url error before loading uploaded documents.
+- Serve PDF.js and its worker from the same upstream compatibility build so kiosk engines lacking `Map.getOrInsertComputed` can render documents.
+- Bind document navigation buttons explicitly so Next works alongside keyboard and automatic page advancement.
+- Add focused viewer regressions and actual locked-PDF.js rendering/navigation coverage in the Chromium/Firefox browser gate; update operator, Wiki and AI guidance.
+
 ### Presentation start and preview controls
 
 - Clear existing content on selected presentation displays before the first slide.

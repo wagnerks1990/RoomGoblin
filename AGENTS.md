@@ -479,3 +479,33 @@ denial must be diagnosed separately and may fall back to muted video; never
 claim JavaScript can manufacture activation or release announcement priority
 because a receiver stalls. See the playback safeguards and physical acceptance
 limits in `docs/MORNING-ANNOUNCEMENTS-DIAGNOSTICS.md`.
+
+## TV-power aggregate intent
+
+Read `docs/TV-POWER-AUTOMATION.md` before changing scheduled TV power. Preserve
+explicit All/HDMI-All/HDBT-All selectors through the canonical action sequence;
+expanded IDs are for resource/priority checks, not a replacement for broadcast
+intent. Never broadcast after announcement filtering or while any configured
+receiver is announcement-locked. Keep typed output/connection rows through
+partial filtering so forced HDMI/HDBT selection survives. Individual output
+metadata must not narrow an aggregate or redirect its last unlocked target.
+The override is an internal function option, never a persisted/browser field.
+Do not replay uncertain CEC writes. Test the real sequence and single-action
+handler together; helper-only and source-string tests missed this regression.
+
+Startup and Resume Scheduled State must preserve the same aggregate intent.
+Keep per-target winner scoring unchanged; coalesce to one broadcast only when
+the same aggregate step/occurrence owns every current TV winner and its complete
+resolved scope, with no receiver locks. Partial overrides retain individual
+commands and their typed transports; never broadcast then replay the overriding
+TV command. Test real winner selection and reconciliation, not only Run Now.
+
+Announcement TV-power protection is enforced again at the shared CEC dispatch
+boundary using every locked receiver's physical `avOutput`, before deduplication
+can hide aliases. Known legacy tv1..tv8 IDs may use their implicit same-number
+port only when `avOutput` is absent. Explicit blank/invalid mappings and unmapped
+named receivers fail closed: TV power is deferred, not guessed. A protected
+physical port blocks both transports conservatively. Individual payload output
+overrides are checked too, and locks are rechecked between individual writes.
+Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
+this boundary to an ID-only filter or automatically retry deferred CEC writes.
