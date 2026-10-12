@@ -567,6 +567,26 @@ test("rejected callers cannot consume the administrator update mutation quota",a
   assert.equal(allowed.response.status,400,"an administrator must still reach trusted-repository validation");
 });
 
+test("rejected authenticated users cannot consume administrator update quotas",async()=>{
+  let result=await request("/api/v1/admin/users",{method:"POST",authenticated:true,
+    body:{username:"quota-viewer",displayName:"Quota Viewer",role:"viewer",profileId:"read-only",password:"quota-viewer-password",enabled:true}});
+  assert.equal(result.response.status,200,JSON.stringify(result.json));
+  result=await request("/api/v1/auth/login",{method:"POST",body:{username:"quota-viewer",password:"quota-viewer-password"}});
+  assert.equal(result.response.status,200,JSON.stringify(result.json));
+  const viewerCookie=String(result.response.headers.get("set-cookie")||"").split(";")[0];
+  assert.ok(viewerCookie);
+  for(const [method,count] of [["GET",121],["PUT",13]]){
+    for(let i=0;i<count;i++){
+      const denied=await request("/api/v1/admin/app-updates/settings",{method,headers:{cookie:viewerCookie},...(method==="PUT"?{body:{}}:{})});
+      assert.equal(denied.response.status,403,"a valid nonadministrator session must not reach quota accounting");
+    }
+  }
+  result=await request("/api/v1/admin/app-updates/settings",{authenticated:true});
+  assert.equal(result.response.status,200,JSON.stringify(result.json));
+  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork"}});
+  assert.equal(result.response.status,400,"the administrator must retain the mutation budget");
+});
+
 test("verified application updater has a durable host job and GUI rollback controls",()=>{
   const host=fs.readFileSync(path.join(projectRoot,"host-agent/server.py"),"utf8");
   const runner=fs.readFileSync(path.join(projectRoot,"host-agent/app-update-runner.sh"),"utf8");
@@ -685,4 +705,6 @@ test("administrator update quota remains shared across routes and forwarded addr
   const other=await request("/api/v1/admin/app-updates/revert",{method:"POST",authenticated:true,
     body:{confirm:"invalid"},headers:{"x-forwarded-for":"203.0.113.80"}});
   assert.equal(other.response.status,429,"another endpoint/address must not create a new mutation budget");
+  const denied=await request("/api/v1/admin/app-updates/settings",{method:"PUT",body:{}});
+  assert.equal(denied.response.status,403,"an exhausted administrator quota must not replace rejected-caller authorization");
 });

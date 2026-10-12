@@ -7,7 +7,7 @@
 
 ### Main-based System Updates
 
-- Authorize administrator update requests before consuming appliance-wide quotas; add executable trust/ancestry/stale-selection and rejected-caller regressions, and align merge guidance with the effective squash-only main ruleset.
+- Charge appliance-wide update quotas only for requests accepted by the shared administrator authorization predicate; add executable trust/ancestry/stale-selection and rejected-caller regressions, and align merge guidance with the effective squash-only main ruleset.
 
 - Change the administrator updater from semantic release-channel polling to the latest merged commit on trusted `main`, while retaining the native exact-SHA image, backup, health and rollback transaction.
 - Show installed/available commit identity in the GUI and history so multiple commits sharing one prerelease VERSION remain distinguishable.

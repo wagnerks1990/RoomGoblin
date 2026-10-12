@@ -157,8 +157,9 @@ A release is not considered production-ready merely because the container starts
 
 Normal published-source CLI updates support `--plan` and `--full`. The native runner compares running component revisions and the saved deployment configuration, backs up before runtime changes, and recreates only changed components. Unknown inputs, migrations, versions or configuration drift invoke full installer reconciliation. Docs-only changes need no service restart. Pending interrupted deployments roll back through the native update journal. See [[Production-Updates]] and [[CI-Workflows]] for operating details and limits.
 
-System Updates read/mutation quotas run after administrator authorization;
-rejected requests cannot exhaust the administrator budget. Merge using the
+System Updates read/mutation quotas charge only requests accepted by the shared
+administrator authorization predicate; rejected requests bypass quota accounting
+and still fail the administrator guard. They cannot exhaust the administrator budget. Merge using the
 strategy allowed by the effective main ruleset (currently squash), with current
 required checks and resolved review threads; repository merge-method checkboxes
 do not override branch rules.

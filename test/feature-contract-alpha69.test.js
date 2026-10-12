@@ -199,13 +199,18 @@ test("System Updates admin routes have appliance-wide rate limits",()=>{
   const server=read("src/server.js");
   assert.match(server,/const appUpdateReadLimit=rateLimit/);
   assert.match(server,/const appUpdateMutationLimit=rateLimit/);
+  for(const name of ["appUpdateReadLimit","appUpdateMutationLimit"]){
+    const definition=server.match(new RegExp(`const ${name}=rateLimit\\(\\{[\\s\\S]*?\\n\\}\\);`));
+    assert.ok(definition,`${name} must retain an auditable rate-limit definition`);
+    assert.match(definition[0],/skip:req=>!administratorAccessAllowed\(req\)/,"rejected callers must not consume the administrator budget");
+  }
   for(const route of [
-    'app.get("/api/v1/admin/app-updates/settings",requireAdmin,appUpdateReadLimit',
-    'app.post("/api/v1/admin/app-updates/check",requireAdmin,appUpdateReadLimit',
-    'app.get("/api/v1/admin/app-updates/job",requireAdmin,appUpdateReadLimit',
-    'app.put("/api/v1/admin/app-updates/settings",requireAdmin,appUpdateMutationLimit',
-    'app.post("/api/v1/admin/app-updates/install",requireAdmin,appUpdateMutationLimit',
-    'app.post("/api/v1/admin/app-updates/revert",requireAdmin,appUpdateMutationLimit'
+    'app.get("/api/v1/admin/app-updates/settings",appUpdateReadLimit,requireAdmin',
+    'app.post("/api/v1/admin/app-updates/check",appUpdateReadLimit,requireAdmin',
+    'app.get("/api/v1/admin/app-updates/job",appUpdateReadLimit,requireAdmin',
+    'app.put("/api/v1/admin/app-updates/settings",appUpdateMutationLimit,requireAdmin',
+    'app.post("/api/v1/admin/app-updates/install",appUpdateMutationLimit,requireAdmin',
+    'app.post("/api/v1/admin/app-updates/revert",appUpdateMutationLimit,requireAdmin'
   ])assert.ok(server.includes(route),`missing updater rate limit: ${route}`);
 });
 

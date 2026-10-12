@@ -101,9 +101,11 @@ Security gates workflow requirements. Repository checkboxes do not override the
 ruleset. Do not bypass checks or enable auto-merge without explicit operator
 approval; any change to the ruleset requires a separately reviewed decision.
 
-System Updates quotas apply only after administrator authorization: rejected
-callers cannot exhaust another administrator's appliance-wide polling or mutation
-budget. Forwarded/client addresses do not create independent update budgets.
+System Updates quotas charge only requests accepted by the shared administrator
+authorization predicate. Rate middleware stays before the administrator guard for
+security analysis, but skips rejected callers rather than consuming another
+administrator's polling/mutation budget. Forwarded/client addresses do not create
+independent update budgets.
 
 ## Recovery and limits
 

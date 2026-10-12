@@ -72,9 +72,10 @@ When publication behavior changes, update the publisher, relevant build logic, `
 
 Never weaken validation, exact-SHA identity, complete-pair publication, backup or recovery gates to make an update appear available sooner.
 
-System Updates administrator quotas must run after `requireAdmin`; unauthorized
-requests must neither consume the read/mutation budget nor reach GitHub or native
-update handoff. Keep fixed appliance-wide keys and the existing limits. Test both
+System Updates rate middleware must remain before `requireAdmin` for security
+analysis but skip callers rejected by the same shared administrator predicate as
+the guard. Unauthorized requests must neither consume the read/mutation budget
+nor reach GitHub or native update handoff. Keep fixed appliance-wide keys and the existing limits. Test both
 rejected-caller floods and accepted requests across routes/forwarded addresses.
 The effective main ruleset currently permits squash merges only; do not infer
 allowed merge strategies from repository-level checkboxes.
