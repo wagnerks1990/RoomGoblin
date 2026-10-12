@@ -23,6 +23,15 @@ The script:
 
 Your normal GitHub credentials/PAT/credential-manager configuration must allow pushing to the Wiki repository.
 
+## Hosted synchronization
+
+The `Sync Wiki` workflow publishes the tracked mirror after relevant changes to
+`main`, and supports manual dispatch. Configure `WIKI_TOKEN` as a repository
+Actions secret with permission to push this repository's Wiki. The workflow
+selects `WIKI_TOKEN` first, then the legacy `WIKI_PUSH_TOKEN`, then the automatic
+GitHub token for repositories where that token can write the Wiki. Clone and push
+use the same credential selection. Never put a token in the tracked mirror.
+
 ## Safety
 
 `wiki/` is treated as authoritative for Markdown pages. The sync helper removes Wiki files that are not present in the mirror before committing. Add any page that should survive synchronization to `wiki/` first.
