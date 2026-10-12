@@ -11,6 +11,9 @@ and pushing the Wiki. Existing `WIKI_PUSH_TOKEN` configurations remain supported
 as a fallback, followed by `github.token`. The token must have access to this
 repository and permission to push its Wiki Git repository. Configure the token
 through GitHub Actions secrets; never place its value in tracked files or logs.
+Git receives credentials through a temporary askpass helper reading the step
+environment, keeping the token out of command arguments and persisted remote
+URLs. The helper is removed when each authenticated step exits.
 
 ## Sync from a local clone
 
