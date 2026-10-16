@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+### Planning save transaction repair
+
+- Fix reviewed Planning saves failing with a nested SQLite transaction error when the normalized class writer runs inside the profile/class save transaction.
+- Use nested savepoints while preserving the outer immediate transaction and atomic rollback. Add real SQLite route regressions for successful saves, failed class writes, and retries.
+
 ### Automatic Planning upgrade import
 
 - Populate the new Planning workspace from existing SQLite classes, calendar, cycle profile, exception rules and special-day patterns on first startup.
