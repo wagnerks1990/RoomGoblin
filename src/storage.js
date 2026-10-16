@@ -280,7 +280,20 @@ class ClassroomHubStorage{
     }catch(error){this.db.exec("ROLLBACK");throw error}
   }
 
-  tx(fn){this.db.exec("BEGIN IMMEDIATE");try{const out=fn();this.db.exec("COMMIT");return out}catch(err){this.db.exec("ROLLBACK");throw err}}
+  tx(fn){
+    const depth=this.transactionDepth||0,savepoint=`roomgoblin_tx_${depth}`;
+    this.db.exec(depth?`SAVEPOINT ${savepoint}`:"BEGIN IMMEDIATE");
+    this.transactionDepth=depth+1;
+    try{
+      const out=fn();
+      this.db.exec(depth?`RELEASE SAVEPOINT ${savepoint}`:"COMMIT");
+      return out;
+    }catch(err){
+      if(depth){this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);this.db.exec(`RELEASE SAVEPOINT ${savepoint}`)}
+      else this.db.exec("ROLLBACK");
+      throw err;
+    }finally{this.transactionDepth=depth}
+  }
   loadMasterKey(){try{const raw=fs.readFileSync(this.masterKeyFile),text=raw.toString("utf8").trim();if(/^[0-9a-f]{64}$/i.test(text))return Buffer.from(text,"hex");if(raw.length===32)return raw;if(text){const b=Buffer.from(text,"base64");if(b.length===32)return b}}catch{}return null}
 
   databaseInfo(){

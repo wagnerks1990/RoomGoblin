@@ -66,12 +66,12 @@ test("real scheduler emits distinct split occurrences and timers, with no active
   assert.equal(ctx.activeClassAt(new Date(2027,9,18,9,0)),null);
   assert.equal(ctx.activeClassAt(new Date(2027,9,18,9,30)).id,"class-1");
 });
-function routes(){
+function routes({store,persist}={}){
   const registered=new Map(),writes=[];
   const context=vm.createContext({crypto,Date,JSON,schoolScheduleProfile:profile(),schedulerCalendar:{},classScheduleStore:{classes:classes()},classroomAutomations:{events:[]},planningEngine:engine,normalizeSchoolScheduleProfile:school.normalizeSchoolScheduleProfile,validDateKey:school.validDateKey,
     schedulerReadLimit:()=>{},schedulerMutationLimit:()=>{},requireCapability:name=>({capability:name}),localDateKey:d=>d.toISOString().slice(0,10),schedulerClock:{now:()=>new Date("2027-10-18T12:00:00Z")},dateFromKey:key=>new Date(`${key}T12:00:00Z`),
     planningMigration:require("../src/planning-migration"),planningStartupMigration:{report:{version:1,status:"imported",sourceHash:"private-internal-hash",counts:{classes:15,automations:0,timetables:1,dates:0}}},
-    app:Object.fromEntries(["get","post","put"].map(method=>[method,(path,...handlers)=>registered.set(`${method} ${path}`,handlers)])),dbStore:{tx:fn=>fn(),setPreference:(key,value)=>writes.push([key,value])},persistJson:(key,value)=>writes.push([key,value]),CLASS_SCHEDULES_FILE:"classes",audit:()=>{}});
+    app:Object.fromEntries(["get","post","put"].map(method=>[method,(path,...handlers)=>registered.set(`${method} ${path}`,handlers)])),dbStore:store||{tx:fn=>fn(),setPreference:(key,value)=>writes.push([key,value])},persistJson:persist||((key,value)=>writes.push([key,value])),CLASS_SCHEDULES_FILE:"classes",audit:()=>{}});
   vm.runInContext(source.slice(source.indexOf("function planningClassesForProfile("),source.indexOf('app.get("/api/v1/school-cycle"')),context);
   function request(method,path,body={}){const result={status:200};registered.get(`${method} ${path}`).at(-1)({body},{status(code){result.status=code;return this},json(value){result.body=value;return this}});return result}
   return {context,registered,writes,request};
@@ -107,4 +107,55 @@ test("failed planning transaction leaves both live profile and class state intac
   context.dbStore.tx=()=>{throw Error("Disk unavailable")};
   assert.equal(request("put","/api/v1/planning",{scheduleProfile:next,previewHash:preview.body.previewHash,expectedUpdatedAt:"baseline"}).status,400);
   assert.equal(context.schoolScheduleProfile,beforeProfile);assert.equal(context.classScheduleStore,beforeClasses);
+});
+
+function sqliteRoutes(t){
+  const path=require("node:path"),os=require("node:os"),{ClassroomHubStorage}=require("../src/storage");
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),"rg-planning-save-")),file=path.join(root,"class-schedules.json");
+  const store=new ClassroomHubStorage({dataDir:root,dbFile:path.join(root,"test.db"),masterKeyFile:path.join(root,"missing")});
+  t.after(()=>{store.db.close();fs.rmSync(root,{recursive:true,force:true})});
+  const fixture=routes({store,persist:(_key,value)=>store.writeJson(file,value)});
+  store.setPreference("school.schedule.profile",fixture.context.schoolScheduleProfile);
+  store.writeJson(file,fixture.context.classScheduleStore);
+  return {...fixture,store};
+}
+
+test("Planning save commits profile and normalized class membership through real nested SQLite writers",t=>{
+  const {context,request,store}=sqliteRoutes(t),next=JSON.parse(JSON.stringify(context.schoolScheduleProfile));
+  next.periodCycleDays["1"]=["A"];next.planning.dates["2027-10-18"]={status:"school",timetableId:"",cycleDay:"G",note:"Special day"};
+  const preview=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-18"});
+  const result=request("put","/api/v1/planning",{scheduleProfile:next,previewHash:preview.body.previewHash,expectedUpdatedAt:"baseline"});
+  assert.equal(result.status,200,result.body.error);
+  assert.equal(store.getPreference("school.schedule.profile").planning.dates["2027-10-18"].cycleDay,"G");
+  assert.deepEqual(store.readNormalized("class-schedules").classes.find(cls=>cls.id==="class-1").cycleDays,["A"]);
+  assert.equal(context.schoolScheduleProfile.updatedAt,result.body.scheduleProfile.updatedAt);
+  assert.equal(store.transactionDepth,0);
+});
+
+test("nested class-write failure rolls back Planning profile and rows, then a fresh preview can save",t=>{
+  const {context,request,store}=sqliteRoutes(t),beforeProfile=store.getPreference("school.schedule.profile"),beforeClasses=store.readNormalized("class-schedules");
+  const liveProfile=context.schoolScheduleProfile,liveClasses=context.classScheduleStore,next=JSON.parse(JSON.stringify(beforeProfile));
+  next.periodCycleDays["1"]=["A"];
+  const preview=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-18"});
+  const body={scheduleProfile:next,previewHash:preview.body.previewHash,expectedUpdatedAt:"baseline"};
+  const original=store.setSetting.bind(store);store.setSetting=(key,value)=>{if(key==="class-schedules.meta")throw Error("Injected class write failure");return original(key,value)};
+  assert.equal(request("put","/api/v1/planning",body).status,400);
+  assert.deepEqual(store.getPreference("school.schedule.profile"),beforeProfile);assert.deepEqual(store.readNormalized("class-schedules"),beforeClasses);
+  assert.equal(context.schoolScheduleProfile,liveProfile);assert.equal(context.classScheduleStore,liveClasses);assert.equal(store.transactionDepth,0);
+  store.setSetting=original;
+  const retry=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-18"});
+  assert.equal(request("put","/api/v1/planning",{...body,previewHash:retry.body.previewHash}).status,200);
+});
+
+test("caught nested failure rolls back its savepoint without committing or losing outer work",t=>{
+  const {store}=sqliteRoutes(t);
+  store.tx(()=>{
+    store.setPreference("test.outer",1);
+    assert.throws(()=>store.tx(()=>{store.setPreference("test.inner",2);throw Error("Inner failure")}),/Inner failure/);
+    assert.equal(store.getPreference("test.inner"),null);assert.equal(store.getPreference("test.outer"),1);
+    store.tx(()=>store.setPreference("test.second",3));
+  });
+  assert.equal(store.getPreference("test.outer"),1);assert.equal(store.getPreference("test.second"),3);assert.equal(store.transactionDepth,0);
+  assert.throws(()=>store.tx(()=>{store.tx(()=>store.setPreference("test.rolled-back",4));throw Error("Outer failure")}),/Outer failure/);
+  assert.equal(store.getPreference("test.rolled-back"),null);assert.equal(store.transactionDepth,0);
 });

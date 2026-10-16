@@ -61,6 +61,11 @@ Dates queried through Planning must be within ten years of the anchor.
 
 ## Automatic import on upgrade
 
+Planning saves use one outer SQLite transaction for profile and class membership.
+Nested normalized writers use SQLite savepoints, so an inner failure rolls back
+its work and an outer failure still rolls back the complete save. Failed saves
+leave the live profile/classes unchanged and can be retried with a fresh preview.
+
 On first Hub startup with this feature, RoomGoblin imports existing configuration
 from authoritative SQLite state after legacy file reconciliation and class loading.
 No separate export, upload or manual recreation is required.
