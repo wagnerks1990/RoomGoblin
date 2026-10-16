@@ -117,8 +117,10 @@ function cyclePreset() {
 }
 
 function classMatches(profile, calendar, cls, key) {
+  if (!require("./planning-studio").inWindow(cls.scheduleWindow,key)) return false;
   if (cls.enabled === false || schoolStatus(profile, calendar, key) === "no-school" || (cls.excludedDates || []).includes(key)) return false;
   if ((cls.includeDates || []).includes(key)) return true;
+  if (cls.scheduleMode === "dates") return false;
   const cycle = cycleForDate(profile, calendar, key);
   if (cls.scheduleMode === "schoolcycle") {
     const days = cls.cycleDays?.length ? cls.cycleDays : profile.periodCycleDays[cls.period] || [];
@@ -134,6 +136,8 @@ function alternateCycle(profile, calendar, anchor, key) {
 }
 
 function resolveDay(profile, calendar, classes, events, key) {
+  const studio=require("./planning-studio");
+  events=events.filter(event=>studio.inWindow(event.scheduleWindow,key));
   const cycle = cycleForDate(profile, calendar, key), status = schoolStatus(profile, calendar, key);
   const table = timetableForDate(profile, calendar, key);
   const {effectiveTimesForRule, specialDayRuleForDate} = require("./school-schedule");
@@ -149,18 +153,20 @@ function resolveDay(profile, calendar, classes, events, key) {
         const offset = minutes(base) + Number(event.classTimeOffsetMinutes || 0);
         return {id:event.id, name:event.name, time:`${String(Math.floor(((offset%1440)+1440)%1440/60)).padStart(2,"0")}:${String(((offset%60)+60)%60).padStart(2,"0")}`, dayOffset:Math.floor(offset/1440), suppressed:status !== "school"};
       });
-      rows.push({...segment, classId:cls.id, period:cls.period, name:cls.name, kind:"class", automations});
+      const authored=table?.blocks.find(block=>block.id===segment.segmentId);
+      rows.push({...segment, classId:cls.id, period:cls.period, name:authored?.label||cls.name, className:cls.name, kind:"class", automations});
     }
   }
-  if (status !== "no-school" && table) rows.push(...table.blocks.filter(block => block.kind !== "class" && (!block.cycleDays.length || block.cycleDays.includes(cycle.cycleDay))).map(block => ({...block, name:block.label, automations:[]})));
+  if (status !== "no-school" && table) rows.push(...table.blocks.filter(block => block.kind !== "class" && (!block.cycleDays.length || block.cycleDays.includes(cycle.cycleDay))).map(block => ({...block, name:block.label, automations:events.filter(e=>e.enabled!==false&&e.blockIds?.includes(block.id)).map(e=>{const occurrence=studio.blockOccurrences(profile,calendar,e,key)?.find(o=>o._planningBlockId===block.id);return {id:e.id,name:e.name,time:occurrence?.time||block.startTime,suppressed:status!=="school"}})})));
   rows.sort((a,b) => a.startTime.localeCompare(b.startTime));
   const warnings = [];
+  for(const row of rows.filter(r=>r.kind!=="class"&&!r.automations.length))warnings.push(`${row.name||"Untitled block"}: no display automation is linked; existing content remains visible.`);
   for (let i=0;i<rows.length;i++) for (let j=i+1;j<rows.length;j++) {
     const a=rows[i], b=rows[j];
     if (a.startTime < b.endTime && b.startTime < a.endTime) warnings.push(`${a.name} overlaps ${b.name}`);
   }
-  const fixedAutomations = events.filter(event => event.enabled !== false && !event.classIds?.length && !event.classId && (event.scheduleMode === "dates" ? (event.includeDates || []).includes(key) : classMatches(profile, calendar, event, key)))
-    .map(event => ({id:event.id,name:event.name,time:event.time,suppressed:status !== "school"}));
+  const fixedAutomations = events.filter(event => event.enabled !== false && !event.blockIds?.length && !event.classIds?.length && !event.classId && (event.scheduleMode === "dates" ? (event.includeDates || []).includes(key) : classMatches(profile, calendar, event, key)))
+    .flatMap(event => studio.times(event).map(time=>({id:event.id,name:event.name,time,suppressed:status !== "school"})));
   const legacyName = legacyRule.startsWith("special:") ? (profile.specialDaySchedules || []).find(item => `special:${item.id}` === legacyRule)?.name : {"half-day":"Half day","1-hour-delay":"One-hour delay","2-hour-delay":"Two-hour delay"}[legacyRule];
   return {date:key, status, cycle, timetable:table ? {id:table.id, name:table.name} : legacyName ? {id:`legacy:${legacyRule}`,name:legacyName} : null, rows, warnings, fixedAutomations,
     automationSuppressed:status !== "school", note:profile.planning?.dates[key]?.note || ""};

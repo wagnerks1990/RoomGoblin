@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+### Planning and Scene Studio
+
+- Replace everyday class and automation forms with searchable libraries and focused, responsive dialogs; add compact timetable rows, cycle-aware month badges, month navigation and date-range drafts.
+- Add date-only classes, date windows, excluded dates, bounded clock repeats and timetable-block automation links for lunch, transitions, homeroom and assemblies. Warn when a non-teaching block has no display action.
+- Add a drag-and-drop screen editor with text/image/shape layers, clock/date/class/countdown/cycle/progress/weather widgets, typography, glow, motion, layer order, locking, undo/redo and receiver-shape previews.
+- Add scoped shared visual layers that accompany display actions without replacing native media sessions; retain existing automation/device identities, announcement priority and BGM rules.
+- Fit scenes through the existing display layout engine and contain-scaled canvas. Bound rotated layers and uploaded image references; honor reduced motion and expire shared layers.
+- Fix duration-overlay reconciliation coercing an absent deadline to Unix epoch and preserve original countdown deadlines across resync. Add explicit end-at-clock timers.
+- Use the existing incremental SHA-256 fallback for chunk uploads on trusted-LAN HTTP where SubtleCrypto is unavailable.
+
 ### Planning save transaction repair
 
 - Fix reviewed Planning saves failing with a nested SQLite transaction error when the normalized class writer runs inside the profile/class save transaction.

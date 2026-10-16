@@ -22,7 +22,7 @@ API routes remain unchanged.
 | --- | --- |
 | Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Lab computers |
 | Content library | Presentations, Media library |
-| Planning | Classes, Automation |
+| Planning | Calendar & Timetables, Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
 
 Use **Find a workspace** to filter navigation labels. The current workspace opens
@@ -210,3 +210,8 @@ Class fallback times move into a disclosure; automation editing uses When, Actio
 & targets, and Timer overlay sections. Calendar changes remain drafts until preview
 and a revision-checked save. See [Planning](PLANNING.md) for the cycle model, split segments,
 CSV calendar import, migration and rollback.
+
+Planning now uses compact timetable rows, a searchable class library and focused
+automation/scene dialogs. See [Planning and Scene Studio](PLANNING-STUDIO.md).
+Shared workspace styles remain scoped to `body.rg-workspace`; receiver scenes
+load only their shared scene renderer and existing display layout engine.

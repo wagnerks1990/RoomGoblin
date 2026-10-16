@@ -21,7 +21,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
   devices=devices||Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
   const commands=[],audits=[];
   let musicTicks=0,announcementRestores=0;
-  const ctx=vm.createContext({
+  const ctx=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},
     ...schema,...runtime,devices,Date,Set,Map,
     schedulerClock:{now:()=>new Date("2026-10-08T19:00:00Z")},
     cleanId:value=>String(value||"").trim().toLowerCase(),
@@ -45,6 +45,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     audit:entry=>audits.push(plain(entry))
   });
   vm.runInContext(
+    section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
     section("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     section("function currentAutomationNonDisplayWinners","function automationOccurrenceIsActiveForContinuousRecovery")+"\n"+
     section("async function reconcileScheduledAutomationState",'app.get("/api/v1/automation-control"'),ctx);

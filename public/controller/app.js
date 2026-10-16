@@ -976,6 +976,7 @@ function applyClassPeriodPreset(){
   if(day)day.value=color==='Mixed'?'Any':color;
 }
 function classDaySummary(cls){
+  if(cls.scheduleMode==='dates')return `${(cls.includeDates||[]).length} specific dates`;
   if(cls.scheduleMode==='schoolcycle'){
     const cycle=cls.cycleDays?.length?cls.cycleDays:periodPresetCycleDays(cls.period);
     const color=cls.dayType&&cls.dayType!=='Any'?cls.dayType:cycleDayColor(cycle);
@@ -1081,6 +1082,10 @@ function renderClassScheduleMode(data=currentClassEdit){
     return;
   }
 
+  if(mode==='dates'){
+    classScheduleModeFields.innerHTML=`<label>Class dates (one per line)<textarea id="classIncludeDates" rows="4">${esc((currentClassEdit.includeDates||[]).join('\n'))}</textarea></label><div class="muted">Only these school dates. Add this class to the selected timetable when Planning supplies the day.</div>`;
+    return;
+  }
   if(mode==='weekly'){
     const n=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     classScheduleModeFields.innerHTML=`<b>Meeting Days</b><div class="toolbar">${n.map((x,i)=>`<label><input type="checkbox" data-classday="${i}" ${(currentClassEdit.days||[]).includes(i)?'checked':''}> ${x}</label>`).join('')}</div>`;
@@ -1106,7 +1111,7 @@ function editClassSchedule(id){
   classContinuationOf.value=x.continuationOf||'';
   classStart.value=x.startTime;classEnd.value=x.endTime;renderClassDefaultTargets(x.defaultTargets?.length?x.defaultTargets:['all']);
   classNotes.value=x.notes||'';classScheduleMode.value=x.scheduleMode||'schoolcycle';
-  currentClassEdit={days:x.days||[1,2,3,4,5],scheduleMode:x.scheduleMode||'schoolcycle',alternatePhase:x.alternatePhase||'A',anchorDate:x.anchorDate||S.scheduleProfile?.anchorDate||'',cycleDays:x.cycleDays||periodPresetCycleDays(x.period),dayType:x.dayType||cycleDayColor(x.cycleDays||[]),enabled:x.enabled!==false};
+  currentClassEdit={...x,days:x.days||[1,2,3,4,5],scheduleMode:x.scheduleMode||'schoolcycle',alternatePhase:x.alternatePhase||'A',anchorDate:x.anchorDate||S.scheduleProfile?.anchorDate||'',cycleDays:x.cycleDays||periodPresetCycleDays(x.period),dayType:x.dayType||cycleDayColor(x.cycleDays||[]),enabled:x.enabled!==false};
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Edit Class';
 }
 async function saveClassSchedule(){
@@ -1120,6 +1125,8 @@ async function saveClassSchedule(){
       alternatePhase:mode==='alternating'?(document.getElementById('classAlternatePhase')?.value||'A'):'A',
       anchorDate:S.scheduleProfile?.anchorDate||'',
       dayType:mode==='schoolcycle'?(document.getElementById('classDayType')?.value||cycleDayColor(cycleDays)):(mode==='alternating'?scheduleGroup(document.getElementById('classAlternatePhase')?.value==='B'?1:0).label:'Any'),
+      includeDates:mode==='dates'?parseDateLines(document.getElementById('classIncludeDates')?.value||''):[],
+      scheduleWindow:{...(currentClassEdit.scheduleWindow||{}),startDate:document.getElementById('classStudioFrom')?.value||'',endDate:document.getElementById('classStudioThrough')?.value||''},
       cycleDays,defaultTargets:selectedClassDefaultTargets(),notes:classNotes.value,enabled:currentClassEdit.enabled!==false
     };
     if(!body.name)throw Error('Class name is required');
@@ -1127,7 +1134,7 @@ async function saveClassSchedule(){
     const id=classId.value;
     if(id)await api('/api/v1/class-schedules/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     else await jpost('/api/v1/class-schedules',body);
-    classEditorMsg.textContent='Saved';await loadClassSchedules();await loadSchedules();newClassSchedule();
+    classEditorMsg.textContent='Saved';await loadClassSchedules();await loadSchedules();newClassSchedule();return true;
   }catch(e){classEditorMsg.textContent=e.message}
 }
 async function deleteClassSchedule(id){const x=S.classes.find(c=>c.id===id);if(!confirm(`Delete "${x?.name||id}"?`))return;await api('/api/v1/class-schedules/'+encodeURIComponent(id),{method:'DELETE'});await loadClassSchedules();await loadSchedules()}
@@ -1743,7 +1750,7 @@ function renderTimerOverlayFields(data=undefined){
   // instead of retaining the state from the previously edited event.
   if(data===null){
     autoTimerOverlayEnabled.checked=false;
-    autoTimerOverlaySource.value='class-end';
+    autoTimerOverlaySource.value='class-end';if(window.autoTimerOverlayEndTime)autoTimerOverlayEndTime.value='';
     populateTimerOverlayClassSelect('');
     autoTimerOverlayMinutes.value='10';
     autoTimerOverlayPosition.value='bottom';
@@ -1759,9 +1766,9 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayFollowLinkedClasses.checked=true;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }else if(data&&typeof data==='object'){
     autoTimerOverlayEnabled.checked=!!data.enabled;
-    autoTimerOverlaySource.value=data.source||'class-end';
+    autoTimerOverlaySource.value=data.source||'class-end';if(window.autoTimerOverlayEndTime)autoTimerOverlayEndTime.value=data.endTime||'';
     populateTimerOverlayClassSelect(data.classId||'');
-    autoTimerOverlayMinutes.value=String(Math.max(1,Math.round(Number(data.durationSeconds||600)/60)));
+    autoTimerOverlayMinutes.value=String(Math.max(1,Number(data.durationSeconds??600)/60));
     autoTimerOverlayPosition.value=data.position||'bottom';
     autoTimerOverlaySize.value=String(data.fontSize||64);
     autoTimerOverlayTextColor.value=data.textColor||'#ffffff';
@@ -1781,12 +1788,14 @@ function renderTimerOverlayFields(data=undefined){
   autoTimerOverlayFields.style.display=enabled?'block':'none';
   autoTimerOverlayDurationWrap.style.display=(enabled&&autoTimerOverlaySource.value==='duration')?'block':'none';
   autoTimerOverlayClassWrap.style.display=(enabled&&autoTimerOverlaySource.value==='class-end')?'block':'none';
+  if(window.autoTimerOverlayEndWrap)autoTimerOverlayEndWrap.style.display=(enabled&&autoTimerOverlaySource.value==='end-time')?'block':'none';
 }
 function readTimerOverlay(){
   if(!autoTimerOverlayEnabled.checked)return null;
   return {
     enabled:true,
     source:autoTimerOverlaySource.value,
+    endTime:autoTimerOverlaySource.value==='end-time'?(window.autoTimerOverlayEndTime?.value||''):'',
     classId:autoTimerOverlaySource.value==='class-end'?(window.autoTimerOverlayClass?.value||''):'',
     durationSeconds:Math.max(60,Number(autoTimerOverlayMinutes.value||10)*60),
     position:autoTimerOverlayPosition.value,

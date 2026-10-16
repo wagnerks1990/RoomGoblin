@@ -1,0 +1,97 @@
+body.rg-workspace :is(#planning,#classes,#schedules){--studio-surface:var(--brand-surface,#142230);--studio-muted:var(--muted,#9eafc0)}
+body.rg-workspace .studioTabs{display:flex;gap:6px;padding:6px;border:1px solid var(--border);border-radius:14px;background:rgba(0,0,0,.12);flex-wrap:wrap;margin:18px 0}
+body.rg-workspace :is(.studioTabs,.sceneLayers) button.selected{background:var(--brand-primary,#0f766e);color:#fff;border-color:transparent}
+body.rg-workspace .studioListTools{display:flex;gap:14px;align-items:end;flex-wrap:wrap;margin:22px 0}
+body.rg-workspace .studioListTools>label:first-child{flex:1;min-width:200px}
+body.rg-workspace .studioListTools label{display:grid;gap:6px;color:var(--studio-muted);font-size:12px}
+body.rg-workspace .studioCards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start}
+body.rg-workspace .studioCard{padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--studio-surface)}
+body.rg-workspace .studioCardHeading{display:flex;gap:12px;justify-content:space-between;align-items:start}
+body.rg-workspace .studioCardHeading h3{margin:0;font-size:18px}
+body.rg-workspace .studioCard p{line-height:1.6;color:var(--studio-muted);overflow-wrap:anywhere}
+body.rg-workspace .studioActionSummary{font-size:12px}
+body.rg-workspace .studioBadge{border:1px solid var(--border);border-radius:30px;padding:3px 9px;white-space:nowrap;font-size:11px}
+body.rg-workspace .studioBadge.enabled{color:#b8f0d0;background:#12664b33}
+body.rg-workspace .studioEmpty{grid-column:1/-1;padding:40px;border:1px dashed var(--border);border-radius:18px;text-align:center;color:var(--studio-muted);line-height:1.7}
+body.rg-workspace :is(.studioDialog,.sceneEditor){background:var(--brand-surface,#101d2c);color:var(--text,#fff);border:1px solid var(--border,#344455);border-radius:20px;padding:0;box-shadow:0 24px 100px #0009;width:min(1120px,96vw);max-width:96vw;max-height:94dvh;overflow:auto}
+body.rg-workspace :is(.studioDialog,.sceneEditor)::backdrop{background:#020a12c9;backdrop-filter:blur(6px)}
+body.rg-workspace :is(.studioDialog,.sceneEditor)>header{padding:22px 26px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);background:var(--brand-surface,#101d2c);position:sticky;top:0;z-index:4}
+body.rg-workspace :is(.studioDialog,.sceneEditor)>header>div{flex:1;min-width:0}
+body.rg-workspace :is(.studioDialog,.sceneEditor) h2{margin:0;font-size:23px}
+body.rg-workspace :is(.studioDialog,.sceneEditor) p{color:var(--muted,#9eafc0);line-height:1.5;margin:8px 0}
+body.rg-workspace .studioDialogBody{padding:0 26px 24px}
+body.rg-workspace .studioDialog>footer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:18px 26px;border-top:1px solid var(--border);position:sticky;bottom:0;background:var(--brand-surface,#101d2c);z-index:4}
+body.rg-workspace .studioStatus{flex:1;min-width:200px;font-size:12px;line-height:1.5;color:var(--muted,#9eafc0)}
+body.rg-workspace .studioEditorPane{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+body.rg-workspace .studioEditorPane[hidden]{display:none!important}
+body.rg-workspace :is(.studioDialogBody,.sceneInspector) label{display:grid;gap:7px;align-content:start;font-size:12px;color:var(--muted,#9eafc0);margin:8px 0}
+body.rg-workspace .studioDialog label:has(input[type=checkbox]){display:flex;align-items:center}
+body.rg-workspace :is(.studioDialog,.sceneEditor) input[type=checkbox]{width:auto}
+body.rg-workspace :is(.studioDialog,.sceneEditor) textarea{min-height:110px;resize:vertical}
+body.rg-workspace :is(.studioDialog,.sceneEditor) :is(input,select,textarea){width:100%;max-width:100%;box-sizing:border-box}
+body.rg-workspace .studioChecks{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:5px;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:12px;padding:12px;min-width:0;grid-column:1/-1}
+body.rg-workspace .studioChecks legend{padding:0 6px;font-size:12px;color:var(--muted,#9eafc0)}
+body.rg-workspace .studioChecks label{display:flex;gap:8px;margin:3px 0}
+body.rg-workspace .studioSequence{display:grid;gap:12px;grid-column:1/-1}
+body.rg-workspace .studioActionCard{padding:18px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.025)}
+body.rg-workspace .studioActionCard h3{display:inline;margin:0 8px}
+body.rg-workspace .studioStep{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#0f766e44}
+body.rg-workspace .studioActionCard p{margin:8px 0}
+body.rg-workspace .studioActionCard .toolbar{margin-top:12px}
+body.rg-workspace .studioActionFields{padding:16px;border-radius:14px;border:1px solid var(--border);margin-top:14px}
+body.rg-workspace .studioRuleResults{border-left:3px solid var(--brand-primary,#0f766e);padding-left:15px;margin:16px 0}
+body.rg-workspace .sceneEditor{width:98vw;max-width:98vw}
+body.rg-workspace .sceneEditorBody{display:grid;grid-template-columns:190px minmax(0,1fr) 260px;min-height:65vh}
+body.rg-workspace .sceneLayers,body.rg-workspace .sceneInspector{padding:16px;overflow:auto;max-height:74vh}
+body.rg-workspace .sceneLayers{border-right:1px solid var(--border)}
+body.rg-workspace .sceneLayers>button{display:block;width:100%;margin:6px 0;text-align:left;overflow-wrap:anywhere}
+body.rg-workspace .sceneLayers p{font-size:11px}
+body.rg-workspace .sceneLayerTools{display:grid;gap:6px;margin-top:20px}
+body.rg-workspace .sceneInspector{border-left:1px solid var(--border)}
+body.rg-workspace .sceneWorkspace{padding:18px;min-width:0;background:#060e17}
+body.rg-workspace .sceneTools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+body.rg-workspace .sceneFrame{position:relative;width:100%;overflow:hidden;background:repeating-conic-gradient(#172532 0 25%,#1c2d3b 0 50%) 50%/20px 20px}
+body.rg-workspace .sceneCanvas{width:1920px;height:1080px;transform-origin:top left;position:absolute;inset:0}
+body.rg-workspace .sceneCanvas .rg-scene-layer{pointer-events:auto;touch-action:none;cursor:move}
+body.rg-workspace .sceneCanvas .sceneSelected{outline:3px solid #4fd5c2;outline-offset:2px}
+body.rg-workspace .sceneResize{position:absolute;width:24px;height:24px;bottom:0;right:0;background:#4fd5c2;border:3px solid #fff;cursor:nwse-resize}
+body.rg-workspace .sceneVariables{display:flex;gap:3px;flex-wrap:wrap}
+body.rg-workspace .sceneVariables button{font-size:10px;padding:5px}
+body.rg-workspace .planningBlock{display:block;border:1px solid var(--border);border-radius:14px;padding:0;margin:12px 0;overflow:hidden;background:var(--studio-surface)}
+body.rg-workspace .planningBlock>summary{display:flex;align-items:center;gap:16px;cursor:pointer;padding:16px;font-weight:600;list-style:none}
+body.rg-workspace .planningBlock>summary::after{content:'Edit ›';margin-left:auto;font-size:12px;color:var(--muted)}
+body.rg-workspace .planningBlock .planningBlockFields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:0 16px 16px}
+body.rg-workspace .planningBlock .toolbar{grid-column:1/-1}
+body.rg-workspace .planningBlock time{font-variant-numeric:tabular-nums;white-space:nowrap;color:#83ddcf;font-size:13px}
+body.rg-workspace .planningRow{border-bottom:1px solid var(--border);padding:16px 0}
+body.rg-workspace .planningRow .muted{font-size:12px;line-height:1.6}
+body.rg-workspace .planningMonth button{min-height:68px;font-variant-numeric:tabular-nums}
+body.rg-workspace .planningMonth button small{display:block;font-size:9px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.rg-workspace .planningMonth .school-closed{opacity:.55}
+body.rg-workspace .planningMonth .school-green{border-top:3px solid #2aa866}
+body.rg-workspace .planningMonth .school-white{border-top:3px solid #dce7ee}
+body.rg-workspace .classStudioList{display:grid;gap:10px}
+body.rg-workspace .classStudioRow{display:grid;grid-template-columns:minmax(180px,1fr) 140px minmax(180px,1fr) auto;gap:12px;padding:18px;align-items:center;border:1px solid var(--border);border-radius:14px;background:var(--studio-surface)}
+body.rg-workspace .classStudioRow p{font-size:12px;color:var(--muted);margin:6px 0}
+body.rg-workspace .classStudioPeriod{font-weight:700;color:#83ddcf}
+body.rg-workspace .classStudioRow .toolbar button{padding:7px 10px}
+@media(max-width:1000px){body.rg-workspace .sceneEditorBody{grid-template-columns:150px minmax(0,1fr)}
+body.rg-workspace .sceneInspector{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-height:none}
+body.rg-workspace .sceneInspector h3{grid-column:1/-1}
+body.rg-workspace .classStudioRow{grid-template-columns:1fr 1fr}
+body.rg-workspace .sceneLayers{max-height:none}
+}
+@media(max-width:650px){body.rg-workspace .studioEditorPane{grid-template-columns:1fr}
+body.rg-workspace :is(.studioDialog,.sceneEditor)>header{padding:15px;flex-wrap:wrap}
+body.rg-workspace .studioDialogBody{padding:0 14px 16px}
+body.rg-workspace .sceneEditorBody{display:flex;flex-direction:column}
+body.rg-workspace .sceneWorkspace{order:0}
+body.rg-workspace .sceneLayers{order:1;max-height:200px;border-right:0}
+body.rg-workspace .sceneInspector{order:2;grid-template-columns:repeat(2,minmax(0,1fr));display:grid}
+body.rg-workspace .sceneFrame{min-height:100px}
+body.rg-workspace .classStudioRow{grid-template-columns:1fr}
+body.rg-workspace .studioStatus{flex-basis:100%}
+body.rg-workspace .planningBlock .planningBlockFields{grid-template-columns:1fr 1fr}
+body.rg-workspace .planningBlock>summary{flex-wrap:wrap}
+body.rg-workspace .planningMonth button{font-size:12px;padding:3px!important}
+}

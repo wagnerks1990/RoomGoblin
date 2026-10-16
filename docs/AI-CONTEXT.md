@@ -638,3 +638,12 @@ original snapshot, idempotent completion marker and existing-native-plan guard.
 Import class-specific timings without merging transition/teaching records by
 period. Do not replace saved cycle configuration with the preset, rewrite
 automations/classes or enable the new resolver as a side effect of import.
+
+## Planning and Scene Studio
+
+Read `PLANNING-STUDIO.md` for timetable block links, temporary schedules,
+shared visual layers, date-only classes, scene limits and widget data. Keep
+`public/shared/scene.js` shared by the controller and receiver and continue using
+`public/display/layout.mjs` for text fitting. Never load operator workspace CSS
+on receivers. Explicit clock/block deadlines are required for lunch timers; an
+absent override must never become Unix epoch or restart an elapsed countdown.

@@ -279,6 +279,8 @@ nav button{min-width:135px}
 <link rel="stylesheet" href="/controller/workspace.css">
 <link rel="stylesheet" href="/controller/lighting.css">
 <link rel="stylesheet" href="/controller/esphome.css">
+<link rel="stylesheet" href="/shared/scene.css">
+<link rel="stylesheet" href="/controller/planning-studio.css">
 </head>
 <body class="rg-workspace rg-controller">
 <a class="rg-skip" href="#workspaceMain">Skip to content</a>
@@ -721,6 +723,7 @@ nav button{min-width:135px}
       <div class="grid2" style="margin-top:10px">
         <label>Schedule
           <select id="classScheduleMode" onchange="renderClassScheduleMode()">
+            <option value="dates">Specific dates / special days</option>
             <option value="schoolcycle">School Cycle</option>
             <option value="weekly">Weekly</option>
             <option value="alternating">Alternating Day Groups</option>
@@ -920,12 +923,14 @@ nav button{min-width:135px}
               <select id="autoTimerOverlaySource" onchange="renderTimerOverlayFields()">
                 <option value="class-end">Linked Class End Time</option>
                 <option value="duration">Manual Duration</option>
+                <option value="end-time">End at a clock time</option>
               </select>
             </label>
             <label id="autoTimerOverlayClassWrap">Timer Class
               <select id="autoTimerOverlayClass"></select>
             </label>
 
+            <label id="autoTimerOverlayEndWrap" style="display:none">Countdown ends at<input id="autoTimerOverlayEndTime" type="time"></label>
             <label id="autoTimerOverlayDurationWrap" style="display:none">Duration Minutes
               <input id="autoTimerOverlayMinutes" type="number" min="1" max="720" value="10">
             </label>
@@ -1446,6 +1451,10 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
 <script src="/controller/special-day-schedules.js"></script>
 <script src="/controller/app.js"></script>
 <script src="/controller/planning.js"></script>
+<script src="/shared/scene.js"></script>
+<script src="/controller/scene-editor.js"></script>
+<script src="/controller/automation-studio.js"></script>
+<script src="/controller/class-studio.js"></script>
 <script src="/controller/workspace.js"></script>
 <script src="/controller/esphome.js"></script>
 <script src="/controller/embedded-workspaces.js"></script>

@@ -45,3 +45,5 @@
 - [Securly Pass Kiosk](Securly-Kiosk)
 - [Windows Lab Agent](Windows-Lab-Agent)
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
+
+- [Planning and Scene Studio](Planning-Studio)

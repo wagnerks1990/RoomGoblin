@@ -33,6 +33,8 @@ const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolS
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
 const planningEngine=require("./planning");
 const planningMigration=require("./planning-migration");
+const planningStudio=require("./planning-studio");
+const planningWeather=require("./planning-weather").createWeatherCache();
 const automationSchema=require("./automation-schema");
 const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceNeedsAnotherPass,sequenceHasContinuousActions}=automationSchema;
 const normalizeSequenceAction=automationSchema["normalize"+"AutomationAction"];
@@ -996,6 +998,9 @@ function currentAutomationDisplayWinners(now=new Date()){
 async function runDisplayAutomationResync(event,winningTargets){
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
   const allowed=new Set(winningTargets||[]),steps=automationActionSequence(event),first=steps[0]||{};
+  const timerOccurrence=[event.id,event._scheduledDateKey||localDateKey(new Date()),event.classId||event._planningBlockId||"clock",event.time].join(":");
+  const priorTimer=typeof persistentState!=="undefined"?[...allowed].map(id=>persistentState.displays[id]?.timer).find(t=>t?.automationId===event.id&&t.automationOccurrence===timerOccurrence&&Number(t.endAt)>0):null;
+  const durationDeadline=event.timerOverlay?.source==="duration"?(priorTimer?new Date(Number(priorTimer.endAt)):new Date(new Date(`${localDateKey(schedulerClock.now())}T${event.time}:00`).getTime()+Number(event.timerOverlay.durationSeconds||0)*1000)):null;
   const results=[];
   if(allowed.size)results.push(await executeCommand({type:"display.clear",target:[...allowed],payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
   for(let i=0;i<steps.length;i++){
@@ -1009,7 +1014,7 @@ async function runDisplayAutomationResync(event,winningTargets){
     else rawTargets=["all"];
     const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
     if(!targets.length)continue;
-    const output=await runSingleAutomationAction({...event,action,targets,payload:{...(step.payload||{}),...(action==="display.media"?{loop:step.executionMode==="loop"}:{})},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
+    const output=await runSingleAutomationAction({...event,_sceneEndAt:durationDeadline?.getTime()||(event.timerOverlay?.source==="end-time"?new Date(`${localDateKey(schedulerClock.now())}T${event.timerOverlay.endTime}:00`).getTime():event._classEndAt),action,targets,payload:{...(step.payload||{}),...(action==="display.media"?{loop:step.executionMode==="loop"}:{})},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
     results.push(...(output.results||[]));
   }
   const timer=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
@@ -1019,7 +1024,7 @@ async function runDisplayAutomationResync(event,winningTargets){
       : (timer.useEventTargets!==false?(first.targets||event.targets):(Array.isArray(timer.targets)&&timer.targets.length?timer.targets:(first.targets||event.targets)));
     const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
     if(targets.length){
-      const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync"});
+      const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync",endAtOverride:durationDeadline});
       if(timerResult?.result)results.push(timerResult.result);
     }
   }
@@ -1232,6 +1237,7 @@ function automationMatchesDate(event,date){
   const blocked=isAutomationSuppressed(date);
   if(blocked.blocked)return {match:false,reason:blocked.reason};
   const key=localDateKey(date);
+  if(!planningStudio.inWindow(event.scheduleWindow,key))return {match:false,reason:"Outside active dates or excluded date"};
   const mode=String(event.scheduleMode||"weekly");
 
   if(mode==="dates"){
@@ -1277,7 +1283,8 @@ function normalizeTimerOverlay(input,existing=null){
   const merged={...prior,...value};
   return {
     enabled:merged.enabled!==false,
-    source:String(merged.source||"duration")==="class-end"?"class-end":"duration",
+    source:["class-end","duration","end-time"].includes(merged.source)?merged.source:"duration",
+    endTime:merged.source==="end-time"?(validTime(merged.endTime)?String(merged.endTime):(()=>{throw Error("Choose a valid timer end time")})()):"",
     classId:cleanId(merged.classId||""),
     durationSeconds:finiteTimerOverlayNumber(merged.durationSeconds,{name:"duration",fallback:600,min:0,max:86400}),
     position:["top","center","bottom"].includes(String(merged.position||"bottom"))?String(merged.position||"bottom"):"bottom",
@@ -1310,6 +1317,12 @@ function normalizeAutomation(input={},existing={}){
   const anchorDate=anchorRaw?String(anchorRaw):"";
   const offsetValue=normalizeIntegerMinutes(input.classTimeOffsetMinutes??existing.classTimeOffsetMinutes??0,{name:"Class time offset",fallback:0,min:-720,max:720});
   const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
+  const scheduleWindow=planningStudio.windowRule(input.scheduleWindow??existing.scheduleWindow??{});
+  const linkedClasses=Array.isArray(input.classIds)?input.classIds:(input.classId!==undefined?[input.classId].filter(Boolean):automationClassIds(existing));
+  const blockIds=input.blockIds??existing.blockIds??[];if(!Array.isArray(blockIds)||blockIds.length>200||blockIds.some(id=>!/^[-\w]{1,100}$/.test(String(id))))throw Error("Choose valid timetable blocks");
+  if(blockIds.length&&linkedClasses.length)throw Error("Choose classes or timetable blocks, not both");
+  if(scheduleWindow.repeatEveryMinutes&&(linkedClasses.length||blockIds.length))throw Error("Interval schedules use a fixed clock time; class-linked schedules follow each class segment");
+  planningStudio.times({time,scheduleWindow});
   const primaryAction=String(input.action??existing.action??input.actionSequence?.[0]?.action??existing.actionSequence?.[0]?.action??"display.clear").trim();
   if(!AUTOMATION_ACTIONS.has(primaryAction))throw new Error(`Unsupported automation action: ${primaryAction||"(blank)"}`);
   const primaryTargets=Array.isArray(input.targets)?input.targets.map(cleanId).filter(Boolean):
@@ -1343,6 +1356,7 @@ function normalizeAutomation(input={},existing={}){
       targets:selected.length||item?.useEventTargets!==false?selected:defaultAutomationActionTargets(stepAction),
       useEventTargets:index===0?false:item?.useEventTargets!==false
     },index,{primaryTargets});
+    if(stepAction==="display.text"&&normalized.payload.scene)normalized.payload.scene=planningStudio.scene.normalize(normalized.payload.scene);
     return normalized;
   });
   if(!actionSequence.length)throw new Error("Automation requires at least one action");
@@ -1357,11 +1371,15 @@ function normalizeAutomation(input={},existing={}){
     alternatePhase,
     anchorDate,
     includeDates,
+    scheduleWindow,
+    blockIds:[...new Set(blockIds.map(String))],
+    overlayPolicy:["inherit","off","selected"].includes(input.overlayPolicy??existing.overlayPolicy)?(input.overlayPolicy??existing.overlayPolicy):"inherit",
+    overlayIds:(()=>{const ids=input.overlayIds??existing.overlayIds??[];if(!Array.isArray(ids)||ids.length>12)throw Error("Choose up to 12 shared layers");return [...new Set(ids.map(String))]})(),
     dayType:normalizedDayType(input.dayType??existing.dayType??"Any"),
     cycleDays:normalizeCycleDays(input.cycleDays===undefined?existing.cycleDays:input.cycleDays),
     period:String(input.period??existing.period??"").trim().slice(0,40),
-    classIds:[...new Set((Array.isArray(input.classIds)?input.classIds:(Array.isArray(existing.classIds)?existing.classIds:[input.classId??existing.classId].filter(Boolean))).map(String).filter(Boolean))],
-    classId:String((Array.isArray(input.classIds)&&input.classIds.length?input.classIds[0]:(input.classId??existing.classId??""))),
+    classIds:[...new Set(linkedClasses.map(String).filter(Boolean))],
+    classId:String(linkedClasses[0]||""),
     classTimeReference:String(input.classTimeReference??existing.classTimeReference??"start")==="end"?"end":"start",
     classTimeOffsetMinutes:offsetValue,
     useClassTargets:input.useClassTargets===undefined?(existing.useClassTargets!==false):!!input.useClassTargets,
@@ -1445,6 +1463,13 @@ function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
+function automationScene(value,event,now=schedulerClock.now()){
+  const scene=planningStudio.scene.normalize(value),cycle=schoolCycleForDate(now),weather=planningWeather.read(planningStudioConfig.weather);
+  const cls=event._class||activeAutomationClassAt(event,now)||classScheduleById(event.classId)||activeClassAt(now);
+  scene.data={className:cls?.name||"",cycleDay:cycle.cycleDay||"",dayGroup:cycle.dayColor||"",timezone:SCHEDULER_TIMEZONE,
+    startAt:Number(event._classStartAt)||(cls?classStartDate(cls,now).getTime():0),endAt:Number(event._sceneEndAt)||Number(event._classEndAt)||(cls?classEndDate(cls,now).getTime():0),weather:weather?.text||"",weatherUpdatedAt:weather?.updatedAt||0};
+  return scene;
+}
 async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation",tvTargetsOverride=null,bypassAnnouncementPriority=false}={}){
   const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
@@ -1488,7 +1513,7 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   }else if(action==="display.timer.class-end"){
     const ts=automationDisplayTargets(event.targets),cls=event._class||activeAutomationClassAt(event,new Date())||classScheduleById(event.classId)||activeClassAt(new Date());
     if(!cls)throw new Error("No class schedule is available for the class-end timer");
-    const now=new Date();if(!manual&&!classScheduleMatchesDate(cls,now))throw new Error(`${cls.name} is not scheduled today`);
+    const now=new Date();if(!manual&&!event._planningBlockId&&!classScheduleMatchesDate(cls,now))throw new Error(`${cls.name} is not scheduled today`);
     const chain=timerLinkedClassChain(event,cls,now,{followLinkedClasses:true,followGapMinutes:15});
     const endAt=chain.endAt||resolvedOccurrenceEndDate(event,cls,now),remaining=Math.max(0,Math.floor((endAt-Date.now())/1000));
     if(remaining<=0)throw new Error(`${cls.name} has already ended`);
@@ -1506,11 +1531,15 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     const ts=requireAutomationTargets(event.targets,"Display text");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
     if(p.background)outputs.results.push(await executeCommand({type:"display.background",target:ts,payload:{color:p.background}},commandSource));
+    if(p.scene){
+      outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{text:String(p.text||p.title||""),scene:automationScene(p.scene,event)}},commandSource));
+    }else{
     if(p.title)outputs.results.push(await executeCommand({type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
     if(p.subtitle)outputs.results.push(await executeCommand({type:"display.subtitle",target:ts,payload:{text:String(p.subtitle),color:p.subtitleColor||"#ffffff",size:Number(p.subtitleSize||40)}},commandSource));
     outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{
       text:String(p.text||""),color:p.color||"#ffffff",size:Number(p.size||54),position:p.position||"center"
     }},commandSource));
+    }
   }else if(action==="display.url"){
     const ts=requireAutomationTargets(event.targets,"Display URL");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
@@ -1555,57 +1584,19 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   }
 
 
-  // Optional scheduled timer overlay addon.
-  // This runs in addition to the event's primary action.
-  const timerOverlay=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-  if(!skipOverlay&&timerOverlay?.enabled){
-    const timerTargets=automationDisplayTargets(
-      timerOverlay.useEventTargets!==false
-        ? event.targets
-        : (Array.isArray(timerOverlay.targets)?timerOverlay.targets:event.targets)
-    );
-
-    const now=new Date();
-    let remainingSeconds=0;
-    let endAt=null;
-
-    if(timerOverlay.source==="class-end"){
-      const cls=event._class||activeAutomationClassAt(event,now)||classScheduleById(event.classId)||activeClassAt(now);
-      if(cls&&classScheduleMatchesDate(cls,now)){
-        endAt=resolvedOccurrenceEndDate(event,cls,now);
-        remainingSeconds=endAt?Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000)):0;
-      }
-    }else{
-      remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
-      endAt=new Date(Date.now()+remainingSeconds*1000);
-    }
-
-    if(remainingSeconds>0){
-      outputs.results.push(await executeCommand({
-        type:"display.timer",
-        target:timerTargets,
-        payload:{
-          visible:true,
-          running:true,
-          mode:"countdown",
-          timerInstanceId:commandId(),
-          durationSeconds:remainingSeconds,
-          remainingSeconds,
-          endAt:endAt.getTime(),
-          startedAt:null,
-          label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),event,now),
-          position:timerOverlay.position||"bottom",
-          fontSize:Number(timerOverlay.fontSize||64),
-          textColor:timerOverlay.textColor||"#ffffff",
-          borderColor:timerOverlay.borderColor||"#ffffff",
-          borderWidth:Number(timerOverlay.borderWidth??4),
-          borderRadius:Number(timerOverlay.borderRadius??18),
-          background:timerOverlay.background||"rgba(0,0,0,.35)"
-        }
-      },"automation"));
-    }
+  // Use the same deadline and block-resolution logic as sequence execution and resync.
+  if(!skipOverlay&&event.timerOverlay?.enabled){
+    const overlay=await runAutomationTimerOverlay(event,{manual,commandSource});
+    if(overlay.result)outputs.results.push(overlay.result);
   }
 
+  if(["display.text","display.url","display.media","display.clear"].includes(action)){
+    const now=schedulerClock.now(),key=localDateKey(now),cycle=schoolCycleForDate(now);
+    const rules=planningStudio.matchingOverlays(planningStudioConfig,event,{dateKey:key,weekday:now.getDay(),time:`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`,cycleDay:cycle.cycleDay});
+    const layers=rules.map(rule=>{const until=rule.endTime?new Date(`${key}T${rule.endTime}:00`).getTime():new Date(`${key}T23:59:59`).getTime();return {id:rule.id,scene:automationScene(expandAutomationPayload(rule.scene,event,now),event,now),expiresAt:Math.min(until,Number(event._classEndAt)||until)}});
+    const ts=requireAutomationTargets(event.targets,"Shared display layers").filter(id=>!announcementLockedDisplayTargets([id]).length);
+    if(ts.length&&(layers.length||ts.some(id=>persistentState.displays[id]?.layers?.length)))outputs.results.push(await executeCommand({type:"display.layers",target:ts,payload:{layers}},commandSource));
+  }
   if(!skipAudit)audit({kind:"automation.run",automationId:event.id,name:event.name,manual,action:event.action,targets:event.targets,ok:true});
   return {ok:true,eventId:event.id,name:event.name,manual,...outputs};
 }
@@ -1720,7 +1711,7 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
       throw new Error("Timer overlay is set to Linked Class End Time, but no timer class is selected, the event is not linked to a class, and no class is currently active.");
     }
     if(!manual&&!classScheduleMatchesDate(cls,now)){
-      throw new Error(`Timer class "${cls.name}" is not scheduled today.`);
+      if(!event._planningBlockId)throw new Error(`Timer class "${cls.name}" is not scheduled today.`);
     }
 
     const chain=timerLinkedClassChain(event,cls,now,timerOverlay);
@@ -1751,8 +1742,11 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
       },commandSource);
       return {ok:true,atZero:true,classId:cls.id,className:cls.name,result};
     }
+  }else if(timerOverlay.source==="end-time"){
+    endAt=new Date(`${localDateKey(now)}T${timerOverlay.endTime}:00`);
+    remainingSeconds=Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000));
   }else{
-    endAt=endAtOverride instanceof Date?new Date(endAtOverride.getTime()):(Number.isFinite(Number(endAtOverride))?new Date(Number(endAtOverride)):new Date(Date.now()+Math.max(0,Number(timerOverlay.durationSeconds??600))*1000));
+    endAt=endAtOverride instanceof Date?new Date(endAtOverride.getTime()):(endAtOverride!=null&&Number.isFinite(Number(endAtOverride))?new Date(Number(endAtOverride)):new Date(Date.now()+Math.max(0,Number(timerOverlay.durationSeconds??600))*1000));
     remainingSeconds=Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000));
   }
 
@@ -1762,7 +1756,7 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
     target:timerTargets,
     payload:{
       visible:true,running:true,mode:"countdown",
-      timerInstanceId:commandId(),
+      timerInstanceId:commandId(),automationId:event.id,automationOccurrence:[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":"),
       durationSeconds:remainingSeconds,
       remainingSeconds,
       endAt:endAt.getTime(),
@@ -1801,9 +1795,10 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   let overlayApplied=false;
   const overlayCoverage=event.timerOverlay?.coverage==="action-1-only"?"action-1-only":"all-display-actions";
   const manualOverlayEndAt=event.timerOverlay?.enabled&&event.timerOverlay?.source!=="class-end"
-    ? new Date(Date.now()+Math.max(0,Number(event.timerOverlay.durationSeconds??600))*1000)
+    ? (event.timerOverlay.source==="end-time"?new Date(`${localDateKey(new Date())}T${event.timerOverlay.endTime}:00`):new Date(Date.now()+Math.max(0,Number(event.timerOverlay.durationSeconds??600))*1000))
     : null;
 
+  event._sceneEndAt=manualOverlayEndAt?.getTime()||Number(event._classEndAt)||0;
   function windowOpen(){
     if(manual)return true;
     const end=Number(event._classEndAt);
@@ -2476,6 +2471,7 @@ if(!Array.isArray(classScheduleStore.classes))classScheduleStore.classes=[];
 // before listeners or scheduler ticks can accept work. Retain the active resolver.
 const planningStartupMigration=planningMigration.migrateLegacyPlanning({store:dbStore,profile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,events:classroomAutomations.events||[]});
 schoolScheduleProfile=planningStartupMigration.profile;
+let planningStudioConfig=planningStudio.normalize(dbStore.getPreference(planningStudio.KEY,{overlays:[]}));
 
 function persistClassSchedules(){persistJson(CLASS_SCHEDULES_FILE,classScheduleStore)}
 function commitClassSchedules(next){persistJson(CLASS_SCHEDULES_FILE,next);classScheduleStore=next;return next}
@@ -2488,7 +2484,7 @@ function normalizeClassSchedule(input={},existing={}){
   if(!validTime(startTime)||!validTime(endTime))throw new Error("Class times must be valid HH:MM values");
   if(timeToMinutes(startTime)>=timeToMinutes(endTime))throw new Error("Class end time must be after its start time");
   const days=(Array.isArray(input.days)?input.days:(existing.days||[1,2,3,4,5])).map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6);
-  const scheduleMode=["weekly","alternating","schoolcycle"].includes(String(input.scheduleMode??existing.scheduleMode??"schoolcycle"))?String(input.scheduleMode??existing.scheduleMode??"schoolcycle"):"schoolcycle";
+  const scheduleMode=["weekly","alternating","schoolcycle","dates"].includes(String(input.scheduleMode??existing.scheduleMode??"schoolcycle"))?String(input.scheduleMode??existing.scheduleMode??"schoolcycle"):"schoolcycle";
   const alternatePhase=String(input.alternatePhase??existing.alternatePhase??"A").toUpperCase()==="B"?"B":"A";
   const period=String(input.period??existing.period??"").trim().slice(0,40);
   const cycleDays=normalizeCycleDays(input.cycleDays===undefined?existing.cycleDays:input.cycleDays,periodDefaultCycleDays(period));
@@ -2499,7 +2495,7 @@ function normalizeClassSchedule(input={},existing={}){
   const excludedDates=uniqueDateKeys(input.excludedDates===undefined?existing.excludedDates:input.excludedDates);
   const defaultTargets=(Array.isArray(input.defaultTargets)?input.defaultTargets:(existing.defaultTargets||["all"])).map(cleanId).filter(Boolean);
   const continuationOf=String(input.continuationOf??existing.continuationOf??"").trim().slice(0,80);
-  return {...existing,id,name,shortName,startTime,endTime,days:[...new Set(days)],scheduleMode,alternatePhase,anchorDate,includeDates,excludedDates,period,cycleDays,dayType,continuationOf,phaseALabel:String(input.phaseALabel??existing.phaseALabel??alternateGroupLabel("A")).trim().slice(0,30)||alternateGroupLabel("A"),phaseBLabel:String(input.phaseBLabel??existing.phaseBLabel??alternateGroupLabel("B")).trim().slice(0,30)||alternateGroupLabel("B"),defaultTargets:[...new Set(defaultTargets)],enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,notes:String(input.notes??existing.notes??"").slice(0,500),createdAt:existing.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  return {...existing,id,name,shortName,startTime,endTime,scheduleWindow:planningStudio.windowRule(input.scheduleWindow??existing.scheduleWindow??{}),days:[...new Set(days)],scheduleMode,alternatePhase,anchorDate,includeDates,excludedDates,period,cycleDays,dayType,continuationOf,phaseALabel:String(input.phaseALabel??existing.phaseALabel??alternateGroupLabel("A")).trim().slice(0,30)||alternateGroupLabel("A"),phaseBLabel:String(input.phaseBLabel??existing.phaseBLabel??alternateGroupLabel("B")).trim().slice(0,30)||alternateGroupLabel("B"),defaultTargets:[...new Set(defaultTargets)],enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,notes:String(input.notes??existing.notes??"").slice(0,500),createdAt:existing.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
 }
 function classScheduleById(id){return classScheduleStore.classes.find(c=>c.id===String(id||""))||null}
 
@@ -2515,11 +2511,13 @@ function classAlternatingPhaseForDate(anchorDate,date=new Date()){
 
 function classScheduleMatchesDate(cls,date=new Date()){
   const key=localDateKey(date);
+  if(!planningStudio.inWindow(cls.scheduleWindow,key))return false;
   if(schoolScheduleProfile.planning?.enabled)return planningEngine.classMatches(schoolScheduleProfile,schedulerCalendar,cls,key)&&effectiveClassSegments(cls,date).length>0;
   if(!effectiveClassTimes(cls,date))return false;
   if(isCalendarBlocked(date).blocked)return false;
   if((cls.excludedDates||[]).includes(key))return false;
   if((cls.includeDates||[]).includes(key))return true;
+  if(cls.scheduleMode==="dates")return false;
 
   if(cls.scheduleMode==="schoolcycle"){
     const cycleDays=normalizeCycleDays(cls.cycleDays,periodDefaultCycleDays(cls.period));
@@ -2626,6 +2624,7 @@ function automationClassIds(event){
 }
 function resolveAutomationForClass(event,classId,date=new Date(),segment=null){
   if(!classId)return event;
+  if(!planningStudio.inWindow(event.scheduleWindow,localDateKey(date)))return null;
   const cls=classScheduleById(classId);if(!cls||cls.enabled===false)return null;
   if(!classScheduleMatchesDate(cls,date))return null;
   const effective=segment||effectiveClassTimes(cls,date);if(!effective)return null;
@@ -2637,11 +2636,13 @@ function resolveAutomationForClass(event,classId,date=new Date(),segment=null){
   return {...event,classId:cls.id,time:`${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`,days:[...(cls.days||[])],scheduleMode:cls.scheduleMode||"schoolcycle",alternatePhase:cls.alternatePhase||"A",anchorDate:cls.anchorDate||schoolCycleAnchor(),dayType:cls.dayType||"Any",cycleDays:[...(cls.cycleDays||periodDefaultCycleDays(cls.period))],period:cls.period||"",includeDates:[...(cls.includeDates||[])],targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),_class:cls,_classDefaultTargets:[...(cls.defaultTargets||[])],_automationClassIds:automationClassIds(event),_classStartAt:occurrenceStart?.getTime()||null,_classEndAt:occurrenceEnd?.getTime()||null,_classIsTransition:isTransitionClass(cls),_sourceDateMatched:true,_scheduledDateKey:localDateKey(scheduledDate)};
 }
 function resolveAutomationOccurrences(event,date=new Date()){
+  if(event.blockIds?.length)return planningStudio.blockOccurrences(schoolScheduleProfile,schedulerCalendar,event,localDateKey(date));
   const ids=automationClassIds(event);
-  if(!ids.length)return [event];
+  if(!ids.length)return planningStudio.times(event).map(time=>({...event,time}));
   return ids.flatMap(id=>effectiveClassSegments(classScheduleById(id),date).map(segment=>resolveAutomationForClass(event,id,date,segment))).filter(Boolean);
 }
 function resolveAutomationFromClass(event,date=new Date()){
+  if(event.blockIds?.length){const runs=resolveAutomationOccurrences(event,date);if(!runs.length)throw Error("The selected timetable blocks are not scheduled on this date");return runs.find(e=>e._classStartAt<=date.getTime()&&e._classEndAt>date.getTime())||runs.find(e=>e._classStartAt>date.getTime())||runs[0]}
   // Manual/Test Now execution must follow the selected class occurrence that is
   // actually active now. Falling straight to the first configured class makes
   // multi-class automations resolve an already-ended period and yields 00:00.
@@ -3926,6 +3927,9 @@ function updateStateFromCommand(command, targets) {
       case "display.text":
         setDisplayState(id, { text: p.text ?? "", textOptions: p });
         break;
+      case "display.layers":
+        setDisplayState(id,{layers:p.layers});
+        break;
       case "display.title":
         setDisplayState(id, { title: p.text ?? "", titleOptions: p });
         break;
@@ -3971,6 +3975,7 @@ function updateStateFromCommand(command, targets) {
           subtitle: "",
           subtitleOptions: { text: "" },
           media: null,
+          layers:[],
           background: { color: "#000000" },
           identify: null,
           presentationBlack: false,
@@ -4003,6 +4008,12 @@ function safeMediaUrl(value) {
 
 const URL_BEARING_DISPLAY_COMMANDS=new Set(["display.image","display.video","display.web","display.pdf","display.document","display.ppt","display.presentation"]);
 function validateCommandForDispatch(command){
+  if(command.type==="display.text"&&command.payload?.scene)command.payload={...command.payload,scene:planningStudio.scene.normalize(command.payload.scene)};
+  if(command.type==="display.layers"){
+    const rows=command.payload?.layers;
+    if(!Array.isArray(rows)||rows.length>12)throw Error("Invalid shared layer collection");
+    command.payload={layers:rows.map(row=>{const expiresAt=Number(row.expiresAt);if(!Number.isFinite(expiresAt)||expiresAt<=0)throw Error("Shared layers require an expiration");return {id:cleanId(row.id),expiresAt,scene:planningStudio.scene.normalize({...row.scene,transparent:true})}})};
+  }
   if(URL_BEARING_DISPLAY_COMMANDS.has(command.type)){
     const payload={...(command.payload||{}),url:safeMediaUrl(command.payload?.url)};
     for(const [name,min,max] of [["opacity",0,1],["volume",0,1],["playbackRate",0.25,4],["startAtSeconds",0,86400],["endAtSeconds",0,86400]])if(payload[name]!==undefined&&payload[name]!==null){const n=Number(payload[name]);if(!Number.isFinite(n)||n<min||n>max)throw new Error(`${name} must be a finite number from ${min} to ${max}`);payload[name]=n}
@@ -5437,6 +5448,36 @@ function planningDayPayload(profile,key){
 app.get("/api/v1/planning",schedulerReadLimit,requireCapability("schedule.manage"),(_req,res)=>{
   res.json({ok:true,scheduleProfile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,preset:planningEngine.cyclePreset(),migration:planningMigration.publicMigrationReport(planningStartupMigration.report),today:localDateKey(schedulerClock.now())});
 });
+function planningMonthPayload(profile,month){
+  const cursor=dateFromKey(`${month}-01`),days=[];
+  for(let n=0;n<31&&localDateKey(cursor).startsWith(month);n++,cursor.setDate(cursor.getDate()+1)){
+    const day=planningDayPayload(profile,localDateKey(cursor));days.push({date:day.date,status:day.status,cycle:day.cycle.cycleDay,group:day.cycle.dayColor,timetable:day.timetable,note:day.note});
+  }
+  return days;
+}
+app.get("/api/v1/planning/month",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{
+    const month=String(req.query.month||"");if(!/^\d{4}-\d{2}$/.test(month)||!validDateKey(`${month}-01`))throw Error("Choose a valid month");
+    res.json({ok:true,days:planningMonthPayload(schoolScheduleProfile,month)});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+function studioReview(input){const config=planningStudio.normalize(input);return {config,hash:crypto.createHash("sha256").update(JSON.stringify({config,saved:planningStudioConfig,events:classroomAutomations.events,classes:classScheduleStore.classes})).digest("hex")}}
+app.get("/api/v1/planning/studio",schedulerReadLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(_req,res)=>res.json({ok:true,config:planningStudioConfig}));
+app.post("/api/v1/planning/studio/preview",schedulerReadLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(req,res)=>{
+  try{const {config,hash}=studioReview(req.body?.config),dateKey=String(req.body?.date||localDateKey(schedulerClock.now()));if(!validDateKey(dateKey))throw Error("Choose a valid date");
+    const date=dateFromKey(dateKey),cycle=schoolCycleForDate(date),time=String(req.body?.time||"12:00");if(!validTime(time))throw Error("Choose a valid time");
+    const matches=classroomAutomations.events.map(event=>{
+      const eligible=event.enabled!==false&&!isAutomationSuppressed(date).blocked&&resolveAutomationOccurrences(event,date).some(run=>run._sourceDateMatched||automationMatchesDate(run,date).match);
+      return {id:event.id,name:event.name,layers:eligible?planningStudio.matchingOverlays(config,event,{dateKey,weekday:date.getDay(),time,cycleDay:cycle.cycleDay}).map(o=>o.name):[]};
+    });
+    res.json({ok:true,previewHash:hash,matches});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.put("/api/v1/planning/studio",schedulerMutationLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(req,res)=>{
+  try{const {config,hash}=studioReview(req.body?.config);if(req.body?.previewHash!==hash)return res.status(409).json({ok:false,error:"Shared layers changed. Preview again before saving."});
+    config.updatedAt=new Date().toISOString();dbStore.setPreference(planningStudio.KEY,config);planningStudioConfig=config;audit({kind:"planning.shared-layers.save",count:config.overlays.length});res.json({ok:true,config});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
 app.get("/api/v1/planning/day",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
   try{const key=String(req.query.date||localDateKey(schedulerClock.now()));if(!validDateKey(key))throw new Error("Choose a valid planning date");res.json({ok:true,day:planningDayPayload(schoolScheduleProfile,key)})}
   catch(err){res.status(400).json({ok:false,error:err.message})}
@@ -5451,7 +5492,7 @@ app.post("/api/v1/planning/preview",schedulerReadLimit,requireCapability("schedu
       const before=planningDayPayload(schoolScheduleProfile,target),after=planningDayPayload(profile,target);
       if(JSON.stringify(before)!==JSON.stringify(after))changes.push({date:target,before:{status:before.status,cycle:before.cycle.cycleDay,timetable:before.timetable?.name||"Existing class times"},after:{status:after.status,cycle:after.cycle.cycleDay,timetable:after.timetable?.name||"Existing class times"}});
     }
-    res.json({ok:true,day,changes,previewHash:hash,revision:schoolScheduleProfile.updatedAt,horizonDays:14});
+    res.json({ok:true,day,changes,...(req.body?.includeMonth?{monthDays:planningMonthPayload(profile,key.slice(0,7))}:{}),previewHash:hash,revision:schoolScheduleProfile.updatedAt,horizonDays:14});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 app.put("/api/v1/planning",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
@@ -5543,7 +5584,7 @@ app.delete("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapabilit
 function evaluateAutomationAt(now=schedulerClock.now()){
   const suppression=isAutomationSuppressed(now),dateKey=localDateKey(now),items=[];
   for(const stored of classroomAutomations.events){
-    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored];
+    const occurrences=resolveAutomationOccurrences(stored,now);
     for(const event of occurrences){
       const match=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
       items.push({automationId:stored.id,name:stored.name,enabled:stored.enabled!==false,time:event.time,classId:event.classId||null,match:!!match.match,suppressed:!!suppression.blocked,reason:suppression.blocked?suppression.reason:(match.reason||null),targets:event.targets||[],actions:automationActionSequence(event).map(step=>step.action)});
@@ -5555,7 +5596,7 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
   const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes(),winners=new Map();
   for(const stored of classroomAutomations.events){
     if(stored?.enabled===false)continue;
-    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored].filter(event=>automationMatchesDate(event,now).match);
+    const occurrences=resolveAutomationOccurrences(stored,now).filter(event=>automationMatchesDate(event,now).match);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;
@@ -5650,7 +5691,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
   const dateKey=localDateKey(now),candidates=[];
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
-    const occurrences=automationClassIds(storedEvent).length?resolveAutomationOccurrences(storedEvent,now):[storedEvent];
+    const occurrences=resolveAutomationOccurrences(storedEvent,now);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
@@ -5726,13 +5767,13 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
     if(isAutomationSuppressed(day).blocked)continue;
     const rule=calendarRuleForDate(day),special=(rule.type.startsWith("planning:")&&rule.special)||rule.type.startsWith("special:")||["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
     if(calendarScope==="normal"&&special||calendarScope==="special"&&!special)continue;
-    const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
+    const candidateOccurrences=resolveAutomationOccurrences(candidate,day).filter(event=>automationMatchesDate(event,day).match);
     for(const occurrence of candidateOccurrences){
       if(!occurrence||occurrence._scheduledDateKey&&occurrence._scheduledDateKey!==localDateKey(day))continue;
       const cKeys=new Set(automationResourceKeys(occurrence));if(!cKeys.size)continue;
       for(const other of events||[]){
         if(!other||other.id===candidate.id||other.enabled===false)continue;
-        const otherOccurrences=automationClassIds(other).length?resolveAutomationOccurrences(other,day):[other].filter(event=>automationMatchesDate(event,day).match);
+        const otherOccurrences=resolveAutomationOccurrences(other,day).filter(event=>automationMatchesDate(event,day).match);
         for(const o of otherOccurrences){
           if(!o||String(o.time)!==String(occurrence.time))continue;
           const shared=automationResourceKeys(o).filter(key=>cKeys.has(key));
@@ -8267,9 +8308,9 @@ async function automationSchedulerTick(){
     for(const storedEvent of classroomAutomations.events){
       if(!storedEvent?.enabled)continue;
       const referenceDates=[-1,0,1].map(offset=>{const d=new Date(now);d.setDate(d.getDate()+offset);return d});
-      const occurrences=automationClassIds(storedEvent).length
+      const occurrences=(automationClassIds(storedEvent).length||storedEvent.blockIds?.length)
         ? referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(storedEvent,referenceDate)).filter(event=>event._scheduledDateKey===dateKey)
-        : [storedEvent];
+        : resolveAutomationOccurrences(storedEvent,now);
       for(const event of occurrences){
         const dateMatch=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
         if(!dateMatch.match||isAutomationSuppressed(now).blocked)continue;

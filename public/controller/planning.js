@@ -5,13 +5,15 @@
   const csv = value => [...new Set(String(value || "").split(/[\s,]+/).filter(Boolean))];
   const uid = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
   let draft = null, snapshot = null, source = null, selectedTable = "", dirty = false, review = null, busy = false, editRevision = 0, pendingPreview = null;
+  const monthCache=new Map(),monthPending=new Set();
   function message(text, error = false) {el("planningMessage").textContent=text;el("planningMessage").classList.toggle("bad",error)}
-  function changed() {editRevision++;dirty=true;review=null;el("planningPublish").disabled=true;message("Unsaved draft. Preview changes before saving.")}
+  function changed() {editRevision++;monthCache.clear();dirty=true;review=null;el("planningPublish").disabled=true;message("Unsaved draft. Preview changes before saving.")}
   function option(select,value,label) {const node=document.createElement("option");node.value=value;node.textContent=label;select.append(node)}
   function input(label,value,type="text") {
     const wrapper=document.createElement("label"),field=document.createElement("input");wrapper.append(document.createTextNode(label));field.type=type;field.value=value||"";wrapper.append(field);return {wrapper,field};
   }
   function pane(name) {
+    if(name==="Calendar"&&draft){capture();const select=el("planningDayTimetable"),value=select.value;select.replaceChildren();option(select,"","Follow regular / calendar exceptions");p().timetables.forEach(table=>option(select,table.id,table.name));select.value=value}
     for(const value of ["Calendar","Timetable","Rotation"]){el(`planning${value}Pane`).hidden=value!==name;el(`planning${value}Tab`).setAttribute("aria-pressed",String(value===name))}
   }
   function p() {return draft.planning}
@@ -46,12 +48,17 @@
   }
   function renderMonth() {
     const key=el("planningDate").value;if(!key)return;
+    const monthKey=key.slice(0,7);
+    if(!dirty&&!monthCache.has(monthKey)&&!monthPending.has(monthKey)){const revision=editRevision;monthPending.add(monthKey);api(`/api/v1/planning/month?month=${monthKey}`).then(result=>{if(revision!==editRevision||dirty)return;monthCache.set(monthKey,result.days||[]);if(el("planningDate").value.startsWith(monthKey))renderMonth()}).catch(()=>{}).finally(()=>monthPending.delete(monthKey))}
     const [year,month]=key.split("-").map(Number),last=new Date(year,month,0).getDate();el("planningMonth").replaceChildren();
     for(const name of ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]){const label=document.createElement("span");label.className="muted";label.textContent=name;el("planningMonth").append(label)}
     for(let i=0;i<new Date(year,month-1,1).getDay();i++){const spacer=document.createElement("span");spacer.setAttribute("aria-hidden","true");el("planningMonth").append(spacer)}
     for(let day=1;day<=last;day++){
       const date=`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`,button=document.createElement("button");button.type="button";button.textContent=String(day);button.setAttribute("aria-pressed",String(date===key));
-      const assigned=p().dates[date],detail=document.createElement("span");detail.textContent=assigned?.status==="no-school"?"Closed":assigned?.cycleDay||new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{weekday:"short"});
+      const assigned=p().dates[date],saved=monthCache.get(monthKey)?.find(day=>day.date===date),detail=document.createElement("span"),status=assigned?.status||saved?.status;
+      detail.textContent=status==="no-school"?"Closed":status==="remote"?"Remote":assigned?.cycleDay||saved?.cycle?`Cycle ${assigned?.cycleDay||saved.cycle}`:new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{weekday:"short"});
+      button.classList.toggle("school-closed",status==="no-school");button.classList.toggle("school-green",status==="school"&&saved?.group===draft.dayGroups[0]?.label);button.classList.toggle("school-white",status==="school"&&saved?.group===draft.dayGroups[1]?.label);
+      const table=assigned?.timetableId?p().timetables.find(t=>t.id===assigned.timetableId):saved?.timetable;if(table){const small=document.createElement("small");small.textContent=table.name;button.title=table.name;button.append(small)}
       button.setAttribute("aria-label",`${date}${assigned?": "+assigned.status+(assigned.cycleDay?", Cycle "+assigned.cycleDay:""):""}`);button.append(detail);button.addEventListener("click",()=>{el("planningDate").value=date;renderDate();preview(false)});el("planningMonth").append(button);
     }
   }
@@ -72,7 +79,7 @@
     const table=p().timetables.find(item=>item.id===selectedTable);el("planningTableFields").hidden=!table;el("planningBlocks").replaceChildren();if(!table)return;
     el("planningTableName").value=table.name;
     table.blocks.forEach((block,index)=>{
-      const row=document.createElement("div");row.className="planningBlock";row.dataset.blockId=block.id;
+      const row=document.createElement("details");row.className="planningBlock";row.dataset.blockId=block.id;row.open=!block.classId&&!block.label;
       const kind=document.createElement("label"),select=document.createElement("select");kind.append(document.createTextNode("Block type"));["class","break","event"].forEach(value=>option(select,value,value==="class"?"Teaching":value==="break"?"Lunch / break":"Assembly / event"));select.setAttribute("aria-label","Block type");select.value=block.kind;kind.append(select);row.append(kind);
       const periodLabel=document.createElement("label"),periodSelect=document.createElement("select");periodLabel.append(document.createTextNode("Period / Bison block"));option(periodSelect,"","Choose a period");
       const periodKeys=[...new Set([...Array.from({length:8},(_,i)=>String(i+1)),...Array.from({length:8},(_,i)=>`BISON-${i+1}`),...source.classes.map(cls=>cls.period).filter(Boolean),block.period].filter(Boolean))];
@@ -82,17 +89,21 @@
       const buttons=document.createElement("div");buttons.className="toolbar";
       const remove=document.createElement("button");remove.type="button";remove.textContent="Remove block";remove.addEventListener("click",()=>{capture();table.blocks.splice(index,1);changed();renderTable()});buttons.append(remove);
       if(index){const move=document.createElement("button");move.type="button";move.textContent="Swap with prior time slot";move.addEventListener("click",()=>{capture();const prior=table.blocks[index-1],current=table.blocks[index];[prior.startTime,current.startTime]=[current.startTime,prior.startTime];[prior.endTime,current.endTime]=[current.endTime,prior.endTime];table.blocks.sort((a,b)=>a.startTime.localeCompare(b.startTime));changed();renderTable()});buttons.append(move)}
-      row.append(buttons);el("planningBlocks").append(row);
+      row.append(buttons);
+      const fields=document.createElement("div");fields.className="planningBlockFields";fields.append(...row.children);row.append(fields);
+      const summary=document.createElement("summary"),time=document.createElement("time"),name=document.createElement("span");
+      const updateSummary=()=>{const values=row.querySelectorAll("input,select");time.textContent=`${values[4].value}–${values[5].value}`;name.textContent=values[2].value||source.classes.find(c=>c.id===values[3].value)?.name||values[1].selectedOptions[0]?.textContent||"New block"};
+      summary.append(time,name);row.prepend(summary);updateSummary();row.addEventListener("input",updateSummary);row.addEventListener("change",updateSummary);el("planningBlocks").append(row);
     });
   }
   function renderDay(result) {
     const {day,changes}=result;
     el("planningDayHeading").textContent=`${day.date} · ${day.status} · ${day.cycle.dayColor||"No group"}${day.cycle.cycleDay?" / Cycle "+day.cycle.cycleDay:""} · ${day.timetable?.name||"Existing class times / calendar rules"}`;
     el("planningDayRows").replaceChildren();
-    for(const row of day.rows){const node=document.createElement("div");node.className="planningRow";const time=document.createElement("time");time.textContent=`${row.startTime}–${row.endTime}`;const content=document.createElement("div"),name=document.createElement("b");name.textContent=row.name;content.append(name);const subtitle=document.createElement("div");subtitle.className="muted";subtitle.textContent=row.kind==="class"?`Period ${row.period} · ${row.classId}`:row.kind;content.append(subtitle);
+    for(const row of day.rows){const node=document.createElement("div");node.className="planningRow";const time=document.createElement("time");time.textContent=`${row.startTime}–${row.endTime}`;const content=document.createElement("div"),name=document.createElement("b");name.textContent=row.name;content.append(name);const subtitle=document.createElement("div");subtitle.className="muted";subtitle.textContent=row.kind==="class"?[row.period?`Period ${row.period.replace("BISON-","Bison ")}`:"Daily entry",row.className!==row.name?row.className:""] .filter(Boolean).join(" · "):row.kind;content.append(subtitle);
       for(const event of row.automations){const action=document.createElement("div");action.className="muted";action.textContent=`${event.time}${event.dayOffset?" ("+(event.dayOffset>0?"+":"")+event.dayOffset+" day)":""} · ${event.name}${event.suppressed?" · suppressed":""}`;content.append(action)}node.append(time,content);el("planningDayRows").append(node)}
     if(!day.rows.length)el("planningDayRows").textContent="No class occurrences on this date.";
-    for(const event of day.fixedAutomations||[]){const node=document.createElement("p");node.textContent=`${event.time} � ${event.name} � fixed clock time${event.suppressed?" � suppressed":""}`;el("planningDayRows").append(node)}
+    for(const event of day.fixedAutomations||[]){const node=document.createElement("p");node.textContent=`${event.time}  ·  ${event.name}  ·  fixed clock time${event.suppressed?"  ·  suppressed":""}`;el("planningDayRows").append(node)}
     el("planningWarnings").replaceChildren();
     const notices=[...day.warnings];if(day.automationSuppressed)notices.unshift("Scheduled classroom automations are suppressed on this date.");if(!p().enabled)notices.unshift("Planning is off. The saved legacy resolver remains active until you enable and save the reviewed plan.");
     for(const warning of notices){const node=document.createElement("div");node.className="planningNotice";node.textContent=warning;el("planningWarnings").append(node)}
@@ -104,8 +115,9 @@
     if(busy){pendingPreview=forSave;return}
     try{
       busy=true;capture();const submitted=JSON.stringify(draft),date=el("planningDate").value,revision=editRevision;
-      const data=await api("/api/v1/planning/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date,scheduleProfile:JSON.parse(submitted)})});
+      const data=await api("/api/v1/planning/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({date,includeMonth:true,scheduleProfile:JSON.parse(submitted)})});
       if(revision!==editRevision||date!==el("planningDate").value){review=null;el("planningPublish").disabled=true;message("The draft changed while preview was loading. Preview again before saving.");return}
+      if(data.monthDays){monthCache.set(date.slice(0,7),data.monthDays);renderMonth()}
       renderDay(data);review=forSave?{...data,draft:submitted}:null;el("planningPublish").disabled=!review;
       message(forSave?"Preview ready. Review the date, warnings, and subsequent rotation changes before saving. No device commands were sent.":"Date preview only. Editing date fields requires Add / update date in draft, then Preview changes.");
     }catch(error){review=null;el("planningPublish").disabled=true;message(error.message,true)}
@@ -113,7 +125,7 @@
   }
   window.loadPlanning=async(force=false)=>{
     if(dirty&&!force){message("Your unsaved planning draft is preserved. Use Reload saved plan to discard it.");return}
-    try{source=await api("/api/v1/planning");draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
+    try{source=await api("/api/v1/planning");monthCache.clear();draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
       const imported=source.migration;el("planningImportStatus").hidden=!imported||["empty","preserved"].includes(imported.status);
       if(imported?.status==="imported")el("planningImportStatus").textContent=`Existing configuration imported automatically: ${imported.counts.classes} classes, ${imported.counts.automations} linked/existing automations retained, ${imported.counts.timetables} timetables, ${imported.counts.dates} calendar dates. ${draft.planning.enabled?"Planning is enabled.":"Your previous scheduler remains active until Planning is enabled and saved."} The original configuration is retained for recovery.${imported.retainedEmptyTemplates?" Empty schedules/rules remain in the compatibility settings.":""}`;
       else if(imported?.status==="blocked")el("planningImportStatus").textContent="Automatic import needs configuration review. Existing scheduling has been retained; no partial conversion was saved.";
@@ -141,6 +153,17 @@
   el("planningTableCopy").addEventListener("click",()=>{if(!draft)return;capture();const table=p().timetables.find(item=>item.id===selectedTable);if(table)newTable({...clone(table),id:uid("table"),name:`${table.name} copy`})});
   el("planningTableRemove").addEventListener("click",()=>{if(!draft)return;capture();if(p().defaultTimetableId===selectedTable||Object.values(p().dates).some(date=>date.timetableId===selectedTable))return message("Reassign dates and the regular timetable before removing this timetable.",true);const table=p().timetables.find(item=>item.id===selectedTable);if(table&&confirm(`Remove timetable "${table.name}" from the draft?`)){p().timetables=p().timetables.filter(item=>item!==table);changed();renderTable();renderDate()}});
   el("planningBlockAdd").addEventListener("click",()=>{capture();const table=p().timetables.find(item=>item.id===selectedTable);if(table){table.blocks.push({id:uid("block"),kind:"class",period:"",classId:"",label:"",startTime:"09:00",endTime:"10:00",cycleDays:[]});changed();renderTable()}});
+  const calendarTools=document.createElement("div");calendarTools.className="toolbar";el("planningMonth").before(calendarTools);
+  for(const [label,offset]of [["← Previous month",-1],["Today",0],["Next month →",1]]){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",()=>{if(!draft)return;const date=new Date(`${el("planningDate").value}T12:00:00`);date.setDate(1);date.setMonth(date.getMonth()+offset);el("planningDate").value=offset?`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-01`:source.today;renderDate();preview(false)});calendarTools.append(button)}
+  const rangeButton=document.createElement("button");rangeButton.type="button";rangeButton.textContent="Apply to a date range";el("planningStageDate").after(rangeButton);
+  rangeButton.addEventListener("click",()=>{
+    if(!draft)return;capture();const dialog=document.createElement("dialog");dialog.className="studioDialog";const body=document.createElement("div");body.className="studioDialogBody";const heading=document.createElement("h2");heading.textContent="Apply this day setup to a range";heading.id="planningRangeHeading";dialog.setAttribute("aria-labelledby",heading.id);body.append(heading);
+    const hint=document.createElement("p");hint.textContent="Applies the selected status, timetable, note and optional fixed cycle letter to each chosen date. Everything stays in your draft until reviewed and saved.";body.append(hint);
+    const start=input("First date",el("planningDate").value,"date"),end=input("Last date",el("planningDate").value,"date"),weekends=input("Include weekends","","checkbox");body.append(start.wrapper,end.wrapper,weekends.wrapper);
+    const status=document.createElement("p");status.setAttribute("role","status");body.append(status);const tools=document.createElement("div");tools.className="toolbar";body.append(tools);
+    for(const [name,fn]of [["Cancel",()=>dialog.close()],["Stage dates",()=>{try{if(!start.field.value||!end.field.value||start.field.value>end.field.value)throw Error("Choose a valid date range");const cursor=new Date(`${start.field.value}T12:00:00`),last=new Date(`${end.field.value}T12:00:00`);if((last-cursor)/86400000>366)throw Error("Choose at most one school year at a time");let count=0;while(cursor<=last){if(weekends.field.checked||p().weekdays.includes(cursor.getDay())){const date=`${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,"0")}-${String(cursor.getDate()).padStart(2,"0")}`;p().dates[date]={status:el("planningDayStatus").value,cycleDay:el("planningCycleOverride").value,timetableId:el("planningDayTimetable").value,note:el("planningDayNote").value};count++}cursor.setDate(cursor.getDate()+1)}changed();renderMonth();dialog.close();message(`${count} dates staged. Preview affected dates and save to apply.`)}catch(error){status.textContent=error.message}}]]){const button=document.createElement("button");button.type="button";button.textContent=name;button.addEventListener("click",fn);tools.append(button)}
+    dialog.append(body);document.body.append(dialog);dialog.addEventListener("close",()=>dialog.remove());dialog.showModal();
+  });
   el("planning").addEventListener("input",event=>{if(draft&&!['planningDate'].includes(event.target.id))changed()});
   el("planning").addEventListener("change",event=>{if(draft&&event.target.matches("select")&&event.target.id!=="planningTableSelect")changed()});
   el("planningImport").addEventListener("change",async event=>{
