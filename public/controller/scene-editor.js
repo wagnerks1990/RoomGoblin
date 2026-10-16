@@ -4,6 +4,7 @@
   const node=(tag,text,className)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e};
   window.editPlanningScene=async(value,{transparent=false}={})=>{
     const {fitElement}=await import("/display/layout.mjs?v=dynamic-fit-20261012-1");
+    const sportsBoards=await api("/api/v1/sports").then(r=>r.config?.boards||[]).catch(()=>[]);
     return new Promise(resolve=>{
     let scene=model.normalize(value||{transparent,background:"#101d2c",layers:[]}),selected=scene.layers[0]?.id||"",playing=false,viewRatio=16/9,history=[],future=[],closed=false;
     scene.transparent=transparent;
@@ -18,7 +19,7 @@
     function button(label,fn,parent=toolbar){const b=node("button",label);b.type="button";b.addEventListener("click",fn);parent.append(b);return b}
     function fit(){const width=frame.clientWidth,height=width/viewRatio,scale=Math.min(width/model.WIDTH,height/model.HEIGHT);canvas.style.transform=`scale(${scale})`;canvas.style.left=`${(width-model.WIDTH*scale)/2}px`;canvas.style.top=`${(height-model.HEIGHT*scale)/2}px`;frame.style.height=`${height}px`}
     function draw(){
-      model.render(canvas,{...scene,data:{className:"Example class",cycleDay:"A",dayGroup:"Green",timezone:S.scheduler?.timezone||"",startAt:Date.now()-600000,endAt:Date.now()+1800000,weather:"Weather preview",weatherUpdatedAt:Date.now(),...scene.data}},{interactive:true,reducedMotion:!playing||matchMedia("(prefers-reduced-motion: reduce)").matches,fitText:fitElement});
+      model.render(canvas,{...scene,data:{className:"Example class",cycleDay:"A",dayGroup:"Green",timezone:S.scheduler?.timezone||"",startAt:Date.now()-600000,endAt:Date.now()+1800000,weather:"Weather preview",weatherUpdatedAt:Date.now(),...scene.data}},{interactive:true,previewSports:true,reducedMotion:!playing||matchMedia("(prefers-reduced-motion: reduce)").matches,fitText:fitElement});
       for(const e of canvas.children){e.classList.toggle("sceneSelected",e.dataset.layerId===selected);e.setAttribute("aria-pressed",String(e.dataset.layerId===selected));if(e.dataset.layerId===selected&&!chosen()?.locked){const resize=node("span",undefined,"sceneResize");resize.dataset.resize="1";resize.setAttribute("aria-hidden","true");e.append(resize)}}
       fit();renderLayers();
     }
@@ -47,7 +48,12 @@
       const layer=chosen();if(!layer){inspector.append(node("p","Select a layer to edit its content and appearance."));return}
       inspector.append(node("h3",layer.name));field("Layer name","name");field("Lock position","locked",{type:"checkbox"});
       if(layer.type==="text"||layer.type==="widget"){
-        if(layer.type==="widget"){field("Widget","widget",{options:model.WIDGETS.map(x=>[x,x])});field("24-hour clock","clock24",{type:"checkbox"})}
+        if(layer.type==="widget"){field("Widget","widget",{options:model.WIDGETS.map(x=>[x,x])}).addEventListener("change",properties);field("24-hour clock","clock24",{type:"checkbox"})}
+        if(layer.type==="widget"&&layer.widget==="sports-board"){
+          const choices=[['','Choose a saved Sports board'],...sportsBoards.map(b=>[b.id,b.name])];if(layer.sportsBoardId&&!sportsBoards.some(b=>b.id===layer.sportsBoardId))choices.push([layer.sportsBoardId,'Saved board (currently unavailable)']);
+          field("Sports board","sportsBoardId",{options:choices}).addEventListener('change',()=>{const board=sportsBoards.find(b=>b.id===layer.sportsBoardId);layer.sportsAudio=board?.audio===true;layer.sportsVolume=board?.volume??1;draw();properties()});
+          field("Sports video sound","sportsAudio",{type:'checkbox'});field("Sports video volume","sportsVolume",{type:'range',min:0,max:1}).step='.01';
+        }
         if(layer.type==="widget"&&layer.widget==="weather"){
           const group=node("fieldset"),legend=node("legend","Weather overlay details");group.append(legend);inspector.append(group);
           for(const key of model.WEATHER_FIELDS){const label=node("label",key.replaceAll("-"," ")),input=node("input");input.type="checkbox";input.checked=layer.weatherFields.includes(key);input.setAttribute("aria-label",`Weather detail: ${key}`);input.addEventListener("change",()=>{const next=model.WEATHER_FIELDS.filter(x=>x===key?input.checked:layer.weatherFields.includes(x));if(!next.length){input.checked=true;announce("Keep at least one weather detail");return}remember();layer.weatherFields=next;draw()});label.prepend(input);group.append(label)}

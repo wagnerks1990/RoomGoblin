@@ -41,6 +41,9 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 <div id="identify"></div>
 <div id="badge">Starting…</div></div>
 <link rel="stylesheet" href="/shared/scene.css">
+<link rel="stylesheet" href="/shared/sports-board.css">
+<script src="/shared/sports-playback.js"></script>
+<script src="/shared/sports-board.js"></script>
 <script src="/shared/scene.js"></script>
 <script type="module">
 import {createDisplayLayout,fitElement,bounded} from '/display/layout.mjs?v=dynamic-fit-20261012-1';
@@ -101,7 +104,7 @@ async function refreshSceneWeather(){
 }
 setInterval(refreshSceneWeather,60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshSceneWeather()});
-const sceneOptions=()=>({resolveAsset:name=>authorizeAssetUrl('/media/'+encodeURIComponent(name)),reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,fitText:fitElement});
+const sceneOptions=()=>({previewSports:preview,resolveAsset:name=>authorizeAssetUrl('/media/'+encodeURIComponent(name)),loadSports:async(boardId,signal)=>{const url=new URL("/api/v1/sports/boards/"+encodeURIComponent(boardId)+"/display",location.origin);if(displayAuth.assetAccessToken)url.searchParams.set("access_token",displayAuth.assetAccessToken);const response=await fetch(url,{credentials:"same-origin",signal});if(!response.ok)throw Error("Sports data unavailable");return response.json()},reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,fitText:fitElement});
 function renderBaseScene(scene){const key=JSON.stringify(scene);if(key===baseSceneSignature)return;baseSceneSignature=key;if(!scene){baseScene.replaceChildren();baseScene.style.background='transparent';baseScene.classList.remove('rg-scene');return}try{RoomGoblinScene.render(baseScene,scene,sceneOptions())}catch{baseScene.replaceChildren();baseScene.style.background='transparent';baseScene.classList.remove('rg-scene')}}
 function renderSharedLayers(layers){
  clearTimeout(sharedLayerExpiry);const rows=layers.filter(l=>Number(l.expiresAt)>Date.now()).slice(0,12),key=JSON.stringify(rows);

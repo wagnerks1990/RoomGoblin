@@ -21,6 +21,8 @@ Background Music development: [Music Studio and recovery](docs/BACKGROUND-MUSIC-
 
 Weather displays: [Weather workspace, forecasts and adjustable overlays](docs/WEATHER-WORKSPACE.md).
 
+Sports displays: [School boards, roster imports and approved source refresh](docs/SPORTS.md).
+
 ## Compatibility contract
 
 Existing installations must continue to work through the rebrand. The following

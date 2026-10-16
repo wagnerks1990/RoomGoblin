@@ -47,6 +47,7 @@ RUN apt-get update \
       fonts-dejavu-core \
       fonts-liberation \
       poppler-utils \
+      util-linux \
       ca-certificates \
       python3-venv \
  && rm -rf /var/lib/apt/lists/*

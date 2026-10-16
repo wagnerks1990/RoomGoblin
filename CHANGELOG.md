@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Add optional school Sports boards with separate varsity/JV pages, continuous rosters, previous/next events, dated media, current/evening weather and existing automation scheduling.
+- Add reviewed PDF/CSV roster and schedule imports, revision-safe saves/undo, approved public-source refresh and bounded media caching. Preserve receiver authorization, announcement priority and silent-board Background Music.
+
 - Add a Weather workspace with current conditions, seven-day/full date-range forecasts, integrated after-school/evening details, hourly tables, optional NWS alerts and explicit display/scheduling controls.
 - Add customizable weather overlay fields and live widget-data refresh without restarting underlying media. Move provider credit to a discreet footer; preserve bounded caching, receiver authorization, stale/unavailable states and school configuration.
 

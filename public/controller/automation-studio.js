@@ -158,5 +158,6 @@
   window.addEventListener("roomgoblin:authchange",()=>{if(!userCan("automation.manage"))document.querySelectorAll("dialog.studioDialog[open],dialog.sceneEditor[open]").forEach(d=>d.close())});
   render();
   window.startWeatherAutomation=scene=>{if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");showPage("schedules");editEvent({name:"Weather forecast",enabled:true,time:"14:45",scheduleMode:"weekly",days:[1,2,3,4,5],targets:[],useClassTargets:false,action:"display.text",payload:{scene}})};
+  window.startSportsAutomation=scene=>{if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");showPage("schedules");editEvent({name:"Sports board",enabled:true,time:"14:45",scheduleMode:"weekly",days:[1,2,3,4,5],targets:[],useClassTargets:false,action:"display.text",payload:{scene}})};
   window.startWeatherOverlay=scene=>{if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");showPage("schedules");editOverlay({id:uid("overlay"),name:"Weather overlay",enabled:true,automationIds:[],excludedAutomationIds:[],classIds:[],cycleDays:[],days:[0,1,2,3,4,5,6],scene})};
 })();

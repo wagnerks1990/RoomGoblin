@@ -308,7 +308,7 @@ nav button{min-width:135px}
     <button data-page="overview" class="active" aria-current="page">Today</button>
     <details class="rg-nav-group" open><summary>Room controls</summary>
       <button data-page="av">Displays & AV</button><button data-page="lights">Lighting</button><button data-page="esphome">ESPHome devices</button>
-      <button data-page="display">Display content</button><button data-page="music">Background music</button><button data-page="weather">Weather</button>
+      <button data-page="display">Display content</button><button data-page="music">Background music</button><button data-page="weather">Weather</button><button data-page="sports">Sports</button>
       <button data-page="lab">Lab computers</button>
     </details>
     <details class="rg-nav-group"><summary>Content library</summary>
@@ -396,6 +396,7 @@ nav button{min-width:135px}
 
 
 <section id="weather" class="page"></section>
+<section id="sports" class="page"></section>
 <section id="music" class="page">
   <div class="top"><div><h1>Background Music</h1><div class="muted">Independent all-day music scheduling. Visual display content continues normally; automation or announcement audio temporarily pauses background music and it resumes afterward.</div></div><div class="toolbar"><button onclick="loadMusicAssistant()">Refresh</button><button onclick="openMusicAssistantUi()">Open Music Assistant</button></div></div>
 
@@ -1454,11 +1455,16 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
 <script src="/controller/special-day-schedules.js"></script>
 <script src="/controller/app.js"></script>
 <script src="/controller/planning.js"></script>
+<link rel="stylesheet" href="/shared/sports-board.css">
+<script src="/shared/sports-playback.js"></script>
+<script src="/shared/sports-board.js"></script>
 <script src="/shared/scene.js"></script>
 <script src="/controller/scene-editor.js"></script>
 <script src="/controller/automation-studio.js"></script>
 <script src="/controller/class-studio.js"></script>
 <script src="/controller/music-studio.js"></script>
+<link rel="stylesheet" href="/controller/sports-workspace.css">
+<script src="/controller/sports-workspace.js"></script>
 <script src="/controller/weather-workspace.js"></script>
 <script src="/controller/workspace.js"></script>
 <script src="/controller/esphome.js"></script>

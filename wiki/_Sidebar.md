@@ -50,3 +50,5 @@
 
 - [Background Music Studio](Background-Music-Studio)
 - [Weather Workspace](Weather-Workspace)
+- [Sports Boards](Sports)
+- [Sports Research and Design](Sports-Design)
