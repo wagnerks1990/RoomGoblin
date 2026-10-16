@@ -10,7 +10,7 @@ Use this file whenever changing GitHub Actions, release publication, source-upda
 - No workflow creates or advances a separate deployment branch. Retain old branches as history rather than deleting or overwriting their commits.
 - Immutable images are tagged `sha-<40-character commit SHA>` and must carry `org.opencontainers.image.revision=<same SHA>`.
 - Mutable `alpha` aliases are convenience pointers only; update correctness is based on the exact immutable SHA pair.
-- Repository settings and the main ruleset must both allow merge commits, squash and rebase while retaining required checks and resolved reviews. A restrictive ruleset requires an authorized administrative change, not a code-only declaration or protection bypass.
+- Follow the effective main ruleset (currently squash-only), retaining current required checks, up-to-date branches and resolved reviews. Repository-level merge-method checkboxes do not override the ruleset; changes require a separately authorized administrative decision.
 
 ## Required validation gate
 
@@ -41,7 +41,7 @@ After the exact-SHA gate passes:
 - before mutable alias promotion, verify that `main` still equals the validated SHA so a stale run cannot replace a newer alpha;
 - promote package aliases only, with read-only source permissions; never advance a production/staging/development branch.
 
-If either image fails, pair promotion must fail closed. Semantic releases remain optional for existing GUI release/revert compatibility; a new release tag is not required for CLI main updates.
+If either image fails, pair promotion must fail closed. The administrator GUI and CLI both select updates from trusted `main`; neither requires a semantic release tag. The GUI may offer a merged main commit before its images finish publishing, but the native transaction must fail closed until the exact SHA pair exists. Legacy semantic-release handling may remain only as a compatibility backend path and must not become the normal GUI selection mechanism.
 
 ## Android maintenance-image dependency retries
 
@@ -50,6 +50,8 @@ The maintenance image compiles the Android Agent APK. If a hosted runner sees a 
 This retry is bounded reliability hardening only. Never suppress a deterministic Gradle failure, use mutable dependency versions to make the build pass, or skip APK package/version/checksum verification. If all attempts fail, the maintenance image and therefore the complete pair must remain unpublished.
 
 ## Main update behavior and legacy migration
+
+The System Updates GUI resolves the latest `main` commit through GitHub metadata, compares it with the Host Agent's local checkout, and passes only that exact 40-character commit into the native `published` journal action. The server must reject tracked local changes, divergent/ahead history, stale selections, and arbitrary user-provided SHAs. The native runner remains authoritative for the second ancestry check, image readiness/revision verification, recovery backup, component plan, health verification and rollback.
 
 The historical `deploy/update-production.sh` filename and native `published` journal action remain compatibility identifiers, not production-branch selectors. Install/update paths select main, require trusted main ancestry and the exact immutable image pair, and use the conservative component plan plus native lock/journal/backup/health/rollback protocol. Do not change the default to local builds or an unvalidated main commit. `install.sh --build-local` remains an explicit development/recovery choice only.
 
@@ -69,3 +71,15 @@ operator procedures aligned; a live filesystem copy is not a SQLite-safe backup.
 When publication behavior changes, update the publisher, relevant build logic, `docs/CI-WORKFLOWS.md`, its Wiki mirror, `docs/PRODUCTION-UPDATES.md`, its Wiki mirror, this context, regression tests and `AGENTS.md` together. Preserve the shared-data startup umask and backup-readability contract described in `PRODUCTION-SHARED-DATA.md`.
 
 Never weaken validation, exact-SHA identity, complete-pair publication, backup or recovery gates to make an update appear available sooner.
+
+System Updates rate middleware must remain before `requireAdmin` for security
+analysis but skip callers rejected by the same shared administrator predicate as
+the guard. Unauthorized requests must neither consume the read/mutation budget
+nor reach GitHub or native update handoff. Keep fixed appliance-wide keys and the existing limits. Test both
+rejected-caller floods and accepted requests across routes/forwarded addresses.
+The effective main ruleset currently permits squash merges only; do not infer
+allowed merge strategies from repository-level checkboxes.
+
+Source identity exposes commit, branch and tracked-change metadata only; do not
+read or return raw Git remote URLs, which may embed credentials. The native
+transaction independently validates the trusted origin before deployment.

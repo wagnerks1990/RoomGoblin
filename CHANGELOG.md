@@ -26,6 +26,17 @@
   serialize status against job startup, preventing stale `quiescing` responses
   from appearing finished. Preserve failed-rollback journals and add deterministic
   worker-completion and browser glyph-overhang regressions.
+### Main-based System Updates
+
+- Keep raw Git origin URLs out of the new source-status projection so embedded credentials cannot reach browser diagnostics; retain native origin verification.
+
+- Charge appliance-wide update quotas only for requests accepted by the shared administrator authorization predicate; add executable trust/ancestry/stale-selection and rejected-caller regressions, and align merge guidance with the effective squash-only main ruleset.
+
+- Change the administrator updater from semantic release-channel polling to the latest merged commit on trusted `main`, while retaining the native exact-SHA image, backup, health and rollback transaction.
+- Show installed/available commit identity in the GUI and history so multiple commits sharing one prerelease VERSION remain distinguishable.
+- Use the same verified main-commit path for automatic maintenance-window updates and reject dirty/divergent source, stale selections and arbitrary SHAs.
+- Correct updater systemd ordering to the canonical `classroom-hub-host-agent.service`, retire the stale old-name unit during install/refresh, and normalize no-request manual oneshot failures without hiding real deployment failures.
+
 
 ### Scheduled all-TV power handoff
 
