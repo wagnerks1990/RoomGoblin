@@ -17,6 +17,7 @@ const execFileAsync = promisify(execFile);
 const scryptAsync = promisify(crypto.scrypt);
 const multer = require("multer");
 const {ResumableUploadStore,ownerKey,inspectUpload,DEFAULT_CHUNK_BYTES}=require("./resumable-upload");
+const {contentDirectory,contentFile}=require("./content-permissions");
 const mqtt = require("mqtt");
 const { WebSocketServer, WebSocket } = require("ws");
 const {rateLimit}=require("express-rate-limit");
@@ -176,9 +177,9 @@ const SESSION_EFFECT_DURATION_MS = environmentInteger("SESSION_EFFECT_DURATION_M
 const SESSION_CLEAR_GAP_MS = environmentInteger("SESSION_CLEAR_GAP_MS",1200,0,30000);
 const SESSION_SPOTLIGHT_ROTATE_MS = environmentInteger("SESSION_SPOTLIGHT_ROTATE_MS",9000,1000,600000);
 
-fs.mkdirSync(MEDIA_DIR, { recursive: true });
-fs.mkdirSync(MEDIA_UPLOAD_SESSION_DIR,{recursive:true });
-fs.mkdirSync(PRESENTATIONS_DIR, { recursive: true });
+contentDirectory(MEDIA_DIR);
+contentDirectory(MEDIA_UPLOAD_SESSION_DIR);
+contentDirectory(PRESENTATIONS_DIR);
 fs.mkdirSync(PRESENTATION_UPLOAD_TMP, { recursive: true });
 
 const DATABASE_FILE = String(process.env.DATABASE_FILE || path.join(DATA_DIR,"classroom-control-hub.db"));
@@ -2003,6 +2004,7 @@ async function convertOfficeToPdf(storedName){
     if(!candidates.length)throw new Error("LibreOffice did not create a PDF");
     const staged=`${generatedPath}.${crypto.randomUUID()}.tmp`;
     fs.copyFileSync(path.join(tmpDir,candidates[0]),staged);
+    contentFile(staged);
     fs.renameSync(staged,generatedPath);
     return generatedName;
   }finally{
@@ -2182,7 +2184,9 @@ async function buildPresentationSlidesUnlocked(id){
   if(!rec)throw new Error("Presentation not found");
   const dir=presentationDir(id);
   const original=path.join(dir,rec.originalFile);
-  const renderTmp=path.join(dir,`render-${crypto.randomUUID()}`);
+  // Keep partial converter output outside the operational-backup tree. Publish
+  // only complete, group-readable assets; never relax the private process umask.
+  const renderTmp=path.join(PRESENTATION_UPLOAD_TMP,`render-${crypto.randomUUID()}`);
   const slidesDir=path.join(dir,"slides");
   const stagedSlides=path.join(renderTmp,"slides");
   fs.mkdirSync(renderTmp,{recursive:true});
@@ -2201,6 +2205,7 @@ async function buildPresentationSlidesUnlocked(id){
       if(!candidates.length)throw new Error("LibreOffice did not create a presentation PDF");
       fs.copyFileSync(path.join(convertDir,candidates[0]),stagedPdf);
     }
+    contentFile(stagedPdf);
 
     await execFileAsync("pdftoppm",[
       "-jpeg","-r","144","-jpegopt","quality=90",stagedPdf,path.join(stagedSlides,"raw")
@@ -2211,7 +2216,8 @@ async function buildPresentationSlidesUnlocked(id){
     .sort((a,b)=>Number(a.match(/(\d+)/)?.[1])-Number(b.match(/(\d+)/)?.[1]));
     if(!generated.length)throw new Error("No slide images were rendered");
 
-    generated.forEach((name,i)=>fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`)));
+    contentDirectory(stagedSlides);
+    generated.forEach((name,i)=>{contentFile(path.join(stagedSlides,name));fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`))});
     const oldSlides=path.join(dir,`slides-old-${crypto.randomUUID()}`),finalPdf=path.join(dir,"presentation.pdf"),oldPdf=path.join(dir,`presentation-old-${crypto.randomUUID()}.pdf`);
     let movedSlides=false,movedPdf=false;
     try{
@@ -7318,10 +7324,11 @@ app.post("/api/v1/presentations/upload",requireCapability("media.manage"),presen
   if(!req.file)return res.status(400).json({ok:false,error:"No presentation uploaded"});
   const id=presentationId();
   const dir=path.join(PRESENTATIONS_DIR,id);
-  fs.mkdirSync(dir,{recursive:true});
+  contentDirectory(dir);
   try{
     const ext=path.extname(req.file.originalname||"").toLowerCase();
     const originalFile=`original${ext}`;
+    contentFile(req.file.path);
     fs.renameSync(req.file.path,path.join(dir,originalFile));
     const now=new Date().toISOString();
     const rec={
@@ -7444,6 +7451,7 @@ function mediaStoredName(originalName){
   return `${crypto.randomUUID()}-${base}${ext}`;
 }
 async function registerUploadedMedia({stored,originalName,mime,size}){
+  contentFile(path.join(MEDIA_DIR,safeStoredName(stored)));
   const type=classifyMedia(stored,mime),rec={
     originalName,storedName:stored,mime,type,uploadedAt:new Date().toISOString(),
     generatedPdf:null,conversionStatus:null,conversionError:null

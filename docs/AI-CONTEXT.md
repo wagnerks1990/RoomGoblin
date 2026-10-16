@@ -162,6 +162,16 @@ A Git update must preserve them.
 
 The shared `data/` root is intentionally root-owned with group `10001` access so both the non-root application and hardened maintenance container can traverse it. Application-owned files remain UID/GID `10001:10001`; `data/backups` is maintained by the maintenance layer. Do not reintroduce code that chmods the entire shared data root to `0700`.
 
+Upload/conversion publication must explicitly apply `0750` content directories
+and `0640` content files after creation: storage/startup's private `0077` umask
+filters creation modes, copied modes and converter output. Use the narrowly scoped
+content helpers, never relax the global umask or identities. Keep partial
+presentation conversion in the excluded `presentation-upload-tmp` root and
+uncommitted resumable `.tmp` paths out of both operational validation and ZIP
+creation. Existing private assets require separately approved bounded repair;
+the updater still fails closed on unreadable committed content. See
+`docs/PRODUCTION-UPDATES.md` and `test/content-backup-permissions.test.js`.
+
 The current master key path is `/etc/classroom-control-hub/master.key`. Upgrades from older installations must preserve `/etc/classroom-hub/master.key` by migrating it rather than silently generating a replacement.
 
 ## Current known-good baseline
