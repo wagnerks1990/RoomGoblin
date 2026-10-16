@@ -11,7 +11,7 @@ async function parse(bytes){
    for(const line of lines.sort((a,b)=>b.y-a.y)){const items=line.items.sort((a,b)=>a.x-b.x),full=items.map(i=>i.text).join(' ');title+=' '+full;
     if(!columns&&/roster/i.test(full)){if(/\bjv\b|junior varsity/i.test(full))level='jv';else if(/\bvarsity\b/i.test(full))level='varsity'}
     if(/^VARSITY$/i.test(full)){level='varsity';continue}if(/^JV$/i.test(full)){level='jv';continue}
-    if(/(?:Number|No\.|#).*Name.*(?:Grade|Class|Year)/i.test(full)){columns=items.map(i=>({x:i.x,name:i.text.toLowerCase()}));continue}
+    if(/(?:Number|No\.|#).*Name.*(?:Grade|Class|Year)/i.test(full)){if(items.length>8)throw Error('Roster header exceeds eight columns');columns=items.map(i=>({x:i.x,name:i.text.toLowerCase()}));continue}
     if(!columns||/^(Managers?:|Head Coach|Assistant Coach)/i.test(full))continue;
     const cells=columns.map(()=>[]);for(const i of items){let selected=0;let dist=Infinity;columns.forEach((c,j)=>{if(Math.abs(c.x-i.x)<dist){dist=Math.abs(c.x-i.x);selected=j}});cells[selected].push(i.text)}
     const obj=Object.fromEntries(columns.map((c,i)=>[c.name,cells[i].join(' ')]));const name=obj.name||[obj['first name'],obj['last name']].filter(Boolean).join(' '),grade=obj.grade||obj.year||obj.class;

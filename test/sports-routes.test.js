@@ -12,6 +12,7 @@ test('Sports routes enforce operator, write, source-admin and receiver boundarie
  let config=model.normalize({teams:[{id:'t',name:'School',sport:'Volleyball'}],boards:[{id:'b',teamIds:['t']}]});
  let response=await req('','editor','PUT',config);assert.equal(response.status,200);config=(await response.json()).config;
  config.teams[0].sources=[{id:'s',url:'https://school.example',enabled:true,approved:true}];assert.equal((await req('','editor','PUT',config)).status,403);response=await req('','admin','PUT',config);assert.equal(response.status,200);config=(await response.json()).config;
+ for(const [key,value]of [['sport','Other sport'],['category','girls'],['level','jv'],['season','2027']]){const changed=structuredClone(config);changed.teams[0][key]=value;assert.equal((await req('','editor','PUT',changed)).status,403)}
  assert.equal((await req('/boards/b/display','operator')).status,401);response=await req('/boards/b/display','receiver');assert.equal(response.status,200);assert.equal(JSON.stringify(await response.json()).includes('school.example'),false);
  assert.equal((await req('/refresh','editor','POST',{})).status,403);assert.equal((await req('/boards/b/scene','operator','POST',{})).status,200);
  assert.equal((await req('/import/roster','editor','POST',{csv:'name,number\nExample Athlete,12'})).status,200);

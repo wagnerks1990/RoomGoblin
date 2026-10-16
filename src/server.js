@@ -6574,7 +6574,7 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   // Sports video is one persistent scene session. Reserve audio for the board
   // until replacement; never restart an automation for individual clips.
   const sportsAudio=p.scene?.layers?.some(l=>l.widget==="sports-board")?require("./sports-audio").commandAudio(command,sportsRuntime.service.read()):null;
-  const eligible=src==="automation"||kind==="morning-announcements"||sportsAudio!==null||p.scene||["display.text","display.clear"].includes(command.type);
+  const eligible=src==="automation"||kind==="morning-announcements"||sportsAudio!==null||p.scene||["display.text","display.clear","display.image","display.pdf","display.document","display.presentation"].includes(command.type);
   if(!eligible)return;
   let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{return}
   const type=String(command.type||"");

@@ -36,6 +36,11 @@ class SportsBrowserTests(unittest.TestCase):
             if target == '/api/v1/sports' and route.request.method == 'PUT':
                 d['config'] = route.request.post_data_json
                 d['config']['revision'] += 1
+                d['display']['revision'] = d['config']['revision']
+                for item in d['display']['pages']:
+                    team = next((t for t in d['config']['teams'] if t['id'] == item['id']), None)
+                    if team:
+                        item['name'] = team['name']
                 route.fulfill(json={'ok': True, 'config': d['config']})
                 return True
             return False
@@ -115,4 +120,48 @@ class SportsBrowserTests(unittest.TestCase):
         page.get_by_role('button', name='Send to selected displays', exact=True).click()
         page.get_by_text('Sports sent to the selected displays.', exact=True).wait_for()
         self.assertEqual(commands[0]['target'], ['tv1'])
+        self.assertEqual(errors, [])
+
+    def test_saving_a_team_invalidates_the_recent_preview_cache(self):
+        page, errors, _, _ = self.sports()
+        page.get_by_role('button', name='Preview board', exact=True).click()
+        page.locator('.rg-sports-heading h2').get_by_text('Girls soccer', exact=True).wait_for()
+        page.get_by_role('button', name='Teams & rosters', exact=True).click()
+        page.get_by_label('Team name', exact=True).fill('Updated girls soccer')
+        page.get_by_role('button', name='Save Sports', exact=True).click()
+        page.get_by_text('Sports saved. No display commands sent.', exact=True).wait_for()
+        page.get_by_role('button', name='Boards', exact=True).click()
+        page.get_by_role('button', name='Preview board', exact=True).click()
+        page.locator('.rg-sports-heading h2').get_by_text('Updated girls soccer', exact=True).wait_for()
+        self.assertEqual(errors, [])
+
+    def test_empty_live_revision_clears_the_retired_team_and_roster(self):
+        page, errors, _, d = self.sports()
+        page.clock.install()
+        page.get_by_role('button', name='Preview board', exact=True).click()
+        page.locator('.rg-sports-player').first.wait_for()
+        d['display']['pages'] = []
+        d['display']['revision'] += 1
+        page.clock.fast_forward(61000)
+        page.wait_for_timeout(100)
+        page.clock.run_for(40000)
+        self.assertEqual(page.locator('.rg-sports-player').count(), 0)
+        self.assertTrue(page.locator('.rg-sports-roster').is_hidden())
+        self.assertEqual(page.locator('.rg-sports-ticker span').inner_text(), '')
+        self.assertEqual(page.locator('.rg-sports-media video').get_attribute('src'), None)
+        self.assertEqual(page.locator('.rg-sports-media img').get_attribute('src'), None)
+        self.assertIn('Choose teams', page.locator('.rg-sports-games').inner_text())
+        self.assertEqual(errors, [])
+
+    def test_finished_clip_does_not_reveal_an_empty_or_stale_photo(self):
+        page, errors, _, d = self.sports()
+        d['display']['pages'][0]['media'] = [{'id':'clip','asset':'fixture.mp4','caption':'Current clip','archive':False,'date':None}]
+        page.evaluate("""d=>{
+            HTMLMediaElement.prototype.play=function(){return Promise.resolve()};
+            const canvas=document.createElement('div');canvas.id='clip-fixture';canvas.style.cssText='position:relative;width:1920px;height:1080px';document.body.append(canvas);
+            RoomGoblinScene.render(canvas,d.scene,{previewSports:false,loadSports:async()=>d.display});
+        }""", d)
+        page.locator('#clip-fixture .rg-sports-player').first.wait_for()
+        page.evaluate("""()=>{const video=document.querySelector('#clip-fixture video');Object.defineProperty(video,'ended',{get:()=>true});video.dispatchEvent(new Event('ended'))}""")
+        self.assertTrue(page.locator('#clip-fixture .rg-sports-media img').is_hidden())
         self.assertEqual(errors, [])
