@@ -20,7 +20,7 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
      else if(source.kind==='calendar')parsed=imports.calendar(r.body.toString('utf8'));
      else{
       parsed=imports.website(r.body.toString('utf8'),source.url,team);
-      const year=team.season.match(/20\d{2}/)?.[0];const doc=parsed.documents?.find(d=>(d.label+' '+d.url).toLowerCase().includes(team.sport.toLowerCase())&&(!year||(d.label+' '+d.url).includes(year))&&new URL(d.url).origin===origins[0]);
+      const year=team.season.match(/20\d{2}/)?.[0];const doc=parsed.documents?.find(d=>(d.label+' '+d.url).toLowerCase().includes(team.sport.toLowerCase())&&(!['girls','boys'].includes(team.category.toLowerCase())||(d.label+' '+d.url).toLowerCase().includes(team.category.toLowerCase()))&&(!year||(d.label+' '+d.url).includes(year))&&new URL(d.url).origin===origins[0]);
       if(doc){const p=await imports.rosterPDF((await fetchImpl(doc.url,{origins,maxBytes:5242880})).body);parsed.roster=p.rows;parsed.season=p.season}
      }
      const target=working.teams.find(t=>t.id===team.id);
