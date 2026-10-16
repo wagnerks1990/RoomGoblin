@@ -740,7 +740,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertFalse(page.locator('[data-planning-page="planning"]').first.is_visible())
         self.assertFalse(errors, errors)
 
-    def studio_page(self, width=1440):
+    def studio_page(self, width=1440, classes=None):
         profile = {'name': 'School', 'anchorDate': '2027-10-18', 'cycleDays': list('ABCDEFGH'),
                    'dayGroups': [{'id': 'green', 'label': 'Green', 'cycleDays': list('ACEG')},
                                  {'id': 'white', 'label': 'White', 'cycleDays': list('BDFH')}],
@@ -763,7 +763,8 @@ class WorkspaceBrowserTests(unittest.TestCase):
             return False
         overrides = {'/api/v1/automations': {'events': [], 'scheduler': {'timezone': 'America/New_York'}},
                      '/api/v1/automations/calendar': {'calendar': {}, 'scheduleProfile': profile},
-                     '/api/v1/planning': {'today': '2027-10-18', 'scheduleProfile': profile, 'classes': []},
+                     '/api/v1/class-schedules': {'classes': classes or []},
+                     '/api/v1/planning': {'today': '2027-10-18', 'scheduleProfile': profile, 'classes': classes or []},
                      '/api/v1/planning/studio': {'config': {'version': 1, 'overlays': [], 'weather': {'enabled': False}}}}
         page, errors = self.page('/controller/', width, overrides=overrides, transport=transport)
         page.evaluate("Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true})")
@@ -894,4 +895,19 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
         self.assertEqual(saved[-1]['actionSequence'][0]['payload']['level'], 35)
         self.assertNotIn('brightness', saved[-1]['actionSequence'][0]['payload'])
+        self.assertFalse(errors, errors)
+
+    def test_existing_date_only_class_retains_dates_and_window(self):
+        record = {'id': 'homeroom', 'name': 'Homeroom', 'shortName': 'HR', 'period': 'HR',
+                  'scheduleMode': 'dates', 'includeDates': ['2027-10-18'], 'enabled': True,
+                  'startTime': '13:13', 'endTime': '14:45', 'defaultTargets': ['all'],
+                  'scheduleWindow': {'startDate': '2027-10-18', 'endDate': '2027-10-18',
+                                     'excludedDates': ['2027-10-19']}}
+        page, errors, saved = self.studio_page(classes=[record])
+        page.evaluate("showPage('classes')")
+        page.get_by_role('button', name='Edit', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        self.assertEqual(editor.locator('#classIncludeDates').input_value(), '2027-10-18')
+        self.assertEqual(editor.locator('#classStudioFrom').input_value(), '2027-10-18')
+        self.assertEqual(page.evaluate('currentClassEdit.scheduleWindow.excludedDates'), ['2027-10-19'])
         self.assertFalse(errors, errors)
