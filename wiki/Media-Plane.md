@@ -39,6 +39,8 @@ content-signature inspection, and 24-hour cleanup of abandoned temporary data.
 Keep Cloudflare's per-request limit at 100 MB. Allow roughly twice the largest
 expected upload as free persistent storage during final assembly.
 
+New resumable session directories use `0750`; metadata, chunks, assembly temporaries and completed media use owner-write/group-read `0640`, regardless of umask `0077`. Temporary descriptors receive this mode before payload writes, and only verified files are atomically published. Group access assumes the documented production GID and parent-directory permissions; existing sessions are not migrated.
+
 Run `node --test test/media-plane-lifecycle.test.js` from the repository for the
 focused suite. See `docs/MEDIA-PLANE.md` for coverage, upgrade and rollback gates.
 This Git-tracked page is published only when the existing Sync Wiki workflow
