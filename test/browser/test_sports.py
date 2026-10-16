@@ -69,11 +69,13 @@ class SportsBrowserTests(unittest.TestCase):
     def test_receiver_bottom_entry_continuous_scroll_and_scene_cleanup(self):
         page, errors, _, d = self.sports()
         page.evaluate("""scene => {
+            for(const link of document.querySelectorAll('link[rel=stylesheet]'))document.head.append(link);
             document.body.replaceChildren();
             const canvas=document.createElement('div');canvas.id='receiver';canvas.style.cssText='position:relative;width:1920px;height:1080px';document.body.append(canvas);
-            RoomGoblinScene.render(canvas,scene);
+            RoomGoblinScene.render(canvas,scene,{previewSports:false});
         }""", d['scene'])
         page.locator('.rg-sports-player').first.wait_for()
+        self.assertEqual(page.locator('.rg-sports').evaluate('(n)=>getComputedStyle(n).display'), 'grid')
         initial = page.locator('.rg-sports-roster-track').evaluate('(n)=>new DOMMatrix(getComputedStyle(n).transform).m42')
         self.assertGreater(initial, 200)
         page.wait_for_timeout(3500)
