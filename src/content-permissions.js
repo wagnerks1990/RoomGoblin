@@ -8,9 +8,9 @@ const path=require("node:path");
 // the shared-reader contract explicitly, including after copies and conversions.
 function contentMode(root,file,directory){
   root=path.resolve(root);file=path.resolve(file);
-  if(file!==root&&!file.startsWith(root+path.sep))throw Error("Classroom content is outside its configured root");
+  if(!file.startsWith(root+path.sep))throw Error("Classroom content is outside its configured root");
   const realRoot=fs.realpathSync(root),parent=fs.realpathSync(path.dirname(file));
-  if(file!==root&&parent!==realRoot&&!parent.startsWith(realRoot+path.sep))throw Error("Classroom content parent escapes its configured root");
+  if(parent!==realRoot&&!parent.startsWith(realRoot+path.sep))throw Error("Classroom content parent escapes its configured root");
   const before=fs.lstatSync(file);
   if(before.isSymbolicLink())throw Error("Symbolic classroom content is not permitted");
   const flags=fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0)|(fs.constants.O_NONBLOCK||0);
@@ -25,7 +25,10 @@ function contentMode(root,file,directory){
 }
 function contentDirectory(root,dir=root,{recursive=true}={}){
   root=path.resolve(root);dir=path.resolve(dir);
-  if(dir!==root&&!dir.startsWith(root+path.sep))throw Error("Classroom content is outside its configured root");
+  // The configured root is trusted configuration, never a requested child path.
+  // Handle it separately so every user-derived child has one strict boundary.
+  if(dir===root){fs.mkdirSync(root,{recursive,mode:0o750});contentMode(path.dirname(root),root,true);return;}
+  if(!dir.startsWith(root+path.sep))throw Error("Classroom content is outside its configured root");
   // Existing parent links must not redirect directory creation outside the root.
   if(dir!==root){
     let parent=path.dirname(dir);
