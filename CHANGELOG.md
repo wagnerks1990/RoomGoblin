@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+### Repository convergence follow-up
+
+- Restrict hosted Wiki credentials to the exact HTTPS GitHub Wiki path; clone
+  without checkout to prevent remote filters from accessing reusable tokens.
+- Route bridge-network and Sendspin migration instructions through the durable
+  updater before source changes, keeping their tracked Wiki pages aligned.
+- Retry transient Hub startup during optional connector setup within fixed
+  deadlines without printing application logs or coupling Cloudflare to health.
+
 ### Resumable upload backup readability
 
 - Apply owner-write/group-read `0640` to metadata, chunk and assembly descriptors

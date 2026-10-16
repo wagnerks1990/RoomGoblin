@@ -6,6 +6,15 @@ const os = require("node:os");
 const path = require("node:path");
 const {spawnSync} = require("node:child_process");
 
+test("existing-appliance migration guides enter the updater before source changes", () => {
+  for (const file of ["docs/HOST-NETWORKING.md", "docs/MUSIC-ASSISTANT-SENDSPIN.md",
+    "wiki/Host-Networking.md", "wiki/Music-Assistant-Sendspin.md"]) {
+    const text = fs.readFileSync(file, "utf8");
+    assert.match(text, /update-production\.sh --full/);
+    assert.doesNotMatch(text, /Pull current main|updating the checkout to the approved commit/);
+  }
+});
+
 test("native installer admission rejects incomplete, stale and unowned recovery evidence", () => {
   const result = spawnSync("python3", ["test/installer_transaction_test.py"], {encoding: "utf8"});
   assert.equal(result.status, 0, result.stderr);

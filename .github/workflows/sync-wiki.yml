@@ -7,6 +7,7 @@ on:
       - 'wiki/**'
       - 'docs/WIKI-SYNC.md'
       - 'scripts/sync-wiki.sh'
+      - 'scripts/wiki-credential-helper.sh'
       - '.github/workflows/sync-wiki.yml'
   workflow_dispatch:
 
@@ -45,19 +46,13 @@ jobs:
           GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.WIKI_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
-          askpass="$(mktemp)"
-          trap 'rm -f "$askpass"' EXIT
-          cat > "$askpass" <<'ASKPASS'
-          #!/bin/sh
-          case "$1" in
-            *Username*) printf '%s\n' x-access-token ;;
-            *Password*) printf '%s\n' "$GH_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          ASKPASS
-          chmod 0700 "$askpass"
-          export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
-          git -c credential.helper= clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" /tmp/wiki
+          helper="$(mktemp)"
+          trap 'rm -f "$helper"' EXIT
+          install -m 0700 scripts/wiki-credential-helper.sh "$helper"
+          export GIT_ASKPASS=/bin/false GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= -c credential.helper="$helper" \
+            -c credential.useHttpPath=true -c http.followRedirects=false \
+            clone --no-checkout "https://github.com/${GITHUB_REPOSITORY}.wiki.git" /tmp/wiki
 
       - name: Synchronize Wiki mirror
         run: |
@@ -77,17 +72,11 @@ jobs:
           GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.WIKI_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
+          helper="$(mktemp)"
+          trap 'rm -f "$helper"' EXIT
+          install -m 0700 scripts/wiki-credential-helper.sh "$helper"
           cd /tmp/wiki
-          askpass="$(mktemp)"
-          trap 'rm -f "$askpass"' EXIT
-          cat > "$askpass" <<'ASKPASS'
-          #!/bin/sh
-          case "$1" in
-            *Username*) printf '%s\n' x-access-token ;;
-            *Password*) printf '%s\n' "$GH_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          ASKPASS
-          chmod 0700 "$askpass"
-          export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
-          git -c credential.helper= push origin HEAD:master
+          export GIT_ASKPASS=/bin/false GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= -c credential.helper="$helper" \
+            -c credential.useHttpPath=true -c http.followRedirects=false \
+            push "https://github.com/${GITHUB_REPOSITORY}.wiki.git" HEAD:master

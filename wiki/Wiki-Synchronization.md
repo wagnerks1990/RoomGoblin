@@ -6,9 +6,11 @@ manual dispatch.
 
 Configure the repository Actions secret `WIKI_TOKEN` with permission to push
 this repository's Wiki. The workflow prefers it over the legacy `WIKI_PUSH_TOKEN`
-and automatic GitHub token for both clone and push. Temporary askpass helpers
-read the step environment, keeping credentials out of Git arguments and remote
-configuration; each helper is removed on success or failure.
+and automatic GitHub token for both clone and push. Temporary credential helpers
+release it only for the exact HTTPS GitHub Wiki repository path. Clone disables
+checkout so remote filters and Git LFS configuration cannot run. Redirects and
+interactive authentication are disabled; helpers are removed after success or
+failure, and credentials never enter Git arguments or remote configuration.
 
 Create the initial Wiki page through GitHub if the Wiki Git repository has not
 yet been initialized. Keep secrets and private classroom data out of the mirror;

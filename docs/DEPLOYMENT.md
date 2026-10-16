@@ -218,7 +218,7 @@ curl -fsS http://127.0.0.1:3000/health
 
 ## Web-managed release updates
 
-The web-managed updater accepts verified semantic-version GitHub releases and delegates host-level work to `classroom-hub-app-update.service`.
+The web-managed updater selects the exact latest trusted `main` commit and delegates host-level work to `classroom-hub-app-update.service`. Its native transaction requires that commit's validated Hub/maintenance images, verifies ancestry and source identity, takes the operational backup, and health-checks or rolls back. Semantic release handling remains a compatibility backend path; see `PRODUCTION-UPDATES.md`.
 
 A successful update currently requires:
 
