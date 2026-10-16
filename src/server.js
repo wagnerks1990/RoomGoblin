@@ -2004,7 +2004,7 @@ async function convertOfficeToPdf(storedName){
     if(!candidates.length)throw new Error("LibreOffice did not create a PDF");
     const staged=`${generatedPath}.${crypto.randomUUID()}.tmp`;
     fs.copyFileSync(path.join(tmpDir,candidates[0]),staged);
-    contentFile(staged);
+    contentFile(MEDIA_DIR,staged);
     fs.renameSync(staged,generatedPath);
     return generatedName;
   }finally{
@@ -2205,7 +2205,7 @@ async function buildPresentationSlidesUnlocked(id){
       if(!candidates.length)throw new Error("LibreOffice did not create a presentation PDF");
       fs.copyFileSync(path.join(convertDir,candidates[0]),stagedPdf);
     }
-    contentFile(stagedPdf);
+    contentFile(PRESENTATION_UPLOAD_TMP,stagedPdf);
 
     await execFileAsync("pdftoppm",[
       "-jpeg","-r","144","-jpegopt","quality=90",stagedPdf,path.join(stagedSlides,"raw")
@@ -2216,8 +2216,8 @@ async function buildPresentationSlidesUnlocked(id){
     .sort((a,b)=>Number(a.match(/(\d+)/)?.[1])-Number(b.match(/(\d+)/)?.[1]));
     if(!generated.length)throw new Error("No slide images were rendered");
 
-    contentDirectory(stagedSlides);
-    generated.forEach((name,i)=>{contentFile(path.join(stagedSlides,name));fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`))});
+    contentDirectory(PRESENTATION_UPLOAD_TMP,stagedSlides);
+    generated.forEach((name,i)=>{contentFile(PRESENTATION_UPLOAD_TMP,path.join(stagedSlides,name));fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`))});
     const oldSlides=path.join(dir,`slides-old-${crypto.randomUUID()}`),finalPdf=path.join(dir,"presentation.pdf"),oldPdf=path.join(dir,`presentation-old-${crypto.randomUUID()}.pdf`);
     let movedSlides=false,movedPdf=false;
     try{
@@ -7324,11 +7324,11 @@ app.post("/api/v1/presentations/upload",requireCapability("media.manage"),presen
   if(!req.file)return res.status(400).json({ok:false,error:"No presentation uploaded"});
   const id=presentationId();
   const dir=path.join(PRESENTATIONS_DIR,id);
-  contentDirectory(dir);
+  contentDirectory(PRESENTATIONS_DIR,dir);
   try{
     const ext=path.extname(req.file.originalname||"").toLowerCase();
     const originalFile=`original${ext}`;
-    contentFile(req.file.path);
+    contentFile(PRESENTATION_UPLOAD_TMP,req.file.path);
     fs.renameSync(req.file.path,path.join(dir,originalFile));
     const now=new Date().toISOString();
     const rec={
@@ -7433,6 +7433,7 @@ app.post("/api/v1/presentations/control",requireCapability("media.manage"),async
 // Media Library uploads / documents
 const resumableUploads=new ResumableUploadStore({
   root:MEDIA_UPLOAD_SESSION_DIR,
+  destinationRoot:MEDIA_DIR,
   maxFileBytes:MAX_UPLOAD_MB*1024*1024,
   chunkBytes:DEFAULT_CHUNK_BYTES,
   ttlMs:UPLOAD_SESSION_TTL_HOURS*60*60*1000,
@@ -7451,7 +7452,7 @@ function mediaStoredName(originalName){
   return `${crypto.randomUUID()}-${base}${ext}`;
 }
 async function registerUploadedMedia({stored,originalName,mime,size}){
-  contentFile(path.join(MEDIA_DIR,safeStoredName(stored)));
+  contentFile(MEDIA_DIR,path.join(MEDIA_DIR,safeStoredName(stored)));
   const type=classifyMedia(stored,mime),rec={
     originalName,storedName:stored,mime,type,uploadedAt:new Date().toISOString(),
     generatedPdf:null,conversionStatus:null,conversionError:null

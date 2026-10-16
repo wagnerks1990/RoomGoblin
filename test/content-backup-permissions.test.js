@@ -19,22 +19,29 @@ test("content publication overrides restrictive umask without relaxing private s
   const content=path.join(root,"content"),secret=path.join(root,"identity");
   fs.mkdirSync(secret);fs.writeFileSync(path.join(secret,"private.key"),"private fixture");
   contentDirectory(content);const file=path.join(content,"asset.pdf");fs.writeFileSync(file,"%PDF-fixture");
-  assert.equal(mode(file),0o600);contentFile(file);
+  assert.equal(mode(file),0o600);contentFile(root,file);
   assert.equal(mode(content),0o750);assert.equal(mode(file),0o640);
   assert.equal(mode(secret),0o700);assert.equal(mode(path.join(secret,"private.key")),0o600);
   assert.equal(process.umask(),0o077);
   fs.symlinkSync(secret,path.join(root,"linked-directory"));
   assert.throws(()=>contentDirectory(path.join(root,"linked-directory")));
   fs.symlinkSync(path.join(secret,"private.key"),path.join(content,"linked-file"));
-  assert.throws(()=>contentFile(path.join(content,"linked-file")));
+  assert.throws(()=>contentFile(root,path.join(content,"linked-file")));
   fs.linkSync(path.join(secret,"private.key"),path.join(content,"hard-link"));
-  assert.throws(()=>contentFile(path.join(content,"hard-link")),/Hard-linked/);
+  assert.throws(()=>contentFile(root,path.join(content,"hard-link")),/Hard-linked/);
+  assert.throws(()=>contentFile(content,path.join(content,"..","identity","private.key")),/outside/);
+  const sibling=path.join(root,"content-other");fs.mkdirSync(sibling);fs.writeFileSync(path.join(sibling,"private"),"private fixture");
+  assert.throws(()=>contentFile(content,path.join(sibling,"private")),/outside/);
+  fs.symlinkSync(secret,path.join(content,"parent-link"));
+  assert.throws(()=>contentFile(content,path.join(content,"parent-link","private.key")),/escapes/);
+  assert.throws(()=>contentDirectory(content,path.join(content,"parent-link","new-directory")),/escapes/);
+  assert.equal(fs.existsSync(path.join(secret,"new-directory")),false);
   assert.equal(mode(path.join(secret,"private.key")),0o600);
 });
 
 test("resumable sessions, metadata, chunks and final media survive umask 0077",linux,async t=>{
   const root=fixture(t);privateUmask(t);
-  const sessions=path.join(root,"sessions"),store=new ResumableUploadStore({root:sessions,maxFileBytes:1024,chunkBytes:1024,minFreeBytes:0});
+  const sessions=path.join(root,"sessions"),store=new ResumableUploadStore({root:sessions,destinationRoot:root,maxFileBytes:1024,chunkBytes:1024,minFreeBytes:0});
   for(const [name,bytes] of [["image.png",Buffer.from("89504e470d0a1a0a","hex")],["video.mp4",Buffer.from("000000186674797069736f6d","hex")],["deck.pdf",Buffer.from("%PDF-fixture")]]){
     const s=store.create({owner:"fixture",name,size:bytes.length});
     assert.equal(mode(store.dir(s.id)),0o750);assert.equal(mode(store.metaFile(s.id)),0o640);
@@ -44,6 +51,10 @@ test("resumable sessions, metadata, chunks and final media survive umask 0077",l
     assert.equal(mode(destination),0o640);assert.deepEqual(fs.readFileSync(destination),bytes);
   }
   assert.equal(process.umask(),0o077);
+  const rejected=store.create({owner:"fixture",name:"rejected.pdf",size:4});
+  const outside=path.join(root,"..",path.basename(root)+"-outside.pdf");
+  await assert.rejects(store.assemble({id:rejected.id,owner:"fixture",digest:digest(Buffer.from("%PDF")),destination:outside}),/outside/);
+  assert.equal(fs.existsSync(outside),false);
 });
 
 function presentationContext(root,{fail=false,onRender=()=>{}}={}){
@@ -83,7 +94,7 @@ test("actual presentation upload and PDF/PPT conversion publish readable assets 
 test("failed rebuild leaves previous readable deck and removes private conversion staging",linux,async t=>{
   const root=fixture(t);privateUmask(t);const ctx=presentationContext(root,{fail:true}),id="pres-existing",dir=ctx.presentationDir(id);
   contentDirectory(dir);contentDirectory(path.join(dir,"slides"));
-  for(const [name,bytes] of [["original.pptx","original"],["presentation.pdf","old pdf"],["slides/slide-001.jpg","old slide"]]){fs.writeFileSync(path.join(dir,name),bytes);contentFile(path.join(dir,name));}
+  for(const [name,bytes] of [["original.pptx","original"],["presentation.pdf","old pdf"],["slides/slide-001.jpg","old slide"]]){fs.writeFileSync(path.join(dir,name),bytes);contentFile(root,path.join(dir,name));}
   ctx.presentationLibrary.presentations[id]={originalFile:"original.pptx"};
   await assert.rejects(ctx.buildPresentationSlidesUnlocked(id),/converter failed/);
   assert.equal(fs.readFileSync(path.join(dir,"presentation.pdf"),"utf8"),"old pdf");
@@ -105,13 +116,13 @@ test("real operational ZIP writer reads content as a different uid in the shared
   const root=fixture(t);privateUmask(t);
   const hub=path.join(root,"classroom-hub"),data=path.join(hub,"data"),deck=path.join(data,"presentations/pres-fixture"),work=path.join(root,"work"),services=path.join(root,"services"),snapshot=path.join(root,"snapshot.db"),dest=path.join(root,"backup.zip");
   for(const dir of [root,hub,data,path.join(data,"presentations"),deck,work,services]){contentDirectory(dir);fs.chownSync(dir,10001,10001);}
-  for(const name of ["original.pptx","presentation.pdf","slide.jpg"]){const file=path.join(deck,name);fs.writeFileSync(file,"fixture "+name);fs.chownSync(file,10001,10001);contentFile(file);}
-  const {DatabaseSync}=require("node:sqlite"),db=new DatabaseSync(snapshot);db.exec("CREATE TABLE fixture(value); INSERT INTO fixture VALUES(1)");db.close();contentFile(snapshot);fs.chownSync(snapshot,10001,10001);
+  for(const name of ["original.pptx","presentation.pdf","slide.jpg"]){const file=path.join(deck,name);fs.writeFileSync(file,"fixture "+name);fs.chownSync(file,10001,10001);contentFile(root,file);}
+  const {DatabaseSync}=require("node:sqlite"),db=new DatabaseSync(snapshot);db.exec("CREATE TABLE fixture(value); INSERT INTO fixture VALUES(1)");db.close();contentFile(root,snapshot);fs.chownSync(snapshot,10001,10001);
   fs.writeFileSync(path.join(hub,".env"),"PRIVATE_TEST_SENTINEL");
   const privateStage=path.join(data,"presentation-upload-tmp");fs.mkdirSync(privateStage);fs.writeFileSync(path.join(privateStage,"unfinished"),"private partial");
   const session=path.join(data,"media-upload-sessions/fixture-session");
   for(const dir of [path.dirname(session),session]){contentDirectory(dir);fs.chownSync(dir,10001,10001);}
-  for(const name of ["session.json","0.part"]){const file=path.join(session,name);fs.writeFileSync(file,"committed "+name);fs.chownSync(file,10001,10001);contentFile(file);}
+  for(const name of ["session.json","0.part"]){const file=path.join(session,name);fs.writeFileSync(file,"committed "+name);fs.chownSync(file,10001,10001);contentFile(root,file);}
   fs.writeFileSync(path.join(session,".active-chunk.tmp"),"private partial");
   const unpublished=path.join(path.dirname(session),".unpublished.tmp");fs.mkdirSync(unpublished);fs.writeFileSync(path.join(unpublished,"session.json"),"private partial");
   const filter=section(maintenance,"function backupFilter(","async function createFullRecoveryExport("),writer=section(maintenance,"async function writeOperationalZipStreaming(","function writeJsonAtomic(");
