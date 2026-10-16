@@ -30,7 +30,11 @@ async function rosterPDF(bytes){
   const season=title.match(/\b20\d{2}\b/)?.[0]||'';return {rows,season,warnings:['Review names, numbers and team levels before applying. Blank levels mean the PDF did not specify them.']};
  }finally{await task.destroy()}
 }
-const decode=s=>String(s).replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;|&apos;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Math.min(0x10ffff,Number(n))));
+// Decode once: a literal &amp;lt; must not turn into a second-level entity.
+const decode=s=>String(s).replace(/&(amp|quot|apos|lt|gt|#(?:x[0-9a-f]+|[0-9]+));/gi,(_,entity)=>{
+ const named={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'},value=entity.toLowerCase();if(value[0]!=='#')return named[value];
+ const code=value[1]==='x'?parseInt(value.slice(2),16):Number(value.slice(1));return Number.isInteger(code)&&code>=0&&code<=0x10ffff&&!(code>=0xd800&&code<=0xdfff)?String.fromCodePoint(code):'\uFFFD';
+});
 const clean=s=>decode(String(s).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ')).trim();
 function structured(raw){if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Expected a Sports JSON object');return {events:Array.isArray(raw.events)?raw.events.slice(0,500):[],roster:Array.isArray(raw.roster)?raw.roster.slice(0,150):null,media:Array.isArray(raw.media)?raw.media.slice(0,50):[],season:String(raw.season||'')}}
 function website(html,url,team){
