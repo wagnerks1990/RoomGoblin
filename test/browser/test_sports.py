@@ -57,6 +57,7 @@ class SportsBrowserTests(unittest.TestCase):
                 page.get_by_role('button', name='Preview board', exact=True).click()
                 page.locator('.sportsPreviewCanvas .rg-sports-player').first.wait_for()
                 self.assertEqual(page.locator('.sportsPreviewCanvas video[src]').count(), 0)
+                self.assertEqual(page.locator('.rg-sports-heading h2').inner_text(), 'Girls soccer')
                 page.get_by_role('button', name='Send to selected displays', exact=True).click()
                 page.get_by_text('Select at least one display', exact=True).wait_for()
                 self.assertFalse(commands)
