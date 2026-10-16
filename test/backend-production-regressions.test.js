@@ -61,16 +61,14 @@ test("Background Music controls retain the player that actually started playback
   assert.match(music,/prior\.playerId!==cfg\.playerId\|\|prior\.favoriteId!==cfg\.favoriteId/);
 });
 
-test("scheduled Background Music waits for player readiness and backs off transient starts",()=>{
-  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf("// Appliance-wide budgets"));
-  const tick=music.slice(music.indexOf("async function backgroundMusicTick"),music.indexOf('app.get("/api/v1/music-assistant/background"'));
-  assert.match(music,/retryAfter:0/);
+test("scheduled Background Music observes readiness before consulting its recovery monitor",()=>{
+  const tick=server.slice(server.indexOf("async function backgroundMusicTick"),server.indexOf('app.get("/api/v1/music-assistant/background"'));
   assert.match(tick,/if\(!actual\?\.found\|\|actual\.available===false\)/);
   assert.match(tick,/Background Music player has not registered yet/);
   assert.match(tick,/Background Music player is temporarily unavailable/);
-  assert.match(tick,/retryAfter\|\|0\)>Date\.now\(\)/);
-  assert.match(tick,/retryAfter=Date\.now\(\)\+30000/);
-  assert.ok(tick.indexOf("if(!actual?.found||actual.available===false)")<tick.indexOf('await backgroundMusicStart({reason:"schedule-player-idle"})'));
+  assert.ok(tick.indexOf("if(!actual?.found||actual.available===false)")<tick.indexOf("backgroundMusicRecovery.observe(actual,{"));
+  assert.match(tick,/decision.action===\"wait\"/);
+  assert.match(tick,/backgroundMusicPriorityBlocked\(\)\|\|backgroundMusicRuntime.manualStopped/);
 });
 
 test("post-announcement resync applies each candidate only to targets it won",()=>{
@@ -82,7 +80,7 @@ test("post-announcement resync applies each candidate only to targets it won",()
 
 test("priority audio reconciliation observes Music Assistant instead of trusting restart-local flags",()=>{
   const reconcile=server.slice(server.indexOf("async function backgroundMusicReconcilePriority"),server.indexOf("function backgroundMusicObserveDisplayCommand"));
-  assert.match(reconcile,/backgroundMusicActualPlayerState\(cfg,true\)/);
+  assert.match(reconcile,/backgroundMusicActualPlayerState\(\{playerId:backgroundMusicRuntime.activePlayerId\|\|cfg.playerId\},true\)/);
   assert.match(reconcile,/if\(!force&&!cfg\.pauseForPriorityAudio\)return/);
   assert.match(server,/backgroundMusicReconcilePriority\(\{force:true\}\)/);
   assert.match(reconcile,/if\(priority&&backgroundMusicRuntime\.playing\)/);

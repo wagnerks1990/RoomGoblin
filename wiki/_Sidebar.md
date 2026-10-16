@@ -47,3 +47,5 @@
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
 
 - [Planning and Scene Studio](Planning-Studio)
+
+- [Background Music Studio](Background-Music-Studio)

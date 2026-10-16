@@ -647,3 +647,7 @@ shared visual layers, date-only classes, scene limits and widget data. Keep
 `public/display/layout.mjs` for text fitting. Never load operator workspace CSS
 on receivers. Explicit clock/block deadlines are required for lunch timers; an
 absent override must never become Unix epoch or restart an elapsed countdown.
+
+## Background Music Studio development
+
+Read `docs/BACKGROUND-MUSIC-STUDIO.md` before changing recovery. `src/background-music.js` distinguishes command acknowledgement from observed playback, supplies bounded retry/backoff and progress-based stall detection. Manual source selection is owned by the same recovery lifecycle; explicit Pause/Stop, sleep and priority audio suppress recovery. Never infer audible output from server elapsed telemetry. Retain Sendspin identities/transport, provider credentials, existing service ownership and the guarded deployment path.

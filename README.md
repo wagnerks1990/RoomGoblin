@@ -17,6 +17,8 @@ cleanup. Reload the controller after upgrading.
 
 RoomGoblin is the branded successor to Classroom Control Hub. The product name, operator interface, setup experience, device-facing presentation, and documentation use **RoomGoblin**. Compatibility-sensitive internal identifiers from earlier releases are intentionally retained until an explicit migration is tested and documented.
 
+Background Music development: [Music Studio and recovery](docs/BACKGROUND-MUSIC-STUDIO.md).
+
 ## Compatibility contract
 
 Existing installations must continue to work through the rebrand. The following
