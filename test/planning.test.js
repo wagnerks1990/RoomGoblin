@@ -70,6 +70,7 @@ function routes(){
   const registered=new Map(),writes=[];
   const context=vm.createContext({crypto,Date,JSON,schoolScheduleProfile:profile(),schedulerCalendar:{},classScheduleStore:{classes:classes()},classroomAutomations:{events:[]},planningEngine:engine,normalizeSchoolScheduleProfile:school.normalizeSchoolScheduleProfile,validDateKey:school.validDateKey,
     schedulerReadLimit:()=>{},schedulerMutationLimit:()=>{},requireCapability:name=>({capability:name}),localDateKey:d=>d.toISOString().slice(0,10),schedulerClock:{now:()=>new Date("2027-10-18T12:00:00Z")},dateFromKey:key=>new Date(`${key}T12:00:00Z`),
+    planningMigration:require("../src/planning-migration"),planningStartupMigration:{report:{version:1,status:"imported",sourceHash:"private-internal-hash",counts:{classes:15,automations:0,timetables:1,dates:0}}},
     app:Object.fromEntries(["get","post","put"].map(method=>[method,(path,...handlers)=>registered.set(`${method} ${path}`,handlers)])),dbStore:{tx:fn=>fn(),setPreference:(key,value)=>writes.push([key,value])},persistJson:(key,value)=>writes.push([key,value]),CLASS_SCHEDULES_FILE:"classes",audit:()=>{}});
   vm.runInContext(source.slice(source.indexOf("function planningClassesForProfile("),source.indexOf('app.get("/api/v1/school-cycle"')),context);
   function request(method,path,body={}){const result={status:200};registered.get(`${method} ${path}`).at(-1)({body},{status(code){result.status=code;return this},json(value){result.body=value;return this}});return result}
@@ -78,6 +79,7 @@ function routes(){
 test("planning API requires capability, previews without writes, rejects stale saves, and commits identities together",()=>{
   const {context,registered,writes,request}=routes();
   for(const handlers of registered.values())assert.ok(handlers.some(handler=>handler.capability==="schedule.manage"));
+  const saved=request("get","/api/v1/planning").body;assert.equal(saved.migration.status,"imported");assert.equal(saved.migration.sourceHash,undefined);assert.equal(saved.migration.profile,undefined);
   const next=JSON.parse(JSON.stringify(context.schoolScheduleProfile));next.planning.dates["2027-10-19"]={status:"no-school"};
   const preview=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-19"});
   assert.equal(preview.status,200);assert.equal(writes.length,0);assert.ok(preview.body.changes.length);

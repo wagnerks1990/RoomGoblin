@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+### Automatic Planning upgrade import
+
+- Populate the new Planning workspace from existing SQLite classes, calendar, cycle profile, exception rules and special-day patterns on first startup.
+- Preserve shared-period transitions, weekly opening/closing blocks, Bison continuations, per-class targets and all existing automation records; retain the active scheduler until Planning is explicitly enabled.
+- Commit the original snapshot, validated imported profile and completion marker atomically; preserve later edits across restarts and retain existing behavior on failed or invalid imports.
+- Add SQLite rollback/idempotency regressions, import status in the GUI and upgrade/recovery documentation. Supplied UI parity review retained all 85 legacy Planning/editor control IDs; no site-specific source data is committed.
+
 ### Planning calendar and timetable rebuild
 
 - Connect Calendar & Timetables, Classes and Automations with capability-aware Planning navigation and progressive editors.

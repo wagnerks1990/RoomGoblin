@@ -621,3 +621,10 @@ the job-start guard. A worker finishing during a poll keeps `running:true` until
 the next poll rather than pairing stale `quiescing` with `running:false`. Preserve
 failed-rollback journals and the event-driven completion-boundary regression in
 `host-agent/test_full_recovery.py`; do not mask the race with test sleeps.
+
+Planning startup conversion lives in `src/planning-migration.js` and runs after
+class loading, before listeners/scheduler ticks. Preserve its SQLite transaction,
+original snapshot, idempotent completion marker and existing-native-plan guard.
+Import class-specific timings without merging transition/teaching records by
+period. Do not replace saved cycle configuration with the preset, rewrite
+automations/classes or enable the new resolver as a side effect of import.

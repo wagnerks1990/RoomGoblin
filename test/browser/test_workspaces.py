@@ -652,7 +652,8 @@ class WorkspaceBrowserTests(unittest.TestCase):
                     req.fulfill(json={'ok': True, 'scheduleProfile': profile})
                 else:
                     req.fulfill(json={'ok': True, 'scheduleProfile': profile, 'calendar': {}, 'classes': [classroom],
-                                      'preset': preset, 'today': '2027-10-18'})
+                                      'preset': preset, 'today': '2027-10-18',
+                                      'migration': {'status': 'imported', 'counts': {'classes': 1, 'automations': 2, 'timetables': 1, 'dates': 3}}})
                 return True
             if target == '/api/v1/planning/preview':
                 body = req.request.post_data_json
@@ -669,6 +670,9 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page, errors = self.page('/controller/', transport=transport)
         page.evaluate("showPage('planning')")
         page.wait_for_function("document.querySelector('#planningDate').value === '2027-10-18'")
+        self.assertTrue(page.locator('#planningImportStatus').is_visible())
+        self.assertIn('1 classes, 2 linked/existing automations retained', page.locator('#planningImportStatus').inner_text())
+        self.assertIn('previous scheduler remains active', page.locator('#planningImportStatus').inner_text())
         page.locator('#planningRotationTab').click()
         page.locator('#planningPreset').click()
         page.locator('#planningEnabled').select_option('1')

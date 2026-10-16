@@ -218,3 +218,13 @@ The same restart rollback protects reinstalls and normal updates. Fresh
 bootstrap and isolated local builds remain supported; local builds do not
 reinstall existing appliances. Read `INSTALL.md` and
 `docs/PRODUCTION-UPDATES.md` before attempting recovery.
+
+## Planning import after upgrade (Unreleased)
+
+The first Hub startup automatically imports existing schedule/profile/calendar data
+into a Planning draft, after SQLite/legacy-file reconciliation. One transaction
+saves the original snapshot, converted profile and completion marker. Subsequent
+starts preserve operator edits. Class/automation IDs, targets and runtime scheduler
+state remain intact; the new resolver is not enabled by import. Invalid or failed
+imports retain existing scheduling and report status in Planning. The native
+updater backup/rollback contract is unchanged. See [Planning automatic import](Planning#automatic-import-on-upgrade).

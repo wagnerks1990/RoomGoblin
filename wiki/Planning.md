@@ -59,6 +59,44 @@ Year bounds and weekdays define ordinary school dates. Explicit date overrides
 can reopen a weekend/closure or establish a makeup school day outside the year.
 Dates queried through Planning must be within ten years of the anchor.
 
+## Automatic import on upgrade
+
+On first Hub startup with this feature, RoomGoblin imports existing configuration
+from authoritative SQLite state after legacy file reconciliation and class loading.
+No separate export, upload or manual recreation is required.
+
+The import preserves the actual cycle sequence, anchor, group names, period mapping,
+continuation policy, class IDs and default display targets. It creates a regular
+class-specific timetable, reusable exception timetables, existing special-day
+patterns and date overrides for closures, remote days, half days and delays. Timing
+is copied by stable class ID: a teaching class and a transition sharing a period
+remain separate. Weekly opening/closing entries, disabled/custom classes and Bison
+continuations are retained. Automation records, sequence settings, timer overlays,
+selected targets, scheduler enabled/paused state and legacy calendar storage are
+not rewritten. The Green/White preset is never substituted for saved configuration.
+
+Imported Planning remains off so the update preserves existing scheduler behavior,
+including weekend/weekly actions. The workspace is populated automatically; preview
+and enable the new resolver separately when ready. Already configured Planning is
+left alone, even when its resolver is off. Restarting or updating again never
+recreates imported templates or overwrites later operator edits.
+
+Import uses one SQLite transaction for the original profile/calendar snapshot,
+converted profile and versioned completion record. The snapshot is retained in
+`school.planning.import.v1.original`; the report is `school.planning.import.v1`.
+No classes, automation records, credentials, runtime files or device state are
+modified. A write failure rolls back the entire import and retains the original
+in-memory scheduler; a later startup retries. Invalid/oversized source configuration
+is left unchanged with a bounded review-required report, rather than a partial
+conversion. Empty patterns with no class intervals remain in compatibility
+settings. Fresh empty installations do not invent dates or import markers.
+
+The Planning workspace displays import status and counts. `GET /api/v1/planning`
+returns bounded report metadata, never the original snapshot. The snapshot stays
+in the existing private SQLite store and normal backups; the updater's operational
+backup/database rollback remains the primary way to restore a previous deployment.
+No production upgrade or live database migration is implied by repository tests.
+
 ## Initial setup and reuse
 
 1. Open Planning → Calendar & Timetables → School year & rotation. Inspect the
@@ -141,7 +179,8 @@ The existing SQLite `school.schedule.profile` preference contains versioned
 regular timetable ID, and date overrides. Limits are 50 timetables, 200 blocks per
 timetable and 2000 date overrides. Validation checks IDs, dates, cycle references,
 clock intervals, removed references, and overlapping same-class segments.
-Old records default to Planning off. No identifiers or database schema change.
+Old records are imported automatically with Planning off; existing native Planning
+is preserved. No identifiers or database schema change.
 
 - `GET /api/v1/planning`: saved profile, current calendar, class inventory, optional
   cycle preset and appliance-local current date.

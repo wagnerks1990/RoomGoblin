@@ -31,6 +31,7 @@ const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,specialDayRuleForDate,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
 const planningEngine=require("./planning");
+const planningMigration=require("./planning-migration");
 const automationSchema=require("./automation-schema");
 const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceNeedsAnotherPass,sequenceHasContinuousActions}=automationSchema;
 const normalizeSequenceAction=automationSchema["normalize"+"AutomationAction"];
@@ -2465,6 +2466,10 @@ function defaultClassSchedules(){return {version:1,classes:[]}}
 let classScheduleStore=readJson(CLASS_SCHEDULES_FILE,defaultClassSchedules());
 if(!classScheduleStore||typeof classScheduleStore!=="object")classScheduleStore=defaultClassSchedules();
 if(!Array.isArray(classScheduleStore.classes))classScheduleStore.classes=[];
+// Import after legacy JSON/SQLite identities are reconciled and classes are loaded,
+// before listeners or scheduler ticks can accept work. Retain the active resolver.
+const planningStartupMigration=planningMigration.migrateLegacyPlanning({store:dbStore,profile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,events:classroomAutomations.events||[]});
+schoolScheduleProfile=planningStartupMigration.profile;
 
 function persistClassSchedules(){persistJson(CLASS_SCHEDULES_FILE,classScheduleStore)}
 function commitClassSchedules(next){persistJson(CLASS_SCHEDULES_FILE,next);classScheduleStore=next;return next}
@@ -5424,7 +5429,7 @@ function planningDayPayload(profile,key){
   return planningEngine.resolveDay(profile,schedulerCalendar,planningClassesForProfile(profile),classroomAutomations.events,key);
 }
 app.get("/api/v1/planning",schedulerReadLimit,requireCapability("schedule.manage"),(_req,res)=>{
-  res.json({ok:true,scheduleProfile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,preset:planningEngine.cyclePreset(),today:localDateKey(schedulerClock.now())});
+  res.json({ok:true,scheduleProfile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,preset:planningEngine.cyclePreset(),migration:planningMigration.publicMigrationReport(planningStartupMigration.report),today:localDateKey(schedulerClock.now())});
 });
 app.get("/api/v1/planning/day",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
   try{const key=String(req.query.date||localDateKey(schedulerClock.now()));if(!validDateKey(key))throw new Error("Choose a valid planning date");res.json({ok:true,day:planningDayPayload(schoolScheduleProfile,key)})}

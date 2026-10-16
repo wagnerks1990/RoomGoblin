@@ -114,6 +114,10 @@
   window.loadPlanning=async(force=false)=>{
     if(dirty&&!force){message("Your unsaved planning draft is preserved. Use Reload saved plan to discard it.");return}
     try{source=await api("/api/v1/planning");draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
+      const imported=source.migration;el("planningImportStatus").hidden=!imported||["empty","preserved"].includes(imported.status);
+      if(imported?.status==="imported")el("planningImportStatus").textContent=`Existing configuration imported automatically: ${imported.counts.classes} classes, ${imported.counts.automations} linked/existing automations retained, ${imported.counts.timetables} timetables, ${imported.counts.dates} calendar dates. ${draft.planning.enabled?"Planning is enabled.":"Your previous scheduler remains active until Planning is enabled and saved."} The original configuration is retained for recovery.${imported.retainedEmptyTemplates?" Empty schedules/rules remain in the compatibility settings.":""}`;
+      else if(imported?.status==="blocked")el("planningImportStatus").textContent="Automatic import needs configuration review. Existing scheduling has been retained; no partial conversion was saved.";
+      else if(imported?.status==="failed")el("planningImportStatus").textContent="Automatic import could not be committed. Existing scheduling has been retained. The import will retry on a later startup.";
       editRevision++;dirty=false;review=null;el("planningPublish").disabled=true;if(!el("planningDate").value)el("planningDate").value=source.today||new Date().toLocaleDateString("en-CA");renderRotation();renderTable();renderDate();await preview(false);
     }catch(error){message(error.message,true)}
   };

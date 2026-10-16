@@ -237,3 +237,13 @@ rollback identities and environment snapshot. Restart recovery remains owned by
 the existing updater; no second installer journal or metadata-only rollback is
 introduced. `--build-local` is available only for fresh isolated development
 installation. See `INSTALL.md` for bootstrap and interrupted-install boundaries.
+
+## Planning import after upgrade (Unreleased)
+
+The first Hub startup automatically imports existing schedule/profile/calendar data
+into a Planning draft, after SQLite/legacy-file reconciliation. One transaction
+saves the original snapshot, converted profile and completion marker. Subsequent
+starts preserve operator edits. Class/automation IDs, targets and runtime scheduler
+state remain intact; the new resolver is not enabled by import. Invalid or failed
+imports retain existing scheduling and report status in Planning. The native
+updater backup/rollback contract is unchanged. See [Planning automatic import](PLANNING.md#automatic-import-on-upgrade).
