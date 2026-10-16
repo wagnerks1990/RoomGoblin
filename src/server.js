@@ -1468,7 +1468,7 @@ function automationScene(value,event,now=schedulerClock.now()){
   const scene=planningStudio.scene.normalize(value),cycle=schoolCycleForDate(now),weather=planningWeather.read(planningStudioConfig.weather);
   const cls=event._class||activeAutomationClassAt(event,now)||classScheduleById(event.classId)||activeClassAt(now);
   scene.data={className:cls?.name||"",cycleDay:cycle.cycleDay||"",dayGroup:cycle.dayColor||"",timezone:SCHEDULER_TIMEZONE,
-    startAt:Number(event._classStartAt)||(cls?classStartDate(cls,now).getTime():0),endAt:Number(event._sceneEndAt)||Number(event._classEndAt)||(cls?classEndDate(cls,now).getTime():0),weather:weather?.text||"",weatherUpdatedAt:weather?.updatedAt||0};
+    startAt:Number(event._classStartAt)||(cls?classStartDate(cls,now).getTime():0),endAt:Number(event._sceneEndAt)||Number(event._classEndAt)||(cls?classEndDate(cls,now).getTime():0),weather:weather?.text||"",weatherWidgets:weather?.widgets||{},weatherSource:weather?.source||"",weatherUpdatedAt:weather?.updatedAt||0};
   return scene;
 }
 async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation",tvTargetsOverride=null,bypassAnnouncementPriority=false}={}){
@@ -5422,6 +5422,32 @@ const schedulerMutationLimit=rateLimit({
   windowMs:60_000,limit:60,keyGenerator:()=>"scheduler-mutations",
   standardHeaders:"draft-8",legacyHeaders:false,
   message:{ok:false,error:"Scheduler configuration or command limit reached; retry later"}
+});
+
+const weatherReadLimit=rateLimit({windowMs:60_000,limit:240,keyGenerator:()=>"weather-read",standardHeaders:"draft-8",legacyHeaders:false});
+const weatherWriteLimit=rateLimit({windowMs:60_000,limit:20,keyGenerator:()=>"weather-write",standardHeaders:"draft-8",legacyHeaders:false});
+app.get("/api/v1/weather",weatherReadLimit,requireControl,async(_req,res)=>{
+  planningWeather.read(planningStudioConfig.weather);await planningWeather.settled();
+  const weather=planningWeather.read(planningStudioConfig.weather);
+  res.json({ok:true,config:planningStudioConfig.weather,weather,status:planningWeather.status(),stale:!!weather&&Date.now()-weather.updatedAt>3600000});
+});
+app.get("/api/v1/weather/display",weatherReadLimit,requireAssetAccess,(_req,res)=>{
+  const w=planningWeather.read(planningStudioConfig.weather);res.json({ok:true,weather:w?{text:w.text,widgets:w.widgets,updatedAt:w.updatedAt,source:w.source}:null});
+});
+app.get("/api/v1/weather/locations",weatherReadLimit,requireControl,async(req,res)=>{
+  try{const query=String(req.query.q||"").trim();if(query.length<2||query.length>80)throw Error("Enter 2–80 characters for a city or postal location");
+    const url=new URL("https://geocoding-api.open-meteo.com/v1/search");url.search=new URLSearchParams({name:query,count:"10",language:"en",format:"json"});
+    const data=await require("./planning-weather").boundedJson(await fetch(url,{signal:AbortSignal.timeout(4000),redirect:"error"}),65536);
+    res.json({ok:true,locations:(Array.isArray(data.results)?data.results:[]).slice(0,10).filter(r=>typeof r.latitude==="number"&&typeof r.longitude==="number"&&Math.abs(r.latitude)<=90&&Math.abs(r.longitude)<=180).map(r=>({label:[r.name,r.admin1,r.country].filter(Boolean).join(", ").slice(0,200),latitude:r.latitude,longitude:r.longitude}))});
+  }catch{res.status(400).json({ok:false,error:"Location search unavailable or invalid; enter coordinates instead"})}
+});
+app.put("/api/v1/weather/config",weatherWriteLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(req,res)=>{
+  try{const weather=require("./planning-weather").normalizeWeather(req.body||{}),next=planningStudio.normalize({...planningStudioConfig,weather,updatedAt:new Date().toISOString()});dbStore.setPreference(planningStudio.KEY,next);planningStudioConfig=next;planningWeather.read(weather);audit({kind:"weather.config.save",enabled:weather.enabled,unit:weather.unit,alertsEnabled:weather.alertsEnabled});res.json({ok:true,config:weather})}
+  catch{res.status(400).json({ok:false,error:"Choose valid weather coordinates and temperature units"})}
+});
+app.post("/api/v1/weather/scene",weatherReadLimit,requireControl,async(req,res)=>{
+  try{planningWeather.read(planningStudioConfig.weather);await planningWeather.settled();const weather=planningWeather.read(planningStudioConfig.weather);if(!weather)throw Error("Configure weather and wait for a valid forecast before creating a screen");res.json({ok:true,scene:require("./weather-scene").weatherScene(weather,req.body||{})})}
+  catch(error){res.status(400).json({ok:false,error:error.message})}
 });
 
 function planningClassesForProfile(profile){

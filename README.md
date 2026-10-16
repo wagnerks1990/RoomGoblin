@@ -19,6 +19,8 @@ RoomGoblin is the branded successor to Classroom Control Hub. The product name, 
 
 Background Music development: [Music Studio and recovery](docs/BACKGROUND-MUSIC-STUDIO.md).
 
+Weather displays: [Weather workspace, forecasts and adjustable overlays](docs/WEATHER-WORKSPACE.md).
+
 ## Compatibility contract
 
 Existing installations must continue to work through the rebrand. The following

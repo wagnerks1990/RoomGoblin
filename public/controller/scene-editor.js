@@ -18,7 +18,7 @@
     function button(label,fn,parent=toolbar){const b=node("button",label);b.type="button";b.addEventListener("click",fn);parent.append(b);return b}
     function fit(){const width=frame.clientWidth,height=width/viewRatio,scale=Math.min(width/model.WIDTH,height/model.HEIGHT);canvas.style.transform=`scale(${scale})`;canvas.style.left=`${(width-model.WIDTH*scale)/2}px`;canvas.style.top=`${(height-model.HEIGHT*scale)/2}px`;frame.style.height=`${height}px`}
     function draw(){
-      model.render(canvas,{...scene,data:{className:"Example class",cycleDay:"A",dayGroup:"Green",timezone:S.scheduler?.timezone||"",startAt:Date.now()-600000,endAt:Date.now()+1800000,weather:"Weather preview · Open-Meteo",weatherUpdatedAt:Date.now()}},{interactive:true,reducedMotion:!playing||matchMedia("(prefers-reduced-motion: reduce)").matches,fitText:fitElement});
+      model.render(canvas,{...scene,data:{className:"Example class",cycleDay:"A",dayGroup:"Green",timezone:S.scheduler?.timezone||"",startAt:Date.now()-600000,endAt:Date.now()+1800000,weather:"Weather preview",weatherUpdatedAt:Date.now(),...scene.data}},{interactive:true,reducedMotion:!playing||matchMedia("(prefers-reduced-motion: reduce)").matches,fitText:fitElement});
       for(const e of canvas.children){e.classList.toggle("sceneSelected",e.dataset.layerId===selected);e.setAttribute("aria-pressed",String(e.dataset.layerId===selected));if(e.dataset.layerId===selected&&!chosen()?.locked){const resize=node("span",undefined,"sceneResize");resize.dataset.resize="1";resize.setAttribute("aria-hidden","true");e.append(resize)}}
       fit();renderLayers();
     }
@@ -48,6 +48,10 @@
       inspector.append(node("h3",layer.name));field("Layer name","name");field("Lock position","locked",{type:"checkbox"});
       if(layer.type==="text"||layer.type==="widget"){
         if(layer.type==="widget"){field("Widget","widget",{options:model.WIDGETS.map(x=>[x,x])});field("24-hour clock","clock24",{type:"checkbox"})}
+        if(layer.type==="widget"&&layer.widget==="weather"){
+          const group=node("fieldset"),legend=node("legend","Weather overlay details");group.append(legend);inspector.append(group);
+          for(const key of model.WEATHER_FIELDS){const label=node("label",key.replaceAll("-"," ")),input=node("input");input.type="checkbox";input.checked=layer.weatherFields.includes(key);input.setAttribute("aria-label",`Weather detail: ${key}`);input.addEventListener("change",()=>{const next=model.WEATHER_FIELDS.filter(x=>x===key?input.checked:layer.weatherFields.includes(x));if(!next.length){input.checked=true;announce("Keep at least one weather detail");return}remember();layer.weatherFields=next;draw()});label.prepend(input);group.append(label)}
+        }
         if(layer.type==="text"){
         field("Text","text",{type:"textarea"});
         const variables=node("div",undefined,"sceneVariables");inspector.append(variables);

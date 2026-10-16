@@ -593,6 +593,24 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertTrue(page.evaluate("window.sceneMediaBefore === document.querySelector('#media video')"))
         self.assertFalse(self.errors,self.errors)
 
+    def test_22_weather_updates_shared_widgets_without_replacing_media(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/fixture.webm', 'muted': True, 'loop': True, 'sessionId': 'weather-native-session'})
+        page.evaluate("window.weatherMediaBefore=document.querySelector('#media video')")
+        page.route('**/api/v1/weather/display*', lambda route: route.fulfill(json={'ok': True, 'weather': {
+            'text': 'Updated weather', 'widgets': {'weather-temperature': '80°F', 'weather-condition': 'Clear'},
+            'updatedAt': NOW, 'source': 'Weather data: Open-Meteo · CC BY 4.0'}}))
+        self.command(page, 'display.layers', {'layers': [{'id': 'weather', 'expiresAt': NOW + 3600000, 'scene': {
+            'transparent': True, 'data': {'weather': 'Old weather', 'weatherUpdatedAt': NOW}, 'layers': [
+                {'id': 'weather', 'type': 'widget', 'widget': 'weather', 'weatherFields': ['temperature', 'condition'],
+                 'x': 55, 'y': 70, 'w': 44, 'h': 10, 'fontSize': 32}]}}]})
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        page.wait_for_function("document.querySelector('#sceneShared [data-layer-id=weather]')?.textContent.includes('80°F')")
+        self.assertNotIn('Open-Meteo', page.locator('#sceneShared [data-layer-id=weather]').inner_text())
+        self.assertIn('Open-Meteo', page.locator('#sceneShared .rg-weather-credit').inner_text())
+        self.assertTrue(page.evaluate("window.weatherMediaBefore === document.querySelector('#media video')"))
+        self.assertFalse(self.errors, self.errors)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

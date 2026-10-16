@@ -20,7 +20,7 @@ API routes remain unchanged.
 
 | Navigation group | Workspaces |
 | --- | --- |
-| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Lab computers |
+| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Weather, Lab computers |
 | Content library | Presentations, Media library |
 | Planning | Calendar & Timetables, Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
@@ -29,6 +29,11 @@ Use **Find a workspace** to filter navigation labels. The current workspace open
 its navigation group automatically. On smaller screens, **Menu** opens the
 navigation drawer; Escape or the backdrop closes it, and choosing a workspace
 moves focus to the main content. The controller also has a skip-to-content link.
+
+Weather combines current/seven-day forecasts, after-school/evening details,
+selectable date ranges and editable overlay fields. Preview is local; explicit
+targets are required before sending a full screen. Scheduled screens and shared
+overlays use the reviewed Planning editors. See [Weather workspace](WEATHER-WORKSPACE.md).
 
 Navigation search is presentation only. `public/controller/app.js` retains page
 activation and capability-based visibility; `workspace.js` must never unhide an

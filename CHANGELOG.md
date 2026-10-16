@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Add a Weather workspace with current conditions, seven-day/full date-range forecasts, integrated after-school/evening details, hourly tables, optional NWS alerts and explicit display/scheduling controls.
+- Add customizable weather overlay fields and live widget-data refresh without restarting underlying media. Move provider credit to a discreet footer; preserve bounded caching, receiver authorization, stale/unavailable states and school configuration.
+
 ### Background Music Studio and recovery
 
 - Add focused Now Playing, music/station search, favorites, schedule and output views, queue controls and sleep timers. Preserve unsaved drafts and focused controls across polling.

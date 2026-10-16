@@ -1,5 +1,11 @@
 # AI Project Context
 
+Weather uses the existing scene/layout engine, a bounded server-owned cache and
+authorized receiver projection. Keep provider credits in the footer, editable
+overlay field selections, integrated sports-hour forecasts and unavailable/stale
+states. Weather updates must not replace native media sessions or timer deadlines.
+See `WEATHER-WORKSPACE.md` for source, permission and rollback boundaries.
+
 Presentation start clears selected receivers before the first slide; idle Next,
 Previous, Go and thumbnails preview locally and set the starting slide. Polling
 must preserve a separately selected preview deck. See `PRESENTATION-CONTROLS.md`
