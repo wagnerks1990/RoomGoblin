@@ -105,6 +105,13 @@ identities by fuzzy name matching. Rich statistics, photos and scores depend on
 source availability. College/pro presets, standings and the earlier proposed
 school-day digest are not shipped by this school-board implementation.
 
+PDF imports are parsed outside the Hub event loop in a Linux `prlimit` child:
+one active parser and two waiting jobs, 96 MiB JavaScript heap, 512 MiB data limit,
+2 GiB virtual-address limit, four/five-second CPU limits and an eight-second wall
+limit. Streaming extraction caps decoded output at 12,000 items/200,000 characters
+and five pages; results are capped at 256 KiB. Worker failure keeps the Hub and
+saved roster available. Hosts without Linux resource isolation use CSV instead.
+
 ## API and storage
 
 `GET/PUT /api/v1/sports` reads/saves configuration. Saves require the current
