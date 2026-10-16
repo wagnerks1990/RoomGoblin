@@ -1,0 +1,19 @@
+body.rg-workspace .planningTabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+body.rg-workspace .planningTabs button[aria-current=page]{background:var(--brand-primary);color:var(--brand-text);border-color:var(--brand-primary)}
+body.rg-workspace .planningHeader{display:flex;justify-content:space-between;align-items:start;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+body.rg-workspace .planningHeader h1{margin:0}
+body.rg-workspace .planningSplit{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}
+body.rg-workspace .planningFields{display:grid;gap:12px}
+body.rg-workspace .planningFields label{display:grid;gap:5px}
+body.rg-workspace .planningFields input,body.rg-workspace .planningFields select{width:100%;min-width:0}
+body.rg-workspace .planningRow{display:grid;grid-template-columns:125px minmax(0,1fr);gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}
+body.rg-workspace .planningRow time{font-variant-numeric:tabular-nums}
+body.rg-workspace .planningBlock{display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:8px;align-items:end;border-bottom:1px solid var(--border);padding:12px 0}
+body.rg-workspace .planningBlock label{display:grid;gap:4px}
+body.rg-workspace .planningNotice{padding:12px;border-left:3px solid var(--brand-primary);margin-top:12px}
+body.rg-workspace .planningMonth{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:14px 0}
+body.rg-workspace .planningMonth button{min-height:45px;padding:6px}
+body.rg-workspace .planningMonth button[aria-pressed=true]{outline:2px solid var(--brand-primary)}
+body.rg-workspace .planningMonth span{display:block;font-size:12px}
+body.rg-workspace .planningMapping{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+@media(max-width:800px){body.rg-workspace .planningSplit{grid-template-columns:1fr}body.rg-workspace .planningBlock{grid-template-columns:repeat(2,minmax(0,1fr))}body.rg-workspace .planningRow{grid-template-columns:100px minmax(0,1fr)}}

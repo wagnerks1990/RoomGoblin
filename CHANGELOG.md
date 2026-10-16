@@ -5,6 +5,29 @@
 
 ## Unreleased
 
+### Automatic Planning upgrade import
+
+- Populate the new Planning workspace from existing SQLite classes, calendar, cycle profile, exception rules and special-day patterns on first startup.
+- Preserve shared-period transitions, weekly opening/closing blocks, Bison continuations, per-class targets and all existing automation records; retain the active scheduler until Planning is explicitly enabled.
+- Commit the original snapshot, validated imported profile and completion marker atomically; preserve later edits across restarts and retain existing behavior on failed or invalid imports.
+- Add SQLite rollback/idempotency regressions, import status in the GUI and upgrade/recovery documentation. Supplied UI parity review retained all 85 legacy Planning/editor control IDs; no site-specific source data is committed.
+
+### Planning calendar and timetable rebuild
+
+- Connect Calendar & Timetables, Classes and Automations with capability-aware Planning navigation and progressive editors.
+- Add opt-in school-year/weekday rules, explicit date overrides, reviewed CSV calendar import and the configurable A–H / Green / White / Bison preset.
+- Resolve period timing from reusable timetables, including multiple teaching segments for one class and separate class-end deadlines around lunch.
+- Preview date plans, fixed/class-linked automation times, overlaps and 14-day changes before a stale-protected transactional save.
+- Preserve legacy timing, identifiers, classes, automation action sequences and device priority; document setup, migration, import and rollback.
+
+
+### Reusable special-day schedules
+
+- Add named, date-assigned timetables in School Calendar Rules with per-class times and explicit omission.
+- Preserve class/automation IDs, class-linked offsets and timer deadlines; return to normal times on unassigned dates.
+- Keep closure/remote suppression and cycle rules; validate dates/intervals and report special-day conflicts separately.
+- Document reusable setup, split-lunch class blocks and rollback in docs and the Wiki mirror.
+
 ### Repository convergence follow-up
 
 - Consolidate native Windows artifact qualification into Validate, remove the

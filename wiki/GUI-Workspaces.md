@@ -196,6 +196,15 @@ with Ctrl+C. This check occurs before installer service/data mutations. Wait for
 [published-source updater](PRODUCTION-UPDATES.md). Do not relabel older images with the missing
 commit tag or bypass revision verification. The source and both images must agree.
 
+## Planning rebuild (Unreleased)
+
+Calendar & Timetables joins Classes and Automations through shared, permission-aware
+Planning tabs. The new page retains `classes` and `schedules` nodes and handlers.
+Class fallback times move into a disclosure; automation editing uses When, Actions
+& targets, and Timer overlay sections. Calendar changes remain drafts until preview
+and a revision-checked save. See [Planning](Planning) for the cycle model, split segments,
+CSV calendar import, migration and rollback.
+
 ## ESPHome device workspace
 
 The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).

@@ -563,3 +563,179 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(page.locator('#espInventory article').count(), 1)
         self.assertTrue(page.get_by_role('button', name='On', exact=True).is_disabled())
         self.assertFalse(errors, errors)
+
+    def test_special_day_timetable_draft_save_reuse_and_remove(self):
+        profile = {'name': 'School', 'anchorDate': '2027-08-23', 'cycleDays': ['A', 'B'],
+                   'dayGroups': [{'id': 'a', 'label': 'Day A', 'cycleDays': ['A']},
+                                 {'id': 'b', 'label': 'Day B', 'cycleDays': ['B']}],
+                   'specialDaySchedules': []}
+        saved = []
+        def transport(req, target):
+            if target == '/api/v1/automations/calendar':
+                if req.request.method == 'PUT':
+                    body = req.request.post_data_json
+                    saved.append(body)
+                    profile.update(body['scheduleProfile'])
+                req.fulfill(json={'ok': True, 'calendar': {}, 'scheduleProfile': profile})
+                return True
+            if target == '/api/v1/automations':
+                req.fulfill(json={'events': []})
+                return True
+            return False
+        page, errors = self.page('/controller/', transport=transport, overrides={
+            '/api/v1/class-schedules/status': {},
+            '/api/v1/class-schedules': {'classes': [
+                {'id': 'p4', 'name': 'Period 4', 'period': '4', 'startTime': '13:00', 'endTime': '14:00'},
+                {'id': 'p3', 'name': 'Period 3', 'period': '3', 'startTime': '11:00', 'endTime': '12:00'}]}})
+        page.evaluate("showPage('schedules')")
+        page.evaluate('loadSchedules()')
+        page.locator('#schedules details').filter(has=page.locator('#specialDayNew')).first.locator('summary').first.click()
+        page.get_by_text('Reusable special-day schedules', exact=True).click()
+        page.locator('#specialDayNew').click()
+        page.locator('#specialDayName').fill('Pep rally')
+        page.locator('#specialDayDates').fill('2027-10-15')
+        row = page.locator('[data-class-id="p4"]')
+        row.locator('input[type=checkbox]').check()
+        row.locator('input[type=time]').nth(0).fill('10:04')
+        row.locator('input[type=time]').nth(1).fill('10:58')
+        self.evidence(page, errors, 'special-day-desktop')
+        page.set_viewport_size({'width': 390, 'height': 1000})
+        self.evidence(page, errors, 'special-day-mobile')
+        page.set_viewport_size({'width': 1440, 'height': 1000})
+        # Refreshing the same stored profile preserves unsaved editor changes.
+        page.evaluate('loadSchedules()')
+        self.assertEqual(page.locator('#specialDayName').input_value(), 'Pep rally')
+        page.get_by_role('button', name='Save School Calendar Rules', exact=True).click()
+        page.wait_for_function("document.querySelector('#calendarMsg').textContent.length > 0")
+        self.assertIn('saved', page.locator('#calendarMsg').inner_text())
+        timetable = saved[-1]['scheduleProfile']['specialDaySchedules'][0]
+        self.assertEqual(timetable['classTimes'], {'p4': {'startTime': '10:04', 'endTime': '10:58'}})
+        self.assertEqual(timetable['dates'], ['2027-10-15'])
+        page.locator('#specialDayDates').fill('2027-10-15\n2027-11-12')
+        page.get_by_role('button', name='Save School Calendar Rules', exact=True).click()
+        page.wait_for_function("S.scheduleProfile.specialDaySchedules[0].dates.includes('2027-11-12')")
+        self.assertEqual(saved[-1]['scheduleProfile']['specialDaySchedules'][0]['dates'], ['2027-10-15', '2027-11-12'])
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.on('dialog', lambda dialog: dialog.accept())
+        page.locator('#specialDayDelete').click()
+        self.assertFalse(page.locator('#specialDayFields').is_visible())
+        page.get_by_role('button', name='Save School Calendar Rules', exact=True).click()
+        page.wait_for_function('S.scheduleProfile.specialDaySchedules.length === 0')
+        self.assertEqual(saved[-1]['scheduleProfile']['specialDaySchedules'], [])
+        self.assertFalse(errors, errors)
+
+    def test_planning_draft_calendar_timetables_preview_and_stale_save(self):
+        profile = {'name': 'School', 'anchorDate': '2027-10-18', 'cycleDays': list('ABCDEFGH'),
+                   'dayGroups': [{'id': 'green', 'label': 'Green', 'cycleDays': list('ACEG'), 'color': '#2aa866'},
+                                 {'id': 'white', 'label': 'White', 'cycleDays': list('BDFH'), 'color': '#eef4f8'}],
+                   'periodCycleDays': {'1': list('ACEG')}, 'updatedAt': 'initial',
+                   'planning': {'enabled': False, 'startDate': '', 'endDate': '', 'weekdays': [1, 2, 3, 4, 5],
+                                'defaultTimetableId': '', 'timetables': [], 'dates': {}}}
+        preset = {key: profile[key] for key in ('cycleDays', 'dayGroups', 'periodCycleDays')}
+        preset['periodCycleDays'] = {str(i): list('ACEG') for i in range(1, 5)}
+        preset['periodCycleDays'].update({str(i): list('BDFH') for i in range(5, 8)})
+        preset['periodCycleDays'].update({f'BISON-{i}': ['BDFH'[(i - 1) // 2]] for i in range(1, 9)})
+        classroom = {'id': 'class-1', 'name': 'Example class', 'period': '1', 'startTime': '08:00', 'endTime': '08:45'}
+        saved, previews = [], []
+        reject = {'once': True}
+        def transport(req, target):
+            if target == '/api/v1/planning':
+                if req.request.method == 'PUT':
+                    if reject['once']:
+                        reject['once'] = False
+                        req.fulfill(status=409, json={'error': 'Review a fresh preview before saving.'})
+                        return True
+                    body = req.request.post_data_json
+                    saved.append(body)
+                    profile.update(body['scheduleProfile'])
+                    profile['updatedAt'] = 'saved'
+                    req.fulfill(json={'ok': True, 'scheduleProfile': profile})
+                else:
+                    req.fulfill(json={'ok': True, 'scheduleProfile': profile, 'calendar': {}, 'classes': [classroom],
+                                      'preset': preset, 'today': '2027-10-18',
+                                      'migration': {'status': 'imported', 'counts': {'classes': 1, 'automations': 2, 'timetables': 1, 'dates': 3}}})
+                return True
+            if target == '/api/v1/planning/preview':
+                body = req.request.post_data_json
+                previews.append(body)
+                plan = body['scheduleProfile']['planning']
+                table = plan['timetables'][0] if plan['timetables'] else None
+                rows = [{**block, 'name': classroom['name'], 'classId': classroom['id'], 'automations': []}
+                        for block in (table['blocks'] if table else [])]
+                req.fulfill(json={'ok': True, 'day': {'date': body['date'], 'status': 'school',
+                    'cycle': {'cycleDay': 'A', 'dayColor': 'Green'}, 'timetable': table, 'rows': rows,
+                    'warnings': [], 'automationSuppressed': False}, 'changes': [], 'previewHash': 'reviewed', 'revision': 'initial'})
+                return True
+            return False
+        page, errors = self.page('/controller/', transport=transport)
+        page.evaluate("showPage('planning')")
+        page.wait_for_function("document.querySelector('#planningDate').value === '2027-10-18'")
+        self.assertTrue(page.locator('#planningImportStatus').is_visible())
+        self.assertIn('1 classes, 2 linked/existing automations retained', page.locator('#planningImportStatus').inner_text())
+        self.assertIn('previous scheduler remains active', page.locator('#planningImportStatus').inner_text())
+        page.locator('#planningRotationTab').click()
+        page.locator('#planningPreset').click()
+        page.locator('#planningEnabled').select_option('1')
+        self.assertEqual(page.locator('[data-period="BISON-8"]').input_value(), 'H')
+        page.locator('#planningTimetableTab').click()
+        page.locator('#planningTableImport').click()
+        page.locator('#planningTableName').fill('Split teaching day')
+        table_id = page.locator('#planningTableSelect').input_value()
+        page.locator('#planningDefaultTable').select_option(table_id)
+        page.locator('#planningBlockAdd').click()
+        self.assertEqual(page.locator('#planningBlocks > .planningBlock').count(), 2, errors)
+        second = page.locator('#planningBlocks > .planningBlock').nth(1)
+        self.assertEqual(second.get_by_label('Period / Bison block', exact=True).count(), 1, second.inner_html())
+        second.get_by_label('Period / Bison block', exact=True).select_option('1')
+        second.get_by_label('Specific class (optional)', exact=True).select_option('class-1')
+        second.get_by_label('Block label', exact=True).fill('After lunch')
+        second.get_by_label('Start', exact=True).fill('09:20')
+        second.get_by_label('End', exact=True).fill('10:00')
+        page.locator('#planningCalendarTab').click()
+        page.locator('#planningDayTimetable').select_option(table_id)
+        page.locator('#planningStageDate').click()
+        page.get_by_text('Example class', exact=True).first.wait_for()
+        self.assertEqual(len(saved), 0)
+        page.locator('#planningPreview').click()
+        page.wait_for_function("!document.querySelector('#planningPublish').disabled")
+        page.locator('#planningPublish').click()
+        page.get_by_text('Review a fresh preview before saving.', exact=True).wait_for()
+        self.assertTrue(page.locator('#planningPublish').is_disabled())
+        self.assertEqual(len(saved), 0)
+        page.locator('#planningPreview').click()
+        page.wait_for_function("!document.querySelector('#planningPublish').disabled")
+        page.locator('#planningPublish').click()
+        page.wait_for_function("document.querySelector('#planningMessage').textContent.startsWith('Planning saved')")
+        self.assertEqual(saved[-1]['scheduleProfile']['planning']['dates']['2027-10-18']['timetableId'], table_id)
+        self.assertEqual(saved[-1]['scheduleProfile']['periodCycleDays']['BISON-8'], ['H'])
+        self.assertEqual(len(saved[-1]['scheduleProfile']['planning']['timetables'][0]['blocks']), 2)
+        # Import is local until review/save and retains explicit cycle letters.
+        page.get_by_text('Import school calendar dates (CSV)', exact=True).click()
+        page.locator('#planningImport').set_input_files({'name': 'calendar.csv', 'mimeType': 'text/csv',
+            'buffer': b'date,status,cycleDay,timetableId,note\n2027-10-19,no-school,,,Closure\n2027-10-20,school,C,,Published cycle'})
+        page.get_by_text('2 dates staged; 0 existing overrides replaced in draft. Preview and save to apply.', exact=True).wait_for()
+        self.assertEqual(len(saved), 1)
+        page.evaluate("""() => {const original=window.fetch;window.fetch=(url,options)=>String(url).endsWith('/planning/preview')?new Promise(resolve=>{window.releasePlanningPreview=()=>original(url,options).then(resolve)}):original(url,options)}""")
+        page.locator('#planningPreview').click()
+        page.wait_for_function('typeof window.releasePlanningPreview === "function"')
+        page.locator('#planningDayNote').fill('Edited during preview')
+        page.evaluate('window.releasePlanningPreview()')
+        page.wait_for_function("document.querySelector('#planningMessage').textContent.startsWith('The draft changed while preview')")
+        self.assertTrue(page.locator('#planningPublish').is_disabled())
+        self.evidence(page, errors, 'planning-calendar-desktop')
+        page.set_viewport_size({'width': 390, 'height': 1000})
+        self.evidence(page, errors, 'planning-calendar-mobile')
+        page.set_viewport_size({'width': 1440, 'height': 1000})
+        page.locator('#planningTimetableTab').click()
+        self.evidence(page, errors, 'planning-timetable-desktop')
+        page.set_viewport_size({'width': 390, 'height': 1000})
+        self.evidence(page, errors, 'planning-timetable-mobile')
+        self.assertFalse(errors, errors)
+
+    def test_planning_navigation_remains_capability_hidden(self):
+        page, errors = self.page('/controller/', role='viewer')
+        self.assertFalse(page.locator('nav button[data-page="planning"]').is_visible())
+        page.evaluate("showPage('planning')")
+        self.assertFalse(page.locator('#planning').is_visible())
+        self.assertFalse(page.locator('[data-planning-page="planning"]').first.is_visible())
+        self.assertFalse(errors, errors)

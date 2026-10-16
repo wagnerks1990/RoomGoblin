@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RoomGoblin</title>
 <link rel="stylesheet" href="/shared/attribution.css">
+<link rel="stylesheet" href="/controller/planning.css">
 <script src="/shared/branding.js" defer></script>
 <style>
 :root{
@@ -310,7 +311,7 @@ nav button{min-width:135px}
       <button data-page="presentations">Presentations</button><button data-page="media">Media library</button>
     </details>
     <details class="rg-nav-group"><summary>Planning</summary>
-      <button data-page="classes">Classes</button><button data-page="schedules">Automation</button>
+      <button data-page="planning">Calendar & Timetables</button><button data-page="classes">Classes</button><button data-page="schedules">Automation</button>
     </details>
     <details class="rg-nav-group"><summary>Administration</summary>
       <button data-page="settings">Settings</button><button data-page="diagnostics">Diagnostics</button>
@@ -667,8 +668,43 @@ nav button{min-width:135px}
 </section>
 
 
+<section id="planning" class="page">
+  <div class="planningHeader"><div><h1>Planning</h1><p class="muted">School dates, cycle rotation, and the timetable that classes and automations follow.</p></div><div class="toolbar"><button type="button" id="planningReload">Reload saved plan</button><button type="button" id="planningPreview" class="primary">Preview changes</button><button type="button" id="planningPublish" disabled>Save reviewed plan</button></div></div>
+  <div id="planningImportStatus" class="planningNotice" role="status" hidden></div>
+  <div id="planningMessage" role="status" class="status"></div>
+  <div class="toolbar" aria-label="Planning view"><button type="button" id="planningCalendarTab" aria-pressed="true">Calendar</button><button type="button" id="planningTimetableTab" aria-pressed="false">Timetables</button><button type="button" id="planningRotationTab" aria-pressed="false">School year & rotation</button></div>
+  <div id="planningCalendarPane" class="planningSplit" style="margin-top:18px">
+    <div class="panel planningFields"><h2 class="sectionTitle">Choose a date</h2>
+      <label for="planningDate">Planning date</label><input id="planningDate" type="date">
+      <div id="planningMonth" class="planningMonth" aria-label="Dates in selected month"></div>
+      <label>School status<select id="planningDayStatus"><option value="school">School day</option><option value="no-school">No school</option><option value="remote">Remote learning</option></select></label>
+      <label>Cycle day<select id="planningCycleOverride"><option value="">Follow calculated rotation</option></select></label>
+      <label>Timetable<select id="planningDayTimetable"><option value="">Follow regular / calendar exceptions</option></select></label>
+      <label>Note<input id="planningDayNote" maxlength="240"></label>
+      <div class="toolbar"><button type="button" id="planningStageDate">Add / update date in draft</button><button type="button" id="planningRemoveDate">Use normal rules for date</button></div>
+      <p class="muted">A cycle-day override changes only this date. Closing or reopening a day changes the calculated rotation afterward. Imported explicit cycle days stay fixed.</p>
+      <details><summary>Import school calendar dates (CSV)</summary><p class="muted">Columns: date,status,cycleDay,timetableId,note. Status: school, no-school, or remote. Cycle and timetable may be blank. Import adds to this draft; review before saving.</p><label>Calendar CSV<input id="planningImport" type="file" accept=".csv,text/csv"></label><div id="planningImportSummary" role="status"></div></details>
+    </div>
+    <div class="panel"><h2 class="sectionTitle">Resolved day plan</h2><div id="planningDayHeading" class="muted">Preview a date to see its classes and automation times.</div><div id="planningDayRows"></div><div id="planningWarnings" role="status"></div><details style="margin-top:14px"><summary>Changes over the next 14 days</summary><div id="planningChanges"></div></details></div>
+  </div>
+  <div id="planningTimetablePane" hidden style="margin-top:18px">
+    <div class="planningHeader"><div><h2>Timetables</h2><div class="muted">Edit period times and order once. Multiple blocks for the same period form one class with separate teaching segments.</div></div><div class="toolbar"><button type="button" id="planningTableNew">New timetable</button><button type="button" id="planningTableImport">Copy existing class times</button><button type="button" id="planningTableCopy">Duplicate</button><button type="button" id="planningTableRemove">Remove</button></div></div>
+    <div class="grid2"><label>Timetable<select id="planningTableSelect"></select></label><label>Regular timetable<select id="planningDefaultTable"><option value="">Keep existing class times</option></select></label></div>
+    <div id="planningTableFields" class="panel" style="margin-top:14px" hidden><label>Timetable name<input id="planningTableName" maxlength="120"></label><div id="planningBlocks"></div><button type="button" id="planningBlockAdd">Add block</button><p class="muted">Use period keys 1–8 or BISON-1 through BISON-8. Select a specific class only when it needs different times from other classes in that period. Use the same class selection on all its teaching segments. Teaching blocks are ordered by time. Break/event blocks are shown in the plan; use a linked class or a fixed-time automation to control devices during them.</p></div>
+  </div>
+  <div id="planningRotationPane" hidden class="panel planningFields" style="margin-top:18px">
+    <h2 class="sectionTitle">School year & rotation</h2>
+    <label>Use the new calendar and timetable resolver<select id="planningEnabled"><option value="0">Off — retain existing scheduling</option><option value="1">On — use this reviewed plan</option></select></label>
+    <div class="grid2"><label>School year starts<input id="planningYearStart" type="date"></label><label>School year ends<input id="planningYearEnd" type="date"></label><label>Cycle anchor date<input id="planningAnchor" type="date"></label><label>Cycle sequence (comma-separated)<input id="planningCycleLetters"></label></div>
+    <div id="planningWeekdays" class="toolbar" aria-label="Regular school weekdays"></div>
+    <button type="button" id="planningPreset">Use Green / White A–H and Bison mapping</button>
+    <p class="muted">Green: A, C, E, G → Periods 1–4. White: B, D, F, H → Periods 5–7. Bison pairs: B → 1/2; D → 3/4; F → 5/6; H → 7/8. This button changes the draft only.</p>
+    <div id="planningGroups" class="planningMapping"></div><h3>Period-to-cycle membership</h3><div id="planningPeriodMapping" class="planningMapping"></div>
+    <p class="muted">Class records that exactly follow the old period mapping follow a changed mapping after review. Explicit custom class-cycle selections and stable class/automation IDs are retained.</p>
+  </div>
+</section>
 <section id="classes" class="page">
-  <div class="top"><div><h1>Class Schedule</h1><div class="muted">Define classes once, then let schedules and timers follow their real start/end times and A/B days.</div></div><div class="toolbar"><button onclick="loadClassSchedules()">Refresh</button><button class="primary" onclick="newClassSchedule()">+ Add Class</button></div></div>
+  <div class="top"><div><h1>Class Schedule</h1><div class="muted">Define class identity and period membership. Planning supplies the daily times, including split teaching segments.</div></div><div class="toolbar"><button onclick="loadClassSchedules()">Refresh</button><button class="primary" onclick="newClassSchedule()">+ Add Class</button></div></div>
   <div id="classCurrentStatus" class="panel">Loading…</div>
   <div class="grid2">
     <div class="panel"><h2 class="sectionTitle">Classes</h2><div id="classScheduleList"></div></div>
@@ -677,7 +713,7 @@ nav button{min-width:135px}
       <div class="grid2">
         <label>Name<input id="className"></label>
         <label>Short Name<input id="classShortName"></label>
-        <label>Period / Block<input id="classPeriod" placeholder="Example: 1 or Advisory" onchange="applyClassPeriodPreset()"></label>
+        <label>Period / Block<input list="planningPeriodKeys" id="classPeriod" placeholder="Example: 1 or Advisory" onchange="applyClassPeriodPreset()"></label>
         <label>Continuation Of<input id="classContinuationOf" placeholder="Optional class ID"></label>
         <label>Start<input id="classStart" type="time" value="08:00"></label>
         <label>End<input id="classEnd" type="time" value="09:00"></label>
@@ -715,7 +751,8 @@ nav button{min-width:135px}
   </div>
 
   <details class="panel workspaceDisclosure" style="margin-bottom:14px">
-    <summary><h2 class="sectionTitle">School Calendar Rules</h2></summary>
+    <summary><h2 class="sectionTitle">School Calendar Rules (compatibility tools)</h2></summary>
+    <p class="muted">Use Planning → Calendar & Timetables for the daily workflow. These tools retain existing exception rules and advanced profile settings.</p>
     <div class="disclosureBody">
 
     <div class="muted" style="margin-bottom:10px">Configure your school’s cycle, day-group names, period mappings, and calendar exceptions. Dates use YYYY-MM-DD.</div>
@@ -730,8 +767,20 @@ nav button{min-width:135px}
       <label><b>Period-to-Cycle Mapping (JSON)</b><textarea id="schoolProfilePeriodMap" rows="6" placeholder='{"1":["A"],"2":["B"]}'></textarea></label>
       <label><b>Exception Time Rules (JSON)</b><textarea id="schoolProfileExceptionRules" rows="6" placeholder='{"half-day":{"periodTimes":{}}}'></textarea></label>
     </div>
+    <details class="advanced"><summary>Reusable special-day schedules</summary>
+      <p class="muted">Save a named timetable and assign YYYY-MM-DD dates. Included classes keep their automation links; omitted classes do not run. Normal times return on other dates. School-cycle and weekday rules still apply. Fixed-time automations keep their clock times.</p>
+      <label for="specialDaySelect">Timetable</label><select id="specialDaySelect" aria-label="Special-day timetable"></select>
+      <div class="toolbar"><button type="button" id="specialDayNew">New timetable</button><button type="button" id="specialDayDelete">Remove timetable</button></div>
+      <div id="specialDayFields" hidden>
+        <label for="specialDayName">Timetable name</label><input id="specialDayName" maxlength="120">
+        <label for="specialDayDates">Assigned dates (one per line; leave blank to keep for future use)</label><textarea id="specialDayDates" rows="3"></textarea>
+        <p class="muted">Check classes to include and enter their special times. For a split lunch, create separate before/after-lunch classes in Classes and link both to the automation. The timer stops at each block end. Create special-only blocks with specific-date scheduling so they do not run on normal days.</p>
+        <div id="specialDayRows" class="scroll"></div>
+      </div>
+      <p id="specialDayMessage" class="muted" role="status">Changes are drafts until Save School Calendar Rules is used.</p>
+    </details>
     <label class="pill" style="margin:8px 0"><input id="schoolProfileLegacyContinuation" type="checkbox"> Enable compatibility for imported legacy continuation blocks</label>
-    <div class="muted" style="margin-bottom:10px">If a date appears in more than one category, priority is: No-School → Remote → Half Day → 2-Hour Delay → 1-Hour Delay.</div>
+    <div class="muted" style="margin-bottom:10px">If a date appears in more than one category, priority is: No-School → Remote → Special-day timetable → Half Day → 2-Hour Delay → 1-Hour Delay.</div>
     <div class="grid2">
       <label><b>District No-School Dates</b><span class="muted">No classroom automation runs and the configured school-day cycle pauses.</span><textarea id="calendarExcludedDates" rows="8" placeholder="YYYY-MM-DD" style="width:100%;resize:vertical;margin-top:6px"></textarea></label>
       <label><b>District Remote Day Dates</b><span class="muted">The school-day cycle still advances, but classroom automation, Morning Announcements, legacy TV schedules, and scheduled Background Music do not run.</span><textarea id="calendarRemoteDates" rows="8" placeholder="YYYY-MM-DD" style="width:100%;resize:vertical;margin-top:6px"></textarea></label>
@@ -1394,7 +1443,9 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
 <div id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle" style="display:none;position:fixed;inset:0;z-index:50000;background:rgba(3,7,12,.96);align-items:center;justify-content:center;padding:20px"><div class="panel" style="width:min(420px,100%);margin:0"><h2 id="loginTitle">Sign in to RoomGoblin</h2><div class="muted">Enter your local RoomGoblin account.</div><div class="formField"><label for="loginUser">Username</label><input id="loginUser" autocomplete="username"></div><div class="formField"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password"></div><label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input id="loginRemember" type="checkbox" style="width:auto"> Remember for 7 days</label><div class="toolbar"><button class="primary" onclick="performLogin()">Sign In</button></div><div id="loginMsg" class="bad" role="alert" aria-live="assertive" style="margin-top:8px"></div></div></div>
 <div id="accountModal" class="authModal" role="dialog" aria-modal="true" aria-labelledby="accountTitle"><div class="panel"><div class="top"><div><h2 id="accountTitle">My Account</h2><div id="accountIdentity" class="muted"></div></div><button onclick="closeAccountModal()" aria-label="Close account dialog">Close</button></div><div class="grid2" style="margin-top:12px"><div class="card"><h3>Change Password</h3><div class="formField"><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password"></div><div class="formField"><label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password"></div><div class="formField"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" autocomplete="new-password"></div><div class="toolbar"><button class="primary" onclick="changeMyPassword()">Change Password</button></div><div id="passwordMsg" class="muted" aria-live="polite"></div></div><div class="card"><div class="top"><div><h3>Active Sessions</h3><div class="muted">Current and recent signed-in browsers.</div></div><button onclick="logoutOtherSessions()">Sign out others</button></div><div id="sessionList" class="subtle">Loading…</div></div></div></div></div>
 <script src="/shared/resumable-upload.js"></script>
+<script src="/controller/special-day-schedules.js"></script>
 <script src="/controller/app.js"></script>
+<script src="/controller/planning.js"></script>
 <script src="/controller/workspace.js"></script>
 <script src="/controller/esphome.js"></script>
 <script src="/controller/embedded-workspaces.js"></script>

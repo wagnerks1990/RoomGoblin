@@ -610,6 +610,15 @@ overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
 
+## Planning (Unreleased)
+
+Read `PLANNING.md` before changing calendar/cycle/timetable behavior. The new
+resolver is opt-in. Preserve A–H cycle identity separately from Green/White groups
+and regular/Bison period membership. Repeated teaching segments share one class
+ID; preserve per-segment deadlines, legacy fallbacks, transactional profile/class
+membership migration and revision-checked preview/save. Calendar imports stage
+locally and never infer district dates or dispatch devices.
+
 ## Display fallback and recovery status snapshots
 
 Renderer `dynamic-fit-20261012-1` allows visible fallback glyph ink outside its
@@ -622,3 +631,10 @@ the job-start guard. A worker finishing during a poll keeps `running:true` until
 the next poll rather than pairing stale `quiescing` with `running:false`. Preserve
 failed-rollback journals and the event-driven completion-boundary regression in
 `host-agent/test_full_recovery.py`; do not mask the race with test sleeps.
+
+Planning startup conversion lives in `src/planning-migration.js` and runs after
+class loading, before listeners/scheduler ticks. Preserve its SQLite transaction,
+original snapshot, idempotent completion marker and existing-native-plan guard.
+Import class-specific timings without merging transition/teaching records by
+period. Do not replace saved cycle configuration with the preset, rewrite
+automations/classes or enable the new resolver as a side effect of import.

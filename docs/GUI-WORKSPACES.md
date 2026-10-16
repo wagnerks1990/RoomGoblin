@@ -201,3 +201,12 @@ commit tag or bypass revision verification. The source and both images must agre
 The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).
 Keep forms and expanded entity cards stable across polling, mark cached inventory
 stale after failed reads, and never infer physical confirmation from socket writes.
+
+## Planning rebuild (Unreleased)
+
+Calendar & Timetables joins Classes and Automations through shared, permission-aware
+Planning tabs. The new page retains `classes` and `schedules` nodes and handlers.
+Class fallback times move into a disclosure; automation editing uses When, Actions
+& targets, and Timer overlay sections. Calendar changes remain drafts until preview
+and a revision-checked save. See [Planning](PLANNING.md) for the cycle model, split segments,
+CSV calendar import, migration and rollback.
