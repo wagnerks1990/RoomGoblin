@@ -39,7 +39,33 @@ test("media selections and sleep deadlines reject unsafe or unbounded values",()
 });
 
 const source=fs.readFileSync(require.resolve("../src/server"),"utf8");
-function extract(name){const at=source.indexOf(`async function ${name}(`);assert.ok(at>=0,name);return source.slice(at,Math.min(...[source.indexOf("\nasync function ",at+1),source.indexOf("\nfunction ",at+1),source.indexOf("\napp.",at+1)].filter(n=>n>=0)))}
+test("real Background Music routes share explicit read/write quotas and save a changed schedule",async t=>{
+ const express=require("express"),{rateLimit}=require("express-rate-limit"),app=express();app.use(express.json());
+ let authorized=0,ticks=0;const saved=[],audits=[],favorites=[];
+ const prior={enabled:false,playerId:"old-output",favoriteId:"station"};
+ const ctx=vm.createContext({app,rateLimit,requireControl:(_q,_r,next)=>{authorized++;next()},
+  backgroundMusicRuntime:{activePlayerId:"old-output",playing:true},backgroundMusicRecovery:{snapshot:()=>({})},
+  backgroundMusicSchedule:()=>prior,normalizeBackgroundMusicSchedule:body=>body,
+  backgroundMusicActualPlayerState:async()=>({found:true,playing:false}),backgroundMusicFavorites:()=>favorites,
+  backgroundMusicPriorityState:()=>({}),backgroundMusicPlayerProbe:{},
+  backgroundMusicStop:async reason=>{assert.equal(reason,"schedule-identity-changed")},
+  dbStore:{setPreference:(key,value)=>saved.push({key,value})},audit:event=>audits.push(event),
+  backgroundMusicTick:async()=>{ticks++}});
+ const start=source.indexOf("// Appliance-wide budgets keep polling separate"),end=source.indexOf('app.get("/api/v1/music-assistant/status"',start);
+ vm.runInContext(source.slice(start,end),ctx);
+ const server=app.listen(0,"127.0.0.1");await new Promise(resolve=>server.once("listening",resolve));
+ t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve)}));
+ const base=`http://127.0.0.1:${server.address().port}/api/v1/music-assistant/background`;
+ const schedule=await fetch(base+"/schedule",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:true,playerId:"new-output",favoriteId:"station"})});
+ assert.equal(schedule.status,200);assert.equal((await schedule.json()).ok,true);assert.equal(ticks,1);
+ assert.equal(ctx.backgroundMusicRuntime.manualStopped,false);assert.equal(saved[0].value.playerId,"new-output");assert.equal(audits[0].kind,"musicassistant.background.schedule.update");
+ for(let i=0;i<29;i++){const response=await fetch(base+"/favorites/missing",{method:"DELETE"});assert.equal(response.status,200);await response.text()}
+ const before=authorized,limited=await fetch(base+"/control",{method:"POST",headers:{"content-type":"application/json"},body:'{"action":"pause"}'});
+ assert.equal(limited.status,429);assert.ok(limited.headers.get("retry-after"));await limited.text();assert.equal(authorized,before);
+ for(let i=0;i<120;i++){const response=await fetch(base);assert.equal(response.status,200);await response.text()}
+ const readLimited=await fetch(base);assert.equal(readLimited.status,429);await readLimited.text();
+});
+function extract(name){const at=source.indexOf(`async function ${name}(`);assert.ok(at>=0,name);return source.slice(at,Math.min(...[source.indexOf("\nasync function ",at+1),source.indexOf("\nfunction ",at+1),source.indexOf("\napp.",at+1),source.indexOf("\nconst ",at+1)].filter(n=>n>=0)))}
 function runtime(){
  const commands=[],r={playing:true,paused:false,manualSession:true,manualStopped:false,startedKey:"today",activePlayerId:"apollo",activeMedia:{uri:"radio://station/1",name:"Station",mediaType:"radio"},sessionGeneration:0},recovery=new PlaybackRecovery(),ctx=vm.createContext({Date,fullExportFreeze:{requested:false},backgroundMusicTickBusy:false,backgroundMusicStartBusy:false,backgroundMusicRuntime:r,backgroundMusicRecovery:recovery,backgroundMusicSchedule:()=>({enabled:false,playerId:"other",favoriteId:"default"}),backgroundMusicWindowActive:()=>false,backgroundMusicWindowKey:()=>"today",backgroundMusicPriorityBlocked:()=>false,backgroundMusicActualPlayerState:async cfg=>{assert.equal(cfg.playerId,"apollo");return {found:false}},backgroundMusicPlayerProbe:{},musicAssistantCommand:async(command,args)=>{commands.push({command,args})},diagnosticError:()=>{},backgroundMusicStop:async()=>{commands.push({command:"stop"})}});
  vm.runInContext(extract("backgroundMusicTick"),ctx);return {ctx,r,recovery,commands};

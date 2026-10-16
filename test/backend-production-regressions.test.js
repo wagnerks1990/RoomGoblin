@@ -53,7 +53,7 @@ test("post-announcement reconciliation failure keeps Background Music paused for
 });
 
 test("Background Music controls retain the player that actually started playback",()=>{
-  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf("// Appliance-wide budgets"));
+  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf('app.get("/api/v1/music-assistant/status"'));
   assert.match(music,/activePlayerId:null/);
   assert.match(music,/backgroundMusicRuntime\.activePlayerId\|\|cfg\.playerId/);
   assert.match(music,/backgroundMusicRuntime\.activePlayerId=pid/);

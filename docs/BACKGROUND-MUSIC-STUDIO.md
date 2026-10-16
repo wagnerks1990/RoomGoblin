@@ -100,8 +100,8 @@ bounded provider/HTTP(S) URIs; script/data/file URIs and URL credentials are
 rejected. The queue response projects at most 50 safe metadata rows and omits
 stream details/credentials. Classroom control remains required for music;
 connection writes retain administrator authorization. Polling and mutations use
-the existing distinct appliance-wide Music Assistant rate budgets and writer
-freeze. Audit entries contain command names, not playback URI payloads.
+the existing distinct appliance-wide Music Assistant rate budgets, registered
+directly before authorization on each route, and writer freeze. Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 
