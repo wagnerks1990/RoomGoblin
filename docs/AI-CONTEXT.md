@@ -39,8 +39,10 @@ This document gives AI assistants a compact operational model of RoomGoblin. `AG
 
 RoomGoblin is a centralized classroom/lab control platform. It coordinates browser displays, scheduled automations, AV routing, lighting, Morning Announcements, Background Music, class schedules, school-cycle rules, Veyon lab management, diagnostics, backup/recovery, Docker integrations, Android/Google TV managed displays, and host-management functions.
 
-Production installers and semantic-release updates pull exact CI-built GHCR
-images. Do not reintroduce appliance-local builds as the default. Local compilation
+Production installers and main-based updates pull exact CI-built GHCR images;
+GUI checks select the latest trusted merged main SHA and recheck stale selections
+before the native published transaction. Legacy semantic-release handling remains
+a compatibility backend path. Do not reintroduce appliance-local builds as the default. Local compilation
 is available only through the explicit `install.sh --build-local` development path.
 
 CI treats secret scanning, pull-request dependency review, and high/critical
@@ -332,8 +334,10 @@ Browser displays use enabled stable display IDs without credentials by default. 
 `main` is the only integration/update source during active development. Work on
 short-lived branches, pass PR checks, merge to main, and publish its exact image
 pair. No production/staging/development branch or environment promotion is used.
-Allow merge commits, squash and rebase in both repository settings and the main
-ruleset, without bypassing required checks/reviews. Normal supported update flow:
+Use the merge strategy permitted by the effective main ruleset (currently squash
+only), without bypassing required checks/reviews or up-to-date branch requirements.
+System Updates authorizes administrators before consuming shared read/mutation
+quotas. Normal supported update flow:
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh
@@ -388,7 +392,7 @@ Authenticated maintenance mutations share an appliance-wide limit of 30 requests
 
 ## Display merge review boundaries (2026-09-09)
 
-PR #27 retains one logical layout owner and adds `public/display/security.mjs` for receiver URL/proxy/identify validation. Never return a rejected raw URL from a catch block. External media is an explicit HTTP(S) signage feature, not permission to load javascript/data/file schemes or to navigate the top-level receiver. Keep external frames isolated, proxy paths same-Hub and identify resources bounded. See `docs/DISPLAY-LAYOUT-CONTRACT.md` for behavior and browser verification. Renderer revision: `dynamic-fit-20260922-8`; active title/subtitle/body/timer objects dynamically share the logical canvas and hard containment remains mandatory.
+PR #27 retains one logical layout owner and adds `public/display/security.mjs` for receiver URL/proxy/identify validation. Never return a rejected raw URL from a catch block. External media is an explicit HTTP(S) signage feature, not permission to load javascript/data/file schemes or to navigate the top-level receiver. Keep external frames isolated, proxy paths same-Hub and identify resources bounded. See `docs/DISPLAY-LAYOUT-CONTRACT.md` for behavior and browser verification. Renderer revision: `dynamic-fit-20261012-1`; active title/subtitle/body/timer objects dynamically share the logical canvas and hard containment remains mandatory.
 
 ## Host installer group prerequisite
 
@@ -526,7 +530,7 @@ Automation `repeatDelaySeconds` means the dwell/stay time **after an action exec
 
 Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-actions`, which means RoomGoblin reasserts the same countdown after every display-content action (text, URL, media, image/document, or clear) so replacing the base display content does not remove the timer. `action-1-only` preserves the one-time overlay behavior. Reasserting a manual-duration timer must keep the original deadline rather than restarting its duration; class-end timers continue to resolve against the same class-end deadline. Morning Announcements priority still wins.
 
-Live-TV containment note: renderer `dynamic-fit-20260922-8` adds a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
+Live-TV containment note: renderer `dynamic-fit-20261012-1` retains a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
 
 
 
@@ -595,3 +599,16 @@ physical port blocks both transports conservatively. Individual payload output
 overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
+
+## Display fallback and recovery status snapshots
+
+Renderer `dynamic-fit-20261012-1` allows visible fallback glyph ink outside its
+own line box only when the display region, natural-size probe and painted ranges
+still contain it. Do not replace those region checks with a minimum font size or
+restore child-height clipping for visible text. See `DISPLAY-LAYOUT-CONTRACT.md`.
+
+Full Recovery status samples worker liveness before reading durable status, under
+the job-start guard. A worker finishing during a poll keeps `running:true` until
+the next poll rather than pairing stale `quiescing` with `running:false`. Preserve
+failed-rollback journals and the event-driven completion-boundary regression in
+`host-agent/test_full_recovery.py`; do not mask the race with test sleeps.

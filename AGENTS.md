@@ -157,9 +157,16 @@ curl -fsS http://localhost:3000/health
 
 Take a filesystem/database-safe backup before production upgrades.
 
+Existing-appliance `install.sh` invocations must enter the host-owned main updater
+before mutations. Preserve the inherited-lock/private-journal installer admission
+in `deploy/installer-transaction.py`, verified selective deployment identity and
+fresh-bootstrap behavior. Never add a flag that bypasses the native snapshot or
+allow raw `--build-local` to reinstall an existing appliance.
+
+
 Operational backups intentionally exclude `data/media`; uploaded media is replaceable and must not block the mandatory pre-update backup. Top-level `data/*.db`, `*.db-wal`, and `*.db-shm` identities are also excluded from the filesystem pass; the operational archive must contain only the separately created canonical SQLite snapshot, never stale legacy database files. Normal configuration-data restore preserves the live `data/media` directory because current operational archives do not contain it. Interrupted legacy restore recovery is the compatibility exception: older safety archives may contain media, so startup rollback must restore those archived media entries. Preserve the streaming Info-ZIP/ZIP64 path and do not reintroduce whole-archive Node buffering.
 
-The GUI updater accepts only semantic-version GitHub releases and delegates the durable update to `classroom-hub-app-update.service`. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
+The GUI updater selects only the latest merged commit on trusted `main` and delegates the exact SHA to the durable `published` transaction in `classroom-hub-app-update.service`; semantic-release handling remains a compatibility backend path. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
 
 Core service recreation is also part of the updater contract. A release can change mounts, read-only/writable paths, environment, or networking without changing an image ID. The updater must therefore force-recreate `maintenance-agent` and `classroom-hub` when deployment inputs/configuration change or when rolling back a release. Published-source selective updates may retain unchanged components only after per-running-image source comparison and a verified deployment-configuration hash; unknown inputs/history must trigger full reconciliation. Read `docs/PRODUCTION-UPDATES.md`. In particular, Managed Displays depends on the dedicated `classroom-control-hub-android-adb` volume mounted at `/managed/classroom-hub/data/android-tv/.android`; the updater must verify this path is writable before declaring the release healthy. Do not replace the force-recreate deployment with a plain `docker compose up -d` unless equivalent tested mount reconciliation exists. See `docs/MANAGED-DISPLAYS-RECOVERY.md`.
 
@@ -309,9 +316,13 @@ Important integrations include MQTT/Govee, Pluto Mark I, Music Assistant, Veyon,
 
 School and classroom identity and theming are stored in the SQLite site profile and exposed to browser surfaces only through presentation-safe responses. This project is intentionally education-only. Keep the Kyle Wagner attribution present on all current user-facing pages.
 
+## System Updates GUI contract
+
+The administrator System Updates page follows the latest merged commit on trusted `main`; it must not use semantic release channels as its normal selection mechanism. A GUI check may discover a newer main commit before CI publication completes, but installation must pass only that exact SHA into the native `published` transaction. Preserve the two-stage trust boundary: the Hub checks GitHub/local fast-forward state and stale selection, then the native runner independently fetches trusted main, verifies ancestry and the exact immutable image pair before any source/runtime mutation. Never add an arbitrary-SHA input, pull source before image preflight, bypass the mutation lock/journal, or create a backup that substitutes for the runner's post-preflight operational backup. Automatic updates use the same path. Keep previous-deployment rollback available and show commit identity in status/history because multiple main commits may share one VERSION string. Fixed appliance-wide read/mutation quotas must charge only requests accepted by the shared administrator predicate, so rejected callers cannot consume the administrator budget. Keep recognizable rate middleware before `requireAdmin`, and skip rejected callers using the same predicate as the guard.
+
 ## CI workflow identity contract
 
-The consolidated required workflows are `Validate`, `Display browser regression`, and `Security gates`. Android debug and restrictive-image coverage now live inside Validate; see `docs/CI-WORKFLOWS.md`. Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
+The consolidated required workflows are `Validate`, `Display browser regression`, and `Security gates`. Android debug, native Windows artifact qualification and restrictive-image coverage live inside Validate; see `docs/CI-WORKFLOWS.md`. Only allowlisted Markdown-only PRs may omit expensive platform/browser/image steps through `tools/ci-scope.py`; unknown inputs and every main push require full coverage. Keep Node/policy/security checks on documentation PRs and stable check-emitting jobs. Do not restore the duplicate native Windows workflow or retired source-patching workflow. Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
 and `.github/workflows/docker-publish.yml`. `Display browser regression` also runs
 operator GUI tests; describe coverage in job/step names without renaming this gate.
 Keep `test/production-image-install.test.js` workflow-identity coverage passing.
@@ -323,9 +334,9 @@ Preserve selective reconciliation, the legacy-runner migration, main ancestry,
 image verification, backups and rollback. Keep local branches/commits intact;
 legacy production and detached recovery checkouts transition safely to main.
 See `docs/PRODUCTION-UPDATES.md`; never replace this with an unconditional pull.
-Repository settings and the main PR ruleset must both permit merge, squash and
-rebase methods. Preserve required checks and resolved reviews, and never bypass
-protections or claim an administrative setting changed without verifying it.
+The effective main PR ruleset controls merge methods; it currently permits squash
+only. Preserve required checks, up-to-date branches and resolved reviews. Never
+bypass protections or claim an administrative setting changed without verifying it.
 
 ## Testing before commit/release
 

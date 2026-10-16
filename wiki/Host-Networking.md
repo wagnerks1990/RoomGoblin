@@ -101,7 +101,7 @@ docker compose config --format json | python3 tools/validate-host-network.py
 
 This validates effective configuration, including core port ranges, collisions, and maintenance isolation. It does **not** prove that arbitrary host ports are free. Rendered Compose includes secrets; pipe it directly to the validator and do not publish it.
 
-After reconciling local changes and updating the checkout to the approved commit, run `sudo bash install.sh`. The installer backs up existing runtime data, refreshes the native Host Agent policy, builds images, and **recreates** the two core containers. A restart alone cannot change a container's networking. Existing `.env` integration aliases remain supported at runtime.
+After reconciling local changes, run `sudo bash /opt/classroom-hub/deploy/update-production.sh --plan`, then `sudo bash /opt/classroom-hub/deploy/update-production.sh --full` during the scheduled interruption. Do not pull or change source first: the updater must verify the recorded installed state before it can own the source switch. Its durable transaction verifies exact published images, takes the operational backup, refreshes Host Agent policy, and **recreates** both core containers. A restart alone cannot change networking. Existing `.env` integration aliases remain supported. For an older updater, follow the one-time transition in `docs/PRODUCTION-UPDATES.md`; fresh bootstrap remains a separate installer path.
 
 ## Existing add-ons: explicit recreation
 

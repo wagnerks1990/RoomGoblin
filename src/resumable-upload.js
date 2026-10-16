@@ -12,8 +12,17 @@ const SESSION_ID=/^[a-f0-9-]{36}$/;
 
 function atomicJson(file,value){
   const tmp=`${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
-  fs.writeFileSync(tmp,JSON.stringify(value),{mode:0o640});
-  fs.renameSync(tmp,file);
+  const fd=fs.openSync(tmp,"wx",0o640);
+  try{
+    try{fs.fchmodSync(fd,0o640);fs.writeFileSync(fd,JSON.stringify(value))}
+    finally{fs.closeSync(fd)}
+    fs.renameSync(tmp,file);
+  }catch(err){fs.rmSync(tmp,{force:true});throw err}
+}
+function sharedWriteStream(file){
+  const fd=fs.openSync(file,"wx",0o640);
+  try{fs.fchmodSync(fd,0o640);return fs.createWriteStream(file,{fd,autoClose:true})}
+  catch(err){fs.closeSync(fd);fs.rmSync(file,{force:true});throw err}
 }
 function safeSessionId(value){const id=String(value||"");if(!SESSION_ID.test(id))throw Object.assign(new Error("Invalid upload session"),{status:400});return id}
 function safeDigest(value,label="SHA-256 digest"){const digest=String(value||"").toLowerCase();if(!/^[a-f0-9]{64}$/.test(digest))throw Object.assign(new Error(`${label} is required`),{status:400});return digest}
@@ -70,7 +79,7 @@ class ResumableUploadStore{
     if(freeBytes-activeBytes-size*2<this.minFreeBytes)throw Object.assign(new Error("Not enough free storage to upload and finalize this file"),{status:507});
     const id=crypto.randomUUID(),now=new Date().toISOString(),totalChunks=Math.ceil(size/this.chunkBytes);
     const meta={id,owner,name,size,mime:String(mime||"application/octet-stream").slice(0,160),chunkBytes:this.chunkBytes,totalChunks,received:{},createdAt:now,updatedAt:now};
-    fs.mkdirSync(this.dir(id),{recursive:false,mode:0o750});atomicJson(this.metaFile(id),meta);return meta;
+    fs.mkdirSync(this.dir(id),{recursive:false,mode:0o750});fs.chmodSync(this.dir(id),0o750);atomicJson(this.metaFile(id),meta);return meta;
   }
   public(meta){return {id:meta.id,name:meta.name,size:meta.size,mime:meta.mime,chunkBytes:meta.chunkBytes,totalChunks:meta.totalChunks,received:Object.keys(meta.received).map(Number).sort((a,b)=>a-b),createdAt:meta.createdAt,updatedAt:meta.updatedAt}}
   async putChunk(args){return this.locked(String(args.id),()=>this._putChunk(args))}
@@ -87,7 +96,7 @@ class ResumableUploadStore{
     const tmp=path.join(this.dir(id),`.${index}.${crypto.randomBytes(6).toString("hex")}.tmp`),target=path.join(this.dir(id),`${index}.part`);
     const hash=crypto.createHash("sha256");let bytes=0;
     input.on("data",chunk=>{bytes+=chunk.length;hash.update(chunk)});
-    try{await pipeline(input,fs.createWriteStream(tmp,{flags:"wx",mode:0o640}));const actual=hash.digest("hex");if(bytes!==expected||actual!==digest)throw Object.assign(new Error("Chunk size or digest verification failed"),{status:400});fs.renameSync(tmp,target)}catch(err){fs.rmSync(tmp,{force:true});throw err}
+    try{await pipeline(input,sharedWriteStream(tmp));const actual=hash.digest("hex");if(bytes!==expected||actual!==digest)throw Object.assign(new Error("Chunk size or digest verification failed"),{status:400});fs.renameSync(tmp,target)}catch(err){fs.rmSync(tmp,{force:true});throw err}
     meta.received[index]={size:bytes,sha256:digest};meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(id),meta);return this.public(meta);
   }
   async assemble(args){return this.locked(String(args.id),()=>this._assemble(args))}
@@ -95,7 +104,7 @@ class ResumableUploadStore{
     const meta=this.owned(id,owner);digest=safeDigest(digest);
     if(Object.keys(meta.received).length!==meta.totalChunks)throw Object.assign(new Error("Upload is incomplete"),{status:409});
     const tmp=`${destination}.${crypto.randomBytes(6).toString("hex")}.uploading`,hash=crypto.createHash("sha256");let bytes=0;
-    const out=fs.createWriteStream(tmp,{flags:"wx",mode:0o660});
+    const out=sharedWriteStream(tmp);
     try{
       for(let i=0;i<meta.totalChunks;i++)await pipeline(fs.createReadStream(path.join(this.dir(id),`${i}.part`)),async function*(source){for await(const chunk of source){bytes+=chunk.length;hash.update(chunk);yield chunk}},out,{end:false});
       await new Promise((resolve,reject)=>out.end(err=>err?reject(err):resolve()));

@@ -85,7 +85,7 @@ Automated coverage: `test/music-assistant-sendspin.test.js` executes endpoint va
 The earlier TV1/Windows kiosk playback success is historical evidence recorded in PR #22, not a claim that this replacement was deployed to physical TVs. After merge:
 
 1. Keep local stashes/backups until playback is verified. Do not `stash pop` the obsolete server block and do not run PR #22 patch scripts.
-2. Take a SQLite-safe operational backup. Pull current main and follow `docs/HOST-NETWORKING.md`, including port-conflict/effective-Compose preflight and `bash install.sh` to refresh the native Host Agent and both core containers when migrating from bridge mode.
+2. Take a SQLite-safe operational backup and follow `docs/HOST-NETWORKING.md`, including port-conflict/effective-Compose preflight. Run `sudo bash /opt/classroom-hub/deploy/update-production.sh --plan`, then `sudo bash /opt/classroom-hub/deploy/update-production.sh --full` to refresh Host Agent and both core containers inside the durable update transaction. Do not pull main or change source first. Use the one-time transition in `docs/PRODUCTION-UPDATES.md` when the installed updater predates this flow.
 3. Reload receivers, check MA API readiness and the configured dedicated listener with `ss -lntp | grep ':8927'` (substitute the saved port). A healthy Hub alone does not prove audio availability.
 4. Attach one TV, verify its `classroom-hub-tvN` player is enabled/registered, start Background Music, and check for stable audible playback. Then check announcements pause/resume and remaining targets. Preserve automation settings and confirm the four-component display layout remains unchanged.
 

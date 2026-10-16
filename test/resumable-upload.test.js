@@ -44,13 +44,68 @@ test("expired sessions are reclaimed and cancelled sessions disappear",async t=>
 
 
 test("resumable upload session data remains readable by the shared maintenance group",async t=>{
+ const previousUmask=process.umask(0o077);t.after(()=>process.umask(previousUmask));
  const {root,store}=fixture();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
- const session=store.create({owner:"user:a",name:"lesson.pdf",size:4,mime:"application/pdf"});
+ const session=store.create({owner:"user:a",name:"lesson.pdf",size:8,mime:"application/pdf"});
  assert.equal(fs.statSync(root).mode&0o777,0o750);
  assert.equal(fs.statSync(store.dir(session.id)).mode&0o777,0o750);
  await put(store,session.id,"user:a",0,Buffer.from("%PDF"));
  assert.equal(fs.statSync(path.join(store.dir(session.id),"0.part")).mode&0o777,0o640);
  assert.equal(fs.statSync(store.metaFile(session.id)).mode&0o777,0o640);
+ await put(store,session.id,"user:a",1,Buffer.from("-1.7"));
+ const destination=path.join(root,"complete.pdf");
+ await store.assemble({id:session.id,owner:"user:a",digest:digest("%PDF-1.7"),destination});
+ assert.equal(fs.statSync(destination).mode&0o777,0o640);
+});
+
+test("temporary metadata, chunks and assembly are group-readable before payload writes",async t=>{
+ const previousUmask=process.umask(0o077);t.after(()=>process.umask(previousUmask));
+ const {root,store}=fixture();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const writeFile=fs.writeFileSync,createStream=fs.createWriteStream;
+ let metadataWrites=0,streamWrites=0;
+ t.mock.method(fs,"writeFileSync",function(file,...args){
+  if(typeof file==="number"){
+   metadataWrites++;assert.equal(fs.fstatSync(file).mode&0o777,0o640);
+   return writeFile.call(this,file,...args);
+  }
+  const result=writeFile.call(this,file,...args);
+  if(String(file).startsWith(root)&&String(file).endsWith(".tmp")){
+   metadataWrites++;assert.equal(fs.statSync(file).mode&0o777,0o640);
+  }
+  return result;
+ });
+ t.mock.method(fs,"createWriteStream",function(...args){
+  const stream=createStream.apply(this,args),write=stream._write;
+  stream._write=function(chunk,encoding,callback){
+   streamWrites++;assert.equal(fs.fstatSync(this.fd).mode&0o777,0o640);
+   return write.call(this,chunk,encoding,callback);
+  };
+  return stream;
+ });
+ const file=Buffer.from("%PDF-1.7"),session=store.create({owner:"user:a",name:"lesson.pdf",size:8});
+ await put(store,session.id,"user:a",0,file.subarray(0,4));
+ await put(store,session.id,"user:a",1,file.subarray(4));
+ const destination=path.join(root,"complete.pdf");
+ await store.assemble({id:session.id,owner:"user:a",digest:digest(file),destination});
+ assert.deepEqual(fs.readFileSync(destination),file);
+ assert.equal(fs.statSync(destination).mode&0o777,0o640);
+ assert.ok(metadataWrites>=3,"metadata writes must execute");
+ assert.ok(streamWrites>=3,"chunk and assembly writes must execute");
+});
+
+test("failed metadata writes close descriptors and preserve the last published state",async t=>{
+ const {root,store}=fixture();t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const session=store.create({owner:"user:a",name:"lesson.pdf",size:4});
+ const before=fs.readFileSync(store.metaFile(session.id));let descriptor;
+ const writeFile=fs.writeFileSync;
+ t.mock.method(fs,"writeFileSync",function(file,...args){
+  if(typeof file==="number"){descriptor=file;throw new Error("injected metadata failure")}
+  return writeFile.call(this,file,...args);
+ });
+ await assert.rejects(put(store,session.id,"user:a",0,Buffer.from("%PDF")),/injected metadata failure/);
+ assert.deepEqual(fs.readFileSync(store.metaFile(session.id)),before);
+ assert.equal(fs.readdirSync(store.dir(session.id)).some(name=>name.endsWith(".tmp")),false);
+ assert.throws(()=>fs.fstatSync(descriptor),error=>error.code==="EBADF");
 });
 
 test("5 GiB policy accepts a 1.7 GiB session without allocating the file and enforces owner quota",t=>{

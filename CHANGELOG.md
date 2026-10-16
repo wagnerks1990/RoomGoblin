@@ -5,6 +5,52 @@
 
 ## Unreleased
 
+### Repository convergence follow-up
+
+- Consolidate native Windows artifact qualification into Validate, remove the
+  obsolete branch patcher, and reduce expensive work only on verified Markdown-
+  only PRs. Preserve always-running policy/security checks and full main gates.
+
+- Restrict hosted Wiki credentials to the exact HTTPS GitHub Wiki path; clone
+  without checkout to prevent remote filters from accessing reusable tokens.
+- Route bridge-network and Sendspin migration instructions through the durable
+  updater before source changes, keeping their tracked Wiki pages aligned.
+- Retry transient Hub startup during optional connector setup within fixed
+  deadlines without printing application logs or coupling Cloudflare to health.
+
+### Resumable upload backup readability
+
+- Apply owner-write/group-read `0640` to metadata, chunk and assembly descriptors
+  before writing payloads under restrictive umask; retain atomic publication,
+  ownership isolation, SHA-256/signature verification and `0750` session traversal.
+- Keep completed media read-only for the maintenance group and clean temporary
+  metadata after write failures without losing the last published session state.
+### Display fallback and recovery status
+
+- Surface an explicit failure when a recovery worker dies before persisting its
+  terminal status; retain its journal and update every active renderer-revision
+  contract and Wiki mirror.
+
+- Fit visible fallback glyph ink against its display region rather than its own
+  line box, preventing excessive shrinking when the font stylesheet is missing.
+  Keep clipping, natural-size and painted-range containment checks; advance the
+  renderer and receiver cache keys to `dynamic-fit-20261012-1`.
+- Sample full-recovery worker liveness before reading its durable phase and
+  serialize status against job startup, preventing stale `quiescing` responses
+  from appearing finished. Preserve failed-rollback journals and add deterministic
+  worker-completion and browser glyph-overhang regressions.
+### Main-based System Updates
+
+- Keep raw Git origin URLs out of the new source-status projection so embedded credentials cannot reach browser diagnostics; retain native origin verification.
+
+- Charge appliance-wide update quotas only for requests accepted by the shared administrator authorization predicate; add executable trust/ancestry/stale-selection and rejected-caller regressions, and align merge guidance with the effective squash-only main ruleset.
+
+- Change the administrator updater from semantic release-channel polling to the latest merged commit on trusted `main`, while retaining the native exact-SHA image, backup, health and rollback transaction.
+- Show installed/available commit identity in the GUI and history so multiple commits sharing one prerelease VERSION remain distinguishable.
+- Use the same verified main-commit path for automatic maintenance-window updates and reject dirty/divergent source, stale selections and arbitrary SHAs.
+- Correct updater systemd ordering to the canonical `classroom-hub-host-agent.service`, retire the stale old-name unit during install/refresh, and normalize no-request manual oneshot failures without hiding real deployment failures.
+
+
 ### Scheduled all-TV power handoff
 
 - Guard actual CEC output ownership for announcement receivers, including named

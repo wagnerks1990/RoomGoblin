@@ -523,22 +523,68 @@ test("maintenance agent does not own SQLite and restore includes verified rollba
   assert.match(host,/hmac\.compare_digest/);
 });
 
-test("application update policy and GitHub token are stored in the database",async()=>{
+test("application main-update policy and GitHub token are stored in the database",async()=>{
   let result=await request("/api/v1/admin/app-updates/settings",{authenticated:true});
   assert.equal(result.response.status,200,JSON.stringify(result.json));
   assert.equal(result.json.settings.repository,"wagnerks1990/RoomGoblin");
+  assert.equal(result.json.settings.source,"main");
+  assert.equal(result.json.settings.branch,"main");
   assert.equal(result.json.settings.automatic,false);
 
-  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork",channel:"stable"}});
+  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork",source:"main"}});
   assert.equal(result.response.status,400);
 
-  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"wagnerks1990/classroom-control-hub",channel:"stable",automatic:true,checkIntervalHours:12,maintenanceStart:"01:30",maintenanceEnd:"03:00",token:"github-test-token"}});
+  const readCredential=["github","test","placeholder"].join("-");
+  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"wagnerks1990/classroom-control-hub",source:"main",automatic:true,checkIntervalHours:12,maintenanceStart:"01:30",maintenanceEnd:"03:00",token:readCredential}});
   assert.equal(result.response.status,200,JSON.stringify(result.json));
   assert.equal(result.json.settings.repository,"wagnerks1990/RoomGoblin");
+  assert.equal(result.json.settings.source,"main");
+  assert.equal(result.json.settings.branch,"main");
   assert.equal(result.json.tokenConfigured,true);
-  assert.equal(result.json.settings.channel,"stable");
   assert.equal(result.json.settings.automatic,true);
-  assert.equal(JSON.stringify(result.json).includes("github-test-token"),false);
+  assert.equal(JSON.stringify(result.json).includes(readCredential),false);
+});
+
+test("rejected callers cannot consume the administrator update read quota",async()=>{
+  for(const [endpoint,method] of [["settings","GET"],["job","GET"],["check","POST"]]){
+    for(let i=0;i<121;i++){
+      const denied=await request(`/api/v1/admin/app-updates/${endpoint}`,{method});
+      assert.equal(denied.response.status,403,`${method} ${endpoint}: rejected callers must not reach the limiter`);
+    }
+  }
+  const allowed=await request("/api/v1/admin/app-updates/settings",{authenticated:true});
+  assert.equal(allowed.response.status,200,JSON.stringify(allowed.json));
+});
+
+test("rejected callers cannot consume the administrator update mutation quota",async()=>{
+  for(const [endpoint,method] of [["settings","PUT"],["install","POST"],["revert","POST"]]){
+    for(let i=0;i<13;i++){
+      const denied=await request(`/api/v1/admin/app-updates/${endpoint}`,{method,body:{}});
+      assert.equal(denied.response.status,403,`${method} ${endpoint}: rejected callers must not reach the limiter`);
+    }
+  }
+  const allowed=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork"}});
+  assert.equal(allowed.response.status,400,"an administrator must still reach trusted-repository validation");
+});
+
+test("rejected authenticated users cannot consume administrator update quotas",async()=>{
+  let result=await request("/api/v1/admin/users",{method:"POST",authenticated:true,
+    body:{username:"quota-viewer",displayName:"Quota Viewer",role:"viewer",profileId:"read-only",password:"quota-viewer-password",enabled:true}});
+  assert.equal(result.response.status,200,JSON.stringify(result.json));
+  result=await request("/api/v1/auth/login",{method:"POST",body:{username:"quota-viewer",password:"quota-viewer-password"}});
+  assert.equal(result.response.status,200,JSON.stringify(result.json));
+  const viewerCookie=String(result.response.headers.get("set-cookie")||"").split(";")[0];
+  assert.ok(viewerCookie);
+  for(const [method,count] of [["GET",121],["PUT",13]]){
+    for(let i=0;i<count;i++){
+      const denied=await request("/api/v1/admin/app-updates/settings",{method,headers:{cookie:viewerCookie},...(method==="PUT"?{body:{}}:{})});
+      assert.equal(denied.response.status,403,"a valid nonadministrator session must not reach quota accounting");
+    }
+  }
+  result=await request("/api/v1/admin/app-updates/settings",{authenticated:true});
+  assert.equal(result.response.status,200,JSON.stringify(result.json));
+  result=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,body:{repository:"example/untrusted-fork"}});
+  assert.equal(result.response.status,400,"the administrator must retain the mutation budget");
 });
 
 test("verified application updater has a durable host job and GUI rollback controls",()=>{
@@ -547,9 +593,11 @@ test("verified application updater has a durable host job and GUI rollback contr
   const controller=fs.readFileSync(path.join(projectRoot,"public/controller/index.html"),"utf8");
   assert.match(host,/app-updates\/start/);
   assert.match(host,/REVERT_RELEASE/);
+  assert.match(host,/INSTALL_MAIN/);
   assert.match(runner,/git fetch --tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main/);
   assert.doesNotMatch(runner,/git fetch[^\n]*refs\/heads\/production/);
   assert.match(runner,/Only semantic-version release tags are accepted/);
+  assert.match(runner,/if \[\[ "\$ACTION" == published \]\]/);
   assert.match(runner,/merge-base --is-ancestor/);
   assert.match(runner,/docker compose exec -T classroom-hub node -e/);
   assert.match(runner,/restore_safety_backup/);
@@ -557,7 +605,8 @@ test("verified application updater has a durable host job and GUI rollback contr
   assert.doesNotMatch(runner,/docker exec[^\n]+-e PORT=/);
   assert.match(runner,/127\.0\.0\.1:\$\{port\}/);
   assert.match(controller,/Revert Last Upgrade/);
-  assert.match(controller,/Automatically install approved releases/);
+  assert.match(controller,/Automatically install new merged main commits/);
+  assert.match(controller,/Main — merged commits/);
   assert.doesNotMatch(controller,/Upload a RoomGoblin release ZIP/);
 });
 
@@ -639,4 +688,23 @@ test("matrix configuration ignores archived topology and rejects stale editor wr
   assert.equal(db.prepare("SELECT value_json FROM system_preferences WHERE key='room.topology'").get().value_json,archived);
   assert.equal(JSON.stringify(db.prepare("SELECT * FROM display_credentials ORDER BY id").all()),credentials);
   db.close();
+});
+
+// Exhaust the shared update budget last, after the other administrator fixtures.
+test("administrator update quota remains shared across routes and forwarded addresses",async()=>{
+  let allowed=0,last;
+  for(let i=0;i<13;i++){
+    last=await request("/api/v1/admin/app-updates/settings",{method:"PUT",authenticated:true,
+      body:{repository:"example/untrusted-fork"},headers:{"x-forwarded-for":`198.51.100.${i+1}`}});
+    assert.ok([400,429].includes(last.response.status));
+    if(last.response.status===400)allowed++;
+  }
+  assert.ok(allowed>0&&allowed<=12,"the administrator budget must allow bounded operations");
+  assert.equal(last.response.status,429);
+  assert.ok(Number(last.response.headers.get("retry-after"))>0);
+  const other=await request("/api/v1/admin/app-updates/revert",{method:"POST",authenticated:true,
+    body:{confirm:"invalid"},headers:{"x-forwarded-for":"203.0.113.80"}});
+  assert.equal(other.response.status,429,"another endpoint/address must not create a new mutation budget");
+  const denied=await request("/api/v1/admin/app-updates/settings",{method:"PUT",body:{}});
+  assert.equal(denied.response.status,403,"an exhausted administrator quota must not replace rejected-caller authorization");
 });

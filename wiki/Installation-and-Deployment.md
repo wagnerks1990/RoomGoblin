@@ -136,7 +136,7 @@ An older `/etc/classroom-hub/master.key` must be migrated instead of silently re
 
 ## Normal Git update cycle
 
-The web controller can perform release-tag updates after `sudo ./install.sh` has installed `classroom-hub-app-update.service`. Each update creates a recovery backup and automatically returns to the previous commit/state if the new release does not pass backend HTTP, maintenance, Host Agent, database/scheduler, and version-convergence checks.
+The web controller follows exact trusted `main` commits through `classroom-hub-app-update.service`. The native transaction requires the matching validated Hub/maintenance image pair before mutation, creates the operational recovery backup, and restores the previous source/state if backend HTTP, maintenance, Host Agent, database/scheduler, mount or version checks fail. Do not pull source first; follow [Main-based updates](Production-Updates).
 
 Manual update:
 

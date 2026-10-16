@@ -4,6 +4,11 @@ RoomGoblin supports optional managed Cloudflare remote HTTPS. The setup wizard a
 
 Cloudflare remains an optional edge layer. It must never become a dependency for local classroom operation, Morning Announcements, scheduler recovery, Background Music reconciliation, managed displays, maintenance, updates, or rollback.
 
+The connector setup script retries local Hub readiness for up to 10 seconds
+before setup and 90 seconds after an explicitly requested Hub recreation. A
+timeout reports failure without printing application logs or credentials. This
+bounded setup check does not add Cloudflare to the Hub health contract.
+
 ## Managed architecture
 
 ```text

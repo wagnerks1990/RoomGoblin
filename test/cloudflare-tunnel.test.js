@@ -38,3 +38,30 @@ test("Cloudflare Tunnel uses the reviewed loopback proxy topology",()=>{
   assert.match(docs,/3010/);
   assert.match(docs,/optional/i);
 });
+
+test("connector readiness retries transient starts and fails within its deadline",()=>{
+  const script=read(scriptPath);
+  const start=script.indexOf("wait_for_hub_health() {");
+  const end=script.indexOf("\ninstall_cloudflared()",start);
+  assert.ok(start>=0 && end>start);
+  const helper=script.slice(start,end);
+  const result=spawnSync("bash",["-c",`set -euo pipefail
+${helper}
+HUB_PORT=3000
+attempts=0
+curl(){ attempts=$((attempts+1)); [[ $attempts -ge 3 ]]; }
+sleep(){ :; }
+wait_for_hub_health 5
+[[ $attempts -eq 3 ]]
+attempts=0
+if wait_for_hub_health 0; then exit 91; fi
+[[ $attempts -eq 0 ]]
+curl(){ return 1; }
+unset -f sleep
+if wait_for_hub_health 1; then exit 92; fi
+`],{encoding:"utf8",timeout:5000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(script,/wait_for_hub_health 10/);
+  assert.match(script,/wait_for_hub_health 90/);
+  assert.doesNotMatch(script,/docker logs/);
+});

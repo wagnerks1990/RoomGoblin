@@ -16,6 +16,8 @@ The service is:
 classroom-hub-host-agent.service
 ```
 
+Update runner units must order themselves after this installed service name. The repository source unit file retains the historical `classroom-control-hub-host-agent.service` filename, but the installer copies it to `/etc/systemd/system/classroom-hub-host-agent.service`; systemd dependencies must therefore reference `classroom-hub-host-agent.service`.
+
 The Host Agent listens only on the Unix socket:
 
 ```text
@@ -30,9 +32,12 @@ The Host Agent provides allowlisted host inventory and lifecycle functions for s
 
 Application releases run as the separate oneshot unit
 `classroom-hub-app-update.service`. The Host Agent validates and writes a
-root-only transient request; the runner then resolves an approved semantic
-version tag, updates the Git checkout, refreshes the Host Agent, rebuilds the
-Compose services, and performs version-aware health verification. A private
+root-only durable request. The normal GUI/CLI path selects an exact trusted merged
+main SHA for the native `published` transaction; semantic-release handling remains
+compatibility-only. The runner independently validates source ancestry and the
+exact published image pair before backup/source mutation, selectively reconciles
+changed services, and verifies version, database, mounts and image identity with
+rollback on failure. A private
 repository token is sourced from the encrypted application database and exists
 on the host only for the duration of `git fetch`.
 
@@ -63,3 +68,7 @@ If the socket is missing, correct/reinstall the service unit, run `systemctl dae
 ## Security boundary
 
 The Unix socket directory should remain root-owned and not be exposed through a public network share or reverse proxy. Do not replace this boundary by granting the main application or maintenance container unrestricted host privileges, and do not restore `/var/run/docker.sock` to the Compose file.
+
+Source identity exposes commit, branch and tracked-change metadata only; do not
+read or return raw Git remote URLs, which may embed credentials. The native
+transaction independently validates the trusted origin before deployment.
