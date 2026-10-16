@@ -1,0 +1,18 @@
+body.rg-workspace #weather .weatherNotice{min-height:1.5em;color:#bed3df}
+body.rg-workspace #weather .weatherHero{padding:28px;border:1px solid #34535a;border-radius:20px;background:radial-gradient(ellipse at top right,#1a685d,#102637 75%);display:grid;grid-template-columns:1fr 2fr;gap:8px 30px}
+body.rg-workspace #weather .weatherHero h2{grid-column:1/-1;margin:0}
+body.rg-workspace #weather .weatherTemperature{font-size:clamp(52px,6vw,96px);font-weight:800;line-height:1.15}
+body.rg-workspace #weather .weatherMetrics{grid-column:2;grid-row:2/4;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:center}
+body.rg-workspace #weather .weatherMetric{padding:12px;background:#102937;border-radius:10px}
+body.rg-workspace #weather .weatherSports{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+body.rg-workspace #weather .weatherSportsCard{padding:22px;border-left:4px solid #76efae;background:#152c3a;border-radius:12px;white-space:pre-line;line-height:1.8}
+body.rg-workspace #weather .weatherDays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-bottom:20px}
+body.rg-workspace #weather .weatherDay{background:#1e2b3d;border:1px solid #364858;border-radius:12px;padding:14px 10px;overflow-wrap:anywhere}
+body.rg-workspace #weather .weatherDay h3{font-size:15px;margin:0 0 14px}body.rg-workspace #weather .weatherDay strong{font-size:25px;color:#c8f7de}body.rg-workspace #weather .weatherDay p{white-space:pre-line;line-height:1.7;font-size:13px}
+body.rg-workspace #weather .weatherOptions{display:flex;flex-wrap:wrap;gap:14px;padding:16px 0}
+body.rg-workspace #weather label{display:flex;flex-direction:column;gap:8px;min-width:150px;flex:1 1 180px}body.rg-workspace #weather label:has(input[type=checkbox]){flex-direction:row;align-items:center}body.rg-workspace #weather input[type=checkbox]{width:auto;flex:none}
+body.rg-workspace #weather .weatherLocations{display:flex;flex-wrap:wrap;gap:8px;flex-basis:100%}body.rg-workspace #weather .weatherTable{overflow-x:auto}body.rg-workspace #weather table{width:100%;border-collapse:collapse}body.rg-workspace #weather th,body.rg-workspace #weather td{padding:12px;text-align:left;border-bottom:1px solid #3a4a59}
+body.rg-workspace #weather .weatherPreviewFrame{width:100%;aspect-ratio:16/9;position:relative;overflow:hidden;background:repeating-conic-gradient(#172633 0% 25%,#243645 0% 50%) 0 0/30px 30px;border:1px solid #35505d;border-radius:12px;margin:16px 0}body.rg-workspace #weather .weatherPreviewCanvas{position:absolute;width:1920px;height:1080px;transform-origin:top left}
+body.rg-workspace #weather .weatherOutputs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}body.rg-workspace #weather .weatherSource{font-size:12px;color:#9bb5c5}
+@media(max-width:1100px){body.rg-workspace #weather .weatherDays{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:650px){body.rg-workspace #weather .weatherHero{display:block;padding:20px}body.rg-workspace #weather .weatherMetrics{grid-template-columns:1fr}body.rg-workspace #weather .weatherSports{grid-template-columns:1fr}body.rg-workspace #weather .weatherDays{grid-template-columns:repeat(2,minmax(0,1fr))}}

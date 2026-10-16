@@ -93,6 +93,14 @@ function sendDisplayMetrics(){
 const baseScene=document.createElement('div'),sharedLayers=document.createElement('div');
 baseScene.id='sceneBase';sharedLayers.id='sceneShared';baseScene.style.cssText='position:absolute;inset:0;z-index:6;pointer-events:none';sharedLayers.style.cssText='position:absolute;inset:0;z-index:8;pointer-events:none';stage.append(baseScene,sharedLayers);
 let baseSceneSignature='',sharedLayerSignature='',sharedLayerExpiry=null;
+let weatherRefreshBusy=false;
+async function refreshSceneWeather(){
+ const hosts=[baseScene,...sharedLayers.children].filter(host=>RoomGoblinScene.hasWeather(host));
+ if(!hosts.length||weatherRefreshBusy)return;weatherRefreshBusy=true;
+ try{const url=new URL('/api/v1/weather/display',location.origin);if(displayAuth.assetAccessToken)url.searchParams.set('access_token',displayAuth.assetAccessToken);const response=await fetch(url,{credentials:'same-origin',signal:AbortSignal.timeout(4000)});if(response.ok){const data=await response.json();if(data.weather)for(const host of hosts)if(host.isConnected)RoomGoblinScene.updateWeather(host,data.weather)}}catch{}finally{weatherRefreshBusy=false}
+}
+setInterval(refreshSceneWeather,60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshSceneWeather()});
 const sceneOptions=()=>({resolveAsset:name=>authorizeAssetUrl('/media/'+encodeURIComponent(name)),reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,fitText:fitElement});
 function renderBaseScene(scene){const key=JSON.stringify(scene);if(key===baseSceneSignature)return;baseSceneSignature=key;if(!scene){baseScene.replaceChildren();baseScene.style.background='transparent';baseScene.classList.remove('rg-scene');return}try{RoomGoblinScene.render(baseScene,scene,sceneOptions())}catch{baseScene.replaceChildren();baseScene.style.background='transparent';baseScene.classList.remove('rg-scene')}}
 function renderSharedLayers(layers){

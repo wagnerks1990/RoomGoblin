@@ -282,6 +282,7 @@ nav button{min-width:135px}
 <link rel="stylesheet" href="/shared/scene.css">
 <link rel="stylesheet" href="/controller/planning-studio.css">
 <link rel="stylesheet" href="/controller/music-studio.css">
+<link rel="stylesheet" href="/controller/weather-workspace.css">
 </head>
 <body class="rg-workspace rg-controller">
 <a class="rg-skip" href="#workspaceMain">Skip to content</a>
@@ -307,7 +308,7 @@ nav button{min-width:135px}
     <button data-page="overview" class="active" aria-current="page">Today</button>
     <details class="rg-nav-group" open><summary>Room controls</summary>
       <button data-page="av">Displays & AV</button><button data-page="lights">Lighting</button><button data-page="esphome">ESPHome devices</button>
-      <button data-page="display">Display content</button><button data-page="music">Background music</button>
+      <button data-page="display">Display content</button><button data-page="music">Background music</button><button data-page="weather">Weather</button>
       <button data-page="lab">Lab computers</button>
     </details>
     <details class="rg-nav-group"><summary>Content library</summary>
@@ -394,6 +395,7 @@ nav button{min-width:135px}
 
 
 
+<section id="weather" class="page"></section>
 <section id="music" class="page">
   <div class="top"><div><h1>Background Music</h1><div class="muted">Independent all-day music scheduling. Visual display content continues normally; automation or announcement audio temporarily pauses background music and it resumes afterward.</div></div><div class="toolbar"><button onclick="loadMusicAssistant()">Refresh</button><button onclick="openMusicAssistantUi()">Open Music Assistant</button></div></div>
 
@@ -1457,6 +1459,7 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
 <script src="/controller/automation-studio.js"></script>
 <script src="/controller/class-studio.js"></script>
 <script src="/controller/music-studio.js"></script>
+<script src="/controller/weather-workspace.js"></script>
 <script src="/controller/workspace.js"></script>
 <script src="/controller/esphome.js"></script>
 <script src="/controller/embedded-workspaces.js"></script>

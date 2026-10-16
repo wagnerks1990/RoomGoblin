@@ -49,3 +49,4 @@
 - [Planning and Scene Studio](Planning-Studio)
 
 - [Background Music Studio](Background-Music-Studio)
+- [Weather Workspace](Weather-Workspace)

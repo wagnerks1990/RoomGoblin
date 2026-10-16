@@ -69,11 +69,22 @@ Widgets include date, clock, class name, cycle/group, countdown, progress and
 optional weather. Class/block countdowns use resolved occurrence boundaries.
 Clock/duration timer metadata is also supplied to scene countdown widgets.
 Weather requires explicit coordinates and sends them only to Open-Meteo's fixed
-forecast endpoint. Requests are non-blocking, limited to four seconds / 32 KiB,
-and cached for 15 minutes. Disabled weather makes no request. Weather data is a
-snapshot refreshed when an automation renders; a long-running untouched screen
-marks old weather stale after one hour. It is not an independent live weather
-feed. Date/time/countdown/progress widgets update on the receiver each second.
+forecast endpoint. Requests are non-blocking, limited to four seconds / 128 KiB,
+and cached for 15 minutes. Disabled weather makes no request. Active weather
+widgets refresh through the authorized Hub projection each minute without
+reissuing content; data older than one hour is marked stale. Forecast payloads
+are bounded to 128 KiB. Date/time/countdown/progress update each second.
+
+Weather snapshots also show **Precip. N% this hour** when Open-Meteo supplies a
+valid hourly probability. This includes rain, showers and snow, not humidity.
+Hourly probabilities cover the hour preceding their timestamp; RoomGoblin picks
+the hour containing the observation in UTC, including date changes. Missing or
+invalid probabilities are omitted rather than displayed as zero. The percentage
+is a forecast snapshot with the same cache/refresh lifecycle as temperature.
+Open-Meteo credit appears in a discreet footer rather than the main readout.
+See [Weather workspace](WEATHER-WORKSPACE.md) for seven-day layouts, integrated
+sports-hour details, adjustable overlays and optional NWS alerts. See the
+[provider's hourly parameter definitions](https://open-meteo.com/en/docs#hourly-parameter-definition).
 
 The shared scene model is bounded to 40 layers and 60,000 serialized characters.
 Images reference uploaded PNG/JPEG/GIF/WebP/BMP filenames, not URLs, HTML or SVG.
