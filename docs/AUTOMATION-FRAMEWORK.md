@@ -142,3 +142,11 @@ on a date. Class-linked start/end offsets, occurrence recovery, active/next clas
 and timer deadlines use each segment independently. Lunch gaps are inactive; no
 extra class or automation copies are created. Fixed-clock actions keep their times.
 Saved date previews use the same segment resolver. See [Planning](PLANNING.md).
+
+## Planning and visual layers
+
+See [Planning and Scene Studio](PLANNING-STUDIO.md) for temporary date windows,
+timetable-block occurrence resolution, explicit clock deadlines and shared visual
+layers. These fields extend existing event metadata without replacing canonical
+`actionSequence[]`, native media sessions or occurrence identity. Scene payloads
+are bounded data, not HTML/CSS execution.

@@ -50,6 +50,7 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - lighting integrations through MQTT
 - class schedules, cycle days, closures, delays, half-days, and remote-day rules
 - automatic upgrade import of existing schedules into Planning drafts, preserving current scheduling and automation records (Unreleased)
+- visual [Planning and Scene Studio](docs/PLANNING-STUDIO.md) with temporary/block-based scheduling, shared overlays, drag-and-drop scenes and fitted live widgets (Unreleased)
 - unified [Planning workspace](docs/PLANNING.md) with school calendar, A–H/Green/White/Bison mapping, reusable timetables, split class segments and reviewed date changes (Unreleased)
 - reusable [special-day timetables](docs/SPECIAL-DAY-SCHEDULES.md) for date-assigned class times (Unreleased)
 - lab/client management integrations

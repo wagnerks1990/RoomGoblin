@@ -22,7 +22,7 @@ API routes remain unchanged.
 | --- | --- |
 | Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Lab computers |
 | Content library | Presentations, Media library |
-| Planning | Classes, Automation |
+| Planning | Calendar & Timetables, Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
 
 Use **Find a workspace** to filter navigation labels. The current workspace opens
@@ -196,17 +196,22 @@ with Ctrl+C. This check occurs before installer service/data mutations. Wait for
 [published-source updater](PRODUCTION-UPDATES.md). Do not relabel older images with the missing
 commit tag or bypass revision verification. The source and both images must agree.
 
+## ESPHome device workspace
+
+The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).
+Keep forms and expanded entity cards stable across polling, mark cached inventory
+stale after failed reads, and never infer physical confirmation from socket writes.
+
 ## Planning rebuild (Unreleased)
 
 Calendar & Timetables joins Classes and Automations through shared, permission-aware
 Planning tabs. The new page retains `classes` and `schedules` nodes and handlers.
 Class fallback times move into a disclosure; automation editing uses When, Actions
 & targets, and Timer overlay sections. Calendar changes remain drafts until preview
-and a revision-checked save. See [Planning](Planning) for the cycle model, split segments,
+and a revision-checked save. See [Planning](PLANNING.md) for the cycle model, split segments,
 CSV calendar import, migration and rollback.
 
-## ESPHome device workspace
-
-The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).
-Keep forms and expanded entity cards stable across polling, mark cached inventory
-stale after failed reads, and never infer physical confirmation from socket writes.
+Planning now uses compact timetable rows, a searchable class library and focused
+automation/scene dialogs. See [Planning and Scene Studio](Planning-Studio).
+Shared workspace styles remain scoped to `body.rg-workspace`; receiver scenes
+load only their shared scene renderer and existing display layout engine.

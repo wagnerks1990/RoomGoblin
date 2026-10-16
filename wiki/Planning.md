@@ -228,3 +228,7 @@ normal-day restoration, stale-save refusal, transaction failure, membership
 preservation, calendar import, capabilities, draft preservation and mobile layout.
 Run the standard Linux validation and Chromium/Firefox operator browser gate.
 Docker/image, security and physical-appliance acceptance remain separate checks.
+
+## Planning and Scene Studio
+
+See [Planning and Scene Studio](Planning-Studio) for focused editors, temporary schedules, timetable-bound break actions, shared overlays, widgets and receiver fitting. These additions retain the reviewed Planning import and existing identities.

@@ -9,7 +9,7 @@ function fixture(){
   const prior={id:"lesson",name:"Lesson",enabled:true,time:"08:58",targets:["tv1"],dates:["2026-12-23"]};
   const other={...prior,id:"transition",name:"AM transition",targets:[...prior.targets]};
   let simulate;
-  const context=vm.createContext({crypto,calendarRuleForDate:()=>({type:"normal",label:"Normal Schedule"}),isAutomationSuppressed:()=>({blocked:false}),cleanId:x=>String(x||"").trim(),
+  const context=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},crypto,calendarRuleForDate:()=>({type:"normal",label:"Normal Schedule"}),isAutomationSuppressed:()=>({blocked:false}),cleanId:x=>String(x||"").trim(),
     automationClassIds:()=>[],automationMatchesDate:(e,d)=>({match:e.dates.includes(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)}),
     automationResourceKeys:e=>e.targets.map(id=>`display-content:${id}`),
     localDateKey:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
@@ -17,6 +17,7 @@ function fixture(){
     resolveAutomationForManualTest:e=>e,automationActionSequence:()=>[{action:"display.text"}],
     evaluateAutomationAt:()=>({}),schedulerClock:{now:()=>day},schedulerReadLimit(){},requireClassroomRead(){},
     app:{post:(url,...handlers)=>{simulate=handlers.at(-1)}}});
+  vm.runInContext(server.slice(server.indexOf("function resolveAutomationOccurrences("),server.indexOf("function resolveAutomationFromClass(")),context);
   // Freeze the route's default horizon at a known date without changing host time.
   vm.runInContext(`const NativeDate=Date;Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[${day.getTime()}]))}}`,context);
   vm.runInContext(server.slice(server.indexOf("function automationConflictDiagnostics("),server.indexOf('app.get("/api/v1/displays/:id/media/status"')),context);
@@ -58,7 +59,7 @@ test("disabled drafts have no blocking conflicts and draft simulation does not m
   assert.equal(request({...prior,enabled:false}).result.ok,true);assert.equal(JSON.stringify(prior),before);
 });
 function uiFixture(result){
-  let saves=0;const context=vm.createContext({autoEnabled:{value:"0"},autoEditorMsg:{textContent:""},autoSteps:[{}],simulate:async()=>result,save:async()=>{saves++;return {ok:true}},window:{}});
+  let saves=0;const context=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},autoEnabled:{value:"0"},autoEditorMsg:{textContent:""},autoSteps:[{}],simulate:async()=>result,save:async()=>{saves++;return {ok:true}},window:{}});
   const start=app.indexOf("function automationValidationMessage("),end=app.indexOf("async function simulateAutomationEditor(",start);
   vm.runInContext(app.slice(start,end),context);
   const assignment=editor.slice(editor.indexOf("window.validateEnableAutomation=async()=>"),editor.indexOf("\n    window.RoomGoblinAutomationV2="));

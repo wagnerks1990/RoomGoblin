@@ -541,5 +541,58 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertFalse(result['outsideRegion'],'glyphs must never escape the region')
 
 
+
+    def test_20_scene_layers_fit_across_receiver_shapes_and_reload(self):
+        scene = {'background': '#101d2c', 'layers': [
+            {'id': 'heading', 'type': 'text', 'text': 'Special school schedule', 'x': 6, 'y': 8,
+             'w': 88, 'h': 18, 'fontSize': 150, 'bold': True, 'glow': 12},
+            {'id': 'message', 'type': 'text', 'text': 'A clear announcement that remains fully visible on every receiver. ' * 6,
+             'x': 8, 'y': 30, 'w': 84, 'h': 40, 'fontSize': 140},
+            {'id': 'timer', 'type': 'widget', 'widget': 'countdown', 'x': 65, 'y': 80,
+             'w': 30, 'h': 14, 'fontSize': 96}],
+            'data': {'className': 'Example class', 'startAt': 1788970000000,
+                     'endAt': 1788970600000}}
+        for width, height in [(1280,720),(1920,1080),(3840,2160),(1280,800),(1024,768),(2560,1080),(1080,1920)]:
+            with self.subTest(width=width, height=height):
+                page = self.page(width,height)
+                self.replay(page, {'textOptions': {'scene': scene}, 'timer': {'visible': False}})
+                data = page.evaluate("""() => {
+                    const stage=document.getElementById('stage').getBoundingClientRect();
+                    const layers=[...document.querySelectorAll('#sceneBase .rg-scene-layer')].map(el=>{
+                        const r=el.getBoundingClientRect(),inner=el.firstChild,range=document.createRange();range.selectNodeContents(inner);
+                        return {font:parseFloat(getComputedStyle(inner).fontSize),left:r.left,right:r.right,top:r.top,bottom:r.bottom,
+                          clips:[...range.getClientRects()].some(q=>q.left<r.left-1||q.right>r.right+1||q.top<r.top-1||q.bottom>r.bottom+1),
+                          overflowing:inner.scrollWidth>el.clientWidth+1||inner.scrollHeight>el.clientHeight+1};
+                    });return {stage:{left:stage.left,right:stage.right,top:stage.top,bottom:stage.bottom},layers};
+                }""")
+                self.assertEqual(len(data['layers']),3)
+                for layer in data['layers']:
+                    self.assertFalse(layer['clips'],data)
+                    self.assertFalse(layer['overflowing'],data)
+                    self.assertGreaterEqual(layer['font'],12)
+                    self.assertGreaterEqual(layer['left'],data['stage']['left']-1)
+                    self.assertLessEqual(layer['right'],data['stage']['right']+1)
+                page.screenshot(path=str(OUTPUT/f'{self.engine}-scene-{width}x{height}.png'))
+                self.command(page,'display.clear',{})
+                self.replay(page, {'textOptions': {'scene': scene}})
+                self.assertEqual(page.locator('#sceneBase [data-layer-id]').count(),3)
+                self.assertFalse(self.errors,self.errors)
+
+    def test_21_shared_layers_preserve_media_node_and_expire(self):
+        page = self.page()
+        self.command(page,'display.video',{'url':'/media/fixture.webm','muted':True,'loop':True,'sessionId':'native-session'})
+        page.evaluate("window.sceneMediaBefore=document.querySelector('#media video')")
+        layer={'id':'global','expiresAt':1788970000100,'scene':{'transparent':True,'layers':[
+            {'id':'notice','type':'text','text':'Shared notice','x':5,'y':80,'w':90,'h':10}]}}
+        self.command(page,'display.layers',{'layers':[layer]})
+        self.assertEqual(page.locator('#sceneShared [data-layer-id]').count(),1)
+        self.assertTrue(page.evaluate("window.sceneMediaBefore === document.querySelector('#media video')"))
+        page.evaluate('window.__now+=200')
+        page.wait_for_timeout(150)
+        self.assertEqual(page.locator('#sceneShared [data-layer-id]').count(),0)
+        self.assertTrue(page.evaluate("window.sceneMediaBefore === document.querySelector('#media video')"))
+        self.assertFalse(self.errors,self.errors)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

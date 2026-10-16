@@ -159,3 +159,9 @@ physical port blocks both transports conservatively. Individual payload output
 overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
+
+## Planning and Scene Studio
+
+See [Planning and Scene Studio](Planning-Studio) for temporary and block-based
+schedules, the visual editor, widgets, shared layers and countdown deadlines.
+Existing canonical action sequences and native receiver media sessions remain.

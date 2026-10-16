@@ -739,3 +739,159 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertFalse(page.locator('#planning').is_visible())
         self.assertFalse(page.locator('[data-planning-page="planning"]').first.is_visible())
         self.assertFalse(errors, errors)
+
+    def studio_page(self, width=1440):
+        profile = {'name': 'School', 'anchorDate': '2027-10-18', 'cycleDays': list('ABCDEFGH'),
+                   'dayGroups': [{'id': 'green', 'label': 'Green', 'cycleDays': list('ACEG')},
+                                 {'id': 'white', 'label': 'White', 'cycleDays': list('BDFH')}],
+                   'periodCycleDays': {'1': list('ACEG')}, 'planning': {'enabled': True,
+                   'timetables': [{'id': 'special', 'name': 'Special day', 'blocks': [
+                       {'id': 'lunch', 'label': 'Lunch', 'kind': 'break', 'startTime': '11:00', 'endTime': '11:30'}]}]}}
+        saved = []
+        def transport(req, target):
+            if target == '/api/v1/automations/draft/simulate':
+                req.fulfill(json={'ok': True, 'resolved': {'targets': ['tv1']}})
+                return True
+            if target == '/api/v1/class-schedules' and req.request.method == 'POST':
+                saved.append({'class': req.request.post_data_json})
+                req.fulfill(json={'ok': True, 'class': {**saved[-1]['class'], 'id': 'special-class'}})
+                return True
+            if target == '/api/v1/automations' and req.request.method == 'POST':
+                saved.append(req.request.post_data_json)
+                req.fulfill(json={'ok': True, 'event': {**saved[-1], 'id': 'saved'}})
+                return True
+            return False
+        overrides = {'/api/v1/automations': {'events': [], 'scheduler': {'timezone': 'America/New_York'}},
+                     '/api/v1/automations/calendar': {'calendar': {}, 'scheduleProfile': profile},
+                     '/api/v1/planning': {'today': '2027-10-18', 'scheduleProfile': profile, 'classes': []},
+                     '/api/v1/planning/studio': {'config': {'version': 1, 'overlays': [], 'weather': {'enabled': False}}}}
+        page, errors = self.page('/controller/', width, overrides=overrides, transport=transport)
+        page.evaluate("Object.defineProperty(crypto,'randomUUID',{value:undefined,configurable:true})")
+        page.evaluate("showPage('schedules')")
+        page.get_by_role('button', name='+ Automation', exact=True).wait_for()
+        return page, errors, saved
+
+    def test_scene_studio_drag_edit_widgets_and_reviewed_save(self):
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('Lunch display')
+        editor.get_by_role('checkbox', name='Special day · Lunch · 11:00–11:30', exact=True).check()
+        editor.get_by_role('button', name='Actions', exact=True).click()
+        editor.get_by_role('button', name='Edit action', exact=True).click()
+        action = page.locator('dialog.studioDialog[open]').last
+        action.get_by_role('button', name='Design this screen', exact=True).click()
+        canvas = page.locator('dialog.sceneEditor[open]')
+        canvas.get_by_role('button', name='+ Widget', exact=True).click()
+        canvas.get_by_label('Widget', exact=True).select_option('countdown')
+        canvas.get_by_label('Glow strength', exact=True).fill('15')
+        canvas.get_by_label('Motion', exact=True).select_option('bounce')
+        layer = canvas.locator('[data-layer-id]').last
+        before = layer.bounding_box()
+        page.mouse.move(before['x'] + 10, before['y'] + 10)
+        page.mouse.down()
+        page.mouse.move(before['x'] + 65, before['y'] + 35, steps=4)
+        page.mouse.up()
+        after = layer.bounding_box()
+        self.assertGreater(after['x'], before['x'] + 40)
+        resize=canvas.locator('.sceneResize').bounding_box()
+        page.mouse.move(resize['x']+resize['width']/2,resize['y']+resize['height']/2)
+        page.mouse.down()
+        page.mouse.move(resize['x']+60,resize['y']+20,steps=4)
+        page.mouse.up()
+        self.assertGreater(layer.bounding_box()['width'],after['width']+35)
+        x=layer.bounding_box()['x']
+        layer.press('Shift+ArrowRight')
+        self.assertGreater(layer.bounding_box()['x'],x+3)
+        canvas.get_by_label('Lock position',exact=True).check()
+        locked_x=layer.bounding_box()['x']
+        layer.press('Shift+ArrowRight')
+        self.assertAlmostEqual(layer.bounding_box()['x'],locked_x,delta=0.5)
+        canvas.get_by_label('Receiver shape', exact=False).select_option(str(4 / 3))
+        metrics=canvas.locator('.rg-scene-layer').evaluate_all('''items => items.map(e=>({id:e.dataset.layerId,font:getComputedStyle(e.firstChild).fontSize,outer:[e.clientWidth,e.clientHeight],inner:[e.firstChild.clientWidth,e.firstChild.clientHeight],rect:e.getBoundingClientRect().toJSON(),text:e.firstChild.textContent}))''')
+        (OUTPUT / 'scene-editor-font-metrics.json').write_text(json.dumps(metrics,indent=2))
+        self.assertGreaterEqual(float(metrics[-1]['font'].replace('px','')),50)
+        self.evidence(page, errors, 'scene-studio-desktop')
+        canvas.get_by_role('button', name='Use scene', exact=True).click()
+        action.get_by_role('button', name='Use action', exact=True).click()
+        editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        editor.get_by_role('button', name='Save automation', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(saved[-1]['blockIds'], ['lunch'])
+        widgets = [l for l in saved[-1]['actionSequence'][0]['payload']['scene']['layers'] if l['type'] == 'widget']
+        self.assertEqual(widgets[0]['widget'], 'countdown')
+        self.assertEqual(widgets[0]['effect'], 'bounce')
+        self.assertEqual(saved[-1]['actionSequence'][0]['targets'], ['all'])
+        self.assertFalse(errors, errors)
+
+    def test_automation_studio_mobile_temporary_timer_and_defaults(self):
+        page, errors, saved = self.studio_page(width=390)
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('Temporary announcement')
+        editor.get_by_role('button', name='Today only', exact=True).click()
+        editor.get_by_role('button', name='Timer & advanced', exact=True).click()
+        editor.get_by_label('Add timer overlay', exact=True).check()
+        editor.get_by_label('Timer source', exact=True).select_option('end-time')
+        editor.get_by_label('Countdown ends at', exact=True).fill('11:28')
+        self.evidence(page, errors, 'automation-studio-mobile')
+        editor.get_by_role('button', name='Actions', exact=True).click()
+        editor.get_by_role('button', name='Edit action', exact=True).click()
+        action = page.locator('dialog.studioDialog[open]').last
+        action.get_by_role('button', name='Use action', exact=True).click()
+        editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        editor.get_by_role('button', name='Save automation', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(saved[-1]['scheduleWindow']['startDate'], '2027-10-18')
+        self.assertEqual(saved[-1]['timerOverlay']['endTime'], '11:28')
+        self.assertEqual(saved[-1]['actionSequence'][0]['payload']['background'], '#101d2c')
+        self.assertFalse(errors, errors)
+
+    def test_class_studio_date_only_identity_and_availability(self):
+        page, errors, saved = self.studio_page()
+        page.evaluate("showPage('classes')")
+        page.get_by_role('button', name='+ Add Class', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Name', exact=True).fill('Special homeroom')
+        editor.get_by_label('Short Name', exact=True).fill('Homeroom')
+        editor.get_by_label('Period / Block', exact=True).fill('Homeroom')
+        editor.get_by_label('Schedule', exact=True).select_option('dates')
+        editor.locator('#classIncludeDates').fill('2027-10-18')
+        editor.locator('#classStudioFrom').fill('2027-10-18')
+        editor.locator('#classStudioThrough').fill('2027-10-18')
+        editor.get_by_text('Fallback times & timer continuation', exact=True).click()
+        editor.get_by_label('Start', exact=True).fill('13:13')
+        editor.get_by_label('End', exact=True).fill('14:45')
+        self.evidence(page, errors, 'class-studio-date-only')
+        editor.get_by_role('button', name='Save Class', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(saved[-1]['class']['scheduleMode'], 'dates')
+        self.assertEqual(saved[-1]['class']['includeDates'], ['2027-10-18'])
+        self.assertEqual(saved[-1]['class']['scheduleWindow']['endDate'], '2027-10-18')
+        self.assertFalse(errors, errors)
+
+    def test_action_studio_keeps_lighting_payloads_compatible(self):
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('Lighting compatibility')
+        editor.get_by_role('button', name='Actions', exact=True).click()
+        editor.get_by_role('button', name='Edit action', exact=True).click()
+        action = page.locator('dialog.studioDialog[open]').last
+        action.get_by_label('Action type', exact=True).select_option('govee.scene')
+        action.get_by_label('Lighting scene name', exact=True).fill('Rainbow')
+        action.get_by_role('button', name='Use action', exact=True).click()
+        editor.get_by_role('button', name='Edit action', exact=True).click()
+        action = page.locator('dialog.studioDialog[open]').last
+        self.assertEqual(action.get_by_label('Lighting scene name', exact=True).input_value(), 'Rainbow')
+        action.get_by_label('Action type', exact=True).select_option('govee.brightness')
+        action.get_by_label('Brightness (%)', exact=True).fill('35')
+        action.get_by_role('button', name='Use action', exact=True).click()
+        editor.get_by_role('button', name='Targets & layers', exact=True).click()
+        editor.get_by_role('checkbox', name='All lights', exact=True).check()
+        editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        editor.get_by_role('button', name='Save automation', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(saved[-1]['actionSequence'][0]['payload']['level'], 35)
+        self.assertNotIn('brightness', saved[-1]['actionSequence'][0]['payload'])
+        self.assertFalse(errors, errors)

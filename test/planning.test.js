@@ -53,7 +53,7 @@ test("planning validation rejects missing references, bad clocks, same-class ove
 function install(ctx,names){for(const name of names){const start=source.indexOf(`function ${name}(`);assert.ok(start>=0,name);const end=source.indexOf("\nfunction ",start+1);vm.runInContext(source.slice(start,end),ctx)}}
 function runtime(){
   const p=profile({timetables:[splitTable()],dates:{"2027-10-18":{status:"school",timetableId:"split"}}});
-  const ctx=vm.createContext({Date,planningEngine:engine,schoolScheduleProfile:p,schedulerCalendar:{},classScheduleStore:{classes:classes(p)},...school,
+  const ctx=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},Date,planningEngine:engine,schoolScheduleProfile:p,schedulerCalendar:{},classScheduleStore:{classes:classes(p)},...school,
     localDateKey:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
     localMinutesNow:d=>d.getHours()*60+d.getMinutes(),timeToMinutes:s=>Number(s.slice(0,2))*60+Number(s.slice(3)),automationTargetDomain:()=>"display-content",schoolCycleAnchor:()=>p.anchorDate,periodDefaultCycleDays:key=>p.periodCycleDays[key]||[],isTransitionClass:()=>false});
   install(ctx,["classScheduleById","calendarRuleForDate","classScheduleMatchesDate","effectiveClassSegments","effectiveClassTimes","classStartDate","classEndDate","activeClassAt","automationClassIds","resolveAutomationForClass","resolveAutomationOccurrences"]);return ctx;
@@ -68,7 +68,7 @@ test("real scheduler emits distinct split occurrences and timers, with no active
 });
 function routes({store,persist}={}){
   const registered=new Map(),writes=[];
-  const context=vm.createContext({crypto,Date,JSON,schoolScheduleProfile:profile(),schedulerCalendar:{},classScheduleStore:{classes:classes()},classroomAutomations:{events:[]},planningEngine:engine,normalizeSchoolScheduleProfile:school.normalizeSchoolScheduleProfile,validDateKey:school.validDateKey,
+  const context=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},isAutomationSuppressed:()=>({blocked:false}),resolveAutomationOccurrences:e=>[e],automationMatchesDate:()=>({match:true}),schoolCycleForDate:()=>({cycleDay:"A"}),crypto,Date,JSON,schoolScheduleProfile:profile(),schedulerCalendar:{},classScheduleStore:{classes:classes()},classroomAutomations:{events:[]},planningEngine:engine,normalizeSchoolScheduleProfile:school.normalizeSchoolScheduleProfile,validDateKey:school.validDateKey,validTime:school.validTime,
     schedulerReadLimit:()=>{},schedulerMutationLimit:()=>{},requireCapability:name=>({capability:name}),localDateKey:d=>d.toISOString().slice(0,10),schedulerClock:{now:()=>new Date("2027-10-18T12:00:00Z")},dateFromKey:key=>new Date(`${key}T12:00:00Z`),
     planningMigration:require("../src/planning-migration"),planningStartupMigration:{report:{version:1,status:"imported",sourceHash:"private-internal-hash",counts:{classes:15,automations:0,timetables:1,dates:0}}},
     app:Object.fromEntries(["get","post","put"].map(method=>[method,(path,...handlers)=>registered.set(`${method} ${path}`,handlers)])),dbStore:store||{tx:fn=>fn(),setPreference:(key,value)=>writes.push([key,value])},persistJson:persist||((key,value)=>writes.push([key,value])),CLASS_SCHEDULES_FILE:"classes",audit:()=>{}});
@@ -158,4 +158,20 @@ test("caught nested failure rolls back its savepoint without committing or losin
   assert.equal(store.getPreference("test.outer"),1);assert.equal(store.getPreference("test.second"),3);assert.equal(store.transactionDepth,0);
   assert.throws(()=>store.tx(()=>{store.tx(()=>store.setPreference("test.rolled-back",4));throw Error("Outer failure")}),/Outer failure/);
   assert.equal(store.getPreference("test.rolled-back"),null);assert.equal(store.transactionDepth,0);
+});
+
+test("shared-layer API requires both capabilities and rejects stale rules without writing",()=>{
+ const {registered,writes,context,request}=routes(),config={overlays:[{id:"notice",name:"Notice",scene:{layers:[{id:"text",type:"text",text:"Notice"}]}}]};
+ for(const [path,handlers]of registered)if(path.includes("/planning/studio")){assert.ok(handlers.some(h=>h.capability==="schedule.manage"));assert.ok(handlers.some(h=>h.capability==="automation.manage"))}
+ const preview=request("post","/api/v1/planning/studio/preview",{config,date:"2027-10-18"});assert.equal(preview.status,200,JSON.stringify(preview.body));assert.equal(writes.length,0);
+ context.classroomAutomations.events.push({id:"changed",name:"Changed"});assert.equal(request("put","/api/v1/planning/studio",{config,previewHash:preview.body.previewHash}).status,409);assert.equal(writes.length,0);
+ const fresh=request("post","/api/v1/planning/studio/preview",{config,date:"2027-10-18"});assert.equal(request("put","/api/v1/planning/studio",{config,previewHash:fresh.body.previewHash}).status,200);assert.equal(writes[0][0],"school.planning.studio.v1");
+ const draft=JSON.parse(JSON.stringify(context.schoolScheduleProfile));draft.planning.dates["2027-10-19"]={status:"no-school"};const month=request("post","/api/v1/planning/preview",{scheduleProfile:draft,date:"2027-10-18",includeMonth:true});assert.equal(month.body.monthDays.length,31);assert.equal(month.body.monthDays.find(d=>d.date==="2027-10-19").status,"no-school");
+});
+
+test("SQLite preserves new scene, block, temporary window and date-only class metadata",t=>{
+ const {store}=sqliteRoutes(t),scene={version:1,layers:[{id:"notice",type:"text",text:"School notice"}]};
+ const event={id:"block-event",name:"Lunch",enabled:true,time:"11:00",blockIds:["lunch"],scheduleWindow:{startDate:"2027-10-18",endDate:"2027-10-18"},overlayPolicy:"selected",overlayIds:["notice"],action:"display.text",targets:["all"],payload:{scene},timerOverlay:{enabled:true,source:"end-time",endTime:"11:28"}};
+ store.writeNormalized("automations",{events:[event]});const saved=store.readNormalized("automations").events[0];assert.deepEqual(saved.blockIds,["lunch"]);assert.deepEqual(saved.payload.scene,scene);assert.equal(saved.timerOverlay.endTime,"11:28");assert.deepEqual(saved.overlayIds,["notice"]);
+ store.writeNormalized("class-schedules",{classes:[{id:"homeroom",name:"Homeroom",scheduleMode:"dates",includeDates:["2027-10-18"],startTime:"13:13",endTime:"14:45",enabled:true}]});const cls=store.readNormalized("class-schedules").classes[0];assert.equal(cls.scheduleMode,"dates");assert.deepEqual(cls.includeDates,["2027-10-18"]);
 });
