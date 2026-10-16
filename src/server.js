@@ -3825,9 +3825,11 @@ function publicUser(user){return user?{id:user.id,username:user.username,display
 function authenticationUnavailable(res){
   return res.status(503).json({ok:false,error:"Secure setup is required before this operation is available",setupRequired:dbStore.userCount()===0});
 }
+function controlAccessAllowed(req){return dbStore.authEnabled()?hasCapability(requestUser(req),"classroom.control"):!!CONTROL_TOKEN&&secureTokenEqual(req.get("x-control-token")||"",CONTROL_TOKEN)}
+function capabilityAccessAllowed(req,capability){return dbStore.authEnabled()?hasCapability(requestUser(req),capability):controlAccessAllowed(req)}
 function requireControl(req, res, next) {
   if(dbStore.authEnabled()){
-    const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});if(!hasCapability(user,"classroom.control"))return res.status(403).json({ok:false,error:"Permission required: classroom.control"});return next();
+    const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});if(!controlAccessAllowed(req))return res.status(403).json({ok:false,error:"Permission required: classroom.control"});return next();
   }
   if(!CONTROL_TOKEN)return authenticationUnavailable(res);
   const token=req.get("x-control-token")||"";
@@ -3853,7 +3855,7 @@ function requireAuthenticated(req,res,next){
 function requireCapability(capability){return (req,res,next)=>{
   if(!dbStore.authEnabled())return requireControl(req,res,next);
   const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});
-  if(!hasCapability(user,capability))return res.status(403).json({ok:false,error:`Permission required: ${capability}`});
+  if(!capabilityAccessAllowed(req,capability))return res.status(403).json({ok:false,error:`Permission required: ${capability}`});
   next();
 }}
 function requireClassroomRead(req,res,next){return requireCapability("classroom.read")(req,res,next)}
@@ -5074,7 +5076,8 @@ function persistentAssetAccessKey(){
 const assetAccessKey=persistentAssetAccessKey();
 function issueAssetAccessToken(deviceId,credentialId="",ttlSeconds=900){const expires=Math.floor(Date.now()/1000)+ttlSeconds,credential=String(credentialId||"legacy").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,80)||"legacy",payload=`${cleanId(deviceId)}.${expires}.${credential}`,signature=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");return `${payload}.${signature}`}
 function validAssetAccessToken(token){const parts=String(token||"").split(".");if(parts.length!==4||!/^\d+$/.test(parts[1])||Number(parts[1])<Math.floor(Date.now()/1000))return false;const payload=`${parts[0]}.${parts[1]}.${parts[2]}`,expected=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");if(!secureTokenEqual(parts[3],expected)||!devices[cleanId(parts[0])]?.enabled)return false;const policy=dbStore.displayCredentialPolicy();if(parts[2]==="direct")return !policy.authenticationRequired;if(parts[2]==="legacy")return policy.legacySharedTokenAllowed;return dbStore.listDisplayCredentials().credentials.some(item=>item.id===parts[2]&&item.displayId===parts[0]&&!item.revokedAt)}
-function requireAssetAccess(req,res,next){if(requestUser(req)||validAssetAccessToken(req.query.access_token))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
+function assetAccessAllowed(req){return !!requestUser(req)||validAssetAccessToken(req.query.access_token)}
+function requireAssetAccess(req,res,next){if(assetAccessAllowed(req))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
 app.use("/media",requireAssetAccess,(req,res,next)=>path.extname(req.path).toLowerCase()===".svg"?res.status(415).json({ok:false,error:"Active SVG media is not served from the application origin"}):next(),express.static(MEDIA_DIR,{fallthrough:false}));
 app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fallthrough:false}));
 // Keep PDF.js and its worker on the same upstream compatibility build for kiosk browsers.
@@ -5426,6 +5429,7 @@ const schedulerMutationLimit=rateLimit({
 
 const sportsRuntime=require("./sports-routes").registerSportsRoutes(app,{
  store:dbStore,readGuard:requireControl,writeGuard:[requireCapability("schedule.manage"),requireCapability("automation.manage")],adminGuard:requireAdmin,
+ canRead:controlAccessAllowed,canWrite:req=>capabilityAccessAllowed(req,"schedule.manage")&&capabilityAccessAllowed(req,"automation.manage"),canReadAssets:assetAccessAllowed,
  canManageSources:administratorAccessAllowed,assetGuard:requireAssetAccess,rateLimit,multer,
  ingestMedia:require("./sports-media-cache").createSportsMediaCache({root:MEDIA_DIR,register:registerUploadedMedia}),
  weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,track:trackFullExportMutation
