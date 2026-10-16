@@ -14,8 +14,13 @@ change today's games without recreating a scheduled occurrence or restarting
 the display session. All providers must have a genuinely free ongoing option;
 trials, premium live endpoints and automatic paid fallback are excluded.
 
-Prioritize usable schedules and team information over an unsupported promise of
-complete live statistics. Native cards require an authorized structured feed or
+Operator clarification: live statistics and live scoreboards are **not required**.
+The hallway audience needs completed results on following school days, upcoming
+games, team information and rosters. Prioritize free final-result and schedule
+coverage over refresh speed. Do not build live clocks, play-by-play or minute-level
+score polling for this scope.
+
+Native cards require an authorized structured feed or
 staff input. Provider widgets remain visibly provider-owned surfaces; availability
 of an iframe is not permission to scrape its contents into native cards.
 
@@ -29,7 +34,7 @@ redistribution permission, ad-free operation or physical-display compatibility.
 | --- | --- | --- |
 | [ArbiterLive team following](https://arbitersportshelp.zendesk.com/hc/en-us/articles/19923810064909-How-do-I-Follow-Teams-on-ArbiterLive) | Public team schedules; team following includes emailing an iCal feed, with account/subscription steps | Preferred school schedule import. A school's actual feed, fields and refresh behavior must be tested; no feed has been obtained. No automated sign-up or email action. |
 | [Arbiter school settings](https://arbitersportshelp.zendesk.com/hc/en-us/articles/19923859998093-School-Settings) | Schools can generate an iCal link for external calendars/websites | Another approved route for an administrator-supplied feed. No assumption that it includes scores or rosters. |
-| [ScoreStream partner tools](https://scorestream.com/partners) and [widgets](https://api.scorestream.com/make-a-scoreboard-widget) | Free automatically updating widgets with team/style selection | Optional reported-score board. Verify exact team coverage, branding, ads, external requests, framing and hallway readability before enabling. Free widgets do not establish a free raw-data API. |
+| [ScoreStream partner tools](https://scorestream.com/partners) and [widgets](https://api.scorestream.com/make-a-scoreboard-widget) | Free automatically updating widgets with team/style selection | Secondary candidate for reported completed results only if an appropriate history/final-only view is verified. Live capabilities are unnecessary. Verify coverage, branding, ads and framing. Free widgets do not establish a free raw-data API. |
 | [ScoreStream FAQ](https://api.scorestream.com/faq) | Community reporting across school, college and professional sports; detailed statistics are not its focus | Treat scores as reported, with appropriate source labeling. Do not promise every league, sport or team will have timely coverage. |
 | [Hudl profile setup](https://www.hudl.com/support/fan-engagement/guides/getting-started-with-your-profile) and [FAQ](https://www.hudl.com/solutions/fan/faq) | Coach-entered schedules/rosters appear on organization profiles; Fan profiles are included for existing Hudl customers | Public team-page links and a potential school-provided roster source. No supported free export/API or permission to reproduce portraits has been verified. An existing school's entitlement is not a generic free RoomGoblin service. |
 | [TheSportsDB API guide](https://www.thesportsdb.com/docs_api_guide.php) and [terms](https://api.thesportsdb.com/docs_terms_of_use.php) | Free V1 has endpoint-specific limits; guide currently restricts team-name search to Arsenal; live scores and V2 require premium | Experimental metadata lookup only after endpoint/coverage/rights verification. Not the backbone for US team discovery, complete rosters, standings or live scores. API availability does not establish rights to every supplied image. |
@@ -52,7 +57,8 @@ ESPN's reachable scoreboard JSON is an exploratory lead, not a verified supporte
 public API contract. No free supported ESPN, NCAA-wide or MaxPreps integration
 has been established in this research. Do not make undocumented endpoints or
 website scraping the default reliability dependency. Rich player statistics and
-universal live coverage remain outside the promised free baseline.
+universal statistics coverage remain outside the promised free baseline. Live
+coverage is outside this scope.
 
 ## Operator workflow
 
@@ -62,7 +68,7 @@ athletics**, **College**, and **Professional** presets. Each opens the same edit
 1. **Choose teams:** search supported sources or add a team manually; filter by
    sport, league/conference, team category and competition level. Keep provider
    category labels; do not infer gender or varsity/JV from a name substring.
-2. **Choose content:** Today, next seven days, recent results, team spotlight,
+2. **Choose content:** Last school day's results, today, next seven days, team spotlight,
    roster, standings or supported statistics. Unsupported choices explain the
    missing source capability rather than displaying empty fake values.
 3. **Design the board:** choose full screen, matchup, compact ticker or overlay;
@@ -103,9 +109,9 @@ operator surface according to the existing product contract.
 
 | Preset | Initial content | Useful controls |
 | --- | --- | --- |
-| School athletics | Today's contests, next seven days, recent results, optional team spotlight | School teams first; varsity/JV/middle-school filters where supplied; home/away/neutral, opponent, venue, time, postponed/cancelled labels; roster rotation opt-in |
-| College | Selected schools and conferences; today's games and upcoming fixtures | Sport and team-category filters, favorites, conference grouping; rankings/standings only with a verified eligible source |
-| Professional | Selected leagues and favorites; live reported games then today's fixtures, recent finals and next games | NFL, NBA, WNBA, MLB, NHL and soccer as selectable candidates; each source must pass coverage checks before a league is marked supported |
+| School athletics | Results since the previous school day's digest, today's contests, next seven days, optional team spotlight | School teams first; varsity/JV/middle-school filters where supplied; home/away/neutral, opponent, venue, time, postponed/cancelled labels; roster rotation opt-in |
+| College | Selected schools and conferences; previous-day/weekend finals and upcoming fixtures | Sport and team-category filters, favorites, conference grouping; rankings/standings only with a verified eligible source |
+| Professional | Selected leagues and favorites; previous-day/weekend finals followed by next games | NFL, NBA, WNBA, MLB, NHL and soccer as selectable candidates; each source must pass coverage checks before a league is marked supported |
 
 Automatic sport selection means **prioritize enabled sports with actual fixtures**,
 not a hardcoded month-to-sport mapping. Keep favorite teams visible; allow manual
@@ -117,8 +123,8 @@ scrolling by default. Limit cards per page and paginate long schedules/rosters
 without clipping. Allow short fades and reduced-motion behavior. A provider frame
 controls its own internal layout; do not claim native styling or filtering of it.
 
-An editable overlay can show next school contest, a selected matchup, reported
-score or schedule-change message. Choose fields and move/resize it in Scene
+An editable overlay can show next school contest, a selected matchup, completed
+result or schedule-change message. Choose fields and move/resize it in Scene
 studio. Preserve underlying video/audio sessions and timer deadlines. A sports
 overlay must not overwrite an announcement, class transition or countdown.
 
@@ -134,7 +140,7 @@ Proposed normalized records:
   category, level, season, optional approved logo, official public page.
 - **Event:** internal ID, source ID/UID, participating teams, start instant or
   date-only/TBD, source timezone, home/away/neutral, venue/address, status,
-  optional score/period, source provenance and freshness per field group.
+  optional final score, completion/report time, source provenance and freshness per field group.
 - **Roster:** team/season, stable row key, approved public display name, jersey
   number, optional position and grade, public source and revision. No private
   contact, birth, eligibility, medical or student-information-system fields.
@@ -167,7 +173,7 @@ or make a closed school day run classroom automations.
 ## Reliable data and display behavior
 
 Maintain separate event state and feed state. Event state can be scheduled, TBD,
-reported-live, final, postponed, cancelled or unknown. Feed state can be healthy,
+in-progress (excluded from result cards), final, postponed, cancelled or unknown. Feed state can be healthy,
 delayed, stale, unavailable, unconfigured or unsupported. A successful fetch is
 not evidence of a newly updated score. Prefer a provider update timestamp; otherwise
 label the time as **Fetched**, not **Score updated**.
@@ -177,15 +183,32 @@ a fabricated game clock, or infer cancellation because an event disappears. An
 unknown final score stays unknown. Preserve cancelled/postponed notices for the
 applicable display window. An empty successful feed differs from a failed fetch.
 
-Proposed initial budgets (subject to provider terms and measured behavior): native
-score adapters poll no faster than 60 seconds during relevant games; schedules
-every 15 minutes; metadata/rosters daily. All receivers share a server-side cache
-and single-flight request; no per-TV upstream polling. Honor Retry-After, add jitter
-and bounded backoff, stop idle polling and retain bounded last-known-good data.
-Score freshness warning starts after three expected intervals; after 15 minutes
-without a healthy refresh remove any suggestion of live currency and offer
-scheduled/last-known content. Source event age can require an earlier warning.
-Roster/schedule freshness thresholds are separately configured and visibly labeled.
+### Next-school-day digest
+
+Prepare the results digest before the configured school opening time, using the
+site timezone. Monday includes weekend results; a school closure extends the
+window back to the previous displayed school-day digest. Read the existing school
+calendar without modifying it. Record a durable digest watermark only after a
+successful digest is prepared; preview does not advance it. Paginate overflow so
+busy weekends do not silently lose results. Outside school hours, retain the
+latest digest and upcoming schedule; manual boards remain available.
+
+Only explicitly final/completed results enter result cards. Unreported outcomes
+appear as **Result pending** with the event date; never treat an in-progress score
+as final. Late finals and corrections update the applicable digest without
+restarting its display session. Corrections to earlier displayed results get a
+dated correction card, avoiding silent disappearance. No result is described as
+"yesterday" unless its event date actually matches yesterday at the site.
+
+Proposed initial budgets (subject to provider terms and measured behavior): results
+refresh on digest preparation and hourly during display hours; schedules every
+30 minutes during display hours; metadata/rosters daily. All receivers share a
+server-side cache and single-flight request; no per-TV upstream polling. Honor
+Retry-After, add jitter and bounded backoff, stop idle polling and retain bounded
+last-known-good data. Warn after three missed scheduled refreshes, preserving
+completed results with their dates and source timestamps. An old final does not
+become an invalid score merely because a source is offline; label the failed
+refresh separately. Source-specific schedule/roster thresholds remain visible.
 These native-cache rules cannot certify freshness inside a third-party iframe.
 
 Use the existing scene/layout engine and safe regions. A native sports data refresh
@@ -229,16 +252,18 @@ operator-only roster fields. All ordinary sports reads are side-effect free.
 2. **School schedule connector:** verify an approved school feed, mapping and
    timezone/changes/cancellation handling; compare selected teams against the
    official published schedule. Do not mark Carlisle import ready before this.
-3. **Optional reported-score source:** test a ScoreStream board's actual school,
-   college and professional coverage, provider frame behavior and suitability on
-   hallway receivers. Offer only the successfully verified choices.
+3. **Completed-results sources:** qualify eligible free final-result feeds or
+   staff imports for school, college and professional selections. Test next-day,
+   weekend, late-final and correction coverage. A ScoreStream frame is optional
+   only if its completed-results view suits this workflow; it is not a dependency.
 4. **Native free-feed additions:** qualify individual metadata/soccer adapters and
    any subsequently documented authorized free feeds. No unsupported broad claim
    of NFL/NCAA statistics; no silent paid upgrade.
 
 Required future regressions: permissions and receiver projection, source bounds
 and URL abuse, cache single-flight/backoff, timezones/DST/TBD, duplicates and moved
-events, missing/stale/conflicting scores, import undo/replacement, draft/focus
+events, missing/stale/conflicting finals, school-day digest watermarks, weekend
+and holiday windows, late finals/corrections, import undo/replacement, draft/focus
 preservation, long names/rosters, landscape/portrait sizing and reduced motion.
 Receiver tests must verify weather/sports refresh retains the same media node,
 countdown deadline, announcement priority and audio state. Provider-frame tests
