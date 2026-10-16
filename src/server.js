@@ -5426,7 +5426,7 @@ const schedulerMutationLimit=rateLimit({
 
 const sportsRuntime=require("./sports-routes").registerSportsRoutes(app,{
  store:dbStore,readGuard:requireControl,writeGuard:[requireCapability("schedule.manage"),requireCapability("automation.manage")],adminGuard:requireAdmin,
- canManageSources:req=>requestUser(req)?.role==="admin",assetGuard:requireAssetAccess,rateLimit,multer,
+ canManageSources:administratorAccessAllowed,assetGuard:requireAssetAccess,rateLimit,multer,
  ingestMedia:require("./sports-media-cache").createSportsMediaCache({root:MEDIA_DIR,register:registerUploadedMedia}),
  weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,track:trackFullExportMutation
 });
@@ -6583,7 +6583,8 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   else if(["display.clear","display.image","display.pdf","display.document","display.presentation"].includes(type)){replacesAudio=true}
   if(replacesAudio)for(const id of targets){
     const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);
-    if(!announcementOwnsTarget)backgroundMusicPriorityTargets.delete(id);
+    const manualOwnsTarget=manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id);
+    if(!announcementOwnsTarget&&!manualOwnsTarget)backgroundMusicPriorityTargets.delete(id);
   }
   if(startsAudio)for(const id of targets)backgroundMusicPriorityTargets.add(id);
   trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});

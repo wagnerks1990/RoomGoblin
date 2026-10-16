@@ -16,10 +16,13 @@ class SportsBrowserTests(unittest.TestCase):
     page = workspaces.WorkspaceBrowserTests.page
     evidence = workspaces.WorkspaceBrowserTests.evidence
 
-    def sports(self, width=1440):
+    def sports(self, width=1440, capabilities=None):
         d = data()
         commands = []
         def transport(route, target):
+            if target == '/api/v1/auth/status' and capabilities is not None:
+                route.fulfill(json={'authEnabled': True, 'userCount': 1, 'user': {'username': 'fixture', 'role': 'admin', 'capabilities': capabilities}})
+                return True
             if target == '/api/v1/sports/boards/b/scene':
                 route.fulfill(json={'ok': True, 'scene': d['scene']})
                 return True
@@ -97,4 +100,18 @@ class SportsBrowserTests(unittest.TestCase):
         page.locator('.rg-sports-weather').get_by_text('Thunderstorms', exact=False).wait_for()
         overflow = page.locator('.rg-sports').evaluate("""n => [...n.querySelectorAll('.rg-sports-heading,article,.rg-sports-weather,.rg-sports-recap')].filter(x=>x.scrollHeight>x.clientHeight+2||x.scrollWidth>x.clientWidth+2).map(x=>x.className||x.tagName)""")
         self.assertEqual(overflow, [])
+        self.assertEqual(errors, [])
+
+    def test_classroom_control_profile_can_preview_and_send_without_editing(self):
+        page, errors, commands, _ = self.sports(capabilities=['classroom.control'])
+        self.assertTrue(page.get_by_role('button', name='Save Sports', exact=True).is_disabled())
+        self.assertTrue(page.get_by_role('button', name='Schedule board', exact=True).is_disabled())
+        self.assertTrue(page.get_by_label('Board name', exact=True).is_disabled())
+        self.assertTrue(page.get_by_label('Board', exact=True).is_enabled())
+        page.get_by_role('button', name='Preview board', exact=True).click()
+        page.locator('.rg-sports-player').first.wait_for()
+        page.get_by_label('Example display', exact=True).check()
+        page.get_by_role('button', name='Send to selected displays', exact=True).click()
+        page.get_by_text('Sports sent to the selected displays.', exact=True).wait_for()
+        self.assertEqual(commands[0]['target'], ['tv1'])
         self.assertEqual(errors, [])

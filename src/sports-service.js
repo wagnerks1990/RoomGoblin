@@ -27,7 +27,7 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
      if(parsed.roster?.length&&!target.rosterLocked&&!rosterChosen.has(team.id)){
       const year=team.season.match(/20\d{2}/)?.[0];if(!year||!String(parsed.season).includes(year))throw Error('Roster season does not match the configured team');
       const rows=parsed.roster.filter(p=>team.level==='program'||p.level===team.level);if(!rows.length)throw Error('Roster has no confirmed entries for this team level');
-      target.roster=rows;target.rosterSource=source.url;target.rosterUpdatedAt=new Date(now()).toISOString();rosterChosen.add(team.id);changed=true;
+      const roster=rows.map(p=>model.normalizePlayer({...p,id:p.id||imports.key([p.name,p.number,p.role].join('|'))}));rosterChosen.add(team.id);if(JSON.stringify(target.roster)!==JSON.stringify(roster)||target.rosterSource!==source.url){target.roster=roster;target.rosterSource=source.url;target.rosterUpdatedAt=new Date(now()).toISOString();changed=true;}
      }
      let accepted=0;
      for(const e of (parsed.events||[]).slice(0,500)){
@@ -36,7 +36,7 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
       if(!incoming.startAt)continue;
       // A schedule-only refresh must not erase a previously verified final.
       if(existing?.status==='final'&&(incoming.status!=='final'||incoming.score==null||incoming.opponentScore==null))continue;
-      const index=working.events.indexOf(existing);if(index<0)working.events.push(incoming);else working.events[index]=incoming;accepted++;changed=true;
+      const normalized=model.normalizeEvent(incoming);accepted++;if(existing&&JSON.stringify(existing)===JSON.stringify(normalized))continue;const index=working.events.indexOf(existing);if(index<0)working.events.push(normalized);else working.events[index]=normalized;changed=true;
      }
      if(source.autoMedia&&source.mediaRights)for(const m of (parsed.media||[]).slice(0,12)){
       if(downloads>=4||!canRun())break;if(String(m.sport||'').toLowerCase()!==team.sport.toLowerCase()||m.level!==team.level)continue;

@@ -27,7 +27,9 @@ The display uses the existing 1920x1080 scene/layout engine and contains images
 and video without cropping. Roster rows enter from below after a two-second pause,
 scroll continuously and loop. Page duration grows to allow the complete roster
 through once; videos play alongside it, with a two-minute per-clip ceiling and
-bounded stall recovery. Video starts muted before requested sound is applied;
+bounded stall recovery. The watchdog checks media time and decoded-frame
+progress independently, escalating through resume, seek, player-local decoder
+reattachment and skipping the failed clip. Seek jumps do not reset escalation. Video starts muted before requested sound is applied;
 blocked audible autoplay falls back to muted playback. An audible board reserves
 Background Music priority until replacement. Silent boards retain Background Music. Audio/volume are captured in the scene when
 sending or scheduling; resend or update the scheduled scene after changing sound.
@@ -73,7 +75,7 @@ event edits. Schedule-only updates cannot erase an existing final. Network failu
 retain saved results/rosters/media; status is separate from event state. Source
 refresh does not delete missing events or infer cancellation from disappearance.
 Source changes are administrator-only. Ordinary edits require schedule and
- automation management permissions; reads use classroom control authorization.
+automation management permissions; reads use classroom control authorization.
 
 Media discovery additionally requires school reuse permission and approved media
 origins. Metadata must match sport and level and include a valid date. More than
