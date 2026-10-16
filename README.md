@@ -21,8 +21,7 @@ Background Music development: [Music Studio and recovery](docs/BACKGROUND-MUSIC-
 
 Weather displays: [Weather workspace, forecasts and adjustable overlays](docs/WEATHER-WORKSPACE.md).
 
-Sports proposal: [Free-source research and workspace design](docs/SPORTS-DESIGN.md)
-(design only; no sports connectors are shipped).
+Sports displays: [School boards, roster imports and approved source refresh](docs/SPORTS.md).
 
 ## Compatibility contract
 

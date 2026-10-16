@@ -5,7 +5,7 @@
   const EFFECTS=["none","fade","slide","bounce","scroll"],TRANSITIONS=["none","fade","slide","zoom"];
   const WEATHER_FIELDS=["location","temperature","condition","feels","wind","humidity","precipitation","precipitation-today","sun","pressure","uv","visibility","alerts","sports-afternoon","sports-evening"];
   const WEATHER_WIDGETS=["weather",...WEATHER_FIELDS.map(x=>`weather-${x}`),"weather-sports",...Array.from({length:16},(_,i)=>`weather-day-${i+1}`),...Array.from({length:12},(_,i)=>`weather-hour-${i+1}`)];
-  const WIDGETS=["clock","date","class","countdown","cycle",...WEATHER_WIDGETS,"progress"];
+  const WIDGETS=["clock","date","class","countdown","cycle",...WEATHER_WIDGETS,"progress","sports-board"];
   const num=(v,d,min,max)=>{const n=v===undefined?d:Number(v);if(!Number.isFinite(n))throw Error("Scene values must be finite numbers");return Math.max(min,Math.min(max,n))};
   const color=(v,d)=>{const s=String(v||d);if(!/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(s))throw Error("Choose a hex color");return s};
   const asset=v=>{const s=String(v||"");if(s&&!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(s)||s.includes("..")||s&&!/\.(png|jpe?g|gif|webp|bmp)$/i.test(s))throw Error("Choose an uploaded image");return s};
@@ -36,7 +36,7 @@
         const x=num(l.x,10,0,99),y=num(l.y,10,0,99);
         return fitGeometry({id,type:l.type,name:String(l.name||`${l.type} ${i+1}`).slice(0,100),x,y,w:num(l.w,50,1,100-x),h:num(l.h,15,1,100-y),
           text:String(l.text||"").slice(0,8000),asset:asset(l.asset),color:color(l.color,"#ffffff"),fill:color(l.fill,"#0f766e"),
-          widget:WIDGETS.includes(l.widget)?l.widget:"clock",weatherFields:[...new Set(weatherFields)],clock24:l.clock24===true,autoFit:l.autoFit!==false,
+          widget:WIDGETS.includes(l.widget)?l.widget:"clock",sportsBoardId:/^[\w-]{1,80}$/.test(String(l.sportsBoardId||''))?String(l.sportsBoardId):'',sportsAudio:l.sportsAudio===true,sportsVolume:num(l.sportsVolume,1,0,1),weatherFields:[...new Set(weatherFields)],clock24:l.clock24===true,autoFit:l.autoFit!==false,
           fontSize:num(l.fontSize,64,12,220),bold:l.bold===true,italic:l.italic===true,underline:l.underline===true,
           align:["left","center","right"].includes(l.align)?l.align:"center",opacity:num(l.opacity,1,0,1),
           radius:num(l.radius,0,0,200),rotation:num(l.rotation,0,-180,180),glow:num(l.glow,0,0,40),
@@ -58,7 +58,7 @@
     if(layer.widget==="progress"){const duration=data.endAt-data.startAt;return duration>0?`${Math.round(Math.max(0,Math.min(100,(now-data.startAt)/duration*100)))}% complete`:"Progress unavailable"}
     const seconds=Math.max(0,Math.ceil((data.endAt-now)/1000));return `${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`;
   }
-  function render(container,value,{resolveAsset=name=>`/media/${encodeURIComponent(name)}`,interactive=false,reducedMotion=false,fitText=null}={}){
+  function render(container,value,{resolveAsset=name=>`/media/${encodeURIComponent(name)}`,interactive=false,reducedMotion=false,fitText=null,loadSports,previewSports=false}={}){
     const scene=normalize(value);container.replaceChildren();container.classList.add("rg-scene");
     container.style.background=scene.transparent?"transparent":scene.background;
     container.dataset.transition=reducedMotion?"none":scene.transition;
@@ -68,15 +68,16 @@
       node.dataset.effect=reducedMotion?"none":layer.effect;node.style.cssText=`left:${layer.x}%;top:${layer.y}%;width:${layer.w}%;height:${layer.h}%;opacity:${layer.opacity};border-radius:${layer.radius}px;transform:rotate(${layer.rotation}deg);--scene-speed:${layer.speed}s`;
       const inner=container.ownerDocument.createElement(layer.type==="image"?"img":"div");inner.className="rg-scene-content";
       if(layer.type==="image"){if(layer.asset)inner.src=resolveAsset(layer.asset);inner.alt=layer.name;inner.style.objectFit=layer.fit;inner.draggable=false}
+      else if(layer.type==='widget'&&layer.widget==='sports-board'){if(typeof window!=='undefined'&&window.RoomGoblinSportsBoard)window.RoomGoblinSportsBoard.mount(inner,layer.sportsBoardId,{resolveAsset,loadSports,preview:previewSports,audio:layer.sportsAudio,volume:layer.sportsVolume});else inner.textContent='Sports renderer unavailable';}
       else if(layer.type==="shape")inner.style.background=layer.fill;
       else {inner.textContent=layer.type==="widget"?widgetText(layer,scene.data):layer.text;inner.style.cssText=`color:${layer.color};font-size:${layer.fontSize}px;font-weight:${layer.bold?800:400};font-style:${layer.italic?"italic":"normal"};text-decoration:${layer.underline?"underline":"none"};text-align:${layer.align};justify-content:${layer.align==="left"?"flex-start":layer.align==="right"?"flex-end":"center"};text-shadow:${layer.glow?`0 0 ${layer.glow}px ${layer.color}`:"none"}`}
       if(layer.type==="text"||layer.type==="widget"){inner.style.lineHeight="1.15";inner.style.overflow="visible";}
       node.append(inner);if(interactive){node.tabIndex=0;node.setAttribute("role","button");node.setAttribute("aria-label",`Select ${layer.name}`)}container.append(node);
-      if((layer.type==="text"||layer.type==="widget")&&layer.autoFit&&fitText){inner.style.height="auto";inner.style.maxHeight="100%";fitText(inner,node,layer.fontSize)}
+      if((layer.type==="text"||layer.type==="widget")&&layer.widget!=='sports-board'&&layer.autoFit&&fitText){inner.style.height="auto";inner.style.maxHeight="100%";fitText(inner,node,layer.fontSize)}
     }
     active.delete(container);
     if(scene.layers.some(l=>l.type==="widget"&&WEATHER_WIDGETS.includes(l.widget))){const credit=container.ownerDocument.createElement("a");credit.className="rg-weather-credit";credit.href="https://open-meteo.com/";credit.target="_blank";credit.rel="noopener noreferrer";credit.textContent=scene.data.weatherSource||"Weather data: Open-Meteo · CC BY 4.0";credit.style.cssText="position:absolute;bottom:1%;right:1%;font-size:16px;color:#fff;background:#061b12;padding:4px 8px;border-radius:4px;text-decoration:none;pointer-events:auto";container.append(credit)}
-    if(scene.layers.some(l=>l.type==="widget"))active.set(container,{scene,fitText});
+    if(scene.layers.some(l=>l.type==="widget"&&l.widget!=='sports-board'))active.set(container,{scene:{...scene,layers:scene.layers.filter(l=>l.widget!=='sports-board')},fitText});
     if(active.size&&!ticker)ticker=setInterval(()=>{for(const [host,{scene,fitText}] of active){if(!host.isConnected){active.delete(host);continue}for(const layer of scene.layers.filter(l=>l.type==="widget")){const outer=[...host.children].find(n=>n.dataset.layerId===layer.id),inner=outer?.firstChild;if(!inner)continue;const text=widgetText(layer,scene.data);if(inner.textContent!==text){inner.textContent=text;if(layer.autoFit&&fitText)fitText(inner,outer,layer.fontSize)}}}if(!active.size){clearInterval(ticker);ticker=null}},1000);
     return scene;
   }

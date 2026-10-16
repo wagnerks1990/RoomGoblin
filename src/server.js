@@ -5424,6 +5424,13 @@ const schedulerMutationLimit=rateLimit({
   message:{ok:false,error:"Scheduler configuration or command limit reached; retry later"}
 });
 
+const sportsRuntime=require("./sports-routes").registerSportsRoutes(app,{
+ store:dbStore,readGuard:requireControl,writeGuard:[requireCapability("schedule.manage"),requireCapability("automation.manage")],adminGuard:requireAdmin,
+ canManageSources:req=>requestUser(req)?.role==="admin",assetGuard:requireAssetAccess,rateLimit,multer,
+ ingestMedia:require("./sports-media-cache").createSportsMediaCache({root:MEDIA_DIR,register:registerUploadedMedia}),
+ weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,track:trackFullExportMutation
+});
+
 const weatherReadLimit=rateLimit({windowMs:60_000,limit:240,keyGenerator:()=>"weather-read",standardHeaders:"draft-8",legacyHeaders:false});
 const weatherWriteLimit=rateLimit({windowMs:60_000,limit:20,keyGenerator:()=>"weather-write",standardHeaders:"draft-8",legacyHeaders:false});
 app.get("/api/v1/weather",weatherReadLimit,requireControl,async(_req,res)=>{
@@ -6560,12 +6567,16 @@ async function releaseManualMediaPriority(reason="operator-resume"){
 function backgroundMusicObserveDisplayCommand(command,source="api"){
   const src=String(source||command?.source||"");
   const p=command?.payload||{},kind=String(p.contentKind||"");
-  const eligible=src==="automation"||kind==="morning-announcements";
+  // Sports video is one persistent scene session. Reserve audio for the board
+  // until replacement; never restart an automation for individual clips.
+  const sportsAudio=p.scene?.layers?.some(l=>l.widget==="sports-board")?require("./sports-audio").commandAudio(command,sportsRuntime.service.read()):null;
+  const eligible=src==="automation"||kind==="morning-announcements"||sportsAudio!==null||p.scene||["display.text","display.clear"].includes(command.type);
   if(!eligible)return;
   let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{return}
   const type=String(command.type||"");
   let startsAudio=false,replacesAudio=false;
-  if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true}
+  if(type==="display.text"){replacesAudio=true;startsAudio=sportsAudio===true}
+  else if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true}
   else if(type==="display.web"){replacesAudio=true;startsAudio=p.forceAudio===true||p.muted===false||kind==="morning-announcements"}
   else if(type==="display.web.audio"){startsAudio=p.unmute!==false}
   else if(type.startsWith("voice.")||type.startsWith("sfx.")){startsAudio=true}

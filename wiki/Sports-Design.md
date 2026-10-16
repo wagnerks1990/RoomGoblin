@@ -1,8 +1,8 @@
 # Sports workspace: research and proposed design
 
-Status: design proposal, researched October 16, 2026. No Sports connector, live
-board, account, subscription, display command or production configuration has
-been created. This document describes intended behavior, not shipped features.
+Status: historical research/proposal, October 16, 2026. The school-board implementation
+is documented in [Sports boards](SPORTS.md). The broader professional/college,
+digest and provider proposals below are not a claim of shipped functionality.
 Prepared for RoomGoblin by Kyle Wagner with development assistance.
 
 ## Product decision
