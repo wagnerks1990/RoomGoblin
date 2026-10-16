@@ -100,7 +100,7 @@ function showLabConsole(kind){
   const active=windows?wf:vf;if(!active.src)active.src=active.dataset.lazySrc;
   labConsoleHelp.textContent=windows?'The Windows agent provides enrolled-computer inventory, screenshots, browser-history review, and supported power/session commands.':'Veyon monitoring uses the configured Veyon WebAPI integration.';
 }
-function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media'){loadMedia();ensureMediaSessionControls();refreshMediaSessionControls();}if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
+function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media'){loadMedia();ensureMediaSessionControls();refreshMediaSessionControls();}if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='planning')loadPlanning();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 
 function overviewContentSummary(state={}){
@@ -1051,7 +1051,8 @@ function clearAutomationClassLinks(){
 
 async function loadClassSchedules(){
   try{
-    const x=await api('/api/v1/class-schedules');
+    const [x,calendar]=await Promise.all([api('/api/v1/class-schedules'),api('/api/v1/automations/calendar')]);
+    S.scheduleProfile=calendar.scheduleProfile||S.scheduleProfile;
     S.classes=x.classes||[];
     S.classStatus={schoolCycle:x.schoolCycle||null,activeClass:x.activeClass||null,nextClass:x.nextClass||null};
     if(window.classCurrentStatus){renderClassCurrentStatus();renderClassScheduleList()}
@@ -2315,7 +2316,7 @@ async function saveAdminSite(){try{const body={school:cfgSchool.value.trim(),roo
 async function saveAdminHardware(){try{const v=JSON.parse(cfgHardware.value);await api('/api/v1/admin/hardware',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(v)});ADMINCFG.hardware=v;renderAdminIntegrationCards();cfgHardwareMsg.textContent='Hardware configuration validated and saved. Restart RoomGoblin if integration endpoints changed.'}catch(e){cfgHardwareMsg.textContent=e.message}}
 function showLogin(){document.body.classList.add('auth-locked');loginOverlay.style.display='flex';setTimeout(()=>loginUser.focus(),50)}
 function hideLogin(){document.body.classList.remove('auth-locked');loginOverlay.style.display='none';loginMsg.textContent=''}
-const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control'],lights:['integrations.control'],esphome:['classroom.read'],display:['classroom.control'],presentations:['media.manage'],media:['media.manage'],music:['classroom.control'],lab:['lab.read'],classes:['schedule.manage'],schedules:['schedule.manage','automation.manage'],diagnostics:['diagnostics.read'],settings:['admin'],system:['admin']};
+const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control'],lights:['integrations.control'],esphome:['classroom.read'],display:['classroom.control'],presentations:['media.manage'],media:['media.manage'],music:['classroom.control'],lab:['lab.read'],planning:['schedule.manage'],classes:['schedule.manage'],schedules:['schedule.manage','automation.manage'],diagnostics:['diagnostics.read'],settings:['admin'],system:['admin']};
 const ACTION_CAPABILITIES={
   admin:['saveAdminDisplaysStructured','addAdminDisplayGroup','removeAdminDisplayGroup','removeAdminDisplay','removeEmptyLegacyDisplayGroups','saveAdmin','loadAdmin','createLabAgentEnrollment','saveLabAgentPolicy','revokeLabAgentCredential','loadSystemManagement'],
   media:['presentationControl','startSelectedPresentation','newPresentationFolder','renamePresentation','movePresentation','deletePresentation','rebuildPresentation','showMedia','convertMedia','deleteMedia'],

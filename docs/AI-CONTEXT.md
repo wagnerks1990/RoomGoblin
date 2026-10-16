@@ -595,3 +595,12 @@ physical port blocks both transports conservatively. Individual payload output
 overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
+
+## Planning (Unreleased)
+
+Read `PLANNING.md` before changing calendar/cycle/timetable behavior. The new
+resolver is opt-in. Preserve A–H cycle identity separately from Green/White groups
+and regular/Bison period membership. Repeated teaching segments share one class
+ID; preserve per-segment deadlines, legacy fallbacks, transactional profile/class
+membership migration and revision-checked preview/save. Calendar imports stage
+locally and never infer district dates or dispatch devices.

@@ -112,6 +112,7 @@ function normalizeSchoolScheduleProfile(input = {}, fallback = defaultSchoolSche
     periodCycleDays,
     exceptionRules,
     specialDaySchedules: normalizeSpecialDaySchedules(input.specialDaySchedules ?? base.specialDaySchedules ?? []),
+    planning: require("./planning").normalizePlanning(input.planning ?? base.planning ?? {}, cycleDays),
     continuation: {
       maximumGapMinutes: boundedFiniteNumber(input.continuation?.maximumGapMinutes, boundedFiniteNumber(base.continuation?.maximumGapMinutes, 15, 0, 120), 0, 120),
       legacyBisonCompatibility: input.continuation?.legacyBisonCompatibility ?? base.continuation?.legacyBisonCompatibility ?? false

@@ -1,5 +1,8 @@
 # Reusable special-day schedules
 
+For the rebuilt workflow with native split teaching segments, use
+[Planning](PLANNING.md). This page documents the retained earlier compatibility editor.
+
 Unreleased: RoomGoblin can store named special timetables for pep rallies,
 assemblies, testing days and other reordered or shortened days. This is source
 functionality, not a claim of deployment or physical-device acceptance.

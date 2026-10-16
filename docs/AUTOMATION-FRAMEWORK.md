@@ -134,3 +134,11 @@ Named date-assigned timetables move existing class-linked occurrences and timer
 deadlines without copying automations. Omitted classes do not run. Fixed-clock
 automations keep their times. See [Special-day schedules](SPECIAL-DAY-SCHEDULES.md)
 for setup, split lunches, priority, validation and rollback.
+
+## Planning timetable segments (Unreleased)
+
+When Planning is enabled, one logical class may resolve multiple teaching segments
+on a date. Class-linked start/end offsets, occurrence recovery, active/next class
+and timer deadlines use each segment independently. Lunch gaps are inactive; no
+extra class or automation copies are created. Fixed-clock actions keep their times.
+Saved date previews use the same segment resolver. See [Planning](PLANNING.md).

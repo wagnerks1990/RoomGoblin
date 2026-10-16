@@ -33,9 +33,9 @@ test("reject ambiguous assignments, malformed dates and invalid intervals before
 });
 function runtime() {
   const source=fs.readFileSync(require.resolve("../src/server"),"utf8");
-  const functions=["calendarRuleForDate","isCalendarBlocked","isAutomationSuppressed","classScheduleMatchesDate","effectiveClassTimes","classStartDate","classEndDate","automationClassIds","resolveAutomationForClass","resolveAutomationOccurrences"];
+  const functions=["calendarRuleForDate","isCalendarBlocked","isAutomationSuppressed","classScheduleMatchesDate","effectiveClassSegments","effectiveClassTimes","classStartDate","classEndDate","automationClassIds","resolveAutomationForClass","resolveAutomationOccurrences"];
   const classes=[{id:"p3",name:"P3",period:"3",startTime:"09:00",endTime:"10:00",days:[5],enabled:true},{id:"omitted",days:[5]}];
-  const ctx=vm.createContext({Date,schoolScheduleProfile:profile(),schedulerCalendar:{},specialDayRuleForDate,effectiveTimesForRule,
+  const ctx=vm.createContext({Date,planningEngine:require("../src/planning"),localMinutesNow:d=>d.getHours()*60+d.getMinutes(),timeToMinutes:s=>Number(s.slice(0,2))*60+Number(s.slice(3)),schoolScheduleProfile:profile(),schedulerCalendar:{},specialDayRuleForDate,effectiveTimesForRule,validTime:require("../src/school-schedule").validTime,
     localDateKey:d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`,
     classScheduleById:id=>classes.find(c=>c.id===id),automationTargetDomain:()=>"display-content",schoolCycleAnchor:()=>date,
     periodDefaultCycleDays:()=>[],isTransitionClass:()=>false});

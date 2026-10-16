@@ -30,6 +30,7 @@ const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=requ
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,specialDayRuleForDate,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
+const planningEngine=require("./planning");
 const automationSchema=require("./automation-schema");
 const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceNeedsAnotherPass,sequenceHasContinuousActions}=automationSchema;
 const normalizeSequenceAction=automationSchema["normalize"+"AutomationAction"];
@@ -1127,6 +1128,15 @@ async function morningAnnouncementsTick(){
 }
 function calendarRuleForDate(date=new Date()){
   const key=localDateKey(date);
+  if(schoolScheduleProfile.planning?.enabled){
+    const status=planningEngine.schoolStatus(schoolScheduleProfile,schedulerCalendar,key);
+    if(status==='no-school')return {type:'no-school',date:key,label:'No school'};
+    if(status==='remote')return {type:'remote',date:key,label:'Remote learning'};
+    const table=planningEngine.timetableForDate(schoolScheduleProfile,schedulerCalendar,key);
+    if(table)return {type:`planning:${table.id}`,date:key,label:table.name,special:!!schoolScheduleProfile.planning.dates[key]?.timetableId};
+    // Explicit school-day overrides can reopen dates in the older calendar.
+    if(schoolScheduleProfile.planning.dates[key]?.status==='school')return {type:'normal',date:key,label:'School day'};
+  }
   if((schedulerCalendar.noSchoolDates||schedulerCalendar.excludedDates||[]).includes(key))return {type:'no-school',date:key,label:'District No-School'};
   if((schedulerCalendar.remoteDates||[]).includes(key))return {type:'remote',date:key,label:'Remote Day'};
   const special=specialDayRuleForDate(schoolScheduleProfile,key);
@@ -1171,6 +1181,7 @@ function normalizedDayType(value,fallback="Any"){const allowed=new Set(["Any","M
 
 function schoolCycleForDate(date=new Date()){
   const key=localDateKey(date);
+  if(schoolScheduleProfile.planning?.enabled)return planningEngine.cycleForDate(schoolScheduleProfile,schedulerCalendar,key);
   const dow=date.getDay();
   const blocked=isCalendarBlocked(date);
   const isStudentSchoolDay=dow!==0&&dow!==6&&!blocked.blocked;
@@ -2482,6 +2493,7 @@ function normalizeClassSchedule(input={},existing={}){
 function classScheduleById(id){return classScheduleStore.classes.find(c=>c.id===String(id||""))||null}
 
 function classAlternatingPhaseForDate(anchorDate,date=new Date()){
+  if(schoolScheduleProfile.planning?.enabled)return planningEngine.alternateCycle(schoolScheduleProfile,schedulerCalendar,anchorDate,localDateKey(date));
   const status=schoolCycleForDate(date);
   if(!status.isStudentSchoolDay)return null;
   const anchor=dateFromKey(validDateKey(anchorDate)?anchorDate:schoolCycleAnchor());
@@ -2492,6 +2504,7 @@ function classAlternatingPhaseForDate(anchorDate,date=new Date()){
 
 function classScheduleMatchesDate(cls,date=new Date()){
   const key=localDateKey(date);
+  if(schoolScheduleProfile.planning?.enabled)return planningEngine.classMatches(schoolScheduleProfile,schedulerCalendar,cls,key)&&effectiveClassSegments(cls,date).length>0;
   if(!effectiveClassTimes(cls,date))return false;
   if(isCalendarBlocked(date).blocked)return false;
   if((cls.excludedDates||[]).includes(key))return false;
@@ -2514,14 +2527,21 @@ function classPeriodNumber(cls){
   return named?Number(named[1]):null;
 }
 function minutesToHHMM(mins){mins=Math.max(0,Math.min(1439,Math.round(mins)));return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`}
-function effectiveClassTimes(cls,date=new Date()){
-  if(!cls)return null;
+function effectiveClassSegments(cls,date=new Date()){
+  if(!cls)return [];
+  const planned=planningEngine.classSegments(schoolScheduleProfile,schedulerCalendar,cls,localDateKey(date));
   const rule=calendarRuleForDate(date);
+  if(planned!==null)return planned.map(segment=>({...segment,rule}));
   const effective=effectiveTimesForRule(schoolScheduleProfile,cls,rule.type);
-  return effective?{...effective,rule}:null;
+  return effective&&validTime(effective.startTime)&&validTime(effective.endTime)?[{...effective,rule}]:[];
 }
-function classStartDate(cls,date=new Date()){const t=effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.startTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
-function classEndDate(cls,date=new Date()){const t=effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.endTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
+function effectiveClassTimes(cls,date=new Date()){
+  const segments=effectiveClassSegments(cls,date),now=localMinutesNow(date);
+  return segments.find(segment=>timeToMinutes(segment.endTime)>now)||segments.at(-1)||null;
+}
+function classStartDate(cls,date=new Date(),times=null){const t=times||effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.startTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
+function classEndDate(cls,date=new Date(),times=null){const t=times||effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.endTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
+
 function isTransitionClass(cls){
   return /transition/i.test(String(cls?.name||"")) || /transition/i.test(String(cls?.shortName||"")) || String(cls?.kind||"").toLowerCase()==="transition";
 }
@@ -2575,7 +2595,10 @@ function nextClassAfter(date=new Date()){
     const d=new Date(date);d.setDate(d.getDate()+off);d.setHours(12,0,0,0);
     for(const c of classScheduleStore.classes){
       if(c.enabled===false||!classScheduleMatchesDate(c,d))continue;
-      const start=classStartDate(c,d),end=classEndDate(c,d);if(start&&end&&start>date)found.push({...c,startTime:effectiveClassTimes(c,d)?.startTime||c.startTime,endTime:effectiveClassTimes(c,d)?.endTime||c.endTime,nextStartAt:start.toISOString(),nextEndAt:end.toISOString()});
+      for(const segment of effectiveClassSegments(c,d)){
+        const start=classStartDate(c,d,segment),end=classEndDate(c,d,segment);
+        if(start&&end&&start>date)found.push({...c,startTime:segment.startTime,endTime:segment.endTime,nextStartAt:start.toISOString(),nextEndAt:end.toISOString()});
+      }
     }
   }
   return found.sort((a,b)=>new Date(a.nextStartAt)-new Date(b.nextStartAt))[0]||null;
@@ -2590,22 +2613,22 @@ function automationClassIds(event){
   if(!ids.length&&event.classId)ids.push(event.classId);
   return [...new Set(ids.map(String))];
 }
-function resolveAutomationForClass(event,classId,date=new Date()){
+function resolveAutomationForClass(event,classId,date=new Date(),segment=null){
   if(!classId)return event;
   const cls=classScheduleById(classId);if(!cls||cls.enabled===false)return null;
   if(!classScheduleMatchesDate(cls,date))return null;
-  const effective=effectiveClassTimes(cls,date);if(!effective)return null;
+  const effective=segment||effectiveClassTimes(cls,date);if(!effective)return null;
   const base=event.classTimeReference==="end"?effective.endTime:effective.startTime;
   const [h,m]=base.split(":").map(Number),rawMinutes=h*60+m+Number(event.classTimeOffsetMinutes||0);
   const dayOffset=Math.floor(rawMinutes/1440),mins=((rawMinutes%1440)+1440)%1440;
   const scheduledDate=new Date(date);scheduledDate.setDate(scheduledDate.getDate()+dayOffset);
-  const occurrenceStart=classStartDate(cls,date),occurrenceEnd=classEndDate(cls,date);
+  const occurrenceStart=classStartDate(cls,date,effective),occurrenceEnd=classEndDate(cls,date,effective);
   return {...event,classId:cls.id,time:`${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`,days:[...(cls.days||[])],scheduleMode:cls.scheduleMode||"schoolcycle",alternatePhase:cls.alternatePhase||"A",anchorDate:cls.anchorDate||schoolCycleAnchor(),dayType:cls.dayType||"Any",cycleDays:[...(cls.cycleDays||periodDefaultCycleDays(cls.period))],period:cls.period||"",includeDates:[...(cls.includeDates||[])],targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),_class:cls,_classDefaultTargets:[...(cls.defaultTargets||[])],_automationClassIds:automationClassIds(event),_classStartAt:occurrenceStart?.getTime()||null,_classEndAt:occurrenceEnd?.getTime()||null,_classIsTransition:isTransitionClass(cls),_sourceDateMatched:true,_scheduledDateKey:localDateKey(scheduledDate)};
 }
 function resolveAutomationOccurrences(event,date=new Date()){
   const ids=automationClassIds(event);
   if(!ids.length)return [event];
-  return ids.map(id=>resolveAutomationForClass(event,id,date)).filter(Boolean);
+  return ids.flatMap(id=>effectiveClassSegments(classScheduleById(id),date).map(segment=>resolveAutomationForClass(event,id,date,segment))).filter(Boolean);
 }
 function resolveAutomationFromClass(event,date=new Date()){
   // Manual/Test Now execution must follow the selected class occurrence that is
@@ -5330,6 +5353,61 @@ const schedulerMutationLimit=rateLimit({
   message:{ok:false,error:"Scheduler configuration or command limit reached; retry later"}
 });
 
+function planningClassesForProfile(profile){
+  const same=(a,b)=>JSON.stringify([...(a||[])].sort())===JSON.stringify([...(b||[])].sort());
+  return classScheduleStore.classes.map(cls=>{
+    if(cls.scheduleMode!=="schoolcycle")return cls;
+    let next=cls;
+    const oldDays=schoolScheduleProfile.periodCycleDays[cls.period],newDays=profile.periodCycleDays[cls.period];
+    if(oldDays&&newDays&&same(cls.cycleDays,oldDays)&&!same(oldDays,newDays))next={...next,cycleDays:[...newDays]};
+    const oldGroup=schoolScheduleProfile.dayGroups.find(group=>group.label===cls.dayType);
+    if(oldGroup){const group=profile.dayGroups.find(group=>(next.cycleDays||[]).length&&(next.cycleDays||[]).every(day=>group.cycleDays.includes(day)));if(group&&group.label!==cls.dayType)next={...next,dayType:group.label}}
+    return next;
+  });
+}
+function planningDraft(body={}){
+  const input=body.scheduleProfile||{};
+  const profile=normalizeSchoolScheduleProfile(input,schoolScheduleProfile);
+  if(profile.planning.enabled&&!validDateKey(profile.anchorDate))throw new Error("Set a cycle anchor before enabling Planning");
+  const hash=crypto.createHash("sha256").update(JSON.stringify({profile,revision:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore,events:classroomAutomations.events})).digest("hex");
+  return {profile,hash};
+}
+function planningDayPayload(profile,key){
+  return planningEngine.resolveDay(profile,schedulerCalendar,planningClassesForProfile(profile),classroomAutomations.events,key);
+}
+app.get("/api/v1/planning",schedulerReadLimit,requireCapability("schedule.manage"),(_req,res)=>{
+  res.json({ok:true,scheduleProfile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,preset:planningEngine.cyclePreset(),today:localDateKey(schedulerClock.now())});
+});
+app.get("/api/v1/planning/day",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{const key=String(req.query.date||localDateKey(schedulerClock.now()));if(!validDateKey(key))throw new Error("Choose a valid planning date");res.json({ok:true,day:planningDayPayload(schoolScheduleProfile,key)})}
+  catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.post("/api/v1/planning/preview",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{
+    const key=String(req.body?.date||localDateKey(schedulerClock.now()));
+    if(!validDateKey(key))throw new Error("Choose a valid planning date");
+    const {profile,hash}=planningDraft(req.body),day=planningDayPayload(profile,key),changes=[];
+    for(let offset=0;offset<14;offset++){
+      const date=dateFromKey(key);date.setDate(date.getDate()+offset);const target=localDateKey(date);
+      const before=planningDayPayload(schoolScheduleProfile,target),after=planningDayPayload(profile,target);
+      if(JSON.stringify(before)!==JSON.stringify(after))changes.push({date:target,before:{status:before.status,cycle:before.cycle.cycleDay,timetable:before.timetable?.name||"Existing class times"},after:{status:after.status,cycle:after.cycle.cycleDay,timetable:after.timetable?.name||"Existing class times"}});
+    }
+    res.json({ok:true,day,changes,previewHash:hash,revision:schoolScheduleProfile.updatedAt,horizonDays:14});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.put("/api/v1/planning",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{
+    const {profile,hash}=planningDraft(req.body);
+    if(req.body?.expectedUpdatedAt!==schoolScheduleProfile.updatedAt||req.body?.previewHash!==hash)return res.status(409).json({ok:false,error:"Planning or its linked classes/automations changed. Review a fresh preview before saving."});
+    profile.updatedAt=new Date().toISOString();
+    const classes=planningClassesForProfile(profile),nextClasses={...classScheduleStore,classes};
+    dbStore.tx(()=>{dbStore.setPreference("school.schedule.profile",profile);persistJson(CLASS_SCHEDULES_FILE,nextClasses)});
+    schoolScheduleProfile=profile;classScheduleStore=nextClasses;
+    audit({kind:"planning.update",enabled:profile.planning.enabled,timetables:profile.planning.timetables.length,dateCount:Object.keys(profile.planning.dates).length});
+    res.json({ok:true,scheduleProfile:schoolScheduleProfile});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+
 app.get("/api/v1/school-cycle",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   const date=req.query.date&&validDateKey(req.query.date)?new Date(`${req.query.date}T12:00:00`):new Date();
   res.json({ok:true,...schoolCycleForDate(date),calendarRule:calendarRuleForDate(date),automationSuppressed:isAutomationSuppressed(date).blocked,cycle:schoolCycleLetters(),dayGroups:schoolScheduleProfile.dayGroups,scheduleProfileId:schoolScheduleProfile.id});
@@ -5350,11 +5428,15 @@ function classScheduleConflicts(candidate,classes,{horizonDays=370,startDate=new
   for(let offset=0;offset<horizonDays&&conflicts.length<20;offset++){
     const day=new Date(start);day.setDate(day.getDate()+offset);
     if(!classScheduleMatchesDate(candidate,day))continue;
-    const aStart=classStartDate(candidate,day),aEnd=classEndDate(candidate,day);if(!aStart||!aEnd)continue;
-    for(const other of classes||[]){
-      if(!other||other.id===candidate.id||other.enabled===false||!classScheduleMatchesDate(other,day))continue;
-      const bStart=classStartDate(other,day),bEnd=classEndDate(other,day);if(!bStart||!bEnd)continue;
-      if(aStart<bEnd&&bStart<aEnd)conflicts.push({date:localDateKey(day),candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,start:new Date(Math.max(aStart,bStart)).toISOString(),end:new Date(Math.min(aEnd,bEnd)).toISOString()});
+    for(const a of effectiveClassSegments(candidate,day)){
+      const aStart=classStartDate(candidate,day,a),aEnd=classEndDate(candidate,day,a);
+      for(const other of classes||[]){
+        if(!other||other.id===candidate.id||other.enabled===false||!classScheduleMatchesDate(other,day))continue;
+        for(const b of effectiveClassSegments(other,day)){
+          const bStart=classStartDate(other,day,b),bEnd=classEndDate(other,day,b);
+          if(aStart<bEnd&&bStart<aEnd)conflicts.push({date:localDateKey(day),candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,start:new Date(Math.max(aStart,bStart)).toISOString(),end:new Date(Math.min(aEnd,bEnd)).toISOString()});
+        }
+      }
     }
   }
   return conflicts;
@@ -5583,7 +5665,7 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
   for(let off=0;off<horizonDays&&conflicts.length<20;off++){
     const day=new Date(start);day.setDate(day.getDate()+off);
     if(isAutomationSuppressed(day).blocked)continue;
-    const rule=calendarRuleForDate(day),special=rule.type.startsWith("special:")||["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
+    const rule=calendarRuleForDate(day),special=(rule.type.startsWith("planning:")&&rule.special)||rule.type.startsWith("special:")||["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
     if(calendarScope==="normal"&&special||calendarScope==="special"&&!special)continue;
     const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
     for(const occurrence of candidateOccurrences){

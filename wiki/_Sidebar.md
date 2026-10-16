@@ -27,6 +27,7 @@
 - [Device Agent v2](Device-Agent-v2)
 - [Android Agent Artifact Pipeline](Android-Agent-Artifact-Pipeline)
 - [Image Permissions Recovery](Image-Permissions-Recovery)
+- [Planning](Planning)
 - [Special-Day Schedules](Special-Day-Schedules)
 - [Automation Display Media](Automation-Display-Media)
 - [Veyon and Music Assistant](Veyon-and-Music-Assistant)
