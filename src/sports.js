@@ -22,7 +22,7 @@ function normalize(input={}){
  if(events.some(e=>!tids.has(e.teamId))||new Set(events.map(e=>e.id)).size!==events.length)throw Error('Events need unique IDs and a configured team');
  const media=list(input.media||[],500).map(m=>({id:id(m.id||randomUUID()),teamId:id(m.teamId),asset:asset(m.asset),caption:text(m.caption,240),date:m.date?instant(m.date):null,approved:m.approved===true,archive:m.archive===true,source:text(m.source,1600),sourceKey:text(m.sourceKey,200)}));
  if(media.some(m=>!tids.has(m.teamId)))throw Error('Media must belong to a configured team');
- const boards=list(input.boards||[],30).map(b=>({id:id(b.id||randomUUID()),name:text(b.name)||'Sports board',rosterHeading:text(b.rosterHeading,60)||'MEET THE TEAM',teamIds:list(b.teamIds||[],80).map(id).filter(t=>tids.has(t)),minimumSeconds:finite(b.minimumSeconds,10,180,20),rosterSpeed:finite(b.rosterSpeed,12,80,30),entryDelay:finite(b.entryDelay,1,5,2),volume:finite(b.volume,0,1,1),audio:b.audio===true,weather:b.weather!==false,archive:b.archive===true,background:/^#[0-9a-f]{6}$/i.test(b.background||'')?b.background:'#091e16',accent:/^#[0-9a-f]{6}$/i.test(b.accent||'')?b.accent:'#b1d872'}));
+ const boards=list(input.boards||[],30).map(b=>({id:id(b.id||randomUUID()),name:text(b.name)||'Sports board',rosterHeading:text(b.rosterHeading,60)||'MEET THE TEAM',teamIds:[...new Set(list(b.teamIds||[],80).map(id).filter(t=>tids.has(t)))],minimumSeconds:finite(b.minimumSeconds,10,180,20),rosterSpeed:finite(b.rosterSpeed,12,80,30),entryDelay:finite(b.entryDelay,1,5,2),volume:finite(b.volume,0,1,1),audio:b.audio===true,weather:b.weather!==false,archive:b.archive===true,background:/^#[0-9a-f]{6}$/i.test(b.background||'')?b.background:'#091e16',accent:/^#[0-9a-f]{6}$/i.test(b.accent||'')?b.accent:'#b1d872'}));
  if(new Set(boards.map(b=>b.id)).size!==boards.length||new Set(media.map(m=>m.id)).size!==media.length)throw Error('Sports IDs must be unique');
  let timezone=text(input.timezone,80)||'UTC';try{new Intl.DateTimeFormat('en',{timeZone:timezone}).format()}catch{throw Error('Choose a valid time zone')}
  return {version:1,revision:Number.isSafeInteger(input.revision)?input.revision:0,timezone,school:text(input.school,120),logo:asset(input.logo),teams,events,media,boards};
@@ -37,7 +37,11 @@ function project(config,boardId,{now=Date.now(),weather=null}={}){
   const program=config.teams.find(p=>p.id===t.rosterTeamId);
   return {id:t.id,name:t.name,sport:t.sport,level:t.level,season:t.season,programRoster:!!program,roster:program?.roster||t.roster,previous:eventProjection(previous),next:eventProjection(next),media:config.media.filter(m=>m.teamId===t.id&&m.approved&&m.asset&&(b.archive||!archived(m,now))).slice(0,12).map(m=>({id:m.id,asset:m.asset,caption:m.caption,date:m.date,archive:archived(m,now)}))};
  });
- return {board:{...b,teamIds:undefined},school:config.school,logo:config.logo,timezone:config.timezone,pages,weather:b.weather&&weather?{text:weather.text,widgets:weather.widgets,updatedAt:weather.updatedAt,source:weather.source}:null,revision:config.revision,generatedAt:now};
+ const output={board:{...b,teamIds:undefined},school:config.school,logo:config.logo,timezone:config.timezone,pages,weather:b.weather&&weather?{text:weather.text,widgets:weather.widgets,updatedAt:weather.updatedAt,source:weather.source}:null,revision:config.revision,generatedAt:now};
+ const rosterSizes=new Map();let bytes=Buffer.byteLength(JSON.stringify({...output,pages:[]}));if(bytes>524256)throw Object.assign(Error('Sports board is too large; select fewer teams or shorten roster details'),{status:413});
+ for(const page of pages){if(!rosterSizes.has(page.roster))rosterSizes.set(page.roster,Buffer.byteLength(JSON.stringify(page.roster)));bytes+=Buffer.byteLength(JSON.stringify({...page,roster:[]}))-2+rosterSizes.get(page.roster)+1;if(bytes>524256)throw Object.assign(Error('Sports board is too large; select fewer teams or shorten roster details'),{status:413});}
+ return output;
 }
+function assertBoardBounds(config){for(const board of config.boards)project(config,board.id);return config}
 function scene(board){return require('../public/shared/scene').normalize({background:board.background,layers:[{id:'sports-board',type:'widget',widget:'sports-board',sportsBoardId:board.id,sportsAudio:board.audio,sportsVolume:board.volume,name:board.name,x:0,y:0,w:100,h:100}]})}
-module.exports={KEY,normalize,normalizePlayer,normalizeEvent,project,scene,id,text};
+module.exports={KEY,normalize,normalizePlayer,normalizeEvent,project,assertBoardBounds,scene,id,text};

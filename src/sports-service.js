@@ -4,8 +4,8 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{throw Error('Media cache unavailable')},now=Date.now,canRun=()=>true}){
  let config=model.normalize(store.getPreference(model.KEY,{})),pending=null;
  const status=new Map();
- function commit(next){next=model.normalize({...next,revision:config.revision+1});store.setPreference(model.KEY,next);config=next;return clone(config)}
- function save(input){if(input.revision!==config.revision)throw Object.assign(Error('Sports changed. Reload before saving to avoid overwriting another edit.'),{status:409});const next=model.normalize(input);store.setPreference(model.KEY+'.previous',config);return commit(next)}
+ function commit(next){next=model.assertBoardBounds(model.normalize({...next,revision:config.revision+1}));store.setPreference(model.KEY,next);config=next;return clone(config)}
+ function save(input){if(input.revision!==config.revision)throw Object.assign(Error('Sports changed. Reload before saving to avoid overwriting another edit.'),{status:409});const next=model.assertBoardBounds(model.normalize(input));store.setPreference(model.KEY+'.previous',config);return commit(next)}
  function undo(revision){if(revision!==config.revision)throw Object.assign(Error('Reload Sports before undoing'),{status:409});const previous=store.getPreference(model.KEY+'.previous',null);if(!previous)throw Error('No previous Sports save');store.setPreference(model.KEY+'.previous',config);return commit(previous)}
  async function refresh(force=false){if(pending)return pending;
   pending=(async()=>{
@@ -46,7 +46,7 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
       const allowed=[...origins,...source.mediaOrigins],url=safeUrl(m.url,allowed);downloads++;const asset=await ingestMedia(url.href,{origins:allowed,fetchImpl});
       staged.media.push({id:imports.key(team.id+':'+sourceKey),teamId:team.id,sourceKey,asset,caption:model.text(m.caption,240),date:new Date(date).toISOString(),approved:true,archive,source:source.url});sourceChanged=true;
      }
-     if(sourceChanged){working=model.normalize(staged);changed=true;}for(const id of chosen)rosterChosen.add(id);
+     if(sourceChanged){working=model.assertBoardBounds(model.normalize(staged));changed=true;}for(const id of chosen)rosterChosen.add(id);
      status.set(key,{at:now(),state:accepted||parsed.roster?.length||parsed.media?.length?'ready':'no-data',events:accepted,media:downloads});
     }catch(error){status.set(key,{at:now(),state:'unavailable',error:model.text(error.message,120)})}
    }

@@ -112,6 +112,10 @@ limit. Streaming extraction caps decoded output at 12,000 items/200,000 characte
 and five pages, with at most eight recognized table columns; results are capped at 256 KiB. Worker failure keeps the Hub and
 saved roster available. Hosts without Linux resource isolation use CSV instead.
 
+Boards deduplicate selected team IDs and limit receiver projections to 512 KiB.
+If a large combination exceeds that limit, choose fewer teams or shorter player
+details; failed saves preserve the previous configuration and undo snapshot.
+
 ## API and storage
 
 `GET/PUT /api/v1/sports` reads/saves configuration. Saves require the current
