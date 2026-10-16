@@ -226,3 +226,14 @@ installing this fix, a stale unit failure from an earlier lock conflict can be
 cleared with `systemctl reset-failed classroom-hub-app-update.service` only after
 confirming the application update completed and no request journal remains. Do
 not start an old updater or delete its journal just to clear a status indicator.
+
+## Manual reinstall transaction ownership
+
+`install.sh` routes existing appliances to `deploy/update-production.sh --full`
+before appliance mutations. It rejects unverified source/deployment identity and
+pending recovery state. Its native installer admission verifies the inherited
+appliance mutation lock, private matching published-update journal, complete
+rollback identities and environment snapshot. Restart recovery remains owned by
+the existing updater; no second installer journal or metadata-only rollback is
+introduced. `--build-local` is available only for fresh isolated development
+installation. See `INSTALL.md` for bootstrap and interrupted-install boundaries.

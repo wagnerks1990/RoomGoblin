@@ -56,6 +56,23 @@ case "$INSTALL_ARCH" in amd64|x86_64) ;; *) fail "unsupported CPU architecture: 
 command -v docker >/dev/null 2>&1 || { echo "Docker is required. Install Docker Engine + Compose plugin first." >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "Docker Compose plugin is required." >&2; exit 1; }
 
+# Existing appliances have exactly one transaction owner. A raw reinstall must
+# enter its durable updater before any backup, source, secret or service mutation.
+if [[ -f "$TARGET/.classroom-hub-installation" || -d "$TARGET/data" ]] || docker inspect classroom-control-hub >/dev/null 2>&1; then
+  if [[ -e /proc/$$/fd/9 ]]; then
+    [[ "$INSTALL_MODE" == pull ]] || fail "transactional reinstall requires published images"
+    python3 "$SOURCE/deploy/installer-transaction.py" "$TARGET" "$SOURCE" "$(git -C "$SOURCE" rev-parse HEAD)" || fail "native updater safety snapshot or lock is missing"
+  else
+    [[ "$INSTALL_MODE" == pull ]] || fail "local builds cannot reinstall an existing appliance; use an isolated development checkout"
+    [[ -f "$TARGET/.env" && -d "$TARGET/.git" ]] || fail "existing appliance is incomplete; preserve its state and use host-owned recovery"
+    [[ ! -e /var/lib/classroom-hub/app-update-request.json ]] || fail "an updater journal is pending; resume classroom-hub-app-update.service before reinstalling"
+    installed="$(git -C "$TARGET" rev-parse HEAD)"
+    python3 "$SOURCE/deploy/installer-transaction.py" --baseline "$TARGET" "$installed" || fail "deployment/source identity is unverified; preserve state and use host-owned recovery"
+    echo "Routing existing appliance reinstall through the durable main updater."
+    exec env CLASSROOM_HUB_DIR="$TARGET" bash "$SOURCE/deploy/update-production.sh" --full
+  fi
+fi
+
 # Confirm the exact validated image pair exists before backups, configuration,
 # database cutover, service changes, or any other appliance mutation.
 if [[ "$INSTALL_MODE" == pull ]]; then

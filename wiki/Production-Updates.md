@@ -206,3 +206,15 @@ installing this fix, a stale unit failure from an earlier lock conflict can be
 cleared with `systemctl reset-failed classroom-hub-app-update.service` only after
 confirming the application update completed and no request journal remains. Do
 not start an old updater or delete its journal just to clear a status indicator.
+
+## Manual reinstalls
+
+On existing appliances, `install.sh` enters the native updater with full
+reconciliation before changing state. The verified deployment identity must
+match; source pulled ahead of deployment, pending journals and incomplete
+installations fail closed. Only the native updater may enter the underlying
+installer with its inherited mutation lock and complete private safety snapshot.
+The same restart rollback protects reinstalls and normal updates. Fresh
+bootstrap and isolated local builds remain supported; local builds do not
+reinstall existing appliances. Read `INSTALL.md` and
+`docs/PRODUCTION-UPDATES.md` before attempting recovery.
