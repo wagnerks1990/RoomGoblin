@@ -7,20 +7,20 @@ Use this file whenever changing Hub process startup, media/presentation uploads,
 - The Hub runs as UID/GID `10001:10001`.
 - The maintenance container requires group-read access to ordinary application assets included in backups.
 - `tools/start-roomgoblin.sh` must establish `umask 0027` before Node starts.
-- Normal application-created files should therefore be `0640`; normal directories should be `0750`, unless code intentionally applies a stricter mode.
+- Storage/startup then deliberately applies private umask `0077`; do not remove it to fix uploads. Ordinary uploaded content must explicitly publish `0640` files and `0750` directories after creation/conversion, because creation modes alone are filtered by the umask.
 - Other-user access remains disabled.
 
 Do not replace this with `0777`, a blanket recursive chmod, or an unknown inherited runtime umask. Secrets, ADB private material, Android signing material, recovery envelopes, and backup artifacts may have intentionally stricter explicit modes and must not be relaxed just to satisfy a generic permission check.
 
 ## Resumable upload session permissions
 
-Resumable upload sessions are ordinary shared application data, not secrets. Their root/session directories must be `0750` and chunk/metadata files `0640` so the maintenance container can include an in-progress upload in the mandatory operational backup. Do not use explicit `0700` session directories or `0600` chunk files; those override the runtime umask and make update preflight fail with `EACCES` on `data/media-upload-sessions`.
+Resumable upload sessions are ordinary shared application data. Publish root/session directories as `0750` and committed chunk/metadata files as `0640`, explicitly overriding the private creation umask on owned content only. Preserve descriptor-safe atomic writes. Exclude unpublished `.tmp` session trees and temporary chunk/metadata files from both operational validation and ZIP creation; retain committed session state. Stage presentation conversion under excluded `presentation-upload-tmp`, normalize complete outputs, then publish. Never skip unreadable committed content or relax secrets to make backups pass.
 
 ## Known failure mode
 
 A large uploaded MP4 was created mode `0600`. The Hub could read it, but maintenance could not read it while creating the mandatory operational safety backup. The production updater correctly stopped before mutating services.
 
-The permanent prevention is the Hub runtime umask, not a broad permission relaxation.
+Permanent prevention is explicit content publication under the private runtime umask, plus excluded uncommitted staging. A wrapper umask alone cannot prevent this failure. Existing asset repair requires separate approval; use the bounded procedure in `docs/PRODUCTION-UPDATES.md` and preserve secret/identity modes.
 
 For an already-affected ordinary media file, repair only the bad application-owned asset, for example:
 

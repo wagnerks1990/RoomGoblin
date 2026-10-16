@@ -113,6 +113,7 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
       "classroom-hub/node_modules/*","classroom-hub/.git/*","classroom-hub/data/backups/*",
       "classroom-hub/data/legacy/*","classroom-hub/data/file-trash/*","classroom-hub/data/media/*","classroom-hub/data/convert-tmp/*",
       "classroom-hub/data/presentation-upload-tmp/*","classroom-hub/.env",
+      "classroom-hub/data/media-upload-sessions/*.tmp",
       ...databaseExclusions
     ];
     await run("/usr/bin/zip",["-q","-r","-y",partial,"classroom-hub",...exclusions.flatMap(x=>["-x",x])],{timeout:900000,cwd:path.dirname(HUB_ROOT),maxBuffer:1024*1024});
@@ -421,6 +422,9 @@ function backupFilter(scope){
     if(normalized.includes("/data/legacy/")||normalized.endsWith("/data/legacy"))return false;
     if(normalized.includes("/data/file-trash/")||normalized.endsWith("/data/file-trash"))return false;
     if(scope==="operational"&&(normalized==="classroom-hub/data/media"||normalized.startsWith("classroom-hub/data/media/")))return false;
+    // In-flight chunks, metadata replacements and unpublished session trees
+    // are private until atomically published. Never archive partial uploads.
+    if(scope==="operational"&&normalized.startsWith("classroom-hub/data/media-upload-sessions/")&&normalized.endsWith(".tmp"))return false;
     if(scope==="configuration"){
       // Configuration backups intentionally omit bulky/ephemeral runtime data;
       // the consistent SQLite snapshot is added separately by backup/create.

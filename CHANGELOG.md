@@ -50,6 +50,20 @@
 - Use the same verified main-commit path for automatic maintenance-window updates and reject dirty/divergent source, stale selections and arbitrary SHAs.
 - Correct updater systemd ordering to the canonical `classroom-hub-host-agent.service`, retire the stale old-name unit during install/refresh, and normalize no-request manual oneshot failures without hiding real deployment failures.
 
+### Uploaded content no longer blocks safety backups
+
+- Preserve maintenance-owned private backup archives during installer data
+  ownership normalization so the verified rollback snapshot stays readable.
+
+- Explicitly publish uploaded media, presentation originals, converted PDFs/slides,
+  resumable metadata and chunks with shared-group readability despite the private
+  runtime umask; preserve ownership and all secret/identity protections.
+- Stage presentation conversion outside the operational-backup tree and exclude
+  uncommitted resumable temporary paths consistently from validation and ZIPs.
+- Add Linux upload/conversion and actual shared-group streaming-backup regressions,
+  including the original permission-denied failure and private-state boundaries.
+- Document the separately approved bounded repair required for existing private
+  presentation assets; retain mandatory backups and normal update/rollback gates.
 
 ### Scheduled all-TV power handoff
 
