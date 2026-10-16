@@ -1,5 +1,6 @@
 "use strict";
 const {createHash}=require('node:crypto');
+const htmlSource=require('./sports-html');
 const key=s=>createHash('sha256').update(String(s)).digest('hex').slice(0,24);
 function csv(raw){
  if(typeof raw!=='string'||Buffer.byteLength(raw)>524288)throw Error('Import must be under 512 KiB');
@@ -35,19 +36,20 @@ const decode=s=>String(s).replace(/&(amp|quot|apos|lt|gt|#(?:x[0-9a-f]+|[0-9]+))
  const named={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'},value=entity.toLowerCase();if(value[0]!=='#')return named[value];
  const code=value[1]==='x'?parseInt(value.slice(2),16):Number(value.slice(1));return Number.isInteger(code)&&code>=0&&code<=0x10ffff&&!(code>=0xd800&&code<=0xdfff)?String.fromCodePoint(code):'\uFFFD';
 });
-const clean=s=>decode(String(s).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ')).trim();
+const clean=s=>decode(htmlSource.strip(String(s)).replace(/\s+/g,' ')).trim();
 function structured(raw){if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Expected a Sports JSON object');return {events:Array.isArray(raw.events)?raw.events.slice(0,500):[],roster:Array.isArray(raw.roster)?raw.roster.slice(0,150):null,media:Array.isArray(raw.media)?raw.media.slice(0,50):[],season:String(raw.season||'')}}
 function website(html,url,team){
  const events=[],media=[],documents=[];const sport=team.sport.toLowerCase(),level=team.level;
  const matches=label=>{const s=label.toLowerCase(),category=team.category?.toLowerCase();if(category&&['girls','boys'].includes(category)&&!s.includes(category))return false;return s.includes(sport)&&(level==='program'||(level==='varsity'?/\bvarsity\b/.test(s)&&!/\bjv\b|junior varsity/.test(s):level==='jv'?/\bjv\b|junior varsity/.test(s):/middle school/.test(s)))};
- for(const match of html.matchAll(/<a\b([^>]{0,5000})>([\s\S]{0,10000}?)<\/a>/gi)){const attrs=match[1],href=attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];if(!href)continue;let target;try{target=new URL(decode(href),url)}catch{continue}const label=clean(match[2]);
+ const entries=htmlSource.elements(html);
+ for(const entry of entries.filter(e=>e.name==='a')){const href=entry.attributes.href;if(!href)continue;let target;try{target=new URL(decode(href),url)}catch{continue}const label=clean(entry.content.slice(0,10000));
   if(/\.pdf$/i.test(target.pathname)&&/roster/i.test(label+' '+target.pathname))documents.push({url:target.href,label});
   if(!matches(label))continue;
   const local=target.searchParams.get('localStartDate'),opponent=label.split(/\s(?:vs\.?|@|at)\s/i).at(-1);
   if(local&&/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(local))events.push({id:key(target.href),sourceId:key(target.href),localStart:local,opponent,homeAway:/@|\bat\b/i.test(label)?'away':'home',status:'scheduled'});
  }
- for(const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
-  let data;try{data=JSON.parse(match[1])}catch{continue}
+ for(const entry of entries.filter(e=>e.name==='script'&&e.attributes.type?.toLowerCase()==='application/ld+json')){
+  let data;try{data=JSON.parse(entry.content)}catch{continue}
   const walk=(obj,depth=0)=>{if(depth>12||!obj||typeof obj!=='object')return;if(Array.isArray(obj)){obj.slice(0,100).forEach(o=>walk(o,depth+1));return}
    if(['VideoObject','ImageObject'].includes(obj['@type'])&&matches(String(obj.name||'')+' '+String(obj.description||''))&&obj.contentUrl)media.push({url:obj.contentUrl,caption:obj.name,date:obj.uploadDate,sport:team.sport,level:team.level});
    for(const v of Object.values(obj))if(v&&typeof v==='object')walk(v,depth+1);
