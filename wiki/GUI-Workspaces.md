@@ -215,3 +215,7 @@ Planning now uses compact timetable rows, a searchable class library and focused
 automation/scene dialogs. See [Planning and Scene Studio](Planning-Studio).
 Shared workspace styles remain scoped to `body.rg-workspace`; receiver scenes
 load only their shared scene renderer and existing display layout engine.
+
+## Background Music Studio
+
+Background Music uses Now playing, Find music, Favorites, Schedule and Outputs & connection tabs. Listening controls and queue stay separate from saved schedule edits. Polling preserves drafts and focused controls. See [Music Studio and recovery](Background-Music-Studio) for recovery, priority and physical acceptance limits.

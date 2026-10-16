@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+### Background Music Studio and recovery
+
+- Add focused Now Playing, music/station search, favorites, schedule and output views, queue controls and sleep timers. Preserve unsaved drafts and focused controls across polling.
+- Track manual source/output selections in recovery instead of issuing unowned search playback. Distinguish accepted commands, reported playback and actual progress telemetry.
+- Add readiness-aware, bounded-backoff recovery, resume-before-reload, suspected-stall detection, finite-track completion and explicit repair without changing listener volume on recovery.
+- Preserve announcement/room-audio priority, operator Stop and receiver sessions; handle priority/Stop during pending play. Project bounded queue metadata without stream details.
+- Register shared music rate limits directly before route authorization, and verify changed-output schedule saves through real HTTP regression tests.
+
 ### Planning and Scene Studio
 
 - Replace everyday class and automation forms with searchable libraries and focused, responsive dialogs; add compact timetable rows, cycle-aware month badges, month navigation and date-range drafts.
