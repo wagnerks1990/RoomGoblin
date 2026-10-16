@@ -322,7 +322,7 @@ The administrator System Updates page follows the latest merged commit on truste
 
 ## CI workflow identity contract
 
-The consolidated required workflows are `Validate`, `Display browser regression`, and `Security gates`. Android debug and restrictive-image coverage now live inside Validate; see `docs/CI-WORKFLOWS.md`. Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
+The consolidated required workflows are `Validate`, `Display browser regression`, and `Security gates`. Android debug, native Windows artifact qualification and restrictive-image coverage live inside Validate; see `docs/CI-WORKFLOWS.md`. Only allowlisted Markdown-only PRs may omit expensive platform/browser/image steps through `tools/ci-scope.py`; unknown inputs and every main push require full coverage. Keep Node/policy/security checks on documentation PRs and stable check-emitting jobs. Do not restore the duplicate native Windows workflow or retired source-patching workflow. Workflow `name:` values are consumed by both `.github/workflows/publish-main-images.yml`
 and `.github/workflows/docker-publish.yml`. `Display browser regression` also runs
 operator GUI tests; describe coverage in job/step names without renaming this gate.
 Keep `test/production-image-install.test.js` workflow-identity coverage passing.

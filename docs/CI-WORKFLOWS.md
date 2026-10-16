@@ -1,17 +1,48 @@
 # GitHub Actions validation and publication
 
-Eight workflows have distinct responsibilities:
+Six workflows have distinct responsibilities:
 
 | Workflow | Required work |
 | --- | --- |
-| Validate | Locked dependency audits, syntax, Node/Python regressions, Windows parsing, Android debug APK, restrictive-context Hub build, maintenance build, two Trivy scans and appliance smoke tests |
+| Validate | Locked dependency audits, syntax, Node/Python regressions, Windows parsing/native artifact qualification, Android debug APK, restrictive-context Hub build, maintenance build, two Trivy scans and appliance smoke tests |
 | Display browser regression | Chromium and Firefox receiver/operator regression tests |
 | Security gates | Full-history secret scan; PR dependency review at moderate severity |
 | Publish Main Images | Start on every `main` push, wait for all three exact-SHA validation workflows, publish exact-revision Hub/maintenance images and refresh alpha aliases without a deployment branch |
 | Publish Containers | Verify semantic version/main ancestry and required checks, then promote the published SHA pair to release tags and create the release |
 | Sync Wiki | Synchronize the tracked mirror on relevant changes or manual dispatch |
-| Windows Native Agent | Additional path-selected Windows build, executable/version checks and downloadable native package |
-| Apply automation convergence hardening | Historical development-branch patch runner; never a main publication or merge gate |
+
+The duplicate Windows workflow has been removed: its nonempty four-executable
+checks, ProductVersion verification and downloadable native package now run in
+the existing required `windows-agent` job after its single locked build. Artifact
+retention is bounded to 14 days. The obsolete branch-patching workflow and its two
+source-rewriting helpers have been retired; source changes belong in reviewed PRs.
+
+## Conservative documentation-only PR selection
+
+`tools/ci-scope.py` skips expensive image, native/Android build and browser steps
+only for pull requests into `main` whose complete Git diff changes allowlisted
+Markdown files under `docs/` or `wiki/`, or the six named root documentation files.
+The jobs and required check names still execute. Root/maintenance locked installs
+and online moderate-severity audits, full Node contracts, JavaScript/PowerShell/
+Python/shell syntax, Host Agent tests, Compose policy, full-history secret scanning
+and dependency review remain enabled. Documentation is still executable policy
+input for the Node suite and never bypasses those tests.
+
+Every main push, release/manual/unknown event, empty/unreadable diff, failed fetch,
+unknown path, workflow/tool/test/configuration/lockfile/version/source change uses
+full qualification. Renames are expanded into their old and new paths so moving
+source under docs cannot hide a source change; source deletions also run full.
+Fork PRs receive only the normal read-only token and the same path rules. There
+are no workflow-level path filters and no new write permission or local transcript
+accepted as a GitHub success check. Executable scope tests cover these fallbacks.
+
+Codex Local/WSL/Cloud should run supported checks before pushing and fix failures
+there. Hosted main qualification and exact image scans remain independent; local
+tests do not replace native Windows execution, browser engines, current advisory
+checks or release provenance. The earlier measured duplicate Windows job cost
+about 1.88 runner-minutes per eligible event; its removal avoids that extra build.
+Documentation-only savings depend on the changed-file mix and runner overhead;
+measure new hosted runs before claiming exact time or billing reductions.
 
 Android debug validation moved into Validate without dropping its APK artifact or
 checksum verification. The restrictive-context build is now the Hub image used
@@ -39,11 +70,12 @@ proposals. The readable main ruleset requires `validate` and `windows-agent`;
 all three full validation workflows remain mandatory publication prerequisites.
 Classic branch protection and Actions-permission settings were inaccessible.
 
-Validate's npm cache key includes both root and maintenance lockfiles. Both native
-Windows build jobs cache global NuGet packages using all four locked dependency
-graphs. Clean npm installs, online audits, locked .NET restores, tests, artifacts,
-browser engines and image scans still run. No path selection or scheduling change
-is implemented, and no existing required check or workflow identity changes.
+Validate's npm cache key includes both root and maintenance lockfiles. The native
+Windows build job caches global NuGet packages using all four locked dependency
+graphs. Clean npm installs and online audits always run. Full qualification keeps
+locked .NET restores, tests, artifacts, both browser engines and image scans.
+No path selection or scheduling change applies to main qualification, and no
+required check or publication workflow identity changes.
 
 Obsolete PR runs are cancelled by PR number. Main runs use commit-specific groups
 and are never cancelled by a newer commit while publication waits on them. Jobs

@@ -7,6 +7,10 @@
 
 ### Repository convergence follow-up
 
+- Consolidate native Windows artifact qualification into Validate, remove the
+  obsolete branch patcher, and reduce expensive work only on verified Markdown-
+  only PRs. Preserve always-running policy/security checks and full main gates.
+
 - Restrict hosted Wiki credentials to the exact HTTPS GitHub Wiki path; clone
   without checkout to prevent remote filters from accessing reusable tokens.
 - Route bridge-network and Sendspin migration instructions through the durable

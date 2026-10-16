@@ -14,6 +14,15 @@ Use this file whenever changing GitHub Actions, release publication, source-upda
 
 ## Required validation gate
 
+Six current workflows retain the three stable gates below. Native Windows
+artifact/version qualification now belongs to Validate's single `windows-agent`
+build; the duplicate workflow and obsolete branch-patching source rewriters are
+retired. `tools/ci-scope.py` permits expensive-step reduction only on allowlisted
+Markdown-only PRs. Unknown/deleted/renamed source, failed diffs and all main pushes
+use full qualification. Node/document-policy tests, online dependency audits and
+security scans remain enabled on docs PRs. Codex preflight evidence never replaces
+the hosted main gate or exact published-image scans. See `docs/CI-WORKFLOWS.md`.
+
 The publication workflow waits for these exact workflow identities on the same commit:
 
 1. `Validate`
