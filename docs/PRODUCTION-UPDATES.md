@@ -32,6 +32,11 @@ resumable-upload files therefore explicitly apply `0750` directories / `0640`
 files before publication through `src/content-permissions.js`. Ownership stays
 with the application; no process-wide umask, capabilities or secret modes change.
 
+Installer ownership normalization excludes `data/backups`: maintenance-owned
+private `0600` rollback archives must not become application-owned, because the
+hardened maintenance container cannot override their owner permissions. Existing
+archive ownership is preserved; no unrelated private state is relaxed.
+
 Presentation conversion runs in `data/presentation-upload-tmp`, which operational
 backups already exclude. In-flight resumable `.tmp` files/directories are also
 excluded consistently from validation and ZIP creation. Complete presentation

@@ -52,6 +52,9 @@
 
 ### Uploaded content no longer blocks safety backups
 
+- Preserve maintenance-owned private backup archives during installer data
+  ownership normalization so the verified rollback snapshot stays readable.
+
 - Explicitly publish uploaded media, presentation originals, converted PDFs/slides,
   resumable metadata and chunks with shared-group readability despite the private
   runtime umask; preserve ownership and all secret/identity protections.

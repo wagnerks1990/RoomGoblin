@@ -14,6 +14,17 @@ function digest(b){return crypto.createHash("sha256").update(b).digest("hex")}
 function fixture(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),"rgb-content-mode-"));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root}
 function privateUmask(t){const prior=process.umask(0o077);t.after(()=>process.umask(prior))}
 
+test("installer ownership normalization preserves private maintenance rollback archives",{skip:process.platform!=="linux"||process.getuid()!==0},t=>{
+  const root=fixture(t);privateUmask(t);const data=path.join(root,"data"),backups=path.join(data,"backups"),content=path.join(data,"presentations");
+  fs.mkdirSync(backups,{recursive:true});fs.mkdirSync(content);
+  const archive=path.join(backups,"pre-update.zip"),asset=path.join(content,"original.pdf");fs.writeFileSync(archive,"private fixture snapshot");fs.writeFileSync(asset,"fixture content");
+  const before=fs.statSync(archive),installer=fs.readFileSync(path.join(__dirname,"../install.sh"),"utf8").replace(/\r\n/g,"\n");
+  const start=installer.indexOf('touch "$TARGET/.classroom-hub-installation"'),end=installer.indexOf('chown root:10001 "$TARGET/data"',start);assert.ok(start>=0&&end>start);
+  const result=spawnSync("bash",["-c","set -eu\n"+installer.slice(start,end)],{env:{...process.env,TARGET:root},encoding:"utf8"});assert.equal(result.status,0,result.stderr);
+  const after=fs.statSync(archive);assert.equal(after.uid,before.uid);assert.equal(after.gid,before.gid);assert.equal(mode(archive),0o600);assert.equal(mode(backups),0o700);
+  assert.equal(fs.statSync(asset).uid,10001);assert.equal(fs.statSync(asset).gid,10001);assert.equal(fs.readFileSync(archive,"utf8"),"private fixture snapshot");
+});
+
 test("content publication overrides restrictive umask without relaxing private siblings",linux,t=>{
   const root=fixture(t);privateUmask(t);
   const content=path.join(root,"content"),secret=path.join(root,"identity");
