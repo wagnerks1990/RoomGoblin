@@ -28,7 +28,7 @@ const {ROOMGOBLIN_IDENTITY}=require("./brand-identity");
 const {applicationVersion}=require("./version");
 const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
-const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
+const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,specialDayRuleForDate,validTime}=require("./school-schedule");
 const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
 const automationSchema=require("./automation-schema");
 const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceNeedsAnotherPass,sequenceHasContinuousActions}=automationSchema;
@@ -1129,6 +1129,8 @@ function calendarRuleForDate(date=new Date()){
   const key=localDateKey(date);
   if((schedulerCalendar.noSchoolDates||schedulerCalendar.excludedDates||[]).includes(key))return {type:'no-school',date:key,label:'District No-School'};
   if((schedulerCalendar.remoteDates||[]).includes(key))return {type:'remote',date:key,label:'Remote Day'};
+  const special=specialDayRuleForDate(schoolScheduleProfile,key);
+  if(special)return special;
   if((schedulerCalendar.halfDayDates||[]).includes(key))return {type:'half-day',date:key,label:'Half Day'};
   if((schedulerCalendar.twoHourDelayDates||[]).includes(key))return {type:'2-hour-delay',date:key,label:'2-Hour Delay'};
   if((schedulerCalendar.oneHourDelayDates||[]).includes(key))return {type:'1-hour-delay',date:key,label:'1-Hour Delay'};
@@ -2490,7 +2492,7 @@ function classAlternatingPhaseForDate(anchorDate,date=new Date()){
 
 function classScheduleMatchesDate(cls,date=new Date()){
   const key=localDateKey(date);
-  if(calendarRuleForDate(date).type==='half-day'&&!effectiveClassTimes(cls,date))return false;
+  if(!effectiveClassTimes(cls,date))return false;
   if(isCalendarBlocked(date).blocked)return false;
   if((cls.excludedDates||[]).includes(key))return false;
   if((cls.includeDates||[]).includes(key))return true;
@@ -5581,7 +5583,7 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
   for(let off=0;off<horizonDays&&conflicts.length<20;off++){
     const day=new Date(start);day.setDate(day.getDate()+off);
     if(isAutomationSuppressed(day).blocked)continue;
-    const rule=calendarRuleForDate(day),special=["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
+    const rule=calendarRuleForDate(day),special=rule.type.startsWith("special:")||["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
     if(calendarScope==="normal"&&special||calendarScope==="special"&&!special)continue;
     const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
     for(const occurrence of candidateOccurrences){

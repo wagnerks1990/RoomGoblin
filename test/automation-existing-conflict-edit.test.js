@@ -78,7 +78,7 @@ test("save routes continue to enforce server-side create and edit validation",()
   assert.match(server,/assertAutomationConflicts\(event,classroomAutomations\.events\.filter\(\(_,index\)=>index!==idx\),\{previous:prior\}\)/);
 });
 
-for(const type of ["half-day","1-hour-delay","2-hour-delay"]){
+for(const type of ["half-day","1-hour-delay","2-hour-delay","special:pep-rally"]){
   test(`${type} overlaps never block new, edited or newly enabled automations`,async()=>{
     for(const kind of ["new","edit","enable"]){
       const {context,prior,request}=fixture();context.calendarRuleForDate=()=>({type,label:type});

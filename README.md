@@ -49,6 +49,7 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - encrypted native [ESPHome devices](docs/ESPHOME-INTEGRATION.md) with verified enrollment, sensor states and supported entity controls (Unreleased)
 - lighting integrations through MQTT
 - class schedules, cycle days, closures, delays, half-days, and remote-day rules
+- reusable [special-day timetables](docs/SPECIAL-DAY-SCHEDULES.md) for date-assigned class times (Unreleased)
 - lab/client management integrations
 - appliance-wide Docker inventory/lifecycle controls
 - optional managed integration deployment/adoption

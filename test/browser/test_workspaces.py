@@ -563,3 +563,63 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(page.locator('#espInventory article').count(), 1)
         self.assertTrue(page.get_by_role('button', name='On', exact=True).is_disabled())
         self.assertFalse(errors, errors)
+
+    def test_special_day_timetable_draft_save_reuse_and_remove(self):
+        profile = {'name': 'School', 'anchorDate': '2027-08-23', 'cycleDays': ['A', 'B'],
+                   'dayGroups': [{'id': 'a', 'label': 'Day A', 'cycleDays': ['A']},
+                                 {'id': 'b', 'label': 'Day B', 'cycleDays': ['B']}],
+                   'specialDaySchedules': []}
+        saved = []
+        def transport(req, target):
+            if target == '/api/v1/automations/calendar':
+                if req.request.method == 'PUT':
+                    body = req.request.post_data_json
+                    saved.append(body)
+                    profile.update(body['scheduleProfile'])
+                req.fulfill(json={'ok': True, 'calendar': {}, 'scheduleProfile': profile})
+                return True
+            if target == '/api/v1/automations':
+                req.fulfill(json={'events': []})
+                return True
+            return False
+        page, errors = self.page('/controller/', transport=transport, overrides={
+            '/api/v1/class-schedules/status': {},
+            '/api/v1/class-schedules': {'classes': [
+                {'id': 'p4', 'name': 'Period 4', 'period': '4', 'startTime': '13:00', 'endTime': '14:00'},
+                {'id': 'p3', 'name': 'Period 3', 'period': '3', 'startTime': '11:00', 'endTime': '12:00'}]}})
+        page.evaluate("showPage('schedules')")
+        page.evaluate('loadSchedules()')
+        page.locator('#schedules details').filter(has=page.locator('#specialDayNew')).first.locator('summary').first.click()
+        page.get_by_text('Reusable special-day schedules', exact=True).click()
+        page.locator('#specialDayNew').click()
+        page.locator('#specialDayName').fill('Pep rally')
+        page.locator('#specialDayDates').fill('2027-10-15')
+        row = page.locator('[data-class-id="p4"]')
+        row.locator('input[type=checkbox]').check()
+        row.locator('input[type=time]').nth(0).fill('10:04')
+        row.locator('input[type=time]').nth(1).fill('10:58')
+        self.evidence(page, errors, 'special-day-desktop')
+        page.set_viewport_size({'width': 390, 'height': 1000})
+        self.evidence(page, errors, 'special-day-mobile')
+        page.set_viewport_size({'width': 1440, 'height': 1000})
+        # Refreshing the same stored profile preserves unsaved editor changes.
+        page.evaluate('loadSchedules()')
+        self.assertEqual(page.locator('#specialDayName').input_value(), 'Pep rally')
+        page.get_by_role('button', name='Save School Calendar Rules', exact=True).click()
+        page.wait_for_function("document.querySelector('#calendarMsg').textContent.length > 0")
+        self.assertIn('saved', page.locator('#calendarMsg').inner_text())
+        timetable = saved[-1]['scheduleProfile']['specialDaySchedules'][0]
+        self.assertEqual(timetable['classTimes'], {'p4': {'startTime': '10:04', 'endTime': '10:58'}})
+        self.assertEqual(timetable['dates'], ['2027-10-15'])
+        page.locator('#specialDayDates').fill('2027-10-15\n2027-11-12')
+        page.get_by_role('button', name='Save School Calendar Rules', exact=True).click()
+        page.wait_for_function("S.scheduleProfile.specialDaySchedules[0].dates.includes('2027-11-12')")
+        self.assertEqual(saved[-1]['scheduleProfile']['specialDaySchedules'][0]['dates'], ['2027-10-15', '2027-11-12'])
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.on('dialog', lambda dialog: dialog.accept())
+        page.locator('#specialDayDelete').click()
+        self.assertFalse(page.locator('#specialDayFields').is_visible())
+        page.get_by_role('button', name='Save School Calendar Rules', exact=True).click()
+        page.wait_for_function('S.scheduleProfile.specialDaySchedules.length === 0')
+        self.assertEqual(saved[-1]['scheduleProfile']['specialDaySchedules'], [])
+        self.assertFalse(errors, errors)

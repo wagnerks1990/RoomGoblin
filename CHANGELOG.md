@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+### Reusable special-day schedules
+
+- Add named, date-assigned timetables in School Calendar Rules with per-class times and explicit omission.
+- Preserve class/automation IDs, class-linked offsets and timer deadlines; return to normal times on unassigned dates.
+- Keep closure/remote suppression and cycle rules; validate dates/intervals and report special-day conflicts separately.
+- Document reusable setup, split-lunch class blocks and rollback in docs and the Wiki mirror.
+
+
 ### Scheduled all-TV power handoff
 
 - Guard actual CEC output ownership for announcement receivers, including named

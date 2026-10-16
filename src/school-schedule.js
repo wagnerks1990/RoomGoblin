@@ -111,6 +111,7 @@ function normalizeSchoolScheduleProfile(input = {}, fallback = defaultSchoolSche
     dayGroups,
     periodCycleDays,
     exceptionRules,
+    specialDaySchedules: normalizeSpecialDaySchedules(input.specialDaySchedules ?? base.specialDaySchedules ?? []),
     continuation: {
       maximumGapMinutes: boundedFiniteNumber(input.continuation?.maximumGapMinutes, boundedFiniteNumber(base.continuation?.maximumGapMinutes, 15, 0, 120), 0, 120),
       legacyBisonCompatibility: input.continuation?.legacyBisonCompatibility ?? base.continuation?.legacyBisonCompatibility ?? false
@@ -133,6 +134,11 @@ function minutesToTime(value) {
 function effectiveTimesForRule(profile, classroom, ruleType) {
   const startTime = classroom?.startTime;
   const endTime = classroom?.endTime;
+  if (String(ruleType).startsWith("special:")) {
+    const schedule = (profile?.specialDaySchedules || []).find(item => `special:${item.id}` === ruleType);
+    // A removed or incomplete special timetable must never fall back to normal times.
+    return schedule && Object.hasOwn(schedule.classTimes, classroom?.id) ? { ...schedule.classTimes[classroom.id] } : null;
+  }
   const rule = profile?.exceptionRules?.[ruleType];
   if (!rule) return { startTime, endTime };
   if (rule.excludeContinuationPeriods && (classroom?.continuationOf || (profile.continuation?.legacyBisonCompatibility && /^(?:BISON-|B[12]\b)/i.test(String(classroom?.period || classroom?.name || ""))))) return null;
@@ -157,12 +163,47 @@ function groupForCycleDay(profile, cycleDay) {
   return (profile?.dayGroups || []).find(group => group.cycleDays.includes(cycleDay)) || null;
 }
 
+function normalizeSpecialDaySchedules(input) {
+  if (!Array.isArray(input) || input.length > 50) throw new Error("Special-day schedules must be an array of at most 50 templates");
+  const ids = new Set(), assignedDates = new Set();
+  return input.map(item => {
+    const id = String(item?.id || "");
+    const name = String(item?.name || "").trim();
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id) || ids.has(id)) throw new Error("Special-day schedule IDs must be unique and valid");
+    if (!name || name.length > 120) throw new Error("Special-day schedules require a name of at most 120 characters");
+    ids.add(id);
+    if (!Array.isArray(item.dates) || item.dates.length > 366) throw new Error(`${name}: supply at most 366 dates`);
+    const dates = [...new Set(item.dates)];
+    for (const date of dates) {
+      if (!validDateKey(date)) throw new Error(`${name}: invalid date ${date}`);
+      if (assignedDates.has(date)) throw new Error(`Only one special-day schedule can be assigned to ${date}`);
+      assignedDates.add(date);
+    }
+    if (!item.classTimes || typeof item.classTimes !== "object" || Array.isArray(item.classTimes)) throw new Error(`${name}: class times are required`);
+    const entries = Object.entries(item.classTimes);
+    if (entries.length > 500) throw new Error(`${name}: too many classes`);
+    const classTimes = Object.create(null);
+    for (const [classId, times] of entries) {
+      if (!classId || classId.length > 80 || !validTime(times?.startTime) || !validTime(times?.endTime) || timeToMinutes(times.startTime) >= timeToMinutes(times.endTime)) throw new Error(`${name}: invalid times for class ${classId}`);
+      classTimes[classId] = { startTime: times.startTime, endTime: times.endTime };
+    }
+    if (dates.length && !entries.length) throw new Error(`${name}: include at least one class before assigning dates`);
+    return { id, name, dates, classTimes };
+  });
+}
+
+function specialDayRuleForDate(profile, dateKey) {
+  const schedule = (profile?.specialDaySchedules || []).find(item => item.dates.includes(dateKey));
+  return schedule ? { type: `special:${schedule.id}`, date: dateKey, label: schedule.name } : null;
+}
+
 module.exports = {
   defaultSchoolScheduleProfile,
   legacySchoolScheduleProfile,
   normalizeSchoolScheduleProfile,
   effectiveTimesForRule,
   groupForCycleDay,
+  specialDayRuleForDate,
   validDateKey,
   validTime
 };

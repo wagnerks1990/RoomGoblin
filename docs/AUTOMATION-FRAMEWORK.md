@@ -127,3 +127,10 @@ Recovery does not treat every earlier continuous automation as active for the re
 Simulation and saving use the same conflict policy. Editing an already-enabled automation preserves exact existing overlaps (same other automation, date, time, and resource set). The editor reports those overlaps as warnings with the other automation's name, date, time, and shared targets. New normal-day overlaps still block saving; newly created or previously disabled automations must pass the normal-day check before enabling. The saved server record supplies the baseline, never a browser-provided baseline.
 
 Checks include the next 90 days. Half-day, one-hour-delay, and two-hour-delay overlaps are separate, non-blocking warnings for every automation: new, edited, or being enabled. Special days use their own timetable and never prevent saving the normal schedule. Normal-day validation is scanned separately so a long list of special-day warnings cannot hide a normal-day conflict. No-school and remote days are suppressed. Warnings do not reschedule events or alter runtime priority.
+
+## Reusable special-day timetables
+
+Named date-assigned timetables move existing class-linked occurrences and timer
+deadlines without copying automations. Omitted classes do not run. Fixed-clock
+automations keep their times. See [Special-day schedules](SPECIAL-DAY-SCHEDULES.md)
+for setup, split lunches, priority, validation and rollback.

@@ -1961,6 +1961,7 @@ function renderSchedulerCalendar(){
   schoolProfileAdditionalGroups.value=JSON.stringify(groups.slice(2),null,2);
   schoolProfilePeriodMap.value=JSON.stringify(p.periodCycleDays||{},null,2);
   schoolProfileExceptionRules.value=JSON.stringify(p.exceptionRules||{},null,2);
+  specialDayEditor.load(p.specialDaySchedules||[],S.classes||[]);
   calendarExcludedDates.value=(c.noSchoolDates||c.excludedDates||[]).join('\n');
   calendarHalfDayDates.value=(c.halfDayDates||[]).join('\n');
   calendarOneHourDelayDates.value=(c.oneHourDelayDates||[]).join('\n');
@@ -1989,6 +1990,7 @@ async function saveSchedulerCalendar(){
         ],
         periodCycleDays:parseObject(schoolProfilePeriodMap.value,'Period mapping'),
         exceptionRules:parseObject(schoolProfileExceptionRules.value,'Exception rules'),
+        specialDaySchedules:specialDayEditor.value(),
         continuation:{maximumGapMinutes:Number(schoolProfileContinuationGap.value||15),legacyBisonCompatibility:schoolProfileLegacyContinuation.checked}
       }
     };

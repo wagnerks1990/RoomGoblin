@@ -730,8 +730,20 @@ nav button{min-width:135px}
       <label><b>Period-to-Cycle Mapping (JSON)</b><textarea id="schoolProfilePeriodMap" rows="6" placeholder='{"1":["A"],"2":["B"]}'></textarea></label>
       <label><b>Exception Time Rules (JSON)</b><textarea id="schoolProfileExceptionRules" rows="6" placeholder='{"half-day":{"periodTimes":{}}}'></textarea></label>
     </div>
+    <details class="advanced"><summary>Reusable special-day schedules</summary>
+      <p class="muted">Save a named timetable and assign YYYY-MM-DD dates. Included classes keep their automation links; omitted classes do not run. Normal times return on other dates. School-cycle and weekday rules still apply. Fixed-time automations keep their clock times.</p>
+      <label for="specialDaySelect">Timetable</label><select id="specialDaySelect" aria-label="Special-day timetable"></select>
+      <div class="toolbar"><button type="button" id="specialDayNew">New timetable</button><button type="button" id="specialDayDelete">Remove timetable</button></div>
+      <div id="specialDayFields" hidden>
+        <label for="specialDayName">Timetable name</label><input id="specialDayName" maxlength="120">
+        <label for="specialDayDates">Assigned dates (one per line; leave blank to keep for future use)</label><textarea id="specialDayDates" rows="3"></textarea>
+        <p class="muted">Check classes to include and enter their special times. For a split lunch, create separate before/after-lunch classes in Classes and link both to the automation. The timer stops at each block end. Create special-only blocks with specific-date scheduling so they do not run on normal days.</p>
+        <div id="specialDayRows" class="scroll"></div>
+      </div>
+      <p id="specialDayMessage" class="muted" role="status">Changes are drafts until Save School Calendar Rules is used.</p>
+    </details>
     <label class="pill" style="margin:8px 0"><input id="schoolProfileLegacyContinuation" type="checkbox"> Enable compatibility for imported legacy continuation blocks</label>
-    <div class="muted" style="margin-bottom:10px">If a date appears in more than one category, priority is: No-School → Remote → Half Day → 2-Hour Delay → 1-Hour Delay.</div>
+    <div class="muted" style="margin-bottom:10px">If a date appears in more than one category, priority is: No-School → Remote → Special-day timetable → Half Day → 2-Hour Delay → 1-Hour Delay.</div>
     <div class="grid2">
       <label><b>District No-School Dates</b><span class="muted">No classroom automation runs and the configured school-day cycle pauses.</span><textarea id="calendarExcludedDates" rows="8" placeholder="YYYY-MM-DD" style="width:100%;resize:vertical;margin-top:6px"></textarea></label>
       <label><b>District Remote Day Dates</b><span class="muted">The school-day cycle still advances, but classroom automation, Morning Announcements, legacy TV schedules, and scheduled Background Music do not run.</span><textarea id="calendarRemoteDates" rows="8" placeholder="YYYY-MM-DD" style="width:100%;resize:vertical;margin-top:6px"></textarea></label>
@@ -1394,6 +1406,7 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
 <div id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle" style="display:none;position:fixed;inset:0;z-index:50000;background:rgba(3,7,12,.96);align-items:center;justify-content:center;padding:20px"><div class="panel" style="width:min(420px,100%);margin:0"><h2 id="loginTitle">Sign in to RoomGoblin</h2><div class="muted">Enter your local RoomGoblin account.</div><div class="formField"><label for="loginUser">Username</label><input id="loginUser" autocomplete="username"></div><div class="formField"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password"></div><label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input id="loginRemember" type="checkbox" style="width:auto"> Remember for 7 days</label><div class="toolbar"><button class="primary" onclick="performLogin()">Sign In</button></div><div id="loginMsg" class="bad" role="alert" aria-live="assertive" style="margin-top:8px"></div></div></div>
 <div id="accountModal" class="authModal" role="dialog" aria-modal="true" aria-labelledby="accountTitle"><div class="panel"><div class="top"><div><h2 id="accountTitle">My Account</h2><div id="accountIdentity" class="muted"></div></div><button onclick="closeAccountModal()" aria-label="Close account dialog">Close</button></div><div class="grid2" style="margin-top:12px"><div class="card"><h3>Change Password</h3><div class="formField"><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password"></div><div class="formField"><label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password"></div><div class="formField"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" autocomplete="new-password"></div><div class="toolbar"><button class="primary" onclick="changeMyPassword()">Change Password</button></div><div id="passwordMsg" class="muted" aria-live="polite"></div></div><div class="card"><div class="top"><div><h3>Active Sessions</h3><div class="muted">Current and recent signed-in browsers.</div></div><button onclick="logoutOtherSessions()">Sign out others</button></div><div id="sessionList" class="subtle">Loading…</div></div></div></div></div>
 <script src="/shared/resumable-upload.js"></script>
+<script src="/controller/special-day-schedules.js"></script>
 <script src="/controller/app.js"></script>
 <script src="/controller/workspace.js"></script>
 <script src="/controller/esphome.js"></script>
