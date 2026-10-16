@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Skip stale mirror snapshots
         env:
@@ -40,10 +42,22 @@ jobs:
 
       - name: Clone Wiki
         env:
-          GH_TOKEN: ${{ secrets.WIKI_PUSH_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.WIKI_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" /tmp/wiki
+          askpass="$(mktemp)"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$GH_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 0700 "$askpass"
+          export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" /tmp/wiki
 
       - name: Synchronize Wiki mirror
         run: |
@@ -60,9 +74,20 @@ jobs:
 
       - name: Push Wiki
         env:
-          GH_TOKEN: ${{ secrets.WIKI_PUSH_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.WIKI_PUSH_TOKEN || github.token }}
         run: |
           set -euo pipefail
           cd /tmp/wiki
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
-          git push origin HEAD:master
+          askpass="$(mktemp)"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$GH_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 0700 "$askpass"
+          export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= push origin HEAD:master
