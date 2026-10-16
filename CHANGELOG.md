@@ -12,6 +12,20 @@
   ownership isolation, SHA-256/signature verification and `0750` session traversal.
 - Keep completed media read-only for the maintenance group and clean temporary
   metadata after write failures without losing the last published session state.
+### Display fallback and recovery status
+
+- Surface an explicit failure when a recovery worker dies before persisting its
+  terminal status; retain its journal and update every active renderer-revision
+  contract and Wiki mirror.
+
+- Fit visible fallback glyph ink against its display region rather than its own
+  line box, preventing excessive shrinking when the font stylesheet is missing.
+  Keep clipping, natural-size and painted-range containment checks; advance the
+  renderer and receiver cache keys to `dynamic-fit-20261012-1`.
+- Sample full-recovery worker liveness before reading its durable phase and
+  serialize status against job startup, preventing stale `quiescing` responses
+  from appearing finished. Preserve failed-rollback journals and add deterministic
+  worker-completion and browser glyph-overhang regressions.
 
 ### Scheduled all-TV power handoff
 

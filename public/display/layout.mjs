@@ -1,6 +1,6 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20260922-12';
+export const LAYOUT_REVISION = 'dynamic-fit-20261012-1';
 export const AUTO_GROW_FACTOR = 1.10;
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
@@ -195,7 +195,11 @@ export function fits(el, box) {
   if (Math.max(el.scrollWidth, el.offsetWidth) > a.width + 0.5 ||
       Math.max(el.scrollHeight, el.offsetHeight) > a.height + 0.5) return false;
   if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 0.5) return false;
-  if (el.clientHeight > 0 && el.scrollHeight > el.clientHeight + 0.5) return false;
+  // Visible glyph ink may extend beyond its own line box with fallback fonts.
+  // Only a clipping child must contain that ink itself; visible text is bounded
+  // by the region, natural-size probe and painted-range checks below.
+  if (getComputedStyle(el).overflowY !== 'visible' &&
+      el.clientHeight > 0 && el.scrollHeight > el.clientHeight + 0.5) return false;
   const natural = naturalSize(el, box);
   if (natural && (natural.width > a.width + 0.5 || natural.height > a.height + 0.5)) return false;
   return renderedContained(el, box);

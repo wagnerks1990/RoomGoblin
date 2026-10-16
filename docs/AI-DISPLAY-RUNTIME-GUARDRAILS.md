@@ -9,7 +9,7 @@ Read `docs/DISPLAY-LAYOUT-CONTRACT.md` before editing display or automation rend
 - Branding must not inject display layout code.
 - Do not add style/class/timer MutationObservers that create a second layout owner.
 
-Current renderer: `dynamic-fit-20260922-12`.
+Current renderer: `dynamic-fit-20261012-1`.
 
 ## Geometry
 

@@ -457,7 +457,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-12')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -477,14 +477,14 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-12')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
 
 
     def test_17_live_tv8_text_does_not_false_collapse(self):
         page=self.page(1548,1273,1)
         self.replay(page,TV8_LIVE_DYNAMIC)
         data=self.measure(page,'live-tv8-false-containment-regression')
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20260922-12')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
         for name in ['title','subtitle','body']:
             self.assertGreaterEqual(data['parts'][name]['font'],12, name)
             self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
@@ -505,7 +505,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.command(page,'display.clear',{})
         self.replay(page,TV8_LIVE_DYNAMIC)
         second=self.measure(page,'transition-recovery-second')
-        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20260922-12')
+        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261012-1')
         self.assertEqual(second['diagnostics']['components']['body']['status'],'fit')
         self.assertGreaterEqual(second['parts']['body']['font'],12)
         self.assertGreater(second['diagnostics']['components']['body']['scale'],0.95)
@@ -514,6 +514,31 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertAlmostEqual(second['parts']['timer']['logicalBox']['y'],900,delta=1)
         self.assertAlmostEqual(second['parts']['timer']['logicalBox']['h'],160,delta=1)
         self.assertEqual(self.signature(first),self.signature(second))
+
+
+    def test_19_visible_glyph_overhang_must_fit_the_region_not_its_line_box(self):
+        page=self.page(layout_css=False)
+        result=page.evaluate("""async () => {
+            const {fits}=await import('/display/layout.mjs');
+            const box=document.createElement('div'), text=document.createElement('div');
+            Object.assign(box.style,{position:'absolute',left:'0',top:'0',width:'600px',
+                height:'200px',display:'flex',alignItems:'center',overflow:'hidden'});
+            Object.assign(text.style,{font:'40px serif',lineHeight:'0.5',width:'100%',
+                flex:'0 0 auto',overflow:'visible',whiteSpace:'nowrap'});
+            text.textContent='Readable fallback glyphs';
+            box.appendChild(text);document.getElementById('stage').appendChild(box);
+            const overhang=text.scrollHeight>text.clientHeight+0.5;
+            const visible=fits(text,box);
+            text.style.overflow='hidden';
+            const clipped=fits(text,box);
+            text.style.overflow='visible';box.style.height='10px';
+            const outsideRegion=fits(text,box);
+            box.remove();return {overhang,visible,clipped,outsideRegion};
+        }""")
+        self.assertTrue(result['overhang'],'fixture must exercise real glyph overhang')
+        self.assertTrue(result['visible'],'visible glyphs contained by the region must fit')
+        self.assertFalse(result['clipped'],'a clipping child must still reject overflow')
+        self.assertFalse(result['outsideRegion'],'glyphs must never escape the region')
 
 
 if __name__ == '__main__':

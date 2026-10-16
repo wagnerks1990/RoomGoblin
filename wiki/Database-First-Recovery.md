@@ -179,3 +179,18 @@ authentication still occurs on every request without forcing a SQLite write on
 every poll. Privacy retention removes expired audit rows periodically; routine
 production operation relies on SQLite page reuse rather than running disruptive
 automatic VACUUM operations.
+
+## Recovery status snapshots
+
+Recovery status samples worker liveness before reading the durable phase and
+serializes that snapshot against starting another job. If the worker finishes
+during the read, `running:true` conservatively keeps the caller polling; the next
+poll returns the terminal phase. Never pair an old `quiescing` phase with
+`running:false`. A failed rollback remains `rollback-failed` with its journal
+retained; this status ordering does not alter rollback or cleanup policy.
+
+If a started worker exits without persisting a terminal phase (including early
+configuration/lock failures or a failed status write), polling reports an explicit
+`failed` response with `previousPhase` and `workerExitedWithoutTerminalStatus:true`.
+It does not claim rollback success or rewrite/delete the durable status or journal;
+retain those files for diagnosis and startup recovery.
