@@ -1,5 +1,13 @@
 # Operator workspaces
 
+## Displays & AV
+
+Use the [TV Routing Matrix](TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has
+been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
+are preserved. Receiver setup uses count/IDs again; Settings manages receivers
+and AV mappings. Reload the controller after upgrading.
+
+
 The GUI redesign organizes RoomGoblin around daily classroom work while keeping
 configuration and maintenance available through grouped navigation and expandable
 sections. These changes are recorded under **Unreleased**; this document does not
@@ -12,7 +20,7 @@ API routes remain unchanged.
 
 | Navigation group | Workspaces |
 | --- | --- |
-| Room controls | Displays & AV, Lighting, Display content, Background music, Lab computers |
+| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Lab computers |
 | Content library | Presentations, Media library |
 | Planning | Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
@@ -50,6 +58,11 @@ Today puts the school-day and display summaries first, with integration health i
 one compact strip. Permission-aware shortcuts open display content, lab computers
 and Background Music. Everyday room power controls stay visible; classroom reset
 and display reload operations remain in the maintenance disclosure.
+
+Scheduled Automation uses an inline class-schedule multi-select. Its closed state
+shows the number of linked classes; opening it exposes a scrollable checkbox list
+with schedule details and explicit Save, Clear All and Cancel actions. Closing the
+dropdown without saving restores the previous selection.
 
 On desktop, **Focus workspace** hides the navigation and widens the current tool
 without replacing or reloading its iframe. **Show navigation** restores it.
@@ -112,7 +125,8 @@ enrollment settings. Unknown presence means no report is available, not online.
 Scene lists load only when controls expand, with visible loading/error/empty
 states and a retry action. Empty or failed scene lists cannot send a scene command.
 Inventory refresh retains existing cards, keyboard focus, open controls and unsaved
-edits. Failed refreshes retain the inventory with an explicit stale-data message.
+edits. Command status reserves a line even when empty, so acknowledgement clearing
+does not move an Apply button between pointer down and pointer up. Failed refreshes retain the inventory with an explicit stale-data message.
 Existing Govee endpoints, MQTT payloads and schedule/device identity remain unchanged.
 
 ## Styling ownership
@@ -178,8 +192,8 @@ and adds a regression comparing publisher requirements to real workflow names.
 
 If the installer reports `sha-5dc717...: not found`, stop its image-wait retry loop
 with Ctrl+C. This check occurs before installer service/data mutations. Wait for
-**Publish Main Images** for the corrected main commit to finish, then pull main
-and rerun `sudo bash install.sh`. Do not relabel older images with the missing
+**Publish Main Images** for the corrected commit to finish, then use the
+[published-source updater](PRODUCTION-UPDATES.md). Do not relabel older images with the missing
 commit tag or bypass revision verification. The source and both images must agree.
 
 ## Planning rebuild (Unreleased)
@@ -190,3 +204,9 @@ Class fallback times move into a disclosure; automation editing uses When, Actio
 & targets, and Timer overlay sections. Calendar changes remain drafts until preview
 and a revision-checked save. See [Planning](Planning) for the cycle model, split segments,
 CSV calendar import, migration and rollback.
+
+## ESPHome device workspace
+
+The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).
+Keep forms and expanded entity cards stable across polling, mark cached inventory
+stale after failed reads, and never infer physical confirmation from socket writes.

@@ -1,5 +1,18 @@
 # GitHub Actions audit for Codex-assisted development
 
+## October 16 implementation follow-up
+
+The measurements and before/after matrix below describe the October 12 cache-only
+snapshot, not the current workflow inventory. PR #236 implements the separately
+requested consolidation: six workflows, one native Windows build with all former
+artifact/version checks, removal of the obsolete branch patcher and its source
+rewriters, and conservative Markdown-only PR selection with fail-closed tests.
+Main pushes still perform complete platform/browser/image/security qualification;
+publication retains its direct main trigger and exact-SHA three-workflow gate.
+See `CI-WORKFLOWS.md` for the current scope policy. New time/resource savings are
+not yet measured; do not treat the historical proposals or estimates below as
+current execution results.
+
 Audited 2026-10-12 against main `98c7044` (PR #224). Implementation branch:
 `ci/preserve-gates-cache-audit`. This audit covers all eight workflow files,
 AGENTS.md, SECURITY.md, Dependabot, image/update contracts, live rulesets and

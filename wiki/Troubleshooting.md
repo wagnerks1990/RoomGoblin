@@ -44,6 +44,8 @@ sudo docker exec classroom-control-hub-maintenance ls -la /run/classroom-control
 
 The current standard install path is `/opt/classroom-hub`. Older service units pointing at `/opt/classroom-control-hub` or `/run/classroom-hub/host-agent.sock` are stale migration configuration.
 
+The canonical installed systemd unit is `classroom-hub-host-agent.service`. A leftover disabled `classroom-control-hub-host-agent.service` may exist after older migrations; update and host-update units should not depend on that stale name.
+
 ## Controller Test Image reports a media URL error
 
 The Controller's per-TV **Test Image** action uses only RoomGoblin's built-in

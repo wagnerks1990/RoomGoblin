@@ -5,6 +5,7 @@ Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, pr
 ## Invariants
 
 - Cloudflare is optional and failure-isolated from local classroom operation.
+- Connector setup may wait at most 10 seconds for initial Hub readiness and 90 seconds after setup/recreation. Bound each probe to the remaining deadline, keep logs/secrets out of failure output, and never make Cloudflare part of core health.
 - Managed Cloudflare logic lives in `src/cloudflare.js`; administrator routes are registered by `src/cloudflare-bridge.js`.
 - Site domains, account/zone/resource IDs, and tenant-specific values are runtime configuration. Never hard-code a school domain or Cloudflare tenant identifier into public source.
 - API Tokens and Global API Keys are encrypted secret-store values. Browser responses expose only configured flags.

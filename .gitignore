@@ -16,6 +16,8 @@ __pycache__/
 config/devices.local.json
 config/hardware.local.json
 public/display/fonts/
+# Generated from sendspin-entry.js by the browser build.
+/public/display/sendspin.bundle.js
 test-results/
 
 # Host installer state, not application source.

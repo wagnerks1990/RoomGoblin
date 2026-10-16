@@ -20,7 +20,8 @@ regenerate signing/ADB keys to repair these failures.
 Retain a successful encrypted `.rgbak` export, its passphrase separately, and the
 installer rollback snapshot. Recovery passphrases require localhost through an
 SSH tunnel or supported HTTPS. After the exact commit's validated images are
-published, follow the standard Git upgrade using `install.sh`.
+published, follow the journaled updater in `PRODUCTION-UPDATES.md`. Do not pull
+source first; use its one-time transition when the installed updater is older.
 
 Require backend, maintenance and Host Agent version convergence. Check saved
 accounts, schedules, devices, assets and integrations; export again after a

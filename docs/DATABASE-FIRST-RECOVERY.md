@@ -433,6 +433,13 @@ During Host Agent startup, the authenticated Unix socket is served before an
 interrupted transaction recreates health-dependent containers. Host mutation
 requests return `423` until recovery or rollback completes.
 
+Recovery status samples worker liveness before reading the durable phase and
+serializes that snapshot against starting another job. If the worker finishes
+during the read, `running:true` conservatively keeps the caller polling; the next
+poll returns the terminal phase. Never pair an old `quiescing` phase with
+`running:false`. A failed rollback remains `rollback-failed` with its journal
+retained; this status ordering does not alter rollback or cleanup policy.
+
 Restore should automatically:
 
 1. inspect and authenticate/validate the bundle;
@@ -607,3 +614,9 @@ When adding a new persistent file, contributors must classify it as one of:
 If it is none of those, it should normally be database-backed.
 
 Any non-regenerable state that remains outside SQLite must be added to the Full Recovery Export allowlist/manifest and covered by restore regression tests.
+
+If a started worker exits without persisting a terminal phase (including early
+configuration/lock failures or a failed status write), polling reports an explicit
+`failed` response with `previousPhase` and `workerExitedWithoutTerminalStatus:true`.
+It does not claim rollback success or rewrite/delete the durable status or journal;
+retain those files for diagnosis and startup recovery.

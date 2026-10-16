@@ -8,7 +8,7 @@ Another failure mode on TV Chromium appeared during action-to-action replacement
 
 ## Current behavior
 
-Current renderer: `dynamic-fit-20260922-12`.
+Current renderer: `dynamic-fit-20261012-1`.
 
 `public/display/layout.mjs` remains the only layout owner. The 1920x1080 logical stage is unchanged.
 
@@ -42,7 +42,7 @@ After deployment, reload the receiver and run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected revision: `dynamic-fit-20260922-12`.
+Expected revision: `dynamic-fit-20261012-1`.
 
 Verify:
 1. title/subtitle are fully contained;

@@ -107,6 +107,28 @@ Then install/start (do not bypass the installer with a raw first-run Compose com
 sudo bash install.sh
 ```
 
+## Existing appliance reinstalls
+
+Running `install.sh` on an existing appliance now enters the native main updater
+with full reconciliation before making any appliance changes. It uses the same
+host-owned lock, durable journal, operational SQLite backup, previous source and
+image identities, environment snapshot, health gates and restart rollback as a
+normal update. Do not pull or replace appliance source before this handoff.
+
+The handoff requires the checkout and running component inputs to match the
+recorded verified deployment. Selective updates may retain older image revisions
+when their relevant inputs are unchanged. Unknown or changed deployment identity,
+pending recovery journals and incomplete installations fail closed; preserve
+those states and use the documented host-owned recovery procedure. Existing
+appliances cannot be reinstalled with `--build-local`; use an isolated fresh
+checkout for development builds. Fresh bootstrap, including a preconfigured
+`.env`, retains the original installer path.
+
+The native updater alone can invoke the underlying installer after mutation
+starts: it must supply the inherited appliance lock and a private matching
+journal containing complete source/image/backup rollback identities, plus the
+private environment snapshot. An environment switch cannot bypass that guard.
+
 ## Normal production updates
 
 Use the verified main updater rather than pulling source first or replacing the application tree with ZIP contents:

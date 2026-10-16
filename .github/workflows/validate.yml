@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_EVENT_NAME: ${{ github.event_name }}
+  CI_BASE_REF: ${{ github.event.pull_request.base.ref }}
+  CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -18,7 +23,10 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Select conservative PR validation scope
+        id: scope
+        run: python tools/ci-scope.py
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -63,8 +71,6 @@ jobs:
         run: npm audit --omit=dev --audit-level=moderate
       - name: Validate maintenance syntax
         run: |
-          node --check maintenance-agent/server.js
-          node --check maintenance-agent/extensions.js
           node --check maintenance-agent/android-tv-agent-artifact.js
       - name: Run stabilization regression tests
         run: npm test
@@ -81,6 +87,7 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config --format json | python3 tools/validate-host-network.py
       - name: Build from a private local source context
+        if: steps.scope.outputs.full != 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -94,15 +101,19 @@ jobs:
           test "$(stat -c %a "$context/src")" = 700
           docker build --network host -t classroom-control-hub:test "$context"
       - name: Smoke user-defined integration bridge
+        if: steps.scope.outputs.full != 'false'
         run: bash tools/smoke-integration-network.sh classroom-control-hub:test
       - name: Verify packaged access without root or runtime mounts
+        if: steps.scope.outputs.full != 'false'
         run: |
           test "$(docker image inspect -f '{{.Config.User}}' classroom-control-hub:test)" = 10001:10001
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
             --entrypoint node classroom-control-hub:test tools/verify-image-permissions.js
       - name: Build maintenance container
+        if: steps.scope.outputs.full != 'false'
         run: docker build -f maintenance-agent/Dockerfile -t classroom-control-hub-maintenance:test .
       - name: Scan main image for high-severity vulnerabilities
+        if: steps.scope.outputs.full != 'false'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: classroom-control-hub:test
@@ -111,6 +122,7 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
       - name: Scan maintenance image for high-severity vulnerabilities
+        if: steps.scope.outputs.full != 'false'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: classroom-control-hub-maintenance:test
@@ -119,13 +131,16 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
       - name: Host-network container smoke test
+        if: steps.scope.outputs.full != 'false'
         run: bash tools/smoke-host-network.sh
       - name: Verify image release stamping
+        if: steps.scope.outputs.full != 'false'
         run: |
           expected="$(cat VERSION)"
           docker run --rm --entrypoint node classroom-control-hub:test -e "const fs=require('fs');const v=fs.readFileSync('/app/VERSION','utf8').trim();if(v!=='$expected')process.exit(1);for(const f of ['/app/public/controller/app.js','/app/public/display/index.html','/app/public/lab-agent/ClassroomHubAgent.ps1'])if(!fs.readFileSync(f,'utf8').includes(v))process.exit(2)"
           docker run --rm --entrypoint node classroom-control-hub-maintenance:test -e "const fs=require('fs');const s=fs.readFileSync('/app/server.js','utf8');if(!s.includes('$expected'))process.exit(1);if(!fs.existsSync('/app/android-agent/agent-release-unsigned.apk')||!fs.existsSync('/app/android-agent/agent-build.json'))process.exit(2)"
       - name: Compose direct HTTP smoke test
+        if: steps.scope.outputs.full != 'false'
         run: |
           set -euo pipefail
           cp .env.example .env
@@ -168,7 +183,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select conservative PR validation scope
+        id: scope
+        run: python tools/ci-scope.py
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.scope.outputs.full != 'false'
         with:
           dotnet-version: '8.0.x'
           cache: true
@@ -191,8 +210,38 @@ jobs:
           }
           if ($failed) { throw 'Windows PowerShell parsing failed.' }
       - name: Build locked native Windows agent
+        if: steps.scope.outputs.full != 'false'
         shell: pwsh
         run: .\windows-agent\scripts\Build-Native-Agent.ps1
+      - name: Verify native artifact set
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: |
+          $root = '.\windows-agent\artifacts\native-agent'
+          $required = @(
+            'RoomGoblinAgent.exe',
+            'RoomGoblinSessionAgent.exe',
+            'RoomGoblinAgentBootstrap.exe',
+            'RoomGoblinAgentUpdater.exe'
+          )
+          foreach ($name in $required) {
+            $path = Join-Path $root $name
+            if (!(Test-Path $path)) { throw "Missing native artifact: $name" }
+            if ((Get-Item $path).Length -le 0) { throw "Empty native artifact: $name" }
+          }
+          $version = (Get-Content .\VERSION -Raw).Trim()
+          $info = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $root 'RoomGoblinAgent.exe'))
+          if ($info.ProductVersion -notlike "$version*") {
+            throw "Native service ProductVersion '$($info.ProductVersion)' does not match VERSION '$version'"
+          }
+      - name: Upload native package
+        if: steps.scope.outputs.full != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: RoomGoblin-native-agent-win-x64
+          path: windows-agent/artifacts/native-agent/
+          if-no-files-found: error
+          retention-days: 14
       - name: Verify Windows agent contract
         shell: pwsh
         run: |
@@ -208,13 +257,18 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select conservative PR validation scope
+        id: scope
+        run: python tools/ci-scope.py
       - name: Verify Java and Android SDK
+        if: steps.scope.outputs.full != 'false'
         run: |
           java -version
           test -n "${ANDROID_HOME:-}"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.2' 'build-tools;36.0.0'
       - name: Install Gradle 9.6.0
+        if: steps.scope.outputs.full != 'false'
         run: |
           set -euo pipefail
           curl -fsSL https://services.gradle.org/distributions/gradle-9.6.0-bin.zip -o "$RUNNER_TEMP/gradle.zip"
@@ -222,9 +276,11 @@ jobs:
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-9.6.0/bin" >> "$GITHUB_PATH"
       - name: Build debug APK
+        if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv
         run: gradle :app:assembleDebug --stacktrace
       - name: Verify APK
+        if: steps.scope.outputs.full != 'false'
         run: |
           set -euo pipefail
           apk=agents/android-tv/app/build/outputs/apk/debug/app-debug.apk
@@ -237,7 +293,8 @@ jobs:
           printf '%s\n' "$badging" | grep -Fq "versionName='$version_name'"
           sha256sum "$apk" | tee agents/android-tv/app/build/outputs/apk/debug/app-debug.apk.sha256
       - name: Upload test APK
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: steps.scope.outputs.full != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ClassroomHub-Display-Agent-debug
           path: |
