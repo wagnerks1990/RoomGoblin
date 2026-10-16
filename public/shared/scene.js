@@ -58,7 +58,7 @@
     if(layer.widget==="progress"){const duration=data.endAt-data.startAt;return duration>0?`${Math.round(Math.max(0,Math.min(100,(now-data.startAt)/duration*100)))}% complete`:"Progress unavailable"}
     const seconds=Math.max(0,Math.ceil((data.endAt-now)/1000));return `${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`;
   }
-  function render(container,value,{resolveAsset=name=>`/media/${encodeURIComponent(name)}`,interactive=false,reducedMotion=false,fitText=null,loadSports,previewSports=false}={}){
+  function render(container,value,{resolveAsset=name=>`/media/${encodeURIComponent(name)}`,interactive=false,reducedMotion=false,fitText=null,loadSports,previewSports=true}={}){
     const scene=normalize(value);container.replaceChildren();container.classList.add("rg-scene");
     container.style.background=scene.transparent?"transparent":scene.background;
     container.dataset.transition=reducedMotion?"none":scene.transition;

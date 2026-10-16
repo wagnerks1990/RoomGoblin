@@ -1,9 +1,15 @@
 /* Sports is a scene widget, not an iframe or a second display layout engine. */
 "use strict";
 (()=>{
- const instances=new Map();
+ const instances=new Map(),previewCache=new Map();
+ async function loadBoard(id,signal){
+  const cached=previewCache.get(id);if(cached&&cached.until>Date.now())return cached.value;
+  const r=await fetch('/api/v1/sports/boards/'+encodeURIComponent(id)+'/display',{credentials:'same-origin',signal});if(!r.ok)throw Error('Sports data unavailable');const value=await r.json();
+  if(value.ok&&Array.isArray(value.pages)){if(previewCache.size>=30)previewCache.delete(previewCache.keys().next().value);previewCache.set(id,{until:Date.now()+30000,value})}return value;
+ }
+ window.addEventListener('roomgoblin:authchange',()=>previewCache.clear());
  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n};
- function mount(host,boardId,{resolveAsset=n=>'/media/'+encodeURIComponent(n),loadSports=async(id,signal)=>{const r=await fetch('/api/v1/sports/boards/'+encodeURIComponent(id)+'/display',{credentials:'same-origin',signal});if(!r.ok)throw Error('Sports data unavailable');return r.json()},preview=false,audio=false,volume=1}={}){
+ function mount(host,boardId,{resolveAsset=n=>'/media/'+encodeURIComponent(n),loadSports=loadBoard,preview=false,audio=false,volume=1}={}){
   host.classList.add('rg-sports');host.replaceChildren();host.style.alignItems='stretch';host.style.whiteSpace='normal';
   const header=el('header'),brand=el('div',null,'rg-sports-brand'),logo=el('img'),school=el('strong','Sports'),weather=el('div',null,'rg-sports-weather'),clock=el('time');logo.alt='School athletics';brand.append(logo,school);header.append(brand,weather,clock);
   const title=el('div',null,'rg-sports-heading'),heading=el('h2'),level=el('span');title.append(heading,level);
