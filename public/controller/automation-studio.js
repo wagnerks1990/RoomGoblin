@@ -157,6 +157,45 @@
   for(const b of newButtons){b.removeAttribute("onclick");b.addEventListener("click",()=>editEvent())}
   window.addEventListener("roomgoblin:authchange",()=>{if(!userCan("automation.manage"))document.querySelectorAll("dialog.studioDialog[open],dialog.sceneEditor[open]").forEach(d=>d.close())});
   render();
+  window.applySceneToExistingAutomation=async(scene,{name="Display screen",overlay=false}={})=>{
+    if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");
+    const safeScene=RoomGoblinScene.normalize(scene);
+    await loadSchedules();
+    const events=clone(S.automations).map(e=>({...e,actionSequence:sequence(e)})),m=modal("Add to existing automation","Choose a saved routine. This opens a draft for review; nothing is saved or sent to displays here.");
+    if(!events.length){m.body.append(el("p","No saved automations are available. Create an automation first."));return}
+    const selected=field(m.body,"Existing automation","",{options:[["","Choose an automation"],...events.map(e=>[e.id,e.name+(e.enabled===false?" (paused)":"")])]}),
+      method=field(m.body,"Apply as",overlay?"overlay":"append",{options:overlay?[["overlay","Weather overlay over existing content"]]:[["append","Add a screen after the existing actions"],["replace","Replace one existing display action"]]}),
+      slot=field(m.body,"Display action to replace","",{options:[]});
+    m.body.append(el("p",overlay?"The shared weather layer keeps the routine's content playing. Its existing schedule and receiver targets are unchanged.":"Schedules, receiver targets and other actions are kept. Actions run in sequence: review delays and execution modes before saving, especially if an earlier action repeats continually."));
+    const visual=a=>["display.text","display.media","display.url"].includes(a.action);
+    const open=button(m.footer,overlay?"Review shared weather layer":"Open automation draft",()=>{
+      try{
+        const event=events.find(e=>e.id===selected.value);if(!event)throw Error("Choose an existing automation");
+        const actions=sequence(event);
+        if(overlay){
+          if(configError)throw Error("Reload shared layer settings before editing");
+          if(!actions.some(visual))throw Error("Choose an automation with display content");
+          if(event.overlayPolicy&&event.overlayPolicy!=="inherit")throw Error("This automation uses a custom shared-layer policy. Set Targets & layers to Follow global layer rules before adding this shared weather layer.");
+          m.dialog.close();showPage("schedules");editOverlay({id:uid("overlay"),name,enabled:true,automationIds:[event.id],excludedAutomationIds:[],classIds:[],cycleDays:[],days:[0,1,2,3,4,5,6],scene:safeScene});return;
+        }
+        if(method.value==="replace"){
+          const index=actions.findIndex(a=>a.id===slot.value&&visual(a));if(index<0)throw Error("Choose a display action to replace");
+          actions[index]={...actions[index],action:"display.text",payload:{scene:safeScene,clearBefore:true},...(actions[index].executionMode==="loop"?{executionMode:"once"}:{})};
+        }else{
+          const prior=actions.find(visual),inherit=targetDomain(actions[0]?.action||"")==="display"&&(!prior||prior.useEventTargets!==false);
+          actions.push({id:uid("action"),action:"display.text",payload:{scene:safeScene,clearBefore:true},targets:clone(prior?.targets||(inherit?event.targets:[])||[]),useEventTargets:inherit,executionMode:"once",delaySeconds:0,repeatCount:1,repeatDelaySeconds:0,continueOnError:true});
+        }
+        m.dialog.close();showPage("schedules");editEvent({...event,actionSequence:actions});
+      }catch(error){m.status.textContent=error.message}
+    },"primary");
+    function update(){
+      const event=events.find(e=>e.id===selected.value),previous=slot.value;
+      slot.replaceChildren();for(const [index,a]of (event?sequence(event):[]).entries())if(visual(a)){const o=el("option",`Action ${index+1} · ${names[a.action]}${a.payload?.title?" · "+a.payload.title:""}`);o.value=a.id;slot.append(o)}
+      if([...slot.options].some(o=>o.value===previous))slot.value=previous;
+      slot.closest("label").hidden=method.value!=="replace";open.disabled=!event||(method.value==="replace"&&!slot.options.length);m.status.textContent="";
+    }
+    selected.addEventListener("change",update);method.addEventListener("change",update);update();
+  };
   window.startWeatherAutomation=scene=>{if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");showPage("schedules");editEvent({name:"Weather forecast",enabled:true,time:"14:45",scheduleMode:"weekly",days:[1,2,3,4,5],targets:[],useClassTargets:false,action:"display.text",payload:{scene}})};
   window.startSportsAutomation=scene=>{if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");showPage("schedules");editEvent({name:"Sports board",enabled:true,time:"14:45",scheduleMode:"weekly",days:[1,2,3,4,5],targets:[],useClassTargets:false,action:"display.text",payload:{scene}})};
   window.startWeatherOverlay=scene=>{if(!userCan("schedule.manage")||!userCan("automation.manage"))throw Error("Schedule and automation permissions are required");showPage("schedules");editOverlay({id:uid("overlay"),name:"Weather overlay",enabled:true,automationIds:[],excludedAutomationIds:[],classIds:[],cycleDays:[],days:[0,1,2,3,4,5,6],scene})};

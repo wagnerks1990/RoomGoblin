@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- Add Weather/Sports shortcuts to reuse existing automations: append a screen, replace a selected display action or scope a shared weather overlay, preserving schedules, targets and device actions through reviewed drafts.
+
 - Add optional school Sports boards with separate varsity/JV pages, continuous rosters, previous/next events, dated media, current/evening weather and existing automation scheduling.
 - Add reviewed PDF/CSV roster and schedule imports, revision-safe saves/undo, approved public-source refresh and bounded media caching. Preserve receiver authorization, announcement priority and silent-board Background Music.
 

@@ -20,7 +20,7 @@ API routes remain unchanged.
 
 | Navigation group | Workspaces |
 | --- | --- |
-| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Weather, Lab computers |
+| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Weather, Sports, Lab computers |
 | Content library | Presentations, Media library |
 | Planning | Calendar & Timetables, Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
@@ -224,3 +224,11 @@ load only their shared scene renderer and existing display layout engine.
 ## Background Music Studio
 
 Background Music uses Now playing, Find music, Favorites, Schedule and Outputs & connection tabs. Listening controls and queue stay separate from saved schedule edits. Polling preserves drafts and focused controls. See [Music Studio and recovery](BACKGROUND-MUSIC-STUDIO.md) for recovery, priority and physical acceptance limits.
+
+Sports combines saved team boards, reviewed PDF/CSV rosters, previous/next events,
+approved cached media and administrator-managed sources. See [Sports boards](SPORTS.md).
+
+Weather and Sports include **Add to existing automation**. Choose a saved routine
+and append a screen or replace a selected display action. Weather overlays open
+a shared-layer draft scoped to that routine. Selection only prepares a draft;
+the standard validation/save flow and capability checks remain required.
