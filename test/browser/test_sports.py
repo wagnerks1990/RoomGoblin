@@ -112,6 +112,7 @@ class SportsBrowserTests(unittest.TestCase):
         page, errors, commands, _ = self.sports(capabilities=['classroom.control'])
         self.assertTrue(page.get_by_role('button', name='Save Sports', exact=True).is_disabled())
         self.assertTrue(page.get_by_role('button', name='Schedule board', exact=True).is_disabled())
+        self.assertTrue(page.get_by_role('button', name='Add to existing automation', exact=True).is_disabled())
         self.assertTrue(page.get_by_label('Board name', exact=True).is_disabled())
         self.assertTrue(page.get_by_label('Board', exact=True).is_enabled())
         page.get_by_role('button', name='Preview board', exact=True).click()

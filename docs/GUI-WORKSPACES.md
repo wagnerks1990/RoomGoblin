@@ -227,3 +227,8 @@ Background Music uses Now playing, Find music, Favorites, Schedule and Outputs &
 
 Sports combines saved team boards, reviewed PDF/CSV rosters, previous/next events,
 approved cached media and administrator-managed sources. See [Sports boards](SPORTS.md).
+
+Weather and Sports include **Add to existing automation**. Choose a saved routine
+and append a screen or replace a selected display action. Weather overlays open
+a shared-layer draft scoped to that routine. Selection only prepares a draft;
+the standard validation/save flow and capability checks remain required.
