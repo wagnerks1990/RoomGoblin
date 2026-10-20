@@ -50,6 +50,11 @@ media loops, error policy, announcement priority and occurrence identity remain.
 
 ## Timers and display design
 
+**Timer & advanced > staged timer effects** adds configurable countdown stages,
+five/two-minute presets, six styles, optional cues, enlarged sizes, finish
+messages and a silent receiver preview with draggable positioning. Existing
+timers keep their classic appearance until enabled. See [Staged timer overlays](TIMER-EFFECTS.md).
+
 Timer overlays support the resolved class/block end, a fixed duration, or an
 explicit same-day clock deadline. Use a block end or clock deadline for lunch;
 a manual test does not restart a countdown to a fixed deadline. Duration timers

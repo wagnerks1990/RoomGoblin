@@ -8,6 +8,16 @@ body.rg-workspace .studioCards{display:grid;grid-template-columns:repeat(auto-fi
 body.rg-workspace .studioCard{padding:22px;border:1px solid var(--border);border-radius:18px;background:var(--studio-surface)}
 body.rg-workspace .studioCardHeading{display:flex;gap:12px;justify-content:space-between;align-items:start}
 body.rg-workspace .studioCardHeading h3{margin:0;font-size:18px}
+body.rg-workspace .timerEffectsEditor{grid-column:1/-1;min-width:0;margin-top:18px}
+body.rg-workspace .timerEffectsEditor details{margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:12px}
+body.rg-workspace .timerEffectsFields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;margin-top:12px}
+body.rg-workspace .timerEffectsEditor label{display:grid;gap:6px;min-width:0}
+body.rg-workspace .timerEffectsEditor :is(input,select,textarea){max-width:100%;min-width:0}
+body.rg-workspace .timerEffectsPreview iframe{width:100%;aspect-ratio:16/9;border:0;background:#0b2018;margin-top:12px}
+body.rg-workspace .timerEffectsPlacement{position:relative;margin-top:12px}
+body.rg-workspace .timerEffectsPlacement iframe{display:block;margin:0}
+body.rg-workspace .timerPlacementHandle{position:absolute;border:2px dashed var(--brand-primary,#0f766e);background:transparent;color:transparent;touch-action:none;cursor:move;min-width:0;min-height:0;padding:0}
+body.rg-workspace .timerPlacementHandle:focus-visible{outline:3px solid var(--brand-primary,#0f766e);outline-offset:2px}
 body.rg-workspace .studioCard p{line-height:1.6;color:var(--studio-muted);overflow-wrap:anywhere}
 body.rg-workspace .studioActionSummary{font-size:12px}
 body.rg-workspace .studioBadge{border:1px solid var(--border);border-radius:30px;padding:3px 9px;white-space:nowrap;font-size:11px}

@@ -61,5 +61,8 @@ test("Today display previews stay live but suppress local video decoding",()=>{
 });
 
 test("media-session renderer release forces receiver convergence",()=>{
-  assert.equal(read("VERSION").trim(),"1.0.0-alpha.84");
+  const version=read("VERSION").trim();
+  const alpha=/^1\.0\.0-alpha\.(\d+)$/.exec(version);
+  if(alpha)assert.ok(Number(alpha[1])>=84,"release must include the media-session renderer upgrade");
+  assert.equal(/DISPLAY_BUILD='([^']+)'/.exec(read("public/display/index.html"))[1],version);
 });

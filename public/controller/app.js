@@ -4,7 +4,7 @@ async function api(url,opt={}){const r=await fetch(url,{cache:'no-store',credent
 function jpost(url,obj){return api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)})}
 let toastTimer=null;function notify(message,type='info'){const el=document.getElementById('hubToast');if(!el)return;el.textContent=String(message||'');el.style.display='block';el.style.borderColor=type==='error'?'#9b3a3a':type==='success'?'#2d8a57':'#3a4a5a';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',4500)}
 
-const CLASSROOM_HUB_VERSION='1.0.0-alpha.84';
+const CLASSROOM_HUB_VERSION='1.0.0-alpha.85';
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&loginOverlay?.style.display==='flex'&&document.activeElement===loginPassword)performLogin()});
 let brandCycleState=null;
 
@@ -1745,7 +1745,9 @@ function populateTimerOverlayClassSelect(selected=''){
   autoTimerOverlayClass.value=current;
 }
 
+let currentTimerEffects;
 function renderTimerOverlayFields(data=undefined){
+  if(data!==undefined)currentTimerEffects=data?.effects?structuredClone(data.effects):undefined;
   // Passing null means "this event has no timer overlay". Reset the UI fully
   // instead of retaining the state from the previously edited event.
   if(data===null){
@@ -1795,6 +1797,7 @@ function readTimerOverlay(){
   return {
     enabled:true,
     source:autoTimerOverlaySource.value,
+    ...(currentTimerEffects===undefined?{}:{effects:structuredClone(currentTimerEffects)}),
     endTime:autoTimerOverlaySource.value==='end-time'?(window.autoTimerOverlayEndTime?.value||''):'',
     classId:autoTimerOverlaySource.value==='class-end'?(window.autoTimerOverlayClass?.value||''):'',
     durationSeconds:Math.max(60,Number(autoTimerOverlayMinutes.value||10)*60),

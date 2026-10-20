@@ -1,0 +1,37 @@
+#timerMessage{display:block;font-size:.30em;line-height:1.25;white-space:normal;overflow-wrap:anywhere;margin:.25em 0}
+#timerTrack{height:6px;background:#ffffff28;border-radius:99px;overflow:hidden;margin:10px 0 2px}
+#timerProgress{height:100%;width:100%;background:var(--timer-cue,#fff);transition:width 1s linear}
+#timerMessage[hidden],#timerTrack[hidden]{display:none}
+#timerDimmer{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:9998;transition:opacity .6s}
+#timerOverlay[data-timer-style]{transition:color .5s,border-color .5s,opacity .5s;isolation:isolate}
+#timerOverlay[data-timer-style=glass]{background:rgba(5,22,17,.90)!important;box-shadow:0 4px 36px #0006,0 0 26px color-mix(in srgb,var(--timer-cue) 30%,transparent)}
+#timerOverlay[data-timer-style=minimal]{border-color:transparent!important;background:transparent!important;box-shadow:none}
+#timerOverlay[data-timer-style=broadcast]{display:grid!important;grid-template-columns:minmax(0,1fr) auto;column-gap:.4em;align-items:center;text-align:left;background:rgba(5,22,17,.94)!important;border-radius:8px!important;border-width:0!important;border-top:5px solid var(--timer-cue)!important}
+#timerOverlay[data-timer-style=broadcast] #timerLabel{grid-column:1;grid-row:1;align-self:end}
+#timerOverlay[data-timer-style=broadcast] #timerValue{grid-column:2;grid-row:1 / 3;line-height:1.2}
+#timerOverlay[data-timer-style=broadcast] #timerMessage{grid-column:1;grid-row:2;align-self:start}
+#timerOverlay[data-timer-style=broadcast] #timerTrack{grid-column:1 / -1}
+#timerOverlay[data-timer-style=ring]{border:0!important;border-radius:50%!important;aspect-ratio:1;display:flex!important;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,22,17,.94)!important;padding:.45em!important}
+#timerOverlay[data-timer-style=ring]:before{content:"";position:absolute;inset:0;border-radius:50%;padding:8px;background:conic-gradient(var(--timer-cue) calc(var(--timer-progress,1)*1turn),#ffffff25 0);mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none;z-index:-1}
+#timerOverlay[data-timer-style=ring] #timerTrack{display:none}
+#timerOverlay[data-timer-style=segments] #timerProgress{background:repeating-linear-gradient(90deg,var(--timer-cue) 0,var(--timer-cue) calc(10% - 4px),transparent calc(10% - 4px),transparent 10%)}
+#timerOverlay.timer-cue{animation-duration:calc(.8s / var(--timer-intensity,1));animation-timing-function:ease-in-out;animation-iteration-count:2}
+#timerOverlay.timer-cue[data-timer-motion=glow]{animation-name:rg-timer-glow}
+#timerOverlay.timer-cue[data-timer-motion=ripple]{animation-name:rg-timer-ripple}
+#timerOverlay.timer-cue[data-timer-motion=pulse]{animation-name:rg-timer-pulse}
+#timerOverlay.timer-cue[data-timer-motion=pop]{animation-name:rg-timer-pop;animation-iteration-count:1}
+#timerOverlay.timer-cue[data-timer-motion=bounce]{animation-name:rg-timer-bounce;animation-iteration-count:1}
+#timerOverlay.timer-cue[data-timer-motion=slide]{animation-name:rg-timer-slide;animation-iteration-count:1}
+#timerOverlay.timer-cue[data-timer-motion=flip]{animation-name:rg-timer-flip;animation-iteration-count:1}
+#timerValue.timer-digit-cue{animation:rg-timer-digit .25s ease-out}
+@keyframes rg-timer-glow{50%{filter:drop-shadow(0 0 12px var(--timer-cue))}}
+@keyframes rg-timer-ripple{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--timer-cue) 40%,transparent)}100%{box-shadow:0 0 0 18px transparent}}
+@keyframes rg-timer-pulse{50%{opacity:.72}}
+@keyframes rg-timer-pop{0%{clip-path:inset(12% round 16px);filter:brightness(.75)}100%{clip-path:inset(0 round 0);filter:brightness(1)}}
+@keyframes rg-timer-bounce{30%{translate:0 -8px}65%{translate:0 3px}}
+@keyframes rg-timer-slide{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0)}}
+@keyframes rg-timer-flip{0%{rotate:x -50deg}100%{rotate:x 0deg}}
+@keyframes rg-timer-digit{0%{opacity:.6;translate:0 3px}100%{opacity:1;translate:0 0}}
+#timerOverlay[data-timer-reduced=true],#timerOverlay[data-timer-reduced=true] *{animation:none!important;transition:none!important}
+#timerRegion[data-timer-reduced=true]{transition:none!important}
+@media(prefers-reduced-motion:reduce){#timerRegion,#timerOverlay,#timerProgress,#timerDimmer{animation:none!important;transition:none!important}#timerValue{animation:none!important}}
