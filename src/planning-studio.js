@@ -1,5 +1,6 @@
 "use strict";
 const scene=require("../public/shared/scene");
+const timerEffects=require("../public/shared/timer-effects");
 const {validDateKey,validTime}=require("./school-schedule");
 const {normalizeWeather}=require("./planning-weather");
 const KEY="school.planning.studio.v1";
@@ -42,7 +43,9 @@ function normalize(input={}){
   if(!Array.isArray(input.overlays||[])||(input.overlays||[]).length>12)throw Error("Use at most 12 shared overlays");
   const ids=new Set();
   if(Buffer.byteLength(JSON.stringify(input))>180000)throw Error("Shared layer configuration is too large");
-  return {version:1,updatedAt:String(input.updatedAt||""),weather:normalizeWeather(input.weather||{}),overlays:(input.overlays||[]).map((o,i)=>{
+  if(!Array.isArray(input.timerPresets||[])||(input.timerPresets||[]).length>12)throw Error("Use at most 12 saved timer presets");
+  const presetIds=new Set(),timerPresets=(input.timerPresets||[]).map(p=>{if(!p||typeof p!=="object"||!/^[-\w]{1,80}$/.test(p.id)||presetIds.has(p.id))throw Error("Choose unique timer preset IDs");presetIds.add(p.id);return {id:p.id,name:String(p.name||"Timer preset").slice(0,80),effects:timerEffects.normalize(p.effects)}});
+  return {version:1,updatedAt:String(input.updatedAt||""),timerPresets,weather:normalizeWeather(input.weather||{}),overlays:(input.overlays||[]).map((o,i)=>{
     const id=String(o.id||`overlay-${i+1}`);if(!/^[\w-]{1,80}$/.test(id)||ids.has(id))throw Error("Overlay IDs must be unique");ids.add(id);
     const days=list(o.days||[0,1,2,3,4,5,6],7).map(Number);if(days.some(d=>!Number.isInteger(d)||d<0||d>6))throw Error("Choose valid weekdays");
     const startTime=String(o.startTime||""),endTime=String(o.endTime||"");

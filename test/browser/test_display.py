@@ -181,10 +181,13 @@ class DisplayBrowserTests(unittest.TestCase):
             return '<script>(function(location){'+source+'})('+loc+');</script>'
         html=re.sub(r'<script src="/shared/(branding.js|attribution.js)[^"]*" defer></script>',shared,html)
         module=(ROOT/'public/display/layout.mjs').read_text().replace('export ','')
+        timer_module=(ROOT/'public/display/timer-effects.mjs').read_text().replace('export ','')
+        html=html.replace('<script src="/shared/timer-effects.js"></script>','<script>'+(ROOT/'public/shared/timer-effects.js').read_text()+'</script>')
+        html=html.replace('<link rel="stylesheet" href="/display/timer-effects.css">','<style>'+(ROOT/'public/display/timer-effects.css').read_text()+'</style>')
         common=(ROOT/'public/shared/common.js').read_text().replace('export ','')
         security=(ROOT/'public/display/security.mjs').read_text().replace('export ','')
         html=re.sub(r'^import .*?;?$', '', html, flags=re.M)
-        html=html.replace('<script type="module">', '<script type="module">const location='+loc+';'+module+common+security+';class SendspinPlayer {}')
+        html=html.replace('<script type="module">', '<script type="module">const location='+loc+';'+module+timer_module+common+security+';class SendspinPlayer {}')
         page.set_content(html,wait_until='load')
 
     def reload_renderer(self, page):

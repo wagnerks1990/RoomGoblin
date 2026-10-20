@@ -1745,7 +1745,9 @@ function populateTimerOverlayClassSelect(selected=''){
   autoTimerOverlayClass.value=current;
 }
 
+let currentTimerEffects;
 function renderTimerOverlayFields(data=undefined){
+  if(data!==undefined)currentTimerEffects=data?.effects?structuredClone(data.effects):undefined;
   // Passing null means "this event has no timer overlay". Reset the UI fully
   // instead of retaining the state from the previously edited event.
   if(data===null){
@@ -1795,6 +1797,7 @@ function readTimerOverlay(){
   return {
     enabled:true,
     source:autoTimerOverlaySource.value,
+    ...(currentTimerEffects===undefined?{}:{effects:structuredClone(currentTimerEffects)}),
     endTime:autoTimerOverlaySource.value==='end-time'?(window.autoTimerOverlayEndTime?.value||''):'',
     classId:autoTimerOverlaySource.value==='class-end'?(window.autoTimerOverlayClass?.value||''):'',
     durationSeconds:Math.max(60,Number(autoTimerOverlayMinutes.value||10)*60),

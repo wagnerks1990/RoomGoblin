@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- Add optional staged timer overlays with configurable five/two-minute cues, six styles, bounded animation and enlargement, progress, finish messages, optional sound, reusable presets and a silent draggable receiver preview. Preserve countdown deadlines, media sessions and classic timer defaults.
+
 - Add optional school Sports boards with separate varsity/JV pages, continuous rosters, previous/next events, dated media, current/evening weather and existing automation scheduling.
 - Add reviewed PDF/CSV roster and schedule imports, revision-safe saves/undo, approved public-source refresh and bounded media caching. Preserve receiver authorization, announcement priority and silent-board Background Music.
 

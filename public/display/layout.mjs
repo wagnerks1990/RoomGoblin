@@ -5,6 +5,7 @@ export const AUTO_GROW_FACTOR = 1.10;
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;
 const STAGE_HEIGHT = 1080;
+const STAGE_WIDTH = 1920;
 const VERTICAL_MARGIN = 30;
 const COMPONENT_GAP = 14;
 const HORIZONTAL_GUTTER = 18;
@@ -287,6 +288,7 @@ export function createDisplayLayout(nodes, getState) {
   let frame = null, previousKey = '', fontEpoch = 0, passCount = 0;
   let fontStatus = 'loading', disposed = false, report = {};
   let recoveryKey = '', recoveryCount = 0, recoveryTimer = null;
+  let timerBox = null, timerAnimation = null;
   stage.dataset.renderer = LAYOUT_REVISION;
   stage.dataset.fontStatus = fontStatus;
 
@@ -407,6 +409,17 @@ export function createDisplayLayout(nodes, getState) {
       timerRegion.style.overflow = 'visible';
       timerOverlay.style.overflow = 'visible';
       timerOverlay.style.boxSizing = 'border-box';
+      // Advanced overlays use the same logical stage and fitter. They never
+      // resize/recreate the media or canvas beneath them.
+      const g=timer.effectsGeometry;
+      timerRegion.dataset.timerAdvanced=String(!!g);
+      if(g){
+        timerRegion.style.left=`${g.x*STAGE_WIDTH/100}px`;timerRegion.style.right='auto';timerRegion.style.width=`${g.w*STAGE_WIDTH/100}px`;
+        region(timerRegion,g.y*STAGE_HEIGHT/100,g.h*STAGE_HEIGHT/100,true);
+        timerOverlay.style.width=['broadcast','ring','segments'].includes(timer.effectsStyle)?'100%':'max-content';
+      }else{
+        timerRegion.style.left=`${HORIZONTAL_GUTTER}px`;timerRegion.style.right=`${HORIZONTAL_GUTTER}px`;timerRegion.style.width='auto';timerOverlay.style.width='max-content';
+      }
     }
 
     if (hasBody) {
@@ -417,11 +430,12 @@ export function createDisplayLayout(nodes, getState) {
 
   function fitTimer(timer) {
     timerRegion.hidden = !timer.visible;
+    timerAnimation?.cancel();timerAnimation=null;
     if (!timer.visible) return {fontSize:0, scale:1, status:'hidden'};
     timerOverlay.style.borderWidth = `${bounded(timer.borderWidth,4,0,24)}px`;
     const actual = timerValue.textContent;
-    timerValue.textContent = '8888888888888:88:88';
-    const cap = componentCap(timer.fontSize,64,FONT_CAPS.timer,timer.autoFit!==false);
+    timerValue.textContent = timer.effectsGeometry?(actual.includes(':')?(actual.split(':').length>2?'88:88:88':'88:88'):actual):'8888888888888:88:88';
+    const cap = componentCap(timer.fontSize,64,timer.effectsGeometry?360:FONT_CAPS.timer,timer.autoFit!==false);
     const result = fitElement(timerOverlay, timerRegion, cap);
     timerValue.textContent = actual;
     if (!fits(timerOverlay, timerRegion)) return fitElement(timerOverlay, timerRegion, result.fontSize);
@@ -435,7 +449,7 @@ export function createDisplayLayout(nodes, getState) {
     const key = JSON.stringify([title.textContent, subtitle.textContent, text.textContent,
       state.titleOptions, state.subtitleOptions, state.textOptions,
       !!timer.visible, timer.label || '', timer.position || 'bottom', timer.fontSize,
-      timer.autoFit, timer.borderWidth, fontEpoch]);
+      timer.autoFit, timer.borderWidth, timer.effectsGeometry, timer.effectsStyle, timer.effectsMessage, fontEpoch]);
     // Skip identical requests only while the live region geometry still
     // matches that state. An intermediate clear/hide transition can leave the
     // same content populated inside collapsed regions, which must be rebuilt.
@@ -528,6 +542,18 @@ export function createDisplayLayout(nodes, getState) {
         recoveryTimer = null;
       }
     }
+    const nextTimerBox=timer.visible?{x:timerRegion.offsetLeft,y:timerRegion.offsetTop,w:timerRegion.clientWidth,h:timerRegion.clientHeight}:null;
+    // Fit at the destination geometry first, then animate only its presentation.
+    // Measuring during CSS width/height transitions otherwise fits large timers
+    // into their old small box and leaves the digits permanently undersized.
+    if(timer.effectsGeometry&&timerBox&&nextTimerBox&&timer.effects?.motion==='full'&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&typeof timerRegion.animate==='function'){
+      const a=timerBox,b=nextTimerBox;
+      if(Math.abs(a.x-b.x)+Math.abs(a.y-b.y)+Math.abs(a.w-b.w)+Math.abs(a.h-b.h)>1){
+        timerRegion.style.transformOrigin='0 0';
+        timerAnimation=timerRegion.animate([{transform:`translate(${a.x-b.x}px,${a.y-b.y}px) scale(${a.w/b.w},${a.h/b.h})`},{transform:'none'}],{duration:bounded(timer.effects.transitionMs,650,100,2000),easing:'cubic-bezier(.2,.8,.2,1)'});
+      }
+    }
+    timerBox=nextTimerBox;
   }
 
   function request() {
@@ -552,6 +578,7 @@ export function createDisplayLayout(nodes, getState) {
     snapshot:() => ({...report, revision:LAYOUT_REVISION, fontStatus, passCount}),
     dispose() {
       disposed = true; clearTimeout(fontTimeout);
+      timerAnimation?.cancel();
       if (recoveryTimer !== null) clearTimeout(recoveryTimer);
       if (frame !== null) cancelAnimationFrame(frame);
       document.fonts?.removeEventListener?.('loadingdone', fontsChanged);

@@ -20,7 +20,7 @@ API routes remain unchanged.
 
 | Navigation group | Workspaces |
 | --- | --- |
-| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Weather, Lab computers |
+| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Weather, Sports, Lab computers |
 | Content library | Presentations, Media library |
 | Planning | Calendar & Timetables, Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
@@ -221,6 +221,15 @@ automation/scene dialogs. See [Planning and Scene Studio](PLANNING-STUDIO.md).
 Shared workspace styles remain scoped to `body.rg-workspace`; receiver scenes
 load only their shared scene renderer and existing display layout engine.
 
+## Timer overlays
+
+Timer & advanced includes optional staged timer effects, copied reusable presets
+and a silent receiver-renderer preview. Stages retain the original deadline and
+do not restart content. See [Staged timer overlays](TIMER-EFFECTS.md).
+
 ## Background Music Studio
 
 Background Music uses Now playing, Find music, Favorites, Schedule and Outputs & connection tabs. Listening controls and queue stay separate from saved schedule edits. Polling preserves drafts and focused controls. See [Music Studio and recovery](BACKGROUND-MUSIC-STUDIO.md) for recovery, priority and physical acceptance limits.
+
+Sports combines saved team boards, reviewed PDF/CSV rosters, previous/next events,
+approved cached media and administrator-managed sources. See [Sports boards](SPORTS.md).

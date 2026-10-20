@@ -34,6 +34,7 @@ const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandT
 const planningEngine=require("./planning");
 const planningMigration=require("./planning-migration");
 const planningStudio=require("./planning-studio");
+const timerEffects=require("../public/shared/timer-effects");
 const {PlaybackRecovery,mediaSelection,sleepDeadline}=require("./background-music");
 const planningWeather=require("./planning-weather").createWeatherCache();
 const automationSchema=require("./automation-schema");
@@ -1300,7 +1301,8 @@ function normalizeTimerOverlay(input,existing=null){
     coverage:String(merged.coverage||"all-display-actions")==="action-1-only"?"action-1-only":"all-display-actions",
     targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(cleanId).filter(Boolean))]:[],
     followLinkedClasses:merged.followLinkedClasses!==false,
-    followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120})
+    followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120}),
+    ...(merged.effects===undefined?{}:{effects:timerEffects.normalize(merged.effects)})
   };
 }
 function normalizeAutomation(input={},existing={}){
@@ -1695,6 +1697,11 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
   if(!timerTargets.length)throw new Error("Timer overlay has no display targets");
 
   const now=new Date();
+  const effectPayload=context=>{
+    if(!timerOverlay.effects)return {};
+    const effects=timerEffects.normalize(timerOverlay.effects),expand=v=>expandAutomationVariables(v,context,now).slice(0,200);
+    return {effects:{...effects,stages:effects.stages.map(s=>({...s,label:expand(s.label),message:expand(s.message)})),finish:{...effects.finish,label:expand(effects.finish.label),message:expand(effects.finish.message)}}};
+  };
   let remainingSeconds=0,endAt=null,cls=null;
 
   if(timerOverlay.source==="class-end"){
@@ -1730,6 +1737,8 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
         payload:{
           visible:true,running:false,mode:"countdown",
           timerInstanceId:commandId(),
+          automationId:event.id,automationOccurrence:[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":"),
+          ...effectPayload({...event,_class:cls}),effectsEndAt:endAt.getTime(),effectsStartAt:Number(event._classStartAt)||classStartDate(cls,now)?.getTime()||now.getTime(),
           durationSeconds:0,remainingSeconds:0,endAt:null,startedAt:null,
           label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),{...event,_class:cls},now),
           position:timerOverlay.position||"bottom",
@@ -1758,6 +1767,7 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
     payload:{
       visible:true,running:true,mode:"countdown",
       timerInstanceId:commandId(),automationId:event.id,automationOccurrence:[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":"),
+      ...effectPayload(contextEvent),effectsEndAt:endAt.getTime(),effectsStartAt:timerOverlay.source==="class-end"?(Number(event._classStartAt)||classStartDate(cls,now)?.getTime()||now.getTime()):timerOverlay.source==="duration"?endAt.getTime()-Number(timerOverlay.durationSeconds||0)*1000:new Date(`${localDateKey(now)}T${event.time}:00`).getTime(),
       durationSeconds:remainingSeconds,
       remainingSeconds,
       endAt:endAt.getTime(),
