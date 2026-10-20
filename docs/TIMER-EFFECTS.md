@@ -3,6 +3,8 @@
 RoomGoblin timers can change presentation as a countdown reaches configurable
 thresholds. These are optional effects on the existing countdown, not new
 automation occurrences. Upgrading does not enable effects on existing timers.
+The alpha.85 release advances receiver version convergence so existing connected
+displays reload the new renderer after upgrading.
 Prepared by Kyle Wagner.
 
 Receiver example from the browser fixture (not a live classroom):

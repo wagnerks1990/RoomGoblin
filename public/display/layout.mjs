@@ -449,7 +449,7 @@ export function createDisplayLayout(nodes, getState) {
     const key = JSON.stringify([title.textContent, subtitle.textContent, text.textContent,
       state.titleOptions, state.subtitleOptions, state.textOptions,
       !!timer.visible, timer.label || '', timer.position || 'bottom', timer.fontSize,
-      timer.autoFit, timer.borderWidth, timer.effectsGeometry, timer.effectsStyle, timer.effectsMessage, fontEpoch]);
+      timer.autoFit, timer.borderWidth, timer.effectsGeometry, timer.effectsStyle, timer.effectsMessage, timer.effectsGeometry ? timerValue.textContent : null, fontEpoch]);
     // Skip identical requests only while the live region geometry still
     // matches that state. An intermediate clear/hide transition can leave the
     // same content populated inside collapsed regions, which must be rebuilt.

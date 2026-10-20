@@ -15,6 +15,48 @@ def effects(style='glass'):
 
 class TimerEffectsReceiverTests(receiver.DisplayBrowserTests):
     # Inherit the harness helpers without rerunning its independent suite here.
+    def test_speech_stage_and_finish_cues_preserve_visual_updates(self):
+        page = self.page()
+        page.evaluate('''()=>{window.spokenCues=[];
+            window.SpeechSynthesisUtterance=class{constructor(text){this.text=text}};
+            Object.defineProperty(window,'speechSynthesis',{value:{cancel(){},speak(cue){window.spokenCues.push(cue.text)}}});}''')
+        fx = effects()
+        fx['stages'][0].update(sound='speak', message='Five minutes remaining')
+        fx['finish'].update(sound='speak')
+        timer = {'visible': True, 'running': True, 'mode': 'countdown',
+                 'endAt': receiver.NOW+301000, 'effectsEndAt': receiver.NOW+301000,
+                 'timerInstanceId': 'speech', 'effects': fx}
+        self.command(page, 'display.timer', timer)
+        page.evaluate('window.__now += 1000')
+        self.command(page, 'display.timer', timer)
+        self.assertEqual(page.evaluate('window.spokenCues'), ['Five minutes remaining'])
+        self.assertEqual(page.locator('#timerMessage').inner_text(), 'Five minutes remaining')
+        page.evaluate('window.__now += 300000')
+        page.wait_for_timeout(1200)
+        self.assertEqual(page.evaluate('window.spokenCues'), ['Five minutes remaining', 'Time to finish'])
+        self.assertEqual(page.locator('#timerValue').inner_text(), 'Time to finish')
+        self.assertFalse(self.errors, self.errors)
+
+    def test_finish_message_refits_when_only_value_changes(self):
+        page = self.page()
+        message = 'Save your work and follow your teacher for the next activity'
+        fx = effects('minimal')
+        fx.update(stages=[], progress=False)
+        fx['finish'].update(label='', message=message)
+        timer = {'visible': True, 'running': True, 'mode': 'countdown', 'label': '',
+                 'fontSize': 180, 'endAt': receiver.NOW+1000,
+                 'timerInstanceId': 'finish-fit', 'effects': fx}
+        self.command(page, 'display.timer', timer)
+        page.wait_for_timeout(200)
+        initial = page.locator('#timerValue').evaluate('(n)=>parseFloat(getComputedStyle(n).fontSize)')
+        page.evaluate('window.__now += 1000')
+        self.command(page, 'display.timer', timer)
+        page.wait_for_timeout(200)
+        self.assertEqual(page.locator('#timerValue').inner_text(), message)
+        self.assertLess(page.locator('#timerValue').evaluate('(n)=>parseFloat(getComputedStyle(n).fontSize)'), initial)
+        self.assertTrue(page.locator('#timerOverlay').evaluate('(n)=>n.scrollWidth<=n.clientWidth+1 && n.scrollHeight<=n.clientHeight+1'))
+        self.assertFalse(self.errors, self.errors)
+
     def test_timer_effects_cross_threshold_once_and_restore_silently(self):
         page = self.page()
         timer = {'visible': True, 'running': True, 'mode': 'countdown', 'endAt': receiver.NOW+600000,

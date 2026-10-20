@@ -15,7 +15,7 @@ export function createTimerEffects({stage,overlay,label,value,requestLayout,form
     stopSound();
     if(kind==='speak'){
       if(!globalThis.speechSynthesis||!globalThis.SpeechSynthesisUtterance)return;
-      utterance=new SpeechSynthesisUtterance(String(spoken||'Time remaining').slice(0,160));utterance.volume=volume;utterance.rate=1;const spoken=utterance;spoken.onend=()=>{if(utterance===spoken)utterance=null};spoken.onerror=()=>{if(utterance===spoken)utterance=null};speechSynthesis.speak(spoken);return;
+      utterance=new SpeechSynthesisUtterance(String(spoken||'Time remaining').slice(0,160));utterance.volume=volume;utterance.rate=1;const cueUtterance=utterance;cueUtterance.onend=()=>{if(utterance===cueUtterance)utterance=null};cueUtterance.onerror=()=>{if(utterance===cueUtterance)utterance=null};speechSynthesis.speak(cueUtterance);return;
     }
     try{const Context=globalThis.AudioContext||globalThis.webkitAudioContext;if(!Context)return;const context=audio=new Context();context.resume().then(()=>{if(audio!==context||!canSound()||document.hidden){context.close().catch(()=>{});return}const at=context.currentTime;for(const [i,f]of (kind==='bell'?[880,1320]:[660,880]).entries()){const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type='sine';oscillator.frequency.value=f;gain.gain.setValueAtTime(0,at+i*.18);gain.gain.linearRampToValueAtTime(volume*.3,at+i*.18+.02);gain.gain.exponentialRampToValueAtTime(.001,at+i*.18+.5);oscillator.connect(gain);gain.connect(context.destination);oscillator.start(at+i*.18);oscillator.stop(at+i*.18+.52)}setTimeout(()=>{if(audio===context)audio=null;context.close().catch(()=>{})},1100)}).catch(()=>{context.close().catch(()=>{});if(audio===context)audio=null})}catch{stopSound()}
   }
