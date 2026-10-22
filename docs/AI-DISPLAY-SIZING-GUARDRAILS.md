@@ -2,7 +2,7 @@
 
 ## Current policy
 
-Renderer revision: `dynamic-fit-20261012-1`.
+Renderer revision: `dynamic-fit-20261022-1`.
 
 `public/display/layout.mjs` is the only sizing and region-allocation authority. The logical display canvas remains 1920x1080; physical TV resolution and DPR only scale the completed stage.
 
@@ -34,6 +34,10 @@ Keep all three checks:
 Painted-containment checks validate glyph ranges only. Do not reject an intentionally full-width flex child because transformed subpixel geometry makes its border box differ slightly from the parent.
 
 A bounded transform fallback may remain only after font-size reduction. Visibility and non-overlap take precedence over requested size.
+
+Reduced-motion CSS must use `transition:none!important`; even a 0.01ms global
+transition duration makes synchronous font fitting measure stale sizes. Keep the
+multiline scene/action-change regression for both motion preferences.
 
 ## Transition recovery
 

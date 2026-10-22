@@ -4,7 +4,7 @@
 
 `public/display/layout.mjs` is the only title/subtitle/body/timer sizing and region-allocation authority. `public/display/index.html` owns state application, media, timer state, transport, and viewport scaling. `public/display/layout.css` provides the packaged font and matching structural defaults, but the module reasserts containment-critical styles before measurement so a stale or missing stylesheet cannot silently change fit behavior.
 
-The current renderer revision is `dynamic-fit-20261012-1`.
+The current renderer revision is `dynamic-fit-20261022-1`.
 
 ## Logical canvas and scaling
 
@@ -101,11 +101,27 @@ Run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-For the current production renderer, expect `revision: dynamic-fit-20261012-1`.
+For the current production renderer, expect `revision: dynamic-fit-20261022-1`.
 
 Diagnostics include viewport, DPR, logical stage scale, font status, layout pass count, active object order, fitted sizes, region geometry, and containment status.
 
 A normal successful component should end with `status: "fit"`. On the validated TV8 transition case, the body recovered from the transient 1px fallback to about 70.25px, scale 1, status `fit`.
+
+## Reduced-motion font fitting
+
+Reduced motion disables CSS transitions completely. A tiny nonzero global
+transition duration creates a font-size transition even on scene text with no
+authored transition, because the default transition property is `all`. The
+synchronous fitter then measures the previous font size at every step and can
+collapse an otherwise readable scene body to 1px with a transform fallback.
+Keep `transition:none!important` in the shared reduced-motion rule. Preserve
+scene text, whitespace, geometry, normal-motion effects, and all three fit
+containment checks; do not compensate by removing auto-fit or clamping its result.
+
+Browser regression covers multiline scene body text with blank lines/trailing
+spaces, both motion preferences, action changes, clear/replay, resize and reload
+at 720p, 1080p, 4K and a narrow DPR-2 viewport. Reduced-motion fitted sizes must
+match normal-motion sizes, remain readable and contain every painted text range.
 
 ## Regression verification
 

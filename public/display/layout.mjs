@@ -1,6 +1,6 @@
 // One owner for title, subtitle, body, timer geometry and fitted font sizes.
 // All measurements are untransformed CSS layout pixels on the 1920x1080 stage.
-export const LAYOUT_REVISION = 'dynamic-fit-20261012-1';
+export const LAYOUT_REVISION = 'dynamic-fit-20261022-1';
 export const AUTO_GROW_FACTOR = 1.10;
 export const FONT_CAPS = Object.freeze({title:220, subtitle:140, body:180, timer:180});
 const READABLE_MIN = 12;

@@ -6,4 +6,6 @@ html[data-brand-surface="operator"] :focus-visible{outline:3px solid var(--brand
 .app-attribution a{color:inherit;font-weight:700;text-underline-offset:3px}
 .app-attribution--overlay{position:fixed;left:10px;bottom:8px;z-index:100000;margin:0;padding:5px 8px;border-radius:6px;background:rgba(0,0,0,.55);color:#fff;opacity:.45;font-size:11px;pointer-events:none}
 .app-attribution--overlay a{pointer-events:auto}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
+/* A nonzero duration creates transitions even on elements with no authored
+   transition (the default property is all). Font fitting must be synchronous. */
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
