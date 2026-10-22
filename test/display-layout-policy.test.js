@@ -92,9 +92,15 @@ test('timer overlay remains a compact dynamic object', () => {
     'full-width timer chrome is the regression this test prevents');
 });
 
-test('receiver cache key and build identity are release-stamped at image build', () => {
+test('receiver and editor cache keys converge with the release-stamped layout identity', async () => {
   const source = fs.readFileSync(indexPath, 'utf8');
   const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
+  const {LAYOUT_REVISION} = await import(pathToFileURL(layoutPath).href);
+  for (const file of ['public/display/index.html', 'public/controller/scene-editor.js', 'public/controller/weather-workspace.js']) {
+    const imports = [...fs.readFileSync(path.join(root, file), 'utf8').matchAll(/\/display\/layout\.mjs\?v=([^'"\s]+)/g)];
+    assert.equal(imports.length, 1, `${file} must import the shared fitter exactly once`);
+    assert.equal(imports[0][1], LAYOUT_REVISION, `${file} must load the current renderer`);
+  }
   assert.match(source, /layout\.mjs\?v=dynamic-fit-20261022-1/);
   assert.match(source, /layout\.css\?v=dynamic-fit-20261022-1/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);

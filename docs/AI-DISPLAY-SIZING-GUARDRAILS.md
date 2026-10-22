@@ -87,4 +87,4 @@ Browser coverage must include:
 
 Assert text-range containment, final anchored geometry, timer/body non-overlap, bounded growth, and that normal settled content does not remain at the 1px fallback.
 
-Any rendering behavior change must update `LAYOUT_REVISION`, both receiver cache keys, tests, operator docs, Wiki mirror, and AI context.
+Any rendering behavior change must update `LAYOUT_REVISION`, both receiver cache keys, the Scene Studio and Weather shared-fitter import URLs, tests, operator docs, Wiki mirror, and AI context.

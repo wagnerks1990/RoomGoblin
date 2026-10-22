@@ -139,7 +139,7 @@ npm test
 
 ## Deployment
 
-Display renderer changes must bump `LAYOUT_REVISION` and both receiver cache keys. Build/publish the exact main-commit image, update the Hub, verify health, remove any temporary local overlay, reload receivers, and confirm the expected renderer revision in live diagnostics.
+Display renderer changes must bump `LAYOUT_REVISION`, both receiver cache keys, and the shared-fitter import URLs in Scene Studio and Weather preview. Build/publish the exact main-commit image, update the Hub, verify health, remove any temporary local overlay, reload receivers and the controller, and confirm the expected renderer revision in live diagnostics.
 
 Do not call a display fix complete based only on source review or container health. Verify the real receiver behavior and, for TV-specific failures, retain the live diagnostics that demonstrate the settled final state.
 
