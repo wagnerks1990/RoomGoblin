@@ -45,6 +45,14 @@ Editing, disabling, or deleting a running automation also invalidates its revisi
 
 Linked-class continuous automations stop cleanly when the resolved class occurrence ends. Startup reconciliation and operator Resume also recover continuous occurrences that are still currently applicable, even when their original start time is outside the normal scheduler catch-up window.
 
+**Resume Scheduled State** also restarts a current continuous sequence interrupted
+by a manual-media takeover. It waits for the interrupted runner to exit before
+reusing the same occurrence identity, then restarts the ordered sequence with its
+saved dwell times and original class-end deadline. Individual operator-cancelled
+runs and other cancellations stay stopped. Startup alone does not release a
+manual-media cancellation. Calendar suppression, enabled state, current winners,
+simulation and Morning Announcements protection still apply.
+
 ## Manual execution
 
 Simulation never dispatches devices.

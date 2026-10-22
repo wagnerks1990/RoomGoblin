@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Fix Resume Scheduled State restoring a static slide without restarting a
+  continuous action sequence interrupted by manual media. Drain pending
+  interruptions before recovery; preserve explicit cancellations and class ends.
+
 ### 1.0.0-alpha.85
 
 - Advance the application/receiver version so connected displays load the staged timer renderer after upgrading. Fix speech cue variable shadowing and refit finish messages when only their displayed value changes.
