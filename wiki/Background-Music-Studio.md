@@ -54,6 +54,32 @@ priority. Ordinary silent visuals do not interrupt music. A priority takeover or
 operator Stop that arrives while a play request is pending is reasserted after
 its late acknowledgement.
 
+### Independent hallway displays
+
+In **Displays & AV → Receiver names, mappings & groups**, set a receiver's
+**Audio priority** to **Independent (hallway)** and save. The Display content
+configuration editor exposes the same setting. Ordinary Sports, video, web,
+voice and sound-effect audio on that receiver no longer pauses classroom
+Background Music. A manual command aimed only at independent receivers also
+leaves the classroom scheduler and other Music Assistant players running.
+Mixed classroom/hallway commands still take over the classroom normally.
+
+Morning Announcements remain mandatory priority, including when their targets
+are independent. An already active manual classroom takeover is released with
+Resume Scheduled State; changing receiver scope does not silently cancel it.
+Changes to scope apply to current audible scenes on the next music tick without
+reloading displays. The music status includes `priority.independentTargets`
+separately from targets that actually hold classroom priority.
+
+This is audio-priority isolation, not physical AV routing or automatic removal
+from schedules, receiver groups or Music Assistant groups. Use a hallway name,
+tag/group and explicit automation targets for hallway signage; keep independent
+receivers out of the classroom music output group. Existing receivers default
+to shared classroom audio. The optional `devices[id].audioScope` value is `room`
+or `independent`; omitted fields on older editor saves preserve the saved value.
+No migration or restart is needed for configuration changes on a supporting
+release. Older releases ignore this field and restore shared audio behavior.
+
 ## Recovery model
 
 An accepted play command is **starting**, not proof of playback. The Hub observes

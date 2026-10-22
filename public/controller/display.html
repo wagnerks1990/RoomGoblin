@@ -463,6 +463,8 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
             <div><label>Lighting alias</label><input id="configLight" aria-label="Display lighting alias" type="text"></div>
           </div>
           <label>Tags</label><input id="configTags" aria-label="Display tags" type="text" placeholder="classroom,hallway">
+          <label for="configAudioScope">Audio priority</label><select id="configAudioScope"><option value="room">Classroom (shared)</option><option value="independent">Independent (hallway)</option></select>
+          <p class="muted">Independent display audio does not pause classroom music or take over classroom scheduling. Morning Announcements still have priority. This does not change routing or schedule targets.</p>
           <label><input id="configEnabled" type="checkbox" checked> Enabled</label>
           <div class="toolbar"><button class="primary" onclick="saveDeviceConfig()">Save Display</button></div>
 
@@ -977,10 +979,10 @@ function setupSettings(){
 function loadDeviceConfig(){
   const id=el('configDevice').value,d=devices[id];if(!d)return;
   el('configName').value=d.name||'';el('configAv').value=d.avOutput||'';el('configLight').value=d.lightingAlias||'';
-  el('configTags').value=(d.tags||[]).join(',');el('configEnabled').checked=d.enabled!==false;
+  el('configTags').value=(d.tags||[]).join(',');el('configEnabled').checked=d.enabled!==false;el('configAudioScope').value=d.audioScope==='independent'?'independent':'room';
 }
 window.saveDeviceConfig=async()=>{
-  const id=el('configDevice').value,body={name:el('configName').value,avOutput:Number(el('configAv').value),lightingAlias:el('configLight').value||null,tags:el('configTags').value.split(',').map(x=>x.trim()).filter(Boolean),enabled:el('configEnabled').checked};
+  const id=el('configDevice').value,body={name:el('configName').value,avOutput:Number(el('configAv').value),lightingAlias:el('configLight').value||null,tags:el('configTags').value.split(',').map(x=>x.trim()).filter(Boolean),enabled:el('configEnabled').checked,audioScope:el('configAudioScope').value};
   const j=await api(`/api/v1/config/devices/${encodeURIComponent(id)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   devices[id]=j.device;renderTargets(window._status);setupPreview();setupSettings();setResultSummary(`✓ Updated ${id}`,true,j);
 };

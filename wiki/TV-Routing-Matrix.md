@@ -124,3 +124,11 @@ Browser regressions cover shared/missing mappings, draft retention, field and
 membership preservation, reload persistence, save errors, administrator-only save
 controls and absence of command writes from configuration changes. Physical
 receiver assignments and routing still require operator verification.
+
+## Independent hallway audio
+
+Set **Audio priority → Independent (hallway)** in the receiver editor for an
+out-of-room display. Ordinary playback then leaves classroom Background Music
+and manual classroom scheduling alone. Morning Announcements retain priority.
+AV ports, group memberships and automation targets are unchanged. See
+[Background Music Studio](Background-Music-Studio#independent-hallway-displays).

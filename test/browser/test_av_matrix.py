@@ -213,9 +213,11 @@ class MatrixBrowserTests(unittest.TestCase):
                 row = page.locator('[data-display-id="receiver-a"]')
                 row.locator('[data-f="name"]').fill('Renamed screen')
                 row.locator('[data-f="avOutput"]').fill('2')
+                row.get_by_label('Audio priority').select_option('independent')
                 page.evaluate('refreshPluto()')
                 self.assertEqual(row.locator('[data-f="name"]').input_value(), 'Renamed screen')
                 self.assertEqual(row.locator('[data-f="avOutput"]').input_value(), '2')
+                self.assertEqual(row.get_by_label('Audio priority').input_value(), 'independent')
                 page.remove_listener('dialog', page._fixture_dialog_handler)
                 page.once('dialog', lambda dialog: dialog.accept())
                 page.evaluate('removeEmptyLegacyDisplayGroups()')
@@ -228,6 +230,8 @@ class MatrixBrowserTests(unittest.TestCase):
                 self.assertEqual(config['devices']['receiver-a']['avConnection'], 'hdbt')
                 self.assertEqual(config['devices']['receiver-a']['tags'], ['existing'])
                 self.assertEqual(config['devices']['receiver-a']['lightingAlias'], 'front')
+                self.assertEqual(config['devices']['receiver-a']['audioScope'], 'independent')
+                self.assertEqual(config['devices']['receiver-b']['audioScope'], 'room')
                 self.assertEqual(config['devices']['receiver-b']['avOutput'], 5)
                 self.assertEqual(config['displayGroups'], {'all': ['receiver-a', 'receiver-b'],
                     'display-all': ['receiver-a'], 'display-display-rear': ['receiver-b'], 'empty-custom': []})
@@ -238,6 +242,7 @@ class MatrixBrowserTests(unittest.TestCase):
                 page.evaluate("showPage('av');openReceiverSettings()")
                 page.wait_for_selector('[data-display-id="receiver-a"]')
                 self.assertEqual(page.locator('[data-display-id="receiver-a"] [data-f="avOutput"]').input_value(), '2')
+                self.assertEqual(page.locator('[data-display-id="receiver-a"]').get_by_label('Audio priority').input_value(), 'independent')
                 self.evidence(page, errors, f'receiver-recovery-{width}')
 
     def test_unmapped_and_shared_outputs_do_not_guess_command_targets(self):

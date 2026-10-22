@@ -5173,7 +5173,13 @@ app.get("/api/v1/lab-agent/manifest",(_req,res)=>{
   catch(error){res.status(500).json({ok:false,error:"Lab agent package is unavailable"})}
 });
 
-function publicDeviceConfig(config={}){return {name:String(config.name||""),enabled:config.enabled!==false,avOutput:Number.isInteger(Number(config.avOutput))?Number(config.avOutput):null,lightingAlias:config.lightingAlias?cleanId(config.lightingAlias):null,tags:Array.isArray(config.tags)?config.tags.map(cleanId).filter(Boolean).slice(0,100):[]}}
+function normalizeDisplayAudioScope(value){
+  if(value===undefined)return "room";
+  if(!["room","independent"].includes(value))throw Error("Display audio must be room or independent");
+  return value;
+}
+function displaySharesRoomAudio(id){return devices[id]?.audioScope!=="independent"}
+function publicDeviceConfig(config={}){return {name:String(config.name||""),enabled:config.enabled!==false,avOutput:Number.isInteger(Number(config.avOutput))?Number(config.avOutput):null,lightingAlias:config.lightingAlias?cleanId(config.lightingAlias):null,tags:Array.isArray(config.tags)?config.tags.map(cleanId).filter(Boolean).slice(0,100):[],audioScope:config.audioScope==="independent"?"independent":"room"}}
 function publicDeviceConfigs(){return Object.fromEntries(Object.entries(devices).map(([id,config])=>[id,publicDeviceConfig(config)]))}
 app.get("/api/v1/devices",requireClassroomRead, (_req, res) => {
   res.json({
@@ -6006,7 +6012,9 @@ app.get("/api/v1/config",requireClassroomRead,(_req,res)=>res.json({ok:true,room
 app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
  const id=cleanId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
  const cur=devices[id],b=req.body||{};
+ let audioScope;try{audioScope=normalizeDisplayAudioScope(b.audioScope===undefined?cur.audioScope:b.audioScope)}catch(e){return res.status(400).json({ok:false,error:e.message})}
  devices[id]={...cur,
+  audioScope,
   name:b.name!==undefined?String(b.name).slice(0,100):cur.name,
   enabled:b.enabled!==undefined?!!b.enabled:cur.enabled,
   avOutput:b.avOutput!==undefined?Number(b.avOutput):cur.avOutput,
@@ -6197,6 +6205,10 @@ app.put("/api/v1/admin/displays",requireAdmin,(req,res)=>{
     for(const [id,d] of Object.entries(nextDevices)){if(!/^[a-z0-9_-]{1,40}$/i.test(id))throw Error(`Invalid display id: ${id}`);if(!d||typeof d!=="object")throw Error(`Invalid display definition: ${id}`)}
     for(const [name,members] of Object.entries(nextGroups)){if(!Array.isArray(members))throw Error(`Group ${name} members must be an array`);for(const id of members)if(!nextDevices[id])throw Error(`Group ${name} references unknown display ${id}`)}
     const committedDevices=JSON.parse(JSON.stringify(nextDevices)),committedGroups=JSON.parse(JSON.stringify(nextGroups));
+    for(const [id,d] of Object.entries(committedDevices)){
+      const scope=d.audioScope===undefined?devices[id]?.audioScope:d.audioScope;
+      if(scope!==undefined)d.audioScope=normalizeDisplayAudioScope(scope);
+    }
     dbStore.writeNormalized("devices",{room:deviceConfig.room||ROOM_NAME,devices:committedDevices,displayGroups:committedGroups,lightingGroups:[...lightingGroups]});
     devices=committedDevices;displayGroups=committedGroups;deviceConfig.devices=devices;deviceConfig.displayGroups=displayGroups;
     const disconnected=[];for(const ws of wsClients){if(ws.role!=="display"||ws.readyState!==WebSocket.OPEN)continue;const id=String(ws.deviceId||"");if(!devices[id]||devices[id].enabled===false){disconnected.push(id);ws.close(1008,"Display removed or disabled")}}
@@ -6427,7 +6439,17 @@ function backgroundMusicWindowKey(cfg,now=new Date()){
   if(a>b&&n<b)d.setDate(d.getDate()-1);
   return `${localDateKey(d)}@${cfg.startTime}`;
 }
-function backgroundMusicPriorityState(){return {active:backgroundMusicPriorityTargets.size>0,targets:[...backgroundMusicPriorityTargets]}}
+function backgroundMusicPriorityState(){
+  // Track all audible scenes so changing a receiver's scope takes effect without
+  // replaying its content. Only room receivers own ordinary classroom priority.
+  const mandatory=morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending;
+  const targets=[],independentTargets=[];
+  for(const id of backgroundMusicPriorityTargets){
+    if(displaySharesRoomAudio(id)||(mandatory&&(morningAnnouncementsRuntime.targets||[]).includes(id))||(manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id)))targets.push(id);
+    else independentTargets.push(id);
+  }
+  return {active:targets.length>0,targets,independentTargets};
+}
 let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null};
 let backgroundMusicProbePending=null;
 async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),force=false){
@@ -6483,7 +6505,7 @@ async function backgroundMusicStop(reason="manual",playerIdOverride=null){
 }
 function backgroundMusicPriorityBlocked(){
   const cfg=backgroundMusicSchedule();
-  return backgroundMusicPriorityTargets.size>0&&(cfg.pauseForPriorityAudio||morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending||manualMediaPriorityRuntime.active);
+  return backgroundMusicPriorityState().active&&(cfg.pauseForPriorityAudio||morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending||manualMediaPriorityRuntime.active);
 }
 async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name="",mediaType="unknown",reason="manual",recover=false}={}){
   if(backgroundMusicStartBusy)throw Error("A music change is already in progress");
@@ -6518,7 +6540,7 @@ async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name
 async function backgroundMusicReconcilePriority({force=false}={}){
   const cfg=backgroundMusicSchedule();
   if(!force&&!cfg.pauseForPriorityAudio)return;
-  const priority=backgroundMusicPriorityTargets.size>0;
+  const priority=backgroundMusicPriorityState().active;
   if(priority&&!backgroundMusicRuntime.playing){
     const actual=await backgroundMusicActualPlayerState({playerId:backgroundMusicRuntime.activePlayerId||cfg.playerId},true);
     if(actual?.playing){backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.activePlayerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"");backgroundMusicRuntime.activeFavoriteId=backgroundMusicRuntime.activeFavoriteId||String(cfg.favoriteId||"")||null}
@@ -6555,6 +6577,9 @@ async function pausePlayingMusicAssistantPlayersForManualMedia(){
 async function engageManualMediaPriority(command,source="api"){
   if(!manualMediaPriorityCommand(command,source))return null;
   let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{}
+  targets=targets.filter(displaySharesRoomAudio);
+  // A hallway-only manual command is local playback, not a classroom takeover.
+  if(!targets.length)return null;
   for(const id of targets)manualMediaPriorityRuntime.targets.add(id);
   if(!manualMediaPriorityRuntime.active)manualMediaPriorityRuntime.schedulerWasEnabled=automationSchedulerEnabled;
   manualMediaPriorityRuntime.active=true;manualMediaPriorityRuntime.lastStartedAt=new Date().toISOString();manualMediaPriorityRuntime.lastSource=String(source||"api");manualMediaPriorityRuntime.lastCommandType=String(command?.type||"");manualMediaPriorityRuntime.lastError=null;
@@ -8111,7 +8136,7 @@ wss.on("connection", (ws, req) => {
           try{
             const bgCfg=backgroundMusicSchedule();
             const reportedPlayer=String(status.clientId||status.playerId||`classroom-hub-${ws.deviceId}`);
-            if(bgCfg.enabled&&String(bgCfg.playerId||'')===reportedPlayer&&!backgroundMusicRuntime.manualStopped&&!backgroundMusicPriorityTargets.size&&status.isPlaying!==true){
+            if(bgCfg.enabled&&String(bgCfg.playerId||'')===reportedPlayer&&!backgroundMusicRuntime.manualStopped&&!backgroundMusicPriorityState().active&&status.isPlaying!==true){
               backgroundMusicRuntime.playing=false;
               if(!backgroundMusicRuntime.pausedForPriority)backgroundMusicRuntime.paused=false;
             }
