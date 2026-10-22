@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep Scene Studio text readable on receivers using reduced motion. Disable
+  implicit font-size transitions during synchronous fitting; preserve authored
+  text/geometry and containment. Renderer/cache revision: `dynamic-fit-20261022-1`.
+
 - Add independent receiver audio priority for hallway signage. Audible hallway
   Sports and hallway-only manual media leave classroom music and scheduling
   running, while Morning Announcements and classroom media retain priority.

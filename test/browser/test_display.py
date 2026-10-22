@@ -173,7 +173,12 @@ class DisplayBrowserTests(unittest.TestCase):
             encoded=base64.b64encode((ROOT/'public/display/fonts'/name).read_bytes()).decode()
             css=css.replace('/display/fonts/'+name,'data:font/ttf;base64,'+encoded)
         html=re.sub(r'<link rel="stylesheet" href="/display/layout.css[^"]*">',lambda _: '<style>'+css+'</style>',html)
-        html=re.sub(r'<link rel="stylesheet" href="/shared/attribution.css">','',html)
+        attribution=(ROOT/'public/shared/attribution.css').read_text()
+        html=re.sub(r'<link rel="stylesheet" href="/shared/attribution.css[^"]*">',lambda _: '<style>'+attribution+'</style>',html)
+        for name in ['scene.js', 'scene.css']:
+            source=(ROOT/'public/shared'/name).read_text()
+            tag=f'<script src="/shared/{name}"></script>' if name.endswith('.js') else f'<link rel="stylesheet" href="/shared/{name}">'
+            html=html.replace(tag, '<script>'+source+'</script>' if name.endswith('.js') else '<style>'+source+'</style>')
         loc="{pathname:'/display/tv7',protocol:'http:',host:'127.0.0.1:31337',origin:'http://127.0.0.1:31337',search:'',hash:'',href:'http://127.0.0.1:31337/display/tv7'}"
         def shared(match):
             name=match[1]
@@ -460,7 +465,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261022-1')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -480,14 +485,14 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261022-1')
 
 
     def test_17_live_tv8_text_does_not_false_collapse(self):
         page=self.page(1548,1273,1)
         self.replay(page,TV8_LIVE_DYNAMIC)
         data=self.measure(page,'live-tv8-false-containment-regression')
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261022-1')
         for name in ['title','subtitle','body']:
             self.assertGreaterEqual(data['parts'][name]['font'],12, name)
             self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
@@ -508,7 +513,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.command(page,'display.clear',{})
         self.replay(page,TV8_LIVE_DYNAMIC)
         second=self.measure(page,'transition-recovery-second')
-        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261022-1')
         self.assertEqual(second['diagnostics']['components']['body']['status'],'fit')
         self.assertGreaterEqual(second['parts']['body']['font'],12)
         self.assertGreater(second['diagnostics']['components']['body']['scale'],0.95)
@@ -613,6 +618,61 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertIn('Open-Meteo', page.locator('#sceneShared .rg-weather-credit').inner_text())
         self.assertTrue(page.evaluate("window.weatherMediaBefore === document.querySelector('#media video')"))
         self.assertFalse(self.errors, self.errors)
+
+
+    def test_23_reduced_motion_scene_text_survives_action_changes(self):
+        body = ('*Read the classroom instructions and place your materials in the designated storage area '
+                'before starting the lesson or beginning the assigned activity.  \n\n'
+                '*Check that all equipment is ready before starting the assigned activity.\n\n'
+                '*Read the directions carefully and ask for help when necessary. ')
+        scene = {'background': '#101d2c', 'layers': [
+            {'id': 'title', 'type': 'text', 'text': 'Classroom reminders',
+             'x': 5, 'y': 4, 'w': 90, 'h': 18, 'fontSize': 88, 'bold': True},
+            {'id': 'body', 'type': 'text', 'text': body,
+             'x': 6, 'y': 25, 'w': 88, 'h': 40, 'fontSize': 50},
+            {'id': 'subtitle', 'type': 'text', 'text': 'Be ready to begin',
+             'x': 6, 'y': 70, 'w': 88, 'h': 8, 'fontSize': 38}]}
+        state = {'textOptions': {'scene': scene}, 'timer': copy.deepcopy(P7['timer'])}
+        # This uses the real reduced-motion stylesheet and browser layout, not
+        # mocked measurements. A nonzero global transition duration used to
+        # animate font-size during the synchronous fit loop, collapsing Body.
+        for width, height, dpr in [(1280,720,1), (1920,1080,1), (3840,2160,1), (800,1200,2)]:
+            with self.subTest(width=width, height=height, dpr=dpr):
+                page = self.page(width, height, dpr)
+                def assert_scene():
+                    data = page.evaluate("""() => [...document.querySelectorAll('#sceneBase .rg-scene-layer')].map(box=>{
+                        const el=box.firstChild,r=box.getBoundingClientRect(),range=document.createRange();
+                        range.selectNodeContents(el);const s=getComputedStyle(el);
+                        return {id:box.dataset.layerId,text:el.textContent,font:parseFloat(s.fontSize),transform:s.transform,
+                            clips:[...range.getClientRects()].some(q=>q.width>0&&q.height>0&&(q.left<r.left-.75||q.right>r.right+.75||q.top<r.top-.75||q.bottom>r.bottom+.75))};
+                    })""")
+                    self.assertEqual(len(data), 3)
+                    self.assertEqual(data[1]['text'], body)
+                    for layer in data:
+                        self.assertGreaterEqual(layer['font'], 24, data)
+                        self.assertEqual(layer['transform'], 'none', data)
+                        self.assertFalse(layer['clips'], data)
+                    self.assertFalse(self.errors, self.errors)
+                    return [layer['font'] for layer in data]
+                self.replay(page, state)
+                normal_fonts = assert_scene()
+                page.emulate_media(reduced_motion='reduce')
+                # Actual action-to-action commands, with no reload between them.
+                for _ in range(2):
+                    self.command(page, 'display.text', {'scene': {'layers': [
+                        {'id': 'body', 'type': 'text', 'text': 'First action', 'fontSize': 50}]}})
+                    self.command(page, 'display.text', {'scene': scene})
+                    self.assertEqual(assert_scene(), normal_fonts)
+                self.command(page, 'display.clear', {})
+                self.replay(page, state)
+                self.assertEqual(assert_scene(), normal_fonts)
+                page.set_viewport_size({'width': width + 17, 'height': height + 23})
+                self.settle(page)
+                assert_scene()
+                self.reload_renderer(page)
+                self.replay(page, state)
+                assert_scene()
+                page.screenshot(path=str(OUTPUT/f'{self.engine}-reduced-motion-scene-{width}x{height}.png'))
 
 
 if __name__ == '__main__':
