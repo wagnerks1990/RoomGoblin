@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Add independent receiver audio priority for hallway signage. Audible hallway
+  Sports and hallway-only manual media leave classroom music and scheduling
+  running, while Morning Announcements and classroom media retain priority.
+
 ### 1.0.0-alpha.85
 
 - Advance the application/receiver version so connected displays load the staged timer renderer after upgrading. Fix speech cue variable shadowing and refit finish messages when only their displayed value changes.

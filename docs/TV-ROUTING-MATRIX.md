@@ -111,6 +111,11 @@ lighting mappings and unrelated receiver fields remain intact. Save with
 send routing, power or display commands. Polling and reopening the disclosure
 preserve drafts; **Reload Saved Settings** explicitly discards them.
 
+**Audio priority → Independent (hallway)** separates an out-of-room receiver's
+ordinary playback from classroom music and manual media takeover. Morning
+Announcements retain priority. It does not change its AV port, membership or
+automation targets. See [Background Music](BACKGROUND-MUSIC-STUDIO.md#independent-hallway-displays).
+
 The matrix now reports missing and shared receiver assignments. It never guesses
 `tvN` from output N. Test Image, Clear, Reload and drawer group saves require a
 unique mapped receiver. Hardware routing/power remain available for every port.

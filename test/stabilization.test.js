@@ -690,6 +690,26 @@ test("matrix configuration ignores archived topology and rejects stale editor wr
   db.close();
 });
 
+test("receiver audio scope persists through both editors, rejects invalid values and preserves older saves",async()=>{
+  const original=(await request("/api/v1/config",{authenticated:true})).json;
+  const id=Object.keys(original.devices)[0],endpoint=`/api/v1/config/devices/${id}`;
+  const save=body=>request(endpoint,{method:"POST",authenticated:true,body});
+  assert.equal((await save({audioScope:"independent"})).response.status,200);
+  assert.equal((await request("/api/v1/config",{authenticated:true})).json.devices[id].audioScope,"independent");
+  const legacy=structuredClone(original.devices);delete legacy[id].audioScope;
+  let response=await request("/api/v1/admin/displays",{method:"PUT",authenticated:true,body:{devices:legacy,displayGroups:original.displayGroups}});
+  assert.equal(response.response.status,200);assert.equal(response.json.devices[id].audioScope,"independent");
+  for(const audioScope of ["hallway",false,null,{},"all"]){
+    assert.equal((await save({audioScope})).response.status,400);
+    const invalid=structuredClone(legacy);invalid[id].audioScope=audioScope;
+    response=await request("/api/v1/admin/displays",{method:"PUT",authenticated:true,body:{devices:invalid}});
+    assert.equal(response.response.status,400);
+    assert.equal((await request("/api/v1/config",{authenticated:true})).json.devices[id].audioScope,"independent");
+  }
+  assert.equal((await save({name:original.devices[id].name})).json.device.audioScope,"independent");
+  assert.equal((await save({audioScope:"room"})).json.device.audioScope,"room");
+});
+
 // Exhaust the shared update budget last, after the other administrator fixtures.
 test("administrator update quota remains shared across routes and forwarded addresses",async()=>{
   let allowed=0,last;
