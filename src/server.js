@@ -5732,6 +5732,12 @@ function currentContinuousRecoveryWinnerIdentities(now=schedulerClock.now()){
   return winners;
 }
 async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery"){
+  if(reason==="operator-resume"){
+    // A just-interrupted runner may still be leaving a dwell wait. Drain it
+    // before reusing its occurrence ID so its cleanup cannot remove the new run.
+    const interrupted=[...automationRunningOccurrences].filter(([id])=>automationCancellationReasons.get(id)==="manual-media-priority").map(([,task])=>task);
+    if(interrupted.length)await Promise.allSettled(interrupted);
+  }
   if(!automationSchedulerEnabled||schedulerClock.status().active&&!schedulerClock.commandsAllowed())return {started:0,skipped:true,reason:"scheduler-disabled-or-dry-run"};
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
@@ -5746,7 +5752,10 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
       if(!winnerIdentities.has(automationOccurrenceIdentity(storedEvent,event)))continue;
       const id=occurrenceId(event,dateKey,event.time);
       const latest=[...automationRunLedger.read().runs].reverse().find(run=>run.occurrenceId===id);
-      if(latest?.status==="cancelled")continue;
+      // Resume explicitly releases a manual-media takeover, not an operator's
+      // cancellation of an individual run. Startup must preserve both stops.
+      const resumeInterrupted=reason==="operator-resume"&&latest?.reason==="manual-media-priority";
+      if(latest?.status==="cancelled"&&!resumeInterrupted)continue;
       candidates.push({storedEvent,event});
     }
   }

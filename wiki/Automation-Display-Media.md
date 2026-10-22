@@ -64,6 +64,13 @@ Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-ac
 
 `Resume Scheduled State` cancels and drains active manual continuous Run Now/draft runs before restoring current scheduled content. This prevents a test automation from resurfacing after its dwell timer when it is not currently scheduled.
 
+Resume also restarts the current scheduled continuous sequence when manual media
+interrupted it. The old runner finishes cancelling before the same occurrence is
+recovered; saved action dwell times and the original class-end deadline remain in
+effect. Individual operator-cancelled runs and other cancellations stay stopped.
+Startup alone does not release manual-media cancellations. Calendar rules,
+enabled state, current winners, simulation and Morning Announcements still apply.
+
 ## Save & Enable conflict checks
 
 Simulation and saving use the same conflict policy. Editing an already-enabled automation preserves exact existing overlaps (same other automation, date, time, and resource set). The editor reports those overlaps as warnings with the other automation's name, date, time, and shared targets. New normal-day overlaps still block saving; newly created or previously disabled automations must pass the normal-day check before enabling. The saved server record supplies the baseline, never a browser-provided baseline.
