@@ -165,3 +165,49 @@ class SportsBrowserTests(unittest.TestCase):
         page.evaluate("""()=>{const video=document.querySelector('#clip-fixture video');Object.defineProperty(video,'ended',{get:()=>true});video.dispatchEvent(new Event('ended'))}""")
         self.assertTrue(page.locator('#clip-fixture .rg-sports-media img').is_hidden())
         self.assertEqual(errors, [])
+
+    def test_time_projection_changes_apply_without_a_configuration_revision(self):
+        page, errors, _, d = self.sports()
+        page.clock.install()
+        d['display']['pages'][0]['next'] = {'id': 'g', 'opponent': 'Expired opponent', 'status': 'scheduled', 'startAt': '2026-10-23T20:00:00Z', 'homeAway': 'home', 'venue': 'Example field'}
+        page.get_by_role('button', name='Preview board', exact=True).click()
+        page.locator('.rg-sports-games').get_by_text('vs Expired opponent', exact=True).wait_for()
+        d['display']['pages'][0]['next'] = None
+        page.clock.fast_forward(61000)
+        page.wait_for_timeout(100)
+        page.clock.run_for(40000)
+        self.assertNotIn('Expired opponent', page.locator('.rg-sports-games').inner_text())
+        self.assertIn('Next game not published', page.locator('.rg-sports-games').inner_text())
+        self.assertEqual(errors, [])
+
+    def test_source_failures_are_visible_and_clear_after_recovery(self):
+        page, errors, _, d = self.sports()
+        page.clock.install()
+        d['display']['updates'] = {'sources': 1, 'unavailable': 1, 'lastCheckedAt': 1}
+        page.get_by_role('button', name='Preview board', exact=True).click()
+        page.locator('.rg-sports footer').get_by_text('Sports source updates unavailable', exact=False).wait_for()
+        d['display']['updates'] = {'sources': 1, 'unavailable': 0, 'lastCheckedAt': 9999999999999}
+        page.clock.fast_forward(61000)
+        page.wait_for_timeout(100)
+        self.assertNotIn('unavailable', page.locator('.rg-sports footer').inner_text())
+        self.assertEqual(errors, [])
+
+    def test_unchanged_content_poll_does_not_reset_receiver_media(self):
+        page, errors, _, d = self.sports()
+        page.clock.install()
+        d['display']['board']['minimumSeconds'] = 300
+        d['display']['pages'][0]['media'] = [{'id': 'clip', 'asset': 'fixture.mp4', 'caption': 'Clip', 'archive': False}]
+        page.evaluate("""d=>{
+            HTMLMediaElement.prototype.play=function(){return Promise.resolve()};
+            window.sportsFixture=d; window.sportsLoads=0;
+            const canvas=document.createElement('div');canvas.id='persistent-sports';canvas.style.cssText='position:relative;width:1920px;height:1080px';document.body.append(canvas);
+            RoomGoblinScene.render(canvas,d.scene,{previewSports:false,loadSports:async()=>{sportsLoads++;return structuredClone(sportsFixture.display)}});
+        }""", d)
+        page.locator('#persistent-sports .rg-sports-player').first.wait_for()
+        page.evaluate("""()=>{window.sportsMedia=document.querySelector('#persistent-sports video');window.sportsMutations=[];new MutationObserver(rows=>sportsMutations.push(...rows.map(r=>r.attributeName))).observe(sportsMedia,{attributes:true,attributeFilter:['src']});sportsFixture.display.revision++;}""")
+        page.clock.fast_forward(61000)
+        page.wait_for_timeout(100)
+        self.assertGreaterEqual(page.evaluate('sportsLoads'), 2)
+        self.assertTrue(page.evaluate("sportsMedia===document.querySelector('#persistent-sports video')"))
+        self.assertEqual(page.evaluate('sportsMutations'), [])
+        self.assertEqual(errors, [])

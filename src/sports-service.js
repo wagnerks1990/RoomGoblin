@@ -3,22 +3,26 @@ const model=require('./sports'),imports=require('./sports-import'),{fetchPublic,
 const clone=v=>JSON.parse(JSON.stringify(v));
 function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{throw Error('Media cache unavailable')},now=Date.now,canRun=()=>true}){
  let config=model.normalize(store.getPreference(model.KEY,{})),pending=null;
- const status=new Map();
+ const status=new Map(Object.entries(store.getPreference(model.KEY+'.sources',{})||{}).slice(0,640));
  function commit(next){next=model.assertBoardBounds(model.normalize({...next,revision:config.revision+1}));store.setPreference(model.KEY,next);config=next;return clone(config)}
  function save(input){if(input.revision!==config.revision)throw Object.assign(Error('Sports changed. Reload before saving to avoid overwriting another edit.'),{status:409});const next=model.assertBoardBounds(model.normalize(input));store.setPreference(model.KEY+'.previous',config);return commit(next)}
  function undo(revision){if(revision!==config.revision)throw Object.assign(Error('Reload Sports before undoing'),{status:409});const previous=store.getPreference(model.KEY+'.previous',null);if(!previous)throw Error('No previous Sports save');store.setPreference(model.KEY+'.previous',config);return commit(previous)}
  async function refresh(force=false){if(pending)return pending;
   pending=(async()=>{
    const initial=clone(config),rosterChosen=new Set();let working=clone(config);let changed=false,downloads=0,requests=0;
-   sources: for(const team of initial.teams.filter(t=>t.enabled))for(const source of [...team.sources].sort((a,b)=>a.priority-b.priority)){
-    if(!canRun()||requests>=12)break sources;if(!source.enabled||!source.approved)continue;const key=team.id+':'+source.id,prior=status.get(key);if(!force&&prior&&now()-prior.at<1800000)continue;
-    requests++;status.set(key,{at:now(),state:'loading'});
+   // Visit the least recently attempted teams first, including forced refreshes.
+   // Keep each team's preferred roster sources in their existing priority order.
+   const lastAttempt=team=>Math.min(...team.sources.filter(s=>s.enabled&&s.approved).map(s=>status.get(team.id+':'+s.id)?.at||0));
+   sources: for(const team of initial.teams.filter(t=>t.enabled).sort((a,b)=>lastAttempt(a)-lastAttempt(b)))for(const source of [...team.sources].sort((a,b)=>a.priority-b.priority)){
+    if(!canRun()||requests>=12)break sources;if(!source.enabled||!source.approved)continue;const key=team.id+':'+source.id,fingerprint=imports.key(JSON.stringify([team.sport,team.category,team.level,team.season,source])),saved=status.get(key),prior=saved?.fingerprint===fingerprint?saved:null;if(!force&&prior&&now()-prior.at<300000)continue;
+    requests++;status.set(key,{at:now(),state:'loading',fingerprint,lastSuccessAt:prior?.lastSuccessAt||null});
     const staged=clone(working),chosen=new Set(rosterChosen);let sourceChanged=false;
     try{
      const origins=[safeUrl(source.url).origin],r=await fetchImpl(source.url,{origins,maxBytes:source.kind==='pdf'?5242880:2097152});let parsed;
      if(source.kind==='pdf'){const p=await imports.rosterPDF(r.body);parsed={roster:p.rows,season:p.season,events:[],media:[]}}
      else if(source.kind==='json')parsed=imports.structured(JSON.parse(r.body.toString('utf8')));
      else if(source.kind==='calendar')parsed=imports.calendar(r.body.toString('utf8'));
+     else if(source.kind==='arbiter')parsed=require('./sports-arbiter').arbiter(r.body.toString('utf8'),source.url,team,staged.timezone);
      else{
       parsed=imports.website(r.body.toString('utf8'),source.url,team);
       const year=team.season.match(/20\d{2}/)?.[0];const doc=parsed.documents?.find(d=>(d.label+' '+d.url).toLowerCase().includes(team.sport.toLowerCase())&&(!['girls','boys'].includes(team.category.toLowerCase())||(d.label+' '+d.url).toLowerCase().includes(team.category.toLowerCase()))&&(!year||(d.label+' '+d.url).includes(year))&&new URL(d.url).origin===origins[0]);
@@ -47,11 +51,13 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
       staged.media.push({id:imports.key(team.id+':'+sourceKey),teamId:team.id,sourceKey,asset,caption:model.text(m.caption,240),date:new Date(date).toISOString(),approved:true,archive,source:source.url});sourceChanged=true;
      }
      if(sourceChanged){working=model.assertBoardBounds(model.normalize(staged));changed=true;}for(const id of chosen)rosterChosen.add(id);
-     status.set(key,{at:now(),state:accepted||parsed.roster?.length||parsed.media?.length?'ready':'no-data',events:accepted,media:downloads});
-    }catch(error){status.set(key,{at:now(),state:'unavailable',error:model.text(error.message,120)})}
+     status.set(key,{at:now(),state:accepted||parsed.roster?.length||parsed.media?.length?'ready':'no-data',events:accepted,media:downloads,fingerprint,lastSuccessAt:now()});
+    }catch(error){status.set(key,{at:now(),state:'unavailable',error:model.text(error.message,120),fingerprint,lastSuccessAt:prior?.lastSuccessAt||null})}
    }
    // Never let an old in-flight fetch overwrite an operator edit.
    if(changed&&config.revision===initial.revision)commit(working);
+   const configured=new Set(config.teams.flatMap(t=>t.sources.map(s=>t.id+':'+s.id)));for(const k of status.keys())if(!configured.has(k))status.delete(k);
+   if(requests)store.setPreference(model.KEY+'.sources',Object.fromEntries(status));
    return {config:clone(config),status:Object.fromEntries(status)};
   })().finally(()=>{pending=null});return pending;
  }

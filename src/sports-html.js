@@ -1,5 +1,5 @@
 "use strict";
-// A non-executing, forward-only extractor for the two elements Sports needs.
+// A non-executing, forward-only extractor for bounded Sports source elements.
 // This deliberately does not build a DOM or repeatedly search malformed suffixes.
 const space=c=>c===' '||c==='\n'||c==='\r'||c==='\t'||c==='\f';
 function endTag(html,start){
@@ -27,7 +27,7 @@ function attributes(raw){
    else{while(i<raw.length&&!space(raw[i]))i++;value=raw.slice(begin,i);}
   }
   if(++count>128)throw Error('Sports source has too many tag attributes');
-  if((name==='href'||name==='type')&&values[name]===undefined)values[name]=value;
+  if(['href','type','id','class','value','selected','data-gameid','data-isgame'].includes(name)&&values[name]===undefined)values[name]=value;
  }
  return values;
 }
@@ -36,7 +36,7 @@ function closingTag(lower,name,start){
  while(at<lower.length){const found=lower.indexOf(needle,at);if(found<0)return -1;const next=lower[found+needle.length];if(next==='>'||next==='/'||space(next))return found;at=found+needle.length;}
  return -1;
 }
-function elements(html){
+function elements(html,names=['a','script'],accept=()=>true){
  if(typeof html!=='string'||html.length>2097152)throw Error('Sports source HTML exceeds the size limit');
  const lower=html.toLowerCase(),found=[];let at=0,tokens=0;
  while(at<html.length){
@@ -46,10 +46,11 @@ function elements(html){
   const end=endTag(html,start);if(end<0)break;
   let i=start+1;while(i<end&&!space(html[i])&&html[i]!=='/'&&html[i]!=='>')i++;
   const name=lower.slice(start+1,i);at=end+1;
-  if(name!=='a'&&name!=='script')continue;
+  if(!names.includes(name))continue;
+  const attrs=attributes(html.slice(i,end));if(!accept(attrs))continue;
   const close=closingTag(lower,name,at);if(close<0)break;
   const closeEnd=endTag(html,close);if(closeEnd<0)break;
-  found.push({name,attributes:attributes(html.slice(i,end)),content:html.slice(at,close)});
+  found.push({name,attributes:attrs,content:html.slice(at,close)});
   at=closeEnd+1;
  }
  return found;

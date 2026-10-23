@@ -9,6 +9,7 @@
  }
  window.addEventListener('roomgoblin:authchange',()=>previewCache.clear());
  window.addEventListener('roomgoblin:sportschange',()=>previewCache.clear());
+ const contentKey=data=>JSON.stringify([data.board,data.school,data.logo,data.timezone,data.pages]);
  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n};
  function mount(host,boardId,{resolveAsset=n=>'/media/'+encodeURIComponent(n),loadSports=loadBoard,preview=false,audio=false,volume=1}={}){
   host.classList.add('rg-sports');host.replaceChildren();host.style.alignItems='stretch';host.style.whiteSpace='normal';
@@ -57,8 +58,9 @@
   }
   async function refresh(){if(dead||busy)return;busy=true;abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),8000);try{
     const data=await loadSports(boardId,abort.signal);if(dead||!host.isConnected)return;if(!data.ok||!Array.isArray(data.pages))throw Error('Sports data unavailable');
-    if(!snapshot){snapshot=data;draw()}else if(data.revision!==snapshot.revision)pending=data;else snapshot.weather=data.weather;
-    footer.textContent='RoomGoblin · Kyle Wagner'+(data.weather?.source?' · '+data.weather.source:'');
+    if(!snapshot){snapshot=data;draw()}else if(contentKey(data)!==contentKey(snapshot))pending=data;else{pending=null;snapshot.weather=data.weather;snapshot.revision=data.revision;}
+    const u=data.updates,notice=u?.unavailable?'Sports source updates unavailable · showing saved content':u?.noData?'Some sports sources have no supported data':u?.sources&&(!u.lastCheckedAt||Date.now()-u.lastCheckedAt>3600000)?'Sports source checks overdue · showing saved content':u&&!u.sources?'Staff-managed sports content':'';
+    footer.textContent='RoomGoblin · Kyle Wagner'+(notice?' · '+notice:'')+(data.weather?.source?' · '+data.weather.source:'');
    }catch{if(!dead)footer.textContent='RoomGoblin · Kyle Wagner · Showing saved content; refresh unavailable'}finally{clearTimeout(timeout);busy=false;if(!dead)fetchTimer=setTimeout(refresh,60000)}
   }
   function tick(at){if(dead)return;if(!host.isConnected){stop();return}const dt=Math.min(.5,Math.max(0,(at-last)/1000));last=at;
