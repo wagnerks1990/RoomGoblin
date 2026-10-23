@@ -27,6 +27,50 @@ test("normal track completion does not restart a manual song, while a radio inte
  assert.equal(recovery.observe(player(null,"idle",{current_media:null}),{finiteTrack:true}).action,"complete");
  recovery.reset();recovery.observe(player(179));now+=2000;assert.equal(recovery.observe(player(180,"idle"),{finiteTrack:false}).action,"wait");now+=9000;assert.equal(recovery.observe(player(180,"idle")).action,"resume");
 });
+
+test("unchanged Music Assistant position anchors keep playing beyond the stall timeout",()=>{
+ let now=1800000000000;const started=now,recovery=new PlaybackRecovery({now:()=>now});
+ const actual=player(12,"playing",{elapsed_time_last_updated:now/1000,current_media:{uri:"demo://radio/1",duration:0}});
+ for(let i=0;i<=120;i++){
+  now=started+i*8000;assert.equal(recovery.observe(actual).action,"none");
+ }
+ assert.equal(recovery.state,"playing");assert.equal(recovery.lastElapsed,972);
+ assert.equal(recovery.snapshot().lastProgressAt,started,"clock interpolation must not claim new reported progress");
+ assert.match(recovery.reason,/estimated/);
+});
+
+test("fresh timestamps reporting a frozen position still trigger bounded recovery",()=>{
+ let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
+ const actual=()=>player(30,"playing",{elapsed_time_last_updated:now/1000});
+ recovery.observe(actual());now+=121000;
+ assert.equal(recovery.observe(actual()).action,"resume");assert.equal(recovery.state,"stalled");
+ recovery.requested();assert.equal(recovery.observe(actual()).action,"wait");
+ now+=21000;assert.equal(recovery.observe(actual()).action,"reload");
+});
+
+test("invalid anchors retain raw-progress detection and missing elapsed remains unknown",()=>{
+ for(const anchor of [undefined,null,0,-1,NaN,Infinity,"bad",true]){
+  let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
+  const actual=player(30,"playing",{elapsed_time_last_updated:anchor});
+  recovery.observe(actual);now+=121000;assert.equal(recovery.observe(actual).action,"resume",String(anchor));
+ }
+ let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
+ const actual=player(null,"playing",{elapsed_time_last_updated:now/1000});
+ recovery.observe(actual);now+=121000;assert.equal(recovery.observe(actual).action,"none");
+ assert.equal(recovery.snapshot().lastProgressAt,null);assert.doesNotMatch(recovery.reason,/estimated|confirmed/);
+});
+
+test("anchored playback still recovers a stopped radio and respects finite completion",()=>{
+ let now=1800000000000;const started=now,recovery=new PlaybackRecovery({now:()=>now});
+ const actual=player(0,"playing",{elapsed_time_last_updated:started/1000});
+ recovery.observe(actual);now+=179000;recovery.observe(actual);now+=1000;
+ assert.equal(recovery.observe(player(null,"idle",{current_media:null}),{finiteTrack:true}).action,"complete");
+ recovery.reset();recovery.observe(actual);now+=1000;
+ assert.equal(recovery.observe(player(0,"paused",{elapsed_time_last_updated:started/1000})).action,"wait");
+ now+=9000;assert.equal(recovery.observe(player(0,"paused",{elapsed_time_last_updated:started/1000})).action,"resume");
+ const paused=new PlaybackRecovery({now:()=>now});
+ assert.equal(paused.observe(player(0,"paused",{elapsed_time_last_updated:started/1000}),{finiteTrack:true}).action,"wait","paused time must not be extrapolated into track completion");
+});
 test("recovery attempts reset only after sustained reported playback",()=>{
  let now=1000;const recovery=new PlaybackRecovery({now:()=>now});recovery.requested();recovery.observe(player(10));assert.equal(recovery.attempts,1);
  now+=31000;recovery.observe(player(41));assert.equal(recovery.attempts,0);
@@ -72,6 +116,16 @@ function runtime(){
 }
 test("real tick observes a manual output outside schedule and clears a stale playing flag when it disappears",async()=>{
  const {ctx,r,commands}=runtime();await ctx.backgroundMusicTick();assert.equal(r.playing,false);assert.equal(r.recovery.state,"waiting");assert.equal(commands.length,0);
+});
+
+test("real tick never resumes or reloads healthy timestamp-anchored playback",async()=>{
+ let now=1800000000000;const {ctx,r,commands}=runtime(),started=now;
+ const recovery=new PlaybackRecovery({now:()=>now});ctx.backgroundMusicRecovery=recovery;
+ ctx.backgroundMusicActualPlayerState=async()=>player(12,"playing",{elapsed_time_last_updated:started/1000});
+ ctx.backgroundMusicResume=async()=>commands.push({command:"resume"});
+ ctx.backgroundMusicStart=async()=>commands.push({command:"reload"});
+ for(let i=0;i<=120;i++){now=started+i*8000;await ctx.backgroundMusicTick()}
+ assert.equal(commands.length,0);assert.equal(r.playing,true);assert.equal(r.recovery.state,"playing");
 });
 test("real tick never recovers after manual stop or during priority audio",async()=>{
  const {ctx,r,commands}=runtime();r.manualStopped=true;await ctx.backgroundMusicTick();assert.equal(commands.length,0);
