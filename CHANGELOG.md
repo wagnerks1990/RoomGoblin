@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Interpret Music Assistant's timestamped playback positions before detecting a
+  Background Music stall, preventing repeated recovery restarts during healthy
+  playback. Keep estimated position separate from reported-progress diagnostics.
+
 - Keep Scene Studio text readable on receivers using reduced motion. Disable
   implicit font-size transitions during synchronous fitting; preserve authored
   text/geometry and containment. Renderer/cache revision: `dynamic-fit-20261022-1`.

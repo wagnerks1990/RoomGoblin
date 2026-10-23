@@ -4,7 +4,7 @@
 // dispatches commands; the owner checks priority and session identity first.
 class PlaybackRecovery {
   constructor({now=Date.now}={}){this.now=now;this.reset()}
-  reset(){this.attempts=0;this.retryAt=0;this.awaitingUntil=0;this.lastProgressAt=0;this.lastElapsed=null;this.lastDuration=0;this.mediaKey="";this.idleSince=0;this.healthySince=0;this.state="idle";this.reason=""}
+  reset(){this.attempts=0;this.retryAt=0;this.awaitingUntil=0;this.lastProgressAt=0;this.lastPositionAt=0;this.lastElapsed=null;this.lastReportedElapsed=null;this.lastDuration=0;this.mediaKey="";this.idleSince=0;this.healthySince=0;this.state="idle";this.reason=""}
   requested(){const now=this.now();this.attempts++;this.awaitingUntil=now+20000;this.retryAt=now+Math.min(300000,15000*2**Math.min(this.attempts-1,5));this.state="starting";this.reason="Waiting for the player to confirm playback"}
   failed(uncertain=false){this.awaitingUntil=uncertain?this.now()+30000:0;this.state="retrying";this.reason=uncertain?"Command response lost; checking the player before retrying":"Playback failed; retry scheduled"}
   observe(actual,{stallSeconds=120,finiteTrack=false}={}){
@@ -15,12 +15,22 @@ class PlaybackRecovery {
     if(actual.playing){
       this.idleSince=0;
       this.lastDuration=Number(media.duration)||0;
-      const progress=Number.isFinite(elapsed)&&(this.lastElapsed===null||elapsed!==this.lastElapsed||key!==this.mediaKey);
-      if(progress){this.lastProgressAt=now;this.lastElapsed=elapsed;this.mediaKey=key}
+      // Music Assistant can retain an unchanged position/timestamp anchor during
+      // steady playback. Match its corrected_elapsed_time contract while playing;
+      // repeatedly reading the same anchor is not evidence of a stalled stream.
+      const anchor=p.elapsed_time_last_updated;
+      const estimated=typeof anchor==="number"&&Number.isFinite(anchor)&&anchor>0;
+      const position=estimated?elapsed+Math.max(0,now/1000-anchor):elapsed;
+      const progress=Number.isFinite(elapsed)&&(this.lastReportedElapsed===null||elapsed!==this.lastReportedElapsed||key!==this.mediaKey);
+      if(progress)this.lastProgressAt=now;
+      if(Number.isFinite(position)){
+        if(this.lastElapsed===null||position!==this.lastElapsed||key!==this.mediaKey)this.lastPositionAt=now;
+        this.lastElapsed=position;this.lastReportedElapsed=elapsed;this.mediaKey=key;
+      }
       // No telemetry means unknown audible progress, not proof of a stall.
-      const stalled=Number.isFinite(elapsed)&&this.lastProgressAt>0&&now-this.lastProgressAt>=stallSeconds*1000;
+      const stalled=Number.isFinite(position)&&this.lastPositionAt>0&&now-this.lastPositionAt>=stallSeconds*1000;
       if(!stalled){
-        this.state="playing";this.reason=progress?"Playback progress confirmed":"Player reports playing";
+        this.state="playing";this.reason=progress?"Playback progress confirmed":estimated&&Number.isFinite(position)?"Player reports playing; position is estimated":"Player reports playing";
         if(!this.healthySince)this.healthySince=now;
         if(now-this.healthySince>=30000){this.attempts=0;this.retryAt=0}
         this.awaitingUntil=0;return {action:"none"};

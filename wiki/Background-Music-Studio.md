@@ -83,7 +83,7 @@ release. Older releases ignore this field and restore shared audio behavior.
 ## Recovery model
 
 An accepted play command is **starting**, not proof of playback. The Hub observes
-Music Assistant's player state and raw reported elapsed progress. A missing or
+Music Assistant's player state and timestamped playback position. A missing or
 unavailable player is marked waiting and receives no volume/play mutations.
 Player reads are single-flight and retain a short cache.
 
@@ -95,9 +95,20 @@ resets that backoff after thirty seconds. An uncertain command timeout receives
 an observation grace period; mutations are never blindly replayed over HTTP.
 Read-only queue/status/search calls may use the existing HTTP fallback.
 
-When elapsed telemetry is supplied, unchanged progress for the configured
-60–600 seconds (default 120) is a suspected stall. Missing elapsed telemetry
-alone is not a stall. A normally completed finite manual track is not restarted
+Music Assistant can retain an unchanged `elapsed_time` plus
+`elapsed_time_last_updated` anchor throughout healthy playback. While the player
+reports playing, RoomGoblin estimates its current position as the elapsed value
+plus time since that timestamp, matching Music Assistant's position contract.
+An unchanged anchor must not trigger a recovery restart every two minutes.
+Clock-based estimates do not advance the diagnostic **Last progress** timestamp
+or count as newly reported progress; the status explicitly identifies estimation.
+
+When position telemetry is supplied, unchanged effective progress for the
+configured 60–600 seconds (default 120) is a suspected stall. Fresh timestamped
+reports of the same frozen position still qualify, as do unchanged raw positions
+from players without a valid numeric timestamp. Missing elapsed telemetry alone
+is not a stall. Paused/idle states are never extrapolated and retain the normal
+resume-before-reload recovery path. A normally completed finite manual track is not restarted
 as though it were a broken radio station. Recovery reloads retain the listener's
 current volume/mute; explicit starts apply saved start volume and unmute.
 
@@ -133,6 +144,7 @@ directly before authorization on each route, and writer freeze. Audit entries co
 
 Targeted tests execute the real tick/start and HTTP queue/command handlers, plus
 the recovery monitor: unavailable players, command confirmation/backoff, raw
+timestamp anchors across multiple stall windows, frozen-position reports,
 progress stalls, track completion, manual Stop, priority races, sleep and safe
 queue projections. Browser fixtures cover search/play identity, sleep, responsive
 layout, unsaved drafts and stable focused controls. Run the active-worktree Linux
