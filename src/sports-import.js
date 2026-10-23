@@ -13,8 +13,8 @@ function csv(raw){
 function rosterCSV(raw){return csv(raw).map(p=>{if(!p.name)throw Error('Roster CSV needs name,number,grade,position,level,role columns (name required)');return {id:key([p.name,p.number,p.level].join('|')),name:p.name,number:p.number,grade:p.grade,position:p.position,level:p.level?.toLowerCase(),role:p.role==='manager'?'manager':'player'}})}
 const {rosterPDF}=require('./sports-pdf');
 // Decode once: a literal &amp;lt; must not turn into a second-level entity.
-const decode=s=>String(s).replace(/&(amp|quot|apos|lt|gt|#(?:x[0-9a-f]+|[0-9]+));/gi,(_,entity)=>{
- const named={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>'},value=entity.toLowerCase();if(value[0]!=='#')return named[value];
+const decode=s=>String(s).replace(/&(amp|quot|apos|lt|gt|nbsp|#(?:x[0-9a-f]+|[0-9]+));/gi,(_,entity)=>{
+ const named={amp:'&',quot:'"',apos:"'",lt:'<',gt:'>',nbsp:' '},value=entity.toLowerCase();if(value[0]!=='#')return named[value];
  const code=value[1]==='x'?parseInt(value.slice(2),16):Number(value.slice(1));return Number.isInteger(code)&&code>=0&&code<=0x10ffff&&!(code>=0xd800&&code<=0xdfff)?String.fromCodePoint(code):'\uFFFD';
 });
 const clean=s=>decode(htmlSource.strip(String(s)).replace(/\s+/g,' ')).trim();
@@ -45,4 +45,4 @@ function calendar(raw){
 }
 // Convert an explicit local wall time without relying on the host timezone.
 function zoned(local,timezone){const parts=local.match(/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/);if(!parts)throw Error('Invalid local date');const wanted=Date.UTC(...parts.slice(1).map((v,i)=>i===1?Number(v)-1:Number(v)));let at=wanted;for(let i=0;i<3;i++){const p=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(at).reduce((o,p)=>(o[p.type]=p.value,o),{});const shown=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute);at+=wanted-shown}return new Date(at).toISOString()}
-module.exports={csv,rosterCSV,rosterPDF,structured,website,calendar,zoned,key};
+module.exports={csv,rosterCSV,rosterPDF,structured,website,calendar,zoned,key,decode};

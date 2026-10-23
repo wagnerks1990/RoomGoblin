@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Refresh Sports sources in fair, bounded five-minute passes; persist and show
+  source health. Import verified public Arbiter team schedules/results and apply
+  time-based board changes without requiring a saved configuration revision or
+  restarting unchanged media.
+
 - Patch the Hub and maintenance `ip-address` lockfile dependency to 10.7.4 for
   GHSA-rxp7-6hxx-x8q5, retaining the existing dependency and audit policies.
 

@@ -54,6 +54,15 @@ Supported source types:
   links containing `localStartDate`; follows a same-origin roster PDF whose link
   identifies the sport and configured season. Recognizes labeled JSON-LD
   ImageObject/VideoObject entries with a dated direct `contentUrl`.
+- **Arbiter public team schedule and results**: use a public HTTPS
+  `arbiterlive.com/Teams/Schedule/<team-id>` link from the official school site.
+  RoomGoblin verifies the sport, category, competition level and selected school
+  year before importing. Game IDs preserve reschedules; reported W/L/T results
+  include zero scores, volleyball sets and overtime. Dates use the Sports
+  timezone and the selected July–June school year. Cancellations/postponements
+  remain explicit; TBA times and unreported scores are never invented. This
+  source imports schedules/results only, not rosters or media. A changed season
+  or unsupported page format requires administrator review.
 - **Direct roster PDF**: text table with number/name/grade or class columns,
   optional position, explicit title/section level. Scans need CSV transcription.
 - **Team-specific iCalendar**: expanded UTC VEVENTs, UID, escaped text and
@@ -69,11 +78,17 @@ in Sports; credential-bearing subscription links are not supported here. Free
 public feeds or staff imports remain the fallback when a provider has no eligible
 export. Conflicting player statistics must be withheld until staff verify them.
 
-The Hub checks enabled approved sources every 30 minutes, sharing a single refresh
-across receivers. Sources run by priority (lower first); staff can lock roster and
+The Hub starts a shared source-check pass every five minutes (and shortly after
+startup), with a five-minute minimum between checks of the same source. Each pass
+attempts at most twelve sources, visiting least-recently-checked teams first; larger
+configurations take multiple passes. Manual refresh uses the same fair queue and
+bounds. Within a team, sources run by priority (lower first); staff can lock roster and
 event edits. Schedule-only updates cannot erase an existing final. Network failures
-retain saved results/rosters/media; status is separate from event state. Source
-refresh does not delete missing events or infer cancellation from disappearance.
+retain saved results/rosters/media; status is separate from event state. Sources
+show the last attempt, last successful check and bounded failure details. Receiver
+boards show source-failure, unsupported-data or overdue-check notices even if the
+Hub itself is reachable. Published provider scores may lag the actual game; this
+is not a live play-by-play service. Source refresh does not delete missing events or infer cancellation from disappearance.
 Source changes are administrator-only. Ordinary edits require schedule and
 automation management permissions; reads use classroom control authorization.
 
@@ -126,13 +141,17 @@ Imports return review data and do not save or dispatch. `POST /boards/:id/scene`
 returns a normal shared scene; `GET /boards/:id/display` requires existing asset
 access and strips source URLs/operator settings from receiver content.
 
-SQLite preferences `sports.workspace.v1` and `.previous` hold saved configuration
-and the prior staff save. Existing operational backups include these preferences;
+SQLite preferences `sports.workspace.v1`, `.previous` and `.sources` hold saved
+configuration, the prior staff save and bounded source-check status. Status survives
+restarts; changed source/team mappings do not inherit a prior successful check.
+Existing operational backups include these preferences;
 media follows the existing replaceable-media backup policy. Background refresh
 participates in Full Recovery Export writer draining. A stale in-flight refresh
 cannot overwrite a later staff edit. Displays poll only the Hub once per minute,
-apply revisions at page boundaries, and retain the current media node on unchanged
-polls. Network failure keeps current content and shows a saved-content notice.
+compare the projected page content (including time-based changes) and apply changes
+at page boundaries after the current clip. Identical polls retain the current media
+session even if unrelated configuration revisions change. Network failure keeps
+current content and shows a saved-content notice.
 
 ## Upgrade and rollback
 
