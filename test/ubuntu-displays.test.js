@@ -98,3 +98,63 @@ test("Linux screen identity and root-helper regression suite",{skip:process.plat
   const result=require("node:child_process").spawnSync("python3",["-m","unittest","discover","-s","test","-p","ubuntu_display_test.py","-v"],{encoding:"utf8",timeout:30000});
   assert.equal(result.status,0,result.stdout+result.stderr);
 });
+
+function managed(h,id="computer"){
+  const d={id,name:"Fixture",address:"10.0.0.8",port:22,fingerprint:fp,machineId,state:"ready",config:screenConfig(input,probe)};
+  h.storage.setPreference(STORE,[...h.manager.records(),d]);h.secrets.set(`ubuntu-display.${id}.ssh`,"test-key");return d;
+}
+test("monitoring separates session and receiver health, computes CPU and retains bounded transitions",async()=>{
+  let ticks=1000,idle=800,online=true;
+  const h=harness(async()=>{if(!online)throw Error("private remote output");return {...probe,identity:"computer",protocolVersion:"2",packageDigest:h.manager.packageDigest,
+    session:{online:true,screens:[{receiverId:"screen1",browserRunning:true},{receiverId:"screen2",browserRunning:true}]},health:{cpuTicks:ticks,cpuIdleTicks:idle,memoryTotalKiB:100,memoryAvailableKiB:50,diskTotalBytes:100,diskFreeBytes:50}}});
+  managed(h);h.manager.receiverOnline=()=>true;
+  await h.manager.refresh("computer");assert.equal(h.manager.list().devices[0].health.state,"healthy");
+  ticks=1100;idle=850;await h.manager.refresh("computer");assert.equal(h.manager.list().devices[0].live.status.health.cpuPercent,50);
+  assert.equal(h.manager.record("computer").history.length,1);
+  h.manager.receiverOnline=id=>id!=="screen2";await h.manager.refresh("computer");
+  assert.equal(h.manager.list().devices[0].health.alerts[0].code,"screen:screen2");
+  online=false;await h.manager.refresh("computer");const d=h.manager.list().devices[0];assert.equal(d.health.state,"offline");assert.ok(d.lastSeenAt);assert.ok(!JSON.stringify(d).includes("private remote"));
+});
+test("fleet polling has four workers, one pass at a time, and stops new work during recovery",async()=>{
+  let active=0,max=0,calls=0,release;
+  const gate=new Promise(r=>release=r);
+  const h=harness(async request=>{active++;max=Math.max(max,active);calls++;await gate;active--;return {...probe,identity:JSON.parse(request.input).id}});
+  for(let n=0;n<8;n++)managed(h,"computer"+n);
+  const pass=h.manager.poll();await h.manager.poll();assert.equal(calls,4);h.manager.canRun=()=>false;release();await pass;
+  assert.equal(max,4);assert.equal(calls,4);assert.equal(h.manager.records()[0].history,undefined);
+});
+test("address changes verify pinned host and machine while retaining keys and receiver assignments",async()=>{
+  let wrong=false,last;
+  const h=harness(async r=>{last=r;return {...probe,identity:wrong?"other":"computer"}});managed(h);
+  await h.manager.edit("computer",{name:"Renamed",location:"Hallway",notes:"Monitor pair",address:"10.0.0.9",port:22});
+  assert.equal(last.hostFingerprint,fp);assert.equal(h.manager.record("computer").config.screens[0].receiverId,"screen1");assert.equal(h.secrets.size,1);
+  wrong=true;await assert.rejects(h.manager.edit("computer",{name:"Wrong",address:"10.0.0.10",port:22}),/does not belong/);
+  assert.equal(h.manager.record("computer").address,"10.0.0.9");
+});
+test("maintenance requires confirmation, supported agent and announcement-safe dispatch; credentials never leave storage",async()=>{
+  const calls=[];let protocol="1";
+  const h=harness(async r=>{const body=JSON.parse(r.input);calls.push(body);return body.action==="status"?{...probe,identity:"computer",protocolVersion:protocol}:{accepted:true,job:{id:body.requestId}}});managed(h);
+  await assert.rejects(h.manager.maintenance("computer",{operation:"update-os"}),/Confirm/);
+  await assert.rejects(h.manager.maintenance("computer",{operation:"shell",confirm:true}),/Unsupported/);
+  await assert.rejects(h.manager.maintenance("computer",{operation:"update-os",confirm:true}),/Repair/);
+  protocol="2";h.manager.allowDisruption=()=>false;
+  await assert.rejects(h.manager.maintenance("computer",{operation:"update-os",confirm:true}),/Announcements/);
+  await h.manager.maintenance("computer",{operation:"check-updates",confirm:true});
+  h.manager.allowDisruption=()=>true;await h.manager.maintenance("computer",{operation:"update-agent",confirm:true});
+  const body=calls.at(-1);assert.match(body.packageDigest,/^[a-f0-9]{64}$/);assert.equal(body.confirm,true);assert.equal(body.files,undefined);assert.equal(body.command,undefined);
+});
+test("scheduled maintenance waits for announcements, is claimed before delivery and is never replayed after uncertainty",async()=>{
+  let writes=0;
+  const h=harness(async r=>{const body=JSON.parse(r.input);if(body.action==="status")return {...probe,identity:"computer",protocolVersion:"2"};writes++;throw Error("uncertain")});managed(h);
+  await h.manager.maintenance("computer",{operation:"update-browser",confirm:true,scheduleAt:new Date(Date.now()+60000).toISOString()});
+  const scheduled=h.manager.record("computer").scheduled;h.manager.updateRecord("computer",{scheduled:{...scheduled,at:new Date(Date.now()-1000).toISOString()}});
+  h.manager.live.set("computer",{online:true});h.manager.allowDisruption=()=>false;await h.manager.runScheduled("computer");assert.equal(writes,0);
+  h.manager.allowDisruption=()=>true;await h.manager.runScheduled("computer");await h.manager.runScheduled("computer");assert.equal(writes,1);assert.equal(h.manager.record("computer").scheduled.state,"attention");
+  h.manager.updateRecord("computer",{scheduled:{...scheduled,at:new Date(Date.now()-3601000).toISOString()}});await h.manager.runScheduled("computer");assert.equal(h.manager.record("computer").scheduled.state,"expired");assert.equal(writes,1);
+});
+test("temporarily missing saved audio outputs stay assigned and graphics/disabled state are validated",()=>{
+  const previous=screenConfig({...input,screens:input.screens.map(s=>({...s,audioSink:"hdmi-a"}))},{...probe,audio:{sinks:[{name:"hdmi-a"}]}}).screens;
+  const saved=screenConfig({...input,screens:previous.map(s=>({...s,graphicsMode:"auto",enabled:false}))},probe,[],{},false,previous);
+  assert.equal(saved.screens[0].audioSink,"hdmi-a");assert.equal(saved.screens[0].enabled,false);assert.equal(saved.screens[0].graphicsMode,"auto");
+  assert.throws(()=>screenConfig({...input,screens:input.screens.map(s=>({...s,graphicsMode:"shell"}))},probe),/graphics/);
+});

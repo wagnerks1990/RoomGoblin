@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Add Ubuntu fleet health, durable history, verified address changes, managed
+  Ubuntu/Chromium/agent updates and one-time maintenance scheduling. Keep fixed
+  restricted commands, announcement-aware dispatch, verified agent rollback,
+  stable screen identities and muted unavailable audio assignments.
+
 - Clear selected receivers before manual media/library replacement, including
   persisted scene, text, timer and blackout layers. Stop retired video/web
   playback and ignore stale video callbacks; preserve announcement priority,

@@ -100,13 +100,88 @@ when the intent is also to stop the kiosk. Removal is deliberately not a wipe.
 
 Hub deployment uses the normal exact-main-image updater and its operational
 backup/source/database rollback. It does not silently upgrade remote computer
-agents. Use **Repair / update agent** with administrator SSH access to explicitly
-install the Hub's reviewed package while retaining the device identity/profiles.
+agents. Protocol 1 computers need **Repair / update agent** with administrator
+SSH once to install protocol 2. Afterwards **Software & updates / Manage updates**
+uses the existing restricted enrollment without asking for administrator credentials.
+An unavailable management key or broken bootstrap still requires administrator repair.
+
+## Monitoring and daily administration
+
+The inventory separates computer connectivity, kiosk heartbeat, each browser process
+and each receiver connection. A running browser is not proof that the physical panel
+is on or that audio is audible. Four bounded SSH workers poll every 30 seconds; a
+second pass cannot overlap the first. Status older than 90 seconds is unconfirmed.
+Monitoring continues when no browser is open, and polling pauses during Full Recovery.
+
+Cards show CPU utilization between samples, available memory, disk space, uptime,
+Ubuntu/kernel and Chromium versions, and the installed agent package digest compared
+with the Hub. Low disk (<10%), low available memory (<8%), missing sessions/receivers,
+reboot requirements and failed maintenance are explicit alerts. Last-seen information
+and the latest 50 health/action events per computer survive Hub restart in SQLite;
+remote maintenance retains 20 job results. No screenshots or raw process output are
+saved in this history. This is bounded operational history, not a long-term metrics
+or external notification service.
+
+**Edit computer** manages name, location, notes and SSH address/port. An address change
+must authenticate the original pinned host key and return the original device and
+machine identity before it is saved. Names never change receiver IDs. Filters and
+open sections survive refreshes; dialogs keep unsaved drafts. Screen assignment can
+pause an output without deleting its identity, retain unavailable audio sinks muted,
+and choose automatic hardware acceleration or software compatibility. Existing
+assignments keep their software mode until explicitly changed; verify GPU/video
+behavior on the actual computer before changing modes.
+
+## Software maintenance and scheduling
+
+All operations require administrator access and explicit confirmation. Computer
+operations affect every screen. Disruptive dispatch is blocked while Morning
+Announcements own any assigned receiver. A job already running cannot be safely
+interrupted by a later announcement; schedule maintenance outside teaching hours.
+
+| Operation | Behavior and recovery |
+| --- | --- |
+| Check updates | Refresh configured Ubuntu package sources, simulate non-removing upgrades, and check Chromium Snap availability. Report package candidates and security-source counts. No packages are installed. |
+| Install Ubuntu updates | Run the native non-removing apt upgrade, keep existing configuration files and save a private pre-update package inventory. No distribution upgrade, removal, autoremove or automatic reboot. APT/dpkg history supports diagnosis; this is not a complete OS snapshot or automatic package downgrade. |
+| Update Chromium | Stop the managed graphical session, refresh only Chromium, then restart the session even if refresh fails. Use Restore previous Chromium revision when Snap retains a suitable revision. |
+| Update RoomGoblin agent | Fetch only the fixed five-file package from the fixed RoomGoblin repository's trusted main commit over HTTPS. Its normalized SHA-256 package digest must exactly match the package in the running Hub. No caller-supplied source, URL, repository, shell command or arbitrary revision is accepted. Preserve identity, profiles and assignments; restart the active kiosk after success. |
+| Restore previous agent | Verify and restore the retained package/identity, then restart the active kiosk. Does not revert screen assignments or browser profiles. |
+
+Agent updates preflight imports, retain a verified previous package and journal before
+replacing files. Failed post-install checks restore those files and identity. A separate
+root-owned recovery copy runs at boot before LightDM, so a torn installed module does
+not prevent rollback. Failure or interruption is surfaced; package operations are never
+blindly repeated. Original pre-enrollment desktop rollback remains separate and intact.
+
+The restricted helper starts only the fixed root-owned
+`roomgoblin-display-maintenance.service`. A computer-wide file lock serializes
+configuration, lifecycle commands and the maintenance worker. Jobs run independently
+of the browser/SSH request, persist under `/var/lib/roomgoblin-display`, have a bounded
+45-minute unit timeout, and report accepted/running/completed/failed/interrupted states.
+Completion means the package operation returned successfully; live screen status is
+separate acceptance evidence. Raw package output and credentials are never returned.
+
+**Schedule once** stores a confirmed operation up to 30 days ahead. The browser's local
+time is converted to an absolute timestamp. The Hub waits up to one hour for a reachable
+computer and for announcements to finish; after that the job expires. A saved claim
+precedes dispatch, preventing replay after a Hub crash or uncertain delivery. The
+computer also retains up to 2048 request receipts for 32 days, rejecting additional
+jobs at that limit rather than forgetting unexpired receipts; restoring an older
+Hub backup cannot repeat an already accepted request. Cancel
+pending jobs explicitly. The Hub must be running and connected to dispatch; if it was
+unavailable beyond the grace period, nothing runs later without a new request. Recurring
+automatic installation policies are not enabled by this feature. Ubuntu's own unattended
+upgrade and Snap refresh policies remain in force; RoomGoblin does not silently disable
+their security updates or claim exclusive ownership of OS updates.
+
+Native helper package downloads require public GitHub access. Package updates use the
+computer's configured authenticated apt sources and Snap store. Repository management,
+OS reinstall, BIOS/firmware and arbitrary remote shells are outside this fixed helper.
+The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
 
 This release supports the dedicated Xorg kiosk on Ubuntu LTS x86-64. Windows,
-ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, automatic OS upgrades and offline content caching are not
+ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, recurring automatic OS upgrades and offline content caching are not
 implemented. Browser-level volume follows the existing receiver controls. Each screen can
 select an advertised audio sink or stay muted. The selected existing card profiles
 are restored in the dedicated kiosk session; unavailable selected sinks fail muted
@@ -119,7 +194,9 @@ verification, transport bounds, credentials, enrollment, failed installs,
 authorization, recovery freeze and assignment conflicts. It runs
 `test/ubuntu_display_test.py` on Linux for output identity/hotplug/configuration
 checks. The operator browser suite exercises the wizard at desktop/mobile sizes,
-independent receiver assignments, draft retention and credential clearing.
+independent receiver assignments, update/schedule controls, filtered health views,
+draft retention and credential clearing. Native regressions cover fixed update operations,
+source/digest verification, concurrency, interrupted jobs and failed-update rollback.
 Physical acceptance must additionally verify reboot, window placement, sustained
 media, announcements/audio, network reconnection, monitor reconnect and rollback.
 
