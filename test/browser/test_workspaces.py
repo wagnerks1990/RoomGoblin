@@ -162,6 +162,70 @@ class WorkspaceBrowserTests(unittest.TestCase):
             page.locator('#ubuntuClose').click()
             self.assertEqual(page.locator('#ubuntuPassword').input_value(), '')
 
+    def test_ubuntu_wizard_ignores_closed_installation_jobs(self):
+        pending, commands = [], []
+        installs = 0
+        finish_second = False
+        def transport(route, target):
+            nonlocal installs
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/host-key'):
+                route.fulfill(json={'fingerprint': 'SHA256:' + 'A' * 43})
+            elif target.endswith('/probe'):
+                route.fulfill(json={'ok': True, 'hostname': 'fixture', 'version': '24.04', 'graphics': 'session-unavailable', 'outputs': []})
+            elif target.endswith('/jobs/job1'):
+                pending.append(route)
+            elif target.endswith('/jobs/job2'):
+                route.fulfill(json={'job': {'id': 'job2', 'deviceId': 'computer2', 'state': 'completed' if finish_second else 'running', 'stage': 'Second installation'}})
+            elif target.endswith('/command'):
+                commands.append(target)
+                route.fulfill(json={'ok': True, 'accepted': True})
+            elif route.request.method == 'POST':
+                installs += 1
+                route.fulfill(json={'ok': True, 'job': {'id': f'job{installs}'}})
+            else:
+                route.fulfill(json={'ok': True, 'devices': [], 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        for number in (1, 2):
+            page.locator('#ubuntuAdd').click()
+            page.locator('#ubuntuName').fill(f'Computer {number}')
+            page.locator('#ubuntuAddress').fill(f'10.0.0.{number}')
+            page.locator('#ubuntuPassword').fill('fixture-password')
+            page.locator('#ubuntuGetFingerprint').click()
+            page.wait_for_function("document.getElementById('ubuntuFingerprint').value.startsWith('SHA256:')")
+            page.locator('#ubuntuHostVerified').check()
+            page.locator('#ubuntuNext').click()
+            page.locator('#ubuntuNext').click()
+            page.locator('#ubuntuConsent').check()
+            with page.expect_request(f'**/jobs/job{number}'):
+                page.locator('#ubuntuNext').click()
+            if number == 1:
+                page.locator('#ubuntuClose').click()
+        self.assertEqual(len(pending), 1)
+        page.wait_for_function("document.getElementById('ubuntuJobStatus').textContent === 'Second installation'")
+        pending[0].fulfill(json={'job': {'id': 'job1', 'deviceId': 'computer1', 'state': 'completed', 'stage': 'Old installation'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.locator('#ubuntuJobStatus').inner_text(), 'Second installation')
+        self.assertTrue(page.locator('#ubuntuActivate').is_hidden())
+        finish_second = True
+        page.clock.fast_forward(3100)
+        page.locator('#ubuntuActivate').wait_for(state='visible')
+        self.assertEqual(page.locator('#ubuntuActivate').get_attribute('data-device'), 'computer2')
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.on('dialog', lambda dialog: dialog.accept())
+        page.locator('#ubuntuActivate').click()
+        page.wait_for_function("document.getElementById('ubuntuActivate').hidden")
+        self.assertEqual(commands, ['/api/v1/ubuntu-displays/computer2/command'])
+        page.keyboard.press('Escape')
+        page.locator('#ubuntuAdd').click()
+        self.assertTrue(page.locator('#ubuntuActivate').is_hidden())
+        self.assertIsNone(page.locator('#ubuntuActivate').get_attribute('data-device'))
+        self.assertEqual(page.locator('#ubuntuJobStatus').inner_text(), '')
+        self.assertFalse(errors, errors)
+
     def test_controller_navigation_search_and_sections(self):
         for width in (390, 1440):
             page, errors = self.page('/controller/', width)

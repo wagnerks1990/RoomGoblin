@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Ubuntu wizard replies and activation controls scoped to their current
+  session so a closed installation cannot change a later computer's wizard.
+
 - Add Ubuntu managed display computers with an SSH enrollment wizard, verified
   host identity, independent receiver/profile per physical output, resolution and
   rotation controls, previews, individual browser recovery, computer maintenance
