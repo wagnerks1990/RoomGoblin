@@ -23,7 +23,7 @@ function harness({devices,locked=[],reply,enabled=true}={}){
   const commands=[],otherCommands=[],audits=[];
   const cancelled=new Set();
   const context=vm.createContext({
-    ...schema,...runtime,devices,Date,Set,Map,setTimeout,clearTimeout,
+    ...schema,...runtime,devices,Date,Set,Map,setTimeout,clearTimeout,shuttingDown:false,
     schedulerClock:{now:()=>new Date("2026-10-08T19:00:00Z")},
     automationTargetDomain:runtime.actionResourceDomain,
     normalizeTimerOverlay:()=>null,

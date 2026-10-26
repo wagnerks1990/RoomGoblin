@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Drain accepted HTTP/WebSocket and tracked background writes before shutdown
+  closes SQLite. Preserve Full Recovery thaw, record automation shutdown as an
+  interruption, and report deadline/checkpoint failures instead of clean exits.
+
 - Add live volume up/down, percentage volume, mute and unmute in Sports and
   Automation, with saved action audio settings. Preserve active playback,
   receiver reconnect settings, announcement priority and independent hallway audio.

@@ -87,6 +87,8 @@ const LOGIN_MAX_ATTEMPTS = environmentInteger("LOGIN_MAX_ATTEMPTS",5,3,20);
 const LOGIN_WINDOW_MS = environmentInteger("LOGIN_WINDOW_MS",15*60*1000,60000,24*60*60*1000);
 const LOGIN_LOCK_MS = environmentInteger("LOGIN_LOCK_MS",15*60*1000,60000,24*60*60*1000);
 const fullExportFreeze={requested:false,active:false,token:null,activeHttpMutations:0,activeWsMutations:0,activeAsyncMutations:0,startedAt:null,leaseTimer:null};
+const {trackApplicationHandlers,waitUntilDrained,closeWebSockets}=require("./application-drain");
+let shutdownRequested=false,shuttingDown=false;
 function trackFullExportMutation(task){
   fullExportFreeze.activeAsyncMutations++;
   return Promise.resolve(task).finally(()=>{fullExportFreeze.activeAsyncMutations=Math.max(0,fullExportFreeze.activeAsyncMutations-1)});
@@ -745,15 +747,16 @@ let morningAnnouncementsReleaseRetryTimer=null;
 let morningAnnouncementsLifecycle=Promise.resolve();
 let morningAnnouncementsLifecycleBusy=0;
 function serializeMorningAnnouncementsLifecycle(task){
-  const invoke=async()=>{morningAnnouncementsLifecycleBusy++;try{return await task()}finally{morningAnnouncementsLifecycleBusy=Math.max(0,morningAnnouncementsLifecycleBusy-1)}};
+  morningAnnouncementsLifecycleBusy++;
+  const invoke=async()=>{try{return await task()}finally{morningAnnouncementsLifecycleBusy=Math.max(0,morningAnnouncementsLifecycleBusy-1)}};
   const run=morningAnnouncementsLifecycle.then(invoke,invoke);
   morningAnnouncementsLifecycle=run.catch(()=>{});
   return run;
 }
 function restartMorningAnnouncementsWatcher(){
   if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
-  if(shuttingDown)return;
-  const run=async()=>{try{await serializeMorningAnnouncementsLifecycle(()=>morningAnnouncementsTick())}finally{if(!shuttingDown){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}};
+  if(shutdownRequested)return;
+  const run=async()=>{try{await serializeMorningAnnouncementsLifecycle(()=>morningAnnouncementsTick())}finally{if(!shutdownRequested){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}};
   morningAnnouncementsTimer=setTimeout(run,2500);morningAnnouncementsTimer.unref();
 }
 const deferredAnnouncementAutomations=new Map();
@@ -879,7 +882,7 @@ function morningAnnouncementsSchoolDay(now=new Date()){
 function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
 function scheduleAnnouncementAudioRetries(targets){
   for(const delay of [1500,4500,10000,20000])setTimeout(()=>{
-    if(fullExportFreeze.requested)return;
+    if(shutdownRequested||fullExportFreeze.requested)return;
     if(!morningAnnouncementsRuntime.active)return;
     if(morningAnnouncementsRuntime.mode!=="manual"&&!morningAnnouncementsRuntime.live)return;
     trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
@@ -1074,9 +1077,10 @@ async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-
   return {winnerCount:winners.length,results};
 }
 function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
-  if(shuttingDown||morningAnnouncementsReleaseRetryTimer)return;
+  if(shutdownRequested||morningAnnouncementsReleaseRetryTimer)return;
   morningAnnouncementsReleaseRetryTimer=setTimeout(()=>{
     morningAnnouncementsReleaseRetryTimer=null;
+    if(shutdownRequested)return;
     if(fullExportFreeze.requested){scheduleMorningAnnouncementsReleaseRetry(targets,reason);return}
     serializeMorningAnnouncementsLifecycle(async()=>{
       if(morningAnnouncementsRuntime.active)return;
@@ -1113,7 +1117,7 @@ async function releaseMorningAnnouncements(reason="stream-ended"){
 }
 let morningAnnouncementsTickBusy=false;
 async function morningAnnouncementsTick(){
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if(morningAnnouncementsTickBusy)return;morningAnnouncementsTickBusy=true;
   try{
     const now=new Date();morningAnnouncementsRuntime.lastWatcherTick=now.toISOString();
@@ -1826,6 +1830,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
       const reason=automationCancellationReasons.get(event._occurrenceId)||"cancelled";
       throw Object.assign(new Error(`Automation run ${reason}`),{code:"AUTOMATION_CANCELLED",reason});
     }
+    if(shuttingDown)throw Object.assign(new Error("Automation interrupted by application shutdown"),{code:"AUTOMATION_INTERRUPTED",reason:"server-shutdown"});
     if(!manual&&!automationSchedulerEnabled)throw Object.assign(new Error("Automation scheduler paused"),{code:"AUTOMATION_SCHEDULER_PAUSED"});
     if(!manual&&isAutomationSuppressed(schedulerClock.now()).blocked)throw Object.assign(new Error("Automation suppressed by current school calendar state"),{code:"AUTOMATION_SUPPRESSED"});
     if(!manual&&event.id){
@@ -2455,7 +2460,7 @@ async function controlPresentation(action,body={}){
 
 let presentationAutoAdvanceBusy=false;
 const presentationAutoAdvanceTimer=setInterval(async()=>{
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if(presentationAutoAdvanceBusy)return;presentationAutoAdvanceBusy=true;
   try{
     if(!presentationState.active||presentationState.paused)return;
@@ -2895,7 +2900,7 @@ const veyonCommandQueue=new VeyonCommandQueue({
   authorize:owner=>{if(owner==="legacy-control")return !dbStore.authEnabled()&&!!CONTROL_TOKEN;const user=dbStore.listUsers().find(u=>u.id===owner&&u.enabled);return !!user&&hasCapability(user,"lab.control")},
   readJournal:()=>dbStore.getPreference("veyon.lock-ownership",[]),
   writeJournal:value=>dbStore.setPreference("veyon.lock-ownership",value),
-  canRun:()=>!fullExportFreeze.requested&&!shuttingDown,
+  canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,
   begin:()=>{fullExportFreeze.activeAsyncMutations++},
   end:()=>{fullExportFreeze.activeAsyncMutations=Math.max(0,fullExportFreeze.activeAsyncMutations-1)},
   safeError:error=>error.reason?safeVeyonFailure(error).error:"Veyon command could not be confirmed."
@@ -3207,8 +3212,8 @@ function pruneStudentData(policy=privacyRetentionPolicy()){
   dbStore.db.prepare("DELETE FROM audit_events WHERE at < ?").run(auditCutoff);
 }
 
-const studentDataPruneTimer=setInterval(()=>{if(fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"periodic-prune"})}},10*60*1000);studentDataPruneTimer.unref();
-const studentDataPruneStartupTimer=setTimeout(()=>{if(fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"startup-prune"})}},5000);studentDataPruneStartupTimer.unref();
+const studentDataPruneTimer=setInterval(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"periodic-prune"})}},10*60*1000);studentDataPruneTimer.unref();
+const studentDataPruneStartupTimer=setTimeout(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"startup-prune"})}},5000);studentDataPruneStartupTimer.unref();
 
 const baseDeviceConfig = readJson(DEVICE_CONFIG_FILE, {
   room: ROOM_NAME,
@@ -3515,7 +3520,7 @@ let sessionEffectBusy = false;
 const sessionLastSpotlightAt = new Map();
 
 async function nextSessionEffect() {
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if (sessionEffectBusy) return;
 
   const sessions = Object.values(classroomSessions).filter(x => !x.paused);
@@ -4170,6 +4175,7 @@ function connectMqtt() {
   mqttClient = mqtt.connect(MQTT_URL, options);
 
   mqttClient.on("connect", () => {
+    if(shutdownRequested)return;
     runtime.mqtt.connected = true;
     runtime.mqtt.lastError = null;
     runtime.mqtt.lastConnectAt = new Date().toISOString();
@@ -4209,7 +4215,7 @@ function connectMqtt() {
   });
 
   mqttClient.on("message", (topic, payloadBuffer) => {
-    if(fullExportFreeze.requested)return;
+    if(shutdownRequested||fullExportFreeze.requested)return;
     const payloadText = payloadBuffer.toString();
     let payload;
     try { payload = JSON.parse(payloadText); } catch { payload = {raw:payloadText}; }
@@ -4741,7 +4747,7 @@ async function executeCommand(input, source = "api") {
 // -----------------------------------------------------------------------------
 
 const app = express();
-let shuttingDown=false;
+const httpHandlers=trackApplicationHandlers(app);
 app.disable("x-powered-by");
 app.set("trust proxy", TRUST_PROXY_HOPS);
 app.use((req,res,next)=>{
@@ -4901,7 +4907,8 @@ app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,as
   fullExportFreeze.requested=true;fullExportFreeze.startedAt=new Date(started).toISOString();
   try{
     const drained=()=>fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0&&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy;
-    while(!drained()&&Date.now()-started<30000)await new Promise(resolve=>setTimeout(resolve,25));
+    while(!shutdownRequested&&!drained()&&Date.now()-started<30000)await new Promise(resolve=>setTimeout(resolve,25));
+    if(shutdownRequested)throw new Error("Application shutdown interrupted Full Recovery Export freeze acquisition");
     if(!drained())throw new Error("Timed out waiting for active application mutations to finish");
     dbStore.db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     fullExportFreeze.active=true;fullExportFreeze.token=token;
@@ -5064,10 +5071,10 @@ app.post("/api/v1/admin/app-updates/revert",appUpdateMutationLimit,requireAdmin,
 
 function withinUpdateWindow(policy,date=new Date()){const minutes=s=>{const [h,m]=s.split(":").map(Number);return h*60+m},now=date.getHours()*60+date.getMinutes(),start=minutes(policy.maintenanceStart),end=minutes(policy.maintenanceEnd);return start===end||start<end?(now>=start&&now<end):(now>=start||now<end)}
 let automaticUpdateBusy=false;
-async function automaticUpdateTick(){if(fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubMainCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:check.available.commit,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"updates.automatic.start",source:"main",commit:check.available.commit})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
+async function automaticUpdateTick(){if(shutdownRequested||fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubMainCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:check.available.commit,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"updates.automatic.start",source:"main",commit:check.available.commit})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
 const automaticUpdateTimer=setInterval(()=>automaticUpdateTick(),15*60*1000);automaticUpdateTimer.unref();const automaticUpdateStartupTimer=setTimeout(()=>automaticUpdateTick(),60*1000);automaticUpdateStartupTimer.unref();
 let updateJobSyncBusy=false;
-async function synchronizeUpdateJob(){if(fullExportFreeze.requested||updateJobSyncBusy)return;updateJobSyncBusy=true;try{recordUpdateJob(await maintenanceAgentApi("GET","/app-updates/job"))}catch{}finally{updateJobSyncBusy=false}}
+async function synchronizeUpdateJob(){if(shutdownRequested||fullExportFreeze.requested||updateJobSyncBusy)return;updateJobSyncBusy=true;try{recordUpdateJob(await maintenanceAgentApi("GET","/app-updates/job"))}catch{}finally{updateJobSyncBusy=false}}
 const updateJobSyncTimer=setInterval(()=>synchronizeUpdateJob(),60*1000);updateJobSyncTimer.unref();const updateJobSyncStartupTimer=setTimeout(()=>synchronizeUpdateJob(),15*1000);updateJobSyncStartupTimer.unref();
 app.use("/api/v1/maintenance", requireAdmin, requireFullRecoveryTransport, (req,res)=>{
   if(!MAINTENANCE_PROXY_ENABLED)return res.status(503).json({ok:false,error:"Privileged maintenance proxy is disabled during stabilization"});
@@ -5189,7 +5196,7 @@ app.get("/health", (_req, res) => {
     try{normalizeTimerOverlay(item.timerOverlay,item.timerOverlay||null);return false}catch{return true}
   }).map(item=>item.id);
   const scheduler={ok:invalidClasses.length===0&&invalidAutomations.length===0,timezone:SCHEDULER_TIMEZONE,invalidClasses,invalidAutomations};
-  const ready=!shuttingDown&&database.ok&&scheduler.ok;
+  const ready=!shutdownRequested&&database.ok&&scheduler.ok;
   res.status(ready?200:503).json({
     ok: ready,
     ready,
@@ -5269,13 +5276,13 @@ app.post("/api/v1/commands", requireControl, async (req, res) => {
 
 // Optional native ESPHome connections share the unprivileged application identity.
 // Registry/key writes and asynchronous enrollment/commands participate in export drain.
-const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown});
+const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested});
 registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRead,
   requireControl:requireCapability("integrations.control"),requireAdmin,
   isAdmin:req=>!dbStore.authEnabled()||(hasRole(requestUser(req),"admin")&&hasCapability(requestUser(req),"*")),
   owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
 
-const ubuntuDisplays=new UbuntuDisplays({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,
+const ubuntuDisplays=new UbuntuDisplays({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,
   allowDisruption:device=>!announcementLockedDisplayTargets(device.config.screens.map(s=>s.receiverId)).length,
   receivers:()=>publicDeviceConfigs(),
   receiverOnline:id=>[...wsClients].some(ws=>ws.role==="display"&&ws.deviceId===id&&ws.readyState===WebSocket.OPEN),
@@ -5500,7 +5507,7 @@ const sportsRuntime=require("./sports-routes").registerSportsRoutes(app,{
  canRead:controlAccessAllowed,canWrite:req=>capabilityAccessAllowed(req,"schedule.manage")&&capabilityAccessAllowed(req,"automation.manage"),canReadAssets:assetAccessAllowed,
  canManageSources:administratorAccessAllowed,assetGuard:requireAssetAccess,rateLimit,multer,
  ingestMedia:require("./sports-media-cache").createSportsMediaCache({root:MEDIA_DIR,register:registerUploadedMedia}),
- weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,track:trackFullExportMutation
+ weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,track:trackFullExportMutation
 });
 
 const weatherReadLimit=rateLimit({windowMs:60_000,limit:240,keyGenerator:()=>"weather-read",standardHeaders:"draft-8",legacyHeaders:false});
@@ -5971,11 +5978,11 @@ function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
       }
       automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult),draft});
     }catch(err){
-      const cancelled=err.code==="AUTOMATION_CANCELLED";
-      const reason=cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
-      if(storedEvent)storedEvent.lastRun={at:new Date().toISOString(),ok:cancelled,manual:true,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:{})};
-      automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:cancelled?"cancelled":"failed",schedulerTime:schedulerClock.now().toISOString(),draft,...(cancelled?{reason}:{error:err.message})});
-      if(!cancelled)diagnosticError(err,{component:"automation",operation:"manual-continuous-run",data:{automationId:event.id||null,draft}});
+      const cancelled=err.code==="AUTOMATION_CANCELLED",interrupted=err.code==="AUTOMATION_INTERRUPTED";
+      const reason=interrupted?"server-shutdown":cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
+      if(storedEvent)storedEvent.lastRun={at:new Date().toISOString(),ok:cancelled,manual:true,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:interrupted?{interrupted:true,reason}:{})};
+      automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:cancelled?"cancelled":interrupted?"interrupted":"failed",schedulerTime:schedulerClock.now().toISOString(),draft,...(cancelled||interrupted?{reason}:{error:err.message})});
+      if(!cancelled&&!interrupted)diagnosticError(err,{component:"automation",operation:"manual-continuous-run",data:{automationId:event.id||null,draft}});
     }finally{
       if(storedEvent){storedEvent.updatedAt=new Date().toISOString();persistAutomations()}
       automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
@@ -6705,7 +6712,7 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
 }
 async function backgroundMusicTick(){
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if(backgroundMusicTickBusy)return;backgroundMusicTickBusy=true;
   try{
     const cfg=backgroundMusicSchedule(),now=new Date(),active=backgroundMusicWindowActive(cfg,now),key=backgroundMusicWindowKey(cfg,now);
@@ -7786,6 +7793,7 @@ const resumableUploads=new ResumableUploadStore({
   minFreeBytes:UPLOAD_MIN_FREE_GB*1024*1024*1024
 });
 const uploadCleanupTimer=setInterval(()=>{
+  if(shutdownRequested)return;
   try{const removed=resumableUploads.cleanup();if(removed)audit({kind:"media.upload.cleanup",removed})}
   catch(err){diagnosticError(err,{component:"media-upload",operation:"cleanup"})}
 },60*60*1000);uploadCleanupTimer.unref?.();
@@ -7947,7 +7955,17 @@ app.use((err, _req, res, _next) => {
 // HTTP server + WebSocket server
 // -----------------------------------------------------------------------------
 
-const server = http.createServer(app);
+const server = http.createServer((req,res)=>{
+  // Gate before Express, including the display-gateway preload's middleware.
+  // Keep the authenticated one-use thaw reachable while an export owns its
+  // freeze; its ordinary route still enforces both credentials and freeze token.
+  const thaw=req.method==="POST"&&String(req.url||"").split("?",1)[0]==="/api/v1/internal/maintenance/export-thaw";
+  if(shutdownRequested&&!thaw){
+    res.writeHead(503,{"Content-Type":"application/json","Connection":"close","Retry-After":"5"});
+    return res.end(JSON.stringify({ok:false,error:"RoomGoblin is shutting down"}));
+  }
+  app(req,res);
+});
 const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
 const WS_MAX_CONNECTIONS=Math.max(25,Math.min(5000,Number(process.env.WS_MAX_CONNECTIONS||500)));
 const WS_MAX_CONNECTIONS_PER_IP=Math.max(5,Math.min(250,Number(process.env.WS_MAX_CONNECTIONS_PER_IP||40)));
@@ -7969,6 +7987,7 @@ function websocketMessageAllowed(ws){
   return ws.messageWindowCount<=maxMessages;
 }
 server.on("upgrade",(req,socket,head)=>{
+  if(shutdownRequested){socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");return}
   let pathname="";try{pathname=new URL(req.url||"/","http://classroom-hub.local").pathname}catch{}
   const target=pathname==="/ws"?wss:pathname==="/music-assistant/sendspin-proxy"?maSendspinProxyWss:null;
   if(!target){socket.destroy();return}
@@ -8009,11 +8028,13 @@ wss.on("connection", (ws, req) => {
   runtime.websocketClients = wsClients.size;
 
   ws.on("pong", () => {
+    if(shutdownRequested)return;
     ws.isAlive = true;
     if (ws.role === "display") markDisplaySeen(ws);
   });
 
   ws.on("message", async (raw) => {
+    if(shutdownRequested)return;
     if(!websocketMessageAllowed(ws)){ws.close(1008,"Message rate limit exceeded");return}
     let msg;
     try {
@@ -8134,7 +8155,7 @@ wss.on("connection", (ws, req) => {
             const maTargets=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
             if(Array.isArray(maTargets)&&maTargets.includes(deviceId)){
               const maToken=musicAssistantToken();
-              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
+              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!shutdownRequested&&!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
             }
           }catch{}
 
@@ -8146,7 +8167,7 @@ wss.on("connection", (ws, req) => {
           if(clientVersion!==APPLICATION_VERSION) {
             audit({kind:"display.renderer.refresh-required",deviceId,clientVersion:clientVersion||null,serverVersion:APPLICATION_VERSION});
             setTimeout(()=>{
-              if(!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN){
+              if(!shutdownRequested&&!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN){
                 wsSend(ws,{type:"command",command:{type:"display.reload",target:deviceId,payload:{reason:"renderer-version-mismatch",serverVersion:APPLICATION_VERSION}}});
               }
             },700);
@@ -8201,7 +8222,7 @@ wss.on("connection", (ws, req) => {
         const previous=runtime.displays[ws.deviceId]||{},status=boundedWsObject(msg.status,"Music Assistant status");
         runtime.displays[ws.deviceId]={...previous,musicAssistant:{...status,desiredAudio:musicAssistantTvAudioState(ws.deviceId),updatedAt:new Date().toISOString()}};
         broadcastControllers({type:"device.status",deviceId:ws.deviceId,status:publicDisplayStatus(ws.deviceId)});
-        if(status.protocolActive===true&&!ws.maAudioRestored&&!ws.maAudioRestorePending){ws.maAudioRestorePending=true;setTimeout(()=>{if(fullExportFreeze.requested){ws.maAudioRestorePending=false;return}trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws)).finally(()=>{ws.maAudioRestorePending=false})},250)}
+        if(status.protocolActive===true&&!ws.maAudioRestored&&!ws.maAudioRestorePending){ws.maAudioRestorePending=true;setTimeout(()=>{if(shutdownRequested||fullExportFreeze.requested){ws.maAudioRestorePending=false;return}trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws)).finally(()=>{ws.maAudioRestorePending=false})},250)}
         if(ws.maAudioRestored){const desired=musicAssistantTvAudioState(ws.deviceId),patch={};const n=Number(status.volume);if(Number.isFinite(n)&&Math.max(0,Math.min(100,n))!==desired.volume)patch.volume=n;if(status.muted!==undefined&&!!status.muted!==desired.muted)patch.muted=!!status.muted;if(Object.keys(patch).length)setMusicAssistantTvAudioState(ws.deviceId,patch)}
 
         // Reconcile scheduled Background Music after a display's persistent
@@ -8428,7 +8449,7 @@ restartMorningAnnouncementsWatcher();
 
 // Background Music has its own scheduler and is intentionally independent of Classroom Automation.
 async function scheduledBackgroundMusicTick(){
-  if(shuttingDown||fullExportFreeze.requested||!musicAssistantTokenConfigured())return;
+  if(shutdownRequested||fullExportFreeze.requested||!musicAssistantTokenConfigured())return;
   await backgroundMusicTick();
 }
 const backgroundMusicTimer=setInterval(()=>scheduledBackgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-tick"})),5000);backgroundMusicTimer.unref();
@@ -8506,17 +8527,17 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
     storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(runResult)}};
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
   }catch(err){
-    const cancelled=err.code==="AUTOMATION_CANCELLED";
-    const reason=cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:cancelled,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:{})};
-    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:cancelled?"cancelled":"failed",schedulerTime:schedulerClock.now().toISOString(),...(cancelled?{reason}:{error:err.message})});
-    audit({kind:cancelled?"automation.cancelled":"automation.error",automationId:storedEvent.id,name:storedEvent.name,...(cancelled?{reason}:{error:err.message})});
+    const cancelled=err.code==="AUTOMATION_CANCELLED",interrupted=err.code==="AUTOMATION_INTERRUPTED";
+    const reason=interrupted?"server-shutdown":cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
+    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:cancelled,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:interrupted?{interrupted:true,reason}:{})};
+    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:cancelled?"cancelled":interrupted?"interrupted":"failed",schedulerTime:schedulerClock.now().toISOString(),...(cancelled||interrupted?{reason}:{error:err.message})});
+    audit({kind:cancelled?"automation.cancelled":interrupted?"automation.interrupted":"automation.error",automationId:storedEvent.id,name:storedEvent.name,...(cancelled||interrupted?{reason}:{error:err.message})});
   }finally{
     storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
   }
 }
 async function automationSchedulerTick(){
-  if(fullExportFreeze.requested||automationSchedulerBusy||!automationSchedulerEnabled)return;
+  if(shutdownRequested||fullExportFreeze.requested||automationSchedulerBusy||!automationSchedulerEnabled)return;
   const clockStatus=schedulerClock.status();
   if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
   automationSchedulerBusy=true;
@@ -8554,13 +8575,13 @@ async function automationSchedulerTick(){
   finally{automationSchedulerBusy=false}
 }
 const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
-const automationStartupReconcileTimer=setTimeout(()=>{if(automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation((async()=>{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")})()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
+const automationStartupReconcileTimer=setTimeout(()=>{if(!shutdownRequested&&automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation((async()=>{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")})()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
 
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.
 let legacyPlutoSchedulerBusy=false;
 const legacyPlutoSchedulerTimer=setInterval(async()=>{
-  if(fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
+  if(shutdownRequested||fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
   const clockStatus=schedulerClock.status();if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
   legacyPlutoSchedulerBusy=true;
   try{
@@ -8598,24 +8619,51 @@ server.listen(PORT, BIND_ADDRESS, () => {
   console.log(`MQTT: ${endpointForLog(MQTT_URL) || "disabled"}`);
   console.log("Node-RED: not required (v0.8 direct hardware mode)");
 });
-const goveeReconcileTimer=setInterval(()=>{if(!fullExportFreeze.requested)reconcileGoveeDiscovery()},60000);
-function gracefulShutdown(signal){
-  if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
-  veyonCommandQueue.stop();
-  esphomeManager.close();
-  ubuntuDisplays.close();
-  sportsRuntime.close();
-  clearInterval(backgroundMusicTimer);clearTimeout(backgroundMusicStartupTimer);
-  clearInterval(presentationAutoAdvanceTimer);clearInterval(uploadCleanupTimer);clearInterval(loginAttemptCleanupTimer);
-  clearTimeout(studentDataPruneStartupTimer);clearTimeout(automaticUpdateStartupTimer);clearTimeout(updateJobSyncStartupTimer);
-  clearTimeout(morningAnnouncementsReleaseRetryTimer);
-  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
-  for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
-  try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};
-  const force=setTimeout(()=>process.exit(1),10000);force.unref();
-  // Begin both listener drains together, then wait for the child to be reaped.
-  const mediaStopped=stopMediaPlane();
-  mediaStopped.catch(error=>{console.error(`RoomGoblin media shutdown failed: ${error.message}`);process.exit(1)});
-  server.close(async()=>{while(veyonCommandQueue.running>0)await new Promise(resolve=>setTimeout(resolve,25));await mediaStopped;closeMusicAssistantReadiness();try{dbStore.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");dbStore.db.close()}catch{};clearTimeout(force);process.exit(0)});
+const goveeReconcileTimer=setInterval(()=>{if(!shutdownRequested&&!fullExportFreeze.requested)reconcileGoveeDiscovery()},60000);
+function applicationWritersDrained(){
+  return httpHandlers.pending===0&&fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0
+    &&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0
+    &&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy
+    &&automationRunningOccurrences.size===0&&veyonCommandQueue.running===0;
+}
+async function gracefulShutdown(signal){
+  if(shutdownRequested)return;
+  shutdownRequested=true;console.log(`${signal} received; draining RoomGoblin`);
+  const force=setTimeout(()=>{console.error("RoomGoblin shutdown exceeded its ten-second drain deadline; pending work was not confirmed complete");process.exit(1)},10000);
+  try{
+    // The export owns its writer freeze. Leave its authenticated thaw route
+    // listening and do not emit shutdown ledger writes while that freeze is held.
+    await waitUntilDrained(()=>!fullExportFreeze.requested);
+    shuttingDown=true;
+    veyonCommandQueue.stop();
+    esphomeManager.close();
+    ubuntuDisplays.close();
+    sportsRuntime.close();
+    clearInterval(backgroundMusicTimer);clearTimeout(backgroundMusicStartupTimer);
+    clearInterval(presentationAutoAdvanceTimer);clearInterval(uploadCleanupTimer);clearInterval(loginAttemptCleanupTimer);
+    clearTimeout(studentDataPruneStartupTimer);clearTimeout(automaticUpdateStartupTimer);clearTimeout(updateJobSyncStartupTimer);
+    clearTimeout(morningAnnouncementsReleaseRetryTimer);
+    clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
+    musicAssistantApiClose("server shutdown");
+    // Close callbacks may write disconnect/status records. Await them along
+    // with handlers whose client already disconnected and background owners.
+    await Promise.all([
+      new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve())),
+      closeWebSockets(wss),closeWebSockets(maSendspinProxyWss),stopMediaPlane(),
+      mqttClient?new Promise(resolve=>mqttClient.end(true,{},resolve)):Promise.resolve()
+    ]);
+    await waitUntilDrained(applicationWritersDrained);
+    closeMusicAssistantReadiness();
+    audit({kind:"application.shutdown",signal});
+    if(pendingAuditWrites.length)throw new Error("Shutdown audit writes are still pending");
+    dbStore.db.exec("PRAGMA busy_timeout=0");
+    const checkpoint=dbStore.db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").all();
+    if(checkpoint.some(row=>row.busy))throw new Error("SQLite checkpoint is busy");
+    dbStore.db.close();
+    clearTimeout(force);process.exit(0);
+  }catch(error){
+    console.error(`RoomGoblin shutdown failed: ${error.message}`);
+    process.exit(1);
+  }
 }
 process.once("SIGTERM",()=>gracefulShutdown("SIGTERM"));process.once("SIGINT",()=>gracefulShutdown("SIGINT"));
