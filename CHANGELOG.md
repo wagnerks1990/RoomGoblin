@@ -8,6 +8,11 @@
 - Start newly installed Ubuntu maintenance services without resetting an unloaded
   systemd unit, and report proxy error responses without blindly retrying jobs.
 
+- Align `npm start` with the appliance bootstrap, await media-child shutdown,
+  clear remaining owned startup/periodic timers and use explicit scheduled music
+  readiness instead of replacing global timers. Record scoped modernization
+  findings and remaining lifecycle work.
+
 - Keep Ubuntu screen cards, wizard fields, status text and primary buttons readable
   in both light and dark operator themes.
 

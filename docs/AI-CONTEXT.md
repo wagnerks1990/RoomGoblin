@@ -1,5 +1,12 @@
 # AI Project Context
 
+The supported application bootstrap is shared by `npm start` and the container
+wrapper. Media child ownership is in `src/media-plane-process.js`; scheduled
+music readiness is explicit, never a global timer override. Read
+`APPLICATION-LIFECYCLE.md` before changing startup order or shutdown. The
+modernization audit records scoped coverage and remaining lifecycle work under
+`docs/audits/roomgoblin-modernization/`.
+
 Ubuntu display lifecycle uses bounded background monitoring and the fixed native
 maintenance worker, verified package digest/rollback and non-replayed scheduled
 jobs. Read `UBUNTU-MANAGED-DISPLAYS.md`; preserve enrollment/receiver identity,

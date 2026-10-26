@@ -19,6 +19,13 @@ The direct source tree on `main` is canonical.
 
 ## Local workflow
 
+Use `npm start` with isolated development data and unused local ports. It runs
+the same Node bootstrap as the container wrapper, including recovery, configured
+display-gateway compatibility, route bridges and the media child. Direct
+`node src/server.js` remains a control-only test entry point. See
+[application lifecycle](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/APPLICATION-LIFECYCLE.md)
+and [modernization coverage](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/audits/roomgoblin-modernization/README.md).
+
 ```bash
 git clone https://github.com/wagnerks1990/RoomGoblin.git
 cd RoomGoblin
