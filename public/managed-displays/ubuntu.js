@@ -11,7 +11,8 @@
   let maintenanceDevice=null,detailsDevice=null,dialogVersion=0;
   async function request(path="",method="GET",body){
     const response=await fetch(base+path,{method,credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
-    const value=await response.json();if(!response.ok||value.ok===false)throw Error(value.error||`Request failed (${response.status})`);return value;
+    let value;try{value=await response.json()}catch{throw Error(`Request failed (${response.status}). Refresh computer status before retrying; delivery may be unconfirmed.`)}
+    if(!response.ok||value.ok===false)throw Error(value.error||`Request failed (${response.status})`);return value;
   }
   function message(text){$("ubuntuMessage").textContent=text}
   function wizardStep(value){step=value;document.querySelectorAll("[data-ubuntu-step]").forEach(el=>el.hidden=Number(el.dataset.ubuntuStep)!==value);$("ubuntuStep").textContent=["1 · Connect","2 · Assign screens","3 · Review installation","4 · Installation"][value];$("ubuntuBack").hidden=value===0||value===3;$("ubuntuNext").hidden=value===3;$("ubuntuNext").textContent=value===0?"Check computer":value===1?"Review installation":editing?"Save screen assignments":"Install RoomGoblin";message("")}

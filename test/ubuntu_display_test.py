@@ -117,11 +117,11 @@ class Maintenance(unittest.TestCase):
 
     def test_fixed_operation_boundary_deduplicates_request_and_rejects_concurrent_jobs(self):
         request = {'operation': 'update-browser', 'confirm': True, 'requestId': str(uuid.uuid4())}
-        with patch('lifecycle.active', return_value=False), patch('lifecycle.run') as run:
+        with patch('lifecycle.active', return_value=False), patch('lifecycle.reset_failed'), patch('lifecycle.run') as run:
             result = lifecycle.begin(request)
             self.assertEqual(result['job']['state'], 'queued')
             self.assertEqual(lifecycle.begin(request)['job']['id'], result['job']['id'])
-            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_count, 1)
             with self.assertRaises(ValueError):
                 lifecycle.begin({**request, 'requestId': str(uuid.uuid4())})
             for change in ({'operation': 'shell'}, {'confirm': False}, {'requestId': '../x'}):
@@ -139,13 +139,23 @@ class Maintenance(unittest.TestCase):
 
     def test_restored_hub_schedule_cannot_replay_a_previous_device_request(self):
         request = {'operation': 'check-updates', 'confirm': True, 'requestId': str(uuid.uuid4())}
-        with patch('lifecycle.active', return_value=False), patch('lifecycle.run') as run:
+        with patch('lifecycle.active', return_value=False), patch('lifecycle.reset_failed'), patch('lifecycle.run') as run:
             lifecycle.begin(request)
             # A later operation replaces the visible current job, as after Hub restore.
             lifecycle.save(self.data / 'maintenance.json', {'id': 'newer', 'state': 'completed'})
             result = lifecycle.begin(request)
             self.assertEqual(result['job']['id'], request['requestId'])
-            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_count, 1)
+
+    def test_fresh_service_starts_without_resetting_an_unloaded_unit(self):
+        request = {'operation': 'check-updates', 'confirm': True, 'requestId': str(uuid.uuid4())}
+        with patch('lifecycle.active', return_value=False), patch('lifecycle.subprocess.run', return_value=types.SimpleNamespace(returncode=1)) as check, patch('lifecycle.run') as run:
+            self.assertTrue(lifecycle.begin(request)['accepted'])
+            check.assert_called_once_with(['systemctl', 'is-failed', '--quiet', lifecycle.UNIT], capture_output=True, timeout=5, check=False)
+            run.assert_called_once_with(['systemctl', 'start', '--no-block', lifecycle.UNIT])
+        with patch('lifecycle.subprocess.run', return_value=types.SimpleNamespace(returncode=0)), patch('lifecycle.run') as run:
+            lifecycle.reset_failed()
+            run.assert_called_once_with(['systemctl', 'reset-failed', lifecycle.UNIT])
 
     def test_apt_plans_reject_removals_and_identify_security_packages(self):
         plan = lifecycle.apt_plan('Inst openssl [3.0.1] (3.0.2 Ubuntu:24.04/noble-security [amd64])\n')

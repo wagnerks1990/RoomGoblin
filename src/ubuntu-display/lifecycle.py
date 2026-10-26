@@ -91,6 +91,15 @@ def active():
     return result.stdout.strip() in (b'active', b'activating', b'deactivating')
 
 
+def reset_failed():
+    # systemd unloads inactive one-shot units. reset-failed rejects a fresh/unloaded
+    # unit even though start can load it; only reset an actual failed instance.
+    result = subprocess.run(['systemctl', 'is-failed', '--quiet', UNIT],
+                            capture_output=True, timeout=5, check=False)
+    if result.returncode == 0:
+        run(['systemctl', 'reset-failed', UNIT])
+
+
 def status():
     job = read(DATA / 'maintenance.json', {})
     if job.get('state') in ('queued', 'running') and time.time() - job.get('updatedAt', 0) > 30 and not active():
@@ -133,7 +142,7 @@ def begin(request):
         save(DATA / 'maintenance-receipts.json', receipts)
         save(DATA / 'maintenance.json', job)
         try:
-            run(['systemctl', 'reset-failed', UNIT])
+            reset_failed()
             run(['systemctl', 'start', '--no-block', UNIT])
         except Exception:
             save(DATA / 'maintenance.json', {**job, 'state': 'failed', 'stage': 'Maintenance service could not start.'})
