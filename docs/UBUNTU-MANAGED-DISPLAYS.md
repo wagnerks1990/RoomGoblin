@@ -163,7 +163,10 @@ separate acceptance evidence. Raw package output and credentials are never retur
 **Schedule once** stores a confirmed operation up to 30 days ahead. The browser's local
 time is converted to an absolute timestamp. The Hub waits up to one hour for a reachable
 computer and for announcements to finish; after that the job expires. A saved claim
-precedes dispatch, preventing replay after a Hub crash or uncertain delivery. Cancel
+precedes dispatch, preventing replay after a Hub crash or uncertain delivery. The
+computer also retains up to 2048 request receipts for 32 days, rejecting additional
+jobs at that limit rather than forgetting unexpired receipts; restoring an older
+Hub backup cannot repeat an already accepted request. Cancel
 pending jobs explicitly. The Hub must be running and connected to dispatch; if it was
 unavailable beyond the grace period, nothing runs later without a new request. Recurring
 automatic installation policies are not enabled by this feature. Ubuntu's own unattended

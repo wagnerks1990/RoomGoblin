@@ -137,6 +137,16 @@ class Maintenance(unittest.TestCase):
             lifecycle.worker()
             execute.assert_not_called()
 
+    def test_restored_hub_schedule_cannot_replay_a_previous_device_request(self):
+        request = {'operation': 'check-updates', 'confirm': True, 'requestId': str(uuid.uuid4())}
+        with patch('lifecycle.active', return_value=False), patch('lifecycle.run') as run:
+            lifecycle.begin(request)
+            # A later operation replaces the visible current job, as after Hub restore.
+            lifecycle.save(self.data / 'maintenance.json', {'id': 'newer', 'state': 'completed'})
+            result = lifecycle.begin(request)
+            self.assertEqual(result['job']['id'], request['requestId'])
+            self.assertEqual(run.call_count, 2)
+
     def test_apt_plans_reject_removals_and_identify_security_packages(self):
         plan = lifecycle.apt_plan('Inst openssl [3.0.1] (3.0.2 Ubuntu:24.04/noble-security [amd64])\n')
         self.assertEqual(plan[0]['candidate'], '3.0.2')

@@ -116,10 +116,20 @@ def begin(request):
         existing = read(DATA / 'maintenance.json', {})
         if existing.get('id') == request_id:
             return {'accepted': True, 'job': status()['job']}
+        receipts = {key: value for key, value in read(DATA / 'maintenance-receipts.json', {}).items()
+                    if time.time() - value.get('startedAt', 0) < 32 * 86400}
+        if request_id in receipts:
+            return {'accepted': True, 'job': receipts[request_id]}
+        if len(receipts) >= 2048:
+            raise ValueError('Maintenance receipt limit reached')
         if active() or (existing.get('state') in ('queued', 'running') and time.time() - existing.get('updatedAt', 0) < 30):
             raise ValueError('Maintenance already running')
         job = dict(id=request_id, operation=operation, state='queued', stage='Waiting for device maintenance',
                    startedAt=time.time(), updatedAt=time.time(), packageDigest=package_digest)
+        # The device remembers accepted IDs independently of Hub backups. A restored
+        # old Hub schedule must not replay a command already accepted here.
+        receipts[request_id] = {k: v for k, v in job.items() if k != 'packageDigest'}
+        save(DATA / 'maintenance-receipts.json', receipts)
         save(DATA / 'maintenance.json', job)
         try:
             run(['systemctl', 'reset-failed', UNIT])
@@ -316,6 +326,9 @@ def worker():
         save(DATA / 'maintenance.json', job)
         entry = {k: v for k, v in job.items() if k != 'packageDigest'}
         save(DATA / 'maintenance-history.json', (read(DATA / 'maintenance-history.json', []) + [entry])[-20:])
+        receipts = read(DATA / 'maintenance-receipts.json', {})
+        receipts[job['id']] = entry
+        save(DATA / 'maintenance-receipts.json', receipts)
 
 
 if __name__ == '__main__':
