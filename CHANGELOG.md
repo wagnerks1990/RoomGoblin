@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Clear selected receivers before manual media/library replacement, including
+  persisted scene, text, timer and blackout layers. Stop retired video/web
+  playback and ignore stale video callbacks; preserve announcement priority,
+  independent hallway audio and persistent live media controls.
+
 - Refresh Sports sources in fair, bounded five-minute passes; persist and show
   source health. Import verified public Arbiter team schedules/results and apply
   time-based board changes without requiring a saved configuration revision or

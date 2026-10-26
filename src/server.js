@@ -4580,6 +4580,20 @@ async function executeCommand(input, source = "api") {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
+  // Manual whole-screen content replaces the selected receivers' prior scene.
+  // Keep title/subtitle/timer edits and persistent media controls composable.
+  const replacesContent=["http","media-library"].includes(source)&&
+    (URL_BEARING_DISPLAY_COMMANDS.has(command.type)||(command.type==="display.text"&&command.payload.scene));
+  const protectsAnnouncements=source==="automation"||source==="presentation"||replacesContent||
+    (["http","media-library"].includes(source)&&command.type==="display.clear");
+  if(replacesContent){
+    const targets=resolveDisplayTargets(command.target);
+    if(!targets.length)throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
+    if(URL_BEARING_DISPLAY_COMMANDS.has(command.type)&&!command.payload.url)throw new Error("Media URL is required");
+    const priorityError=announcementPriorityError(targets);
+    if(priorityError)throw priorityError;
+    command.target=targets;
+  }
   const manualPriority=await engageManualMediaPriority(command,source);
   const result = {
     ok: true,
@@ -4613,7 +4627,16 @@ async function executeCommand(input, source = "api") {
     // This final router-level check closes the race where an automation passed
     // its initial check, awaited a delay/network operation, and then attempted
     // to overwrite a display after an announcement had acquired priority.
-    if(source==="automation"||source==="presentation"){
+    if(protectsAnnouncements){
+      const priorityError=announcementPriorityError(targets);
+      if(priorityError)throw priorityError;
+    }
+
+    if(replacesContent){
+      // Use the existing command for open/legacy receivers and persisted replay.
+      // Acquire audio priority first so clearing cannot briefly resume music.
+      const cleared=await executeCommand({type:"display.clear",target:targets,payload:{}},source);
+      result.warnings.push(...cleared.warnings);
       const priorityError=announcementPriorityError(targets);
       if(priorityError)throw priorityError;
     }
