@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Clear selected receivers before manual media/library replacement, including
+  persisted scene, text, timer and blackout layers. Stop retired video/web
+  playback and ignore stale video callbacks; preserve announcement priority,
+  independent hallway audio and persistent live media controls.
+
 - Keep Ubuntu wizard replies and activation controls scoped to their current
   session so a closed installation cannot change a later computer's wizard.
 

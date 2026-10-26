@@ -242,6 +242,78 @@ class DisplayBrowserTests(unittest.TestCase):
         # Firefox quantizes transformed rects; containment still checks those rects.
         return {name:(round(p['font'],2),*[p['logicalBox'][d] for d in ['x','y','w','h']]) for name,p in data['parts'].items()}
 
+    def test_manual_content_clear_removes_scene_timer_blackout_and_web_audio(self):
+        page = self.page()
+        scene = {'width': 1920, 'height': 1080, 'layers': [
+            {'id': 'old', 'type': 'text', 'text': 'Old scene', 'fontSize': 60}]}
+        state = copy.deepcopy(P7)
+        state.update(textOptions={'scene': scene}, presentationBlack=True,
+                     layers=[{'id': 'old-overlay', 'expiresAt': NOW + 60000, 'scene': scene}],
+                     media={'type': 'web', 'url': '/document-viewer/', 'forceAudio': True})
+        self.replay(page, state)
+        page.evaluate("window.__oldFrame=document.querySelector('#media iframe')")
+        self.command(page, 'display.identify', {'durationMs': 30000})
+        # This is the legacy-compatible sequence emitted by both manual entry points.
+        self.command(page, 'display.clear', {})
+        self.command(page, 'display.image', {'url': '/test-images/tv1.svg'})
+        result = page.evaluate("""() => ({
+            oldFrameConnected:__oldFrame.isConnected, oldFrameUrl:__oldFrame.src,
+            layers:document.querySelectorAll('#sceneBase > *, #sceneShared > *').length,
+            text:['title','subtitle','text'].map(id=>document.getElementById(id).textContent),
+            timer:getComputedStyle(document.getElementById('timerOverlay')).display,
+            black:getComputedStyle(document.getElementById('presentationBlack')).display,
+            identify:getComputedStyle(document.getElementById('identify')).display,
+            media:[...document.getElementById('media').children].map(n=>n.tagName)
+        })""")
+        self.assertFalse(result['oldFrameConnected'])
+        self.assertEqual(result['oldFrameUrl'], 'about:blank')
+        self.assertEqual(result['layers'], 0)
+        self.assertEqual(result['text'], ['', '', ''])
+        for key in ['timer', 'black', 'identify']:
+            self.assertEqual(result[key], 'none')
+        self.assertEqual(result['media'], ['IMG'])
+        self.assertFalse(self.errors)
+
+    def test_retired_video_cannot_resume_audio_or_report_successor_ended(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/old.mp4', 'sessionId': 'old', 'autoplay': False})
+        page.evaluate("""() => {
+            const video=window.__oldVideo=document.querySelector('#media video');
+            window.__lateCanPlay=video.oncanplay; window.__lateEnded=video.onended;
+            window.__playCount=0;
+            video.play=()=>{window.__playCount++;return new Promise(resolve=>window.__finishPlay=resolve)};
+        }""")
+        # Replay keeps the same session; its play promise is still pending on replacement.
+        self.replay(page, {'media': {'type': 'video', 'url': '/media/old.mp4', 'sessionId': 'old', 'autoplay': True}})
+        page.evaluate("window.__lateCanPlay()")
+        self.command(page, 'display.clear', {})
+        self.command(page, 'display.image', {'url': '/test-images/tv1.svg'})
+        page.evaluate("""async () => {
+            window.__sent=[];window.__badgeBefore=document.getElementById('badge').textContent;
+            __finishPlay();await Promise.resolve();__lateCanPlay();__lateEnded();
+            for(const name of ['error','loadedmetadata','playing'])__oldVideo.dispatchEvent(new Event(name));
+        }""")
+        page.wait_for_timeout(180)
+        self.assertEqual(page.evaluate("__playCount"), 1)
+        self.assertTrue(page.evaluate("__oldVideo.paused && __oldVideo.muted && !__oldVideo.hasAttribute('src') && !__oldVideo.isConnected"))
+        self.assertEqual(page.evaluate("document.getElementById('badge').textContent"), page.evaluate("__badgeBefore"))
+        self.assertFalse(page.evaluate("__sent.some(m=>m.type==='display.media.ended'||m.type==='display.media.status')"))
+        self.assertEqual(page.locator('#media img').count(), 1)
+        self.assertFalse(self.errors)
+
+    def test_media_controls_and_same_session_replay_keep_video_element(self):
+        page = self.page()
+        media = {'type': 'video', 'url': '/media/clip.mp4', 'sessionId': 'live', 'autoplay': False, 'volume': .5}
+        self.replay(page, {'media': media})
+        page.evaluate("window.__video=document.querySelector('#media video')")
+        self.command(page, 'display.media.control', {'action': 'volume', 'volume': .25})
+        self.command(page, 'display.media.control', {'action': 'pause'})
+        self.assertEqual(page.evaluate('__video.volume'), .25)
+        self.replay(page, {'media': {**media, 'volume': .25}})
+        self.assertTrue(page.evaluate("__video===document.querySelector('#media video')"))
+        self.assertEqual(page.evaluate('__video.volume'), .25)
+        self.assertFalse(self.errors)
+
     def test_01_p6_p7_cross_resolution_and_reload(self):
         baseline={}
         for w,h,dpr in [(1920,1080,1),(3840,2160,1),(1920,1080,2),(1280,720,1),(1082,1226,1)]:
