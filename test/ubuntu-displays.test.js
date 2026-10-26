@@ -31,6 +31,10 @@ test("two identical monitors remain separate by connector; duplicate receivers a
   assert.throws(()=>screenConfig({...input,screens:[{...input.screens[0],mode:"8000x8000"}]},probe));
   assert.throws(()=>screenConfig(input,probe,[],{screen1:{enabled:false}}));
   assert.equal(screenConfig({...input,screens:[]},{...probe,graphics:"session-unavailable"},[],{},true).screens.length,0);
+  assert.throws(()=>screenConfig({...input,screens:[{...input.screens[0],audioSink:"unknown"}]},probe),/audio output/);
+  const audioProbe={...probe,audio:{sinks:[{name:"hdmi-one"}],profiles:[{card:"alsa.card",profile:"pro-audio"}]}};
+  const routed=screenConfig({...input,screens:[{...input.screens[0],audioSink:"hdmi-one"}]},audioProbe);
+  assert.equal(routed.screens[0].audioSink,"hdmi-one");assert.equal(routed.audioProfiles[0].profile,"pro-audio");
 });
 test("bootstrap uses ephemeral admin credentials and a separate restricted encrypted key; exact identities are verified",async()=>{
   const calls=[];let id;

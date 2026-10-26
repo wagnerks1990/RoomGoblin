@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src' / 'ubuntu-display'))
 from probe import parse_outputs
-from session import resolve_screens
+from session import resolve_screens, audio_route
 from control import validate_config, safe_read, command
 
 
@@ -40,6 +40,11 @@ class UbuntuScreens(unittest.TestCase):
         self.assertEqual(resolved[0]['error'], 'disconnected')
         self.assertEqual(resolved[1]['receiverId'], 'screen2')
         self.assertEqual(resolved[1]['error'], '')
+
+    def test_unavailable_audio_sink_fails_muted_instead_of_using_another_output(self):
+        self.assertEqual(audio_route('hdmi-one', {'hdmi-two'}), {'muted': True, 'missing': True, 'sink': None})
+        self.assertEqual(audio_route('hdmi-one', {'hdmi-one', 'hdmi-two'}), {'muted': False, 'missing': False, 'sink': 'hdmi-one'})
+        self.assertEqual(audio_route('muted', {'hdmi-one'})['muted'], True)
 
     def test_connector_or_monitor_change_requires_explicit_remapping(self):
         self.outputs[0]['connector'] = 'HDMI-2'

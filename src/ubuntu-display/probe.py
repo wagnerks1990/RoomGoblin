@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import shutil
+import pwd
 
 
 def run(args, env=None, timeout=8):
@@ -65,6 +66,37 @@ def parse_outputs(text):
     return outputs[:16]
 
 
+def audio_inventory():
+    """Read the local graphical user's advertised audio devices, never remote sockets."""
+    prefix = []
+    if os.geteuid() == 0:
+        candidates = []
+        try:
+            user = pwd.getpwnam('rg-display')
+            candidates.append(user)
+        except KeyError:
+            pass
+        for socket in Path('/run/user').glob('*/pulse/native'):
+            try:
+                user = pwd.getpwuid(int(socket.parent.parent.name))
+                if user.pw_uid >= 1000 and user not in candidates:
+                    candidates.append(user)
+            except (KeyError, ValueError):
+                continue
+        user = next((u for u in candidates if Path(f'/run/user/{u.pw_uid}/pulse/native').exists()), None)
+        if not user:
+            return {'sinks': [], 'profiles': []}
+        prefix = ['runuser', '-u', user.pw_name, '--', 'env', f'XDG_RUNTIME_DIR=/run/user/{user.pw_uid}']
+    try:
+        sinks = json.loads(run(prefix + ['pactl', '--format=json', 'list', 'sinks'], timeout=2))
+        cards = json.loads(run(prefix + ['pactl', '--format=json', 'list', 'cards'], timeout=2))
+        return {'sinks': [{'name': s['name'], 'description': str(s.get('description', s['name']))[:160]} for s in sinks[:32]],
+                'profiles': [{'card': c['name'], 'profile': c['active_profile']} for c in cards[:16]
+                             if isinstance(c.get('active_profile'), str)]}
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return {'sinks': [], 'profiles': []}
+
+
 def inventory():
     release = {}
     for line in Path('/etc/os-release').read_text().splitlines():
@@ -85,6 +117,7 @@ def inventory():
             'version': release.get('VERSION_ID'), 'architecture': os.uname().machine,
             'machineId': hashlib.sha256(Path('/etc/machine-id').read_bytes().strip()).hexdigest(),
             'graphics': graphics, 'outputs': outputs, 'hardwareConnectors': connectors[:16],
+            'audio': audio_inventory(),
             'installed': Path('/etc/roomgoblin-display/identity.json').exists(),
             'health': {'uptimeSeconds': int(float(Path('/proc/uptime').read_text().split()[0])),
                        'loadAverage': list(os.getloadavg()), 'memoryTotalKiB': int(memory.get('MemTotal', 0)),

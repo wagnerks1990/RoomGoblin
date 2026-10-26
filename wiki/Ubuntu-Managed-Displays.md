@@ -17,7 +17,7 @@ display renderer and announcement/audio priority rules remain authoritative.
    trusted SSH inventory. Accept it explicitly. Choose an SSH key or password.
    Bootstrap credentials are not saved; encrypted private keys can use a passphrase.
 4. Check the computer. Assign each connected Xorg output its own receiver ID,
-   name, advertised resolution and rotation. Matching EDID values on identical
+   name, advertised resolution, rotation and audio output. Matching EDID values on identical
    monitors are disambiguated by connector; a missing identity fails closed.
 5. Review and confirm installation. The installer snapshots desktop configuration,
    installs the Chromium Snap/Xorg/Openbox/LightDM dependencies and restricted
@@ -104,10 +104,11 @@ install the Hub's reviewed package while retaining the device identity/profiles.
 ## Limits and validation
 
 This release supports the dedicated Xorg kiosk on Ubuntu LTS x86-64. Windows,
-ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, independent
-HDMI audio routing, automatic OS upgrades and offline content caching are not
-implemented. Browser-level volume follows the existing receiver controls and the
-computer's available default audio device. Multiple 4K outputs remain subject to
+ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, automatic OS upgrades and offline content caching are not
+implemented. Browser-level volume follows the existing receiver controls. Each screen can
+select an advertised audio sink or stay muted. The selected existing card profiles
+are restored in the dedicated kiosk session; unavailable selected sinks fail muted
+and report a diagnostic instead of playing through a different output. Multiple 4K outputs remain subject to
 the GPU, driver, cable, video decoder and Xorg framebuffer limits; unsupported
 modes are reported rather than silently mirrored.
 

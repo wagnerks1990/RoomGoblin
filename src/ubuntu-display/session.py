@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 from urllib.parse import quote
-from probe import parse_outputs, run
+from probe import parse_outputs, run, audio_inventory
 from control import ROOT, STATE, atomic_json, safe_read, validate_config
 
 
@@ -43,6 +43,12 @@ def stop(process):
                 pass
 
 
+def audio_route(sink, available):
+    missing = sink not in ('default', 'muted') and sink not in available
+    return {'muted': sink == 'muted' or missing, 'missing': missing,
+            'sink': sink if sink not in ('default', 'muted') and not missing else None}
+
+
 def identify(screens):
     import tkinter as tk
     root = tk.Tk()
@@ -70,11 +76,21 @@ def main():
     for command in (['xset', 's', 'off'], ['xset', 's', 'noblank'], ['xset', '-dpms']):
         subprocess.run(command, capture_output=True)
     children, signatures, next_start, failures, placements = {}, {}, {}, {}, {}
-    last_layout, last_command = '', ''
+    last_layout, last_command, last_profiles = '', '', None
     try:
         while True:
+            stage = 'configuration'
             try:
                 config = validate_config(safe_read(ROOT / 'config.json'))
+                if config['audioProfiles'] != last_profiles:
+                    try:
+                        for profile in config['audioProfiles']:
+                            run(['pactl', 'set-card-profile', profile['card'], profile['profile']])
+                        last_profiles = config['audioProfiles']
+                    except (OSError, subprocess.SubprocessError):
+                        pass  # Late audio registration is reported per screen; visuals continue.
+                sinks = {sink['name'] for sink in audio_inventory()['sinks']}
+                stage = 'output-inventory'
                 outputs = parse_outputs(run(['xrandr', '--prop']))
                 screens = resolve_screens(config, outputs)
                 active = {s['receiverId'] for s in screens if not s['error']}
@@ -85,6 +101,7 @@ def main():
                         signatures.pop(receiver, None)
                 layout = json.dumps([(s['connector'], s['monitorId'], s['mode'], s['rotation'], s['error']) for s in screens])
                 if layout != last_layout:
+                    stage = 'output-layout'
                     args, x = ['xrandr'], 0
                     for screen in screens:
                         if screen['error']:
@@ -116,11 +133,15 @@ def main():
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 state = []
                 for screen in screens:
+                    stage = 'browser-session'
                     receiver, geometry = screen['receiverId'], screen['geometry']
                     error = screen['error']
                     if not error and geometry:
                         url = config['hubUrl'] + '/display/' + quote(receiver)
-                        signature = hashlib.sha256(url.encode()).hexdigest()
+                        audio_sink = screen.get('audioSink', 'default')
+                        route = audio_route(audio_sink, sinks)
+                        audio_missing, muted = route['missing'], route['muted']
+                        signature = hashlib.sha256((url + audio_sink + str(muted)).encode()).hexdigest()
                         process = children.get(receiver)
                         if signatures.get(receiver) != signature:
                             stop(process)
@@ -142,10 +163,15 @@ def main():
                                 marker.write_text(token_hash)
                             args = ['/snap/bin/chromium', '--user-data-dir=' + str(profile), '--class=rg-' + receiver,
                                     '--app=' + url, '--no-first-run', '--no-default-browser-check', '--noerrdialogs',
-                                    '--disable-session-crashed-bubble', '--force-device-scale-factor=1',
+                                    '--disable-session-crashed-bubble', '--force-device-scale-factor=1', '--disable-gpu',
                                     '--window-position=' + str(geometry['x']) + ',' + str(geometry['y']),
                                     '--window-size=' + str(geometry['width']) + ',' + str(geometry['height'])]
-                            children[receiver] = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            if muted:
+                                args.append('--mute-audio')
+                            env = dict(os.environ)
+                            if audio_sink not in ('default', 'muted') and not audio_missing:
+                                env['PULSE_SINK'] = audio_sink
+                            children[receiver] = subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                                                  stderr=subprocess.DEVNULL, start_new_session=True)
                             signatures[receiver] = signature
                         # Move the existing window; never navigate/reload for placement.
@@ -162,12 +188,15 @@ def main():
                             failures[receiver] = 0
                         else:
                             error = 'browser-starting'
+                        if audio_missing:
+                            error = 'audio-output-unavailable-muted'
                     state.append({'receiverId': receiver, 'connector': screen['connector'], 'geometry': geometry,
                                   'browserRunning': receiver in children and children[receiver].poll() is None,
                                   'error': error})
                 atomic_json(STATE / 'state.json', {'online': True, 'at': time.time(), 'screens': state})
-            except Exception:
-                atomic_json(STATE / 'state.json', {'online': False, 'at': time.time(), 'error': 'session-reconciliation-failed'})
+            except Exception as error:
+                atomic_json(STATE / 'state.json', {'online': False, 'at': time.time(), 'error': 'session-reconciliation-failed',
+                                                 'stage': stage, 'code': type(error).__name__})
             time.sleep(2)
     finally:
         for process in children.values():

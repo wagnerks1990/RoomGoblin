@@ -132,7 +132,7 @@ def install(payload):
         env = dict(os.environ, DEBIAN_FRONTEND='noninteractive')
         subprocess.run(['apt-get', 'install', '-y', '--no-install-recommends', 'lightdm', 'lightdm-gtk-greeter',
                         'xorg', 'openbox', 'x11-xserver-utils', 'wmctrl', 'scrot', 'python3-tk', 'dbus-user-session',
-                        'pulseaudio', 'sudo', 'chromium-browser'], env=env, check=True, timeout=900,
+                        'pipewire', 'pipewire-pulse', 'wireplumber', 'pulseaudio-utils', 'sudo', 'chromium-browser'], env=env, check=True, timeout=900,
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     finally:
         policy.unlink(missing_ok=True)

@@ -41,7 +41,8 @@ function screenConfig(input,probe,otherRecords=[],receivers={},allowEmpty=false)
   if(!Array.isArray(screens)||(!screens.length&&!allowEmpty)||screens.length>16)throw fail("Assign between one and sixteen screens.");
   const outputs=new Map((probe.outputs||[]).map(o=>[o.connector,o])),used=new Set(),connectors=new Set();
   const assigned=new Set(otherRecords.flatMap(d=>d.config?.screens?.map(s=>s.receiverId)||[]));
-  return {hubUrl,screens:screens.map(s=>{
+  const audioProfiles=(probe.audio?.profiles||[]).filter(p=>/^[A-Za-z0-9_.:-]{1,160}$/.test(p.card)&&/^[A-Za-z0-9_.:+-]{1,160}$/.test(p.profile));
+  return {hubUrl,audioProfiles,screens:screens.map(s=>{
     if(!s||typeof s!=="object"||!/^[a-zA-Z0-9_-]{1,40}$/.test(s.receiverId||""))throw fail("Each screen needs a valid receiver ID (letters, numbers, hyphen or underscore).");
     if(used.has(s.receiverId)||assigned.has(s.receiverId))throw fail("A receiver ID can belong to only one Ubuntu output.",409);
     if(connectors.has(s.connector))throw fail("Each connector can be assigned only once.");
@@ -53,7 +54,9 @@ function screenConfig(input,probe,otherRecords=[],receivers={},allowEmpty=false)
     if(mode!=="auto"&&!output.modes.includes(mode))throw fail("Choose a resolution advertised by this monitor.");
     if(!["normal","left","right","inverted"].includes(rotation))throw fail("Invalid screen rotation.");
     const name=String(s.name||s.receiverId).trim();if(!name||name.length>100||/[\x00-\x1f]/.test(name))throw fail("Screen names must be 1–100 printable characters.");
-    return {connector:s.connector,monitorId:s.monitorId,receiverId:s.receiverId,name,mode,rotation,enabled:s.enabled!==false};
+    const audioSink=s.audioSink||"default";
+    if(!["default","muted"].includes(audioSink)&&!(probe.audio?.sinks||[]).some(sink=>sink.name===audioSink))throw fail("Choose an available audio output.");
+    return {connector:s.connector,monitorId:s.monitorId,receiverId:s.receiverId,name,mode,rotation,audioSink,enabled:s.enabled!==false};
   })};
 }
 

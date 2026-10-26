@@ -80,10 +80,19 @@ def validate_config(value):
         token = screen.get('enrollmentToken', '')
         if token and not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', token):
             raise ValueError('Invalid display enrollment')
+        sink = screen.get('audioSink', 'default')
+        if not isinstance(sink, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}', sink):
+            raise ValueError('Invalid audio output')
         clean.append(dict(connector=connector, receiverId=receiver, name=name, monitorId=monitor,
                           mode=mode, rotation=rotation, enabled=screen.get('enabled', True) is True,
-                          enrollmentToken=token))
-    return {'hubUrl': value['hubUrl'].rstrip('/'), 'screens': clean}
+                          enrollmentToken=token, audioSink=sink))
+    profiles = value.get('audioProfiles', [])
+    if not isinstance(profiles, list) or len(profiles) > 16:
+        raise ValueError('Invalid audio profiles')
+    for profile in profiles:
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}', profile.get('card', '')) or not re.fullmatch(r'[A-Za-z0-9_.:+-]{1,160}', profile.get('profile', '')):
+            raise ValueError('Invalid audio profile')
+    return {'hubUrl': value['hubUrl'].rstrip('/'), 'screens': clean, 'audioProfiles': profiles}
 
 
 def status():
