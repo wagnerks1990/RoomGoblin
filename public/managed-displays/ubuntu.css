@@ -1,0 +1,21 @@
+body.rg-workspace .ubuntu-computer{margin-top:14px}
+body.rg-workspace .ubuntu-screens{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px;margin:16px 0}
+body.rg-workspace .ubuntu-screen{padding:14px;border:1px solid #344356;border-radius:10px;background:#0b1220}
+body.rg-workspace .ubuntu-screen small{display:block;margin-top:5px;overflow-wrap:anywhere}
+body.rg-workspace .ubuntu-screen-state{font-size:13px;color:#b8c6d5;margin:12px 0;overflow-wrap:anywhere}
+body.rg-workspace .ubuntu-computer details{border-top:1px solid #344356;margin-top:16px;padding-top:12px}
+body.rg-workspace .ubuntu-computer details .subtle{margin-top:12px}
+body.rg-workspace #ubuntuWizard{width:min(920px,96vw);max-height:92vh;overflow:auto}
+body.rg-workspace #ubuntuWizard textarea{width:100%;min-height:80px;border:1px solid #344356;background:#0b1220;color:#edf3fa;border-radius:8px;padding:10px;font:13px monospace}
+body.rg-workspace .ubuntu-output{border:1px solid #344356;border-radius:10px;margin:14px 0;padding:16px;min-width:0}
+body.rg-workspace .ubuntu-output legend{padding:0 8px;color:#83e8c2}
+body.rg-workspace .ubuntu-checkbox{display:flex!important;align-items:flex-start;gap:10px!important;margin:14px 0}
+body.rg-workspace .ubuntu-checkbox input{width:auto!important;flex:0 0 auto;margin-top:4px}
+body.rg-workspace #ubuntuMessage{white-space:pre-wrap;color:#f6cd7c;overflow-wrap:anywhere}
+body.rg-workspace #ubuntuReview{min-height:70px}
+body.rg-workspace #ubuntuStep{color:#83e8c2;margin:12px 0;font-weight:600}
+body.rg-workspace #ubuntuAdd,body.rg-workspace #ubuntuNext{background:#0f766e}
+body.rg-workspace #ubuntuFingerprint{font-family:monospace;font-size:12px}
+body.rg-workspace .ubuntu-card-message{overflow-wrap:anywhere}
+body.rg-workspace #ubuntuWizard [hidden]{display:none!important}
+@media(max-width:700px){body.rg-workspace #ubuntuWizard .grid .wide{grid-column:auto}body.rg-workspace .ubuntu-computer .card-head{flex-direction:column}body.rg-workspace #ubuntuWizard .grid{grid-template-columns:1fr}body.rg-workspace #ubuntuWizard .dialog-head{gap:8px}}

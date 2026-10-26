@@ -117,6 +117,115 @@ class WorkspaceBrowserTests(unittest.TestCase):
                     page, errors = self.page(path, width)
                     self.evidence(page, errors, f'{path.strip("/").replace("/", "-")}-{width}')
 
+    def test_ubuntu_wizard_assigns_outputs_independently_and_keeps_drafts(self):
+        monitor = 'a' * 64
+        outputs = [{'connector': name, 'connected': True, 'monitorId': monitor, 'modes': ['1920x1080']} for name in ('HDMI-1', 'DP-1')]
+        requests = []
+        def transport(route, target):
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            requests.append((target, route.request.method))
+            if target.endswith('/host-key'):
+                self.assertNotIn('password', route.request.post_data_json)
+                self.assertNotIn('privateKey', route.request.post_data_json)
+                route.fulfill(json={'fingerprint': 'SHA256:' + 'A' * 43})
+            elif target.endswith('/probe'):
+                route.fulfill(json={'ok': True, 'hostname': 'fixture-computer', 'version': '24.04', 'graphics': 'x11', 'outputs': outputs})
+            else:
+                route.fulfill(json={'ok': True, 'devices': [], 'receivers': {'screen1': {'name': 'Existing screen'}}})
+            return True
+        for width in (390, 1440):
+            page, errors = self.page('/managed-displays/', width, transport=transport)
+            page.locator('#ubuntuAdd').click()
+            page.locator('#ubuntuName').fill('Fixture computer')
+            page.locator('#ubuntuAddress').fill('10.0.0.8')
+            page.locator('#ubuntuPassword').fill('fixture-password')
+            page.locator('#ubuntuGetFingerprint').click()
+            page.wait_for_function("document.getElementById('ubuntuFingerprint').value.startsWith('SHA256:')")
+            page.locator('#ubuntuNext').click()
+            self.assertIn('Verify', page.locator('#ubuntuMessage').inner_text())
+            page.locator('#ubuntuHostVerified').check()
+            page.locator('#ubuntuNext').click()
+            page.locator('[data-connector="HDMI-1"]').wait_for()
+            rows = page.locator('#ubuntuOutputRows [name="receiver"]')
+            rows.nth(0).fill('screen1')
+            rows.nth(1).fill('screen1')
+            page.locator('#ubuntuNext').click()
+            self.assertIn('different receiver', page.locator('#ubuntuMessage').inner_text())
+            rows.nth(1).fill('screen2')
+            page.locator('#ubuntuNext').click()
+            self.assertIn('HDMI-1', page.locator('#ubuntuReview').inner_text())
+            self.assertIn('DP-1', page.locator('#ubuntuReview').inner_text())
+            page.locator('#ubuntuBack').click()
+            self.assertEqual(rows.nth(1).input_value(), 'screen2')
+            self.evidence(page, errors, f'ubuntu-multi-output-{width}')
+            page.locator('#ubuntuClose').click()
+            self.assertEqual(page.locator('#ubuntuPassword').input_value(), '')
+
+    def test_ubuntu_wizard_ignores_closed_installation_jobs(self):
+        pending, commands = [], []
+        installs = 0
+        finish_second = False
+        def transport(route, target):
+            nonlocal installs
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/host-key'):
+                route.fulfill(json={'fingerprint': 'SHA256:' + 'A' * 43})
+            elif target.endswith('/probe'):
+                route.fulfill(json={'ok': True, 'hostname': 'fixture', 'version': '24.04', 'graphics': 'session-unavailable', 'outputs': []})
+            elif target.endswith('/jobs/job1'):
+                pending.append(route)
+            elif target.endswith('/jobs/job2'):
+                route.fulfill(json={'job': {'id': 'job2', 'deviceId': 'computer2', 'state': 'completed' if finish_second else 'running', 'stage': 'Second installation'}})
+            elif target.endswith('/command'):
+                commands.append(target)
+                route.fulfill(json={'ok': True, 'accepted': True})
+            elif route.request.method == 'POST':
+                installs += 1
+                route.fulfill(json={'ok': True, 'job': {'id': f'job{installs}'}})
+            else:
+                route.fulfill(json={'ok': True, 'devices': [], 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        for number in (1, 2):
+            page.locator('#ubuntuAdd').click()
+            page.locator('#ubuntuName').fill(f'Computer {number}')
+            page.locator('#ubuntuAddress').fill(f'10.0.0.{number}')
+            page.locator('#ubuntuPassword').fill('fixture-password')
+            page.locator('#ubuntuGetFingerprint').click()
+            page.wait_for_function("document.getElementById('ubuntuFingerprint').value.startsWith('SHA256:')")
+            page.locator('#ubuntuHostVerified').check()
+            page.locator('#ubuntuNext').click()
+            page.locator('#ubuntuNext').click()
+            page.locator('#ubuntuConsent').check()
+            with page.expect_request(f'**/jobs/job{number}'):
+                page.locator('#ubuntuNext').click()
+            if number == 1:
+                page.locator('#ubuntuClose').click()
+        self.assertEqual(len(pending), 1)
+        page.wait_for_function("document.getElementById('ubuntuJobStatus').textContent === 'Second installation'")
+        pending[0].fulfill(json={'job': {'id': 'job1', 'deviceId': 'computer1', 'state': 'completed', 'stage': 'Old installation'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.locator('#ubuntuJobStatus').inner_text(), 'Second installation')
+        self.assertTrue(page.locator('#ubuntuActivate').is_hidden())
+        finish_second = True
+        page.clock.fast_forward(3100)
+        page.locator('#ubuntuActivate').wait_for(state='visible')
+        self.assertEqual(page.locator('#ubuntuActivate').get_attribute('data-device'), 'computer2')
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.on('dialog', lambda dialog: dialog.accept())
+        page.locator('#ubuntuActivate').click()
+        page.wait_for_function("document.getElementById('ubuntuActivate').hidden")
+        self.assertEqual(commands, ['/api/v1/ubuntu-displays/computer2/command'])
+        page.keyboard.press('Escape')
+        page.locator('#ubuntuAdd').click()
+        self.assertTrue(page.locator('#ubuntuActivate').is_hidden())
+        self.assertIsNone(page.locator('#ubuntuActivate').get_attribute('data-device'))
+        self.assertEqual(page.locator('#ubuntuJobStatus').inner_text(), '')
+        self.assertFalse(errors, errors)
+
     def test_controller_navigation_search_and_sections(self):
         for width in (390, 1440):
             page, errors = self.page('/controller/', width)

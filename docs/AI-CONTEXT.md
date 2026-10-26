@@ -43,6 +43,13 @@ This document gives AI assistants a compact operational model of RoomGoblin. `AG
 
 ## Purpose
 
+Ubuntu multi-output enrollment and the restricted SSH kiosk runtime are documented
+in [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md). Keep one unique receiver
+per enabled physical connector, stable EDID/connector checks and isolated profiles.
+The installer snapshots desktop configuration; activation is explicit. Routine
+management uses a forced command under a separate restricted key, never stored
+bootstrap passwords or an arbitrary remote root shell.
+
 RoomGoblin is a centralized classroom/lab control platform. It coordinates browser displays, scheduled automations, AV routing, lighting, Morning Announcements, Background Music, class schedules, school-cycle rules, Veyon lab management, diagnostics, backup/recovery, Docker integrations, Android/Google TV managed displays, and host-management functions.
 
 Production installers and main-based updates pull exact CI-built GHCR images;

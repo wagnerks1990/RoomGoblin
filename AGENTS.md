@@ -234,6 +234,16 @@ Run repository validation and search for unintended stale current-baseline versi
 
 ## Operator GUI contract
 
+Ubuntu managed display computers use `src/ubuntu-displays.js` and the fixed
+`src/ubuntu-display/` SSH installer/control/session package. Read
+`docs/UBUNTU-MANAGED-DISPLAYS.md` before changing this feature. Preserve pinned SSH
+host identities, ephemeral bootstrap credentials, encrypted per-computer keys,
+forced-command management, non-sudo kiosk sessions, first-install rollback and
+Full Recovery writer drain. Every physical output has its own stable receiver;
+monitor/connector changes fail closed. Do not share profiles/receiver IDs, guess
+AV matrix mappings, expose arbitrary remote root commands, or couple Ubuntu
+inventory to ADB health. Existing Android enrollment remains compatible.
+
 Read `docs/GUI-WORKSPACES.md` before changing operator navigation or layout.
 Scope shared workspace styles to `body.rg-workspace`; never load them into the
 physical display renderer. Preserve capability-hidden navigation, stable control
