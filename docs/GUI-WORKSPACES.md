@@ -48,7 +48,8 @@ reviews installation changes and reports asynchronous progress. Computer-level
 maintenance is distinct from per-screen controls; failed ADB probes do not disable
 Ubuntu management. Computer cards include resource health, software versions,
 alerts, history, metadata editing and explicit immediate/scheduled maintenance.
-Polling preserves focused controls and open dialogs. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
+Polling preserves focused controls and open dialogs. Ubuntu screen cards and
+wizard controls use the shared light/dark contrast tokens. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
 
 | Surface | Organization |
 | --- | --- |

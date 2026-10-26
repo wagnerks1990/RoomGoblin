@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Ubuntu screen cards, wizard fields, status text and primary buttons readable
+  in both light and dark operator themes.
+
 - Add Ubuntu fleet health, durable history, verified address changes, managed
   Ubuntu/Chromium/agent updates and one-time maintenance scheduling. Keep fixed
   restricted commands, announcement-aware dispatch, verified agent rollback,
