@@ -1,7 +1,8 @@
-# Core architecture and lifecycle: first implementation
+# Core architecture and lifecycle
 
 Audited baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`.
-All locations below refer to that revision, not the modified line numbers.
+Original finding locations refer to that revision. Follow-up locations below
+explicitly identify their newer baseline.
 
 ## Coverage
 
@@ -91,15 +92,16 @@ Follow RG-ARCH-004 before marking this review unit complete.
 - **Confidence/status:** Confirmed / Implemented; local regression suite passed.
   This is timer cleanup, not cancellation of already-running tasks.
 
-## RG-ARCH-004: complete writer drain remains unproven
+## RG-ARCH-004: shutdown can exit before asynchronous writes finish
 
 - **Subsystem/category/priority:** Core lifecycle / Reliability / P2.
 - **Location:** `src/server.js:4882-4900,5932-5958,8460-8473,8559-8570`.
 - **Current implementation:** Full Recovery tracks asynchronous mutations and busy
   domains. Shutdown waits for HTTP close and the Veyon queue, then closes SQLite.
 - **Evidence:** The shutdown predicate does not include the export writer counters,
-  running automation map or presentation builds. No reproduced production failure
-  is claimed; many tasks complete before the normal stop finishes.
+  running automation map or presentation builds. A disconnected response does not cancel its async handler. Controlled Linux
+  process tests now reproduce the outstanding write and inspect final SQLite
+  state; no production data-loss incident is claimed.
 - **Problem:** Completion of every asynchronous writer is not established before
   closing its store. A long-running task can lose its final status write on exit.
 - **Recommendation/benefit:** Audit all writer owners and introduce a bounded
@@ -112,12 +114,52 @@ Follow RG-ARCH-004 before marking this review unit complete.
   presentation conversion, sports/Ubuntu and announcement jobs during SIGTERM;
   inspect final SQLite state and subsequent restart recovery. Include hard deadline
   and active export/thaw races.
-- **Confidence/status:** Strong Evidence / Deferred to the next focused lifecycle
-  change. Requires full writer-owner coverage, not a broader rewrite in this PR.
+- **Confidence/status:** Confirmed / Bounded drain implemented for registered
+  handlers and existing tracked/busy owners. Process regressions verify final
+  HTTP/WS writes, automation restart policy, freeze coordination and failure
+  deadlines. Feature-specific physical acceptance remains open.
+
+### Follow-up coverage and implementation
+
+Baseline: `ea53e2deff70dbb151ca551ddd27b89c633d6afd`, alpha.85.
+Relevant original locations: `src/server.js:89-93` (async tracking), `747-753`
+(announcement queue), `1824-1846` (action cancellation/dwell), `4743-4756`
+(request accounting), `4896-4936` (freeze/thaw), `5962-5988` (manual ledger),
+`8016-8036,8366-8407` (WebSocket ownership), `8501-8520` (scheduled ledger),
+`8602-8621` (shutdown). These are baseline locations, not patched line numbers.
+
+Read the new drain module and its tests in full. Re-reviewed the selected server
+regions above plus timer entry points, integration construction/close contracts,
+announcement serialization and scheduled recovery. This remains a scoped review,
+not a claim that every line of the main server or every integration was audited.
+
+| Owner | Shutdown policy |
+| --- | --- |
+| HTTP routes and middleware, including bridge registrations | Track returned promises past response finish/disconnect; preserve Express error and guard behavior |
+| WebSocket handlers and MQTT delivery | Reject new work, await active message counters and close callbacks; bound WebSocket handshake |
+| Manual/scheduled automation occurrences | Interrupt at action/dwell boundaries; preserve operator cancellation and current-winner restart recovery |
+| Announcement lifecycle queue | Count queued and active work; prevent timer rearming |
+| Presentation builds/advance, session effects, music, update jobs | Wait for existing build maps and busy ownership flags |
+| Veyon, ESPHome, Ubuntu, Sports | Stop admission/timers and wait for their existing tracked mutations |
+| Full Recovery export | Abort pending acquisition; keep active authenticated thaw reachable; never steal its freeze |
+
+SQLite closes only after those owners drain and audit/checkpoint succeed. A
+nonwaiting checkpoint avoids blocking past the shutdown deadline on another
+reader. Hardware commands already sent are not reversed. A task exceeding the
+fixed deadline fails the stop; durable feature-specific restart/cancellation for
+long conversions or remote operations is not added by this patch.
+
+The HTTP tracker uses application-instance registration, not global Express
+prototype patches or private stack traversal. It cannot discover work that a
+handler detaches without returning/tracking it. Future mounted routers require
+explicit registration tracking. Existing bridge authentication/order tests and
+all repository gates remain required; the broader bridge-composition review is
+still open.
 
 ## Completion boundary
 
 The first bootstrap/media/readiness patch is implemented. The broader Core
-Architecture and Application Lifecycle unit remains open for RG-ARCH-004 and
-explicit bridge-composition coverage. No UI redesign, production/device tests,
+Architecture and Application Lifecycle unit remains open for exhaustive writer
+ownership/feature acceptance and explicit bridge-composition coverage. The
+registered-handler and tracked-owner shutdown defect in RG-ARCH-004 is addressed. No UI redesign, production/device tests,
 deployment or release completion is claimed.

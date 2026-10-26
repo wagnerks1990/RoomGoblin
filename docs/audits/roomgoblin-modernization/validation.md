@@ -65,5 +65,61 @@ the existing `Sync Wiki` workflow after a reviewed merge to main. No production
 configuration, appliance, classroom display, database or external service was
 changed. No merge, deployment, image publication or live acceptance is implied.
 
-The broader writer-drain and bridge-composition review remains open; see
-[the coverage and findings](core-lifecycle.md).
+That first patch left writer drain and bridge composition open. The follow-up
+below adds the bounded drain; exhaustive feature acceptance and bridge composition
+remain open in [the coverage and findings](core-lifecycle.md).
+
+
+## Writer-drain follow-up (2026-10-26)
+
+Baseline: `ea53e2deff70dbb151ca551ddd27b89c633d6afd`, alpha.85. The mandated
+Windows helper was run against the baseline and the complete candidate, including
+untracked new files, using its isolated native WSL snapshot.
+
+| Check | Actual result |
+| --- | --- |
+| Baseline `npm run check` + `npm test` | 965 tests: 963 passed, 0 failed, 2 skipped |
+| Final candidate `npm run check` + `npm test` | 978 tests: 976 passed, 0 failed, 2 skipped |
+| Python compile: Host Agent server/start/full recovery | Passed |
+| Host Full Recovery unittest suite | 23 passed, 0 failures/errors |
+| All tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Node: v24.21.0 in WSL. The two skips still require root for cross-UID/group
+ownership tests. Docker is absent locally and in WSL; Compose/images, Node 22,
+browser/platform and security coverage remain the required PR workflows, whose
+current result belongs to the exact PR head rather than these local counts.
+
+The 13 new regressions cover:
+
+- Actual HTTP disconnect and response-finish races: the final write remains in
+  the same Hub SQLite database after clean process exit.
+- Express route chaining, nested guards, setting getters, async middleware and
+  error handlers, without changing the global prototypes.
+- Ordinary aborted-body cleanup remains unchanged; during shutdown, a late
+  body-parser continuation cannot start another writer for that abandoned request.
+- An unresponsive WebSocket close handshake and disconnect callback completion.
+- An accepted authenticated WebSocket command whose MQTT adapter is deliberately
+  delayed: its final command audit persists even after the socket disconnects.
+- A stuck handler exceeding the existing ten-second deadline exits 1, and a
+  reader holding a WAL snapshot causes checkpoint failure rather than false
+  success; the completed application write is preserved.
+- Active export freeze retains authentication and one-use thaw validation while
+  other requests (including the preloaded display gateway) receive 503.
+- Pending freeze acquisition aborts on shutdown, and a manual continuous run
+  records interruption without being marked operator-cancelled.
+- A scheduled continuous run records interruption, recovers on real process
+  restart, and stays cancelled across a further restart after operator Stop.
+- Queued announcement work survives a failed predecessor and retains ownership
+  until its final callback finishes.
+
+During development, missing shutdown variables in existing VM harnesses and a
+missing receiver in the new scheduled fixture caused test failures. The harnesses
+now explicitly provide the new lifecycle state, and process fixtures provision a
+test-owned receiver. No production guard or assertion was removed to pass tests.
+
+No live appliance, display, integration credential or production data was used.
+MQTT is a controlled test adapter; no physical delivery is claimed. Full
+presentation conversion, Sports refresh and Ubuntu remote-operation acceptance
+under shutdown remain feature-specific follow-ups. Hosted Wiki synchronization
+will use the existing workflow after a reviewed merge; this PR updates its mirror.

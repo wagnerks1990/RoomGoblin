@@ -2,7 +2,10 @@
 
 The supported application bootstrap is shared by `npm start` and the container
 wrapper. Media child ownership is in `src/media-plane-process.js`; scheduled
-music readiness is explicit, never a global timer override. Read
+music readiness is explicit, never a global timer override. HTTP handlers must
+return their async work; detached writers need explicit tracking. Shutdown drains
+accepted work before SQLite close and distinguishes automation interruption from
+operator cancellation. Preserve the independent Full Recovery freeze/thaw path. Read
 `APPLICATION-LIFECYCLE.md` before changing startup order or shutdown. The
 modernization audit records scoped coverage and remaining lifecycle work under
 `docs/audits/roomgoblin-modernization/`.

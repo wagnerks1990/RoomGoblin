@@ -2,11 +2,13 @@
 
 Status: **Core Architecture and Application Lifecycle in progress**. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
-readiness and owned timer cleanup. It is not a complete audit of `server.js` or
+readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
+automation interruption/restart policy and export-thaw coordination. It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 
 Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`, `main`,
-`1.0.0-alpha.85`. Source line references in findings belong to this exact revision.
+`1.0.0-alpha.85`. Original finding locations belong to that revision. The RG-ARCH-004 follow-up
+uses `ea53e2deff70dbb151ca551ddd27b89c633d6afd` as its exact baseline.
 
 - [Core lifecycle findings and coverage](core-lifecycle.md)
 - [Validation evidence](validation.md)
