@@ -246,11 +246,14 @@ class WorkspaceBrowserTests(unittest.TestCase):
             else:
                 route.fulfill(json={'ok': True, 'devices': [device], 'receivers': {'screen1': {'name': 'Hallway screen'}}})
             return True
-        for width in (390, 1440):
-            page, errors = self.page('/managed-displays/', width, transport=transport)
+        for width, theme in ((390, "dark"), (1440, "dark"), (390, "light"), (1440, "light")):
+            page, errors = self.page('/managed-displays/', width, transport=transport, theme={'mode': theme})
             page.clock.install()
             page.locator('[data-id="fixture"]').wait_for()
             self.assertIn('12%', page.locator('.ubuntu-metrics').inner_text())
+            colors = page.locator('.ubuntu-screen').evaluate('(element) => ({background:getComputedStyle(element).backgroundColor,color:getComputedStyle(element).color})')
+            self.assertEqual(colors['background'], 'rgb(243, 246, 249)' if theme == 'light' else 'rgb(11, 19, 32)')
+            self.assertEqual(colors['color'], 'rgb(30, 41, 59)' if theme == 'light' else 'rgb(248, 250, 252)')
             page.locator('#ubuntuSearch').fill('does not exist')
             self.assertEqual(page.locator('.ubuntu-computer').count(), 0)
             page.locator('#ubuntuSearch').fill('Hallway')
@@ -278,7 +281,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
             self.assertEqual(page.locator('[name="audioSink"]').input_value(), 'missing-hdmi')
             self.assertEqual(page.locator('[name="graphicsMode"]').input_value(), 'software')
             page.locator('#ubuntuClose').click()
-            self.evidence(page, errors, f'ubuntu-fleet-{width}')
+            self.evidence(page, errors, f'ubuntu-fleet-{theme}-{width}')
 
     def test_controller_navigation_search_and_sections(self):
         for width in (390, 1440):
