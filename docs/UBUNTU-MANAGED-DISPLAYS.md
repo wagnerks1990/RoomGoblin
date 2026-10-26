@@ -159,6 +159,10 @@ of the browser/SSH request, persist under `/var/lib/roomgoblin-display`, have a 
 45-minute unit timeout, and report accepted/running/completed/failed/interrupted states.
 Completion means the package operation returned successfully; live screen status is
 separate acceptance evidence. Raw package output and credentials are never returned.
+Fresh or unloaded one-shot services start directly; only a failed service has its
+failure state reset. If a proxy returns an HTML error instead of JSON, the wizard
+reports the HTTP status and asks the operator to refresh device status before retrying
+because delivery may be uncertain. It never automatically resubmits the operation.
 
 **Schedule once** stores a confirmed operation up to 30 days ahead. The browser's local
 time is converted to an absolute timestamp. The Hub waits up to one hour for a reachable

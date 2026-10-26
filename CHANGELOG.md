@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Start newly installed Ubuntu maintenance services without resetting an unloaded
+  systemd unit, and report proxy error responses without blindly retrying jobs.
+
 - Keep Ubuntu screen cards, wizard fields, status text and primary buttons readable
   in both light and dark operator themes.
 

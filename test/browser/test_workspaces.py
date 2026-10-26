@@ -237,12 +237,16 @@ class WorkspaceBrowserTests(unittest.TestCase):
         device = {'id': 'fixture', 'name': 'Hallway computer', 'address': '10.0.0.8', 'port': 22, 'location': 'Hallway', 'config': {'hubUrl': 'http://10.0.0.2:3000', 'screens': [screen]},
                   'health': {'state': 'attention', 'alerts': [{'code': 'reboot', 'text': 'Ubuntu requires a reboot.'}]}, 'live': {'online': True, 'at': 1750000000000, 'status': status}}
         sent = []
+        unavailable = [False]
         def transport(route, target):
             if not target.startswith('/api/v1/ubuntu-displays'):
                 return False
             if route.request.method in ('POST', 'PUT') and not target.endswith('/refresh'):
                 sent.append((target, route.request.post_data_json))
-                route.fulfill(json={'ok': True, 'accepted': True})
+                if unavailable[0]:
+                    route.fulfill(status=503, content_type='text/html', body='<!DOCTYPE html><title>Unavailable</title>')
+                else:
+                    route.fulfill(json={'ok': True, 'accepted': True})
             else:
                 route.fulfill(json={'ok': True, 'devices': [device], 'receivers': {'screen1': {'name': 'Hallway screen'}}})
             return True
@@ -271,6 +275,18 @@ class WorkspaceBrowserTests(unittest.TestCase):
             page.locator('#ubuntuMaintenance').wait_for(state='hidden')
             self.assertEqual(sent[-1][1]['operation'], 'update-os')
             self.assertIn('scheduleAt', sent[-1][1])
+            unavailable[0] = True
+            page.locator('[data-action="maintenance"]').click()
+            page.locator('#ubuntuMaintenanceConfirm').check()
+            page.locator('#ubuntuMaintenanceSubmit').click()
+            page.wait_for_function("document.querySelector('#ubuntuMaintenanceMessage').textContent.includes('Request failed (503)')")
+            self.assertIn('delivery may be unconfirmed', page.locator('#ubuntuMaintenanceMessage').inner_text())
+            count = len(sent)
+            page.clock.fast_forward(16000)
+            self.assertEqual(len(sent), count)
+            self.assertTrue(page.locator('#ubuntuMaintenanceConfirm').is_checked())
+            page.locator('#ubuntuMaintenanceClose').click()
+            unavailable[0] = False
             page.locator('[data-action="details"]').click()
             page.locator('#ubuntuDetailNotes').fill('Retain this unsaved note')
             page.clock.fast_forward(16000)
