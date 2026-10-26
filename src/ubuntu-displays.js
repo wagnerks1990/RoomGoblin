@@ -183,7 +183,7 @@ class UbuntuDisplays{
       if(Number(status.protocolVersion)<2)throw fail("Use Repair with administrator SSH once to enable managed updates.",409);
       this.check();
       if(input.operation!=="check-updates"&&!this.allowDisruption(d))throw fail("Morning Announcements started before maintenance dispatch.",409);
-      const result=await this.rpc(d,"maintenance",{operation:input.operation,confirm:true,requestId:input.requestId||crypto.randomUUID(),packageDigest:this.packageDigest});
+      const result=await this.rpc(d,"maintenance",{operation:input.operation,confirm:true,requestId:input.requestId||crypto.randomUUID(),packageDigest:this.packageDigest,packageVersion:require("./version").applicationVersion()});
       this.event(id,"maintenance",{operation:input.operation,state:"accepted",jobId:result.job?.id||null});return {ok:true,...result};
     }finally{this.busy.delete(id)}
   }

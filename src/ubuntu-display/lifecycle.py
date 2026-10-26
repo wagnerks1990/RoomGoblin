@@ -110,7 +110,8 @@ def begin(request):
     if not re.fullmatch(r'[a-f0-9-]{36}', request_id):
         raise ValueError('Invalid maintenance request identity')
     package_digest = request.get('packageDigest', '')
-    if operation == 'update-agent' and not re.fullmatch(r'[a-f0-9]{64}', package_digest):
+    package_version = request.get('packageVersion', '')
+    if operation == 'update-agent' and (not re.fullmatch(r'[a-f0-9]{64}', package_digest) or not re.fullmatch(r'[a-zA-Z0-9.+-]{1,80}', package_version)):
         raise ValueError('Verified Hub package required')
     with mutation_lock():
         existing = read(DATA / 'maintenance.json', {})
@@ -125,7 +126,7 @@ def begin(request):
         if active() or (existing.get('state') in ('queued', 'running') and time.time() - existing.get('updatedAt', 0) < 30):
             raise ValueError('Maintenance already running')
         job = dict(id=request_id, operation=operation, state='queued', stage='Waiting for device maintenance',
-                   startedAt=time.time(), updatedAt=time.time(), packageDigest=package_digest)
+                   startedAt=time.time(), updatedAt=time.time(), packageDigest=package_digest, packageVersion=package_version)
         # The device remembers accepted IDs independently of Hub backups. A restored
         # old Hub schedule must not replay a command already accepted here.
         receipts[request_id] = {k: v for k, v in job.items() if k != 'packageDigest'}
@@ -239,13 +240,15 @@ def recover_agent():
         restore_agent()
 
 
-def update_agent(expected):
+def update_agent(expected, expected_version):
     from installer import write
     from control import atomic_json
     with tempfile.TemporaryDirectory(prefix='agent-', dir=DATA) as directory:
         stage('Downloading and verifying the agent package against this Hub')
         staged = Path(directory)
         version, commit = prepare_agent(staged, expected)
+        if version != expected_version:
+            raise ValueError('Trusted main version differs from the running Hub')
         # Validate imports before changing the installed package. Sources come only from trusted main.
         run(['/usr/bin/python3', '-sE', '-c',
              'import sys; sys.path.insert(0, sys.argv[1]); import control,installer,lifecycle,probe,session', str(staged)])
@@ -301,7 +304,7 @@ def execute(job):
             if running:
                 run(['systemctl', 'start', 'lightdm'])
     elif operation == 'update-agent':
-        update_agent(job['packageDigest'])
+        update_agent(job['packageDigest'], job['packageVersion'])
         run(['systemctl', 'try-restart', 'lightdm'])
     elif operation == 'revert-agent':
         restore_agent()

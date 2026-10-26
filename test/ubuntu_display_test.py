@@ -209,7 +209,7 @@ class Maintenance(unittest.TestCase):
         # Import check succeeds; post-write health fails, exercising real backup/restore.
         with patch('lifecycle.prepare_agent', side_effect=prepare), patch('control.atomic_json', side_effect=atomic), patch('lifecycle.run', side_effect=['', '{}']), patch('lifecycle.os.chown'), patch('lifecycle.pwd.getpwnam', return_value=types.SimpleNamespace(pw_gid=1000)):
             with self.assertRaises(KeyError):
-                lifecycle.update_agent('f' * 64)
+                lifecycle.update_agent('f' * 64, 'new')
         self.assertEqual({name: (self.lib / name).read_bytes() for name in lifecycle.FILES}, old)
         self.assertEqual((self.root / 'identity.json').read_bytes(), identity)
         self.assertFalse((self.data / 'agent-transaction.json').exists())
