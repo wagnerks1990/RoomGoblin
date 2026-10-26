@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Add live volume up/down, percentage volume, mute and unmute in Sports and
+  Automation, with saved action audio settings. Preserve active playback,
+  receiver reconnect settings, announcement priority and independent hallway audio.
+
 - Start newly installed Ubuntu maintenance services without resetting an unloaded
   systemd unit, and report proxy error responses without blindly retrying jobs.
 

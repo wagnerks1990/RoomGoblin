@@ -1,7 +1,7 @@
 /* Sports is a scene widget, not an iframe or a second display layout engine. */
 "use strict";
 (()=>{
- const instances=new Map(),previewCache=new Map();
+ const instances=new Map(),audioControls=new Map(),previewCache=new Map();
  async function loadBoard(id,signal){
   const cached=previewCache.get(id);if(cached&&cached.until>Date.now())return cached.value;
   const r=await fetch('/api/v1/sports/boards/'+encodeURIComponent(id)+'/display',{credentials:'same-origin',signal});if(!r.ok)throw Error('Sports data unavailable');const value=await r.json();
@@ -22,8 +22,9 @@
   let snapshot=null,pending=null,index=0,page=null,elapsed=0,last=performance.now(),cycle=0,frame=null,fetchTimer=null,dead=false,busy=false,abort=null,currentMedia=-1,lastMediaAt=-20,playing=false,videoStarted=0,epoch=0,restoreMetadata=null;
   const playback=RoomGoblinSportsPlayback,watch=playback.watchdog();
   function clearRestore(){if(restoreMetadata){video.removeEventListener('loadedmetadata',restoreMetadata);restoreMetadata=null}}
-  function stop(){if(dead)return;dead=true;epoch++;clearRestore();document.removeEventListener('visibilitychange',visibility);abort?.abort();clearTimeout(fetchTimer);cancelAnimationFrame(frame);video.pause();video.removeAttribute('src');video.load();instances.delete(host)}
+  function stop(){if(dead)return;dead=true;epoch++;clearRestore();document.removeEventListener('visibilitychange',visibility);abort?.abort();clearTimeout(fetchTimer);cancelAnimationFrame(frame);video.pause();video.removeAttribute('src');video.load();instances.delete(host);audioControls.delete(host)}
   instances.set(host,stop);
+  audioControls.set(host,p=>{if(dead||preview)return;if(p.volume!==undefined)volume=p.volume;if(p.muted!==undefined)audio=!p.muted;video.volume=volume;video.muted=!audio;video.defaultMuted=!audio});
   const date=(value,time=false)=>{try{return new Date(value).toLocaleString(undefined,{timeZone:snapshot.timezone,weekday:'short',month:'short',day:'numeric',...(time?{hour:'numeric',minute:'2-digit'}:{})})}catch{return 'Date unavailable'}};
   function renderGame(node,event,upcoming){node.replaceChildren(el('h3',upcoming?'NEXT UP':'PREVIOUS GAME'));if(!event){node.append(el('p',upcoming?'Next game not published':'Result not published'));return}
    node.append(el('small',(upcoming?event.status.toUpperCase():'FINAL')+' · '+date(event.startAt),upcoming?'rg-sports-future':'rg-sports-past'));
@@ -88,5 +89,6 @@
  }
  // Disconnect immediately on scene replacement, including announcement takeover.
  const observer=new MutationObserver(()=>{for(const [node,stop]of instances)if(!node.isConnected)stop()});observer.observe(document.documentElement,{childList:true,subtree:true});
- window.RoomGoblinSportsBoard={mount};
+ function setAudio(root,p){for(const [host,control]of audioControls)if(root.contains(host))control(p)}
+ window.RoomGoblinSportsBoard={mount,setAudio};
 })();

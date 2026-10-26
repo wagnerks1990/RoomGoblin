@@ -35,6 +35,7 @@ const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandT
 const planningEngine=require("./planning");
 const planningMigration=require("./planning-migration");
 const planningStudio=require("./planning-studio");
+const displayAudio=require("./display-audio");
 const timerEffects=require("../public/shared/timer-effects");
 const {PlaybackRecovery,mediaSelection,sleepDeadline}=require("./background-music");
 const {musicAssistantTokenConfigured,closeMusicAssistantReadiness}=require("./music-assistant-readiness");
@@ -1552,7 +1553,8 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
     const url=String(p.url||"").trim();
     if(!url)throw new Error("URL is required");
-    outputs.results.push(await executeCommand({type:"display.web",target:ts,payload:{url,localDirect:p.localDirect!==false}},commandSource));
+    const audio=p.volume!==undefined||p.muted!==undefined?{volume:p.volume??1,muted:p.muted===true,forceAudio:p.muted!==true&&Number(p.volume??1)>0}:{};
+    outputs.results.push(await executeCommand({type:"display.web",target:ts,payload:{url,localDirect:p.localDirect!==false,...audio}},commandSource));
   }else if(action==="display.media"){
     const ts=requireAutomationTargets(event.targets,"Display media");
     if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
@@ -3940,7 +3942,11 @@ function updateStateFromCommand(command, targets) {
   const p = command.payload;
 
   for (const id of targets) {
+    if(["display.text","display.layers","display.video","display.web","display.image","display.pdf","display.document","display.presentation","display.clear"].includes(command.type))setDisplayState(id,{audioContentId:command.id});
     switch (command.type) {
+      case "display.audio.control":
+        setDisplayState(id,displayAudio.apply(persistentState.displays[id],p));
+        break;
       case "display.text":
         setDisplayState(id, { text: p.text ?? "", textOptions: p });
         break;
@@ -4025,6 +4031,7 @@ function safeMediaUrl(value) {
 
 const URL_BEARING_DISPLAY_COMMANDS=new Set(["display.image","display.video","display.web","display.pdf","display.document","display.ppt","display.presentation"]);
 function validateCommandForDispatch(command){
+  if(command.type==="display.audio.control")command.payload=displayAudio.validate(command.payload);
   if(command.type==="display.text"&&command.payload?.scene)command.payload={...command.payload,scene:planningStudio.scene.normalize(command.payload.scene)};
   if(command.type==="display.layers"){
     const rows=command.payload?.layers;
@@ -4588,7 +4595,7 @@ async function executeCommand(input, source = "api") {
   // Keep title/subtitle/timer edits and persistent media controls composable.
   const replacesContent=["http","media-library"].includes(source)&&
     (URL_BEARING_DISPLAY_COMMANDS.has(command.type)||(command.type==="display.text"&&command.payload.scene));
-  const protectsAnnouncements=source==="automation"||source==="presentation"||replacesContent||
+  const protectsAnnouncements=source==="automation"||source==="presentation"||command.type==="display.audio.control"||replacesContent||
     (["http","media-library"].includes(source)&&command.type==="display.clear");
   if(replacesContent){
     const targets=resolveDisplayTargets(command.target);
@@ -4645,6 +4652,11 @@ async function executeCommand(input, source = "api") {
       if(priorityError)throw priorityError;
     }
 
+    if(command.type==="display.audio.control")for(const id of targets){
+      const audio=displayAudio.describe(persistentState.displays[id]);
+      if(!audio.available)throw Error("This display has no active video, website or Sports audio");
+      if(command.payload.contentKey&&command.payload.contentKey!==audio.contentKey)throw Error("Displayed content changed. Refresh live audio controls.");
+    }
     updateStateFromCommand(command, targets);
 
     const physicalDeliveries=broadcastDisplays(targets, {type:"command",command});
@@ -5930,6 +5942,22 @@ app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireCont
   }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
 
+app.get("/api/v1/displays/audio",schedulerReadLimit,requireControl,(req,res)=>{
+  res.json({ok:true,displays:Object.entries(devices).filter(([,device])=>device.enabled!==false).map(([id,device])=>({
+    id,name:device.name||id,...displayAudio.describe(persistentState.displays[id]),
+    locked:!!announcementPriorityError([id]),online:publicDisplayStatus(id).online
+  }))});
+});
+app.post("/api/v1/displays/:id/audio",schedulerMutationLimit,requireControl,async(req,res)=>{
+  try{
+    const id=cleanId(req.params.id);
+    if(!id||!devices[id]||devices[id].enabled===false)throw Error("Unknown display");
+    const result=await executeCommand({type:"display.audio.control",target:[id],payload:req.body},"controller");
+    audit({kind:"display.audio.control",deviceId:id});
+    res.json({ok:true,result,audio:displayAudio.describe(persistentState.displays[id])});
+  }catch(error){res.status(error.statusCode||400).json({ok:false,error:error.message})}
+});
+
 function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
   const id=`manual-${cleanId(event.id||"draft")||"draft"}-${crypto.randomUUID()}`;
   supersedeOverlappingAutomationRuns(event,id);
@@ -6644,6 +6672,14 @@ async function releaseManualMediaPriority(reason="operator-resume"){
   return {released:true,targets,pausedPlayers,schedulerRestored:schedulerWasEnabled};
 }
 function backgroundMusicObserveDisplayCommand(command,source="api"){
+  if(command.type==="display.audio.control"){
+    for(const id of resolveDisplayTargets(command.target)){
+      if(displayAudio.describe(persistentState.displays[id]).audible)backgroundMusicPriorityTargets.add(id);
+      else if(!morningAnnouncementsRuntime.active&&!manualMediaPriorityRuntime.targets.has(id))backgroundMusicPriorityTargets.delete(id);
+    }
+    trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
+    return;
+  }
   const src=String(source||command?.source||"");
   const p=command?.payload||{},kind=String(p.contentKind||"");
   // Sports video is one persistent scene session. Reserve audio for the board
@@ -6655,8 +6691,8 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   const type=String(command.type||"");
   let startsAudio=false,replacesAudio=false;
   if(type==="display.text"){replacesAudio=true;startsAudio=sportsAudio===true}
-  else if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true}
-  else if(type==="display.web"){replacesAudio=true;startsAudio=p.forceAudio===true||p.muted===false||kind==="morning-announcements"}
+  else if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true&&Number(p.volume??1)>0}
+  else if(type==="display.web"){replacesAudio=true;startsAudio=(p.forceAudio===true||p.muted===false||kind==="morning-announcements")&&p.muted!==true&&Number(p.volume??1)>0}
   else if(type==="display.web.audio"){startsAudio=p.unmute!==false}
   else if(type.startsWith("voice.")||type.startsWith("sfx.")){startsAudio=true}
   else if(["display.clear","display.image","display.pdf","display.document","display.presentation"].includes(type)){replacesAudio=true}

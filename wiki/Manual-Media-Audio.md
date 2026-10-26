@@ -18,3 +18,7 @@ silent images and documents leave Background Music available. Hallway-only
 playback keeps its independent audio scope. Use Resume Scheduled State to release
 an existing manual takeover. Individual text/title/subtitle/timer edits and live
 media controls retain their existing overlay and persistent-session behavior.
+
+For current automated video, compatible website and Sports sound, use
+[Live audio in Automation or Sports](Automation-Display-Media#live-audio-controls).
+These controls change current playback; saved action settings apply on the next run.
