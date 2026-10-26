@@ -46,6 +46,7 @@
   function render(){
     host.replaceChildren();if(configError)host.append(el("p",`Shared layer settings unavailable: ${configError}. Reload before editing shared layers.`,"bad"));const nav=el("div",undefined,"studioTabs");host.append(nav);button(nav,"Automations",()=>{selectedTab="automations";render()},selectedTab==="automations"?"selected":"");button(nav,"Shared layers",()=>{selectedTab="overlays";render()},selectedTab==="overlays"?"selected":"");button(nav,"Display & widget settings",settings);
     const tools=el("div",undefined,"studioListTools"),search=field(tools,"Search automations or layers",query,{type:"search"});search.addEventListener("input",()=>{query=search.value;renderCards(cards)});const picker=field(tools,"Show",filter,{options:[["all","All"],["enabled","Enabled"],["disabled","Disabled"],["temporary","Temporary"]]});picker.addEventListener("change",()=>{filter=picker.value;renderCards(cards)});button(tools,selectedTab==="overlays"?"+ Shared layer":"+ Automation",()=>selectedTab==="overlays"?editOverlay():editEvent(),"primary");host.append(tools);
+    if(selectedTab==="automations")RoomGoblinAudioControls.mount(host);
     const cards=el("div",undefined,"studioCards");host.append(cards);renderCards(cards);
   }
   function renderCards(parent){
@@ -117,6 +118,10 @@
         if(action.action==="display.text"){
           const summary=el("p",p.scene?`${p.scene.layers.length} layers in the canvas scene`:"Text action · compatible with existing displays");fields.append(summary);
           button(fields,p.scene?"Open scene studio":"Design this screen",async()=>{try{const scene=await editPlanningScene(p.scene||RoomGoblinScene.fromText(p));if(scene){p.scene=scene;payloadFields()}}catch(error){m.status.textContent=error.message}},"primary");
+          if(p.scene)for(const layer of p.scene.layers||[])if(layer.widget==='sports-board'){
+            fields.append(el('h4','Sports audio'));
+            RoomGoblinAudioControls.settings(fields,{volume:layer.sportsVolume??1,muted:layer.sportsAudio!==true,change:audio=>{layer.sportsVolume=audio.volume;layer.sportsAudio=!audio.muted}});
+          }
           if(p.scene){button(fields,"Use plain text instead",()=>{if(confirm("Remove the canvas design from this action?")){delete p.scene;payloadFields()}})}
           else {bind("Title","title");bind("Message","text",{type:"textarea"});bind("Subtitle","subtitle");bind("Background","background",{type:"color",default:"#101d2c"});bind("Text color","color",{type:"color",default:"#ffffff"});bind("Text size","size",{type:"number",min:12,max:180,default:64})}
         }else if(action.action==="display.media"){
@@ -125,12 +130,12 @@
           const file=(S.mediaFiles||[]).find(f=>f.storedName===p.storedName),kind=file?.type||(/\.(mp4|webm|mov|m4v)$/i.test(p.storedName||"")?"video":/\.(pdf|pptx?|docx?)$/i.test(p.storedName||"")?"document":"image");
           if(["image","video"].includes(kind))bind("Image / video fit","fit",{options:[["contain","Fit completely (no crop)"],["cover","Fill and crop edges"]],default:"contain"});
           if(kind==="video"){
-            bind("Volume (0–1)","volume",{type:"number",min:0,max:1,default:1}).step="0.05";bind("Muted","muted",{type:"checkbox"});bind("Start at seconds","startAtSeconds",{type:"number",min:0,max:86400,default:0});bind("Stop at seconds (0 = end)","endAtSeconds",{type:"number",min:0,max:86400,default:0});bind("Playback speed","playbackRate",{type:"number",min:.25,max:4,default:1}).step="0.25";
+            RoomGoblinAudioControls.settings(fields,{volume:p.volume??1,muted:!!p.muted,change:audio=>Object.assign(p,audio)});bind("Start at seconds","startAtSeconds",{type:"number",min:0,max:86400,default:0});bind("Stop at seconds (0 = end)","endAtSeconds",{type:"number",min:0,max:86400,default:0});bind("Playback speed","playbackRate",{type:"number",min:.25,max:4,default:1}).step="0.25";
           }else if(["pdf","presentation","document"].includes(kind)){
             bind("Starting page","page",{type:"number",min:1,max:10000,default:1});bind("Advance page every milliseconds (0 = manual)","autoAdvanceMs",{type:"number",min:0,max:3600000,default:0});
           }
 
-        }else if(action.action==="display.url"){bind("Website address","url",{type:"url"});bind("Direct local display access","localDirect",{type:"checkbox",default:true})}
+        }else if(action.action==="display.url"){bind("Website address","url",{type:"url"});bind("Direct local display access","localDirect",{type:"checkbox",default:true});RoomGoblinAudioControls.settings(fields,{volume:p.volume??1,muted:!!p.muted,change:audio=>Object.assign(p,audio)});fields.append(el("p","Website sound controls require a compatible embedded player."))}
         else if(action.action==="display.timer.class-end"){bind("Timer label","label",{default:"%class_short% · Time remaining"});bind("Font size","fontSize",{type:"number",min:12,max:220,default:64});bind("Text color","textColor",{type:"color",default:"#ffffff"})}
         else if(["tv.power","govee.power"].includes(action.action))bind("Power","state",{options:[["on","On"],["off","Off"]],default:"on"});
         else if(action.action==="govee.color")bind("Color","color",{type:"color",default:"#ffffff"});

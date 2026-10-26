@@ -11,6 +11,7 @@ function fixture(){
   const commands=[],audits=[],r={playing:true,activePlayerId:"speaker",pausedForPriority:false,manualStopped:false};
   const ctx=vm.createContext({
     require:createRequire(require.resolve("../src/server")),Date,
+    displayAudio:require("../src/display-audio"),persistentState:{displays:{}},
     devices:{room:{},hall:{audioScope:"independent"}},
     sportsRuntime:{service:{read:()=>({boards:[{id:"sports"}]})}},
     resolveDisplayTargets:target=>Array.isArray(target)?target:[target],
@@ -99,4 +100,26 @@ test("legacy and unknown scope stay shared; scope changes do not cancel an exist
   ctx.backgroundMusicPriorityTargets.clear();ctx.backgroundMusicPriorityTargets.add("hall");
   Object.assign(ctx.manualMediaPriorityRuntime,{active:true,targets:new Set(["hall"])});
   assert.equal(ctx.backgroundMusicPriorityBlocked(),true);
+});
+
+
+test("live Sports audio releases and reacquires room priority while hallway controls stay independent",async()=>{
+  const {ctx,r,commands}=fixture();
+  const state=muted=>({textOptions:{scene:{layers:[{type:"widget",widget:"sports-board",sportsBoardId:"sports",sportsVolume:.5,sportsAudio:!muted}]}}});
+  for(const id of ["hall","room"]){
+    ctx.persistentState.displays[id]=state(false);
+    ctx.backgroundMusicObserveDisplayCommand({type:"display.audio.control",target:[id]},"controller");
+    await ctx.backgroundMusicReconcilePriority();
+    assert.equal(ctx.backgroundMusicPriorityBlocked(),id==="room");
+  }
+  assert.ok(commands.includes("pause"));
+  ctx.persistentState.displays.room=state(true);
+  ctx.backgroundMusicObserveDisplayCommand({type:"display.audio.control",target:["room"]},"controller");
+  await ctx.backgroundMusicReconcilePriority();assert.ok(commands.includes("resume"));
+  r.manualStopped=true;ctx.persistentState.displays.room=state(false);
+  ctx.backgroundMusicObserveDisplayCommand({type:"display.audio.control",target:["room"]},"controller");
+  await ctx.backgroundMusicReconcilePriority();commands.length=0;
+  ctx.persistentState.displays.room=state(true);
+  ctx.backgroundMusicObserveDisplayCommand({type:"display.audio.control",target:["room"]},"controller");
+  await ctx.backgroundMusicReconcilePriority();assert.equal(commands.includes("resume"),false);
 });

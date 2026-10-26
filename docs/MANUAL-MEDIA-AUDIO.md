@@ -12,7 +12,9 @@ The Display Content → Media → Manual / Selected Media panel includes an expl
 - Manual web/stream commands also set `forceAudio` when volume is above zero so the receiver's existing web-audio recovery behavior is used.
 - `localDirect` remains controlled by the existing "Load URL directly from this TV/browser" checkbox.
 
-This control is intentionally scoped to the manual media panel. Morning Announcements retain their dedicated announcement-volume control and automated media retains its existing payload behavior until separately extended.
+This control sets manual playback defaults. Morning Announcements retain their
+dedicated announcement-volume control. For current automated video, website and
+Sports sound, use [Live audio in Automation or Sports](AUTOMATION-DISPLAY-MEDIA.md#live-audio-controls).
 
 ## Replacing displayed content
 

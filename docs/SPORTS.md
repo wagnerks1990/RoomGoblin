@@ -31,8 +31,14 @@ bounded stall recovery. The watchdog checks media time and decoded-frame
 progress independently, escalating through resume, seek, player-local decoder
 reattachment and skipping the failed clip. Seek jumps do not reset escalation. Video starts muted before requested sound is applied;
 blocked audible autoplay falls back to muted playback. An audible board reserves
-Background Music priority until replacement. Silent boards retain Background Music. Audio/volume are captured in the scene when
-sending or scheduling; resend or update the scheduled scene after changing sound.
+Background Music priority until replacement or live muting. Silent boards retain Background Music. Audio/volume are captured in the scene when
+sending or scheduling. The saved volume slider uses 0–100%; **Muted** preserves
+the selected level. Edit the scheduled action's Sports audio to change future runs.
+Under **Boards > Live audio**, choose a display currently showing this board and
+use volume up/down, the percentage slider, Mute or Unmute. This changes current
+playback without resending the board, resetting its roster or restarting the clip.
+The setting also applies to later clips and reconnects until content is replaced.
+The next automation run uses its saved settings. See [live automation audio](AUTOMATION-DISPLAY-MEDIA.md#live-audio-controls).
 Morning Announcements retain priority and remove the Sports renderer/media.
 
 Weather uses the site's saved Weather coordinates and Fahrenheit/Celsius choice,
