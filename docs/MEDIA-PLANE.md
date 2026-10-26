@@ -19,7 +19,12 @@ The control plane remains on the normal RoomGoblin listener (default `3000`). Up
   - byte-range delivery for browser video/audio
   - no controller/API routes
 
-`tools/start-roomgoblin.sh` supervises both processes. If either process exits, the other is terminated so Docker restarts a converged pair rather than leaving half of the appliance running.
+`tools/start-roomgoblin.sh` execs the same Node bootstrap used by `npm start`.
+`src/media-plane-process.js` supervises the media child while the Hub remains
+PID 1. Unexpected child exit fails the application; normal shutdown waits for
+the child's exit, escalating a stuck child after six seconds within the Hub's
+ten-second deadline. An abrupt owner exit kills the child synchronously. See
+[application lifecycle](APPLICATION-LIFECYCLE.md) for ownership and drain limits.
 
 ## Asset authorization
 

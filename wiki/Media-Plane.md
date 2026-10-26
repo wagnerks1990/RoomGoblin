@@ -11,6 +11,14 @@ RoomGoblin separates uploaded video delivery from classroom control traffic.
 
 This prevents a large or slow MP4 transfer from blocking Clear, Stop, navigation, telemetry, or other classroom commands.
 
+The Hub owns the media child through `src/media-plane-process.js`. Unexpected
+child exit fails the application so container restart restores the pair. Normal
+shutdown waits for child exit, escalates a stuck child after six seconds and
+retains the Hub's ten-second overall limit. Abrupt owner exit kills the child
+synchronously. `npm start` and the container use the same Node bootstrap. See
+[application lifecycle](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/APPLICATION-LIFECYCLE.md)
+for the limits of the application writer drain.
+
 ## Authorization
 
 The media listener is not public. Each request is authorized through the normal RoomGoblin control plane before the media process reads the file.

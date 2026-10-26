@@ -2,7 +2,7 @@
 
 const fs=require("fs");
 const path=require("path");
-const {spawn}=require("child_process");
+const {startMediaPlane}=require("./media-plane-process");
 const {DatabaseSync}=require("node:sqlite");
 process.umask(0o077);
 
@@ -100,31 +100,6 @@ function reconcileVeyonSecretMetadata(db){
   db.prepare("UPDATE secret_store SET metadata_json=?,updated_at=? WHERE name='veyon.private-key'")
     .run(JSON.stringify(metadata),new Date().toISOString());
   console.warn(`Startup recovery reconciled Veyon private-key metadata to '${keyName}'.`);
-}
-
-function startMediaPlane(){
-  const child=spawn(process.execPath,[path.join(__dirname,"media-server.js")],{
-    env:process.env,
-    stdio:"inherit"
-  });
-  let intentional=false;
-  const stop=()=>{
-    if(intentional)return;
-    intentional=true;
-    try{child.kill("SIGTERM")}catch{}
-  };
-  process.once("exit",stop);
-  child.once("error",error=>{
-    console.error(`RoomGoblin media plane failed to start: ${error.message}`);
-    if(!intentional){intentional=true;process.exit(1)}
-  });
-  child.once("exit",(code,signal)=>{
-    if(intentional)return;
-    intentional=true;
-    console.error(`RoomGoblin media plane exited unexpectedly (${signal||code||"unknown"}).`);
-    process.exit(1);
-  });
-  return child;
 }
 
 adoptSynchronizedVeyonKeyName();

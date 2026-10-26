@@ -6,8 +6,7 @@
 // so encrypted secrets and live runtime apply logic remain owned by server.js.
 const crypto=require("crypto");
 const express=require("express");
-const fs=require("fs");
-const {DatabaseSync}=require("node:sqlite");
+const {musicAssistantTokenConfigured}=require("./music-assistant-readiness");
 
 const TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
 function tokenEqual(actual,expected){
@@ -19,34 +18,6 @@ function requireMaintenance(req,res,next){
   if(!tokenEqual(req.get("x-maintenance-token"),TOKEN))return res.status(401).json({ok:false,error:"Unauthorized"});
   next();
 }
-
-// Background Music is intentionally dormant until Music Assistant credentials
-// exist. Older alpha.71 behavior invoked the scheduler every five seconds even
-// when no token was configured, generating repeated WebSocket/HTTP 401 errors.
-// This startup guard preserves the saved schedule and automatically begins
-// normal polling as soon as the encrypted token appears in SQLite.
-let integrationReadDb=null,integrationReadDbIdentity=null;
-function databaseIdentity(file){const stat=fs.statSync(file);return `${stat.dev}:${stat.ino}`}
-function closeIntegrationReadDb(){if(integrationReadDb){try{integrationReadDb.close()}catch{}}integrationReadDb=null;integrationReadDbIdentity=null}
-function musicAssistantTokenConfigured(){
-  const file=String(process.env.DATABASE_FILE||"").trim();if(!file)return false;
-  try{
-    const identity=databaseIdentity(file);
-    if(integrationReadDb&&integrationReadDbIdentity!==identity)closeIntegrationReadDb();
-    if(!integrationReadDb){integrationReadDb=new DatabaseSync(file,{readOnly:true});integrationReadDbIdentity=identity}
-    return !!integrationReadDb.prepare("SELECT 1 FROM secret_store WHERE name='musicassistant.token' LIMIT 1").get();
-  }catch{closeIntegrationReadDb();return false}
-}
-function isBackgroundMusicTimer(fn,delay){return Number(delay)<=5000&&/backgroundMusicTick/.test(String(fn||""))}
-const nativeSetInterval=global.setInterval,nativeSetTimeout=global.setTimeout;
-global.setInterval=function(fn,delay,...args){
-  if(typeof fn==="function"&&isBackgroundMusicTimer(fn,delay))return nativeSetInterval.call(global,()=>{if(musicAssistantTokenConfigured())return fn(...args)},delay);
-  return nativeSetInterval.call(global,fn,delay,...args);
-};
-global.setTimeout=function(fn,delay,...args){
-  if(typeof fn==="function"&&isBackgroundMusicTimer(fn,delay))return nativeSetTimeout.call(global,()=>{if(musicAssistantTokenConfigured())return fn(...args)},delay);
-  return nativeSetTimeout.call(global,fn,delay,...args);
-};
 
 // Music Assistant 2.9+ can expose both a Universal Player and one or more
 // protocol children for the same physical device. RoomGoblin asks for protocol

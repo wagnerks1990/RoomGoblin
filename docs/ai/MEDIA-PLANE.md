@@ -6,6 +6,11 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+The Node bootstrap in `src/startup-recovery.js` starts the supervised child
+through `src/media-plane-process.js`; `npm start` and the container wrapper share
+that bootstrap. Preserve fail-together behavior and bounded, awaited child exit
+on shutdown. See `docs/APPLICATION-LIFECYCLE.md` and the Linux process tests.
+
 - `3000`: controller UI, REST API, scheduler, display WebSockets, telemetry, clear/stop/control commands.
 - `3020`: authorized `GET/HEAD /media/*` byte-range delivery only.
 
