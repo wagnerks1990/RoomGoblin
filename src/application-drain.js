@@ -6,7 +6,7 @@ const {setTimeout:delay}=require("node:timers/promises");
 // A response closing does not cancel its async handler. Track returned promises
 // through this application's public registration methods, including bridge
 // registrations, without changing Express prototypes or inspecting its stack.
-function trackApplicationHandlers(app){
+function trackApplicationHandlers(app,{isStopping=()=>false}={}){
   let pending=0;
   const handlers=new WeakMap(),routes=new WeakSet();
   function invoke(handler,self,args){
@@ -24,9 +24,10 @@ function trackApplicationHandlers(app){
     const wrapped=value.length===4
       ? function(error,req,res,next){return invoke(value,this,[error,req,res,next])}
       : function(req,res,next){
-        // A disconnected body parser can call next after HTTP close. Do not
-        // start another handler for that abandoned request.
-        if(req.aborted)return;
+        // A disconnected body parser can call next after HTTP close. During
+        // shutdown, do not start another handler for that abandoned request.
+        // Ordinary request cleanup retains its existing behavior otherwise.
+        if(isStopping()&&req.aborted)return;
         return invoke(value,this,[req,res,next]);
       };
     handlers.set(value,wrapped);handlers.set(wrapped,wrapped);

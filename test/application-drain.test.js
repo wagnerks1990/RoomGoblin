@@ -38,6 +38,25 @@ test("registration retains nested guards, route chains, settings and async error
   await waitUntilDrained(()=>tracker.pending===0);assert.equal(app.get("test-value"),"kept");
 });
 
+test("an aborted body retains ordinary cleanup but cannot start a new writer during shutdown",async t=>{
+  for(const stopping of [false,true]){
+    const app=express();trackApplicationHandlers(app,{isStopping:()=>stopping});
+    let entered,afterAbort,handled=false;
+    const started=new Promise(resolve=>{entered=resolve});
+    const aborted=new Promise(resolve=>{afterAbort=resolve});
+    app.use((req,_res,next)=>{
+      req.resume();entered();
+      req.once("aborted",()=>setImmediate(()=>{next();afterAbort()}));
+    });
+    app.post("/upload",()=>{handled=true});
+    const {url}=await listen(t,app);
+    const req=http.request(url+"/upload",{method:"POST",headers:{"Transfer-Encoding":"chunked"}});
+    req.on("error",()=>{});req.write("partial body");
+    await started;req.destroy();await aborted;
+    assert.equal(handled,!stopping);
+  }
+});
+
 test("WebSocket drain bounds an unresponsive peer and waits for disconnect writes",async t=>{
   const {server,url}=await listen(t,express()),wss=new WebSocketServer({server});
   let closed=false;

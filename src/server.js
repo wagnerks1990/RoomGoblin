@@ -4747,7 +4747,7 @@ async function executeCommand(input, source = "api") {
 // -----------------------------------------------------------------------------
 
 const app = express();
-const httpHandlers=trackApplicationHandlers(app);
+const httpHandlers=trackApplicationHandlers(app,{isStopping:()=>shutdownRequested});
 app.disable("x-powered-by");
 app.set("trust proxy", TRUST_PROXY_HOPS);
 app.use((req,res,next)=>{

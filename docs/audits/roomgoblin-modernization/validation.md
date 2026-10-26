@@ -79,7 +79,7 @@ untracked new files, using its isolated native WSL snapshot.
 | Check | Actual result |
 | --- | --- |
 | Baseline `npm run check` + `npm test` | 965 tests: 963 passed, 0 failed, 2 skipped |
-| Final candidate `npm run check` + `npm test` | 977 tests: 975 passed, 0 failed, 2 skipped |
+| Final candidate `npm run check` + `npm test` | 978 tests: 976 passed, 0 failed, 2 skipped |
 | Python compile: Host Agent server/start/full recovery | Passed |
 | Host Full Recovery unittest suite | 23 passed, 0 failures/errors |
 | All tracked shell scripts, `bash -n` | Passed |
@@ -90,12 +90,14 @@ ownership tests. Docker is absent locally and in WSL; Compose/images, Node 22,
 browser/platform and security coverage remain the required PR workflows, whose
 current result belongs to the exact PR head rather than these local counts.
 
-The 12 new regressions cover:
+The 13 new regressions cover:
 
 - Actual HTTP disconnect and response-finish races: the final write remains in
   the same Hub SQLite database after clean process exit.
 - Express route chaining, nested guards, setting getters, async middleware and
   error handlers, without changing the global prototypes.
+- Ordinary aborted-body cleanup remains unchanged; during shutdown, a late
+  body-parser continuation cannot start another writer for that abandoned request.
 - An unresponsive WebSocket close handshake and disconnect callback completion.
 - An accepted authenticated WebSocket command whose MQTT adapter is deliberately
   delayed: its final command audit persists even after the socket disconnects.

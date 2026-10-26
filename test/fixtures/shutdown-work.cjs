@@ -14,8 +14,8 @@ if(process.env.SHUTDOWN_MQTT_FIXTURE==="1"){
     setImmediate(()=>client.emit("connect"));return client;
   }};
 }
-lifecycle.trackApplicationHandlers=app=>{
-  const tracker=track(app);
+lifecycle.trackApplicationHandlers=(app,options)=>{
+  const tracker=track(app,options);
   app.post("/fixture/pending-write",async(req,res)=>{
     console.log("fixture-writer-started");
     if(req.query.early==="true")res.end("accepted");
