@@ -4,6 +4,11 @@
 
 ## Displays & AV
 
+[Ubuntu managed displays](docs/UBUNTU-MANAGED-DISPLAYS.md) enrolls an Ubuntu
+computer with an independent RoomGoblin receiver on each connected display output.
+Managed Displays includes the SSH setup wizard, screen assignment, preview,
+diagnostics, restricted maintenance and desktop rollback alongside Android devices.
+
 Use the [TV Routing Matrix](docs/TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has
 been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
 are preserved. Receiver setup uses count/IDs again; Settings manages receivers

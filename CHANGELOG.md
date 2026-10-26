@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Add Ubuntu managed display computers with an SSH enrollment wizard, verified
+  host identity, independent receiver/profile per physical output, resolution and
+  rotation controls, previews, individual browser recovery, computer maintenance
+  and a retained pre-installation desktop rollback. Preserve Android management.
+- Patch compatible Hub body-parser and multer dependencies for GHSA-27r3-jxmh-p828
+  and GHSA-q7qp-rjg7-q26m without changing upload behavior or dependency policy.
+
 - Refresh Sports sources in fair, bounded five-minute passes; persist and show
   source health. Import verified public Arbiter team schedules/results and apply
   time-based board changes without requiring a saved configuration revision or

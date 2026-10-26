@@ -2,6 +2,7 @@
 
 const express = require("express");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
+const {UbuntuDisplays,registerUbuntuDisplayRoutes}=require("./ubuntu-displays");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
@@ -5236,6 +5237,18 @@ registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRe
   isAdmin:req=>!dbStore.authEnabled()||(hasRole(requestUser(req),"admin")&&hasCapability(requestUser(req),"*")),
   owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
 
+const ubuntuDisplays=new UbuntuDisplays({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,
+  receivers:()=>publicDeviceConfigs(),
+  receiverOnline:id=>[...wsClients].some(ws=>ws.role==="display"&&ws.deviceId===id&&ws.readyState===WebSocket.OPEN),
+  ensureReceivers:screens=>{
+    const next={...devices};
+    for(const screen of screens)if(!next[screen.receiverId])next[screen.receiverId]={name:screen.name,enabled:true,audioScope:"independent"};
+    dbStore.writeNormalized("devices",{room:deviceConfig.room||ROOM_NAME,devices:next,displayGroups,lightingGroups:[...lightingGroups]});
+    devices=next;deviceConfig.devices=devices;
+  },track:trackFullExportMutation,audit});
+registerUbuntuDisplayRoutes(app,{manager:ubuntuDisplays,requireAdmin,isAdmin:administratorAccessAllowed,
+  track:trackFullExportMutation,audit,trustProxyHops:Number(process.env.TRUST_PROXY_HOPS||0)});
+
 app.get("/api/v1/integrations/check",requireCapability("integrations.control"), async (_req,res)=>{
   const out={ok:true,mqtt:{configured:runtime.mqtt.configured,connected:runtime.mqtt.connected,lastError:runtime.mqtt.lastError},
     hardware:{govee:{configured:runtime.hardware.govee.configured,reachable:runtime.mqtt.connected,lastError:runtime.hardware.govee.lastError},
@@ -8523,6 +8536,7 @@ function gracefulShutdown(signal){
   if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
   veyonCommandQueue.stop();
   esphomeManager.close();
+  ubuntuDisplays.close();
   clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
   for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
   try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};

@@ -42,6 +42,12 @@ item hidden by authorization. The shared stylesheet explicitly preserves the
 
 ## Surface behavior
 
+Managed Displays also contains an independent Ubuntu computer inventory. Its
+wizard verifies SSH identity, checks readiness, assigns each physical output,
+reviews installation changes and reports asynchronous progress. Computer-level
+maintenance is distinct from per-screen controls; failed ADB probes do not disable
+Ubuntu management. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
+
 | Surface | Organization |
 | --- | --- |
 | Main controller | Grouped, searchable navigation; consistent cards, controls and spacing; existing workspace IDs and operations retained |
