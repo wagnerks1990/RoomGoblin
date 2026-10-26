@@ -69,6 +69,8 @@ shutdown, activation and rollback require explicit confirmation and affect the
 whole computer. Commands with uncertain delivery are not automatically replayed.
 Installation jobs survive browser closure; after a Hub restart, an incomplete
 enrollment remains visible for explicit repair instead of being retried blindly.
+Closing the wizard discards its activation target and ignores its late replies;
+the installation continues on the Hub without changing a later wizard session.
 
 Registry/key writes, installation jobs and management actions participate in the
 Hub's Full Recovery writer drain. Device identity, records and encrypted keys

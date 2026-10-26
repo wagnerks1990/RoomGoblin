@@ -2,7 +2,8 @@
 (()=>{
   "use strict";
   const $=id=>document.getElementById(id),base="/api/v1/ubuntu-displays";
-  let inventory={devices:[],receivers:{}},probe=null,editing=null,repairing=null,step=0,polling=false;
+  let inventory={devices:[],receivers:{}},probe=null,editing=null,repairing=null,step=0,polling=false,wizardVersion=0;
+  const currentWizard=version=>version===wizardVersion&&$("ubuntuWizard").open;
   const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   async function request(path="",method="GET",body){
     const response=await fetch(base+path,{method,credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
@@ -11,7 +12,7 @@
   function message(text){$("ubuntuMessage").textContent=text}
   function wizardStep(value){step=value;document.querySelectorAll("[data-ubuntu-step]").forEach(el=>el.hidden=Number(el.dataset.ubuntuStep)!==value);$("ubuntuStep").textContent=["1 · Connect","2 · Assign screens","3 · Review installation","4 · Installation"][value];$("ubuntuBack").hidden=value===0||value===3;$("ubuntuNext").hidden=value===3;$("ubuntuNext").textContent=value===0?"Check computer":value===1?"Review installation":editing?"Save screen assignments":"Install RoomGoblin";message("")}
   function clearCredentials(){for(const id of ["ubuntuPassword","ubuntuKey","ubuntuPassphrase"])$(id).value="";$("ubuntuKeyFile").value=""}
-  function closeWizard(){clearCredentials();probe=null;editing=null;repairing=null;$("ubuntuWizard").close()}
+  function closeWizard(){wizardVersion++;clearCredentials();probe=null;editing=null;repairing=null;$("ubuntuActivate").hidden=true;delete $("ubuntuActivate").dataset.device;$("ubuntuWizard").close()}
   function auth(){return {address:$("ubuntuAddress").value.trim(),port:Number($("ubuntuPort").value),username:$("ubuntuUsername").value.trim(),password:$("ubuntuPassword").value,privateKey:$("ubuntuKey").value,passphrase:$("ubuntuPassphrase").value,fingerprint:$("ubuntuFingerprint").value.trim()}}
   function assignments(){return [...$("ubuntuOutputRows").querySelectorAll("[data-connector]")].filter(row=>row.querySelector('[name="use"]').checked).map(row=>({connector:row.dataset.connector,monitorId:row.dataset.monitor,
     receiverId:row.querySelector('[name="receiver"]').value.trim(),name:row.querySelector('[name="screenName"]').value.trim(),mode:row.querySelector('[name="mode"]').value,rotation:row.querySelector('[name="rotation"]').value,audioSink:row.querySelector('[name="audioSink"]').value,enabled:true}))}
@@ -49,6 +50,7 @@
     }).join("")||'<p class="empty">Add an Ubuntu computer to manage each connected monitor as an independent screen.</p>';
   }
   async function openWizard(device=null,repair=false){
+    const version=++wizardVersion;$("ubuntuActivate").hidden=true;delete $("ubuntuActivate").dataset.device;$("ubuntuJobStatus").textContent="";$("ubuntuNext").disabled=false;
     clearCredentials();$("ubuntuForm").reset();editing=null;repairing=null;probe=null;
     $("ubuntuHubUrl").value=location.origin;$("ubuntuUsername").value="root";$("ubuntuPort").value="22";$("ubuntuFingerprint").value="";$("ubuntuHostVerified").checked=false;
     wizardStep(0);$("ubuntuWizard").showModal();
@@ -58,23 +60,23 @@
       if(repair){repairing=device.id;message("Use the original administrator SSH access to repair/update this computer. Its management identity and browser profiles will be retained.")}
       else{
         editing=device.id;
-        try{await request(`/${device.id}/refresh`,"POST",{});inventory=await request();const fresh=inventory.devices.find(d=>d.id===device.id);probe=fresh.live?.status;if(!probe)throw Error("Computer could not be checked.");screenRows(device.config);wizardStep(1)}catch(e){message(e.message)}
+        try{await request(`/${device.id}/refresh`,"POST",{});const freshInventory=await request();if(!currentWizard(version))return;inventory=freshInventory;const fresh=inventory.devices.find(d=>d.id===device.id);probe=fresh.live?.status;if(!probe)throw Error("Computer could not be checked.");screenRows(device.config);wizardStep(1)}catch(e){if(currentWizard(version))message(e.message)}
       }
     }
   }
   $("ubuntuAdd").addEventListener("click",()=>openWizard());
   $("ubuntuClose").addEventListener("click",closeWizard);
-  $("ubuntuWizard").addEventListener("cancel",clearCredentials);
+  $("ubuntuWizard").addEventListener("cancel",event=>{event.preventDefault();closeWizard()});
   $("ubuntuBack").addEventListener("click",()=>wizardStep(Math.max(editing?1:0,step-1)));
-  $("ubuntuKeyFile").addEventListener("change",async()=>{const file=$("ubuntuKeyFile").files[0];if(file&&file.size<=32768)$("ubuntuKey").value=await file.text();else message("Choose an SSH private key under 32 KiB.")});
+  $("ubuntuKeyFile").addEventListener("change",async()=>{const version=wizardVersion,file=$("ubuntuKeyFile").files[0];if(file&&file.size<=32768){const key=await file.text();if(currentWizard(version)&&$("ubuntuKeyFile").files[0]===file)$("ubuntuKey").value=key}else message("Choose an SSH private key under 32 KiB.")});
   for(const id of ["ubuntuAddress","ubuntuPort"])$(id).addEventListener("input",()=>{$("ubuntuFingerprint").value="";$("ubuntuHostVerified").checked=false});
-  $("ubuntuGetFingerprint").addEventListener("click",async()=>{try{message("Reading SSH host fingerprint…");const result=await request("/host-key","POST",{address:$("ubuntuAddress").value.trim(),port:Number($("ubuntuPort").value)});$("ubuntuFingerprint").value=result.fingerprint;$("ubuntuHostVerified").checked=false;message("Compare this fingerprint with the computer or your trusted SSH inventory, then accept it.")}catch(e){message(e.message)}});
+  $("ubuntuGetFingerprint").addEventListener("click",async()=>{const version=wizardVersion,address=$("ubuntuAddress").value.trim(),port=Number($("ubuntuPort").value);try{message("Reading SSH host fingerprint…");const result=await request("/host-key","POST",{address,port});if(!currentWizard(version)||address!==$("ubuntuAddress").value.trim()||port!==Number($("ubuntuPort").value))return;$("ubuntuFingerprint").value=result.fingerprint;$("ubuntuHostVerified").checked=false;message("Compare this fingerprint with the computer or your trusted SSH inventory, then accept it.")}catch(e){if(currentWizard(version))message(e.message)}});
   $("ubuntuForm").addEventListener("submit",async event=>{
-    event.preventDefault();const button=$("ubuntuNext");button.disabled=true;
+    event.preventDefault();const button=$("ubuntuNext"),version=wizardVersion;button.disabled=true;
     try{
       if(step===0){
         if(!$("ubuntuHostVerified").checked)throw Error("Verify and accept the SSH fingerprint before continuing.");
-        message("Checking Ubuntu, permissions and physical outputs…");probe=await request("/probe","POST",auth());screenRows(repairing?inventory.devices.find(d=>d.id===repairing)?.config:null);wizardStep(1);
+        message("Checking Ubuntu, permissions and physical outputs…");const result=await request("/probe","POST",auth());if(!currentWizard(version))return;probe=result;screenRows(repairing?inventory.devices.find(d=>d.id===repairing)?.config:null);wizardStep(1);
       }else if(step===1){
         const screens=assignments();if((!screens.length&&(editing||probe.graphics==="x11"))||screens.some(s=>!s.receiverId))throw Error("Assign a unique receiver ID to every selected screen.");
         if(new Set(screens.map(s=>s.receiverId)).size!==screens.length)throw Error("Each output needs a different receiver ID.");
@@ -82,23 +84,25 @@
         $("ubuntuInstallDetails").hidden=Boolean(editing);wizardStep(2);
       }else if(step===2){
         const body={hubUrl:$("ubuntuHubUrl").value,screens:assignments()};
-        if(editing){await request(`/${editing}/screens`,"PUT",body);closeWizard();await load();return}
+        if(editing){await request(`/${editing}/screens`,"PUT",body);if(currentWizard(version))closeWizard();await load();return}
         if(!$("ubuntuConsent").checked)throw Error("Confirm the installation changes before continuing.");
         const result=await request("","POST",{...auth(),...body,name:$("ubuntuName").value,id:repairing||undefined,confirm:true});
-        clearCredentials();wizardStep(3);watchJob(result.job.id);
+        if(!currentWizard(version))return;clearCredentials();wizardStep(3);watchJob(result.job.id,version);
       }
-    }catch(e){message(e.message)}finally{button.disabled=false}
+    }catch(e){if(currentWizard(version))message(e.message)}finally{if(currentWizard(version))button.disabled=false}
   });
-  async function watchJob(id){
+  async function watchJob(id,version){
+    if(!currentWizard(version))return;
     try{
-      const {job}=await request(`/jobs/${id}`);$("ubuntuJobStatus").textContent=job.error||job.stage;
-      if(job.state==="running"){setTimeout(()=>watchJob(id),3000);return}
+      const {job}=await request(`/jobs/${id}`);if(!currentWizard(version))return;$("ubuntuJobStatus").textContent=job.error||job.stage;
+      if(job.state==="running"){setTimeout(()=>watchJob(id,version),3000);return}
       $("ubuntuActivate").hidden=job.state!=="completed";$("ubuntuActivate").dataset.device=job.deviceId;await load();
-    }catch(e){$("ubuntuJobStatus").textContent=e.message}
+    }catch(e){if(currentWizard(version))$("ubuntuJobStatus").textContent=e.message}
   }
   $("ubuntuActivate").addEventListener("click",async()=>{
+    const version=wizardVersion,deviceId=$("ubuntuActivate").dataset.device;if(!currentWizard(version)||!deviceId||$("ubuntuActivate").hidden)return;
     if(!confirm("Activate the RoomGoblin kiosk now? This restarts the computer’s graphical session and affects all attached screens."))return;
-    try{await request(`/${$("ubuntuActivate").dataset.device}/command`,"POST",{action:"activate",confirm:true});$("ubuntuJobStatus").textContent="Activation requested. Refresh status to verify every screen.";$("ubuntuActivate").hidden=true}catch(e){message(e.message)}
+    try{await request(`/${deviceId}/command`,"POST",{action:"activate",confirm:true});if(!currentWizard(version))return;$("ubuntuJobStatus").textContent="Activation requested. Refresh status to verify every screen.";$("ubuntuActivate").hidden=true}catch(e){if(currentWizard(version))message(e.message)}
   });
   $("ubuntuComputers").addEventListener("click",async event=>{
     const button=event.target.closest("button[data-action]"),card=button?.closest("[data-id]");if(!card)return;
