@@ -141,7 +141,7 @@ def main():
                         audio_sink = screen.get('audioSink', 'default')
                         route = audio_route(audio_sink, sinks)
                         audio_missing, muted = route['missing'], route['muted']
-                        signature = hashlib.sha256((url + audio_sink + str(muted)).encode()).hexdigest()
+                        signature = hashlib.sha256((url + audio_sink + str(muted) + screen['graphicsMode']).encode()).hexdigest()
                         process = children.get(receiver)
                         if signatures.get(receiver) != signature:
                             stop(process)
@@ -163,11 +163,13 @@ def main():
                                 marker.write_text(token_hash)
                             args = ['/snap/bin/chromium', '--user-data-dir=' + str(profile), '--class=rg-' + receiver,
                                     '--app=' + url, '--no-first-run', '--no-default-browser-check', '--noerrdialogs',
-                                    '--disable-session-crashed-bubble', '--force-device-scale-factor=1', '--disable-gpu',
+                                    '--disable-session-crashed-bubble', '--force-device-scale-factor=1',
                                     '--window-position=' + str(geometry['x']) + ',' + str(geometry['y']),
                                     '--window-size=' + str(geometry['width']) + ',' + str(geometry['height'])]
                             if muted:
                                 args.append('--mute-audio')
+                            if screen['graphicsMode'] == 'software':
+                                args.append('--disable-gpu')
                             env = dict(os.environ)
                             if audio_sink not in ('default', 'muted') and not audio_missing:
                                 env['PULSE_SINK'] = audio_sink

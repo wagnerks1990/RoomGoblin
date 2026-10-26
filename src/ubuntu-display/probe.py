@@ -113,13 +113,26 @@ def inventory():
         connectors.append({'connector': status.parent.name, 'connected': status.read_text().strip() == 'connected'})
     memory = dict(re.findall(r'^(MemTotal|MemAvailable):\s+(\d+)', Path('/proc/meminfo').read_text(), re.M))
     disk = shutil.disk_usage('/')
+    browser = {}
+    try:
+        snap = Path('/snap/chromium/current')
+        meta = (snap / 'meta/snap.yaml').read_text()
+        match = re.search(r'^version:\s*(.+)$', meta, re.M)
+        browser = {'version': match[1].strip("'\"")[:80] if match else 'unknown', 'revision': snap.resolve().name}
+    except OSError:
+        pass
+    cpu = Path('/proc/stat').read_text().splitlines()[0].split()[1:9]
+    cpu = list(map(int, cpu))
     return {'hostname': os.uname().nodename, 'distribution': release.get('ID'),
             'version': release.get('VERSION_ID'), 'architecture': os.uname().machine,
             'machineId': hashlib.sha256(Path('/etc/machine-id').read_bytes().strip()).hexdigest(),
             'graphics': graphics, 'outputs': outputs, 'hardwareConnectors': connectors[:16],
             'audio': audio_inventory(),
             'installed': Path('/etc/roomgoblin-display/identity.json').exists(),
+            'browser': browser, 'kernel': os.uname().release,
+            'rebootRequired': Path('/var/run/reboot-required').exists(),
             'health': {'uptimeSeconds': int(float(Path('/proc/uptime').read_text().split()[0])),
+                       'cpuTicks': sum(cpu), 'cpuIdleTicks': cpu[3] + cpu[4], 'cpuCount': os.cpu_count(),
                        'loadAverage': list(os.getloadavg()), 'memoryTotalKiB': int(memory.get('MemTotal', 0)),
                        'memoryAvailableKiB': int(memory.get('MemAvailable', 0)), 'diskTotalBytes': disk.total, 'diskFreeBytes': disk.free},
             'desktopPresent': Path('/etc/X11/default-display-manager').exists()}

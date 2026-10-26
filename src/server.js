@@ -5261,6 +5261,7 @@ registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRe
   owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
 
 const ubuntuDisplays=new UbuntuDisplays({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown,
+  allowDisruption:device=>!announcementLockedDisplayTargets(device.config.screens.map(s=>s.receiverId)).length,
   receivers:()=>publicDeviceConfigs(),
   receiverOnline:id=>[...wsClients].some(ws=>ws.role==="display"&&ws.deviceId===id&&ws.readyState===WebSocket.OPEN),
   ensureReceivers:screens=>{

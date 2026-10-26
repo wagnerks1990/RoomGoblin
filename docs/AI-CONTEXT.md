@@ -1,5 +1,10 @@
 # AI Project Context
 
+Ubuntu display lifecycle uses bounded background monitoring and the fixed native
+maintenance worker, verified package digest/rollback and non-replayed scheduled
+jobs. Read `UBUNTU-MANAGED-DISPLAYS.md`; preserve enrollment/receiver identity,
+announcement-aware dispatch and Full Recovery drain.
+
 Weather uses the existing scene/layout engine, a bounded server-owned cache and
 authorized receiver projection. Keep provider credits in the footer, editable
 overlay field selections, integrated sports-hour forecasts and unavailable/stale

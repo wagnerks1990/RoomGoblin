@@ -17,5 +17,19 @@ body.rg-workspace #ubuntuStep{color:#83e8c2;margin:12px 0;font-weight:600}
 body.rg-workspace #ubuntuAdd,body.rg-workspace #ubuntuNext{background:#0f766e}
 body.rg-workspace #ubuntuFingerprint{font-family:monospace;font-size:12px}
 body.rg-workspace .ubuntu-card-message{overflow-wrap:anywhere}
+body.rg-workspace .ubuntu-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}
+body.rg-workspace .ubuntu-metrics>div{padding:12px;border:1px solid var(--border,#344356);border-radius:10px;min-width:0}
+body.rg-workspace .ubuntu-metrics small,body.rg-workspace .ubuntu-metrics strong{display:block;overflow-wrap:anywhere}
+body.rg-workspace .ubuntu-metrics strong{margin-top:7px;font-size:18px}
+body.rg-workspace .ubuntu-alerts{padding:12px 12px 12px 30px;border-left:3px solid #f59e0b;border-radius:6px;background:#f59e0b12;line-height:1.6}
+body.rg-workspace .ubuntu-software{display:grid;grid-template-columns:minmax(120px,1fr) 3fr;gap:10px;margin:16px 0;font-size:14px}
+body.rg-workspace .ubuntu-software dt{color:var(--muted,#b8c6d5)}
+body.rg-workspace .ubuntu-software dd{margin:0;overflow-wrap:anywhere}
+body.rg-workspace .ubuntu-job{padding:12px;background:#0f766e1a;border-radius:8px;line-height:1.6;overflow-wrap:anywhere}
+body.rg-workspace .ubuntu-history,body.rg-workspace .ubuntu-packages{padding-left:24px;line-height:1.7;max-height:320px;overflow:auto;overflow-wrap:anywhere}
+body.rg-workspace #ubuntuMaintenance,body.rg-workspace #ubuntuDetails{width:min(680px,94vw);max-height:90vh;overflow:auto}
+body.rg-workspace #ubuntuMaintenance label{margin:14px 0}
+body.rg-workspace #ubuntuDetailNotes{width:100%;min-height:90px;background:var(--rg-bg);color:var(--rg-text);border:1px solid var(--border);border-radius:8px;padding:10px}
+@media(max-width:700px){body.rg-workspace .ubuntu-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}body.rg-workspace .ubuntu-software{grid-template-columns:1fr}body.rg-workspace .ubuntu-software dd{margin-bottom:8px}}
 body.rg-workspace #ubuntuWizard [hidden]{display:none!important}
 @media(max-width:700px){body.rg-workspace #ubuntuWizard .grid .wide{grid-column:auto}body.rg-workspace .ubuntu-computer .card-head{flex-direction:column}body.rg-workspace #ubuntuWizard .grid{grid-template-columns:1fr}body.rg-workspace #ubuntuWizard .dialog-head{gap:8px}}

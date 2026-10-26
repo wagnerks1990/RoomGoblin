@@ -226,6 +226,60 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(page.locator('#ubuntuJobStatus').inner_text(), '')
         self.assertFalse(errors, errors)
 
+    def test_ubuntu_fleet_health_updates_scheduling_and_polling_preserve_drafts(self):
+        monitor = 'a' * 64
+        screen = {'connector': 'HDMI-1', 'monitorId': monitor, 'receiverId': 'screen1', 'name': 'Hallway screen', 'mode': '1920x1080', 'rotation': 'normal', 'audioSink': 'missing-hdmi', 'enabled': True}
+        status = {'protocolVersion': '2', 'identity': 'fixture', 'version': '24.04', 'kernel': '6.8.0', 'agentVersion': 'fixture', 'packageDigest': 'a' * 64,
+                  'outputs': [{'connector': 'HDMI-1', 'monitorId': monitor, 'connected': True, 'modes': ['1920x1080']}], 'audio': {'sinks': []},
+                  'session': {'online': True, 'screens': [{'receiverId': 'screen1', 'browserRunning': True}]},
+                  'health': {'cpuPercent': 12, 'memoryTotalKiB': 100, 'memoryAvailableKiB': 50, 'diskFreeBytes': 50000000000, 'uptimeSeconds': 5000},
+                  'maintenance': {'updates': {'count': 1, 'securityCount': 1, 'checkedAt': 1750000000, 'packages': [{'name': 'openssl', 'installed': '3.0', 'candidate': '3.1', 'security': True}]}}}
+        device = {'id': 'fixture', 'name': 'Hallway computer', 'address': '10.0.0.8', 'port': 22, 'location': 'Hallway', 'config': {'hubUrl': 'http://10.0.0.2:3000', 'screens': [screen]},
+                  'health': {'state': 'attention', 'alerts': [{'code': 'reboot', 'text': 'Ubuntu requires a reboot.'}]}, 'live': {'online': True, 'at': 1750000000000, 'status': status}}
+        sent = []
+        def transport(route, target):
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if route.request.method in ('POST', 'PUT') and not target.endswith('/refresh'):
+                sent.append((target, route.request.post_data_json))
+                route.fulfill(json={'ok': True, 'accepted': True})
+            else:
+                route.fulfill(json={'ok': True, 'devices': [device], 'receivers': {'screen1': {'name': 'Hallway screen'}}})
+            return True
+        for width in (390, 1440):
+            page, errors = self.page('/managed-displays/', width, transport=transport)
+            page.clock.install()
+            page.locator('[data-id="fixture"]').wait_for()
+            self.assertIn('12%', page.locator('.ubuntu-metrics').inner_text())
+            page.locator('#ubuntuSearch').fill('does not exist')
+            self.assertEqual(page.locator('.ubuntu-computer').count(), 0)
+            page.locator('#ubuntuSearch').fill('Hallway')
+            page.locator('summary', has_text='Software & updates').click()
+            page.locator('[data-action="maintenance"]').click()
+            page.locator('#ubuntuOperation').select_option('update-os')
+            self.assertIn('automatic OS rollback', page.locator('#ubuntuOperationDetail').inner_text())
+            page.locator('#ubuntuMaintenanceWhen').select_option('later')
+            page.locator('#ubuntuScheduleAt').fill('2027-01-01T21:00')
+            page.clock.fast_forward(16000)
+            self.assertEqual(page.locator('#ubuntuOperation').input_value(), 'update-os')
+            self.assertEqual(page.locator('#ubuntuScheduleAt').input_value(), '2027-01-01T21:00')
+            page.locator('#ubuntuMaintenanceConfirm').check()
+            page.locator('#ubuntuMaintenanceSubmit').click()
+            page.locator('#ubuntuMaintenance').wait_for(state='hidden')
+            self.assertEqual(sent[-1][1]['operation'], 'update-os')
+            self.assertIn('scheduleAt', sent[-1][1])
+            page.locator('[data-action="details"]').click()
+            page.locator('#ubuntuDetailNotes').fill('Retain this unsaved note')
+            page.clock.fast_forward(16000)
+            self.assertEqual(page.locator('#ubuntuDetailNotes').input_value(), 'Retain this unsaved note')
+            page.locator('#ubuntuDetailsClose').click()
+            page.locator('[data-action="edit"]').click()
+            page.locator('[name="audioSink"]').wait_for()
+            self.assertEqual(page.locator('[name="audioSink"]').input_value(), 'missing-hdmi')
+            self.assertEqual(page.locator('[name="graphicsMode"]').input_value(), 'software')
+            page.locator('#ubuntuClose').click()
+            self.evidence(page, errors, f'ubuntu-fleet-{width}')
+
     def test_controller_navigation_search_and_sections(self):
         for width in (390, 1440):
             page, errors = self.page('/controller/', width)

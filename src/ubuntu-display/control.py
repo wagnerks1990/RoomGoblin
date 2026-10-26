@@ -2,6 +2,7 @@
 """Fixed SSH forced-command interface. This is the only passwordless sudo grant."""
 import base64
 import json
+import math
 import os
 from pathlib import Path
 import pwd
@@ -17,7 +18,7 @@ from probe import inventory
 ROOT = Path('/etc/roomgoblin-display')
 STATE = Path('/run/roomgoblin-display')
 USER = 'rg-display'
-VERSION = '1'
+VERSION = '2'
 
 
 def atomic_json(path, value, mode=0o640):
@@ -83,9 +84,12 @@ def validate_config(value):
         sink = screen.get('audioSink', 'default')
         if not isinstance(sink, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}', sink):
             raise ValueError('Invalid audio output')
+        graphics_mode = screen.get('graphicsMode', 'software')
+        if graphics_mode not in ('auto', 'software'):
+            raise ValueError('Invalid graphics mode')
         clean.append(dict(connector=connector, receiverId=receiver, name=name, monitorId=monitor,
                           mode=mode, rotation=rotation, enabled=screen.get('enabled', True) is True,
-                          enrollmentToken=token, audioSink=sink))
+                          enrollmentToken=token, audioSink=sink, graphicsMode=graphics_mode))
     profiles = value.get('audioProfiles', [])
     if not isinstance(profiles, list) or len(profiles) > 16:
         raise ValueError('Invalid audio profiles')
@@ -95,15 +99,47 @@ def validate_config(value):
     return {'hubUrl': value['hubUrl'].rstrip('/'), 'screens': clean, 'audioProfiles': profiles}
 
 
+def session_state(value):
+    # The kiosk writes runtime state. Project only bounded diagnostics, never
+    # arbitrary user-controlled fields into administrator status or history.
+    if not isinstance(value, dict):
+        raise ValueError('Invalid session state')
+    at = value.get('at', 0)
+    if not isinstance(at, (int, float)) or not math.isfinite(at) or not 0 <= time.time() - at < 12:
+        return {'online': False, 'error': 'session-stale'}
+    allowed = ('', 'disabled', 'disconnected', 'monitor-changed', 'resolution-unavailable',
+               'browser-starting', 'audio-output-unavailable-muted')
+    screens = value.get('screens', [])
+    if not isinstance(screens, list) or len(screens) > 16:
+        raise ValueError('Invalid session screens')
+    clean = []
+    for screen in screens:
+        if not isinstance(screen, dict) or not re.fullmatch(r'[A-Za-z0-9_-]{1,40}', screen.get('receiverId', '')):
+            raise ValueError('Invalid runtime receiver')
+        geometry = screen.get('geometry')
+        if geometry is not None:
+            if not isinstance(geometry, dict) or any(type(geometry.get(k)) is not int or not 0 <= geometry[k] <= 32768 for k in ('x', 'y', 'width', 'height')):
+                raise ValueError('Invalid runtime geometry')
+            geometry = {k: geometry[k] for k in ('x', 'y', 'width', 'height')}
+        clean.append({'receiverId': screen['receiverId'], 'geometry': geometry,
+                      'connector': str(screen.get('connector', ''))[:64],
+                      'browserRunning': screen.get('browserRunning') is True,
+                      'error': screen.get('error') if screen.get('error') in allowed else 'runtime-diagnostic-unavailable'})
+    return {'online': value.get('online') is True, 'at': at, 'screens': clean,
+            **({'error': 'session-reconciliation-failed'} if value.get('error') else {})}
+
+
 def status():
+    from lifecycle import status as maintenance_status, digest, LIB
     result = inventory()
     result['protocolVersion'] = VERSION
     result['agentVersion'] = safe_read(ROOT / 'identity.json').get('version', 'unknown')
     result['identity'] = safe_read(ROOT / 'identity.json')['id']
+    result['packageDigest'] = digest(LIB)
+    result['maintenance'] = maintenance_status()
     try:
-        session = safe_read(STATE / 'state.json')
-        result['session'] = session if time.time() - session.get('at', 0) < 12 else {'online': False, 'error': 'session-stale'}
-    except (OSError, ValueError):
+        result['session'] = session_state(safe_read(STATE / 'state.json'))
+    except (OSError, ValueError, TypeError):
         result['session'] = {'online': False, 'error': 'session-unavailable'}
     return result
 
@@ -117,6 +153,18 @@ def command(request):
     action = request.get('action')
     if action == 'status':
         return status()
+    from lifecycle import begin, active, mutation_lock, recover_agent
+    if action == 'maintenance':
+        return begin(request)
+    with mutation_lock():
+        if active():
+            raise ValueError('Computer maintenance is running')
+        recover_agent()
+        return mutate(request)
+
+
+def mutate(request):
+    action = request.get('action')
     if action == 'configure':
         config = validate_config(request.get('config'))
         atomic_json(ROOT / 'config.json', config)

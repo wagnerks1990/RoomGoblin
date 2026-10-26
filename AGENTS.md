@@ -239,7 +239,13 @@ Ubuntu managed display computers use `src/ubuntu-displays.js` and the fixed
 `docs/UBUNTU-MANAGED-DISPLAYS.md` before changing this feature. Preserve pinned SSH
 host identities, ephemeral bootstrap credentials, encrypted per-computer keys,
 forced-command management, non-sudo kiosk sessions, first-install rollback and
-Full Recovery writer drain. Every physical output has its own stable receiver;
+Full Recovery writer drain. Protocol 2 maintenance is the fixed native
+`lifecycle.py` worker, with a computer-wide lock, durable jobs and independent
+boot recovery. Agent updates fetch fixed trusted-main files and must match the
+running Hub package digest; never accept caller-provided code, URLs or arbitrary
+revisions. Keep announcement-aware dispatch, claimed-before-send schedules,
+non-replayed uncertain operations, native security-update policies and explicit
+OS rollback limits. Every physical output has its own stable receiver;
 monitor/connector changes fail closed. Do not share profiles/receiver IDs, guess
 AV matrix mappings, expose arbitrary remote root commands, or couple Ubuntu
 inventory to ADB health. Existing Android enrollment remains compatible.

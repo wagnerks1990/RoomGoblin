@@ -46,7 +46,9 @@ Managed Displays also contains an independent Ubuntu computer inventory. Its
 wizard verifies SSH identity, checks readiness, assigns each physical output,
 reviews installation changes and reports asynchronous progress. Computer-level
 maintenance is distinct from per-screen controls; failed ADB probes do not disable
-Ubuntu management. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
+Ubuntu management. Computer cards include resource health, software versions,
+alerts, history, metadata editing and explicit immediate/scheduled maintenance.
+Polling preserves focused controls and open dialogs. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
 
 | Surface | Organization |
 | --- | --- |
