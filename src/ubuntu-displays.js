@@ -36,7 +36,7 @@ function hubOrigin(value){
   if(!["http:","https:"].includes(url.protocol)||url.username||url.password||url.search||url.hash||!["","/"].includes(url.pathname))throw fail("Use a Hub origin without a path, credentials or query.");
   return url.origin;
 }
-function screenConfig(input,probe,otherRecords=[],receivers={},allowEmpty=false){
+function screenConfig(input,probe,otherRecords=[],receivers={},allowEmpty=false,previous=[]){
   const hubUrl=hubOrigin(input.hubUrl),screens=input.screens;
   if(!Array.isArray(screens)||(!screens.length&&!allowEmpty)||screens.length>16)throw fail("Assign between one and sixteen screens.");
   const outputs=new Map((probe.outputs||[]).map(o=>[o.connector,o])),used=new Set(),connectors=new Set();
@@ -46,16 +46,17 @@ function screenConfig(input,probe,otherRecords=[],receivers={},allowEmpty=false)
     if(!s||typeof s!=="object"||!/^[a-zA-Z0-9_-]{1,40}$/.test(s.receiverId||""))throw fail("Each screen needs a valid receiver ID (letters, numbers, hyphen or underscore).");
     if(used.has(s.receiverId)||assigned.has(s.receiverId))throw fail("A receiver ID can belong to only one Ubuntu output.",409);
     if(connectors.has(s.connector))throw fail("Each connector can be assigned only once.");
-    const output=outputs.get(s.connector);
-    if(!output?.connected||!output.monitorId||output.monitorId!==s.monitorId)throw fail("A monitor changed or disconnected. Probe the computer again.",409);
+    const output=outputs.get(s.connector),old=previous.find(p=>p.connector===s.connector);
+    const unchangedOffline=!output?.connected&&old&&["connector","monitorId","receiverId","mode","rotation","audioSink"].every(k=>(s[k]??({mode:"auto",rotation:"normal",audioSink:"default"}[k]))===(old[k]??({mode:"auto",rotation:"normal",audioSink:"default"}[k])));
+    if(!unchangedOffline&&(!output?.connected||!output.monitorId||output.monitorId!==s.monitorId))throw fail("A monitor changed or disconnected. Probe the computer again.",409);
     if(receivers[s.receiverId]?.enabled===false)throw fail("Enable the selected receiver before assigning it.",409);
     used.add(s.receiverId);connectors.add(s.connector);
     const mode=s.mode||"auto",rotation=s.rotation||"normal";
-    if(mode!=="auto"&&!output.modes.includes(mode))throw fail("Choose a resolution advertised by this monitor.");
+    if(!unchangedOffline&&mode!=="auto"&&!output.modes.includes(mode))throw fail("Choose a resolution advertised by this monitor.");
     if(!["normal","left","right","inverted"].includes(rotation))throw fail("Invalid screen rotation.");
     const name=String(s.name||s.receiverId).trim();if(!name||name.length>100||/[\x00-\x1f]/.test(name))throw fail("Screen names must be 1–100 printable characters.");
     const audioSink=s.audioSink||"default";
-    if(!["default","muted"].includes(audioSink)&&!(probe.audio?.sinks||[]).some(sink=>sink.name===audioSink))throw fail("Choose an available audio output.");
+    if(!unchangedOffline&&!["default","muted"].includes(audioSink)&&!(probe.audio?.sinks||[]).some(sink=>sink.name===audioSink))throw fail("Choose an available audio output.");
     return {connector:s.connector,monitorId:s.monitorId,receiverId:s.receiverId,name,mode,rotation,audioSink,enabled:s.enabled!==false};
   })};
 }
@@ -124,7 +125,7 @@ class UbuntuDisplays{
     catch(e){this.live.set(id,{at:Date.now(),online:false,error:e.status?e.message:"Status unavailable"})}
     finally{this.busy.delete(id)}
   }
-  async poll(){if(this.closed||!this.canRun())return;for(const d of this.records()){if(this.closed||!this.canRun())break;if(d.state==="ready")await this.refresh(d.id)}}
+  async poll(){if(this.closed||!this.canRun())return;let records;try{records=this.records()}catch{return}for(const d of records){if(this.closed||!this.canRun())break;if(d.state==="ready")await this.refresh(d.id)}}
   async enroll(input){
     this.check();if(this.enrolling||this.configuring)throw fail("Another Ubuntu configuration change is in progress.",409);
     if(input.confirm!==true)throw fail("Review and confirm the kiosk installation first.");
@@ -137,7 +138,7 @@ class UbuntuDisplays{
       if(record&&(record.machineId!==probe.machineId||record.fingerprint!==fp))throw fail("Repair target does not match this computer.",409);
       if(!record&&this.records().some(d=>d.machineId===probe.machineId||d.address===endpoint.address))throw fail("This computer is already enrolled. Use Repair instead.",409);
       if(!record&&this.records().length>=MAX_DEVICES)throw fail("Ubuntu inventory limit reached.",409);
-      const config=screenConfig(input,probe,this.records().filter(d=>d.id!==record?.id),this.receivers(),probe.graphics!=="x11");
+      const config=screenConfig(input,probe,this.records().filter(d=>d.id!==record?.id),this.receivers(),probe.graphics!=="x11",record?.config.screens||[]);
       const id=record?.id||crypto.randomUUID(),key=record?{privateKey:this.storage.getSecret(secretName(id))}:managementKey();
       if(!key.privateKey)throw fail("The saved management key is unavailable.",503);
       if(!key.publicKey)key.publicKey="ssh-rsa "+utils.parseKey(key.privateKey).getPublicSSH().toString("base64");
@@ -178,7 +179,7 @@ class UbuntuDisplays{
     try{
       const d=this.record(id),probe=await this.rpc(d,"status");
       if(probe.identity!==id||probe.machineId!==d.machineId)throw fail("Computer identity changed.",409);
-      const config=screenConfig(input,probe,this.records().filter(d=>d.id!==id),this.receivers());
+      const config=screenConfig(input,probe,this.records().filter(d=>d.id!==id),this.receivers(),false,d.config.screens);
       this.ensureReceivers(config.screens);const deploymentConfig=structuredClone(config);
       this.storage.tx(()=>{if(this.storage.displayCredentialPolicy?.().authenticationRequired)for(const s of deploymentConfig.screens)s.enrollmentToken=this.storage.createDisplayEnrollment(s.receiverId,{ttlMinutes:60}).token});
       await this.rpc(d,"configure",{config:deploymentConfig});

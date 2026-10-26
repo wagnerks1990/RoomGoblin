@@ -17,12 +17,20 @@
     receiverId:row.querySelector('[name="receiver"]').value.trim(),name:row.querySelector('[name="screenName"]').value.trim(),mode:row.querySelector('[name="mode"]').value,rotation:row.querySelector('[name="rotation"]').value,audioSink:row.querySelector('[name="audioSink"]').value,enabled:true}))}
   function screenRows(config=null){
     const connected=(probe.outputs||[]).filter(o=>o.connected);
-    $("ubuntuProbeSummary").textContent=`${probe.hostname} · Ubuntu ${probe.version} · ${connected.length} connected screen${connected.length===1?"":"s"}`;
+    for(const saved of config?.screens||[])if(!connected.some(o=>o.connector===saved.connector))connected.push({connector:saved.connector,monitorId:saved.monitorId,modes:saved.mode==="auto"?[]:[saved.mode],connected:false});
+    $("ubuntuProbeSummary").textContent=`${probe.hostname} · Ubuntu ${probe.version} · ${connected.filter(o=>o.connected).length} connected screens`;
     $("ubuntuOutputRows").innerHTML=connected.map((output,index)=>{
       const saved=config?.screens.find(s=>s.connector===output.connector),receiver=saved?.receiverId||"";
       return `<fieldset class="ubuntu-output" data-connector="${esc(output.connector)}" data-monitor="${esc(output.monitorId)}"><legend>Screen ${index+1} · ${esc(output.connector)}</legend><label class="ubuntu-checkbox"><input type="checkbox" name="use" ${output.monitorId?"checked":"disabled"}>Use this output</label>${!output.monitorId?'<p class="warning">Monitor identity unavailable. Check its cable/adapter before enrollment.</p>':""}<div class="grid"><label>Screen name<input name="screenName" value="${esc(saved?.name||`${probe.hostname} screen ${index+1}`)}" maxlength="100"></label><label>Receiver ID<input name="receiver" list="ubuntuReceivers" value="${esc(receiver)}" placeholder="Unique existing or new ID" pattern="[a-zA-Z0-9_-]{1,40}" maxlength="40"></label><label>Resolution<select name="mode"><option value="auto">Recommended</option>${output.modes.map(m=>`<option ${saved?.mode===m?"selected":""}>${esc(m)}</option>`).join("")}</select></label><label>Rotation<select name="rotation">${[["normal","Landscape"],["left","Portrait left"],["right","Portrait right"],["inverted","Upside down"]].map(([v,label])=>`<option value="${v}" ${saved?.rotation===v?"selected":""}>${label}</option>`).join("")}</select></label><label class="wide">Audio output<select name="audioSink">${[{name:"default",description:"Computer default"},{name:"muted",description:"Muted"},...(probe.audio?.sinks||[])].map(sink=>`<option value="${esc(sink.name)}" ${(saved?.audioSink||"default")===sink.name?"selected":""}>${esc(sink.description)}</option>`).join("")}</select></label></div></fieldset>`;
     }).join("")||'<p class="warning">This computer needs its Xorg kiosk session prepared first. Continue to install, activate the kiosk, then use Assign screens to map the detected monitors. Existing desktop configuration is saved for rollback.</p>';
     $("ubuntuReceivers").innerHTML=Object.entries(inventory.receivers).map(([id,d])=>`<option value="${esc(id)}">${esc(d.name||id)}</option>`).join("");
+    for(const output of connected.filter(o=>!o.connected)){
+      const row=[...$("ubuntuOutputRows").querySelectorAll("[data-connector]")].find(r=>r.dataset.connector===output.connector);
+      const saved=config.screens.find(s=>s.connector===output.connector),sink=row.querySelector('[name="audioSink"]');
+      if(saved.audioSink&&![...sink.options].some(o=>o.value===saved.audioSink)){sink.add(new Option(saved.audioSink,saved.audioSink));sink.value=saved.audioSink}
+      row.querySelector("legend").textContent+=" · disconnected; assignment retained";
+      row.querySelectorAll("input,select").forEach(el=>el.disabled=true);
+    }
   }
   async function load(){
     if(polling)return;polling=true;

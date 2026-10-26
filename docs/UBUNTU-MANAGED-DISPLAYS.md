@@ -120,3 +120,11 @@ checks. The operator browser suite exercises the wizard at desktop/mobile sizes,
 independent receiver assignments, draft retention and credential clearing.
 Physical acceptance must additionally verify reboot, window placement, sustained
 media, announcements/audio, network reconnection, monitor reconnect and rollback.
+
+The 2026-10-26 pilot verified two independent 3840x2160 outputs with different
+existing receiver content, output-specific captures, reboot/session recovery and
+separate configured audio sinks. Restarting one screen changed only its browser
+process; the other remained running. Configuration rollback restored every saved
+file byte-for-byte and restarted the previous desktop, followed by successful
+repair/reactivation. Audible output, physical cable removal and sustained
+announcement playback still require operator acceptance on each installation.

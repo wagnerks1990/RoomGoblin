@@ -35,6 +35,9 @@ test("two identical monitors remain separate by connector; duplicate receivers a
   const audioProbe={...probe,audio:{sinks:[{name:"hdmi-one"}],profiles:[{card:"alsa.card",profile:"pro-audio"}]}};
   const routed=screenConfig({...input,screens:[{...input.screens[0],audioSink:"hdmi-one"}]},audioProbe);
   assert.equal(routed.screens[0].audioSink,"hdmi-one");assert.equal(routed.audioProfiles[0].profile,"pro-audio");
+  const previous=screenConfig(input,probe).screens,offline={...probe,outputs:[outputs[1]]};
+  const kept=screenConfig({...input,screens:previous},offline,[],{},false,previous);assert.equal(kept.screens.length,2);
+  assert.throws(()=>screenConfig({...input,screens:previous.map(s=>({...s,receiverId:s.receiverId+"changed"}))},offline,[],{},false,previous));
 });
 test("bootstrap uses ephemeral admin credentials and a separate restricted encrypted key; exact identities are verified",async()=>{
   const calls=[];let id;
@@ -62,6 +65,10 @@ test("mutations honor full-recovery freeze and serialize each device",async()=>{
   const h=harness();h.manager.canRun=()=>false;
   await assert.rejects(h.manager.enroll({}),e=>e.status===423);await assert.rejects(h.manager.command("x",{}),e=>e.status===423);
   h.manager.canRun=()=>true;h.manager.busy.add("x");await assert.rejects(h.manager.command("x",{action:"reboot",confirm:true}),e=>e.status===409);
+});
+test("unreadable optional inventory reports an error without crashing Hub background polling",async()=>{
+  const h=harness();h.storage.setPreference(STORE,{invalid:true});
+  assert.throws(()=>h.manager.list(),/could not be read/);await assert.doesNotReject(h.manager.poll());
 });
 test("actual SSH transport verifies host keys, isolates JSON stdin, bounds output and rejects changed identity",async t=>{
   const key=crypto.generateKeyPairSync("rsa",{modulusLength:2048,privateKeyEncoding:{type:"pkcs1",format:"pem"},publicKeyEncoding:{type:"spki",format:"pem"}}).privateKey;
