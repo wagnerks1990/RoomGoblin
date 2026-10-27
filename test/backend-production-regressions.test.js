@@ -186,7 +186,7 @@ test("manual video/audio playback pauses scheduler, Background Music, and active
   assert.match(server,/if\(type==="display\.video"\)return true/);
   assert.match(server,/players\/cmd\/pause/);
   assert.match(server,/if\(automationSchedulerEnabled\)setAutomationSchedulerEnabled\(false\)/);
-  assert.match(server,/automationCancellationReasons\.set\(id,"manual-media-priority"\)/);
+  assert.match(server,/requestAutomationRunCancellation\(ids,"manual-media-priority"\)/);
   assert.match(server,/backgroundMusicPriorityTargets\.add\(id\)/);
   assert.match(server,/releaseManualMediaPriority\("schedule-resumed"\)/);
   assert.match(server,/if\(schedulerWasEnabled&&!automationSchedulerEnabled\)setAutomationSchedulerEnabled\(true\)/);

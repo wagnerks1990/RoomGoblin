@@ -5866,8 +5866,9 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
       if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
       if(!winnerIdentities.has(automationOccurrenceIdentity(storedEvent,event)))continue;
       const id=occurrenceId(event,dateKey,event.time);
-      const latest=[...automationRunLedger.read().runs].reverse().find(run=>run.occurrenceId===id);
-      if(latest?.status==="cancelled")continue;
+      // A saved Stop is terminal for this occurrence, including a crash before
+      // its checkpoint or a later running/interrupted diagnostic record.
+      if(automationRunLedger.read().runs.some(run=>run.occurrenceId===id&&["cancel-requested","cancelled"].includes(run.status)))continue;
       candidates.push({storedEvent,event});
     }
   }
@@ -5909,7 +5910,7 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
 }
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
-app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"operator-cancelled");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"operator-cancelled"});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
+app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});requestAutomationRunCancellation([id],"operator-cancelled");audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
 app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const manualMediaPriority=await releaseManualMediaPriority("schedule-resumed");const cancelledManualRuns=await cancelActiveManualAutomationRuns("schedule-resumed"),result=await serializeMorningAnnouncementsLifecycle(()=>reconcileScheduledAutomationState("operator-resume")),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery,cancelledManualRuns,manualMediaPriority})}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
@@ -6710,8 +6711,7 @@ function manualMediaPriorityCommand(command,source="api"){
 }
 function pauseActiveAutomationRunsForManualMedia(){
   const ids=[...automationRunningOccurrences.keys()];
-  for(const id of ids){automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"manual-media-priority");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"manual-media-priority"});}
-  return ids;
+  return requestAutomationRunCancellation(ids,"manual-media-priority");
 }
 async function pausePlayingMusicAssistantPlayersForManualMedia(){
   let players=[];try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}
@@ -8535,6 +8535,18 @@ const automationRunningOccurrences=new Map();
 const automationRunningOccurrenceMeta=new Map();
 const automationCancelledOccurrences=new Set();
 const automationCancellationReasons=new Map();
+function requestAutomationRunCancellation(ids,reason){
+  const selected=[...new Set(ids)],schedulerTime=schedulerClock.now().toISOString();
+  const entries=selected.map(id=>{
+    const meta=automationRunningOccurrenceMeta.get(id);
+    return {occurrenceId:id,automationId:meta?.automationId||null,classId:meta?.classId||null,status:"cancel-requested",schedulerTime,reason};
+  });
+  // The preference upsert is atomic. Keep every selected owner unchanged if
+  // persistence fails, instead of cancelling a partially saved selection.
+  automationRunLedger.recordMany(entries);
+  for(const id of selected){automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,reason)}
+  return selected;
+}
 function startOwnedAutomationOccurrence(id,meta,execute){
   if(automationRunningOccurrences.has(id))throw new Error("Automation occurrence is already running");
   const resources=new Set(meta.resources||[]);
@@ -8566,10 +8578,9 @@ function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(runningId===newOccurrenceId)continue;
     if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
-    automationCancelledOccurrences.add(runningId);automationCancellationReasons.set(runningId,"superseded");
-    automationRunLedger.record({occurrenceId:runningId,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"superseded"});
     cancelled.push(runningId);
   }
+  requestAutomationRunCancellation(cancelled,"superseded");
   if(cancelled.length)audit({kind:"automation.run.supersede",automationId:event.id,occurrenceId:newOccurrenceId,cancelled});
   return cancelled;
 }
@@ -8578,13 +8589,11 @@ async function cancelActiveManualAutomationRuns(reason="schedule-resumed"){
   const tasks=[];
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(!meta?.manual)continue;
-    automationCancelledOccurrences.add(runningId);
-    automationCancellationReasons.set(runningId,reason);
-    automationRunLedger.record({occurrenceId:runningId,automationId:meta.automationId||null,classId:meta.classId||null,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason});
     ids.push(runningId);
     const task=automationRunningOccurrences.get(runningId);
     if(task)tasks.push(Promise.resolve(task));
   }
+  requestAutomationRunCancellation(ids,reason);
   if(ids.length){
     audit({kind:"automation.manual.cancel-for-resume",reason,cancelled:ids});
     // Manual continuous runs check cancellation at every action boundary and
@@ -8602,13 +8611,11 @@ async function cancelOverlappingManualAutomationRuns(event,reason="manual-run-re
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(!meta?.manual)continue;
     if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
-    automationCancelledOccurrences.add(runningId);
-    automationCancellationReasons.set(runningId,reason);
-    automationRunLedger.record({occurrenceId:runningId,automationId:meta.automationId||null,classId:meta.classId||null,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason});
     ids.push(runningId);
     const task=automationRunningOccurrences.get(runningId);
     if(task)tasks.push(Promise.resolve(task));
   }
+  requestAutomationRunCancellation(ids,reason);
   if(ids.length){
     audit({kind:"automation.manual.replace",automationId:event.id||null,reason,cancelled:ids});
     await Promise.allSettled(tasks);

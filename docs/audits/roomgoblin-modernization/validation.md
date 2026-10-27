@@ -890,3 +890,34 @@ Host Python compilation and tracked Bash syntax passed. Final diff review and
 whitespace checks passed. Fresh CI is still required on the consolidated PR head;
 Docker/Compose, image scans/builds and platform/browser qualification remain its
 responsibility. No physical device command or production fault injection was used.
+
+PR #278 head `e3f93c4f5755784e1950d41a1b6cadb0c1e31114` subsequently passed all
+14 PR checks, with no unresolved review threads, and was squash-merged as
+`66c54a2b321675905472ea992b88b0f0319ab8fa`. Main validation/publication and normal
+backed-up appliance delivery remain pending.
+
+## Cancellation persistence follow-up (2026-10-27 UTC)
+
+The 24 cancellation/recovery fixtures failed 18 baseline cases and passed six
+controls. They use actual cancellation functions, the operator callback, recovery
+admission and the real ledger with isolated preference snapshots. The corrected
+focused runtime/ownership/resource/cancellation suite passed all **60 tests**.
+The full active-worktree native Linux run is in progress. No physical fault
+injection or classroom command was issued.
+
+The first native snapshot had **1,136 tests: 1,132 passed, 2 failed, 2 skipped**.
+Both failures were obsolete source-pattern assertions for direct manual-media
+cancellation and latest-row cancellation recovery. The second snapshot included
+only the first assertion correction and had **1,133 passed, 1 failed, 2 skipped**.
+Both assertions now follow the shared helper and retained-history predicate;
+the corrected focused suite passes **70 tests**. A fresh full snapshot is running.
+Neither intermediate full run qualifies the patch. A Windows contract run passed
+40 and failed the Linux-only shared-mode assertion; native Linux passed that
+assertion unchanged. The Windows failure is environmental.
+
+The final native snapshot on checked main `66c54a2` plus the cancellation patch
+passed **1,136 tests: 1,134 passed, 0 failed, 2 root-only ownership skips**, plus
+**23 Host Recovery tests**, Node/controller checks, Host Python compilation and
+tracked Bash syntax. Final diff and whitespace review passed. Only documentation
+qualification text changed afterward. Docker is unavailable locally; fresh CI
+must qualify Compose, image builds/scans, browser tests and native artifacts.

@@ -22,7 +22,7 @@ function harness({devices={tv1:{enabled:true,avOutput:1},tv2:{enabled:true,avOut
     schedulerClock:{now:()=>new Date(),commandsAllowed:()=>true},
     classroomAutomations:{events:[]},automationSchedulerEnabled:true,shuttingDown:false,
     automationCancelledOccurrences:new Set(),automationCancellationReasons:new Map(),automationRunningOccurrenceMeta:new Map(),
-    automationRunLedger:{record:()=>{}},
+    automationRunLedger:runtime.makeLedger({getPreference:()=>({runs:[]}),setPreference:()=>{}}),
     morningAnnouncementsRuntime:{active:false},isAutomationSuppressed:()=>({blocked:false}),
     normalizeTimerOverlay:value=>value||null,expandAutomationPayload:payload=>payload,
     AUTOMATION_ACTIONS:new Set(["tv.power","display.clear","govee.power"]),
@@ -40,6 +40,7 @@ function harness({devices={tv1:{enabled:true,avOutput:1},tv2:{enabled:true,avOut
     section("async function runSingleAutomationAction(","function timerLinkedClassChain(")+"\n"+
     section("async function runClassroomAutomation(","function safeStoredName(")+"\n"+
     section("function automationResourceKeys(","function automationConflictSignature(")+"\n"+
+    section("function requestAutomationRunCancellation(","function startOwnedAutomationOccurrence(")+"\n"+
     section("function supersedeOverlappingAutomationRuns(","async function cancelActiveManualAutomationRuns("),ctx);
   return {ctx,commands,lights,display,keys:event=>plain(ctx.automationResourceKeys(event)).sort(),async run(event){
     ctx.classroomAutomations.events=[event];return ctx.runClassroomAutomation(event,{maxPasses:1});
