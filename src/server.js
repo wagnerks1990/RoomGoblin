@@ -12,6 +12,8 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const net = require("net");
+const {setTimeout:plutoAbortableDelay}=require("node:timers/promises");
+const {createPlutoStatusReader,readPlutoResponse,STATUS_BUDGET_MS:PLUTO_STATUS_BUDGET_MS}=require("./pluto-transport");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
@@ -4477,13 +4479,12 @@ function plutoBuild(action){
   return {body,expected,readOnly,meta:p};
 }
 
-async function plutoPostRaw(body){
+async function plutoPostRaw(body,{signal}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PLUTO_TIMEOUT_MS),started=Date.now();
   try{
-    const r=await fetch(PLUTO_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:controller.signal});
-    const text=await r.text();
-    let data;try{data=JSON.parse(text)}catch{throw new Error(`Pluto returned non-JSON: ${text.slice(0,300)}`)}
-    if(!r.ok)throw new Error(`Pluto HTTP ${r.status}`);
+    signal?.throwIfAborted();
+    const r=await fetch(PLUTO_URL,{method:"POST",redirect:"error",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:signal?AbortSignal.any([signal,controller.signal]):controller.signal});
+    const data=await readPlutoResponse(r);
     audit({kind:"service.action",component:"pluto",operation:String(body?.comhead||"request"),durationMs:Date.now()-started,status:r.status,ok:true});
     return data;
   }catch(err){
@@ -4492,15 +4493,24 @@ async function plutoPostRaw(body){
   }finally{clearTimeout(timer)}
 }
 
-async function directPluto(action){
+async function directPluto(action,{signal}={}){
   const req=plutoBuild(action);
+  if(!PLUTO_URL)throw new Error("Pluto matrix is not configured");
+  const readController=req.readOnly&&!signal?new AbortController():null;
+  const readTimer=readController?setTimeout(()=>readController.abort(new Error(`Matrix read exceeded its ${PLUTO_STATUS_BUDGET_MS} ms budget`)),PLUTO_STATUS_BUDGET_MS):null;
+  if(!req.readOnly)plutoStatusReader.invalidate();
+  try{return await performPlutoRequest(action,req,{signal:signal||readController?.signal})}
+  finally{if(readTimer)clearTimeout(readTimer);if(!req.readOnly)plutoStatusReader.invalidate()}
+}
+async function performPlutoRequest(action,req,{signal}={}){
   let last;
   const attempts=req.readOnly?Math.max(1,PLUTO_READ_RETRIES+1):1;
   const delays=[0,120,250,500,900];
   for(let n=0;n<attempts;n++){
-    if(n && delays[Math.min(n,delays.length-1)]) await new Promise(r=>setTimeout(r,delays[Math.min(n,delays.length-1)]));
     try{
-      const raw=await plutoPostRaw(req.body);last=raw;
+      signal?.throwIfAborted();
+      if(n && delays[Math.min(n,delays.length-1)]) await plutoAbortableDelay(delays[Math.min(n,delays.length-1)],undefined,{signal});
+      const raw=await plutoPostRaw(req.body,{signal});last=raw;
       if(raw?.comhead===req.expected){
         runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
         if(req.readOnly)return {type:action.action,data:raw,retries:n};
@@ -4512,12 +4522,14 @@ async function directPluto(action){
         return {type:"ack",action:action.action,ok:true,pendingVerify:true,message:`Write sent; Pluto returned stale ${raw?.comhead||"response"}. Verify on refresh.`,raw};
       }
     }catch(err){
+      if(signal?.aborted){runtime.hardware.pluto.lastError=signal.reason.message;throw signal.reason}
       runtime.hardware.pluto.lastError=err.name==="AbortError"?`Timeout after ${PLUTO_TIMEOUT_MS} ms`:err.message;
       if(!req.readOnly||n===attempts-1)throw err;
     }
   }
   throw new Error(`Pluto kept returning stale responses. Last: ${last?.comhead||"unknown"}`);
 }
+const plutoStatusReader=createPlutoStatusReader(directPluto);
 
 async function runLightingCommand(command){
   const p=command.payload||{},type=command.type;
@@ -5393,10 +5405,7 @@ app.post("/api/v1/govee/:target/:action",requireControl,async(req,res)=>{
 // v0.8 direct Pluto APIs
 app.post("/api/v1/pluto",requireControl,async(req,res)=>{try{res.json(await directPluto(req.body||{}))}catch(e){res.status(502).json({ok:false,error:e.message})}});
 app.get("/api/v1/pluto/status",requireClassroomRead,async(_req,res)=>{
-  const out={ok:true,labels:avLabels};
-  for(const a of ["videoStatus","outputStatus","inputStatus","cecStatus","systemStatus","networkStatus"]){
-    try{out[a]=(await directPluto({action:a})).data}catch(e){out.ok=false;out[a]={error:e.message}}
-  }
+  const out={...await plutoStatusReader.status(),labels:avLabels};
   res.status(out.ok?200:207).json(out);
 });
 app.get("/api/v1/pluto/labels",requireClassroomRead,(_req,res)=>res.json({ok:true,labels:avLabels}));
@@ -6375,6 +6384,7 @@ app.put("/api/v1/admin/integration-connections",requireAdmin,async(req,res)=>{
       dbStore.putSecret("veyon.private-key",key,{type:"private-key",integration:"veyon",keyName:next.veyon.keyName});
     }
     dbStore.setPreference("integrations.connections",next);
+    plutoStatusReader.invalidate();
     applyIntegrationConnections(next);
     runtime.hardware.pluto={...runtime.hardware.pluto,configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null};
     veyonConnectionCache.clear();veyonAuthInFlight.clear();

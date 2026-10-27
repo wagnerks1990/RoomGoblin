@@ -464,6 +464,29 @@ test("maintenance database API is token-bound and keeps secrets masked by defaul
   assert.equal(result.json.integrations.modules.govee2mqtt.apiKey,"••••••••");
 });
 
+test("matrix destination configuration requires administrator or authenticated maintenance ownership",async()=>{
+  const before=await request("/api/v1/admin/config",{authenticated:true});
+  const login=await request("/api/v1/auth/login",{method:"POST",body:{username:"viewer-test",password:"viewer-test-password"}});
+  assert.equal(login.response.status,200);
+  const viewerCookie=String(login.response.headers.get("set-cookie")||"").split(";")[0];
+  const created=await request("/api/v1/admin/users",{method:"POST",authenticated:true,body:{username:"matrix-operator",role:"operator",profileId:"teacher",password:"matrix-operator-fixture",enabled:true}});
+  assert.equal(created.response.status,200);
+  const operatorLogin=await request("/api/v1/auth/login",{method:"POST",body:{username:"matrix-operator",password:"matrix-operator-fixture"}});
+  assert.equal(operatorLogin.response.status,200);
+  const operatorCookie=String(operatorLogin.response.headers.get("set-cookie")||"").split(";")[0];
+  const body={pluto:{url:"http://192.0.2.99/unapproved"}};
+  for(const headers of [{},{cookie:viewerCookie},{cookie:operatorCookie},{"x-maintenance-token":"test-maintenance-secret"}]){
+    const denied=await request("/api/v1/admin/integration-connections",{method:"PUT",body,headers});
+    assert.equal(denied.response.status,403);
+  }
+  for(const headers of [{},{cookie:viewerCookie},{cookie:operatorCookie},{"x-maintenance-token":"wrong"}]){
+    const denied=await request("/api/v1/internal/maintenance/integration-connections",{method:"PUT",body,headers});
+    assert.equal(denied.response.status,401);
+  }
+  const after=await request("/api/v1/admin/config",{authenticated:true});
+  assert.deepEqual(after.json.integrationConnections,before.json.integrationConnections);
+});
+
 test("classroom integration connections are GUI-managed, database-backed, and secret-safe",async()=>{
   const mqttPassword="mqtt-regression-secret",veyonKey="-----BEGIN PRIVATE KEY-----\nregression-only\n-----END PRIVATE KEY-----";
   let result=await request("/api/v1/admin/integration-connections",{method:"PUT",authenticated:true,body:{mqtt:{url:"",username:"classroom-hub",password:mqttPassword,jsonBridge:true,legacyBridge:false},pluto:{url:"http://192.0.2.20/cgi-bin/instr",timeoutMs:5500,readRetries:3},veyon:{url:"http://host.docker.internal:11080",keyName:"ClassroomControlHub",privateKey:veyonKey,scanSubnet:"192.0.2",scanStart:20,scanEnd:39,poolMax:18,authRetries:1,thumbnailConcurrency:6}}});

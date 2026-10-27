@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Share matrix status scans across callers, cap aggregate/named reads at eight
+  seconds and invalidate cached readings on command or connection changes.
+- Bound matrix response bodies to 64 KiB, stop retry waits on cancellation and
+  fail immediately when the optional matrix is unconfigured; writes remain single-attempt.
+
 - Give Displays & AV a dedicated workspace owner; isolate bounded browser reads,
   retain unavailable inventories and preserve focused matrix controls on refresh.
 - Report rejected matrix commands and unknown telemetry accurately; preserve TV

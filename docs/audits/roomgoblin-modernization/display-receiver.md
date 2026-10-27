@@ -1,7 +1,7 @@
 # Display receiver browser-runtime review
 
 Baseline: `b3ba0afb2c06f12df7be8ff98c3953cfd00f6957`, alpha.85.
-Status: source review and full local qualification complete; CI and delivery pending.
+Status: source review, local/CI qualification, merge and appliance delivery complete.
 New renderer identifier: `dynamic-fit-20261027-1`.
 
 ## Inspection scope
@@ -32,7 +32,7 @@ production acceptance.
 | Baseline locations | `public/display/index.html:158-162,206-216` |
 | Complexity / compatibility risk | Small / Low |
 | Expected benefit | Play and Restart work for intentionally paused initial content |
-| State | Identified, reproduced, planned, implemented, full local qualification passed; CI and delivery pending |
+| State | Identified, reproduced, planned, implemented, local/CI qualification passed; merged and appliance delivery verified |
 
 The shared start helper returned immediately whenever the original media payload
 had `autoplay:false`, including explicit Play and Restart. The baseline browser
@@ -51,7 +51,7 @@ the same receiver element, plus existing persistent-session/audio regressions.
 | Baseline locations | `public/display/index.html:158-184,186-204,206-216` |
 | Complexity / compatibility risk | Medium / Medium; asynchronous playback ownership |
 | Expected benefit | The latest explicit stop/pause remains authoritative |
-| State | Identified, reproduced, planned, implemented, full local qualification passed; CI and delivery pending |
+| State | Identified, reproduced, planned, implemented, local/CI qualification passed; merged and appliance delivery verified |
 
 The helper checked video identity after awaiting play, but a Pause on the same
 video did not change identity. The pending helper could unmute, notice the paused
@@ -76,7 +76,7 @@ is not hardware decoder or acoustic acceptance.
 | Baseline locations | `public/display/index.html:142-150,245` |
 | Complexity / compatibility risk | Small / Low |
 | Expected benefit | Replaced content stops generating obsolete image requests |
-| State | Identified, reproduced, planned, implemented, full local qualification passed; CI and delivery pending |
+| State | Identified, reproduced, planned, implemented, local/CI qualification passed; merged and appliance delivery verified |
 
 Image load errors scheduled anonymous timeouts. Clear removed the DOM but did not
 cancel those callbacks; the baseline fixture made a second request after Clear.
@@ -95,7 +95,7 @@ requests before/after Clear and retains the empty media root.
 | Baseline locations | `public/display/index.html:58,271` |
 | Complexity / compatibility risk | Small / Low; server verification unchanged |
 | Expected benefit | Explicit enrollment works in the current page when storage is unavailable |
-| State | Identified, reproduced, planned, implemented, full local qualification passed; CI and delivery pending |
+| State | Identified, reproduced, planned, implemented, local/CI qualification passed; merged and appliance delivery verified |
 
 One broad try/catch parsed the enrollment fragment, cleared the URL, then read local
 storage. A SecurityError discarded the already-extracted one-use token and returned
@@ -115,7 +115,7 @@ page-local; a future reload can require a fresh enrollment link.
 | Baseline location | `public/display/layout.css:16` |
 | Complexity / compatibility risk | Small / Low |
 | Expected benefit | Packaged defaults match the canonical body whitespace policy |
-| State | Identified, validated by source inspection, implemented; full local qualification passed; CI and delivery pending |
+| State | Identified, validated by source inspection, implemented; local/CI qualification passed; merged and appliance delivery verified |
 
 A literal backslash-n separated the heading rule from `#text`, becoming part of the
 selector rather than a line break. The module subsequently reapplied body styles,
@@ -162,3 +162,17 @@ root-only skips; 23 Host Recovery tests; all Python/Bash/controller checks;
 merged Today changes and all receiver logic/tests. Later edits record evidence only.
 No Docker runtime is available locally; required CI retains Compose, both image
 builds/scans and platform artifacts before merge.
+
+
+## Verified delivery
+
+PR #274 merged as `ed8135b9bd8fd9f340a6360611a7db2767da08e4`. All PR/main gates,
+Wiki sync and exact image publication succeeded. The normal backed-up updater
+completed on 2026-10-27 at 05:59:48 UTC. Clean main and the healthy Hub image
+match that commit; the healthy maintenance container was retained. Control/media
+and Host Agent health, readiness, canonical SQLite, eight secret decryptions,
+DB/ADB permissions, authorization and served receiver/layout/editor assets passed.
+Backup checksum, ZIP CRC and extracted SQLite checks passed, with rollback to
+`e7534eced5a8a803f524e46e7667f06bc7ab5deb` available and no pending request.
+PR #274 records the complete receipt. Existing physical receivers were not forced
+to reload and their currently loaded browser revision remains unverified.

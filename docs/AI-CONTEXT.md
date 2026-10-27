@@ -53,6 +53,13 @@ and AV-label stores; leave `room.topology` archived and untouched. Do not restor
 topology scripts, request wrappers or preference projections. Keep unchanged
 matrix controls stable across polling and surface save failures.
 
+Matrix reads use the shared `src/pluto-transport.js` status owner: one pending
+scan, two-second monotonic cache, eight-second total read budgets and bounded
+64 KiB response bodies. Keep cancellation active through bodies and retry waits.
+Invalidate readings on command/connection changes without replaying uncertain
+writes. Preserve returned handler ownership after browser disconnect and the
+existing announcement, audit-freeze and shutdown contracts.
+
 
 Alpha.82 live-upgrade corrections and acceptance limits are documented in
 `ALPHA82-UPGRADE-RECOVERY.md`. Preserve shared SQLite/ADB access under GID 10001
