@@ -137,6 +137,7 @@ class ESPHomeManager{
     });
   }
   async discover({force=false}={}){
+    this.checkRun();
     if(!force&&Date.now()-this.discoveryCache.at<15000)return {ok:true,cached:true,devices:this.discoveryCache.devices};
     if(this.discoveryPromise)return this.discoveryPromise;
     const work=()=>new Promise((resolve,reject)=>{

@@ -19,6 +19,18 @@ test("blank ESPHome key is accepted only when explicitly allowed",()=>{
   const key=crypto.randomBytes(32).toString("base64");assert.equal(encryptionKey(key,{allowEmpty:true}),key);
 });
 
+for(const state of ["cold","cached","pending","closed"])test(`ESPHome discovery respects lifecycle admission before ${state} work`,async()=>{
+  const h=fixture();let starts=0;
+  try{
+    h.manager.spawnProcess=()=>{starts++;throw Error("Unexpected discovery worker start")};
+    if(state==="cached")h.manager.discoveryCache={at:Date.now(),devices:[]};
+    if(state==="pending")h.manager.discoveryPromise=Promise.resolve({ok:true,devices:[]});
+    if(state==="closed")h.manager.close();else h.manager.canRun=()=>false;
+    await assert.rejects(h.manager.discover(),{status:423});
+    assert.equal(starts,0,"rejected discovery must not start a worker");
+  }finally{h.close()}
+});
+
 test("an intentionally unencrypted native API device can be enrolled without storing a fake secret",async()=>{
   const h=fixture();try{
     const result=await h.manager.save(null,{name:"Open node",address:"10.44.0.9",port:6053,key:""});

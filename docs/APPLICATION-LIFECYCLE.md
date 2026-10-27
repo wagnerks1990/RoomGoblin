@@ -113,6 +113,13 @@ fails without issuing a token if work remains; it does not cancel that work or
 close SQLite. Read methods and explicitly tracked background owners retain their
 existing policy. Detached work still requires explicit ownership.
 
+ESPHome discovery is a GET operation with explicitly tracked asynchronous work
+and a success audit. Its manager checks admission before cache lookup or pending
+scan reuse, so new calls cannot enter while export acquisition/freeze or close
+holds the lifecycle lock. Already accepted discovery drains normally. Audit
+records remain buffered while freeze is requested and flush after authenticated
+thaw; shutdown waits for the final audit before closing SQLite.
+
 After the listeners, child and writers drain, shutdown flushes pending audit
 records and performs a nonwaiting SQLite WAL checkpoint. A busy/failed checkpoint,
 pending audit write or drain deadline exits with status 1; it must not be reported
@@ -160,6 +167,11 @@ or finish its response, then verify freeze acknowledgment follows its final
 SQLite write. They also exercise rejection cleanup, acquisition timeout/retry,
 the real administrator proxy with a loopback maintenance fixture, and stable
 mutation classification through mounted middleware and async error handlers.
+
+Discovery regressions run the real manager, administrator route, freeze/thaw,
+shutdown and SQLite audit path with a controlled worker IPC stream. They cover
+new/cached admission, accepted discovery across freeze and shutdown, and deferred
+audit persistence. They do not perform a physical mDNS scan.
 
 There is no schema, version, receiver identity, port, authentication or dependency
 migration. Deployment requires the normal validated-main image pair and backed-up

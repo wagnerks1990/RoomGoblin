@@ -279,6 +279,40 @@ retained registration composition; integration business logic remains separate.
   No physical playback or production fault injection is claimed.
 - **Status:** Implemented; validation and delivery recorded separately.
 
+## RG-ARCH-008: discovery bypasses the manager's lifecycle admission
+
+- **Subsystem/category/priority:** Core lifecycle / Reliability / P2.
+- **Baseline:** `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`, alpha.85.
+- **Location at baseline:** `src/esphome.js:139-168,251-265`;
+  `src/server.js:5283-5287,3677-3711`.
+- **Current implementation/problem:** Discovery returns cached/pending work or
+  starts its helper without the `canRun`/closed check used by other operations.
+  Its GET route bypasses the generic mutating-method admission guard. A paused
+  or closed manager can therefore admit another scan or successful cached call.
+- **Evidence:** Five corrected baseline regressions fail: four manager states
+  (cold, cached, pending and closed), and a real administrator GET returning 200
+  while a canonical Hub export is frozen. Accepted discovery already drains
+  correctly. Audit persistence is already buffered during a freeze, so this is
+  not evidence of a SQLite snapshot write or production corruption.
+- **Recommendation/benefit:** Apply the existing manager admission check before
+  every discovery path, keeping lifecycle pause semantics consistent and avoiding
+  additional discovery work while the application is quiescing.
+- **Complexity/compatibility risk/confidence:** Small / Low / Confirmed.
+- **Implementation:** `discover()` calls `checkRun()` before cache lookup, reuse
+  or spawn. Existing accepted scans and their tracking/audit policy are retained.
+- **Review:** Read `src/esphome.js`, `src/ubuntu-displays.js` and
+  `src/sports-service.js` in full for lifecycle ownership; review their Hub wiring,
+  audit/freeze code and discovery UI error handling. Native device workers and
+  physical device acceptance remain separate feature review units.
+- **Verification:** Manager admission permutations plus real canonical-process
+  administrator discovery, freeze/thaw and shutdown with temporary SQLite and a
+  controlled worker IPC stream. Verify no new worker/success audit on rejection,
+  normal retry/cache after thaw, accepted-work drain and deferred audit flush.
+- **Preserved boundaries/limits:** Authentication, rate limits, discovery result
+  bounds, credential-free helper, native device state and audit buffering.
+  Tests do not perform mDNS, device adoption or hardware commands.
+- **Status:** Implemented; validation and delivery recorded separately.
+
 ## Completion boundary
 
 The first bootstrap/media/readiness patch is implemented. The broader Core

@@ -241,3 +241,41 @@ The user requested push, merge and update after this change; the normal
 validated-main publication, operational backup and rollback path remain required.
 Delivery and hosted Wiki synchronization are recorded in the PR. No production
 fault injection or physical playback acceptance is claimed.
+
+## Discovery admission follow-up (2026-10-27 UTC)
+
+Baseline: `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`, alpha.85. The corrected
+targeted baseline reported **10 tests: 5 passed, 5 failed, 0 skipped**. Four
+manager-admission permutations and a canonical administrator request during an
+active export freeze failed. Accepted discovery already drained correctly.
+
+An initial test incorrectly expected audit persistence during freeze acquisition.
+Reading `audit()` confirmed the existing deliberate buffering policy. The test
+now requires no SQLite audit before thaw and persistence afterward. No application
+audit behavior was changed, and no snapshot-write defect is claimed.
+
+The final native Linux active-worktree snapshot used
+`C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`, retaining its check/test
+procedure and appending Host Agent Python compilation, recovery tests and shell
+syntax validation:
+
+| Check | Actual result |
+| --- | --- |
+| `npm run check` | Passed |
+| `npm test` | 1003 tests: 1001 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Python compilation | Passed |
+| Host Full Recovery unittests | 23 passed, 0 failures/errors |
+| Tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Seven new tests cover cold/cached/pending/closed admission, rejection without
+worker launch or a deferred success audit, thaw/retry/cache behavior, accepted
+discovery through export acquisition, and final audit persistence before shutdown.
+The process fixture retains the real manager, guarded route, SQLite and lifecycle
+owners while replacing only external mDNS worker IPC. No network scan or device
+command is performed. The current UI already surfaces the returned lock error.
+
+Docker is unavailable locally; exact-head CI must qualify both runtime images,
+Compose, vulnerability scans, native artifacts and browsers. Push/merge/update
+continues through the normal exact-main publication, backup and rollback path;
+delivery evidence and hosted Wiki synchronization belong to the PR record.
