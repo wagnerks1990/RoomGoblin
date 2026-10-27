@@ -1,6 +1,7 @@
 # RoomGoblin modernization audit
 
-Status: **Shared frontend and navigation in final qualification**. Core Architecture
+Status: **Today and live-display monitoring in validation**. Shared frontend
+and navigation completed validation, merge, publication and appliance delivery in PR #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
 readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
@@ -49,6 +50,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Today and live-display monitoring findings](today-dashboard.md)
 - [Shared frontend findings and coverage](shared-frontend.md)
 - [Core lifecycle findings and coverage](core-lifecycle.md)
 - [Validation evidence](validation.md)

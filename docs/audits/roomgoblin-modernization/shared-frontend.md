@@ -1,7 +1,7 @@
 # Shared frontend and navigation review
 
 Baseline: `40b88c197b2e4d4dbed448348a9d1a9805949dbf`, alpha.85.
-Status: scoped source review and local validation complete; CI and delivery pending.
+Status: scoped source review, validation, CI and appliance delivery complete in PR #272.
 
 ## Source scope
 
@@ -36,7 +36,7 @@ provides progressive disclosure. Shared operator styling remains opt-in through
 | Baseline locations | `public/controller/workspace.js:74-233`; `public/controller/app.js:533` |
 | Complexity / compatibility risk | Small / Low; preserve existing binding IDs and handlers |
 | Expected benefit | One enrollment implementation and explicit, reviewable feature ownership |
-| State | Identified, validated, planned, implemented and locally tested; CI/delivery pending |
+| State | Identified, validated, planned, implemented and tested and closed after CI and delivery |
 
 `workspace.js` claimed presentation-only navigation ownership but also rebuilt
 the updater and replaced the global Windows enrollment handler defined in
@@ -65,7 +65,7 @@ or appliance requests.
 | Baseline locations | `public/controller/workspace.js:13-34`; `public/controller/app.js:2329-2351,2587` |
 | Complexity / compatibility risk | Medium / Medium; account/login and capability UI transitions |
 | Expected benefit | Predictable keyboard access and visible focus across navigation, login and account dialogs |
-| State | Identified, reproduced, planned, implemented and locally tested; CI/delivery pending |
+| State | Identified, reproduced, planned, implemented and tested and closed after CI and delivery |
 
 Opening Account from the mobile drawer left the drawer open and its keyboard
 handler active. Account/login dialogs lacked a complete Tab loop; returning focus
@@ -95,7 +95,7 @@ Account/login field spacing now leaves room for visible focus outlines.
 | Baseline locations | `public/shared/workspace.css:2-10,28,50-60`; `public/shared/attribution.css:2`; `public/shared/roomgoblin.css:6,9-11`; `public/controller/workspace.css:113` |
 | Complexity / compatibility risk | Small / Low; operator-scoped CSS with rendered checks |
 | Expected benefit | Consistent default light/dark surfaces and readable semantic/focus states |
-| State | Identified, reproduced, planned, implemented and locally tested; CI/delivery pending |
+| State | Identified, reproduced, planned, implemented and tested and closed after CI and delivery |
 
 Rendered default light-mode contrast was 1.13:1 for inline code, 1.59:1 for warning
 text, 2.28:1 for the focus outline and 1.05:1 for compact brand text. Global
@@ -119,7 +119,7 @@ complete WCAG conformance or arbitrary custom-theme accessibility.
 `test/helpers/lifecycle-process.cjs:16-19`. Small implementation, low compatibility
 risk; test helpers only. Expected benefit: readiness waits retain their bounded
 elapsed-time budget across wall-clock corrections. Identified, reproduced,
-implemented and tested; CI pending. Cross-reference this finding in the later
+implemented, tested and closed after CI and delivery. Cross-reference this finding in the later
 tests/CI review rather than duplicating it.
 
 The first full Linux run had one startup-recovery timeout. The isolated case
@@ -144,3 +144,5 @@ specific host clock-adjustment source was not independently established.
 
 Validation and delivery results are recorded in [validation.md](validation.md)
 and the associated pull request after completion.
+
+Delivery completed 2026-10-27 at 05:08:42 UTC on main `b3ba0afb2c06f12df7be8ff98c3953cfd00f6957`. See validation.md and PR #272 for the receipt.
