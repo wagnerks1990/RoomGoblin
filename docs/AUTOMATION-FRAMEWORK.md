@@ -57,6 +57,15 @@ saved action's intended resource set. Class-default display targets remain
 separate from lighting and TV-power resources. Unknown lighting targets keep a
 diagnostic identity and still fail through normal dispatch validation.
 
+Scheduled, recovered and managed manual replacements register their own task
+immediately, then wait inside that ownership for older overlapping tasks to
+settle. Already accepted adapter work can finish, but cannot complete after the
+replacement starts sending. Discovery and unrelated resources remain available.
+A still-newer replacement can cancel a waiting one; execution rechecks lifecycle
+and cancellation before class-window decisions or timer overlays. Failure of an
+older task does not fail its replacement. A hung predecessor keeps overlapping
+work waiting, with the existing lifecycle failure deadline unchanged.
+
 Editing, disabling, or deleting a running automation also invalidates its revision/configuration and causes the runner to stop at the next cancellation-aware checkpoint.
 
 Linked-class continuous automations stop cleanly when the resolved class occurrence ends. Startup reconciliation and operator Resume also recover continuous occurrences that are still currently applicable, even when their original start time is outside the normal scheduler catch-up window.

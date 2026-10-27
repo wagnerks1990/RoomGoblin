@@ -176,3 +176,40 @@ test("unexpired live simulation and return to real time retain scheduled executi
     assert.equal((await h.run(undefined,{maxPasses:2})).ok,true);assert.equal(h.calls.length,4);
   }
 });
+
+test("a waiting run cancelled or interrupted before entry cannot emit an expired-class overlay",async()=>{
+  for(const code of ["AUTOMATION_CANCELLED","AUTOMATION_INTERRUPTED"]){
+    const h=harness();let overlays=0;
+    h.ctx.runAutomationTimerOverlay=async()=>{overlays++;return {ok:true}};
+    if(code==="AUTOMATION_CANCELLED")h.ctx.automationCancelledOccurrences.add("cycle-fixture:run");
+    else h.ctx.shuttingDown=true;
+    await assert.rejects(h.run(undefined,{}, {_classEndAt:Date.parse("2026-10-27T13:59:00Z"),
+      timerOverlay:{enabled:true,source:"duration",durationSeconds:60}}),error=>error.code===code);
+    assert.equal(h.calls.length,0);assert.equal(overlays,0);
+  }
+});
+
+test("cancellation or shutdown after an accepted action prevents a new overlay",async()=>{
+  for(const code of ["AUTOMATION_CANCELLED","AUTOMATION_INTERRUPTED"]){
+    const h=harness();let overlays=0;const dispatch=h.ctx.runSingleAutomationAction;
+    h.ctx.runAutomationTimerOverlay=async()=>{overlays++;return {ok:true}};
+    h.ctx.runSingleAutomationAction=async event=>{
+      const result=await dispatch(event);
+      if(code==="AUTOMATION_CANCELLED")h.ctx.automationCancelledOccurrences.add("cycle-fixture:run");
+      else h.ctx.shuttingDown=true;
+      return result;
+    };
+    await assert.rejects(h.run([h.step("one",{executionMode:"once"})],{},
+      {timerOverlay:{enabled:true,source:"duration",durationSeconds:60}}),error=>error.code===code);
+    assert.equal(h.calls.length,1);assert.equal(overlays,0);
+  }
+});
+
+test("a cancellation at the final wait boundary cannot emit an overlay after class end",async()=>{
+  const h=harness({onWait:({ctx})=>ctx.automationCancelledOccurrences.add("cycle-fixture:run")});let overlays=0;
+  h.ctx.runAutomationTimerOverlay=async()=>{overlays++;return {ok:true}};
+  await assert.rejects(h.run([h.step("one",{executionMode:"once",delaySeconds:.5})],{},
+    {_classEndAt:Date.parse("2026-10-27T14:00:00Z")+400,timerOverlay:{enabled:true,source:"duration",durationSeconds:60}}),
+    error=>error.code==="AUTOMATION_CANCELLED");
+  assert.equal(h.calls.length,0);assert.equal(overlays,0);
+});

@@ -271,3 +271,13 @@ reserve their chosen transport independently of receiver aliases. Announcement
 deferral does not shrink the intended resource set. Class display defaults remain
 separate from lighting/TV domains. Unknown lighting targets retain their diagnostic
 identity and normal dispatch error. No saved mappings or command payloads change.
+
+## Replacement command ordering
+
+Scheduled, recovered and managed manual replacements register immediately and
+wait inside task ownership for older overlapping tasks to settle. Already accepted
+adapter work finishes before replacement dispatch. Discovery and unrelated
+resources remain available; a newer run can cancel an already waiting replacement.
+Execution rechecks cancellation and shutdown before class-window decisions or
+overlays. Predecessor failure does not poison the replacement. A hung predecessor
+keeps overlapping work waiting under the unchanged lifecycle failure deadline.

@@ -85,6 +85,13 @@ The full active-worktree native Linux snapshot passed **1,084 tests: 1,082 passe
 controller checks, Host Python compilation and tracked Bash syntax passed.
 Docker is unavailable locally, so CI owns Compose, image builds/scans and native
 artifact qualification. Required CI, checked merge, Wiki sync, exact-image
-publication and the normal backed-up update are pending. In-flight adapter
-ordering, recovery winner timing and the remaining scheduler/editor review remain
-open. Resource identity does not imply those other behaviors are fixed.
+publication and the normal backed-up update are pending. Replacement ordering has
+its own [review and tests](scheduler-dispatch-order.md) in the combined PR #278.
+Recovery winner timing and the remaining scheduler/editor review remain open.
+Resource identity does not imply those other behaviors are fixed.
+
+
+This change is included in the consolidated PR #278. Its final combined snapshot
+passed 1,110 tests with zero failures and two root-only skips (1,112 total), plus
+23 Host Recovery tests and syntax checks. See the validation record; fresh CI,
+checked merge and delivery remain pending.

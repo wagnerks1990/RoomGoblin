@@ -53,3 +53,9 @@ patch was reapplied on that main commit without changing runtime or test content
 Docker is unavailable locally, so CI must qualify Compose, images and artifacts.
 The remaining scheduler engine/editor review stays open. CI, checked merge, Wiki
 sync, exact-image publication and the normal backed-up update are pending.
+
+
+This change is included in the consolidated PR #278. Its final combined snapshot
+passed 1,110 tests with zero failures and two root-only skips (1,112 total), plus
+23 Host Recovery tests and syntax checks. See the validation record; fresh CI,
+checked merge and delivery remain pending.

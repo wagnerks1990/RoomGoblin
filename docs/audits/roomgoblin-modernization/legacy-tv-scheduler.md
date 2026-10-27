@@ -103,3 +103,9 @@ After integrating checked scheduler merge `70ad1c8`, the combined actual worktre
 passed **136 native focused tests**, 23 Host Recovery tests and syntax checks.
 The source merged without overlap; documentation overlaps retained both contracts
 and their qualification records. Fresh CI must validate this combined PR head.
+
+
+This change is included in the consolidated PR #278. Its final combined snapshot
+passed 1,110 tests with zero failures and two root-only skips (1,112 total), plus
+23 Host Recovery tests and syntax checks. See the validation record; fresh CI,
+checked merge and delivery remain pending.

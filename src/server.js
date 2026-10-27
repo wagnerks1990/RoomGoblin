@@ -1862,7 +1862,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   async function applyTimerOverlay({targetsOverride=null,force=false}={}){
     if(!event.timerOverlay?.enabled)return;
     if(overlayApplied&&!force)return;
-    assertSimulationAllowsRun();
+    assertRunActive();
     overlayApplied=true;
     try{
       const sourceTargets=Array.isArray(targetsOverride)&&targetsOverride.length
@@ -1896,6 +1896,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // Action 1 only while at least two actions remain eligible, or while
   // an explicit finite repeat still has passes remaining.
   let pass=1,aborted=false;
+  assertRunActive();
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
     if(boundedMaxPasses&&pass>boundedMaxPasses)break;
@@ -8536,10 +8537,19 @@ const automationCancelledOccurrences=new Set();
 const automationCancellationReasons=new Map();
 function startOwnedAutomationOccurrence(id,meta,execute){
   if(automationRunningOccurrences.has(id))throw new Error("Automation occurrence is already running");
+  const resources=new Set(meta.resources||[]);
+  const predecessors=[...automationRunningOccurrenceMeta]
+    .filter(([,prior])=>(prior.resources||[]).some(key=>resources.has(key)))
+    .map(([priorId])=>automationRunningOccurrences.get(priorId)).filter(Boolean);
   automationRunningOccurrenceMeta.set(id,meta);
   // Defer execution until both registries and the recovery drain own the task.
   // Even a synchronous ledger failure must settle through this finalizer.
-  const task=trackFullExportMutation(Promise.resolve().then(execute).catch(error=>{
+  const task=trackFullExportMutation(Promise.resolve().then(async()=>{
+    // Cancellation cannot undo a command already accepted by an adapter. Keep
+    // discovery free, but let every older overlapping owner settle before send.
+    if(predecessors.length)await Promise.allSettled(predecessors);
+    return execute();
+  }).catch(error=>{
     diagnosticError(error,{component:"automation",operation:"occurrence-task",data:{automationId:meta.automationId||null,occurrenceId:id}});
     throw error;
   }).finally(()=>{

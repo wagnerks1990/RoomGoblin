@@ -840,3 +840,53 @@ Node/controller checks, Host Python compilation and tracked Bash syntax passed.
 Docker is unavailable locally; CI must qualify Compose, image builds/scans and
 native artifacts. No physical commands or production fault injection were used.
 Checked merge, Wiki sync, exact images and normal backed-up delivery are pending.
+
+
+## Replacement ordering qualification (2026-10-27 UTC)
+
+Six new ownership fixtures failed against main `70ad1c8`; a disjoint-resource
+control passed. An additional actual-runner regression reproduced an expired
+class window skipping cancellation before a final overlay. Corrected ownership,
+cycle, manual and TV sequence/recovery suites passed **102 tests**.
+
+The full active-worktree native Linux snapshot passed **1,079 tests: 1,077 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+Node/controller checks, Host Python compilation and tracked Bash syntax passed.
+No physical command or production fault injection was used. Docker/Compose/images
+and artifacts remain CI qualifications. This patch will join the legacy TV,
+test-clock and resource fixes in PR #278, followed by fresh combined qualification.
+
+## Scheduler timing/ownership delivery closure (2026-10-27 UTC)
+
+PR #277 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 07:10:08 UTC
+on clean main and Hub image `70ad1c8e6dbcf2e824746d25af8142dc88c363ea`.
+Maintenance retained its healthy `20f8c501916f34e17bee2c643434e7cce0c919e6`
+container; both containers have zero restarts. Health/readiness, canonical SQLite,
+eight secret decryptions, DB/ADB permissions, authentication, operator asset hashes
+and deployment inputs passed. The archive passed journal checksum, ZIP CRC,
+canonical-only database and extracted SQLite checks. Rollback to `9c15339` remains
+available. PR #277 records the archive name, size and SHA-256. No physical command
+or receiver reload was issued.
+
+## Combined scheduler follow-up qualification (2026-10-27 UTC)
+
+The legacy TV, test-clock, resource identity and replacement-ordering patches were
+integrated into PR #278's branch without discarding either side's tests or audit
+records. The initial combined focused run passed **133 tests**. Its full native
+snapshot passed **1,110 tests: 1,108 passed, 0 failed, 2 root-only ownership skips**,
+plus **23 Host Recovery tests** and Node/controller/Python/Bash checks.
+
+Final review then added two failing regressions for cancellation after an accepted
+action and at the final wait/class-end boundary. Each new overlay now checks the
+full run-active predicate. The corrected combined focused run passed **135 tests**.
+A fresh full native run is required for this final runtime correction; the earlier
+combined full result is not presented as its qualification.
+
+The final active-worktree snapshot, including both late-cancellation tests and
+the full overlay guard, passed **1,112 tests: 1,110 passed, 0 failed, 2 root-only
+ownership skips**, plus **23 Host Recovery tests**. Node/controller checks,
+Host Python compilation and tracked Bash syntax passed. Final diff review and
+whitespace checks passed. Fresh CI is still required on the consolidated PR head;
+Docker/Compose, image scans/builds and platform/browser qualification remain its
+responsibility. No physical device command or production fault injection was used.
