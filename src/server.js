@@ -904,9 +904,12 @@ function morningAnnouncementsSchoolDay(now=new Date()){
 }
 function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
 function scheduleAnnouncementAudioRetries(targets){
+  // Target-array identity belongs to one takeover, even if its successor uses
+  // the same receiver IDs. Old retries must never control that newer session.
+  const owner=morningAnnouncementsRuntime.targets;
   for(const delay of [1500,4500,10000,20000])setTimeout(()=>{
     if(shutdownRequested||fullExportFreeze.requested)return;
-    if(!morningAnnouncementsRuntime.active)return;
+    if(!morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.targets!==owner)return;
     if(morningAnnouncementsRuntime.mode!=="manual"&&!morningAnnouncementsRuntime.live)return;
     trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
   },delay);

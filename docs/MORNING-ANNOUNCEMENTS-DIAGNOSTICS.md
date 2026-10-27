@@ -45,6 +45,9 @@ saved settings; correct the error and retry the save. Clearing a stream URL uses
 the same transaction. A successful save does not by itself confirm receiver
 playback or a successful live volume command.
 
+Starting a replacement announcement retires the previous session's delayed
+audio retries, including when both sessions use the same displays.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.

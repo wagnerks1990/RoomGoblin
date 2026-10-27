@@ -26,6 +26,9 @@ saved settings; correct the error and retry the save. Clearing a stream URL uses
 the same transaction. A successful save does not by itself confirm receiver
 playback or a successful live volume command.
 
+Starting a replacement announcement retires the previous session's delayed
+audio retries, including when both sessions use the same displays.
+
 ## Receiver diagnostics
 
 On a display receiver:
