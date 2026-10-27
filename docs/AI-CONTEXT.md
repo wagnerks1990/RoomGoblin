@@ -18,6 +18,12 @@ Read `APPLICATION-LIFECYCLE.md` before changing startup order or shutdown. The
 modernization audit records scoped coverage and remaining lifecycle work under
 `docs/audits/roomgoblin-modernization/`.
 
+Automation timing and task ownership are documented in `AUTOMATION-FRAMEWORK.md`.
+Use monotonic wait duration and a one-second minimum continuing cycle. Keep
+scheduled, recovered and manual task registration ahead of execution, with
+unconditional cleanup outside fallible ledger/final-save work. Failure diagnostics
+remain inside the owned recovery/shutdown task; interruption is not cancellation.
+
 Ubuntu display lifecycle uses bounded background monitoring and the fixed native
 maintenance worker, verified package digest/rollback and non-replayed scheduled
 jobs. Read `UBUNTU-MANAGED-DISPLAYS.md`; preserve enrollment/receiver identity,

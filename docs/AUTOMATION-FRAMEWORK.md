@@ -35,7 +35,13 @@ The runner proceeds Action 1 → Action 2 → Action 3 → … . It starts anoth
 
 Each action keeps its own delay, targets, payload, and error policy. A failed action with `continueOnError=true` does not block the remaining eligible actions on that pass. With `continueOnError=false`, the sequence stops.
 
-A multi-action continuous sequence with no configured waits is rate-limited so it cannot spin faster than one complete pass per second. Delays are cancellation-aware and class-boundary-aware.
+A continuing continuous sequence starts no more than one complete pass per second.
+Action execution and configured waits count toward this floor; slower passes add
+no further timed delay but still yield to ordinary timers. Finished runs,
+finite-only repeats and a single remaining continual action receive no extra
+cycle wait. Delays use a monotonic clock, so clock corrections do not shorten or
+extend them. Cancellation, pause and class boundaries are checked at intervals
+of at most 500 ms during waits; calendar eligibility still uses the scheduler clock.
 
 ## Scheduling and supersession
 
@@ -55,7 +61,7 @@ overlapping scheduler ticks; freeze acknowledgment waits for that accepted work.
 
 Simulation never dispatches devices.
 
-A live draft test executes one pass when the draft contains any continuous action, so the HTTP request cannot hang indefinitely. Saved scheduled continuous occurrences use the normal background scheduler lifecycle and cancellation controls.
+A live draft test with continual actions starts a managed background run and returns its run ID without holding the HTTP request open. Use **Stop Run** to cancel an active run. Saved **Run Now** uses the same managed lifecycle; finite manual sequences return their completed result.
 
 ## Media-aware editing
 
@@ -156,3 +162,14 @@ timetable-block occurrence resolution, explicit clock deadlines and shared visua
 layers. These fields extend existing event metadata without replacing canonical
 `actionSequence[]`, native media sessions or occurrence identity. Scene payloads
 are bounded data, not HTML/CSS execution.
+
+
+## Run ownership and persistence failures
+
+Scheduled, recovered and managed manual runs register their task and metadata
+before execution begins. Admission must persist before dispatch. Final ledger or
+configuration-save failures are reported, and task/cancellation metadata is always
+released after settlement. Accepted work stays inside the Full Recovery/shutdown
+drain until its execution, persistence and error reporting finish. A failed new
+manual admission save does not cancel an existing accepted run. Durable claims, current
+winner recovery and shutdown interruption semantics remain unchanged.

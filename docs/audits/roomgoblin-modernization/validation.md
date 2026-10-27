@@ -732,3 +732,37 @@ real-Hub cases failed their shared startup hook because Windows lacks the Linux
 `fchmod` contract. Native Linux ran those tests successfully. No permission check
 or assertion was weakened. Documentation, Wiki mirror and delivery receipts were
 updated after qualification; `git diff --check` passed.
+
+
+## Scheduler timing and task ownership (2026-10-27 UTC)
+
+Baseline `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0`. Two initial cycle regressions
+failed: zero-delay passes had no one-second floor and a timer could not request
+cancellation. An independent clock regression reproduced a one-second wait
+extending to 3,601 seconds after a backwards correction. Six ownership regressions
+reproduced stale task/metadata entries after ledger/final-save failures; two
+hold/interruption controls passed before the fix. A ninth ownership case verifies
+failed admission persistence cannot cancel prior accepted work.
+
+| Check | Result |
+| --- | --- |
+| Focused timing, ownership, manual and TV-power boundaries | 94 passed |
+| Initial timing-only native full suite | 1,047 total: 1,045 passed, 0 failed, 2 skipped |
+| Intermediate ownership full suite | 1,056 total: 1,053 passed, 1 source-location assertion failed, 2 skipped |
+| Corrected final native full suite | 1,056 total: 1,054 passed, 0 failed, 2 root-only ownership skips |
+| Final Host Recovery / syntax checks | 23 passed; Node/controller, Host Python and tracked Bash checks passed |
+| Combined current tree after checked AV merge | 125 native tests and 23 Host Recovery tests passed; syntax passed |
+
+The intermediate assertion was updated to follow registry insertion through the
+new owner and still reject blocking dispatch; executable task/drain regressions
+remain authoritative. The final full snapshot includes all scheduler runtime and
+tests on `d3c41b1`; combined qualification follows AV merge `9c15339`. The adjacent
+import conflict was resolved by retaining both independent imports. CI still owns
+full combined coverage, Docker/Compose, runtime scans and native artifacts.
+
+Windows broad execution had 100 passed and one Linux permission-mode failure.
+Native Linux passed that assertion without weakening it. Documentation changed
+after snapshots only to record evidence; no physical classroom testing is claimed.
+PR #276's final alert 416 repeated the reviewed privileged destination flow after
+the redirect line changed; its 27-node SARIF trace was rechecked and classified
+with the same evidence as alert 415. All 14 PR gates then passed and #276 merged.
