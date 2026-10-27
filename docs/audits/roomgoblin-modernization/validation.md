@@ -1,516 +1,516 @@
-# Lifecycle validation evidence
-
-Date: 2026-10-26. Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`.
-The candidate is the working-tree patch in this PR, including its untracked new
-source/test files; the Windows helper snapshots that exact state into native WSL.
-
-## Executed locally
-
-| Check | Result |
-| --- | --- |
-| Baseline native Linux `npm run check` and `npm test` | Passed; 947 tests, 945 passed, 0 failed, 2 skipped |
-| Final candidate native Linux `npm run check` and `npm test` | Passed; 958 tests, 956 passed, 0 failed, 2 skipped |
-| Final callback isolation/global-timer tests | 2 passed, 0 failed, 0 skipped |
-| Host Python compilation | Passed for `server.py`, `start.py`, `full_recovery.py` |
-| Host Full Recovery unittest suite | 23 passed, 0 failures/errors, 0 skipped |
-| All tracked shell scripts, `bash -n` | Passed in the native Linux snapshot |
-| `git diff --check` | Passed |
-
-The mandated command was run for the baseline and candidate:
-
-```powershell
-py -3.11 "C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py"
-```
-
-An additional invocation used that helper's unchanged snapshot procedure and
-check/test commands, then appended Python compilation, the host unittest suite
-and `git ls-files -z '*.sh' | xargs -0 -r -n 1 bash -n` inside the same native
-checkout. Linux Node was v24.21.0; CI also validates its configured Node 22 runtime.
-The two full-suite skips require root for cross-UID/group ownership tests.
-
-Initial direct WSL validation encountered an unsourced nvm environment and then
-the Windows worktree's nonportable Git pointer. Neither is a source regression.
-The verified native snapshot resolved both and completed the host/shell checks.
-
-## Behavioral coverage
-
-- The Node command declared by npm matches the container's `exec` command.
-- The actual bootstrap starts both healthy listeners using temporary data and
-  loopback-only ports. Maintenance mirrors return 401 without their token and
-  200 with a test-owned token.
-- An incomplete HTTP request holds the media child in its five-second drain.
-  The Hub exits normally only after that child has exited and been reaped.
-- Killing the media child makes the Hub exit 1.
-- Supervisor state tests cover repeated stop, pending exit, escalation, startup
-  errors, unexpected zero exit, abrupt owner exit and control-only entry points.
-- Readiness follows token insertion/removal and an atomically replaced database.
-- Registering maintenance routes does not replace global timers or suppress
-  surrounding recovery work when no Music Assistant token exists.
-
-The last defect was reproduced against the baseline bridge in an isolated Node
-process: a callback that reconciles state and then calls `backgroundMusicTick`
-never ran without credentials (`false !== true`). The same callback regression
-passes with this patch. This reproduces the source-text interception mechanism;
-it is not a live Morning Announcements/device acceptance test.
-
-## External and operational limits
-
-Docker is unavailable in the local Windows/WSL environment. Compose validation,
-image builds, image security scans, browser regression and other platform gates
-must run through the PR's existing required workflows. Check the exact PR head;
-these local results do not claim those gates passed.
-
-The Wiki mirror is changed with the source. Hosted Wiki synchronization remains
-the existing `Sync Wiki` workflow after a reviewed merge to main. No production
-configuration, appliance, classroom display, database or external service was
-changed. No merge, deployment, image publication or live acceptance is implied.
-
-That first patch left writer drain and bridge composition open. The follow-up
-below adds the bounded drain; exhaustive feature acceptance and bridge composition
-remain open in [the coverage and findings](core-lifecycle.md).
-
-
-## Writer-drain follow-up (2026-10-26)
-
-Baseline: `ea53e2deff70dbb151ca551ddd27b89c633d6afd`, alpha.85. The mandated
-Windows helper was run against the baseline and the complete candidate, including
-untracked new files, using its isolated native WSL snapshot.
-
-| Check | Actual result |
-| --- | --- |
-| Baseline `npm run check` + `npm test` | 965 tests: 963 passed, 0 failed, 2 skipped |
-| Final candidate `npm run check` + `npm test` | 978 tests: 976 passed, 0 failed, 2 skipped |
-| Python compile: Host Agent server/start/full recovery | Passed |
-| Host Full Recovery unittest suite | 23 passed, 0 failures/errors |
-| All tracked shell scripts, `bash -n` | Passed |
-| `git diff --check` | Passed |
-
-Node: v24.21.0 in WSL. The two skips still require root for cross-UID/group
-ownership tests. Docker is absent locally and in WSL; Compose/images, Node 22,
-browser/platform and security coverage remain the required PR workflows, whose
-current result belongs to the exact PR head rather than these local counts.
-
-The 13 new regressions cover:
-
-- Actual HTTP disconnect and response-finish races: the final write remains in
-  the same Hub SQLite database after clean process exit.
-- Express route chaining, nested guards, setting getters, async middleware and
-  error handlers, without changing the global prototypes.
-- Ordinary aborted-body cleanup remains unchanged; during shutdown, a late
-  body-parser continuation cannot start another writer for that abandoned request.
-- An unresponsive WebSocket close handshake and disconnect callback completion.
-- An accepted authenticated WebSocket command whose MQTT adapter is deliberately
-  delayed: its final command audit persists even after the socket disconnects.
-- A stuck handler exceeding the existing ten-second deadline exits 1, and a
-  reader holding a WAL snapshot causes checkpoint failure rather than false
-  success; the completed application write is preserved.
-- Active export freeze retains authentication and one-use thaw validation while
-  other requests (including the preloaded display gateway) receive 503.
-- Pending freeze acquisition aborts on shutdown, and a manual continuous run
-  records interruption without being marked operator-cancelled.
-- A scheduled continuous run records interruption, recovers on real process
-  restart, and stays cancelled across a further restart after operator Stop.
-- Queued announcement work survives a failed predecessor and retains ownership
-  until its final callback finishes.
-
-During development, missing shutdown variables in existing VM harnesses and a
-missing receiver in the new scheduled fixture caused test failures. The harnesses
-now explicitly provide the new lifecycle state, and process fixtures provision a
-test-owned receiver. No production guard or assertion was removed to pass tests.
-
-No live appliance, display, integration credential or production data was used.
-MQTT is a controlled test adapter; no physical delivery is claimed. Full
-presentation conversion, Sports refresh and Ubuntu remote-operation acceptance
-under shutdown remain feature-specific follow-ups. Hosted Wiki synchronization
-will use the existing workflow after a reviewed merge; this PR updates its mirror.
-
-## Explicit bridge composition follow-up (2026-10-27 UTC)
-
-Baseline: `38db6b8d9bf8fad328fa2639c592b4f739dcca3a`, alpha.85. The ordinary
-Windows helper passed against the active candidate, including untracked files.
-A final invocation used its unchanged snapshot/check/test procedure and appended
-Host Agent Python compilation, Full Recovery unittests and tracked-shell syntax
-checks. Both native Linux runs reported 982 tests: **980 passed, 0 failed,
-2 root-only ownership skips**. The host suite passed **23 tests**; Python compile,
-shell syntax and `git diff --check` passed.
-
-The five new composition scenarios also passed on Windows. An initial harness
-used immediate `process.exit()` after closing sockets and hit a Windows libuv
-assertion; normal process completion fixed it. The existing atomic SQLite rename
-test remains unsuitable for Windows and passed in native Linux. No application
-guard or assertion was removed to accommodate either environment.
-
-Loopback tests cover unchanged Express prototypes/unowned apps, idempotent
-composition, separate application guards, generated administration routes,
-maintenance-token separation, Veyon key/identity transforms, Music Assistant
-aliases and async error/drain ownership. Existing canonical-process lifecycle
-tests also pass. An old source-text import-order assertion was replaced by this
-request-level composition coverage; guarded Veyon GUI checks remain.
-
-No production data or integration services were used by the tests. Docker is
-unavailable locally; Compose, both images, scans, Node 22, native platforms and
-browser regressions remain the required exact-head CI gates. The operator has
-authorized merge/update after these gates, through the exact-main image pair,
-operational backup and normal rollback path. Deployment evidence belongs to the
-PR's delivery record; these local results do not claim physical acceptance or an
-exhaustive audit of integration business logic.
-
-## Export-handler drain follow-up (2026-10-27 UTC)
-
-Baseline: `da6bb77187bd23787239347db903ab842fbc6683`, alpha.85. Three new
-canonical-process regressions were run against that unchanged application using
-the helper's native Linux snapshot procedure. All three failed at the expected
-assertion: export freeze acknowledged while a held HTTP handler could still write.
-The fixture registers after real admission middleware and writes through the
-actual Hub SQLite instance; it uses only temporary data and loopback connections.
-
-The candidate passed 21 targeted lifecycle/freeze tests. The final full invocation
-used `C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py` with its unchanged
-active-worktree snapshot, `npm run check` and `npm test` procedure, appending Host
-Agent Python compile/unittests and tracked-shell syntax checks:
-
-| Check | Actual result |
-| --- | --- |
-| `npm run check` | Passed |
-| `npm test` | 988 tests: 986 passed, 0 failed, 2 root-only ownership skips |
-| Host Agent Python compilation | Passed |
-| Host Full Recovery unittests | 23 passed, 0 failures/errors |
-| Tracked shell scripts, `bash -n` | Passed |
-| `git diff --check` | Passed |
-
-Six added tests cover transport closure versus returned-handler lifetime,
-rejection cleanup, final SQLite state before freeze acknowledgment, one-use thaw,
-the real 30-second acquisition timeout with later completion/retry, the guarded
-administrator export proxy with a maintenance fixture, and stable classification
-through mounted middleware and async error handlers. Existing shutdown/export
-races and automation restart tests still pass. The six tracker tests also pass
-on Windows. No guard or assertion was weakened.
-
-GitHub code scanning flagged exception text in the loopback maintenance fixture's
-HTTP error body. The fixture now sends fixed plain text and retains the original
-exception for the test runner's assertion. All five export process regressions
-passed again in native Linux after that test-only correction; the application
-implementation is identical to the full-suite candidate above. CI is rerun on
-the corrected PR head before merge.
-
-Docker is unavailable locally; Compose, both runtime images, security scans,
-Node 22, native platforms and browser regressions remain exact-head CI gates.
-The requested merge and update follow those gates and exact-main publication,
-with the normal operational backup and rollback path. Delivery evidence belongs
-to the PR. No production Full Recovery export, remote integration command or
-physical classroom playback is claimed by these tests.
-
-## Media shutdown outcome follow-up (2026-10-27 UTC)
-
-Baseline: `446a9523da9a160bc510e679397269c9097aeb1d`, alpha.85. With only
-the new/updated tests applied, the native Linux snapshot reported **25 tests:
-16 passed, 9 failed, 0 skipped**. Failures reproduced false-success shutdown
-status and premature release of child ownership after signaling errors. The
-candidate passed all **25 targeted tests** after the implementation fix.
-
-The final full run used `C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`
-with its unchanged active-worktree snapshot, `npm run check` and `npm test`
-procedure, appending Host Agent Python compilation, Full Recovery unittests and
-tracked-shell syntax checks:
-
-| Check | Actual result |
-| --- | --- |
-| `npm run check` | Passed |
-| `npm test` | 996 tests: 994 passed, 0 failed, 2 root-only ownership skips |
-| Host Agent Python compilation | Passed |
-| Host Full Recovery unittests | 23 passed, 0 failures/errors |
-| Tracked shell scripts, `bash -n` | Passed |
-| `git diff --check` | Passed |
-
-Eight added tests and the corrected timeout assertion distinguish clean drain
-from unsuccessful child exit. A canonical process keeps an accepted HTTP writer
-alive after media SIGKILL, persists its final SQLite write, then exits 1. Unit
-tests cover forced termination including a racing zero exit, nonzero/signal
-status, emitted/thrown signaling errors, actual reaping and owner-exit fallback.
-The existing timeout remains a failure; no deadline, guard or assertion was
-weakened to make the tests pass. These tests use temporary data and loopback only.
-
-Code scanning identified missing rate limiting on the test fixture's new file
-access. The fixture now admits at most four requests per minute across callers;
-all nine writer-drain process tests passed again in native Linux. Production
-source is unchanged from the full-suite run above. CI runs on the corrected head.
-
-Docker is unavailable locally. Compose, both runtime images, vulnerability scans,
-Node 22, native platforms and browser regressions remain exact-head CI gates.
-The user requested push, merge and update after this change; the normal
-validated-main publication, operational backup and rollback path remain required.
-Delivery and hosted Wiki synchronization are recorded in the PR. No production
-fault injection or physical playback acceptance is claimed.
-
-## Discovery admission follow-up (2026-10-27 UTC)
-
-Baseline: `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`, alpha.85. The corrected
-targeted baseline reported **10 tests: 5 passed, 5 failed, 0 skipped**. Four
-manager-admission permutations and a canonical administrator request during an
-active export freeze failed. Accepted discovery already drained correctly.
-
-An initial test incorrectly expected audit persistence during freeze acquisition.
-Reading `audit()` confirmed the existing deliberate buffering policy. The test
-now requires no SQLite audit before thaw and persistence afterward. No application
-audit behavior was changed, and no snapshot-write defect is claimed.
-
-The final native Linux active-worktree snapshot used
-`C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`, retaining its check/test
-procedure and appending Host Agent Python compilation, recovery tests and shell
-syntax validation:
-
-| Check | Actual result |
-| --- | --- |
-| `npm run check` | Passed |
-| `npm test` | 1003 tests: 1001 passed, 0 failed, 2 root-only ownership skips |
-| Host Agent Python compilation | Passed |
-| Host Full Recovery unittests | 23 passed, 0 failures/errors |
-| Tracked shell scripts, `bash -n` | Passed |
-| `git diff --check` | Passed |
-
-Seven new tests cover cold/cached/pending/closed admission, rejection without
-worker launch or a deferred success audit, thaw/retry/cache behavior, accepted
-discovery through export acquisition, and final audit persistence before shutdown.
-The process fixture retains the real manager, guarded route, SQLite and lifecycle
-owners while replacing only external mDNS worker IPC. No network scan or device
-command is performed. The current UI already surfaces the returned lock error.
-
-Docker is unavailable locally; exact-head CI must qualify both runtime images,
-Compose, vulnerability scans, native artifacts and browsers. Push/merge/update
-continues through the normal exact-main publication, backup and rollback path;
-delivery evidence and hosted Wiki synchronization belong to the PR record.
-
-## Feature-owner lifecycle coverage (2026-10-27 UTC)
-
-Baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`, alpha.85. Seven new
-canonical-process tests pass against unchanged runtime code. They cover accepted
-Sports refresh, Ubuntu scheduled acknowledgment and presentation conversion across
-shutdown and export freeze, plus conversion deadline/restart/rebuild behavior.
-No new runtime defect is claimed by this test-only follow-up.
-
-The mandated `RoomGoblin-LinuxTests.py` active-worktree snapshot included all four
-new test/fixture files. Targeted checks: **7 passed, 0 failed, 0 skipped**.
-Full native Linux validation: `npm run check` passed; `npm test` reported
-**1010 tests: 1008 passed, 0 failed, 2 root-only ownership skips**. Host Recovery
-reported **23 passed**. Host Python compilation, tracked shell syntax and
-`git diff --check` passed. The Sports timer runs at its real 15-second interval;
-the interrupted conversion uses the real ten-second shutdown deadline.
-
-Feed/SSH/rasterizer adapters are controlled fixtures, while the canonical Hub,
-routes, managers, SQLite, filesystem publication, freeze/thaw and shutdown remain
-real. This does not qualify external services, hardware commands or rendered
-slide quality. Docker remains unavailable locally; exact-head CI qualifies the
-runtime images, scans, native artifacts and browsers before merge/publication.
-
-## Read-side housekeeping freeze (2026-10-27 UTC)
-
-Runtime baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`; the local
-test-only parent `ee97d7a90ac6d6766d721eec6a290afae8fdd290` has identical
-application source. Four initial authentication regressions reported **0 passed,
-4 failed**: session cleanup, device credential timestamps and a canonical Hub
-GET advancing activity after freeze acknowledgment. After the authentication fix,
-a delayed update-status response reproduced the separate history-write gap
-(**5 tests: 4 passed, 1 failed**). All use temporary data.
-
-The final mandated native Linux active-worktree snapshot includes both fixes and
-five new regressions. `npm run check` passed; `npm test` reported **1015 tests:
-1013 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
-Host Python compilation, tracked-shell syntax and `git diff --check` passed.
-The intermediate authentication/storage/freeze subset passed **13 tests**.
-
-SQLite `query_only` catches unintended writes during paused authentication reads.
-Expiry, revocation, disabled receivers, invalid tokens, session-list filtering,
-cleanup throttling and post-thaw persistence are asserted. Canonical Hub tests
-exercise actual admin reads and a maintenance response held across freeze; later
-status polls record one history entry without duplicates. No production freeze,
-credential change or external device command was used for regression testing.
-
-Exact-head CI still qualifies Compose, both images, image/security scans, native
-artifacts and browsers. Published-main deployment, health/identity verification,
-operational backup and rollback evidence are recorded in the PR after delivery.
-
-## Veyon read-side identity freeze (2026-10-27 UTC)
-
-Baseline: `c74d6417fd14bf1773829002f4c472543141887f`, alpha.85. The initial
-canonical empty-inventory regression failed (**0 passed, 1 failed**): a GET wrote
-`veyon.inventory-hostmap.v2` after the export freeze acknowledged. The candidate
-includes three process regressions. The targeted freeze/bridge subset passed
-**10 tests, 0 failed, 0 skipped**. Initial fixture assertions were corrected to
-use the existing 401 authentication response and a hostname-bearing computer;
-neither required a runtime change or weakened the snapshot assertion.
-
-The mandated native Linux active-worktree helper verified the modified files and
-both new test/fixture files. `npm run check` passed. Full `npm test`: **1018 tests,
-1016 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
-Host Python compilation, tracked shell syntax and `git diff --check` passed.
-
-Coverage includes new GET/HEAD admission, Express case/trailing-slash aliases,
-administrator key/config projections, maintenance inventory, token-protected
-maintenance config availability, and a held accepted inventory persisting its
-stable mapping before freeze acknowledgment. Only the synthetic computer's TCP
-probe is controlled; no real workstation or Veyon command is contacted. Normal
-identity projection and post-thaw access remain exercised. Docker is unavailable
-locally; exact-head CI must still qualify Compose/images, scans, native artifacts
-and browsers. Merge, publication and appliance update evidence belong to the PR.
-
-## Interrupted presentation staging (2026-10-27 UTC)
-
-Baseline: `acd537731f1e9eb08d8f7937003ccd1c287fbb6d`, alpha.85. Extending the
-existing real ten-second conversion/deadline test reproduced persistent private
-render staging after restart (**0 passed, 1 failed**). The original remains
-preserved; the added failure concerns orphan staging, not source loss.
-
-The candidate targeted lifecycle/content-permission/staging subset reported
-**19 tests: 17 passed, 0 failed, 2 root-only ownership skips**. It covers source
-preservation and rebuild after restart, recognized-directory cleanup, unknown
-entries, linked roots/directories, nested symbolic/hard links, whole-tree
-validation and bounded scan/candidate/node budgets.
-
-The mandated native Linux active-worktree helper included both new files and
-all modifications. `npm run check` passed; full `npm test`: **1023 tests,
-1021 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
-Host Python compilation, tracked-shell syntax, the new module's syntax check and
-`git diff --check` passed. Rendering uses a controlled external adapter; no
-physical receiver or live appliance fault injection was performed. Docker remains
-unavailable locally; exact-head CI, publication and normal backed-up deployment
-must complete before claiming external delivery.
-
-## Detached Veyon cleanup ownership (2026-10-27 UTC)
-
-Baseline: `42fa368794b14c9bda80565ac66ae9c69c2a07f7`, alpha.85. Three canonical
-process regressions reproduced lost shutdown/freeze ownership and idle cleanup
-admission during a freeze (**0 passed, 3 failed**). A first candidate run exposed
-incorrect test JSON-path expressions; correcting those expressions required no
-runtime change. The final cleanup/read-freeze subset passed **6 tests**.
-
-The mandated native Linux active-worktree helper included both new test files
-and all modifications. `npm run check` passed; full `npm test`: **1026 tests,
-1024 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
-Host Python compilation, tracked-shell syntax and `git diff --check` passed.
-Tests run the real 15-second idle timer and canonical application, controlling
-only the external WebAPI transport and cached connection age. No physical
-computer is contacted. Docker remains unavailable locally; exact-head CI,
-publication and normal appliance update remain separate delivery gates.
-
-## Lab socket disconnect persistence (2026-10-27 UTC)
-
-Baseline: `58524737cf434d220f271a27998d7e1369212657`, alpha.85. Both initial
-canonical regressions failed (**0 passed, 2 failed**): disconnect writes changed
-the acknowledged snapshot, and an older socket stamped its live replacement.
-The final targeted subset passed **7 tests**, covering those cases, acquisition
-abort, deferred persistence retry and explicit shutdown failure on a persistent
-SQLite error, plus existing freeze/authentication checks.
-
-The mandated native Linux helper validated the active worktree including the new
-lab regression file. `npm run check` passed; full `npm test`: **1031 tests,
-1029 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
-Host Python compilation, tracked-shell syntax and `git diff --check` passed.
-Enrollment uses a real canonical Hub, temporary credentials and loopback sockets;
-no real Windows agent, workstation command or student data is involved. Docker,
-browser/native qualification, publication and live delivery remain CI/deployment
-gates. The separate startup-reconciliation reproduction is not part of this run.
-
-## Startup reconciliation admission (2026-10-27 UTC)
-
-Baseline: `9873450f9a3fcbd6855938004b1509003fce1eb5`, alpha.85. The canonical
-startup regression failed (**0 passed, 1 failed**) because the real five-second
-callback added recovered/running ledger rows inside an acknowledged freeze.
-The targeted lifecycle/automation subset passed **24 tests**. A final duplicate
-admission guard was included in the full run.
-
-Native Linux active-worktree verification passed `npm run check`; full `npm test`
-reported **1032 tests, 1030 passed, 0 failed, 2 root-only ownership skips**.
-Host Recovery: **23 passed**. Host Python compilation, tracked-shell syntax and
-`git diff --check` passed. The test waits for actual startup and scheduler timers,
-checks unchanged frozen state, post-thaw current-winner recovery and clean stop.
-Its synthetic receiver has no connected display. The new Sports-import
-reproduction files were added after the helper captured this snapshot and are
-not part of these results. CI and final appliance delivery remain separate gates.
-
-## Sports import callbacks and final lifecycle suite (2026-10-27 UTC)
-
-Baseline: `b49c164e10bb1084a25dfd2af572d20f7b5336e1`, alpha.85. All four initial
-canonical callback regressions failed (**0 passed, 4 failed**): after browser
-disconnect, shutdown/freeze finished before the held PDF-processing adapter.
-Both successful and failed processing now remain owned. The targeted lifecycle,
-real PDF isolation and Sports authorization subset passed **10 tests**.
-
-The mandated native Linux helper validated all active source/test modifications
-and both new fixture/test files. `npm run check` passed. Final full `npm test`:
-**1036 tests, 1034 passed, 0 failed, 2 root-only ownership skips**. Host Recovery:
-**23 passed**. Host Python compilation, tracked-shell syntax and `git diff --check`
-passed. The final run also includes malformed/oversized multipart error coverage
-and all Veyon cleanup, lab disconnect and startup reconciliation regressions.
-
-The import fixture controls only the processing adapter; real parser tests retain
-their Linux resource/queue checks. No student roster, connected receiver or live
-workstation is used. Final audit prose was reconciled after the helper snapshot;
-runtime and test files were unchanged. Docker remains unavailable locally; CI,
-immutable publication and the backed-up appliance update must finish before
-claiming delivery of this final lifecycle patch set.
-
-### CI fixture-key correction
-
-CodeQL check `121994239360` on PR #271 head
-`7eff0e285180a8b1a490773e8f7efed8afde84df` correctly rejected the cleanup fixture's
-generated 1024-bit RSA key. The fixture now generates 2048 bits. No production
-key, scanner rule, exclusion, security policy or application source was changed.
-
-The corrected active-worktree full rerun passed: **1036 tests, 1034 passed,
-0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
-`npm run check`, Host Python compilation, tracked-shell syntax and diff checks
-also passed. The corrected pushed head still requires fresh CodeQL and all
-required PR gates before merge; the earlier failed check is not a passing result.
-
-
-## Core lifecycle delivery closure (2026-10-27 UTC)
-
-PRs #269-#271 completed all PR/main checks and exact image publication. The normal
-published-main update completed at 04:10:31 UTC with source/Hub image
-`40b88c197b2e4d4dbed448348a9d1a9805949dbf`. Maintenance retained its healthy
-`20f8c501916f34e17bee2c643434e7cce0c919e6` image and container identity.
-Post-update checks verified clean main, both control/media health endpoints,
-canonical SQLite integrity, all eight encrypted secrets, required file/ADB
-permissions, maintenance authorization boundaries, no pending update request,
-and rollback to the prior deployment. The new operational archive passed checksum,
-ZIP CRC and extracted canonical SQLite checks. No physical classroom command or
-production fault injection was performed. See PR #271 for the delivery receipt.
-
-## Shared frontend and navigation (2026-10-27 UTC)
-
-Source baseline: `40b88c197b2e4d4dbed448348a9d1a9805949dbf` plus the active worktree
-patch. The native Linux helper captured tracked and new files from this worktree.
-Final source changes were included in the following runs; later edits recorded
-only these results and review notes.
-
-| Check | Result |
-| --- | --- |
-| `npm run check`, including 16 controller scripts | Passed |
-| Full `npm test` on native Linux | 1,038 tests: 1,036 passed, 0 failed, 2 root-only ownership checks skipped |
-| Host Agent Full Recovery Python suite | 23 passed |
-| Host Python compilation and all tracked shell syntax | Passed |
-| Chromium full browser discovery with locked PDF.js and packaged fonts | 115 passed, 0 failed |
-| Firefox full browser discovery with locked PDF.js and packaged fonts | 115 passed, 0 failed |
-| `git diff --check` | Passed |
-| Default light/dark phone/desktop screenshot review | Corrected mixed theme background, unreadable brand/headings and account field focus spacing |
-
-The browser suites run real bundled HTML/CSS/JS with deterministic API/WebSocket
-fixtures. New coverage exercises account/login focus, session-loss navigation,
-light/dark/system-light body and semantic contrast, enrollment JSON downloads,
-opaque-token quoting, HTTPS/LAN fallback and updater settings bindings. Existing
-navigation, embedded-session, receiver and feature regressions remain enabled.
-
-The first broad browser attempt omitted `npm ci` in its temporary snapshot:
-110 cases passed but the document suite setup failed because PDF.js was absent.
-All five document cases passed after installing the locked graph; final browser
-discovery includes that dependency setup. The first full Node attempt reported
-1,034 passed, 1 failed and 2 skipped. Its startup-recovery timeout passed in
-isolation; a deterministic test then reproduced the polling helper's premature
-expiry on a forward wall-clock correction. Monotonic timing fixed the helper
-without extending its ten-second budget. Final full-suite results are above.
-
-Docker is unavailable in the local Windows/WSL environment. Compose, both runtime
-images, image vulnerability qualification and platform artifacts remain required
-CI checks before merging; local checks do not substitute for those gates.
-Appliance delivery is pending exact-main image publication and will be recorded
-in the PR after the normal updater and post-update integrity checks complete.
+# Lifecycle validation evidence
+
+Date: 2026-10-26. Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`.
+The candidate is the working-tree patch in this PR, including its untracked new
+source/test files; the Windows helper snapshots that exact state into native WSL.
+
+## Executed locally
+
+| Check | Result |
+| --- | --- |
+| Baseline native Linux `npm run check` and `npm test` | Passed; 947 tests, 945 passed, 0 failed, 2 skipped |
+| Final candidate native Linux `npm run check` and `npm test` | Passed; 958 tests, 956 passed, 0 failed, 2 skipped |
+| Final callback isolation/global-timer tests | 2 passed, 0 failed, 0 skipped |
+| Host Python compilation | Passed for `server.py`, `start.py`, `full_recovery.py` |
+| Host Full Recovery unittest suite | 23 passed, 0 failures/errors, 0 skipped |
+| All tracked shell scripts, `bash -n` | Passed in the native Linux snapshot |
+| `git diff --check` | Passed |
+
+The mandated command was run for the baseline and candidate:
+
+```powershell
+py -3.11 "C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py"
+```
+
+An additional invocation used that helper's unchanged snapshot procedure and
+check/test commands, then appended Python compilation, the host unittest suite
+and `git ls-files -z '*.sh' | xargs -0 -r -n 1 bash -n` inside the same native
+checkout. Linux Node was v24.21.0; CI also validates its configured Node 22 runtime.
+The two full-suite skips require root for cross-UID/group ownership tests.
+
+Initial direct WSL validation encountered an unsourced nvm environment and then
+the Windows worktree's nonportable Git pointer. Neither is a source regression.
+The verified native snapshot resolved both and completed the host/shell checks.
+
+## Behavioral coverage
+
+- The Node command declared by npm matches the container's `exec` command.
+- The actual bootstrap starts both healthy listeners using temporary data and
+  loopback-only ports. Maintenance mirrors return 401 without their token and
+  200 with a test-owned token.
+- An incomplete HTTP request holds the media child in its five-second drain.
+  The Hub exits normally only after that child has exited and been reaped.
+- Killing the media child makes the Hub exit 1.
+- Supervisor state tests cover repeated stop, pending exit, escalation, startup
+  errors, unexpected zero exit, abrupt owner exit and control-only entry points.
+- Readiness follows token insertion/removal and an atomically replaced database.
+- Registering maintenance routes does not replace global timers or suppress
+  surrounding recovery work when no Music Assistant token exists.
+
+The last defect was reproduced against the baseline bridge in an isolated Node
+process: a callback that reconciles state and then calls `backgroundMusicTick`
+never ran without credentials (`false !== true`). The same callback regression
+passes with this patch. This reproduces the source-text interception mechanism;
+it is not a live Morning Announcements/device acceptance test.
+
+## External and operational limits
+
+Docker is unavailable in the local Windows/WSL environment. Compose validation,
+image builds, image security scans, browser regression and other platform gates
+must run through the PR's existing required workflows. Check the exact PR head;
+these local results do not claim those gates passed.
+
+The Wiki mirror is changed with the source. Hosted Wiki synchronization remains
+the existing `Sync Wiki` workflow after a reviewed merge to main. No production
+configuration, appliance, classroom display, database or external service was
+changed. No merge, deployment, image publication or live acceptance is implied.
+
+That first patch left writer drain and bridge composition open. The follow-up
+below adds the bounded drain; exhaustive feature acceptance and bridge composition
+remain open in [the coverage and findings](core-lifecycle.md).
+
+
+## Writer-drain follow-up (2026-10-26)
+
+Baseline: `ea53e2deff70dbb151ca551ddd27b89c633d6afd`, alpha.85. The mandated
+Windows helper was run against the baseline and the complete candidate, including
+untracked new files, using its isolated native WSL snapshot.
+
+| Check | Actual result |
+| --- | --- |
+| Baseline `npm run check` + `npm test` | 965 tests: 963 passed, 0 failed, 2 skipped |
+| Final candidate `npm run check` + `npm test` | 978 tests: 976 passed, 0 failed, 2 skipped |
+| Python compile: Host Agent server/start/full recovery | Passed |
+| Host Full Recovery unittest suite | 23 passed, 0 failures/errors |
+| All tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Node: v24.21.0 in WSL. The two skips still require root for cross-UID/group
+ownership tests. Docker is absent locally and in WSL; Compose/images, Node 22,
+browser/platform and security coverage remain the required PR workflows, whose
+current result belongs to the exact PR head rather than these local counts.
+
+The 13 new regressions cover:
+
+- Actual HTTP disconnect and response-finish races: the final write remains in
+  the same Hub SQLite database after clean process exit.
+- Express route chaining, nested guards, setting getters, async middleware and
+  error handlers, without changing the global prototypes.
+- Ordinary aborted-body cleanup remains unchanged; during shutdown, a late
+  body-parser continuation cannot start another writer for that abandoned request.
+- An unresponsive WebSocket close handshake and disconnect callback completion.
+- An accepted authenticated WebSocket command whose MQTT adapter is deliberately
+  delayed: its final command audit persists even after the socket disconnects.
+- A stuck handler exceeding the existing ten-second deadline exits 1, and a
+  reader holding a WAL snapshot causes checkpoint failure rather than false
+  success; the completed application write is preserved.
+- Active export freeze retains authentication and one-use thaw validation while
+  other requests (including the preloaded display gateway) receive 503.
+- Pending freeze acquisition aborts on shutdown, and a manual continuous run
+  records interruption without being marked operator-cancelled.
+- A scheduled continuous run records interruption, recovers on real process
+  restart, and stays cancelled across a further restart after operator Stop.
+- Queued announcement work survives a failed predecessor and retains ownership
+  until its final callback finishes.
+
+During development, missing shutdown variables in existing VM harnesses and a
+missing receiver in the new scheduled fixture caused test failures. The harnesses
+now explicitly provide the new lifecycle state, and process fixtures provision a
+test-owned receiver. No production guard or assertion was removed to pass tests.
+
+No live appliance, display, integration credential or production data was used.
+MQTT is a controlled test adapter; no physical delivery is claimed. Full
+presentation conversion, Sports refresh and Ubuntu remote-operation acceptance
+under shutdown remain feature-specific follow-ups. Hosted Wiki synchronization
+will use the existing workflow after a reviewed merge; this PR updates its mirror.
+
+## Explicit bridge composition follow-up (2026-10-27 UTC)
+
+Baseline: `38db6b8d9bf8fad328fa2639c592b4f739dcca3a`, alpha.85. The ordinary
+Windows helper passed against the active candidate, including untracked files.
+A final invocation used its unchanged snapshot/check/test procedure and appended
+Host Agent Python compilation, Full Recovery unittests and tracked-shell syntax
+checks. Both native Linux runs reported 982 tests: **980 passed, 0 failed,
+2 root-only ownership skips**. The host suite passed **23 tests**; Python compile,
+shell syntax and `git diff --check` passed.
+
+The five new composition scenarios also passed on Windows. An initial harness
+used immediate `process.exit()` after closing sockets and hit a Windows libuv
+assertion; normal process completion fixed it. The existing atomic SQLite rename
+test remains unsuitable for Windows and passed in native Linux. No application
+guard or assertion was removed to accommodate either environment.
+
+Loopback tests cover unchanged Express prototypes/unowned apps, idempotent
+composition, separate application guards, generated administration routes,
+maintenance-token separation, Veyon key/identity transforms, Music Assistant
+aliases and async error/drain ownership. Existing canonical-process lifecycle
+tests also pass. An old source-text import-order assertion was replaced by this
+request-level composition coverage; guarded Veyon GUI checks remain.
+
+No production data or integration services were used by the tests. Docker is
+unavailable locally; Compose, both images, scans, Node 22, native platforms and
+browser regressions remain the required exact-head CI gates. The operator has
+authorized merge/update after these gates, through the exact-main image pair,
+operational backup and normal rollback path. Deployment evidence belongs to the
+PR's delivery record; these local results do not claim physical acceptance or an
+exhaustive audit of integration business logic.
+
+## Export-handler drain follow-up (2026-10-27 UTC)
+
+Baseline: `da6bb77187bd23787239347db903ab842fbc6683`, alpha.85. Three new
+canonical-process regressions were run against that unchanged application using
+the helper's native Linux snapshot procedure. All three failed at the expected
+assertion: export freeze acknowledged while a held HTTP handler could still write.
+The fixture registers after real admission middleware and writes through the
+actual Hub SQLite instance; it uses only temporary data and loopback connections.
+
+The candidate passed 21 targeted lifecycle/freeze tests. The final full invocation
+used `C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py` with its unchanged
+active-worktree snapshot, `npm run check` and `npm test` procedure, appending Host
+Agent Python compile/unittests and tracked-shell syntax checks:
+
+| Check | Actual result |
+| --- | --- |
+| `npm run check` | Passed |
+| `npm test` | 988 tests: 986 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Python compilation | Passed |
+| Host Full Recovery unittests | 23 passed, 0 failures/errors |
+| Tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Six added tests cover transport closure versus returned-handler lifetime,
+rejection cleanup, final SQLite state before freeze acknowledgment, one-use thaw,
+the real 30-second acquisition timeout with later completion/retry, the guarded
+administrator export proxy with a maintenance fixture, and stable classification
+through mounted middleware and async error handlers. Existing shutdown/export
+races and automation restart tests still pass. The six tracker tests also pass
+on Windows. No guard or assertion was weakened.
+
+GitHub code scanning flagged exception text in the loopback maintenance fixture's
+HTTP error body. The fixture now sends fixed plain text and retains the original
+exception for the test runner's assertion. All five export process regressions
+passed again in native Linux after that test-only correction; the application
+implementation is identical to the full-suite candidate above. CI is rerun on
+the corrected PR head before merge.
+
+Docker is unavailable locally; Compose, both runtime images, security scans,
+Node 22, native platforms and browser regressions remain exact-head CI gates.
+The requested merge and update follow those gates and exact-main publication,
+with the normal operational backup and rollback path. Delivery evidence belongs
+to the PR. No production Full Recovery export, remote integration command or
+physical classroom playback is claimed by these tests.
+
+## Media shutdown outcome follow-up (2026-10-27 UTC)
+
+Baseline: `446a9523da9a160bc510e679397269c9097aeb1d`, alpha.85. With only
+the new/updated tests applied, the native Linux snapshot reported **25 tests:
+16 passed, 9 failed, 0 skipped**. Failures reproduced false-success shutdown
+status and premature release of child ownership after signaling errors. The
+candidate passed all **25 targeted tests** after the implementation fix.
+
+The final full run used `C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`
+with its unchanged active-worktree snapshot, `npm run check` and `npm test`
+procedure, appending Host Agent Python compilation, Full Recovery unittests and
+tracked-shell syntax checks:
+
+| Check | Actual result |
+| --- | --- |
+| `npm run check` | Passed |
+| `npm test` | 996 tests: 994 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Python compilation | Passed |
+| Host Full Recovery unittests | 23 passed, 0 failures/errors |
+| Tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Eight added tests and the corrected timeout assertion distinguish clean drain
+from unsuccessful child exit. A canonical process keeps an accepted HTTP writer
+alive after media SIGKILL, persists its final SQLite write, then exits 1. Unit
+tests cover forced termination including a racing zero exit, nonzero/signal
+status, emitted/thrown signaling errors, actual reaping and owner-exit fallback.
+The existing timeout remains a failure; no deadline, guard or assertion was
+weakened to make the tests pass. These tests use temporary data and loopback only.
+
+Code scanning identified missing rate limiting on the test fixture's new file
+access. The fixture now admits at most four requests per minute across callers;
+all nine writer-drain process tests passed again in native Linux. Production
+source is unchanged from the full-suite run above. CI runs on the corrected head.
+
+Docker is unavailable locally. Compose, both runtime images, vulnerability scans,
+Node 22, native platforms and browser regressions remain exact-head CI gates.
+The user requested push, merge and update after this change; the normal
+validated-main publication, operational backup and rollback path remain required.
+Delivery and hosted Wiki synchronization are recorded in the PR. No production
+fault injection or physical playback acceptance is claimed.
+
+## Discovery admission follow-up (2026-10-27 UTC)
+
+Baseline: `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`, alpha.85. The corrected
+targeted baseline reported **10 tests: 5 passed, 5 failed, 0 skipped**. Four
+manager-admission permutations and a canonical administrator request during an
+active export freeze failed. Accepted discovery already drained correctly.
+
+An initial test incorrectly expected audit persistence during freeze acquisition.
+Reading `audit()` confirmed the existing deliberate buffering policy. The test
+now requires no SQLite audit before thaw and persistence afterward. No application
+audit behavior was changed, and no snapshot-write defect is claimed.
+
+The final native Linux active-worktree snapshot used
+`C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`, retaining its check/test
+procedure and appending Host Agent Python compilation, recovery tests and shell
+syntax validation:
+
+| Check | Actual result |
+| --- | --- |
+| `npm run check` | Passed |
+| `npm test` | 1003 tests: 1001 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Python compilation | Passed |
+| Host Full Recovery unittests | 23 passed, 0 failures/errors |
+| Tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Seven new tests cover cold/cached/pending/closed admission, rejection without
+worker launch or a deferred success audit, thaw/retry/cache behavior, accepted
+discovery through export acquisition, and final audit persistence before shutdown.
+The process fixture retains the real manager, guarded route, SQLite and lifecycle
+owners while replacing only external mDNS worker IPC. No network scan or device
+command is performed. The current UI already surfaces the returned lock error.
+
+Docker is unavailable locally; exact-head CI must qualify both runtime images,
+Compose, vulnerability scans, native artifacts and browsers. Push/merge/update
+continues through the normal exact-main publication, backup and rollback path;
+delivery evidence and hosted Wiki synchronization belong to the PR record.
+
+## Feature-owner lifecycle coverage (2026-10-27 UTC)
+
+Baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`, alpha.85. Seven new
+canonical-process tests pass against unchanged runtime code. They cover accepted
+Sports refresh, Ubuntu scheduled acknowledgment and presentation conversion across
+shutdown and export freeze, plus conversion deadline/restart/rebuild behavior.
+No new runtime defect is claimed by this test-only follow-up.
+
+The mandated `RoomGoblin-LinuxTests.py` active-worktree snapshot included all four
+new test/fixture files. Targeted checks: **7 passed, 0 failed, 0 skipped**.
+Full native Linux validation: `npm run check` passed; `npm test` reported
+**1010 tests: 1008 passed, 0 failed, 2 root-only ownership skips**. Host Recovery
+reported **23 passed**. Host Python compilation, tracked shell syntax and
+`git diff --check` passed. The Sports timer runs at its real 15-second interval;
+the interrupted conversion uses the real ten-second shutdown deadline.
+
+Feed/SSH/rasterizer adapters are controlled fixtures, while the canonical Hub,
+routes, managers, SQLite, filesystem publication, freeze/thaw and shutdown remain
+real. This does not qualify external services, hardware commands or rendered
+slide quality. Docker remains unavailable locally; exact-head CI qualifies the
+runtime images, scans, native artifacts and browsers before merge/publication.
+
+## Read-side housekeeping freeze (2026-10-27 UTC)
+
+Runtime baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`; the local
+test-only parent `ee97d7a90ac6d6766d721eec6a290afae8fdd290` has identical
+application source. Four initial authentication regressions reported **0 passed,
+4 failed**: session cleanup, device credential timestamps and a canonical Hub
+GET advancing activity after freeze acknowledgment. After the authentication fix,
+a delayed update-status response reproduced the separate history-write gap
+(**5 tests: 4 passed, 1 failed**). All use temporary data.
+
+The final mandated native Linux active-worktree snapshot includes both fixes and
+five new regressions. `npm run check` passed; `npm test` reported **1015 tests:
+1013 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+The intermediate authentication/storage/freeze subset passed **13 tests**.
+
+SQLite `query_only` catches unintended writes during paused authentication reads.
+Expiry, revocation, disabled receivers, invalid tokens, session-list filtering,
+cleanup throttling and post-thaw persistence are asserted. Canonical Hub tests
+exercise actual admin reads and a maintenance response held across freeze; later
+status polls record one history entry without duplicates. No production freeze,
+credential change or external device command was used for regression testing.
+
+Exact-head CI still qualifies Compose, both images, image/security scans, native
+artifacts and browsers. Published-main deployment, health/identity verification,
+operational backup and rollback evidence are recorded in the PR after delivery.
+
+## Veyon read-side identity freeze (2026-10-27 UTC)
+
+Baseline: `c74d6417fd14bf1773829002f4c472543141887f`, alpha.85. The initial
+canonical empty-inventory regression failed (**0 passed, 1 failed**): a GET wrote
+`veyon.inventory-hostmap.v2` after the export freeze acknowledged. The candidate
+includes three process regressions. The targeted freeze/bridge subset passed
+**10 tests, 0 failed, 0 skipped**. Initial fixture assertions were corrected to
+use the existing 401 authentication response and a hostname-bearing computer;
+neither required a runtime change or weakened the snapshot assertion.
+
+The mandated native Linux active-worktree helper verified the modified files and
+both new test/fixture files. `npm run check` passed. Full `npm test`: **1018 tests,
+1016 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked shell syntax and `git diff --check` passed.
+
+Coverage includes new GET/HEAD admission, Express case/trailing-slash aliases,
+administrator key/config projections, maintenance inventory, token-protected
+maintenance config availability, and a held accepted inventory persisting its
+stable mapping before freeze acknowledgment. Only the synthetic computer's TCP
+probe is controlled; no real workstation or Veyon command is contacted. Normal
+identity projection and post-thaw access remain exercised. Docker is unavailable
+locally; exact-head CI must still qualify Compose/images, scans, native artifacts
+and browsers. Merge, publication and appliance update evidence belong to the PR.
+
+## Interrupted presentation staging (2026-10-27 UTC)
+
+Baseline: `acd537731f1e9eb08d8f7937003ccd1c287fbb6d`, alpha.85. Extending the
+existing real ten-second conversion/deadline test reproduced persistent private
+render staging after restart (**0 passed, 1 failed**). The original remains
+preserved; the added failure concerns orphan staging, not source loss.
+
+The candidate targeted lifecycle/content-permission/staging subset reported
+**19 tests: 17 passed, 0 failed, 2 root-only ownership skips**. It covers source
+preservation and rebuild after restart, recognized-directory cleanup, unknown
+entries, linked roots/directories, nested symbolic/hard links, whole-tree
+validation and bounded scan/candidate/node budgets.
+
+The mandated native Linux active-worktree helper included both new files and
+all modifications. `npm run check` passed; full `npm test`: **1023 tests,
+1021 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax, the new module's syntax check and
+`git diff --check` passed. Rendering uses a controlled external adapter; no
+physical receiver or live appliance fault injection was performed. Docker remains
+unavailable locally; exact-head CI, publication and normal backed-up deployment
+must complete before claiming external delivery.
+
+## Detached Veyon cleanup ownership (2026-10-27 UTC)
+
+Baseline: `42fa368794b14c9bda80565ac66ae9c69c2a07f7`, alpha.85. Three canonical
+process regressions reproduced lost shutdown/freeze ownership and idle cleanup
+admission during a freeze (**0 passed, 3 failed**). A first candidate run exposed
+incorrect test JSON-path expressions; correcting those expressions required no
+runtime change. The final cleanup/read-freeze subset passed **6 tests**.
+
+The mandated native Linux active-worktree helper included both new test files
+and all modifications. `npm run check` passed; full `npm test`: **1026 tests,
+1024 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+Tests run the real 15-second idle timer and canonical application, controlling
+only the external WebAPI transport and cached connection age. No physical
+computer is contacted. Docker remains unavailable locally; exact-head CI,
+publication and normal appliance update remain separate delivery gates.
+
+## Lab socket disconnect persistence (2026-10-27 UTC)
+
+Baseline: `58524737cf434d220f271a27998d7e1369212657`, alpha.85. Both initial
+canonical regressions failed (**0 passed, 2 failed**): disconnect writes changed
+the acknowledged snapshot, and an older socket stamped its live replacement.
+The final targeted subset passed **7 tests**, covering those cases, acquisition
+abort, deferred persistence retry and explicit shutdown failure on a persistent
+SQLite error, plus existing freeze/authentication checks.
+
+The mandated native Linux helper validated the active worktree including the new
+lab regression file. `npm run check` passed; full `npm test`: **1031 tests,
+1029 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+Enrollment uses a real canonical Hub, temporary credentials and loopback sockets;
+no real Windows agent, workstation command or student data is involved. Docker,
+browser/native qualification, publication and live delivery remain CI/deployment
+gates. The separate startup-reconciliation reproduction is not part of this run.
+
+## Startup reconciliation admission (2026-10-27 UTC)
+
+Baseline: `9873450f9a3fcbd6855938004b1509003fce1eb5`, alpha.85. The canonical
+startup regression failed (**0 passed, 1 failed**) because the real five-second
+callback added recovered/running ledger rows inside an acknowledged freeze.
+The targeted lifecycle/automation subset passed **24 tests**. A final duplicate
+admission guard was included in the full run.
+
+Native Linux active-worktree verification passed `npm run check`; full `npm test`
+reported **1032 tests, 1030 passed, 0 failed, 2 root-only ownership skips**.
+Host Recovery: **23 passed**. Host Python compilation, tracked-shell syntax and
+`git diff --check` passed. The test waits for actual startup and scheduler timers,
+checks unchanged frozen state, post-thaw current-winner recovery and clean stop.
+Its synthetic receiver has no connected display. The new Sports-import
+reproduction files were added after the helper captured this snapshot and are
+not part of these results. CI and final appliance delivery remain separate gates.
+
+## Sports import callbacks and final lifecycle suite (2026-10-27 UTC)
+
+Baseline: `b49c164e10bb1084a25dfd2af572d20f7b5336e1`, alpha.85. All four initial
+canonical callback regressions failed (**0 passed, 4 failed**): after browser
+disconnect, shutdown/freeze finished before the held PDF-processing adapter.
+Both successful and failed processing now remain owned. The targeted lifecycle,
+real PDF isolation and Sports authorization subset passed **10 tests**.
+
+The mandated native Linux helper validated all active source/test modifications
+and both new fixture/test files. `npm run check` passed. Final full `npm test`:
+**1036 tests, 1034 passed, 0 failed, 2 root-only ownership skips**. Host Recovery:
+**23 passed**. Host Python compilation, tracked-shell syntax and `git diff --check`
+passed. The final run also includes malformed/oversized multipart error coverage
+and all Veyon cleanup, lab disconnect and startup reconciliation regressions.
+
+The import fixture controls only the processing adapter; real parser tests retain
+their Linux resource/queue checks. No student roster, connected receiver or live
+workstation is used. Final audit prose was reconciled after the helper snapshot;
+runtime and test files were unchanged. Docker remains unavailable locally; CI,
+immutable publication and the backed-up appliance update must finish before
+claiming delivery of this final lifecycle patch set.
+
+### CI fixture-key correction
+
+CodeQL check `121994239360` on PR #271 head
+`7eff0e285180a8b1a490773e8f7efed8afde84df` correctly rejected the cleanup fixture's
+generated 1024-bit RSA key. The fixture now generates 2048 bits. No production
+key, scanner rule, exclusion, security policy or application source was changed.
+
+The corrected active-worktree full rerun passed: **1036 tests, 1034 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+`npm run check`, Host Python compilation, tracked-shell syntax and diff checks
+also passed. The corrected pushed head still requires fresh CodeQL and all
+required PR gates before merge; the earlier failed check is not a passing result.
+
+
+## Core lifecycle delivery closure (2026-10-27 UTC)
+
+PRs #269-#271 completed all PR/main checks and exact image publication. The normal
+published-main update completed at 04:10:31 UTC with source/Hub image
+`40b88c197b2e4d4dbed448348a9d1a9805949dbf`. Maintenance retained its healthy
+`20f8c501916f34e17bee2c643434e7cce0c919e6` image and container identity.
+Post-update checks verified clean main, both control/media health endpoints,
+canonical SQLite integrity, all eight encrypted secrets, required file/ADB
+permissions, maintenance authorization boundaries, no pending update request,
+and rollback to the prior deployment. The new operational archive passed checksum,
+ZIP CRC and extracted canonical SQLite checks. No physical classroom command or
+production fault injection was performed. See PR #271 for the delivery receipt.
+
+## Shared frontend and navigation (2026-10-27 UTC)
+
+Source baseline: `40b88c197b2e4d4dbed448348a9d1a9805949dbf` plus the active worktree
+patch. The native Linux helper captured tracked and new files from this worktree.
+Final source changes were included in the following runs; later edits recorded
+only these results and review notes.
+
+| Check | Result |
+| --- | --- |
+| `npm run check`, including 16 controller scripts | Passed |
+| Full `npm test` on native Linux | 1,038 tests: 1,036 passed, 0 failed, 2 root-only ownership checks skipped |
+| Host Agent Full Recovery Python suite | 23 passed |
+| Host Python compilation and all tracked shell syntax | Passed |
+| Chromium full browser discovery with locked PDF.js and packaged fonts | 115 passed, 0 failed |
+| Firefox full browser discovery with locked PDF.js and packaged fonts | 115 passed, 0 failed |
+| `git diff --check` | Passed |
+| Default light/dark phone/desktop screenshot review | Corrected mixed theme background, unreadable brand/headings and account field focus spacing |
+
+The browser suites run real bundled HTML/CSS/JS with deterministic API/WebSocket
+fixtures. New coverage exercises account/login focus, session-loss navigation,
+light/dark/system-light body and semantic contrast, enrollment JSON downloads,
+opaque-token quoting, HTTPS/LAN fallback and updater settings bindings. Existing
+navigation, embedded-session, receiver and feature regressions remain enabled.
+
+The first broad browser attempt omitted `npm ci` in its temporary snapshot:
+110 cases passed but the document suite setup failed because PDF.js was absent.
+All five document cases passed after installing the locked graph; final browser
+discovery includes that dependency setup. The first full Node attempt reported
+1,034 passed, 1 failed and 2 skipped. Its startup-recovery timeout passed in
+isolation; a deterministic test then reproduced the polling helper's premature
+expiry on a forward wall-clock correction. Monotonic timing fixed the helper
+without extending its ten-second budget. Final full-suite results are above.
+
+Docker is unavailable in the local Windows/WSL environment. Compose, both runtime
+images, image vulnerability qualification and platform artifacts remain required
+CI checks before merging; local checks do not substitute for those gates.
+Appliance delivery is pending exact-main image publication and will be recorded
+in the PR after the normal updater and post-update integrity checks complete.
