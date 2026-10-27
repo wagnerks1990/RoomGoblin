@@ -1,7 +1,11 @@
 # Display recovery timing
 
+## Verified delivery
+
+All 14 PR checks passed before squash merge at `217588afddcaf445d1fa9a2dd684dde088c82c7a`. Main validation, browser regression, security, Wiki sync and exact image publication passed. The normal selective Hub update completed on 2026-10-27 at 09:44:29 UTC. Read-only appliance verification confirmed clean main, the exact Hub image revision, healthy control/media/maintenance/Host Agent endpoints, canonical SQLite integrity, all eight encrypted secrets, database/ADB permissions and expected authorization responses. The existing maintenance container remained healthy. Backup `auto-operational-2026-10-27T09-44-16-411Z.zip` (128,534,819 bytes, mode 0600) matched journal SHA-256 `5441fdd9786bfb4fa617b2209445a34817f2b836dce12a948ea64a874fed0ff2` and passed ZIP CRC, canonical-database-only and extracted SQLite checks. Rollback to `2bd5ce9` remains available. Served operator assets matched merged source. No physical classroom commands, receiver reloads or production fault injection were used.
+
 Baseline: `22b19dce3078ccfb3c058f6db0d27b7851588e97`, alpha.85, checked
-PR #283 main. Status: locally qualified on checked PR #284 main; CI and delivery pending.
+PR #283 main. Status: all checks passed; deployed and verified at `217588a` (PR #285).
 
 ## RG-SCHED-022: Recovery applied future display actions and cleared their targets
 
