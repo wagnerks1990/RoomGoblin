@@ -8633,7 +8633,7 @@ const automationStartupReconcileTimer=setTimeout(reconcileAutomationStartup,5000
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.
 let legacyPlutoSchedulerBusy=false;
-const legacyPlutoSchedulerTimer=setInterval(async()=>{
+async function legacyPlutoSchedulerTick(){
   if(shutdownRequested||fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
   const clockStatus=schedulerClock.status();if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
   legacyPlutoSchedulerBusy=true;
@@ -8646,17 +8646,27 @@ const legacyPlutoSchedulerTimer=setInterval(async()=>{
       sch.lastExec=sch.lastExec||{};sch.lastRun=sch.lastRun||{};
       for(const [kind,time,index] of [["on",sch.onTime,0],["off",sch.offTime,1]]){
         if(time!==hhmm||sch.lastExec[kind]===minuteKey)continue;
-        const displayId=Object.keys(devices).find(id=>Number(devices[id]?.avOutput)===Number(sch.index));
-        if(displayId&&morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([displayId]).length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${displayId}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
+        const locked=automationTvPowerPhysicalLocks({output:Number(sch.index)},announcementLockedDisplayTargets(["all"]));
+        if(locked.length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${locked.join(", ")}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
+        const previousExec=sch.lastExec[kind],previousRun=sch.lastRun;
         sch.lastExec[kind]=minuteKey;
+        sch.lastRun={text:`${kind==="on"?"On":"Off"} requested ${now.toLocaleString()}; delivery not confirmed`,stamp:Date.now(),ok:null,pending:true};
+        // Claim before sending. A restart must not replay an uncertain CEC write.
+        try{persistPlutoSchedules()}
+        catch(error){
+          if(previousExec===undefined)delete sch.lastExec[kind];else sch.lastExec[kind]=previousExec;
+          sch.lastRun=previousRun;throw error;
+        }
         try{const result=await directPluto({action:"cecOutput",output:Number(sch.index),connection:sch.type,index});assertAdapterResults([result],{action:"Legacy TV power"});sch.lastRun={text:`${kind==="on"?"On":"Off"} ${now.toLocaleString()}`,stamp:Date.now(),ok:true}}
         catch(e){sch.lastRun={text:`ERROR ${now.toLocaleString()}: ${e.message}`,stamp:Date.now(),ok:false}}
         changed=true;
       }
     }
     if(changed)persistPlutoSchedules();
-  }finally{legacyPlutoSchedulerBusy=false}
-},15000);legacyPlutoSchedulerTimer.unref();
+  }catch(error){diagnosticError(error,{component:"automation",operation:"legacy-tv-scheduler"})}
+  finally{legacyPlutoSchedulerBusy=false}
+}
+const legacyPlutoSchedulerTimer=setInterval(legacyPlutoSchedulerTick,15000);legacyPlutoSchedulerTimer.unref();
 
 connectMqtt();
 

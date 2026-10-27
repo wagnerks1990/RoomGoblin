@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Protect legacy per-output TV schedules with all physical announcement locks
+  and persist claims before CEC dispatch so uncertain writes cannot replay.
+- Report legacy scheduler persistence errors and release its busy/drain ownership
+  even when a final status save fails.
+
 - Share matrix status scans across callers, cap aggregate/named reads at eight
   seconds and invalidate cached readings on command or connection changes.
 - Bound matrix response bodies to 64 KiB, stop retry waits on cancellation and

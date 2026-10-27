@@ -732,3 +732,20 @@ real-Hub cases failed their shared startup hook because Windows lacks the Linux
 `fchmod` contract. Native Linux ran those tests successfully. No permission check
 or assertion was weakened. Documentation, Wiki mirror and delivery receipts were
 updated after qualification; `git diff --check` passed.
+
+## Legacy TV scheduler qualification (2026-10-27 UTC)
+
+Baseline `9c15339776e6193b2002a1fccbd0c1e7cbd6f37a` fails seven of the eleven
+legacy scheduler regression fixtures; four behavior controls pass. The corrected
+focused suite passes all **91 tests** across legacy scheduling, canonical TV power,
+recovery and bounded Pluto transport. Tests execute the actual timer/tick, physical
+lock helper and application writer-drain predicate with controlled adapters.
+
+The required Windows-to-native-Linux helper tested the active worktree snapshot:
+**1,064 tests: 1,062 passed, 0 failed, 2 root-only ownership skips**, plus
+**23 Host Recovery tests**. Node/controller checks, Host Python compilation and
+tracked Bash syntax passed. The snapshot includes the final admission-retry and
+writer-drain fixtures. Docker is unavailable locally; required CI still owns
+Compose, both image builds/scans and native artifacts. No physical CEC command,
+receiver reload or production fault injection was performed. Merge, Wiki sync,
+exact image publication and the normal backed-up update remain pending.

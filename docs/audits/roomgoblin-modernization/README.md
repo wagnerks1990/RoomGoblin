@@ -1,8 +1,10 @@
 # RoomGoblin modernization audit
 
-Status: **Displays & AV backend read bounds locally qualified**. The operator
-workspace merged and verified on the appliance in PR #275. Receiver
-browser-runtime delivery completed in PR #274. Today/live monitoring and shared
+Status: **Legacy TV scheduler safeguards implemented and qualified locally;
+delivery pending**. Scheduler timing/task ownership is under review in PR #277. Displays
+& AV backend reads merged in PR #276 and await exact-image publication/delivery.
+The operator workspace is deployed through PR #275; receiver browser-runtime
+delivery completed in PR #274. Today/live monitoring and shared
 frontend delivery completed in PRs #273 and #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
@@ -52,6 +54,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Legacy TV scheduler findings](legacy-tv-scheduler.md)
 - [Displays & AV backend read bounds](av-status.md)
 - [Displays & AV workspace findings](displays-av.md)
 - [Display receiver browser-runtime findings](display-receiver.md)
