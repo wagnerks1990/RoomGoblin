@@ -6,14 +6,20 @@ const {setTimeout:delay}=require("node:timers/promises");
 // A response closing does not cancel its async handler. Track returned promises
 // through this application's public registration methods, including bridge
 // registrations, without changing Express prototypes or inspecting its stack.
-function trackApplicationHandlers(app,{isStopping=()=>false}={}){
-  let pending=0;
-  const handlers=new WeakMap(),routes=new WeakSet();
+function trackApplicationHandlers(app,{isStopping=()=>false,isMutation=()=>false}={}){
+  let pending=0,pendingMutations=0;
+  const handlers=new WeakMap(),routes=new WeakSet(),mutations=new WeakMap();
   function invoke(handler,self,args){
+    const req=args[args.length===4?1:0];
+    // Classify once at application entry, before mounted middleware can trim
+    // req.url/path. Export control/proxy requests must not wait on themselves.
+    if(!mutations.has(req))mutations.set(req,!!isMutation(req));
+    const mutation=mutations.get(req);
     const result=handler.apply(self,args);
     if(!result||typeof result.then!=="function")return result;
     pending++;
-    return Promise.resolve(result).finally(()=>{pending--});
+    if(mutation)pendingMutations++;
+    return Promise.resolve(result).finally(()=>{pending--;if(mutation)pendingMutations--});
   }
   function wrap(value){
     if(Array.isArray(value))return value.map(wrap);
@@ -25,7 +31,8 @@ function trackApplicationHandlers(app,{isStopping=()=>false}={}){
       ? function(error,req,res,next){return invoke(value,this,[error,req,res,next])}
       : function(req,res,next){
         // A disconnected body parser can call next after HTTP close. During
-        // shutdown, do not start another handler for that abandoned request.
+        // shutdown or export freeze, do not start another handler for that
+        // abandoned request.
         // Ordinary request cleanup retains its existing behavior otherwise.
         if(isStopping()&&req.aborted)return;
         return invoke(value,this,[req,res,next]);
@@ -47,7 +54,7 @@ function trackApplicationHandlers(app,{isStopping=()=>false}={}){
     return result;
   };
   app.use=function(...args){return use.apply(this,args.map(wrap))};
-  return {get pending(){return pending}};
+  return {get pending(){return pending},get pendingMutations(){return pendingMutations}};
 }
 
 async function waitUntilDrained(ready){

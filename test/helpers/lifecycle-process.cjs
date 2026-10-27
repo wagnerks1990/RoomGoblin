@@ -18,7 +18,7 @@ async function waitFor(check,description){
   while(Date.now()<end){if(await check())return;await delay(40)}
   throw new Error(`Timed out: ${description}`);
 }
-async function launch(t,{preload=null,directory=null,receivers=false,mockMqtt=false,gateway=false}={}){
+async function launch(t,{preload=null,directory=null,receivers=false,mockMqtt=false,gateway=false,maintenanceUrl=null}={}){
   const dir=directory||fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-lifecycle-"));
   if(receivers)fs.writeFileSync(path.join(dir,"runtime-config.json"),JSON.stringify({devices:{tv1:{name:"Test receiver",enabled:true}}}));
   const control=await port(),media=await port();
@@ -30,6 +30,7 @@ async function launch(t,{preload=null,directory=null,receivers=false,mockMqtt=fa
   const [command,...args]=start.split(/\s+/);assert.equal(command,"node");
   if(mockMqtt){env.MQTT_URL="mqtt://127.0.0.1:1883";env.SHUTDOWN_MQTT_FIXTURE="1"}
   if(gateway)env.DISPLAY_GATEWAY_ALLOWED_HOSTS="example.invalid";
+  if(maintenanceUrl){env.MAINTENANCE_URL=maintenanceUrl;env.MAINTENANCE_PROXY_ENABLED="true"}
   if(preload)args.unshift("--require",preload);
   const child=spawn(process.execPath,args,{cwd:root,env,stdio:["ignore","pipe","pipe"]});
   const exited=once(child,"exit");let output="",mediaPid=null;

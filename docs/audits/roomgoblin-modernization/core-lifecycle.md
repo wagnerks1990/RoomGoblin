@@ -202,6 +202,44 @@ retained registration composition; integration business logic remains separate.
 - **Status:** Implemented and locally tested; exact-head CI and delivery are
   recorded in the pull request.
 
+## RG-ARCH-006: export freeze releases HTTP ownership before the writer finishes
+
+- **Subsystem/category/priority:** Core lifecycle / Recovery reliability / P1.
+- **Baseline:** `da6bb77187bd23787239347db903ab842fbc6683`, alpha.85.
+- **Location at baseline:** `src/server.js:4755-4764,4905-4925`;
+  `src/application-drain.js:9-17,50`.
+- **Current implementation/problem:** Shutdown tracks returned handler promises,
+  but export acquisition only counts the HTTP response lifetime. A disconnected
+  or completed response can release its mutation count before the handler's final
+  write, allowing snapshot acknowledgment while that write is still possible.
+- **Evidence:** Three canonical-process tests fail on the baseline: hold an
+  admitted writer, disconnect/finish its response, and request a freeze. The
+  freeze returns before the final SQLite preference write. The rejection case
+  reproduces the same gap. These are isolated fixtures, not a production incident.
+- **Recommendation/benefit:** Reuse handler ownership for mutating HTTP requests
+  so snapshot acquisition observes completion rather than transport closure.
+- **Complexity/compatibility risk/confidence:** Small / Medium / Confirmed.
+- **Implementation:** Cache the shared mutation predicate at application entry;
+  count returned handler/error-handler promises separately from all shutdown
+  work. Add that count to export acquisition. Preserve response-lifetime counting
+  for body parsing and exclude freeze/thaw/export proxy from mutation accounting.
+  Prevent an aborted parser from starting another handler while freeze is pending.
+- **Verification:** Real canonical Hub, temporary SQLite and loopback clients:
+  disconnect, early response, rejection, final write before freeze acknowledgment,
+  one-use thaw, 30-second acquisition failure followed by completion/retry, and
+  administrator export proxy calling back through real freeze/thaw endpoints.
+  Tracker tests retain classification across mounted middleware and async errors.
+- **Preserved boundaries:** Existing authentication/transport policy, independent
+  export ownership, host lock, timeout/lease, shutdown deadline, schema, identities
+  and deployment/rollback path. No production export or external service command
+  is needed for these regressions.
+- **Review/limit:** Read the tracker, admission/freeze/thaw/proxy functions and
+  changed fixtures/tests in full. This covers returned mutating HTTP promises;
+  read-method side effects, detached callbacks and integration-specific writers
+  still require their explicit owners and feature acceptance. It is not a new
+  whole-application snapshot proof.
+- **Status:** Implemented; validation and delivery are recorded separately.
+
 ## Completion boundary
 
 The first bootstrap/media/readiness patch is implemented. The broader Core

@@ -154,3 +154,48 @@ authorized merge/update after these gates, through the exact-main image pair,
 operational backup and normal rollback path. Deployment evidence belongs to the
 PR's delivery record; these local results do not claim physical acceptance or an
 exhaustive audit of integration business logic.
+
+## Export-handler drain follow-up (2026-10-27 UTC)
+
+Baseline: `da6bb77187bd23787239347db903ab842fbc6683`, alpha.85. Three new
+canonical-process regressions were run against that unchanged application using
+the helper's native Linux snapshot procedure. All three failed at the expected
+assertion: export freeze acknowledged while a held HTTP handler could still write.
+The fixture registers after real admission middleware and writes through the
+actual Hub SQLite instance; it uses only temporary data and loopback connections.
+
+The candidate passed 21 targeted lifecycle/freeze tests. The final full invocation
+used `C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py` with its unchanged
+active-worktree snapshot, `npm run check` and `npm test` procedure, appending Host
+Agent Python compile/unittests and tracked-shell syntax checks:
+
+| Check | Actual result |
+| --- | --- |
+| `npm run check` | Passed |
+| `npm test` | 988 tests: 986 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Python compilation | Passed |
+| Host Full Recovery unittests | 23 passed, 0 failures/errors |
+| Tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Six added tests cover transport closure versus returned-handler lifetime,
+rejection cleanup, final SQLite state before freeze acknowledgment, one-use thaw,
+the real 30-second acquisition timeout with later completion/retry, the guarded
+administrator export proxy with a maintenance fixture, and stable classification
+through mounted middleware and async error handlers. Existing shutdown/export
+races and automation restart tests still pass. The six tracker tests also pass
+on Windows. No guard or assertion was weakened.
+
+GitHub code scanning flagged exception text in the loopback maintenance fixture's
+HTTP error body. The fixture now sends fixed plain text and retains the original
+exception for the test runner's assertion. All five export process regressions
+passed again in native Linux after that test-only correction; the application
+implementation is identical to the full-suite candidate above. CI is rerun on
+the corrected PR head before merge.
+
+Docker is unavailable locally; Compose, both runtime images, security scans,
+Node 22, native platforms and browser regressions remain exact-head CI gates.
+The requested merge and update follow those gates and exact-main publication,
+with the normal operational backup and rollback path. Delivery evidence belongs
+to the PR. No production Full Recovery export, remote integration command or
+physical classroom playback is claimed by these tests.

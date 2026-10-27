@@ -93,6 +93,18 @@ one-use `export-thaw` endpoint reachable. Other new requests receive HTTP 503.
 Shutdown does not clear the export's token or emit interruption writes while its
 freeze is held. Waiting for thaw consumes the same ten-second total deadline.
 
+Full Recovery acquisition also waits for `httpHandlers.pendingMutations`.
+The shared admission predicate classifies mutating HTTP requests once at
+application entry, before mounted middleware changes their path. Returned
+handler and error-handler promises remain counted after response finish or
+disconnect. Freeze/thaw and the initiating `/api/v1/maintenance/backup/create`
+proxy are excluded from this mutation count, but remain in the shutdown count.
+New mutations stay locked while acquisition waits. An aborted body cannot start
+a late handler during the freeze. The existing 30-second acquisition deadline
+fails without issuing a token if work remains; it does not cancel that work or
+close SQLite. Read methods and explicitly tracked background owners retain their
+existing policy. Detached work still requires explicit ownership.
+
 After the listeners, child and writers drain, shutdown flushes pending audit
 records and performs a nonwaiting SQLite WAL checkpoint. A busy/failed checkpoint,
 pending audit write or drain deadline exits with status 1; it must not be reported
@@ -130,6 +142,12 @@ restart recovery versus operator cancellation, active thaw and pending freeze
 races, deadline failure and a busy checkpoint. Announcement queue tests cover a
 failed predecessor followed by a queued writer. This is not live hardware,
 production presentation conversion, or end-to-end Sports/Ubuntu acceptance.
+
+Export regressions hold an accepted writer behind a test-owned gate, disconnect
+or finish its response, then verify freeze acknowledgment follows its final
+SQLite write. They also exercise rejection cleanup, acquisition timeout/retry,
+the real administrator proxy with a loopback maintenance fixture, and stable
+mutation classification through mounted middleware and async error handlers.
 
 There is no schema, version, receiver identity, port, authentication or dependency
 migration. Deployment requires the normal validated-main image pair and backed-up

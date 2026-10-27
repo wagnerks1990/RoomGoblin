@@ -4747,16 +4747,18 @@ async function executeCommand(input, source = "api") {
 // HTTP API
 // -----------------------------------------------------------------------------
 
+function fullExportHttpMutation(req){
+  const freezeControl=req.path==="/api/v1/internal/maintenance/export-freeze"||req.path==="/api/v1/internal/maintenance/export-thaw";
+  const exportProxy=req.path==="/api/v1/maintenance/backup/create";
+  return !['GET','HEAD','OPTIONS'].includes(req.method)&&!freezeControl&&!exportProxy;
+}
 const app = express();
-const httpHandlers=trackApplicationHandlers(app,{isStopping:()=>shutdownRequested});
+const httpHandlers=trackApplicationHandlers(app,{isStopping:()=>shutdownRequested||fullExportFreeze.requested,isMutation:fullExportHttpMutation});
 installApplicationBridges(app);
 app.disable("x-powered-by");
 app.set("trust proxy", TRUST_PROXY_HOPS);
 app.use((req,res,next)=>{
-  const mutating=!['GET','HEAD','OPTIONS'].includes(req.method);
-  const freezeControl=req.path==="/api/v1/internal/maintenance/export-freeze"||req.path==="/api/v1/internal/maintenance/export-thaw";
-  const exportProxy=req.path==="/api/v1/maintenance/backup/create";
-  if(!mutating||freezeControl||exportProxy)return next();
+  if(!fullExportHttpMutation(req))return next();
   if(fullExportFreeze.requested)return res.status(423).json({ok:false,error:"A Full Recovery Export is creating a consistent appliance snapshot; changes are temporarily locked"});
   fullExportFreeze.activeHttpMutations++;
   let released=false;const release=()=>{if(released)return;released=true;fullExportFreeze.activeHttpMutations=Math.max(0,fullExportFreeze.activeHttpMutations-1)};
@@ -4908,7 +4910,7 @@ app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,as
   const token=crypto.randomBytes(32).toString("base64url"),started=Date.now();
   fullExportFreeze.requested=true;fullExportFreeze.startedAt=new Date(started).toISOString();
   try{
-    const drained=()=>fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0&&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy;
+    const drained=()=>httpHandlers.pendingMutations===0&&fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0&&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy;
     while(!shutdownRequested&&!drained()&&Date.now()-started<30000)await new Promise(resolve=>setTimeout(resolve,25));
     if(shutdownRequested)throw new Error("Application shutdown interrupted Full Recovery Export freeze acquisition");
     if(!drained())throw new Error("Timed out waiting for active application mutations to finish");
