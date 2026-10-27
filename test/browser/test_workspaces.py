@@ -1375,6 +1375,40 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page.get_by_role('button', name='+ Automation', exact=True).wait_for()
         return page, errors, saved
 
+    def test_linked_class_preview_reports_the_dispatch_date_across_calendar_boundaries(self):
+        cases = [
+            ('2027-10-18', '00:30', '01:30', 'start', -60, '2027-10-17', '23:30'),
+            ('2027-12-31', '22:30', '23:30', 'end', 60, '2028-01-01', '00:30'),
+            ('2028-03-01', '00:30', '01:30', 'start', -60, '2028-02-29', '23:30'),
+            ('2027-03-14', '00:30', '01:30', 'start', -60, '2027-03-13', '23:30'),
+            ('2027-10-18', '08:00', '09:00', 'start', 15, '2027-10-18', '08:15'),
+            ('2027-10-18', '08:00', '09:00', 'end', 0, '2027-10-18', '09:00'),
+        ]
+        for date, start, end, reference, offset, expected_date, expected_time in cases:
+            with self.subTest(date=date, reference=reference, offset=offset):
+                cls = {'id': 'edge', 'name': 'Boundary class', 'period': '1',
+                       'scheduleMode': 'weekly', 'days': [1, 2, 3, 4, 5],
+                       'startTime': start, 'endTime': end, 'enabled': True}
+                page, errors, saved = self.studio_page(classes=[cls])
+                day = {'date': date, 'automationSuppressed': False, 'rows': [
+                    {'classId': 'edge', 'name': 'Boundary class', 'startTime': start, 'endTime': end}]}
+                page.route('**/api/v1/planning/day*', lambda route: route.fulfill(json={'day': day}))
+                page.get_by_role('button', name='+ Automation', exact=True).click()
+                page.evaluate('''([reference, offset]) => {
+                    document.querySelector('[data-autoclass="edge"]').checked = true;
+                    document.getElementById('autoClassRef').value = reference;
+                    document.getElementById('autoClassOffset').value = offset;
+                    updateAutomationClassPreview();
+                }''', [reference, offset])
+                page.wait_for_function("document.getElementById('autoClassPreview').textContent.includes('segment')")
+                actual = page.locator('#autoClassPreview').text_content()
+                self.assertIn(expected_date + ' · Boundary class → ' + expected_time, actual)
+                self.assertIn(start + '–' + end, actual)
+                if expected_date != date:
+                    self.assertIn('segment ' + date + ' ' + start, actual)
+                self.assertEqual(saved, [])
+                self.assertFalse(errors, errors)
+
     def test_automation_today_only_refreshes_after_calendar_date_changes(self):
         from playwright.sync_api import expect
         page, errors, saved = self.studio_page()

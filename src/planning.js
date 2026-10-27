@@ -157,7 +157,7 @@ function resolveDay(profile, calendar, classes, events, key) {
       rows.push({...segment, classId:cls.id, period:cls.period, name:authored?.label||cls.name, className:cls.name, kind:"class", automations});
     }
   }
-  if (status !== "no-school" && table) rows.push(...table.blocks.filter(block => block.kind !== "class" && (!block.cycleDays.length || block.cycleDays.includes(cycle.cycleDay))).map(block => ({...block, name:block.label, automations:events.filter(e=>e.enabled!==false&&e.blockIds?.includes(block.id)).map(e=>{const occurrence=studio.blockOccurrences(profile,calendar,e,key)?.find(o=>o._planningBlockId===block.id);return {id:e.id,name:e.name,time:occurrence?.time||block.startTime,suppressed:status!=="school"}})})));
+  if (status !== "no-school" && table) rows.push(...table.blocks.filter(block => block.kind !== "class" && (!block.cycleDays.length || block.cycleDays.includes(cycle.cycleDay))).map(block => ({...block, name:block.label, automations:events.filter(e=>e.enabled!==false&&e.blockIds?.includes(block.id)).map(e=>{const occurrence=studio.blockOccurrences(profile,calendar,e,key)?.find(o=>o._planningBlockId===block.id);const dayOffset=occurrence?Math.round((Date.parse(`${occurrence._scheduledDateKey}T12:00:00Z`)-Date.parse(`${key}T12:00:00Z`))/86400000):0;return {id:e.id,name:e.name,time:occurrence?.time||block.startTime,dayOffset,suppressed:status!=="school"}})})));
   rows.sort((a,b) => a.startTime.localeCompare(b.startTime));
   const warnings = [];
   for(const row of rows.filter(r=>r.kind!=="class"&&!r.automations.length))warnings.push(`${row.name||"Untitled block"}: no display automation is linked; existing content remains visible.`);
