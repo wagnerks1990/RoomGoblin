@@ -128,7 +128,12 @@ explicitly selects a new timetable. Closure and remote suppression always apply
 before classroom dispatch.
 
 Drafts survive navigation. Reload saved plan explicitly discards a dirty draft
-after confirmation. Preview and save never issue device commands, resume the
+after confirmation. Edits made while Reload is loading are preserved; an older
+reload response or error cannot replace a newer one. Saves retain exclusive
+ownership of their draft and revision while pending. A CSV file still loading
+when the draft is reloaded, saved or edited cannot modify that newer draft;
+select the file again to apply it after review.
+Preview and save never issue device commands, resume the
 scheduler, or restart running occurrences. Already-running occurrences keep their
 resolved boundaries; use the existing Pause/Resume Scheduled State controls
 deliberately when changing today's plan. Announcement priority is unchanged.

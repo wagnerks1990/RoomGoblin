@@ -1058,6 +1058,153 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertFalse(page.locator('[data-planning-page="planning"]').first.is_visible())
         self.assertFalse(errors, errors)
 
+    def planning_draft_page(self):
+        from playwright.sync_api import expect
+        profile={'name':'School','anchorDate':'2027-10-18','cycleDays':list('ABCDEFGH'),'dayGroups':[{'id':'green','label':'Green','cycleDays':list('ACEG')},{'id':'white','label':'White','cycleDays':list('BDFH')}],'periodCycleDays':{},'updatedAt':'initial','planning':{'enabled':False,'startDate':'','endDate':'','weekdays':[1,2,3,4,5],'defaultTimetableId':'','timetables':[],'dates':{}}}
+        source={'scheduleProfile':profile,'calendar':{},'classes':[],'preset':{k:profile[k] for k in ('cycleDays','dayGroups','periodCycleDays')},'today':'2027-10-18'}
+        def transport(req,target):
+            if target=='/api/v1/planning/preview':
+                body=req.request.post_data_json
+                req.fulfill(json={'day':{'date':body['date'],'status':'school','cycle':{'cycleDay':'A','dayColor':'Green'},'rows':[],'warnings':[],'automationSuppressed':False},'changes':[],'previewHash':'reviewed'})
+                return True
+            return False
+        page,errors=self.page('/controller/',overrides={'/api/v1/planning':source},transport=transport)
+        page.evaluate("showPage('planning')")
+        expect(page.locator('#planningDate')).to_have_value('2027-10-18')
+        page.locator('#planningRotationTab').click()
+        return page,errors,source
+    def test_planning_pending_reload_preserves_newer_edits(self):
+        from playwright.sync_api import expect
+        page,errors,source=self.planning_draft_page()
+        held=[]
+        page.route('**/api/v1/planning',lambda route:held.append(route))
+        with page.expect_request('**/api/v1/planning'):page.evaluate('void loadPlanning()')
+        page.locator('#planningAnchor').fill('2027-10-20')
+        with page.expect_response('**/api/v1/planning'):held[0].fulfill(json=source)
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningAnchor')).to_have_value('2027-10-20')
+        self.assertFalse(errors,errors)
+    def test_planning_latest_reload_wins_out_of_order_responses(self):
+        from playwright.sync_api import expect
+        import copy, time
+        page,errors,source=self.planning_draft_page()
+        held=[]
+        page.route('**/api/v1/planning',lambda route:held.append(route))
+        for _ in range(2):
+            with page.expect_request('**/api/v1/planning'):page.evaluate('void loadPlanning()')
+        deadline=time.monotonic()+5
+        while len(held)<2 and time.monotonic()<deadline:page.wait_for_timeout(10)
+        self.assertEqual(len(held),2)
+        newer=copy.deepcopy(source);newer['scheduleProfile']['anchorDate']='2027-10-21'
+        held[1].fulfill(json=newer)
+        expect(page.locator('#planningAnchor')).to_have_value('2027-10-21')
+        with page.expect_response('**/api/v1/planning'):held[0].fulfill(json=source)
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningAnchor')).to_have_value('2027-10-21')
+        self.assertFalse(errors,errors)
+    def test_planning_csv_finishing_after_reload_does_not_mutate_the_new_draft(self):
+        from playwright.sync_api import expect
+        page,errors,source=self.planning_draft_page()
+        page.locator('#planningCalendarTab').click()
+        page.get_by_text('Import school calendar dates (CSV)',exact=True).click()
+        page.evaluate("() => {File.prototype.text=function(){return new Promise(resolve=>{window.releaseCalendarFile=()=>resolve('date,status,cycleDay,timetableId,note\\n2027-10-20,no-school,,,Old import')})};}")
+        page.locator('#planningImport').set_input_files({'name':'old.csv','mimeType':'text/csv','buffer':b'fixture'})
+        page.wait_for_function('typeof window.releaseCalendarFile === "function"')
+        page.evaluate('loadPlanning(true)')
+        page.evaluate('window.releaseCalendarFile()')
+        page.locator('#planningDate').fill('2027-10-20')
+        page.locator('#planningDate').dispatch_event('change')
+        expect(page.locator('#planningDayStatus')).to_have_value('school')
+        self.assertFalse(errors,errors)
+
+    def test_planning_confirmed_reload_discards_only_the_existing_draft(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_draft_page()
+        page.locator('#planningAnchor').fill('2027-10-22')
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.locator('#planningReload').click()
+        expect(page.locator('#planningAnchor')).to_have_value('2027-10-18')
+        expect(page.locator('#planningPublish')).to_be_disabled()
+        self.assertFalse(errors, errors)
+
+    def test_planning_obsolete_load_failure_preserves_newer_status(self):
+        from playwright.sync_api import expect
+        import time
+        page, errors, source = self.planning_draft_page()
+        held = []
+        page.route('**/api/v1/planning', lambda route: held.append(route))
+        for _ in range(2):
+            with page.expect_request('**/api/v1/planning'):
+                page.evaluate('void loadPlanning()')
+        deadline = time.monotonic() + 5
+        while len(held) < 2 and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
+        self.assertEqual(len(held), 2)
+        held[1].fulfill(json=source)
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        with page.expect_response('**/api/v1/planning'):
+            held[0].fulfill(status=503, json={'error': 'Obsolete load failed'})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        self.assertFalse(errors, errors)
+
+    def test_planning_load_is_not_admitted_during_save(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_draft_page()
+        page.locator('#planningPreview').click()
+        expect(page.locator('#planningPublish')).to_be_enabled()
+        held, reads = [], []
+        def transport(route):
+            if route.request.method == 'PUT':
+                held.append(route)
+            else:
+                reads.append(route.request)
+                route.fulfill(json=source)
+        page.route('**/api/v1/planning', transport)
+        with page.expect_request('**/api/v1/planning'):
+            page.locator('#planningPublish').click()
+        page.evaluate('loadPlanning(true)')
+        held[0].fulfill(json={'scheduleProfile': {**source['scheduleProfile'], 'updatedAt': 'saved'}})
+        expect(page.locator('#planningMessage')).to_contain_text('Planning saved')
+        self.assertEqual(len(reads), 0)
+        expect(page.locator('#planningPreview')).to_be_enabled()
+        expect(page.locator('#planningPublish')).to_be_disabled()
+        self.assertFalse(errors, errors)
+
+    def test_planning_csv_keeps_edits_made_during_file_read(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_draft_page()
+        page.locator('#planningCalendarTab').click()
+        page.get_by_text('Import school calendar dates (CSV)', exact=True).click()
+        page.evaluate("""() => {
+            window.originalCalendarFileText=File.prototype.text;
+            File.prototype.text=function(){return new Promise(resolve=>{
+                window.releaseCalendarFile=()=>resolve('date,status,cycleDay,timetableId,note\\n2027-10-20,no-school,,,Old import');
+            })};
+        }""")
+        page.locator('#planningImport').set_input_files({'name': 'old.csv', 'mimeType': 'text/csv', 'buffer': b'fixture'})
+        page.wait_for_function('typeof window.releaseCalendarFile === "function"')
+        page.locator('#planningDate').fill('2027-10-20')
+        with page.expect_response('**/api/v1/planning/preview'):
+            page.locator('#planningDate').dispatch_event('change')
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        page.locator('#planningDayStatus').select_option('remote')
+        with page.expect_response('**/api/v1/planning/preview'):
+            page.locator('#planningStageDate').click()
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        page.evaluate('window.releaseCalendarFile()')
+        expect(page.locator('#planningMessage')).to_contain_text('draft changed while the calendar file')
+        expect(page.locator('#planningDayStatus')).to_have_value('remote')
+        page.evaluate('() => {File.prototype.text=window.originalCalendarFileText}')
+        page.locator('#planningImport').set_input_files({'name': 'reviewed.csv', 'mimeType': 'text/csv',
+            'buffer': b'date,status,cycleDay,timetableId,note\n2027-10-21,no-school,,,Reviewed import'})
+        expect(page.locator('#planningImportSummary')).to_contain_text('1 dates staged')
+        page.locator('#planningDate').fill('2027-10-21')
+        page.locator('#planningDate').dispatch_event('change')
+        expect(page.locator('#planningDayStatus')).to_have_value('no-school')
+        self.assertFalse(errors, errors)
+
     def studio_page(self, width=1440, classes=None):
         profile = {'name': 'School', 'anchorDate': '2027-10-18', 'cycleDays': list('ABCDEFGH'),
                    'dayGroups': [{'id': 'green', 'label': 'Green', 'cycleDays': list('ACEG')},
