@@ -12,7 +12,7 @@ PR #281 main. Status: merged and deployed through PR #283; verified below.
 | Exact baseline locations | `src/automation-runtime.js:122-135`; `src/server.js:5860-5870` |
 | Complexity / compatibility risk | Medium / Optional field in the existing version-1 preference |
 | Expected benefit | History traffic cannot revive a stopped current occurrence |
-| State | Reproduced, implemented and locally qualified |
+| State | Validated and merged in PR #283; main delivery pending |
 
 A saved cancellation followed by 500 unrelated history rows disappears from the
 bounded ledger. After restarting, continuous recovery admits that stopped current

@@ -1,7 +1,7 @@
 # Scheduler dispatch permission
 
 Baseline: `66c54a2b321675905472ea992b88b0f0319ab8fa`, alpha.85.
-Status: all 14 PR checks passed; merged in PR #282 as 970cab3; main delivery pending.
+Status: validated, merged and deployed through PR #282 at 970cab3; receipt below.
 
 ## RG-SCHED-016: Direct reconciliation and multi-command actions could bypass dry mode
 
@@ -12,7 +12,7 @@ Status: all 14 PR checks passed; merged in PR #282 as 970cab3; main delivery pen
 | Exact baseline locations | `src/server.js:1016,1065,1493,1703,5890,8689` and their complete function bodies |
 | Complexity / compatibility risk | Medium / Medium: more precise dispatch admission |
 | Expected benefit | End live test-clock permission before subsequent scheduled commands |
-| State | Validated and merged in PR #282; main delivery pending |
+| State | Validated, merged and deployed; receipt below |
 
 Sequence checkpoints did not cover direct recovery actions, timer dispatch or
 commands later inside an already entered multi-command action. Reconciliation
@@ -46,7 +46,7 @@ and explicit permitted clocks rather than bypassing it.
 | Exact baseline location | `src/server.js:212` |
 | Complexity / compatibility risk | Small / Low: preserve existing preference shape |
 | Expected benefit | Failed pause/resume saves leave runtime and persisted state aligned |
-| State | Validated and merged in PR #282; main delivery pending |
+| State | Validated, merged and deployed; receipt below |
 
 The toggle changed the runtime flag before writing its preference. Both enable
 and disable could take effect despite a failed save. The candidate preference is
@@ -89,3 +89,17 @@ focused suite passed **271 tests**. The final combined native snapshot passed
 **1,157 tests: 1,155 passed, 0 failed, 2 root-only ownership skips**, plus
 **23 Host Recovery tests** and Node/controller/Python/Bash checks. Only documentation
 qualification text changed afterward. Fresh CI and delivery remain pending.
+
+## Appliance delivery closure (2026-10-27 UTC)
+
+PR #282 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 08:30:51 UTC
+on clean main and Hub image `970cab330ffcf0e16585ac68a816a7697812e332`.
+The existing healthy maintenance container at `20f8c501916f34e17bee2c643434e7cce0c919e6`
+was retained; both containers have zero restarts. Control/media health, readiness,
+canonical SQLite, eight secret decryptions, DB/ADB permissions, authentication
+boundaries, served operator assets and deployment inputs passed. The archive
+passed journal checksum, ZIP CRC, canonical-only database and extracted SQLite
+checks. Rollback to `52e28c6660e9258772f842f8df5eac4517d90a6a` remains
+available. PR #282 records the backup name, size and SHA-256. No physical command,
+receiver reload or production fault injection was issued.
