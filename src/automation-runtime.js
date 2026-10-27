@@ -123,6 +123,18 @@ function assertAutomationCommandsAllowed(clock,{manual=false}={}){
   if(!manual&&!clock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
 }
 
+function firstPassDueActions(sequence,elapsedSeconds){
+  const due=[];let elapsed=0;
+  if(!Number.isFinite(elapsedSeconds)||elapsedSeconds<0)return due;
+  for(const step of sequence){
+    elapsed+=Math.max(0,Number(step.delaySeconds||0));
+    if(elapsed>elapsedSeconds)break;
+    due.push(step);
+    elapsed+=Math.max(0,Number(step.repeatDelaySeconds||0));
+  }
+  return due;
+}
+
 function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLimit=5000,now=()=>new Date()}={}){
   if(!Number.isSafeInteger(cancellationLimit)||cancellationLimit<1||cancellationLimit>5000)throw new Error("Automation cancellation retention limit is invalid");
   const cancellationStatus=status=>status==="cancel-requested"||status==="cancelled";
@@ -181,4 +193,4 @@ function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLim
   return {read,record,recordMany,claim,cancelledOccurrenceIds};
 }
 
-module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger};
+module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,occurrenceId,makeLedger};

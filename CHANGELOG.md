@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Reconcile only due display actions and timers, preserving configured delays,
+  current content, composed layers and delayed continuous-run ownership.
+- Use the scheduler clock consistently during display recovery and leave skipped
+  occurrences unconsumed when no output is due.
 - Respect pre-action delays and preceding dwell times during TV/lighting recovery;
   restore the later eligible action when one occurrence has equal-time steps.
 - Preserve delayed continuous-run ownership separately from currently due actions

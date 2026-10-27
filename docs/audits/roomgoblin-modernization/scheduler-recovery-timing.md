@@ -112,3 +112,10 @@ tests: 1,186 passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Rec
 tests**, Node/controller checks, Python compilation and tracked Bash syntax.
 Only documentation status/qualification text changed afterward. Final diff and
 whitespace review passed. Fresh CI/publication and appliance delivery remain gates.
+
+
+All 14 PR checks passed before squash merge in PR #284 at
+`2bd5ce972dca231d5aeb8eff42a57245cec8fee6`. The checked branch was current with
+main and had no unresolved review threads. Main validation, exact image
+publication and backed-up appliance delivery are pending; merged source alone
+is not an installable release.
