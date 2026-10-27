@@ -24,6 +24,13 @@ Receiver tools/group saves must require a unique enabled output mapping, never a
 guessed `tvN`. Preserve long group keys and references; wrap them for readability
 instead of automatically stripping historical `display-` prefixes.
 
+Matrix reads use the shared `src/pluto-transport.js` status owner: one pending
+scan, two-second monotonic cache, eight-second total read budgets and bounded
+64 KiB response bodies. Keep cancellation active through bodies and retry waits.
+Invalidate readings on command/connection changes without replaying uncertain
+writes. Preserve returned handler ownership after browser disconnect and the
+existing announcement, audit-freeze and shutdown contracts.
+
 
 For alpha.84 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
 Keep SQLite database/WAL/SHM access shared with maintenance (0660), ADB trust
