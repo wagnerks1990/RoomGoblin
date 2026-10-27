@@ -260,3 +260,14 @@ recheck that permission before actions, during waits and before a new timer
 overlay. Expiry or a switch to dry mode stops the sequence with a recorded error.
 An already accepted action may finish; its effects are not undone. Explicit
 manual Run Now and live draft tests remain available.
+
+## Automation resource identity
+
+Conflict checks and replacement use the action's dispatch intent. Empty primary
+targets use normal defaults; lighting groups resolve to member devices. Individual
+TV power follows its configured connection and valid legacy output override.
+All-TV broadcasts reserve all eight ports on both transports; HDMI/HDBT broadcasts
+reserve their chosen transport independently of receiver aliases. Announcement
+deferral does not shrink the intended resource set. Class display defaults remain
+separate from lighting/TV domains. Unknown lighting targets retain their diagnostic
+identity and normal dispatch error. No saved mappings or command payloads change.

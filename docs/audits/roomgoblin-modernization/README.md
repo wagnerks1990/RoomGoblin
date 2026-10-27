@@ -57,6 +57,7 @@ Queued subsystem units below have not been marked audited.
 
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
 
+- [Scheduler resource identity findings](scheduler-resources.md)
 - [Scheduler timing, task ownership and remaining review](scheduler.md)
 - [Scheduled sequence test-clock findings](scheduler-simulation.md)
 - [Displays & AV backend read bounds](av-status.md)

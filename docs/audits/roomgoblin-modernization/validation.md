@@ -824,3 +824,19 @@ to `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0` remains available.
 PR #276 records the archive name, size and SHA-256. No physical command or receiver
 reload was issued. Scheduler timing/ownership subsequently merged in PR #277 as
 `70ad1c8e6dbcf2e824746d25af8142dc88c363ea`; its deployment is pending.
+
+
+## Scheduler resource identity qualification (2026-10-27 UTC)
+
+Baseline main `70ad1c8` fails **9 of 13** dispatch/resource fixtures; four
+compatibility controls pass. The corrected resource, TV sequence/recovery,
+ownership, timing and existing-conflict editing suites pass **112 tests**.
+Fixtures execute the actual runner, dispatch handlers, Govee target resolver,
+resource resolver, conflict diagnostics and supersession with controlled adapters.
+
+The active-worktree native Linux snapshot passed **1,084 tests: 1,082 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+Node/controller checks, Host Python compilation and tracked Bash syntax passed.
+Docker is unavailable locally; CI must qualify Compose, image builds/scans and
+native artifacts. No physical commands or production fault injection were used.
+Checked merge, Wiki sync, exact images and normal backed-up delivery are pending.
