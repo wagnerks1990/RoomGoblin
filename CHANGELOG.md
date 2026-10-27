@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Refresh Calendar Today from the current appliance date without reloading the
+  draft; delayed lookups preserve newer edits, navigation and pending saves.
+
 - Keep class save retries on one draft identity and prevent older saves from
   clearing newer work or reopening a closed class editor.
 

@@ -1073,6 +1073,127 @@ class WorkspaceBrowserTests(unittest.TestCase):
         expect(page.locator('#planningDate')).to_have_value('2027-10-18')
         page.locator('#planningRotationTab').click()
         return page,errors,source
+    def planning_today_page(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_draft_page()
+        page.locator('#planningCalendarTab').click()
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        return page, errors, source
+
+    def hold_planning_today(self, page):
+        import time
+        held = []
+        page.route('**/api/v1/planning/day', lambda route: held.append(route))
+        page.locator('#planning').get_by_role('button', name='Today', exact=True).click()
+        deadline = time.monotonic() + 5
+        while not held and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
+        self.assertEqual(len(held), 1, 'Today must read the current appliance date')
+        return held
+
+    def test_planning_today_refreshes_appliance_date_without_reloading_draft(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_today_page()
+        page.locator('#planningDayNote').fill('Keep this calendar draft')
+        page.locator('#planningStageDate').click()
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        reads, previews = [], []
+        page.on('request', lambda request: reads.append(request) if request.url.endswith('/api/v1/planning') else None)
+        page.on('request', lambda request: previews.append(request.post_data_json) if request.url.endswith('/api/v1/planning/preview') else None)
+        page.route('**/api/v1/planning/day', lambda route: route.fulfill(json={'day': {'date': '2027-10-19'}}))
+        page.locator('#planning').get_by_role('button', name='Today', exact=True).click()
+        expect(page.locator('#planningDate')).to_have_value('2027-10-19')
+        expect(page.locator('#planningMessage')).to_contain_text('Date preview only')
+        self.assertEqual(previews[-1]['date'], '2027-10-19')
+        self.assertEqual(previews[-1]['scheduleProfile']['planning']['dates']['2027-10-18']['note'], 'Keep this calendar draft')
+        self.assertEqual(reads, [])
+        self.assertFalse(errors, errors)
+
+    def test_planning_today_keeps_later_manual_date_selection(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_today_page()
+        held = self.hold_planning_today(page)
+        page.locator('#planningDate').fill('2027-10-21')
+        page.locator('#planningDate').dispatch_event('change')
+        expect(page.locator('#planningDayHeading')).to_contain_text('2027-10-21')
+        with page.expect_response('**/api/v1/planning/day'):
+            held[0].fulfill(json={'day': {'date': '2027-10-19'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningDate')).to_have_value('2027-10-21')
+        self.assertFalse(errors, errors)
+
+    def test_planning_today_keeps_edits_and_ignores_obsolete_errors(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_today_page()
+        held = self.hold_planning_today(page)
+        page.locator('#planningDayNote').fill('A newer unsaved note')
+        with page.expect_response('**/api/v1/planning/day'):
+            held[0].fulfill(status=503, json={'error': 'Obsolete date lookup'})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningDate')).to_have_value('2027-10-18')
+        expect(page.locator('#planningDayNote')).to_have_value('A newer unsaved note')
+        expect(page.locator('#planningMessage')).to_contain_text('Unsaved draft')
+        self.assertFalse(errors, errors)
+
+    def test_planning_today_failure_preserves_date_and_can_retry(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_today_page()
+        responses = [{'error': 'Date service unavailable'}, {'day': {'date': '2027-10-19'}}]
+        def transport(route):
+            response = responses.pop(0)
+            route.fulfill(status=503 if 'error' in response else 200, json=response)
+        page.route('**/api/v1/planning/day', transport)
+        today = page.locator('#planning').get_by_role('button', name='Today', exact=True)
+        today.click()
+        expect(page.locator('#planningMessage')).to_contain_text('Date service unavailable')
+        expect(page.locator('#planningDate')).to_have_value('2027-10-18')
+        today.click()
+        expect(page.locator('#planningDate')).to_have_value('2027-10-19')
+        self.assertFalse(errors, errors)
+
+    def test_planning_today_latest_lookup_wins(self):
+        from playwright.sync_api import expect
+        import time
+        page, errors, source = self.planning_today_page()
+        held = self.hold_planning_today(page)
+        page.locator('#planning').get_by_role('button', name='Today', exact=True).click()
+        deadline = time.monotonic() + 5
+        while len(held) < 2 and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
+        self.assertEqual(len(held), 2)
+        held[1].fulfill(json={'day': {'date': '2027-10-20'}})
+        expect(page.locator('#planningDate')).to_have_value('2027-10-20')
+        with page.expect_response('**/api/v1/planning/day'):
+            held[0].fulfill(json={'day': {'date': '2027-10-19'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningDate')).to_have_value('2027-10-20')
+        self.assertFalse(errors, errors)
+
+    def test_planning_today_cannot_replace_pending_save_or_unlock_controls(self):
+        from playwright.sync_api import expect
+        import time
+        page, errors, source = self.planning_today_page()
+        page.locator('#planningPreview').click()
+        expect(page.locator('#planningPublish')).to_be_enabled()
+        held = self.hold_planning_today(page)
+        writes = []
+        page.route('**/api/v1/planning', lambda route: writes.append(route))
+        page.locator('#planningPublish').click()
+        deadline = time.monotonic() + 5
+        while not writes and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
+        self.assertEqual(len(writes), 1)
+        with page.expect_response('**/api/v1/planning/day'):
+            held[0].fulfill(json={'day': {'date': '2027-10-19'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningDate')).to_have_value('2027-10-18')
+        expect(page.locator('#planningPreview')).to_be_disabled()
+        expect(page.locator('#planning').get_by_role('button', name='Today', exact=True)).to_be_disabled()
+        writes[0].fulfill(json={'scheduleProfile': {**source['scheduleProfile'], 'updatedAt': 'saved'}})
+        expect(page.locator('#planningMessage')).to_contain_text('Planning saved')
+        expect(page.locator('#planning').get_by_role('button', name='Today', exact=True)).to_be_enabled()
+        self.assertFalse(errors, errors)
+
     def test_planning_pending_reload_preserves_newer_edits(self):
         from playwright.sync_api import expect
         page,errors,source=self.planning_draft_page()

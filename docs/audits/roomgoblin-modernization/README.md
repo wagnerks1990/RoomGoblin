@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Class-editor save ownership locally qualified; checked integration pending**.
+Status: **Calendar Today and class-save fixes locally qualified; checked integration pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -69,6 +69,7 @@ Queued subsystem units below have not been marked audited.
 - [Automation editor save ownership](automation-save-ownership.md)
 - [Planning draft ownership](planning-draft-ownership.md)
 - [Class editor save ownership](class-save-ownership.md)
+- [Calendar current-day navigation](planning-current-day.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)
