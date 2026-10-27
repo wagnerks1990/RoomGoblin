@@ -173,6 +173,16 @@ shutdown and SQLite audit path with a controlled worker IPC stream. They cover
 new/cached admission, accepted discovery across freeze and shutdown, and deferred
 audit persistence. They do not perform a physical mDNS scan.
 
+`test/background-lifecycle.test.js` exercises the real initial Sports refresh
+timer, Ubuntu scheduled poll and authenticated presentation upload with temporary
+SQLite data. Feed/SSH transports and rasterization are controlled test adapters.
+Held operations must persist their final results before freeze acknowledgment or
+clean shutdown; freeze audits flush only after thaw. A claimed Ubuntu job must
+not dispatch again on restart. An over-budget conversion must fail shutdown,
+retain its original file, recover to an explicit interrupted state and permit
+rebuild. These tests qualify lifecycle ownership, not physical device behavior,
+external feed availability or visual rendering quality.
+
 There is no schema, version, receiver identity, port, authentication or dependency
 migration. Deployment requires the normal validated-main image pair and backed-up
 updater. Rollback uses the existing previous-deployment recovery path. Do not
