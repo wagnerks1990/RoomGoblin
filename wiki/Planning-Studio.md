@@ -38,6 +38,12 @@ An earlier automation or shared-layer preview response cannot re-enable Save
 after edits or replace a newer review. Shared-layer edits clear the old match
 results. Preview and Save continue to send no device commands.
 
+While saving or deleting an automation/shared layer, its editor holds the draft
+and disables competing actions. A failed request restores editing and requires
+a new preview. A new automation keeps its draft ID across retries; if an earlier
+save was accepted but its reply was lost, the duplicate-ID response directs you
+to reload and check that save. Closing an editor does not cancel a submitted save.
+
 An automation can follow class segments, **timetable blocks**, or clock rules.
 Timetable-block selection includes lunch, transitions, assemblies and homeroom;
 its occurrence follows the selected block's actual times and skips days where
