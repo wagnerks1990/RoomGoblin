@@ -601,3 +601,46 @@ CI still owns local-unavailable Docker/Compose, image scans and native platform
 artifacts. Merge, Wiki sync, exact image publication and normal backed-up deployment
 remain open until their actual receipts are recorded. No physical receiver reload,
 classroom command or fault injection was performed.
+
+
+## Today delivery closure (2026-10-27 UTC)
+
+All PR/main gates, Wiki sync and exact image publication passed for PR #273.
+The normal updater completed at 05:38:34 UTC on clean main/Hub image
+`e7534eced5a8a803f524e46e7667f06bc7ab5deb`. The healthy maintenance container
+remained at `20f8c501916f34e17bee2c643434e7cce0c919e6`. Control/media/Host Agent
+health, readiness, canonical SQLite, eight secret decryptions, DB/ADB permissions,
+authorization and served asset hashes passed. The backup passed journal checksum,
+ZIP CRC, canonical-only database and extracted SQLite checks. Previous-deployment
+rollback is available, with no pending request. PR #273 holds the full receipt.
+No physical classroom commands or fault injection occurred.
+
+## Displays & AV operator workspace (2026-10-27 UTC)
+
+Finding baseline: `e7534eced5a8a803f524e46e7667f06bc7ab5deb`. Final full snapshots
+include receiver merge `ed8135b9bd8fd9f340a6360611a7db2767da08e4` and the AV patch.
+Seven initial regressions failed against the baseline. Additional cases cover
+changed-status focus retention, permissions, special dictionary keys, modal
+handoff and malformed responses; these are not all claimed baseline failures.
+
+| Check | Result |
+| --- | --- |
+| Native Linux `npm run check` and full `npm test` | 1,038 total: 1,036 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Full Recovery suite | 23 passed |
+| Host Python compilation and tracked Bash syntax | Passed |
+| Full Chromium browser discovery | 140 passed, 0 failed |
+| Full Firefox browser discovery | 140 passed, 0 failed |
+| Final current-tree AV/Today qualification, Chromium | 31 passed, 0 failed |
+| Final current-tree AV/Today qualification, Firefox | 31 passed, 0 failed |
+| Controller syntax and symbol ownership | 17 scripts passed |
+
+After the full snapshots were captured, setup's receiver-ID blur listener gained
+visible error handling, and its invalid-ID test changed from a direct function
+call to a real Save click. The final 31-case runs cover those current-tree changes
+in both engines. Other later edits record evidence only. A phone drawer screenshot
+was visually inspected; source controls remain readable and accessible.
+
+Docker is unavailable locally. CI must complete Compose, image builds/scans and
+native platform qualification before merge/publication. Backend aggregate probe
+ownership remains RG-AV-010 in this same review unit. No physical routing, TV
+power, receiver reload or production fault injection was performed.

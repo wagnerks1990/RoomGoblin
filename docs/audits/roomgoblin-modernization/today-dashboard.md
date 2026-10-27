@@ -1,7 +1,7 @@
 # Today and live-display monitoring review
 
 Baseline: `b3ba0afb2c06f12df7be8ff98c3953cfd00f6957`, alpha.85.
-Status: source review and local validation complete; CI, merge and delivery pending.
+Status: source review, validation, merge and appliance delivery complete through PR #273.
 
 ## Scope and decisions
 
@@ -30,7 +30,7 @@ failures. Physical receiver playback and matrix controls are the next review uni
 | Baseline locations | `public/controller/app.js:241-285`; `src/server.js:5330-5336,5395-5400` |
 | Complexity / compatibility risk | Medium / Low; browser read ownership only |
 | Expected benefit | Usable initial room status and accurate independent service/error signals |
-| State | Identified, reproduced, planned, implemented, locally tested; CI and delivery pending |
+| State | Identified, reproduced, planned, implemented, tested and closed through PR #273 |
 
 The old loader waited for five requests together, including six sequential Pluto
 probes. A stalled optional probe blocked display inventory and class information.
@@ -62,7 +62,7 @@ These fixtures do not measure production network latency or device availability.
 | Baseline locations | `public/controller/app.js:133-151,156-202` |
 | Complexity / compatibility risk | Medium / Medium; DOM identity and preview lifecycle |
 | Expected benefit | Stable keyboard focus and no redundant preview document reload on status reads |
-| State | Identified, reproduced, planned, implemented, locally tested; CI and delivery pending |
+| State | Identified, reproduced, planned, implemented, tested and closed through PR #273 |
 
 Every refresh replaced the complete card grid, including all live preview iframes
 and buttons. The baseline regression confirmed changed iframe identity and lost
@@ -91,7 +91,7 @@ Browser tests use lightweight preview documents and do not claim physical video 
 | Baseline locations | `public/controller/app.js:153-155,193-196,556-563` |
 | Complexity / compatibility risk | Small / Low; existing commands and target IDs retained |
 | Expected benefit | Clear recovery controls and no ambiguous test-image assignment |
-| State | Identified, validated, planned, implemented, locally tested; CI and delivery pending |
+| State | Identified, validated, planned, implemented, tested and closed through PR #273 |
 
 Missing output mappings silently returned; duplicate mappings could send a
 port-numbered test image without the required unique enabled receiver assignment.
@@ -115,7 +115,7 @@ TV is physically on. No real command was sent during this review.
 | Baseline locations | `public/controller/app.js:1153-1158,2341-2351`; `public/controller/index.html:342` |
 | Complexity / compatibility risk | Small / Low; backend guards unchanged |
 | Expected benefit | Visible unavailable state and controls consistent with existing authorization |
-| State | Identified, validated, planned, implemented, locally tested; CI and delivery pending |
+| State | Identified, validated, planned, implemented, tested and closed through PR #273 |
 
 A failed automation read updated only the hidden scheduling workspace, leaving
 Today's "Automation..." indicator and Pause button unchanged. Toggle/Resume were
@@ -136,3 +136,12 @@ All eight focused browser cases pass. Full native Linux passed 1,036 tests with
 two root-only skips; Host Recovery passed 23; Chromium and Firefox each passed
 123 browser tests. CI/image qualification and normal backed-up deployment are tracked in
 [validation.md](validation.md) and the delivery PR. Unverified stages stay open.
+
+
+Delivery closure: all PR/main gates, Wiki sync and exact images passed. The normal
+updater completed at 05:38:34 UTC on 2026-10-27 with clean main/Hub revision
+`e7534eced5a8a803f524e46e7667f06bc7ab5deb`. Control/media health, readiness,
+Host Agent, canonical SQLite, eight encrypted secrets, permissions, authorization
+and served assets passed. The operational backup passed checksum/CRC/database
+checks; rollback to `b3ba0afb2c06f12df7be8ff98c3953cfd00f6957` is available.
+PR #273 records the exact backup/checksum. No physical classroom command occurred.

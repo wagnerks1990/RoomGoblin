@@ -10,12 +10,13 @@ test('controller shell composes feature owners without replacing enrollment hand
   const shell=fs.readFileSync('public/controller/workspace.js','utf8');
   const html=fs.readFileSync('public/controller/index.html','utf8');
   const scripts=[...html.matchAll(/<script src="(\/controller\/[^\"]+)"/g)].map(match=>match[1]);
-  for(const file of ['lab-enrollment.js','system-updates-workspace.js']){
+  for(const file of ['lab-enrollment.js','system-updates-workspace.js','av-workspace.js']){
     assert.equal(scripts.filter(src=>src===`/controller/${file}`).length,1);
     assert.ok(scripts.indexOf(`/controller/${file}`)>scripts.indexOf('/controller/app.js'));
   }
   assert.doesNotMatch(shell,/createLabAgentEnrollment|enhanceUpdateWorkspace|\/api\//);
   assert.doesNotMatch(app,/function createLabAgentEnrollment\(/);
+  assert.doesNotMatch(app,/function (refreshPluto|renderAvDrawer)\(/);
 });
 
 test('action results open every enclosing disclosure without activating another page',()=>{

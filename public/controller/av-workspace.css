@@ -1,0 +1,5 @@
+/* Drawer geometry and native modal behavior are confined to the operator UI. */
+body.rg-workspace dialog.avTvDrawer{box-sizing:border-box;margin:0 0 0 auto;max-height:none;max-width:none;border:0;border-left:1px solid var(--rg-line);color:var(--rg-text);background:var(--rg-surface);height:100dvh;transform:none}
+body.rg-workspace dialog.avTvDrawer::backdrop{background:#0008}
+body.rg-workspace #avReadMsg{flex-basis:100%}
+body.rg-workspace dialog.avTvDrawer .card>label{display:block}
