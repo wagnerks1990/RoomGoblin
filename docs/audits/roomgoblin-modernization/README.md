@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Planning fixes awaiting delivery; announcement monitor fixes locally qualified**.
+Status: **Planning fixes awaiting delivery; announcement monitoring/settings fixes locally qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -78,6 +78,7 @@ Queued subsystem units below have not been marked audited.
 - [Timetable occurrence identity and class references](planning-block-identities.md)
 - [Planning preview dispatch dates](planning-preview-dates.md)
 - [Announcement monitor ownership and offline evidence](announcement-monitoring.md)
+- [Announcement configuration transaction](announcement-configuration.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)

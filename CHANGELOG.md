@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Commit announcement settings and their encrypted stream URL together before
+  applying them, preserving prior settings and safe retries after storage errors.
+
 - Retain one announcement watcher across settings changes, discard obsolete
   probe results, and require consecutive automatic offline evidence for release.
 

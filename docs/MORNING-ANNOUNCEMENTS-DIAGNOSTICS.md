@@ -39,6 +39,12 @@ change while a check is pending, its obsolete response is rejected and you can
 check again. Saving settings retains one periodic watcher even when a previous
 probe or lifecycle operation is still pending.
 
+Settings are committed with the encrypted stream URL before the watcher or live
+volume control uses them. A storage failure preserves the previous active and
+saved settings; correct the error and retry the save. Clearing a stream URL uses
+the same transaction. A successful save does not by itself confirm receiver
+playback or a successful live volume command.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.

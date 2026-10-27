@@ -20,6 +20,12 @@ change while a check is pending, its obsolete response is rejected and you can
 check again. Saving settings retains one periodic watcher even when a previous
 probe or lifecycle operation is still pending.
 
+Settings are committed with the encrypted stream URL before the watcher or live
+volume control uses them. A storage failure preserves the previous active and
+saved settings; correct the error and retry the save. Clearing a stream URL uses
+the same transaction. A successful save does not by itself confirm receiver
+playback or a successful live volume command.
+
 ## Receiver diagnostics
 
 On a display receiver:
