@@ -113,6 +113,22 @@ test("status deadline covers a real HTTP body that never finishes",async(t)=>{
   assert.equal(result.code,207);
 });
 
+test("matrix redirects cannot move reads or writes to another endpoint",async(t)=>{
+  let redirected=0,requests=0;
+  const server=http.createServer((req,res)=>{
+    if(req.url==="/matrix"){
+      requests++;res.writeHead(307,{Location:"/unapproved"});res.end();
+    }else{redirected++;res.writeHead(200,{"Content-Type":"application/json"});res.end('{"comhead":"video switch","result":1}');}
+  });
+  await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
+  t.after(()=>{server.closeAllConnections();return new Promise(resolve=>server.close(resolve))});
+  const h=harness({fetchImpl:(_body,options)=>fetch(`http://127.0.0.1:${server.address().port}/matrix`,options)});
+  for(const action of [{action:"videoStatus"},{action:"route",input:1,output:2}])
+    await assert.rejects(h.direct(action));
+  assert.equal(requests,2);
+  assert.equal(redirected,0);
+});
+
 test("per-attempt timeouts retry reads within the aggregate budget",async()=>{
   const h=harness({timeoutMs:20,readRetries:1,fetchImpl:(body,{signal},calls)=>{
     if(calls.length===1)return new Promise((_resolve,reject)=>signal.addEventListener("abort",()=>reject(signal.reason),{once:true}));

@@ -4483,7 +4483,7 @@ async function plutoPostRaw(body,{signal}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PLUTO_TIMEOUT_MS),started=Date.now();
   try{
     signal?.throwIfAborted();
-    const r=await fetch(PLUTO_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:signal?AbortSignal.any([signal,controller.signal]):controller.signal});
+    const r=await fetch(PLUTO_URL,{method:"POST",redirect:"error",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:signal?AbortSignal.any([signal,controller.signal]):controller.signal});
     const data=await readPlutoResponse(r);
     audit({kind:"service.action",component:"pluto",operation:String(body?.comhead||"request"),durationMs:Date.now()-started,status:r.status,ok:true});
     return data;

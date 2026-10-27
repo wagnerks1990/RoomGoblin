@@ -1,7 +1,7 @@
 # RoomGoblin modernization audit
 
 Status: **Displays & AV backend read bounds locally qualified**. The operator
-workspace merged in PR #275 and awaits main publication/delivery. Receiver
+workspace merged and verified on the appliance in PR #275. Receiver
 browser-runtime delivery completed in PR #274. Today/live monitoring and shared
 frontend delivery completed in PRs #273 and #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first

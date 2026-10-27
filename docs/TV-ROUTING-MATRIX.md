@@ -185,3 +185,9 @@ Matrix responses are limited to 64 KiB by both declared and streamed size. Error
 responses are cancelled, and malformed JSON errors do not reproduce raw upstream
 text. These are control/status safeguards, not physical power confirmation.
 No stored configuration, CEC write retries or announcement lock policy changes.
+
+Matrix requests reject redirects, including same-host redirects, so neither a
+read nor a command can be forwarded beyond the explicitly configured endpoint.
+Configure the final HTTP(S) matrix URL. Only an enabled full administrator or
+the authenticated internal maintenance service can change this destination;
+normal classroom commands cannot supply a URL.

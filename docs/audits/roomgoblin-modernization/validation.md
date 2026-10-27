@@ -691,3 +691,44 @@ unchanged test; all 84 focused cases then passed. No assertion was weakened.
 Docker remains unavailable locally. CI owns Compose, both image scans/builds and
 native artifacts before checked merge/publication. No physical AV command,
 receiver reload or production fault injection was performed.
+
+
+## AV workspace delivery closure (2026-10-27 UTC)
+
+PR #275 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 06:18:09 UTC
+on clean main and Hub image `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0`.
+Maintenance retained its healthy `20f8c501916f34e17bee2c643434e7cce0c919e6`
+container; both containers have zero restarts. Health/readiness, canonical SQLite,
+eight secret decryptions, DB/ADB permissions, authentication, served AV/controller/
+setup asset hashes and deployment-input checks passed. The operational archive
+passed journal checksum, ZIP CRC, canonical-only database and extracted SQLite
+checks. Rollback to `ed8135b9bd8fd9f340a6360611a7db2767da08e4` remains available.
+PR #275 records the backup name, size and SHA-256. No physical command or receiver
+reload was issued.
+
+
+## AV redirect and privileged-configuration qualification (2026-10-27 UTC)
+
+A real loopback 307 regression failed before the redirect correction. It now
+passes for both a status read and a route write, with zero requests reaching the
+redirect destination. The full active-worktree native Linux snapshot passed
+**1,053 tests: 1,051 passed, 0 failed, 2 root-only ownership skips**, plus
+**23 Host Recovery tests**. `npm run check`, Host Python compilation and tracked
+Bash syntax passed. The snapshot includes the final runtime redirect policy.
+
+The authorization fixture was then extended to include the teacher/operator
+profile. The final current-tree transport, real-Hub HTTP and bridge suites passed
+**55 tests, 0 failed**, plus 23 Host Recovery tests and syntax checks. This covers
+anonymous/viewer/operator denial, maintenance-token rejection on the admin route,
+and the separate internal maintenance token boundary. No runtime code changed
+after the full snapshot. CodeQL alert 415's privileged configuration flow was
+reviewed and classified as a false positive with this evidence; the independently
+reproduced redirect forwarding defect was corrected. Security rules and required
+gates remain unchanged; fresh CI is required for the corrected head.
+
+The initial Windows transport/HTTP attempt passed 14 transport cases; all 36
+real-Hub cases failed their shared startup hook because Windows lacks the Linux
+`fchmod` contract. Native Linux ran those tests successfully. No permission check
+or assertion was weakened. Documentation, Wiki mirror and delivery receipts were
+updated after qualification; `git diff --check` passed.

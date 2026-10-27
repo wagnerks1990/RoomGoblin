@@ -105,3 +105,41 @@ Required CI still owns Docker/Compose, runtime image scans, browser suites and
 native platform qualification. Merge, Wiki sync, exact image publication and the
 normal backed-up appliance update remain pending. Neither physical AV commands
 nor production fault injection are used as part of this review.
+
+## RG-AV-012: Matrix redirects could forward commands to another destination
+
+| Field | Assessment |
+| --- | --- |
+| Subsystem / category | Matrix transport / Security |
+| Priority / confidence | P2 / Confirmed by loopback HTTP regression |
+| Exact baseline locations | `ed8135b9bd8fd9f340a6360611a7db2767da08e4`, `src/server.js:4483` |
+| Complexity / compatibility risk | Small / Low; configure the final endpoint instead of a redirect |
+| Expected benefit | Keep read and command requests at the configured matrix endpoint |
+| State | Identified, reproduced, implemented; Linux qualification passed; fresh CI pending |
+
+The transport used fetch's default redirect policy. A controlled endpoint could
+forward the POST, including its body with a 307 response, to another URL. A real
+loopback fixture reproduced a command reaching the redirect destination. The
+transport now uses `redirect:"error"`; the fixture verifies both reads and writes
+fail without reaching the second endpoint. Write retries remain disabled.
+
+### CodeQL destination-flow review
+
+PR #276 check `122039562978`, alert 415 (`js/request-forgery`), traces the request
+URL from `PUT /api/v1/admin/integration-connections` through normalization and
+`applyIntegrationConnections` to `PLUTO_URL`. The SARIF trace was read in full.
+That route requires the enabled full administrator predicate (role plus wildcard
+capability); the separate internal maintenance mirror requires its server token.
+This is an intentional privileged configuration capability, not an operator
+command URL parameter. HTTP(S) scheme and embedded credentials are validated
+when configuration is saved. The public status/command endpoints cannot change
+the destination. Existing installer environment configuration remains supported.
+
+An added real-Hub HTTP regression checks anonymous/read-only/teacher-operator requests and a
+maintenance token presented to the administrator route are rejected, and that
+anonymous/read-only/teacher-operator/wrong-token maintenance requests are rejected without changing
+configuration. Existing accepted administrator and maintenance configuration
+coverage remains in the suite. After the native 55-case transport/HTTP/bridge suite passed, alert 415 was
+classified as a false positive with that evidence. This disposition applies to
+the intentional privileged destination configuration, separately from the real
+redirect defect. No scanner rule, exclusion, workflow or required gate changed.
