@@ -89,3 +89,5 @@ The companion [block identity and class-reference patch](planning-block-identiti
 addresses RG-PLAN-004/005, including missing-class validation on Planning preview
 and save. Offset dates in operator previews remain under review. Later-loop
 phase remains a scheduler follow-up. The overall roadmap is not complete.
+
+Delivery through PR #291 is verified at `407be9e`; see the [shared runtime receipt](planning-block-identities.md).

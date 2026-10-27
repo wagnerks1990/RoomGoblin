@@ -48,6 +48,11 @@ playback or a successful live volume command.
 Starting a replacement announcement retires the previous session's delayed
 audio retries, including when both sessions use the same displays.
 
+Announcement audio priority remains held through failed display reconciliation,
+including independent hallway displays. Once recovery succeeds, restored audible
+video or an existing manual takeover retains its own music-priority policy.
+A media-ended notification cannot release an active announcement hold.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.

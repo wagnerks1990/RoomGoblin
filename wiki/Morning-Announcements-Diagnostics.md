@@ -29,6 +29,11 @@ playback or a successful live volume command.
 Starting a replacement announcement retires the previous session's delayed
 audio retries, including when both sessions use the same displays.
 
+Announcement audio priority remains held through failed display reconciliation,
+including independent hallway displays. Once recovery succeeds, restored audible
+video or an existing manual takeover retains its own music-priority policy.
+A media-ended notification cannot release an active announcement hold.
+
 ## Receiver diagnostics
 
 On a display receiver:
