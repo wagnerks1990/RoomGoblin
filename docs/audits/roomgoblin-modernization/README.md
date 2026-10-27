@@ -84,6 +84,7 @@ Queued subsystem units below have not been marked audited.
 - [Announcement audio retry ownership](announcement-audio-retries.md)
 - [Announcement and media priority ownership](announcement-priority.md)
 - [Announcement probe destination security review](announcement-probe-security.md)
+- [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)

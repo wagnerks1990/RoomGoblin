@@ -847,14 +847,27 @@ async function fetchWithDeadline(url,options={},timeoutMs=3500){
     let current=validateDisplayGatewayTarget(url,MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS);
     for(let redirects=0;redirects<=3;redirects++){
       const response=await fetch(current,{...options,redirect:"manual",signal:ctrl.signal,headers:{"cache-control":"no-cache",...(options.headers||{})}});
-      if(![301,302,303,307,308].includes(response.status))return response;
+      if(![301,302,303,307,308].includes(response.status)){
+        // Keep the same deadline through playlist consumption. A publisher that
+        // sends headers but stalls its body must not pin the lifecycle queue.
+        if(!response.ok){await response.body?.cancel();return new Response(null,{status:response.status,headers:response.headers})}
+        const maxBytes=512*1024,chunks=[];let size=0;
+        if(Number(response.headers.get("content-length"))>maxBytes)throw Error("Morning Announcements playlist exceeds size limit");
+        if(response.body)for await(const chunk of response.body){
+          size+=chunk.byteLength;
+          if(size>maxBytes)throw Error("Morning Announcements playlist exceeds size limit");
+          chunks.push(Buffer.from(chunk));
+        }
+        return new Response([204,205].includes(response.status)?null:Buffer.concat(chunks),{status:response.status,headers:response.headers});
+      }
+      await response.body?.cancel();
       const location=response.headers.get("location");
       if(!location)throw Error("Morning Announcements probe redirect is missing a location");
       if(redirects===3)throw Error("Morning Announcements probe exceeded the redirect limit");
       current=validateDisplayGatewayTarget(new URL(location,current),MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS);
     }
     throw Error("Morning Announcements probe redirect failed");
-  }finally{clearTimeout(timer)}
+  }finally{ctrl.abort();clearTimeout(timer)}
 }
 async function probeMorningAnnouncementsLive(){
   const c=announcementsCoordinates();

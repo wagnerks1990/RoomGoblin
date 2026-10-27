@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Bound announcement probes through playlist body consumption, release redirect
+  and error transports, and reject oversized playlists as unknown availability.
+
 - Separate mandatory announcement audio holds from ordinary media priority,
   preserving hallway recovery holds and priority belonging to restored content.
 
