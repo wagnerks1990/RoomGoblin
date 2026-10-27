@@ -40,7 +40,7 @@ function harness({failStatus,failPersistAt=0,run}={}){
     runClassroomAutomation:async(...args)=>{dispatches++;return run?run(...args):{ok:true,results:[]}},
     audit:value=>audits.push(value),diagnosticError:(error,context)=>errors.push({message:error.message,context})
   });
-  vm.runInContext(section("function trackFullExportMutation(","// Veyon becomes")+
+  vm.runInContext(section("function resolveScheduledAutomationOccurrences(","function resolveAutomationFromClass(")+section("function trackFullExportMutation(","// Veyon becomes")+
     section("let automationSchedulerBusy=false;","let automationStartupReconcilePending=true;")+
     section("function startManagedManualAutomation(",'app.post("/api/v1/automations/draft/run"')+
     section("async function recoverContinuousAutomationOccurrences(","async function reconcileScheduledAutomationState(")+

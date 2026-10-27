@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Align class-offset recovery with live scheduling across midnight, preserve
+  resolved timer dates, and exclude power/lighting steps beyond class end.
+
 - Refresh Calendar Today from the current appliance date without reloading the
   draft; delayed lookups preserve newer edits, navigation and pending saves.
 

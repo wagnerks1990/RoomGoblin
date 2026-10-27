@@ -25,7 +25,7 @@ function recover(ledger){
     supersedeOverlappingAutomationRuns:()=>{},automationResourceKeys:()=>["display-content:screen"],
     startOwnedAutomationOccurrence:(...args)=>starts.push(args),executeScheduledAutomationOccurrence:()=>{},audit:()=>{}
   });
-  vm.runInContext(section("async function recoverContinuousAutomationOccurrences(","async function reconcileScheduledAutomationState("),ctx);
+  vm.runInContext(section("function resolveScheduledAutomationOccurrences(","function resolveAutomationFromClass(")+section("async function recoverContinuousAutomationOccurrences(","async function reconcileScheduledAutomationState("),ctx);
   return ctx.recoverContinuousAutomationOccurrences();
 }
 
