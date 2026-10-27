@@ -122,13 +122,14 @@ audit records for their separate baseline reproductions and qualification.
 Cancellation persistence passed all checks and is deployed through PR #281; see
 the [cancellation follow-up](scheduler-cancellation.md).
 The remaining test-clock dispatch boundaries and pause-save ordering are
-implemented and locally qualified in the
-[dispatch-permission follow-up](scheduler-dispatch-permission.md); combined
-qualification and all 14 PR checks passed; PR #282 is merged, with delivery pending.
-Cancellation retention is implemented in the
-[Stop-retention follow-up](scheduler-stop-retention.md), with final integration
-validation complete locally. Recovery winner timing remains open. The editor is a separate
-unit. This does not close the complete scheduler engine audit.
+validated and deployed through PR #282; see the
+[dispatch-permission follow-up](scheduler-dispatch-permission.md). Cancellation
+retention passed all 14 checks and merged in PR #283, with publication/delivery
+pending; see the [Stop-retention follow-up](scheduler-stop-retention.md).
+[TV/lighting recovery timing and ownership](scheduler-recovery-timing.md) passed
+final local integration validation. Display recovery timing, later-pass phase and
+cross-date resolution remain open. The editor is a separate unit. This does not
+close the complete scheduler engine audit.
 
 
 ## Qualification boundary

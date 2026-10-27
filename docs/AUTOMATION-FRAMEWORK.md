@@ -8,6 +8,20 @@ Actions execute in canonical order. Each action's `repeatDelaySeconds` is the **
 
 For example, if Action 1 has a 3600-second dwell and Action 2 has a 60-second dwell, RoomGoblin runs Action 1, leaves it active for one hour, runs Action 2, leaves it active for one minute, then returns to Action 1 when the configured execution modes keep the sequence eligible. This applies to text, URLs, media, lighting, TV power, and other automation actions. When the class/event window ends, the sequence stops normally.
 
+Startup/Resume TV and lighting recovery uses each action's configured first-pass
+pre-delay plus every preceding dwell, including other action domains. Eligibility
+uses exact seconds; it is not rounded into an earlier minute. Later eligible steps
+within the same occurrence replace earlier state on the same target. The existing
+minute/priority/event-ID precedence between occurrences remains unchanged. This
+projection does not reconstruct adapter latency or the phase of later loop passes.
+
+Continuous-run admission uses a separate ownership view: already-started TV and
+lighting sequences reserve their complete intended scope while waiting. Ownership
+follows occurrence start, priority and event ID; a later action cannot turn an older
+run into a newer owner. Pending winners can restart through the normal owned runner
+without applying future state during reconciliation. Stop filtering follows winner
+selection so it cannot revive a superseded predecessor.
+
 ## Schema v3: scheduled automation + ordered actions
 
 The canonical persisted model is `actionSequence[]`. There is no runtime distinction between a primary action and later actions. Every action has the same fields:

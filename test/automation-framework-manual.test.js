@@ -88,6 +88,6 @@ test("any manual run replaces overlapping managed manual loops",()=>{
 test("continuous recovery only restarts current winners",()=>{
   assert.match(server,/function currentContinuousRecoveryWinnerIdentities\(now=schedulerClock\.now\(\)\)/);
   assert.match(server,/for\(const candidate of currentAutomationDisplayWinners\(now\)\)/);
-  assert.match(server,/for\(const candidate of currentAutomationNonDisplayWinners\(now\)\)/);
+  assert.match(server,/for\(const candidate of currentAutomationNonDisplayWinners\(now,\{forRecoveryOwnership:true\}\)\)/);
   assert.match(server,/if\(!winnerIdentities\.has\(automationOccurrenceIdentity\(storedEvent,event\)\)\)continue/);
 });

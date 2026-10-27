@@ -1001,3 +1001,37 @@ tests**, Node/controller checks, Python compilation and tracked Bash syntax.
 Only documentation status/qualification text changed afterward. Diff and
 whitespace review passed. CI still owns Docker/Compose, image scans/builds,
 browser and platform artifact qualification. No physical command was issued.
+
+## Dispatch permission delivery closure (2026-10-27 UTC)
+
+PR #282 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 08:30:51 UTC
+on clean main and Hub image `970cab330ffcf0e16585ac68a816a7697812e332`.
+The existing healthy maintenance container at `20f8c501916f34e17bee2c643434e7cce0c919e6`
+was retained; both containers have zero restarts. Control/media health, readiness,
+canonical SQLite, eight secret decryptions, DB/ADB permissions, authentication
+boundaries, served operator assets and deployment inputs passed. The archive
+passed journal checksum, ZIP CRC, canonical-only database and extracted SQLite
+checks. Rollback to `52e28c6660e9258772f842f8df5eac4517d90a6a` remains
+available. PR #282 records the backup name, size and SHA-256. No physical command,
+receiver reload or production fault injection was issued.
+
+## Recovery timing and ownership qualification (2026-10-27 UTC)
+
+The first 11 timing cases and existing aggregate/permission/cycle coverage passed
+**117 focused tests**. Native validation on PR #282 main plus that patch passed
+**1,168 tests: 1,166 passed, 0 failed, 2 root-only ownership skips**, plus **23 Host
+Recovery tests**. After PR #283 main integration, focused coverage passed **156
+tests** and native coverage passed **1,183 tests: 1,181 passed, 0 failed, 2 skipped**,
+plus the same 23 Host tests.
+
+Final review added five actual recovery-admission cases. The partial timing patch
+failed all five until ownership was separated from currently due actions. A source
+assertion was updated to require the explicit ownership mode. The final focused
+suite passed **187 tests**. The fresh final native snapshot passed **1,188 tests:
+1,186 passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Recovery
+tests**, Node/controller checks, Python compilation and tracked Bash syntax.
+Earlier native results do not qualify the subsequent ownership correction.
+Only documentation status/qualification text changed afterward. Diff and whitespace
+review passed. CI still owns Docker/Compose, image scans/builds, browser and native
+artifact qualification. No physical command or production fault injection was used.

@@ -1,7 +1,8 @@
 # Scheduler Stop retention
 
 Baseline: `52e28c6660e9258772f842f8df5eac4517d90a6a`, alpha.85, checked
-PR #281 main. Status: locally qualified on checked PR #282 main; CI/delivery pending.
+PR #281 main. Status: all 14 PR checks passed; merged in PR #283 as 22b19dc;
+main publication and delivery pending.
 
 ## RG-SCHED-018: Diagnostic history eviction could forget an accepted Stop
 
@@ -12,7 +13,7 @@ PR #281 main. Status: locally qualified on checked PR #282 main; CI/delivery pen
 | Exact baseline locations | `src/automation-runtime.js:122-135`; `src/server.js:5860-5870` |
 | Complexity / compatibility risk | Medium / Optional field in the existing version-1 preference |
 | Expected benefit | History traffic cannot revive a stopped current occurrence |
-| State | Reproduced, implemented and locally qualified |
+| State | Validated and merged in PR #283; main delivery pending |
 
 A saved cancellation followed by 500 unrelated history rows disappears from the
 bounded ledger. After restarting, continuous recovery admits that stopped current
