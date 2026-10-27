@@ -1,7 +1,11 @@
 # Automation editor dates and preview responses
 
+## Verified delivery
+
+All 14 PR checks passed before squash merge at `3978311d9a6c0348db5947c974c98079a16814b8`. Main validation, browser regression, security, Wiki sync and exact image publication passed. The normal selective Hub update completed on 2026-10-27 at 10:24:35 UTC. Read-only appliance verification confirmed clean main, the exact Hub revision, healthy control/media/maintenance/Host Agent endpoints, canonical SQLite integrity, all eight encrypted secrets, database/ADB permissions and expected authorization responses. Maintenance remained unchanged and healthy. Backup `auto-operational-2026-10-27T10-24-21-745Z.zip` (128,567,842 bytes, mode 0600) matched journal SHA-256 `636c160d73da6891ed9b616ef3b376699c1e59a0cd576bfcfd0952dec7c571b2` and passed ZIP CRC, canonical-database-only and extracted SQLite checks. Rollback to `065e32e` remains available. Served automation/planning/controller/setup assets matched merged source. No physical commands, receiver reloads or production fault injection were used.
+
 Baseline: checked main `217588afddcaf445d1fa9a2dd684dde088c82c7a`, alpha.85.
-Status: implemented and locally qualified; required CI and delivery remain. The patch is now
+Status: all gates passed; deployed and verified at `3978311` (PR #287). The patch was
 integrated with checked resource/ownership main `065e32e73b8c9c84068d2feb8a9760f4a8f4b4a8`
 (PR #286). Both documentation conflicts retained the editor and recovery changes.
 
