@@ -23,7 +23,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
   const ledger=runtime.makeLedger({getPreference:()=>plain(ledgerState),setPreference:(_key,value)=>{ledgerState=plain(value)}});
   let musicTicks=0,announcementRestores=0;
   const ctx=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},
-    ...schema,...runtime,devices,Date,Set,Map,
+    ...schema,...runtime,devices,Date,Set,Map,goveeDevices:{lamp:{}},goveeGroups:{},
     schedulerClock:{now:()=>now,commandsAllowed:()=>true,status:()=>({active:false})},
     automationSchedulerEnabled:true,automationRunLedger:ledger,automationRunningOccurrences:new Map(),
     currentAutomationDisplayWinners:()=>[],localMinutesNow:date=>date.getHours()*60+date.getMinutes(),
@@ -50,7 +50,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     audit:entry=>audits.push(plain(entry))
   });
   vm.runInContext(
-    section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
+    section("function goveeTargets(","async function goveeUdpTemperature(")+"\n"+section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
     section("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     section("function currentAutomationNonDisplayWinners","function automationOccurrenceIsActiveForContinuousRecovery")+"\n"+
     section("function automationOccurrenceScheduledMinutes(","function automationOccurrenceIsCurrentlyApplicable(")+"\n"+

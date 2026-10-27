@@ -1,12 +1,14 @@
 # RoomGoblin modernization audit
 
-Status: **Scheduler recovery timing and ownership locally qualified on checked main**.
+Status: **Recovery resource identity locally qualified; integration and CI pending**.
 The combined scheduler safeguards in PR #278 were validated, merged and deployed
 at `66c54a2` with health, backup integrity and rollback verified. Cancellation
 persistence is deployed at `52e28c6` after all checks and backup/health verification.
 Dispatch permission is deployed at `970cab3` after checked publication and receipt
-verification. Stop retention passed all 14 checks and merged in PR #283 at
-`22b19dc`; main publication and delivery are pending. Scheduler timing/task
+verification. Stop retention is deployed and verified at `22b19dc` (PR #283).
+Recovery timing/ownership merged at `2bd5ce9` (PR #284), with main publication
+and delivery pending. Display timing is locally qualified and under PR #285
+checks. Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -59,6 +61,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Recovery resource identity](scheduler-recovery-resources.md)
 - [Scheduler dispatch permission](scheduler-dispatch-permission.md)
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
 

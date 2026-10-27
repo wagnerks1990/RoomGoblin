@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Resolve lighting recovery winners by device and TV winners by physical transport
+  and output, preserving partial All scope and delayed/stopped occurrence ownership.
+
 - Respect pre-action delays and preceding dwell times during TV/lighting recovery;
   restore the later eligible action when one occurrence has equal-time steps.
 - Preserve delayed continuous-run ownership separately from currently due actions

@@ -35,7 +35,7 @@ const {applicationVersion}=require("./version");
 const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,specialDayRuleForDate,validTime}=require("./school-schedule");
-const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger}=require("./automation-runtime");
+const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,tvPowerIntent,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger}=require("./automation-runtime");
 const planningEngine=require("./planning");
 const planningMigration=require("./planning-migration");
 const planningStudio=require("./planning-studio");
@@ -5796,18 +5796,22 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now(),{forRecover
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
         else targets=defaultAutomationActionTargets(step.action);
-        const tvTargets=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}):null;
-        const resolved=tvTargets?tvTargets.map(item=>item.id):targets;
+        const powerIntent=domain==="tv-power"?tvPowerIntent(targets,{devices,payload:step.payload||{}}):null;
+        const resolved=powerIntent?powerIntent.resolvedTargets:[...new Set(targets.flatMap(target=>{
+          const id=cleanId(target);
+          return goveeDevices[id]||Array.isArray(goveeGroups[id])?goveeTargets(id).map(cleanId):[id];
+        }))];
         // Shared in-process identity connects winners from this exact step and
         // occurrence. Do not replace the existing per-target precedence model.
-        const tvPowerIntent=tvTargets?{targets:[...targets],resolvedTargets:tvTargets}:null;
-        for(const target of resolved){
-          const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
+        for(const resource of resolved){
+          const target=powerIntent?resource.id:resource;
+          const key=powerIntent?`tv-power:${resource.connection}:${resource.output}`:`lighting:${target}`;
+          const prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
           // Preserve minute/priority/event precedence between occurrences;
           // within one occurrence the later eligible action is its final state.
           const sameOccurrence=prior&&score[2]===prior.score[2]&&event.classId===prior.event.classId&&event.time===prior.event.time;
           if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&(score[2]>prior.score[2]||sameOccurrence))){
-            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(tvPowerIntent?{tvPowerIntent}:{})});
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(powerIntent?{tvPowerIntent:powerIntent,tvPowerTarget:resource}:{})});
           }
         }
       }
@@ -5826,11 +5830,10 @@ function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
   // per-target; never broadcast first and try to repair overridden TVs later.
   const complete=Boolean(selector&&intent?.resolvedTargets?.length&&
     tvWinners.every(winner=>winner.tvPowerIntent===intent)&&
-    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.target===target.id)));
+    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.tvPowerTarget===target)));
   let emitted=false;
   return winners.flatMap(winner=>{
     if(winner.domain!=="tv-power")return [winner];
-    if(locked.has(winner.target))return [{...winner,deferred:true}];
     const metadata=winner.tvPowerIntent,payload={...(winner.event.payload||{})};
     if((metadata?.targets||[]).some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete payload.output;
     if(complete&&!locked.size){
@@ -5838,7 +5841,7 @@ function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
       emitted=true;
       return [{...winner,target:selector,event:{...winner.event,targets:[selector],payload},tvTargetsOverride:intent.resolvedTargets}];
     }
-    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:metadata?.resolvedTargets?.filter(target=>target.id===winner.target)}];
+    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:[winner.tvPowerTarget]}];
   });
 }
 function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerClock.now()){
@@ -5945,21 +5948,7 @@ function automationResourceKeys(event){
     if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
     if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
     else if(domain==="tv-power"){
-      const requested=[...new Set(targets.map(cleanId).filter(Boolean))];
-      const selector=requested.includes("all")?"all":requested.length===1?requested[0]:null;
-      if(["all","hdmi-all","hdbt-all"].includes(selector)){
-        // Aggregate CEC writes address physical ports independently of receiver
-        // aliases. Reserve their full intent even while announcements defer some.
-        for(const connection of selector==="all"?["hdmi","hdbt"]:[selector==="hdmi-all"?"hdmi":"hdbt"]){
-          for(let output=1;output<=8;output++)keys.push(`tv-power:${connection}:${output}`);
-        }
-      }else{
-        const resolved=expandTvTargets(requested,{devices,connection:step.payload?.connection||"hdbt"});
-        const aggregate=requested.some(id=>["all","hdmi-all","hdbt-all"].includes(id));
-        const output=Number(step.payload?.output);
-        if(!aggregate&&resolved.length===1&&Number.isInteger(output)&&output>=1&&output<=8)resolved[0].output=output;
-        for(const target of resolved)keys.push(`tv-power:${target.connection}:${target.output}`);
-      }
+      for(const target of tvPowerIntent(targets,{devices,payload:step.payload||{}}).resolvedTargets)keys.push(`tv-power:${target.connection}:${target.output}`);
     }else if(domain==="lighting")for(const target of targets){
       const id=cleanId(target);
       const aliases=goveeDevices[id]||Array.isArray(goveeGroups[id])?goveeTargets(id):[id];

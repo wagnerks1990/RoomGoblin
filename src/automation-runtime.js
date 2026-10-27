@@ -86,6 +86,27 @@ function expandTvTargets(targets,options={}){
   return rows;
 }
 
+function tvPowerIntent(targets,{devices={},payload={}}={}){
+  const requested=[...new Set((Array.isArray(targets)?targets:[]).map(value=>String(value||"").trim().toLowerCase()).filter(Boolean))];
+  const candidate=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+  const selector=["all","hdmi-all","hdbt-all"].includes(candidate)?candidate:null;
+  const mapped=expandTvTargets(requested,{devices,connection:payload.connection||"hdbt"});
+  let resolvedTargets=mapped;
+  if(selector){
+    // Broadcasts address fixed physical ports, independently of receiver aliases.
+    // Unmapped ports use a diagnostic transport/port label, never a receiver ID.
+    const connections=selector==="all"?["hdmi","hdbt"]:[selector==="hdmi-all"?"hdmi":"hdbt"];
+    resolvedTargets=connections.flatMap(connection=>Array.from({length:8},(_,index)=>{
+      const output=index+1,alias=mapped.find(row=>row.connection===connection&&row.output===output);
+      return {id:alias?.id||`${connection}:${output}`,connection,output};
+    }));
+  }else if(!requested.some(id=>["all","hdmi-all","hdbt-all"].includes(id))&&mapped.length===1){
+    const output=Number(payload.output);
+    if(Number.isInteger(output)&&output>=1&&output<=8)resolvedTargets=[{...mapped[0],output}];
+  }
+  return {targets:requested,selector,resolvedTargets};
+}
+
 function summarizeAdapterResult(result){
   if(result===undefined||result===null)return {ok:false,status:"unknown",reason:"No adapter result"};
   if(result.ok===false)return {ok:false,status:"rejected",reason:String(result.error||result.message||"Adapter rejected the command")};
@@ -181,4 +202,4 @@ function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLim
   return {read,record,recordMany,claim,cancelledOccurrenceIds};
 }
 
-module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger};
+module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,tvPowerIntent,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger};

@@ -252,3 +252,19 @@ Stop or restarting a run. Duplicate markers consume no extra capacity. Manual
 run IDs remain ordinary history. Existing history migrates on the next successful
 write; public history responses are unchanged. Source rollback to an older runtime
 restores that runtime's earlier history-only retention behavior.
+
+## Physical resources during recovery
+
+Startup and Resume compare lighting group members as individual devices. Only
+winning members are restored, so an older group cannot overwrite a newer device
+state. Unknown targets still report errors. TV recovery uses physical connection
+and output identity, including valid individual output overrides. HDMI and HDBT
+remain independent; All TVs covers eight outputs on both transports. Conflict,
+replacement and recovery share the same TV command-target calculation.
+
+A complete uncontested All selection keeps its single broadcast. Partial winners
+use their exact physical targets and preserve announcement locks on both
+transports. Ports without receiver aliases use transport/port diagnostic labels;
+these labels do not create receivers or change mappings. Recovery counts now
+represent actual devices and physical command targets. An acknowledgement is not
+proof of physical TV power state.
