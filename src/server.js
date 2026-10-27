@@ -732,19 +732,25 @@ catch(error){
 function publicMorningAnnouncementsConfig(){
   return {...morningAnnouncements,streamUrl:morningAnnouncements.streamUrl?REDACTED_CONFIG_VALUE:"",streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
 }
-function persistMorningAnnouncements(){
-  if(morningAnnouncements.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,morningAnnouncements.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
-  else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
-  const {streamUrl:_secret,...stored}=morningAnnouncements;
-  const persisted={...stored,streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
-  persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
-  // readJson imports legacy files into SQLite but intentionally leaves their
-  // source in place. Atomically scrub this one after the encrypted write wins.
-  if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
-    const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${process.pid}`;
-    fs.writeFileSync(staged,JSON.stringify(persisted,null,2),{mode:0o600});
-    fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);
-  }
+function persistMorningAnnouncements(next=morningAnnouncements){
+  const {streamUrl:_secret,...stored}=next;
+  const persisted={...stored,streamUrlConfigured:Boolean(next.streamUrl)};
+  const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${crypto.randomUUID()}`;
+  let ownsStaged=false;
+  try{
+    dbStore.tx(()=>{
+      if(next.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,next.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
+      else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
+      persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
+      // SQLite owns configuration and its secret as one transaction. Legacy
+      // files are only redacted migration remnants, never the live authority.
+      if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
+        const fd=fs.openSync(staged,"wx",0o600);ownsStaged=true;
+        try{fs.writeFileSync(fd,JSON.stringify(persisted,null,2))}finally{fs.closeSync(fd)}
+        fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);ownsStaged=false;
+      }
+    });
+  }finally{if(ownsStaged)fs.rmSync(staged,{force:true})}
 }
 // Migrate legacy plaintext/environment configuration into the encrypted store
 // and remove it from the ordinary database-backed JSON object.
@@ -5503,7 +5509,8 @@ app.get("/api/v1/automations/morning-announcements",requireClassroomRead,(_req,r
 app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),async(req,res)=>{
   try{
     const applyLiveVolume=Object.hasOwn(req.body||{},"volumePercent");
-    morningAnnouncements=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);persistMorningAnnouncements();restartMorningAnnouncementsWatcher();
+    const next=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);
+    persistMorningAnnouncements(next);morningAnnouncements=next;restartMorningAnnouncementsWatcher();
     const liveVolume=applyLiveVolume?await serializeMorningAnnouncementsLifecycle(()=>applyMorningAnnouncementVolume()):null;
     res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime),...(liveVolume?{liveVolume}:{})});
   }

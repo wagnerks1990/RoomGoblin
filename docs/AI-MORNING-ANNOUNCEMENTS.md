@@ -26,6 +26,17 @@ owns one generation, so a retired callback queued behind a lifecycle operation
 cannot probe or create another timer chain. Preserve normal interval bounds,
 shutdown drain and manual announcement ownership.
 
+## Configuration persistence
+
+Save normalized configuration and its encrypted stream URL in one SQLite
+transaction before replacing the live configuration or restarting the watcher.
+The same rule applies to explicit URL deletion. A failed legacy-file scrub must
+roll back the database writes and leave live settings unchanged; clean up only
+the exclusively created staging file. Startup still scrubs legacy plaintext.
+SQLite remains authoritative: a commit failure after legacy-file replacement may
+leave that migration remnant redacted, but cannot commit partial database state.
+Live volume dispatch follows persistence and has its own observable outcome.
+
 ## Receiver-side safety net
 
 `public/shared/attribution.js` installs a narrow receiver guard before the display module's WebSocket handler is assigned. During rollout it suppresses duplicate identical Morning Announcements `display.web` assertions and duplicate `morning-announcements-takeover` clears while the same session is already active. It must always allow an explicit `morning-announcements-release` clear.

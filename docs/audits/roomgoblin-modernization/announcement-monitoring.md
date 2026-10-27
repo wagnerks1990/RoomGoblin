@@ -66,6 +66,7 @@ Node/controller/Python/Bash checks. Checked integration, required CI, exact
 images and backed-up delivery remain.
 No live stream, receiver, music session or production fault was exercised.
 
-Announcement configuration persistence, failed release/priority reconciliation,
+Configuration persistence is now covered by [its transaction patch](announcement-configuration.md).
+Failed release/priority reconciliation,
 the remaining audio lifecycle and Background Music editor are still under
 review. This patch does not close the subsystem or the modernization roadmap.
