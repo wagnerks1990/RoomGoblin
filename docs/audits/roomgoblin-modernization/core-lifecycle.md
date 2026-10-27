@@ -164,11 +164,19 @@ retained registration composition; integration business logic remains separate.
   `src/veyon-keyring-bridge.js:49-96`, `src/veyon-dhcp-identity-bridge.js:89-94`,
   `src/veyon-update-bridge.js:63-82`, `src/cloudflare-bridge.js:35-52`,
   `src/startup-recovery.js:127-132` and `src/server.js:4749-4750`.
+- **Current implementation/problem:** Module imports replace shared Express
+  methods and share management-route registration flags. API composition depends
+  on import timing rather than the application owner, complicating isolated
+  validation and making additional application instances incomplete.
 - **Evidence:** An isolated baseline process creates an Express app, imports the
   Veyon update bridge, then creates a second app. The shared prototype changes;
   only the later app gets management routes. Global registration flags also
   prevent later applications from independently registering their own routes.
   This is reproduced load-order dependence, not a claimed production incident.
+- **Recommendation/benefit:** Install the existing compatibility hooks explicitly
+  per application. This makes ordering visible, prevents unrelated application
+  changes and permits realistic composition tests without prototype cleanup.
+- **Complexity/compatibility risk/confidence:** Small / Medium / Confirmed.
 - **Implementation:** `installApplicationBridges(app)` installs the five bridges
   in their existing order after handler tracking. Each bridge captures only the
   owning app's methods; management registration flags move into that installation.
@@ -191,6 +199,8 @@ retained registration composition; integration business logic remains separate.
 - **Risk/limit:** Application-local routing is not multi-tenant storage isolation.
   Process-wide integration caches and stores remain intentional compatibility
   state. Physical device and external provisioning acceptance remain separate.
+- **Status:** Implemented and locally tested; exact-head CI and delivery are
+  recorded in the pull request.
 
 ## Completion boundary
 
