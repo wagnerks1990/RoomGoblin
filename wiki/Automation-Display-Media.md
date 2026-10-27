@@ -229,3 +229,15 @@ and cancellation metadata after settlement, so they cannot leave a phantom run
 blocking recovery or shutdown. Failed new manual admission saves preserve existing
 accepted work. Live draft continual runs return a managed run ID; use **Stop Run**
 to cancel them. Finite manual sequences return their completed result.
+
+
+## Automation resource identity
+
+Conflict checks and replacement use the action's dispatch intent. Empty primary
+targets use normal defaults; lighting groups resolve to member devices. Individual
+TV power follows its configured connection and valid legacy output override.
+All-TV broadcasts reserve all eight ports on both transports; HDMI/HDBT broadcasts
+reserve their chosen transport independently of receiver aliases. Announcement
+deferral does not shrink the intended resource set. Class display defaults remain
+separate from lighting/TV domains. Unknown lighting targets retain their diagnostic
+identity and normal dispatch error. No saved mappings or command payloads change.

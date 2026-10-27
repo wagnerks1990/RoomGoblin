@@ -47,6 +47,16 @@ of at most 500 ms during waits; calendar eligibility still uses the scheduler cl
 
 Scheduled occurrences are durably claimed before execution. When a newer scheduled occurrence starts and uses a resource already owned by an older running continuous sequence, RoomGoblin requests cancellation of the older overlapping occurrence before starting the newer one. This prevents two scheduled loops from continuously fighting for the same display, TV, or lighting target.
 
+Conflict checks and run replacement resolve resources from dispatch intent:
+empty primary targets use the action's normal defaults, lighting groups resolve
+to device members, and individual TV power follows its configured connection and
+legacy output override. All-TV broadcasts reserve all eight physical outputs on
+both transports; HDMI-only/HDBT-only broadcasts reserve their selected transport,
+independently of receiver aliases. Announcement deferral does not narrow the
+saved action's intended resource set. Class-default display targets remain
+separate from lighting and TV-power resources. Unknown lighting targets keep a
+diagnostic identity and still fail through normal dispatch validation.
+
 Editing, disabling, or deleting a running automation also invalidates its revision/configuration and causes the runner to stop at the next cancellation-aware checkpoint.
 
 Linked-class continuous automations stop cleanly when the resolved class occurrence ends. Startup reconciliation and operator Resume also recover continuous occurrences that are still currently applicable, even when their original start time is outside the normal scheduler catch-up window.

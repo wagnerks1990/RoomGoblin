@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Match automation conflict and replacement resources to default display targets,
+  lighting group members and actual TV connection/output/broadcast intent.
+
 - Enforce the continuous-automation one-second cycle floor while keeping
   cancellation responsive and configured waits stable across clock corrections.
 - Release scheduled/manual/recovered task ownership even when ledger or final

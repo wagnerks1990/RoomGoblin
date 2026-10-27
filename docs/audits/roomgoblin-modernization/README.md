@@ -1,7 +1,9 @@
 # RoomGoblin modernization audit
 
-Status: **Scheduler timing and run ownership locally qualified; checked PR pending**. Displays & AV backend reads merged in PR #276 and await exact-image
-publication/delivery. The operator workspace is deployed through PR #275, and
+Status: **Scheduler resource identity fixes locally qualified**.
+Scheduler timing/task ownership merged in PR #277 and awaits publication/delivery.
+Legacy TV safeguards are in PR #278; test-clock safeguards are in PR #279.
+The AV backend is deployed through PR #276. The operator workspace is deployed through PR #275, and
 receiver browser-runtime delivery completed in PR #274. Today/live monitoring and shared
 frontend delivery completed in PRs #273 and #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first
@@ -52,6 +54,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Scheduler resource identity findings](scheduler-resources.md)
 - [Scheduler timing, task ownership and remaining review](scheduler.md)
 - [Displays & AV backend read bounds](av-status.md)
 - [Displays & AV workspace findings](displays-av.md)

@@ -5913,11 +5913,30 @@ function automationResourceKeys(event){
   for(const step of steps){
     const action=step.action,domain=automationTargetDomain(action);let targets=[];
     if(step!==steps[0]&&step.useEventTargets!==false&&domain===automationTargetDomain(steps[0]?.action))targets=steps[0]?.targets||event.targets||[];
-    else if(Array.isArray(step.targets))targets=step.targets;
+    else targets=Array.isArray(step.targets)&&step.targets.length?step.targets:defaultAutomationActionTargets(action);
     if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
     if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
-    else if(domain==="tv-power")for(const target of expandTvTargets(targets,{devices}))keys.push(`tv-power:${target.connection}:${target.output}`);
-    else if(domain==="lighting")for(const id of targets)keys.push(`lighting:${cleanId(id)}`);
+    else if(domain==="tv-power"){
+      const requested=[...new Set(targets.map(cleanId).filter(Boolean))];
+      const selector=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+      if(["all","hdmi-all","hdbt-all"].includes(selector)){
+        // Aggregate CEC writes address physical ports independently of receiver
+        // aliases. Reserve their full intent even while announcements defer some.
+        for(const connection of selector==="all"?["hdmi","hdbt"]:[selector==="hdmi-all"?"hdmi":"hdbt"]){
+          for(let output=1;output<=8;output++)keys.push(`tv-power:${connection}:${output}`);
+        }
+      }else{
+        const resolved=expandTvTargets(requested,{devices,connection:step.payload?.connection||"hdbt"});
+        const aggregate=requested.some(id=>["all","hdmi-all","hdbt-all"].includes(id));
+        const output=Number(step.payload?.output);
+        if(!aggregate&&resolved.length===1&&Number.isInteger(output)&&output>=1&&output<=8)resolved[0].output=output;
+        for(const target of resolved)keys.push(`tv-power:${target.connection}:${target.output}`);
+      }
+    }else if(domain==="lighting")for(const target of targets){
+      const id=cleanId(target);
+      const aliases=goveeDevices[id]||Array.isArray(goveeGroups[id])?goveeTargets(id):[id];
+      for(const alias of aliases)keys.push(`lighting:${cleanId(alias)}`);
+    }
   }
   return [...new Set(keys)];
 }

@@ -766,3 +766,19 @@ after snapshots only to record evidence; no physical classroom testing is claime
 PR #276's final alert 416 repeated the reviewed privileged destination flow after
 the redirect line changed; its 27-node SARIF trace was rechecked and classified
 with the same evidence as alert 415. All 14 PR gates then passed and #276 merged.
+
+
+## Scheduler resource identity qualification (2026-10-27 UTC)
+
+Baseline main `70ad1c8` fails **9 of 13** dispatch/resource fixtures; four
+compatibility controls pass. The corrected resource, TV sequence/recovery,
+ownership, timing and existing-conflict editing suites pass **112 tests**.
+Fixtures execute the actual runner, dispatch handlers, Govee target resolver,
+resource resolver, conflict diagnostics and supersession with controlled adapters.
+
+The active-worktree native Linux snapshot passed **1,084 tests: 1,082 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+Node/controller checks, Host Python compilation and tracked Bash syntax passed.
+Docker is unavailable locally; CI must qualify Compose, image builds/scans and
+native artifacts. No physical commands or production fault injection were used.
+Checked merge, Wiki sync, exact images and normal backed-up delivery are pending.
