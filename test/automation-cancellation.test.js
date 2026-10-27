@@ -108,19 +108,20 @@ test("ledger batches retain bounded history and preserve single-record and claim
 function recoveryHarness(statuses){
   const now=new Date("2026-10-27T14:00:00Z"),event={id:"continuous",enabled:true,time:"10:00"};
   const id=occurrenceId(event,"2026-10-27",event.time),starts=[];
-  const rows=statuses.map(status=>({occurrenceId:id,status}));
+  let state={version:1,runs:statuses.map(status=>({occurrenceId:id,status}))};
+  const ledger=makeLedger({getPreference:()=>plain(state),setPreference:(_key,next)=>{state=plain(next)}});
   const ctx=vm.createContext({Date,Map,Set,Promise,occurrenceId,
     automationSchedulerEnabled:true,schedulerClock:{now:()=>now,status:()=>({active:false}),commandsAllowed:()=>true},
     isAutomationSuppressed:()=>({blocked:false}),currentContinuousRecoveryWinnerIdentities:()=>new Set(["winner"]),
     automationOccurrenceIdentity:()=>"winner",automationOccurrenceIsActiveForContinuousRecovery:()=>true,
     automationOccurrenceScheduledMinutes:()=>600,localMinutesNow:()=>600,localDateKey:()=>"2026-10-27",
     classroomAutomations:{events:[event]},resolveAutomationOccurrences:value=>[value],
-    automationRunLedger:{read:()=>({runs:rows}),record:row=>rows.push(row)},automationRunningOccurrences:new Map(),
+    automationRunLedger:ledger,automationRunningOccurrences:new Map(),
     supersedeOverlappingAutomationRuns:()=>{},automationResourceKeys:()=>["display-content:screen"],
     startOwnedAutomationOccurrence:(...args)=>starts.push(args),executeScheduledAutomationOccurrence:()=>{},audit:()=>{}
   });
   vm.runInContext(section("async function recoverContinuousAutomationOccurrences(","async function reconcileScheduledAutomationState("),ctx);
-  return {ctx,starts,rows,id};
+  return {ctx,starts,get rows(){return state.runs},id};
 }
 for(const statuses of [["cancel-requested"],["cancel-requested","running"],["cancel-requested","interrupted"],["cancelled"]]){
   test(`restart recovery respects retained stop intent after ${statuses.join(" then ")}`,async()=>{

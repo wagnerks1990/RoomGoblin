@@ -5768,7 +5768,7 @@ function evaluateAutomationAt(now=schedulerClock.now()){
   }
   return {observedAt:new Date().toISOString(),schedulerTime:now.toISOString(),schoolCycle:schoolCycleForDate(now),suppression,items};
 }
-function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
+function currentAutomationNonDisplayWinners(now=schedulerClock.now(),{forRecoveryOwnership=false}={}){
   const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes(),winners=new Map();
   const nowSeconds=nowMinutes*60+now.getSeconds()+now.getMilliseconds()/1000;
   for(const stored of classroomAutomations.events){
@@ -5787,8 +5787,11 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
         elapsed+=Math.max(0,Number(steps[index-1]?.repeatDelaySeconds||0))+Math.max(0,Number(step.delaySeconds||0));
         const domain=automationTargetDomain(step.action);
         if(!["tv-power","lighting"].includes(domain))continue;
-        const effectiveMinute=scheduled+Math.floor(elapsed/60);
-        if(scheduled*60+elapsed>nowSeconds)continue;
+        // A started sequence reserves its whole intended resource set even
+        // while waiting. Pending/later steps cannot age an older run into a
+        // newer owner; only state projection uses the action's effective time.
+        const effectiveMinute=forRecoveryOwnership?scheduled:scheduled+Math.floor(elapsed/60);
+        if(!forRecoveryOwnership&&scheduled*60+elapsed>nowSeconds)continue;
         let targets=[];
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
@@ -5859,7 +5862,7 @@ function currentContinuousRecoveryWinnerIdentities(now=schedulerClock.now()){
   for(const candidate of currentAutomationDisplayWinners(now)){
     winners.add(automationOccurrenceIdentity(candidate.storedEvent,candidate.event));
   }
-  for(const candidate of currentAutomationNonDisplayWinners(now)){
+  for(const candidate of currentAutomationNonDisplayWinners(now,{forRecoveryOwnership:true})){
     const storedEvent=classroomAutomations.events.find(item=>item.id===candidate.automationId);
     if(storedEvent)winners.add(automationOccurrenceIdentity(storedEvent,candidate.event));
   }
@@ -5870,7 +5873,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
   const winnerIdentities=currentContinuousRecoveryWinnerIdentities(now);
-  const dateKey=localDateKey(now),candidates=[];
+  const dateKey=localDateKey(now),candidates=[],cancelled=automationRunLedger.cancelledOccurrenceIds();
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
     const occurrences=resolveAutomationOccurrences(storedEvent,now);
@@ -5881,7 +5884,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
       const id=occurrenceId(event,dateKey,event.time);
       // A saved Stop is terminal for this occurrence, including a crash before
       // its checkpoint or a later running/interrupted diagnostic record.
-      if(automationRunLedger.read().runs.some(run=>run.occurrenceId===id&&["cancel-requested","cancelled"].includes(run.status)))continue;
+      if(cancelled.has(id))continue;
       candidates.push({storedEvent,event});
     }
   }

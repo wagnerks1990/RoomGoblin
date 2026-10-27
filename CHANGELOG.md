@@ -7,6 +7,11 @@
 
 - Respect pre-action delays and preceding dwell times during TV/lighting recovery;
   restore the later eligible action when one occurrence has equal-time steps.
+- Preserve delayed continuous-run ownership separately from currently due actions
+  so a pending or stopped winner cannot revive a superseded loop.
+
+- Retain scheduled Stop identities independently of diagnostic history, with real-date
+  cleanup and bounded storage, so history traffic cannot revive cancelled loops.
 
 - Recheck test-clock live permission at scheduled command, reconciliation and
   legacy TV dispatch boundaries; save scheduler pause changes before applying them.

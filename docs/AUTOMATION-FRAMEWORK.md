@@ -15,6 +15,13 @@ within the same occurrence replace earlier state on the same target. The existin
 minute/priority/event-ID precedence between occurrences remains unchanged. This
 projection does not reconstruct adapter latency or the phase of later loop passes.
 
+Continuous-run admission uses a separate ownership view: already-started TV and
+lighting sequences reserve their complete intended scope while waiting. Ownership
+follows occurrence start, priority and event ID; a later action cannot turn an older
+run into a newer owner. Pending winners can restart through the normal owned runner
+without applying future state during reconciliation. Stop filtering follows winner
+selection so it cannot revive a superseded predecessor.
+
 ## Schema v3: scheduled automation + ordered actions
 
 The canonical persisted model is `actionSequence[]`. There is no runtime distinction between a primary action and later actions. Every action has the same fields:
@@ -226,11 +233,22 @@ runs unchanged; cancellation does not undo hardware actions already accepted.
 Operator Stop, replacement, manual-run resume and manual-media cancellation share
 this boundary. The history remains bounded to 500 records. A cancellation batch
 larger than that capacity fails before changing execution, rather than silently
-dropping its own new markers. Later history retention is unchanged.
+dropping its own new markers.
 
-Continuous recovery excludes an occurrence with a retained `cancel-requested` or
-`cancelled` record, even if a later diagnostic row says `running` or `interrupted`.
+Continuous recovery excludes an occurrence with a saved `cancel-requested` or
+`cancelled` marker, even if a later diagnostic row says `running` or `interrupted`.
 This covers a restart between saving Stop and reaching the next cancellation
 checkpoint. Shutdown interruption without a cancellation remains recoverable.
 The surrounding manual-media takeover has separate priority/pause state; this
 atomicity guarantee covers its run cancellation selection only.
+
+Scheduled Stop identities are saved independently of the 500 diagnostic rows in
+the same atomic preference write. Retention follows real local dates: yesterday,
+today and future dated occurrences remain protected; older identities are cleaned
+on a subsequent write. Test-clock changes cannot age them out. The protected set
+is bounded to 5,000 identities and one MiB of UTF-8 JSON. A full budget or invalid
+protected state rejects new ledger writes and recovery before acknowledging a
+Stop or restarting a run. Duplicate markers consume no extra capacity. Manual
+run IDs remain ordinary history. Existing history migrates on the next successful
+write; public history responses are unchanged. Source rollback to an older runtime
+restores that runtime's earlier history-only retention behavior.

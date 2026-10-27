@@ -1,7 +1,7 @@
 # TV and lighting recovery timing
 
 Baseline: `970cab330ffcf0e16585ac68a816a7697812e332`, alpha.85, checked
-PR #282 main. Status: locally qualified; checked-main integration and CI pending.
+PR #282 main. Status: locally qualified on checked PR #283 main; CI/delivery pending.
 
 ## RG-SCHED-019: Recovery admitted actions before configured delays elapsed
 
@@ -40,11 +40,45 @@ within the same event/class/time occurrence. Minute, priority and event-ID
 precedence between separate occurrences remains unchanged. TV aggregate intent,
 typed transports, physical announcement locks and no-retry behavior are retained.
 
-## Evidence and limits
+## RG-SCHED-021: Action eligibility was also used as restart ownership
+
+| Field | Assessment |
+| --- | --- |
+| Subsystem / category | Continuous recovery / Pending sequence ownership |
+| Priority / confidence | P1 / Confirmed by executable admission cases |
+| Exact baseline locations | `src/server.js:5771-5807,5851-5860` at checked `22b19dce3078ccfb3c058f6db0d27b7851588e97` |
+| Complexity / compatibility risk | Medium / Explicit internal ownership mode |
+| Expected benefit | Recover a delayed current owner without restarting an older loop |
+| State | Reproduced, implemented and locally qualified |
+
+Continuous recovery reused the state-projection winners. A pending first action
+could therefore hide its current sequence owner and allow an older loop to restart.
+Adding accurate dwell timing also exposed a later action in an older occurrence
+displacing a newer owner. These are distinct questions: which command is due now,
+and which started occurrence owns the intended resource.
+
+The existing helper now has an explicit internal ownership mode, used only for
+continuous-run admission. It includes pending steps of already-started occurrences
+and ranks them by occurrence start, then the existing priority/event-ID order.
+Action-state projection retains exact eligibility and effective-minute ranking.
+Cancellation is checked after winner selection, so a stopped pending winner cannot
+revive a superseded predecessor. Class/window checks, the actual owned runner,
+delays and cancellation remain unchanged. No command is issued by winner selection.
+
+Five added fixtures execute actual winner selection and recovery admission. On
+checked main, three ownership cases failed; the combined sub-minute state/admission
+case also failed because of early dispatch, and the older-step ownership control
+passed. All five failed on the partial timing correction before ownership was
+separated. A preliminary incorrectly nested loop fixture was corrected before
+those baseline runs and is not counted as defect evidence. The corrected focused
+suite passed **187 tests**. One old source-call assertion was updated to require
+the explicit ownership mode; executable cases verify the behavior.
+
+## Qualification history and limits
 
 The initial four-case probe failed three cases and passed its exact-boundary
 control. Ten executable command-path regressions then failed six cases and passed
-four controls against the baseline. The final 11-case file adds lighting coverage.
+four controls against the baseline. The initial 11-case file added lighting coverage.
 It executes actual winner selection, dispatch planning, reconciliation and the
 TV/Govee single-action handler with fixture adapters. The focused run passed
 **117 tests**, including existing aggregate, announcement, permission and cycle
@@ -61,3 +95,20 @@ elapsed adapter latency, replay uncertain writes or reconstruct later loop phase
 Display resync, later-pass recovery, cross-date resolution and the editor remain
 separate review items. No SQLite schema, API, payload, stored ID, dependency or
 version change occurs. No physical command or production fault injection was used.
+
+Checked main `22b19dce3078ccfb3c058f6db0d27b7851588e97` is now integrated,
+including the complete Stop-retention implementation and 15 new regressions.
+Two documentation conflicts were inspected and both changes retained; runtime
+merged without conflicts. The combined focused suite passed **156 tests**.
+A fresh full native snapshot is running for this combined source.
+
+That pre-admission combined snapshot passed **1,183 tests: 1,181 passed, 0 failed,
+2 root-only ownership skips**, plus **23 Host Recovery tests** and syntax checks.
+It does not qualify the subsequent ownership correction. A fresh full snapshot
+including all 16 timing/admission fixtures is running.
+
+The final combined snapshot including the ownership correction passed **1,188
+tests: 1,186 passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Recovery
+tests**, Node/controller checks, Python compilation and tracked Bash syntax.
+Only documentation status/qualification text changed afterward. Final diff and
+whitespace review passed. Fresh CI/publication and appliance delivery remain gates.

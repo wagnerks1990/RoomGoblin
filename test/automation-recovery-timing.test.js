@@ -19,11 +19,16 @@ function section(start,end){
 // handler together. No appliance, network, persistent database or credentials.
 function harness({devices,locked=[],announcementActive=false,blocked=false,reply,now=new Date(2026,9,27,10)}={}){
   devices=devices||Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
-  const commands=[],audits=[];
+  const commands=[],audits=[],started=[];let ledgerState={version:1,runs:[]};
+  const ledger=runtime.makeLedger({getPreference:()=>plain(ledgerState),setPreference:(_key,value)=>{ledgerState=plain(value)}});
   let musicTicks=0,announcementRestores=0;
   const ctx=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},
     ...schema,...runtime,devices,Date,Set,Map,
-    schedulerClock:{now:()=>now,commandsAllowed:()=>true},
+    schedulerClock:{now:()=>now,commandsAllowed:()=>true,status:()=>({active:false})},
+    automationSchedulerEnabled:true,automationRunLedger:ledger,automationRunningOccurrences:new Map(),
+    currentAutomationDisplayWinners:()=>[],localMinutesNow:date=>date.getHours()*60+date.getMinutes(),
+    supersedeOverlappingAutomationRuns:()=>{},automationResourceKeys:()=>["fixture-resource"],
+    startOwnedAutomationOccurrence:id=>started.push(id),executeScheduledAutomationOccurrence:()=>{},
     cleanId:value=>String(value||"").trim().toLowerCase(),
     localDateKey:()=>"2026-10-27",
     automationClassIds:()=>[],
@@ -48,14 +53,20 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
     section("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     section("function currentAutomationNonDisplayWinners","function automationOccurrenceIsActiveForContinuousRecovery")+"\n"+
+    section("function automationOccurrenceScheduledMinutes(","function automationOccurrenceIsCurrentlyApplicable(")+"\n"+
+    section("function automationOccurrenceIsActiveForContinuousRecovery(","async function reconcileScheduledAutomationState(")+"\n"+
     section("async function reconcileScheduledAutomationState",'app.get("/api/v1/automation-control"'),ctx);
   return {
-    commands,audits,
+    commands,audits,started,ledger,
     get musicTicks(){return musicTicks;},
     get announcementRestores(){return announcementRestores;},
     async reconcile(events,reason="operator-resume"){
       ctx.classroomAutomations.events=events;
       return plain(await ctx.reconcileScheduledAutomationState(reason));
+    },
+    async recover(events){
+      ctx.classroomAutomations.events=events;
+      return plain(await ctx.recoverContinuousAutomationOccurrences("fixture-restart"));
     }
   };
 }
@@ -116,4 +127,34 @@ test("lighting recovery also waits through its pre-action delay",async()=>{
   const before=harness({now:at(19.999)});await before.reconcile([sequence(steps)]);assert.deepEqual(before.commands,[]);
   const after=harness({now:at(20)});await after.reconcile([sequence(steps)]);
   assert.deepEqual(after.commands,[{kind:"govee",args:["lamp","on",{state:"on"}]}]);
+});
+
+const loop=(id,time,{delay=0,dwell=30,targets=["tv1"]}={})=>sequence([
+  {...power(targets,{state:"on"}),executionMode:"loop",delaySeconds:delay,repeatDelaySeconds:dwell},
+  {...power(targets),executionMode:"loop",repeatDelaySeconds:30}
+],{id,time});
+test("a delayed continuous owner can restart without applying its state early",async()=>{
+  const h=harness({now:at(1)}),events=[loop("pending","10:00",{delay:59})];
+  await h.reconcile(events);assert.deepEqual(h.commands,[]);
+  assert.equal((await h.recover(events)).started,1);
+  assert.deepEqual(h.started,[runtime.occurrenceId(events[0],"2026-10-27","10:00")]);
+});
+test("a newer delayed continuous owner prevents the older loop from recovering",async()=>{
+  const h=harness({now:at(1)}),events=[loop("old","09:59"),loop("new","10:00",{delay:120})];
+  assert.equal((await h.recover(events)).started,1);
+  assert.deepEqual(h.started,[runtime.occurrenceId(events[1],"2026-10-27","10:00")]);
+});
+test("a later step in an older loop cannot displace a newer recovery owner",async()=>{
+  const h=harness({now:at(600)}),events=[loop("old","09:59",{dwell:600}),loop("new","10:00")];
+  assert.equal((await h.recover(events)).started,1);
+  assert.deepEqual(h.started,[runtime.occurrenceId(events[1],"2026-10-27","10:00")]);
+});
+test("a stopped pending winner does not revive its superseded predecessor",async()=>{
+  const h=harness({now:at(1)}),events=[loop("old","09:59"),loop("stopped","10:00",{delay:120})];
+  h.ledger.record({occurrenceId:runtime.occurrenceId(events[1],"2026-10-27","10:00"),status:"cancel-requested"});
+  assert.equal((await h.recover(events)).started,0);assert.deepEqual(h.started,[]);
+});
+test("independent delayed owners both remain recoverable",async()=>{
+  const h=harness({now:at(1)}),events=[loop("first","10:00",{delay:120}),loop("second","10:00",{delay:90,targets:["tv2"]})];
+  assert.equal((await h.recover(events)).started,2);assert.equal(h.started.length,2);
 });

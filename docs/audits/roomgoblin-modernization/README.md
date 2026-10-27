@@ -1,10 +1,12 @@
 # RoomGoblin modernization audit
 
-Status: **Scheduler dispatch permission and cancellation integration locally qualified**.
+Status: **Scheduler recovery timing and ownership locally qualified on checked main**.
 The combined scheduler safeguards in PR #278 were validated, merged and deployed
 at `66c54a2` with health, backup integrity and rollback verified. Cancellation
-persistence passed all 14 checks and merged in PR #281; its main publication and
-appliance delivery are pending. Scheduler timing/task
+persistence is deployed at `52e28c6` after all checks and backup/health verification.
+Dispatch permission is deployed at `970cab3` after checked publication and receipt
+verification. Stop retention passed all 14 checks and merged in PR #283 at
+`22b19dc`; main publication and delivery are pending. Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -63,6 +65,8 @@ Queued subsystem units below have not been marked audited.
 - [Scheduler cancellation persistence](scheduler-cancellation.md)
 
 - [TV and lighting recovery timing](scheduler-recovery-timing.md)
+
+- [Scheduler Stop retention](scheduler-stop-retention.md)
 
 - [Scheduler resource identity findings](scheduler-resources.md)
 
