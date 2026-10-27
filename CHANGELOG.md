@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retire delayed announcement audio retries when their takeover is replaced,
+  including replacements that target the same receivers.
+
 - Commit announcement settings and their encrypted stream URL together before
   applying them, preserving prior settings and safe retries after storage errors.
 

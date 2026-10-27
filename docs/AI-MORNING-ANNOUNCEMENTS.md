@@ -37,6 +37,11 @@ SQLite remains authoritative: a commit failure after legacy-file replacement may
 leave that migration remnant redacted, but cannot commit partial database state.
 Live volume dispatch follows persistence and has its own observable outcome.
 
+Delayed audio retries belong to the exact takeover target-array identity. A new
+takeover replaces that identity even when receiver IDs are unchanged. Retired
+retries must not send volume/unmute commands into a successor session. Current
+retries retain the latest saved volume and existing freeze/shutdown guards.
+
 ## Receiver-side safety net
 
 `public/shared/attribution.js` installs a narrow receiver guard before the display module's WebSocket handler is assigned. During rollout it suppresses duplicate identical Morning Announcements `display.web` assertions and duplicate `morning-announcements-takeover` clears while the same session is already active. It must always allow an explicit `morning-announcements-release` clear.

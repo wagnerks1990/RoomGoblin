@@ -79,6 +79,7 @@ Queued subsystem units below have not been marked audited.
 - [Planning preview dispatch dates](planning-preview-dates.md)
 - [Announcement monitor ownership and offline evidence](announcement-monitoring.md)
 - [Announcement configuration transaction](announcement-configuration.md)
+- [Announcement audio retry ownership](announcement-audio-retries.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)
