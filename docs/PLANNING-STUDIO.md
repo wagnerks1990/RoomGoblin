@@ -24,6 +24,11 @@ falls through to weekly recurrence. When Planning supplies the selected day,
 assign that class to a teaching block in its timetable. Defining a class alone
 does not issue commands to receivers.
 
+Class Save holds its current draft while pending. New class drafts retain their
+IDs across retries; an already accepted create directs you to refresh and check
+the earlier save. Closing the dialog does not cancel a submitted save. Its later
+response cannot clear or close a newer class draft or reopen a closed editor.
+
 **Automations** uses cards and a dialog with When, Actions, Targets & layers, and
 Timer & advanced tabs. Preview validates without dispatch. Save follows the
 reviewed draft; edits invalidate the review. Run now remains an explicit live

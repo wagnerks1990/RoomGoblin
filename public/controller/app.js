@@ -790,6 +790,7 @@ function classTargetSummary(targets){
 }
 
 let currentClassEdit={days:[1,2,3,4,5],scheduleMode:'weekly',alternatePhase:'A',anchorDate:''};
+function newClassDraftId(){return `class-${globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,11)}`}`}
 
 function minutesFromTime(value){
   const [h,m]=String(value||'00:00').split(':').map(Number);
@@ -977,7 +978,7 @@ function newClassSchedule(){
   classContinuationOf.value='';
   classStart.value='08:00';classEnd.value='09:00';renderClassDefaultTargets(['all']);classNotes.value='';
   classScheduleMode.value='schoolcycle';
-  currentClassEdit={days:[1,2,3,4,5],scheduleMode:'schoolcycle',alternatePhase:'A',anchorDate:S.scheduleProfile?.anchorDate||'',cycleDays:[],dayType:'Any',enabled:true};
+  currentClassEdit={id:newClassDraftId(),days:[1,2,3,4,5],scheduleMode:'schoolcycle',alternatePhase:'A',anchorDate:S.scheduleProfile?.anchorDate||'',cycleDays:[],dayType:'Any',enabled:true};
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Add Class';classEditorMsg.textContent='';
 }
 function editClassSchedule(id){
@@ -990,10 +991,13 @@ function editClassSchedule(id){
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Edit Class';
 }
 async function saveClassSchedule(){
+  const owner=currentClassEdit;
   try{
+    if(!classId.value&&!owner.id)owner.id=newClassDraftId();
     const mode=classScheduleMode.value;
     const cycleDays=mode==='schoolcycle'?selectedClassCycleDays():[];
     const body={
+      id:owner.id,
       name:className.value.trim(),shortName:classShortName.value.trim(),period:classPeriod.value,continuationOf:classContinuationOf.value.trim(),
       startTime:classStart.value,endTime:classEnd.value,scheduleMode:mode,
       days:mode==='weekly'?[...classScheduleModeFields.querySelectorAll('[data-classday]:checked')].map(x=>Number(x.dataset.classday)):[1,2,3,4,5],
@@ -1009,8 +1013,11 @@ async function saveClassSchedule(){
     const id=classId.value;
     if(id)await api('/api/v1/class-schedules/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     else await jpost('/api/v1/class-schedules',body);
-    classEditorMsg.textContent='Saved';await loadClassSchedules();await loadSchedules();newClassSchedule();return true;
-  }catch(e){classEditorMsg.textContent=e.message}
+    if(currentClassEdit===owner)classEditorMsg.textContent='Saved';
+    await loadClassSchedules();await loadSchedules();
+    if(currentClassEdit!==owner)return false;
+    newClassSchedule(false);return true;
+  }catch(e){const message=!classId.value&&e.message==='Class ID already exists'?'This class draft already exists. Close the editor and refresh classes to check the earlier save.':e.message;if(currentClassEdit===owner)classEditorMsg.textContent=message;else notify(`An earlier class save failed: ${e.message}`,'error')}
 }
 async function deleteClassSchedule(id){const x=S.classes.find(c=>c.id===id);if(!confirm(`Delete "${x?.name||id}"?`))return;await api('/api/v1/class-schedules/'+encodeURIComponent(id),{method:'DELETE'});await loadClassSchedules();await loadSchedules()}
 async function duplicateClassSchedule(id){

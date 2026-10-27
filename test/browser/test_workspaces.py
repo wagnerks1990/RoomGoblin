@@ -1657,6 +1657,156 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertTrue(blocked, 'an earlier date response cannot release mutation ownership')
         self.assertFalse(errors, errors)
 
+
+    def class_save_editor(self):
+        page, errors, saved = self.studio_page()
+        page.evaluate("showPage('classes')")
+        page.get_by_role('button', name='+ Add Class', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.locator('#className').fill('First class')
+        editor.locator('#classScheduleMode').select_option('weekly')
+        return page, errors, editor, saved
+
+    def test_class_pending_save_cannot_create_twice(self):
+        from playwright.sync_api import expect
+        page, errors, editor, saved = self.class_save_editor()
+        held = []
+        page.route('**/api/v1/class-schedules', lambda route: held.append(route) if route.request.method == 'POST' else route.fallback())
+        save = editor.get_by_role('button', name='Save Class', exact=True)
+        with page.expect_request('**/api/v1/class-schedules'):
+            save.click()
+        blocked = save.is_disabled()
+        inert = editor.locator('.studioDialogBody').evaluate('(node) => node.inert')
+        if not blocked:
+            with page.expect_request('**/api/v1/class-schedules'):
+                save.click()
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        count = len(held)
+        for request in held:
+            request.fulfill(status=503, json={'error': 'Class save unavailable'})
+        expect(editor.locator('#classEditorMsg')).to_contain_text('Class save unavailable')
+        expect(save).to_be_enabled()
+        self.assertEqual(count, 1)
+        self.assertTrue(blocked)
+        self.assertTrue(inert)
+        self.assertFalse(editor.locator('.studioDialogBody').evaluate('(node) => node.inert'))
+        self.assertFalse(errors, errors)
+
+    def test_class_old_save_cannot_clear_or_close_a_newer_draft(self):
+        from playwright.sync_api import expect
+        page, errors, editor, saved = self.class_save_editor()
+        held = []
+        page.route('**/api/v1/class-schedules', lambda route: held.append(route) if route.request.method == 'POST' else route.fallback())
+        with page.expect_request('**/api/v1/class-schedules'):
+            editor.get_by_role('button', name='Save Class', exact=True).click()
+        editor.get_by_role('button', name='Close', exact=True).click()
+        page.get_by_role('button', name='+ Add Class', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.locator('#className').fill('Newer unsaved class')
+        with page.expect_response('**/api/v1/class-schedules'):
+            held[0].fulfill(json={'ok': True, 'classSchedule': {'id': 'created'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#className')).to_have_value('Newer unsaved class')
+        self.assertEqual(page.locator('dialog.studioDialog[open]').count(), 1)
+        self.assertFalse(editor.locator('.studioDialogBody').evaluate('(node) => node.inert'))
+        self.assertFalse(errors, errors)
+
+    def test_class_ambiguous_create_retry_keeps_one_identity(self):
+        from playwright.sync_api import expect
+        page, errors, editor, saved = self.class_save_editor()
+        requests, owned = [], {}
+        def create(route):
+            if route.request.method != 'POST':
+                return route.fallback()
+            body = route.request.post_data_json
+            requests.append(body)
+            identity = body.get('id') or 'server-created-' + str(len(requests))
+            if identity in owned:
+                return route.fulfill(status=409, json={'error': 'Class ID already exists'})
+            owned[identity] = body
+            if len(requests) == 1:
+                return route.fulfill(status=503, json={'error': 'The first save reply was lost'})
+            route.fulfill(json={'ok': True, 'classSchedule': {**body, 'id': identity}})
+        page.route('**/api/v1/class-schedules', create)
+        save = editor.get_by_role('button', name='Save Class', exact=True)
+        save.click()
+        expect(editor.locator('#classEditorMsg')).to_contain_text('reply was lost')
+        save.click()
+        page.wait_for_function("document.querySelector('#classEditorMsg').textContent !== 'The first save reply was lost'")
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(owned), 1)
+        self.assertTrue(requests[0].get('id'))
+        self.assertEqual(requests[0]['id'], requests[1]['id'])
+        expect(editor.locator('#classEditorMsg')).to_contain_text('check the earlier save')
+        expect(save).to_be_enabled()
+        self.assertFalse(errors, errors)
+
+    def test_class_separate_drafts_keep_distinct_ids_across_mode_changes(self):
+        from playwright.sync_api import expect
+        page, errors, editor, saved = self.class_save_editor()
+        editor.get_by_role('button', name='Save Class', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        page.get_by_role('button', name='+ Add Class', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.locator('#className').fill('Second class')
+        editor.locator('#classScheduleMode').select_option('dates')
+        editor.locator('#classIncludeDates').fill('2027-10-18')
+        editor.get_by_role('button', name='Save Class', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(len(saved), 2)
+        first, second = [entry['class'] for entry in saved]
+        self.assertTrue(first.get('id'))
+        self.assertTrue(second.get('id'))
+        self.assertNotEqual(first['id'], second['id'])
+        self.assertEqual(second['includeDates'], ['2027-10-18'])
+        self.assertFalse(errors, errors)
+
+    def test_class_existing_edit_preserves_its_id_and_uses_put(self):
+        from playwright.sync_api import expect
+        record = {'id': 'existing-class', 'name': 'Existing class', 'shortName': 'EC',
+                  'period': '1', 'startTime': '08:00', 'endTime': '09:00', 'scheduleMode': 'weekly',
+                  'days': [1, 2, 3, 4, 5], 'defaultTargets': ['all'], 'enabled': True}
+        page, errors, saved = self.studio_page(classes=[record])
+        page.evaluate("showPage('classes')")
+        page.locator('.classStudioRow').get_by_role('button', name='Edit', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        updates = []
+        def update(route):
+            updates.append({'method': route.request.method, 'body': route.request.post_data_json})
+            route.fulfill(json={'ok': True, 'classSchedule': updates[-1]['body']})
+        page.route('**/api/v1/class-schedules/existing-class', update)
+        editor.locator('#className').fill('Renamed class')
+        editor.get_by_role('button', name='Save Class', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0]['method'], 'PUT')
+        self.assertEqual(updates[0]['body'].get('id', record['id']), record['id'])
+        self.assertEqual(updates[0]['body']['name'], 'Renamed class')
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_class_save_completion_does_not_reopen_a_closed_editor(self):
+        from playwright.sync_api import expect
+        page, errors, editor, saved = self.class_save_editor()
+        held = []
+        page.route('**/api/v1/class-schedules', lambda route: held.append(route) if route.request.method == 'POST' else route.fallback())
+        with page.expect_request('**/api/v1/class-schedules'):
+            editor.get_by_role('button', name='Save Class', exact=True).click()
+        editor.get_by_role('button', name='Close', exact=True).click()
+        page.evaluate("""() => {
+            const dialog=document.querySelector('#classStudioTitle').closest('dialog');
+            window.classEditorReopens=0;
+            new MutationObserver(records=>{
+                window.classEditorReopens+=records.filter(record=>record.attributeName==='open'&&record.oldValue===null).length;
+            }).observe(dialog,{attributes:true,attributeOldValue:true,attributeFilter:['open']});
+        }""")
+        held[0].fulfill(json={'ok': True, 'classSchedule': {'id': 'created'}})
+        expect(page.locator('#className')).to_have_value('')
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.evaluate('window.classEditorReopens'), 0)
+        self.assertEqual(page.locator('dialog.studioDialog[open]').count(), 0)
+        self.assertFalse(errors, errors)
+
     def test_scene_studio_drag_edit_widgets_and_reviewed_save(self):
         page, errors, saved = self.studio_page()
         page.get_by_role('button', name='+ Automation', exact=True).click()
