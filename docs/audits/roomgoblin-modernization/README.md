@@ -1,14 +1,11 @@
 # RoomGoblin modernization audit
 
-Status: **Display recovery timing locally qualified on checked main; CI pending**.
-The combined scheduler safeguards in PR #278 were validated, merged and deployed
-at `66c54a2` with health, backup integrity and rollback verified. Cancellation
-persistence is deployed at `52e28c6` after all checks and backup/health verification.
-Dispatch permission is deployed at `970cab3` and Stop retention at `22b19dc`,
-with health, backup integrity and rollback verified after all required gates.
-TV/lighting recovery timing and ownership passed all 14 checks and merged in
-PR #284 at `2bd5ce9`; main publication and appliance delivery are pending.
-Scheduler timing/task
+Status: **Recovery resource identity and complete ownership qualified on checked main; CI pending**.
+The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
+recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
+with health, backup integrity and rollback verified. Display timing passed all
+14 PR checks and merged at `217588a` (PR #285); main publication and delivery
+remain pending. Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -60,6 +57,9 @@ The shared frontend review starts at that same source commit. Its first patch
 separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
+
+- [Complete recovery ownership](scheduler-complete-recovery-owner.md)
+- [Recovery resource identity](scheduler-recovery-resources.md)
 
 - [Display recovery timing](scheduler-display-recovery.md)
 - [Scheduler dispatch permission](scheduler-dispatch-permission.md)

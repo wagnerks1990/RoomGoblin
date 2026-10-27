@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Restart continuous occurrences only while they own their complete target scope,
+  preventing partially superseded groups or mixed-action loops from overwriting winners.
+
+- Resolve lighting recovery winners by device and TV winners by physical transport
+  and output, preserving partial All scope and delayed/stopped occurrence ownership.
+
+
 - Reconcile only due display actions and timers, preserving configured delays,
   current content, composed layers and delayed continuous-run ownership.
 - Use the scheduler clock consistently during display recovery and leave skipped

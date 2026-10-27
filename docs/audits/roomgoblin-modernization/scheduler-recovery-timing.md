@@ -116,6 +116,6 @@ whitespace review passed. Fresh CI/publication and appliance delivery remain gat
 
 All 14 PR checks passed before squash merge in PR #284 at
 `2bd5ce972dca231d5aeb8eff42a57245cec8fee6`. The checked branch was current with
-main and had no unresolved review threads. Main validation, exact image
-publication and backed-up appliance delivery are pending; merged source alone
-is not an installable release.
+main and had no unresolved review threads.
+
+All 14 PR checks passed before squash merge at `2bd5ce972dca231d5aeb8eff42a57245cec8fee6`. Main Validate, Display browser regression, Security gates, Wiki sync and exact Hub/maintenance image publication passed. The normal selective Hub update completed on 2026-10-27 UTC. Read-only appliance verification confirmed clean main, exact Hub image identity, healthy control/media/maintenance/Host Agent endpoints, canonical SQLite integrity, all eight encrypted secrets, database/ADB permissions and expected authorization responses. The unchanged maintenance container remained healthy. Backup `auto-operational-2026-10-27T09-23-23-054Z.zip` (128,524,397 bytes, mode 0600) matched journal SHA-256 `c59230f4b1801fec07ea7b2d3e4688a332146570ce6f99be06961e98b6246405` and passed ZIP CRC, canonical-database-only and extracted SQLite checks. Rollback to `22b19dc` remains available. Served operator assets matched merged source. No physical classroom commands, receiver reloads or production fault injection were used.

@@ -322,6 +322,32 @@ Dry reconciliation reports a skipped result. Explicit manual actions and overlay
 remain available. Independent schedulers and manual-media release keep their own
 policies. Failed scheduler pause/resume saves preserve the prior runtime flag.
 
+## Physical resources during recovery
+
+Startup and Resume compare lighting group members as individual devices. Only
+winning members are restored, so an older group cannot overwrite a newer device
+state. Unknown targets still report errors. TV recovery uses physical connection
+and output identity, including valid individual output overrides. HDMI and HDBT
+remain independent; All TVs covers eight outputs on both transports. Conflict,
+replacement and recovery share the same TV command-target calculation.
+
+A complete uncontested All selection keeps its single broadcast. Partial winners
+use their exact physical targets and preserve announcement locks on both
+transports. Ports without receiver aliases use transport/port diagnostic labels;
+these labels do not create receivers or change mappings. Recovery counts now
+represent actual devices and physical command targets. An acknowledgement is not
+proof of physical TV power state.
+
+## Complete loop ownership on recovery
+
+Recovery restarts a whole sequence only while that occurrence owns every intended
+display, lighting device and physical TV target, including explicit event-level
+timer displays. Owning part of a group is insufficient: the whole older loop
+could otherwise overwrite a newer winner. Desired-state reconciliation can still
+restore its winning pieces without restarting that loop. Delayed complete owners
+and independent loops remain recoverable; a retained Stop remains terminal.
+No saved sequence is split, and no cancellation record is created by this check.
+
 ## Display recovery timing
 
 Display reconciliation uses the scheduler clock and only the currently due

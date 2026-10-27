@@ -185,7 +185,7 @@ Starting another manual automation on overlapping resources also replaces any ac
 
 ## Continuous recovery winner filtering
 
-Recovery does not treat every earlier continuous automation as active for the rest of the day. Before restarting a continuous occurrence, RoomGoblin compares it with the current display/non-display winners and only restarts occurrences that still own at least one current winning resource identity. This prevents an older or superseded event from waking after Resume Scheduled State and repainting current content.
+Recovery does not treat every earlier continuous automation as active for the rest of the day. Before restarting a continuous occurrence, RoomGoblin compares it with the current display/non-display winners and only restarts occurrences that still own their complete nonempty intended resource set. The runner restarts a whole sequence, so retaining just one target cannot safely admit a partially superseded loop. Explicit event-level timer displays are included, and delayed actions retain their pending ownership. This prevents an older or superseded event from waking after Resume Scheduled State and repainting current content.
 
 ## Save & Enable conflict checks
 
@@ -252,6 +252,22 @@ Stop or restarting a run. Duplicate markers consume no extra capacity. Manual
 run IDs remain ordinary history. Existing history migrates on the next successful
 write; public history responses are unchanged. Source rollback to an older runtime
 restores that runtime's earlier history-only retention behavior.
+
+## Physical resources during recovery
+
+Startup and Resume compare lighting group members as individual devices. Only
+winning members are restored, so an older group cannot overwrite a newer device
+state. Unknown targets still report errors. TV recovery uses physical connection
+and output identity, including valid individual output overrides. HDMI and HDBT
+remain independent; All TVs covers eight outputs on both transports. Conflict,
+replacement and recovery share the same TV command-target calculation.
+
+A complete uncontested All selection keeps its single broadcast. Partial winners
+use their exact physical targets and preserve announcement locks on both
+transports. Ports without receiver aliases use transport/port diagnostic labels;
+these labels do not create receivers or change mappings. Recovery counts now
+represent actual devices and physical command targets. An acknowledgement is not
+proof of physical TV power state.
 
 ## Display recovery timing
 

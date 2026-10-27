@@ -21,11 +21,12 @@ function harness(events,seconds=1,{clockDate=null,persistentState={displays:{}}}
  AUTOMATION_ACTIONS:new Set(['display.text','display.clear','display.url']),schoolCycleForDate:()=>({}),
  planningStudio:{matchingOverlays:()=>[]},planningStudioConfig:{},audit:()=>{},persistAutomations:()=>{},diagnosticError:error=>{throw error},
  automationSchedulerEnabled:true,isAutomationSuppressed:()=>({blocked:false}),currentAutomationNonDisplayWinners:()=>[],
- automationRunLedger:ledger,automationRunningOccurrences:new Map(),supersedeOverlappingAutomationRuns:()=>{},automationResourceKeys:()=>['fixture-display'],
+ automationRunLedger:ledger,automationRunningOccurrences:new Map(),supersedeOverlappingAutomationRuns:()=>{},defaultAutomationActionTargets:()=>['all'],
  startOwnedAutomationOccurrence:id=>started.push(id),executeScheduledAutomationOccurrence:()=>{}
  });
  vm.runInContext(section('function automationDeferredDisplayTargets(','function consumeDeferredAnnouncementAutomations(')+
  section('async function runSingleAutomationAction(','function timerLinkedClassChain(')+
+ section('function automationResourceKeys(','function automationConflictDiagnostics(')+
  section('function automationOccurrenceIsActiveForContinuousRecovery(','async function reconcileScheduledAutomationState(')+
  section('async function resyncCurrentDisplayAutomationsAfterAnnouncements(','function scheduleMorningAnnouncementsReleaseRetry('),ctx);
  return {ctx,commands,timers,started,ledger,get actions(){return commands.filter(row=>row.type==='display.text').map(row=>row.payload.text)},now:new NativeDate(clockDate||stamp)};

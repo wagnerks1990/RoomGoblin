@@ -93,13 +93,13 @@ test("recovery broadcasts despite duplicate receiver-to-output mappings",async()
 test("a newer individual winner prevents a broad shutdown during recovery",async()=>{
   const h=harness();
   assert.equal((await h.reconcile([event(),event("override","00:02",power(["tv3"],{state:"on"}))])).ok,true);
-  assert.deepEqual(h.commands,individual("hdbt",[3]));
+  assert.deepEqual(h.commands,[...individual("hdmi"),...individual("hdbt",[3])]);
 });
 
 test("same-minute winner priority remains authoritative",async()=>{
   const h=harness();
   assert.equal((await h.reconcile([event(),event("override","00:01",power(["tv3"],{state:"on"}),{priority:10})])).ok,true);
-  assert.deepEqual(h.commands,individual("hdbt",[3]));
+  assert.deepEqual(h.commands,[...individual("hdmi"),...individual("hdbt",[3])]);
 });
 
 test("a later aggregate that replaces every individual winner can broadcast",async()=>{
@@ -111,7 +111,7 @@ test("a later aggregate that replaces every individual winner can broadcast",asy
 test("different aggregate actions are not mixed into one recovery command",async()=>{
   const h=harness();
   assert.equal((await h.reconcile([event("old","00:01",power(["hdbt-all"],{state:"on"})),event("new","00:02",power(["hdmi-all"]))])).ok,true);
-  assert.deepEqual(h.commands,[{action:"cecAllHdmi",index:1}]);
+  assert.deepEqual(h.commands,[...individual("hdbt",[1,2,3,4,5,6,7,8]),...individual("hdmi")]);
 });
 
 test("partial aggregate winners retain forced HDMI transport",async()=>{
@@ -123,7 +123,7 @@ test("partial aggregate winners retain forced HDMI transport",async()=>{
 test("stale aggregate output metadata cannot redirect every partial winner",async()=>{
   const h=harness();
   assert.equal((await h.reconcile([event("base","00:01",power(["all"],{state:"off",output:3})),event("override","00:02",power(["tv3"],{state:"on"}))])).ok,true);
-  assert.deepEqual(h.commands,individual("hdbt",[3]));
+  assert.deepEqual(h.commands,[...individual("hdmi"),...individual("hdbt",[3])]);
 });
 
 test("explicit individual selections never become a broadcast during recovery",async()=>{
@@ -157,7 +157,7 @@ test("receiver locks also prevent a broadcast and defer individual recovery writ
   const h=harness({locked:["tv3"]});
   const result=await h.reconcile([event()]);
   assert.equal(result.ok,true);
-  assert.deepEqual(h.commands,individual("hdbt",[],[3]));
+  assert.deepEqual(h.commands,[...individual("hdmi",[],[3]),...individual("hdbt",[],[3])]);
   assert.equal(result.resources.find(row=>row.target==="tv3").deferred,true);
 });
 
@@ -202,18 +202,18 @@ test("recovery protects the physical output of a named announcement receiver",as
   const h=harness({devices,locked:["screen"]});
   const result=await h.reconcile([event()]);
   assert.equal(result.ok,true);
-  assert.deepEqual(h.commands,individual("hdbt",[],[3]));
+  assert.deepEqual(h.commands,[...individual("hdmi",[],[3]),...individual("hdbt",[],[3])]);
   assert.equal(result.resources.find(row=>row.target==="tv3").deferred,true);
   assert.equal(h.musicTicks,1);
 });
 
-test("recovery protects a locked receiver omitted by physical-output deduplication",async()=>{
+test("recovery protects a locked alias while restoring the remaining physical ports",async()=>{
   const devices=Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
   devices.tv2.avOutput=1;
   const h=harness({devices,locked:["tv2"]});
   const result=await h.reconcile([event()]);
   assert.equal(result.ok,true);
-  assert.deepEqual(h.commands,individual("hdbt",[],[1,2]));
+  assert.deepEqual(h.commands,[...individual("hdmi",[],[1]),...individual("hdbt",[],[1])]);
   assert.equal(result.resources.find(row=>row.target==="tv1").deferred,true);
 });
 
