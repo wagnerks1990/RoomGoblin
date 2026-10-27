@@ -133,6 +133,11 @@ reload response or error cannot replace a newer one. Saves retain exclusive
 ownership of their draft and revision while pending. A CSV file still loading
 when the draft is reloaded, saved or edited cannot modify that newer draft;
 select the file again to apply it after review.
+Calendar **Today** reads the appliance's current scheduler date each time,
+including its configured time zone and test-clock date. It preserves the draft
+and does not reload saved settings. A later edit, date selection, reload or Save
+invalidates the pending lookup. Failed lookups keep the selected date and show
+an error; use Today again to retry.
 Preview and save never issue device commands, resume the
 scheduler, or restart running occurrences. Already-running occurrences keep their
 resolved boundaries; use the existing Pause/Resume Scheduled State controls

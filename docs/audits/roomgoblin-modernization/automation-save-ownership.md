@@ -4,8 +4,23 @@ Baseline: `84d981be83cfe9cb9dd11970cd16644f290c4ab4` (PR #287 date/preview patch
 based on checked main `065e32e`), alpha.85. Final integration uses checked main
 `3978311d9a6c0348db5947c974c98079a16814b8`; its tree is identical to the qualified
 PR #287 head. Owned work was preserved and applied without conflicts.
-Status: implemented and locally qualified on checked main; required CI and
-delivery remain.
+Status: all gates passed; deployed and verified at `68f36c4` (PR #288).
+
+## Verified delivery
+
+All 14 PR checks passed before squash merge at
+`68f36c47b2d4595bc38e5ca71045bace95f3e805`. Main validation, browser regression,
+security, Wiki sync and exact image publication passed. The normal selective
+Hub update completed on 2026-10-27 at 10:43:03 UTC. Read-only appliance checks
+verified clean main, exact Hub image and served assets, control/media/maintenance/
+Host health, canonical SQLite integrity, eight encrypted secrets, database/ADB
+permissions and expected authorization responses. Maintenance stayed unchanged
+and healthy. Backup `auto-operational-2026-10-27T10-42-50-358Z.zip`
+(128,576,391 bytes, mode 0600) matched journal SHA-256
+`3db560612a2a729aad7580d116c3ebbf3f96ec52a17b457878f61d7a3d1813fb`
+and passed ZIP CRC, canonical-database-only and extracted SQLite checks.
+Rollback to `3978311` remains available. No physical commands, receiver reloads
+or production fault injection were used.
 
 ## RG-AUTO-EDIT-003: Repeated or uncertain create requests duplicated routines
 

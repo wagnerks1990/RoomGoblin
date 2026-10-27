@@ -4,10 +4,22 @@
   const clone = value => structuredClone(value);
   const csv = value => [...new Set(String(value || "").split(/[\s,]+/).filter(Boolean))];
   const uid = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
-  let draft = null, snapshot = null, source = null, selectedTable = "", dirty = false, review = null, busy = false, saving = false, editRevision = 0, loadGeneration = 0, importGeneration = 0, pendingPreview = null;
+  let draft = null, snapshot = null, source = null, selectedTable = "", dirty = false, review = null, busy = false, saving = false, editRevision = 0, loadGeneration = 0, importGeneration = 0, todayGeneration = 0, pendingPreview = null;
   const monthCache=new Map(),monthPending=new Set();
   function message(text, error = false) {el("planningMessage").textContent=text;el("planningMessage").classList.toggle("bad",error)}
-  function changed() {editRevision++;monthCache.clear();dirty=true;review=null;el("planningPublish").disabled=true;message("Unsaved draft. Preview changes before saving.")}
+  function changed() {editRevision++;todayGeneration++;monthCache.clear();dirty=true;review=null;el("planningPublish").disabled=true;message("Unsaved draft. Preview changes before saving.")}
+  function selectDate(date) {todayGeneration++;el("planningDate").value=date;renderDate();preview(false)}
+  async function selectToday() {
+    if(!draft||saving)return;
+    const owner=draft,generation=++todayGeneration;
+    const current=()=>generation===todayGeneration&&owner===draft&&!saving;
+    try{
+      const result=await api("/api/v1/planning/day"),date=result.day?.date;
+      if(!current())return;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(`${date}T12:00:00Z`).toISOString().slice(0,10)!==date)throw Error("The appliance did not return a valid current date.");
+      selectDate(date);
+    }catch(error){if(current())message(`Could not select Today: ${error.message}`,true)}
+  }
   function option(select,value,label) {const node=document.createElement("option");node.value=value;node.textContent=label;select.append(node)}
   function input(label,value,type="text") {
     const wrapper=document.createElement("label"),field=document.createElement("input");wrapper.append(document.createTextNode(label));field.type=type;field.value=value||"";wrapper.append(field);return {wrapper,field};
@@ -59,7 +71,7 @@
       detail.textContent=status==="no-school"?"Closed":status==="remote"?"Remote":assigned?.cycleDay||saved?.cycle?`Cycle ${assigned?.cycleDay||saved.cycle}`:new Date(`${date}T12:00:00`).toLocaleDateString(undefined,{weekday:"short"});
       button.classList.toggle("school-closed",status==="no-school");button.classList.toggle("school-green",status==="school"&&saved?.group===draft.dayGroups[0]?.label);button.classList.toggle("school-white",status==="school"&&saved?.group===draft.dayGroups[1]?.label);
       const table=assigned?.timetableId?p().timetables.find(t=>t.id===assigned.timetableId):saved?.timetable;if(table){const small=document.createElement("small");small.textContent=table.name;button.title=table.name;button.append(small)}
-      button.setAttribute("aria-label",`${date}${assigned?": "+assigned.status+(assigned.cycleDay?", Cycle "+assigned.cycleDay:""):""}`);button.append(detail);button.addEventListener("click",()=>{el("planningDate").value=date;renderDate();preview(false)});el("planningMonth").append(button);
+      button.setAttribute("aria-label",`${date}${assigned?": "+assigned.status+(assigned.cycleDay?", Cycle "+assigned.cycleDay:""):""}`);button.append(detail);button.addEventListener("click",()=>selectDate(date));el("planningMonth").append(button);
     }
   }
   function renderDate() {
@@ -130,7 +142,7 @@
     try{const result=await api("/api/v1/planning");
       if(generation!==loadGeneration)return;
       if(revision!==editRevision||saving){message("Your newer planning edits were kept. Reload again to discard them.");return}
-      source=result;importGeneration++;monthCache.clear();draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
+      source=result;importGeneration++;todayGeneration++;monthCache.clear();draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
       const imported=source.migration;el("planningImportStatus").hidden=!imported||["empty","preserved"].includes(imported.status);
       if(imported?.status==="imported")el("planningImportStatus").textContent=`Existing configuration imported automatically: ${imported.counts.classes} classes, ${imported.counts.automations} linked/existing automations retained, ${imported.counts.timetables} timetables, ${imported.counts.dates} calendar dates. ${draft.planning.enabled?"Planning is enabled.":"Your previous scheduler remains active until Planning is enabled and saved."} The original configuration is retained for recovery.${imported.retainedEmptyTemplates?" Empty schedules/rules remain in the compatibility settings.":""}`;
       else if(imported?.status==="blocked")el("planningImportStatus").textContent="Automatic import needs configuration review. Existing scheduling has been retained; no partial conversion was saved.";
@@ -143,11 +155,12 @@
   el("planningPublish").addEventListener("click",async()=>{
     if(!review||busy)return;capture();if(review.draft!==JSON.stringify(draft)){changed();return}
     const controls=[...el("planning").querySelectorAll("input,select,button")].map(node=>({node,disabled:node.disabled}));controls.forEach(({node})=>node.disabled=true);
-    try{busy=saving=true;loadGeneration++;importGeneration++;const result=await api("/api/v1/planning",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({scheduleProfile:draft,expectedUpdatedAt:snapshot,previewHash:review.previewHash})});draft=clone(result.scheduleProfile);S.scheduleProfile=result.scheduleProfile;snapshot=draft.updatedAt;dirty=false;review=null;message("Planning saved. No commands were dispatched. Running occurrences keep their resolved boundaries; use Resume Scheduled State deliberately if needed.")}
+    try{busy=saving=true;loadGeneration++;importGeneration++;todayGeneration++;const result=await api("/api/v1/planning",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({scheduleProfile:draft,expectedUpdatedAt:snapshot,previewHash:review.previewHash})});draft=clone(result.scheduleProfile);S.scheduleProfile=result.scheduleProfile;snapshot=draft.updatedAt;dirty=false;review=null;message("Planning saved. No commands were dispatched. Running occurrences keep their resolved boundaries; use Resume Scheduled State deliberately if needed.")}
     catch(error){review=null;message(error.message,true)}finally{busy=saving=false;controls.forEach(({node,disabled})=>node.disabled=disabled);el("planningPublish").disabled=true}
   });
   for(const name of ["Calendar","Timetable","Rotation"])el(`planning${name}Tab`).addEventListener("click",()=>pane(name));
-  el("planningDate").addEventListener("change",()=>{if(draft){renderDate();preview(false)}});
+  el("planningDate").addEventListener("input",()=>todayGeneration++);
+  el("planningDate").addEventListener("change",()=>{if(draft)selectDate(el("planningDate").value)});
   el("planningStageDate").addEventListener("click",()=>{if(!draft)return;capture();const key=el("planningDate").value;if(!/^\d{4}-\d{2}-\d{2}$/.test(key))return message("Choose a valid date",true);p().dates[key]={status:el("planningDayStatus").value,cycleDay:el("planningCycleOverride").value,timetableId:el("planningDayTimetable").value,note:el("planningDayNote").value};changed();renderMonth();preview(false)});
   el("planningRemoveDate").addEventListener("click",()=>{if(draft){delete p().dates[el("planningDate").value];changed();renderDate();preview(false)}});
   el("planningPreset").addEventListener("click",()=>{if(!draft)return;capture();Object.assign(draft,clone(source.preset));changed();renderRotation();renderDate();message("A–H / Green / White / Bison mapping staged. Set an anchor, choose whether to enable Planning, and preview before saving.")});
@@ -159,10 +172,10 @@
   el("planningTableRemove").addEventListener("click",()=>{if(!draft)return;capture();if(p().defaultTimetableId===selectedTable||Object.values(p().dates).some(date=>date.timetableId===selectedTable))return message("Reassign dates and the regular timetable before removing this timetable.",true);const table=p().timetables.find(item=>item.id===selectedTable);if(table&&confirm(`Remove timetable "${table.name}" from the draft?`)){p().timetables=p().timetables.filter(item=>item!==table);changed();renderTable();renderDate()}});
   el("planningBlockAdd").addEventListener("click",()=>{capture();const table=p().timetables.find(item=>item.id===selectedTable);if(table){table.blocks.push({id:uid("block"),kind:"class",period:"",classId:"",label:"",startTime:"09:00",endTime:"10:00",cycleDays:[]});changed();renderTable()}});
   const calendarTools=document.createElement("div");calendarTools.className="toolbar";el("planningMonth").before(calendarTools);
-  for(const [label,offset]of [["← Previous month",-1],["Today",0],["Next month →",1]]){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",()=>{if(!draft)return;const date=new Date(`${el("planningDate").value}T12:00:00`);date.setDate(1);date.setMonth(date.getMonth()+offset);el("planningDate").value=offset?`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-01`:source.today;renderDate();preview(false)});calendarTools.append(button)}
+  for(const [label,offset]of [["← Previous month",-1],["Today",0],["Next month →",1]]){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",()=>{if(!draft||saving)return;if(!offset)return selectToday();const date=new Date(`${el("planningDate").value}T12:00:00`);date.setDate(1);date.setMonth(date.getMonth()+offset);selectDate(`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-01`)});calendarTools.append(button)}
   const rangeButton=document.createElement("button");rangeButton.type="button";rangeButton.textContent="Apply to a date range";el("planningStageDate").after(rangeButton);
   rangeButton.addEventListener("click",()=>{
-    if(!draft)return;capture();const dialog=document.createElement("dialog");dialog.className="studioDialog";const body=document.createElement("div");body.className="studioDialogBody";const heading=document.createElement("h2");heading.textContent="Apply this day setup to a range";heading.id="planningRangeHeading";dialog.setAttribute("aria-labelledby",heading.id);body.append(heading);
+    if(!draft)return;todayGeneration++;capture();const dialog=document.createElement("dialog");dialog.className="studioDialog";const body=document.createElement("div");body.className="studioDialogBody";const heading=document.createElement("h2");heading.textContent="Apply this day setup to a range";heading.id="planningRangeHeading";dialog.setAttribute("aria-labelledby",heading.id);body.append(heading);
     const hint=document.createElement("p");hint.textContent="Applies the selected status, timetable, note and optional fixed cycle letter to each chosen date. Everything stays in your draft until reviewed and saved.";body.append(hint);
     const start=input("First date",el("planningDate").value,"date"),end=input("Last date",el("planningDate").value,"date"),weekends=input("Include weekends","","checkbox");body.append(start.wrapper,end.wrapper,weekends.wrapper);
     const status=document.createElement("p");status.setAttribute("role","status");body.append(status);const tools=document.createElement("div");tools.className="toolbar";body.append(tools);
