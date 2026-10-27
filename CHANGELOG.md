@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Restart continuous occurrences only while they own their complete target scope,
+  preventing partially superseded groups or mixed-action loops from overwriting winners.
+
 - Resolve lighting recovery winners by device and TV winners by physical transport
   and output, preserving partial All scope and delayed/stopped occurrence ownership.
 

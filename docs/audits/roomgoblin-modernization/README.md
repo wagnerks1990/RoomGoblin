@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Recovery resource identity locally qualified; integration and CI pending**.
+Status: **Complete recovery ownership implemented; native qualification in progress**.
 The combined scheduler safeguards in PR #278 were validated, merged and deployed
 at `66c54a2` with health, backup integrity and rollback verified. Cancellation
 persistence is deployed at `52e28c6` after all checks and backup/health verification.
@@ -61,6 +61,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)
 - [Scheduler dispatch permission](scheduler-dispatch-permission.md)
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)

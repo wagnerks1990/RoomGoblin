@@ -27,7 +27,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     schedulerClock:{now:()=>now,commandsAllowed:()=>true,status:()=>({active:false})},
     automationSchedulerEnabled:true,automationRunLedger:ledger,automationRunningOccurrences:new Map(),
     currentAutomationDisplayWinners:()=>[],localMinutesNow:date=>date.getHours()*60+date.getMinutes(),
-    supersedeOverlappingAutomationRuns:()=>{},automationResourceKeys:()=>["fixture-resource"],
+    supersedeOverlappingAutomationRuns:()=>{},
     startOwnedAutomationOccurrence:id=>started.push(id),executeScheduledAutomationOccurrence:()=>{},
     cleanId:value=>String(value||"").trim().toLowerCase(),
     localDateKey:()=>"2026-10-27",
@@ -50,7 +50,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     audit:entry=>audits.push(plain(entry))
   });
   vm.runInContext(
-    section("function goveeTargets(","async function goveeUdpTemperature(")+"\n"+section("async function directGoveeCommand(","function goveeInventory(")+"\n"+section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
+    section("function automationResourceKeys(","function automationConflictDiagnostics(")+"\n"+section("function goveeTargets(","async function goveeUdpTemperature(")+"\n"+section("async function directGoveeCommand(","function goveeInventory(")+"\n"+section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
     section("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     section("function currentAutomationNonDisplayWinners","function automationOccurrenceIsActiveForContinuousRecovery")+"\n"+
     section("function automationOccurrenceScheduledMinutes(","function automationOccurrenceIsCurrentlyApplicable(")+"\n"+

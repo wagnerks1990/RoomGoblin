@@ -337,3 +337,13 @@ transports. Ports without receiver aliases use transport/port diagnostic labels;
 these labels do not create receivers or change mappings. Recovery counts now
 represent actual devices and physical command targets. An acknowledgement is not
 proof of physical TV power state.
+
+## Complete loop ownership on recovery
+
+Recovery restarts a whole sequence only while that occurrence owns every intended
+display, lighting device and physical TV target, including explicit event-level
+timer displays. Owning part of a group is insufficient: the whole older loop
+could otherwise overwrite a newer winner. Desired-state reconciliation can still
+restore its winning pieces without restarting that loop. Delayed complete owners
+and independent loops remain recoverable; a retained Stop remains terminal.
+No saved sequence is split, and no cancellation record is created by this check.

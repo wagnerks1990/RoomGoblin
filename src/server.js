@@ -5811,7 +5811,7 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now(),{forRecover
           // within one occurrence the later eligible action is its final state.
           const sameOccurrence=prior&&score[2]===prior.score[2]&&event.classId===prior.event.classId&&event.time===prior.event.time;
           if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&(score[2]>prior.score[2]||sameOccurrence))){
-            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(powerIntent?{tvPowerIntent:powerIntent,tvPowerTarget:resource}:{})});
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},occurrence:event,score,automationId:stored.id,name:stored.name,domain,target,...(powerIntent?{tvPowerIntent:powerIntent,tvPowerTarget:resource}:{})});
           }
         }
       }
@@ -5861,15 +5861,31 @@ function automationOccurrenceIdentity(storedEvent,event){
   return `${storedEvent?.id||event?.id||""}|${event?.classId||"manual"}|${event?.time||""}`;
 }
 function currentContinuousRecoveryWinnerIdentities(now=schedulerClock.now()){
-  const winners=new Set();
-  for(const candidate of currentAutomationDisplayWinners(now)){
-    winners.add(automationOccurrenceIdentity(candidate.storedEvent,candidate.event));
+  const owners=new Map();
+  const resourceKey=key=>key.replace(/^display-(?:content|overlay):/,"display:");
+  function recordOwnership(storedEvent,event,keys){
+    const identity=automationOccurrenceIdentity(storedEvent,event);
+    if(!owners.has(identity)){
+      const required=new Set(automationResourceKeys(event).map(resourceKey));
+      // An event-level timer may target displays outside its action sequence.
+      if(event.timerOverlay?.enabled)for(const id of automationDeferredDisplayTargets(event))required.add(`display:${id}`);
+      owners.set(identity,{required,owned:new Set()});
+    }
+    for(const key of keys)owners.get(identity).owned.add(key);
+  }
+  for(const candidate of currentAutomationDisplayWinners(now,{forRecoveryOwnership:true})){
+    recordOwnership(candidate.storedEvent,candidate.event,candidate.winningTargets.map(id=>`display:${id}`));
   }
   for(const candidate of currentAutomationNonDisplayWinners(now,{forRecoveryOwnership:true})){
     const storedEvent=classroomAutomations.events.find(item=>item.id===candidate.automationId);
-    if(storedEvent)winners.add(automationOccurrenceIdentity(storedEvent,candidate.event));
+    if(!storedEvent)continue;
+    const target=candidate.tvPowerTarget;
+    const key=target?`tv-power:${target.connection}:${target.output}`:`${candidate.domain}:${candidate.target}`;
+    recordOwnership(storedEvent,candidate.occurrence||candidate.event,[key]);
   }
-  return winners;
+  // The runner restarts an entire occurrence. A partial winner cannot safely
+  // resume its full sequence against resources owned by another occurrence.
+  return new Set([...owners].filter(([,owner])=>owner.required.size&&[...owner.required].every(key=>owner.owned.has(key))).map(([identity])=>identity));
 }
 async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery"){
   if(!automationSchedulerEnabled||schedulerClock.status().active&&!schedulerClock.commandsAllowed())return {started:0,skipped:true,reason:"scheduler-disabled-or-dry-run"};

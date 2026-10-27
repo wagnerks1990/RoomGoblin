@@ -185,7 +185,7 @@ Starting another manual automation on overlapping resources also replaces any ac
 
 ## Continuous recovery winner filtering
 
-Recovery does not treat every earlier continuous automation as active for the rest of the day. Before restarting a continuous occurrence, RoomGoblin compares it with the current display/non-display winners and only restarts occurrences that still own at least one current winning resource identity. This prevents an older or superseded event from waking after Resume Scheduled State and repainting current content.
+Recovery does not treat every earlier continuous automation as active for the rest of the day. Before restarting a continuous occurrence, RoomGoblin compares it with the current display/non-display winners and only restarts occurrences that still own their complete nonempty intended resource set. The runner restarts a whole sequence, so retaining just one target cannot safely admit a partially superseded loop. Explicit event-level timer displays are included, and delayed actions retain their pending ownership. This prevents an older or superseded event from waking after Resume Scheduled State and repainting current content.
 
 ## Save & Enable conflict checks
 
