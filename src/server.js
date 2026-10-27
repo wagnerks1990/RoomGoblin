@@ -1833,12 +1833,16 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     const end=Number(event._classEndAt);
     return !Number.isFinite(end)||schedulerClock.now().getTime()<end;
   }
+  function assertSimulationAllowsRun(){
+    if(!manual&&!schedulerClock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
+  }
   function assertRunActive(){
     if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId)){
       const reason=automationCancellationReasons.get(event._occurrenceId)||"cancelled";
       throw Object.assign(new Error(`Automation run ${reason}`),{code:"AUTOMATION_CANCELLED",reason});
     }
     if(shuttingDown)throw Object.assign(new Error("Automation interrupted by application shutdown"),{code:"AUTOMATION_INTERRUPTED",reason:"server-shutdown"});
+    assertSimulationAllowsRun();
     if(!manual&&!automationSchedulerEnabled)throw Object.assign(new Error("Automation scheduler paused"),{code:"AUTOMATION_SCHEDULER_PAUSED"});
     if(!manual&&isAutomationSuppressed(schedulerClock.now()).blocked)throw Object.assign(new Error("Automation suppressed by current school calendar state"),{code:"AUTOMATION_SUPPRESSED"});
     if(!manual&&event.id){
@@ -1858,6 +1862,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   async function applyTimerOverlay({targetsOverride=null,force=false}={}){
     if(!event.timerOverlay?.enabled)return;
     if(overlayApplied&&!force)return;
+    assertRunActive();
     overlayApplied=true;
     try{
       const sourceTargets=Array.isArray(targetsOverride)&&targetsOverride.length
@@ -1891,6 +1896,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // Action 1 only while at least two actions remain eligible, or while
   // an explicit finite repeat still has passes remaining.
   let pass=1,aborted=false;
+  assertRunActive();
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
     if(boundedMaxPasses&&pass>boundedMaxPasses)break;
@@ -5913,11 +5919,30 @@ function automationResourceKeys(event){
   for(const step of steps){
     const action=step.action,domain=automationTargetDomain(action);let targets=[];
     if(step!==steps[0]&&step.useEventTargets!==false&&domain===automationTargetDomain(steps[0]?.action))targets=steps[0]?.targets||event.targets||[];
-    else if(Array.isArray(step.targets))targets=step.targets;
+    else targets=Array.isArray(step.targets)&&step.targets.length?step.targets:defaultAutomationActionTargets(action);
     if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
     if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
-    else if(domain==="tv-power")for(const target of expandTvTargets(targets,{devices}))keys.push(`tv-power:${target.connection}:${target.output}`);
-    else if(domain==="lighting")for(const id of targets)keys.push(`lighting:${cleanId(id)}`);
+    else if(domain==="tv-power"){
+      const requested=[...new Set(targets.map(cleanId).filter(Boolean))];
+      const selector=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+      if(["all","hdmi-all","hdbt-all"].includes(selector)){
+        // Aggregate CEC writes address physical ports independently of receiver
+        // aliases. Reserve their full intent even while announcements defer some.
+        for(const connection of selector==="all"?["hdmi","hdbt"]:[selector==="hdmi-all"?"hdmi":"hdbt"]){
+          for(let output=1;output<=8;output++)keys.push(`tv-power:${connection}:${output}`);
+        }
+      }else{
+        const resolved=expandTvTargets(requested,{devices,connection:step.payload?.connection||"hdbt"});
+        const aggregate=requested.some(id=>["all","hdmi-all","hdbt-all"].includes(id));
+        const output=Number(step.payload?.output);
+        if(!aggregate&&resolved.length===1&&Number.isInteger(output)&&output>=1&&output<=8)resolved[0].output=output;
+        for(const target of resolved)keys.push(`tv-power:${target.connection}:${target.output}`);
+      }
+    }else if(domain==="lighting")for(const target of targets){
+      const id=cleanId(target);
+      const aliases=goveeDevices[id]||Array.isArray(goveeGroups[id])?goveeTargets(id):[id];
+      for(const alias of aliases)keys.push(`lighting:${cleanId(alias)}`);
+    }
   }
   return [...new Set(keys)];
 }
@@ -8512,10 +8537,19 @@ const automationCancelledOccurrences=new Set();
 const automationCancellationReasons=new Map();
 function startOwnedAutomationOccurrence(id,meta,execute){
   if(automationRunningOccurrences.has(id))throw new Error("Automation occurrence is already running");
+  const resources=new Set(meta.resources||[]);
+  const predecessors=[...automationRunningOccurrenceMeta]
+    .filter(([,prior])=>(prior.resources||[]).some(key=>resources.has(key)))
+    .map(([priorId])=>automationRunningOccurrences.get(priorId)).filter(Boolean);
   automationRunningOccurrenceMeta.set(id,meta);
   // Defer execution until both registries and the recovery drain own the task.
   // Even a synchronous ledger failure must settle through this finalizer.
-  const task=trackFullExportMutation(Promise.resolve().then(execute).catch(error=>{
+  const task=trackFullExportMutation(Promise.resolve().then(async()=>{
+    // Cancellation cannot undo a command already accepted by an adapter. Keep
+    // discovery free, but let every older overlapping owner settle before send.
+    if(predecessors.length)await Promise.allSettled(predecessors);
+    return execute();
+  }).catch(error=>{
     diagnosticError(error,{component:"automation",operation:"occurrence-task",data:{automationId:meta.automationId||null,occurrenceId:id}});
     throw error;
   }).finally(()=>{
@@ -8652,7 +8686,7 @@ const automationStartupReconcileTimer=setTimeout(reconcileAutomationStartup,5000
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.
 let legacyPlutoSchedulerBusy=false;
-const legacyPlutoSchedulerTimer=setInterval(async()=>{
+async function legacyPlutoSchedulerTick(){
   if(shutdownRequested||fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
   const clockStatus=schedulerClock.status();if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
   legacyPlutoSchedulerBusy=true;
@@ -8665,17 +8699,27 @@ const legacyPlutoSchedulerTimer=setInterval(async()=>{
       sch.lastExec=sch.lastExec||{};sch.lastRun=sch.lastRun||{};
       for(const [kind,time,index] of [["on",sch.onTime,0],["off",sch.offTime,1]]){
         if(time!==hhmm||sch.lastExec[kind]===minuteKey)continue;
-        const displayId=Object.keys(devices).find(id=>Number(devices[id]?.avOutput)===Number(sch.index));
-        if(displayId&&morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([displayId]).length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${displayId}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
+        const locked=automationTvPowerPhysicalLocks({output:Number(sch.index)},announcementLockedDisplayTargets(["all"]));
+        if(locked.length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${locked.join(", ")}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
+        const previousExec=sch.lastExec[kind],previousRun=sch.lastRun;
         sch.lastExec[kind]=minuteKey;
+        sch.lastRun={text:`${kind==="on"?"On":"Off"} requested ${now.toLocaleString()}; delivery not confirmed`,stamp:Date.now(),ok:null,pending:true};
+        // Claim before sending. A restart must not replay an uncertain CEC write.
+        try{persistPlutoSchedules()}
+        catch(error){
+          if(previousExec===undefined)delete sch.lastExec[kind];else sch.lastExec[kind]=previousExec;
+          sch.lastRun=previousRun;throw error;
+        }
         try{const result=await directPluto({action:"cecOutput",output:Number(sch.index),connection:sch.type,index});assertAdapterResults([result],{action:"Legacy TV power"});sch.lastRun={text:`${kind==="on"?"On":"Off"} ${now.toLocaleString()}`,stamp:Date.now(),ok:true}}
         catch(e){sch.lastRun={text:`ERROR ${now.toLocaleString()}: ${e.message}`,stamp:Date.now(),ok:false}}
         changed=true;
       }
     }
     if(changed)persistPlutoSchedules();
-  }finally{legacyPlutoSchedulerBusy=false}
-},15000);legacyPlutoSchedulerTimer.unref();
+  }catch(error){diagnosticError(error,{component:"automation",operation:"legacy-tv-scheduler"})}
+  finally{legacyPlutoSchedulerBusy=false}
+}
+const legacyPlutoSchedulerTimer=setInterval(legacyPlutoSchedulerTick,15000);legacyPlutoSchedulerTimer.unref();
 
 connectMqtt();
 

@@ -733,6 +733,23 @@ real-Hub cases failed their shared startup hook because Windows lacks the Linux
 or assertion was weakened. Documentation, Wiki mirror and delivery receipts were
 updated after qualification; `git diff --check` passed.
 
+## Legacy TV scheduler qualification (2026-10-27 UTC)
+
+Baseline `9c15339776e6193b2002a1fccbd0c1e7cbd6f37a` fails seven of the eleven
+legacy scheduler regression fixtures; four behavior controls pass. The corrected
+focused suite passes all **91 tests** across legacy scheduling, canonical TV power,
+recovery and bounded Pluto transport. Tests execute the actual timer/tick, physical
+lock helper and application writer-drain predicate with controlled adapters.
+
+The required Windows-to-native-Linux helper tested the active worktree snapshot:
+**1,064 tests: 1,062 passed, 0 failed, 2 root-only ownership skips**, plus
+**23 Host Recovery tests**. Node/controller checks, Host Python compilation and
+tracked Bash syntax passed. The snapshot includes the final admission-retry and
+writer-drain fixtures. Docker is unavailable locally; required CI still owns
+Compose, both image builds/scans and native artifacts. No physical CEC command,
+receiver reload or production fault injection was performed. Merge, Wiki sync,
+exact image publication and the normal backed-up update remain pending.
+
 
 ## Scheduler timing and task ownership (2026-10-27 UTC)
 
@@ -766,3 +783,110 @@ after snapshots only to record evidence; no physical classroom testing is claime
 PR #276's final alert 416 repeated the reviewed privileged destination flow after
 the redirect line changed; its 27-node SARIF trace was rechecked and classified
 with the same evidence as alert 415. All 14 PR gates then passed and #276 merged.
+
+## Legacy scheduler integration with checked main (2026-10-27 UTC)
+
+PR #277 merged as `70ad1c8e6dbcf2e824746d25af8142dc88c363ea` after all 14 checks
+passed. Its integration into the legacy scheduler branch merged source cleanly;
+documentation overlaps were resolved by retaining both contracts and evidence.
+The combined active-worktree native suite passed **136 focused tests**, plus
+**23 Host Recovery tests**, Node/controller checks, Host Python compilation and
+tracked Bash syntax. Fresh CI must validate the combined head before merging.
+AV backend PR #276 is deployed and verified on `9c15339`; its PR records the full
+health, identity, backup-integrity and rollback receipt. PR #277 delivery is pending.
+
+
+## Scheduled sequence simulation qualification (2026-10-27 UTC)
+
+Five of seven new permission fixtures failed against the qualified PR #277 head;
+the two manual/live/real-time controls passed. The actual runner and real
+SchedulerClock permission implementation now pass all **91 focused tests**.
+The full active-worktree native Linux snapshot passed **1,078 tests: 1,076 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**,
+Node/controller checks, Host Python compilation and tracked Bash syntax.
+The checked squash merge of PR #277 has the identical tree; reapplying this
+patch on it changed no runtime or test content. Docker/Compose/images/artifacts
+remain CI qualifications. No physical command or production fault injection was
+used. CI, checked merge, Wiki sync, exact images and appliance delivery are pending.
+
+
+## AV backend delivery closure (2026-10-27 UTC)
+
+PR #276 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 06:51:07 UTC
+on clean main and Hub image `9c15339776e6193b2002a1fccbd0c1e7cbd6f37a`.
+Maintenance retained its healthy `20f8c501916f34e17bee2c643434e7cce0c919e6`
+container; both containers have zero restarts. Health/readiness, canonical SQLite,
+eight secret decryptions, DB/ADB permissions, authentication boundaries, served
+operator asset hashes and deployment inputs passed. The backup passed journal
+checksum, ZIP CRC, canonical-only database and extracted SQLite checks. Rollback
+to `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0` remains available.
+PR #276 records the archive name, size and SHA-256. No physical command or receiver
+reload was issued. Scheduler timing/ownership subsequently merged in PR #277 as
+`70ad1c8e6dbcf2e824746d25af8142dc88c363ea`; its deployment is pending.
+
+
+## Scheduler resource identity qualification (2026-10-27 UTC)
+
+Baseline main `70ad1c8` fails **9 of 13** dispatch/resource fixtures; four
+compatibility controls pass. The corrected resource, TV sequence/recovery,
+ownership, timing and existing-conflict editing suites pass **112 tests**.
+Fixtures execute the actual runner, dispatch handlers, Govee target resolver,
+resource resolver, conflict diagnostics and supersession with controlled adapters.
+
+The active-worktree native Linux snapshot passed **1,084 tests: 1,082 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+Node/controller checks, Host Python compilation and tracked Bash syntax passed.
+Docker is unavailable locally; CI must qualify Compose, image builds/scans and
+native artifacts. No physical commands or production fault injection were used.
+Checked merge, Wiki sync, exact images and normal backed-up delivery are pending.
+
+
+## Replacement ordering qualification (2026-10-27 UTC)
+
+Six new ownership fixtures failed against main `70ad1c8`; a disjoint-resource
+control passed. An additional actual-runner regression reproduced an expired
+class window skipping cancellation before a final overlay. Corrected ownership,
+cycle, manual and TV sequence/recovery suites passed **102 tests**.
+
+The full active-worktree native Linux snapshot passed **1,079 tests: 1,077 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+Node/controller checks, Host Python compilation and tracked Bash syntax passed.
+No physical command or production fault injection was used. Docker/Compose/images
+and artifacts remain CI qualifications. This patch will join the legacy TV,
+test-clock and resource fixes in PR #278, followed by fresh combined qualification.
+
+## Scheduler timing/ownership delivery closure (2026-10-27 UTC)
+
+PR #277 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 07:10:08 UTC
+on clean main and Hub image `70ad1c8e6dbcf2e824746d25af8142dc88c363ea`.
+Maintenance retained its healthy `20f8c501916f34e17bee2c643434e7cce0c919e6`
+container; both containers have zero restarts. Health/readiness, canonical SQLite,
+eight secret decryptions, DB/ADB permissions, authentication, operator asset hashes
+and deployment inputs passed. The archive passed journal checksum, ZIP CRC,
+canonical-only database and extracted SQLite checks. Rollback to `9c15339` remains
+available. PR #277 records the archive name, size and SHA-256. No physical command
+or receiver reload was issued.
+
+## Combined scheduler follow-up qualification (2026-10-27 UTC)
+
+The legacy TV, test-clock, resource identity and replacement-ordering patches were
+integrated into PR #278's branch without discarding either side's tests or audit
+records. The initial combined focused run passed **133 tests**. Its full native
+snapshot passed **1,110 tests: 1,108 passed, 0 failed, 2 root-only ownership skips**,
+plus **23 Host Recovery tests** and Node/controller/Python/Bash checks.
+
+Final review then added two failing regressions for cancellation after an accepted
+action and at the final wait/class-end boundary. Each new overlay now checks the
+full run-active predicate. The corrected combined focused run passed **135 tests**.
+A fresh full native run is required for this final runtime correction; the earlier
+combined full result is not presented as its qualification.
+
+The final active-worktree snapshot, including both late-cancellation tests and
+the full overlay guard, passed **1,112 tests: 1,110 passed, 0 failed, 2 root-only
+ownership skips**, plus **23 Host Recovery tests**. Node/controller checks,
+Host Python compilation and tracked Bash syntax passed. Final diff review and
+whitespace checks passed. Fresh CI is still required on the consolidated PR head;
+Docker/Compose, image scans/builds and platform/browser qualification remain its
+responsibility. No physical device command or production fault injection was used.

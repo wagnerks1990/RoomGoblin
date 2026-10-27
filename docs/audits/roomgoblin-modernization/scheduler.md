@@ -1,7 +1,8 @@
 # Scheduler run-loop review
 
 Baseline: `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0`, alpha.85.
-Status: timing and task-ownership patch locally qualified; checked PR and delivery pending.
+Status: checked merge and appliance delivery completed in PR #277 on 2026-10-27.
+See the validation record and PR for the verified deployment receipt.
 
 ## Inspection boundary
 
@@ -115,11 +116,12 @@ change either API, execution mode or receiver-native media looping.
 
 ## Remaining scheduler review
 
-These source observations require executable confirmation before implementation:
-legacy TV schedule claims and physical announcement locks; cleanup after failed
-run-history persistence; resource identity for inherited/default targets; and
-supersession while an older adapter is still in flight. The editor is a separate
-unit. None is represented here as completed or as a reproduced defect.
+The follow-up in PR #278 covers legacy TV claims/physical locks, test-clock
+permission, resource identity and replacement dispatch ordering. See the linked
+audit records for their separate baseline reproductions and qualification.
+Cancellation-request persistence failures, recovery winner timing and remaining
+simulation dispatch boundaries still require review. The editor is a separate
+unit. This does not close the complete scheduler engine audit.
 
 
 ## Qualification boundary

@@ -31,6 +31,11 @@ Invalidate readings on command/connection changes without replaying uncertain
 writes. Preserve returned handler ownership after browser disconnect and the
 existing announcement, audit-freeze and shutdown contracts.
 
+Legacy per-output TV schedules must use all physical announcement locks, save an
+exact-minute claim before sending CEC and never replay an uncertain write after
+restart. Persistence failures must release scheduler ownership and remain visible.
+See `docs/TV-POWER-AUTOMATION.md` for the legacy and canonical contracts.
+
 
 For alpha.84 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
 Keep SQLite database/WAL/SHM access shared with maintenance (0660), ADB trust

@@ -146,3 +146,25 @@ The updater owns operational backup, health checking and automatic rollback on
 deployment failure. Preserve its saved source/database/environment and image
 identity together when reverting; do not reset the database or recreate device
 credentials to undo this source-only repair.
+
+
+## Legacy per-output schedules
+
+Existing HDMI/HDBT per-output schedules use the same physical announcement-lock
+helper as canonical automation TV power. Every locked receiver is considered,
+including multiple receiver IDs sharing an output. Unmapped or invalid named
+receiver locks defer power without guessing a port; known physical locks protect
+both transports. Locks are rechecked before each output write.
+
+Each due on/off occurrence saves its exact-minute claim and an unconfirmed
+outcome before sending CEC. If that save fails, nothing is sent; a later tick may
+retry admission for the still-due unsent occurrence. Once a command may have been
+sent, its saved claim prevents replay after restart, even if the final result
+could not be saved. An unconfirmed result needs operator verification; it is not
+physical power-state confirmation. Rejected/uncertain writes remain single-attempt.
+
+Persistence errors are recorded inside scheduler ownership, and the busy flag is
+released on every outcome. Accepted writes remain part of the existing Full
+Recovery/shutdown drain. Pause, calendar/day/time eligibility, dry simulation,
+transport selection and the 15-second timer remain unchanged. No saved schedule,
+receiver identity or database-schema migration is required.

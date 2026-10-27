@@ -1,8 +1,12 @@
 # RoomGoblin modernization audit
 
-Status: **Scheduler timing and run ownership locally qualified; checked PR pending**. Displays & AV backend reads merged in PR #276 and await exact-image
-publication/delivery. The operator workspace is deployed through PR #275, and
-receiver browser-runtime delivery completed in PR #274. Today/live monitoring and shared
+Status: **Combined scheduler safeguards locally qualified in PR #278**. Legacy TV,
+test-clock, resource identity and replacement ordering retain their individual
+audit evidence; 1,110 native tests passed with two root-only skips, plus 23 Host
+Recovery tests. Fresh CI and delivery are pending. Scheduler timing/task
+ownership delivery completed in PR #277. AV backend delivery completed in
+PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
+delivery completed in PR #274. Today/live monitoring and shared
 frontend delivery completed in PRs #273 and #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
@@ -52,7 +56,13 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Legacy TV scheduler findings](legacy-tv-scheduler.md)
+
+- [Scheduler resource identity findings](scheduler-resources.md)
+
+- [Scheduler replacement ordering](scheduler-dispatch-order.md)
 - [Scheduler timing, task ownership and remaining review](scheduler.md)
+- [Scheduled sequence test-clock findings](scheduler-simulation.md)
 - [Displays & AV backend read bounds](av-status.md)
 - [Displays & AV workspace findings](displays-av.md)
 - [Display receiver browser-runtime findings](display-receiver.md)

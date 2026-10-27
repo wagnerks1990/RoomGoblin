@@ -211,6 +211,27 @@ schedules, the visual editor, widgets, shared layers and countdown deadlines.
 Existing canonical action sequences and native receiver media sessions remain.
 
 
+## Legacy per-output schedules
+
+Existing HDMI/HDBT per-output schedules use the same physical announcement-lock
+helper as canonical automation TV power. Every locked receiver is considered,
+including multiple receiver IDs sharing an output. Unmapped or invalid named
+receiver locks defer power without guessing a port; known physical locks protect
+both transports. Locks are rechecked before each output write.
+
+Each due on/off occurrence saves its exact-minute claim and an unconfirmed
+outcome before sending CEC. If that save fails, nothing is sent; a later tick may
+retry admission for the still-due unsent occurrence. Once a command may have been
+sent, its saved claim prevents replay after restart, even if the final result
+could not be saved. An unconfirmed result needs operator verification; it is not
+physical power-state confirmation. Rejected/uncertain writes remain single-attempt.
+
+Persistence errors are recorded inside scheduler ownership, and the busy flag is
+released on every outcome. Accepted writes remain part of the existing Full
+Recovery/shutdown drain. Pause, calendar/day/time eligibility, dry simulation,
+transport selection and the 15-second timer remain unchanged. No saved schedule,
+receiver identity or database-schema migration is required.
+
 ## Continuous sequence timing
 
 Continuing continuous sequences have a minimum one-second pass duration, counting
@@ -229,3 +250,34 @@ and cancellation metadata after settlement, so they cannot leave a phantom run
 blocking recovery or shutdown. Failed new manual admission saves preserve existing
 accepted work. Live draft continual runs return a managed run ID; use **Stop Run**
 to cancel them. Finite manual sequences return their completed result.
+
+
+## Scheduled sequence test-clock permission
+
+Editor draft simulation is side-effect free. The scheduler test clock is dry by
+default and has a separate bounded live-command option. Scheduled sequences
+recheck that permission before actions, during waits and before a new timer
+overlay. Expiry or a switch to dry mode stops the sequence with a recorded error.
+An already accepted action may finish; its effects are not undone. Explicit
+manual Run Now and live draft tests remain available.
+
+## Automation resource identity
+
+Conflict checks and replacement use the action's dispatch intent. Empty primary
+targets use normal defaults; lighting groups resolve to member devices. Individual
+TV power follows its configured connection and valid legacy output override.
+All-TV broadcasts reserve all eight ports on both transports; HDMI/HDBT broadcasts
+reserve their chosen transport independently of receiver aliases. Announcement
+deferral does not shrink the intended resource set. Class display defaults remain
+separate from lighting/TV domains. Unknown lighting targets retain their diagnostic
+identity and normal dispatch error. No saved mappings or command payloads change.
+
+## Replacement command ordering
+
+Scheduled, recovered and managed manual replacements register immediately and
+wait inside task ownership for older overlapping tasks to settle. Already accepted
+adapter work finishes before replacement dispatch. Discovery and unrelated
+resources remain available; a newer run can cancel an already waiting replacement.
+Execution rechecks cancellation and shutdown before class-window decisions or
+overlays. Predecessor failure does not poison the replacement. A hung predecessor
+keeps overlapping work waiting under the unchanged lifecycle failure deadline.

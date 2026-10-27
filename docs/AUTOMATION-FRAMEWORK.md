@@ -47,6 +47,25 @@ of at most 500 ms during waits; calendar eligibility still uses the scheduler cl
 
 Scheduled occurrences are durably claimed before execution. When a newer scheduled occurrence starts and uses a resource already owned by an older running continuous sequence, RoomGoblin requests cancellation of the older overlapping occurrence before starting the newer one. This prevents two scheduled loops from continuously fighting for the same display, TV, or lighting target.
 
+Conflict checks and run replacement resolve resources from dispatch intent:
+empty primary targets use the action's normal defaults, lighting groups resolve
+to device members, and individual TV power follows its configured connection and
+legacy output override. All-TV broadcasts reserve all eight physical outputs on
+both transports; HDMI-only/HDBT-only broadcasts reserve their selected transport,
+independently of receiver aliases. Announcement deferral does not narrow the
+saved action's intended resource set. Class-default display targets remain
+separate from lighting and TV-power resources. Unknown lighting targets keep a
+diagnostic identity and still fail through normal dispatch validation.
+
+Scheduled, recovered and managed manual replacements register their own task
+immediately, then wait inside that ownership for older overlapping tasks to
+settle. Already accepted adapter work can finish, but cannot complete after the
+replacement starts sending. Discovery and unrelated resources remain available.
+A still-newer replacement can cancel a waiting one; execution rechecks lifecycle
+and cancellation before class-window decisions or timer overlays. Failure of an
+older task does not fail its replacement. A hung predecessor keeps overlapping
+work waiting, with the existing lifecycle failure deadline unchanged.
+
 Editing, disabling, or deleting a running automation also invalidates its revision/configuration and causes the runner to stop at the next cancellation-aware checkpoint.
 
 Linked-class continuous automations stop cleanly when the resolved class occurrence ends. Startup reconciliation and operator Resume also recover continuous occurrences that are still currently applicable, even when their original start time is outside the normal scheduler catch-up window.
@@ -59,7 +78,13 @@ overlapping scheduler ticks; freeze acknowledgment waits for that accepted work.
 
 ## Manual execution
 
-Simulation never dispatches devices.
+Editor draft simulation never dispatches devices. The scheduler test clock is
+also dry by default; its separate live-command option grants a bounded window.
+Scheduled sequences recheck that permission before actions, during waits and
+before starting a new timer overlay. Expiry or a switch back to dry mode stops
+the sequence with a recorded dry-run error. An already accepted action may finish;
+its physical effects are not undone. Explicit manual Run Now and live draft tests
+remain available independently of this scheduled-run permission.
 
 A live draft test with continual actions starts a managed background run and returns its run ID without holding the HTTP request open. Use **Stop Run** to cancel an active run. Saved **Run Now** uses the same managed lifecycle; finite manual sequences return their completed result.
 
