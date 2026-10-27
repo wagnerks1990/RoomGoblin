@@ -281,3 +281,160 @@ class MatrixBrowserTests(unittest.TestCase):
         self.assertTrue(page.locator('button[onclick="saveAdminDisplaysStructured()"]').is_disabled())
         self.assertTrue(page.locator('button[onclick="removeEmptyLegacyDisplayGroups()"]').is_disabled())
         self.assertFalse(errors, errors)
+
+    def test_rejected_power_command_does_not_record_success(self):
+        page, errors, _, _, _ = self.matrix()
+        page.route('**/api/v1/pluto', lambda route: route.fulfill(json={'type':'ack','action':'cecOutput','result':0,'ok':False}))
+        page.evaluate('toggleRowTvPower(1)')
+        self.assertIn('rejected', page.locator('#hubToast').inner_text().lower())
+        self.assertIsNone(page.evaluate("localStorage.getItem('classroomHub.avPowerStates')"))
+        self.assertFalse(errors, errors)
+
+    def test_unknown_power_readings_are_not_reported_off(self):
+        page, errors, _, _, _ = self.matrix()
+        for value in (None, '', 'unknown'):
+            page.evaluate('(value)=>{S.pluto.cecStatus={hdbtPower:[value]};renderMatrix()}', value)
+            self.assertFalse(page.evaluate('avPowerStateInfo(1).known'))
+            self.assertIn('not reported', page.locator('#matrix .av40PowerMini').first.get_attribute('title'))
+        self.assertFalse(errors, errors)
+
+    def test_power_and_route_keep_unsaved_drawer_fields(self):
+        page, errors, config, _, _ = self.matrix()
+        config['displayGroups']['lesson'] = []
+        page.evaluate('refreshPluto()')
+        page.evaluate('openAvTvDrawer(1)')
+        page.locator('#avDrawerTvName').fill('Draft TV name')
+        page.locator('[data-drawer-tv-group="lesson"]').check()
+        page.evaluate('drawerTvPower(0)')
+        self.assertEqual(page.locator('#avDrawerTvName').input_value(), 'Draft TV name')
+        self.assertTrue(page.locator('[data-drawer-tv-group="lesson"]').is_checked())
+        page.locator('#avDrawerSource').select_option('2')
+        page.evaluate('drawerUpdateRoute()')
+        self.assertEqual(page.locator('#avDrawerTvName').input_value(), 'Draft TV name')
+        self.assertTrue(page.locator('[data-drawer-tv-group="lesson"]').is_checked())
+        self.assertIn('Source 2', page.locator('#avDrawerCurrentSource').inner_text())
+        self.assertFalse(errors, errors)
+
+    def test_receiver_read_failure_does_not_mark_matrix_offline(self):
+        page, errors, _, _, writes = self.matrix()
+        page.route('**/api/v1/config', lambda route: route.fulfill(status=503,json={'error':'Fixture receiver config unavailable'}))
+        page.evaluate('refreshPluto()')
+        self.assertEqual(page.locator('#avHealth').inner_text(), 'Matrix Online')
+        self.assertIn('receiver', page.locator('#avReadMsg').inner_text().lower())
+        page.evaluate("S.avDeviceStatus={'receiver-a':{online:true}};openAvTvDrawer(1)")
+        page.evaluate('drawerTestImage()')
+        self.assertIn('unavailable', page.locator('#hubToast').inner_text().lower())
+        self.assertEqual(writes, [])
+        self.assertFalse(errors, errors)
+
+    def test_refresh_requests_share_one_matrix_read(self):
+        page, errors, _, labels, _ = self.matrix()
+        held=[]
+        page.route('**/api/v1/pluto/status', lambda route: held.append(route))
+        page.evaluate('window.fixtureRefresh=Promise.all([refreshPluto(),refreshPluto()]);void 0')
+        page.wait_for_timeout(150)
+        try:
+            self.assertEqual(len(held), 1)
+        finally:
+            for route in held:
+                route.fulfill(json={'ok':True,'labels':labels,'videoStatus':{'allsource':[1]*8}})
+        page.evaluate('fixtureRefresh')
+        self.assertFalse(errors, errors)
+
+    def test_tv_drawer_keyboard_focus_and_escape(self):
+        page, errors, _, _, _ = self.matrix()
+        trigger=page.locator('#matrix .av40TvName').first
+        trigger.click()
+        self.assertTrue(page.locator('#avDrawerTvName').evaluate('(e)=>e===document.activeElement'))
+        page.keyboard.press('Shift+Tab')
+        self.assertTrue(page.evaluate("avTvDrawer.contains(document.activeElement)"))
+        page.keyboard.press('Escape')
+        self.assertFalse(page.locator('#avTvDrawer').is_visible())
+        self.assertTrue(trigger.evaluate('(e)=>e===document.activeElement'))
+        self.assertFalse(errors, errors)
+
+    def test_setup_rejects_invalid_receiver_ids_before_any_save(self):
+        writes=[]
+        config={'devices':{'Front_A':{'name':'Front','enabled':True}},'displayGroups':{'all':['Front_A']}}
+        def transport(route,target):
+            if target=='/api/v1/admin/config':
+                route.fulfill(json={'ok':True,'site':{},'devices':config,'hardware':{}})
+                return True
+            if route.request.method in ('PUT','POST'):
+                writes.append(target)
+                route.fulfill(status=400 if target=='/api/v1/admin/displays' else 200,json={'error':'Invalid display id'} if target=='/api/v1/admin/displays' else {'ok':True})
+                return True
+            return False
+        page,errors=self.page('/setup/',transport=transport)
+        page.wait_for_function("document.querySelector('#receiverIds').value==='Front_A'")
+        page.locator('#receiverIds').fill('invalid.receiver')
+        page.locator('button[onclick="save()"]').click()
+        self.assertEqual(writes,[])
+        self.assertIn('receiver id',page.locator('#msg').inner_text().lower())
+        page.locator('#receiverIds').fill('Front_A')
+        page.locator('#displayCount').fill('2')
+        page.locator('#displayCount').dispatch_event('change')
+        self.assertEqual(page.locator('#receiverIds').input_value(),'Front_A, tv1')
+        self.assertFalse(errors,errors)
+
+    def test_changed_receiver_status_preserves_other_matrix_controls(self):
+        page,errors,_,_,_=self.matrix()
+        page.evaluate("window.fixtureRoute=document.querySelector('#matrix .route');fixtureRoute.focus();S.avDeviceStatus={'receiver-a':{online:true}};renderMatrix()")
+        self.assertTrue(page.evaluate("fixtureRoute===document.querySelector('#matrix .route')&&fixtureRoute===document.activeElement"))
+        self.assertFalse(errors,errors)
+
+    def test_drawer_rejection_is_visible_without_caching_power(self):
+        page,errors,_,_,_=self.matrix()
+        page.route('**/api/v1/pluto',lambda route:route.fulfill(json={'type':'ack','result':0,'ok':False}))
+        page.evaluate('openAvTvDrawer(1)')
+        page.evaluate('drawerTvPower(0)')
+        self.assertIn('rejected',page.locator('#hubToast').inner_text().lower())
+        self.assertIsNone(page.evaluate("localStorage.getItem('classroomHub.avPowerStates')"))
+        page.evaluate('openAvSourceDrawer(1)')
+        page.evaluate('sourceDrawerPower(1)')
+        self.assertIn('rejected',page.locator('#hubToast').inner_text().lower())
+        self.assertFalse(errors,errors)
+
+    def test_drawer_yields_to_login_when_session_expires(self):
+        page,errors,_,_,_=self.matrix()
+        page.evaluate('openAvTvDrawer(1)')
+        page.evaluate('showLogin()')
+        self.assertFalse(page.locator('#avTvDrawer').is_visible())
+        self.assertTrue(page.locator('#loginOverlay').is_visible())
+        page.wait_for_function("document.activeElement===loginUser")
+        self.assertFalse(errors,errors)
+
+    def test_av_controls_match_server_permissions(self):
+        page,errors,_,_,_=self.matrix()
+        page.evaluate("applyAuthUi({user:{role:'teacher',capabilities:['integrations.control']}});openAvTvDrawer(1)")
+        self.assertTrue(page.locator('button[onclick="drawerTvPower(0)"]').is_disabled())
+        self.assertTrue(page.locator('button[onclick="saveDrawerTvGroups()"]').is_disabled())
+        self.assertTrue(page.locator('button[onclick="saveDrawerTvName()"]').is_disabled())
+        page.evaluate("applyAuthUi({user:{role:'teacher',capabilities:['integrations.control','classroom.control']}})")
+        self.assertFalse(page.locator('button[onclick="drawerTvPower(0)"]').is_disabled())
+        self.assertTrue(page.locator('button[onclick="saveDrawerTvName()"]').is_disabled())
+        page.evaluate('openAvTvDrawer(8)')
+        self.assertFalse(page.locator('button[onclick="saveDrawerTvName()"]').is_disabled())
+        page.evaluate('openAvSourceDrawer(1)')
+        self.assertFalse(page.locator('button[onclick="saveSourceDrawer()"]').is_disabled())
+        self.assertFalse(errors,errors)
+
+    def test_receiver_editor_preserves_special_named_keys(self):
+        page,errors,config,_,_=self.matrix()
+        config['devices']['__proto__']={'name':'Fixture special ID','enabled':True}
+        config['displayGroups']['__proto__']=['__proto__']
+        page.evaluate('openReceiverSettings()')
+        page.wait_for_selector('[data-display-id="__proto__"]')
+        page.evaluate('saveAdminDisplaysStructured()')
+        self.assertIn('__proto__',config['devices'])
+        self.assertEqual(config['displayGroups']['__proto__'],['__proto__'])
+        self.assertFalse(errors,errors)
+
+    def test_malformed_matrix_status_keeps_last_inventory_and_reports_failure(self):
+        page,errors,_,_,_=self.matrix()
+        page.route('**/api/v1/pluto/status',lambda route:route.fulfill(body='null',content_type='application/json'))
+        page.evaluate('refreshPluto()')
+        self.assertEqual(page.locator('#avHealth').inner_text(),'Matrix unavailable')
+        self.assertIn('Invalid status response',page.locator('#avReadMsg').inner_text())
+        self.assertEqual(page.locator('#matrix .route').count(),64)
+        self.assertFalse(errors,errors)

@@ -132,3 +132,31 @@ out-of-room display. Ordinary playback then leaves classroom Background Music
 and manual classroom scheduling alone. Morning Announcements retain priority.
 AV ports, group memberships and automation targets are unchanged. See
 [Background Music Studio](Background-Music-Studio#independent-hallway-displays).
+
+
+## Status, command feedback and keyboard use
+
+The operator controller loads matrix controls from `av-workspace.js` and scoped
+`av-workspace.css`. Configuration and receiver health refresh independently of
+matrix status. A failed read retains the last inventory with an unavailable/stale
+message; receiver tools and mapping-dependent saves require available receiver
+configuration/status. Repeated Refresh clicks share one active read. Browser read
+budgets do not yet bound the backend's aggregate retry sequence.
+
+Missing power/signal values remain Unknown. A rejected matrix acknowledgement is
+an error and does not update saved power intent. A successful acknowledgement or
+last command is still not physical panel confirmation. Polling preserves routing
+button identity/focus even when another receiver changes status, and command
+feedback remains separate from read health.
+
+TV/source drawers are keyboard modals: focus starts in the name field, Tab stays
+inside, and Escape/Close returns to the initiating control. Login/account dialogs
+close an open drawer. Power and route changes preserve unsaved names and group
+choices. Controls reflect existing server permissions: classroom control for
+commands/labels and administrator access for receiver/group configuration.
+
+Setup validates receiver IDs before any save and reports errors beside the form.
+IDs use 1–40 letters, numbers, underscores or hyphens; existing casing and group
+keys are preserved. Invalid input is not silently renamed. Current backend
+identity normalization is unchanged; any future migration requires explicit
+compatibility and credential-preservation coverage.

@@ -1,8 +1,10 @@
 # RoomGoblin modernization audit
 
-Status: **Display receiver browser runtime in validation**. Today and live-display
-monitoring merged in PR #273; main-image publication and delivery are pending.
-Shared frontend and navigation completed appliance delivery in PR #272. Core Architecture
+Status: **Displays & AV workspace locally qualified**; its backend probe-budget
+follow-up remains queued within the same review unit. Receiver browser-runtime
+fixes merged in PR #274 and await main-image publication/delivery. Today and live
+monitoring completed appliance delivery in PR #273. Shared frontend completed
+appliance delivery in PR #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
 readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
@@ -51,6 +53,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Displays & AV findings and boundary follow-up](displays-av.md)
 - [Display receiver browser-runtime findings](display-receiver.md)
 - [Today and live-display monitoring findings](today-dashboard.md)
 - [Shared frontend findings and coverage](shared-frontend.md)

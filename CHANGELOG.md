@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Give Displays & AV a dedicated workspace owner; isolate bounded browser reads,
+  retain unavailable inventories and preserve focused matrix controls on refresh.
+- Report rejected matrix commands and unknown telemetry accurately; preserve TV
+  drawer drafts during power/routing and support native keyboard modal behavior.
+- Match AV controls to server permissions and validate setup receiver IDs before
+  side effects while preserving existing receiver/group keys.
+
 - Honor explicit receiver Play/Restart when initial autoplay is disabled; keep
   Pause/Stop authoritative over pending playback and late canplay callbacks.
 - Cancel obsolete image retries and retain page-local enrollment credentials when
