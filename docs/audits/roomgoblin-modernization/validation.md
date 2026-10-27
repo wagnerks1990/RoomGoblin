@@ -448,3 +448,16 @@ workstation is used. Final audit prose was reconciled after the helper snapshot;
 runtime and test files were unchanged. Docker remains unavailable locally; CI,
 immutable publication and the backed-up appliance update must finish before
 claiming delivery of this final lifecycle patch set.
+
+### CI fixture-key correction
+
+CodeQL check `121994239360` on PR #271 head
+`7eff0e285180a8b1a490773e8f7efed8afde84df` correctly rejected the cleanup fixture's
+generated 1024-bit RSA key. The fixture now generates 2048 bits. No production
+key, scanner rule, exclusion, security policy or application source was changed.
+
+The corrected active-worktree full rerun passed: **1036 tests, 1034 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+`npm run check`, Host Python compilation, tracked-shell syntax and diff checks
+also passed. The corrected pushed head still requires fresh CodeQL and all
+required PR gates before merge; the earlier failed check is not a passing result.
