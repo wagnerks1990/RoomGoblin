@@ -199,6 +199,7 @@ The requested merge and update follow those gates and exact-main publication,
 with the normal operational backup and rollback path. Delivery evidence belongs
 to the PR. No production Full Recovery export, remote integration command or
 physical classroom playback is claimed by these tests.
+
 ## Media shutdown outcome follow-up (2026-10-27 UTC)
 
 Baseline: `446a9523da9a160bc510e679397269c9097aeb1d`, alpha.85. With only
@@ -235,4 +236,3 @@ The user requested push, merge and update after this change; the normal
 validated-main publication, operational backup and rollback path remain required.
 Delivery and hosted Wiki synchronization are recorded in the PR. No production
 fault injection or physical playback acceptance is claimed.
-
