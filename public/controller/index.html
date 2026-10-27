@@ -339,7 +339,7 @@ nav button{min-width:135px}
 <section id="overview" class="page active">
   <div class="top">
     <div><h1>Today</h1><div class="muted">Everything you need to run the room.</div></div>
-    <div class="toolbar"><span id="todayAutomationState" class="pill">Automation…</span><button id="todayAutomationToggle" onclick="toggleAutomationScheduler()">Pause Automation</button><button onclick="resumeScheduledAutomation()">Resume Schedule</button><button onclick="refreshOverview()">Refresh status</button></div>
+    <div class="toolbar"><span id="todayAutomationState" class="pill">Automation…</span><button id="todayAutomationToggle" disabled data-command-unavailable="true" onclick="toggleAutomationScheduler()">Pause Automation</button><button onclick="resumeScheduledAutomation()">Resume Schedule</button><button onclick="refreshOverview()">Refresh status</button></div>
   </div>
 
   <div class="grid2 rg-day-summary">
@@ -357,7 +357,7 @@ nav button{min-width:135px}
 
   <div class="rg-health-strip" aria-label="Integration health">
     <div><span>RoomGoblin</span><strong id="hubState">…</strong></div>
-    <div><span>MQTT / Govee</span><strong id="mqttState">…</strong></div>
+    <div><span>MQTT broker</span><strong id="mqttState">…</strong></div>
     <div><span>Pluto Mark I</span><strong id="plutoState">…</strong></div>
   </div>
 

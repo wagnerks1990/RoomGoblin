@@ -514,3 +514,57 @@ images, image vulnerability qualification and platform artifacts remain required
 CI checks before merging; local checks do not substitute for those gates.
 Appliance delivery is pending exact-main image publication and will be recorded
 in the PR after the normal updater and post-update integrity checks complete.
+
+
+## Today and live-display monitoring (2026-10-27 UTC)
+
+Source baseline: `b3ba0afb2c06f12df7be8ff98c3953cfd00f6957` plus the active worktree.
+The first three baseline browser tests reproduced the blocked optional probe,
+lost inventory and replaced preview/focus (two assertions and one timeout).
+The corrected focused Today and AV matrix run passed **18 tests**. Controller
+syntax/symbol checks passed. Final active-worktree snapshot results:
+
+| Check | Result |
+| --- | --- |
+| `npm run check` and full native Linux `npm test` | 1,038 total: 1,036 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Full Recovery Python suite | 23 passed |
+| Host Python compilation and tracked Bash syntax | Passed |
+| Chromium full browser discovery | 123 passed, 0 failed |
+| Firefox full browser discovery | 123 passed, 0 failed |
+| Final current-tree Today check | 8 passed after restoring the unchanged Settings heading |
+| Controller symbol/syntax and `git diff --check` | Passed |
+
+All logic and test changes were included in the full snapshots. After capture,
+one unrelated Settings heading was restored to its baseline text; the corrected
+current tree passed the eight Today browser cases and controller validation.
+Later edits only record audit and delivery evidence. Phone screenshot inspection
+confirmed no horizontal overflow and visible unavailable/disabled states.
+
+The first broad browser attempt caught the new card's `data-display-id` collision
+with existing receiver-editor selectors. Today now uses `data-overview-id`; the
+existing AV regression was retained and passes unchanged. The superseded broad
+run was stopped after reproducing the collision; a new complete run uses the
+corrected snapshot. Screenshot inspection also removed a leftover loading marker.
+The first Node suite passed, but the supplemental Host Recovery command selected
+the wrong directory and found zero tests. That command failed rather than claiming
+coverage. The final run selects `host-agent/test_full_recovery.py` explicitly.
+
+Docker is unavailable locally. Required CI retains Compose, runtime image builds,
+vulnerability scans and native artifact qualification. Deployment remains pending
+reviewed merge, exact image publication and the normal backed-up update. Tests use
+transport fixtures; no physical display, TV power or classroom command was issued.
+
+
+## Shared frontend delivery closure (2026-10-27 UTC)
+
+All PR/main gates, Wiki sync and immutable publication passed. The normal updater
+completed at 05:08:42 UTC on clean main/Hub image
+`b3ba0afb2c06f12df7be8ff98c3953cfd00f6957`. Maintenance retained the healthy
+`20f8c501916f34e17bee2c643434e7cce0c919e6` container; both containers report zero
+restarts. Control/media health, Hub readiness, Host Agent health, canonical SQLite,
+eight encrypted secrets, DB/ADB permissions and maintenance authorization checks
+passed. Served enrollment/updater/shared-style asset hashes match merged source.
+The operational backup passed journal checksum, ZIP CRC, canonical-only database
+contents and extracted SQLite checks. No request remains pending; rollback to
+`40b88c197b2e4d4dbed448348a9d1a9805949dbf` is available. PR #272 records the backup
+identity and checksum. No physical classroom action or fault injection occurred.

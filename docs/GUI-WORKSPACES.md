@@ -80,6 +80,18 @@ one compact strip. Permission-aware shortcuts open display content, lab computer
 and Background Music. Everyday room power controls stay visible; classroom reset
 and display reload operations remain in the maintenance disclosure.
 
+Today loads the room inventory and class information independently of optional AV
+probes. **Refresh status** retains unchanged preview sessions and keyboard focus;
+**Refresh previews** explicitly reloads them. Failed reads show unavailable or
+last-known data rather than an empty room. MQTT reports broker connectivity only.
+Receiver online/offline status does not establish physical TV power or playback.
+
+Mapped TV power remains available when a receiver is offline. Test Image requires
+one enabled receiver uniquely assigned to its AV output and a successful inventory
+read. Missing mappings and command errors are visible. Automation read failures
+appear on Today; Pause requires automation management and Resume requires classroom
+control, matching the existing server guards.
+
 Scheduled Automation uses an inline class-schedule multi-select. Its closed state
 shows the number of linked classes; opening it exposes a scrollable checkbox list
 with schedule details and explicit Save, Clear All and Cancel actions. Closing the

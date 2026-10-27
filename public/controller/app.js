@@ -132,7 +132,7 @@ function overviewDisplayName(id,config={}){
 }
 function overviewResolutionParts(value){
   const m=String(value||'').match(/^(\d+)x(\d+)$/i);
-  if(!m)return {width:1920,height:1080,label:'Unknown resolution'};
+  if(!m||Number(m[1])<1||Number(m[2])<1||Number(m[1])>16384||Number(m[2])>16384)return {width:1920,height:1080,label:'Unknown resolution'};
   return {width:Number(m[1]),height:Number(m[2]),label:`${m[1]}x${m[2]}`};
 }
 function scaleOverviewDisplayPreviews(){
@@ -150,54 +150,92 @@ function scaleOverviewDisplayPreviews(){
     frame.style.transform=`translate(${Math.max(0,(w-scaledW)/2)}px,${Math.max(0,(h-scaledH)/2)}px) scale(${scale})`;
   });
 }
-function overviewAvStatusLine(id,config){const o=Number(config.avOutput||0),p=S.overviewPluto||{},input=Number(p.videoStatus?.allsource?.[o-1]||0),labels=p.labels||{},source=labels.inputs?.[input-1]||`Content Source ${input||'—'}`;return o?`<div class="overviewAvLine"><b>HDBT ${o}</b> • Source: <b>${esc(source)}</b></div>`:''}
-async function overviewTestImage(id,output){if(!output)return;await sendTvTestImage(id,output);notify(`Test image sent to ${overviewDisplayName(id,(S.avConfig?.devices||{})[id]||{})}.`,'success')}
-async function overviewTvPower(output,index){if(!output)return;await plutoAction({action:'cecOutput',output:Number(output),connection:'hdbt',index},false)}
+const overviewSnapshot={devices:null,status:null,inventoryError:false,statusError:false};
+let overviewRefreshPending=null,overviewPlutoPending=null;
+function overviewOutput(config={}){const output=Number(config.avOutput);return Number.isInteger(output)&&output>=1&&output<=8?output:0}
+function overviewUniqueMapping(id,output){
+  const hits=Object.entries(overviewSnapshot.devices?.devices||{}).filter(([,d])=>d?.enabled!==false&&overviewOutput(d)===output);
+  return !!output&&hits.length===1&&hits[0][0]===id;
+}
+function overviewAvStatusLine(id,config){
+  const output=overviewOutput(config);if(!output)return 'AV output not assigned';
+  const p=S.overviewPluto,input=Number(p?.videoStatus?.allsource?.[output-1]);
+  const source=Number.isInteger(input)&&input>=1&&input<=8?(p.labels?.inputs?.[input-1]||`Content Source ${input}`):'Unavailable';
+  return `<b>HDBT ${output}</b> • Source: <b>${esc(source)}</b>`;
+}
+async function overviewTestImage(id,output){
+  try{
+    if(overviewSnapshot.inventoryError||!overviewUniqueMapping(id,Number(output)))throw Error('Test image requires one enabled receiver with a unique AV output mapping. Refresh status and check Displays & AV.');
+    await sendTvTestImage(id,Number(output));
+    notify(`Test image sent to ${overviewDisplayName(id,overviewSnapshot.devices.devices[id])}.`,'success');
+  }catch(error){notify(error.message,'error')}
+}
+async function overviewTvPower(output,index){
+  try{
+    if(!overviewOutput({avOutput:output}))throw Error('Assign a valid AV output in Displays & AV before using TV power.');
+    const result=await plutoAction({action:'cecOutput',output:Number(output),connection:'hdbt',index},false);
+    notify(result?.data?.result===1?'TV power command confirmed.':'TV power command sent; physical power is not confirmed.','success');
+  }catch(error){notify(error.message,'error')}
+}
 function renderOverviewDisplays(devicesResponse,statusResponse){
   const configs=devicesResponse?.devices||{};
-  const statuses=devicesResponse?.status||statusResponse?.runtime?.displays||{};
+  const statuses=(!overviewSnapshot.statusError&&statusResponse?.runtime?.displays)||devicesResponse?.status||{};
   const states=statusResponse?.state?.displays||{};
   const ids=Object.keys(configs).filter(id=>configs[id]?.enabled!==false).sort((a,b)=>a.localeCompare(b,{numeric:true}));
+  const stale=overviewSnapshot.inventoryError||overviewSnapshot.statusError;
   const onlineCount=ids.filter(id=>statuses[id]?.online).length;
-
-  overviewDisplaySummary.textContent=`${onlineCount} / ${ids.length} Online`;
-  overviewDisplaySummary.className='kpi '+(onlineCount===ids.length&&ids.length?'ok':onlineCount?'':'bad');
-  overviewDisplayDetail.textContent=ids.length
-    ? `${ids.length-onlineCount} offline • ${ids.length} configured display${ids.length===1?'':'s'}`
-    : 'No displays configured.';
-
-  overviewDisplays.innerHTML=ids.length?ids.map(id=>{
-    const config=configs[id]||{},status=statuses[id]||{},state=states[id]||{};
-    const online=!!status.online;
-    const resolution=status.meta?.resolution||status.resolution||'';
-    const logical=overviewResolutionParts(resolution);
-    const content=overviewContentSummary(state);
-    return `<div class="displayOverviewCard">
-      <div class="displayPreview">
-        ${online
-          ? `<iframe data-overview-preview="${esc(id)}" data-logical-width="${logical.width}" data-logical-height="${logical.height}" src="/display/${encodeURIComponent(id)}?preview=1&overview=${Date.now()}" title="${esc(id)} preview"></iframe>`
-          : `<div class="displayPreviewOffline"><div style="text-align:center"><b>${esc(overviewDisplayName(id,config))}</b><br>Display offline</div></div>`}
-      </div>
-      <div class="displayOverviewBody">
-        <div class="displayOverviewTitle">
-          <div class="displayOverviewName">${esc(overviewDisplayName(id,config))}</div>
-          <div class="${online?'displayStatusOnline':'displayStatusOffline'}">${online?'ONLINE':'OFFLINE'}</div>
-        </div>
-        <div class="displayMeta">
-          ID: ${esc(id)} • ${esc(logical.label)}<br>
-          Last seen: ${esc(overviewLastSeen(status))}
-        </div>
-        <div style="margin-top:7px">${content.map(x=>`<span class="contentBadge">${esc(x)}</span>`).join('')}</div>
-        ${overviewAvStatusLine(id,config)}
-        <div class="toolbar" style="margin-top:10px">
-          <button onclick="overviewTestImage(${inlineJsArg(id)},${Number(config.avOutput)||0})">Test Image</button>
-          <button onclick="overviewTvPower(${Number(config.avOutput)||0},0)">Power On</button>
-          <button onclick="overviewTvPower(${Number(config.avOutput)||0},1)">Power Off</button>
-          <button onclick="window.open(${inlineJsArg(`/display/${encodeURIComponent(id)}?preview=1`)},'_blank','noopener')">Preview</button>
-        </div>
-      </div>
-    </div>`;
-  }).join(''):'<div class="muted">No displays configured.</div>';
+  overviewDisplaySummary.textContent=devicesResponse?`${onlineCount} / ${ids.length} Online${stale?' (last known)':''}`:'Unavailable';
+  overviewDisplaySummary.className='kpi '+(!stale&&onlineCount===ids.length&&ids.length?'ok':'');
+  overviewDisplayDetail.textContent=stale
+    ? `${overviewSnapshot.inventoryError?'Display inventory':'Content status'} unavailable. ${devicesResponse?'Showing last known data; refresh to retry.':'Refresh to retry.'}`
+    : ids.length?`${ids.length-onlineCount} receiver${ids.length-onlineCount===1?'':'s'} offline • ${ids.length} configured. Receiver connection does not confirm TV power.`:'No displays configured.';
+  const existing=new Map([...overviewDisplays.querySelectorAll('.displayOverviewCard')].map(card=>[card.dataset.overviewId,card]));
+  for(const [id,card] of existing)if(!ids.includes(id))card.remove();
+  for(const child of [...overviewDisplays.children])if(!child.classList.contains('displayOverviewCard'))child.remove();
+  if(!ids.length){
+    const empty=document.createElement('div');empty.dataset.overviewEmpty='';empty.className='muted';
+    empty.textContent=stale||!devicesResponse?'Display inventory unavailable. Refresh to retry.':'No displays configured.';overviewDisplays.append(empty);
+  }
+  ids.forEach((id,index)=>{
+    const config=configs[id]||{},status=statuses[id]||{},state=states[id];
+    const online=!!status.online,logical=overviewResolutionParts(status.meta?.resolution||status.resolution||'');
+    let card=existing.get(id);
+    if(!card){
+      card=document.createElement('div');card.className='displayOverviewCard';card.dataset.overviewId=id;
+      card.innerHTML=`<div class="displayPreview"></div><div class="displayOverviewBody">
+        <div class="displayOverviewTitle"><div class="displayOverviewName"></div><div data-overview-connection></div></div>
+        <div class="displayMeta"></div><div data-overview-content style="margin-top:7px"></div><div class="overviewAvLine"></div>
+        <div class="toolbar" style="margin-top:10px"><button data-overview-test>Test Image</button><button data-overview-power="0">Power On</button><button data-overview-power="1">Power Off</button><button data-overview-open>Preview</button></div></div>`;
+    }
+    // Moving an unchanged iframe reloads its browsing context. Leave existing cards in place.
+    if(!card.isConnected)overviewDisplays.insertBefore(card,overviewDisplays.children[index]||null);
+    card.querySelector('.displayOverviewName').textContent=overviewDisplayName(id,config);
+    const connection=card.querySelector('[data-overview-connection]');
+    connection.textContent=`RECEIVER ${online?'ONLINE':'OFFLINE'}${stale?' • Last known':''}`;
+    connection.className=online?'displayStatusOnline':'displayStatusOffline';
+    card.querySelector('.displayMeta').textContent=`ID: ${id} • ${logical.label} • Last seen: ${overviewLastSeen(status)}`;
+    card.querySelector('[data-overview-content]').innerHTML=(state?overviewContentSummary(state):['Content unavailable']).map(x=>`<span class="contentBadge">${esc(x)}</span>`).join('');
+    card.querySelector('.overviewAvLine').innerHTML=overviewAvStatusLine(id,config);
+    const viewport=card.querySelector('.displayPreview');let frame=viewport.querySelector('iframe');
+    if(online){
+      if(!frame){
+        viewport.innerHTML=`<iframe data-overview-preview="${esc(id)}" src="/display/${encodeURIComponent(id)}?preview=1" title="${esc(id)} preview"></iframe>`;frame=viewport.firstElementChild;
+      }
+      frame.dataset.logicalWidth=logical.width;frame.dataset.logicalHeight=logical.height;
+    }else if(frame||!viewport.firstElementChild){
+      viewport.innerHTML='<div class="displayPreviewOffline">Receiver offline • TV power controls remain available when mapped.</div>';
+    }
+    const output=overviewOutput(config),test=card.querySelector('[data-overview-test]');
+    test.setAttribute('onclick',`overviewTestImage(${inlineJsArg(id)},${output})`);
+    test.dataset.commandUnavailable=String(overviewSnapshot.inventoryError||!overviewUniqueMapping(id,output));
+    test.title=test.dataset.commandUnavailable==='true'?'Requires current inventory and one enabled receiver mapped to this AV output.':'';
+    card.querySelectorAll('[data-overview-power]').forEach(button=>{
+      button.setAttribute('onclick',`overviewTvPower(${output},${button.dataset.overviewPower})`);
+      button.dataset.commandUnavailable=String(!output);button.title=output?'Sends a power command; receiver connection is a separate status.':'Assign a valid AV output in Displays & AV.';
+    });
+    card.querySelector('[data-overview-open]').onclick=()=>window.open(`/display/${encodeURIComponent(id)}?preview=1`,'_blank','noopener');
+    enforceCapabilityControls(card);
+  });
   requestAnimationFrame(scaleOverviewDisplayPreviews);
 }
 function refreshOverviewDisplayPreviews(){
@@ -238,51 +276,66 @@ async function reloadAllDisplays(){
 const overviewPreviewResizeObserver=new ResizeObserver(()=>scaleOverviewDisplayPreviews());
 const overviewDisplaysObserverTarget=document.getElementById('overviewDisplays');
 if(overviewDisplaysObserverTarget)overviewPreviewResizeObserver.observe(overviewDisplaysObserverTarget);
-async function refreshOverview(){
+function overviewHealth(element,state){
+  const text=state?.configured===false?'NOT CONFIGURED':state?.connected===true?'ONLINE':state?.connected===false?'OFFLINE':'UNAVAILABLE';
+  element.textContent=text;element.className='kpi '+(text==='ONLINE'?'ok':text==='OFFLINE'?'bad':'');
+}
+function refreshOverviewPluto(){
+  if(overviewPlutoPending)return overviewPlutoPending;
+  overviewPlutoPending=(async()=>{
+    try{
+      const pluto=await api('/api/v1/pluto/status',{signal:AbortSignal.timeout(30000)});
+      S.overviewPluto=pluto;
+      overviewHealth(plutoState,{connected:pluto.systemStatus? !pluto.systemStatus.error:undefined});
+    }catch{S.overviewPluto=null;overviewHealth(plutoState,null)}
+    finally{
+      for(const card of overviewDisplays.querySelectorAll('.displayOverviewCard'))card.querySelector('.overviewAvLine').innerHTML=overviewAvStatusLine(card.dataset.overviewId,overviewSnapshot.devices?.devices?.[card.dataset.overviewId]||{});
+      overviewPlutoPending=null;
+    }
+  })();
+  return overviewPlutoPending;
+}
+function refreshOverview(){
+  if(overviewRefreshPending)return overviewRefreshPending;
   loadAutomationControl();
-  try{
-    const [st,intg,dev,classes,pluto]=await Promise.all([
-      api('/api/v1/status'),
-      api('/api/v1/integrations/check').catch(e=>({ok:false,error:e.message})),
-      api('/api/v1/devices').catch(()=>({devices:{},status:{}})),
-      api('/api/v1/class-schedules').catch(()=>({})),
-      api('/api/v1/pluto/status').catch(()=>({}))
-    ]);
-    S.displayDevices=dev.devices||S.displayDevices||{};
-    populateDisplaySelect(window.mediaTarget);
-
-    hubState.textContent=st.ok?'ONLINE':'ERROR';
-    hubState.className='kpi '+(st.ok?'ok':'bad');
-
-    mqttState.textContent=intg.mqtt?.connected?'ONLINE':'OFFLINE';
-    mqttState.className='kpi '+(intg.mqtt?.connected?'ok':'bad');
-
-    plutoState.textContent=intg.hardware?.pluto?.reachable?'ONLINE':'OFFLINE';
-    plutoState.className='kpi '+(intg.hardware?.pluto?.reachable?'ok':'bad');
-
-    const cy=classes.schoolCycle||brandCycleState||{};
-    if(cy.isStudentSchoolDay){
-      overviewSchoolDay.textContent=`${cy.dayColor} Day • Cycle ${cy.cycleDay}`;
-      overviewSchoolDay.className='kpi ok';
-    }else{
-      overviewSchoolDay.textContent='No Student Cycle Today';
-      overviewSchoolDay.className='kpi';
-    }
-
-    if(classes.activeClass){
-      const end=classes.activeClass.endTime||new Date(classes.activeClass.endAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-      overviewClassStatus.innerHTML=`<b>Current:</b> ${esc(classes.activeClass.name)} • ends ${esc(end)}`;
-    }else if(classes.nextClass){
-      const next=new Date(classes.nextClass.nextStartAt);
-      overviewClassStatus.innerHTML=`<b>Next:</b> ${esc(classes.nextClass.name)} • ${esc(next.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))}`;
-    }else{
-      overviewClassStatus.textContent=cy.reason?`No active class • ${cy.reason}`:'No active or upcoming class.';
-    }
-
-    S.overviewPluto=pluto; renderOverviewDisplays(dev,st);
-  }catch(e){
-    if(window.overviewDisplays)overviewDisplays.innerHTML=`<div class="bad">Overview error: ${esc(e.message)}</div>`;
-  }
+  // Optional AV probes must never gate the room inventory or current class.
+  refreshOverviewPluto();
+  const paint=()=>renderOverviewDisplays(overviewSnapshot.devices,overviewSnapshot.status);
+  overviewRefreshPending=Promise.all([
+    (async()=>{
+      try{
+        const st=await api('/api/v1/status',{signal:AbortSignal.timeout(10000)});
+        overviewSnapshot.status=st;overviewSnapshot.statusError=false;
+        hubState.textContent=st.ok?'ONLINE':'ERROR';hubState.className='kpi '+(st.ok?'ok':'bad');
+        overviewHealth(mqttState,st.runtime?.mqtt);
+      }catch{overviewSnapshot.statusError=true;hubState.textContent='UNAVAILABLE';hubState.className='kpi';overviewHealth(mqttState,null)}
+      paint();
+    })(),
+    (async()=>{
+      try{
+        const dev=await api('/api/v1/devices',{signal:AbortSignal.timeout(10000)});
+        if(!dev.devices||typeof dev.devices!=='object'||Array.isArray(dev.devices))throw Error('Invalid display inventory');
+        overviewSnapshot.devices=dev;overviewSnapshot.inventoryError=false;
+        S.displayDevices=dev.devices;populateDisplaySelect(window.mediaTarget);
+      }catch{overviewSnapshot.inventoryError=true}
+      paint();
+    })(),
+    (async()=>{
+      try{
+        const classes=await api('/api/v1/class-schedules',{signal:AbortSignal.timeout(10000)}),cy=classes.schoolCycle||brandCycleState;
+        overviewSchoolDay.textContent=cy?(cy.isStudentSchoolDay?`${cy.dayColor} Day • Cycle ${cy.cycleDay}`:'No Student Cycle Today'):'School cycle unavailable';
+        overviewSchoolDay.className='kpi '+(cy?.isStudentSchoolDay?'ok':'');
+        if(classes.activeClass){
+          const end=classes.activeClass.endTime||new Date(classes.activeClass.endAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+          overviewClassStatus.innerHTML=`<b>Current:</b> ${esc(classes.activeClass.name)} • ends ${esc(end)}`;
+        }else if(classes.nextClass){
+          const next=new Date(classes.nextClass.nextStartAt);
+          overviewClassStatus.innerHTML=`<b>Next:</b> ${esc(classes.nextClass.name)} • ${esc(next.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))}`;
+        }else overviewClassStatus.textContent=cy?.reason?`No active class • ${cy.reason}`:'No active or upcoming class.';
+      }catch{overviewSchoolDay.textContent='School cycle unavailable';overviewSchoolDay.className='kpi';overviewClassStatus.textContent='Class schedule unavailable. Refresh to retry.'}
+    })()
+  ]).finally(()=>{overviewRefreshPending=null});
+  return overviewRefreshPending;
 }
 async function clearClassroom(){if(!confirm('Blank ALL enabled classroom displays?'))return;const j=await jpost('/api/v1/classroom/clear-all',{});alert(`Classroom cleared on ${(j.targets||[]).length} display(s).`)}
 
@@ -1151,11 +1204,11 @@ async function duplicateClassSchedule(id){
 
 let AUTOMATION_CONTROL=null;
 async function loadAutomationControl(){
-  try{const j=await api('/api/v1/automation-control');AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){if(window.automationControlSummary)automationControlSummary.textContent=`Scheduler control error: ${e.message}`}
+  try{const j=await api('/api/v1/automation-control',{signal:AbortSignal.timeout(10000)});AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){if(window.automationControlSummary)automationControlSummary.textContent=`Scheduler control error: ${e.message}`;if(window.todayAutomationState){todayAutomationState.textContent='Automation unavailable';todayAutomationState.className='pill warn';todayAutomationToggle.dataset.commandUnavailable='true';enforceCapabilityControls(todayAutomationToggle.parentElement)}}
 }
 function paintAutomationControl(j={}){
   if(!window.automationControlSummary)return;const clock=j.clock||{},mode=clock.active?'TEST CLOCK':'Real time';automationControlSummary.textContent=`${j.enabled!==false?'Automatic runs ON':'Automatic runs PAUSED'} • ${mode} • ${clock.schedulerTime?new Date(clock.schedulerTime).toLocaleString():''}`;
-  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);if(window.todayAutomationState){todayAutomationState.textContent=j.enabled!==false?'Automation Active':'Automation Paused';todayAutomationState.className='pill '+(j.enabled!==false?'ok':'warn')}if(window.todayAutomationToggle)todayAutomationToggle.textContent=j.enabled!==false?'Pause Automation':'Enable Automation';
+  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);if(window.todayAutomationState){todayAutomationState.textContent=j.enabled!==false?'Automation Active':'Automation Paused';todayAutomationState.className='pill '+(j.enabled!==false?'ok':'warn')}if(window.todayAutomationToggle){todayAutomationToggle.textContent=j.enabled!==false?'Pause Automation':'Enable Automation';todayAutomationToggle.dataset.commandUnavailable='false';enforceCapabilityControls(todayAutomationToggle.parentElement)};
   automationSimulationBanner.textContent=clock.active?`TEST CLOCK ACTIVE — ${new Date(clock.schedulerTime).toLocaleString()} • ${clock.liveCommands?'REAL DEVICE COMMANDS ENABLED':'dry-run only'}`:'';
   automationSimulationBanner.className=`status ${clock.active?(clock.liveCommands?'bad':'warn'):''}`;
 }
@@ -2341,10 +2394,10 @@ const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control']
 const ACTION_CAPABILITIES={
   admin:['saveAdminDisplaysStructured','addAdminDisplayGroup','removeAdminDisplayGroup','removeAdminDisplay','removeEmptyLegacyDisplayGroups','saveAdmin','loadAdmin','createLabAgentEnrollment','saveLabAgentPolicy','revokeLabAgentCredential','loadSystemManagement'],
   media:['presentationControl','startSelectedPresentation','newPresentationFolder','renamePresentation','movePresentation','deletePresentation','rebuildPresentation','showMedia','convertMedia','deleteMedia'],
-  automation:['saveAutomation','deleteAutomation','duplicateAutomation','runAutomation','testAutomationEditor','saveMorningWatch','checkMorningWatch'],
+  automation:['toggleAutomationScheduler','saveAutomation','deleteAutomation','duplicateAutomation','runAutomation','testAutomationEditor','saveMorningWatch','checkMorningWatch'],
   schedule:['saveClassSchedule','deleteClassSchedule','duplicateClassSchedule','saveSchedulerCalendar'],
   integrations:['goveeCmd','plutoAction','route','powerAllAvTvs','drawerTvPower','drawerUpdateRoute','sourceDrawerPower','saveMusicAssistantConfig'],
-  classroom:['clearClassroom','overviewTestImage','overviewTvPower','reloadAllDisplays','bgmControl','bgmPlayFavorite','bgmUseFavorite','deleteBgmFavorite','maPlayerCmd','maMute','maSetVolume','musicAssistantTvBridge']
+  classroom:['resumeScheduledAutomation','clearClassroom','overviewTestImage','overviewTvPower','reloadAllDisplays','bgmControl','bgmPlayFavorite','bgmUseFavorite','deleteBgmFavorite','maPlayerCmd','maMute','maSetVolume','musicAssistantTvBridge']
 };
 function userCan(capability){const u=window.AUTH_STATUS?.user;if(!u)return false;if(capability==='admin')return u.role==='admin';const caps=Array.isArray(u.capabilities)?u.capabilities:[];return caps.includes('*')||caps.includes(capability)}
 function actionCapability(code=''){for(const name of ACTION_CAPABILITIES.admin)if(code.includes(name))return 'admin';for(const name of ACTION_CAPABILITIES.media)if(code.includes(name))return 'media.manage';for(const name of ACTION_CAPABILITIES.automation)if(code.includes(name))return 'automation.manage';for(const name of ACTION_CAPABILITIES.schedule)if(code.includes(name))return 'schedule.manage';for(const name of ACTION_CAPABILITIES.integrations)if(code.includes(name))return 'integrations.control';for(const name of ACTION_CAPABILITIES.classroom)if(code.includes(name))return 'classroom.control';return null}

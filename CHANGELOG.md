@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Load Today inventory and classes without waiting for optional AV probes; retain
+  last-known displays on read failures and report independent MQTT/AV availability.
+- Preserve live-display preview sessions and keyboard focus during status refresh;
+  distinguish receiver connectivity from physical TV power and show command errors.
+- Guard Today test images with unique enabled receiver mappings and align
+  automation controls with the existing server permissions and availability.
+
 - Separate Windows enrollment and System Updates presentation from the navigation
   shell while preserving controls, enrollment downloads and updater requests.
 - Close mobile navigation before account/login dialogs, contain keyboard focus,
