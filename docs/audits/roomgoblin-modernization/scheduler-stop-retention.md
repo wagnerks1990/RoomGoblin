@@ -1,7 +1,7 @@
 # Scheduler Stop retention
 
 Baseline: `52e28c6660e9258772f842f8df5eac4517d90a6a`, alpha.85, checked
-PR #281 main. Status: locally qualified on checked PR #282 main; CI/delivery pending.
+PR #281 main. Status: merged and deployed through PR #283; verified below.
 
 ## RG-SCHED-018: Diagnostic history eviction could forget an accepted Stop
 
@@ -68,3 +68,23 @@ qualification text changed afterward. Final diff/whitespace review passed.
 This closes retention only for continuous-run recovery. Current-state display/TV
 reconciliation, action timing and the editor remain separate review items. No
 physical command, receiver reload or production fault injection was used.
+
+
+## Delivery receipt
+
+All 14 PR checks passed before squash merge at
+`22b19dce3078ccfb3c058f6db0d27b7851588e97`. Validate, Display browser regression,
+Security gates, Sync Wiki and Publish Main Images passed on that exact main.
+The normal updater completed at **2026-10-27 08:49:55 UTC**. Read-only verification
+confirmed clean main, the exact Hub image revision, unchanged healthy maintenance,
+zero container restarts, control/media/maintenance/Host Agent health, canonical
+SQLite integrity, all eight secret decryptions, DB/ADB permissions, authentication
+boundaries and served operator assets. Previous deployment `970cab3` remains
+available for rollback.
+
+Operational backup `auto-operational-2026-10-27T08-49-42-105Z.zip` is 128,512,601
+bytes, mode 0600, SHA-256
+`d78a1040cd44db070d763148cbab4e70998cf1e14d2d9df3b3079f454d803ecd`.
+Its checksum matches the journal; archive CRC, canonical-database-only layout and
+extracted SQLite quick check passed. No physical classroom command or receiver
+reload was used.

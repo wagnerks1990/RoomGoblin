@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Reconcile only due display actions and timers, preserving configured delays,
+  current content, composed layers and delayed continuous-run ownership.
+- Use the scheduler clock consistently during display recovery and leave skipped
+  occurrences unconsumed when no output is due.
+
 - Retain scheduled Stop identities independently of diagnostic history, with real-date
   cleanup and bounded storage, so history traffic cannot revive cancelled loops.
 
