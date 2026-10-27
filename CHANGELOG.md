@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve newer calendar drafts across delayed reloads and CSV reads, and keep
+  in-flight saves from losing their draft or revision to a reload.
+
 - Prevent overlapping automation/shared-layer editor writes and retain a new
   automation's draft identity across retries after an uncertain save response.
 

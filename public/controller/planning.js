@@ -4,7 +4,7 @@
   const clone = value => structuredClone(value);
   const csv = value => [...new Set(String(value || "").split(/[\s,]+/).filter(Boolean))];
   const uid = prefix => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
-  let draft = null, snapshot = null, source = null, selectedTable = "", dirty = false, review = null, busy = false, editRevision = 0, pendingPreview = null;
+  let draft = null, snapshot = null, source = null, selectedTable = "", dirty = false, review = null, busy = false, saving = false, editRevision = 0, loadGeneration = 0, importGeneration = 0, pendingPreview = null;
   const monthCache=new Map(),monthPending=new Set();
   function message(text, error = false) {el("planningMessage").textContent=text;el("planningMessage").classList.toggle("bad",error)}
   function changed() {editRevision++;monthCache.clear();dirty=true;review=null;el("planningPublish").disabled=true;message("Unsaved draft. Preview changes before saving.")}
@@ -124,22 +124,27 @@
     finally{busy=false;if(pendingPreview!==null){const next=pendingPreview;pendingPreview=null;preview(next)}}
   }
   window.loadPlanning=async(force=false)=>{
+    if(saving)return;
     if(dirty&&!force){message("Your unsaved planning draft is preserved. Use Reload saved plan to discard it.");return}
-    try{source=await api("/api/v1/planning");monthCache.clear();draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
+    const generation=++loadGeneration;let revision=editRevision;
+    try{const result=await api("/api/v1/planning");
+      if(generation!==loadGeneration)return;
+      if(revision!==editRevision||saving){message("Your newer planning edits were kept. Reload again to discard them.");return}
+      source=result;importGeneration++;monthCache.clear();draft=clone(source.scheduleProfile);snapshot=draft.updatedAt;draft.planning ||= {enabled:false,startDate:"",endDate:"",weekdays:[1,2,3,4,5],defaultTimetableId:"",timetables:[],dates:{}};
       const imported=source.migration;el("planningImportStatus").hidden=!imported||["empty","preserved"].includes(imported.status);
       if(imported?.status==="imported")el("planningImportStatus").textContent=`Existing configuration imported automatically: ${imported.counts.classes} classes, ${imported.counts.automations} linked/existing automations retained, ${imported.counts.timetables} timetables, ${imported.counts.dates} calendar dates. ${draft.planning.enabled?"Planning is enabled.":"Your previous scheduler remains active until Planning is enabled and saved."} The original configuration is retained for recovery.${imported.retainedEmptyTemplates?" Empty schedules/rules remain in the compatibility settings.":""}`;
       else if(imported?.status==="blocked")el("planningImportStatus").textContent="Automatic import needs configuration review. Existing scheduling has been retained; no partial conversion was saved.";
       else if(imported?.status==="failed")el("planningImportStatus").textContent="Automatic import could not be committed. Existing scheduling has been retained. The import will retry on a later startup.";
-      editRevision++;dirty=false;review=null;el("planningPublish").disabled=true;if(!el("planningDate").value)el("planningDate").value=source.today||new Date().toLocaleDateString("en-CA");renderRotation();renderTable();renderDate();await preview(false);
-    }catch(error){message(error.message,true)}
+      editRevision++;revision=editRevision;dirty=false;review=null;el("planningPublish").disabled=true;if(!el("planningDate").value)el("planningDate").value=source.today||new Date().toLocaleDateString("en-CA");renderRotation();renderTable();renderDate();await preview(false);
+    }catch(error){if(generation===loadGeneration&&revision===editRevision&&!saving)message(error.message,true)}
   };
   el("planningReload").addEventListener("click",()=>{if(!dirty||confirm("Discard the unsaved Planning draft and reload saved settings?"))loadPlanning(true)});
   el("planningPreview").addEventListener("click",()=>preview());
   el("planningPublish").addEventListener("click",async()=>{
     if(!review||busy)return;capture();if(review.draft!==JSON.stringify(draft)){changed();return}
     const controls=[...el("planning").querySelectorAll("input,select,button")].map(node=>({node,disabled:node.disabled}));controls.forEach(({node})=>node.disabled=true);
-    try{busy=true;const result=await api("/api/v1/planning",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({scheduleProfile:draft,expectedUpdatedAt:snapshot,previewHash:review.previewHash})});draft=clone(result.scheduleProfile);S.scheduleProfile=result.scheduleProfile;snapshot=draft.updatedAt;dirty=false;review=null;message("Planning saved. No commands were dispatched. Running occurrences keep their resolved boundaries; use Resume Scheduled State deliberately if needed.")}
-    catch(error){review=null;message(error.message,true)}finally{busy=false;controls.forEach(({node,disabled})=>node.disabled=disabled);el("planningPublish").disabled=true}
+    try{busy=saving=true;loadGeneration++;importGeneration++;const result=await api("/api/v1/planning",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({scheduleProfile:draft,expectedUpdatedAt:snapshot,previewHash:review.previewHash})});draft=clone(result.scheduleProfile);S.scheduleProfile=result.scheduleProfile;snapshot=draft.updatedAt;dirty=false;review=null;message("Planning saved. No commands were dispatched. Running occurrences keep their resolved boundaries; use Resume Scheduled State deliberately if needed.")}
+    catch(error){review=null;message(error.message,true)}finally{busy=saving=false;controls.forEach(({node,disabled})=>node.disabled=disabled);el("planningPublish").disabled=true}
   });
   for(const name of ["Calendar","Timetable","Rotation"])el(`planning${name}Tab`).addEventListener("click",()=>pane(name));
   el("planningDate").addEventListener("change",()=>{if(draft){renderDate();preview(false)}});
@@ -167,15 +172,19 @@
   el("planning").addEventListener("input",event=>{if(draft&&!['planningDate'].includes(event.target.id))changed()});
   el("planning").addEventListener("change",event=>{if(draft&&event.target.matches("select")&&event.target.id!=="planningTableSelect")changed()});
   el("planningImport").addEventListener("change",async event=>{
-    try{if(!draft)return;const file=event.target.files?.[0];if(!file)return;if(file.size>256*1024)throw Error("Calendar CSV must be at most 256 KiB");
-      const text=(await file.text()).replace(/^\uFEFF/,""),rows=[];let row=[],field="",quoted=false;
+    const file=event.target.files?.[0],owner=draft,revision=editRevision,generation=++importGeneration;
+    try{if(!draft||saving||!file)return;if(file.size>256*1024)throw Error("Calendar CSV must be at most 256 KiB");
+      const text=(await file.text()).replace(/^\uFEFF/,"");
+      if(generation!==importGeneration||owner!==draft)return;
+      if(revision!==editRevision||saving){message("The draft changed while the calendar file was loading. Import it again to apply its dates.",true);return}
+      const rows=[];let row=[],field="",quoted=false;
       for(let i=0;i<text.length;i++){const char=text[i];if(char==='"'){if(quoted&&text[i+1]==='"'){field+='"';i++}else quoted=!quoted}else if(!quoted&&(char===','||char==='\n')){row.push(field.trim());field="";if(char==='\n'){if(row.some(Boolean))rows.push(row);row=[]}}else if(char!=='\r')field+=char}
       if(quoted)throw Error("Unclosed CSV quote");row.push(field.trim());if(row.some(Boolean))rows.push(row);
       const header=rows.shift();if(!header||header.join(',')!=="date,status,cycleDay,timetableId,note")throw Error("CSV header must be date,status,cycleDay,timetableId,note");if(rows.length>2000)throw Error("At most 2000 CSV rows are supported");
       const next=clone(p().dates),seen=new Set();let replacements=0;
       for(const values of rows){if(values.length!==5)throw Error("Every calendar row must have five columns");const [date,status,cycleDay,timetableId,note]=values;if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(`${date}T12:00:00Z`).toISOString().slice(0,10)!==date||!["school","no-school","remote"].includes(status)||seen.has(date))throw Error(`Invalid or duplicate CSV date/status: ${date}`);if(cycleDay&&!draft.cycleDays.includes(cycleDay))throw Error(`${date}: unknown cycle day`);if(timetableId&&!p().timetables.some(table=>table.id===timetableId))throw Error(`${date}: unknown timetable`);seen.add(date);if(Object.hasOwn(next,date))replacements++;next[date]={status,cycleDay,timetableId,note}}
       p().dates=next;changed();renderDate();el("planningImportSummary").textContent=`${rows.length} dates staged; ${replacements} existing overrides replaced in draft. Preview and save to apply.`;
-    }catch(error){message(error.message,true)}finally{event.target.value=""}
+    }catch(error){if(generation===importGeneration&&owner===draft)message(error.message,true)}finally{if(event.target.files?.[0]===file)event.target.value=""}
   });
   // Navigation shares the existing class/automation nodes and handlers.
   for(const [id,current] of [["planning","planning"],["classes","classes"],["schedules","schedules"]]){
