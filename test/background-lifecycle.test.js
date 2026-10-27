@@ -85,7 +85,9 @@ test("a conversion exceeding shutdown's deadline retains its source and recovers
   await waitFor(()=>app.output().includes("fixture-presentation-conversion-started"),"accepted conversion");
   app.child.kill("SIGTERM");assert.deepEqual(await app.exited,[1,null],app.output());await assert.rejects(upload);
   assert.equal(auditCount(app,"presentation.upload"),0);assert.match(app.output(),/ten-second drain deadline/);
+  assert.ok(fs.readdirSync(path.join(app.dir,"presentation-upload-tmp")).some(name=>name.startsWith("render-")),"deadline left conversion staging for startup recovery");
   const restarted=await launch(t,{preload:fixture("presentation"),directory:app.dir});
+  assert.deepEqual(fs.readdirSync(path.join(app.dir,"presentation-upload-tmp")),[],"startup must reclaim interrupted render staging");
   const library=await fetch(`http://127.0.0.1:${restarted.control}/api/v1/presentations`,{headers:{cookie}});
   assert.equal(library.status,200);const {presentations}=await library.json();assert.equal(presentations.length,1);
   const saved=presentations[0];assert.equal(saved.conversionStatus,"failed");assert.match(saved.conversionError,/interrupted/);

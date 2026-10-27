@@ -352,3 +352,25 @@ probe is controlled; no real workstation or Veyon command is contacted. Normal
 identity projection and post-thaw access remain exercised. Docker is unavailable
 locally; exact-head CI must still qualify Compose/images, scans, native artifacts
 and browsers. Merge, publication and appliance update evidence belong to the PR.
+
+## Interrupted presentation staging (2026-10-27 UTC)
+
+Baseline: `acd537731f1e9eb08d8f7937003ccd1c287fbb6d`, alpha.85. Extending the
+existing real ten-second conversion/deadline test reproduced persistent private
+render staging after restart (**0 passed, 1 failed**). The original remains
+preserved; the added failure concerns orphan staging, not source loss.
+
+The candidate targeted lifecycle/content-permission/staging subset reported
+**19 tests: 17 passed, 0 failed, 2 root-only ownership skips**. It covers source
+preservation and rebuild after restart, recognized-directory cleanup, unknown
+entries, linked roots/directories, nested symbolic/hard links, whole-tree
+validation and bounded scan/candidate/node budgets.
+
+The mandated native Linux active-worktree helper included both new files and
+all modifications. `npm run check` passed; full `npm test`: **1023 tests,
+1021 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax, the new module's syntax check and
+`git diff --check` passed. Rendering uses a controlled external adapter; no
+physical receiver or live appliance fault injection was performed. Docker remains
+unavailable locally; exact-head CI, publication and normal backed-up deployment
+must complete before claiming external delivery.

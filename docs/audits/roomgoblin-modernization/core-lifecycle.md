@@ -394,8 +394,33 @@ a further review lead; the separately reproduced finding below addresses it.
 - **Limits:** No real workstation, native service, key rotation, preview or
   classroom command is used. Hardware acceptance remains in its review unit.
 
-A deadline-interrupted presentation conversion also leaves private render staging
-that needs a bounded cleanup-policy review. It is not resolved by these findings.
+### RG-ARCH-011: interrupted conversion staging survives restart
+
+- **Subsystem/category/priority:** Core lifecycle / Recovery and resources / P2.
+- **Baseline:** `acd537731f1e9eb08d8f7937003ccd1c287fbb6d`, alpha.85;
+  `src/server.js:196,2221-2270` and
+  `test/background-lifecycle.test.js:83-100`.
+- **Problem/evidence:** The real ten-second shutdown deadline interrupts a held
+  conversion, preserving its source and private render directory. Restart marks
+  the presentation rebuildable but never reclaims that directory. The added
+  restart assertion fails on this baseline; repeated interruptions can accumulate
+  excluded, expendable render output. No production disk exhaustion is claimed.
+- **Implementation:** Startup-only cleanup recognizes UUIDv4 render directories
+  in the existing private staging root. Bound root scan, candidates, total nodes
+  and depth; validate a whole tree before unlink/rmdir, reject links/special files,
+  other owners/filesystems and changed identities. Preserve unknown uploads and
+  all original/published presentation assets. Warn on leftovers without blocking
+  startup. No timer, retention setting or schema migration is added.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. Cleanup is destructive
+  only for recognized expendable staging and must precede all new conversions.
+- **Review/verification:** Review upload naming, render staging/publication,
+  interruption recovery and backup exclusions. Extend the canonical deadline test
+  to require startup reclamation, source preservation and rebuild. Filesystem
+  tests cover unknown entries, links, hard links, whole-tree validation and budgets.
+- **Limits:** Bounded cleanup may leave oversized/unsafe staging for inspection.
+  It does not remove unknown partial uploads, change rendered slides or prove
+  physical receiver behavior. Runtime conversion still uses its existing finally
+  cleanup; no cleanup loop races active rendering.
 
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer

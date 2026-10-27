@@ -19,6 +19,7 @@ const scryptAsync = promisify(crypto.scrypt);
 const multer = require("multer");
 const {ResumableUploadStore,ownerKey,inspectUpload,DEFAULT_CHUNK_BYTES}=require("./resumable-upload");
 const {contentDirectory,contentFile}=require("./content-permissions");
+const {cleanupPresentationStaging}=require("./presentation-staging");
 const mqtt = require("mqtt");
 const { WebSocketServer, WebSocket } = require("ws");
 const {rateLimit}=require("express-rate-limit");
@@ -194,6 +195,9 @@ contentDirectory(MEDIA_DIR);
 contentDirectory(MEDIA_UPLOAD_SESSION_DIR);
 contentDirectory(PRESENTATIONS_DIR);
 fs.mkdirSync(PRESENTATION_UPLOAD_TMP, { recursive: true });
+const presentationStagingRecovery=cleanupPresentationStaging(PRESENTATION_UPLOAD_TMP);
+if(presentationStagingRecovery.removed)console.log(`Reclaimed ${presentationStagingRecovery.removed} interrupted presentation render directories`);
+if(presentationStagingRecovery.skipped||presentationStagingRecovery.errors||presentationStagingRecovery.limited)console.warn("Presentation staging cleanup left unsafe, unreadable or over-budget entries for inspection");
 
 const DATABASE_FILE = String(process.env.DATABASE_FILE || path.join(DATA_DIR,"classroom-control-hub.db"));
 const MASTER_KEY_FILE = String(process.env.MASTER_KEY_FILE || "/run/secrets/classroom-control-hub-master-key");
