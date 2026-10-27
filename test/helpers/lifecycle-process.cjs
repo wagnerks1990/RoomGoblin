@@ -8,14 +8,15 @@ const net=require("node:net");
 const {spawn}=require("node:child_process");
 const {once}=require("node:events");
 const {setTimeout:delay}=require("node:timers/promises");
+const {performance}=require("node:perf_hooks");
 
 const root=path.resolve(__dirname,"../..");
 const start=require("../../package.json").scripts.start;
 const linux={skip:process.platform!=="linux"?"Requires Linux signal and /proc child-lifecycle semantics":false,timeout:25000};
 async function port(){const server=net.createServer();server.listen(0,"127.0.0.1");await once(server,"listening");const value=server.address().port;await new Promise(resolve=>server.close(resolve));return value}
 async function waitFor(check,description){
-  const end=Date.now()+10000;
-  while(Date.now()<end){if(await check())return;await delay(40)}
+  const end=performance.now()+10000;
+  while(performance.now()<end){if(await check())return;await delay(40)}
   throw new Error(`Timed out: ${description}`);
 }
 async function launch(t,{preload=null,directory=null,receivers=false,mockMqtt=false,gateway=false,maintenanceUrl=null}={}){

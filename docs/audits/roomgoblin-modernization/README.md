@@ -1,6 +1,7 @@
 # RoomGoblin modernization audit
 
-Status: **Core Architecture and Application Lifecycle in final qualification**. The first
+Status: **Shared frontend and navigation in final qualification**. Core Architecture
+and Application Lifecycle is complete for its enumerated entry-point scope. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
 readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
 automation interruption/restart policy and export-thaw coordination. The next
@@ -24,8 +25,8 @@ The startup scheduler follow-up defers recovery until snapshot thaw and retains
 one pending pass so currently applicable automation winners still recover.
 The import-callback follow-up exposes the Sports PDF-processing promise to the
 existing drain, including disconnected clients and processing errors.
-The enumerated lifecycle entry-point source review is complete; final CI and
-delivery are pending for the last patch set. This is not a whole-server business
+The enumerated lifecycle entry-point source review, final CI and appliance
+delivery are complete through PR #271. This is not a whole-server business
 logic or physical-device acceptance claim. Other subsystem units remain queued.
 
 Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`, `main`,
@@ -36,16 +37,19 @@ The export-handler follow-up uses `da6bb77187bd23787239347db903ab842fbc6683`.
 The media-stop follow-up uses `446a9523da9a160bc510e679397269c9097aeb1d`.
 The discovery follow-up uses `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`.
 
-Appliance delivery through PR [#268](https://github.com/wagnerks1990/RoomGoblin/pull/268)
-was verified at `20f8c501916f34e17bee2c643434e7cce0c919e6` on 2026-10-27 UTC:
-healthy services, exact Hub/maintenance images, database/secret integrity, a new
-verified operational backup and rollback to `86b5ec55fa5a758145837463a7f98a46c38bcab8`.
-PRs [#269](https://github.com/wagnerks1990/RoomGoblin/pull/269) and
-[#270](https://github.com/wagnerks1990/RoomGoblin/pull/270) are merged. Their
-changes and the remaining callback/admission fixes will share the next normal
-published-main update. Consult PR delivery evidence for subsequent live state.
+Appliance delivery through PR [#271](https://github.com/wagnerks1990/RoomGoblin/pull/271)
+was verified on 2026-10-27 UTC at `40b88c197b2e4d4dbed448348a9d1a9805949dbf`.
+The selective update replaced the Hub and retained the healthy maintenance
+container at `20f8c501916f34e17bee2c643434e7cce0c919e6`. Health, database/secret
+integrity, backup checksum/archive/SQLite integrity and rollback were verified.
+No physical classroom commands were issued. See the PR for delivery evidence.
+
+The shared frontend review starts at that same source commit. Its first patch
+separates feature presentation from navigation, repairs account/login focus
+handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Shared frontend findings and coverage](shared-frontend.md)
 - [Core lifecycle findings and coverage](core-lifecycle.md)
 - [Validation evidence](validation.md)
 - [Current lifecycle contract](../../APPLICATION-LIFECYCLE.md)
@@ -104,6 +108,5 @@ browser architecture. No framework migration or dependency upgrade is needed
 for the demonstrated lifecycle defects. Preserve compatibility identifiers and
 all operational data. Use focused PRs; production deployment remains separate.
 
-Discovery leads RG-UI-001 (workspace shell ownership) and RG-DOC-001 (backup
-retention documentation) remain outside this implementation. Revalidate their
-source locations in their own review units before proposing changes.
+RG-UI-001 (workspace shell ownership) is revalidated in the shared frontend review.
+RG-DOC-001 (backup retention documentation) remains queued for its own review unit.

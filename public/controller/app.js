@@ -530,7 +530,6 @@ async function loadMedia(){
  }catch(e){mediaRows.innerHTML=`<tr><td colspan="6" class="bad">${esc(e.message)}</td></tr>`}
 }
 async function loadLabAgentCredentials(){try{const j=await api('/api/v1/admin/lab-agent-credentials');labLegacySharedToken.checked=j.policy?.legacySharedTokenAllowed!==false;const active=(j.credentials||[]).filter(x=>!x.revokedAt);labAgentCredentials.innerHTML=`<table><thead><tr><th>Computer</th><th>Label</th><th>Created</th><th>Last Used</th><th></th></tr></thead><tbody>${active.map(x=>`<tr><td><code>${esc(x.agentId)}</code></td><td>${esc(x.label||'Windows classroom agent')}</td><td>${esc(new Date(x.createdAt).toLocaleString())}</td><td>${x.lastUsedAt?esc(new Date(x.lastUsedAt).toLocaleString()):'Never'}</td><td><button class="danger" onclick="revokeLabAgentCredential(${inlineJsArg(x.id)})">Revoke</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">No individually enrolled Windows agents.</td></tr>'}</tbody></table>`}catch(e){labAgentCredentials.innerHTML=`<div class="muted">Agent enrollment requires an administrator: ${esc(e.message)}</div>`}}
-async function createLabAgentEnrollment(){try{const id=labEnrollmentId.value.trim();if(!id)throw Error('Enter a stable computer ID.');const j=await api(`/api/v1/admin/lab-agents/${encodeURIComponent(id)}/enrollment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ttlMinutes:Number(labEnrollmentTtl.value||15)})}),e=j.enrollment;labEnrollmentResult.style.display='block';labEnrollmentResult.innerHTML=`<b>Run once in elevated PowerShell on ${esc(e.agentId)}</b><textarea class="raw" readonly style="width:100%;min-height:120px;margin-top:8px">${esc(e.installCommand)}</textarea><div class="muted">Expires ${esc(new Date(e.expiresAt).toLocaleString())}. The raw enrollment token is shown only in this command.</div>`;await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
 async function revokeLabAgentCredential(id){if(!confirm('Revoke this computer credential and disconnect its agent?'))return;try{await api(`/api/v1/admin/lab-agent-credentials/${encodeURIComponent(id)}`,{method:'DELETE'});await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
 async function saveLabAgentPolicy(){try{await api('/api/v1/admin/lab-agent-credentials/policy',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({legacySharedTokenAllowed:labLegacySharedToken.checked,enrollmentTtlMinutes:Number(labEnrollmentTtl.value||15)})});notify('Lab agent security policy saved.','success');await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
 async function showMedia(enc){
@@ -2326,8 +2325,18 @@ function removeEmptyLegacyDisplayGroups(){if(!RECEIVERCFG)return;const v=collect
 function renderAdminIntegrationCards(){const hw=ADMINCFG?.hardware||{},g=hw.govee||{},p=hw.pluto||{};cfgIntegrationCards.innerHTML=`<div class="integrationCard"><div><b>Pluto AV Matrix</b><div class="muted">${esc(p.name||'AV matrix')}</div><div class="integrationState"><span class="pill">${esc(p.host||'Host not configured')}</span><span class="pill">External hardware</span></div></div><button onclick="showPage('av')">Open Displays & AV</button></div><div class="integrationCard"><div><b>Govee Lighting</b><div class="muted">${Object.keys(g.devices||{}).length} devices • ${Object.keys(g.groups||{}).length} groups</div><div class="integrationState"><span class="pill">MQTT-backed</span><span class="pill">Encrypted secrets supported</span></div></div><button onclick="showPage('lights')">Open Lighting</button></div>`}
 async function saveAdminSite(){try{const body={school:cfgSchool.value.trim(),room:cfgRoom.value.trim(),displayPrefix:cfgDisplayPrefix.value.trim()||'TV',timezone:cfgTimezone.value.trim(),theme:{mode:cfgThemeMode.value,primary:cfgThemePrimary.value,accent:cfgThemeAccent.value,background:cfgThemeBackground.value,surface:cfgThemeSurface.value,text:cfgThemeText.value}};const j=await api('/api/v1/admin/site',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});cfgSiteMsg.textContent=`Saved to database (revision ${j.site.revision}).`;ADMINCFG&&(ADMINCFG.site=j.site);applySiteBranding(j.site||{})}catch(e){cfgSiteMsg.textContent=e.message}}
 async function saveAdminHardware(){try{const v=JSON.parse(cfgHardware.value);await api('/api/v1/admin/hardware',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(v)});ADMINCFG.hardware=v;renderAdminIntegrationCards();cfgHardwareMsg.textContent='Hardware configuration validated and saved. Restart RoomGoblin if integration endpoints changed.'}catch(e){cfgHardwareMsg.textContent=e.message}}
-function showLogin(){document.body.classList.add('auth-locked');loginOverlay.style.display='flex';setTimeout(()=>loginUser.focus(),50)}
-function hideLogin(){document.body.classList.remove('auth-locked');loginOverlay.style.display='none';loginMsg.textContent=''}
+function syncAuthModalInert(){
+ const open=document.body.classList.contains('auth-locked')||accountModal.style.display==='flex';
+ document.querySelectorAll('.app,.rg-mobilebar,.rg-skip').forEach(el=>{el.inert=open});
+}
+function showLogin(){
+ window.dispatchEvent(new Event('roomgoblin:modalopen'));
+ document.body.classList.add('auth-locked');
+ closeAccountModal();
+ loginOverlay.style.display='flex';syncAuthModalInert();
+ setTimeout(()=>{if(document.body.classList.contains('auth-locked')&&!loginOverlay.contains(document.activeElement))loginUser.focus()},50);
+}
+function hideLogin(){document.body.classList.remove('auth-locked');loginOverlay.style.display='none';loginMsg.textContent='';syncAuthModalInert()}
 const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control'],lights:['integrations.control'],esphome:['classroom.read'],display:['classroom.control'],presentations:['media.manage'],media:['media.manage'],music:['classroom.control'],weather:['classroom.control'],sports:['classroom.control'],lab:['lab.read'],planning:['schedule.manage'],classes:['schedule.manage'],schedules:['schedule.manage','automation.manage'],diagnostics:['diagnostics.read'],settings:['admin'],system:['admin']};
 const ACTION_CAPABILITIES={
   admin:['saveAdminDisplaysStructured','addAdminDisplayGroup','removeAdminDisplayGroup','removeAdminDisplay','removeEmptyLegacyDisplayGroups','saveAdmin','loadAdmin','createLabAgentEnrollment','saveLabAgentPolicy','revokeLabAgentCredential','loadSystemManagement'],
@@ -2342,13 +2351,48 @@ function actionCapability(code=''){for(const name of ACTION_CAPABILITIES.admin)i
 function enforceCapabilityControls(root=document){for(const el of root.querySelectorAll?.('button[onclick],input[onchange],select[onchange]')||[]){const required=actionCapability(el.getAttribute('onclick')||el.getAttribute('onchange')||'');if(!required)continue;const allowed=userCan(required);el.disabled=!allowed||el.dataset.commandUnavailable==='true';el.setAttribute('aria-disabled',String(el.disabled));if(!allowed)el.title=`Permission required: ${required}`}}
 const capabilityObserver=new MutationObserver(records=>{if(!window.AUTH_STATUS?.user)return;for(const record of records)for(const node of record.addedNodes)if(node.nodeType===Node.ELEMENT_NODE){if(node.matches?.('button[onclick],input[onchange],select[onchange]'))enforceCapabilityControls(node.parentElement||document);else enforceCapabilityControls(node)}});
 capabilityObserver.observe(document.body,{childList:true,subtree:true});
-function applyAuthUi(j){window.AUTH_STATUS=j||{};const u=j?.user;if(u){authAccount.style.display='block';authAccountName.textContent=u.displayName||u.username;authAccountRole.textContent=(u.role||'').toUpperCase();accountIdentity.textContent=`${u.displayName||u.username} • ${u.username} • ${u.role}`;for(const [pageId,required] of Object.entries(PAGE_CAPABILITIES)){const allowed=required.every(userCan),page=document.getElementById(pageId),nav=document.querySelector(`nav button[data-page="${pageId}"]`);if(page)page.dataset.authorized=String(allowed);if(nav){nav.hidden=!allowed;nav.setAttribute('aria-hidden',String(!allowed))}}enforceCapabilityControls();const active=document.querySelector('.page.active');if(active?.dataset.authorized==='false'){const first=[...document.querySelectorAll('nav button[data-page]')].find(x=>!x.hidden);if(first)showPage(first.dataset.page)}}else{authAccount.style.display='none'}window.dispatchEvent(new Event('roomgoblin:authchange'))}
+function applyAuthUi(j){
+ window.AUTH_STATUS=j||{};
+ const u=j?.user;
+ authAccount.style.display=u?'block':'none';
+ if(u){
+  authAccountName.textContent=u.displayName||u.username;
+  authAccountRole.textContent=(u.role||'').toUpperCase();
+  accountIdentity.textContent=`${u.displayName||u.username} • ${u.username} • ${u.role}`;
+ }
+ for(const [pageId,required] of Object.entries(PAGE_CAPABILITIES)){
+  const allowed=required.every(userCan),page=document.getElementById(pageId),nav=document.querySelector(`nav button[data-page="${pageId}"]`);
+  if(page)page.dataset.authorized=String(allowed);
+  if(nav){nav.hidden=!allowed;nav.setAttribute('aria-hidden',String(!allowed))}
+ }
+ enforceCapabilityControls();
+ const active=document.querySelector('.page.active');
+ if(u&&active?.dataset.authorized==='false'){
+  const first=[...document.querySelectorAll('nav button[data-page]')].find(x=>!x.hidden);
+  if(first)showPage(first.dataset.page);
+ }
+ window.dispatchEvent(new Event('roomgoblin:authchange'));
+}
 async function performLogin(){try{loginMsg.textContent='';const r=await fetch('/api/v1/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginUser.value,password:loginPassword.value,remember:loginRemember.checked})}),j=await r.json();if(!r.ok)throw Error(j.error||'Login failed');loginPassword.value='';await bootstrapController()}catch(e){loginMsg.textContent=e.message}}
 async function performLogout(){try{await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin'});}finally{window.AUTH_STATUS={authEnabled:true,user:null};applyAuthUi(window.AUTH_STATUS);showLogin();closeAccountModal();controllerBootstrapped=false;if(window.ws&&typeof window.ws.close==='function')try{window.ws.close()}catch{} }}
 async function checkAuthentication(){try{const r=await fetch('/api/v1/auth/status',{cache:'no-store',credentials:'same-origin'}),j=await r.json();window.AUTH_STATUS=j;applyAuthUi(j);if(j.authEnabled&&!j.user){showLogin();return false}hideLogin();return true}catch(e){showLogin();loginMsg.textContent='Unable to verify authentication';return false}}
 let accountReturnFocus=null;
-function openAccountModal(){accountReturnFocus=document.activeElement;accountModal.style.display='flex';loadMySessions();setTimeout(()=>currentPassword.focus(),0)}
-function closeAccountModal(){accountModal.style.display='none';currentPassword.value='';newPassword.value='';confirmPassword.value='';passwordMsg.textContent='';accountReturnFocus?.focus?.()}
+function openAccountModal(){
+ accountReturnFocus=document.activeElement;
+ window.dispatchEvent(new Event('roomgoblin:modalopen'));
+ accountModal.style.display='flex';syncAuthModalInert();loadMySessions();
+ setTimeout(()=>{if(accountModal.style.display==='flex')currentPassword.focus()},0);
+}
+function closeAccountModal(){
+ const wasOpen=accountModal.style.display==='flex';
+ accountModal.style.display='none';currentPassword.value='';newPassword.value='';confirmPassword.value='';passwordMsg.textContent='';
+ syncAuthModalInert();
+ if(wasOpen&&!document.body.classList.contains('auth-locked')){
+  const target=[accountReturnFocus,document.getElementById('workspaceMenu'),document.getElementById('workspaceMain')].find(el=>el?.getClientRects().length&&getComputedStyle(el).visibility==='visible'&&!el.closest('[inert]'));
+  target?.focus();
+ }
+ accountReturnFocus=null;
+}
 async function loadMySessions(){try{const j=await api('/api/v1/auth/sessions');sessionList.innerHTML=(j.sessions||[]).map(x=>`<div class="sessionRow"><div><b>${x.current?'Current session':'Session'}</b><div class="meta">${esc(x.remoteAddr||'')} • ${esc(new Date(x.lastSeenAt||x.createdAt).toLocaleString())}<br>${esc((x.userAgent||'').slice(0,120))}</div></div><div>${x.current?'<span class="pill ok">CURRENT</span>':`<button class="danger" onclick="revokeMySession(${inlineJsArg(x.id)})">Revoke</button>`}</div></div>`).join('')||'<div class="muted">No active sessions.</div>'}catch(e){sessionList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
 async function revokeMySession(id){try{await api('/api/v1/auth/sessions/'+encodeURIComponent(id),{method:'DELETE'});await loadMySessions()}catch(e){alert(e.message)}}
 async function logoutOtherSessions(){if(!confirm('Sign out every other RoomGoblin session for this account?'))return;try{const j=await api('/api/v1/auth/logout-others',{method:'POST'});alert(`Signed out ${j.removed||0} other session(s).`);await loadMySessions()}catch(e){alert(e.message)}}
@@ -2584,5 +2628,16 @@ async function loadDiagnosticInfrastructure(){
 }
 
 for(const control of [window.appUpdateChannel,window.appUpdateAutomatic,window.appUpdateInterval,window.appUpdateStart,window.appUpdateEnd])control?.addEventListener('change',clearSelectedAppRelease);
-document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(accountModal?.style.display==='flex')closeAccountModal()});
+document.addEventListener('keydown',event=>{
+ const modal=document.body.classList.contains('auth-locked')?loginOverlay:accountModal.style.display==='flex'?accountModal:null;
+ if(!modal)return;
+ if(event.key==='Escape'&&modal===accountModal){event.preventDefault();closeAccountModal();return}
+ if(event.key!=='Tab')return;
+ const items=[...modal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
+ const first=items[0],last=items.at(-1);
+ if(!first)return;
+ if(!modal.contains(document.activeElement)){event.preventDefault();(event.shiftKey?last:first).focus()}
+ else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+ else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+});
 bootstrapController();

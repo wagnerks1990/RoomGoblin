@@ -6,7 +6,7 @@ const path=require("node:path");
 
 const root=path.resolve(__dirname,"..");
 const server=fs.readFileSync(path.join(root,"src/server.js"),"utf8");
-const workspace=fs.readFileSync(path.join(root,"public/controller/workspace.js"),"utf8");
+const workspace=fs.readFileSync(path.join(root,"public/controller/lab-enrollment.js"),"utf8");
 const attribution=fs.readFileSync(path.join(root,"public/shared/attribution.js"),"utf8");
 const androidV2=fs.readFileSync(path.join(root,"maintenance-agent/android-tv-agent-v2.js"),"utf8");
 const cloudflare=fs.readFileSync(path.join(root,"src/cloudflare.js"),"utf8");

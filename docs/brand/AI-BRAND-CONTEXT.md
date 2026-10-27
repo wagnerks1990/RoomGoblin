@@ -68,3 +68,9 @@ artwork after truncated originals were found; never infer dimensions from those
 filenames. New art must not silently replace the supplied mascot.
 Branding regressions must decode bundled PNG streams, not merely check file
 extensions or PNG signatures.
+
+Operator code, warning text and keyboard outlines use the theme-aware
+`--rg-code`, `--rg-warning` and `--rg-focus` tokens in shared workspace CSS.
+Compact lockups inherit operator text color. Preserve these scoped contrast
+overrides when loading global brand styles; do not apply them to physical
+display/document/video renderers or replace configurable brand colors globally.

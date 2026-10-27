@@ -30,6 +30,13 @@ its navigation group automatically. On smaller screens, **Menu** opens the
 navigation drawer; Escape or the backdrop closes it, and choosing a workspace
 moves focus to the main content. The controller also has a skip-to-content link.
 
+Opening My Account or showing the login prompt closes the mobile drawer first.
+Account and login dialogs contain keyboard focus and make the surrounding shell
+inert. Closing My Account clears its password fields and returns focus to its
+visible opener, or to Menu when that opener is inside the closed mobile drawer.
+Session loss hides capability-bound navigation immediately. Repeated expired
+requests keep an unfinished login field focused rather than restarting entry.
+
 Weather combines current/seven-day forecasts, after-school/evening details,
 selectable date ranges and editable overlay fields. Preview is local; explicit
 targets are required before sending a full screen. Scheduled screens and shared
@@ -41,6 +48,15 @@ item hidden by authorization. The shared stylesheet explicitly preserves the
 `hidden` attribute. Backend authentication and authorization remain authoritative.
 
 ## Surface behavior
+
+Managed Displays also contains an independent Ubuntu computer inventory. Its
+wizard verifies SSH identity, checks readiness, assigns each physical output,
+reviews installation changes and reports asynchronous progress. Computer-level
+maintenance is distinct from per-screen controls; failed ADB probes do not disable
+Ubuntu management. Computer cards include resource health, software versions,
+alerts, history, metadata editing and explicit immediate/scheduled maintenance.
+Polling preserves focused controls and open dialogs. Ubuntu screen cards and
+wizard controls use the shared light/dark contrast tokens. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
 
 | Surface | Organization |
 | --- | --- |
@@ -142,11 +158,21 @@ Existing Govee endpoints, MQTT payloads and schedule/device identity remain unch
 are mapped for compatibility. Runtime brand primary/background/surface/text tokens
 remain inputs. Dark slate surfaces, teal primary controls, explicit status labels,
 visible keyboard focus, restrained borders and reduced-motion rules provide the
-common visual treatment. Light and system brand modes have operator overrides.
+common visual treatment. Light and system brand modes have operator overrides. `--rg-code`, `--rg-warning`
+and `--rg-focus` provide readable semantic text and keyboard outlines in either
+mode; compact brand lockups inherit the operator text color. These corrections
+are scoped to `body.rg-workspace` and do not restyle playback renderers.
+
+The HTML explicitly loads the enrollment and update presentation modules after
+`app.js`. Navigation does not generate credentials or replace feature handlers.
+`app.js` retains the API helper, authorization, update requests and account/login
+lifecycle. Existing feature IDs and inline actions are preserved.
 
 Page-specific layout lives in:
 
-- `public/controller/workspace.css` and `workspace.js` for the main shell;
+- `public/controller/workspace.css` and `workspace.js` for navigation and shell layout;
+- `public/controller/system-updates-workspace.{css,js}` for update presentation;
+- `public/controller/lab-enrollment.js` as the single Windows enrollment UI owner;
 - `public/controller/embedded-workspaces.js` for same-origin lab frame sizing and visible viewport reporting;
 - `public/controller/display-workspace.css` for the content editor;
 - `public/controller/lighting.css` for compact Govee controls;

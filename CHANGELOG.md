@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- Separate Windows enrollment and System Updates presentation from the navigation
+  shell while preserving controls, enrollment downloads and updater requests.
+- Close mobile navigation before account/login dialogs, contain keyboard focus,
+  clear stale navigation permissions on session loss and retain unfinished login
+  input when concurrent requests report an expired session.
+- Improve operator light-theme contrast for code, brand lockups, warning badges
+  and keyboard focus without changing physical display styling.
+
 - Keep Sports roster PDF imports owned until processing finishes after a browser
   disconnects. Shutdown and Full Recovery now drain the returned route promise;
   upload limits, parser isolation and review-before-save behavior remain intact.
