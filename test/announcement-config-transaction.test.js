@@ -40,7 +40,8 @@ test("a successful announcement save commits the secret and redacted metadata be
  const h=fixture(t,{legacy:true});assert.equal((await h.save()).status,200);
  assert.equal(h.store.getSecret(secret),newUrl);assert.equal(h.store.readJson(h.file,{}).enabled,false);assert.equal(h.ctx.morningAnnouncements.enabled,false);
  assert.equal(h.restarts,1);assert.equal(h.volumes,1);assert.equal(h.store.transactionDepth,0);
- assert.equal(fs.readFileSync(h.file,"utf8").includes(newUrl),false);assert.equal(fs.readFileSync(h.file,"utf8").includes(oldUrl),false);
+ const {streamUrl:_secret,...expected}=JSON.parse(JSON.stringify(h.ctx.morningAnnouncements));
+ assert.deepEqual(JSON.parse(fs.readFileSync(h.file,"utf8")),{...expected,streamUrlConfigured:true});
  assert.equal(fs.readdirSync(h.dir).some(name=>name.includes(".redacted-")),false);
  if(process.platform!=="win32")assert.equal(fs.statSync(h.file).mode&0o777,0o600);
 });
@@ -58,6 +59,6 @@ test("a failed settings write can be retried without a premature watcher or volu
 });
 test("startup persistence still scrubs legacy plaintext without dispatching",t=>{
  const h=fixture(t,{legacy:true});h.ctx.persistMorningAnnouncements();
- assert.equal(h.store.getSecret(secret),oldUrl);assert.equal(fs.readFileSync(h.file,"utf8").includes(oldUrl),false);
+ assert.equal(h.store.getSecret(secret),oldUrl);assert.deepEqual(JSON.parse(fs.readFileSync(h.file,"utf8")),h.saved);
  assert.equal(h.restarts,0);assert.equal(h.volumes,0);assert.equal(h.store.transactionDepth,0);
 });
