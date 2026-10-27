@@ -2,7 +2,8 @@
 
 Baseline: locally qualified editor commit
 `511f9d0fea971dba1972f03146121645fb2d203a`. Its scheduler source is unchanged
-from checked main `3978311`; checked integration will be recorded before PR.
+from checked main `3978311`. The qualified patch and companion identity fixes
+are integrated unchanged onto checked main `955195a` after PR #290.
 
 ## RG-SCHED-027: Recovery lost valid class offsets across dates
 
@@ -79,7 +80,8 @@ Native active-worktree qualification passes 1,254 tests, zero failures and two
 root-only ownership skips (1,256 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. This patch is retained unchanged on the
 qualified PR #290 editor head `c0c36c9`; the only integration conflict reconciled
-the audit status text. Required CI, checked integration, image publication and
+the audit status text. Final integration onto checked main `955195a` preserved
+the qualified source and tests exactly. Required CI, image publication and
 backed-up delivery remain pending. No physical command,
 receiver reload, live calendar edit or production fault injection was used.
 

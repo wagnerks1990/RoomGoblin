@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Class boundaries, block identity and class references qualified; checked integration pending**.
+Status: **Planning runtime fixes qualified on checked main; required CI pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all

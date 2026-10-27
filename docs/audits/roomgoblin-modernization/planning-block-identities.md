@@ -1,7 +1,10 @@
 # Timetable occurrence identity and class references
 
 Baseline: `ac09411902bcec3363cf60a0e8a8cb4b07d6abe1`, the locally qualified
-class-boundary patch on PR #290. Checked main integration remains pending.
+class-boundary patch on PR #290. The final qualified tree is integrated unchanged
+on checked main `955195af5a0077e823f075def12440a81db4f141` after PR #290.
+A complete tree comparison against `4405c73` confirms identical implementation,
+tests and documents before recording this integration receipt.
 
 ## RG-PLAN-004: Simultaneous timetable blocks shared execution identities
 
