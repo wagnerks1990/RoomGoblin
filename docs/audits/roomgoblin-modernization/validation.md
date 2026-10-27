@@ -186,6 +186,13 @@ through mounted middleware and async error handlers. Existing shutdown/export
 races and automation restart tests still pass. The six tracker tests also pass
 on Windows. No guard or assertion was weakened.
 
+GitHub code scanning flagged exception text in the loopback maintenance fixture's
+HTTP error body. The fixture now sends fixed plain text and retains the original
+exception for the test runner's assertion. All five export process regressions
+passed again in native Linux after that test-only correction; the application
+implementation is identical to the full-suite candidate above. CI is rerun on
+the corrected PR head before merge.
+
 Docker is unavailable locally; Compose, both runtime images, security scans,
 Node 22, native platforms and browser regressions remain exact-head CI gates.
 The requested merge and update follow those gates and exact-main publication,

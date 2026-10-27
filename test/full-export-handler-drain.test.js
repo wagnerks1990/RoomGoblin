@@ -46,8 +46,9 @@ test("a stuck HTTP writer fails freeze acquisition without issuing a token or lo
 });
 
 test("the administrator export proxy can acquire and thaw its own freeze without deadlock",linux,async t=>{
-  let app;
+  let app,upstreamError;
   const upstream=http.createServer(async(req,res)=>{
+    res.setHeader("Content-Type","text/plain; charset=utf-8");
     try{
       assert.equal(req.url,"/backup/create");assert.equal(req.headers["x-maintenance-token"],headers["x-maintenance-token"]);
       req.resume();
@@ -55,7 +56,7 @@ test("the administrator export proxy can acquire and thaw its own freeze without
       assert.equal(frozen.status,200);const {freezeToken}=await frozen.json();
       const thawed=await request(app,"export-thaw",{freezeToken});assert.equal(thawed.status,200);await thawed.text();
       res.end("export completed");
-    }catch(error){res.statusCode=500;res.end(error.message)}
+    }catch(error){upstreamError=error;res.statusCode=500;res.end("Fixture request failed")}
   });
   upstream.listen(0,"127.0.0.1");await once(upstream,"listening");
   t.after(()=>{upstream.closeAllConnections();upstream.close()});
@@ -64,6 +65,6 @@ test("the administrator export proxy can acquire and thaw its own freeze without
   const admin=await fetch(base+"/api/v1/setup/administrator",{method:"POST",headers:{"content-type":"application/json","x-setup-token":"lifecycle-test-setup"},body:JSON.stringify({username:"export-admin",password:"test-only-long-password"})});
   assert.equal(admin.status,201);await admin.text();
   const result=await fetch(base+"/api/v1/maintenance/backup/create",{method:"POST",headers:{"content-type":"application/json",cookie:admin.headers.get("set-cookie").split(";",1)[0]},body:JSON.stringify({scope:"full"}),signal:AbortSignal.timeout(5000)});
-  assert.equal(result.status,200);assert.equal(await result.text(),"export completed");
+  assert.ifError(upstreamError);assert.equal(result.status,200);assert.equal(await result.text(),"export completed");
   app.child.kill("SIGTERM");assert.deepEqual(await app.exited,[0,null],app.output());
 });
