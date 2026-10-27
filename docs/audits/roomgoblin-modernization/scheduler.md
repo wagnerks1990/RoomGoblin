@@ -124,11 +124,15 @@ the [cancellation follow-up](scheduler-cancellation.md).
 The remaining test-clock dispatch boundaries and pause-save ordering are
 validated and deployed through PR #282; see the
 [dispatch-permission follow-up](scheduler-dispatch-permission.md). Cancellation
-retention passed all 14 checks and merged in PR #283, with publication/delivery
-pending; see the [Stop-retention follow-up](scheduler-stop-retention.md).
+retention is validated and deployed through PR #283; see the
+[Stop-retention follow-up](scheduler-stop-retention.md).
 [TV/lighting recovery timing and ownership](scheduler-recovery-timing.md) passed
-final local integration validation. Display recovery timing, later-pass phase and
-cross-date resolution remain open. The editor is a separate unit. This does not
+all 14 checks and merged in PR #284; publication/delivery are pending.
+[Display recovery timing](scheduler-display-recovery.md) is implemented with
+combined native qualification complete. Lighting-group and physical-TV recovery
+identity defects have local reproductions and remain queued for the next focused
+patch. Later-pass phase and cross-date resolution remain open. The editor is a
+separate unit. This does not
 close the complete scheduler engine audit.
 
 

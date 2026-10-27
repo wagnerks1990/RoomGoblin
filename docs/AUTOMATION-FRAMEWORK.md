@@ -268,3 +268,19 @@ transports. Ports without receiver aliases use transport/port diagnostic labels;
 these labels do not create receivers or change mappings. Recovery counts now
 represent actual devices and physical command targets. An acknowledgement is not
 proof of physical TV power state.
+
+## Display recovery timing
+
+Display reconciliation uses the scheduler clock and only the currently due
+prefix of the configured first pass, including pre-action delays and dwell in
+all action domains. Future content or timers cannot take a target or clear its
+current content. Due composed actions retain their order and class/inherited
+target rules. Timer recovery preserves an owned deadline before clearing and
+retains the original scheduled-deadline fallback. A resync with no due output
+sends nothing and does not mark the occurrence executed.
+
+Continuous-run recovery uses the full current occurrence's intended targets,
+including pending actions, so the normal runner can recover a delayed owner.
+Stopped winners do not cause an older owner to restart. This first-pass state
+projection does not reconstruct later loop phases or adapter execution latency.
+Existing announcement priority and dry/live test-clock guards remain in force.

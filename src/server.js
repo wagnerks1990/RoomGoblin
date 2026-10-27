@@ -35,7 +35,7 @@ const {applicationVersion}=require("./version");
 const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
 const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,specialDayRuleForDate,validTime}=require("./school-schedule");
-const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,tvPowerIntent,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger}=require("./automation-runtime");
+const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,tvPowerIntent,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,occurrenceId,makeLedger}=require("./automation-runtime");
 const planningEngine=require("./planning");
 const planningMigration=require("./planning-migration");
 const planningStudio=require("./planning-studio");
@@ -982,13 +982,25 @@ function automationOccurrenceIsCurrentlyApplicable(event,now=new Date()){
   }
   return automationDeferredDisplayTargets(event).size>0;
 }
-function currentAutomationDisplayWinners(now=new Date()){
+function automationDueActionSequence(event,now=schedulerClock.now()){
+  const sequence=automationActionSequence(event);
+  const elapsed=now.getHours()*3600+now.getMinutes()*60+now.getSeconds()+now.getMilliseconds()/1000-automationOccurrenceScheduledMinutes(event)*60;
+  const steps=firstPassDueActions(sequence,elapsed);
+  return {steps,timerDue:elapsed>=0&&(steps.length>0||sequence.length===0)};
+}
+function currentAutomationDisplayWinners(now=schedulerClock.now(),{forRecoveryOwnership=false}={}){
   const candidates=[];
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
     for(const event of resolveAutomationOccurrences(storedEvent,now)){
       if(!automationOccurrenceIsCurrentlyApplicable(event,now))continue;
-      const targets=[...automationDeferredDisplayTargets(event)];
+      let intent=event;
+      if(!forRecoveryOwnership){
+        const due=automationDueActionSequence(event,now);
+        if(!due.steps.length)continue;
+        intent={...event,actionSequence:due.steps,timerOverlay:due.timerDue?event.timerOverlay:null};
+      }
+      const targets=[...automationDeferredDisplayTargets(intent)];
       if(!targets.length)continue;
       candidates.push({storedEvent,event,targets,scheduledMinutes:automationOccurrenceScheduledMinutes(event)});
     }
@@ -1016,12 +1028,11 @@ function currentAutomationDisplayWinners(now=new Date()){
 async function runDisplayAutomationResync(event,winningTargets){
   assertAutomationCommandsAllowed(schedulerClock);
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
-  const allowed=new Set(winningTargets||[]),steps=automationActionSequence(event),first=steps[0]||{};
-  const timerOccurrence=[event.id,event._scheduledDateKey||localDateKey(new Date()),event.classId||event._planningBlockId||"clock",event.time].join(":");
+  const now=schedulerClock.now(),due=automationDueActionSequence(event,now);
+  const allowed=new Set(winningTargets||[]),steps=due.steps,first=steps[0]||{},dispatches=[];
+  const timerOccurrence=[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":");
   const priorTimer=typeof persistentState!=="undefined"?[...allowed].map(id=>persistentState.displays[id]?.timer).find(t=>t?.automationId===event.id&&t.automationOccurrence===timerOccurrence&&Number(t.endAt)>0):null;
-  const durationDeadline=event.timerOverlay?.source==="duration"?(priorTimer?new Date(Number(priorTimer.endAt)):new Date(new Date(`${localDateKey(schedulerClock.now())}T${event.time}:00`).getTime()+Number(event.timerOverlay.durationSeconds||0)*1000)):null;
-  const results=[];
-  if(allowed.size)results.push(await executeCommand({type:"display.clear",target:[...allowed],payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
+  const durationDeadline=event.timerOverlay?.source==="duration"?(priorTimer?new Date(Number(priorTimer.endAt)):new Date(new Date(`${localDateKey(now)}T${event.time}:00`).getTime()+Number(event.timerOverlay.durationSeconds||0)*1000)):null;
   for(let i=0;i<steps.length;i++){
     const step=steps[i]||{},action=step.action,domain=automationTargetDomain(action);
     if(!["display-content","display-overlay"].includes(domain))continue;
@@ -1033,19 +1044,29 @@ async function runDisplayAutomationResync(event,winningTargets){
     else rawTargets=["all"];
     const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
     if(!targets.length)continue;
-    const output=await runSingleAutomationAction({...event,_sceneEndAt:durationDeadline?.getTime()||(event.timerOverlay?.source==="end-time"?new Date(`${localDateKey(schedulerClock.now())}T${event.timerOverlay.endTime}:00`).getTime():event._classEndAt),action,targets,payload:{...(step.payload||{}),...(action==="display.media"?{loop:step.executionMode==="loop"}:{})},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
-    results.push(...(output.results||[]));
+    dispatches.push({step,action,targets});
   }
-  const timer=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
+  const timer=due.timerDue&&event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
+  let timerTargets=[];
   if(timer?.enabled){
     const rawTargets=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
       ? event._classDefaultTargets
       : (timer.useEventTargets!==false?(first.targets||event.targets):(Array.isArray(timer.targets)&&timer.targets.length?timer.targets:(first.targets||event.targets)));
-    const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
-    if(targets.length){
-      const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync",endAtOverride:durationDeadline});
-      if(timerResult?.result)results.push(timerResult.result);
-    }
+    timerTargets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
+  }
+  // Plan before clearing: future content/overlays must not clear a target whose
+  // current state still belongs to another occurrence. Preserve due composition.
+  const clearTargets=[...new Set([...dispatches.flatMap(row=>row.targets),...timerTargets])],results=[];
+  if(!clearTargets.length)return {ok:true,skipped:true,reason:"no-actions-due",results};
+  assertAutomationCommandsAllowed(schedulerClock);
+  results.push(await executeCommand({type:"display.clear",target:clearTargets,payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
+  for(const {step,action,targets} of dispatches){
+    const output=await runSingleAutomationAction({...event,_sceneEndAt:durationDeadline?.getTime()||(event.timerOverlay?.source==="end-time"?new Date(`${localDateKey(now)}T${event.timerOverlay.endTime}:00`).getTime():event._classEndAt),action,targets,payload:{...(step.payload||{}),...(action==="display.media"?{loop:step.executionMode==="loop"}:{})},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
+    results.push(...(output.results||[]));
+  }
+  if(timerTargets.length){
+    const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets:timerTargets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync",endAtOverride:durationDeadline});
+    if(timerResult?.result)results.push(timerResult.result);
   }
   return {ok:true,results};
 }
@@ -1065,7 +1086,7 @@ function consumeDeferredAnnouncementAutomations(){
 }
 async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-ended"){
   if(!schedulerClock.commandsAllowed())return {winnerCount:0,results:[],skipped:true,reason:"test-clock-dry-run"};
-  const now=new Date(),winners=currentAutomationDisplayWinners(now),results=[];
+  const now=schedulerClock.now(),winners=currentAutomationDisplayWinners(now),results=[];
   let skipped=false;
   for(const candidate of winners){
     if(!schedulerClock.commandsAllowed()){skipped=true;break}
@@ -1073,6 +1094,10 @@ async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-
     const scheduledMinuteKey=`${localDateKey(now)} ${candidate.event.time}`;
     try{
       const result=await runDisplayAutomationResync(candidate.event,candidate.winningTargets);
+      if(result.skipped){
+        results.push({automationId:candidate.storedEvent.id,name:candidate.storedEvent.name,classId:candidate.event.classId||null,time:candidate.event.time,targets:candidate.winningTargets,ok:true,skipped:true,reason:result.reason});
+        continue;
+      }
       candidate.storedEvent.lastExecByClass=candidate.storedEvent.lastExecByClass||{};
       candidate.storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;
       candidate.storedEvent.lastExec=scheduledMinuteKey;

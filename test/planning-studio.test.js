@@ -2,7 +2,7 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const studio=require("../src/planning-studio"),engine=require("../src/planning"),school=require("../src/school-schedule"),{createWeatherCache}=require("../src/planning-weather");
 const scene=studio.scene;
-const {assertAutomationCommandsAllowed,SchedulerClock}=require("../src/automation-runtime");
+const {assertAutomationCommandsAllowed,SchedulerClock,firstPassDueActions}=require("../src/automation-runtime");
 const profile=()=>school.normalizeSchoolScheduleProfile({...engine.cyclePreset(),anchorDate:"2027-10-18",planning:{enabled:true,dates:{"2027-10-18":{status:"school",timetableId:"special"}},timetables:[{id:"special",name:"Special",blocks:[{id:"lunch",kind:"break",label:"Lunch A",startTime:"10:58",endTime:"11:28"},{id:"return",kind:"event",label:"Return to class",startTime:"11:28",endTime:"11:36"}]}]}});
 test("temporary recurring clocks are bounded, skip dates, and reject ambiguous ranges",()=>{
  const w=studio.windowRule({startDate:"2027-10-18",endDate:"2027-10-22",excludedDates:["2027-10-20"],repeatEveryMinutes:15,endTime:"09:00"});
@@ -69,8 +69,8 @@ test("timetable-bound lunch timer uses block end even though no teaching class e
 test("resync preserves an owned duration deadline and reconstructs the original scheduled deadline after restart",async()=>{
  for(const prior of [true,false]){
   const deadline=new Date(2027,9,18,11,prior?27:28).getTime(),timerCalls=[],state={displays:{tv1:{timer:prior?{automationId:"lunch",automationOccurrence:"lunch:2027-10-18:clock:10:58",endAt:deadline}:null}}};
-  const ctx=vm.createContext({assertAutomationCommandsAllowed,Date,persistentState:state,normalizeTimerOverlay:x=>x,automationActionSequence:()=>[],automationTargetDomain:()=>"display-content",automationDisplayTargets:x=>x,executeCommand:async()=>{state.displays.tv1.timer=null;return {ok:true}},runAutomationTimerOverlay:async(e,opts)=>{timerCalls.push(opts);return {}},localDateKey:()=>"2027-10-18",schedulerClock:{now:()=>new Date(2027,9,18,11,10),commandsAllowed:()=>true}});
-  vm.runInContext(extract("runDisplayAutomationResync",true),ctx);await ctx.runDisplayAutomationResync({id:"lunch",_scheduledDateKey:"2027-10-18",time:"10:58",targets:["tv1"],timerOverlay:{enabled:true,source:"duration",durationSeconds:1800}},["tv1"]);
+  const ctx=vm.createContext({assertAutomationCommandsAllowed,firstPassDueActions,Date,persistentState:state,normalizeTimerOverlay:x=>x,automationActionSequence:()=>[],automationTargetDomain:()=>"display-content",automationDisplayTargets:x=>x,executeCommand:async()=>{state.displays.tv1.timer=null;return {ok:true}},runAutomationTimerOverlay:async(e,opts)=>{timerCalls.push(opts);return {}},localDateKey:()=>"2027-10-18",schedulerClock:{now:()=>new Date(2027,9,18,11,10),commandsAllowed:()=>true}});
+  vm.runInContext(extract("automationOccurrenceScheduledMinutes")+extract("automationDueActionSequence")+extract("runDisplayAutomationResync",true),ctx);await ctx.runDisplayAutomationResync({id:"lunch",_scheduledDateKey:"2027-10-18",time:"10:58",targets:["tv1"],timerOverlay:{enabled:true,source:"duration",durationSeconds:1800}},["tv1"]);
   assert.equal(new Date(timerCalls[0].endAtOverride).getTime(),deadline);
  }
 });

@@ -2,9 +2,10 @@
 
 Baseline: locally qualified resource patch
 `c3fd0a49d44fcff96a5676b184b335ed609c02ca` on checked PR #284 main.
-That resource patch is not yet merged. Status: implemented and locally qualified.
-Checked integration with PR #285 and the resource patch remains a
-separate requirement before PR submission.
+The resource and complete-ownership patches are now combined on checked PR #285
+main `217588afddcaf445d1fa9a2dd684dde088c82c7a`. Both were locally qualified
+separately, and the combined active-worktree qualification passed before PR
+submission.
 
 ## RG-SCHED-026: Partial ownership admitted an entire older loop
 
@@ -15,7 +16,7 @@ separate requirement before PR submission.
 | Exact baseline locations | `src/server.js:5863-5873,5874-5908,8584-8600` |
 | Complexity / compatibility risk | Medium / Intentionally tightens recovery from any target to full scope |
 | Expected benefit | Do not restart a whole loop against a newer winner's targets |
-| State | Reproduced, implemented and locally qualified; checked integration pending |
+| State | Reproduced, implemented and locally qualified; combined integration qualified; CI pending |
 
 Normal supersession cancels an entire older run when its resources overlap a new
 occurrence. Recovery instead admitted any earlier loop that retained one winning
@@ -70,3 +71,18 @@ command or receiver reload was used. No stored identity, schema, dependency or
 version migration is needed. Later-pass reconstruction, cross-date resolution,
 event-timer replacement resource policy and the editor remain separate audit
 boundaries. This does not close the entire scheduler engine review.
+
+
+## Checked integration
+
+The normal merge of checked display-timing main retained both runtime helpers,
+due display/timer selection and complete ownership admission. Documentation
+conflicts retained both contracts. The display recovery fixture now loads actual
+resource keys instead of a placeholder. An initial integration run passed 111
+cases and failed 17 because that fixture named a nonexistent extraction boundary;
+correcting the boundary produced **128 passed, zero failed, zero skipped** with
+behavioral assertions unchanged. The combined native snapshot passed **1,237 tests: 1,235 passed, zero failed,
+two root-only ownership skips**, plus **23 Host Recovery tests**, Node/controller
+validation, Host Python compilation and tracked Bash syntax. Only documentation
+evidence changed afterward. Required CI still owns Compose, image/scanner,
+browser and native-platform qualification.

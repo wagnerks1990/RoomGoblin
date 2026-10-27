@@ -1,14 +1,11 @@
 # RoomGoblin modernization audit
 
-Status: **Complete recovery ownership implemented; native qualification in progress**.
-The combined scheduler safeguards in PR #278 were validated, merged and deployed
-at `66c54a2` with health, backup integrity and rollback verified. Cancellation
-persistence is deployed at `52e28c6` after all checks and backup/health verification.
-Dispatch permission is deployed at `970cab3` after checked publication and receipt
-verification. Stop retention is deployed and verified at `22b19dc` (PR #283).
-Recovery timing/ownership merged at `2bd5ce9` (PR #284), with main publication
-and delivery pending. Display timing is locally qualified and under PR #285
-checks. Scheduler timing/task
+Status: **Recovery resource identity and complete ownership qualified on checked main; CI pending**.
+The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
+recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
+with health, backup integrity and rollback verified. Display timing passed all
+14 PR checks and merged at `217588a` (PR #285); main publication and delivery
+remain pending. Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -63,6 +60,8 @@ Queued subsystem units below have not been marked audited.
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)
+
+- [Display recovery timing](scheduler-display-recovery.md)
 - [Scheduler dispatch permission](scheduler-dispatch-permission.md)
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
 

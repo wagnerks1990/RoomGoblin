@@ -1,7 +1,7 @@
 # Recovery resource identity
 
 Baseline: `2bd5ce972dca231d5aeb8eff42a57245cec8fee6`, alpha.85, checked
-PR #284 main. Status: locally qualified on checked PR #284 main; integration and CI pending.
+PR #284 main. Status: combined resource/ownership patch qualified on checked PR #285 main; CI pending.
 
 ## RG-SCHED-024: Lighting recovery compared groups with their own members
 
@@ -87,8 +87,12 @@ The native active-worktree snapshot passed **1,210 tests: 1,208 passed, 0 failed
 2 root-only ownership skips**, plus **23 Host Recovery tests**, Node/controller
 checks, Python compilation and tracked Bash syntax. Only documentation status and
 evidence changed afterward. CI must also qualify Compose, runtime
-images/scans, browsers and native artifacts. PR #285 display timing integration
-is still pending; this patch is initially qualified on checked PR #284 main.
+images/scans, browsers and native artifacts. This initial snapshot was qualified on checked PR #284 main. The resource and
+complete-ownership changes are now integrated with checked PR #285 main
+`217588a`. That combined snapshot passed **1,237 tests: 1,235 passed, zero
+failed and two root-only ownership skips**, plus **23 Host Recovery tests**
+and Node/controller/Python/Bash checks. The combined focused suite passed 128
+cases. See the ownership audit for fixture-integration evidence.
 
 Reconciliation diagnostics count actual lighting devices and physical TV command
 targets. `resourceDispatches` can still be smaller because a complete aggregate
@@ -106,6 +110,6 @@ phase, cross-date resolution and the editor remain separate audit work.
 A separate probe exposes a remaining admission boundary: a loop that owns only
 part of its original group can still be admitted as a whole occurrence when no
 cancellation marker exists. Its two controls (unopposed ownership and retained
-Stop) pass. Normal whole-run replacement versus partial recovery needs a separate
-policy/regression review. This patch does not mark that boundary or the entire
-scheduler engine complete.
+Stop) pass. The combined [complete-ownership patch](scheduler-complete-recovery-owner.md)
+addresses that boundary with ten cases, requiring the entire intended scope
+before whole-run admission. The entire scheduler engine remains under review.
