@@ -138,6 +138,11 @@ including its configured time zone and test-clock date. It preserves the draft
 and does not reload saved settings. A later edit, date selection, reload or Save
 invalidates the pending lookup. Failed lookups keep the selected date and show
 an error; use Today again to retry.
+Linked-class previews show the actual dispatch date after applying an offset.
+When that differs from the class day, the segment retains its source date.
+Resolved timetable-block actions show the same previous/next-day indicator as
+class actions. Date labels follow calendar boundaries, including leap days and
+year changes, without changing saved timing or dispatch.
 Preview and save never issue device commands, resume the
 scheduler, or restart running occurrences. Already-running occurrences keep their
 resolved boundaries; use the existing Pause/Resume Scheduled State controls

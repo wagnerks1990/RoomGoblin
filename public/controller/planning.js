@@ -225,7 +225,12 @@
       try{const result=await api(`/api/v1/planning/day${date?"?date="+encodeURIComponent(date):""}`);if(serial!==previewSerial)return;el("autoClassPreview").replaceChildren();
         if(result.day.automationSuppressed){el("autoClassPreview").textContent=`${result.day.date}: scheduled classroom actions are suppressed.`;return}
         const rows=result.day.rows.filter(row=>ids.includes(row.classId));
-        for(const row of rows){const node=document.createElement("div"),base=reference==="end"?row.endTime:row.startTime,[h,m]=base.split(":").map(Number),raw=h*60+m+offset,value=((raw%1440)+1440)%1440;node.textContent=`${result.day.date} · ${row.name} → ${String(Math.floor(value/60)).padStart(2,"0")}:${String(value%60).padStart(2,"0")} · segment ${row.startTime}–${row.endTime}`;el("autoClassPreview").append(node)}
+        for(const row of rows){
+          const node=document.createElement("div"),base=reference==="end"?row.endTime:row.startTime,[h,m]=base.split(":").map(Number),raw=h*60+m+offset,value=((raw%1440)+1440)%1440,dayOffset=Math.floor(raw/1440);
+          const dispatchDate=new Date(`${result.day.date}T12:00:00Z`);dispatchDate.setUTCDate(dispatchDate.getUTCDate()+dayOffset);
+          node.textContent=`${dispatchDate.toISOString().slice(0,10)} · ${row.name} → ${String(Math.floor(value/60)).padStart(2,"0")}:${String(value%60).padStart(2,"0")} · segment ${dayOffset?result.day.date+" ":""}${row.startTime}–${row.endTime}`;
+          el("autoClassPreview").append(node);
+        }
         if(!rows.length)el("autoClassPreview").textContent=`${result.day.date}: none of these classes occur in the saved day plan.`;
       }catch(error){if(serial===previewSerial)el("autoClassPreview").textContent=`Day preview unavailable: ${error.message}`}
     },150);
