@@ -1,7 +1,7 @@
 # Scheduler Stop retention
 
 Baseline: `52e28c6660e9258772f842f8df5eac4517d90a6a`, alpha.85, checked
-PR #281 main. Status: locally qualified; checked-main integration and CI pending.
+PR #281 main. Status: locally qualified on checked PR #282 main; CI/delivery pending.
 
 ## RG-SCHED-018: Diagnostic history eviction could forget an accepted Stop
 
@@ -53,8 +53,17 @@ the UTF-8 byte limit. The native active-worktree snapshot passed **1,151 tests:
 1,149 passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Recovery
 tests**, Node/controller checks, Python compilation and tracked Bash syntax.
 CI must also qualify Compose, runtime images/scans, browser coverage and native
-artifacts. Checked-main integration is next; this result belongs to baseline
-PR #281 plus the retention patch.
+artifacts. This result belongs to baseline PR #281 plus the retention patch.
+
+Checked main `970cab330ffcf0e16585ac68a816a7697812e332` is now integrated.
+The ledger/helper and documentation overlaps were inspected and both sets of
+changes retained. Combined focused validation passed **116 tests**. A final full
+snapshot is running; the preceding result is not claimed for this combined tree.
+
+The final combined native snapshot passed **1,172 tests: 1,170 passed, 0 failed,
+2 root-only ownership skips**, plus **23 Host Recovery tests**, Node/controller
+checks, Python compilation and tracked Bash syntax. Only documentation status and
+qualification text changed afterward. Final diff/whitespace review passed.
 
 This closes retention only for continuous-run recovery. Current-state display/TV
 reconciliation, action timing and the editor remain separate review items. No

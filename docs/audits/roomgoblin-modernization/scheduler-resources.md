@@ -1,7 +1,7 @@
 # Automation resource identity review
 
 Baseline: `70ad1c8e6dbcf2e824746d25af8142dc88c363ea`, alpha.85.
-Status: implemented and qualified locally; checked merge and delivery pending.
+Status: validated, merged and delivered in PR #278 on 2026-10-27 UTC.
 
 ## Inspection boundary
 
@@ -22,7 +22,7 @@ review, not closure of recovery winner timing or in-flight supersession ordering
 | Exact baseline locations | `src/server.js:5911-5924`; runner target resolution `1910-1928` |
 | Complexity / compatibility risk | Small / Low: existing dispatch defaults |
 | Expected benefit | Detect and replace overlapping runs targeting the default devices |
-| State | Reproduced, locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 The runner applies the action's default `all` selector when a primary action has
 no explicit targets. Resource calculation instead used its empty array, producing
@@ -40,7 +40,7 @@ remain intact; this patch does not redefine empty inherited-target semantics.
 | Exact baseline locations | `src/server.js:5919`; dispatch `1493-1528` |
 | Complexity / compatibility risk | Medium / Medium: broader accurate broadcast ownership |
 | Expected benefit | Prevent missed broadcast overlaps and false connection conflicts |
-| State | Reproduced, locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 Resource expansion omitted the payload connection and individual output override.
 It also used receiver aliases for aggregate commands that actually address every
@@ -63,7 +63,7 @@ mapping, transport command, saved identifier or topology store changes.
 | Exact baseline locations | `src/server.js:5920`; group resolution `4350-4354` |
 | Complexity / compatibility risk | Small / Low: current configured group membership |
 | Expected benefit | Prevent a group loop from fighting a newer command to one member |
-| State | Reproduced, locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 The resource resolver kept a group name such as `all`, while Govee dispatch expands
 the group into device aliases. A command to a member did not overlap that group
@@ -95,3 +95,14 @@ This change is included in the consolidated PR #278. Its final combined snapshot
 passed 1,110 tests with zero failures and two root-only skips (1,112 total), plus
 23 Host Recovery tests and syntax checks. See the validation record; fresh CI,
 checked merge and delivery remain pending.
+
+## Delivery closure
+
+PR #278 passed all 14 PR checks and all five main workflows. The normal backed-up
+update completed at 07:45:03 UTC on clean main and Hub image
+`66c54a2b321675905472ea992b88b0f0319ab8fa`. Maintenance remained healthy at
+`20f8c501916f34e17bee2c643434e7cce0c919e6`. Runtime health, database/secret integrity,
+permissions, authentication, source/deployment inputs, served assets, backup
+integrity and rollback passed. No physical command or receiver reload was issued.
+Earlier pending statements describe their qualification stage; this closure is
+the current delivery status. See [validation evidence](validation.md).

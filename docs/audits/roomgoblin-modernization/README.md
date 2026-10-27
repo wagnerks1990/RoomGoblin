@@ -1,10 +1,11 @@
 # RoomGoblin modernization audit
 
-Status: **Combined scheduler safeguards merged in PR #278; cancellation follow-up locally qualified**. Legacy TV,
-test-clock, resource identity and replacement ordering retain their individual
-audit evidence; 1,110 native tests passed with two root-only skips, plus 23 Host
-Recovery tests. All 14 PR checks passed; main validation/publication and delivery
-are pending. Scheduler timing/task
+Status: **Scheduler Stop retention locally qualified on checked main**.
+The combined scheduler safeguards in PR #278 were validated, merged and deployed
+at `66c54a2` with health, backup integrity and rollback verified. Cancellation
+persistence is deployed at `52e28c6` after all checks and backup/health verification.
+Dispatch permission passed all 14 checks and merged in PR #282 at `970cab3`;
+main publication and appliance delivery are pending. Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -57,6 +58,7 @@ separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
 
+- [Scheduler dispatch permission](scheduler-dispatch-permission.md)
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
 
 - [Scheduler cancellation persistence](scheduler-cancellation.md)

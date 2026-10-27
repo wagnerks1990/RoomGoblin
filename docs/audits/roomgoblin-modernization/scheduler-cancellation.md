@@ -2,7 +2,7 @@
 
 Baseline: `e3f93c4f5755784e1950d41a1b6cadb0c1e31114`, alpha.85, the
 qualified PR #278 head. Checked main `66c54a2b321675905472ea992b88b0f0319ab8fa`
-has the identical tree. Status: implemented and qualified locally; CI/delivery pending.
+has the identical tree. Status: validated, merged and deployed in PR #281; receipt below.
 
 ## RG-SCHED-014: Cancellation writes could partially change execution
 
@@ -13,7 +13,7 @@ has the identical tree. Status: implemented and qualified locally; CI/delivery p
 | Exact baseline locations | `src/server.js:5912,6711-6715,8563-8617`; `src/automation-runtime.js:122-128` |
 | Complexity / compatibility risk | Medium / Low: one existing preference upsert |
 | Expected benefit | Failed cancellation saves leave all selected runs unchanged |
-| State | Reproduced, implemented and locally qualified; CI/delivery pending |
+| State | Validated, merged and deployed; receipt below |
 
 The operator Stop callback and four bulk helpers changed cancellation flags before
 writing each ledger row. A failed first save could stop a run despite reporting
@@ -38,7 +38,7 @@ separate priority and scheduler-pause changes are not claimed atomic here.
 | Exact baseline locations | `src/server.js:5867-5870` |
 | Complexity / compatibility risk | Small / Low: retained occurrence history only |
 | Expected benefit | A restart before the cancellation checkpoint respects saved Stop |
-| State | Reproduced, implemented and locally qualified; CI/delivery pending |
+| State | Validated, merged and deployed; receipt below |
 
 Recovery excluded only a latest `cancelled` row. An already saved
 `cancel-requested` row did not prevent recovery, and a later running/interrupted
@@ -70,8 +70,30 @@ must qualify Compose, images/scans, browser coverage and native artifacts.
 
 The 500-row ledger can later evict an old cancellation marker. This patch preserves
 that existing retention policy and does not claim indefinite cancellation memory.
-Retention under sustained history traffic remains an explicit scheduler review
-item. Current-winner reconciliation outside continuous recovery, recovery action
+Retention under sustained history traffic is addressed by the separate
+[Stop-retention follow-up](scheduler-stop-retention.md). Current-winner reconciliation outside continuous recovery, recovery action
 timing and remaining simulation dispatch boundaries also remain open. No physical
-command or production fault injection was used. Checked CI/merge, Wiki sync,
-exact images and appliance delivery are pending.
+command or production fault injection was used. The checked merge and delivery
+receipt below supersede the earlier qualification-stage status.
+
+## Checked merge
+
+PR #281 passed all 14 checks and merged as
+`52e28c6660e9258772f842f8df5eac4517d90a6a`, with the same tree as its qualified
+head. Main validation, Wiki sync, exact images and backed-up delivery subsequently
+passed as recorded below. The dispatch-permission branch preserves this entire implementation
+and all 24 cancellation regressions during integration.
+
+## Appliance delivery closure (2026-10-27 UTC)
+
+PR #281 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 08:12:33 UTC
+on clean main and Hub image `52e28c6660e9258772f842f8df5eac4517d90a6a`.
+The existing maintenance container at `20f8c501916f34e17bee2c643434e7cce0c919e6`
+was retained; both containers are healthy with zero restarts. Control/media health,
+readiness, canonical SQLite, eight secret decryptions, DB/ADB permissions,
+authentication boundaries, served operator assets and deployment inputs passed.
+The backup passed journal checksum, ZIP CRC, canonical-only database and extracted
+SQLite checks. Rollback to `66c54a2b321675905472ea992b88b0f0319ab8fa` remains
+available. PR #281 records the archive name, size and SHA-256. No physical classroom
+command, receiver reload or production fault injection was issued.
