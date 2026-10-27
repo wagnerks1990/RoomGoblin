@@ -970,3 +970,34 @@ passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**
 and Node/controller/Python/Bash checks. Final diff and whitespace checks passed.
 Only documentation qualification text changed afterward. Fresh CI is required
 for the combined PR head before merge, Wiki sync, image publication and update.
+
+## Cancellation persistence delivery closure (2026-10-27 UTC)
+
+PR #281 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 08:12:33 UTC
+on clean main and Hub image `52e28c6660e9258772f842f8df5eac4517d90a6a`.
+The existing maintenance container at `20f8c501916f34e17bee2c643434e7cce0c919e6`
+was retained; both containers are healthy with zero restarts. Control/media health,
+readiness, canonical SQLite, eight secret decryptions, DB/ADB permissions,
+authentication boundaries, served operator assets and deployment inputs passed.
+The backup passed journal checksum, ZIP CRC, canonical-only database and extracted
+SQLite checks. Rollback to `66c54a2b321675905472ea992b88b0f0319ab8fa` remains
+available. PR #281 records the archive name, size and SHA-256. No physical classroom
+command, receiver reload or production fault injection was issued.
+
+## Stop retention qualification (2026-10-27 UTC)
+
+The actual ledger/recovery fixture reproduced a stopped current winner restarting
+after 500 later history rows. The final 15 retention cases also cover legacy-row
+migration, claims, atomic failure, capacity, duplicates, real-date cleanup and
+invalid/oversized protected state. The focused suite passed **72 tests**.
+The native snapshot on PR #281 main passed **1,151 tests: 1,149 passed, 0 failed,
+2 root-only ownership skips**, plus **23 Host Recovery tests**.
+
+After checked PR #282 main was integrated, the combined focused suite passed
+**116 tests**. The final native active-worktree snapshot passed **1,172 tests:
+1,170 passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Recovery
+tests**, Node/controller checks, Python compilation and tracked Bash syntax.
+Only documentation status/qualification text changed afterward. Diff and
+whitespace review passed. CI still owns Docker/Compose, image scans/builds,
+browser and platform artifact qualification. No physical command was issued.

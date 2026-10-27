@@ -1,7 +1,7 @@
 # Scheduler dispatch permission
 
 Baseline: `66c54a2b321675905472ea992b88b0f0319ab8fa`, alpha.85.
-Status: implemented and qualified on checked cancellation main; CI/delivery pending.
+Status: all 14 PR checks passed; merged in PR #282 as 970cab3; main delivery pending.
 
 ## RG-SCHED-016: Direct reconciliation and multi-command actions could bypass dry mode
 
@@ -12,7 +12,7 @@ Status: implemented and qualified on checked cancellation main; CI/delivery pend
 | Exact baseline locations | `src/server.js:1016,1065,1493,1703,5890,8689` and their complete function bodies |
 | Complexity / compatibility risk | Medium / Medium: more precise dispatch admission |
 | Expected benefit | End live test-clock permission before subsequent scheduled commands |
-| State | Reproduced, implemented and locally qualified; CI/delivery pending |
+| State | Validated and merged in PR #282; main delivery pending |
 
 Sequence checkpoints did not cover direct recovery actions, timer dispatch or
 commands later inside an already entered multi-command action. Reconciliation
@@ -46,7 +46,7 @@ and explicit permitted clocks rather than bypassing it.
 | Exact baseline location | `src/server.js:212` |
 | Complexity / compatibility risk | Small / Low: preserve existing preference shape |
 | Expected benefit | Failed pause/resume saves leave runtime and persisted state aligned |
-| State | Reproduced, implemented and locally qualified; CI/delivery pending |
+| State | Validated and merged in PR #282; main delivery pending |
 
 The toggle changed the runtime flag before writing its preference. Both enable
 and disable could take effect despite a failed save. The candidate preference is

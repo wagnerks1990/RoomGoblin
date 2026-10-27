@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retain scheduled Stop identities independently of diagnostic history, with real-date
+  cleanup and bounded storage, so history traffic cannot revive cancelled loops.
+
 - Recheck test-clock live permission at scheduled command, reconciliation and
   legacy TV dispatch boundaries; save scheduler pause changes before applying them.
 

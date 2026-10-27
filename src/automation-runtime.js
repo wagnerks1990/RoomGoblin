@@ -123,20 +123,62 @@ function assertAutomationCommandsAllowed(clock,{manual=false}={}){
   if(!manual&&!clock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
 }
 
-function makeLedger(store,{key="automation.run-ledger",limit=500}={}){
-  function read(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {version:1,runs:Array.isArray(value.runs)?value.runs:[]}}
-  function write(value){store.setPreference(key,{version:1,runs:value.runs.slice(-limit)})}
+function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLimit=5000,now=()=>new Date()}={}){
+  if(!Number.isSafeInteger(cancellationLimit)||cancellationLimit<1||cancellationLimit>5000)throw new Error("Automation cancellation retention limit is invalid");
+  const cancellationStatus=status=>status==="cancel-requested"||status==="cancelled";
+  const dateKey=date=>`${String(date.getFullYear()).padStart(4,"0")}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  function occurrenceDate(id){
+    if(typeof id!=="string")return null;
+    const match=/^.+:.+:(\d{4}-\d{2}-\d{2}):(\d{2}):(\d{2})$/.exec(id);
+    if(!match||Number(match[2])>23||Number(match[3])>59)return null;
+    const date=new Date(`${match[1]}T12:00:00`);
+    return Number.isFinite(date.getTime())&&dateKey(date)===match[1]?match[1]:null;
+  }
+  function retainedCancellations(value){
+    const saved=value.cancelledOccurrences===undefined?[]:value.cancelledOccurrences;
+    if(!Array.isArray(saved)||saved.length>5000)throw new Error("Automation cancellation state is invalid or exceeds its limit");
+    // Retention follows real local dates, never the operator's simulated clock.
+    // Keep yesterday for overnight occurrences, today and future live-test IDs.
+    const cutoff=new Date(now());
+    if(!Number.isFinite(cutoff.getTime()))throw new Error("Automation cancellation retention date is invalid");
+    cutoff.setHours(0,0,0,0);cutoff.setDate(cutoff.getDate()-1);
+    const firstDate=dateKey(cutoff),ids=new Set();let bytes=2;
+    const add=(id,strict=false)=>{
+      const date=occurrenceDate(id);
+      if(!date){if(strict)throw new Error("Automation cancellation identity is invalid");return}
+      if(date<firstDate||ids.has(id))return;
+      bytes+=Buffer.byteLength(JSON.stringify(id),"utf8")+1;
+      if(ids.size>=cancellationLimit||bytes>1024*1024)throw new Error("Automation cancellation retention limit reached");
+      ids.add(id);
+    };
+    for(const id of saved)add(id,true);
+    for(const row of value.runs||[])if(cancellationStatus(row.status))add(row.occurrenceId);
+    return [...ids];
+  }
+  function readValue(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {...value,runs:Array.isArray(value.runs)?value.runs:[]}}
+  function read(){const value=readValue();return {version:1,runs:value.runs}}
+  function readState(){const value=readValue();return {...value,cancelledOccurrences:retainedCancellations(value)}}
+  function write(value){
+    // Migrate legacy history and retain newly requested Stops before truncation,
+    // in the same atomic preference write as the diagnostic rows.
+    const cancelledOccurrences=retainedCancellations(value);
+    store.setPreference(key,{version:1,runs:value.runs.slice(-limit),cancelledOccurrences});
+  }
+  function cancelledOccurrenceIds(){
+    const state=readState();
+    return new Set([...state.cancelledOccurrences,...state.runs.filter(row=>cancellationStatus(row.status)).map(row=>row.occurrenceId)]);
+  }
   function recordMany(entries){
     if(!entries.length)return entries;
     // Never acknowledge a batch after dropping some of its own new records.
     if(entries.length>limit)throw new Error("Automation ledger batch exceeds its history limit");
-    const state=read(),observedAt=new Date().toISOString();
-    write({runs:[...state.runs,...entries.map(entry=>({...entry,observedAt}))]});
+    const state=readState(),observedAt=new Date().toISOString();
+    write({...state,runs:[...state.runs,...entries.map(entry=>({...entry,observedAt}))]});
     return entries;
   }
   function record(entry){recordMany([entry]);return entry}
-  function claim(id,details={}){const state=read();const existing=[...state.runs].reverse().find(run=>run.occurrenceId===id&&["claimed","running","succeeded"].includes(run.status));if(existing)return {claimed:false,existing};const row={occurrenceId:id,status:"claimed",...details};state.runs.push({...row,observedAt:new Date().toISOString()});write(state);return {claimed:true,row}}
-  return {read,record,recordMany,claim};
+  function claim(id,details={}){const state=readState();const existing=[...state.runs].reverse().find(run=>run.occurrenceId===id&&["claimed","running","succeeded"].includes(run.status));if(existing)return {claimed:false,existing};const row={occurrenceId:id,status:"claimed",...details};write({...state,runs:[...state.runs,{...row,observedAt:new Date().toISOString()}]});return {claimed:true,row}}
+  return {read,record,recordMany,claim,cancelledOccurrenceIds};
 }
 
 module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger};

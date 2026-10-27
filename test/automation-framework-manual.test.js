@@ -52,7 +52,8 @@ test("continuous scheduled automations recover after restart or operator resume"
   assert.match(server,/continuousRecovery=await recoverContinuousAutomationOccurrences\("operator-resume"\)/);
   assert.match(server,/recoverContinuousAutomationOccurrences\("startup-reconcile"\)/);
   const recovery=server.slice(server.indexOf("async function recoverContinuousAutomationOccurrences("),server.indexOf("async function reconcileScheduledAutomationState("));
-  assert.match(recovery,/run\.occurrenceId===id&&\["cancel-requested","cancelled"\]\.includes\(run\.status\)/);
+  assert.match(recovery,/cancelled=automationRunLedger\.cancelledOccurrenceIds\(\)/);
+  assert.match(recovery,/if\(cancelled\.has\(id\)\)continue/);
   assert.match(server,/status:cancelled\?"cancelled":interrupted\?"interrupted":"failed"/);
 });
 
