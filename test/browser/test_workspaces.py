@@ -1194,6 +1194,22 @@ class WorkspaceBrowserTests(unittest.TestCase):
         expect(page.locator('#planning').get_by_role('button', name='Today', exact=True)).to_be_enabled()
         self.assertFalse(errors, errors)
 
+    def test_planning_today_cannot_change_an_open_date_range(self):
+        from playwright.sync_api import expect
+        page, errors, source = self.planning_today_page()
+        page.locator('#planningDayNote').fill('Keep this range setup')
+        held = self.hold_planning_today(page)
+        page.get_by_role('button', name='Apply to a date range', exact=True).click()
+        dialog = page.get_by_role('dialog', name='Apply this day setup to a range')
+        expect(dialog.get_by_label('First date')).to_have_value('2027-10-18')
+        with page.expect_response('**/api/v1/planning/day'):
+            held[0].fulfill(json={'day': {'date': '2027-10-19'}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#planningDate')).to_have_value('2027-10-18')
+        expect(page.locator('#planningDayNote')).to_have_value('Keep this range setup')
+        dialog.get_by_role('button', name='Cancel', exact=True).click()
+        self.assertFalse(errors, errors)
+
     def test_planning_pending_reload_preserves_newer_edits(self):
         from playwright.sync_api import expect
         page,errors,source=self.planning_draft_page()

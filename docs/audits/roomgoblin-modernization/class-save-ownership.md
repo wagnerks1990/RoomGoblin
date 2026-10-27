@@ -1,9 +1,10 @@
 # Class editor save ownership
 
 Baseline: checked main `3978311d9a6c0348db5947c974c98079a16814b8`, alpha.85.
-The local implementation follows qualified calendar draft commit `1f288f9`;
-checked-main integration will be recorded before PR submission.
-Status: locally qualified; checked integration and required CI remain pending.
+The qualified class and calendar Today changes are integrated on checked main
+`dd23fb4491a930b82f6ea17a03a4d5e318df337d` (PR #289). Runtime/tests were retained
+unchanged during integration; the sole conflict reconciled audit status text.
+Status: combined editor qualification passed on checked main; required CI pending.
 
 ## RG-CLASS-001: Repeated or uncertain saves created duplicate classes
 
@@ -63,6 +64,11 @@ plus all 23 Host Recovery tests. The Linux run includes Node/controller, Python
 and tracked Bash syntax checks. Docker, platform qualification and required
 security gates remain CI responsibilities; checked integration and CI remain.
 
-Calendar Today refresh and cross-date/class-end scheduler semantics remain under
-review in the linked planning unit. This patch does not close the unit or the
+Final combined qualification on checked main `dd23fb4` includes Calendar Today
+and its range-dialog guard: all 69 workspace Chromium tests pass, alongside
+1,235 native Linux passes, zero failures, two root-only skips and 23 Host Recovery
+passes. Syntax/controller checks pass. Required CI and delivery remain pending.
+
+Calendar Today is included in this combined editor patch. Cross-date/class-end
+scheduler semantics remain separate. This patch does not close the unit or the
 overall modernization roadmap.

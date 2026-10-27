@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Calendar Today and class-save fixes locally qualified; checked integration pending**.
+Status: **Calendar Today and class-save fixes qualified on checked main; required CI pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
