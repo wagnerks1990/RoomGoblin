@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Enforce the continuous-automation one-second cycle floor while keeping
+  cancellation responsive and configured waits stable across clock corrections.
+- Release scheduled/manual/recovered task ownership even when ledger or final
+  persistence fails; retain accepted work through shutdown and recovery drain.
+
 - Share matrix status scans across callers, cap aggregate/named reads at eight
   seconds and invalidate cached readings on command or connection changes.
 - Bound matrix response bodies to 64 KiB, stop retry waits on cancellation and
