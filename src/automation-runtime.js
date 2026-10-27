@@ -119,6 +119,10 @@ class SchedulerClock{
 
 function occurrenceId(event,dateKey,time){return `${String(event?.id||"unknown")}:${String(event?.classId||"manual")}:${dateKey}:${time}`}
 
+function assertAutomationCommandsAllowed(clock,{manual=false}={}){
+  if(!manual&&!clock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
+}
+
 function makeLedger(store,{key="automation.run-ledger",limit=500}={}){
   function read(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {version:1,runs:Array.isArray(value.runs)?value.runs:[]}}
   function write(value){store.setPreference(key,{version:1,runs:value.runs.slice(-limit)})}
@@ -127,4 +131,4 @@ function makeLedger(store,{key="automation.run-ledger",limit=500}={}){
   return {read,record,claim};
 }
 
-module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger};
+module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,occurrenceId,makeLedger};

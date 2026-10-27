@@ -45,6 +45,20 @@ of at most 500 ms during waits; calendar eligibility still uses the scheduler cl
 
 ## Scheduling and supersession
 
+The scheduler test clock's live permission is checked again before each new
+display/TV/lighting dispatch within an automation action, before timer overlays,
+and during desired-state reconciliation. Returning to dry mode or expiring the
+permission stops subsequent commands; an already accepted adapter operation may
+finish. Explicit manual Run Now/draft actions and manual overlays remain available.
+Legacy per-output TV schedules recheck permission before claiming the next write,
+while persisting the result of previously accepted work.
+
+Dry reconciliation returns a skipped result and does not begin announcement,
+display, resource or Background Music restoration through that reconciliation
+call. Other independent schedulers and manual-media release operations have their
+own policies. A scheduler pause/resume preference is saved before its runtime flag
+changes, so a failed save preserves the previous flag.
+
 Scheduled occurrences are durably claimed before execution. When a newer scheduled occurrence starts and uses a resource already owned by an older running continuous sequence, RoomGoblin requests cancellation of the older overlapping occurrence before starting the newer one. This prevents two scheduled loops from continuously fighting for the same display, TV, or lighting target.
 
 Conflict checks and run replacement resolve resources from dispatch intent:

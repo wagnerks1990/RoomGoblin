@@ -281,3 +281,12 @@ resources remain available; a newer run can cancel an already waiting replacemen
 Execution rechecks cancellation and shutdown before class-window decisions or
 overlays. Predecessor failure does not poison the replacement. A hung predecessor
 keeps overlapping work waiting under the unchanged lifecycle failure deadline.
+
+## Scheduled dispatch permission
+
+The test clock's live permission is checked before each new command in a scheduled
+action, timer overlays, reconciliation and later legacy TV writes. If permission
+ends during accepted work, that work may finish, but subsequent dispatch stops.
+Dry reconciliation reports a skipped result. Explicit manual actions and overlays
+remain available. Independent schedulers and manual-media release keep their own
+policies. Failed scheduler pause/resume saves preserve the prior runtime flag.

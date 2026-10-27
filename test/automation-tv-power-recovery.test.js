@@ -23,7 +23,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
   let musicTicks=0,announcementRestores=0;
   const ctx=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},
     ...schema,...runtime,devices,Date,Set,Map,
-    schedulerClock:{now:()=>new Date("2026-10-08T19:00:00Z")},
+    schedulerClock:{now:()=>new Date("2026-10-08T19:00:00Z"),commandsAllowed:()=>true},
     cleanId:value=>String(value||"").trim().toLowerCase(),
     localDateKey:()=>"2026-10-08",
     automationClassIds:()=>[],

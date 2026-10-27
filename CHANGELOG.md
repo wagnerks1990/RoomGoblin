@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Recheck test-clock live permission at scheduled command, reconciliation and
+  legacy TV dispatch boundaries; save scheduler pause changes before applying them.
+
 - Protect legacy per-output TV schedules with all physical announcement locks
   and persist claims before CEC dispatch so uncertain writes cannot replay.
 - Report legacy scheduler persistence errors and release its busy/drain ownership
