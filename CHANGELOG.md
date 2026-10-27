@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Drain detached Veyon connection cleanup before shutdown or recovery freeze
+  completes. Pause the idle cleanup timer during freeze/shutdown and retain
+  final cleanup audits without delaying the computer-removal response.
+
 - Reclaim bounded, recognized presentation render staging at startup after an
   interrupted conversion. Preserve originals, published assets and unknown or
   linked entries; interrupted presentations remain explicitly rebuildable.

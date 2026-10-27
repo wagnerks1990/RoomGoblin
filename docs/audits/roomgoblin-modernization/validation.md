@@ -374,3 +374,20 @@ Host Python compilation, tracked-shell syntax, the new module's syntax check and
 physical receiver or live appliance fault injection was performed. Docker remains
 unavailable locally; exact-head CI, publication and normal backed-up deployment
 must complete before claiming external delivery.
+
+## Detached Veyon cleanup ownership (2026-10-27 UTC)
+
+Baseline: `42fa368794b14c9bda80565ac66ae9c69c2a07f7`, alpha.85. Three canonical
+process regressions reproduced lost shutdown/freeze ownership and idle cleanup
+admission during a freeze (**0 passed, 3 failed**). A first candidate run exposed
+incorrect test JSON-path expressions; correcting those expressions required no
+runtime change. The final cleanup/read-freeze subset passed **6 tests**.
+
+The mandated native Linux active-worktree helper included both new test files
+and all modifications. `npm run check` passed; full `npm test`: **1026 tests,
+1024 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+Tests run the real 15-second idle timer and canonical application, controlling
+only the external WebAPI transport and cached connection age. No physical
+computer is contacted. Docker remains unavailable locally; exact-head CI,
+publication and normal appliance update remain separate delivery gates.

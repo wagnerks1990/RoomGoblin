@@ -422,6 +422,31 @@ a further review lead; the separately reproduced finding below addresses it.
   physical receiver behavior. Runtime conversion still uses its existing finally
   cleanup; no cleanup loop races active rendering.
 
+### RG-ARCH-012: detached Veyon cleanup has no lifecycle owner
+
+- **Subsystem/category/priority:** Core lifecycle / Reliability and audit / P3.
+- **Baseline:** `42fa368794b14c9bda80565ac66ae9c69c2a07f7`, alpha.85;
+  `src/server.js:2768,7231`.
+- **Problem/evidence:** The idle-pool timer and computer-removal handler discard
+  connection-close promises. Three canonical regressions reproduce clean shutdown
+  before accepted cleanup/audit finishes, freeze acknowledgment while cleanup is
+  pending, and a new idle close beginning while frozen. Existing freeze audit
+  buffering prevents these tests from establishing SQLite snapshot corruption;
+  the defect is missing work ownership/admission and possible shutdown audit loss.
+- **Implementation:** Use the existing tracked async mutation owner for both
+  detached paths; guard idle timer admission during shutdown/freeze. Keep the
+  immediate computer-removal response, current network timeouts, audit buffering
+  and total failure deadlines. No endpoint command or key behavior changes.
+- **Complexity/risk/confidence:** Small / Low / Confirmed. Slow cleanup may now
+  cause the existing drain deadline to fail rather than falsely reporting success.
+- **Review/verification:** Review all Hub `.catch` call sites for detached work,
+  Veyon pool timer/removal/close, audit buffering and shutdown/freeze counters.
+  The canonical tests use real routes, connection cache and the 15-second timer;
+  a controlled WebAPI transport holds only the close response and a test clock
+  ages the synthetic cached connection. No physical workstation is contacted.
+- **Limits:** External Veyon session teardown is transport-fixture coverage, not
+  physical endpoint acceptance. This follow-up does not alter other integrations.
+
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer
 ownership/feature acceptance. Registered-handler drain and explicit bridge

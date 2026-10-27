@@ -16,6 +16,8 @@ The Veyon read follow-up includes persistent identity/key reads in the snapshot
 admission and drain barrier, preserving save-before-project stable IDs.
 The presentation recovery follow-up bounds startup reclamation of interrupted
 render staging while preserving originals and rebuild behavior.
+The connection-cleanup follow-up tracks the two detached Veyon close paths and
+pauses idle timer admission while the lifecycle lock is held.
 It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 

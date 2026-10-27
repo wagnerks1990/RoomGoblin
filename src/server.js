@@ -2765,7 +2765,10 @@ async function veyonCloseIdleConnections(){
     if(!rec.active&&now-Number(rec.lastUsed||0)>45000)await veyonCloseConnection(host,rec);
   }
 }
-const veyonPoolTimer=setInterval(()=>veyonCloseIdleConnections().catch(()=>{}),15000);
+const veyonPoolTimer=setInterval(()=>{
+  if(shutdownRequested||fullExportFreeze.requested)return;
+  trackFullExportMutation(veyonCloseIdleConnections()).catch(()=>{});
+},15000);
 veyonPoolTimer.unref?.();
 
 async function veyonAuthenticateInternal(host){
@@ -7228,7 +7231,7 @@ app.post("/api/v1/veyon/computers/role",requireCapability("lab.control"),(req,re
 app.delete("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)=>{
   const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
   if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-  delete veyonComputerStore.computers[id];veyonCloseConnection(rec.ip).catch(()=>{});persistVeyonComputers();
+  delete veyonComputerStore.computers[id];trackFullExportMutation(veyonCloseConnection(rec.ip)).catch(()=>{});persistVeyonComputers();
   res.json({ok:true,id});
 });
 app.get("/api/v1/veyon/computers/:id/info",requireCapability("lab.read"),async(req,res)=>{

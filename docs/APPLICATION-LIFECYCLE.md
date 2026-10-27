@@ -146,6 +146,13 @@ persisted. The separate maintenance config mirror has no keyring projection and
 remains token-protected and available to recovery. Ordinary authentication and
 update-status reads retain their read-only freeze policy.
 
+The Veyon idle-pool timer checks freeze/shutdown admission and tracks its entire
+cleanup promise. Removing a computer also tracks its detached connection close
+while retaining the immediate API response. Accepted closes and their audits
+therefore finish before clean shutdown or freeze acknowledgment; audit persistence
+still waits for thaw when appropriate. Network close and overall lifecycle
+deadlines are unchanged, so an over-budget drain remains an explicit failure.
+
 After the listeners, child and writers drain, shutdown flushes pending audit
 records and performs a nonwaiting SQLite WAL checkpoint. A busy/failed checkpoint,
 pending audit write or drain deadline exits with status 1; it must not be reported
