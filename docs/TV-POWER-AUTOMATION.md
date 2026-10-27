@@ -67,6 +67,14 @@ deferred CEC writes.
 
 ## Startup and Resume Scheduled State
 
+First-pass recovery candidates become eligible only after their pre-action delay
+and all preceding action dwells have elapsed, including display/lighting dwells.
+Sub-minute and fractional delays keep their exact eligibility boundary. The
+existing minute/priority/event-ID ordering between occurrences is preserved;
+within one occurrence, a later eligible step wins an otherwise equal score.
+This is configured first-pass timing, not reconstruction of adapter latency or
+later loop phases.
+
 Recovery first computes the existing per-target winners using scheduled time,
 priority and event identity. Each TV winner retains a shared, in-process marker
 for its original step/occurrence and that step's requested selectors and typed

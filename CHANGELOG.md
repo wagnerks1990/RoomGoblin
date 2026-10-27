@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Respect pre-action delays and preceding dwell times during TV/lighting recovery;
+  restore the later eligible action when one occurrence has equal-time steps.
+
 - Recheck test-clock live permission at scheduled command, reconciliation and
   legacy TV dispatch boundaries; save scheduler pause changes before applying them.
 

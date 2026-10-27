@@ -282,6 +282,14 @@ Execution rechecks cancellation and shutdown before class-window decisions or
 overlays. Predecessor failure does not poison the replacement. A hung predecessor
 keeps overlapping work waiting under the unchanged lifecycle failure deadline.
 
+## TV and lighting recovery timing
+
+TV/lighting recovery respects first-pass pre-action delays and every preceding
+dwell across action domains, with exact-second eligibility. Later eligible steps
+in the same occurrence replace earlier state; the existing minute/priority/event-ID
+precedence between occurrences remains intact. This does not infer adapter latency
+or later loop phases.
+
 ## Cancellation persistence
 
 Stop requests save the complete selected set before changing run cancellation

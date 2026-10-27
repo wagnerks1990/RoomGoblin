@@ -62,6 +62,8 @@ Queued subsystem units below have not been marked audited.
 
 - [Scheduler cancellation persistence](scheduler-cancellation.md)
 
+- [TV and lighting recovery timing](scheduler-recovery-timing.md)
+
 - [Scheduler resource identity findings](scheduler-resources.md)
 
 - [Scheduler replacement ordering](scheduler-dispatch-order.md)

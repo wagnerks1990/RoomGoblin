@@ -5770,6 +5770,7 @@ function evaluateAutomationAt(now=schedulerClock.now()){
 }
 function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
   const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes(),winners=new Map();
+  const nowSeconds=nowMinutes*60+now.getSeconds()+now.getMilliseconds()/1000;
   for(const stored of classroomAutomations.events){
     if(stored?.enabled===false)continue;
     const occurrences=resolveAutomationOccurrences(stored,now).filter(event=>automationMatchesDate(event,now).match);
@@ -5781,11 +5782,13 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
       let elapsed=0;
       for(let index=0;index<steps.length;index++){
         const step=steps[index]||{};
-        elapsed+=Math.max(0,Number(step.delaySeconds||0));
+        // First-pass recovery must respect all prior action dwells, including
+        // other domains, and must not round a pre-action delay into the past.
+        elapsed+=Math.max(0,Number(steps[index-1]?.repeatDelaySeconds||0))+Math.max(0,Number(step.delaySeconds||0));
         const domain=automationTargetDomain(step.action);
         if(!["tv-power","lighting"].includes(domain))continue;
         const effectiveMinute=scheduled+Math.floor(elapsed/60);
-        if(effectiveMinute>nowMinutes)continue;
+        if(scheduled*60+elapsed>nowSeconds)continue;
         let targets=[];
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
@@ -5797,7 +5800,10 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
         const tvPowerIntent=tvTargets?{targets:[...targets],resolvedTargets:tvTargets}:null;
         for(const target of resolved){
           const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
-          if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2])){
+          // Preserve minute/priority/event precedence between occurrences;
+          // within one occurrence the later eligible action is its final state.
+          const sameOccurrence=prior&&score[2]===prior.score[2]&&event.classId===prior.event.classId&&event.time===prior.event.time;
+          if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&(score[2]>prior.score[2]||sameOccurrence))){
             winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(tvPowerIntent?{tvPowerIntent}:{})});
           }
         }
