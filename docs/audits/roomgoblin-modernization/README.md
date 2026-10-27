@@ -10,6 +10,8 @@ The media-stop follow-up propagates child failures without discarding accepted w
 The discovery follow-up closes lifecycle admission before cache or worker access.
 The feature-owner follow-up adds canonical Sports/Ubuntu/presentation lifecycle
 and restart coverage without changing their runtime behavior.
+The read-housekeeping follow-up closes authentication and update-status writes
+during snapshot freeze while retaining read access and authorization checks.
 It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 

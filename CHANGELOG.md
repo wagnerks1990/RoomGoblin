@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep authentication activity/expiry housekeeping and update-status history from
+  writing during Full Recovery freeze. Reads, credential validation and expiry
+  enforcement remain available; normal housekeeping resumes after thaw.
+
 - Add canonical-process regression coverage for accepted Sports refreshes,
   scheduled Ubuntu maintenance acknowledgments and presentation conversion across
   shutdown/export freeze, including conversion deadline and restart recovery.

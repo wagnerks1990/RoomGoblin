@@ -198,7 +198,7 @@ fs.mkdirSync(PRESENTATION_UPLOAD_TMP, { recursive: true });
 const DATABASE_FILE = String(process.env.DATABASE_FILE || path.join(DATA_DIR,"classroom-control-hub.db"));
 const MASTER_KEY_FILE = String(process.env.MASTER_KEY_FILE || "/run/secrets/classroom-control-hub-master-key");
 const LEGACY_JSON_MIRROR = String(process.env.LEGACY_JSON_MIRROR || "false").toLowerCase()==="true";
-const dbStore = new ClassroomHubStorage({dataDir:DATA_DIR,dbFile:DATABASE_FILE,masterKeyFile:MASTER_KEY_FILE,legacyMirror:LEGACY_JSON_MIRROR});
+const dbStore = new ClassroomHubStorage({dataDir:DATA_DIR,dbFile:DATABASE_FILE,masterKeyFile:MASTER_KEY_FILE,legacyMirror:LEGACY_JSON_MIRROR,canMaintainAuth:()=>!fullExportFreeze.requested&&!shutdownRequested});
 const schedulerClock=new SchedulerClock({timezone:SCHEDULER_TIMEZONE});
 const automationRunLedger=makeLedger(dbStore);
 let automationSchedulerEnabled=(dbStore.getPreference("automation.scheduler",{enabled:true})||{}).enabled!==false;
@@ -5053,7 +5053,8 @@ app.get("/api/v1/recovery-status/:recoveryId",async(req,res)=>{
     return res.json(status);
   }catch{return res.status(503).json({ok:false,error:"Recovery status is temporarily unavailable"})}
 });
-function recordUpdateJob(job){if(!job?.phase||job.phase==="idle")return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",targetCommit:job.targetCommit||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",activeCommit:job.activeCommit||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
+// Status remains readable during export; the next unfrozen poll records history.
+function recordUpdateJob(job){if(fullExportFreeze.requested||!job?.phase||job.phase==="idle")return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",targetCommit:job.targetCommit||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",activeCommit:job.activeCommit||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
 const appUpdateReadLimit=rateLimit({
   skip:req=>!administratorAccessAllowed(req),
   windowMs:60_000,limit:120,keyGenerator:()=>"app-update-read",

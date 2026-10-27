@@ -47,6 +47,11 @@ after thaw, non-replayed Ubuntu jobs and interrupted-conversion rebuild after a
 failed shutdown deadline. External feed/SSH transports and rasterization use
 controlled adapters; physical device and visual rendering acceptance are separate.
 
+Full Recovery freeze also pauses authentication housekeeping and update-history
+cache writes from read requests. Authentication still checks expiry, revocation
+and enabled identities, and status remains readable. Normal maintenance resumes
+after thaw; the native update transaction journal remains authoritative.
+
 ## Display clients
 
 Displays are browser/kiosk endpoints with stable IDs. They render classroom slides, text, timers, images, video, web content, and priority announcements.

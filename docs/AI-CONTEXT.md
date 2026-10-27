@@ -257,6 +257,9 @@ Alpha.80 Full Recovery invariants:
   freeze before database selection; it drains in-flight HTTP/WebSocket and
   scheduler/announcement/presentation/session/audio/update work, queues audits,
   and fails closed after 30 seconds rather than mixing points in time;
+- authentication reads pause cleanup/activity writes during export freeze while
+  still enforcing expiry/revocation. Update-status reads defer history writes
+  until an unfrozen poll; neither read path may mutate a frozen SQLite snapshot;
 - master, ADB, signing and native Veyon identities are stable-copied and
   revalidated under that host lock, and both freeze tokens are released on every
   success/failure path (with a bounded crash lease);

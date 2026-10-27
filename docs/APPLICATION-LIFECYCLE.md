@@ -120,6 +120,20 @@ holds the lifecycle lock. Already accepted discovery drains normally. Audit
 records remain buffered while freeze is requested and flush after authenticated
 thaw; shutdown waits for the final audit before closing SQLite.
 
+Authentication reads must not become snapshot writers. The Hub supplies storage's
+`canMaintainAuth` callback to pause session cleanup, session last-seen and device
+credential last-used writes during freeze acquisition, active freeze and shutdown.
+Session/credential validation remains immediate: expired, revoked, disabled or
+unknown identities still fail; session lists filter expiry without deleting rows.
+Skipped cleanup does not advance its throttle, so a later allowed read performs
+overdue maintenance. Other storage users retain the default housekeeping policy.
+
+System Updates status remains readable during freeze, including a request already
+waiting on maintenance when freeze starts. `recordUpdateJob` checks the current
+freeze state before writing history. The next unfrozen poll records the latest
+job once; this is a bounded status cache, not the native transaction journal.
+Accepted update-history work still persists normally during shutdown.
+
 After the listeners, child and writers drain, shutdown flushes pending audit
 records and performs a nonwaiting SQLite WAL checkpoint. A busy/failed checkpoint,
 pending audit write or drain deadline exits with status 1; it must not be reported
