@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Add canonical-process regression coverage for accepted Sports refreshes,
+  scheduled Ubuntu maintenance acknowledgments and presentation conversion across
+  shutdown/export freeze, including conversion deadline and restart recovery.
+
 - Pause new ESPHome discovery requests during Full Recovery freezes and after
   manager shutdown, including cached requests. Existing discovery drains safely
   and its deferred audit record is retained through thaw or shutdown.

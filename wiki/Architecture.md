@@ -40,6 +40,13 @@ The Node.js service provides controller UI/API, scheduler, display orchestration
 
 The main application does not require unrestricted host privileges. Runtime state is mounted into the container rather than baked into the image.
 
+Canonical-process lifecycle regressions cover accepted Sports refreshes, scheduled
+Ubuntu maintenance acknowledgments and presentation conversions during shutdown
+and Full Recovery freeze. They verify final SQLite/asset persistence, audit flush
+after thaw, non-replayed Ubuntu jobs and interrupted-conversion rebuild after a
+failed shutdown deadline. External feed/SSH transports and rasterization use
+controlled adapters; physical device and visual rendering acceptance are separate.
+
 ## Display clients
 
 Displays are browser/kiosk endpoints with stable IDs. They render classroom slides, text, timers, images, video, web content, and priority announcements.

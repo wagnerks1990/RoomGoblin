@@ -8,6 +8,8 @@ follow-up makes route-bridge installation explicit and adds composition tests.
 The export follow-up carries mutating handler ownership past HTTP response closure.
 The media-stop follow-up propagates child failures without discarding accepted writes.
 The discovery follow-up closes lifecycle admission before cache or worker access.
+The feature-owner follow-up adds canonical Sports/Ubuntu/presentation lifecycle
+and restart coverage without changing their runtime behavior.
 It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 

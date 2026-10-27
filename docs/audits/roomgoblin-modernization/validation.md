@@ -279,3 +279,25 @@ Docker is unavailable locally; exact-head CI must qualify both runtime images,
 Compose, vulnerability scans, native artifacts and browsers. Push/merge/update
 continues through the normal exact-main publication, backup and rollback path;
 delivery evidence and hosted Wiki synchronization belong to the PR record.
+
+## Feature-owner lifecycle coverage (2026-10-27 UTC)
+
+Baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`, alpha.85. Seven new
+canonical-process tests pass against unchanged runtime code. They cover accepted
+Sports refresh, Ubuntu scheduled acknowledgment and presentation conversion across
+shutdown and export freeze, plus conversion deadline/restart/rebuild behavior.
+No new runtime defect is claimed by this test-only follow-up.
+
+The mandated `RoomGoblin-LinuxTests.py` active-worktree snapshot included all four
+new test/fixture files. Targeted checks: **7 passed, 0 failed, 0 skipped**.
+Full native Linux validation: `npm run check` passed; `npm test` reported
+**1010 tests: 1008 passed, 0 failed, 2 root-only ownership skips**. Host Recovery
+reported **23 passed**. Host Python compilation, tracked shell syntax and
+`git diff --check` passed. The Sports timer runs at its real 15-second interval;
+the interrupted conversion uses the real ten-second shutdown deadline.
+
+Feed/SSH/rasterizer adapters are controlled fixtures, while the canonical Hub,
+routes, managers, SQLite, filesystem publication, freeze/thaw and shutdown remain
+real. This does not qualify external services, hardware commands or rendered
+slide quality. Docker remains unavailable locally; exact-head CI qualifies the
+runtime images, scans, native artifacts and browsers before merge/publication.

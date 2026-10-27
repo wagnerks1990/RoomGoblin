@@ -315,6 +315,26 @@ retained registration composition; integration business logic remains separate.
 
 ## Completion boundary
 
+### Feature-owner lifecycle coverage follow-up
+
+Baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`, alpha.85.
+Seven canonical-process regressions extend RG-ARCH-004 coverage. The real initial
+Sports timer persists fetched events/source status before shutdown or freeze.
+The real Ubuntu poll claims a scheduled check before dispatch, drains its delayed
+acknowledgment, persists history/audit and does not replay it after restart.
+The real presentation upload promotes assets and its library record before a
+clean stop or freeze; a conversion exceeding the ten-second stop budget retains
+its source and recovers as interrupted/rebuildable. Existing behavior passed;
+this follow-up adds protection and does not claim a newly repaired runtime defect.
+
+Read `src/veyon-command-queue.js` in full, and re-read the Sports/Ubuntu managers,
+their Hub wiring, presentation conversion/upload/rebuild and restart regions.
+The retained legacy session dashboard is unreachable behind the existing HTTP
+410 retirement guard; its detached callback is not treated as a live writer bug.
+Physical commands, external feed correctness and rasterizer output quality remain
+in their feature-specific review units. Authentication read-side housekeeping is
+a further lifecycle review lead, not a confirmed finding in this follow-up.
+
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer
 ownership/feature acceptance. Registered-handler drain and explicit bridge
