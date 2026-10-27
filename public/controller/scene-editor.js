@@ -3,7 +3,7 @@
   const model=RoomGoblinScene,clone=x=>structuredClone(x),id=()=>`layer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,11)}`;
   const node=(tag,text,className)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e};
   window.editPlanningScene=async(value,{transparent=false}={})=>{
-    const {fitElement}=await import("/display/layout.mjs?v=dynamic-fit-20261022-1");
+    const {fitElement}=await import("/display/layout.mjs?v=dynamic-fit-20261027-1");
     const sportsBoards=await api("/api/v1/sports").then(r=>r.config?.boards||[]).catch(()=>[]);
     return new Promise(resolve=>{
     let scene=model.normalize(value||{transparent,background:"#101d2c",layers:[]}),selected=scene.layers[0]?.id||"",playing=false,viewRatio=16/9,history=[],future=[],closed=false;

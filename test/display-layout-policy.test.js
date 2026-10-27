@@ -10,7 +10,7 @@ const indexPath = path.join(root, 'public', 'display', 'index.html');
 
 test('display renderer uses dynamic content-object layout', async () => {
   const layout = await import(pathToFileURL(layoutPath).href + `?t=${Date.now()}`);
-  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20261022-1');
+  assert.equal(layout.LAYOUT_REVISION, 'dynamic-fit-20261027-1');
   assert.equal(layout.AUTO_GROW_FACTOR, 1.10);
   assert.deepEqual(layout.FONT_CAPS, { title: 220, subtitle: 140, body: 180, timer: 180 });
 
@@ -101,8 +101,8 @@ test('receiver and editor cache keys converge with the release-stamped layout id
     assert.equal(imports.length, 1, `${file} must import the shared fitter exactly once`);
     assert.equal(imports[0][1], LAYOUT_REVISION, `${file} must load the current renderer`);
   }
-  assert.match(source, /layout\.mjs\?v=dynamic-fit-20261022-1/);
-  assert.match(source, /layout\.css\?v=dynamic-fit-20261022-1/);
+  assert.match(source, /layout\.mjs\?v=dynamic-fit-20261027-1/);
+  assert.match(source, /layout\.css\?v=dynamic-fit-20261027-1/);
   assert.match(source, /DISPLAY_BUILD='\d+\.\d+\.\d+-alpha\.\d+'/);
   assert.match(dockerfile,/RELEASE_VERSION="\$\(cat VERSION\)"/);
   assert.ok(dockerfile.includes('public/display/index.html'),

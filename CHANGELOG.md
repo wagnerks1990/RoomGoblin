@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Honor explicit receiver Play/Restart when initial autoplay is disabled; keep
+  Pause/Stop authoritative over pending playback and late canplay callbacks.
+- Cancel obsolete image retries and retain page-local enrollment credentials when
+  browser storage is unavailable. Correct the body-text stylesheet newline and
+  converge renderer/cache references on `dynamic-fit-20261027-1`.
+
 - Load Today inventory and classes without waiting for optional AV probes; retain
   last-known displays on read failures and report independent MQTT/AV availability.
 - Preserve live-display preview sessions and keyboard focus during status refresh;

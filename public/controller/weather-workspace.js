@@ -46,7 +46,7 @@
   const previous=offset.value;offset.replaceChildren();w.daily.forEach((row,i)=>{const o=el("option",i===0?"Today":local(row.time,{weekday:"short",month:"short",day:"numeric"}));o.value=i;offset.append(o)});offset.value=previous||"0";
   if(!loadedConfig&&!dirty){const c=data.config||{};enabled.checked=c.enabled;label.value=c.label||"";latitude.value=c.latitude??"";longitude.value=c.longitude??"";unit.value=c.unit||"fahrenheit";nws.checked=c.alertsEnabled===true;loadedConfig=true}
  }
- async function draw(){const {fitElement}=await import("/display/layout.mjs?v=dynamic-fit-20261022-1");RoomGoblinScene.render(canvas,scene,{reducedMotion:true,fitText:fitElement});resize()}
+ async function draw(){const {fitElement}=await import("/display/layout.mjs?v=dynamic-fit-20261027-1");RoomGoblinScene.render(canvas,scene,{reducedMotion:true,fitText:fitElement});resize()}
  function resize(){canvas.style.transform=`scale(${frame.clientWidth/1920})`}
  new ResizeObserver(resize).observe(frame);
  async function generate(){const generation=++sceneGeneration,overlayFields=Object.entries(checks).filter(([,input])=>input.checked).map(([key])=>key),metrics=Object.entries(fullChecks).filter(([,input])=>input.checked).map(([key])=>key);if(!overlayFields.length)throw Error("Keep at least one overlay detail");const r=await request("/api/v1/weather/scene",{mode:mode.value,view:view.value,days:Number(days.value),dayOffset:Number(offset.value),overlayFields,metrics});if(generation!==sceneGeneration)throw Error("Layout changed while loading; preview again");scene=r.scene;await draw();notice.textContent="Preview ready. No commands sent."}

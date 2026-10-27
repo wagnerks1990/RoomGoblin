@@ -24,6 +24,11 @@ http://hub.example:3000/display/tv1#enrollmentToken=<one-use-token>
 
 The receiver exchanges the token over its WebSocket, stores the issued credential locally, and removes the URL fragment. The server stores only hashes. Credentials can be revoked or rotated independently.
 
+If browser storage is unavailable, the current page retains an enrollment token
+and its issued credential in memory. The token is still removed from the URL.
+A later page reload may require a fresh enrollment link because the credential
+could not be persisted. Server verification and one-use enrollment remain required.
+
 Turning credential authentication off restores stable URL access immediately. Existing credentials may remain stored for a future opt-in; they are not required while the policy is off.
 
 `DISPLAY_TOKEN` is only a legacy fallback when credential authentication is required. It is not needed in the default stable URL mode.
