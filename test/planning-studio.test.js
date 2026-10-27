@@ -2,6 +2,7 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm");
 const studio=require("../src/planning-studio"),engine=require("../src/planning"),school=require("../src/school-schedule"),{createWeatherCache}=require("../src/planning-weather");
 const scene=studio.scene;
+const {assertAutomationCommandsAllowed,SchedulerClock}=require("../src/automation-runtime");
 const profile=()=>school.normalizeSchoolScheduleProfile({...engine.cyclePreset(),anchorDate:"2027-10-18",planning:{enabled:true,dates:{"2027-10-18":{status:"school",timetableId:"special"}},timetables:[{id:"special",name:"Special",blocks:[{id:"lunch",kind:"break",label:"Lunch A",startTime:"10:58",endTime:"11:28"},{id:"return",kind:"event",label:"Return to class",startTime:"11:28",endTime:"11:36"}]}]}});
 test("temporary recurring clocks are bounded, skip dates, and reject ambiguous ranges",()=>{
  const w=studio.windowRule({startDate:"2027-10-18",endDate:"2027-10-22",excludedDates:["2027-10-20"],repeatEveryMinutes:15,endTime:"09:00"});
@@ -53,7 +54,7 @@ const source=fs.readFileSync(require.resolve("../src/server"),"utf8");
 function extract(name,async=false){const start=source.indexOf(`${async?"async ":""}function ${name}(`);assert.ok(start>=0,name);const end=source.indexOf("\nfunction ",start+1),nextAsync=source.indexOf("\nasync function ",start+1);return source.slice(start,Math.min(...[end,nextAsync].filter(n=>n>=0)))}
 function timerRuntime(){
  const now=new Date(2027,9,18,11,10).getTime(),sent=[];class ClockDate extends Date{constructor(...args){super(...(args.length?args:[now]))}static now(){return now}}
- const ctx=vm.createContext({Date:ClockDate,localDateKey:()=>"2027-10-18",automationDisplayTargets:t=>t,commandId:()=>"timer-id",expandAutomationVariables:v=>v,executeCommand:async c=>{sent.push(c);return {ok:true}},classScheduleMatchesDate:()=>false,timerLinkedClassChain:e=>({endAt:new Date(e._classEndAt),classes:[e._class]})});vm.runInContext(extract("runAutomationTimerOverlay",true),ctx);return {ctx,sent,now};
+ const ctx=vm.createContext({assertAutomationCommandsAllowed,schedulerClock:new SchedulerClock(),Date:ClockDate,localDateKey:()=>"2027-10-18",automationDisplayTargets:t=>t,commandId:()=>"timer-id",expandAutomationVariables:v=>v,executeCommand:async c=>{sent.push(c);return {ok:true}},classScheduleMatchesDate:()=>false,timerLinkedClassChain:e=>({endAt:new Date(e._classEndAt),classes:[e._class]})});vm.runInContext(extract("runAutomationTimerOverlay",true),ctx);return {ctx,sent,now};
 }
 test("duration timers with no override never interpret null as Unix epoch",async()=>{
  const {ctx,sent,now}=timerRuntime();await ctx.runAutomationTimerOverlay({id:"lunch",targets:["tv1"],timerOverlay:{enabled:true,source:"duration",durationSeconds:1800}});assert.equal(sent[0].payload.endAt,now+1800000);assert.equal(sent[0].payload.durationSeconds,1800);
@@ -68,7 +69,7 @@ test("timetable-bound lunch timer uses block end even though no teaching class e
 test("resync preserves an owned duration deadline and reconstructs the original scheduled deadline after restart",async()=>{
  for(const prior of [true,false]){
   const deadline=new Date(2027,9,18,11,prior?27:28).getTime(),timerCalls=[],state={displays:{tv1:{timer:prior?{automationId:"lunch",automationOccurrence:"lunch:2027-10-18:clock:10:58",endAt:deadline}:null}}};
-  const ctx=vm.createContext({Date,persistentState:state,normalizeTimerOverlay:x=>x,automationActionSequence:()=>[],automationTargetDomain:()=>"display-content",automationDisplayTargets:x=>x,executeCommand:async()=>{state.displays.tv1.timer=null;return {ok:true}},runAutomationTimerOverlay:async(e,opts)=>{timerCalls.push(opts);return {}},localDateKey:()=>"2027-10-18",schedulerClock:{now:()=>new Date(2027,9,18,11,10)}});
+  const ctx=vm.createContext({assertAutomationCommandsAllowed,Date,persistentState:state,normalizeTimerOverlay:x=>x,automationActionSequence:()=>[],automationTargetDomain:()=>"display-content",automationDisplayTargets:x=>x,executeCommand:async()=>{state.displays.tv1.timer=null;return {ok:true}},runAutomationTimerOverlay:async(e,opts)=>{timerCalls.push(opts);return {}},localDateKey:()=>"2027-10-18",schedulerClock:{now:()=>new Date(2027,9,18,11,10),commandsAllowed:()=>true}});
   vm.runInContext(extract("runDisplayAutomationResync",true),ctx);await ctx.runDisplayAutomationResync({id:"lunch",_scheduledDateKey:"2027-10-18",time:"10:58",targets:["tv1"],timerOverlay:{enabled:true,source:"duration",durationSeconds:1800}},["tv1"]);
   assert.equal(new Date(timerCalls[0].endAtOverride).getTime(),deadline);
  }
@@ -87,7 +88,7 @@ test("real automation normalization retains device scenes and safely unlinks old
 
 test("single lighting actions delegate deadline overlays without treating device scenes as screen layers",async()=>{
  const {ctx,sent}=timerRuntime();
- Object.assign(ctx,{schedulerClock:{now:()=>new Date(2027,9,18,11,10)},expandAutomationPayload:x=>x,AUTOMATION_ACTIONS:new Set(["govee.scene"]),directGoveeCommand:async()=>({ok:true}),audit:()=>{}});
+ Object.assign(ctx,{schedulerClock:{now:()=>new Date(2027,9,18,11,10),commandsAllowed:()=>true},expandAutomationPayload:x=>x,AUTOMATION_ACTIONS:new Set(["govee.scene"]),directGoveeCommand:async()=>({ok:true}),audit:()=>{}});
  vm.runInContext(extract("runSingleAutomationAction",true),ctx);
  await ctx.runSingleAutomationAction({id:"notice",action:"govee.scene",targets:["light-1"],payload:{scene:"Rainbow"},timerOverlay:{enabled:true,source:"end-time",endTime:"11:28",useEventTargets:false,targets:["tv1"]}});
  assert.equal(sent.length,1);assert.equal(sent[0].target[0],"tv1");assert.equal(sent[0].payload.remainingSeconds,18*60);

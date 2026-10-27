@@ -292,3 +292,12 @@ saved just before a restart or followed by a running/interrupted diagnostic row.
 Shutdown interruption without Stop remains recoverable. The history retains 500
 rows; larger cancellation batches fail before changes, and later row retention is
 unchanged. Other manual-media priority/pause state is a separate boundary.
+
+## Scheduled dispatch permission
+
+The test clock's live permission is checked before each new command in a scheduled
+action, timer overlays, reconciliation and later legacy TV writes. If permission
+ends during accepted work, that work may finish, but subsequent dispatch stops.
+Dry reconciliation reports a skipped result. Explicit manual actions and overlays
+remain available. Independent schedulers and manual-media release keep their own
+policies. Failed scheduler pause/resume saves preserve the prior runtime flag.

@@ -1,7 +1,7 @@
 # Automation replacement dispatch ordering
 
 Baseline: `70ad1c8e6dbcf2e824746d25af8142dc88c363ea`, alpha.85.
-Status: implemented and qualified locally; integration into PR #278 pending.
+Status: validated, merged and delivered in PR #278 on 2026-10-27 UTC.
 
 ## RG-SCHED-012: Replacement dispatch raced older accepted adapter work
 
@@ -12,7 +12,7 @@ Status: implemented and qualified locally; integration into PR #278 pending.
 | Exact baseline locations | `src/server.js:8513-8527,8528-8541`; scheduled/recovered/manual owner callers |
 | Complexity / compatibility risk | Medium / Medium: overlapping work now waits for settlement |
 | Expected benefit | Keep a late older adapter completion from overwriting replacement state |
-| State | Reproduced and locally qualified; combined CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 Supersession marked older runs cancelled, but the new owner immediately executed
 its action. Cancellation checkpoints cannot undo a request already accepted by
@@ -41,7 +41,7 @@ released. Adapters are controlled; no live device is contacted.
 | Exact baseline locations | `src/server.js:1858-1861,1893-1908,1999` |
 | Complexity / compatibility risk | Small / Low: existing lifecycle predicate |
 | Expected benefit | Prevent a cancelled waiting run from emitting a final overlay |
-| State | Reproduced and locally qualified; combined CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 The sequence checked the class window before its first cancellation checkpoint.
 If a waiting replacement reached execution after the class ended, it could skip
@@ -79,3 +79,14 @@ Full Recovery failure deadline. Cancellation-persistence failures are a separate
 open review item. No schema, device identity, API, command payload or dependency
 change is required. Checked merge, Wiki sync, exact images and the normal backed-up
 update remain pending.
+
+## Delivery closure
+
+PR #278 passed all 14 PR checks and all five main workflows. The normal backed-up
+update completed at 07:45:03 UTC on clean main and Hub image
+`66c54a2b321675905472ea992b88b0f0319ab8fa`. Maintenance remained healthy at
+`20f8c501916f34e17bee2c643434e7cce0c919e6`. Runtime health, database/secret integrity,
+permissions, authentication, source/deployment inputs, served assets, backup
+integrity and rollback passed. No physical command or receiver reload was issued.
+Earlier pending statements describe their qualification stage; this closure is
+the current delivery status. See [validation evidence](validation.md).

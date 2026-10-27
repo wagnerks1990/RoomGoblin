@@ -1,6 +1,7 @@
 "use strict";
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),vm=require("node:vm"),path=require("node:path");
 const displayAudio=require("../src/display-audio");
+const {assertAutomationCommandsAllowed}=require("../src/automation-runtime");
 const source=fs.readFileSync(require.resolve("../src/server"),"utf8").replace(/\r\n/g,"\n");
 function extract(name){const start=source.search(new RegExp(`(?:async )?function ${name}\\(`));assert.ok(start>=0,name);return source.slice(start,source.indexOf("\n}",start)+2)}
 const sports=()=>({textOptions:{scene:{layers:[{id:"board",type:"widget",widget:"sports-board",sportsBoardId:"school",sportsAudio:true,sportsVolume:.6}]}},timer:{remainingSeconds:300}});
@@ -42,7 +43,7 @@ test("audio input rejects invalid values and status never exposes media URLs",()
 
 test("website automation dispatch preserves legacy defaults and carries explicit saved audio",async()=>{
   for(const audio of [{},{volume:.37,muted:true},{volume:.7,muted:false}]){
-    const sent=[],ctx=vm.createContext({expandAutomationPayload:p=>p,schedulerClock:{now:()=>new Date()},
+    const sent=[],ctx=vm.createContext({assertAutomationCommandsAllowed,expandAutomationPayload:p=>p,schedulerClock:{now:()=>new Date(),commandsAllowed:()=>true},
       AUTOMATION_ACTIONS:new Set(["display.url"]),requireAutomationTargets:targets=>targets,
       executeCommand:async c=>{sent.push(c);return {ok:true}},localDateKey:()=>"2026-10-26",schoolCycleForDate:()=>({}),
       planningStudio:{matchingOverlays:()=>[]},planningStudioConfig:{},announcementLockedDisplayTargets:()=>[],persistentState:{displays:{}}});

@@ -921,3 +921,52 @@ passed **1,136 tests: 1,134 passed, 0 failed, 2 root-only ownership skips**, plu
 tracked Bash syntax. Final diff and whitespace review passed. Only documentation
 qualification text changed afterward. Docker is unavailable locally; fresh CI
 must qualify Compose, image builds/scans, browser tests and native artifacts.
+
+## Combined scheduler delivery closure (2026-10-27 UTC)
+
+PR #278 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The backed-up update completed at 07:45:03 UTC on
+clean main and Hub revision `66c54a2b321675905472ea992b88b0f0319ab8fa`.
+Maintenance retained its healthy `20f8c501916f34e17bee2c643434e7cce0c919e6`
+container. Both containers have zero restarts. Hub/media/maintenance/Host Agent
+health, canonical SQLite integrity, eight secret decryptions, DB/ADB permissions,
+authentication, served operator assets and source/deployment configuration passed.
+Rollback to `70ad1c8e6dbcf2e824746d25af8142dc88c363ea` remains available.
+
+Backup `auto-operational-2026-10-27T07-44-50-077Z.zip` is **128,462,461 bytes**,
+mode **0600**, SHA-256
+`a0708be1db2d36b6a499278b96116fb683cb0abf37965a0a6273f7c0fcc9d450`.
+Journal checksum, ZIP CRC, canonical-database-only content and extracted SQLite
+integrity passed. No physical command, receiver reload or production fault
+injection was issued.
+
+## Dispatch permission follow-up (2026-10-27 UTC)
+
+Fifteen initial actual-function/real-clock cases reproduced ten failures and five
+manual/live controls. Four scheduler-toggle cases failed on the original
+save ordering. Two additional post-announcement cases cover candidate boundaries
+and persistence. All **247 focused tests** now pass, including these 21 cases.
+The full native active-worktree run is in progress. No live hardware was used.
+
+The first full native snapshot passed 1,130, failed one unchanged media deadline
+assertion and skipped two root-only cases (1,133 total). That assertion used
+`Date.now()` despite the test runner measuring only 3,056 ms for its full case.
+The test now uses monotonic elapsed time with the same 4,500 ms ceiling and leaves
+the 3,000 ms production deadline, 503/no-body response and socket cleanup intact.
+All **8 native media lifecycle tests**, **23 Host Recovery tests** and syntax
+checks pass after that correction. A fresh full run is required and is running.
+
+That corrected full native snapshot passed **1,133 tests: 1,131 passed, 0 failed,
+2 root-only ownership skips**, plus **23 Host Recovery tests** and syntax checks.
+PR #281 then passed all 14 checks and merged as
+`52e28c6660e9258772f842f8df5eac4517d90a6a`; its tree exactly matches qualified
+head `3a932beeffa350a0b73d4d526ba4d30d2ad6f999`. Its main delivery gates and the
+combined dispatch-permission integration remain pending.
+
+Checked cancellation main was then integrated without discarding either side's
+runtime, tests or audit evidence. All **271 combined focused tests** passed.
+The final combined active-worktree native snapshot passed **1,157 tests: 1,155
+passed, 0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**
+and Node/controller/Python/Bash checks. Final diff and whitespace checks passed.
+Only documentation qualification text changed afterward. Fresh CI is required
+for the combined PR head before merge, Wiki sync, image publication and update.

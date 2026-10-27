@@ -1,7 +1,7 @@
 # Legacy TV scheduler review
 
 Baseline: `9c15339776e6193b2002a1fccbd0c1e7cbd6f37a`, alpha.85.
-Status: implemented and qualified locally; checked merge and delivery pending.
+Status: validated, merged and delivered in PR #278 on 2026-10-27 UTC.
 
 ## Inspection boundary
 
@@ -21,7 +21,7 @@ engine, editor, lighting or announcement subsystem.
 | Exact baseline locations | `src/server.js:8649-8650`; shared helper `1625-1637` |
 | Complexity / compatibility risk | Small / Medium: physical output reservation |
 | Expected benefit | Prevent legacy schedules from powering announcement-owned TVs |
-| State | Identified, reproduced, locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 The timer selected the first receiver whose mapping matched the output, then
 checked that receiver alone. An unlocked alias could hide another locked receiver
@@ -48,7 +48,7 @@ their exact command and connection. No live receiver or matrix is contacted.
 | Exact baseline locations | `src/server.js:8651-8657` |
 | Complexity / compatibility risk | Medium / Medium: durable admission and uncertain outcomes |
 | Expected benefit | Avoid replaying an uncertain CEC command after restart |
-| State | Identified, reproduced, locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 `lastExec` changed only in memory before dispatch, and the whole schedule store
 was saved after the loop. A restart between dispatch and that save could find the
@@ -77,7 +77,7 @@ failures with one write, including on subsequent ticks.
 | Exact baseline locations | `src/server.js:8636-8659` |
 | Complexity / compatibility risk | Small / Low |
 | Expected benefit | Report storage failure without an unhandled timer rejection |
-| State | Identified, reproduced, locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 The asynchronous interval callback had a finalizer but no outer error handler.
 Persistence errors rejected its ignored promise. The named tick now records those
@@ -109,3 +109,14 @@ This change is included in the consolidated PR #278. Its final combined snapshot
 passed 1,110 tests with zero failures and two root-only skips (1,112 total), plus
 23 Host Recovery tests and syntax checks. See the validation record; fresh CI,
 checked merge and delivery remain pending.
+
+## Delivery closure
+
+PR #278 passed all 14 PR checks and all five main workflows. The normal backed-up
+update completed at 07:45:03 UTC on clean main and Hub image
+`66c54a2b321675905472ea992b88b0f0319ab8fa`. Maintenance remained healthy at
+`20f8c501916f34e17bee2c643434e7cce0c919e6`. Runtime health, database/secret integrity,
+permissions, authentication, source/deployment inputs, served assets, backup
+integrity and rollback passed. No physical command or receiver reload was issued.
+Earlier pending statements describe their qualification stage; this closure is
+the current delivery status. See [validation evidence](validation.md).

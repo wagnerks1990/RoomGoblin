@@ -119,10 +119,13 @@ change either API, execution mode or receiver-native media looping.
 The follow-up in PR #278 covers legacy TV claims/physical locks, test-clock
 permission, resource identity and replacement dispatch ordering. See the linked
 audit records for their separate baseline reproductions and qualification.
-Cancellation-request persistence is implemented in the
-[follow-up](scheduler-cancellation.md), with local qualification complete. Retention
-under sustained history traffic, recovery winner timing and remaining simulation
-dispatch boundaries still require review. The editor is a separate
+Cancellation persistence passed all 14 checks and merged in PR #281; see the
+[cancellation follow-up](scheduler-cancellation.md). Its main delivery is pending.
+The remaining test-clock dispatch boundaries and pause-save ordering are
+implemented and locally qualified in the
+[dispatch-permission follow-up](scheduler-dispatch-permission.md); combined
+qualification after integration is complete locally. Cancellation retention and
+recovery winner timing remain open. The editor is a separate
 unit. This does not close the complete scheduler engine audit.
 
 

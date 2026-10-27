@@ -2,7 +2,7 @@
 
 Baseline: `e3f93c4f5755784e1950d41a1b6cadb0c1e31114`, alpha.85, the
 qualified PR #278 head. Checked main `66c54a2b321675905472ea992b88b0f0319ab8fa`
-has the identical tree. Status: implemented and qualified locally; CI/delivery pending.
+has the identical tree. Status: validated and merged in PR #281; main publication and delivery pending.
 
 ## RG-SCHED-014: Cancellation writes could partially change execution
 
@@ -75,3 +75,11 @@ item. Current-winner reconciliation outside continuous recovery, recovery action
 timing and remaining simulation dispatch boundaries also remain open. No physical
 command or production fault injection was used. Checked CI/merge, Wiki sync,
 exact images and appliance delivery are pending.
+
+## Checked merge
+
+PR #281 passed all 14 checks and merged as
+`52e28c6660e9258772f842f8df5eac4517d90a6a`, with the same tree as its qualified
+head. Main validation, Wiki sync, exact images and backed-up delivery remain the
+next gates. The dispatch-permission branch preserves this entire implementation
+and all 24 cancellation regressions during integration.

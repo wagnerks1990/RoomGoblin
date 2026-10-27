@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Recheck test-clock live permission at scheduled command, reconciliation and
+  legacy TV dispatch boundaries; save scheduler pause changes before applying them.
+
 - Save automation cancellation selections atomically before stopping execution,
   and honor retained Stop requests during continuous-run restart recovery.
 

@@ -2,7 +2,7 @@
 
 Baseline: `5454b7b50687079560591402259b4a52ebcac7b8`, the locally qualified
 scheduler timing/ownership head in PR #277, based on main `9c15339`.
-Status: implemented and qualified locally; checked merge and delivery pending.
+Status: validated, merged and delivered in PR #278 on 2026-10-27 UTC.
 
 ## RG-SCHED-008: Running sequences outlived test-clock live permission
 
@@ -13,7 +13,7 @@ Status: implemented and qualified locally; checked merge and delivery pending.
 | Exact baseline locations | `src/server.js:1836-1856,1858-1874`; `src/automation-runtime.js:109-117` |
 | Complexity / compatibility risk | Small / Low: existing scheduled-run permission |
 | Expected benefit | Stop a sequence advancing after its test clock returns to dry mode |
-| State | Reproduced, implemented and locally qualified; CI/delivery pending |
+| State | Reproduced, validated and delivered in PR #278 |
 
 The scheduler checks test-clock live permission before starting a tick or recovering
 an occurrence. Its running sequence checkpoints checked cancellation, shutdown,
@@ -59,3 +59,14 @@ This change is included in the consolidated PR #278. Its final combined snapshot
 passed 1,110 tests with zero failures and two root-only skips (1,112 total), plus
 23 Host Recovery tests and syntax checks. See the validation record; fresh CI,
 checked merge and delivery remain pending.
+
+## Delivery closure
+
+PR #278 passed all 14 PR checks and all five main workflows. The normal backed-up
+update completed at 07:45:03 UTC on clean main and Hub image
+`66c54a2b321675905472ea992b88b0f0319ab8fa`. Maintenance remained healthy at
+`20f8c501916f34e17bee2c643434e7cce0c919e6`. Runtime health, database/secret integrity,
+permissions, authentication, source/deployment inputs, served assets, backup
+integrity and rollback passed. No physical command or receiver reload was issued.
+Earlier pending statements describe their qualification stage; this closure is
+the current delivery status. See [validation evidence](validation.md).

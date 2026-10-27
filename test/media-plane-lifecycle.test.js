@@ -8,6 +8,7 @@ const path = require("node:path");
 const http = require("node:http");
 const { spawn } = require("node:child_process");
 const { setTimeout: delay } = require("node:timers/promises");
+const { performance } = require("node:perf_hooks");
 
 async function until(check, message, timeout = 2000) {
   const deadline = Date.now() + timeout;
@@ -211,21 +212,22 @@ test("authorization forwards only the signed path and approved session cookie", 
 });
 
 
-test("authorization has a wall-clock deadline even while upstream sends interim responses", async t => {
+test("authorization has an elapsed-time deadline even while upstream sends interim responses", async t => {
   let closed = false;
   const { origin } = await fixture(t, (req, res) => {
     res.writeProcessing();
     const keepAlive = setInterval(() => res.writeProcessing(), 100);
     res.once("close", () => { closed = true; clearInterval(keepAlive); });
   });
-  const started = Date.now();
+  const started = performance.now();
   const response = await fetch(`${origin}/media/fixture.mp4?asset=valid`, {
     signal: AbortSignal.timeout(5000)
   });
   assert.equal(response.status, 503);
   assert.equal(response.headers.get("retry-after"), "1");
   assert.equal(await response.text(), "");
-  assert.ok(Date.now() - started < 4500, "authorization exceeded its bounded deadline");
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 4500, `authorization exceeded its bounded deadline: ${elapsed} ms`);
   await until(() => closed, "timed-out authorization retained its upstream socket");
 });
 
