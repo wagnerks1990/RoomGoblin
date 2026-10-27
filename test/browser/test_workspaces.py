@@ -1079,7 +1079,8 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 req.fulfill(json={'ok': True, 'event': {**saved[-1], 'id': 'saved'}})
                 return True
             return False
-        overrides = {'/api/v1/automations': {'events': [], 'scheduler': {'timezone': 'America/New_York'}},
+        overrides = {'/api/v1/automation-control': {'enabled': True, 'clock': {'schedulerTime': '2027-10-18T16:00:00Z', 'timezone': 'America/New_York'}},
+                     '/api/v1/automations': {'events': [], 'scheduler': {'timezone': 'America/New_York'}},
                      '/api/v1/automations/calendar': {'calendar': {}, 'scheduleProfile': profile},
                      '/api/v1/class-schedules': {'classes': classes or []},
                      '/api/v1/planning': {'today': '2027-10-18', 'scheduleProfile': profile, 'classes': classes or []},
@@ -1089,6 +1090,186 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page.evaluate("showPage('schedules')")
         page.get_by_role('button', name='+ Automation', exact=True).wait_for()
         return page, errors, saved
+
+    def test_automation_today_only_refreshes_after_calendar_date_changes(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.route('**/api/v1/automation-control', lambda route: route.fulfill(json={'clock': {'schedulerTime': '2027-10-19T16:00:00Z', 'timezone': 'America/New_York'}}))
+        page.evaluate('loadSchedules()')
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_role('button', name='Today only', exact=True).click()
+        expect(editor.get_by_label('Active from (optional)', exact=True)).to_have_value('2027-10-19')
+        expect(editor.get_by_label('Active through (optional)', exact=True)).to_have_value('2027-10-19')
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_automation_today_only_uses_appliance_timezone_when_planning_is_unavailable(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.route('**/api/v1/planning', lambda route: route.fulfill(status=403, json={'error': 'Permission denied'}))
+        page.route('**/api/v1/automation-control', lambda route: route.fulfill(json={
+            'clock': {'schedulerTime': '2027-10-19T02:00:00Z', 'timezone': 'America/New_York', 'active': True}}))
+        page.evaluate('loadSchedules()')
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_role('button', name='Today only', exact=True).click()
+        expect(editor.get_by_label('Active from (optional)', exact=True)).to_have_value('2027-10-18')
+        expect(editor.get_by_label('Active through (optional)', exact=True)).to_have_value('2027-10-18')
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_automation_today_only_refreshes_an_editor_left_open_overnight(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        page.route('**/api/v1/automation-control', lambda route: route.fulfill(json={'clock': {'schedulerTime': '2027-10-19T16:00:00Z', 'timezone': 'America/New_York'}}))
+        editor.get_by_role('button', name='Today only', exact=True).click()
+        expect(editor.get_by_label('Active from (optional)', exact=True)).to_have_value('2027-10-19')
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_automation_today_only_keeps_dates_when_planning_date_is_unavailable(self):
+        from playwright.sync_api import expect
+        for response in ({'status': 503, 'json': {'error': 'Planning date unavailable'}},
+                         {'json': {'clock': {'schedulerTime': 'invalid', 'timezone': 'America/New_York'}}},
+                         {'json': {'clock': {'schedulerTime': '2027-10-19T16:00:00Z', 'timezone': 'invalid'}}}):
+            with self.subTest(response=response):
+                page, errors, saved = self.studio_page()
+                page.get_by_role('button', name='+ Automation', exact=True).click()
+                editor = page.locator('dialog.studioDialog[open]').last
+                start = editor.get_by_label('Active from (optional)', exact=True)
+                end = editor.get_by_label('Active through (optional)', exact=True)
+                start.fill('2027-10-21')
+                end.fill('2027-10-22')
+                page.route('**/api/v1/automation-control', lambda route: route.fulfill(**response))
+                editor.get_by_role('button', name='Today only', exact=True).click()
+                expect(editor.locator('.studioStatus')).to_contain_text('unavailable')
+                expect(start).to_have_value('2027-10-21')
+                expect(end).to_have_value('2027-10-22')
+                expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_disabled()
+                self.assertEqual(saved, [])
+                self.assertFalse(errors, errors)
+
+    def test_automation_today_only_does_not_overwrite_newer_date_edits(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('Date draft')
+        held = []
+        page.route('**/api/v1/automation-control', lambda route: held.append(route))
+        with page.expect_request('**/api/v1/automation-control'):
+            editor.get_by_role('button', name='Today only', exact=True).click()
+        expect(editor.get_by_role('button', name='Preview & validate', exact=True)).to_be_disabled()
+        editor.get_by_label('Active from (optional)', exact=True).fill('2027-10-21')
+        editor.get_by_label('Active through (optional)', exact=True).fill('2027-10-22')
+        self.assertEqual(len(held), 1)
+        held[0].fulfill(json={'clock': {'schedulerTime': '2027-10-19T16:00:00Z', 'timezone': 'America/New_York'}})
+        expect(editor.locator('.studioStatus')).to_contain_text('date edits were kept')
+        expect(editor.get_by_label('Active from (optional)', exact=True)).to_have_value('2027-10-21')
+        expect(editor.get_by_label('Active through (optional)', exact=True)).to_have_value('2027-10-22')
+        expect(editor.get_by_role('button', name='Preview & validate', exact=True)).to_be_enabled()
+        expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_disabled()
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_automation_preview_cannot_revalidate_an_edited_draft(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('First draft')
+        held = []
+        page.route('**/api/v1/automations/draft/simulate', lambda route: held.append(route))
+        with page.expect_request('**/api/v1/automations/draft/simulate'):
+            editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        editor.get_by_label('Automation name', exact=True).fill('Changed draft')
+        self.assertEqual(len(held), 1)
+        with page.expect_response('**/api/v1/automations/draft/simulate'):
+            held[0].fulfill(json={'ok': True, 'resolved': {'targets': ['tv1']}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_disabled()
+        expect(editor.locator('.studioStatus')).to_contain_text('Unsaved changes')
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_automation_obsolete_preview_failure_keeps_the_new_review(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('First draft')
+        held = []
+        page.route('**/api/v1/automations/draft/simulate', lambda route: held.append(route))
+        with page.expect_request('**/api/v1/automations/draft/simulate'):
+            editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        editor.get_by_label('Automation name', exact=True).fill('Reviewed draft')
+        with page.expect_request('**/api/v1/automations/draft/simulate'):
+            editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        self.assertEqual(len(held), 2)
+        held[1].fulfill(json={'ok': True, 'resolved': {'targets': ['tv1']}})
+        expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_enabled()
+        with page.expect_response('**/api/v1/automations/draft/simulate'):
+            held[0].fulfill(status=503, json={'error': 'Obsolete preview failure'})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_enabled()
+        expect(editor.locator('.studioStatus')).to_contain_text('Ready to save')
+        editor.get_by_role('button', name='Save automation', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]['name'], 'Reviewed draft')
+        self.assertFalse(errors, errors)
+
+
+
+    def test_shared_layer_preview_cannot_revalidate_an_edited_rule(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='Shared layers', exact=True).click()
+        page.get_by_role('button', name='+ Shared layer', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Layer rule name', exact=True).fill('First rule')
+        held = []
+        page.route('**/api/v1/planning/studio/preview', lambda route: held.append(route))
+        with page.expect_request('**/api/v1/planning/studio/preview'):
+            editor.get_by_role('button', name='Preview rule', exact=True).click()
+        editor.get_by_label('Layer rule name', exact=True).fill('Changed rule')
+        self.assertEqual(len(held), 1)
+        with page.expect_response('**/api/v1/planning/studio/preview'):
+            held[0].fulfill(json={'matches': [], 'previewHash': 'first-rule'})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(editor.get_by_role('button', name='Save shared layer', exact=True)).to_be_disabled()
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+    def test_shared_layer_obsolete_preview_failure_keeps_the_new_review(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='Shared layers', exact=True).click()
+        page.get_by_role('button', name='+ Shared layer', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Layer rule name', exact=True).fill('First rule')
+        held = []
+        page.route('**/api/v1/planning/studio/preview', lambda route: held.append(route))
+        with page.expect_request('**/api/v1/planning/studio/preview'):
+            editor.get_by_role('button', name='Preview rule', exact=True).click()
+        editor.get_by_label('Layer rule name', exact=True).fill('Reviewed rule')
+        with page.expect_request('**/api/v1/planning/studio/preview'):
+            editor.get_by_role('button', name='Preview rule', exact=True).click()
+        self.assertEqual(len(held), 2)
+        held[1].fulfill(json={'matches': [], 'previewHash': 'reviewed-rule'})
+        expect(editor.get_by_role('button', name='Save shared layer', exact=True)).to_be_enabled()
+        with page.expect_response('**/api/v1/planning/studio/preview'):
+            held[0].fulfill(status=503, json={'error': 'Obsolete layer preview failure'})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(editor.get_by_role('button', name='Save shared layer', exact=True)).to_be_enabled()
+        expect(editor.locator('.studioStatus')).to_contain_text('Preview ready')
+        self.assertEqual(saved, [])
+        self.assertFalse(errors, errors)
+
+
 
     def test_scene_studio_drag_edit_widgets_and_reviewed_save(self):
         page, errors, saved = self.studio_page()

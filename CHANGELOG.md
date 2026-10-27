@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Refresh Today only from the appliance's current planning date and preserve
+  newer date edits while its lookup is pending. Ignore obsolete automation and
+  shared-layer preview responses so only the current reviewed draft enables Save.
+
 - Restart continuous occurrences only while they own their complete target scope,
   preventing partially superseded groups or mixed-action loops from overwriting winners.
 

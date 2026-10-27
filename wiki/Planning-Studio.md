@@ -30,6 +30,14 @@ reviewed draft; edits invalidate the review. Run now remains an explicit live
 command. Pause/Enable does not delete the record. The specialist device editor
 retains compatibility with imported payload options and existing control IDs.
 
+**Today only** reads the appliance's current planning date when selected, including
+in a controller or editor left open overnight. If that lookup fails, existing date
+fields stay intact and the error is shown. Dates edited while a lookup is pending
+take precedence over its late response. Preview and Save wait for that lookup.
+An earlier automation or shared-layer preview response cannot re-enable Save
+after edits or replace a newer review. Shared-layer edits clear the old match
+results. Preview and Save continue to send no device commands.
+
 An automation can follow class segments, **timetable blocks**, or clock rules.
 Timetable-block selection includes lunch, transitions, assemblies and homeroom;
 its occurrence follows the selected block's actual times and skips days where

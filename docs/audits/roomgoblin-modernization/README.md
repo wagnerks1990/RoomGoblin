@@ -1,11 +1,13 @@
 # RoomGoblin modernization audit
 
-Status: **Recovery resource identity and complete ownership qualified on checked main; CI pending**.
+Status: **Automation editor date/preview fixes locally qualified; required CI and delivery pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
-14 PR checks and merged at `217588a` (PR #285); main publication and delivery
-remain pending. Scheduler timing/task
+gates and is deployed/verified at `217588a` (PR #285).
+Resource identity and complete ownership passed all 14 checks and merged at
+`065e32e` (PR #286); main publication and appliance delivery remain pending.
+Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -57,6 +59,8 @@ The shared frontend review starts at that same source commit. Its first patch
 separates feature presentation from navigation, repairs account/login focus
 handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
 Queued subsystem units below have not been marked audited.
+
+- [Automation editor dates and preview responses](automation-editor-dates.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)
