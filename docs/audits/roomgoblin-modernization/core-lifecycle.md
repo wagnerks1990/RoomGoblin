@@ -470,6 +470,26 @@ a further review lead; the separately reproduced finding below addresses it.
   physical classroom acceptance is involved. Abrupt exit while metadata is only
   in memory can lose its timestamp, as with other interrupted volatile work.
 
+### RG-ARCH-014: startup reconciliation begins inside an acknowledged freeze
+
+- **Subsystem/category/priority:** Core lifecycle / Snapshot and scheduling / P2.
+- **Baseline:** `9873450f9a3fcbd6855938004b1509003fce1eb5`, alpha.85;
+  `src/server.js:8610`.
+- **Problem/evidence:** The five-second startup callback checks shutdown and
+  scheduler policy but not freeze admission. A canonical test freezes before that
+  timer and observes new `recovered-running`/`running` ledger rows afterward.
+  The initial regression fails; its display target is synthetic and unconnected.
+- **Implementation:** Retain one pending startup pass until admission is possible.
+  Retry on the existing scheduler timer, track accepted work, and hold scheduler
+  busy through completion. Disabled/simulation checks and current-winner recovery
+  remain intact; no new timer, stale snapshot or occurrence replay is introduced.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. After a deferred
+  start, recovery can wait up to one normal scheduler interval after thaw.
+- **Verification:** Real initial timer, freeze/thaw, unchanged frozen ledger,
+  post-thaw current-winner recovery once, clean shutdown; existing scheduled/manual
+  enforcement and cancellation regressions remain required.
+- **Limits:** This validates lifecycle admission, not physical output delivery.
+
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer
 ownership/feature acceptance. Registered-handler drain and explicit bridge

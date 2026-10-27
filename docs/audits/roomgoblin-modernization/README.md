@@ -20,6 +20,8 @@ The connection-cleanup follow-up tracks the two detached Veyon close paths and
 pauses idle timer admission while the lifecycle lock is held.
 The lab-close follow-up defers disconnect metadata during recovery freeze and
 ignores obsolete socket closures without hiding current offline status.
+The startup scheduler follow-up defers recovery until snapshot thaw and retains
+one pending pass so currently applicable automation winners still recover.
 It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 

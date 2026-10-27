@@ -1,5 +1,10 @@
 # Architecture
 
+Startup automation reconciliation respects the Full Recovery freeze. If its
+initial five-second pass is deferred, the existing scheduler timer retries one
+pending pass after thaw using current winners. Accepted work retains writer-drain
+ownership, and the ordinary scheduler cannot overlap that startup pass.
+
 See [Host Networking](Host-Networking) for the current Linux container topology, loopback-only maintenance API, explicit add-on migration, listener ports and recovery rules.
 
 RoomGoblin separates the classroom application, browser display clients, persistence, maintenance functions, host-level administration, and external integrations.

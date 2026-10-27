@@ -8606,8 +8606,19 @@ async function automationSchedulerTick(){
   }catch(error){diagnosticError(error,{component:"automation",operation:"scheduler-tick"})}
   finally{automationSchedulerBusy=false}
 }
-const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
-const automationStartupReconcileTimer=setTimeout(()=>{if(!shutdownRequested&&automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation((async()=>{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")})()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
+let automationStartupReconcilePending=true;
+function reconcileAutomationStartup(){
+  if(!automationStartupReconcilePending||shutdownRequested||fullExportFreeze.requested||automationSchedulerBusy)return;
+  automationStartupReconcilePending=false;
+  if(!automationSchedulerEnabled||schedulerClock.status().active)return;
+  automationSchedulerBusy=true;
+  return trackFullExportMutation((async()=>{
+    try{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")}
+    finally{automationSchedulerBusy=false}
+  })()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}));
+}
+const automationSchedulerTimer=setInterval(()=>{if(automationStartupReconcilePending)reconcileAutomationStartup();else automationSchedulerTick()},15000);automationSchedulerTimer.unref();
+const automationStartupReconcileTimer=setTimeout(reconcileAutomationStartup,5000);automationStartupReconcileTimer.unref();
 
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.

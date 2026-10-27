@@ -409,3 +409,20 @@ Enrollment uses a real canonical Hub, temporary credentials and loopback sockets
 no real Windows agent, workstation command or student data is involved. Docker,
 browser/native qualification, publication and live delivery remain CI/deployment
 gates. The separate startup-reconciliation reproduction is not part of this run.
+
+## Startup reconciliation admission (2026-10-27 UTC)
+
+Baseline: `9873450f9a3fcbd6855938004b1509003fce1eb5`, alpha.85. The canonical
+startup regression failed (**0 passed, 1 failed**) because the real five-second
+callback added recovered/running ledger rows inside an acknowledged freeze.
+The targeted lifecycle/automation subset passed **24 tests**. A final duplicate
+admission guard was included in the full run.
+
+Native Linux active-worktree verification passed `npm run check`; full `npm test`
+reported **1032 tests, 1030 passed, 0 failed, 2 root-only ownership skips**.
+Host Recovery: **23 passed**. Host Python compilation, tracked-shell syntax and
+`git diff --check` passed. The test waits for actual startup and scheduler timers,
+checks unchanged frozen state, post-thaw current-winner recovery and clean stop.
+Its synthetic receiver has no connected display. The new Sports-import
+reproduction files were added after the helper captured this snapshot and are
+not part of these results. CI and final appliance delivery remain separate gates.

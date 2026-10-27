@@ -73,6 +73,13 @@ or schedule a release retry.
 
 ## Writer drain and restart policy
 
+The five-second startup automation pass uses the same freeze/shutdown admission
+as periodic work. If a freeze or active scheduler pass prevents admission, keep
+one pending startup pass and retry on the existing 15-second scheduler timer.
+Once admitted, track it through completion and hold scheduler busy so another
+tick cannot overlap it. Resolve current winners at execution time; preserve
+disabled/simulation behavior, announcement priority and cancelled-run exclusion.
+
 Lab-agent close callbacks remove only the currently registered socket. They keep
 live offline state in memory during Full Recovery acquisition/freeze and defer
 inventory persistence until authenticated thaw, lease expiry or acquisition

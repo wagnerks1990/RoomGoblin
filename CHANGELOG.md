@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep startup automation reconciliation outside Full Recovery freezes. Retry
+  a deferred startup pass on the existing scheduler timer after thaw, using the
+  current winners and the same tracked drain without replaying cancelled runs.
+
 - Defer lab-agent disconnect metadata until Full Recovery thaws, while showing
   the live offline state immediately. Ignore replaced sockets' close events and
   retain failed metadata writes for retry before a clean shutdown.
