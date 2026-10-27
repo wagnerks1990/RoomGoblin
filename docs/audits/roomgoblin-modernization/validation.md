@@ -301,3 +301,30 @@ routes, managers, SQLite, filesystem publication, freeze/thaw and shutdown remai
 real. This does not qualify external services, hardware commands or rendered
 slide quality. Docker remains unavailable locally; exact-head CI qualifies the
 runtime images, scans, native artifacts and browsers before merge/publication.
+
+## Read-side housekeeping freeze (2026-10-27 UTC)
+
+Runtime baseline: `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`; the local
+test-only parent `ee97d7a90ac6d6766d721eec6a290afae8fdd290` has identical
+application source. Four initial authentication regressions reported **0 passed,
+4 failed**: session cleanup, device credential timestamps and a canonical Hub
+GET advancing activity after freeze acknowledgment. After the authentication fix,
+a delayed update-status response reproduced the separate history-write gap
+(**5 tests: 4 passed, 1 failed**). All use temporary data.
+
+The final mandated native Linux active-worktree snapshot includes both fixes and
+five new regressions. `npm run check` passed; `npm test` reported **1015 tests:
+1013 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+The intermediate authentication/storage/freeze subset passed **13 tests**.
+
+SQLite `query_only` catches unintended writes during paused authentication reads.
+Expiry, revocation, disabled receivers, invalid tokens, session-list filtering,
+cleanup throttling and post-thaw persistence are asserted. Canonical Hub tests
+exercise actual admin reads and a maintenance response held across freeze; later
+status polls record one history entry without duplicates. No production freeze,
+credential change or external device command was used for regression testing.
+
+Exact-head CI still qualifies Compose, both images, image/security scans, native
+artifacts and browsers. Published-main deployment, health/identity verification,
+operational backup and rollback evidence are recorded in the PR after delivery.

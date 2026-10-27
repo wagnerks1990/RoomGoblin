@@ -332,8 +332,45 @@ their Hub wiring, presentation conversion/upload/rebuild and restart regions.
 The retained legacy session dashboard is unreachable behind the existing HTTP
 410 retirement guard; its detached callback is not treated as a live writer bug.
 Physical commands, external feed correctness and rasterizer output quality remain
-in their feature-specific review units. Authentication read-side housekeeping is
-a further lifecycle review lead, not a confirmed finding in this follow-up.
+in their feature-specific review units. Authentication read-side housekeeping was
+a further review lead; the separately reproduced finding below addresses it.
+
+### RG-ARCH-009: read requests perform housekeeping during snapshot freeze
+
+- **Subsystem/category/priority:** Core lifecycle / Snapshot consistency / P2.
+- **Runtime baseline:** `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`, alpha.85;
+  the test-only follow-up `ee97d7a90ac6d6766d721eec6a290afae8fdd290` has the same
+  application source.
+- **Locations:** `src/storage.js:490,500,532-541` (authentication housekeeping),
+  `src/server.js:201,3831-3836,5056,5072` (storage wiring and update-status history).
+- **Problem/evidence:** An authenticated GET advances session activity after the
+  real freeze endpoint acknowledges a snapshot. A held System Updates GET writes
+  its history when the maintenance response arrives inside that freeze. Storage
+  regressions also reproduce cleanup and credential activity writes when reads
+  are required to remain read-only. These are metadata consistency violations;
+  no credential corruption or production incident is claimed.
+- **Implementation:** An application-owned `canMaintainAuth` predicate pauses only
+  cleanup/activity writes. Validation and expiry/revocation filtering remain live.
+  Update history checks freeze at its write boundary; status stays available and
+  a later unfrozen poll records the latest job without duplicate entries.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. Do not use stale
+  authentication caches, extend session expiry or treat frozen reads as authorized
+  without checking the current database. No schema or credential migration.
+- **Review:** Read `src/storage.js` in full; inspect all Hub session/credential
+  callers, freeze/thaw, update-status/poll wiring and existing throttle tests.
+- **Verification:** Canonical Hub freeze/read/thaw with temporary SQLite, a held
+  loopback maintenance response, and storage reads under SQLite `query_only`.
+  Check valid/expired/revoked/disabled identities, skipped cleanup throttling,
+  post-thaw activity/history persistence and duplicate-history coalescing.
+- **Limits:** This closes the identified read-side owners, not every integration
+  read path. The native update journal, backup/rollback, access profiles, optional
+  receiver credentials and Full Recovery transport/ownership remain unchanged.
+
+Further review leads: Veyon inventory reads persist hostname/identity mappings
+and key-affinity metadata through compatibility bridges; their freeze ownership
+needs dedicated reproduction. A deadline-interrupted conversion also leaves
+private render staging that needs a bounded cleanup-policy review. Neither lead
+is claimed resolved by RG-ARCH-009.
 
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer

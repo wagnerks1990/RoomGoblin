@@ -22,6 +22,11 @@ Automatic application updates use the same main-commit path during the configure
 
 ## Normal update
 
+Status polling remains available during a Full Recovery export freeze. It defers
+the Hub's history-cache write until the next unfrozen poll, including responses
+that arrive after freeze acquisition. The native transaction journal remains the
+authoritative update record; installation, backup and rollback policy is unchanged.
+
 ### Uploaded content and backup permissions
 
 The Hub's storage/startup modules deliberately set `umask 0077` for private
