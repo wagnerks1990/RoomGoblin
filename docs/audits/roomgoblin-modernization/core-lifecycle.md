@@ -366,11 +366,36 @@ a further review lead; the separately reproduced finding below addresses it.
   read path. The native update journal, backup/rollback, access profiles, optional
   receiver credentials and Full Recovery transport/ownership remain unchanged.
 
-Further review leads: Veyon inventory reads persist hostname/identity mappings
-and key-affinity metadata through compatibility bridges; their freeze ownership
-needs dedicated reproduction. A deadline-interrupted conversion also leaves
-private render staging that needs a bounded cleanup-policy review. Neither lead
-is claimed resolved by RG-ARCH-009.
+### RG-ARCH-010: Veyon read-side identity writers bypass snapshot admission
+
+- **Subsystem/category/priority:** Core lifecycle / Snapshot consistency / P2.
+- **Baseline:** `c74d6417fd14bf1773829002f4c472543141887f`, alpha.85.
+- **Locations:** `src/server.js:2873-2888,4750-4754,7163-7177`;
+  `src/veyon-dhcp-identity-bridge.js:22-32`; keyring metadata/transport bridges.
+- **Problem/evidence:** A canonical Hub with an empty inventory writes the
+  `veyon.inventory-hostmap.v2` preference after freeze acknowledgment. GETs
+  bypassed admission and returned-promise mutation tracking. Populated inventory
+  can also persist discovered hostnames; Veyon authentication remembers keys.
+- **Implementation:** Include Veyon GET/HEAD routes, administrator config/keyring
+  projections and the maintenance inventory mirror in the shared predicate.
+  New reads pause with 423; accepted handlers drain before the snapshot. Match
+  Express case/trailing-slash aliases. Keep the actual maintenance config mirror
+  readable: it has no keyring projection and retains its token guard.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. Veyon views pause
+  for the snapshot interval; do not silently skip stable-ID persistence or
+  return identifiers that the next request cannot resolve.
+- **Review:** Read identity/keyring/update bridges, identity reconciliation,
+  keyring storage and maintenance mirror composition. Review the Hub's Veyon
+  inventory/info/preview/features/authentication routes and transport writes.
+- **Verification:** Canonical process and temporary SQLite, empty inventory
+  reproduction, GET/HEAD aliases, metadata routes, maintenance auth and read
+  access; hold only a synthetic computer's TCP probe and verify final identity
+  persistence before freeze acknowledgment and stable mapping after thaw.
+- **Limits:** No real workstation, native service, key rotation, preview or
+  classroom command is used. Hardware acceptance remains in its review unit.
+
+A deadline-interrupted presentation conversion also leaves private render staging
+that needs a bounded cleanup-policy review. It is not resolved by these findings.
 
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer

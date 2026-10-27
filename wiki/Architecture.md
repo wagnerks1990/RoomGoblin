@@ -52,6 +52,12 @@ cache writes from read requests. Authentication still checks expiry, revocation
 and enabled identities, and status remains readable. Normal maintenance resumes
 after thaw; the native update transaction journal remains authoritative.
 
+Veyon reads can persist inventory identities, hostnames or key preferences.
+Recovery therefore drains accepted Veyon GET/HEAD handlers and pauses new ones,
+including administrator config/keyring projections and the maintenance inventory
+mirror, until thaw. The separate token-protected maintenance config read remains
+available to recovery. Stable computer IDs are persisted before projection.
+
 ## Display clients
 
 Displays are browser/kiosk endpoints with stable IDs. They render classroom slides, text, timers, images, video, web content, and priority announcements.

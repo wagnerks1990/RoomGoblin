@@ -10,6 +10,10 @@ accepted work before SQLite close and distinguishes automation interruption from
 operator cancellation. Preserve the independent Full Recovery freeze/thaw path.
 Full Recovery also drains returned mutating HTTP promises past response closure;
 its freeze/thaw and initiating export proxy are excluded to prevent self-wait.
+Veyon GET/HEAD routes and administrator config/keyring projections are included
+because they can persist identity/key metadata. Keep the maintenance inventory
+mirror in that barrier, while the read-only maintenance config mirror stays
+available to recovery. Preserve authoritative identity before projection.
 Read `APPLICATION-LIFECYCLE.md` before changing startup order or shutdown. The
 modernization audit records scoped coverage and remaining lifecycle work under
 `docs/audits/roomgoblin-modernization/`.

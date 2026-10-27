@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Include Veyon reads that initialize or update persistent identity/key metadata
+  in Full Recovery admission and drain. Accepted reads finish before snapshot;
+  new Veyon views and administrator key/config projections pause until thaw.
+
 - Keep authentication activity/expiry housekeeping and update-status history from
   writing during Full Recovery freeze. Reads, credential validation and expiry
   enforcement remain available; normal housekeeping resumes after thaw.

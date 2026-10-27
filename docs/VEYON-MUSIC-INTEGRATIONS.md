@@ -45,6 +45,15 @@ The Veyon workstation inventory is stored through the database-backed `veyon-com
 
 Legacy `data/veyon-computers.json` is migration input only. Startup recovery merges it into the SQLite namespace, verifies the record count, records the migration, and removes the active legacy file. Production runs with `LEGACY_JSON_MIRROR=false`, so subsequent writes remain database-only.
 
+Full Recovery treats Veyon reads as potential writers: inventory persists stable
+identity mappings/hostnames and authentication can remember key preferences.
+Already accepted reads finish before snapshot acknowledgment. New Veyon GET/HEAD
+requests, administrator config/keyring projections and the maintenance inventory
+mirror return HTTP 423 while acquisition/freeze is held; retry after thaw.
+The token-protected maintenance config mirror remains readable because it does
+not apply the keyring projection. Stable IDs are still persisted before being
+returned, and existing preview capabilities and native Veyon ownership remain.
+
 ### Veyon authentication material
 
 The authoritative Veyon private authentication key is stored encrypted in `secret_store` under `veyon.private-key`. The Veyon public key and non-secret deployment metadata may be stored as managed-integration configuration.
