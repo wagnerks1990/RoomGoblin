@@ -1,7 +1,9 @@
 # AI Project Context
 
 The supported application bootstrap is shared by `npm start` and the container
-wrapper. Media child ownership is in `src/media-plane-process.js`; scheduled
+wrapper. `src/application-bridges.js` explicitly installs ordered compatibility
+routes on the Hub after handler tracking; importing bridges must not mutate
+Express prototypes. Media child ownership is in `src/media-plane-process.js`; scheduled
 music readiness is explicit, never a global timer override. HTTP handlers must
 return their async work; detached writers need explicit tracking. Shutdown drains
 accepted work before SQLite close and distinguishes automation interruption from

@@ -50,7 +50,8 @@ test("registering maintenance routes leaves global timers unchanged",()=>{
   const result=spawnSync(process.execPath,["-e",String.raw`
     const assert=require("node:assert/strict");
     const timeout=global.setTimeout,interval=global.setInterval;
-    require("./src/maintenance-route-bridge");
+    const app=require("express")();
+    require("./src/maintenance-route-bridge").installMaintenanceBridge(app);
     assert.equal(global.setTimeout,timeout);
     assert.equal(global.setInterval,interval);
   `],{cwd:path.resolve(__dirname,".."),encoding:"utf8",timeout:10000});

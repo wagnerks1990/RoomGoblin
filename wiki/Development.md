@@ -25,6 +25,12 @@ display-gateway compatibility, route bridges and the media child. Direct
 `node src/server.js` remains a control-only test entry point. See
 [application lifecycle](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/APPLICATION-LIFECYCLE.md).
 
+Both entry points install the ordered compatibility bridges explicitly on the
+Hub application through `src/application-bridges.js`, after handler tracking.
+Importing bridge modules leaves Express prototypes unchanged. Keep the existing
+administrator and maintenance guards and the bridge order; loopback composition
+tests cover these boundaries without contacting classroom integrations.
+
 Shutdown waits for accepted handler/background writes and records interrupted
 scheduled loops for current-winner recovery on restart. Operator cancellation
 remains terminal. Active recovery exports retain their authenticated thaw path;

@@ -49,8 +49,8 @@ Follow RG-ARCH-004 before marking this review unit complete.
   recovery work when no music credentials exist.
 - **Confidence:** Confirmed from code and current behavioral regressions.
 - **Status:** Implemented and locally tested for entry-point/timer ownership.
-  Express registration wrappers are deliberately retained. Replacing them needs
-  separate route-composition/authentication fixtures within this review unit.
+  The bridge follow-up below replaces global prototype patches with explicit
+  application-owned registration and adds route-composition/authentication fixtures.
 
 ## RG-ARCH-002: media child outlives normal shutdown
 
@@ -153,13 +153,59 @@ The HTTP tracker uses application-instance registration, not global Express
 prototype patches or private stack traversal. It cannot discover work that a
 handler detaches without returning/tracking it. Future mounted routers require
 explicit registration tracking. Existing bridge authentication/order tests and
-all repository gates remain required; the broader bridge-composition review is
-still open.
+all repository gates remain required. The bridge follow-up below covers the
+retained registration composition; integration business logic remains separate.
+
+## RG-ARCH-005: import-time bridges modify unrelated Express applications
+
+- **Subsystem/category/priority:** Core lifecycle / Architecture and reliability / P2.
+- **Baseline:** `38db6b8d9bf8fad328fa2639c592b4f739dcca3a`, alpha.85.
+- **Location at baseline:** `src/maintenance-route-bridge.js:103-153`,
+  `src/veyon-keyring-bridge.js:49-96`, `src/veyon-dhcp-identity-bridge.js:89-94`,
+  `src/veyon-update-bridge.js:63-82`, `src/cloudflare-bridge.js:35-52`,
+  `src/startup-recovery.js:127-132` and `src/server.js:4749-4750`.
+- **Current implementation/problem:** Module imports replace shared Express
+  methods and share management-route registration flags. API composition depends
+  on import timing rather than the application owner, complicating isolated
+  validation and making additional application instances incomplete.
+- **Evidence:** An isolated baseline process creates an Express app, imports the
+  Veyon update bridge, then creates a second app. The shared prototype changes;
+  only the later app gets management routes. Global registration flags also
+  prevent later applications from independently registering their own routes.
+  This is reproduced load-order dependence, not a claimed production incident.
+- **Recommendation/benefit:** Install the existing compatibility hooks explicitly
+  per application. This makes ordering visible, prevents unrelated application
+  changes and permits realistic composition tests without prototype cleanup.
+- **Complexity/compatibility risk/confidence:** Small / Medium / Confirmed.
+- **Implementation:** `installApplicationBridges(app)` installs the five bridges
+  in their existing order after handler tracking. Each bridge captures only the
+  owning app's methods; management registration flags move into that installation.
+  Repeated composition is a no-op. Both canonical and direct control-only starts
+  now use the same explicit route composition.
+- **Preserved boundaries:** Administrator guards, maintenance token separation,
+  backend-ID maintenance inventory, stable public Veyon IDs, key metadata only,
+  Music Assistant aliases and returned handler promises. Display gateway preload,
+  integration stores/caches, database identity and external provisioning behavior
+  are unchanged. Existing route hooks still identify their established paths and
+  capture the existing first administrator guard; they are not a generic router.
+- **Review:** Read all five bridge modules and the new coordinator in full;
+  inspect startup, Hub construction, handler tracking and relevant tests. This
+  does not audit all Veyon/Cloudflare/Music Assistant business implementations.
+- **Verification:** Five loopback subprocess scenarios cover imports/unowned apps,
+  repeat installation, two separately guarded applications, every generated
+  management route's rejection boundary, safe authenticated routes, maintenance
+  mirrors, key/identity transforms, aliases, async rejection and post-response
+  writer drain. Fixtures own their SQLite data and never call real integrations.
+- **Risk/limit:** Application-local routing is not multi-tenant storage isolation.
+  Process-wide integration caches and stores remain intentional compatibility
+  state. Physical device and external provisioning acceptance remain separate.
+- **Status:** Implemented and locally tested; exact-head CI and delivery are
+  recorded in the pull request.
 
 ## Completion boundary
 
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer
-ownership/feature acceptance and explicit bridge-composition coverage. The
-registered-handler and tracked-owner shutdown defect in RG-ARCH-004 is addressed. No UI redesign, production/device tests,
-deployment or release completion is claimed.
+ownership/feature acceptance. Registered-handler drain and explicit bridge
+composition are addressed within their documented coverage. No UI redesign,
+exhaustive server audit or physical-device acceptance is claimed by these tests.

@@ -59,13 +59,6 @@ test("Veyon lifecycle GUI uses guarded same-origin administration routes",()=>{
   assert.match(runner,/sha256sum -c/);assert.match(runner,/dpkg-deb --field/);assert.match(runner,/rc=\$\?; rm -f/);assert.match(host,/Requested Veyon .* is not newer than installed/);
 });
 
-test("startup loads DHCP identity and lifecycle bridges before the server",()=>{
-  const source=fs.readFileSync(path.join(root,"src","startup-recovery.js"),"utf8");
-  const dhcp=source.indexOf('require("./veyon-dhcp-identity-bridge")');
-  const lifecycle=source.indexOf('require("./veyon-update-bridge")');
-  const server=source.indexOf('require("./server")');
-  assert.ok(dhcp>=0&&lifecycle>dhcp&&server>lifecycle);
-});
 
 test("installed Veyon version survives an empty apt upgrade list",()=>{
   const {installedVeyonVersion}=require('../src/veyon-update-policy');

@@ -1,9 +1,6 @@
 "use strict";
 
-const express=require("express");
 const {runtimeVeyonKeyring,normalizeKeyName,validPrivateKey}=require("./veyon-keyring");
-
-let managementRoutesRegistered=false;
 
 function publicKeyring(){
   const value=runtimeVeyonKeyring.metadata();
@@ -46,51 +43,54 @@ function wrapIntegrationSave(handler){
   };
 }
 
-const nativeGet=express.application.get;
-const nativePost=express.application.post;
-const nativePut=express.application.put;
-const nativeDelete=express.application.delete;
+function installVeyonKeyringBridge(app){
+  let managementRoutesRegistered=false;
+  const nativeGet=app.get;
+  const nativePost=app.post;
+  const nativePut=app.put;
+  const nativeDelete=app.delete;
 
-function registerManagementRoutes(app,requireAdmin){
-  if(managementRoutesRegistered||typeof requireAdmin!=="function")return;
-  managementRoutesRegistered=true;
-  nativeGet.call(app,"/api/v1/admin/veyon-keys",requireAdmin,(_req,res)=>{
-    try{res.json({ok:true,...publicKeyring()})}catch{res.status(500).json({ok:false,error:"Unable to read Veyon keyring metadata"})}
-  });
-  nativePost.call(app,"/api/v1/admin/veyon-keys",requireAdmin,(req,res)=>{
-    try{
-      const keyName=runtimeVeyonKeyring.importKey(req.body?.keyName,req.body?.privateKey,{preferred:req.body?.preferred===true});
-      res.status(201).json({ok:true,keyName,...publicKeyring()});
-    }catch(error){res.status(400).json({ok:false,error:error.message})}
-  });
-  nativePut.call(app,"/api/v1/admin/veyon-keys/preferred",requireAdmin,(req,res)=>{
-    try{runtimeVeyonKeyring.setPreferred(req.body?.keyName);res.json({ok:true,...publicKeyring()})}
-    catch(error){res.status(400).json({ok:false,error:error.message})}
-  });
-  nativeDelete.call(app,"/api/v1/admin/veyon-keys/:keyName",requireAdmin,(req,res)=>{
-    try{
-      const keyName=normalizeKeyName(req.params.keyName),legacy=runtimeVeyonKeyring.currentLegacy();
-      if(keyName===legacy.keyName&&validPrivateKey(legacy.privateKey))return res.status(409).json({ok:false,error:"This is the active compatibility Veyon key. Import or select another default key before removing its keyring copy."});
-      runtimeVeyonKeyring.removeKey(keyName);res.json({ok:true,keyName,...publicKeyring()});
-    }catch(error){res.status(400).json({ok:false,error:error.message})}
-  });
+  function registerManagementRoutes(app,requireAdmin){
+    if(managementRoutesRegistered||typeof requireAdmin!=="function")return;
+    managementRoutesRegistered=true;
+    nativeGet.call(app,"/api/v1/admin/veyon-keys",requireAdmin,(_req,res)=>{
+      try{res.json({ok:true,...publicKeyring()})}catch{res.status(500).json({ok:false,error:"Unable to read Veyon keyring metadata"})}
+    });
+    nativePost.call(app,"/api/v1/admin/veyon-keys",requireAdmin,(req,res)=>{
+      try{
+        const keyName=runtimeVeyonKeyring.importKey(req.body?.keyName,req.body?.privateKey,{preferred:req.body?.preferred===true});
+        res.status(201).json({ok:true,keyName,...publicKeyring()});
+      }catch(error){res.status(400).json({ok:false,error:error.message})}
+    });
+    nativePut.call(app,"/api/v1/admin/veyon-keys/preferred",requireAdmin,(req,res)=>{
+      try{runtimeVeyonKeyring.setPreferred(req.body?.keyName);res.json({ok:true,...publicKeyring()})}
+      catch(error){res.status(400).json({ok:false,error:error.message})}
+    });
+    nativeDelete.call(app,"/api/v1/admin/veyon-keys/:keyName",requireAdmin,(req,res)=>{
+      try{
+        const keyName=normalizeKeyName(req.params.keyName),legacy=runtimeVeyonKeyring.currentLegacy();
+        if(keyName===legacy.keyName&&validPrivateKey(legacy.privateKey))return res.status(409).json({ok:false,error:"This is the active compatibility Veyon key. Import or select another default key before removing its keyring copy."});
+        runtimeVeyonKeyring.removeKey(keyName);res.json({ok:true,keyName,...publicKeyring()});
+      }catch(error){res.status(400).json({ok:false,error:error.message})}
+    });
+  }
+
+  app.get=function(route,...handlers){
+    if(route==="/api/v1/admin/config"&&handlers.length){
+      handlers[handlers.length-1]=withKeyringProjection(handlers[handlers.length-1]);
+    }
+    return nativeGet.call(this,route,...handlers);
+  };
+
+  app.put=function(route,...handlers){
+    const adminRoute=route==="/api/v1/admin/integration-connections";
+    const maintenanceRoute=route==="/api/v1/internal/maintenance/integration-connections";
+    if((adminRoute||maintenanceRoute)&&handlers.length){
+      if(adminRoute)registerManagementRoutes(this,handlers[0]);
+      handlers[handlers.length-1]=wrapIntegrationSave(handlers[handlers.length-1]);
+    }
+    return nativePut.call(this,route,...handlers);
+  };
 }
 
-express.application.get=function(route,...handlers){
-  if(route==="/api/v1/admin/config"&&handlers.length){
-    handlers[handlers.length-1]=withKeyringProjection(handlers[handlers.length-1]);
-  }
-  return nativeGet.call(this,route,...handlers);
-};
-
-express.application.put=function(route,...handlers){
-  const adminRoute=route==="/api/v1/admin/integration-connections";
-  const maintenanceRoute=route==="/api/v1/internal/maintenance/integration-connections";
-  if((adminRoute||maintenanceRoute)&&handlers.length){
-    if(adminRoute)registerManagementRoutes(this,handlers[0]);
-    handlers[handlers.length-1]=wrapIntegrationSave(handlers[handlers.length-1]);
-  }
-  return nativePut.call(this,route,...handlers);
-};
-
-module.exports={publicKeyring,addKeyringProjection,wrapIntegrationSave};
+module.exports={installVeyonKeyringBridge,publicKeyring,addKeyringProjection,wrapIntegrationSave};

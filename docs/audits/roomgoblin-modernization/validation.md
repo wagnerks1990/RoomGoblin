@@ -123,3 +123,34 @@ MQTT is a controlled test adapter; no physical delivery is claimed. Full
 presentation conversion, Sports refresh and Ubuntu remote-operation acceptance
 under shutdown remain feature-specific follow-ups. Hosted Wiki synchronization
 will use the existing workflow after a reviewed merge; this PR updates its mirror.
+
+## Explicit bridge composition follow-up (2026-10-27 UTC)
+
+Baseline: `38db6b8d9bf8fad328fa2639c592b4f739dcca3a`, alpha.85. The ordinary
+Windows helper passed against the active candidate, including untracked files.
+A final invocation used its unchanged snapshot/check/test procedure and appended
+Host Agent Python compilation, Full Recovery unittests and tracked-shell syntax
+checks. Both native Linux runs reported 982 tests: **980 passed, 0 failed,
+2 root-only ownership skips**. The host suite passed **23 tests**; Python compile,
+shell syntax and `git diff --check` passed.
+
+The five new composition scenarios also passed on Windows. An initial harness
+used immediate `process.exit()` after closing sockets and hit a Windows libuv
+assertion; normal process completion fixed it. The existing atomic SQLite rename
+test remains unsuitable for Windows and passed in native Linux. No application
+guard or assertion was removed to accommodate either environment.
+
+Loopback tests cover unchanged Express prototypes/unowned apps, idempotent
+composition, separate application guards, generated administration routes,
+maintenance-token separation, Veyon key/identity transforms, Music Assistant
+aliases and async error/drain ownership. Existing canonical-process lifecycle
+tests also pass. An old source-text import-order assertion was replaced by this
+request-level composition coverage; guarded Veyon GUI checks remain.
+
+No production data or integration services were used by the tests. Docker is
+unavailable locally; Compose, both images, scans, Node 22, native platforms and
+browser regressions remain the required exact-head CI gates. The operator has
+authorized merge/update after these gates, through the exact-main image pair,
+operational backup and normal rollback path. Deployment evidence belongs to the
+PR's delivery record; these local results do not claim physical acceptance or an
+exhaustive audit of integration business logic.

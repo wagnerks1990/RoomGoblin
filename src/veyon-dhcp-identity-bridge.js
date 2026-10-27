@@ -1,6 +1,5 @@
 "use strict";
 
-const express=require("express");
 const path=require("path");
 const {ClassroomHubStorage}=require("./storage");
 const {runtimeVeyonKeyring}=require("./veyon-keyring");
@@ -86,9 +85,11 @@ function wrapHandlers(route,method,handlers){
   return next;
 }
 
-for(const method of ["get","post","put","delete"]){
-  const previous=express.application[method];
-  express.application[method]=function(route,...handlers){return previous.call(this,route,...wrapHandlers(route,method,handlers))};
+function installVeyonIdentityBridge(app){
+  for(const method of ["get","post","put","delete"]){
+    const previous=app[method];
+    app[method]=function(route,...handlers){return previous.call(this,route,...wrapHandlers(route,method,handlers))};
+  }
 }
 
-module.exports={PREF,reconcileBody,projectOperationalBody,rewriteRequestIds,mappedId,stableId};
+module.exports={installVeyonIdentityBridge,PREF,reconcileBody,projectOperationalBody,rewriteRequestIds,mappedId,stableId};
