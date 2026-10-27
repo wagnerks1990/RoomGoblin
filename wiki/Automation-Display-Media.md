@@ -282,6 +282,17 @@ Execution rechecks cancellation and shutdown before class-window decisions or
 overlays. Predecessor failure does not poison the replacement. A hung predecessor
 keeps overlapping work waiting under the unchanged lifecycle failure deadline.
 
+## Cancellation persistence
+
+Stop requests save the complete selected set before changing run cancellation
+flags. A save failure leaves that set running. Replacement, Resume and manual-media
+run cancellation share this rule; already accepted hardware actions can finish.
+Continuous recovery honors retained cancellation requests, including requests
+saved just before a restart or followed by a running/interrupted diagnostic row.
+Shutdown interruption without Stop remains recoverable. The history retains 500
+rows; larger cancellation batches fail before changes, and later row retention is
+unchanged. Other manual-media priority/pause state is a separate boundary.
+
 ## Scheduled dispatch permission
 
 The test clock's live permission is checked before each new command in a scheduled

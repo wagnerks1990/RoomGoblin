@@ -8,6 +8,9 @@
 - Recheck test-clock live permission at scheduled command, reconciliation and
   legacy TV dispatch boundaries; save scheduler pause changes before applying them.
 
+- Save automation cancellation selections atomically before stopping execution,
+  and honor retained Stop requests during continuous-run restart recovery.
+
 - Protect legacy per-output TV schedules with all physical announcement locks
   and persist claims before CEC dispatch so uncertain writes cannot replay.
 - Report legacy scheduler persistence errors and release its busy/drain ownership

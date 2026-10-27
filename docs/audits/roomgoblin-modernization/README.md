@@ -1,9 +1,10 @@
 # RoomGoblin modernization audit
 
-Status: **Scheduler dispatch permission implemented; native qualification in progress**.
+Status: **Scheduler dispatch permission and cancellation integration locally qualified**.
 The combined scheduler safeguards in PR #278 were validated, merged and deployed
 at `66c54a2` with health, backup integrity and rollback verified. Cancellation
-persistence is locally qualified and in PR #281 CI. Scheduler timing/task
+persistence passed all 14 checks and merged in PR #281; its main publication and
+appliance delivery are pending. Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
@@ -58,6 +59,8 @@ Queued subsystem units below have not been marked audited.
 
 - [Scheduler dispatch permission](scheduler-dispatch-permission.md)
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
+
+- [Scheduler cancellation persistence](scheduler-cancellation.md)
 
 - [Scheduler resource identity findings](scheduler-resources.md)
 

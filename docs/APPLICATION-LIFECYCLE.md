@@ -116,6 +116,11 @@ Already requested operator cancellation retains precedence and remains
 occurrence can recover. Manual runs do not automatically restart. Commands already
 delivered to hardware are not undone or replayed by the shutdown handler.
 
+Persist the complete cancellation selection before exposing cancellation to any
+selected task. Recovery honors retained cancellation requests even when a later
+running/interrupted row exists. Ordinary shutdown interruption alone must still
+allow current-winner recovery. The 500-record ledger retention bound is unchanged.
+
 Scheduled, recovered and managed manual automation tasks share one ownership
 boundary. Register both task and metadata before starting execution; release them
 in an outer finalizer even when ledger or final configuration persistence fails.

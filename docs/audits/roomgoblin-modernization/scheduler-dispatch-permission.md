@@ -1,7 +1,7 @@
 # Scheduler dispatch permission
 
 Baseline: `66c54a2b321675905472ea992b88b0f0319ab8fa`, alpha.85.
-Status: implemented and locally qualified; integrating checked cancellation main.
+Status: implemented and qualified on checked cancellation main; CI/delivery pending.
 
 ## RG-SCHED-016: Direct reconciliation and multi-command actions could bypass dry mode
 
@@ -12,7 +12,7 @@ Status: implemented and locally qualified; integrating checked cancellation main
 | Exact baseline locations | `src/server.js:1016,1065,1493,1703,5890,8689` and their complete function bodies |
 | Complexity / compatibility risk | Medium / Medium: more precise dispatch admission |
 | Expected benefit | End live test-clock permission before subsequent scheduled commands |
-| State | Reproduced and implemented; native qualification and delivery pending |
+| State | Reproduced, implemented and locally qualified; CI/delivery pending |
 
 Sequence checkpoints did not cover direct recovery actions, timer dispatch or
 commands later inside an already entered multi-command action. Reconciliation
@@ -46,7 +46,7 @@ and explicit permitted clocks rather than bypassing it.
 | Exact baseline location | `src/server.js:212` |
 | Complexity / compatibility risk | Small / Low: preserve existing preference shape |
 | Expected benefit | Failed pause/resume saves leave runtime and persisted state aligned |
-| State | Reproduced and implemented; native qualification and delivery pending |
+| State | Reproduced, implemented and locally qualified; CI/delivery pending |
 
 The toggle changed the runtime flag before writing its preference. Both enable
 and disable could take effect despite a failed save. The candidate preference is
@@ -82,3 +82,10 @@ The corrected full native snapshot passed **1,133 tests: 1,131 passed, 0 failed,
 Node/controller/Python/Bash checks. Final source and whitespace review passed.
 Checked cancellation main will be integrated before final combined qualification
 and CI. Earlier qualification-pending statements describe the preceding stage.
+
+Checked main `52e28c6660e9258772f842f8df5eac4517d90a6a` is now integrated,
+preserving all cancellation runtime changes and 24 regressions. The combined
+focused suite passed **271 tests**. The final combined native snapshot passed
+**1,157 tests: 1,155 passed, 0 failed, 2 root-only ownership skips**, plus
+**23 Host Recovery tests** and Node/controller/Python/Bash checks. Only documentation
+qualification text changed afterward. Fresh CI and delivery remain pending.
