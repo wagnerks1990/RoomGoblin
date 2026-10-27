@@ -86,6 +86,15 @@ heartbeat metadata, and never expose the receiver's internal full-URL comparison
 key. The manual display controller must load the saved stream URL without writing
 configuration during page initialization and must fail closed when no URL exists.
 
+## Bounded HLS probes
+
+Each primary/adaptive request has one 3.5-second deadline covering redirects,
+headers and complete body consumption. Successful playlists are bounded to
+512 KiB of declared and streamed bytes. Cancel redirect/error bodies, preserve
+allowlist validation for every redirect and abort the transport on all outcomes.
+Timeouts and oversized playlists are UNKNOWN, never authoritative offline
+evidence. Buffered response data remains usable after transport cleanup.
+
 ## Future replacement monitoring
 
 A later monitor may use an Ant Media API/webhook or another authoritative publisher signal. Preserve transition semantics and diagnostics even when the probe mechanism changes. Monitoring and playback are separate concerns: the monitor decides when a session should begin/end; the receiver/player decides how to survive transient playback/network errors while the session remains active.
