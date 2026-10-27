@@ -45,6 +45,12 @@ Editing, disabling, or deleting a running automation also invalidates its revisi
 
 Linked-class continuous automations stop cleanly when the resolved class occurrence ends. Startup reconciliation and operator Resume also recover continuous occurrences that are still currently applicable, even when their original start time is outside the normal scheduler catch-up window.
 
+Full Recovery can defer the initial startup reconciliation. The Hub retains one
+pending pass and retries it on the existing 15-second scheduler timer after thaw.
+It selects the winners for that later moment, without replaying stale or cancelled
+occurrences. An admitted startup pass owns the ordinary writer drain and excludes
+overlapping scheduler ticks; freeze acknowledgment waits for that accepted work.
+
 ## Manual execution
 
 Simulation never dispatches devices.

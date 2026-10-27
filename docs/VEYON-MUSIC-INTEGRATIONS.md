@@ -214,6 +214,12 @@ locks and exclude targets with a newer command. Dispatch checks the actor's
 current permissions and current inventory identity. Recovery export pauses new
 queue work and drains active workers before snapshotting the ownership journal.
 
+Idle connection cleanup also pauses during recovery freeze or shutdown. Accepted
+idle cleanup and the detached connection close after computer removal participate
+in the same drain, retaining their final audit. Computer removal still responds
+without waiting for the WebAPI close. Existing close/lifecycle deadlines apply;
+cleanup exceeding the total deadline must not be reported as a clean stop.
+
 Validation uses simulated multi-computer and outage fixtures. Actual latency
 still depends on endpoint availability, authentication, and the Veyon service;
 a fast queue acknowledgement is not a promise that every computer changes

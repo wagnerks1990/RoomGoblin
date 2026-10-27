@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Core Architecture and Application Lifecycle in progress**. The first
+Status: **Core Architecture and Application Lifecycle in final qualification**. The first
 implementation covers the bootstrap, media-process ownership, scheduled music
 readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
 automation interruption/restart policy and export-thaw coordination. The next
@@ -16,8 +16,17 @@ The Veyon read follow-up includes persistent identity/key reads in the snapshot
 admission and drain barrier, preserving save-before-project stable IDs.
 The presentation recovery follow-up bounds startup reclamation of interrupted
 render staging while preserving originals and rebuild behavior.
-It is not a complete audit of `server.js` or
-all application lifetimes. No other subsystem has entered implementation.
+The connection-cleanup follow-up tracks the two detached Veyon close paths and
+pauses idle timer admission while the lifecycle lock is held.
+The lab-close follow-up defers disconnect metadata during recovery freeze and
+ignores obsolete socket closures without hiding current offline status.
+The startup scheduler follow-up defers recovery until snapshot thaw and retains
+one pending pass so currently applicable automation winners still recover.
+The import-callback follow-up exposes the Sports PDF-processing promise to the
+existing drain, including disconnected clients and processing errors.
+The enumerated lifecycle entry-point source review is complete; final CI and
+delivery are pending for the last patch set. This is not a whole-server business
+logic or physical-device acceptance claim. Other subsystem units remain queued.
 
 Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`, `main`,
 `1.0.0-alpha.85`. Original finding locations belong to that revision. The RG-ARCH-004 follow-up
@@ -27,13 +36,15 @@ The export-handler follow-up uses `da6bb77187bd23787239347db903ab842fbc6683`.
 The media-stop follow-up uses `446a9523da9a160bc510e679397269c9097aeb1d`.
 The discovery follow-up uses `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`.
 
-Delivery through PR [#266](https://github.com/wagnerks1990/RoomGoblin/pull/266)
-is verified on that main revision: scoped findings RG-ARCH-001 through
-RG-ARCH-008 are implemented and covered by the current checks. The ordinary
-backed-up appliance update completed with healthy services and verified rollback.
-The live Hub revision is `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`; unchanged
-maintenance/Host Agent inputs were independently verified by the selective updater.
-The broader review remains in progress; queued units below are not marked audited.
+Appliance delivery through PR [#268](https://github.com/wagnerks1990/RoomGoblin/pull/268)
+was verified at `20f8c501916f34e17bee2c643434e7cce0c919e6` on 2026-10-27 UTC:
+healthy services, exact Hub/maintenance images, database/secret integrity, a new
+verified operational backup and rollback to `86b5ec55fa5a758145837463a7f98a46c38bcab8`.
+PRs [#269](https://github.com/wagnerks1990/RoomGoblin/pull/269) and
+[#270](https://github.com/wagnerks1990/RoomGoblin/pull/270) are merged. Their
+changes and the remaining callback/admission fixes will share the next normal
+published-main update. Consult PR delivery evidence for subsequent live state.
+Queued subsystem units below have not been marked audited.
 
 - [Core lifecycle findings and coverage](core-lifecycle.md)
 - [Validation evidence](validation.md)

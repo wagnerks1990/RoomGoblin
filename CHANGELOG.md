@@ -5,6 +5,22 @@
 
 ## Unreleased
 
+- Keep Sports roster PDF imports owned until processing finishes after a browser
+  disconnects. Shutdown and Full Recovery now drain the returned route promise;
+  upload limits, parser isolation and review-before-save behavior remain intact.
+
+- Keep startup automation reconciliation outside Full Recovery freezes. Retry
+  a deferred startup pass on the existing scheduler timer after thaw, using the
+  current winners and the same tracked drain without replaying cancelled runs.
+
+- Defer lab-agent disconnect metadata until Full Recovery thaws, while showing
+  the live offline state immediately. Ignore replaced sockets' close events and
+  retain failed metadata writes for retry before a clean shutdown.
+
+- Drain detached Veyon connection cleanup before shutdown or recovery freeze
+  completes. Pause the idle cleanup timer during freeze/shutdown and retain
+  final cleanup audits without delaying the computer-removal response.
+
 - Reclaim bounded, recognized presentation render staging at startup after an
   interrupted conversion. Preserve originals, published assets and unknown or
   linked entries; interrupted presentations remain explicitly rebuildable.

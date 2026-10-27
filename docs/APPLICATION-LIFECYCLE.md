@@ -73,6 +73,21 @@ or schedule a release retry.
 
 ## Writer drain and restart policy
 
+The five-second startup automation pass uses the same freeze/shutdown admission
+as periodic work. If a freeze or active scheduler pass prevents admission, keep
+one pending startup pass and retry on the existing 15-second scheduler timer.
+Once admitted, track it through completion and hold scheduler busy so another
+tick cannot overlap it. Resolve current winners at execution time; preserve
+disabled/simulation behavior, announcement priority and cancelled-run exclusion.
+
+Lab-agent close callbacks remove only the currently registered socket. They keep
+live offline state in memory during Full Recovery acquisition/freeze and defer
+inventory persistence until authenticated thaw, lease expiry or acquisition
+failure. A successful ordinary lab inventory write also clears the pending flag.
+Persistence failures remain pending and diagnostic; shutdown retries after socket
+closure and fails if metadata still cannot be saved. Older replaced sockets must
+not stamp a current connection as disconnected. No agent command is replayed.
+
 The shutdown barrier waits for registered HTTP handler promises even after a
 response finishes or its client disconnects. `src/application-drain.js` wraps
 only the application's public route/use registration methods, preserving route
@@ -80,6 +95,12 @@ guards, nested handler arrays, errors and bridge ordering. It does not replace
 Express prototypes or inspect private router stacks. New code must return its
 async promise; detached work must have an explicit tracked owner. Mounted routers
 would need their own registration tracking; none are currently used by the Hub.
+
+Sports roster upload parsing uses ordinary middleware followed by a returned
+async import handler. A callback nested inside Multer must not hide the accepted
+PDF-processing promise from drain tracking. Disconnected imports finish or fail
+within the existing lifecycle deadline; parser limits and review-only semantics
+are unchanged. The PDF worker also exits when its parent IPC channel disconnects.
 
 The barrier also waits for WebSocket message handlers, tracked asynchronous
 mutations (including Veyon, ESPHome, Ubuntu displays and Sports), queued/running
@@ -145,6 +166,13 @@ save-before-project identity contract; do not return stable IDs that were not
 persisted. The separate maintenance config mirror has no keyring projection and
 remains token-protected and available to recovery. Ordinary authentication and
 update-status reads retain their read-only freeze policy.
+
+The Veyon idle-pool timer checks freeze/shutdown admission and tracks its entire
+cleanup promise. Removing a computer also tracks its detached connection close
+while retaining the immediate API response. Accepted closes and their audits
+therefore finish before clean shutdown or freeze acknowledgment; audit persistence
+still waits for thaw when appropriate. Network close and overall lifecycle
+deadlines are unchanged, so an over-budget drain remains an explicit failure.
 
 After the listeners, child and writers drain, shutdown flushes pending audit
 records and performs a nonwaiting SQLite WAL checkpoint. A busy/failed checkpoint,

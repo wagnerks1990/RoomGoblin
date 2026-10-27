@@ -1,5 +1,9 @@
 # Sports boards
 
+Accepted roster PDF imports remain tracked through parser completion after a
+browser disconnects. Hub shutdown and Full Recovery freeze drain that work;
+upload limits, Linux resource isolation and review-before-save remain unchanged.
+
 RoomGoblin's optional Sports workspace presents one page per configured team and
 competition level, with the previous reported final, next scheduled game, media,
 a continuous roster, a clock and optional school weather. Prepared by Kyle Wagner.

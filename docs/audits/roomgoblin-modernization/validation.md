@@ -374,3 +374,90 @@ Host Python compilation, tracked-shell syntax, the new module's syntax check and
 physical receiver or live appliance fault injection was performed. Docker remains
 unavailable locally; exact-head CI, publication and normal backed-up deployment
 must complete before claiming external delivery.
+
+## Detached Veyon cleanup ownership (2026-10-27 UTC)
+
+Baseline: `42fa368794b14c9bda80565ac66ae9c69c2a07f7`, alpha.85. Three canonical
+process regressions reproduced lost shutdown/freeze ownership and idle cleanup
+admission during a freeze (**0 passed, 3 failed**). A first candidate run exposed
+incorrect test JSON-path expressions; correcting those expressions required no
+runtime change. The final cleanup/read-freeze subset passed **6 tests**.
+
+The mandated native Linux active-worktree helper included both new test files
+and all modifications. `npm run check` passed; full `npm test`: **1026 tests,
+1024 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+Tests run the real 15-second idle timer and canonical application, controlling
+only the external WebAPI transport and cached connection age. No physical
+computer is contacted. Docker remains unavailable locally; exact-head CI,
+publication and normal appliance update remain separate delivery gates.
+
+## Lab socket disconnect persistence (2026-10-27 UTC)
+
+Baseline: `58524737cf434d220f271a27998d7e1369212657`, alpha.85. Both initial
+canonical regressions failed (**0 passed, 2 failed**): disconnect writes changed
+the acknowledged snapshot, and an older socket stamped its live replacement.
+The final targeted subset passed **7 tests**, covering those cases, acquisition
+abort, deferred persistence retry and explicit shutdown failure on a persistent
+SQLite error, plus existing freeze/authentication checks.
+
+The mandated native Linux helper validated the active worktree including the new
+lab regression file. `npm run check` passed; full `npm test`: **1031 tests,
+1029 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+Enrollment uses a real canonical Hub, temporary credentials and loopback sockets;
+no real Windows agent, workstation command or student data is involved. Docker,
+browser/native qualification, publication and live delivery remain CI/deployment
+gates. The separate startup-reconciliation reproduction is not part of this run.
+
+## Startup reconciliation admission (2026-10-27 UTC)
+
+Baseline: `9873450f9a3fcbd6855938004b1509003fce1eb5`, alpha.85. The canonical
+startup regression failed (**0 passed, 1 failed**) because the real five-second
+callback added recovered/running ledger rows inside an acknowledged freeze.
+The targeted lifecycle/automation subset passed **24 tests**. A final duplicate
+admission guard was included in the full run.
+
+Native Linux active-worktree verification passed `npm run check`; full `npm test`
+reported **1032 tests, 1030 passed, 0 failed, 2 root-only ownership skips**.
+Host Recovery: **23 passed**. Host Python compilation, tracked-shell syntax and
+`git diff --check` passed. The test waits for actual startup and scheduler timers,
+checks unchanged frozen state, post-thaw current-winner recovery and clean stop.
+Its synthetic receiver has no connected display. The new Sports-import
+reproduction files were added after the helper captured this snapshot and are
+not part of these results. CI and final appliance delivery remain separate gates.
+
+## Sports import callbacks and final lifecycle suite (2026-10-27 UTC)
+
+Baseline: `b49c164e10bb1084a25dfd2af572d20f7b5336e1`, alpha.85. All four initial
+canonical callback regressions failed (**0 passed, 4 failed**): after browser
+disconnect, shutdown/freeze finished before the held PDF-processing adapter.
+Both successful and failed processing now remain owned. The targeted lifecycle,
+real PDF isolation and Sports authorization subset passed **10 tests**.
+
+The mandated native Linux helper validated all active source/test modifications
+and both new fixture/test files. `npm run check` passed. Final full `npm test`:
+**1036 tests, 1034 passed, 0 failed, 2 root-only ownership skips**. Host Recovery:
+**23 passed**. Host Python compilation, tracked-shell syntax and `git diff --check`
+passed. The final run also includes malformed/oversized multipart error coverage
+and all Veyon cleanup, lab disconnect and startup reconciliation regressions.
+
+The import fixture controls only the processing adapter; real parser tests retain
+their Linux resource/queue checks. No student roster, connected receiver or live
+workstation is used. Final audit prose was reconciled after the helper snapshot;
+runtime and test files were unchanged. Docker remains unavailable locally; CI,
+immutable publication and the backed-up appliance update must finish before
+claiming delivery of this final lifecycle patch set.
+
+### CI fixture-key correction
+
+CodeQL check `121994239360` on PR #271 head
+`7eff0e285180a8b1a490773e8f7efed8afde84df` correctly rejected the cleanup fixture's
+generated 1024-bit RSA key. The fixture now generates 2048 bits. No production
+key, scanner rule, exclusion, security policy or application source was changed.
+
+The corrected active-worktree full rerun passed: **1036 tests, 1034 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+`npm run check`, Host Python compilation, tracked-shell syntax and diff checks
+also passed. The corrected pushed head still requires fresh CodeQL and all
+required PR gates before merge; the earlier failed check is not a passing result.

@@ -21,8 +21,37 @@ scheduled music callers; listener startup and shutdown. The remaining routes,
 business functions and full integration implementations were **not** line-by-line
 audited. ESPHome/Ubuntu/Veyon close paths were sampled for ownership only.
 
-The initial shutdown review is therefore not a whole-application drain proof.
-Follow RG-ARCH-004 before marking this review unit complete.
+The initial shutdown review was not a whole-application drain proof. Subsequent
+entry-point review and regression coverage are recorded below; feature-specific
+business logic remains assigned to its own roadmap unit.
+
+### Final lifecycle entry-point review
+
+The follow-up enumerated timers, immediate/microtask dispatch, socket/process
+callbacks, detached promises and child-process creation across `src/`, then
+reviewed their admission, returned/tracked work and persistence boundaries.
+The table describes lifecycle ownership, not full functional acceptance of each
+integration or an assertion that every route's business logic was audited.
+
+| Entry-point family | Reviewed ownership and persistence |
+| --- | --- |
+| Bootstrap and compatibility bridges | Canonical preload/recovery path, explicit ordered registration, media owner, startup-only migration/cleanup before listeners |
+| HTTP and asynchronous upload handlers | Returned promises survive response finish/disconnect; aborted parser continuations stop during drain; Sports import now uses a separate returned handler |
+| Read-side persistent maintenance | Auth housekeeping defers; update-history writes recheck freeze; Veyon identity/key projections participate in admission and drain |
+| WebSockets and MQTT | Accepted messages are counted; MQTT messages check admission; display pong/close data stays in memory with buffered audit; lab close metadata defers until thaw |
+| Announcement, music and automation work | Lifecycle queue/busy flags, tracked priority reconciliation, guarded delayed restoration, current-winner startup retry and fixed interruption semantics |
+| Veyon queue/pool | Queue begin/end ownership and microtask admission, guarded tracked idle cleanup, tracked detached removal close |
+| ESPHome and Ubuntu managers | Discovery and request work are tracked; idle ESPHome configuration/device events maintain volatile worker state; Ubuntu polling/enrollment and scheduled jobs retain tracked owners |
+| Sports and Weather | Sports refresh and accepted imports retain ownership; PDF worker has Linux limits and parent-IPC-disconnect exit; weather fetch/cache is volatile and request-owned |
+| Content and housekeeping | Returned presentation/media conversion handlers; bounded startup render cleanup; resumable-upload staging is excluded by Full Recovery's allowlist; login cleanup is memory-only; retention/update timers have admission guards |
+| Shutdown and failures | Owned timers stop, sockets/child/listeners settle, accepted writers drain, pending metadata/audit flush, checkpoint precedes SQLite close; unsuccessful deadlines remain exit 1 |
+
+Source review of these entry-point families is complete. Findings RG-ARCH-001
+through RG-ARCH-015 have implementations and scoped regression evidence. Final
+CI, merge, publication and appliance qualification remain delivery gates for the
+last patch set. Physical device, production fault-injection and feature/business
+acceptance are explicitly outside this lifecycle review; the corresponding
+roadmap units retain that work.
 
 ## RG-ARCH-001: implicit startup composition
 
@@ -422,8 +451,96 @@ a further review lead; the separately reproduced finding below addresses it.
   physical receiver behavior. Runtime conversion still uses its existing finally
   cleanup; no cleanup loop races active rendering.
 
-The first bootstrap/media/readiness patch is implemented. The broader Core
-Architecture and Application Lifecycle unit remains open for exhaustive writer
-ownership/feature acceptance. Registered-handler drain and explicit bridge
-composition are addressed within their documented coverage. No UI redesign,
-exhaustive server audit or physical-device acceptance is claimed by these tests.
+### RG-ARCH-012: detached Veyon cleanup has no lifecycle owner
+
+- **Subsystem/category/priority:** Core lifecycle / Reliability and audit / P3.
+- **Baseline:** `42fa368794b14c9bda80565ac66ae9c69c2a07f7`, alpha.85;
+  `src/server.js:2768,7231`.
+- **Problem/evidence:** The idle-pool timer and computer-removal handler discard
+  connection-close promises. Three canonical regressions reproduce clean shutdown
+  before accepted cleanup/audit finishes, freeze acknowledgment while cleanup is
+  pending, and a new idle close beginning while frozen. Existing freeze audit
+  buffering prevents these tests from establishing SQLite snapshot corruption;
+  the defect is missing work ownership/admission and possible shutdown audit loss.
+- **Implementation:** Use the existing tracked async mutation owner for both
+  detached paths; guard idle timer admission during shutdown/freeze. Keep the
+  immediate computer-removal response, current network timeouts, audit buffering
+  and total failure deadlines. No endpoint command or key behavior changes.
+- **Complexity/risk/confidence:** Small / Low / Confirmed. Slow cleanup may now
+  cause the existing drain deadline to fail rather than falsely reporting success.
+- **Review/verification:** Review all Hub `.catch` call sites for detached work,
+  Veyon pool timer/removal/close, audit buffering and shutdown/freeze counters.
+  The canonical tests use real routes, connection cache and the 15-second timer;
+  a controlled WebAPI transport holds only the close response and a test clock
+  ages the synthetic cached connection. No physical workstation is contacted.
+- **Limits:** External Veyon session teardown is transport-fixture coverage, not
+  physical endpoint acceptance. This follow-up does not alter other integrations.
+
+### RG-ARCH-013: lab socket close escapes snapshot ownership
+
+- **Subsystem/category/priority:** Core lifecycle / Recovery and connection state / P2.
+- **Baseline:** `58524737cf434d220f271a27998d7e1369212657`, alpha.85;
+  `src/server.js:3173-3178,8416-8421`.
+- **Problem/evidence:** A real enrolled loopback agent disconnects after freeze
+  acknowledgment and writes `disconnectedAt` into the frozen inventory. A second
+  reproduction shows the old socket's close stamping a connected replacement.
+  Both initial canonical regressions fail; no physical computer is used.
+- **Implementation:** Close only the current socket's registration. Keep live
+  offline state in memory, defer its inventory persistence while freeze is
+  requested, and flush on thaw/lease expiry/acquisition failure. Retain failures
+  for later inventory writes and final shutdown retry; fail shutdown if pending.
+  Accepted message writes still drain normally; do not globally suppress them.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. Metadata is deferred
+  only while frozen or after a diagnosed persistence error; auth is unchanged.
+- **Verification:** Canonical enrollment and WebSockets, SQLite snapshot equality,
+  post-thaw persistence, replacement identity, aborted acquisition, and injected
+  SQLite failures with successful retry versus explicit failed shutdown.
+- **Limits:** No Windows installation, remote command, screenshot/history data or
+  physical classroom acceptance is involved. Abrupt exit while metadata is only
+  in memory can lose its timestamp, as with other interrupted volatile work.
+
+### RG-ARCH-014: startup reconciliation begins inside an acknowledged freeze
+
+- **Subsystem/category/priority:** Core lifecycle / Snapshot and scheduling / P2.
+- **Baseline:** `9873450f9a3fcbd6855938004b1509003fce1eb5`, alpha.85;
+  `src/server.js:8610`.
+- **Problem/evidence:** The five-second startup callback checks shutdown and
+  scheduler policy but not freeze admission. A canonical test freezes before that
+  timer and observes new `recovered-running`/`running` ledger rows afterward.
+  The initial regression fails; its display target is synthetic and unconnected.
+- **Implementation:** Retain one pending startup pass until admission is possible.
+  Retry on the existing scheduler timer, track accepted work, and hold scheduler
+  busy through completion. Disabled/simulation checks and current-winner recovery
+  remain intact; no new timer, stale snapshot or occurrence replay is introduced.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. After a deferred
+  start, recovery can wait up to one normal scheduler interval after thaw.
+- **Verification:** Real initial timer, freeze/thaw, unchanged frozen ledger,
+  post-thaw current-winner recovery once, clean shutdown; existing scheduled/manual
+  enforcement and cancellation regressions remain required.
+- **Limits:** This validates lifecycle admission, not physical output delivery.
+
+### RG-ARCH-015: roster import processing is hidden inside an upload callback
+
+- **Subsystem/category/priority:** Core lifecycle / Accepted work ownership / P3.
+- **Baseline:** `b49c164e10bb1084a25dfd2af572d20f7b5336e1`, alpha.85;
+  `src/sports-routes.js:17`.
+- **Problem/evidence:** Multer does not return its async callback's PDF-processing
+  promise. After a client disconnect, canonical shutdown exits cleanly and export
+  freeze acknowledges while processing is still accepted and pending. Four
+  success/error regressions fail. The importer is review-only, so this does not
+  establish persistent roster loss or snapshot database corruption.
+- **Implementation:** Keep upload parsing in ordinary middleware, then return the
+  async import handler. Preserve upload errors, authorization, quotas, PDF worker
+  resource limits and explicit review/save. No new hook, timer or parser change.
+- **Complexity/risk/confidence:** Small / Low / Confirmed. Slow accepted imports
+  now count against the existing drain deadline instead of being discarded.
+- **Verification:** Real multipart parsing and canonical process, disconnected
+  import success/error across shutdown and freeze, malformed/oversized upload
+  rejection, existing real PDF resource-isolation and route authorization tests.
+- **Limits:** Lifecycle tests hold the PDF adapter, while existing parser tests
+  exercise real workers. No student roster or production import is used.
+
+The Core Architecture and Application Lifecycle source review is ready for final
+qualification and delivery. The entry-point coverage above replaces the initial
+sampled ownership review. No UI redesign, whole-server business-logic audit or
+physical-device acceptance is claimed by these tests.

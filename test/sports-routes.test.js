@@ -17,4 +17,9 @@ test('Sports routes enforce operator, write, source-admin and receiver boundarie
  assert.equal((await req('/refresh','editor','POST',{})).status,403);assert.equal((await req('/boards/b/scene','operator','POST',{})).status,200);
  assert.equal((await req('/import/roster','editor','POST',{csv:'name,number\nExample Athlete,12'})).status,200);
  assert.equal(runtime.service.read().teams[0].roster.length,0,'import is review-only');
+ for(const [field,size]of [['unexpected',8],['file',5242881]]){
+  const body=new FormData();body.append(field,new Blob([Buffer.alloc(size)]),'fixture.pdf');
+  const rejected=await fetch(url+'/import/roster',{method:'POST',headers:{'x-role':'editor'},body});
+  assert.equal(rejected.status,400);assert.equal((await rejected.json()).error,'Upload a roster PDF under 5 MiB');
+ }
 });
