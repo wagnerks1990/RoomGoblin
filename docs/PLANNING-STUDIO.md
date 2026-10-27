@@ -24,6 +24,14 @@ falls through to weekly recurrence. When Planning supplies the selected day,
 assign that class to a teaching block in its timetable. Defining a class alone
 does not issue commands to receivers.
 
+Remove a class's timetable references before deleting the class. The delete
+response identifies each referencing timetable, including saved timetables while
+Planning is disabled. Existing automation, timer and continuation references
+also prevent deletion; no blocks are silently removed.
+Preview and Save also reject missing class references and identify the timetable
+to repair. Disabled saved classes and period-only blocks remain valid. A class
+removed after Preview invalidates that review before Save writes anything.
+
 Class Save holds its current draft while pending. New class drafts retain their
 IDs across retries; an already accepted create directs you to refresh and check
 the earlier save. Closing the dialog does not cancel a submitted save. Its later
@@ -53,6 +61,9 @@ An automation can follow class segments, **timetable blocks**, or clock rules.
 Timetable-block selection includes lunch, transitions, assemblies and homeroom;
 its occurrence follows the selected block's actual times and skips days where
 that block is absent. Choose classes or blocks for one automation, not both.
+Simultaneous blocks have separate execution and Stop identities. If they target
+the same output at equal priority, recovery selects the final live block rather
+than merging their identities.
 The resolved day warns about breaks/events with no linked display automation:
 without a display action, previous content remains visible.
 
@@ -138,6 +149,15 @@ normalized stores; new windows, block links and scene payloads live in existing
 JSON metadata. No replacement of old IDs, credentials, display groups, imported
 source snapshots or production-specific configuration is required. No shared
 rules are enabled by default. Existing plain actions remain supported.
+
+Block occurrence keys use `block:<blockId>`; ordinary class/clock keys and stored
+class, timetable, receiver and automation IDs are unchanged. Upgrade honors old
+`manual` execution markers and claimed/running/succeeded ledger rows to prevent
+uncertain replay. An old Stop applies to every block that formerly shared that
+event/date/time identity. Existing history is retained rather than rewritten.
+New Stops remain separate by block and follow the same bounded date retention.
+Rollback uses the guarded updater's matching pre-update source/database snapshot;
+do not copy new execution markers into an older source checkout.
 
 Planning/month/class routes require `schedule.manage`; automation mutations keep
 `automation.manage`. Shared-rule routes require both. Shared-rule preview hashes

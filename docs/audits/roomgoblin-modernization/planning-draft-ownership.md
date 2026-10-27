@@ -79,3 +79,7 @@ review in this unit. Cross-date/class-end scheduling semantics and calendar Toda
 date refresh remain under review; the automation editor's Today-only fix does
 not establish coverage for the separate calendar control. This is not completion
 of the planning unit or the modernization roadmap.
+
+## Delivery receipt
+
+Delivery verified 2026-10-27 UTC at `dd23fb4491a930b82f6ea17a03a4d5e318df337d` after all 14 PR checks, checked squash merge, main gates and exact image publication. The normal updater completed at 2026-10-27T11:01:29.143679+00:00; clean main, exact Hub image/served assets, both service health endpoints, canonical SQLite quick_check and eight encrypted secret rows passed. Maintenance retained its verified container at `20f8c501916f34e17bee2c643434e7cce0c919e6`; both containers report zero restarts. Backup `auto-operational-2026-10-27T11-01-15-573Z.zip` is 128597238 bytes, mode 0600, SHA-256 `a42fa16f624a90aef500d29019727d1304ccd438cb13990d7a4ec2c83725453c`; journal checksum, archive CRC, canonical-database-only contents and extracted SQLite integrity passed. Previous deployment `68f36c47b2d4595bc38e5ca71045bace95f3e805` and its image pair remain available for rollback. No physical commands, receiver reloads or live calendar edits were used.

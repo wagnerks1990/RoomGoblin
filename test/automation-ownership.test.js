@@ -6,7 +6,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 const vm=require("node:vm");
 const crypto=require("node:crypto");
-const {makeLedger,occurrenceId}=require("../src/automation-runtime");
+const {makeLedger,occurrenceId,automationOccurrenceKey}=require("../src/automation-runtime");
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8");
 function section(start,end){
   const a=source.indexOf(start),b=source.indexOf(end,a);
@@ -22,7 +22,7 @@ function harness({failStatus,failPersistAt=0,run}={}){
     state=next;
   }});
   const ctx=vm.createContext({
-    Date,Map,Set,Promise,crypto,occurrenceId,automationRunLedger:ledger,
+    Date,Map,Set,Promise,crypto,occurrenceId,automationOccurrenceKey,automationRunLedger:ledger,
     shutdownRequested:false,automationSchedulerEnabled:true,SCHEDULER_CATCHUP_MINUTES:5,
     fullExportFreeze:{requested:false,activeAsyncMutations:0},
     schedulerClock:{now:()=>now,status:()=>({active:false}),commandsAllowed:()=>true},
@@ -40,7 +40,7 @@ function harness({failStatus,failPersistAt=0,run}={}){
     runClassroomAutomation:async(...args)=>{dispatches++;return run?run(...args):{ok:true,results:[]}},
     audit:value=>audits.push(value),diagnosticError:(error,context)=>errors.push({message:error.message,context})
   });
-  vm.runInContext(section("function trackFullExportMutation(","// Veyon becomes")+
+  vm.runInContext(section("function resolveScheduledAutomationOccurrences(","function resolveAutomationFromClass(")+section("function trackFullExportMutation(","// Veyon becomes")+
     section("let automationSchedulerBusy=false;","let automationStartupReconcilePending=true;")+
     section("function startManagedManualAutomation(",'app.post("/api/v1/automations/draft/run"')+
     section("async function recoverContinuousAutomationOccurrences(","async function reconcileScheduledAutomationState(")+
