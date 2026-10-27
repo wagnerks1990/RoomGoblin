@@ -122,9 +122,17 @@ function occurrenceId(event,dateKey,time){return `${String(event?.id||"unknown")
 function makeLedger(store,{key="automation.run-ledger",limit=500}={}){
   function read(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {version:1,runs:Array.isArray(value.runs)?value.runs:[]}}
   function write(value){store.setPreference(key,{version:1,runs:value.runs.slice(-limit)})}
-  function record(entry){const state=read();state.runs.push({...entry,observedAt:new Date().toISOString()});write(state);return entry}
+  function recordMany(entries){
+    if(!entries.length)return entries;
+    // Never acknowledge a batch after dropping some of its own new records.
+    if(entries.length>limit)throw new Error("Automation ledger batch exceeds its history limit");
+    const state=read(),observedAt=new Date().toISOString();
+    write({runs:[...state.runs,...entries.map(entry=>({...entry,observedAt}))]});
+    return entries;
+  }
+  function record(entry){recordMany([entry]);return entry}
   function claim(id,details={}){const state=read();const existing=[...state.runs].reverse().find(run=>run.occurrenceId===id&&["claimed","running","succeeded"].includes(run.status));if(existing)return {claimed:false,existing};const row={occurrenceId:id,status:"claimed",...details};state.runs.push({...row,observedAt:new Date().toISOString()});write(state);return {claimed:true,row}}
-  return {read,record,claim};
+  return {read,record,recordMany,claim};
 }
 
 module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger};

@@ -198,3 +198,18 @@ released after settlement. Accepted work stays inside the Full Recovery/shutdown
 drain until its execution, persistence and error reporting finish. A failed new
 manual admission save does not cancel an existing accepted run. Durable claims, current
 winner recovery and shutdown interruption semantics remain unchanged.
+
+Cancellation saves the complete selected set in one SQLite preference write before
+changing any run's in-memory cancellation flag. A failed save leaves all selected
+runs unchanged; cancellation does not undo hardware actions already accepted.
+Operator Stop, replacement, manual-run resume and manual-media cancellation share
+this boundary. The history remains bounded to 500 records. A cancellation batch
+larger than that capacity fails before changing execution, rather than silently
+dropping its own new markers. Later history retention is unchanged.
+
+Continuous recovery excludes an occurrence with a retained `cancel-requested` or
+`cancelled` record, even if a later diagnostic row says `running` or `interrupted`.
+This covers a restart between saving Stop and reaching the next cancellation
+checkpoint. Shutdown interruption without a cancellation remains recoverable.
+The surrounding manual-media takeover has separate priority/pause state; this
+atomicity guarantee covers its run cancellation selection only.
