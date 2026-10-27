@@ -250,3 +250,13 @@ and cancellation metadata after settlement, so they cannot leave a phantom run
 blocking recovery or shutdown. Failed new manual admission saves preserve existing
 accepted work. Live draft continual runs return a managed run ID; use **Stop Run**
 to cancel them. Finite manual sequences return their completed result.
+
+
+## Scheduled sequence test-clock permission
+
+Editor draft simulation is side-effect free. The scheduler test clock is dry by
+default and has a separate bounded live-command option. Scheduled sequences
+recheck that permission before actions, during waits and before a new timer
+overlay. Expiry or a switch to dry mode stops the sequence with a recorded error.
+An already accepted action may finish; its effects are not undone. Explicit
+manual Run Now and live draft tests remain available.

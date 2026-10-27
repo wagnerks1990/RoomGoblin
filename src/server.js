@@ -1833,12 +1833,16 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     const end=Number(event._classEndAt);
     return !Number.isFinite(end)||schedulerClock.now().getTime()<end;
   }
+  function assertSimulationAllowsRun(){
+    if(!manual&&!schedulerClock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
+  }
   function assertRunActive(){
     if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId)){
       const reason=automationCancellationReasons.get(event._occurrenceId)||"cancelled";
       throw Object.assign(new Error(`Automation run ${reason}`),{code:"AUTOMATION_CANCELLED",reason});
     }
     if(shuttingDown)throw Object.assign(new Error("Automation interrupted by application shutdown"),{code:"AUTOMATION_INTERRUPTED",reason:"server-shutdown"});
+    assertSimulationAllowsRun();
     if(!manual&&!automationSchedulerEnabled)throw Object.assign(new Error("Automation scheduler paused"),{code:"AUTOMATION_SCHEDULER_PAUSED"});
     if(!manual&&isAutomationSuppressed(schedulerClock.now()).blocked)throw Object.assign(new Error("Automation suppressed by current school calendar state"),{code:"AUTOMATION_SUPPRESSED"});
     if(!manual&&event.id){
@@ -1858,6 +1862,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   async function applyTimerOverlay({targetsOverride=null,force=false}={}){
     if(!event.timerOverlay?.enabled)return;
     if(overlayApplied&&!force)return;
+    assertSimulationAllowsRun();
     overlayApplied=true;
     try{
       const sourceTargets=Array.isArray(targetsOverride)&&targetsOverride.length

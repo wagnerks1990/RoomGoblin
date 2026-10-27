@@ -1,9 +1,10 @@
 # RoomGoblin modernization audit
 
-Status: **Legacy TV scheduler safeguards locally qualified; PR #278 in CI**.
-Scheduler timing/task ownership merged in PR #277 and awaits publication/delivery.
-The test-clock follow-up is in PR #279. AV backend delivery completed in PR #276.
-The operator workspace is deployed through PR #275; receiver browser-runtime
+Status: **Scheduler safeguards integrating into PR #278**. Legacy TV,
+test-clock, resource identity and replacement ordering retain their individual
+audit evidence; fresh combined qualification is pending. Scheduler timing/task
+ownership merged in PR #277 and awaits delivery. AV backend delivery completed in
+PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
 frontend delivery completed in PRs #273 and #272. Core Architecture
 and Application Lifecycle is complete for its enumerated entry-point scope. The first
@@ -57,6 +58,7 @@ Queued subsystem units below have not been marked audited.
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
 
 - [Scheduler timing, task ownership and remaining review](scheduler.md)
+- [Scheduled sequence test-clock findings](scheduler-simulation.md)
 - [Displays & AV backend read bounds](av-status.md)
 - [Displays & AV workspace findings](displays-av.md)
 - [Display receiver browser-runtime findings](display-receiver.md)

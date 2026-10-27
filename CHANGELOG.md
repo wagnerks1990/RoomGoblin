@@ -10,6 +10,9 @@
 - Report legacy scheduler persistence errors and release its busy/drain ownership
   even when a final status save fails.
 
+- Stop scheduled sequences at their next checkpoint when test-clock live permission
+  expires or is disabled; prevent new timer overlays while retaining manual runs.
+
 - Enforce the continuous-automation one-second cycle floor while keeping
   cancellation responsive and configured waits stable across clock corrections.
 - Release scheduled/manual/recovered task ownership even when ledger or final
