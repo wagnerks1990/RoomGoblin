@@ -68,8 +68,8 @@
     if(!shown.length)parent.append(el("div",selectedTab==="overlays"?"No shared layers yet. Add an announcement, logo, timer, or information strip that accompanies other automations.":"No matching automations. Create a routine, a class-linked action, or a temporary schedule.","studioEmpty"));
   }
   function editEvent(original=null){
-    const e=clone(original||{name:"",enabled:true,time:"07:45",scheduleMode:"weekly",days:[1,2,3,4,5],targets:["all"],useClassTargets:true,action:"display.text",payload:{text:"Welcome"}});let actions=sequence(e),review=null,datePending=false,previewGeneration=0;
-    const m=modal(e.id?`Edit ${e.name}`:"New automation","Choose when it runs, then build the ordered actions. Preview is local; Run now sends commands to real devices.");
+    const editing=!!original?.id,e=clone(original||{name:"",enabled:true,time:"07:45",scheduleMode:"weekly",days:[1,2,3,4,5],targets:["all"],useClassTargets:true,action:"display.text",payload:{text:"Welcome"}});if(!editing)e.id=uid("auto");let actions=sequence(e),review=null,datePending=false,previewGeneration=0,saving=false;
+    const m=modal(editing?`Edit ${e.name}`:"New automation","Choose when it runs, then build the ordered actions. Preview is local; Run now sends commands to real devices.");
     const tabs=el("div",undefined,"studioTabs"),panes={};m.body.append(tabs);
     for(const [key,label] of [["when","When"],["actions","Actions"],["targets","Targets & layers"],["timer","Timer & advanced"]]){const pane=el("section",undefined,"studioEditorPane");pane.hidden=key!=="when";panes[key]=pane;button(tabs,label,()=>{for(const [k,p]of Object.entries(panes))p.hidden=k!==key});m.body.append(pane)}
     const name=field(panes.when,"Automation name",e.name),enabled=field(panes.when,"Enabled",e.enabled!==false,{type:"checkbox"}),time=field(panes.when,"First run / fixed time",e.time,{type:"time"});
@@ -80,14 +80,14 @@
     const mode=field(panes.when,"Recurrence",e.scheduleMode||"weekly",{options:[["weekly","Weekdays"],["schoolcycle","School cycle"],["dates","Specific dates"],["alternating","Alternating groups"]]});
     const days=checks(panes.when,"Weekdays",weekdays,e.days||[1,2,3,4,5]),cycles=checks(panes.when,"Cycle days",(S.scheduleProfile.cycleDays||[]).map(x=>[x,`Cycle ${x}`]),e.cycleDays||[]),include=field(panes.when,"Specific dates (one per line)",(e.includeDates||[]).join("\n"),{type:"textarea"}),phase=field(panes.when,"Alternating group",e.alternatePhase||"A",{options:[["A",S.scheduleProfile.dayGroups?.[0]?.label||"A"],["B",S.scheduleProfile.dayGroups?.[1]?.label||"B"]]});
     const window=e.scheduleWindow||{},start=field(panes.when,"Active from (optional)",window.startDate||"",{type:"date"}),end=field(panes.when,"Active through (optional)",window.endDate||"",{type:"date"});const todayButton=button(panes.when,"Today only",async()=>{
-      if(datePending)return;
+      if(datePending||saving)return;
       const previous=[start.value,end.value];datePending=true;invalidate();todayButton.disabled=preview.disabled=true;m.status.textContent="Loading the current planning date…";
       try{
         const value=await currentSchedulerDate();if(!m.dialog.open)return;
         if(start.value!==previous[0]||end.value!==previous[1]){m.status.textContent="Your date edits were kept. Choose Today only again to replace them.";return}
         start.value=end.value=value;invalidate();
       }catch(error){if(m.dialog.open)m.status.textContent=error.message}
-      finally{datePending=false;todayButton.disabled=preview.disabled=false}
+      finally{datePending=false;todayButton.disabled=preview.disabled=saving}
     });
     const exclude=field(panes.when,"Skip these dates",(window.excludedDates||[]).join("\n"),{type:"textarea"}),repeat=field(panes.when,"Repeat every minutes (0 = once)",window.repeatEveryMinutes||0,{type:"number",min:0,max:720}),repeatEnd=field(panes.when,"Last repeating run",window.endTime||"",{type:"time"});
     function recurrence(){const linked=classes().length>0||blocks().length>0;time.closest("label").hidden=linked;ref.closest("label").hidden=offset.closest("label").hidden=!linked;mode.closest("label").hidden=linked;days.node.hidden=linked||mode.value!=="weekly";cycles.node.hidden=linked||mode.value!=="schoolcycle";include.closest("label").hidden=linked||mode.value!=="dates";phase.closest("label").hidden=linked||mode.value!=="alternating";repeat.closest("label").hidden=repeatEnd.closest("label").hidden=linked;if(linked){repeat.value="0";repeatEnd.value=""}}
@@ -118,6 +118,7 @@
       return {...e,id:e.id||undefined,name:name.value.trim(),enabled:enabled.checked,time:time.value,scheduleMode:mode.value,days:days().map(Number),cycleDays:cycles(),includeDates:dates(include.value),alternatePhase:phase.value,anchorDate:e.anchorDate||S.scheduleProfile.anchorDate||"",blockIds,classIds:linked,classId:linked[0]||"",classTimeReference:ref.value,classTimeOffsetMinutes:Number(offset.value),useClassTargets:useClass.checked,targets:selected,action:seq[0].action,payload:seq[0].payload,actionSequence:seq,scheduleWindow:{startDate:start.value,endDate:end.value,excludedDates:dates(exclude.value),repeatEveryMinutes:Number(repeat.value),endTime:repeatEnd.value},overlayPolicy:configError?(e.overlayPolicy||"inherit"):policy.value,overlayIds:configError?(e.overlayIds||[]):overlayIds(),priority:Number(priority.value),timerOverlay:timerOn.checked?{...timer,enabled:true,source:timerSource.value,endTime:timerEnd.value,durationSeconds:Number(minutes.value)*60,label:timerLabel.value,position:position.value,fontSize:Number(size.value),textColor:timerColor.value,effects:effectsEditor.read()}:null};
     }
     const preview=button(m.footer,"Preview & validate",async()=>{
+      if(saving)return;
       const generation=++previewGeneration;review=null;save.disabled=true;
       try{
         const draft=body(),json=JSON.stringify(draft),result=await send("/api/v1/automations/draft/simulate",draft);
@@ -127,11 +128,21 @@
         review=json;save.disabled=false;m.status.textContent=`Ready to save · ${actions.length} actions · ${result.resolved?.targets?.length||0} targets${result.warnings?.length?` · ${result.warnings.length} warnings`:""}. No device commands sent.`;
       }catch(error){if(m.dialog.open&&generation===previewGeneration){m.status.textContent=error.message;save.disabled=true;review=null}}
     });
-    const save=button(m.footer,"Save automation",async()=>{try{const draft=body();if(JSON.stringify(draft)!==review)throw Error("Preview the changed draft again");save.disabled=true;await send(e.id?`/api/v1/automations/${encodeURIComponent(e.id)}`:"/api/v1/automations",draft,e.id?"PUT":"POST");m.dialog.close();await loadSchedules();notify("Automation saved. No device commands sent.","success")}catch(error){m.status.textContent=error.message;review=null;save.disabled=true}},"primary");save.disabled=true;
+    const save=button(m.footer,"Save automation",async()=>{
+      if(saving)return;
+      try{
+        const draft=body();if(JSON.stringify(draft)!==review)throw Error("Preview the changed draft again");
+        saving=true;previewGeneration++;setSaving(true);m.status.textContent="Saving automation…";
+        await send(editing?`/api/v1/automations/${encodeURIComponent(e.id)}`:"/api/v1/automations",draft,editing?"PUT":"POST");
+        m.dialog.close();await loadSchedules();notify("Automation saved. No device commands sent.","success");
+      }catch(error){review=null;save.disabled=true;m.status.textContent=!editing&&error.message==="Automation ID already exists"?"This draft already exists. Close this editor and reload automations to check the earlier save.":error.message}
+      finally{if(saving){saving=false;setSaving(false)}}
+    },"primary");save.disabled=true;
+    function setSaving(pending){m.body.inert=pending;m.body.setAttribute("aria-busy",String(pending));for(const control of m.footer.querySelectorAll("button"))control.disabled=pending;preview.disabled=todayButton.disabled=pending||datePending;save.disabled=true}
     function invalidate(){previewGeneration++;review=null;save.disabled=true;m.status.textContent="Unsaved changes. Preview before saving."}
     m.body.addEventListener("input",invalidate);m.body.addEventListener("change",invalidate);renderActions();
-    button(m.footer,"Detailed device editor",()=>{if(!e.id){notify("Save this automation first to open detailed imported device options.");return}m.dialog.close();legacyDialog.showModal();editAutomation(e.id)});
-    if(e.id)button(m.footer,"Delete automation",async()=>{if(!confirm(`Delete automation "${e.name}"?`))return;try{await api(`/api/v1/automations/${encodeURIComponent(e.id)}`,{method:"DELETE"});m.dialog.close();await loadSchedules()}catch(error){m.status.textContent=error.message}},"danger");
+    button(m.footer,"Detailed device editor",()=>{if(saving)return;if(!editing){notify("Save this automation first to open detailed imported device options.");return}m.dialog.close();legacyDialog.showModal();editAutomation(e.id)});
+    if(editing)button(m.footer,"Delete automation",async()=>{if(saving||!confirm(`Delete automation "${e.name}"?`))return;saving=true;previewGeneration++;review=null;setSaving(true);try{await api(`/api/v1/automations/${encodeURIComponent(e.id)}`,{method:"DELETE"});m.dialog.close();await loadSchedules()}catch(error){m.status.textContent=error.message}finally{saving=false;setSaving(false)}},"danger");
   }
   async function editAction(original,index,primaryAction="display.text"){
     return new Promise(resolve=>{
@@ -178,13 +189,14 @@
   }
   function editOverlay(original=null){
     if(configError){notify("Reload shared layer settings before editing.","error");return}
-    const overlay=clone(original||{id:uid("overlay"),name:"Shared announcement",enabled:true,automationIds:[],excludedAutomationIds:[],classIds:[],cycleDays:[],days:[0,1,2,3,4,5,6],scene:{transparent:true,layers:[{id:uid("layer"),type:"text",name:"Announcement",text:"Your announcement",x:5,y:88,w:90,h:8,fontSize:48,color:"#ffffff",bold:true}]}}),m=modal(original?`Edit ${overlay.name}`:"New shared layer","These layers accompany the selected automations without replacing or restarting their content. Rules are evaluated each time a display action runs.");let review=null,previewGeneration=0;
+    const overlay=clone(original||{id:uid("overlay"),name:"Shared announcement",enabled:true,automationIds:[],excludedAutomationIds:[],classIds:[],cycleDays:[],days:[0,1,2,3,4,5,6],scene:{transparent:true,layers:[{id:uid("layer"),type:"text",name:"Announcement",text:"Your announcement",x:5,y:88,w:90,h:8,fontSize:48,color:"#ffffff",bold:true}]}}),m=modal(original?`Edit ${overlay.name}`:"New shared layer","These layers accompany the selected automations without replacing or restarting their content. Rules are evaluated each time a display action runs.");let review=null,previewGeneration=0,saving=false;
     const name=field(m.body,"Layer rule name",overlay.name),enabled=field(m.body,"Enabled",overlay.enabled,{type:"checkbox"}),ids=checks(m.body,"Apply to automations (none = all)",S.automations.map(e=>[e.id,e.name]),overlay.automationIds),excluded=checks(m.body,"Exclude automations",S.automations.map(e=>[e.id,e.name]),overlay.excludedAutomationIds),classes=checks(m.body,"Only these classes (none = all)",S.classes.map(c=>[c.id,c.name]),overlay.classIds),days=checks(m.body,"Weekdays",weekdays,overlay.days),cycles=checks(m.body,"Cycle days (none = all)",(S.scheduleProfile.cycleDays||[]).map(x=>[x,x]),overlay.cycleDays);
     const w=overlay.scheduleWindow||{},start=field(m.body,"Active from",w.startDate||"",{type:"date"}),end=field(m.body,"Active through",w.endDate||"",{type:"date"}),startTime=field(m.body,"Daily start (optional)",overlay.startTime||"",{type:"time"}),endTime=field(m.body,"Daily end (optional)",overlay.endTime||"",{type:"time"});
     button(m.body,"Design shared layer",async()=>{const scene=await editPlanningScene(overlay.scene,{transparent:true});if(scene){overlay.scene=scene;invalidate();m.status.textContent=`${scene.layers.length} layers ready. Preview the rule.`}},"primary");
     const date=field(m.body,"Preview date",today,{type:"date"}),time=field(m.body,"Preview time","12:00",{type:"time"}),results=el("div",undefined,"studioRuleResults");m.body.append(results);
     function draft(){const next=clone(config),rule={...overlay,name:name.value,enabled:enabled.checked,automationIds:ids(),excludedAutomationIds:excluded(),classIds:classes(),days:days().map(Number),cycleDays:cycles(),scheduleWindow:{...w,startDate:start.value,endDate:end.value},startTime:startTime.value,endTime:endTime.value};const index=next.overlays.findIndex(o=>o.id===overlay.id);if(index>=0)next.overlays[index]=rule;else next.overlays.push(rule);return next}
     button(m.footer,"Preview rule",async()=>{
+      if(saving)return;
       const generation=++previewGeneration;review=null;save.disabled=true;
       try{
         const next=draft(),json=JSON.stringify(next),r=await send("/api/v1/planning/studio/preview",{config:next,date:date.value,time:time.value});
@@ -195,9 +207,19 @@
         review={json,hash:r.previewHash};save.disabled=false;m.status.textContent="Preview ready. No commands sent.";
       }catch(error){if(m.dialog.open&&generation===previewGeneration){invalidate();m.status.textContent=error.message}}
     });
-    const save=button(m.footer,"Save shared layer",async()=>{try{const next=draft();if(review?.json!==JSON.stringify(next))throw Error("Preview the changed rule again");const r=await send("/api/v1/planning/studio",{config:next,previewHash:review.hash},"PUT");config=r.config;m.dialog.close();render();notify("Shared layer saved. It will accompany the next matching display action.","success")}catch(error){invalidate();m.status.textContent=error.message}},"primary");save.disabled=true;
+    const save=button(m.footer,"Save shared layer",async()=>{
+      if(saving)return;
+      try{
+        const next=draft();if(review?.json!==JSON.stringify(next))throw Error("Preview the changed rule again");
+        saving=true;previewGeneration++;setSaving(true);m.status.textContent="Saving shared layer…";
+        const r=await send("/api/v1/planning/studio",{config:next,previewHash:review.hash},"PUT");
+        config=r.config;m.dialog.close();render();notify("Shared layer saved. It will accompany the next matching display action.","success");
+      }catch(error){invalidate();m.status.textContent=error.message}
+      finally{if(saving){saving=false;setSaving(false)}}
+    },"primary");save.disabled=true;
+    function setSaving(pending){m.body.inert=pending;m.body.setAttribute("aria-busy",String(pending));for(const control of m.footer.querySelectorAll("button"))control.disabled=pending;save.disabled=true}
     function invalidate(){previewGeneration++;review=null;save.disabled=true;results.replaceChildren();m.status.textContent="Unsaved changes. Preview the rule before saving."}m.body.addEventListener("input",invalidate);m.body.addEventListener("change",invalidate);
-    if(original)button(m.footer,"Remove rule",async()=>{if(!confirm(`Remove shared layer "${overlay.name}"?`))return;try{const next=clone(config);next.overlays=next.overlays.filter(o=>o.id!==overlay.id);const preview=await send("/api/v1/planning/studio/preview",{config:next,date:date.value,time:time.value});config=(await send("/api/v1/planning/studio",{config:next,previewHash:preview.previewHash},"PUT")).config;m.dialog.close();render()}catch(error){m.status.textContent=error.message}},"danger");
+    if(original)button(m.footer,"Remove rule",async()=>{if(saving||!confirm(`Remove shared layer "${overlay.name}"?`))return;saving=true;previewGeneration++;review=null;setSaving(true);try{const next=clone(config);next.overlays=next.overlays.filter(o=>o.id!==overlay.id);const preview=await send("/api/v1/planning/studio/preview",{config:next,date:date.value,time:time.value});config=(await send("/api/v1/planning/studio",{config:next,previewHash:preview.previewHash},"PUT")).config;m.dialog.close();render()}catch(error){m.status.textContent=error.message}finally{saving=false;setSaving(false)}},"danger");
   }
   function settings(){
     if(configError){notify("Reload shared layer settings before editing.","error");return}

@@ -1,7 +1,8 @@
 # Recovery resource identity
 
 Baseline: `2bd5ce972dca231d5aeb8eff42a57245cec8fee6`, alpha.85, checked
-PR #284 main. Status: combined resource/ownership patch qualified on checked PR #285 main; CI pending.
+PR #284 main. Status: all gates passed; deployed and verified at `065e32e` (PR #286).
+See the [combined delivery receipt](scheduler-complete-recovery-owner.md#verified-delivery).
 
 ## RG-SCHED-024: Lighting recovery compared groups with their own members
 

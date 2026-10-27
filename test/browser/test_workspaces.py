@@ -1271,6 +1271,245 @@ class WorkspaceBrowserTests(unittest.TestCase):
 
 
 
+
+    def test_automation_pending_save_owns_the_editor_until_failure(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('One intended routine')
+        held = []
+        page.route('**/api/v1/automations', lambda route: held.append(route) if route.request.method == 'POST' else route.fallback())
+        preview = editor.get_by_role('button', name='Preview & validate', exact=True)
+        save = editor.get_by_role('button', name='Save automation', exact=True)
+        preview.click()
+        expect(save).to_be_enabled()
+        with page.expect_request('**/api/v1/automations'):
+            save.click()
+        # Exercise the old duplicate path without waiting on a correctly disabled control.
+        blocked = preview.is_disabled()
+        inert = editor.locator('.studioDialogBody').evaluate('(node) => node.inert')
+        if not blocked:
+            preview.click()
+            expect(save).to_be_enabled()
+            with page.expect_request('**/api/v1/automations'):
+                save.click()
+        count = len(held)
+        for request in held:
+            request.fulfill(status=503, json={'error': 'Save temporarily unavailable'})
+        expect(editor.locator('.studioStatus')).to_contain_text('temporarily unavailable')
+        expect(preview).to_be_enabled()
+        expect(save).to_be_disabled()
+        self.assertFalse(editor.locator('.studioDialogBody').evaluate('(node) => node.inert'))
+        editor.get_by_label('Automation name', exact=True).fill('Editable after failure')
+        self.assertEqual(count, 1, 'one pending save must own the dialog')
+        self.assertTrue(blocked)
+        self.assertTrue(inert)
+        self.assertFalse(errors, errors)
+
+    def test_automation_ambiguous_create_retry_keeps_one_identity(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='+ Automation', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        editor.get_by_label('Automation name', exact=True).fill('One intended routine')
+        requests, owned = [], {}
+        def create(route):
+            if route.request.method != 'POST':
+                return route.fallback()
+            body = route.request.post_data_json
+            requests.append(body)
+            identity = body.get('id') or 'server-generated-' + str(len(requests))
+            if identity in owned:
+                return route.fulfill(status=409, json={'error': 'Automation ID already exists'})
+            owned[identity] = body
+            if len(requests) == 1:
+                return route.fulfill(status=503, json={'error': 'The first save reply was lost'})
+            route.fulfill(json={'ok': True, 'event': {**body, 'id': identity}})
+        page.route('**/api/v1/automations', create)
+        preview = editor.get_by_role('button', name='Preview & validate', exact=True)
+        save = editor.get_by_role('button', name='Save automation', exact=True)
+        preview.click()
+        expect(save).to_be_enabled()
+        save.click()
+        expect(editor.locator('.studioStatus')).to_contain_text('reply was lost')
+        preview.click()
+        expect(save).to_be_enabled()
+        with page.expect_response('**/api/v1/automations'):
+            save.click()
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(owned), 1, 'retry must not create another logical routine')
+        self.assertTrue(requests[0].get('id'))
+        self.assertEqual(requests[0]['id'], requests[1]['id'])
+        expect(editor.locator('.studioStatus')).to_contain_text('check the earlier save')
+        expect(save).to_be_disabled()
+        self.assertFalse(errors, errors)
+
+    def test_automation_separate_new_drafts_have_distinct_create_ids(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        for name in ('First routine', 'Second routine'):
+            page.get_by_role('button', name='+ Automation', exact=True).click()
+            editor = page.locator('dialog.studioDialog[open]').last
+            expect(editor.get_by_role('heading', name='New automation', exact=True)).to_be_visible()
+            self.assertEqual(editor.get_by_role('button', name='Delete automation', exact=True).count(), 0)
+            editor.get_by_label('Automation name', exact=True).fill(name)
+            editor.get_by_role('button', name='Preview & validate', exact=True).click()
+            expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_enabled()
+            editor.get_by_role('button', name='Save automation', exact=True).click()
+            page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(len(saved), 2)
+        self.assertTrue(saved[0].get('id'))
+        self.assertTrue(saved[1].get('id'))
+        self.assertNotEqual(saved[0]['id'], saved[1]['id'])
+        self.assertFalse(errors, errors)
+
+    def test_automation_edit_preserves_id_and_duplicate_creates_new_id(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        record = {'id': 'existing-routine', 'name': 'Existing routine', 'enabled': True,
+                  'time': '07:45', 'scheduleMode': 'weekly', 'days': [1, 2, 3, 4, 5],
+                  'targets': ['all'], 'action': 'display.text', 'payload': {'text': 'Welcome'}}
+        page.route('**/api/v1/automations', lambda route: route.fulfill(json={'events': [record], 'scheduler': {'timezone': 'America/New_York'}}) if route.request.method == 'GET' else route.fallback())
+        updates = []
+        def update(route):
+            updates.append(route.request.post_data_json)
+            route.fulfill(json={'ok': True, 'event': updates[-1]})
+        page.route('**/api/v1/automations/existing-routine', update)
+        page.evaluate('loadSchedules()')
+        page.locator('.studioCard').get_by_role('button', name='Edit', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        expect(editor.get_by_role('button', name='Delete automation', exact=True)).to_be_visible()
+        editor.get_by_label('Automation name', exact=True).fill('Updated routine')
+        editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_enabled()
+        editor.get_by_role('button', name='Save automation', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0]['id'], record['id'])
+        page.locator('.studioCard').get_by_role('button', name='Duplicate', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        expect(editor.get_by_role('heading', name='New automation', exact=True)).to_be_visible()
+        editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_enabled()
+        editor.get_by_role('button', name='Save automation', exact=True).click()
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertEqual(len(saved), 1)
+        self.assertTrue(saved[0].get('id'))
+        self.assertNotEqual(saved[0]['id'], record['id'])
+        self.assertFalse(errors, errors)
+
+
+    def test_shared_layer_save_is_single_flight_and_retains_preview_hash(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        page.get_by_role('button', name='Shared layers', exact=True).click()
+        page.get_by_role('button', name='+ Shared layer', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        page.route('**/api/v1/planning/studio/preview', lambda route: route.fulfill(json={'matches': [], 'previewHash': 'reviewed-layer'}))
+        held = []
+        page.route('**/api/v1/planning/studio', lambda route: held.append(route) if route.request.method == 'PUT' else route.fallback())
+        preview = editor.get_by_role('button', name='Preview rule', exact=True)
+        save = editor.get_by_role('button', name='Save shared layer', exact=True)
+        preview.click()
+        expect(save).to_be_enabled()
+        with page.expect_request('**/api/v1/planning/studio'):
+            save.click()
+        blocked = preview.is_disabled()
+        inert = editor.locator('.studioDialogBody').evaluate('(node) => node.inert')
+        if not blocked:
+            with page.expect_request('**/api/v1/planning/studio'):
+                save.click()
+        count = len(held)
+        payloads = [request.request.post_data_json for request in held]
+        for request in held:
+            request.fulfill(status=503, json={'error': 'Layer save unavailable'})
+        expect(editor.locator('.studioStatus')).to_contain_text('Layer save unavailable')
+        expect(preview).to_be_enabled()
+        expect(save).to_be_disabled()
+        self.assertEqual(count, 1)
+        self.assertTrue(blocked)
+        self.assertTrue(inert)
+        self.assertEqual(payloads[0]['previewHash'], 'reviewed-layer')
+        self.assertFalse(editor.locator('.studioDialogBody').evaluate('(node) => node.inert'))
+        # A newly reviewed retry retains the rule identity and the backend hash.
+        retries = []
+        def retry_save(route):
+            if route.request.method != 'PUT':
+                return route.fallback()
+            retries.append(route.request.post_data_json)
+            route.fulfill(json={'config': retries[-1]['config']})
+        page.route('**/api/v1/planning/studio', retry_save)
+        preview.click()
+        expect(save).to_be_enabled()
+        with page.expect_response('**/api/v1/planning/studio'):
+            save.click()
+        self.assertEqual(len(retries), 1)
+        retry = retries[0]
+        self.assertEqual(retry['config']['overlays'][0]['id'], payloads[0]['config']['overlays'][0]['id'])
+        self.assertEqual(retry['previewHash'], 'reviewed-layer')
+        page.wait_for_function("!document.querySelector('dialog.studioDialog[open]')")
+        self.assertFalse(errors, errors)
+
+    def test_automation_delete_blocks_competing_save(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        record = {'id': 'existing-routine', 'name': 'Existing routine', 'enabled': True,
+                  'time': '07:45', 'scheduleMode': 'weekly', 'days': [1, 2, 3, 4, 5],
+                  'targets': ['all'], 'action': 'display.text', 'payload': {'text': 'Welcome'}}
+        page.route('**/api/v1/automations', lambda route: route.fulfill(json={'events': [record], 'scheduler': {'timezone': 'America/New_York'}}) if route.request.method == 'GET' else route.fallback())
+        held = []
+        page.route('**/api/v1/automations/existing-routine', lambda route: held.append(route))
+        page.evaluate('loadSchedules()')
+        page.locator('.studioCard').get_by_role('button', name='Edit', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        preview = editor.get_by_role('button', name='Preview & validate', exact=True)
+        save = editor.get_by_role('button', name='Save automation', exact=True)
+        preview.click()
+        expect(save).to_be_enabled()
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.once('dialog', lambda dialog: dialog.accept())
+        with page.expect_request('**/api/v1/automations/existing-routine'):
+            editor.get_by_role('button', name='Delete automation', exact=True).click()
+        blocked = save.is_disabled() and preview.is_disabled()
+        self.assertEqual(held[0].request.method, 'DELETE')
+        held[0].fulfill(status=503, json={'error': 'Delete unavailable'})
+        expect(editor.locator('.studioStatus')).to_contain_text('Delete unavailable')
+        expect(preview).to_be_enabled()
+        expect(save).to_be_disabled()
+        self.assertTrue(blocked)
+        self.assertEqual(len(held), 1)
+        self.assertFalse(errors, errors)
+
+
+    def test_automation_date_response_cannot_unlock_a_pending_delete(self):
+        from playwright.sync_api import expect
+        page, errors, saved = self.studio_page()
+        record = {'id': 'existing-routine', 'name': 'Existing routine', 'enabled': True,
+                  'time': '07:45', 'scheduleMode': 'weekly', 'days': [1, 2, 3, 4, 5],
+                  'targets': ['all'], 'action': 'display.text', 'payload': {'text': 'Welcome'}}
+        page.route('**/api/v1/automations', lambda route: route.fulfill(json={'events': [record], 'scheduler': {'timezone': 'America/New_York'}}) if route.request.method == 'GET' else route.fallback())
+        page.evaluate('loadSchedules()')
+        page.locator('.studioCard').get_by_role('button', name='Edit', exact=True).click()
+        editor = page.locator('dialog.studioDialog[open]').last
+        dates, deletes = [], []
+        page.route('**/api/v1/automation-control', lambda route: dates.append(route))
+        page.route('**/api/v1/automations/existing-routine', lambda route: deletes.append(route))
+        with page.expect_request('**/api/v1/automation-control'):
+            editor.get_by_role('button', name='Today only', exact=True).click()
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.once('dialog', lambda dialog: dialog.accept())
+        with page.expect_request('**/api/v1/automations/existing-routine'):
+            editor.get_by_role('button', name='Delete automation', exact=True).click()
+        dates[0].fulfill(json={'clock': {'schedulerTime': '2027-10-19T16:00:00Z', 'timezone': 'America/New_York'}})
+        expect(editor.get_by_label('Active from (optional)', exact=True)).to_have_value('2027-10-19')
+        blocked = editor.get_by_role('button', name='Preview & validate', exact=True).is_disabled()
+        deletes[0].fulfill(status=503, json={'error': 'Delete unavailable'})
+        expect(editor.locator('.studioStatus')).to_contain_text('Delete unavailable')
+        expect(editor.get_by_role('button', name='Preview & validate', exact=True)).to_be_enabled()
+        self.assertTrue(blocked, 'an earlier date response cannot release mutation ownership')
+        self.assertFalse(errors, errors)
+
     def test_scene_studio_drag_edit_widgets_and_reviewed_save(self):
         page, errors, saved = self.studio_page()
         page.get_by_role('button', name='+ Automation', exact=True).click()

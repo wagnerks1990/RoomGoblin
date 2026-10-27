@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Prevent overlapping automation/shared-layer editor writes and retain a new
+  automation's draft identity across retries after an uncertain save response.
+
 - Refresh Today only from the appliance's current planning date and preserve
   newer date edits while its lookup is pending. Ignore obsolete automation and
   shared-layer preview responses so only the current reviewed draft enables Save.
