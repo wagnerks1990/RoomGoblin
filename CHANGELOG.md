@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Pause new ESPHome discovery requests during Full Recovery freezes and after
+  manager shutdown, including cached requests. Existing discovery drains safely
+  and its deferred audit record is retained through thaw or shutdown.
+
 - Report media-child shutdown failures instead of clean Hub exits. Retain child
   ownership after signaling errors and finish accepted writes before reporting
   failure, within the existing ten-second shutdown deadline.

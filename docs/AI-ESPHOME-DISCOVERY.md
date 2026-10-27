@@ -13,6 +13,12 @@ Do not add API-key extraction, guessing, downgrade, or implicit firmware changes
 
 Discovery runs only for authenticated administrators, is rate-limited, bounded to 128 results, and briefly cached. It must not gain access to the RoomGoblin master key or stored integration secrets. Keep it read-only.
 
+Call the manager's lifecycle admission check before returning cached results,
+joining pending discovery or launching a worker. New calls are locked during
+Full Recovery acquisition/active freeze and after close. Already accepted scans
+remain tracked through completion; do not cancel them or bypass audit buffering.
+The canonical-process lifecycle tests use a controlled IPC fixture, not real mDNS.
+
 The current enrollment endpoint remains private IPv4-only even though discovery can observe hostnames and IPv6 addresses. Hostname/IPv6 control requires a separate design that preserves SSRF/rebinding protections and hardware identity pinning.
 
 Preserve existing RoomGoblin priorities and isolation: Morning Announcements, scheduler recovery, Background Music reconciliation, display stability, Veyon, Full Recovery writer draining, and managed-device compatibility must not depend on ESPHome discovery success.

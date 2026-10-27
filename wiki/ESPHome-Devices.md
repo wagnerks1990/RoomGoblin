@@ -105,6 +105,12 @@ The worker receives credentials through private stdin rather than command argume
 
 ESPHome enrollment mutations participate in Full Recovery writer draining. The SQLite registry and encrypted keys are already covered by the RoomGoblin database/master-key recovery identity. Live sensor state and reconnect state are memory-only. Device firmware projects remain outside the RoomGoblin recovery bundle.
 
+Discovery also checks lifecycle admission before cache lookup, pending-work reuse
+or worker launch. New requests return HTTP 423 during export acquisition/active
+freeze and after manager close. Already accepted discovery remains tracked until
+it finishes; audit persistence is deferred until thaw, or drained before shutdown
+closes SQLite. Inventory reads retain their existing availability.
+
 Validation includes Node integration tests, real Express permission/rate-limit routes, encrypted SQLite transactions, pinned native-client Python tests, browser regressions in Chromium/Firefox, restrictive non-root image tests, image vulnerability scans, host-network/Compose smoke tests, and production-image import of the discovery/worker modules.
 
 These automated tests are **not physical-device acceptance**. After deployment, validate against representative real devices:
