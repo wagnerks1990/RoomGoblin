@@ -290,5 +290,13 @@ run cancellation share this rule; already accepted hardware actions can finish.
 Continuous recovery honors retained cancellation requests, including requests
 saved just before a restart or followed by a running/interrupted diagnostic row.
 Shutdown interruption without Stop remains recoverable. The history retains 500
-rows; larger cancellation batches fail before changes, and later row retention is
-unchanged. Other manual-media priority/pause state is a separate boundary.
+rows; larger cancellation batches fail before changes. Other manual-media
+priority/pause state is a separate boundary.
+
+Scheduled Stop identities survive diagnostic-row eviction in the same atomic
+preference. Real local date cleanup retains yesterday, today and future dates;
+simulated time cannot purge them. The protected set is bounded to 5,000 identities
+and one MiB of UTF-8 JSON. Invalid state or exhausted capacity fails before a Stop
+is accepted or recovery starts. Legacy rows migrate on a successful write; manual
+IDs retain ordinary history behavior. Older source versions restore their earlier
+history-only retention guarantee after rollback.

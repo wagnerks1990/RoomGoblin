@@ -61,6 +61,8 @@ Queued subsystem units below have not been marked audited.
 
 - [Scheduler cancellation persistence](scheduler-cancellation.md)
 
+- [Scheduler Stop retention](scheduler-stop-retention.md)
+
 - [Scheduler resource identity findings](scheduler-resources.md)
 
 - [Scheduler replacement ordering](scheduler-dispatch-order.md)

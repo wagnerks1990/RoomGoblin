@@ -5857,7 +5857,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
   const winnerIdentities=currentContinuousRecoveryWinnerIdentities(now);
-  const dateKey=localDateKey(now),candidates=[];
+  const dateKey=localDateKey(now),candidates=[],cancelled=automationRunLedger.cancelledOccurrenceIds();
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
     const occurrences=resolveAutomationOccurrences(storedEvent,now);
@@ -5868,7 +5868,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
       const id=occurrenceId(event,dateKey,event.time);
       // A saved Stop is terminal for this occurrence, including a crash before
       // its checkpoint or a later running/interrupted diagnostic record.
-      if(automationRunLedger.read().runs.some(run=>run.occurrenceId===id&&["cancel-requested","cancelled"].includes(run.status)))continue;
+      if(cancelled.has(id))continue;
       candidates.push({storedEvent,event});
     }
   }

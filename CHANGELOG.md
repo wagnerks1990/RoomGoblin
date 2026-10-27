@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retain scheduled Stop identities independently of diagnostic history, with real-date
+  cleanup and bounded storage, so history traffic cannot revive cancelled loops.
+
 - Save automation cancellation selections atomically before stopping execution,
   and honor retained Stop requests during continuous-run restart recovery.
 
