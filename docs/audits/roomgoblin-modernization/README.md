@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Class-offset recovery and timers locally qualified; planning identity review in progress**.
+Status: **Class boundaries, block identity and class references qualified; checked integration pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -11,10 +11,10 @@ Date/preview fixes passed all gates and deployed at `3978311` (PR #287), with
 health, backup integrity and rollback verified.
 Automation save ownership passed all gates and deployed at `68f36c4` (PR #288),
 with health, backup integrity and rollback verified. Calendar draft ownership
-passed all 14 checks and merged at `dd23fb4` (PR #289); main publication and
+passed all 14 checks and deployed at `dd23fb4` (PR #289), with health, backup
+integrity and rollback verified. Class-save and Calendar Today changes passed
+all 14 checks and merged at `955195a` (PR #290); main publication and backed-up
 appliance delivery remain pending.
-Class-save and Calendar Today changes are qualified on checked main and under
-required CI in PR #290.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -74,6 +74,7 @@ Queued subsystem units below have not been marked audited.
 - [Class editor save ownership](class-save-ownership.md)
 - [Calendar current-day navigation](planning-current-day.md)
 - [Class offsets, recovery and timer dates](planning-class-boundaries.md)
+- [Timetable occurrence identity and class references](planning-block-identities.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)

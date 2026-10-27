@@ -2,7 +2,7 @@
 
 const test=require("node:test"),assert=require("node:assert/strict");
 const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm");
-const {makeLedger,occurrenceId}=require("../src/automation-runtime");
+const {makeLedger,occurrenceId,automationOccurrenceKey}=require("../src/automation-runtime");
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8");
 const plain=value=>JSON.parse(JSON.stringify(value));
 function section(start,end){
@@ -110,7 +110,7 @@ function recoveryHarness(statuses){
   const id=occurrenceId(event,"2026-10-27",event.time),starts=[];
   let state={version:1,runs:statuses.map(status=>({occurrenceId:id,status}))};
   const ledger=makeLedger({getPreference:()=>plain(state),setPreference:(_key,next)=>{state=plain(next)}});
-  const ctx=vm.createContext({Date,Map,Set,Promise,occurrenceId,
+  const ctx=vm.createContext({Date,Map,Set,Promise,occurrenceId,automationOccurrenceKey,
     automationSchedulerEnabled:true,schedulerClock:{now:()=>now,status:()=>({active:false}),commandsAllowed:()=>true},
     isAutomationSuppressed:()=>({blocked:false}),currentContinuousRecoveryWinnerIdentities:()=>new Set(["winner"]),
     automationOccurrenceIdentity:()=>"winner",automationOccurrenceIsActiveForContinuousRecovery:()=>true,

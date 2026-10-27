@@ -138,7 +138,8 @@ class SchedulerClock{
   status(){const active=!!this.simulated;return {mode:active?"simulated":"real",active,timezone:this.timezone,schedulerTime:this.now().toISOString(),observedAt:new Date().toISOString(),liveCommands:active&&this.commandsAllowed(),liveExpiresAt:this.liveExpiresAt?new Date(this.liveExpiresAt).toISOString():null}}
 }
 
-function occurrenceId(event,dateKey,time){return `${String(event?.id||"unknown")}:${String(event?.classId||"manual")}:${dateKey}:${time}`}
+function automationOccurrenceKey(event){return String(event?.classId||(event?._planningBlockId?`block:${event._planningBlockId}`:"manual"))}
+function occurrenceId(event,dateKey,time){return `${String(event?.id||"unknown")}:${automationOccurrenceKey(event)}:${dateKey}:${time}`}
 
 function assertAutomationCommandsAllowed(clock,{manual=false}={}){
   if(!manual&&!clock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
@@ -210,8 +211,15 @@ function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLim
     return entries;
   }
   function record(entry){recordMany([entry]);return entry}
-  function claim(id,details={}){const state=readState();const existing=[...state.runs].reverse().find(run=>run.occurrenceId===id&&["claimed","running","succeeded"].includes(run.status));if(existing)return {claimed:false,existing};const row={occurrenceId:id,status:"claimed",...details};write({...state,runs:[...state.runs,{...row,observedAt:new Date().toISOString()}]});return {claimed:true,row}}
+  function claim(id,details={},{legacyIds=[]}={}){
+    const state=readState(),identities=new Set([id,...legacyIds]);
+    const stopped=state.cancelledOccurrences.find(value=>identities.has(value));
+    if(stopped)return {claimed:false,existing:{occurrenceId:stopped,status:"cancelled"}};
+    const existing=[...state.runs].reverse().find(run=>identities.has(run.occurrenceId)&&["claimed","running","succeeded"].includes(run.status));
+    if(existing)return {claimed:false,existing};
+    const row={occurrenceId:id,status:"claimed",...details};write({...state,runs:[...state.runs,{...row,observedAt:new Date().toISOString()}]});return {claimed:true,row};
+  }
   return {read,record,recordMany,claim,cancelledOccurrenceIds};
 }
 
-module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,tvPowerIntent,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,occurrenceId,makeLedger};
+module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,tvPowerIntent,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,automationOccurrenceKey,occurrenceId,makeLedger};

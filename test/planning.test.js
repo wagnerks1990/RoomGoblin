@@ -120,6 +120,34 @@ function sqliteRoutes(t){
   return {...fixture,store};
 }
 
+for(const enabled of [true,false])test("planning review and save reject missing class references while enabled="+enabled,()=>{
+  const {context,writes,request}=routes(),next=JSON.parse(JSON.stringify(context.schoolScheduleProfile));
+  next.planning.enabled=enabled;next.planning.timetables=[splitTable()];next.planning.timetables[0].blocks[0].classId="missing-class";
+  const preview=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-18"});
+  assert.equal(preview.status,400);assert.match(preview.body.error,/Split lunch.*missing-class/);
+  const hash=context.planningDraft({scheduleProfile:next}).hash;
+  assert.equal(request("put","/api/v1/planning",{scheduleProfile:next,expectedUpdatedAt:"baseline",previewHash:hash}).status,400);
+  assert.equal(writes.length,0);
+});
+
+test("a removed class invalidates an earlier planning review before any write",()=>{
+  const {context,writes,request}=routes(),next=JSON.parse(JSON.stringify(context.schoolScheduleProfile));
+  next.planning.timetables=[splitTable()];next.planning.timetables[0].blocks[0].classId="class-1";
+  const preview=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-18"});assert.equal(preview.status,200);
+  context.classScheduleStore.classes=context.classScheduleStore.classes.filter(cls=>cls.id!=="class-1");
+  assert.equal(request("put","/api/v1/planning",{scheduleProfile:next,expectedUpdatedAt:"baseline",previewHash:preview.body.previewHash}).status,409);
+  assert.equal(writes.length,0);
+});
+
+test("disabled saved classes and period-only blocks remain valid planning references",()=>{
+  const {context,writes,request}=routes(),next=JSON.parse(JSON.stringify(context.schoolScheduleProfile));
+  context.classScheduleStore.classes.find(cls=>cls.id==="class-1").enabled=false;
+  next.planning.timetables=[splitTable()];next.planning.timetables[0].blocks[0].classId="class-1";
+  const preview=request("post","/api/v1/planning/preview",{scheduleProfile:next,date:"2027-10-18"});assert.equal(preview.status,200);
+  assert.equal(request("put","/api/v1/planning",{scheduleProfile:next,expectedUpdatedAt:"baseline",previewHash:preview.body.previewHash}).status,200);
+  assert.equal(writes.length,2);
+});
+
 test("Planning save commits profile and normalized class membership through real nested SQLite writers",t=>{
   const {context,request,store}=sqliteRoutes(t),next=JSON.parse(JSON.stringify(context.schoolScheduleProfile));
   next.periodCycleDays["1"]=["A"];next.planning.dates["2027-10-18"]={status:"school",timetableId:"",cycleDay:"G",note:"Special day"};

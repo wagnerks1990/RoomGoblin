@@ -83,8 +83,7 @@ the audit status text. Required CI, checked integration, image publication and
 backed-up delivery remain pending. No physical command,
 receiver reload, live calendar edit or production fault injection was used.
 
-Planning review still includes block-occurrence identity collisions (two blocks
-at the same time), class-reference deletion and final API/draft reconciliation.
-RG-PLAN-004 tracks the block identity investigation; it is not closed by this
-patch. Later-loop phase remains a scheduler follow-up. The overall roadmap is
-not complete.
+The companion [block identity and class-reference patch](planning-block-identities.md)
+addresses RG-PLAN-004/005, including missing-class validation on Planning preview
+and save. Offset dates in operator previews remain under review. Later-loop
+phase remains a scheduler follow-up. The overall roadmap is not complete.

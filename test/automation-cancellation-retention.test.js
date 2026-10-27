@@ -2,7 +2,7 @@
 
 const test=require("node:test"),assert=require("node:assert/strict");
 const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm");
-const {makeLedger,occurrenceId}=require("../src/automation-runtime");
+const {makeLedger,occurrenceId,automationOccurrenceKey}=require("../src/automation-runtime");
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8");
 const plain=value=>JSON.parse(JSON.stringify(value));
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a,start);return source.slice(a,b)}
@@ -16,7 +16,7 @@ function fixture({limit=500,cancellationLimit=5000,state={version:1,runs:[]},dat
 const id=(date="2026-10-27",name="winner")=>occurrenceId({id:name},date,"10:00");
 function recover(ledger){
   const event={id:"winner",enabled:true,time:"10:00"},now=new Date(2026,9,27,10),starts=[];
-  const ctx=vm.createContext({Date,Map,Set,Promise,occurrenceId,automationRunLedger:ledger,
+  const ctx=vm.createContext({Date,Map,Set,Promise,occurrenceId,automationOccurrenceKey,automationRunLedger:ledger,
     automationSchedulerEnabled:true,schedulerClock:{now:()=>now,status:()=>({active:false}),commandsAllowed:()=>true},
     isAutomationSuppressed:()=>({blocked:false}),currentContinuousRecoveryWinnerIdentities:()=>new Set(["winner"]),
     automationOccurrenceIdentity:()=>"winner",automationOccurrenceIsActiveForContinuousRecovery:()=>true,
@@ -46,6 +46,39 @@ test("claims preserve Stop identities while retaining duplicate-claim behavior",
   const h=fixture({limit:2});h.ledger.record({occurrenceId:id(),status:"cancel-requested"});
   assert.equal(h.ledger.claim("one").claimed,true);assert.equal(h.ledger.claim("two").claimed,true);
   assert.equal(h.ledger.claim("two").claimed,false);assert.equal((await recover(h.restart())).started,0);
+});
+
+test("a retained Stop rejects a fresh claim after diagnostic history eviction",()=>{
+  const h=fixture({limit:1});h.ledger.record({occurrenceId:id(),status:"cancel-requested"});
+  h.ledger.record({occurrenceId:"unrelated",status:"succeeded"});
+  const before=h.state,writes=h.writes,result=h.restart().claim(id());
+  assert.equal(result.claimed,false);assert.equal(result.existing.status,"cancelled");
+  assert.equal(h.writes,writes);assert.deepEqual(h.state,before);
+});
+
+test("legacy claim aliases are scoped to the requested occurrence",()=>{
+  const h=fixture();h.ledger.record({occurrenceId:id(),status:"succeeded"});
+  const next=occurrenceId({id:"winner",_planningBlockId:"first"},"2026-10-27","10:00");
+  assert.equal(h.ledger.claim(next,{}, {legacyIds:[id()]}).claimed,false);
+  assert.equal(h.ledger.claim(next,{}, {legacyIds:[id("2026-10-26")]}).claimed,true);
+  assert.equal(h.ledger.claim(next).claimed,false);
+});
+
+test("a claim persistence failure cannot admit an occurrence or discard retained Stops",()=>{
+  const h=fixture();h.ledger.record({occurrenceId:id(),status:"cancel-requested"});
+  const before=h.state;h.setFailure(true);
+  assert.throws(()=>h.ledger.claim(id("2026-10-27","other")),/fixture save failed/);
+  assert.deepEqual(h.state,before);h.setFailure(false);
+  assert.equal(h.restart().claim(id()).claimed,false);
+  assert.equal(h.restart().claim(id("2026-10-27","other")).claimed,true);
+});
+
+test("block Stop identities follow the same real-date retention and expiry policy",()=>{
+  const block=date=>occurrenceId({id:"winner",_planningBlockId:"first"},date,"10:00");
+  const h=fixture({state:{version:1,runs:[],cancelledOccurrences:[block("2026-10-25"),block("2026-10-26"),block("2026-10-27")]}});
+  h.ledger.record({occurrenceId:"ordinary",status:"succeeded"});
+  assert.deepEqual(h.state.cancelledOccurrences,[block("2026-10-26"),block("2026-10-27")]);
+  assert.equal(h.restart().claim(block("2026-10-27")).claimed,false);
 });
 test("failed persistence cannot accept or lose a durable Stop identity",()=>{
   const h=fixture();h.ledger.record({occurrenceId:id(),status:"cancel-requested"});const before=h.state;
