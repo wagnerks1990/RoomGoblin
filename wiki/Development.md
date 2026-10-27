@@ -35,6 +35,9 @@ Shutdown waits for accepted handler/background writes and records interrupted
 scheduled loops for current-winner recovery on restart. Operator cancellation
 remains terminal. Active recovery exports retain their authenticated thaw path;
 a ten-second drain timeout or failed SQLite checkpoint exits unsuccessfully.
+Media-child failure or forced termination also exits unsuccessfully, after the
+remaining accepted writers drain. Signaling errors retain child ownership until
+exit; they do not substitute for reaping the child.
 Full Recovery acquisition also waits for returned mutating HTTP handlers after
 response finish/disconnect. Freeze/thaw and the initiating export proxy are
 excluded from the mutation count, preventing self-wait; the existing 30-second

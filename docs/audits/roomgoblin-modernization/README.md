@@ -6,6 +6,7 @@ readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
 automation interruption/restart policy and export-thaw coordination. The next
 follow-up makes route-bridge installation explicit and adds composition tests.
 The export follow-up carries mutating handler ownership past HTTP response closure.
+The media-stop follow-up propagates child failures without discarding accepted writes.
 It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 
@@ -14,6 +15,7 @@ Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`, `main`,
 uses `ea53e2deff70dbb151ca551ddd27b89c633d6afd` as its exact baseline.
 The bridge-composition follow-up uses `38db6b8d9bf8fad328fa2639c592b4f739dcca3a`.
 The export-handler follow-up uses `da6bb77187bd23787239347db903ab842fbc6683`.
+The media-stop follow-up uses `446a9523da9a160bc510e679397269c9097aeb1d`.
 
 - [Core lifecycle findings and coverage](core-lifecycle.md)
 - [Validation evidence](validation.md)

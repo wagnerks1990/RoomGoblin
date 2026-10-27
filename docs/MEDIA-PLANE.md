@@ -23,7 +23,10 @@ The control plane remains on the normal RoomGoblin listener (default `3000`). Up
 `src/media-plane-process.js` supervises the media child while the Hub remains
 PID 1. Unexpected child exit fails the application; normal shutdown waits for
 the child's exit, escalating a stuck child after six seconds within the Hub's
-ten-second deadline. An abrupt owner exit kills the child synchronously. See
+ten-second deadline. Nonzero/signal exits, signaling errors and forced termination
+fail shutdown; accepted Hub writes still drain before SQLite closes. A signal
+error retains child ownership until exit. An abrupt owner exit kills the child
+synchronously. See
 [application lifecycle](APPLICATION-LIFECYCLE.md) for ownership and drain limits.
 
 ## Asset authorization

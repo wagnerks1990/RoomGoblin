@@ -8651,19 +8651,23 @@ async function gracefulShutdown(signal){
     musicAssistantApiClose("server shutdown");
     // Close callbacks may write disconnect/status records. Await them along
     // with handlers whose client already disconnected and background owners.
-    await Promise.all([
+    const closeResults=await Promise.allSettled([
       new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve())),
       closeWebSockets(wss),closeWebSockets(maSendspinProxyWss),stopMediaPlane(),
       mqttClient?new Promise(resolve=>mqttClient.end(true,{},resolve)):Promise.resolve()
     ]);
     await waitUntilDrained(applicationWritersDrained);
     closeMusicAssistantReadiness();
+    const closeFailure=closeResults.find(result=>result.status==="rejected");
     audit({kind:"application.shutdown",signal});
     if(pendingAuditWrites.length)throw new Error("Shutdown audit writes are still pending");
     dbStore.db.exec("PRAGMA busy_timeout=0");
     const checkpoint=dbStore.db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").all();
     if(checkpoint.some(row=>row.busy))throw new Error("SQLite checkpoint is busy");
     dbStore.db.close();
+    // A failed child/listener still gets the same writer drain. Report the
+    // failure only after accepted work and SQLite cleanup have completed.
+    if(closeFailure)throw closeFailure.reason;
     clearTimeout(force);process.exit(0);
   }catch(error){
     console.error(`RoomGoblin shutdown failed: ${error.message}`);

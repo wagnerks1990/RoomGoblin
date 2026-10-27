@@ -4,6 +4,7 @@ const {setTimeout:delay}=require("node:timers/promises"),{DatabaseSync}=require(
 const {launch,waitFor,linux}=require("./helpers/lifecycle-process.cjs");
 const {WebSocket}=require("ws"),{once}=require("node:events");
 const preload=path.join(__dirname,"fixtures/shutdown-work.cjs");
+const fs=require("node:fs"),net=require("node:net");
 function preference(app,key){
   const db=new DatabaseSync(path.join(app.dir,"hub.db"),{readOnly:true});
   try{const row=db.prepare("SELECT value_json FROM system_preferences WHERE key=?").get(key);return row?JSON.parse(row.value_json):null}finally{db.close()}
@@ -51,6 +52,21 @@ test("a busy SQLite checkpoint reports failure while preserving the completed wr
     assert.match(app.output(),/SQLite checkpoint is busy/);
   }finally{reader.close()}
   assert.equal(preference(app,"shutdown.fixture.completed"),true);
+});
+
+test("media shutdown failure still drains accepted HTTP writes before exiting unsuccessfully",linux,async t=>{
+  const app=await launch(t,{preload});
+  await (await request(app,"/fixture/pending-write?early=true&gate=true",{})).text();
+  const socket=net.connect(app.media,"127.0.0.1");socket.on("error",()=>{});t.after(()=>socket.destroy());
+  await once(socket,"connect");socket.write("GET /health HTTP/1.1\r\n");await delay(60);
+  app.child.kill("SIGTERM");await waitFor(()=>app.output().includes("received; draining"),"shutdown admission");
+  await delay(100);process.kill(app.mediaPid,"SIGKILL");
+  await waitFor(()=>{try{process.kill(app.mediaPid,0);return false}catch(error){assert.equal(error.code,"ESRCH");return true}},"media child reaping");
+  await delay(100);assert.equal(app.child.exitCode,null,"a child failure must not discard accepted writes");
+  fs.writeFileSync(path.join(app.dir,"release-writer"),"");
+  assert.deepEqual(await app.exited,[1,null],app.output());
+  assert.equal(preference(app,"shutdown.fixture.completed"),true);
+  assert.match(app.output(),/media plane shutdown failed.*SIGKILL/);
 });
 
 test("shutdown preserves an active export freeze and admits only authenticated thaw",linux,async t=>{

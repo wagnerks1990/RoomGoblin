@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Report media-child shutdown failures instead of clean Hub exits. Retain child
+  ownership after signaling errors and finish accepted writes before reporting
+  failure, within the existing ten-second shutdown deadline.
+
 - Keep Full Recovery waiting for accepted HTTP writes after a response finishes
   or disconnects. Preserve export-proxy progress, authenticated one-use thaw and
   the existing acquisition timeout when a writer cannot finish.

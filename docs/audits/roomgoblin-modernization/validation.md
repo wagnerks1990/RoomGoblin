@@ -199,3 +199,45 @@ The requested merge and update follow those gates and exact-main publication,
 with the normal operational backup and rollback path. Delivery evidence belongs
 to the PR. No production Full Recovery export, remote integration command or
 physical classroom playback is claimed by these tests.
+
+## Media shutdown outcome follow-up (2026-10-27 UTC)
+
+Baseline: `446a9523da9a160bc510e679397269c9097aeb1d`, alpha.85. With only
+the new/updated tests applied, the native Linux snapshot reported **25 tests:
+16 passed, 9 failed, 0 skipped**. Failures reproduced false-success shutdown
+status and premature release of child ownership after signaling errors. The
+candidate passed all **25 targeted tests** after the implementation fix.
+
+The final full run used `C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`
+with its unchanged active-worktree snapshot, `npm run check` and `npm test`
+procedure, appending Host Agent Python compilation, Full Recovery unittests and
+tracked-shell syntax checks:
+
+| Check | Actual result |
+| --- | --- |
+| `npm run check` | Passed |
+| `npm test` | 996 tests: 994 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Python compilation | Passed |
+| Host Full Recovery unittests | 23 passed, 0 failures/errors |
+| Tracked shell scripts, `bash -n` | Passed |
+| `git diff --check` | Passed |
+
+Eight added tests and the corrected timeout assertion distinguish clean drain
+from unsuccessful child exit. A canonical process keeps an accepted HTTP writer
+alive after media SIGKILL, persists its final SQLite write, then exits 1. Unit
+tests cover forced termination including a racing zero exit, nonzero/signal
+status, emitted/thrown signaling errors, actual reaping and owner-exit fallback.
+The existing timeout remains a failure; no deadline, guard or assertion was
+weakened to make the tests pass. These tests use temporary data and loopback only.
+
+Code scanning identified missing rate limiting on the test fixture's new file
+access. The fixture now admits at most four requests per minute across callers;
+all nine writer-drain process tests passed again in native Linux. Production
+source is unchanged from the full-suite run above. CI runs on the corrected head.
+
+Docker is unavailable locally. Compose, both runtime images, vulnerability scans,
+Node 22, native platforms and browser regressions remain exact-head CI gates.
+The user requested push, merge and update after this change; the normal
+validated-main publication, operational backup and rollback path remain required.
+Delivery and hosted Wiki synchronization are recorded in the PR. No production
+fault injection or physical playback acceptance is claimed.

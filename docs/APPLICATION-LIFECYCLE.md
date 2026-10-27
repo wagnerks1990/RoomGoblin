@@ -53,9 +53,17 @@ SIGKILL because a Node exit handler cannot await asynchronous cleanup.
 On SIGINT/SIGTERM, the Hub rejects new HTTP requests and WebSocket messages.
 After any existing Full Recovery export thaws, it starts its HTTP drain and the
 media child's drain together. Repeated media stop calls share one promise. The
-child retains its five-second HTTP shutdown deadline; the supervisor escalates to SIGKILL after six seconds and
-waits for the exit event. The application retains its ten-second overall deadline
-and waits for the media child before closing SQLite and exiting normally.
+child retains its five-second HTTP shutdown deadline; the supervisor escalates
+to SIGKILL after six seconds and waits for the exit event. Only an unforced
+code-zero exit without a signal or signaling error is successful. A failed signal
+does not prove termination: retain the deadline and abrupt-owner kill fallback
+until actual exit. Spawn failure without a child PID still fails immediately.
+The application retains its ten-second overall deadline.
+
+Listener and child closures settle before the accepted-writer barrier completes.
+A child/listener failure must not short-circuit that barrier: finish accepted
+writes, flush audit records, checkpoint and close SQLite, then exit 1 with the
+failure reported. A stuck writer or child still fails at the overall deadline.
 
 Shutdown clears the startup/periodic timers for presentations, Background Music,
 retention, updates, upload cleanup and login cleanup as well as the existing
@@ -131,13 +139,17 @@ mentioning a music tick inside that callback must not suppress its other work.
 `test/application-lifecycle.test.js` launches the declared Node startup command
 against temporary data and loopback ports, verifies guarded maintenance routes
 and both health endpoints, holds a media connection during shutdown, and kills
-the media child to verify failure propagation. Linux is required for signals and
-the `/proc` child-ownership check. Supervisor tests also cover repeated stop,
-deadline escalation, spawn errors and abrupt-owner fallback.
+the media child to verify failure propagation. Both a media connection that
+drains normally and one exceeding the child's deadline are covered. Linux is
+required for signals and the `/proc` child-ownership check. Supervisor tests also cover repeated stop,
+deadline escalation, nonzero/signal exits, signaling errors, spawn errors and
+abrupt-owner fallback. Forced termination remains a failure even if a racing
+child exit reports code zero.
 
 Writer regressions launch the canonical process with temporary SQLite data and
 loopback clients. They cover disconnected/finished HTTP handlers, a pending
-WebSocket command with a controlled MQTT adapter, manual interruption, scheduled
+WebSocket command with a controlled MQTT adapter, media failure while an accepted
+HTTP writer is held behind a test gate, manual interruption, scheduled
 restart recovery versus operator cancellation, active thaw and pending freeze
 races, deadline failure and a busy checkpoint. Announcement queue tests cover a
 failed predecessor followed by a queued writer. This is not live hardware,
