@@ -32,6 +32,13 @@ RELEASE
 
 The deployment target is a 15-second probe interval with six consecutive confirmed-offline results before release (about 90 seconds). Unknown/time-out/proxy errors are diagnostic conditions, not authoritative proof that publishing ended.
 
+Unknown results and probe errors reset the consecutive-offline streak. Manual
+**Check** requests show diagnostics but cannot advance the automatic release
+threshold; live or unknown diagnostic evidence resets the streak. If settings
+change while a check is pending, its obsolete response is rejected and you can
+check again. Saving settings retains one periodic watcher even when a previous
+probe or lifecycle operation is still pending.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.
