@@ -229,3 +229,14 @@ and cancellation metadata after settlement, so they cannot leave a phantom run
 blocking recovery or shutdown. Failed new manual admission saves preserve existing
 accepted work. Live draft continual runs return a managed run ID; use **Stop Run**
 to cancel them. Finite manual sequences return their completed result.
+
+
+## Replacement command ordering
+
+Scheduled, recovered and managed manual replacements register immediately and
+wait inside task ownership for older overlapping tasks to settle. Already accepted
+adapter work finishes before replacement dispatch. Discovery and unrelated
+resources remain available; a newer run can cancel an already waiting replacement.
+Execution rechecks cancellation and shutdown before class-window decisions or
+overlays. Predecessor failure does not poison the replacement. A hung predecessor
+keeps overlapping work waiting under the unchanged lifecycle failure deadline.

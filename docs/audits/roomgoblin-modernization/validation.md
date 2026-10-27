@@ -766,3 +766,18 @@ after snapshots only to record evidence; no physical classroom testing is claime
 PR #276's final alert 416 repeated the reviewed privileged destination flow after
 the redirect line changed; its 27-node SARIF trace was rechecked and classified
 with the same evidence as alert 415. All 14 PR gates then passed and #276 merged.
+
+
+## Replacement ordering qualification (2026-10-27 UTC)
+
+Six new ownership fixtures failed against main `70ad1c8`; a disjoint-resource
+control passed. An additional actual-runner regression reproduced an expired
+class window skipping cancellation before a final overlay. Corrected ownership,
+cycle, manual and TV sequence/recovery suites passed **102 tests**.
+
+The full active-worktree native Linux snapshot passed **1,079 tests: 1,077 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**.
+Node/controller checks, Host Python compilation and tracked Bash syntax passed.
+No physical command or production fault injection was used. Docker/Compose/images
+and artifacts remain CI qualifications. This patch will join the legacy TV,
+test-clock and resource fixes in PR #278, followed by fresh combined qualification.

@@ -122,6 +122,13 @@ in an outer finalizer even when ledger or final configuration persistence fails.
 Keep error reporting inside the tracked task. Failed admission saves must not create
 phantom ownership or cancel previously accepted manual work.
 
+A replacement registers before waiting for older overlapping owners to settle.
+That wait belongs to the new tracked task, so both accepted writers remain in
+the drain while scheduler discovery stays free. Settled predecessor failures do
+not fail the successor. A waiting run rechecks cancellation/shutdown at sequence
+entry before class-window decisions and overlays. The existing overall failure
+deadline still applies when a predecessor cannot settle.
+
 Full Recovery's freeze remains independently owned. Shutdown aborts an unfinished
 freeze acquisition, but an already active freeze keeps its authenticated,
 one-use `export-thaw` endpoint reachable. Other new requests receive HTTP 503.

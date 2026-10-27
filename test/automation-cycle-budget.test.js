@@ -118,3 +118,15 @@ test("a native timer receives an event-loop turn between real continuous passes"
   try{await h.run(undefined,{manual:true,maxPasses:2});assert.equal(secondPassYielded,true)}
   finally{clearTimeout(marker)}
 });
+
+test("a waiting run cancelled or interrupted before entry cannot emit an expired-class overlay",async()=>{
+  for(const code of ["AUTOMATION_CANCELLED","AUTOMATION_INTERRUPTED"]){
+    const h=harness();let overlays=0;
+    h.ctx.runAutomationTimerOverlay=async()=>{overlays++;return {ok:true}};
+    if(code==="AUTOMATION_CANCELLED")h.ctx.automationCancelledOccurrences.add("cycle-fixture:run");
+    else h.ctx.shuttingDown=true;
+    await assert.rejects(h.run(undefined,{}, {_classEndAt:Date.parse("2026-10-27T13:59:00Z"),
+      timerOverlay:{enabled:true,source:"duration",durationSeconds:60}}),error=>error.code===code);
+    assert.equal(h.calls.length,0);assert.equal(overlays,0);
+  }
+});
