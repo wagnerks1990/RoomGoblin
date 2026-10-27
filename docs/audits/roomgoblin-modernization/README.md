@@ -1,15 +1,17 @@
 # RoomGoblin modernization audit
 
-Status: **Planning/calendar draft ownership locally qualified; checked integration and CI pending**.
+Status: **Class-editor save ownership locally qualified; checked integration pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
 gates and is deployed/verified at `217588a` (PR #285).
 Resource identity and complete ownership passed all 14 checks and merged at
 `065e32e` (PR #286); exact images published and the appliance update is verified.
-Date/preview fixes passed all 14 checks and merged at `3978311` (PR #287);
-main publication and appliance delivery remain pending.
-Automation save ownership is locally qualified and under required CI in PR #288.
+Date/preview fixes passed all gates and deployed at `3978311` (PR #287), with
+health, backup integrity and rollback verified.
+Automation save ownership passed all 14 checks and merged at `68f36c4` (PR #288);
+exact image publication and appliance delivery remain pending. Calendar draft
+ownership is locally qualified and under required CI in PR #289.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -66,6 +68,7 @@ Queued subsystem units below have not been marked audited.
 - [Automation editor dates and preview responses](automation-editor-dates.md)
 - [Automation editor save ownership](automation-save-ownership.md)
 - [Planning draft ownership](planning-draft-ownership.md)
+- [Class editor save ownership](class-save-ownership.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)

@@ -20,9 +20,16 @@
   function availabilityValues(c={}){enabledInput.checked=c.enabled!==false;document.getElementById("classStudioFrom").value=c.scheduleWindow?.startDate||"";document.getElementById("classStudioThrough").value=c.scheduleWindow?.endDate||""}
   window.addEventListener("roomgoblin:authchange",()=>{if(!userCan("schedule.manage")&&dialog.open)dialog.close()});
   const newClass=window.newClassSchedule,editClass=window.editClassSchedule;
-  window.newClassSchedule=function(){newClass();choices();availabilityValues();title.textContent="New class";if(!dialog.open)dialog.showModal();document.getElementById("className").focus()};
-  window.editClassSchedule=function(id){editClass(id);const record=S.classes.find(c=>c.id===id);choices(record?.continuationOf||"");availabilityValues(record);title.textContent="Edit class";if(!dialog.open)dialog.showModal();document.getElementById("className").focus()};
+  const pendingSaves=new WeakSet(),saveButton=editor.querySelector('button[onclick="saveClassSchedule()"]');
+  function setSaving(pending){body.inert=pending;body.setAttribute("aria-busy",String(pending));saveButton.disabled=pending}
+  window.newClassSchedule=function(open=true){newClass();choices();availabilityValues();setSaving(false);title.textContent="New class";if(open&&!dialog.open)dialog.showModal();if(open)document.getElementById("className").focus()};
+  window.editClassSchedule=function(id){editClass(id);const record=S.classes.find(c=>c.id===id);choices(record?.continuationOf||"");availabilityValues(record);setSaving(false);title.textContent="Edit class";if(!dialog.open)dialog.showModal();document.getElementById("className").focus()};
   const save=window.saveClassSchedule;
-  window.saveClassSchedule=async function(){const saved=await save();if(saved===true){dialog.close();notify("Class saved. Timetable assignments and linked automation IDs are preserved.","success")}};
+  window.saveClassSchedule=async function(){
+    const owner=currentClassEdit;if(pendingSaves.has(owner))return;
+    pendingSaves.add(owner);setSaving(true);
+    try{const saved=await save();if(saved===true){dialog.close();notify("Class saved. Timetable assignments and linked automation IDs are preserved.","success")}}
+    finally{pendingSaves.delete(owner);if(currentClassEdit===owner)setSaving(false)}
+  };
   const heading=page.querySelector("h1");heading.textContent="Classes";heading.nextElementSibling.textContent="Name classes once. Assign their periods and display targets here; control each day's times in Timetables.";
 })();
