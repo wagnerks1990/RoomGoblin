@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep Full Recovery waiting for accepted HTTP writes after a response finishes
+  or disconnects. Preserve export-proxy progress, authenticated one-use thaw and
+  the existing acquisition timeout when a writer cannot finish.
+
 - Install compatibility routes explicitly on the owning Hub application instead
   of modifying Express globally when modules load. Preserve route guards,
   maintenance mirrors, Veyon identities, Music Assistant aliases and writer drain.

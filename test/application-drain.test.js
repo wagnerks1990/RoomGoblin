@@ -38,6 +38,31 @@ test("registration retains nested guards, route chains, settings and async error
   await waitUntilDrained(()=>tracker.pending===0);assert.equal(app.get("test-value"),"kept");
 });
 
+test("mutation ownership keeps its entry classification across mounts and async error handlers",async t=>{
+  const app=express(),classified=[];
+  const tracker=trackApplicationHandlers(app,{isMutation:req=>{classified.push(req.path);return req.method==="POST"&&req.path!=="/proxy/create"}});
+  app.use((_req,_res,next)=>next());
+  let release,entered;
+  const started=new Promise(resolve=>{entered=resolve}),blocked=new Promise(resolve=>{release=resolve});
+  app.use("/proxy",async(req,res)=>{assert.equal(req.path,"/create");entered();await blocked;res.end()});
+  const {url}=await listen(t,app);
+  const proxy=fetch(url+"/proxy/create",{method:"POST"});await started;
+  assert.equal(tracker.pending,1);assert.equal(tracker.pendingMutations,0);
+  release();await (await proxy).text();await waitUntilDrained(()=>tracker.pending===0);
+  assert.deepEqual(classified,["/proxy/create"]);
+
+  let rejectRelease,errorEntered,errorRelease;
+  const rejected=new Promise(resolve=>{rejectRelease=resolve}),handling=new Promise(resolve=>{errorEntered=resolve}),errorBlocked=new Promise(resolve=>{errorRelease=resolve});
+  app.post("/write",async(_req,res)=>{res.end();await rejected;throw Error("expected")});
+  app.use(async(error,_req,_res,_next)=>{assert.equal(error.message,"expected");errorEntered();await errorBlocked});
+  await (await fetch(url+"/write",{method:"POST"})).text();
+  assert.equal(tracker.pendingMutations,1);
+  rejectRelease();await handling;
+  assert.equal(tracker.pendingMutations,1,"the error handler owns the remaining write");
+  errorRelease();await waitUntilDrained(()=>tracker.pending===0);
+  assert.equal(tracker.pendingMutations,0);assert.deepEqual(classified,["/proxy/create","/write"]);
+});
+
 test("an aborted body retains ordinary cleanup but cannot start a new writer during shutdown",async t=>{
   for(const stopping of [false,true]){
     const app=express();trackApplicationHandlers(app,{isStopping:()=>stopping});

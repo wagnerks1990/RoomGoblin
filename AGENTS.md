@@ -58,6 +58,9 @@ can drain them before SQLite closes. Preserve the independent Full Recovery
 freeze/thaw ownership and the ten-second failure deadline. Automation shutdown
 is an interruption; never turn it into operator cancellation that prevents
 current-winner restart recovery.
+Full Recovery must also drain returned mutating HTTP handler promises after
+response finish/disconnect. Keep freeze/thaw and the initiating export proxy
+outside that mutation count so export cannot wait on itself.
 
 Use the repository on `main` as the source of truth. Read this file before changing application behavior. Then consult, in order:
 

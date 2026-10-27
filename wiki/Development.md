@@ -35,6 +35,10 @@ Shutdown waits for accepted handler/background writes and records interrupted
 scheduled loops for current-winner recovery on restart. Operator cancellation
 remains terminal. Active recovery exports retain their authenticated thaw path;
 a ten-second drain timeout or failed SQLite checkpoint exits unsuccessfully.
+Full Recovery acquisition also waits for returned mutating HTTP handlers after
+response finish/disconnect. Freeze/thaw and the initiating export proxy are
+excluded from the mutation count, preventing self-wait; the existing 30-second
+acquisition deadline fails closed if work remains.
 See [modernization coverage](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/audits/roomgoblin-modernization/README.md).
 
 ```bash
