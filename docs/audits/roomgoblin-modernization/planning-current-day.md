@@ -15,7 +15,7 @@ ownership case was added during integration and is documented below.
 | Exact baseline locations | `public/controller/planning.js:169-170`; existing date API `src/server.js:5682-5685` |
 | Complexity / compatibility risk | Small / Existing authorized read API and draft preview retained |
 | Expected benefit | An overnight-open calendar returns to the current appliance date |
-| State | Reproduced, implemented and locally qualified |
+| State | Deployed and verified at `955195a` |
 
 Today selected `source.today`, captured by the original plan load. A long-lived
 tab could return to yesterday even when the appliance scheduler had advanced.
@@ -40,7 +40,7 @@ and pending Save ownership. All 68 workspace Chromium tests pass. Native
 active-worktree Linux qualification passes 1,235 tests, zero failures and two
 root-only ownership skips (1,237 total), plus 23 Host Recovery tests, controller
 validation and Python/Bash syntax checks. This combined snapshot includes the
-qualified class-save changes. Required CI remains; CI
+qualified class-save changes. Required CI passed; CI
 owns Docker, platform, security and exact image publication checks.
 
 The final range-dialog case reproduced one additional race in the initial fix:
@@ -54,3 +54,6 @@ Chromium tests, all seven focused Today cases in Chromium and Firefox, and
 No live calendar edits, physical commands, receiver reloads or fault injection
 were used. Cross-date/class-end scheduler semantics remain under review. This
 patch does not close the planning unit or the complete modernization roadmap.
+
+Delivery completed with PR #290 at `955195a`; see the verified
+[combined editor receipt](class-save-ownership.md#delivery-receipt).

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Show actual dispatch dates for linked-class previews and day offsets for
+  timetable blocks that run across midnight, including year and leap-day changes.
+
 - Keep simultaneous timetable blocks distinct during execution and recovery,
   honor legacy run/Stop markers, and protect timetable references on class deletion.
 

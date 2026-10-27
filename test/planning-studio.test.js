@@ -22,6 +22,20 @@ test("day preview links break actions and warns when an event would leave previo
  const p=profile(),e={id:"lunch-display",name:"Lunch screen",blockIds:["lunch"],enabled:true};
  const day=engine.resolveDay(p,{},[],[e],"2027-10-18");assert.equal(day.rows[0].automations[0].name,"Lunch screen");assert.equal(day.fixedAutomations.length,0);assert.ok(day.warnings.some(w=>w.includes("Return to class")&&w.includes("no display automation")));
 });
+
+for(const [date,start,end,reference,offset,expectedTime,dayOffset] of [
+ ["2027-10-18","00:30","01:30","start",-60,"23:30",-1],
+ ["2027-12-31","22:30","23:30","end",60,"00:30",1],
+ ["2028-03-01","00:30","01:30","start",-60,"23:30",-1],
+ ["2027-03-14","00:30","01:30","start",-60,"23:30",-1],
+ ["2027-10-18","08:00","09:00","start",15,"08:15",0]
+])test("block day preview retains its resolved date offset: "+date+" "+reference+" "+offset,()=>{
+ const p=profile();p.planning.dates[date]={status:"school",timetableId:"special"};
+ p.planning.timetables[0].blocks=[{id:"edge",kind:"break",label:"Boundary",startTime:start,endTime:end,cycleDays:[]}];
+ const e={id:"edge-event",name:"Boundary action",enabled:true,blockIds:["edge"],classTimeReference:reference,classTimeOffsetMinutes:offset};
+ const result=engine.resolveDay(p,{},[],[e],date).rows[0].automations[0];
+ assert.equal(result.time,expectedTime);assert.equal(result.dayOffset,dayOffset);assert.equal(result.suppressed,false);
+});
 test("date-only classes and class date windows cannot leak into later regular days",()=>{
  const p=profile(),c={id:"homeroom",enabled:true,scheduleMode:"dates",includeDates:["2027-10-18"],days:[1,2,3,4,5]};
  assert.equal(engine.classMatches(p,{},c,"2027-10-18"),true);assert.equal(engine.classMatches(p,{},c,"2027-10-19"),false);
