@@ -59,7 +59,13 @@ overlapping scheduler ticks; freeze acknowledgment waits for that accepted work.
 
 ## Manual execution
 
-Simulation never dispatches devices.
+Editor draft simulation never dispatches devices. The scheduler test clock is
+also dry by default; its separate live-command option grants a bounded window.
+Scheduled sequences recheck that permission before actions, during waits and
+before starting a new timer overlay. Expiry or a switch back to dry mode stops
+the sequence with a recorded dry-run error. An already accepted action may finish;
+its physical effects are not undone. Explicit manual Run Now and live draft tests
+remain available independently of this scheduled-run permission.
 
 A live draft test with continual actions starts a managed background run and returns its run ID without holding the HTTP request open. Use **Stop Run** to cancel an active run. Saved **Run Now** uses the same managed lifecycle; finite manual sequences return their completed result.
 

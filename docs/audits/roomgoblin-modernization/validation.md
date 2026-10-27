@@ -766,3 +766,33 @@ after snapshots only to record evidence; no physical classroom testing is claime
 PR #276's final alert 416 repeated the reviewed privileged destination flow after
 the redirect line changed; its 27-node SARIF trace was rechecked and classified
 with the same evidence as alert 415. All 14 PR gates then passed and #276 merged.
+
+
+## Scheduled sequence simulation qualification (2026-10-27 UTC)
+
+Five of seven new permission fixtures failed against the qualified PR #277 head;
+the two manual/live/real-time controls passed. The actual runner and real
+SchedulerClock permission implementation now pass all **91 focused tests**.
+The full active-worktree native Linux snapshot passed **1,078 tests: 1,076 passed,
+0 failed, 2 root-only ownership skips**, plus **23 Host Recovery tests**,
+Node/controller checks, Host Python compilation and tracked Bash syntax.
+The checked squash merge of PR #277 has the identical tree; reapplying this
+patch on it changed no runtime or test content. Docker/Compose/images/artifacts
+remain CI qualifications. No physical command or production fault injection was
+used. CI, checked merge, Wiki sync, exact images and appliance delivery are pending.
+
+
+## AV backend delivery closure (2026-10-27 UTC)
+
+PR #276 passed all 14 PR checks and all five main workflows, including Wiki sync
+and exact image publication. The normal backed-up update completed at 06:51:07 UTC
+on clean main and Hub image `9c15339776e6193b2002a1fccbd0c1e7cbd6f37a`.
+Maintenance retained its healthy `20f8c501916f34e17bee2c643434e7cce0c919e6`
+container; both containers have zero restarts. Health/readiness, canonical SQLite,
+eight secret decryptions, DB/ADB permissions, authentication boundaries, served
+operator asset hashes and deployment inputs passed. The backup passed journal
+checksum, ZIP CRC, canonical-only database and extracted SQLite checks. Rollback
+to `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0` remains available.
+PR #276 records the archive name, size and SHA-256. No physical command or receiver
+reload was issued. Scheduler timing/ownership subsequently merged in PR #277 as
+`70ad1c8e6dbcf2e824746d25af8142dc88c363ea`; its deployment is pending.
