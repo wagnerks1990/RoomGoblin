@@ -3,6 +3,11 @@
 The Windows agent provides constrained computer inventory and classroom actions;
 it is not a general remote shell.
 
+The Hub keeps offline status current during Full Recovery while deferring its
+disconnect timestamp write until snapshot thaw. Failed writes remain pending for
+retry, and shutdown cannot report success while they remain unsaved. An older
+replaced socket closing cannot mark the current connection disconnected.
+
 ## Enrollment
 
 1. Open **Lab → Agent Enrollment** as an administrator.

@@ -391,3 +391,21 @@ Tests run the real 15-second idle timer and canonical application, controlling
 only the external WebAPI transport and cached connection age. No physical
 computer is contacted. Docker remains unavailable locally; exact-head CI,
 publication and normal appliance update remain separate delivery gates.
+
+## Lab socket disconnect persistence (2026-10-27 UTC)
+
+Baseline: `58524737cf434d220f271a27998d7e1369212657`, alpha.85. Both initial
+canonical regressions failed (**0 passed, 2 failed**): disconnect writes changed
+the acknowledged snapshot, and an older socket stamped its live replacement.
+The final targeted subset passed **7 tests**, covering those cases, acquisition
+abort, deferred persistence retry and explicit shutdown failure on a persistent
+SQLite error, plus existing freeze/authentication checks.
+
+The mandated native Linux helper validated the active worktree including the new
+lab regression file. `npm run check` passed; full `npm test`: **1031 tests,
+1029 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked-shell syntax and `git diff --check` passed.
+Enrollment uses a real canonical Hub, temporary credentials and loopback sockets;
+no real Windows agent, workstation command or student data is involved. Docker,
+browser/native qualification, publication and live delivery remain CI/deployment
+gates. The separate startup-reconciliation reproduction is not part of this run.

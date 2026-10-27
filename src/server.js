@@ -2963,6 +2963,7 @@ if(!Array.isArray(labAiRulesStore.excludeDomains))labAiRulesStore.excludeDomains
 if(!labHistoryStore||typeof labHistoryStore!=="object")labHistoryStore={version:1,computers:{}};
 if(!labHistoryStore.computers||typeof labHistoryStore.computers!=="object")labHistoryStore.computers={};
 const labAgentSockets=new Map();
+let labDisconnectPersistencePending=false;
 const LAB_ALLOWED_ACTIONS=new Set(["message","restart","shutdown","cancel-shutdown","logoff","lock","refresh-history","screenshot","run-preset","update-agent","instructor-lock","instructor-unlock","app-lock","app-unlock"]);
 
 function cleanLabAgentId(v){
@@ -2970,7 +2971,13 @@ function cleanLabAgentId(v){
   if(!id)throw new Error("Invalid lab agent ID");
   return id.slice(0,120);
 }
-function persistLabComputers(){persistJson(LAB_COMPUTERS_FILE,labComputerStore)}
+function persistLabComputers(){persistJson(LAB_COMPUTERS_FILE,labComputerStore);labDisconnectPersistencePending=false}
+function flushLabDisconnects(){
+  if(labDisconnectPersistencePending&&!fullExportFreeze.requested){
+    try{persistLabComputers()}catch(error){diagnosticError(error,{component:"lab-agent",operation:"persist-disconnect"})}
+  }
+  return !labDisconnectPersistencePending;
+}
 function persistLabHistory(){persistJson(LAB_HISTORY_FILE,labHistoryStore)}
 function persistLabAiAlerts(){persistJson(LAB_AI_ALERTS_FILE,labAiAlertsStore)}
 function persistLabAiRules(){persistJson(LAB_AI_RULES_FILE,labAiRulesStore)}
@@ -3172,8 +3179,9 @@ function sendLabAgentCommand(targets,action,payload={}){
 }
 function markLabSocketDisconnected(ws){
   if(ws.role!=="lab-agent"||!ws.labAgentId)return;
-  const id=ws.labAgentId;if(labAgentSockets.get(id)===ws)labAgentSockets.delete(id);
-  const rec=labComputerStore.computers[id];if(rec){rec.disconnectedAt=new Date().toISOString();persistLabComputers()}
+  const id=ws.labAgentId;if(labAgentSockets.get(id)!==ws)return;
+  labAgentSockets.delete(id);
+  const rec=labComputerStore.computers[id];if(rec){rec.disconnectedAt=new Date().toISOString();labDisconnectPersistencePending=true;flushLabDisconnects()}
   broadcastControllers({type:"lab.status",computer:publicLabComputer(id)});audit({kind:"lab.disconnected",id});
 }
 
@@ -4919,6 +4927,7 @@ app.get("/api/v1/internal/maintenance/status",requireMaintenanceAgent,(_req,res)
 function clearFullExportFreeze({forced=false}={}){
   if(fullExportFreeze.leaseTimer)clearTimeout(fullExportFreeze.leaseTimer);
   fullExportFreeze.requested=false;fullExportFreeze.active=false;fullExportFreeze.token=null;fullExportFreeze.startedAt=null;fullExportFreeze.leaseTimer=null;
+  flushLabDisconnects();
   audit({kind:forced?"recovery.full-export.freeze-expired":"recovery.full-export.thaw",forced});
 }
 app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,async(req,res)=>{
@@ -4938,6 +4947,7 @@ app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,as
     return res.json({ok:true,freezeToken:token,startedAt:fullExportFreeze.startedAt,leaseSeconds:1800});
   }catch(error){
     fullExportFreeze.requested=false;fullExportFreeze.active=false;fullExportFreeze.token=null;fullExportFreeze.startedAt=null;
+    flushLabDisconnects();
     audit({kind:"recovery.full-export.freeze-failed",error:error.message});
     return res.status(503).json({ok:false,error:error.message});
   }
@@ -8677,6 +8687,7 @@ async function gracefulShutdown(signal){
     await waitUntilDrained(applicationWritersDrained);
     closeMusicAssistantReadiness();
     const closeFailure=closeResults.find(result=>result.status==="rejected");
+    if(!flushLabDisconnects())throw new Error("Shutdown lab disconnect writes are still pending");
     audit({kind:"application.shutdown",signal});
     if(pendingAuditWrites.length)throw new Error("Shutdown audit writes are still pending");
     dbStore.db.exec("PRAGMA busy_timeout=0");

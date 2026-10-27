@@ -447,6 +447,29 @@ a further review lead; the separately reproduced finding below addresses it.
 - **Limits:** External Veyon session teardown is transport-fixture coverage, not
   physical endpoint acceptance. This follow-up does not alter other integrations.
 
+### RG-ARCH-013: lab socket close escapes snapshot ownership
+
+- **Subsystem/category/priority:** Core lifecycle / Recovery and connection state / P2.
+- **Baseline:** `58524737cf434d220f271a27998d7e1369212657`, alpha.85;
+  `src/server.js:3173-3178,8416-8421`.
+- **Problem/evidence:** A real enrolled loopback agent disconnects after freeze
+  acknowledgment and writes `disconnectedAt` into the frozen inventory. A second
+  reproduction shows the old socket's close stamping a connected replacement.
+  Both initial canonical regressions fail; no physical computer is used.
+- **Implementation:** Close only the current socket's registration. Keep live
+  offline state in memory, defer its inventory persistence while freeze is
+  requested, and flush on thaw/lease expiry/acquisition failure. Retain failures
+  for later inventory writes and final shutdown retry; fail shutdown if pending.
+  Accepted message writes still drain normally; do not globally suppress them.
+- **Complexity/risk/confidence:** Small / Medium / Confirmed. Metadata is deferred
+  only while frozen or after a diagnosed persistence error; auth is unchanged.
+- **Verification:** Canonical enrollment and WebSockets, SQLite snapshot equality,
+  post-thaw persistence, replacement identity, aborted acquisition, and injected
+  SQLite failures with successful retry versus explicit failed shutdown.
+- **Limits:** No Windows installation, remote command, screenshot/history data or
+  physical classroom acceptance is involved. Abrupt exit while metadata is only
+  in memory can lose its timestamp, as with other interrupted volatile work.
+
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer
 ownership/feature acceptance. Registered-handler drain and explicit bridge

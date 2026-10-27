@@ -73,6 +73,14 @@ or schedule a release retry.
 
 ## Writer drain and restart policy
 
+Lab-agent close callbacks remove only the currently registered socket. They keep
+live offline state in memory during Full Recovery acquisition/freeze and defer
+inventory persistence until authenticated thaw, lease expiry or acquisition
+failure. A successful ordinary lab inventory write also clears the pending flag.
+Persistence failures remain pending and diagnostic; shutdown retries after socket
+closure and fails if metadata still cannot be saved. Older replaced sockets must
+not stamp a current connection as disconnected. No agent command is replayed.
+
 The shutdown barrier waits for registered HTTP handler promises even after a
 response finishes or its client disconnects. `src/application-drain.js` wraps
 only the application's public route/use registration methods, preserving route

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Defer lab-agent disconnect metadata until Full Recovery thaws, while showing
+  the live offline state immediately. Ignore replaced sockets' close events and
+  retain failed metadata writes for retry before a clean shutdown.
+
 - Drain detached Veyon connection cleanup before shutdown or recovery freeze
   completes. Pause the idle cleanup timer during freeze/shutdown and retain
   final cleanup audits without delaying the computer-removal response.
