@@ -5,7 +5,6 @@
 // The mirrored handlers are the application's existing database-backed handlers,
 // so encrypted secrets and live runtime apply logic remain owned by server.js.
 const crypto=require("crypto");
-const express=require("express");
 const {musicAssistantTokenConfigured}=require("./music-assistant-readiness");
 
 const TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
@@ -100,54 +99,56 @@ function wrapVeyonStatusHandler(handler){
   }
 }
 
-const originalGet=express.application.get;
-express.application.get=function(route,...handlers){
-  if(route==="/api/v1/admin/config"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalGet.call(this,"/api/v1/internal/maintenance/config",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/music-assistant/status"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    const wrapped=wrapMusicAssistantStatusHandler(handler);
-    originalGet.call(this,"/api/v1/internal/maintenance/music-assistant/status",requireMaintenance,wrapped);
-    handlers[handlers.length-1]=wrapped;
-  }
-  if(route==="/api/v1/veyon/computers"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalGet.call(this,"/api/v1/internal/maintenance/veyon/computers",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/veyon/status"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalGet.call(this,"/api/v1/internal/maintenance/veyon/status",requireMaintenance,wrapVeyonStatusHandler(handler));
-    handlers[handlers.length-1]=wrapVeyonStatusHandler(handler);
-  }
-  return originalGet.call(this,route,...handlers);
-};
+function installMaintenanceBridge(app){
+  const originalGet=app.get;
+  app.get=function(route,...handlers){
+    if(route==="/api/v1/admin/config"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalGet.call(this,"/api/v1/internal/maintenance/config",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/music-assistant/status"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      const wrapped=wrapMusicAssistantStatusHandler(handler);
+      originalGet.call(this,"/api/v1/internal/maintenance/music-assistant/status",requireMaintenance,wrapped);
+      handlers[handlers.length-1]=wrapped;
+    }
+    if(route==="/api/v1/veyon/computers"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalGet.call(this,"/api/v1/internal/maintenance/veyon/computers",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/veyon/status"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalGet.call(this,"/api/v1/internal/maintenance/veyon/status",requireMaintenance,wrapVeyonStatusHandler(handler));
+      handlers[handlers.length-1]=wrapVeyonStatusHandler(handler);
+    }
+    return originalGet.call(this,route,...handlers);
+  };
 
-const originalPut=express.application.put;
-express.application.put=function(route,...handlers){
-  if(route==="/api/v1/admin/integration-connections"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalPut.call(this,"/api/v1/internal/maintenance/integration-connections",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/music-assistant/config"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalPut.call(this,"/api/v1/internal/maintenance/music-assistant/config",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/music-assistant/background/schedule"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
-  }
-  return originalPut.call(this,route,...handlers);
-};
+  const originalPut=app.put;
+  app.put=function(route,...handlers){
+    if(route==="/api/v1/admin/integration-connections"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalPut.call(this,"/api/v1/internal/maintenance/integration-connections",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/music-assistant/config"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalPut.call(this,"/api/v1/internal/maintenance/music-assistant/config",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/music-assistant/background/schedule"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
+    }
+    return originalPut.call(this,route,...handlers);
+  };
 
-const originalPost=express.application.post;
-express.application.post=function(route,...handlers){
-  if((route==="/api/v1/music-assistant/command"||route==="/api/v1/music-assistant/background/control")&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
-  }
-  return originalPost.call(this,route,...handlers);
-};
+  const originalPost=app.post;
+  app.post=function(route,...handlers){
+    if((route==="/api/v1/music-assistant/command"||route==="/api/v1/music-assistant/background/control")&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
+    }
+    return originalPost.call(this,route,...handlers);
+  };
+}
 
-module.exports={musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId,musicAssistantTokenConfigured};
+module.exports={installMaintenanceBridge,musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId,musicAssistantTokenConfigured};

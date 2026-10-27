@@ -50,6 +50,9 @@ This file is the authoritative project context for AI coding assistants and huma
 ## Source of truth
 
 Read `docs/APPLICATION-LIFECYCLE.md` before changing startup or shutdown.
+Install compatibility bridges explicitly through `src/application-bridges.js`
+after handler tracking. Preserve their order and per-application registration;
+do not restore import-time Express prototype patches.
 Return HTTP handler promises and explicitly track detached writers so shutdown
 can drain them before SQLite closes. Preserve the independent Full Recovery
 freeze/thaw ownership and the ten-second failure deadline. Automation shutdown

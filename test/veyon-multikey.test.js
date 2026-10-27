@@ -77,10 +77,7 @@ test("connection-pool exhaustion does not spray alternate credentials",async()=>
   assert.equal(shouldFallbackAuthentication(error),false);
 });
 
-test("startup recovery loads the Veyon keyring bridge before server routes",()=>{
-  const recovery=fs.readFileSync(path.join(__dirname,"..","src","startup-recovery.js"),"utf8");
-  assert.match(recovery,/require\("\.\/veyon-keyring-bridge"\);[\s\S]*require\("\.\/server"\);/);
-  assert.match(recovery,/require\("\.\/maintenance-route-bridge"\);\s*require\("\.\/server"\);/);
+test("Veyon keyring GUI uses the guarded metadata routes",()=>{
   const ui=fs.readFileSync(path.join(__dirname,"..","public","controller","veyon-keyring-ui.js"),"utf8");
   assert.match(ui,/\/api\/v1\/admin\/veyon-keys/);
   assert.match(ui,/Key material is never displayed after import/);

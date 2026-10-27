@@ -13,7 +13,9 @@ authoritative database filename, repairs incomplete built-in profiles, migrates
 legacy Veyon inventory and reconciles the synchronized Veyon key metadata.
 These existing recovery operations and their persistent identifiers are retained.
 
-Startup then starts the media process and registers bridges in this order:
+Startup then starts the media process. `server.js` creates its Express application,
+installs handler tracking, and explicitly calls `installApplicationBridges(app)`
+from `src/application-bridges.js` before registering routes. It installs:
 
 1. Veyon keyring compatibility.
 2. Veyon DHCP/stable inventory identity.
@@ -22,9 +24,24 @@ Startup then starts the media process and registers bridges in this order:
 5. Maintenance mirrors and Music Assistant player aliases.
 6. The main application's routes, integrations and listeners.
 
-These bridges currently wrap Express registration. Their ordering is a
-compatibility requirement. Removing them requires feature-specific route and
-authorization tests; it is not a safe source-wide cleanup.
+The bridges wrap only that application's registration methods. Importing their
+modules does not change Express prototypes. Installation is idempotent, and
+management-route registration flags belong to the installed application. Their
+order preserves existing authentication, maintenance mirrors and Veyon/Music
+Assistant transforms; the display-gateway preload remains independent.
+
+Direct control-only `server.js` starts also install these bridges. Both entry
+points therefore own the same API composition; the canonical bootstrap still
+owns startup recovery and the media child. The bridge helpers retain the existing
+process-wide integration stores/caches; this is not a multi-tenant application
+factory. Administrator guards are still captured from the existing admin route
+registrations, so keep those guards first. Existing rate-limited routes elsewhere
+retain their rate middleware before authorization.
+
+`test/application-bridges.test.js` exercises real loopback requests for app
+isolation, administrator guards, maintenance-token separation, Veyon identity/key
+composition, Music Assistant aliases and async drain/error propagation. It uses
+temporary SQLite data without contacting external integrations.
 
 ## Media process ownership
 

@@ -1,12 +1,11 @@
 "use strict";
 
-const express=require("express");
 const http=require("http");
 const path=require("path");
 const {ClassroomHubStorage}=require("./storage");
 const {CloudflareManager}=require("./cloudflare");
 
-let routesRegistered=false,storeInstance=null;
+let storeInstance=null;
 function storage(){
   if(storeInstance)return storeInstance;
   const dataDir=path.resolve(process.env.DATA_DIR||path.join(__dirname,"..","data"));
@@ -32,21 +31,24 @@ function maintenanceRequest(method,pathName,body=null,timeoutMs=180000){
 function manager(){return new CloudflareManager({storage:storage(),connectorInstaller:token=>maintenanceRequest("POST","/cloudflare/configure",{token},240000)})}
 function route(fn){return async(req,res)=>{try{res.json(await fn(req))}catch(error){res.status(error.status||500).json({ok:false,error:error.message})}}}
 
-const nativeGet=express.application.get,nativePut=express.application.put,nativePost=express.application.post,nativeDelete=express.application.delete;
-function register(app,requireAdmin){
-  if(routesRegistered||typeof requireAdmin!=="function")return;routesRegistered=true;
-  nativeGet.call(app,"/api/v1/admin/cloudflare",requireAdmin,route(()=>manager().liveStatus()));
-  nativePut.call(app,"/api/v1/admin/cloudflare",requireAdmin,route(req=>({ok:true,settings:manager().save(req.body||{})})));
-  nativePost.call(app,"/api/v1/admin/cloudflare/validate",requireAdmin,route(req=>{const m=manager();if(req.body&&Object.keys(req.body).length)m.save(req.body);return m.validate()}));
-  nativePost.call(app,"/api/v1/admin/cloudflare/provision",requireAdmin,route(req=>manager().provision(req.body||{})));
-  nativePost.call(app,"/api/v1/admin/cloudflare/restart",requireAdmin,route(()=>maintenanceRequest("POST","/cloudflare/restart",{confirm:"RESTART_ROOMGOBLIN_FOR_CLOUDFLARE"},30000)));
-  nativeDelete.call(app,"/api/v1/admin/cloudflare/credentials",requireAdmin,route(()=>{
-    const s=storage();s.tx(()=>{s.deleteSecret("integration.cloudflare.api-token");s.deleteSecret("integration.cloudflare.global-key")});
-    return {ok:true,settings:manager().status()};
-  }));
+function installCloudflareBridge(app){
+  let routesRegistered=false;
+  const nativeGet=app.get,nativePut=app.put,nativePost=app.post,nativeDelete=app.delete;
+  function register(app,requireAdmin){
+    if(routesRegistered||typeof requireAdmin!=="function")return;routesRegistered=true;
+    nativeGet.call(app,"/api/v1/admin/cloudflare",requireAdmin,route(()=>manager().liveStatus()));
+    nativePut.call(app,"/api/v1/admin/cloudflare",requireAdmin,route(req=>({ok:true,settings:manager().save(req.body||{})})));
+    nativePost.call(app,"/api/v1/admin/cloudflare/validate",requireAdmin,route(req=>{const m=manager();if(req.body&&Object.keys(req.body).length)m.save(req.body);return m.validate()}));
+    nativePost.call(app,"/api/v1/admin/cloudflare/provision",requireAdmin,route(req=>manager().provision(req.body||{})));
+    nativePost.call(app,"/api/v1/admin/cloudflare/restart",requireAdmin,route(()=>maintenanceRequest("POST","/cloudflare/restart",{confirm:"RESTART_ROOMGOBLIN_FOR_CLOUDFLARE"},30000)));
+    nativeDelete.call(app,"/api/v1/admin/cloudflare/credentials",requireAdmin,route(()=>{
+      const s=storage();s.tx(()=>{s.deleteSecret("integration.cloudflare.api-token");s.deleteSecret("integration.cloudflare.global-key")});
+      return {ok:true,settings:manager().status()};
+    }));
+  }
+  app.get=function(routeName,...handlers){
+    if(routeName==="/api/v1/admin/config"&&handlers.length)register(this,handlers[0]);
+    return nativeGet.call(this,routeName,...handlers);
+  };
 }
-express.application.get=function(routeName,...handlers){
-  if(routeName==="/api/v1/admin/config"&&handlers.length)register(this,handlers[0]);
-  return nativeGet.call(this,routeName,...handlers);
-};
-module.exports={manager,maintenanceRequest};
+module.exports={installCloudflareBridge,manager,maintenanceRequest};

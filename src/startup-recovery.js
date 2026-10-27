@@ -120,13 +120,6 @@ if(fs.existsSync(dbFile)){
 // so restart policy restores a converged pair.
 startMediaPlane();
 
-// Register scoped route bridges before server.js creates the Express routes.
-// The Veyon bridges preserve legacy-key compatibility, move mutable DHCP
-// addresses behind stable hostname identities, and expose guarded lifecycle
-// checks/updates. The maintenance bridge then mirrors established handlers.
-require("./veyon-keyring-bridge");
-require("./veyon-dhcp-identity-bridge");
-require("./veyon-update-bridge");
-require("./cloudflare-bridge");
-require("./maintenance-route-bridge");
+// server.js explicitly installs the compatibility bridges on its own Express
+// application after writer tracking and before registering application routes.
 require("./server");

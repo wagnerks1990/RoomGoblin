@@ -88,6 +88,7 @@ const LOGIN_WINDOW_MS = environmentInteger("LOGIN_WINDOW_MS",15*60*1000,60000,24
 const LOGIN_LOCK_MS = environmentInteger("LOGIN_LOCK_MS",15*60*1000,60000,24*60*60*1000);
 const fullExportFreeze={requested:false,active:false,token:null,activeHttpMutations:0,activeWsMutations:0,activeAsyncMutations:0,startedAt:null,leaseTimer:null};
 const {trackApplicationHandlers,waitUntilDrained,closeWebSockets}=require("./application-drain");
+const {installApplicationBridges}=require("./application-bridges");
 let shutdownRequested=false,shuttingDown=false;
 function trackFullExportMutation(task){
   fullExportFreeze.activeAsyncMutations++;
@@ -4748,6 +4749,7 @@ async function executeCommand(input, source = "api") {
 
 const app = express();
 const httpHandlers=trackApplicationHandlers(app,{isStopping:()=>shutdownRequested});
+installApplicationBridges(app);
 app.disable("x-powered-by");
 app.set("trust proxy", TRUST_PROXY_HOPS);
 app.use((req,res,next)=>{

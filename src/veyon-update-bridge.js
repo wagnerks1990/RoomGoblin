@@ -1,12 +1,10 @@
 "use strict";
 
-const express=require("express");
 const {parseVersion,compareVersions,parseAptVeyon,installedVeyonVersion,selectOfficialUbuntuAsset}=require("./veyon-update-policy");
 
 const GITHUB_LATEST="https://api.github.com/repos/veyon/veyon/releases/latest";
 const MAINTENANCE_URL=String(process.env.MAINTENANCE_URL||"http://127.0.0.1:3010").replace(/\/$/,"");
 const MAINTENANCE_TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
-let routesRegistered=false;
 
 async function jsonFetch(url,options={},timeoutMs=10000){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -60,23 +58,26 @@ async function startUpdate(status){
   return jsonFetch(`${MAINTENANCE_URL}/host/veyon/update`,{method:"POST",headers:{"x-maintenance-token":MAINTENANCE_TOKEN,"content-type":"application/json"},body:JSON.stringify({confirm:"INSTALL_VEYON_RELEASE",version:asset.version,url:asset.url,sha256:asset.sha256})},20000);
 }
 
-const previousGet=express.application.get;
-const previousPost=express.application.post;
-function registerRoutes(app,requireAdmin){
-  if(routesRegistered||typeof requireAdmin!=="function")return;
-  routesRegistered=true;
-  previousGet.call(app,"/api/v1/admin/veyon-update-status",requireAdmin,async(_req,res)=>{
-    try{res.json(await statusPayload())}catch(error){res.status(502).json({ok:false,error:error.message})}
-  });
-  previousPost.call(app,"/api/v1/admin/veyon-update",requireAdmin,async(req,res)=>{
-    if(String(req.body?.confirm||"")!=="UPDATE_VEYON_AND_HOST")return res.status(400).json({ok:false,error:"Explicit UPDATE_VEYON_AND_HOST confirmation required"});
-    try{const status=await statusPayload();if(!status.installAvailable)return res.status(409).json({ok:false,error:"No installable Veyon update is currently available for this appliance",status});const result=await startUpdate(status);res.status(202).json({ok:true,scope:"host-packages",includesVeyon:true,result})}
-    catch(error){res.status(502).json({ok:false,error:error.message})}
-  });
+function installVeyonUpdateBridge(app){
+  let routesRegistered=false;
+  const previousGet=app.get;
+  const previousPost=app.post;
+  function registerRoutes(app,requireAdmin){
+    if(routesRegistered||typeof requireAdmin!=="function")return;
+    routesRegistered=true;
+    previousGet.call(app,"/api/v1/admin/veyon-update-status",requireAdmin,async(_req,res)=>{
+      try{res.json(await statusPayload())}catch(error){res.status(502).json({ok:false,error:error.message})}
+    });
+    previousPost.call(app,"/api/v1/admin/veyon-update",requireAdmin,async(req,res)=>{
+      if(String(req.body?.confirm||"")!=="UPDATE_VEYON_AND_HOST")return res.status(400).json({ok:false,error:"Explicit UPDATE_VEYON_AND_HOST confirmation required"});
+      try{const status=await statusPayload();if(!status.installAvailable)return res.status(409).json({ok:false,error:"No installable Veyon update is currently available for this appliance",status});const result=await startUpdate(status);res.status(202).json({ok:true,scope:"host-packages",includesVeyon:true,result})}
+      catch(error){res.status(502).json({ok:false,error:error.message})}
+    });
+  }
+  app.get=function(route,...handlers){
+    if(route==="/api/v1/admin/config"&&handlers.length)registerRoutes(this,handlers[0]);
+    return previousGet.call(this,route,...handlers);
+  };
 }
-express.application.get=function(route,...handlers){
-  if(route==="/api/v1/admin/config"&&handlers.length)registerRoutes(this,handlers[0]);
-  return previousGet.call(this,route,...handlers);
-};
 
-module.exports={statusPayload,upstreamRelease,hostUpdates,startUpdate};
+module.exports={installVeyonUpdateBridge,statusPayload,upstreamRelease,hostUpdates,startUpdate};

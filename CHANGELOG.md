@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Install compatibility routes explicitly on the owning Hub application instead
+  of modifying Express globally when modules load. Preserve route guards,
+  maintenance mirrors, Veyon identities, Music Assistant aliases and writer drain.
+
 - Drain accepted HTTP/WebSocket and tracked background writes before shutdown
   closes SQLite. Preserve Full Recovery thaw, record automation shutdown as an
   interruption, and report deadline/checkpoint failures instead of clean exits.
