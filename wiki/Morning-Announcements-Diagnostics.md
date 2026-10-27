@@ -13,6 +13,13 @@ PLAYING + sustained confirmed OFFLINE -> RELEASE once
 
 The current deployment target is a 15-second probe cadence and six consecutive confirmed-offline results, approximately 90 seconds, before release.
 
+Unknown results and probe errors reset the consecutive-offline streak. Manual
+**Check** requests show diagnostics but cannot advance the automatic release
+threshold; live or unknown diagnostic evidence resets the streak. If settings
+change while a check is pending, its obsolete response is rejected and you can
+check again. Saving settings retains one periodic watcher even when a previous
+probe or lifecycle operation is still pending.
+
 ## Receiver diagnostics
 
 On a display receiver:

@@ -751,6 +751,7 @@ function persistMorningAnnouncements(){
 persistMorningAnnouncements();
 const morningAnnouncementsRuntime={live:false,active:false,mode:null,targets:[],lastCheck:null,lastWatcherTick:null,lastLiveAt:null,lastEndedAt:null,lastError:null,probe:null,probeStatus:null,probeDurationMs:null,offlineCount:0,lastAssertAt:0,releaseReconcilePending:false};
 let morningAnnouncementsTimer=null;
+let morningAnnouncementsWatcherGeneration=0;
 let morningAnnouncementsReleaseRetryTimer=null;
 let morningAnnouncementsLifecycle=Promise.resolve();
 let morningAnnouncementsLifecycleBusy=0;
@@ -762,9 +763,17 @@ function serializeMorningAnnouncementsLifecycle(task){
   return run;
 }
 function restartMorningAnnouncementsWatcher(){
+  const generation=++morningAnnouncementsWatcherGeneration;
   if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
+  morningAnnouncementsTimer=null;
   if(shutdownRequested)return;
-  const run=async()=>{try{await serializeMorningAnnouncementsLifecycle(()=>morningAnnouncementsTick())}finally{if(!shutdownRequested){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}};
+  const ownsWatcher=()=>!shutdownRequested&&generation===morningAnnouncementsWatcherGeneration;
+  const run=async()=>{
+    if(!ownsWatcher())return;
+    morningAnnouncementsTimer=null;
+    try{await serializeMorningAnnouncementsLifecycle(()=>ownsWatcher()?morningAnnouncementsTick():undefined)}
+    finally{if(ownsWatcher()){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}
+  };
   morningAnnouncementsTimer=setTimeout(run,2500);morningAnnouncementsTimer.unref();
 }
 const deferredAnnouncementAutomations=new Map();
@@ -1155,6 +1164,7 @@ let morningAnnouncementsTickBusy=false;
 async function morningAnnouncementsTick(){
   if(shutdownRequested||fullExportFreeze.requested)return;
   if(morningAnnouncementsTickBusy)return;morningAnnouncementsTickBusy=true;
+  const config=morningAnnouncements;
   try{
     const now=new Date();morningAnnouncementsRuntime.lastWatcherTick=now.toISOString();
     // Manual announcements are operator-controlled and remain locked until Stop / Clear.
@@ -1165,6 +1175,7 @@ async function morningAnnouncementsTick(){
       return;
     }
     const probe=await probeMorningAnnouncementsLive();
+    if(morningAnnouncements!==config)return;
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();morningAnnouncementsRuntime.probe=probe.probe;morningAnnouncementsRuntime.probeStatus=probe.status||null;morningAnnouncementsRuntime.probeDurationMs=probe.durationMs??null;morningAnnouncementsRuntime.lastError=probe.error||null;
     if(probe.live===true){
       morningAnnouncementsRuntime.live=true;morningAnnouncementsRuntime.offlineCount=0;
@@ -1175,9 +1186,10 @@ async function morningAnnouncementsTick(){
       morningAnnouncementsRuntime.live=false;morningAnnouncementsRuntime.offlineCount++;
       if(morningAnnouncementsRuntime.active&&morningAnnouncementsRuntime.offlineCount>=morningAnnouncements.offlineConfirmations)await releaseMorningAnnouncements("stream-ended");
     }else{
+      morningAnnouncementsRuntime.offlineCount=0;
       morningAnnouncementsRuntime.lastError=probe.error||"HLS probe unavailable";
     }
-  }catch(err){morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}
+  }catch(err){if(morningAnnouncements===config){morningAnnouncementsRuntime.offlineCount=0;morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}}
   finally{morningAnnouncementsTickBusy=false}
 }
 function calendarRuleForDate(date=new Date()){
@@ -5498,8 +5510,10 @@ app.put("/api/v1/automations/morning-announcements",requireCapability("automatio
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 app.post("/api/v1/automations/morning-announcements/check",requireControl,async(_req,res)=>{
+  const config=morningAnnouncements;
   try{
     const probe=await probeMorningAnnouncementsLive();
+    if(morningAnnouncements!==config)return res.status(409).json({ok:false,error:"Morning Announcement settings changed. Check again."});
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
     morningAnnouncementsRuntime.probe=probe.probe||null;
     morningAnnouncementsRuntime.probeStatus=probe.status||null;
@@ -5511,11 +5525,12 @@ app.post("/api/v1/automations/morning-announcements/check",requireControl,async(
       morningAnnouncementsRuntime.lastLiveAt=morningAnnouncementsRuntime.lastCheck;
     }else if(probe.live===false){
       morningAnnouncementsRuntime.live=false;
-      if(morningAnnouncementsRuntime.active)morningAnnouncementsRuntime.offlineCount++;
-      else morningAnnouncementsRuntime.offlineCount=0;
-    }
+      // Diagnostic requests must not accelerate the periodic release threshold.
+    }else morningAnnouncementsRuntime.offlineCount=0;
     res.json(publicProjection({ok:true,...probe,config:publicMorningAnnouncementsConfig(),runtime:morningAnnouncementsRuntime}));
   }catch(err){
+    if(morningAnnouncements!==config)return res.status(409).json({ok:false,error:"Morning Announcement settings changed. Check again."});
+    morningAnnouncementsRuntime.offlineCount=0;
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
     morningAnnouncementsRuntime.lastError=err.message;
     res.status(500).json({ok:false,error:err.message,runtime:morningAnnouncementsRuntime});

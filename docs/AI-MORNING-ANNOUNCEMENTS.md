@@ -17,6 +17,15 @@ live -> sustained confirmed offline : release once
 
 Current deployment intent is 15-second health checks and about 90 seconds of sustained confirmed-offline evidence before release. Unknown/time-out errors must remain distinguishable from authoritative offline results.
 
+Only periodic watcher observations advance the consecutive-offline count.
+Unknown results and probe errors break that streak; manual diagnostic checks
+cannot accelerate automatic release. Manual live/unknown results also reset the
+streak. A settings replacement retires earlier automatic/diagnostic results;
+obsolete diagnostics return 409 and must be checked again. Each watcher restart
+owns one generation, so a retired callback queued behind a lifecycle operation
+cannot probe or create another timer chain. Preserve normal interval bounds,
+shutdown drain and manual announcement ownership.
+
 ## Receiver-side safety net
 
 `public/shared/attribution.js` installs a narrow receiver guard before the display module's WebSocket handler is assigned. During rollout it suppresses duplicate identical Morning Announcements `display.web` assertions and duplicate `morning-announcements-takeover` clears while the same session is already active. It must always allow an explicit `morning-announcements-release` clear.
