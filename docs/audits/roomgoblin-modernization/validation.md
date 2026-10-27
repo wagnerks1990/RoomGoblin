@@ -426,3 +426,25 @@ checks unchanged frozen state, post-thaw current-winner recovery and clean stop.
 Its synthetic receiver has no connected display. The new Sports-import
 reproduction files were added after the helper captured this snapshot and are
 not part of these results. CI and final appliance delivery remain separate gates.
+
+## Sports import callbacks and final lifecycle suite (2026-10-27 UTC)
+
+Baseline: `b49c164e10bb1084a25dfd2af572d20f7b5336e1`, alpha.85. All four initial
+canonical callback regressions failed (**0 passed, 4 failed**): after browser
+disconnect, shutdown/freeze finished before the held PDF-processing adapter.
+Both successful and failed processing now remain owned. The targeted lifecycle,
+real PDF isolation and Sports authorization subset passed **10 tests**.
+
+The mandated native Linux helper validated all active source/test modifications
+and both new fixture/test files. `npm run check` passed. Final full `npm test`:
+**1036 tests, 1034 passed, 0 failed, 2 root-only ownership skips**. Host Recovery:
+**23 passed**. Host Python compilation, tracked-shell syntax and `git diff --check`
+passed. The final run also includes malformed/oversized multipart error coverage
+and all Veyon cleanup, lab disconnect and startup reconciliation regressions.
+
+The import fixture controls only the processing adapter; real parser tests retain
+their Linux resource/queue checks. No student roster, connected receiver or live
+workstation is used. Final audit prose was reconciled after the helper snapshot;
+runtime and test files were unchanged. Docker remains unavailable locally; CI,
+immutable publication and the backed-up appliance update must finish before
+claiming delivery of this final lifecycle patch set.

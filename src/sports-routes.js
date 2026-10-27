@@ -14,7 +14,9 @@ function registerSportsRoutes(app,{store,readGuard,writeGuard,adminGuard,canMana
  app.post('/api/v1/sports/boards/:id/scene',readLimit,readGuard,(req,res)=>{const board=service.read().boards.find(b=>b.id===req.params.id);if(!board)return res.status(404).json({ok:false,error:'Sports board not found'});res.json({ok:true,scene:model.scene(board)})});
  app.post('/api/v1/sports/import/workspace',writeLimit,...writeGuard,(req,res)=>{try{res.json({ok:true,config:model.normalize(req.body)})}catch(e){fail(res,e)}});
  const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:5242880,files:1,fields:4}}).single('file');
- app.post('/api/v1/sports/import/roster',writeLimit,...writeGuard,(req,res)=>upload(req,res,async error=>{if(error)return fail(res,Error('Upload a roster PDF under 5 MiB'));try{if(req.file)return res.json({ok:true,...await imports.rosterPDF(req.file.buffer)});res.json({ok:true,rows:imports.rosterCSV(req.body?.csv),warnings:['Review team level, spelling and jersey numbers before applying.']})}catch(e){fail(res,e)}}));
+ app.post('/api/v1/sports/import/roster',writeLimit,...writeGuard,
+  (req,res,next)=>upload(req,res,error=>error?fail(res,Error('Upload a roster PDF under 5 MiB')):next()),
+  async(req,res)=>{try{if(req.file)return res.json({ok:true,...await imports.rosterPDF(req.file.buffer)});res.json({ok:true,rows:imports.rosterCSV(req.body?.csv),warnings:['Review team level, spelling and jersey numbers before applying.']})}catch(e){fail(res,e)}});
  app.post('/api/v1/sports/import/events',writeLimit,...writeGuard,(req,res)=>{try{res.json({ok:true,events:req.body?.calendar?imports.calendar(req.body.calendar).events:imports.csv(req.body?.csv),warnings:['Review the team, time zone and final scores before applying.']})}catch(e){fail(res,e)}});
  const refresh=()=>{if(canRun())track(service.refresh()).catch(()=>{})};
  const timer=setInterval(refresh,300000);timer.unref?.();

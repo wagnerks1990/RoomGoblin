@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep Sports roster PDF imports owned until processing finishes after a browser
+  disconnects. Shutdown and Full Recovery now drain the returned route promise;
+  upload limits, parser isolation and review-before-save behavior remain intact.
+
 - Keep startup automation reconciliation outside Full Recovery freezes. Retry
   a deferred startup pass on the existing scheduler timer after thaw, using the
   current winners and the same tracked drain without replaying cancelled runs.

@@ -21,8 +21,37 @@ scheduled music callers; listener startup and shutdown. The remaining routes,
 business functions and full integration implementations were **not** line-by-line
 audited. ESPHome/Ubuntu/Veyon close paths were sampled for ownership only.
 
-The initial shutdown review is therefore not a whole-application drain proof.
-Follow RG-ARCH-004 before marking this review unit complete.
+The initial shutdown review was not a whole-application drain proof. Subsequent
+entry-point review and regression coverage are recorded below; feature-specific
+business logic remains assigned to its own roadmap unit.
+
+### Final lifecycle entry-point review
+
+The follow-up enumerated timers, immediate/microtask dispatch, socket/process
+callbacks, detached promises and child-process creation across `src/`, then
+reviewed their admission, returned/tracked work and persistence boundaries.
+The table describes lifecycle ownership, not full functional acceptance of each
+integration or an assertion that every route's business logic was audited.
+
+| Entry-point family | Reviewed ownership and persistence |
+| --- | --- |
+| Bootstrap and compatibility bridges | Canonical preload/recovery path, explicit ordered registration, media owner, startup-only migration/cleanup before listeners |
+| HTTP and asynchronous upload handlers | Returned promises survive response finish/disconnect; aborted parser continuations stop during drain; Sports import now uses a separate returned handler |
+| Read-side persistent maintenance | Auth housekeeping defers; update-history writes recheck freeze; Veyon identity/key projections participate in admission and drain |
+| WebSockets and MQTT | Accepted messages are counted; MQTT messages check admission; display pong/close data stays in memory with buffered audit; lab close metadata defers until thaw |
+| Announcement, music and automation work | Lifecycle queue/busy flags, tracked priority reconciliation, guarded delayed restoration, current-winner startup retry and fixed interruption semantics |
+| Veyon queue/pool | Queue begin/end ownership and microtask admission, guarded tracked idle cleanup, tracked detached removal close |
+| ESPHome and Ubuntu managers | Discovery and request work are tracked; idle ESPHome configuration/device events maintain volatile worker state; Ubuntu polling/enrollment and scheduled jobs retain tracked owners |
+| Sports and Weather | Sports refresh and accepted imports retain ownership; PDF worker has Linux limits and parent-IPC-disconnect exit; weather fetch/cache is volatile and request-owned |
+| Content and housekeeping | Returned presentation/media conversion handlers; bounded startup render cleanup; resumable-upload staging is excluded by Full Recovery's allowlist; login cleanup is memory-only; retention/update timers have admission guards |
+| Shutdown and failures | Owned timers stop, sockets/child/listeners settle, accepted writers drain, pending metadata/audit flush, checkpoint precedes SQLite close; unsuccessful deadlines remain exit 1 |
+
+Source review of these entry-point families is complete. Findings RG-ARCH-001
+through RG-ARCH-015 have implementations and scoped regression evidence. Final
+CI, merge, publication and appliance qualification remain delivery gates for the
+last patch set. Physical device, production fault-injection and feature/business
+acceptance are explicitly outside this lifecycle review; the corresponding
+roadmap units retain that work.
 
 ## RG-ARCH-001: implicit startup composition
 
@@ -490,8 +519,28 @@ a further review lead; the separately reproduced finding below addresses it.
   enforcement and cancellation regressions remain required.
 - **Limits:** This validates lifecycle admission, not physical output delivery.
 
-The first bootstrap/media/readiness patch is implemented. The broader Core
-Architecture and Application Lifecycle unit remains open for exhaustive writer
-ownership/feature acceptance. Registered-handler drain and explicit bridge
-composition are addressed within their documented coverage. No UI redesign,
-exhaustive server audit or physical-device acceptance is claimed by these tests.
+### RG-ARCH-015: roster import processing is hidden inside an upload callback
+
+- **Subsystem/category/priority:** Core lifecycle / Accepted work ownership / P3.
+- **Baseline:** `b49c164e10bb1084a25dfd2af572d20f7b5336e1`, alpha.85;
+  `src/sports-routes.js:17`.
+- **Problem/evidence:** Multer does not return its async callback's PDF-processing
+  promise. After a client disconnect, canonical shutdown exits cleanly and export
+  freeze acknowledges while processing is still accepted and pending. Four
+  success/error regressions fail. The importer is review-only, so this does not
+  establish persistent roster loss or snapshot database corruption.
+- **Implementation:** Keep upload parsing in ordinary middleware, then return the
+  async import handler. Preserve upload errors, authorization, quotas, PDF worker
+  resource limits and explicit review/save. No new hook, timer or parser change.
+- **Complexity/risk/confidence:** Small / Low / Confirmed. Slow accepted imports
+  now count against the existing drain deadline instead of being discarded.
+- **Verification:** Real multipart parsing and canonical process, disconnected
+  import success/error across shutdown and freeze, malformed/oversized upload
+  rejection, existing real PDF resource-isolation and route authorization tests.
+- **Limits:** Lifecycle tests hold the PDF adapter, while existing parser tests
+  exercise real workers. No student roster or production import is used.
+
+The Core Architecture and Application Lifecycle source review is ready for final
+qualification and delivery. The entry-point coverage above replaces the initial
+sampled ownership review. No UI redesign, whole-server business-logic audit or
+physical-device acceptance is claimed by these tests.

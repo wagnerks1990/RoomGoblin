@@ -96,6 +96,12 @@ Express prototypes or inspect private router stacks. New code must return its
 async promise; detached work must have an explicit tracked owner. Mounted routers
 would need their own registration tracking; none are currently used by the Hub.
 
+Sports roster upload parsing uses ordinary middleware followed by a returned
+async import handler. A callback nested inside Multer must not hide the accepted
+PDF-processing promise from drain tracking. Disconnected imports finish or fail
+within the existing lifecycle deadline; parser limits and review-only semantics
+are unchanged. The PDF worker also exits when its parent IPC channel disconnects.
+
 The barrier also waits for WebSocket message handlers, tracked asynchronous
 mutations (including Veyon, ESPHome, Ubuntu displays and Sports), queued/running
 announcement lifecycle work, presentation conversions/advance, session effects,

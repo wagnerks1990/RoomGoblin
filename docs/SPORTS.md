@@ -133,6 +133,11 @@ limit. Streaming extraction caps decoded output at 12,000 items/200,000 characte
 and five pages, with at most eight recognized table columns; results are capped at 256 KiB. Worker failure keeps the Hub and
 saved roster available. Hosts without Linux resource isolation use CSV instead.
 
+The import route remains owned through PDF-processing completion even if its
+browser disconnects. Hub shutdown and Full Recovery freeze drain that accepted
+work within their existing deadlines. Multipart errors retain the 5 MiB upload
+message; parsed rows still require review and an explicit save.
+
 Boards deduplicate selected team IDs and limit receiver projections to 512 KiB.
 If a large combination exceeds that limit, choose fewer teams or shorter player
 details; failed saves preserve the previous configuration and undo snapshot.
