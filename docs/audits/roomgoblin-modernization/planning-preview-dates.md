@@ -1,6 +1,9 @@
 # Planning preview dispatch dates
 
 Baseline: `aced546c91bb18a8b903835752423f292f5fee4f` (PR #291).
+The qualified tree is integrated unchanged onto checked main
+`407be9eb2ce6495721164cf6dc00a68c2a111bc1`. A complete tree comparison against
+`9ae4496` passed before adding this integration and PR #290 delivery receipt.
 
 ## RG-PLAN-006: Offset previews displayed the source day as dispatch day
 
@@ -34,6 +37,6 @@ Chromium and Firefox, and all 70 workspace Chromium tests pass. The five date
 projection cases also pass under `America/New_York` and `Pacific/Auckland`.
 The final native active-worktree snapshot passes 1,288 tests with zero failures
 and two root-only skips (1,290 total), plus all 23 Host Recovery tests and
-Node/controller/Python/Bash checks. Checked integration, required CI, exact
+Node/controller/Python/Bash checks. Required CI, exact
 image publication and backed-up appliance delivery remain pending. No live calendar edits or
 physical commands were issued. Later-loop phase remains separate scheduler work.
