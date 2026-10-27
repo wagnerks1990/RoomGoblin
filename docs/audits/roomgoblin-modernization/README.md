@@ -23,10 +23,12 @@ The export-handler follow-up uses `da6bb77187bd23787239347db903ab842fbc6683`.
 The media-stop follow-up uses `446a9523da9a160bc510e679397269c9097aeb1d`.
 The discovery follow-up uses `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`.
 
-Delivery through PR [#265](https://github.com/wagnerks1990/RoomGoblin/pull/265)
+Delivery through PR [#266](https://github.com/wagnerks1990/RoomGoblin/pull/266)
 is verified on that main revision: scoped findings RG-ARCH-001 through
-RG-ARCH-007 are implemented and covered by the current checks. The ordinary
+RG-ARCH-008 are implemented and covered by the current checks. The ordinary
 backed-up appliance update completed with healthy services and verified rollback.
+The live Hub revision is `a2c78bb03ff1567c9bf69318000bbc81b9d41a88`; unchanged
+maintenance/Host Agent inputs were independently verified by the selective updater.
 The broader review remains in progress; queued units below are not marked audited.
 
 - [Core lifecycle findings and coverage](core-lifecycle.md)

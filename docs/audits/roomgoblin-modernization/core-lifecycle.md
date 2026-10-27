@@ -366,6 +366,12 @@ a further review lead; the separately reproduced finding below addresses it.
   read path. The native update journal, backup/rollback, access profiles, optional
   receiver credentials and Full Recovery transport/ownership remain unchanged.
 
+Further review leads: Veyon inventory reads persist hostname/identity mappings
+and key-affinity metadata through compatibility bridges; their freeze ownership
+needs dedicated reproduction. A deadline-interrupted conversion also leaves
+private render staging that needs a bounded cleanup-policy review. Neither lead
+is claimed resolved by RG-ARCH-009.
+
 The first bootstrap/media/readiness patch is implemented. The broader Core
 Architecture and Application Lifecycle unit remains open for exhaustive writer
 ownership/feature acceptance. Registered-handler drain and explicit bridge
