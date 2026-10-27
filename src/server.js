@@ -972,12 +972,11 @@ function automationOccurrenceScheduledMinutes(event){
   return (Number.isFinite(h)?h:0)*60+(Number.isFinite(m)?m:0);
 }
 function automationOccurrenceIsCurrentlyApplicable(event,now=new Date()){
-  if(!event||!automationMatchesDate(event,now).match)return false;
+  if(!event||(event._sourceDateMatched?isAutomationSuppressed(now).blocked:!automationMatchesDate(event,now).match))return false;
   const scheduled=automationOccurrenceScheduledMinutes(event),current=localMinutesNow(now);
   if(scheduled>current)return false;
   if(event._class){
-    const start=Number(event._classStartAt),end=Number(event._classEndAt),stamp=now.getTime();
-    if(Number.isFinite(start)&&stamp<start)return false;
+    const end=Number(event._classEndAt),stamp=now.getTime();
     if(Number.isFinite(end)&&stamp>=end)return false;
   }
   return automationDeferredDisplayTargets(event).size>0;
@@ -992,7 +991,7 @@ function currentAutomationDisplayWinners(now=schedulerClock.now(),{forRecoveryOw
   const candidates=[];
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
-    for(const event of resolveAutomationOccurrences(storedEvent,now)){
+    for(const event of resolveScheduledAutomationOccurrences(storedEvent,now)){
       if(!automationOccurrenceIsCurrentlyApplicable(event,now))continue;
       let intent=event;
       if(!forRecoveryOwnership){
@@ -1564,7 +1563,7 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   }else if(action==="display.timer.class-end"){
     const ts=automationDisplayTargets(event.targets),cls=event._class||activeAutomationClassAt(event,new Date())||classScheduleById(event.classId)||activeClassAt(new Date());
     if(!cls)throw new Error("No class schedule is available for the class-end timer");
-    const now=new Date();if(!manual&&!event._planningBlockId&&!classScheduleMatchesDate(cls,now))throw new Error(`${cls.name} is not scheduled today`);
+    const now=new Date();if(!manual&&!event._planningBlockId&&!classScheduleMatchesDate(cls,resolvedClassReferenceDate(event,now)))throw new Error(`${cls.name} is not scheduled on the resolved class date`);
     const chain=timerLinkedClassChain(event,cls,now,{followLinkedClasses:true,followGapMinutes:15});
     const endAt=chain.endAt||resolvedOccurrenceEndDate(event,cls,now),remaining=Math.max(0,Math.floor((endAt-Date.now())/1000));
     if(remaining<=0)throw new Error(`${cls.name} has already ended`);
@@ -1670,6 +1669,7 @@ function automationTvPowerPhysicalLocks(target,lockedReceivers){
 
 function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   if(!baseClass)return {classes:[],endAt:null,finalClass:null};
+  const referenceDate=resolvedClassReferenceDate(event,now);
 
   // Transition pseudo-classes are already the gap being counted. They must end at
   // their own resolved boundary (for example 13:05 -> 13:13) and must not be
@@ -1691,7 +1691,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   const selected=[...new Set(ids)]
     .map(classScheduleById)
     .filter(Boolean)
-    .filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,now));
+    .filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,referenceDate));
 
   if(!selected.some(c=>c.id===baseClass.id))selected.push(baseClass);
 
@@ -1699,7 +1699,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   const follow=timerOverlay.followLinkedClasses!==false;
   const chain=[baseClass];
   const used=new Set([baseClass.id]);
-  const baseTimes=effectiveClassTimes(baseClass,now);
+  const baseTimes=effectiveClassTimes(baseClass,referenceDate);
   let cursorEnd=timeToMinutes(baseTimes?.endTime||baseClass.endTime);
 
   if(follow){
@@ -1709,7 +1709,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
     while(true){
       const next=selected
         .filter(c=>!used.has(c.id))
-        .map(c=>{const t=effectiveClassTimes(c,now);return t?{c,start:timeToMinutes(t.startTime),end:timeToMinutes(t.endTime)}:null})
+        .map(c=>{const t=effectiveClassTimes(c,referenceDate);return t?{c,start:timeToMinutes(t.startTime),end:timeToMinutes(t.endTime)}:null})
         .filter(Boolean)
         .filter(x=>x.start>=cursorEnd&&x.start-cursorEnd<=maxGap)
         .filter(x=>isValidTimerContinuation(chain[chain.length-1],x.c))
@@ -1724,7 +1724,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   const final=chain[chain.length-1]||baseClass;
   return {
     classes:chain,
-    endAt:final.id===baseClass.id?resolvedOccurrenceEndDate(event,final,now):classEndDate(final,now),
+    endAt:final.id===baseClass.id?resolvedOccurrenceEndDate(event,final,now):classEndDate(final,referenceDate),
     finalClass:final,
     gapMinutes:maxGap,
     linked:chain.length>1
@@ -1768,8 +1768,8 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
     if(!cls){
       throw new Error("Timer overlay is set to Linked Class End Time, but no timer class is selected, the event is not linked to a class, and no class is currently active.");
     }
-    if(!manual&&!classScheduleMatchesDate(cls,now)){
-      if(!event._planningBlockId)throw new Error(`Timer class "${cls.name}" is not scheduled today.`);
+    if(!manual&&!classScheduleMatchesDate(cls,resolvedClassReferenceDate(event,now))){
+      if(!event._planningBlockId)throw new Error(`Timer class "${cls.name}" is not scheduled on the resolved class date.`);
     }
 
     const chain=timerLinkedClassChain(event,cls,now,timerOverlay);
@@ -2653,13 +2653,18 @@ function isValidTimerContinuation(current,next){
   const a=classBasePeriodNumber(current),b=classBasePeriodNumber(next);
   return Number.isInteger(a)&&Number.isInteger(b)&&a===b;
 }
+function resolvedClassReferenceDate(event,date=new Date()){
+  const stamp=Number(event?._classStartAt);
+  return event?._sourceDateMatched&&event._class&&Number.isFinite(stamp)&&stamp>0?new Date(stamp):date;
+}
 function resolvedOccurrenceEndDate(event,cls,date=new Date()){
+  const referenceDate=resolvedClassReferenceDate(event,date);
   const stamp=Number(event?._classEndAt);
   if(Number.isFinite(stamp)&&stamp>0){
     const d=new Date(stamp);
-    if(localDateKey(d)===localDateKey(date))return d;
+    if(localDateKey(d)===localDateKey(referenceDate))return d;
   }
-  return classEndDate(cls,date);
+  return classEndDate(cls,referenceDate);
 }
 function activeClassAt(date=new Date()){return classScheduleStore.classes.filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,date)).find(c=>{const a=classStartDate(c,date),b=classEndDate(c,date);return a&&b&&a<=date&&date<b})||null}
 function activeAutomationClassAt(event,date=new Date()){
@@ -2716,6 +2721,11 @@ function resolveAutomationOccurrences(event,date=new Date()){
   const ids=automationClassIds(event);
   if(!ids.length)return planningStudio.times(event).map(time=>({...event,time}));
   return ids.flatMap(id=>effectiveClassSegments(classScheduleById(id),date).map(segment=>resolveAutomationForClass(event,id,date,segment))).filter(Boolean);
+}
+function resolveScheduledAutomationOccurrences(event,date=new Date()){
+  if(!event.classIds?.length&&!event.classId&&!event.blockIds?.length)return resolveAutomationOccurrences(event,date);
+  const dateKey=localDateKey(date),referenceDates=[-1,0,1].map(offset=>{const d=new Date(date);d.setDate(d.getDate()+offset);return d});
+  return referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(event,referenceDate)).filter(event=>event._scheduledDateKey===dateKey);
 }
 function resolveAutomationFromClass(event,date=new Date()){
   if(event.blockIds?.length){const runs=resolveAutomationOccurrences(event,date);if(!runs.length)throw Error("The selected timetable blocks are not scheduled on this date");return runs.find(e=>e._classStartAt<=date.getTime()&&e._classEndAt>date.getTime())||runs.find(e=>e._classStartAt>date.getTime())||runs[0]}
@@ -5785,7 +5795,7 @@ app.delete("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapabilit
 function evaluateAutomationAt(now=schedulerClock.now()){
   const suppression=isAutomationSuppressed(now),dateKey=localDateKey(now),items=[];
   for(const stored of classroomAutomations.events){
-    const occurrences=resolveAutomationOccurrences(stored,now);
+    const occurrences=resolveScheduledAutomationOccurrences(stored,now);
     for(const event of occurrences){
       const match=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
       items.push({automationId:stored.id,name:stored.name,enabled:stored.enabled!==false,time:event.time,classId:event.classId||null,match:!!match.match,suppressed:!!suppression.blocked,reason:suppression.blocked?suppression.reason:(match.reason||null),targets:event.targets||[],actions:automationActionSequence(event).map(step=>step.action)});
@@ -5798,11 +5808,13 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now(),{forRecover
   const nowSeconds=nowMinutes*60+now.getSeconds()+now.getMilliseconds()/1000;
   for(const stored of classroomAutomations.events){
     if(stored?.enabled===false)continue;
-    const occurrences=resolveAutomationOccurrences(stored,now).filter(event=>automationMatchesDate(event,now).match);
+    const occurrences=resolveScheduledAutomationOccurrences(stored,now).filter(event=>event._sourceDateMatched?!isAutomationSuppressed(now).blocked:automationMatchesDate(event,now).match);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;
       if(scheduled>nowMinutes)continue;
+      const end=Number(event._classEndAt),scheduledAt=new Date(`${dateKey}T${event.time}:00`).getTime();
+      if(Number.isFinite(end)&&scheduledAt>=end)continue;
       const steps=automationActionSequence(event),first=steps[0]||{},eventDomain=automationTargetDomain(first.action);
       let elapsed=0;
       for(let index=0;index<steps.length;index++){
@@ -5816,7 +5828,7 @@ function currentAutomationNonDisplayWinners(now=schedulerClock.now(),{forRecover
         // while waiting. Pending/later steps cannot age an older run into a
         // newer owner; only state projection uses the action's effective time.
         const effectiveMinute=forRecoveryOwnership?scheduled:scheduled+Math.floor(elapsed/60);
-        if(!forRecoveryOwnership&&scheduled*60+elapsed>nowSeconds)continue;
+        if(!forRecoveryOwnership&&(scheduled*60+elapsed>nowSeconds||Number.isFinite(end)&&scheduledAt+elapsed*1000>=end))continue;
         let targets=[];
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
@@ -5876,8 +5888,7 @@ function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerCl
   const scheduled=automationOccurrenceScheduledMinutes(event),current=localMinutesNow(now);
   if(scheduled>current)return false;
   if(event._class){
-    const start=Number(event._classStartAt),end=Number(event._classEndAt),stamp=now.getTime();
-    if(Number.isFinite(start)&&stamp<start)return false;
+    const end=Number(event._classEndAt),stamp=now.getTime();
     if(Number.isFinite(end)&&stamp>=end)return false;
   }
   return sequenceHasContinuousActions(automationActionSequence(event));
@@ -5920,7 +5931,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
   const dateKey=localDateKey(now),candidates=[],cancelled=automationRunLedger.cancelledOccurrenceIds();
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
-    const occurrences=resolveAutomationOccurrences(storedEvent,now);
+    const occurrences=resolveScheduledAutomationOccurrences(storedEvent,now);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
@@ -8701,10 +8712,7 @@ async function automationSchedulerTick(){
     const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes();
     for(const storedEvent of classroomAutomations.events){
       if(!storedEvent?.enabled)continue;
-      const referenceDates=[-1,0,1].map(offset=>{const d=new Date(now);d.setDate(d.getDate()+offset);return d});
-      const occurrences=(automationClassIds(storedEvent).length||storedEvent.blockIds?.length)
-        ? referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(storedEvent,referenceDate)).filter(event=>event._scheduledDateKey===dateKey)
-        : resolveAutomationOccurrences(storedEvent,now);
+      const occurrences=resolveScheduledAutomationOccurrences(storedEvent,now);
       for(const event of occurrences){
         const dateMatch=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
         if(!dateMatch.match||isAutomationSuppressed(now).blocked)continue;

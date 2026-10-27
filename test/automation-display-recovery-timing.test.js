@@ -24,7 +24,7 @@ function harness(events,seconds=1,{clockDate=null,persistentState={displays:{}}}
  automationRunLedger:ledger,automationRunningOccurrences:new Map(),supersedeOverlappingAutomationRuns:()=>{},defaultAutomationActionTargets:()=>['all'],
  startOwnedAutomationOccurrence:id=>started.push(id),executeScheduledAutomationOccurrence:()=>{}
  });
- vm.runInContext(section('function automationDeferredDisplayTargets(','function consumeDeferredAnnouncementAutomations(')+
+ vm.runInContext(section('function resolveScheduledAutomationOccurrences(','function resolveAutomationFromClass(')+section('function automationDeferredDisplayTargets(','function consumeDeferredAnnouncementAutomations(')+
  section('async function runSingleAutomationAction(','function timerLinkedClassChain(')+
  section('function automationResourceKeys(','function automationConflictDiagnostics(')+
  section('function automationOccurrenceIsActiveForContinuousRecovery(','async function reconcileScheduledAutomationState(')+

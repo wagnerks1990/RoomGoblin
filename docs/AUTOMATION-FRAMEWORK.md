@@ -284,3 +284,25 @@ including pending actions, so the normal runner can recover a delayed owner.
 Stopped winners do not cause an older owner to restart. This first-pass state
 projection does not reconstruct later loop phases or adapter execution latency.
 Existing announcement priority and dry/live test-clock guards remain in force.
+
+## Class offsets across calendar dates
+
+The live tick, diagnostics and recovery resolve class/block occurrences from the
+current date and its neighboring dates, then retain only occurrences scheduled
+for the selected scheduler date. A negative offset may therefore prepare a
+next-day class before midnight. Its source class/calendar eligibility remains
+authoritative, and the current date's closure/remote suppression still applies.
+Pre-class display and continuous recovery begin at the scheduled offset, while
+the existing resolved class-end cutoff still stops scheduled execution.
+
+TV/lighting recovery does not project a first-pass action whose configured delay
+would reach or pass that cutoff. A state that was already due before class end
+can remain the winner afterward; recovery does not invent the later action that
+the runner would have skipped. Ownership precedence, saved Stop, announcement
+priority and the explicit first-pass/adapter-latency limits remain unchanged.
+
+Class-end actions, overlays and explicit continuation chains use the resolved
+class's source date. A pre-midnight action keeps the next day's deadline instead
+of selecting an already-ended deadline on the dispatch date. Unresolved timers
+still validate their current class date. Adjacent ordinary classes never become
+continuations merely because their times touch; transition blocks remain terminal.
