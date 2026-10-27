@@ -134,6 +134,18 @@ freeze state before writing history. The next unfrozen poll records the latest
 job once; this is a bounded status cache, not the native transaction journal.
 Accepted update-history work still persists normally during shutdown.
 
+Veyon GET/HEAD routes also participate in the mutation barrier: their identity
+bridge can initialize storage, persist stable mappings and move key affinity;
+inventory/info/preview authentication can update hostnames or key metadata.
+Administrator config/keyring reads can import compatibility key metadata too.
+The shared predicate pauses these routes and the maintenance inventory mirror
+with HTTP 423 during acquisition/freeze, including Express case/trailing-slash
+aliases. Accepted handler promises drain through their final writes. Keep the
+save-before-project identity contract; do not return stable IDs that were not
+persisted. The separate maintenance config mirror has no keyring projection and
+remains token-protected and available to recovery. Ordinary authentication and
+update-status reads retain their read-only freeze policy.
+
 After the listeners, child and writers drain, shutdown flushes pending audit
 records and performs a nonwaiting SQLite WAL checkpoint. A busy/failed checkpoint,
 pending audit write or drain deadline exits with status 1; it must not be reported

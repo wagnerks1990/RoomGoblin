@@ -328,3 +328,27 @@ credential change or external device command was used for regression testing.
 Exact-head CI still qualifies Compose, both images, image/security scans, native
 artifacts and browsers. Published-main deployment, health/identity verification,
 operational backup and rollback evidence are recorded in the PR after delivery.
+
+## Veyon read-side identity freeze (2026-10-27 UTC)
+
+Baseline: `c74d6417fd14bf1773829002f4c472543141887f`, alpha.85. The initial
+canonical empty-inventory regression failed (**0 passed, 1 failed**): a GET wrote
+`veyon.inventory-hostmap.v2` after the export freeze acknowledged. The candidate
+includes three process regressions. The targeted freeze/bridge subset passed
+**10 tests, 0 failed, 0 skipped**. Initial fixture assertions were corrected to
+use the existing 401 authentication response and a hostname-bearing computer;
+neither required a runtime change or weakened the snapshot assertion.
+
+The mandated native Linux active-worktree helper verified the modified files and
+both new test/fixture files. `npm run check` passed. Full `npm test`: **1018 tests,
+1016 passed, 0 failed, 2 root-only ownership skips**. Host Recovery: **23 passed**.
+Host Python compilation, tracked shell syntax and `git diff --check` passed.
+
+Coverage includes new GET/HEAD admission, Express case/trailing-slash aliases,
+administrator key/config projections, maintenance inventory, token-protected
+maintenance config availability, and a held accepted inventory persisting its
+stable mapping before freeze acknowledgment. Only the synthetic computer's TCP
+probe is controlled; no real workstation or Veyon command is contacted. Normal
+identity projection and post-thaw access remain exercised. Docker is unavailable
+locally; exact-head CI must still qualify Compose/images, scans, native artifacts
+and browsers. Merge, publication and appliance update evidence belong to the PR.

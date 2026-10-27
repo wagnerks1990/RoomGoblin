@@ -4748,6 +4748,16 @@ async function executeCommand(input, source = "api") {
 // -----------------------------------------------------------------------------
 
 function fullExportHttpMutation(req){
+  // Veyon reads may initialize identity/key stores, persist discovered hostnames
+  // or remember authenticated keys. Count the returned handler through its
+  // final write and pause new reads; never project an unpersisted stable ID.
+  // Express GET routes also accept HEAD, case variants and a trailing slash.
+  const veyonRead=['GET','HEAD'].includes(req.method)&&(
+    /^\/api\/v1\/veyon\//i.test(req.path)||
+    /^\/api\/v1\/admin\/(?:config|veyon-keys)\/?$/i.test(req.path)||
+    /^\/api\/v1\/internal\/maintenance\/veyon\/computers\/?$/i.test(req.path)
+  );
+  if(veyonRead)return true;
   const freezeControl=req.path==="/api/v1/internal/maintenance/export-freeze"||req.path==="/api/v1/internal/maintenance/export-thaw";
   const exportProxy=req.path==="/api/v1/maintenance/backup/create";
   return !['GET','HEAD','OPTIONS'].includes(req.method)&&!freezeControl&&!exportProxy;
