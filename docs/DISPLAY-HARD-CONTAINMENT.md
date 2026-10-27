@@ -1,6 +1,6 @@
 # Display Hard Containment
 
-Current renderer: `dynamic-fit-20261022-1`.
+Current renderer: `dynamic-fit-20261027-1`.
 
 Containment and readable anchored geometry are joint invariants.
 
@@ -48,7 +48,7 @@ Run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-Expected revision: `dynamic-fit-20261022-1`.
+Expected revision: `dynamic-fit-20261027-1`.
 
 For normal settled content, visible components should report `status: "fit"`. The validated TV8 action-transition case recovers the body to about 70.25px, scale 1, with the bottom-timer body region restored to y=222/h=663.
 

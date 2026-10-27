@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Classroom Display</title>
-<link rel="stylesheet" href="/shared/attribution.css?v=dynamic-fit-20261022-1">
+<link rel="stylesheet" href="/shared/attribution.css?v=dynamic-fit-20261027-1">
 <script src="/shared/branding.js?v=single-fit-20260909-4" defer></script>
 <script src="/shared/attribution.js" defer></script>
 <style>
@@ -29,7 +29,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 #identify{display:none;position:absolute;inset:0;z-index:50;background:#1769e0;color:#fff;align-items:center;justify-content:center;font-size:270px;font-weight:900;overflow:hidden}
 #badge{position:fixed;right:8px;bottom:8px;background:#0009;color:#fff;font-size:11px;padding:5px 7px;border-radius:6px;opacity:.35;z-index:60}
 </style>
-<link rel="stylesheet" href="/display/layout.css?v=dynamic-fit-20261022-1">
+<link rel="stylesheet" href="/display/layout.css?v=dynamic-fit-20261027-1">
 </head>
 <body>
 <div id="stage"><div id="media"></div>
@@ -49,13 +49,23 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 <link rel="stylesheet" href="/display/timer-effects.css">
 <script type="module">
 import {createTimerEffects} from '/display/timer-effects.mjs';
-import {createDisplayLayout,fitElement,bounded} from '/display/layout.mjs?v=dynamic-fit-20261022-1';
+import {createDisplayLayout,fitElement,bounded} from '/display/layout.mjs?v=dynamic-fit-20261027-1';
 import {authorizeMediaUrl,musicAssistantProxyUrl,identifyDuration,setDisplayGatewayHosts} from '/display/security.mjs?v=single-fit-20260909-4';
 import {wsUrl,getDisplayId} from '/shared/common.js';
 import {SendspinPlayer} from '/display/sendspin.bundle.js';
 const LOGICAL_WIDTH=1920,LOGICAL_HEIGHT=1080,DISPLAY_BUILD='1.0.0-alpha.85';
 const id=getDisplayId(),preview=new URLSearchParams(location.search).get('preview')==='1';
-const displayAuth=(()=>{try{const p=new URLSearchParams(location.hash.slice(1)),legacy=p.get('displayToken'),enrollmentToken=p.get('enrollmentToken')||'';if(legacy)localStorage.setItem('classroom-hub-display-token',legacy);if(legacy||enrollmentToken)history.replaceState(null,'',location.pathname+location.search);return {legacyToken:localStorage.getItem('classroom-hub-display-token')||'',credential:localStorage.getItem(`classroom-hub-display-credential:${id}`)||'',enrollmentToken,assetAccessToken:''}}catch{return {legacyToken:'',credential:'',enrollmentToken:'',assetAccessToken:''}}})();
+const displayAuth=(()=>{
+  const params=new URLSearchParams(location.hash.slice(1));
+  let legacyToken=params.get('displayToken')||'',credential='';
+  const enrollmentToken=params.get('enrollmentToken')||'';
+  if(legacyToken||enrollmentToken)history.replaceState(null,'',location.pathname+location.search);
+  // Storage can be unavailable in a kiosk. Keep supplied credentials in memory
+  // so an enrollment handshake is not silently discarded after clearing the URL.
+  try{if(legacyToken)localStorage.setItem('classroom-hub-display-token',legacyToken);else legacyToken=localStorage.getItem('classroom-hub-display-token')||''}catch{}
+  try{credential=localStorage.getItem(`classroom-hub-display-credential:${id}`)||''}catch{}
+  return {legacyToken,credential,enrollmentToken,assetAccessToken:''};
+})();
 function authorizeAssetUrl(value){return authorizeMediaUrl(value,location.origin,displayAuth.assetAccessToken)}
 const stage=document.getElementById('stage'),media=document.getElementById('media'),titleRegion=document.getElementById('titleRegion'),subtitleRegion=document.getElementById('subtitleRegion'),textLayer=document.getElementById('textLayer'),text=document.getElementById('text'),title=document.getElementById('title'),subtitle=document.getElementById('subtitle'),presentationBlack=document.getElementById('presentationBlack'),identify=document.getElementById('identify'),badge=document.getElementById('badge'),timerOverlay=document.getElementById('timerOverlay'),timerLabel=document.getElementById('timerLabel'),timerValue=document.getElementById('timerValue');
 let ws,reconnectTimer=null,timerState={visible:false,running:false,mode:'countdown',durationSeconds:300,remainingSeconds:300},timerVisualState=null,timerTick=null,lastViewportSignature='';
@@ -138,9 +148,11 @@ function tryDirectWebAudio(frame,volume=1,{play=true}={}){try{const doc=frame?.c
 function sendWebAudioHints(frame,volume=1,{play=true}={}){if(!frame?.contentWindow)return;for(const hint of [...(play&&volume>0?[{type:'unmute'},{action:'unmute'}]:[]),{type:'setMuted',muted:volume<=0},{type:'setVolume',volume:Math.max(0,Math.min(1,Number(volume??1)))},...(play?[{type:'play'}]:[])]){try{frame.contentWindow.postMessage(hint,'*')}catch{}}}
 function enforceWebAudio({reload=false,volume=null,unmute=true}={}){const frame=activeWebFrame,spec=activeWebSpec;if(spec&&volume!==null&&Number.isFinite(Number(volume)))spec.volume=Math.max(0,Math.min(1,Number(volume)));if(spec&&unmute===false&&volume===null)spec.volume=0;if(!frame||!spec)return false;if(spec.forceAudio&&isAntMediaPlayerUrl(spec.url)){try{const normalized=spec.integratedAntMedia?integratedAntMediaUrl(spec.url,spec.volume??1,{cacheBust:reload}):normalizeAntMediaUrl(spec.url,{cacheBust:reload});if(reload||(!spec.integratedAntMedia&&frame.src!==normalized))frame.src=normalized}catch{}}try{frame.allow='autoplay; fullscreen; picture-in-picture';frame.setAttribute('allowfullscreen','');frame.setAttribute('webkitallowfullscreen','')}catch{}try{frame.contentWindow?.focus()}catch{}const desired=spec.muted?0:Math.max(0,Math.min(1,Number(spec.volume??1)));tryDirectWebAudio(frame,desired);sendWebAudioHints(frame,desired);return true}
 function scheduleWebAudioRecovery(){clearWebAudioTimers();for(const delay of [0,300,1000,2500,6000,12000])webAudioTimers.push(setTimeout(()=>enforceWebAudio({reload:false}),delay))}
-let activeMediaSession=null,mediaStatusLastSent=0;
+let activeMediaSession=null,mediaStatusLastSent=0,mediaImageRetry=null;
 function clearMediaPlayback(){
   clearWebAudioTimers();
+  clearTimeout(mediaImageRetry);mediaImageRetry=null;
+  for(const image of media.querySelectorAll('img')){image.onerror=null;image.removeAttribute('src')}
   activeWebFrame=null;activeWebSpec=null;activeMediaSession=null;
   for(const player of media.querySelectorAll('video,audio')){
     player.oncanplay=null;player.onended=null;
@@ -155,10 +167,13 @@ function reportMediaStatus(reason='timeupdate'){
   const spec=activeMediaSession.spec||{};
   try{ws.send(JSON.stringify({type:'display.media.status',status:{sessionId:spec.sessionId||null,state:video.ended?'ended':video.paused?'paused':'playing',positionSeconds:Number(video.currentTime||0),durationSeconds:Number.isFinite(video.duration)?Number(video.duration):null,volume:Number(video.volume),muted:!!video.muted,loop:!!video.loop,playbackRate:Number(video.playbackRate||1),startAtSeconds:Number(spec.startAtSeconds||0),endAtSeconds:Number(spec.endAtSeconds)||null,reason}}))}catch{}
 }
-async function startVideoPlayback(video,m,reason='autoplay'){
-  const current=()=>activeMediaSession?.video===video;
-  if(!current())return false;
-  if(m.autoplay===false)return true;
+async function startVideoPlayback(video,m,reason='autoplay',explicit=false){
+  const session=activeMediaSession;
+  if(session?.video!==video)return false;
+  if(!explicit&&(m.autoplay===false||session.operatorPaused))return true;
+  if(explicit)session.operatorPaused=false;
+  const operation=session.playbackOperation=(session.playbackOperation||0)+1;
+  const current=()=>activeMediaSession===session&&session.playbackOperation===operation;
   video.muted=true;video.defaultMuted=true;
   try{
     await video.play();
@@ -187,7 +202,8 @@ function configureVideoSession(video,m){
   const start=Math.max(0,Number(m.startAtSeconds||0)),end=Number(m.endAtSeconds)>0?Number(m.endAtSeconds):null;
   const desiredVolume=Math.max(0,Math.min(1,Number(m.volume??1))),desiredRate=Math.max(.25,Math.min(4,Number(m.playbackRate||1)));
   const spec={...m,startAtSeconds:start,endAtSeconds:end,volume:desiredVolume,playbackRate:desiredRate,muted:!!m.muted};
-  activeMediaSession={video,spec};
+  if(activeMediaSession?.video!==video)activeMediaSession={video,playbackOperation:0,operatorPaused:false};
+  activeMediaSession.spec=spec;
   if(video.dataset.rgMediaSessionBound==='1'){
     video.loop=!!spec.loop&&!end;video.playbackRate=desiredRate;video.volume=desiredVolume;video.muted=!!spec.muted;video.defaultMuted=!!spec.muted;
     reportMediaStatus('session-update');return
@@ -205,10 +221,10 @@ function configureVideoSession(video,m){
 }
 function applyMediaControl(p={}){
   const video=activeMediaSession?.video;if(!video)return false;const action=String(p.action||'').toLowerCase(),spec=activeMediaSession.spec||{};
-  if(action==='play')startVideoPlayback(video,spec,'control-play').catch(()=>{});
-  else if(action==='pause')video.pause();
-  else if(action==='stop'){video.pause();video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));}
-  else if(action==='restart'){video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));startVideoPlayback(video,spec,'control-restart').catch(()=>{});}
+  if(action==='play')startVideoPlayback(video,spec,'control-play',true).catch(()=>{});
+  else if(action==='pause'){activeMediaSession.operatorPaused=true;activeMediaSession.playbackOperation++;video.pause();}
+  else if(action==='stop'){activeMediaSession.operatorPaused=true;activeMediaSession.playbackOperation++;video.pause();video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));}
+  else if(action==='restart'){video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));startVideoPlayback(video,spec,'control-restart',true).catch(()=>{});}
   else if(action==='seek'){const position=Math.max(0,Math.min(Number.isFinite(video.duration)?video.duration:Number.MAX_SAFE_INTEGER,Number(p.positionSeconds||0)));video.currentTime=position;spec.positionSeconds=position}
   else if(action==='volume'){spec.volume=Math.max(0,Math.min(1,Number(p.volume??1)));video.volume=spec.volume;if(video.volume>0){spec.muted=false;video.muted=false;video.defaultMuted=false}}
   else if(action==='mute'){spec.muted=p.muted!==false;video.muted=spec.muted;video.defaultMuted=video.muted;}
@@ -242,7 +258,15 @@ function renderMedia(m){
   let authorizedUrl='';if(m?.url){try{authorizedUrl=authorizeAssetUrl(m.url)}catch{badge.textContent=`${id} rejected invalid media URL`;return}}
   if(m?.type==='video'&&activeMediaSession?.video&&activeMediaSession.spec?.sessionId&&m.sessionId===activeMediaSession.spec.sessionId&&authorizedUrl===activeMediaSession.spec.authorizedUrl){activeMediaSession.spec={...activeMediaSession.spec,...m,authorizedUrl};configureVideoSession(activeMediaSession.video,activeMediaSession.spec);return}
   clearMediaPlayback();if(!authorizedUrl)return;let n;
-  if(m.type==='image'){n=document.createElement('img');n.decoding='async';n.src=authorizedUrl;let retries=0;n.onerror=()=>{if(retries>=3)return;retries++;const join=authorizedUrl.includes('?')?'&':'?';setTimeout(()=>{n.src=authorizedUrl+join+'retry='+Date.now()},500*retries)}}
+  if(m.type==='image'){
+    n=document.createElement('img');n.decoding='async';n.src=authorizedUrl;let retries=0;
+    n.onerror=()=>{
+      if(n.parentElement!==media||retries>=3)return;
+      retries++;clearTimeout(mediaImageRetry);
+      const retryUrl=new URL(authorizedUrl);retryUrl.searchParams.set('retry',String(Date.now()));
+      mediaImageRetry=setTimeout(()=>{mediaImageRetry=null;if(n.parentElement===media)n.src=retryUrl.href},500*retries);
+    };
+  }
   else if(m.type==='video'){n=document.createElement('video');configureVideoSession(n,{...m,authorizedUrl});n.src=authorizedUrl}
   else if(m.type==='web'||m.type==='pdf'){n=document.createElement('iframe');const isWeb=m.type==='web';const integratedAntMedia=!!(isWeb&&m.forceAudio&&isAntMediaPlayerUrl(authorizedUrl));const spec={...m,url:authorizedUrl,integratedAntMedia};const frameUrl=integratedAntMedia?integratedAntMediaUrl(authorizedUrl,m.muted?0:m.volume??1):authorizedUrl;const framePath=new URL(frameUrl).pathname;if(new URL(frameUrl).origin!==location.origin||framePath.startsWith('/display-gateway/'))n.setAttribute('sandbox','allow-scripts allow-forms allow-presentation');n.src=frameUrl;if(isWeb){n.allow='autoplay; fullscreen; picture-in-picture';n.setAttribute('allowfullscreen','');n.setAttribute('webkitallowfullscreen','');if(m.localDirect!==false){n.dataset.loadPath='tv-local';n.referrerPolicy='no-referrer-when-downgrade'}activeWebFrame=n;activeWebSpec=spec;n.addEventListener('load',()=>{if(activeWebFrame===n&&(spec.forceAudio||spec.muted!==undefined))scheduleWebAudioRecovery()})}}
   if(n){n.style.objectFit=m.fit||'contain';n.style.opacity=String(m.opacity??1);media.appendChild(n);if(activeWebFrame&&(activeWebSpec?.forceAudio||activeWebSpec?.muted!==undefined))scheduleWebAudioRecovery()}

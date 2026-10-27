@@ -32,11 +32,12 @@ test("manual display media exposes persistent playback controls",()=>{
   assert.match(helper,/window\.controllerDisplayCommand\(type,window\.controllerDisplayTargetArg\(\),payload\)/);
   assert.match(controller,/window\.controllerDisplayCommand=cmd/);
   assert.match(controller,/window\.controllerDisplayTargetArg=targetArg/);
-  assert.match(receiver,/async function startVideoPlayback\(video,m,reason='autoplay'\)/);
+  assert.match(receiver,/async function startVideoPlayback\(video,m,reason='autoplay',explicit=false\)/);
   assert.match(receiver,/video\.muted=true;video\.defaultMuted=true/);
   assert.match(receiver,/await video\.play\(\)/);
   assert.match(receiver,/muted-fallback/);
-  assert.match(receiver,/activeMediaSession=\{video,spec\}/);
+  assert.match(receiver,/if\(activeMediaSession\?\.video!==video\)activeMediaSession=\{video,playbackOperation:0,operatorPaused:false\}/);
+  assert.match(receiver,/activeMediaSession\.spec=spec/);
 });
 
 test("Display Studio media library never loads MP4 files as thumbnails",()=>{

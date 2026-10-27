@@ -4,7 +4,7 @@
 
 `public/display/layout.mjs` is the only title/subtitle/body/timer sizing and region-allocation authority. `public/display/index.html` owns state application, media, timer state, transport, and viewport scaling. `public/display/layout.css` provides the packaged font and matching structural defaults, but the module reasserts containment-critical styles before measurement so a stale or missing stylesheet cannot silently change fit behavior.
 
-The current renderer revision is `dynamic-fit-20261022-1`.
+The current renderer revision is `dynamic-fit-20261027-1`.
 
 ## Logical canvas and scaling
 
@@ -101,7 +101,7 @@ Run:
 JSON.stringify(window.ClassroomDisplayDiagnostics(), null, 2)
 ```
 
-For the current production renderer, expect `revision: dynamic-fit-20261022-1`.
+For this renderer, expect `revision: dynamic-fit-20261027-1`.
 
 Diagnostics include viewport, DPR, logical stage scale, font status, layout pass count, active object order, fitted sizes, region geometry, and containment status.
 
@@ -150,3 +150,22 @@ The receiver validates media URLs in `public/display/security.mjs` before touchi
 Music Assistant browser connections may use only this Hub's `/music-assistant/sendspin-proxy` WebSocket endpoint with the trusted Hub origin and fixed path.
 
 Identify overlays are independent of the title/subtitle/body/timer layout engine and must not create a second fitter or layout observer.
+
+
+## Receiver playback and enrollment lifecycle
+
+Renderer `dynamic-fit-20261027-1` preserves the existing layout geometry and fit
+policy. Explicit Play/Restart can start a video whose initial autoplay was disabled.
+Pause/Stop supersede pending playback attempts and later canplay callbacks without
+replacing the video element. Clearing/replacing an image cancels its pending retry;
+retries remain bounded to three and cannot act on retired content.
+
+Enrollment and legacy URL credentials are held in memory even when browser storage
+is unavailable, and removed from the URL before connecting. A credential that cannot
+be persisted remains valid only for the current page; a later page reload may need
+a new enrollment link. Server authentication and one-use token policy are unchanged.
+
+Browser regressions reproduce these four failures and test recovery without physical
+classroom commands. Installing the source does not establish that an already-open
+TV loaded the new renderer or that physical playback has been accepted. Verify the
+revision after an authorized receiver reload and report hardware results separately.

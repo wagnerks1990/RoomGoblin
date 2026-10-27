@@ -314,6 +314,67 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertEqual(page.evaluate('__video.volume'), .25)
         self.assertFalse(self.errors)
 
+    def test_explicit_play_starts_autoplay_disabled_video(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/manual.mp4', 'sessionId': 'manual', 'autoplay': False, 'muted': True})
+        page.evaluate("""() => {
+          const video=document.querySelector('#media video');window.__playCount=0;
+          video.play=()=>{window.__playCount++;return Promise.resolve()};
+        }""")
+        self.command(page, 'display.media.control', {'action': 'play'})
+        self.assertEqual(page.evaluate('__playCount'), 1)
+        self.command(page, 'display.media.control', {'action': 'pause'})
+        self.command(page, 'display.media.control', {'action': 'restart'})
+        self.assertEqual(page.evaluate('__playCount'), 2)
+        self.assertFalse(self.errors)
+
+    def test_pause_wins_over_pending_video_start(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/pending.mp4', 'sessionId': 'pending', 'autoplay': True})
+        page.evaluate("""() => {
+          const video=window.__video=document.querySelector('#media video');
+          window.__playCount=0;window.__paused=true;
+          Object.defineProperty(video,'paused',{get:()=>window.__paused});
+          video.pause=()=>{window.__paused=true};
+          video.play=()=>{window.__paused=false;window.__playCount++;return new Promise(resolve=>window.__finishPlay=resolve)};
+          video.oncanplay();
+        }""")
+        self.command(page, 'display.media.control', {'action': 'pause'})
+        page.evaluate('__finishPlay()')
+        page.wait_for_timeout(220)
+        self.assertEqual(page.evaluate('__playCount'), 1)
+        self.assertTrue(page.evaluate('__paused'))
+        page.evaluate('__video.oncanplay()')
+        self.assertEqual(page.evaluate('__playCount'), 1)
+        self.assertFalse(self.errors)
+
+    def test_cleared_image_cancels_pending_retry(self):
+        page = self.page()
+        requests = []
+        def unavailable(route):
+            requests.append(route.request.url)
+            route.fulfill(status=503, body='Unavailable fixture image')
+        page.route('**/media/retry.svg*', unavailable)
+        self.command(page, 'display.image', {'url': '/media/retry.svg'})
+        self.assertTrue(requests)
+        self.command(page, 'display.clear', {})
+        before = len(requests)
+        page.wait_for_timeout(1100)
+        self.assertEqual(len(requests), before)
+        self.assertEqual(page.locator('#media img').count(), 0)
+        self.assertFalse(self.errors)
+
+    def test_enrollment_handshake_survives_unavailable_browser_storage(self):
+        page = self.page()
+        page.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Storage unavailable','SecurityError')}})")
+        page.goto('http://127.0.0.1:31337/display/tv7#enrollmentToken=fixture-one-use-enrollment')
+        page.reload()
+        page.wait_for_function("window.__sent?.some(message=>message.type==='hello')")
+        hello = page.evaluate("__sent.find(message=>message.type==='hello')")
+        self.assertEqual(hello['enrollmentToken'], 'fixture-one-use-enrollment')
+        self.assertEqual(page.evaluate('location.hash'), '')
+        self.assertFalse(self.errors)
+
     def test_01_p6_p7_cross_resolution_and_reload(self):
         baseline={}
         for w,h,dpr in [(1920,1080,1),(3840,2160,1),(1920,1080,2),(1280,720,1),(1082,1226,1)]:
@@ -537,7 +598,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261022-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261027-1')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -557,14 +618,14 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261022-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261027-1')
 
 
     def test_17_live_tv8_text_does_not_false_collapse(self):
         page=self.page(1548,1273,1)
         self.replay(page,TV8_LIVE_DYNAMIC)
         data=self.measure(page,'live-tv8-false-containment-regression')
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261022-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261027-1')
         for name in ['title','subtitle','body']:
             self.assertGreaterEqual(data['parts'][name]['font'],12, name)
             self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
@@ -585,7 +646,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.command(page,'display.clear',{})
         self.replay(page,TV8_LIVE_DYNAMIC)
         second=self.measure(page,'transition-recovery-second')
-        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261022-1')
+        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261027-1')
         self.assertEqual(second['diagnostics']['components']['body']['status'],'fit')
         self.assertGreaterEqual(second['parts']['body']['font'],12)
         self.assertGreater(second['diagnostics']['components']['body']['scale'],0.95)

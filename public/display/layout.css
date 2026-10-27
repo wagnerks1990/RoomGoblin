@@ -13,4 +13,5 @@
 /* Leave ascent/descent space: tight 1.0/1.05 line boxes can fit numerically
    while glyphs themselves extend outside a heading or timer region. */
 #title,#subtitle,#text,#timerOverlay,#timerLabel,#timerValue{line-height:1.2}
-#title,#subtitle{white-space:nowrap;overflow-wrap:normal;word-break:normal}\n#text{white-space:break-spaces;overflow-wrap:anywhere;word-break:break-word;padding:0}
+#title,#subtitle{white-space:nowrap;overflow-wrap:normal;word-break:normal}
+#text{white-space:break-spaces;overflow-wrap:anywhere;word-break:break-word;padding:0}

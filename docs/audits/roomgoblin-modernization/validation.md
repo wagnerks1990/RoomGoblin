@@ -568,3 +568,36 @@ The operational backup passed journal checksum, ZIP CRC, canonical-only database
 contents and extracted SQLite checks. No request remains pending; rollback to
 `40b88c197b2e4d4dbed448348a9d1a9805949dbf` is available. PR #272 records the backup
 identity and checksum. No physical classroom action or fault injection occurred.
+
+
+## Display receiver browser runtime (2026-10-27 UTC)
+
+Finding baseline: `b3ba0afb2c06f12df7be8ff98c3953cfd00f6957`. Final qualification
+snapshots include merged Today commit `e7534eced5a8a803f524e46e7667f06bc7ab5deb`
+and the active receiver patch. The four baseline browser regressions all failed;
+focused corrected runs passed nine audio/receiver cases and seven final cases.
+
+| Check | Result |
+| --- | --- |
+| Native Linux `npm run check` and full `npm test` | 1,038 total: 1,036 passed, 0 failed, 2 root-only ownership skips |
+| Host Agent Full Recovery suite | 23 passed |
+| Host Python compilation and tracked Bash syntax | Passed |
+| Focused receiver/layout source-policy checks | 12 passed |
+| Full Chromium browser discovery | 127 passed, 0 failed |
+| Full Firefox browser discovery | 127 passed, 0 failed |
+| Changed-file UTF-8 and line-ending inspection | Passed |
+
+The first broad Node run reported 1,035 passes, one failure and two skips because
+an existing source-contract test expected the previous playback signature/session
+literal. Both old browser snapshots reported 115 passes and four failures out of
+119, all at old renderer-revision assertions. The expectations now match the new
+explicit-play signature, persistent session and required cache identity. Geometry
+and behavioral assertions remain intact. Fresh complete runs use the current tree.
+
+Two rendered fixture screenshots were visually inspected: body/title/timer
+containment remains readable, including the timer-only layout. The latter fixture
+contains an unavailable background image; it is not claimed as image-load acceptance.
+CI still owns local-unavailable Docker/Compose, image scans and native platform
+artifacts. Merge, Wiki sync, exact image publication and normal backed-up deployment
+remain open until their actual receipts are recorded. No physical receiver reload,
+classroom command or fault injection was performed.

@@ -9,7 +9,7 @@ Read `docs/DISPLAY-LAYOUT-CONTRACT.md` before editing display or automation rend
 - Branding must not inject display layout code.
 - Do not add style/class/timer MutationObservers that create a second layout owner.
 
-Current renderer: `dynamic-fit-20261022-1`.
+Current renderer: `dynamic-fit-20261027-1`.
 
 ## Geometry
 
@@ -60,3 +60,13 @@ Retain browser evidence for:
 Do not weaken a failing browser assertion merely to make CI green. Do not call a deployment fixed based only on merge status or container health.
 
 When renderer behavior changes, update this file, `docs/DISPLAY-LAYOUT-CONTRACT.md`, its Wiki mirror, sizing guardrails, tests, and changelog.
+
+## Receiver-owned asynchronous work
+
+Explicit Play/Restart override initial autoplay only for the requested operation.
+Pause/Stop invalidate older play attempts and suppress late canplay recovery.
+Keep generation ownership inside the persistent video session; state refreshes
+must not manufacture a new owner for unchanged content. Cancel image retry timers
+and reject retired-image callbacks on clear/replacement. Storage failures must not
+discard enrollment credentials already removed from the URL; retain them in memory
+without changing server verification or logging their values.
