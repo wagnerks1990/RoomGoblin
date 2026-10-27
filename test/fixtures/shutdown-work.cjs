@@ -3,6 +3,7 @@
 // Hub storage instance after the HTTP client has gone away. No production hook.
 const storage=require("../../src/storage"),lifecycle=require("../../src/application-drain");
 const fs=require("node:fs"),path=require("node:path");
+const {rateLimit}=require("express-rate-limit");
 const Original=storage.ClassroomHubStorage,track=lifecycle.trackApplicationHandlers;
 let store;
 storage.ClassroomHubStorage=class extends Original{constructor(...args){super(...args);store=this}};
@@ -17,7 +18,7 @@ if(process.env.SHUTDOWN_MQTT_FIXTURE==="1"){
 }
 lifecycle.trackApplicationHandlers=(app,options)=>{
   const tracker=track(app,options);
-  app.post("/fixture/pending-write",async(req,res)=>{
+  app.post("/fixture/pending-write",rateLimit({windowMs:60000,limit:4,keyGenerator:()=>"shutdown-fixture",standardHeaders:false,legacyHeaders:false}),async(req,res)=>{
     console.log("fixture-writer-started");
     if(req.query.early==="true")res.end("accepted");
     if(req.query.gate==="true"){

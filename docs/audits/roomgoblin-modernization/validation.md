@@ -230,6 +230,11 @@ status, emitted/thrown signaling errors, actual reaping and owner-exit fallback.
 The existing timeout remains a failure; no deadline, guard or assertion was
 weakened to make the tests pass. These tests use temporary data and loopback only.
 
+Code scanning identified missing rate limiting on the test fixture's new file
+access. The fixture now admits at most four requests per minute across callers;
+all nine writer-drain process tests passed again in native Linux. Production
+source is unchanged from the full-suite run above. CI runs on the corrected head.
+
 Docker is unavailable locally. Compose, both runtime images, vulnerability scans,
 Node 22, native platforms and browser regressions remain exact-head CI gates.
 The user requested push, merge and update after this change; the normal
