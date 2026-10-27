@@ -92,7 +92,7 @@ Account/login field spacing now leaves room for visible focus outlines.
 | --- | --- |
 | Subsystem / category | Shared design system / UI/UX |
 | Priority / confidence | P1 / Confirmed; default light mode made headings and controls unreadable |
-| Baseline locations | `public/shared/workspace.css:2-10,28,50-60`; `public/shared/attribution.css:2`; `public/shared/roomgoblin.css:6,9-11`; `public/controller/workspace.css:114` |
+| Baseline locations | `public/shared/workspace.css:2-10,28,50-60`; `public/shared/attribution.css:2`; `public/shared/roomgoblin.css:6,9-11`; `public/controller/workspace.css:113` |
 | Complexity / compatibility risk | Small / Low; operator-scoped CSS with rendered checks |
 | Expected benefit | Consistent default light/dark surfaces and readable semantic/focus states |
 | State | Identified, reproduced, planned, implemented and locally tested; CI/delivery pending |
