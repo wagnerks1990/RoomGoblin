@@ -48,6 +48,13 @@ retries retain the latest saved volume and existing freeze/shutdown guards.
 
 This is a defense-in-depth guard, not permission to keep a server-side periodic reassert forever. Prefer fixing the lifecycle owner rather than expanding interception to unrelated commands.
 
+Mandatory announcement audio holds have their own target set, separate from
+ordinary media and manual takeover ownership. Media-ended observations and
+replacement commands may update ordinary priority while the mandatory hold
+remains. Release removes only the announcement hold after reconciliation;
+restored audible content keeps its own priority. Pending reconciliation retains
+mandatory hallway priority even after active runtime targets have cleared.
+
 The server owns the hard priority boundary. It serializes announcement start/stop transitions and rechecks the lock at every automation display delivery, including work that already passed an earlier check and then awaited a delay or network operation. Only display targets owned by the active announcement are deferred; lighting and other non-display work continues. If post-release display reconciliation fails, retain the Background Music priority hold and retry before resuming.
 
 The Live Watch announcement-volume slider is a live control as well as persisted configuration. While an announcement owns targets, a volume update must send `display.web.audio` to those runtime-owned targets with `reload:false`; it must not clear, reload, or recreate the player. When no announcement is active, the value is saved for the next takeover.

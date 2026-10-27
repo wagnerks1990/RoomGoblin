@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Separate mandatory announcement audio holds from ordinary media priority,
+  preserving hallway recovery holds and priority belonging to restored content.
+
 - Retire delayed announcement audio retries when their takeover is replaced,
   including replacements that target the same receivers.
 

@@ -759,6 +759,7 @@ const morningAnnouncementsRuntime={live:false,active:false,mode:null,targets:[],
 let morningAnnouncementsTimer=null;
 let morningAnnouncementsWatcherGeneration=0;
 let morningAnnouncementsReleaseRetryTimer=null;
+const morningAnnouncementsPriorityTargets=new Set();
 let morningAnnouncementsLifecycle=Promise.resolve();
 let morningAnnouncementsLifecycleBusy=0;
 function serializeMorningAnnouncementsLifecycle(task){
@@ -924,7 +925,7 @@ async function applyMorningAnnouncementVolume(){
   return {active:true,applied:true,targets};
 }
 async function setMorningAnnouncementPriorityTargets(targets,active){
-  for(const id of targets||[]){if(active)backgroundMusicPriorityTargets.add(id);else backgroundMusicPriorityTargets.delete(id)}
+  for(const id of targets||[]){if(active)morningAnnouncementsPriorityTargets.add(id);else morningAnnouncementsPriorityTargets.delete(id)}
   // Morning Announcements are non-optional priority audio even when ordinary
   // automation audio pausing has been disabled in the Background Music policy.
   await backgroundMusicReconcilePriority({force:true});
@@ -6688,13 +6689,14 @@ function backgroundMusicWindowKey(cfg,now=new Date()){
 function backgroundMusicPriorityState(){
   // Track all audible scenes so changing a receiver's scope takes effect without
   // replaying its content. Only room receivers own ordinary classroom priority.
-  const mandatory=morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending;
-  const targets=[],independentTargets=[];
+  // Mandatory announcement holds survive media-ended messages and pending
+  // release reconciliation. Ordinary restored media retains its own hold.
+  const targets=new Set(morningAnnouncementsPriorityTargets),independentTargets=[];
   for(const id of backgroundMusicPriorityTargets){
-    if(displaySharesRoomAudio(id)||(mandatory&&(morningAnnouncementsRuntime.targets||[]).includes(id))||(manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id)))targets.push(id);
+    if(displaySharesRoomAudio(id)||morningAnnouncementsPriorityTargets.has(id)||(manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id)))targets.add(id);
     else independentTargets.push(id);
   }
-  return {active:targets.length>0,targets,independentTargets};
+  return {active:targets.size>0,targets:[...targets],independentTargets};
 }
 let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null};
 let backgroundMusicProbePending=null;
@@ -6751,7 +6753,7 @@ async function backgroundMusicStop(reason="manual",playerIdOverride=null){
 }
 function backgroundMusicPriorityBlocked(){
   const cfg=backgroundMusicSchedule();
-  return backgroundMusicPriorityState().active&&(cfg.pauseForPriorityAudio||morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending||manualMediaPriorityRuntime.active);
+  return morningAnnouncementsPriorityTargets.size>0||(backgroundMusicPriorityState().active&&(cfg.pauseForPriorityAudio||manualMediaPriorityRuntime.active));
 }
 async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name="",mediaType="unknown",reason="manual",recover=false}={}){
   if(backgroundMusicStartBusy)throw Error("A music change is already in progress");
@@ -6852,7 +6854,7 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   if(command.type==="display.audio.control"){
     for(const id of resolveDisplayTargets(command.target)){
       if(displayAudio.describe(persistentState.displays[id]).audible)backgroundMusicPriorityTargets.add(id);
-      else if(!morningAnnouncementsRuntime.active&&!manualMediaPriorityRuntime.targets.has(id))backgroundMusicPriorityTargets.delete(id);
+      else if(!manualMediaPriorityRuntime.targets.has(id))backgroundMusicPriorityTargets.delete(id);
     }
     trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
     return;
@@ -6874,9 +6876,8 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   else if(type.startsWith("voice.")||type.startsWith("sfx.")){startsAudio=true}
   else if(["display.clear","display.image","display.pdf","display.document","display.presentation"].includes(type)){replacesAudio=true}
   if(replacesAudio)for(const id of targets){
-    const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);
     const manualOwnsTarget=manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id);
-    if(!announcementOwnsTarget&&!manualOwnsTarget)backgroundMusicPriorityTargets.delete(id);
+    if(!manualOwnsTarget)backgroundMusicPriorityTargets.delete(id);
   }
   if(startsAudio)for(const id of targets)backgroundMusicPriorityTargets.add(id);
   trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
