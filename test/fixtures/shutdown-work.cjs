@@ -2,6 +2,7 @@
 // Test-only preload: hold a real registered handler and write through the exact
 // Hub storage instance after the HTTP client has gone away. No production hook.
 const storage=require("../../src/storage"),lifecycle=require("../../src/application-drain");
+const fs=require("node:fs"),path=require("node:path");
 const Original=storage.ClassroomHubStorage,track=lifecycle.trackApplicationHandlers;
 let store;
 storage.ClassroomHubStorage=class extends Original{constructor(...args){super(...args);store=this}};
@@ -19,7 +20,9 @@ lifecycle.trackApplicationHandlers=(app,options)=>{
   app.post("/fixture/pending-write",async(req,res)=>{
     console.log("fixture-writer-started");
     if(req.query.early==="true")res.end("accepted");
-    await new Promise(resolve=>setTimeout(resolve,req.query.stuck==="true"?60000:800));
+    if(req.query.gate==="true"){
+      while(!fs.existsSync(path.join(process.env.DATA_DIR,"release-writer")))await new Promise(resolve=>setTimeout(resolve,10));
+    }else await new Promise(resolve=>setTimeout(resolve,req.query.stuck==="true"?60000:800));
     store.setPreference("shutdown.fixture.completed",true);
     if(!res.writableEnded)res.end("completed");
   });

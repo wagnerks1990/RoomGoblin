@@ -6,12 +6,14 @@ const path=require("node:path");
 // One owner for the media child's lifetime. The application stays PID 1; a
 // failed media listener must fail the pair so the container can restart it.
 function createMediaPlaneSupervisor({spawnProcess=spawn,owner=process,gracefulTimeoutMs=6000,report=message=>console.error(message)}={}){
-  let child=null,finished=false,stopping=false,stopPromise=null,resolveStop,rejectStop,killTimer=null;
+  let child=null,finished=false,stopping=false,stopPromise=null,resolveStop,rejectStop,killTimer=null,stopFailure=null,ownerExiting=false;
   const killOnOwnerExit=()=>{
     // An exit listener cannot await graceful cleanup. This also handles a
     // synchronous bootstrap failure before server.js installs signal handlers.
+    ownerExiting=true;
     if(child&&!finished)try{child.kill("SIGKILL")}catch{}
   };
+  const rememberStopFailure=error=>{stopFailure??=error};
   function finish(error){
     if(finished)return;
     finished=true;
@@ -25,11 +27,20 @@ function createMediaPlaneSupervisor({spawnProcess=spawn,owner=process,gracefulTi
     if(child)throw new Error("RoomGoblin media plane is already started");
     child=spawnProcess(process.execPath,[path.join(__dirname,"media-server.js")],{env:process.env,stdio:"inherit"});
     owner.once("exit",killOnOwnerExit);
-    child.once("error",error=>finish(error));
+    child.on("error",error=>{
+      if(finished||ownerExiting)return;
+      if(!child.pid){finish(error);return}
+      // A failed signal is not an exit. Keep the deadline and owner fallback
+      // until the running child is actually reaped.
+      if(stopping){rememberStopFailure(error);return}
+      report(`RoomGoblin media plane failed: ${error.message}`);
+      owner.exit(1);
+    });
     child.once("exit",(code,signal)=>{
       if(finished)return;
       if(!stopping)report(`RoomGoblin media plane exit status: ${signal??code??"unknown"}.`);
-      finish();
+      const error=stopping&&(stopFailure||(code!==0||signal?new Error(`RoomGoblin media plane shutdown failed: ${signal??code??"unknown"}.`):null));
+      finish(error);
     });
     return child;
   }
@@ -40,9 +51,12 @@ function createMediaPlaneSupervisor({spawnProcess=spawn,owner=process,gracefulTi
     stopPromise=new Promise((resolve,reject)=>{resolveStop=resolve;rejectStop=reject});
     // The child has its own five-second HTTP drain. Give it time to finish,
     // then reap even a stuck child before the application's ten-second limit.
-    killTimer=setTimeout(()=>{try{child.kill("SIGKILL")}catch(error){finish(error)}},gracefulTimeoutMs);
+    killTimer=setTimeout(()=>{
+      rememberStopFailure(new Error("RoomGoblin media plane shutdown required forced termination."));
+      try{child.kill("SIGKILL")}catch(error){rememberStopFailure(error)}
+    },gracefulTimeoutMs);
     killTimer.unref();
-    try{child.kill("SIGTERM")}catch(error){finish(error)}
+    try{child.kill("SIGTERM")}catch(error){rememberStopFailure(error)}
     return stopPromise;
   }
   return {start,stop};

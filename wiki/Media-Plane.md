@@ -14,7 +14,10 @@ This prevents a large or slow MP4 transfer from blocking Clear, Stop, navigation
 The Hub owns the media child through `src/media-plane-process.js`. Unexpected
 child exit fails the application so container restart restores the pair. Normal
 shutdown waits for child exit, escalates a stuck child after six seconds and
-retains the Hub's ten-second overall limit. Abrupt owner exit kills the child
+retains the Hub's ten-second overall limit. Nonzero/signal exits, signaling errors
+and forced termination fail shutdown; accepted Hub writes still drain before
+SQLite closes. A signaling error retains child ownership until exit. Abrupt owner
+exit kills the child
 synchronously. `npm start` and the container use the same Node bootstrap. See
 [application lifecycle](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/APPLICATION-LIFECYCLE.md)
 for the limits of the application writer drain.

@@ -240,6 +240,45 @@ retained registration composition; integration business logic remains separate.
   whole-application snapshot proof.
 - **Status:** Implemented; validation and delivery are recorded separately.
 
+## RG-ARCH-007: media shutdown loses exit status and child ownership
+
+- **Subsystem/category/priority:** Core lifecycle / Reliability and observability / P2.
+- **Baseline:** `446a9523da9a160bc510e679397269c9097aeb1d`, alpha.85.
+- **Location at baseline:** `src/media-plane-process.js:9-44`,
+  `src/server.js:8652-8674`, `src/media-server.js:152-155`.
+- **Current implementation/problem:** Requested child shutdown ignores its exit
+  status. The child's five-second HTTP timeout, signal death and forced kill all
+  resolve as success. A signaling error also drops ownership before actual exit.
+  Simply rejecting on child failure would make the Hub's fail-fast closure wait
+  abandon accepted writers before the existing drain barrier.
+- **Evidence:** Nine failures in a 25-test native Linux baseline run reproduce
+  false-success outcomes and premature release of child ownership. A canonical
+  process with an incomplete media request exits zero after the media deadline.
+  These are temporary-data fixtures, not a claimed production incident.
+- **Recommendation/benefit:** Preserve the first failure, settle shutdown only
+  on actual child exit, and await all listener closures plus accepted writers
+  before reporting failure. This makes exit status trustworthy without losing
+  accepted work or orphaning a child after a failed signal.
+- **Complexity/compatibility risk/confidence:** Small / Medium / Confirmed.
+- **Implementation:** Distinguish spawn failure from running-child errors using
+  the assigned PID. Retain escalation and owner-exit cleanup after signaling
+  errors; ignore reentrant errors during owner exit. Treat nonzero/signal and
+  forced exits as failures. Hub closure uses settled results and reports failure
+  after writer drain and SQLite cleanup, within the same overall deadline.
+- **Review:** Read the supervisor, media listener, shutdown function and changed
+  fixtures/tests in full. Review the writer barrier and canonical process helper.
+  This is not an exhaustive server or media-playback audit.
+- **Verification:** Clean and timed-out media connections, signal death with a
+  held accepted writer, final SQLite persistence, repeated stop, nonzero/signal
+  exits, forced kill with a racing zero exit, emitted/thrown signaling errors,
+  spawn failure and abrupt-owner cleanup. Baseline and candidate counts are in
+  [validation evidence](validation.md); delivery belongs to the PR record.
+- **Preserved boundaries/limits:** Five/six/ten-second deadlines, independent
+  Full Recovery freeze ownership, authentication, media ports, receiver sessions,
+  automation interruption/recovery, schema and dependencies remain unchanged.
+  No physical playback or production fault injection is claimed.
+- **Status:** Implemented; validation and delivery recorded separately.
+
 ## Completion boundary
 
 The first bootstrap/media/readiness patch is implemented. The broader Core
