@@ -116,6 +116,12 @@ Already requested operator cancellation retains precedence and remains
 occurrence can recover. Manual runs do not automatically restart. Commands already
 delivered to hardware are not undone or replayed by the shutdown handler.
 
+Scheduled, recovered and managed manual automation tasks share one ownership
+boundary. Register both task and metadata before starting execution; release them
+in an outer finalizer even when ledger or final configuration persistence fails.
+Keep error reporting inside the tracked task. Failed admission saves must not create
+phantom ownership or cancel previously accepted manual work.
+
 Full Recovery's freeze remains independently owned. Shutdown aborts an unfinished
 freeze acquisition, but an already active freeze keeps its authenticated,
 one-use `export-thaw` endpoint reachable. Other new requests receive HTTP 503.

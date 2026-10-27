@@ -231,3 +231,22 @@ released on every outcome. Accepted writes remain part of the existing Full
 Recovery/shutdown drain. Pause, calendar/day/time eligibility, dry simulation,
 transport selection and the 15-second timer remain unchanged. No saved schedule,
 receiver identity or database-schema migration is required.
+
+## Continuous sequence timing
+
+Continuing continuous sequences have a minimum one-second pass duration, counting
+action execution and configured waits. Fast passes wait only for the remainder;
+slow passes still yield to timers without another timed delay. Finished runs,
+finite-only repeats and a single remaining continual action get no added cycle
+wait. Cancellation, pause and class boundaries are checked at most 500 ms apart
+during waits. A monotonic clock keeps configured wait durations stable across
+system-clock corrections; class/calendar eligibility uses the scheduler clock.
+Receiver-native media looping and persistent playback controls remain unchanged.
+
+
+Scheduled, recovered and managed manual runs retain task ownership through final
+persistence and error reporting. Failed ledger/save operations release the task
+and cancellation metadata after settlement, so they cannot leave a phantom run
+blocking recovery or shutdown. Failed new manual admission saves preserve existing
+accepted work. Live draft continual runs return a managed run ID; use **Stop Run**
+to cancel them. Finite manual sequences return their completed result.

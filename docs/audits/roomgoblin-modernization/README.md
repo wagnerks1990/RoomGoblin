@@ -1,8 +1,8 @@
 # RoomGoblin modernization audit
 
-Status: **Legacy TV scheduler safeguards implemented and qualified locally;
-delivery pending**. Scheduler timing/task ownership is under review in PR #277. Displays
-& AV backend reads merged in PR #276 and await exact-image publication/delivery.
+Status: **Legacy TV scheduler safeguards locally qualified; PR #278 in CI**.
+Scheduler timing/task ownership merged in PR #277 and awaits publication/delivery.
+The test-clock follow-up is in PR #279. AV backend delivery completed in PR #276.
 The operator workspace is deployed through PR #275; receiver browser-runtime
 delivery completed in PR #274. Today/live monitoring and shared
 frontend delivery completed in PRs #273 and #272. Core Architecture
@@ -55,6 +55,8 @@ handoffs and improves default light-theme contrast. See [findings](shared-fronte
 Queued subsystem units below have not been marked audited.
 
 - [Legacy TV scheduler findings](legacy-tv-scheduler.md)
+
+- [Scheduler timing, task ownership and remaining review](scheduler.md)
 - [Displays & AV backend read bounds](av-status.md)
 - [Displays & AV workspace findings](displays-av.md)
 - [Display receiver browser-runtime findings](display-receiver.md)

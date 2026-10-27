@@ -1,7 +1,8 @@
 # Displays & AV backend status review
 
 Baseline: `ed8135b9bd8fd9f340a6360611a7db2767da08e4`, alpha.85.
-Status: implemented and locally qualified; checked PR and delivery pending.
+Status: checked merge and appliance delivery completed in PR #276 on 2026-10-27.
+See the validation record and PR for the verified deployment receipt.
 This closes the backend follow-up to the operator workspace in PR #275.
 
 ## Scope and ownership

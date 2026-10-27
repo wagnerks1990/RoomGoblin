@@ -12,6 +12,7 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const net = require("net");
+const {performance}=require("node:perf_hooks");
 const {setTimeout:plutoAbortableDelay}=require("node:timers/promises");
 const {createPlutoStatusReader,readPlutoResponse,STATUS_BUDGET_MS:PLUTO_STATUS_BUDGET_MS}=require("./pluto-transport");
 const { execFile } = require("child_process");
@@ -1846,11 +1847,11 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
   }
   async function waitSeconds(seconds){
-    const deadline=Date.now()+Math.max(0,Number(seconds||0))*1000;
-    while(Date.now()<deadline){
+    const deadline=performance.now()+Math.max(0,Number(seconds||0))*1000;
+    while(performance.now()<deadline){
       assertRunActive();
       if(!windowOpen())return false;
-      await new Promise(r=>setTimeout(r,Math.min(500,Math.max(1,deadline-Date.now()))));
+      await new Promise(r=>setTimeout(r,Math.min(500,Math.max(1,deadline-performance.now()))));
     }
     return windowOpen();
   }
@@ -1893,6 +1894,7 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
     if(boundedMaxPasses&&pass>boundedMaxPasses)break;
+    const passStartedAt=performance.now();
     let executed=0;
     for(let i=0;i<steps.length;i++){
       const step=steps[i]||{};
@@ -1983,8 +1985,15 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
     combined.passes=pass;
     if(aborted||!sequenceNeedsAnotherPass(steps,pass+1))break;
-    pass++;
+    if(boundedMaxPasses&&pass>=boundedMaxPasses)break;
     if(continuous&&executed===0)break;
+    // Yield even when fast/blocked actions contain no explicit delays. Count
+    // action time and configured waits toward the floor, without extending a
+    // slow pass or delaying a sequence that has already finished.
+    const cycleWait=continuous?Math.max(0,1000-(performance.now()-passStartedAt)):0;
+    if(cycleWait&&!(await waitSeconds(cycleWait/1000))){combined.endedReason="class-ended";break}
+    if(continuous&&!cycleWait)await new Promise(resolve=>setTimeout(resolve,0));
+    pass++;
   }
 
   await applyTimerOverlay();
@@ -5861,12 +5870,11 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
   for(const {storedEvent,event} of candidates){
     const id=occurrenceId(event,dateKey,event.time);
     if(automationRunningOccurrences.has(id))continue;
-    supersedeOverlappingAutomationRuns(event,id);
-    automationRunningOccurrenceMeta.set(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),recovered:true,reason});
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"recovered-running",schedulerTime:now.toISOString(),reason});
+    supersedeOverlappingAutomationRuns(event,id);
     const occurrenceKey=event.classId||"manual",scheduledMinuteKey=`${dateKey} ${event.time}`,deltaMinutes=Math.max(0,localMinutesNow(now)-automationOccurrenceScheduledMinutes(event));
-    const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
-    automationRunningOccurrences.set(id,task);task.catch(()=>{});
+    startOwnedAutomationOccurrence(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),recovered:true,reason},
+      ()=>executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
     started++;
   }
   if(started)audit({kind:"automation.continuous.recover",reason,started,schedulerTime:now.toISOString()});
@@ -6008,10 +6016,9 @@ app.post("/api/v1/displays/:id/audio",schedulerMutationLimit,requireControl,asyn
 
 function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
   const id=`manual-${cleanId(event.id||"draft")||"draft"}-${crypto.randomUUID()}`;
-  supersedeOverlappingAutomationRuns(event,id);
-  automationRunningOccurrenceMeta.set(id,{automationId:event.id||null,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),manual:true,draft});
   automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:"manual-running",schedulerTime:schedulerClock.now().toISOString(),draft});
-  const task=trackFullExportMutation((async()=>{
+  supersedeOverlappingAutomationRuns(event,id);
+  startOwnedAutomationOccurrence(id,{automationId:event.id||null,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),manual:true,draft},async()=>{
     try{
       const runResult=await runClassroomAutomation({...event,_occurrenceId:id},{manual:true});
       if(storedEvent){
@@ -6026,10 +6033,8 @@ function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
       if(!cancelled&&!interrupted)diagnosticError(err,{component:"automation",operation:"manual-continuous-run",data:{automationId:event.id||null,draft}});
     }finally{
       if(storedEvent){storedEvent.updatedAt=new Date().toISOString();persistAutomations()}
-      automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
     }
-  })());
-  automationRunningOccurrences.set(id,task);task.catch(()=>{});
+  });
   audit({kind:"automation.manual.started",automationId:event.id||null,name:event.name,occurrenceId:id,draft,actions:automationActionSequence(event).map(step=>step.action)});
   return {ok:true,started:true,continuous:true,manual:true,draft,occurrenceId:id,eventId:event.id||null,name:event.name,message:"Continuous automation started. Use Stop Run to cancel it."};
 }
@@ -8505,6 +8510,21 @@ const automationRunningOccurrences=new Map();
 const automationRunningOccurrenceMeta=new Map();
 const automationCancelledOccurrences=new Set();
 const automationCancellationReasons=new Map();
+function startOwnedAutomationOccurrence(id,meta,execute){
+  if(automationRunningOccurrences.has(id))throw new Error("Automation occurrence is already running");
+  automationRunningOccurrenceMeta.set(id,meta);
+  // Defer execution until both registries and the recovery drain own the task.
+  // Even a synchronous ledger failure must settle through this finalizer.
+  const task=trackFullExportMutation(Promise.resolve().then(execute).catch(error=>{
+    diagnosticError(error,{component:"automation",operation:"occurrence-task",data:{automationId:meta.automationId||null,occurrenceId:id}});
+    throw error;
+  }).finally(()=>{
+    automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);
+    automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
+  }));
+  automationRunningOccurrences.set(id,task);task.catch(()=>{});
+  return task;
+}
 function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
   const resources=new Set(automationResourceKeys(event));
   if(!resources.size)return [];
@@ -8575,7 +8595,7 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:cancelled?"cancelled":interrupted?"interrupted":"failed",schedulerTime:schedulerClock.now().toISOString(),...(cancelled||interrupted?{reason}:{error:err.message})});
     audit({kind:cancelled?"automation.cancelled":interrupted?"automation.interrupted":"automation.error",automationId:storedEvent.id,name:storedEvent.name,...(cancelled||interrupted?{reason}:{error:err.message})});
   }finally{
-    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
+    storedEvent.updatedAt=new Date().toISOString();persistAutomations();
   }
 }
 async function automationSchedulerTick(){
@@ -8608,9 +8628,8 @@ async function automationSchedulerTick(){
         if(morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([...automationDeferredDisplayTargets(event)]).length)queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes);
         storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;storedEvent.lastExec=scheduledMinuteKey;storedEvent.updatedAt=new Date().toISOString();persistAutomations();
         supersedeOverlappingAutomationRuns(event,id);
-        automationRunningOccurrenceMeta.set(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString()});
-        const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
-        automationRunningOccurrences.set(id,task);task.catch(()=>{});
+        startOwnedAutomationOccurrence(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString()},
+          ()=>executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
       }
     }
   }catch(error){diagnosticError(error,{component:"automation",operation:"scheduler-tick"})}

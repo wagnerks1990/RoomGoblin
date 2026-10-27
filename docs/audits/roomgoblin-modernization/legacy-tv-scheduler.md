@@ -21,7 +21,7 @@ engine, editor, lighting or announcement subsystem.
 | Exact baseline locations | `src/server.js:8649-8650`; shared helper `1625-1637` |
 | Complexity / compatibility risk | Small / Medium: physical output reservation |
 | Expected benefit | Prevent legacy schedules from powering announcement-owned TVs |
-| State | Identified, reproduced, implemented; full qualification pending |
+| State | Identified, reproduced, locally qualified; CI/delivery pending |
 
 The timer selected the first receiver whose mapping matched the output, then
 checked that receiver alone. An unlocked alias could hide another locked receiver
@@ -48,7 +48,7 @@ their exact command and connection. No live receiver or matrix is contacted.
 | Exact baseline locations | `src/server.js:8651-8657` |
 | Complexity / compatibility risk | Medium / Medium: durable admission and uncertain outcomes |
 | Expected benefit | Avoid replaying an uncertain CEC command after restart |
-| State | Identified, reproduced, implemented; full qualification pending |
+| State | Identified, reproduced, locally qualified; CI/delivery pending |
 
 `lastExec` changed only in memory before dispatch, and the whole schedule store
 was saved after the loop. A restart between dispatch and that save could find the
@@ -77,7 +77,7 @@ failures with one write, including on subsequent ticks.
 | Exact baseline locations | `src/server.js:8636-8659` |
 | Complexity / compatibility risk | Small / Low |
 | Expected benefit | Report storage failure without an unhandled timer rejection |
-| State | Identified, reproduced, implemented; full qualification pending |
+| State | Identified, reproduced, locally qualified; CI/delivery pending |
 
 The asynchronous interval callback had a finalizer but no outer error handler.
 Persistence errors rejected its ignored promise. The named tick now records those
@@ -98,3 +98,8 @@ and tracked Bash syntax passed. Docker is unavailable locally; CI must qualify
 Compose, image builds/scans and platform artifacts. CI, checked merge, Wiki sync,
 exact image publication and normal backed-up update are pending.
 The rest of scheduler/editor review remains open.
+
+After integrating checked scheduler merge `70ad1c8`, the combined actual worktree
+passed **136 native focused tests**, 23 Host Recovery tests and syntax checks.
+The source merged without overlap; documentation overlaps retained both contracts
+and their qualification records. Fresh CI must validate this combined PR head.

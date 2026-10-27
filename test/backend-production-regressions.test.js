@@ -152,7 +152,9 @@ test("scheduler discovery is non-blocking and class occurrences still honor glob
   const scheduler=server.slice(server.indexOf("// Unified Classroom Automation scheduler"),server.indexOf("// Legacy per-output Pluto schedules"));
   const tick=scheduler.slice(scheduler.indexOf("async function automationSchedulerTick"));
   assert.match(tick,/automationRunLedger\.claim/);
-  assert.match(tick,/automationRunningOccurrences\.set/);
+  assert.match(tick,/startOwnedAutomationOccurrence\(id,/);
+  assert.match(scheduler,/automationRunningOccurrences\.set\(id,task\)/);
+  assert.doesNotMatch(tick,/await startOwnedAutomationOccurrence/);
   assert.match(tick,/isAutomationSuppressed\(now\)\.blocked/);
   assert.doesNotMatch(tick,/await runClassroomAutomation\(event\)/);
   assert.match(scheduler,/async function executeScheduledAutomationOccurrence/);
