@@ -6,6 +6,18 @@ const vm=require('node:vm');
 const app=fs.readFileSync('public/controller/app.js','utf8');
 const helper=app.slice(app.indexOf('function revealControllerOutput('),app.indexOf('function setRecoveryStatus('));
 
+test('controller shell composes feature owners without replacing enrollment handlers',()=>{
+  const shell=fs.readFileSync('public/controller/workspace.js','utf8');
+  const html=fs.readFileSync('public/controller/index.html','utf8');
+  const scripts=[...html.matchAll(/<script src="(\/controller\/[^\"]+)"/g)].map(match=>match[1]);
+  for(const file of ['lab-enrollment.js','system-updates-workspace.js']){
+    assert.equal(scripts.filter(src=>src===`/controller/${file}`).length,1);
+    assert.ok(scripts.indexOf(`/controller/${file}`)>scripts.indexOf('/controller/app.js'));
+  }
+  assert.doesNotMatch(shell,/createLabAgentEnrollment|enhanceUpdateWorkspace|\/api\//);
+  assert.doesNotMatch(app,/function createLabAgentEnrollment\(/);
+});
+
 test('action results open every enclosing disclosure without activating another page',()=>{
   const page={tagName:'SECTION',dataset:{authorized:'false'},parentElement:null};
   const outer={tagName:'DETAILS',open:false,parentElement:page};
@@ -33,7 +45,7 @@ test('navigation search and authorization changes cannot redisplay restricted wo
   const elements={workspaceSidebar:sidebar,workspaceMenu:{setAttribute(){},addEventListener(){}},workspaceSearch:search,workspaceBackdrop:{addEventListener(){}},workspaceSearchEmpty:empty};
   const document={getElementById:id=>elements[id],createElement:()=>({addEventListener(){}}),querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){}};
   let isAdmin=false;
-  const context={document,matchMedia:()=>({addEventListener(){}}),MutationObserver:class{observe(){}},userCan:()=>isAdmin,window:{addEventListener:(name,fn)=>handlers[name]=fn}};
+  const context={document,matchMedia:()=>({addEventListener(){}}),MutationObserver:class{observe(){}},userCan:()=>isAdmin,window:{AUTH_STATUS:{user:{}},addEventListener:(name,fn)=>handlers[name]=fn}};
   vm.runInNewContext(fs.readFileSync('public/controller/workspace.js','utf8'),context);
   assert.equal(managed.hidden,true);assert.equal(group.hidden,true);
   search.value='Settings';handlers.input();

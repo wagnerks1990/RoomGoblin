@@ -338,6 +338,142 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertIn('auth-locked', locked.locator('body').get_attribute('class'))
         self.evidence(locked, locked_errors, 'login-390')
 
+    def test_navigation_yields_to_account_and_expired_session(self):
+        page, errors = self.page('/controller/', width=390)
+        page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+        page.locator('#workspaceMenu').click()
+        page.locator('#authAccount button').first.click()
+        page.locator('#currentPassword').wait_for()
+        self.assertEqual(page.locator('#workspaceMenu').get_attribute('aria-expanded'), 'false')
+        page.locator('#accountModal button').last.focus()
+        page.keyboard.press('Tab')
+        self.assertEqual(page.locator(':focus').get_attribute('aria-label'), 'Close account dialog')
+        page.keyboard.press('Shift+Tab')
+        self.assertEqual(page.locator(':focus').inner_text(), 'Sign out others')
+        page.locator('#currentPassword').fill('temporary fixture value')
+        page.keyboard.press('Escape')
+        self.assertFalse(page.locator('#accountModal').is_visible())
+        self.assertEqual(page.locator('#currentPassword').input_value(), '')
+        self.assertEqual(page.locator(':focus').get_attribute('id'), 'workspaceMenu')
+        page.locator('#workspaceMenu').click()
+        page.evaluate("applyAuthUi({authEnabled:true,user:null}); showLogin()")
+        self.assertEqual(page.locator('#workspaceMenu').get_attribute('aria-expanded'), 'false')
+        self.assertFalse(page.locator('#workspaceMain').evaluate('(el) => el.inert'))
+        self.assertFalse(page.locator('nav button[data-page="settings"]').is_visible())
+        page.wait_for_function("document.activeElement.id === 'loginUser'")
+        page.locator('#loginOverlay button').last.focus()
+        page.keyboard.press('Tab')
+        self.assertEqual(page.locator(':focus').get_attribute('id'), 'loginUser')
+        page.locator('#loginPassword').fill('unfinished fixture login')
+        page.evaluate('showLogin()')
+        page.wait_for_timeout(100)
+        self.assertEqual(page.locator(':focus').get_attribute('id'), 'loginPassword')
+        self.assertEqual(page.locator('#loginPassword').input_value(), 'unfinished fixture login')
+        self.assertFalse(errors, errors)
+
+    def test_shared_workspace_code_warning_and_focus_contrast(self):
+        for mode in ('light', 'dark', 'system'):
+            page, errors = self.page('/controller/', theme={'mode': mode})
+            if mode == 'system':
+                page.emulate_media(color_scheme='light')
+            page.wait_for_function(f"document.documentElement.dataset.brandMode === '{mode}'")
+            self.assertEqual(page.evaluate('getComputedStyle(document.body).backgroundColor'),
+                             'rgb(11, 19, 32)' if mode == 'dark' else 'rgb(243, 246, 249)')
+            self.assertEqual(page.evaluate('getComputedStyle(document.body).color'),
+                             'rgb(248, 250, 252)' if mode == 'dark' else 'rgb(30, 41, 59)')
+            page.evaluate("""() => {
+              const panel=document.createElement('section');
+              panel.className='panel'; panel.id='contrastFixture';
+              panel.innerHTML='<code>main</code><span class="rg-update-status rg-update-status--warning">running</span><div data-brand-lockup>RoomGoblin</div><button>Keyboard focus</button>';
+              document.getElementById('workspaceMain').prepend(panel);
+              notify('Fixture status message');
+              panel.querySelector('button').focus();
+            }""")
+            page.keyboard.press('Tab')
+            page.keyboard.press('Shift+Tab')
+            values = page.locator('#contrastFixture').evaluate(r"""panel => {
+              const luminance=color=>{
+                const rgb=color.match(/[\d.]+/g).slice(0,3).map(Number).map(x=>{
+                  x/=255; return x<=.04045?x/12.92:((x+.055)/1.055)**2.4;
+                });
+                return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+              };
+              const ratio=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+              const surface=luminance(getComputedStyle(panel).backgroundColor);
+              const toast=getComputedStyle(document.getElementById('hubToast'));
+              return {
+                code:ratio(luminance(getComputedStyle(panel.querySelector('code')).color),surface),
+                warning:ratio(luminance(getComputedStyle(panel.querySelector('span')).color),surface),
+                focus:ratio(luminance(getComputedStyle(panel.querySelector('button')).outlineColor),surface),
+                brand:ratio(luminance(getComputedStyle(panel.querySelector('[data-brand-lockup]')).color),surface),
+                toast:ratio(luminance(toast.color),luminance(toast.backgroundColor))
+              };
+            }""")
+            self.assertGreaterEqual(values['code'], 4.5, (mode, values))
+            self.assertGreaterEqual(values['warning'], 4.5, (mode, values))
+            self.assertGreaterEqual(values['focus'], 3, (mode, values))
+            self.assertGreaterEqual(values['brand'], 4.5, (mode, values))
+            self.assertGreaterEqual(values['toast'], 4.5, (mode, values))
+            self.assertFalse(errors, errors)
+
+    def test_controller_feature_modules_keep_enrollment_and_update_bindings(self):
+        writes = []
+        enrollment = {'agentId': 'fixture-pc', 'token': "fixture-'opaque-token",
+                      'installerUrl': 'https://hub.example.test/install.ps1',
+                      'preferredOrigin': 'https://hub.example.test',
+                      'requestOrigin': 'http://127.0.0.1:31337',
+                      'expiresAt': '2030-01-01T00:00:00Z',
+                      'installCommand': 'legacy fixture command'}
+        def transport(route, target):
+            if target == '/api/v1/admin/lab-agents/fixture-pc/enrollment':
+                writes.append((target, route.request.post_data_json))
+                route.fulfill(json={'enrollment': enrollment})
+            elif target == '/api/v1/admin/lab-agent-credentials':
+                route.fulfill(json={'credentials': [], 'policy': {}})
+            elif target == '/api/v1/admin/app-updates/settings':
+                if route.request.method == 'PUT':
+                    writes.append((target, route.request.post_data_json))
+                route.fulfill(json={'settings': {'repository': 'fixture/roomgoblin'},
+                                    'currentVersion': 'fixture', 'currentCommit': 'a' * 40})
+            elif target == '/api/v1/admin/app-updates/job':
+                route.fulfill(json={'running': False, 'phase': 'idle', 'revertAvailable': False, 'history': []})
+            elif target == '/api/v1/admin/app-updates/check':
+                route.fulfill(json={'repository': 'fixture/roomgoblin', 'currentVersion': 'fixture',
+                                    'currentCommit': 'a' * 40, 'available': {'shortCommit': 'b' * 12}})
+            else:
+                return False
+            return True
+        page, errors = self.page('/controller/', transport=transport)
+        page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+        page.evaluate("showPage('lab'); revealControllerOutput('labEnrollmentId')")
+        page.locator('#labEnrollmentId').fill('fixture-pc')
+        page.locator('#labEnrollmentTtl').fill('20')
+        page.get_by_role('button', name='Create One-Time Installer', exact=True).click()
+        page.locator('[data-native-enrollment-file]').wait_for()
+        self.assertEqual(writes, [('/api/v1/admin/lab-agents/fixture-pc/enrollment', {'ttlMinutes': 20})])
+        with page.expect_download() as event:
+            page.locator('[data-native-enrollment-file]').click()
+        download = event.value
+        payload = json.loads(Path(download.path()).read_text())
+        self.assertEqual(download.suggested_filename, 'roomgoblin-enrollment-fixture-pc.json')
+        self.assertEqual(payload['enrollmentToken'], enrollment['token'])
+        self.assertEqual(payload['hubUrl'], enrollment['preferredOrigin'])
+        self.assertEqual(payload['fallbackHubUrl'], enrollment['requestOrigin'])
+        self.assertTrue(payload['allowHttpFallback'])
+        self.assertFalse(payload['allowHttp'])
+        self.assertIn("fixture-''opaque-token", page.locator('#labEnrollmentResult textarea').first.input_value())
+        page.evaluate("showPage('system')")
+        page.wait_for_function("!document.getElementById('installAppUpdateBtn').disabled")
+        self.assertEqual(page.locator('#rgUpdateAvailableVersion').inner_text(), 'b' * 12)
+        self.assertTrue(page.locator('#revertAppUpdateBtn').is_disabled())
+        page.locator('#appUpdateInterval').fill('36')
+        page.get_by_role('button', name='Save Settings', exact=True).click()
+        page.wait_for_function("document.getElementById('hubToast').textContent.includes('settings saved')")
+        self.assertEqual(writes[-1][1]['source'], 'main')
+        self.assertEqual(writes[-1][1]['checkIntervalHours'], 36)
+        self.assertEqual(len(writes), 2)
+        self.assertFalse(errors, errors)
+
     def test_managed_disclosure_and_offline_inventory(self):
         page, errors = self.page('/managed-displays/', width=390)
         page.locator('#devices .card').wait_for()

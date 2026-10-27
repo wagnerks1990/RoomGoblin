@@ -461,3 +461,56 @@ The corrected active-worktree full rerun passed: **1036 tests, 1034 passed,
 `npm run check`, Host Python compilation, tracked-shell syntax and diff checks
 also passed. The corrected pushed head still requires fresh CodeQL and all
 required PR gates before merge; the earlier failed check is not a passing result.
+
+
+## Core lifecycle delivery closure (2026-10-27 UTC)
+
+PRs #269-#271 completed all PR/main checks and exact image publication. The normal
+published-main update completed at 04:10:31 UTC with source/Hub image
+`40b88c197b2e4d4dbed448348a9d1a9805949dbf`. Maintenance retained its healthy
+`20f8c501916f34e17bee2c643434e7cce0c919e6` image and container identity.
+Post-update checks verified clean main, both control/media health endpoints,
+canonical SQLite integrity, all eight encrypted secrets, required file/ADB
+permissions, maintenance authorization boundaries, no pending update request,
+and rollback to the prior deployment. The new operational archive passed checksum,
+ZIP CRC and extracted canonical SQLite checks. No physical classroom command or
+production fault injection was performed. See PR #271 for the delivery receipt.
+
+## Shared frontend and navigation (2026-10-27 UTC)
+
+Source baseline: `40b88c197b2e4d4dbed448348a9d1a9805949dbf` plus the active worktree
+patch. The native Linux helper captured tracked and new files from this worktree.
+Final source changes were included in the following runs; later edits recorded
+only these results and review notes.
+
+| Check | Result |
+| --- | --- |
+| `npm run check`, including 16 controller scripts | Passed |
+| Full `npm test` on native Linux | 1,038 tests: 1,036 passed, 0 failed, 2 root-only ownership checks skipped |
+| Host Agent Full Recovery Python suite | 23 passed |
+| Host Python compilation and all tracked shell syntax | Passed |
+| Chromium full browser discovery with locked PDF.js and packaged fonts | 115 passed, 0 failed |
+| Firefox full browser discovery with locked PDF.js and packaged fonts | 115 passed, 0 failed |
+| `git diff --check` | Passed |
+| Default light/dark phone/desktop screenshot review | Corrected mixed theme background, unreadable brand/headings and account field focus spacing |
+
+The browser suites run real bundled HTML/CSS/JS with deterministic API/WebSocket
+fixtures. New coverage exercises account/login focus, session-loss navigation,
+light/dark/system-light body and semantic contrast, enrollment JSON downloads,
+opaque-token quoting, HTTPS/LAN fallback and updater settings bindings. Existing
+navigation, embedded-session, receiver and feature regressions remain enabled.
+
+The first broad browser attempt omitted `npm ci` in its temporary snapshot:
+110 cases passed but the document suite setup failed because PDF.js was absent.
+All five document cases passed after installing the locked graph; final browser
+discovery includes that dependency setup. The first full Node attempt reported
+1,034 passed, 1 failed and 2 skipped. Its startup-recovery timeout passed in
+isolation; a deterministic test then reproduced the polling helper's premature
+expiry on a forward wall-clock correction. Monotonic timing fixed the helper
+without extending its ten-second budget. Final full-suite results are above.
+
+Docker is unavailable in the local Windows/WSL environment. Compose, both runtime
+images, image vulnerability qualification and platform artifacts remain required
+CI checks before merging; local checks do not substitute for those gates.
+Appliance delivery is pending exact-main image publication and will be recorded
+in the PR after the normal updater and post-update integrity checks complete.
