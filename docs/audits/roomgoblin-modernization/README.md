@@ -1,15 +1,15 @@
 # RoomGoblin modernization audit
 
-Status: **Planning/calendar draft ownership locally qualified; checked integration and CI pending**.
+Status: **Planning/calendar draft ownership qualified on checked main; required CI and delivery pending**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
 gates and is deployed/verified at `217588a` (PR #285).
 Resource identity and complete ownership passed all 14 checks and merged at
 `065e32e` (PR #286); exact images published and the appliance update is verified.
-Date/preview fixes passed all 14 checks and merged at `3978311` (PR #287);
-main publication and appliance delivery remain pending.
-Automation save ownership is locally qualified and under required CI in PR #288.
+Date/preview fixes passed all gates and deployed at `3978311` (PR #287), with
+health, backup integrity and rollback verified. Automation save ownership passed
+all 14 checks and merged at `68f36c4` (PR #288); main publication and delivery remain.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime

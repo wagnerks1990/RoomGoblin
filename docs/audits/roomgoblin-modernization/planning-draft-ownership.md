@@ -1,9 +1,11 @@
 # Planning draft ownership
 
 Baseline: checked main `3978311d9a6c0348db5947c974c98079a16814b8`, alpha.85.
-The working branch includes the separately qualified automation save follow-up
-`d2dc8ab` (PR #288); checked-main integration will be recorded before submission.
-Status: implemented and locally qualified; checked-main integration and CI remain.
+The qualified patch is integrated with checked main
+`68f36c47b2d4595bc38e5ca71045bace95f3e805` (PR #288). That main tree matches
+the previously qualified save head `d2dc8ab`; cherry-picking the calendar patch
+required no conflicts or code changes. Status: locally qualified; required CI
+and delivery remain.
 
 ## RG-PLAN-001: Reload responses overwrote newer drafts
 
@@ -68,7 +70,7 @@ active-worktree Linux snapshot passed **1,235 tests, zero failures and two
 root-only ownership skips** (1,237 total), plus **23 Host Recovery tests** and
 Node/controller/Python/Bash checks. Docker/Compose, platform and security checks
 remain with required CI; Docker is unavailable locally. Checked-main integration
-and required CI remain.
+preserved the qualified implementation and tests unchanged.
 No server API, SQLite schema, saved IDs, scheduler dispatch, device command or
 production calendar data is changed by this patch.
 
