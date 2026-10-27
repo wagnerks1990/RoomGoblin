@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Reclaim bounded, recognized presentation render staging at startup after an
+  interrupted conversion. Preserve originals, published assets and unknown or
+  linked entries; interrupted presentations remain explicitly rebuildable.
+
 - Include Veyon reads that initialize or update persistent identity/key metadata
   in Full Recovery admission and drain. Accepted reads finish before snapshot;
   new Veyon views and administrator key/config projections pause until thaw.

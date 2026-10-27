@@ -28,3 +28,18 @@ verify only selected TVs clear, navigate without flashes, and verify preview
 navigation sends nothing until Start. Repeat with Morning Announcements active.
 Use the normal backed-up production updater; rollback follows the normal source
 and image recovery procedure. No data schema or receiver identity changes occur.
+
+## Interrupted conversion recovery
+
+A conversion interrupted by a service restart remains failed/rebuildable unless
+an earlier rendered deck is available. Its original file is retained. At startup,
+RoomGoblin reclaims only recognized private render staging, before new conversion
+work begins. Cleanup is bounded and rejects linked, special, foreign-owned or
+changed entries; unknown uploads are preserved. A warning means some staging
+needs inspection, not that the original presentation was removed. Rebuild uses
+the retained original and the normal atomic publication path.
+
+Tests exercise the actual shutdown deadline, restart cleanup and successful
+rebuild with a controlled rasterizer. They do not qualify rendered slide quality
+or physical presentation playback. See [Application lifecycle](APPLICATION-LIFECYCLE.md)
+for the cleanup budgets and writer-drain contract.

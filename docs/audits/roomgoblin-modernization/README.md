@@ -14,6 +14,8 @@ The read-housekeeping follow-up closes authentication and update-status writes
 during snapshot freeze while retaining read access and authorization checks.
 The Veyon read follow-up includes persistent identity/key reads in the snapshot
 admission and drain barrier, preserving save-before-project stable IDs.
+The presentation recovery follow-up bounds startup reclamation of interrupted
+render staging while preserving originals and rebuild behavior.
 It is not a complete audit of `server.js` or
 all application lifetimes. No other subsystem has entered implementation.
 

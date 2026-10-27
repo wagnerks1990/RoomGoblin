@@ -153,6 +153,17 @@ as a clean stop. The deadline does not close SQLite underneath pending writers.
 Long external operations or conversions can still exceed this budget; their
 individual cancellation/restart semantics remain feature-specific.
 
+Before listeners or conversions start, `src/presentation-staging.js` reclaims
+orphan `render-<UUIDv4>` directories beneath `presentation-upload-tmp`. One pass
+inspects at most 512 root entries, considers 64 render directories and validates
+8192 tree nodes with depth capped at eight. A candidate is fully validated before
+deletion. Root/child symbolic links, hard-linked files, special files, changed
+identities and different owners/filesystems are not deleted. Unknown upload
+files and names remain untouched. Refused or over-budget entries produce a
+generic startup warning rather than blocking the Hub. This is startup-only work;
+it must never run over active conversions. Originals and completed assets live
+outside this staging tree and retain the existing rebuild/backup policy.
+
 ## Scheduled music readiness
 
 `src/music-assistant-readiness.js` checks only whether the encrypted Music
