@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve newer Sports edits during saves and reject delayed scene responses
+  after a draft edit or board-view change.
+
 - Retire Sports feed health immediately when source/team mappings change and
   return current source status after saves and undo.
 

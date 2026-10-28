@@ -47,6 +47,12 @@ It is school-location weather, including on away-game pages. The clock updates
 locally in the configured Sports timezone. Weather keeps its provider attribution
 and stale indicator; weather does not cancel games.
 
+A pending Save Sports remains disabled across edits and tab redraws. Newer draft
+edits survive save completion and use the acknowledged server revision for their
+next save. Preview/send responses belong to the originating board view and draft;
+editing or leaving that view while a scene loads prevents its later dispatch.
+Save failures retain the draft and release retry.
+
 Saved workspace JSON can be loaded under **Sources > Import a Sports workspace**.
 It is validated into a draft for review; Save Sports remains a separate action.
 
