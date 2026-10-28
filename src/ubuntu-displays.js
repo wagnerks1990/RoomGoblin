@@ -151,7 +151,14 @@ class UbuntuDisplays{
     }))}catch{/* An unreadable optional registry must not crash the Hub. */}finally{this.polling=false}
   }
   updateRecord(id,patch){this.storage.setPreference(STORE,this.records().map(d=>d.id===id?{...d,...patch}:d))}
-  event(id,kind,detail){const d=this.record(id);this.updateRecord(id,{history:[...(d.history||[]),{at:new Date().toISOString(),kind,...detail}].slice(-50)});this.audit({kind:"ubuntu-display."+kind,deviceId:id,...detail})}
+  event(id,kind,detail){
+    // The primary save or remote dispatch has already completed. Report a
+    // secondary history failure without turning it into a repeatable operation.
+    let saved=true;
+    try{const d=this.record(id);this.updateRecord(id,{history:[...(d.history||[]),{at:new Date().toISOString(),kind,...detail}].slice(-50)})}catch{saved=false}
+    this.audit({kind:"ubuntu-display."+kind,deviceId:id,...detail,...(!saved?{computerHistorySaved:false}:{})});
+    return saved?{}:{warning:"The request was accepted, but this computer's history could not be saved. Check its current status before taking further action."};
+  }
   async edit(id,input){
     this.check();if(this.busy.has(id)||this.enrolling||this.configuring)throw fail("Computer is busy.",409);
     const d=this.record(id),name=String(input.name||"").trim(),location=String(input.location||"").trim(),notes=String(input.notes||"").trim();
@@ -161,7 +168,7 @@ class UbuntuDisplays{
       if(this.records().some(row=>row.id!==id&&row.address===endpoint.address&&row.port===endpoint.port))throw fail("That address is already assigned.",409);
       const status=await this.rpc({...d,...endpoint},"status");if(status.identity!==id||status.machineId!==d.machineId)throw fail("The new address does not belong to this computer.",409);
     }
-    this.check();this.updateRecord(id,{name,location,notes,...endpoint});this.event(id,"details",{message:"Computer details saved; SSH identity retained."});return {ok:true};
+    this.check();this.updateRecord(id,{name,location,notes,...endpoint});return {ok:true,...this.event(id,"details",{message:"Computer details saved; SSH identity retained."})};
     }finally{this.busy.delete(id)}
   }
   async maintenance(id,input){
@@ -173,7 +180,7 @@ class UbuntuDisplays{
       const at=Date.parse(input.scheduleAt);if(!Number.isFinite(at)||at<Date.now()+30000||at>Date.now()+30*86400000)throw fail("Schedule maintenance between one minute and 30 days from now.");
       if(d.scheduled?.state==="scheduled")throw fail("Cancel the existing scheduled job first.",409);
       const scheduled={id:crypto.randomUUID(),operation:input.operation,at:new Date(at).toISOString(),state:"scheduled"};
-      this.updateRecord(id,{scheduled});this.event(id,"scheduled",{operation:input.operation,scheduledAt:scheduled.at});return {ok:true,scheduled};
+      this.updateRecord(id,{scheduled});return {ok:true,scheduled,...this.event(id,"scheduled",{operation:input.operation,scheduledAt:scheduled.at})};
     }
     if(input.operation!=="check-updates"&&!this.allowDisruption(d))throw fail("Morning Announcements currently own a screen on this computer. Try after announcements finish.",409);
     this.busy.add(id);
@@ -184,10 +191,10 @@ class UbuntuDisplays{
       this.check();
       if(input.operation!=="check-updates"&&!this.allowDisruption(d))throw fail("Morning Announcements started before maintenance dispatch.",409);
       const result=await this.rpc(d,"maintenance",{operation:input.operation,confirm:true,requestId:input.requestId||crypto.randomUUID(),packageDigest:this.packageDigest,packageVersion:require("./version").applicationVersion()});
-      this.event(id,"maintenance",{operation:input.operation,state:"accepted",jobId:result.job?.id||null});return {ok:true,...result};
+      return {ok:true,...result,...this.event(id,"maintenance",{operation:input.operation,state:"accepted",jobId:result.job?.id||null})};
     }finally{this.busy.delete(id)}
   }
-  cancelScheduled(id){this.check();const d=this.record(id);if(d.scheduled?.state!=="scheduled")throw fail("No pending scheduled job.",409);this.updateRecord(id,{scheduled:{...d.scheduled,state:"cancelled"}});this.event(id,"schedule-cancelled",{});return {ok:true}}
+  cancelScheduled(id){this.check();const d=this.record(id);if(d.scheduled?.state!=="scheduled")throw fail("No pending scheduled job.",409);this.updateRecord(id,{scheduled:{...d.scheduled,state:"cancelled"}});return {ok:true,...this.event(id,"schedule-cancelled",{})}}
   async runScheduled(id){
     if(this.closed||!this.canRun())return;const d=this.record(id),job=d.scheduled;
     if(job?.state!=="scheduled"||Date.parse(job.at)>Date.now()||this.busy.has(id))return;
@@ -268,7 +275,7 @@ class UbuntuDisplays{
     if(["activate","reboot","shutdown","rollback"].includes(input.action)&&input.confirm!==true)throw fail("Explicit confirmation is required.");
     if(["restart-screen","screenshot"].includes(input.action)&&!d.config.screens.some(s=>s.receiverId===input.receiverId))throw fail("Unknown screen.");
     this.busy.add(id);
-    try{const result=await this.rpc(d,input.action,{receiverId:input.receiverId,confirm:input.confirm===true});if(input.action!=="screenshot")this.event(id,"command",{action:input.action,state:"accepted"});return {ok:true,...result}}
+    try{const result=await this.rpc(d,input.action,{receiverId:input.receiverId,confirm:input.confirm===true});return {ok:true,...result,...(input.action!=="screenshot"?this.event(id,"command",{action:input.action,state:"accepted"}):{})}}
     finally{this.busy.delete(id)}
   }
   remove(id,confirm){this.check();if(confirm!==true)throw fail("Confirm removal first.");if(this.busy.has(id))throw fail("Computer is busy.",409);this.record(id);this.storage.tx(()=>{this.storage.setPreference(STORE,this.records().filter(d=>d.id!==id));this.storage.deleteSecret(secretName(id))});this.live.delete(id);return {ok:true,message:"Management enrollment removed. Receivers and computer files were preserved."}}

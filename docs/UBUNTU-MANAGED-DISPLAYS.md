@@ -195,6 +195,14 @@ unsaved and visible after an older submission finishes. Closed-dialog failures
 remain on the original computer's card. Preview captures have their own lifetime:
 closing or requesting another capture retires the old result and clears its image.
 
+An accepted command or maintenance job is not reported as failed solely because
+its computer-history append fails. The response retains its outcome and job ID
+with a visible warning; the shared audit owner still receives the event and its
+history-persistence status. Saved metadata, schedules and cancellations use the
+same distinction. Primary persistence, pre-dispatch claims and uncertain SSH
+delivery still fail visibly. No operation is automatically repeated. A failed
+per-computer history entry is not reconstructed or claimed as persisted.
+
 This release supports the dedicated Xorg kiosk on Ubuntu LTS x86-64. Windows,
 ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, recurring automatic OS upgrades and offline content caching are not
 implemented. Browser-level volume follows the existing receiver controls. Each screen can

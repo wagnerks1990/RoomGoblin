@@ -220,6 +220,39 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 self.assertFalse(page.locator('#ubuntu' + kind + 'Submit').is_disabled())
                 self.assertFalse(errors, errors)
 
+    def test_ubuntu_accepted_operations_show_history_warnings_without_repeating_writes(self):
+        warning = "The request was accepted, but this computer's history could not be saved."
+        for action in ('identify', 'details', 'maintenance', 'cancel-schedule'):
+            with self.subTest(action=action):
+                device, writes = self.ubuntu_fixture_computer(), []
+                device['scheduled'] = {'state': 'scheduled', 'operation': 'update-browser', 'at': '2027-01-01T21:00:00Z'}
+                def transport(route, target):
+                    if not target.startswith('/api/v1/ubuntu-displays'):
+                        return False
+                    if route.request.method != 'GET':
+                        writes.append((target, route.request.method))
+                        route.fulfill(json={'ok': True, 'accepted': True, 'warning': warning})
+                    else:
+                        route.fulfill(json={'devices': [device], 'receivers': {}})
+                    return True
+                page, errors = self.page('/managed-displays/', transport=transport)
+                page.clock.install()
+                page.remove_listener('dialog', page._fixture_dialog_handler)
+                page.on('dialog', lambda dialog: dialog.accept())
+                if action in ('maintenance', 'cancel-schedule'):
+                    page.locator('#ubuntuComputers summary', has_text='Software & updates').click()
+                page.locator('#ubuntuComputers [data-action="' + action + '"]').click()
+                if action == 'details':
+                    page.locator('#ubuntuDetailsSubmit').click()
+                elif action == 'maintenance':
+                    page.locator('#ubuntuMaintenanceConfirm').check()
+                    page.locator('#ubuntuMaintenanceSubmit').click()
+                page.wait_for_function("document.querySelector('.ubuntu-card-message').textContent.includes('history could not be saved')")
+                page.clock.fast_forward(16000)
+                self.assertIn(warning, page.locator('.ubuntu-card-message').inner_text())
+                self.assertEqual(len(writes), 1)
+                self.assertFalse(errors, errors)
+
     def test_ubuntu_command_ownership_survives_inventory_redraws(self):
         device, pending = self.ubuntu_fixture_computer(), []
         def transport(route, target):

@@ -9,7 +9,7 @@ function fixture(){
  const ctx=vm.createContext({$,dialogVersion:1,detailsDevice:"one",maintenanceDevice:"one",pendingCommands:new Set(),render(){},computerMessage:(id,text)=>messages.set(id,text),load:async()=>true,
   request(url,method,body){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});calls.push({url,method,body:JSON.parse(JSON.stringify(body)),resolve,reject});return promise}});
  const start=source.includes("function maintenanceDraft(")?source.indexOf("function maintenanceDraft("):source.indexOf('$("ubuntuMaintenanceForm").addEventListener("submit"');
- vm.runInContext(source.slice(start,source.indexOf('$("ubuntuSearch").addEventListener')),ctx);
+ vm.runInContext(source.slice(source.indexOf("function outcomeMessage("),source.indexOf("function computerMessage("))+source.slice(start,source.indexOf('$("ubuntuSearch").addEventListener')),ctx);
  return {ctx,nodes,$,calls,messages,submit:kind=>handlers["ubuntu"+kind+"Form:submit"]({preventDefault(){}})};
 }
 test("Ubuntu metadata completion preserves a newer unsaved dialog draft",async()=>{
@@ -40,4 +40,9 @@ for(const kind of ["Details","Maintenance"])test(`Ubuntu ${kind} rejection prese
 for(const kind of ["Details","Maintenance"])test(`closed Ubuntu ${kind} requests report failures on their original computer`,async()=>{
  const h=fixture(),one=h.submit(kind);h.ctx.dialogVersion++;h.calls[0].reject(Error("delivery unconfirmed"));await one;
  assert.equal(h.messages.get("one"),"delivery unconfirmed");assert.equal(h.ctx.pendingCommands.size,0);assert.equal(h.$("ubuntu"+kind+"Message").textContent,"");
+});
+for(const kind of ["Details","Maintenance"])test(`Ubuntu ${kind} acceptance keeps secondary history warnings visible with newer drafts`,async()=>{
+ const h=fixture(),one=h.submit(kind);if(kind==="Details")h.$("ubuntuDetailName").value="Newer";else h.$("ubuntuOperation").value="update-os";
+ h.calls[0].resolve({ok:true,warning:"Computer history could not be saved."});await one;
+ assert.match(h.messages.get("one"),/history could not be saved/);assert.match(h.$("ubuntu"+kind+"Message").textContent,/history could not be saved/);assert.equal(h.$("ubuntu"+kind).open,true);assert.equal(h.calls.length,1);
 });
