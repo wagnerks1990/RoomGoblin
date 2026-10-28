@@ -4352,19 +4352,32 @@ function toLegacyCommand(command) {
 // -----------------------------------------------------------------------------
 
 let mqttClient = null;
+const pendingMqttPublishes = new Set();
+
+function rejectMqttPublishes(client, reason) {
+  for (const pending of [...pendingMqttPublishes]) {
+    if (pending.client === client) pending.finish(new Error(`${reason}; command delivery is unconfirmed`));
+  }
+}
 
 function mqttPublish(topic, payload, options = {}) {
   return new Promise((resolve, reject) => {
-    if (!mqttClient || !runtime.mqtt.connected) {
+    const client = mqttClient;
+    if (!client || !client.connected || client.disconnecting || !runtime.mqtt.connected) {
       return reject(new Error("MQTT is not connected"));
     }
-
-    mqttClient.publish(
-      topic,
-      typeof payload === "string" ? payload : JSON.stringify(payload),
-      { qos: 0, retain: false, ...options },
-      (err) => (err ? reject(err) : resolve())
-    );
+    const message = typeof payload === "string" ? payload : JSON.stringify(payload);
+    let settled = false;
+    const pending = {client, finish(err) {
+      if (settled) return;
+      settled = true; clearTimeout(timer); pendingMqttPublishes.delete(pending);
+      err ? reject(err) : resolve();
+    }};
+    const timer = setTimeout(() => pending.finish(new Error("MQTT command timed out; delivery is unconfirmed")), 5000);
+    pendingMqttPublishes.add(pending);
+    try {
+      client.publish(topic, message, {qos: 0, retain: false, ...options}, pending.finish);
+    } catch (err) { pending.finish(err); }
   });
 }
 
@@ -4381,22 +4394,24 @@ function connectMqtt() {
     clientId: "classroom-hub-" + crypto.randomBytes(4).toString("hex"),
     reconnectPeriod: 2000,
     connectTimeout: 10000,
+    queueQoSZero: false,
     clean: true
   };
 
   if (MQTT_USERNAME) options.username = MQTT_USERNAME;
   if (MQTT_PASSWORD) options.password = MQTT_PASSWORD;
 
-  mqttClient = mqtt.connect(MQTT_URL, options);
+  const client = mqtt.connect(MQTT_URL, options);
+  mqttClient = client;
 
-  mqttClient.on("connect", () => {
-    if(shutdownRequested)return;
+  client.on("connect", () => {
+    if(shutdownRequested || mqttClient !== client)return;
     runtime.mqtt.connected = true;
     runtime.mqtt.lastError = null;
     runtime.mqtt.lastConnectAt = new Date().toISOString();
     console.log("MQTT connected:", endpointForLog(MQTT_URL));
 
-    mqttClient.subscribe(
+    client.subscribe(
       [
         "classroom/v2/display/+/state",
         "classroom/v2/display/+/presence",
@@ -4412,25 +4427,30 @@ function connectMqtt() {
     audit({ kind: "mqtt.connected", url: runtime.mqtt.url });
   });
 
-  mqttClient.on("reconnect", () => {
-    runtime.mqtt.connected = false;
+  client.on("reconnect", () => {
+    rejectMqttPublishes(client, "MQTT is reconnecting");
+    if (mqttClient === client) runtime.mqtt.connected = false;
   });
 
-  mqttClient.on("close", () => {
-    runtime.mqtt.connected = false;
+  client.on("close", () => {
+    rejectMqttPublishes(client, "MQTT connection closed");
+    if (mqttClient === client) runtime.mqtt.connected = false;
   });
 
-  mqttClient.on("offline", () => {
-    runtime.mqtt.connected = false;
+  client.on("offline", () => {
+    rejectMqttPublishes(client, "MQTT is offline");
+    if (mqttClient === client) runtime.mqtt.connected = false;
   });
 
-  mqttClient.on("error", (err) => {
+  client.on("error", (err) => {
+    rejectMqttPublishes(client, "MQTT connection error");
+    if (mqttClient !== client) return;
     runtime.mqtt.lastError = err.message;
     console.error("MQTT error:", err.message);
   });
 
-  mqttClient.on("message", (topic, payloadBuffer) => {
-    if(shutdownRequested||fullExportFreeze.requested)return;
+  client.on("message", (topic, payloadBuffer) => {
+    if(mqttClient!==client||shutdownRequested||fullExportFreeze.requested)return;
     const payloadText = payloadBuffer.toString();
     let payload;
     try { payload = JSON.parse(payloadText); } catch { payload = {raw:payloadText}; }
@@ -4513,8 +4533,10 @@ function connectMqtt() {
 }
 
 function reconnectMqtt(){
-  if(mqttClient){mqttClient.removeAllListeners();mqttClient.end(true);mqttClient=null}
+  const client=mqttClient;
+  mqttClient=null;
   runtime.mqtt.connected=false;
+  if(client){rejectMqttPublishes(client,"MQTT connection changed");client.removeAllListeners();client.on("error",()=>{});client.end(true)}
   connectMqtt();
 }
 
@@ -4544,10 +4566,14 @@ function goveeTargets(target){
 
 async function goveeUdpTemperature(device,kelvin){
   return new Promise((resolve,reject)=>{
+    const ip=device.ip;
     const sock=dgram.createSocket("udp4");
     const packet=Buffer.from(JSON.stringify({msg:{cmd:"colorwc",data:{color:{r:0,g:0,b:0},colorTemInKelvin:kelvin}}}));
-    const done=(err)=>{try{sock.close()}catch{};err?reject(err):resolve({method:"native-udp",ip:device.ip,port:4003})};
-    sock.send(packet,4003,device.ip,done);
+    let settled=false;
+    const done=(err)=>{if(settled)return;settled=true;clearTimeout(timer);try{sock.close()}catch{};err?reject(err):resolve({method:"native-udp",ip,port:4003})};
+    const timer=setTimeout(()=>done(new Error("Govee UDP command timed out; delivery is unconfirmed")),5000);
+    sock.on("error",done);
+    try{sock.send(packet,4003,ip,done)}catch(err){done(err)}
   });
 }
 

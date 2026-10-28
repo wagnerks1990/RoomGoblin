@@ -1,15 +1,28 @@
 # RoomGoblin modernization audit
 
-Status: **PR #309 delivered; PR #310 merged and publishing; rebuild follow-up and lighting inventory repairs qualified**.
+The Group 9 [command transport repair](lighting-command-transport.md) reproduces
+six UDP/MQTT failures and passes 29 new regressions, including actual library,
+loopback socket and disconnected-handler ownership checks. Final qualification
+passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
+85 focused integration cases pass. The inventory batch remains qualified on
+`b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
+
+Status: **PR #310 delivered; PR #311 merged and publishing; lighting inventory and command transport qualified**.
+
+PR #310 is deployed and verified at `906e0ec`; see its
+[delivery receipt](presentation-session-delivery.md). PR #311 passed all 14
+checks with no unresolved reviews and merged as `fa5bb49`. Its exact images and
+backed-up update are pending. The qualified inventory and transport commits
+will be integrated together as the next focused lighting batch.
 
 The preliminary Group 9 [lighting inventory/feedback repair](lighting-inventory-ownership.md)
 has 15 new Node cases and two new browser cases passing. Final qualification
 passes 1,890 Linux tests, two root-only skips and all 23 Host Recovery tests;
 all 78 workspace cases pass in Chromium and Firefox. Configuration writes,
 backend transport/device ownership and ESPHome
-remain under review. Group 8 delivery is still pending for PR #310 and its rebuild
-follow-up. PR #310 passed all 14 checks with resolved security reviews and merged
-as `906e0ec`; exact images and its backed-up update remain pending.
+remain under review. Group 8 delivery is still pending for the rebuild follow-up.
+PR #310 passed all 14 checks with resolved security reviews and merged as
+`906e0ec`; exact images and its backed-up update are verified.
 
 PR #309 is deployed and verified at `86ce127`; see its
 [delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
