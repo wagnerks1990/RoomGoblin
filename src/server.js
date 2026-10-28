@@ -732,26 +732,34 @@ catch(error){
 function publicMorningAnnouncementsConfig(){
   return {...morningAnnouncements,streamUrl:morningAnnouncements.streamUrl?REDACTED_CONFIG_VALUE:"",streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
 }
-function persistMorningAnnouncements(){
-  if(morningAnnouncements.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,morningAnnouncements.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
-  else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
-  const {streamUrl:_secret,...stored}=morningAnnouncements;
-  const persisted={...stored,streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
-  persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
-  // readJson imports legacy files into SQLite but intentionally leaves their
-  // source in place. Atomically scrub this one after the encrypted write wins.
-  if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
-    const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${process.pid}`;
-    fs.writeFileSync(staged,JSON.stringify(persisted,null,2),{mode:0o600});
-    fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);
-  }
+function persistMorningAnnouncements(next=morningAnnouncements){
+  const {streamUrl:_secret,...stored}=next;
+  const persisted={...stored,streamUrlConfigured:Boolean(next.streamUrl)};
+  const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${crypto.randomUUID()}`;
+  let ownsStaged=false;
+  try{
+    dbStore.tx(()=>{
+      if(next.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,next.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
+      else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
+      persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
+      // SQLite owns configuration and its secret as one transaction. Legacy
+      // files are only redacted migration remnants, never the live authority.
+      if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
+        const fd=fs.openSync(staged,"wx",0o600);ownsStaged=true;
+        try{fs.writeFileSync(fd,JSON.stringify(persisted,null,2))}finally{fs.closeSync(fd)}
+        fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);ownsStaged=false;
+      }
+    });
+  }finally{if(ownsStaged)fs.rmSync(staged,{force:true})}
 }
 // Migrate legacy plaintext/environment configuration into the encrypted store
 // and remove it from the ordinary database-backed JSON object.
 persistMorningAnnouncements();
 const morningAnnouncementsRuntime={live:false,active:false,mode:null,targets:[],lastCheck:null,lastWatcherTick:null,lastLiveAt:null,lastEndedAt:null,lastError:null,probe:null,probeStatus:null,probeDurationMs:null,offlineCount:0,lastAssertAt:0,releaseReconcilePending:false};
 let morningAnnouncementsTimer=null;
+let morningAnnouncementsWatcherGeneration=0;
 let morningAnnouncementsReleaseRetryTimer=null;
+const morningAnnouncementsPriorityTargets=new Set();
 let morningAnnouncementsLifecycle=Promise.resolve();
 let morningAnnouncementsLifecycleBusy=0;
 function serializeMorningAnnouncementsLifecycle(task){
@@ -762,9 +770,17 @@ function serializeMorningAnnouncementsLifecycle(task){
   return run;
 }
 function restartMorningAnnouncementsWatcher(){
+  const generation=++morningAnnouncementsWatcherGeneration;
   if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
+  morningAnnouncementsTimer=null;
   if(shutdownRequested)return;
-  const run=async()=>{try{await serializeMorningAnnouncementsLifecycle(()=>morningAnnouncementsTick())}finally{if(!shutdownRequested){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}};
+  const ownsWatcher=()=>!shutdownRequested&&generation===morningAnnouncementsWatcherGeneration;
+  const run=async()=>{
+    if(!ownsWatcher())return;
+    morningAnnouncementsTimer=null;
+    try{await serializeMorningAnnouncementsLifecycle(()=>ownsWatcher()?morningAnnouncementsTick():undefined)}
+    finally{if(ownsWatcher()){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}
+  };
   morningAnnouncementsTimer=setTimeout(run,2500);morningAnnouncementsTimer.unref();
 }
 const deferredAnnouncementAutomations=new Map();
@@ -889,9 +905,12 @@ function morningAnnouncementsSchoolDay(now=new Date()){
 }
 function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
 function scheduleAnnouncementAudioRetries(targets){
+  // Target-array identity belongs to one takeover, even if its successor uses
+  // the same receiver IDs. Old retries must never control that newer session.
+  const owner=morningAnnouncementsRuntime.targets;
   for(const delay of [1500,4500,10000,20000])setTimeout(()=>{
     if(shutdownRequested||fullExportFreeze.requested)return;
-    if(!morningAnnouncementsRuntime.active)return;
+    if(!morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.targets!==owner)return;
     if(morningAnnouncementsRuntime.mode!=="manual"&&!morningAnnouncementsRuntime.live)return;
     trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
   },delay);
@@ -906,7 +925,7 @@ async function applyMorningAnnouncementVolume(){
   return {active:true,applied:true,targets};
 }
 async function setMorningAnnouncementPriorityTargets(targets,active){
-  for(const id of targets||[]){if(active)backgroundMusicPriorityTargets.add(id);else backgroundMusicPriorityTargets.delete(id)}
+  for(const id of targets||[]){if(active)morningAnnouncementsPriorityTargets.add(id);else morningAnnouncementsPriorityTargets.delete(id)}
   // Morning Announcements are non-optional priority audio even when ordinary
   // automation audio pausing has been disabled in the Background Music policy.
   await backgroundMusicReconcilePriority({force:true});
@@ -1155,6 +1174,7 @@ let morningAnnouncementsTickBusy=false;
 async function morningAnnouncementsTick(){
   if(shutdownRequested||fullExportFreeze.requested)return;
   if(morningAnnouncementsTickBusy)return;morningAnnouncementsTickBusy=true;
+  const config=morningAnnouncements;
   try{
     const now=new Date();morningAnnouncementsRuntime.lastWatcherTick=now.toISOString();
     // Manual announcements are operator-controlled and remain locked until Stop / Clear.
@@ -1165,6 +1185,7 @@ async function morningAnnouncementsTick(){
       return;
     }
     const probe=await probeMorningAnnouncementsLive();
+    if(morningAnnouncements!==config)return;
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();morningAnnouncementsRuntime.probe=probe.probe;morningAnnouncementsRuntime.probeStatus=probe.status||null;morningAnnouncementsRuntime.probeDurationMs=probe.durationMs??null;morningAnnouncementsRuntime.lastError=probe.error||null;
     if(probe.live===true){
       morningAnnouncementsRuntime.live=true;morningAnnouncementsRuntime.offlineCount=0;
@@ -1175,9 +1196,10 @@ async function morningAnnouncementsTick(){
       morningAnnouncementsRuntime.live=false;morningAnnouncementsRuntime.offlineCount++;
       if(morningAnnouncementsRuntime.active&&morningAnnouncementsRuntime.offlineCount>=morningAnnouncements.offlineConfirmations)await releaseMorningAnnouncements("stream-ended");
     }else{
+      morningAnnouncementsRuntime.offlineCount=0;
       morningAnnouncementsRuntime.lastError=probe.error||"HLS probe unavailable";
     }
-  }catch(err){morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}
+  }catch(err){if(morningAnnouncements===config){morningAnnouncementsRuntime.offlineCount=0;morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}}
   finally{morningAnnouncementsTickBusy=false}
 }
 function calendarRuleForDate(date=new Date()){
@@ -5491,15 +5513,18 @@ app.get("/api/v1/automations/morning-announcements",requireClassroomRead,(_req,r
 app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),async(req,res)=>{
   try{
     const applyLiveVolume=Object.hasOwn(req.body||{},"volumePercent");
-    morningAnnouncements=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);persistMorningAnnouncements();restartMorningAnnouncementsWatcher();
+    const next=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);
+    persistMorningAnnouncements(next);morningAnnouncements=next;restartMorningAnnouncementsWatcher();
     const liveVolume=applyLiveVolume?await serializeMorningAnnouncementsLifecycle(()=>applyMorningAnnouncementVolume()):null;
     res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime),...(liveVolume?{liveVolume}:{})});
   }
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 app.post("/api/v1/automations/morning-announcements/check",requireControl,async(_req,res)=>{
+  const config=morningAnnouncements;
   try{
     const probe=await probeMorningAnnouncementsLive();
+    if(morningAnnouncements!==config)return res.status(409).json({ok:false,error:"Morning Announcement settings changed. Check again."});
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
     morningAnnouncementsRuntime.probe=probe.probe||null;
     morningAnnouncementsRuntime.probeStatus=probe.status||null;
@@ -5511,11 +5536,12 @@ app.post("/api/v1/automations/morning-announcements/check",requireControl,async(
       morningAnnouncementsRuntime.lastLiveAt=morningAnnouncementsRuntime.lastCheck;
     }else if(probe.live===false){
       morningAnnouncementsRuntime.live=false;
-      if(morningAnnouncementsRuntime.active)morningAnnouncementsRuntime.offlineCount++;
-      else morningAnnouncementsRuntime.offlineCount=0;
-    }
+      // Diagnostic requests must not accelerate the periodic release threshold.
+    }else morningAnnouncementsRuntime.offlineCount=0;
     res.json(publicProjection({ok:true,...probe,config:publicMorningAnnouncementsConfig(),runtime:morningAnnouncementsRuntime}));
   }catch(err){
+    if(morningAnnouncements!==config)return res.status(409).json({ok:false,error:"Morning Announcement settings changed. Check again."});
+    morningAnnouncementsRuntime.offlineCount=0;
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
     morningAnnouncementsRuntime.lastError=err.message;
     res.status(500).json({ok:false,error:err.message,runtime:morningAnnouncementsRuntime});
@@ -6663,13 +6689,14 @@ function backgroundMusicWindowKey(cfg,now=new Date()){
 function backgroundMusicPriorityState(){
   // Track all audible scenes so changing a receiver's scope takes effect without
   // replaying its content. Only room receivers own ordinary classroom priority.
-  const mandatory=morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending;
-  const targets=[],independentTargets=[];
+  // Mandatory announcement holds survive media-ended messages and pending
+  // release reconciliation. Ordinary restored media retains its own hold.
+  const targets=new Set(morningAnnouncementsPriorityTargets),independentTargets=[];
   for(const id of backgroundMusicPriorityTargets){
-    if(displaySharesRoomAudio(id)||(mandatory&&(morningAnnouncementsRuntime.targets||[]).includes(id))||(manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id)))targets.push(id);
+    if(displaySharesRoomAudio(id)||morningAnnouncementsPriorityTargets.has(id)||(manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id)))targets.add(id);
     else independentTargets.push(id);
   }
-  return {active:targets.length>0,targets,independentTargets};
+  return {active:targets.size>0,targets:[...targets],independentTargets};
 }
 let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null};
 let backgroundMusicProbePending=null;
@@ -6726,7 +6753,7 @@ async function backgroundMusicStop(reason="manual",playerIdOverride=null){
 }
 function backgroundMusicPriorityBlocked(){
   const cfg=backgroundMusicSchedule();
-  return backgroundMusicPriorityState().active&&(cfg.pauseForPriorityAudio||morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.releaseReconcilePending||manualMediaPriorityRuntime.active);
+  return morningAnnouncementsPriorityTargets.size>0||(backgroundMusicPriorityState().active&&(cfg.pauseForPriorityAudio||manualMediaPriorityRuntime.active));
 }
 async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name="",mediaType="unknown",reason="manual",recover=false}={}){
   if(backgroundMusicStartBusy)throw Error("A music change is already in progress");
@@ -6827,7 +6854,7 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   if(command.type==="display.audio.control"){
     for(const id of resolveDisplayTargets(command.target)){
       if(displayAudio.describe(persistentState.displays[id]).audible)backgroundMusicPriorityTargets.add(id);
-      else if(!morningAnnouncementsRuntime.active&&!manualMediaPriorityRuntime.targets.has(id))backgroundMusicPriorityTargets.delete(id);
+      else if(!manualMediaPriorityRuntime.targets.has(id))backgroundMusicPriorityTargets.delete(id);
     }
     trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
     return;
@@ -6849,9 +6876,8 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
   else if(type.startsWith("voice.")||type.startsWith("sfx.")){startsAudio=true}
   else if(["display.clear","display.image","display.pdf","display.document","display.presentation"].includes(type)){replacesAudio=true}
   if(replacesAudio)for(const id of targets){
-    const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);
     const manualOwnsTarget=manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id);
-    if(!announcementOwnsTarget&&!manualOwnsTarget)backgroundMusicPriorityTargets.delete(id);
+    if(!manualOwnsTarget)backgroundMusicPriorityTargets.delete(id);
   }
   if(startsAudio)for(const id of targets)backgroundMusicPriorityTargets.add(id);
   trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});

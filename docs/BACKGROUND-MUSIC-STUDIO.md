@@ -80,6 +80,11 @@ or `independent`; omitted fields on older editor saves preserve the saved value.
 No migration or restart is needed for configuration changes on a supporting
 release. Older releases ignore this field and restore shared audio behavior.
 
+Announcement holds are tracked separately from ordinary audible content.
+Finishing an announcement cannot discard a restored video's priority, and an
+ordinary media-ended event cannot end the mandatory announcement hold. Failed
+release reconciliation retains that hold for independent hallway targets too.
+
 ## Recovery model
 
 An accepted play command is **starting**, not proof of playback. The Hub observes

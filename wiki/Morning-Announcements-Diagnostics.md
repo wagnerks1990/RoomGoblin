@@ -13,6 +13,27 @@ PLAYING + sustained confirmed OFFLINE -> RELEASE once
 
 The current deployment target is a 15-second probe cadence and six consecutive confirmed-offline results, approximately 90 seconds, before release.
 
+Unknown results and probe errors reset the consecutive-offline streak. Manual
+**Check** requests show diagnostics but cannot advance the automatic release
+threshold; live or unknown diagnostic evidence resets the streak. If settings
+change while a check is pending, its obsolete response is rejected and you can
+check again. Saving settings retains one periodic watcher even when a previous
+probe or lifecycle operation is still pending.
+
+Settings are committed with the encrypted stream URL before the watcher or live
+volume control uses them. A storage failure preserves the previous active and
+saved settings; correct the error and retry the save. Clearing a stream URL uses
+the same transaction. A successful save does not by itself confirm receiver
+playback or a successful live volume command.
+
+Starting a replacement announcement retires the previous session's delayed
+audio retries, including when both sessions use the same displays.
+
+Announcement audio priority remains held through failed display reconciliation,
+including independent hallway displays. Once recovery succeeds, restored audible
+video or an existing manual takeover retains its own music-priority policy.
+A media-ended notification cannot release an active announcement hold.
+
 ## Receiver diagnostics
 
 On a display receiver:

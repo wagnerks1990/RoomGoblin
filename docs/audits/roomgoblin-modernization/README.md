@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Planning runtime fixes merged; preview-date fixes qualified on checked main**.
+Status: **Planning fixes awaiting delivery; announcement lifecycle and audio-ownership fixes locally qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -14,8 +14,10 @@ with health, backup integrity and rollback verified. Calendar draft ownership
 passed all 14 checks and deployed at `dd23fb4` (PR #289), with health, backup
 integrity and rollback verified. Class-save and Calendar Today changes passed
 all 14 checks and deployed at `955195a` (PR #290), with health, backup integrity
-and rollback verified. Planning runtime fixes passed all 14 checks and merged
-at `407be9e` (PR #291); main image publication and delivery remain pending.
+and rollback verified. Planning runtime fixes passed all gates and deployed at
+`407be9e` (PR #291), with health, backup integrity and rollback verified.
+Preview dates passed all 14 checks and merged at `fe8b68a` (PR #292); exact image
+publication and appliance delivery remain pending.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -77,6 +79,11 @@ Queued subsystem units below have not been marked audited.
 - [Class offsets, recovery and timer dates](planning-class-boundaries.md)
 - [Timetable occurrence identity and class references](planning-block-identities.md)
 - [Planning preview dispatch dates](planning-preview-dates.md)
+- [Announcement monitor ownership and offline evidence](announcement-monitoring.md)
+- [Announcement configuration transaction](announcement-configuration.md)
+- [Announcement audio retry ownership](announcement-audio-retries.md)
+- [Announcement and media priority ownership](announcement-priority.md)
+- [Announcement probe destination security review](announcement-probe-security.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)

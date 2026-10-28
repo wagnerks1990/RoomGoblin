@@ -15,7 +15,7 @@ function fixture(){
     devices:{room:{},hall:{audioScope:"independent"}},
     sportsRuntime:{service:{read:()=>({boards:[{id:"sports"}]})}},
     resolveDisplayTargets:target=>Array.isArray(target)?target:[target],
-    backgroundMusicPriorityTargets:new Set(),backgroundMusicRuntime:r,
+    backgroundMusicPriorityTargets:new Set(),morningAnnouncementsPriorityTargets:new Set(),backgroundMusicRuntime:r,
     morningAnnouncementsRuntime:{active:false,releaseReconcilePending:false,targets:[]},
     manualMediaPriorityRuntime:{active:false,targets:new Set(),pausedPlayers:new Set()},
     backgroundMusicSchedule:()=>({pauseForPriorityAudio:true,playerId:"speaker"}),
