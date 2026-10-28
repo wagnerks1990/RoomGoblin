@@ -707,6 +707,28 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+General Music Assistant status retains the connection generation captured with
+its settings. Recheck before legacy player-list fallback and before success/error
+projection; retired reads return 409 and require refresh. Do not pair old
+configuration or players with a replacement connection's transport metadata.
+
+Each Background Music start failure advances recovery once. Its current-generation
+outer catch owns failed/requested accounting; an inner failed transition must not
+clear the confirmation wait and accidentally count the same command twice.
+Preserve uncertain-execution observation and retired-session isolation.
+
+Player probe cache/pending work belongs to its player and Music Assistant
+connection generation. Only the latest-started probe publishes the shared cache;
+retirement forbids a legacy lookup retry across connection identities. Status
+must recheck session/player/connection after awaiting telemetry and omit stale
+readings, retaining current errors without attaching another output's failure.
+
+Serialize accepted Background Music schedule writes and return the entire
+queued HTTP handler promise through Stop, persistence and reconciliation.
+Normalize each write against the preceding committed configuration. Only the
+still-current generation acquired by a successful schedule Stop may clear its
+schedule key or release manual Stop; preserve newer manual playback intent.
+
 Music Assistant connection metadata and its optional encrypted token are one
 SQLite transaction. Reset the persistent connection only after commit; failed
 saves leave the prior identity active. Omitted or blank tokens retain the stored

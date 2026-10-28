@@ -42,7 +42,8 @@ Firefox, and all 70 broader workspace tests pass in each browser. The full nativ
 suite was repeated after that correction: 1,409 passed, zero failed and two
 root-only ownership skips (1,411 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact images
-and backed-up appliance delivery remain pending. The mobile panel was visually
+and combined PR #299/#300 appliance delivery passed; see the
+[receipt](announcement-active-targets.md#verified-combined-appliance-delivery). The mobile panel was visually
 inspected; fields and draft feedback remain readable. Existing saved-volume and
 no-player-reload checks pass.
 

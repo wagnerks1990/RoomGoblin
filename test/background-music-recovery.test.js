@@ -88,7 +88,7 @@ test("real Background Music routes share explicit read/write quotas and save a c
  let authorized=0,ticks=0;const saved=[],audits=[],favorites=[];
  const prior={enabled:false,playerId:"old-output",favoriteId:"station"};
  const ctx=vm.createContext({app,rateLimit,requireControl:(_q,_r,next)=>{authorized++;next()},
-  backgroundMusicRuntime:{activePlayerId:"old-output",playing:true},backgroundMusicRecovery:{snapshot:()=>({})},
+  maApiGeneration:0,backgroundMusicRuntime:{sessionGeneration:0,activePlayerId:"old-output",playing:true},backgroundMusicRecovery:{snapshot:()=>({})},
   backgroundMusicSchedule:()=>prior,normalizeBackgroundMusicSchedule:body=>body,
   backgroundMusicActualPlayerState:async()=>({found:true,playing:false}),backgroundMusicFavorites:()=>favorites,
   backgroundMusicPriorityState:()=>({}),backgroundMusicPlayerProbe:{},

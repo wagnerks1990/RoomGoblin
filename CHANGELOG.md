@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- Retire Music Assistant connection-status reads when settings change, requiring
+  refresh instead of returning old outputs or retrying against a new connection.
+
+- Keep Live Watch manual-check progress and results from being replaced by
+  obsolete polls, and retain one pending check through capability refresh.
+
+- Count a rejected Background Music start once when calculating recovery backoff,
+  retaining the observation wait for uncertain playback responses.
+
+- Keep Background Music player probes with their connection and current session;
+  discard stale telemetry and unrelated output errors in status responses.
+
+- Preserve Background Music schedule-save order and newer manual playback
+  intent while an earlier save waits for its output to stop.
+
 - Save Music Assistant connection settings and its optional encrypted token
   atomically, retaining the prior connection when persistence fails.
 
