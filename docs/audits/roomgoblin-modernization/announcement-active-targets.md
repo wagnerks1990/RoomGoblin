@@ -47,5 +47,7 @@ The supported native active-worktree suite passes 1,421 tests, zero failures and
 two root-only ownership skips (1,423 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact images
 and backed-up appliance delivery remain pending. Continuing receivers' delayed
-audio retries after an added target, and other Background Music runtime and
-transport ownership paths, remain separate review.
+audio retries are covered by the [content-ownership follow-up](announcement-audio-content.md).
+That follow-up refines audio retirement to changed receiver content, preserving
+needed retries for unchanged continuing receivers. Background Music session
+reconciliation remains separate review.

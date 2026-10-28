@@ -110,6 +110,7 @@ Queued subsystem units below have not been marked audited.
 - [Announcement monitor ownership and offline evidence](announcement-monitoring.md)
 - [Announcement configuration transaction](announcement-configuration.md)
 - [Announcement audio retry ownership](announcement-audio-retries.md)
+- [Announcement audio content ownership](announcement-audio-content.md)
 - [Announcement and media priority ownership](announcement-priority.md)
 - [Announcement probe destination security review](announcement-probe-security.md)
 - [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)

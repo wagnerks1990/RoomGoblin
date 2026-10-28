@@ -19,8 +19,10 @@ active. Stopping and starting another announcement before the old timeout fired
 therefore sent a command to the old targets using the new session's volume.
 The same issue existed when the successor reused the original receiver IDs.
 
-Each retry now captures the runtime target-array identity created by its
-takeover. Replacement retires that identity, so its callbacks become inert.
+This initial fix captured the runtime target-array identity created by its
+takeover. The later [content-ownership follow-up](announcement-audio-content.md)
+uses per-receiver content IDs so unchanged playback retains needed retries when
+another receiver is added; changed content still retires its earlier callbacks.
 The current session keeps the four existing bounded retry delays, latest saved
 volume, manual-mode behavior and shutdown/export-freeze guards. No receiver is
 reloaded and no persistent identity changes.
@@ -34,7 +36,8 @@ announcement stability, hallway priority and Background Music recovery.
 The native active-worktree snapshot passes 1,330 tests, zero failures and two
 root-only ownership skips (1,332 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Required CI, checked integration, exact
-images and normal backed-up delivery remain pending. No physical audio behavior
+images and normal backed-up delivery completed in PR #293; see the
+[delivery receipt](announcement-priority.md#verified-combined-delivery). No physical audio behavior
 was exercised.
 
 The broader release/priority reconciliation review remains open; this change
