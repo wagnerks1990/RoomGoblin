@@ -903,8 +903,21 @@ dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag')};
 dz.ondragleave=()=>dz.classList.remove('drag');
 dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag');if(e.dataTransfer.files[0])uploadFile(e.dataTransfer.files[0])};
 
+let mediaLibraryGeneration=0;
+window.showLibraryMedia=async file=>{
+ try{
+  const target=targetArg(),label=file.originalName||file.storedName||'Uploaded media';
+  const body={target,fit:el('mediaFit').value,opacity:Number(el('mediaOpacity').value),autoplay:el('videoAutoplay').checked,loop:el('videoLoop').checked,muted:el('videoMuted').checked,localDirect:el('mediaLocalDirect').checked};
+  el('mediaUrl').value=file.url;
+    const j=await api(`/api/v1/media/${encodeURIComponent(file.storedName)}/display`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    setResultSummary(`✓ ${label} sent to ${Array.isArray(target)?target.join(', '):target}`,true,j);
+  }catch(e){setResultSummary('✕ '+e.message,false,{error:e.message})}
+};
 window.loadMedia=async()=>{
-  const j=await api('/api/v1/media'),w=el('mediaGrid');w.innerHTML='';
+ const generation=++mediaLibraryGeneration;
+ try{
+  const j=await api('/api/v1/media');if(generation!==mediaLibraryGeneration)return;
+  const w=el('mediaGrid');w.innerHTML='';
   for(const f of j.files||[]){
     const card=document.createElement('div');card.className='mediaCard';
     const thumb=document.createElement('div');thumb.className='mediaThumb';
@@ -917,9 +930,10 @@ window.loadMedia=async()=>{
     const m=document.createElement('div');m.className='mediaMeta';m.textContent=`${f.type} • ${(f.size/1024/1024).toFixed(1)} MB`;
     const tb=document.createElement('div');tb.className='toolbar';
     const use=document.createElement('button');use.textContent='Select';use.onclick=()=>{el('mediaUrl').value=f.url;setResultSummary(`Selected ${label}`,true,f)};
-    const show=document.createElement('button');show.textContent=f.type==='video'?'Play':'Show';show.onclick=()=>{el('mediaUrl').value=f.url;sendMedia(f.type==='video'?'display.video':'display.image')};
+    const show=document.createElement('button');show.textContent=f.type==='video'?'Play':'Show';show.onclick=()=>showLibraryMedia(f);
     tb.append(use,show);body.append(n,m,tb);card.append(thumb,body);w.appendChild(card);
   }
+ }catch(e){if(generation===mediaLibraryGeneration){el('mediaGrid').textContent='Unable to load media library: '+e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}}
 };
 
 window.loadScenes=async()=>{

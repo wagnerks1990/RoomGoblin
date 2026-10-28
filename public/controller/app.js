@@ -564,11 +564,22 @@ presentationUploadForm.addEventListener('submit',async e=>{
 });
 
 function fmtBytes(n){n=Number(n||0);if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(1)+' GB'}
+let mediaLibraryRequest=null,mediaLibraryPending=false,mediaLibraryRenderGeneration=0;
+function fetchMediaLibrary(){
+ const request=api('/api/v1/media').then(j=>{
+  if(mediaLibraryRequest!==request)return mediaLibraryRequest;
+  S.mediaFiles=j.files||[];mediaLibraryPending=false;return S.mediaFiles;
+ },error=>{
+  if(mediaLibraryRequest!==request)return mediaLibraryRequest;
+  mediaLibraryPending=false;throw error;
+ });
+ mediaLibraryRequest=request;mediaLibraryPending=true;return request;
+}
 async function loadMedia(){
+ const generation=++mediaLibraryRenderGeneration;
  try{
-  const j=await api('/api/v1/media');
-  S.mediaFiles=j.files||[];
-  mediaRows.innerHTML=(j.files||[]).map(f=>{
+  const files=await fetchMediaLibrary();if(generation!==mediaLibraryRenderGeneration)return;
+  mediaRows.innerHTML=files.map(f=>{
    const conv=f.conversionStatus?`${esc(f.conversionStatus)}${f.conversionError?`<br><span class="bad">${esc(f.conversionError)}</span>`:''}`:'—';
    const showable=['image','video','pdf','presentation','document'].includes(f.type);
    return `<tr><td style="text-align:left"><b>${esc(f.originalName||f.storedName)}</b><br><span class="muted">${esc(f.storedName)}</span></td>
@@ -580,7 +591,7 @@ async function loadMedia(){
      <button class="danger" onclick="deleteMedia(${inlineJsArg(encodeURIComponent(f.storedName))},${inlineJsArg(f.originalName||f.storedName)})">Delete</button>
    </div></td></tr>`;
   }).join('')||'<tr><td colspan="6">No uploaded files.</td></tr>';
- }catch(e){mediaRows.innerHTML=`<tr><td colspan="6" class="bad">${esc(e.message)}</td></tr>`}
+ }catch(e){if(generation===mediaLibraryRenderGeneration)mediaRows.innerHTML=`<tr><td colspan="6" class="bad">${esc(e.message)}</td></tr>`}
 }
 async function loadLabAgentCredentials(){try{const j=await api('/api/v1/admin/lab-agent-credentials');labLegacySharedToken.checked=j.policy?.legacySharedTokenAllowed!==false;const active=(j.credentials||[]).filter(x=>!x.revokedAt);labAgentCredentials.innerHTML=`<table><thead><tr><th>Computer</th><th>Label</th><th>Created</th><th>Last Used</th><th></th></tr></thead><tbody>${active.map(x=>`<tr><td><code>${esc(x.agentId)}</code></td><td>${esc(x.label||'Windows classroom agent')}</td><td>${esc(new Date(x.createdAt).toLocaleString())}</td><td>${x.lastUsedAt?esc(new Date(x.lastUsedAt).toLocaleString()):'Never'}</td><td><button class="danger" onclick="revokeLabAgentCredential(${inlineJsArg(x.id)})">Revoke</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">No individually enrolled Windows agents.</td></tr>'}</tbody></table>`}catch(e){labAgentCredentials.innerHTML=`<div class="muted">Agent enrollment requires an administrator: ${esc(e.message)}</div>`}}
 async function revokeLabAgentCredential(id){if(!confirm('Revoke this computer credential and disconnect its agent?'))return;try{await api(`/api/v1/admin/lab-agent-credentials/${encodeURIComponent(id)}`,{method:'DELETE'});await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
@@ -1328,13 +1339,13 @@ function moveAutomationStep(i,d){
   renderAutomationSteps();
 }
 
-async function ensureAutomationMediaLibrary(){
-  if(S.mediaFiles?.length)return S.mediaFiles;
+async function ensureAutomationMediaLibrary({refresh=false}={}){
+  if(!refresh&&!mediaLibraryPending&&S.mediaFiles?.length)return S.mediaFiles;
   try{
-    const j=await api('/api/v1/media');
-    S.mediaFiles=j.files||[];
+    await (!refresh&&mediaLibraryPending?mediaLibraryRequest:fetchMediaLibrary());
   }catch(e){
     console.warn('Unable to load media library for scheduler:',e.message);
+    if(refresh)notify('Unable to refresh media library: '+e.message,'error');
   }
   return S.mediaFiles||[];
 }
@@ -1465,7 +1476,7 @@ function stepPayloadHtml(step,i){
     </label>
     <div class="toolbar" style="margin-top:8px">
       <button type="button" onclick="previewAutomationMedia(${i})">Preview Selected Media</button>
-      <button type="button" onclick="ensureAutomationMediaLibrary().then(()=>{refreshAutomationMediaPickers()})">Refresh Media List</button>
+      <button type="button" onclick="ensureAutomationMediaLibrary({refresh:true}).then(()=>{refreshAutomationMediaPickers()})">Refresh Media List</button>
     </div>
     <div class="muted">Choose an image, video, PDF, presentation, or document already uploaded to RoomGoblin. You no longer need the internal stored filename.</div>`;
   }
@@ -2104,14 +2115,14 @@ async function checkMorningWatch(){
 
 async function loadSchedules(){
   try{
-    const [a,m,g,cal,cls]=await Promise.all([
+    const [a,,g,cal,cls]=await Promise.all([
       api('/api/v1/automations'),
-      api('/api/v1/media'),
+      fetchMediaLibrary(),
       api('/api/v1/govee'),
       api('/api/v1/automations/calendar'),
       api('/api/v1/class-schedules')
     ]);
-    S.automations=a.events||[];S.mediaFiles=m.files||[];S.govee=g;S.scheduler=a.scheduler||null;S.classes=cls.classes||[];S.classStatus={schoolCycle:cls.schoolCycle||null,calendarRule:cls.calendarRule||null,activeClass:cls.activeClass||null,nextClass:cls.nextClass||null};populateAutomationClassSelect(selectedAutomationClassIds());
+    S.automations=a.events||[];S.govee=g;S.scheduler=a.scheduler||null;S.classes=cls.classes||[];S.classStatus={schoolCycle:cls.schoolCycle||null,calendarRule:cls.calendarRule||null,activeClass:cls.activeClass||null,nextClass:cls.nextClass||null};populateAutomationClassSelect(selectedAutomationClassIds());
     S.schedulerCalendar=cal.calendar||S.schedulerCalendar;S.scheduleProfile=cal.scheduleProfile||S.scheduleProfile;S.districtNoSchoolDates=cal.districtNoSchoolDates||[];
     renderSchedulerClock();renderSchedulerCalendar();renderAutomationList();loadMorningWatch();
     if(!autoId.value)newAutomation();

@@ -6,6 +6,12 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Library cards use the canonical media display route for document readiness and
+viewer selection. Preserve target arrays and explicit image/video options.
+Controller media/scheduler/picker requests share `fetchMediaLibrary` ownership;
+do not publish stale cache snapshots after unrelated schedule requests settle.
+Keep current failures visible and explicit picker refresh independent of cache.
+
 Media registration/conversion/deletion/replay share `withMediaFileWrite`.
 Commit record changes into the latest library only after persistence succeeds.
 Resumable discard stays inside its session owner and acquires the file owner;
