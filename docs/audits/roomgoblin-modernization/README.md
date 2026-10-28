@@ -1,5 +1,17 @@
 # RoomGoblin modernization audit
 
+PR #320 is [deployed and verified](windows-native-bounds-delivery.md) at
+`d3a3937`. PR #321 passed all 14 checks and merged as `395cb88`; exact publication
+precedes its backed-up update. The [legacy-task admission repair](windows-legacy-task-state.md)
+reproduces two failures and passes 24 state/migration cases, all 36 lifecycle
+cases, a locked bootstrap build with zero warnings/errors, 2,169 Linux tests
+with two root-only skips, and all 23 Host Recovery cases. Fresh-enrollment
+replacement of an existing configuration is reproduced for a separate repair.
+Ubuntu/Android managed-display review and roadmap groups 11-17 remain open.
+
+The status above is current. Entries below retain earlier qualification and
+delivery history, including their then-pending descriptions.
+
 PR #319 is [deployed and verified](windows-agent-delivery.md) at `0f24c99` after
 the planner's full reconciliation. PR #320 passed all 14 checks and merged as
 `d3a3937`; all main gates and exact image publication passed, and its backed-up

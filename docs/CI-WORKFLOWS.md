@@ -38,6 +38,12 @@ processes run only inside the temporary fixture. No service is installed or
 controlled by these tests. Eight included install-owner cases use temporary
 package/config files and simulated service/task operations to cover legacy
 admission failures, fresh-config cleanup and unsafe-stop rollback refusal.
+`python tools/test-native-legacy-state.py` adds 24 Windows cases for
+registered enabled/missing state, lookup errors, a real 30-second admission
+deadline, COM object release and installer rollback/disable decisions. COM and
+service/task mutations use fixtures. One read-only probe checks a unique absent
+task through the real Windows COM interface; no task is created, enabled or run.
+That probe is skipped on non-Windows hosts; the remaining 23 cases still run.
 
 ## Conservative documentation-only PR selection
 

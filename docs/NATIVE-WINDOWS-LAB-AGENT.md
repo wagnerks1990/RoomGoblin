@@ -45,6 +45,12 @@ Legacy-task shutdown/disable and install-directory preparation are inside the
 installer's failure handler. Failures before native-service work can recover
 the legacy task and clean a newly created config without stopping an untouched
 native service. Existing enrolled configuration remains preserved.
+Migration reads the registered legacy task's enabled property before changing
+either runtime. Only an explicit missing-task lookup establishes absence;
+access, connection and property-read errors fail admission. A 30-second wait
+bounds this read-only COM query; Windows exposes no cancellation for the call,
+so a late background read cannot apply changes and ends when the bootstrap exits.
+If disabling the legacy task is rejected, native installation does not begin.
 
 The native package contains four self-contained `win-x64` executables:
 
@@ -177,7 +183,10 @@ The PowerShell scheduled-task agent remains in the repository during migration. 
 6. starts the native service;
 7. waits for a fresh native health report.
 
-If the native service fails acceptance, the bootstrap removes it, re-enables the legacy task, and starts the legacy agent again. `uninstall` similarly restores the legacy task when available.
+If the native service fails acceptance, the bootstrap removes it and restores
+the legacy task only when that task was enabled before this installation.
+An already-disabled task remains disabled. Explicit `uninstall` retains its
+documented behavior of restoring the legacy task when available.
 
 Do not remove the legacy package until the native rollout and upgrade path have been accepted across the intended fleet.
 
