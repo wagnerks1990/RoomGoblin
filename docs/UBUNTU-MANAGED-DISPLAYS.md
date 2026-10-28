@@ -186,6 +186,11 @@ The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
 
+Installation and repair completion update only their owned readiness state.
+Cancellation and history saved while the installer is pending remain intact on
+both success and failure. A failed completion save remains visible; it never
+repeats the installer or restores an older scheduled job.
+
 The inventory has one shared refresh owner. A write invalidates older reads and
 queues a fresh read after outstanding writes settle; uncertain writes are not
 automatically repeated. Assignment editing uses the refreshed configuration.

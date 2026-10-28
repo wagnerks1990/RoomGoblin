@@ -1,17 +1,17 @@
 # RoomGoblin modernization audit
 
-PR #323 is [deployed and verified](windows-enrollment-identity-delivery.md) at
-`7acaa7a`; PR #322's [delivery](windows-legacy-task-state-delivery.md) and PR #321's
-[delivery](windows-native-lifecycle-delivery.md) are also verified. PR #324 passed
-all 14 checks and merged as `fb1d1e6`; exact publication and delivery follow.
-The separate [history outcome repair](ubuntu-history-outcomes.md) is qualified
-with 2,210 Linux passes, two root-only skips, all 23 Host Recovery cases and
-103 workspace cases in each browser. The [Android enrollment repair](android-enrollment-ownership.md)
-passes ten source cases and three browser cases. Combined qualification passes
-2,220 Linux tests with two root-only skips, all 23 Host Recovery cases and 106
-workspace cases in each browser after the documented fixture repairs.
-Ubuntu wizard probe/input ownership and the remaining Android inventory, edit
-and preview review are next within Group 10. Later roadmap work remains.
+PR #324 is [deployed and verified](ubuntu-reliability-delivery.md) at `fb1d1e6`.
+PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
+[Android enrollment](android-enrollment-ownership.md) repairs and is running
+required checks after 2,220 Linux passes, two root-only skips, 23 Host Recovery
+passes and 106 workspace passes in each browser. The separate
+[Ubuntu repair completion fix](ubuntu-repair-record-ownership.md) passes all six
+regression cases, 2,226 Linux tests with two root-only skips and all 23 Host
+Recovery cases. Ubuntu wizard ownership is reproduced for the next repair.
+Android inventory, editing and preview review and later roadmap work remain.
+
+Earlier status entries below are historical; their pending delivery statements
+are superseded by the current status and linked delivery receipts above.
 
 PR #322 carries the qualified legacy-task repair and is running required CI.
 The separate [enrollment identity repair](windows-enrollment-identity.md) fails

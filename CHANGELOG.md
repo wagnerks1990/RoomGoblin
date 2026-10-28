@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve cancelled maintenance schedules and newer computer records when
+  Ubuntu installation or repair completes or fails.
+
 - Complete accepted Android enrollment using the captured form, clear submitted
   pairing codes, prevent duplicate requests and preserve newer drafts/editors.
 

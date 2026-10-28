@@ -242,12 +242,12 @@ class UbuntuDisplays{
             }
           });
           await this.rpc(record,"configure",{config:deploymentConfig});
-          record.state="ready";this.storage.setPreference(STORE,this.records().map(d=>d.id===id?record:d));
+          this.updateRecord(id,{state:"ready"});
           job.stage="Installed. Activate the kiosk when ready.";job.state="completed";
           this.audit({kind:"ubuntu-display.install",deviceId:id,screenCount:config.screens.length,ok:true});
         }catch(error){
           job.state="failed";job.error=error.status?error.message:"Installation failed. Existing enrollment and rollback files were retained.";
-          record.state="attention";this.storage.setPreference(STORE,this.records().map(d=>d.id===id?record:d));
+          this.updateRecord(id,{state:"attention"});
         }finally{job.finishedAt=new Date().toISOString();this.busy.delete(id);this.enrolling=false}
       })();
       this.track(task);return {ok:true,job:{...job}};
