@@ -13,7 +13,10 @@ session for reconnect replay. Positive volume unmutes; zero volume preserves
 mute intent. Control values must be finite. Playback operations and position
 remain receiver-owned; reconnect snapshots do not replay seeks or restarts.
 See [the reconnect review](audits/roomgoblin-modernization/media-reconnect-settings.md)
-for qualification and the separate token-renewal issue still under review.
+for qualification. Receiver video identity uses the validated source and session
+ID, so renewed asset tokens do not replace healthy playback. Failed sources may
+use a newer authorized URL with the same element and saved position, bounded to
+three consecutive attempts. See [token continuity](audits/roomgoblin-modernization/media-token-continuity.md).
 
 - Control plane: `http://<hub>:3000`
   - controller UI

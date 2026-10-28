@@ -26,8 +26,8 @@ pass. Coverage includes retirement at both mutation boundaries, current success,
 successful retry, bounded failure, retirement during retry wait and replacement
 before dispatch. The supported Linux active-worktree suite passes 1,567 tests,
 zero failures and two root-only ownership skips, plus all 23 Host Recovery tests
-and Node/controller/Python/Bash checks. This change's checked PR, immutable images
-and backed-up delivery remain pending.
+and Node/controller/Python/Bash checks. Required gates, immutable images and
+backed-up delivery passed in PR #303; see the [receipt](music-tv-delivery.md).
 
 Uncertain-write retry behavior, reconnect scheduling ownership and named-player
 audio persistence are handled by the [recovery follow-up](music-tv-recovery.md).

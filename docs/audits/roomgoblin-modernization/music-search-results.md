@@ -24,4 +24,5 @@ Studio cases and all 70 workspace cases pass in both Chromium and Firefox.
 The supported Linux active-worktree suite passes 1,567 tests, zero failures and
 two root-only ownership skips, plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Required gates, exact images and backed-up
-delivery remain pending. Deterministic transports issue no physical classroom commands.
+delivery passed in PR #303; see the [receipt](music-tv-delivery.md).
+Deterministic transports issue no physical classroom commands.
