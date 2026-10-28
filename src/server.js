@@ -390,32 +390,43 @@ function purgeGoveeAlias(alias){
   }
 }
 function migrateGoveeDiscoveryRegistry(){
-  let removed=0;
+  const aliases=[];
   for(const [key,entry] of Object.entries({...goveeDiscovery.devices})){
     const id=String(entry?.id||"");
     if(entry?.discovered && isSyntheticGoveeEntity(id,entry)){
-      purgeGoveeAlias(cleanId(entry.alias||key)); removed++;
+      aliases.push(cleanId(entry.alias||key));
     }
   }
-  if(removed){persistGoveeDiscovery();audit({kind:"govee.discovery.migrate",removedSynthetic:removed});}
+  const removed=aliases.length;
+  if(removed){removeGoveeAliases(aliases);audit({kind:"govee.discovery.migrate",removedSynthetic:removed});}
   return removed;
+}
+function removeGoveeAliases(aliases){
+  const removed=new Set(aliases);
+  const devices=Object.fromEntries(Object.entries(goveeDiscovery.devices).filter(([key,entry])=>!removed.has(key)&&!removed.has(cleanId(entry?.alias||key))));
+  persistGoveeDiscovery({...goveeDiscovery,devices});
+  for(const alias of removed)purgeGoveeAlias(alias);
 }
 function reconcileGoveeDiscovery(nowMs=Date.now(),options={}){
   const force=!!options.force;
-  let removed=0,offline=0;
+  const aliases=[],offlineUpdates=[];
+  let removedSynthetic=0;
   for(const [key,entry] of Object.entries({...goveeDiscovery.devices})){
     if(!entry?.discovered)continue;
     const alias=cleanId(entry.alias||key);
     const id=String(entry.id||"");
-    if(isSyntheticGoveeEntity(id,entry)){purgeGoveeAlias(alias);removed++;continue;}
+    if(isSyntheticGoveeEntity(id,entry)){aliases.push(alias);removedSynthetic++;continue;}
     const seen=Date.parse(goveePresence[id]?.lastSeen||entry.lastSeen||0);
     if(!Number.isFinite(seen)||seen<=0)continue;
     const age=nowMs-seen;
-    if((force&&age>60000)||(!force&&age>GOVEE_RECONCILE_GRACE_MS)){purgeGoveeAlias(alias);removed++;}
-    else if(age>60000){goveePresence[id]={status:"offline",lastSeen:new Date(seen).toISOString()};offline++;}
+    if((force&&age>60000)||(!force&&age>GOVEE_RECONCILE_GRACE_MS))aliases.push(alias);
+    else if(age>60000)offlineUpdates.push([id,{status:"offline",lastSeen:new Date(seen).toISOString()}]);
   }
-  if(removed){persistGoveeDiscovery();audit({kind:"govee.discovery.reconcile",removed,offline,force});broadcastControllers({type:"govee.inventory",reason:force?"manual-reconcile":"reconcile",removed});}
-  return {removed,offline,force};
+  const removed=aliases.length,offline=offlineUpdates.length;
+  if(removed)removeGoveeAliases(aliases);
+  for(const [id,presence] of offlineUpdates)goveePresence[id]=presence;
+  if(removed){audit({kind:"govee.discovery.reconcile",removed,offline,force});broadcastControllers({type:"govee.inventory",reason:force?"manual-reconcile":"reconcile",removed});}
+  return {removed,offline,force,removedSynthetic};
 }
 function applyGoveeRegistryEntry(entry){
   if(!entry?.id||!entry?.alias)return;
@@ -455,7 +466,6 @@ function bootstrapGoveeDiscovery(){
   for(const entry of Object.values(goveeDiscovery.devices))applyGoveeRegistryEntry(entry);
 }
 bootstrapGoveeDiscovery();
-migrateGoveeDiscoveryRegistry();
 
 function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
   const id=normalizeGoveePhysicalId(deviceId);
@@ -464,8 +474,10 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
   const meta=goveeExtractMeta(id,cfg);
   const configuredAlias=goveeConfiguredAliasById(id);
   let alias=configuredAlias||goveeAliasForId(id);
-  let entry=Object.values(goveeDiscovery.devices).find(x=>normalizeGoveePhysicalId(x?.id)===id);
+  const existing=Object.entries(goveeDiscovery.devices).find(([,entry])=>normalizeGoveePhysicalId(entry?.id)===id);
+  let entry=existing?{...existing[1]}:null;
   const newDevice=!entry&&!configuredAlias;
+  if(goveeDiscovery.autoAdd===false)return configuredAlias||(entry?cleanId(entry.alias||alias):null);
 
   // Existing hardware.json devices are known already; create a registry overlay only
   // when we need discovery metadata or user-editable overrides.
@@ -479,7 +491,6 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
       discovered:!configuredAlias,
       firstSeen:now,lastSeen:now,source
     };
-    goveeDiscovery.devices[alias]=entry;
   }else{
     alias=cleanId(entry.alias||alias);
     entry.alias=alias;
@@ -490,13 +501,10 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
     if(!entry.ip&&meta.ip)entry.ip=meta.ip;
   }
 
-  if(goveeDiscovery.autoAdd!==false){
-    applyGoveeRegistryEntry(entry);
-    goveeDiscovery.lastDiscoveryAt=now;
-    persistGoveeDiscovery();
-    audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice});
-    broadcastControllers({type:"govee.discovery",deviceId:id,alias,device:goveeDevices[alias]});
-  }
+  persistGoveeDiscovery({...goveeDiscovery,devices:{...goveeDiscovery.devices,[existing?existing[0]:alias]:entry},lastDiscoveryAt:now});
+  applyGoveeRegistryEntry(entry);
+  audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice});
+  broadcastControllers({type:"govee.discovery",deviceId:id,alias,device:goveeDevices[alias]});
   return alias;
 }
 function touchGoveePresence(deviceId,status="online"){
@@ -3951,6 +3959,8 @@ function diagnosticError(error,context={}){
     context:diagnosticSanitize(context.data||{})
   });
 }
+// Discovery cleanup needs the initialized audit owner and must not block the Hub.
+try{migrateGoveeDiscoveryRegistry()}catch(error){diagnosticError(error,{component:"govee",operation:"startup-migration"})}
 process.on("unhandledRejection",reason=>diagnosticError(reason instanceof Error?reason:new Error(String(reason)),{component:"node",operation:"unhandledRejection"}));
 process.on("uncaughtException",err=>{diagnosticError(err,{component:"node",operation:"uncaughtException"});process.exitCode=1;const timer=setTimeout(()=>process.exit(1),100);timer.unref()});
 
@@ -4466,6 +4476,7 @@ function connectMqtt() {
       return;
     }
 
+    try{
     const cm=topic.match(/^homeassistant\/light\/gv2mqtt-([^/]+)\/config$/);
     if(cm){
       const deviceId=normalizeGoveePhysicalId(cm[1]);
@@ -4531,6 +4542,7 @@ function connectMqtt() {
       if(alias)broadcastControllers({type:"govee.inventory",reason:"status-attributes",alias});
       return;
     }
+    }catch(error){diagnosticError(error,{component:"govee",operation:"mqtt-discovery"})}
   });
 }
 
@@ -5627,10 +5639,9 @@ app.put("/api/v1/govee/discovery",requireControl,(req,res)=>{
   res.json({ok:true,discovery:goveeInventory().discovery});
 });
 app.post("/api/v1/govee/discovery/reconcile",requireControl,(req,res)=>{
-  const migrated=migrateGoveeDiscoveryRegistry();
   const force=req.body?.force!==false;
-  const result=reconcileGoveeDiscovery(Date.now(),{force});
-  res.json({ok:true,migrated,...result,inventory:goveeInventory()});
+  const {removedSynthetic:migrated,...result}=reconcileGoveeDiscovery(Date.now(),{force});
+  res.json({ok:true,migrated,...result,removed:result.removed-migrated,inventory:goveeInventory()});
 });
 app.put("/api/v1/govee/device/:target",requireControl,(req,res)=>{
   try{res.json({ok:true,...updateGoveeDevice(req.params.target,req.body||{})})}
@@ -9292,7 +9303,10 @@ server.listen(PORT, BIND_ADDRESS, () => {
   console.log(`MQTT: ${endpointForLog(MQTT_URL) || "disabled"}`);
   console.log("Node-RED: not required (v0.8 direct hardware mode)");
 });
-const goveeReconcileTimer=setInterval(()=>{if(!shutdownRequested&&!fullExportFreeze.requested)reconcileGoveeDiscovery()},60000);
+const goveeReconcileTimer=setInterval(()=>{
+  if(shutdownRequested||fullExportFreeze.requested)return;
+  try{reconcileGoveeDiscovery()}catch(error){diagnosticError(error,{component:"govee",operation:"periodic-reconcile"})}
+},60000);
 function applicationWritersDrained(){
   return httpHandlers.pending===0&&fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0
     &&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0

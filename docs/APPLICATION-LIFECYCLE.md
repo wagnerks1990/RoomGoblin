@@ -2,6 +2,12 @@
 
 ## Bootstrap ownership
 
+Govee registry cleanup runs after the audit owner initializes. Its startup,
+MQTT-discovery and periodic persistence failures remain diagnostic; they do not
+terminate the Hub or change unrelated integration health. Cleanup persists before
+publishing removals, and background admission retains freeze/shutdown checks.
+See [Govee lighting](GOVEE-LIGHTING.md).
+
 `npm start` and `tools/start-roomgoblin.sh` execute
 `node --require ./src/direct-display-compat.js src/startup-recovery.js`.
 The shell wrapper uses `exec`, preserving the Hub as the container's PID 1.

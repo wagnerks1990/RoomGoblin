@@ -1,5 +1,13 @@
 # RoomGoblin modernization audit
 
+The [discovery persistence repair](lighting-discovery-persistence.md) passes all
+25 new regressions and 72 combined focused cases; full qualification passes
+1,979 Linux tests, two root-only skips and all 23 Host Recovery tests.
+PR #312 is [deployed and verified](lighting-reliability-delivery.md) at `33ee5d0`.
+PR #313 passed all 14 checks without unresolved reviews and merged as `5cf4c81`;
+its exact images and backed-up update are pending. Registry and discovery repairs
+will follow together as the next focused Group 9 batch.
+
 The [lighting registry save repair](lighting-registry-persistence.md) fixes three
 reproduced failed/invalid-save mutations and a group-name restart defect. All
 18 new regressions pass; full qualification passes 1,954 Linux tests, two
@@ -24,7 +32,7 @@ passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
 85 focused integration cases pass. The inventory batch remains qualified on
 `b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
 
-Status: **PR #311 delivered; PR #312 merged and publishing; lighting configuration ordering qualified**.
+Status: **PR #312 delivered; PR #313 merged and publishing; lighting registry/discovery repairs qualified**.
 
 PR #311 is deployed and verified at `fa5bb49`; see its
 [delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/

@@ -23,9 +23,27 @@ result survive intermediate replies. Successful saves with failed refreshes say
 both outcomes. See [GUI workspaces](GUI-WORKSPACES.md#compact-govee-lighting).
 
 These controller rules do not serialize different browser sessions. The shared
-browser API still supplies its existing fetch lifetime. Automatic discovery and
-reconciliation have separate registry mutation paths; metadata/preference save
-ordering does not claim atomicity for those paths.
+browser API still supplies its existing fetch lifetime.
+
+## Discovery and cleanup
+
+When automatic enrollment is disabled, unknown physical devices do not enter
+the registry, including on a later preference save or restart. Known devices
+retain their aliases and continue receiving transient state/presence updates.
+Rediscovery preserves operator names, existing physical metadata, groups and
+historical registry keys.
+
+Enrollment and cleanup stage the complete registry change and persist it before
+updating inventory, group references or notifications. Manual cleanup combines
+synthetic migration and stale-device removal in one write. A failed write keeps
+the prior live registry and projections; later explicit or periodic attempts
+remain possible. Periodic grace, configured-device retention and unknown-time
+behavior remain unchanged.
+
+Startup migration runs after audit initialization. Startup, MQTT discovery and
+periodic cleanup failures are diagnostic and do not terminate the Hub or mark
+the MQTT connection unavailable. Freeze/shutdown still reject background writes.
+These operations update configuration only; they do not dispatch hardware commands.
 
 ## Command completion
 

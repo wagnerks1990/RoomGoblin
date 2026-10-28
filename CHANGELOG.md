@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Honor disabled lighting enrollment across restarts and persist discovery/
+  cleanup changes before publishing them; contain background persistence errors.
+
 - Persist lighting metadata and discovery preferences before changing live
   settings, and preserve group names as ordinary data during registry rebuilds.
 
