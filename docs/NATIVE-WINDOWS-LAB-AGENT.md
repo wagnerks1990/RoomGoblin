@@ -11,6 +11,26 @@ Validate job compiles the actual process helper with isolated process fixtures
 using `python tools/test-native-command-process.py` on .NET 8; it does not install
 or start the agent service. Enrollment and the command allowlist are unchanged.
 
+Each configured WebSocket origin has a 15-second connection/handshake budget.
+A failed or timed-out origin is disposed before trying the next configured
+origin; service cancellation stops immediately and preserves the caller token.
+Healthy primary connections retain preference. Existing HTTPS validation,
+explicit LAN fallback policy, heartbeat and reconnect backoff remain unchanged.
+
+Command output is drained under the same cancellation/deadline as process exit,
+retaining at most 64 Ki characters from each stream for diagnostics. Error text
+remains capped at 2,048 characters. Waiting for an inherited output pipe cannot
+extend the command budget. This bounds the read; it does not establish ownership
+of a detached descendant whose parent already exited.
+
+Native update downloads have a 45-second per-file transfer deadline covering
+headers, body reads and file writes. Cancellation preserves the caller's token;
+deadline failures report a timeout. Partial stages are removed on either outcome.
+Declared/actual lengths, package limits, SHA-256 and publisher verification remain
+required. `python tools/test-native-update-transfer.py` exercises the actual client
+with loopback HTTP and temporary staging; its signature-verifier fixture checks
+dispatch after hashing, not Windows trust validation or service installation.
+
 The native package contains four self-contained `win-x64` executables:
 
 - `RoomGoblinAgent.exe` — Windows service running as `LocalSystem`. It maintains the outbound WebSocket connection, sends hello/heartbeat telemetry, dispatches constrained commands, collects browser history, and coordinates updates.

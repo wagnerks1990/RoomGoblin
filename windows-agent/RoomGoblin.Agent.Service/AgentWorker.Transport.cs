@@ -74,19 +74,14 @@ internal sealed partial class AgentWorker
             throw new InvalidOperationException(
                 $"Could not start {Path.GetFileName(fileName)}.");
 
-        var stdoutTask =
-            process.StandardOutput.ReadToEndAsync();
-        var stderrTask =
-            process.StandardError.ReadToEndAsync();
-
-        using var timeoutCts =
-            CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(timeout);
+        var stdoutTask = ReadProcessOutputAsync(process.StandardOutput, timeoutCts.Token);
+        var stderrTask = ReadProcessOutputAsync(process.StandardError, timeoutCts.Token);
 
         try
         {
-            await process.WaitForExitAsync(
-                timeoutCts.Token);
+            await Task.WhenAll(process.WaitForExitAsync(timeoutCts.Token), stdoutTask, stderrTask);
         }
         catch (OperationCanceledException)
         {
@@ -123,6 +118,20 @@ internal sealed partial class AgentWorker
                 (detail.Length > 0
                     ? $": {detail}"
                     : "."));
+        }
+    }
+
+    private static async Task<string> ReadProcessOutputAsync(StreamReader reader, CancellationToken ct)
+    {
+        const int maxChars = 64 * 1024;
+        var retained = new StringBuilder();
+        var buffer = new char[4096];
+        while (true)
+        {
+            var count = await reader.ReadAsync(buffer.AsMemory(), ct);
+            if (count == 0) return retained.ToString();
+            var keep = Math.Min(count, maxChars - retained.Length);
+            if (keep > 0) retained.Append(buffer, 0, keep);
         }
     }
 
