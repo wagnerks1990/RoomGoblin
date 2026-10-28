@@ -6,6 +6,11 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Browser upload startup/cancel operations share same-file ownership within a page.
+Only confirmed missing/cancelled sessions may be forgotten, and only if their
+saved ID still matches. Keep both controllers' generation checks on progress,
+completion, error, cancellation and abort-handle cleanup.
+
 Video validation supplies the normalized command ID only when no session ID was
 provided. Preserve explicit occurrence/caller identity and legacy command strings.
 

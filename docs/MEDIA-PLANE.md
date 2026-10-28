@@ -89,6 +89,11 @@ at least twice the largest expected upload free beneath the persistent data root
 
 ## Range transport
 
+Upload resume/cancel errors retain the browser's session ID. A confirmed missing
+session permits a fresh upload; confirmed cancellation forgets only its own ID.
+Same-page startup/cancel sequencing and controller operation ownership preserve
+current progress and retry controls. See [upload browser ownership](audits/roomgoblin-modernization/upload-client-ownership.md).
+
 Resumable-upload expiry skips sessions with accepted or queued chunk, assembly
 or cancel operations. Idle expired sessions are reclaimed after their final
 operation releases ownership. See [the upload cleanup review](audits/roomgoblin-modernization/upload-cleanup-ownership.md).
