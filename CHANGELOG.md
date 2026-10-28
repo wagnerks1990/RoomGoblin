@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Apply changed Android display assignments to an already-open WebView while
+  preserving its live session on unchanged assignments and ordinary resume.
+
 - Close active and queued Android management sockets when its service stops,
   while preserving accepted clients during listener replacement.
 

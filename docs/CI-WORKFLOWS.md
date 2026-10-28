@@ -58,6 +58,10 @@ APK build. Four JVM cases compile the actual listener, service fields and shutdo
 methods with Android callbacks replaced. Real loopback sockets verify closure of
 active/queued clients, overflow rejection, normal completion and listener
 replacement. This does not install an APK or exercise Android framework lifecycle.
+`python3 tools/test-android-activity-assignment.py` adds seven cases against the
+actual URL and intent methods with a WebView substitute: first assignment,
+reassignment, placeholder recovery, unchanged redirected sessions, explicit
+reload, reload after reassignment and recovery of a missing current URL.
 
 ## Conservative documentation-only PR selection
 
