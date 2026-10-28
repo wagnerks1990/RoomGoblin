@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+PR #315 is [deployed and verified](lighting-identity-delivery.md) at `af76c5a`.
+The ESPHome batch is pushed as PR #316. Its language analysis jobs uploaded
+successfully, but the separate CodeQL summary initially reported missing
+configurations; merge awaits a complete fresh check result. Lab inventory and
+information-dialog ownership findings remain under review.
+
 ESPHome admission, controller ownership and worker containment are integrated on
 merged `main` `af76c5a` in three focused commits. Runtime, configuration and tests
 match qualified `f976056` byte for byte; only audit evidence differs. All 51
