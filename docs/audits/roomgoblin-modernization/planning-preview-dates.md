@@ -40,3 +40,22 @@ and two root-only skips (1,290 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Required CI, exact
 image publication and backed-up appliance delivery remain pending. No live calendar edits or
 physical commands were issued. Later-loop phase remains separate scheduler work.
+
+## Verified delivery
+
+PR #292 passed all 14 checks and merged at
+`fe8b68a05a966e237f8485f172a2c2e2cfdb436d`. All five main workflows passed,
+including exact image publication and Wiki synchronization. The normal update
+completed on 2026-10-27 at 12:05:04 UTC. The Hub runs that exact revision with
+zero restarts; the unchanged maintenance container remains healthy.
+
+Final verification confirms clean main, healthy control/media/maintenance/Host
+Agent, SQLite integrity, all eight encrypted secrets, database and ADB modes,
+authorization boundaries, served asset hashes and an empty selective update
+plan. The rollback commit `407be9e` and its images remain available.
+
+Operational backup `auto-operational-2026-10-27T12-04-51-449Z.zip` is 128,661,202
+bytes, mode 0600, SHA-256
+`990694a8a1b79232872cfb25a259aeeda2178733e70ddb473fabfb12956517cf`.
+Archive CRC, canonical database-only membership and extracted SQLite integrity
+passed. No physical commands, receiver reloads or live calendar edits were used.

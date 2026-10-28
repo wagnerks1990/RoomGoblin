@@ -1,0 +1,51 @@
+# Music workspace save ownership
+
+Baseline: `30f6d861b06abf03d1b7493e3e69dcb1622d7ac5`. The Music workspace is
+unchanged from the initial reproduced baseline `ef7be2c88dedcb762a1b4915cc8d8f2a09af6c27`.
+
+## RG-MUSIC-001: Late saves replaced newer drafts and cleared newer tokens
+
+| Field | Assessment |
+| --- | --- |
+| Subsystem / category | Background Music workspace / Async editor ownership |
+| Priority / confidence | P1 / Reproduced in actual Chromium workspace |
+| Baseline locations | `public/controller/music-studio.js:15,43-44,81,104-131` |
+| Complexity / compatibility risk | Small / Browser-local ownership; existing APIs retained |
+| Expected benefit | Preserve operator edits and prevent duplicate settings writes |
+| State | Implemented; final native qualification passed |
+
+A completed schedule save cleared the dirty flag and refreshed the selected
+favorite even after a newer edit. Connection completion similarly reset the URL
+and unconditionally cleared a newly typed token. Two pending saves could write
+the same form concurrently. Three browser reproductions fail on baseline.
+
+Each form now has a draft revision and one pending write. Completion clears its
+dirty flag only for the submitted revision; newer edits remain visibly unsaved.
+The token field has separate revision ownership so the submitted secret is
+cleared without clearing a later entry. Inputs remain editable while the form's
+save control is disabled. Failures retain the draft and release the pending guard.
+
+Save/reload operations invalidate earlier reads. The shared reader remains
+single-flight and coalesces a requested refresh after the current read finishes.
+Schedule initialization and explicit reload respect edits made during the read.
+Reload cannot discard a draft while its save is pending. Existing capability
+checks, backend authorization, API fields and physical playback remain intact.
+
+## Evidence and delivery boundary
+
+All ten Music workspace browser tests pass in Chromium and Firefox. Seven are
+new save/reload cases: newer schedule drafts, duplicate schedule writes, newer
+connection fields, failed-save retry and editable inputs, duplicate connection
+writes and submitted-token clearing, edits during reload, and a poll that began
+before a successful save. The three existing listening/mobile/favorites tests
+also pass. Controller syntax and runtime-symbol validation pass.
+
+All 70 broader workspace Chromium tests also pass. The first native run was
+interrupted when the local session ended; it is not counted as a pass. The final
+native active-worktree snapshot passes 1,354 tests, zero failures and two root-only
+ownership skips (1,356 total), plus all 23 Host Recovery tests and
+Node/controller/Python/Bash checks.
+
+Checked integration, required CI, exact images and normal backed-up delivery
+remain pending. Browser transports are deterministic fixtures;
+no live credentials, music sessions or physical commands were used.

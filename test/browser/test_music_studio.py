@@ -1,5 +1,6 @@
 """Real music workspace with bounded fixture transports; no live audio commands."""
 import unittest
+import time
 import test_workspaces as workspaces
 
 
@@ -101,4 +102,145 @@ class MusicStudioBrowserTests(unittest.TestCase):
         page.get_by_label('Radio stream URL', exact=True).fill('invalid')
         page.get_by_role('button', name='Save station', exact=True).click()
         self.assertIn('HTTP(S)', page.locator('.musicNotice').inner_text())
+        self.assertFalse(errors, errors)
+
+    def wait_request(self, page, held):
+        deadline=time.monotonic()+5
+        while not held and time.monotonic()<deadline: page.wait_for_timeout(10)
+        self.assertTrue(held, 'save request was not captured')
+    def test_schedule_save_preserves_newer_favorite(self):
+        page, errors, requests=music_page(self)
+        page.get_by_role('button',name='Schedule',exact=True).click()
+        held=[]
+        page.route('**/api/v1/music-assistant/background/schedule',lambda route: held.append(route))
+        page.locator('#bgmStart').fill('08:00')
+        page.evaluate('()=>{window.__save=saveBackgroundMusicSchedule()}')
+        self.wait_request(page,held)
+        page.locator('#bgmStart').fill('08:30')
+        page.locator('#bgmFavorite').select_option('')
+        held[0].fulfill(json={'ok':True})
+        page.evaluate('window.__save')
+        self.assertEqual(page.locator('#bgmFavorite').input_value(),'')
+        self.assertEqual(page.locator('#bgmStart').input_value(),'08:30')
+        self.assertFalse(errors,errors)
+    def test_schedule_has_one_pending_write(self):
+        page, errors, requests=music_page(self)
+        held=[]
+        page.route('**/api/v1/music-assistant/background/schedule',lambda route: held.append(route))
+        page.evaluate('()=>{window.__first=saveBackgroundMusicSchedule()}')
+        self.wait_request(page,held)
+        page.evaluate('()=>{window.__second=saveBackgroundMusicSchedule()}')
+        page.wait_for_timeout(100)
+        count=len(held)
+        for route in held:route.fulfill(json={'ok':True})
+        page.evaluate('Promise.all([window.__first,window.__second])')
+        self.assertEqual(count,1)
+    def test_connection_save_keeps_newer_token_and_url(self):
+        page, errors, requests=music_page(self)
+        page.get_by_role('button',name='Outputs & connection',exact=True).click()
+        page.locator('#maUrl').evaluate("el=>{el.closest('details').open=true}")
+        page.locator('#maUrl').fill('http://127.0.0.1:8096')
+        page.locator('#maToken').fill('first-fixture-token')
+        held=[]
+        page.route('**/api/v1/music-assistant/config',lambda route: held.append(route))
+        page.evaluate('()=>{window.__save=saveMusicAssistantConfig()}')
+        self.wait_request(page,held)
+        page.locator('#maUrl').fill('http://127.0.0.1:8097')
+        page.locator('#maToken').fill('newer-fixture-token')
+        held[0].fulfill(json={'ok':True})
+        page.evaluate('window.__save')
+        self.assertEqual(page.locator('#maToken').input_value(),'newer-fixture-token')
+        self.assertEqual(page.locator('#maUrl').input_value(),'http://127.0.0.1:8097')
+        self.assertFalse(errors,errors)
+
+    def test_failed_schedule_save_keeps_draft_and_allows_retry(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Schedule', exact=True).click()
+        page.locator('#bgmStart').fill('08:45')
+        page.locator('#bgmFavorite').select_option('')
+        held = []
+        page.route('**/api/v1/music-assistant/background/schedule', lambda route: held.append(route))
+        page.evaluate('()=>{window.__save=saveBackgroundMusicSchedule()}')
+        self.wait_request(page, held)
+        self.assertTrue(page.get_by_role('button', name='Save Background Music', exact=True).is_disabled())
+        self.assertTrue(page.get_by_role('button', name='Reload saved schedule', exact=True).is_disabled())
+        self.assertTrue(page.locator('#bgmStart').is_enabled())
+        held.pop().fulfill(status=500, json={'error': 'fixture save failed'})
+        page.evaluate('window.__save')
+        self.assertEqual(page.locator('#bgmStart').input_value(), '08:45')
+        self.assertEqual(page.locator('#bgmFavorite').input_value(), '')
+        self.assertIn('fixture save failed', page.locator('#bgmSaveMsg').inner_text())
+        self.assertTrue(page.get_by_role('button', name='Save Background Music', exact=True).is_enabled())
+        page.evaluate('()=>{window.__save=saveBackgroundMusicSchedule()}')
+        self.wait_request(page, held)
+        self.assertEqual(held[0].request.post_data_json['startTime'], '08:45')
+        held[0].fulfill(json={'ok': True})
+        page.evaluate('window.__save')
+        self.assertFalse(errors, errors)
+
+    def test_connection_save_has_one_write_and_clears_only_submitted_token(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Outputs & connection', exact=True).click()
+        page.locator('#maUrl').evaluate("el=>{el.closest('details').open=true}")
+        page.locator('#maToken').fill('fixture-submitted-token')
+        held = []
+        page.route('**/api/v1/music-assistant/config', lambda route: held.append(route))
+        page.evaluate('()=>{window.__first=saveMusicAssistantConfig()}')
+        self.wait_request(page, held)
+        self.assertTrue(page.get_by_role('button', name='Save & Test', exact=True).is_disabled())
+        self.assertTrue(page.locator('#maToken').is_enabled())
+        page.evaluate('()=>{window.__second=saveMusicAssistantConfig()}')
+        page.wait_for_timeout(100)
+        count = len(held)
+        for route in held:
+            route.fulfill(status=500, json={'error': 'fixture connection failed'})
+        page.evaluate('Promise.all([window.__first,window.__second])')
+        self.assertEqual(count, 1)
+        self.assertEqual(page.locator('#maToken').input_value(), '')
+        self.assertTrue(page.get_by_role('button', name='Save & Test', exact=True).is_enabled())
+        self.assertIn('fixture connection failed', page.locator('.musicNotice').inner_text())
+        self.assertFalse(errors, errors)
+
+    def test_reload_response_preserves_edits_made_while_loading(self):
+        page, errors, requests = music_page(self)
+        page.wait_for_function('!window.musicStudioLoading')
+        page.get_by_role('button', name='Schedule', exact=True).click()
+        held = []
+        page.route('**/api/v1/music-assistant/background', lambda route: held.append(route))
+        page.get_by_role('button', name='Reload saved schedule', exact=True).click()
+        self.wait_request(page, held)
+        page.locator('#bgmStart').fill('09:15')
+        page.locator('#bgmFavorite').select_option('')
+        held[0].fallback()
+        page.wait_for_function('!window.musicStudioLoading')
+        self.assertEqual(page.locator('#bgmStart').input_value(), '09:15')
+        self.assertEqual(page.locator('#bgmFavorite').input_value(), '')
+        self.assertIn('Unsaved', page.locator('#bgmSaveMsg').inner_text())
+        self.assertFalse(errors, errors)
+
+    def test_poll_started_before_save_cannot_restore_old_favorite(self):
+        page, errors, requests = music_page(self)
+        page.wait_for_function('!window.musicStudioLoading')
+        page.get_by_role('button', name='Schedule', exact=True).click()
+        held = []
+        def hold_first(route):
+            if not held:
+                held.append(route)
+            else:
+                route.fallback()
+        page.route('**/api/v1/music-assistant/background', hold_first)
+        page.evaluate('()=>{window.__poll=loadMusicAssistant()}')
+        self.wait_request(page, held)
+        page.locator('#bgmStart').fill('08:10')
+        page.locator('#bgmFavorite').select_option('')
+        page.evaluate('()=>{window.__save=saveBackgroundMusicSchedule()}')
+        deadline = time.monotonic() + 5
+        while not requests and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
+        self.assertTrue(requests)
+        held[0].fulfill(json={'schedule': {'startTime': '07:00', 'playerId': 'speaker', 'favoriteId': 'station'},
+                             'favorites': [{'id': 'station', 'name': 'Station', 'uri': 'demo://radio/1'}], 'runtime': {}})
+        page.evaluate('Promise.all([window.__poll,window.__save])')
+        self.assertEqual(page.locator('#bgmFavorite').input_value(), '')
+        self.assertEqual(page.locator('#bgmStart').input_value(), '08:10')
         self.assertFalse(errors, errors)
