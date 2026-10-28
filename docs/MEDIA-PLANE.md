@@ -85,6 +85,10 @@ at least twice the largest expected upload free beneath the persistent data root
 
 ## Range transport
 
+Resumable-upload expiry skips sessions with accepted or queued chunk, assembly
+or cancel operations. Idle expired sessions are reclaimed after their final
+operation releases ownership. See [the upload cleanup review](audits/roomgoblin-modernization/upload-cleanup-ownership.md).
+
 Browser MP4 playback requires efficient random access. The media plane implements:
 
 - `Accept-Ranges: bytes`

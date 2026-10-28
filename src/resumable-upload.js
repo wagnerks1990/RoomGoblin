@@ -121,7 +121,9 @@ class ResumableUploadStore{
     }catch(err){out.destroy();fs.rmSync(tmp,{force:true});throw err}
   }
   async cancel(id,owner){return this.locked(String(id),()=>{this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true})})}
-  cleanup(now=Date.now()){let removed=0;for(const name of fs.readdirSync(this.root)){if(!SESSION_ID.test(name))continue;try{const meta=this.read(name);if(now-Date.parse(meta.updatedAt)>this.ttlMs){fs.rmSync(this.dir(name),{recursive:true,force:true});removed++}}catch{try{const st=fs.statSync(path.join(this.root,name));if(now-st.mtimeMs>this.ttlMs){fs.rmSync(path.join(this.root,name),{recursive:true,force:true});removed++}}catch{}}}return removed}
+  // Accepted writers (including queued assembly/cancel work) own their session
+  // until the final lock settles. Expiry must never unlink their active inputs.
+  cleanup(now=Date.now()){let removed=0;for(const name of fs.readdirSync(this.root)){if(!SESSION_ID.test(name)||this.locks.has(name))continue;try{const meta=this.read(name);if(now-Date.parse(meta.updatedAt)>this.ttlMs){fs.rmSync(this.dir(name),{recursive:true,force:true});removed++}}catch{try{const st=fs.statSync(path.join(this.root,name));if(now-st.mtimeMs>this.ttlMs){fs.rmSync(path.join(this.root,name),{recursive:true,force:true});removed++}}catch{}}}return removed}
 }
 
 module.exports={ResumableUploadStore,ownerKey,inspectUpload,DEFAULT_CHUNK_BYTES,ABSOLUTE_CHUNK_BYTES,MIB};

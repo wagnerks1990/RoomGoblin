@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **PR #303 delivered; PR #304 merged and publishing; media reconnect fixes under validation**.
+Status: **PR #303 delivered; PR #304 publishing; media reconnect fixes in PR #305; upload cleanup under validation**.
 
 PR #303 is deployed and verified at `2b0c79a`; see its
 [delivery receipt](music-tv-delivery.md).
@@ -17,6 +17,7 @@ Named-receiver audio, uncertain writes and reconnect ownership have
 Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
 Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
 The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
+Upload expiry now has [eight regressions for active writer ownership](upload-cleanup-ownership.md).
 Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
 complete tree was byte-identical to qualified `3c15e92`. Qualification includes
 1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
