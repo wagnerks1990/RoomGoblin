@@ -448,7 +448,23 @@ class ClassroomHubStorage{
   }
   telemetryState(limit=500){limit=Math.max(1,Math.min(5000,Number(limit)||500));return this.db.prepare("SELECT key,kind,payload_json,first_seen,last_seen,count FROM telemetry_state ORDER BY last_seen DESC LIMIT ?").all(limit).map(r=>({...r,payload:parseJson(r.payload_json,{})}))}
   recentAudit(limit=250,{kind=null}={}){limit=Math.max(1,Math.min(5000,Number(limit)||250));const rows=kind?this.db.prepare("SELECT payload_json FROM audit_events WHERE kind=? ORDER BY id DESC LIMIT ?").all(kind,limit):this.db.prepare("SELECT payload_json FROM audit_events ORDER BY id DESC LIMIT ?").all(limit);return rows.map(r=>parseJson(r.payload_json,{raw:r.payload_json})).reverse()}
-  importAuditJsonl(file,{archive=true}={}){if(this.migrationDone(file,"sqlite:audit_events")||!fs.existsSync(file))return {imported:0,skipped:true};const lines=fs.readFileSync(file,"utf8").split(/\r?\n/).filter(Boolean),stmt=this.db.prepare("INSERT INTO audit_events(at,kind,payload_json) VALUES(?,?,?)");this.db.exec("BEGIN");let imported=0;try{for(const line of lines){try{const e=JSON.parse(line);stmt.run(String(e.at||iso()),String(e.kind||""),JSON.stringify(e));imported++}catch{}}this.db.exec("COMMIT")}catch(err){this.db.exec("ROLLBACK");throw err}this.recordMigration(file,"sqlite:audit_events",imported,{type:"jsonl"});if(archive&&imported){const dir=path.join(this.dataDir,"legacy");fs.mkdirSync(dir,{recursive:true});fs.renameSync(file,path.join(dir,`audit-imported-${Date.now()}.jsonl`))}return {imported,skipped:false}}
+  importAuditJsonl(file,{archive=true}={}){
+    if(this.migrationDone(file,"sqlite:audit_events")||!fs.existsSync(file))return {imported:0,skipped:true};
+    const lines=fs.readFileSync(file,"utf8").split(/\r?\n/).filter(Boolean),stmt=this.db.prepare("INSERT INTO audit_events(at,kind,payload_json) VALUES(?,?,?)");
+    let imported=0;
+    this.tx(()=>{
+      for(const line of lines){
+        let values;
+        try{const entry=JSON.parse(line);values=[String(entry.at||iso()),String(entry.kind||""),JSON.stringify(entry)]}catch{continue}
+        // Malformed legacy lines may be skipped; storage failures must roll back.
+        stmt.run(...values);
+        imported++;
+      }
+      this.recordMigration(file,"sqlite:audit_events",imported,{type:"jsonl"});
+    });
+    if(archive&&imported){const dir=path.join(this.dataDir,"legacy");fs.mkdirSync(dir,{recursive:true});fs.renameSync(file,path.join(dir,`audit-imported-${Date.now()}.jsonl`))}
+    return {imported,skipped:false};
+  }
   migrationDone(source,target){return !!this.db.prepare("SELECT 1 ok FROM migration_history WHERE source=? AND target=? LIMIT 1").get(String(source),String(target))}
   recordMigration(source,target,records=0,details={}){this.db.prepare("INSERT INTO migration_history(source,target,records,details_json,migrated_at) VALUES(?,?,?,?,?)").run(String(source),String(target),Number(records)||0,JSON.stringify(details||{}),iso())}
 

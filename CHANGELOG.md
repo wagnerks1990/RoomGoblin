@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Roll back legacy audit imports on storage failures and commit their migration
+  record with the imported rows before archiving the source.
+
 - Commit update policy and integration connection metadata together with their
   requested credential changes, preserving the prior identity on storage failure.
 

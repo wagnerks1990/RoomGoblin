@@ -1,7 +1,13 @@
 # RoomGoblin modernization audit
 
-PR #338 is merged as `bdf521c` after all 14 checks; exact publication and delivery
-are pending. The final Weather batch is in PR #339. Backend/database review starts
+[Legacy audit import transactions](audit-import-transaction.md) repair two
+reproduced data-loss/duplication paths. All 31 targeted cases pass; the full Linux
+snapshot passes 2,470 tests, zero failures and two root-only skips, all 23 Host
+Recovery and all 55 JVM cases. Checked delivery is pending.
+
+PR #338 is [deployed and verified](sports-durability-delivery.md) at `bdf521c`
+after all required gates. PR #339 is merged as `770d7a7`; its exact publication
+and delivery are pending. Backend/database review starts
 with [administrative settings transactions](settings-identity-transaction.md):
 seven reproduced failures are repaired and all 37 targeted cases pass. Its Linux
 snapshot passes 2,464 tests, zero failures and two root-only skips, all 23 Host

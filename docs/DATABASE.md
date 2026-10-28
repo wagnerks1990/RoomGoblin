@@ -35,6 +35,11 @@ compatibility rows are then removed so the relational tables become authoritativ
 The application continues to consume the same JSON-shaped objects through the
 storage abstraction, so existing controller/API behavior is preserved.
 
+Legacy audit JSONL import skips malformed entries but propagates database write
+failures. Imported rows and their migration record commit together before the
+source is archived. Failed writes or commits preserve the source for a complete
+retry; a recorded import is not duplicated on restart.
+
 The storage abstraction also makes non-normalized application namespaces database-backed. A path such as `data/veyon-computers.json` is a legacy namespace identifier, not an instruction to use a JSON file at runtime. With `LEGACY_JSON_MIRROR=false` (the production default), reads and writes use SQLite `object_store` and do not maintain JSON mirrors.
 
 ### Veyon state
