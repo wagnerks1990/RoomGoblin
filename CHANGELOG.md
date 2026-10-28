@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep late Background Music control responses, probes and recovery errors from
+  overwriting a newer managed session or its playback intent.
+
 - Preserve audio retries for continuing announcement receivers and bind delayed
   audio/live volume to their current content through asynchronous delivery.
 
