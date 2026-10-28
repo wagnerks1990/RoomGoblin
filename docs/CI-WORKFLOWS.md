@@ -30,6 +30,14 @@ verification is replaced only in the transfer fixture, after real SHA-256 checks
 loopback cases for primary preference, the real 15-second handshake deadline,
 caller/pre-cancelled admission and errors from all configured origins. It sends
 no enrollment credential and does not test certificate trust or the live Hub.
+`python tools/test-native-lifecycle-process.py` adds 36 cases across the actual
+bootstrap/updater helpers: both real 30-second defaults, retained/error output,
+capture/argument/exit-code compatibility, inherited pipes and confirmed-stop
+polling. Service queries are replaced with controlled outcomes; owned child
+processes run only inside the temporary fixture. No service is installed or
+controlled by these tests. Eight included install-owner cases use temporary
+package/config files and simulated service/task operations to cover legacy
+admission failures, fresh-config cleanup and unsafe-stop rollback refusal.
 
 ## Conservative documentation-only PR selection
 
