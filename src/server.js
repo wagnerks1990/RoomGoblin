@@ -945,9 +945,13 @@ async function setMorningAnnouncementPriorityTargets(targets,active){
   await backgroundMusicReconcilePriority({force:true});
 }
 async function assertMorningAnnouncements({mode="automatic",targetsOverride=null,urlOverride=null}={}){
-  const targets=Array.isArray(targetsOverride)&&targetsOverride.length?automationDisplayTargets(targetsOverride):announcementTargets();if(!targets.length)return;
+  const explicitTargets=targetsOverride!==null;
+  const targets=explicitTargets?(Array.isArray(targetsOverride)?automationDisplayTargets(targetsOverride):[]):announcementTargets();
+  if(!targets.length){if(explicitTargets)throw Error("No enabled display targets selected for Morning Announcements");return}
   const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
   const clearId=commandId(),contentId=commandId();
+  const previous={active:morningAnnouncementsRuntime.active,mode:morningAnnouncementsRuntime.mode,targets:morningAnnouncementsRuntime.targets,lastAssertAt:morningAnnouncementsRuntime.lastAssertAt,lastLiveAt:morningAnnouncementsRuntime.lastLiveAt};
+  const previousContent=new Map((previous.targets||[]).map(id=>[id,persistentState.displays[id]?.audioContentId]));
   // Acquire both the display and audio priority state before sending any
   // takeover commands. Otherwise a scheduler tick can overwrite the display,
   // or Music Assistant can remain audible, while takeover is in flight.
@@ -965,17 +969,19 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
     await priorityTask;
   }catch(error){
     await priorityTask.catch(()=>{});
-    morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0;
     // Dispatch can fail after publishing state or some transports. Keep those
     // owned changes under the normal conditional release/reconciliation path.
     // Unchanged or superseding content must never become cleanup targets.
     const owned=targets.filter(id=>[clearId,contentId].includes(persistentState.displays[id]?.audioContentId));
+    const restorePrevious=previous.active&&!owned.length&&[...previousContent].every(([id,content])=>persistentState.displays[id]?.audioContentId===content);
+    if(restorePrevious)Object.assign(morningAnnouncementsRuntime,previous);
+    else{morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0}
     if(owned.length)queueMorningAnnouncementsReleaseTargets(owned);
     if(morningAnnouncementsReleaseTargets.size){
       morningAnnouncementsRuntime.releaseReconcilePending=true;
       scheduleMorningAnnouncementsReleaseRetry([...morningAnnouncementsReleaseTargets.keys()],"start-failed");
     }
-    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)),false)}
+    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)&&!(restorePrevious&&previousContent.has(id))),false)}
     catch(cleanupError){diagnosticError(cleanupError,{component:"automation",operation:"morning-announcements-start-cleanup"})}
     throw error;
   }

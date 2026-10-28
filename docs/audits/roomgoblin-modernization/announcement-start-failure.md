@@ -34,7 +34,7 @@ and Node/controller/Python/Bash checks. Required CI, checked integration, exact
 images and backed-up appliance delivery remain pending. Tests use deterministic
 transports; no physical receiver commands or production failure injection were used.
 
-Replacement of an already active announcement, including changed target sets,
-remains a separate review. The unchanged-content control here is a fresh start;
-it does not establish recovery of a previously active session after replacement
-fails before its first dispatch.
+The unchanged-content control here is a fresh start. The separate
+[target-admission follow-up](announcement-target-admission.md) covers an untouched
+prior active session when replacement fails before dispatch. Changed target sets
+and partial replacement of an active session remain separate review.
