@@ -283,6 +283,22 @@ Late audio-command persistence remains a separate reproduced review finding.
 
 ## Inventory and review sequence
 
+## Upload completion and media-library integration
+
+Completion receipts and conversion/deletion ownership are integrated on merged
+`main` `f3e8624`. Before this evidence note and PR #307's delivery receipt, the
+complete tree matched qualified `8a81abd`. The supported Linux snapshot passes
+1,771 tests, zero failures and two root-only skips, plus all 23 Host Recovery
+tests and Node/controller/Python/Bash checks. All 90 focused Linux integration
+tests pass with two root-only skips (92 total). An additional native-Windows
+attempt was unsuitable because shared-permission fixtures require Linux
+`fchmod`; it is not counted as qualification. Required PR/main gates and exact
+image delivery for this batch remain pending. PR #307 is deployed and verified;
+see [the receipt](upload-recovery-delivery.md). Media-card document dispatch,
+cancellation outcome feedback and library refresh ownership remain under review.
+
+## Inventory and review sequence
+
 These are review units, not proposed new services. Later units remain queued;
 their ordering may change when the current unit's evidence warrants it.
 
