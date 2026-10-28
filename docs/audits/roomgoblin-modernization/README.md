@@ -10,13 +10,15 @@ passes, two root-only skips, all 23 Host Recovery cases and 113 workspace cases
 per browser. The [inventory/status repair](android-inventory-ownership.md)
 reproduces 15 failures on old source and passes all 16 targeted cases, 2,296 Linux
 tests with two root-only skips, all 23 Host Recovery cases and 116 workspace
-cases per browser. It is PR #328; its held-route timing repair passed 40 Firefox
-repetitions and 116 workspace cases per browser, and fresh CI is running before
-merge. The separate [card-command fix](android-command-ownership.md)
+cases per browser. PR #328's held-route timing repair passed 40 Firefox
+repetitions and 116 workspace cases per browser; all 14 checks passed before
+merge as `f76670b`. Exact publication and delivery follow. The separate [card-command fix](android-command-ownership.md)
 passes nine targeted cases, 2,305 Linux tests with two root-only skips, all 23
-Host Recovery cases and 119 workspace cases per browser. Remote shell output
-has four reproduced ownership failures queued next. Remaining Group 10 and
-roadmap work is open.
+Host Recovery cases and 119 workspace cases per browser. The [shell/output fix](android-shell-ownership.md)
+passes nine targeted cases, 2,314 Linux tests with two root-only skips, all 23
+Host Recovery cases and 122 workspace cases per browser. Lifecycle inventory and
+page-reload behavior has four reproduced failures queued next. Remaining Group
+10 and roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and

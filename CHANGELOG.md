@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Android shell and diagnostic output with the newest request, preserve
+  typed commands, and share pending-device admission with card controls.
+
 - Retain pending Android card-command ownership across refreshes and capability
   updates, preventing duplicate ADB, Agent v2 and installation requests.
 

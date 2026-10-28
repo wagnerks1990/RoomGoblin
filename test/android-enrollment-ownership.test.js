@@ -8,12 +8,12 @@ function fixture(){
  for(const key of Object.keys(values))Object.defineProperty(form.elements,key,{value:{get value(){return values[key]},set value(v){values[key]=v}}});
  nodes.enroll=form;nodes.editDialog={open:false};nodes.enrollMsg={textContent:""};nodes.devices={querySelectorAll:()=>[]};
  const $=id=>nodes[id]??=( {value:"",disabled:false,textContent:"",addEventListener(){}} );
- const ctx=vm.createContext({$,state:{adbAvailable:true},enrollmentBusy:false,editVersion:0,
+ const ctx=vm.createContext({$,state:{adbAvailable:true},deviceOperations:new Map(),enrollmentBusy:false,editVersion:0,
   FormData:class{constructor(target){if(target!==form)throw Error("event form unavailable");this.entries=Object.entries(values)}[Symbol.iterator](){return this.entries[Symbol.iterator]()}},
   api(url,options){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});calls.push({url,options,resolve,reject});return promise},
   load:async()=>{},deviceById:()=>({id:"new-display"}),openEdit:id=>opened.push(id)});
  const begin=source.includes("function enrollmentDraft(")?source.indexOf("function enrollmentDraft("):source.indexOf('$("enroll").addEventListener');
- vm.runInContext(source.slice(source.indexOf("function applyBridgeAvailability("),source.indexOf("function filterDisplayInventory("))+source.slice(begin,source.indexOf('$("editForm").addEventListener')),ctx);
+ vm.runInContext(source.slice(source.indexOf("function updateShellAvailability("),source.indexOf("function filterDisplayInventory("))+source.slice(begin,source.indexOf('$("editForm").addEventListener')),ctx);
  return {ctx,values,nodes,button,calls,opened,resets:()=>resets,submit(){const event={currentTarget:form,preventDefault(){}};const pending=submit(event);event.currentTarget=null;return pending}};
 }
 const accepted={ok:true,device:{id:"new-display",name:"Accepted display"}};
