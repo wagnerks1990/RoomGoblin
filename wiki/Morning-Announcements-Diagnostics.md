@@ -39,6 +39,14 @@ previous execution markers remain available for retry. Release recovery saves
 those markers before reconciling current display winners or releasing music;
 it does not replay the old deferred commands.
 
+Failed release clears remain pending. A retry clears only content still owned
+by that release; newer content and its audio priority are preserved. If another
+announcement starts first, its later release also finishes the older pending
+work before music can resume. Removed receivers retire their pending records.
+A selected receiver mapped to the shared legacy broadcast topic fails closed
+instead of clearing unrelated receivers. These are command-ownership checks,
+not proof of physical playback or audible silence.
+
 HLS probe deadlines cover the full playlist body, including a server that sends
 headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
 and 512 KiB. A timeout or oversized response is reported as unknown availability

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Recover failed announcement releases across successor sessions, retry clears
+  only for their owned content, and preserve newer content through delivery races.
+
 - Retain deferred announcement occurrences and restore prior execution markers
   after storage failures; persist retry bookkeeping before display/music release.
 

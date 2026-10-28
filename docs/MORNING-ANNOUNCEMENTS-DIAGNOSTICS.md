@@ -58,6 +58,14 @@ previous execution markers remain available for retry. Release recovery saves
 those markers before reconciling current display winners or releasing music;
 it does not replay the old deferred commands.
 
+Failed release clears remain pending. A retry clears only content still owned
+by that release; newer content and its audio priority are preserved. If another
+announcement starts first, its later release also finishes the older pending
+work before music can resume. Removed receivers retire their pending records.
+A selected receiver mapped to the shared legacy broadcast topic fails closed
+instead of clearing unrelated receivers. These are command-ownership checks,
+not proof of physical playback or audible silence.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.

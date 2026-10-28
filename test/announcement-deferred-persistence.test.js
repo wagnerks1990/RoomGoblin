@@ -5,11 +5,11 @@ function extract(name){const a=source.search(new RegExp("(?:async )?function "+n
 function fixture({existing=true}={}){
  const event=existing?{id:"lesson",lastExec:"old",lastExecByClass:{base:"old"},lastRun:{ok:false},updatedAt:"before"}:{id:"lesson"};
  const item={storedEventId:"lesson",occurrenceKey:"base",scheduledMinuteKey:"2026-10-27 08:00",dateKey:"2026-10-27",event:{time:"08:00",classId:"base"}},queue=new Map([["one",item]]),writes=[],timers=[],calls=[];
- const ctx=vm.createContext({Date,Map,Promise,deferredAnnouncementAutomations:queue,classroomAutomations:{events:[event]},persistAutomations:()=>writes.push(JSON.parse(JSON.stringify(event))),
+ const ctx=vm.createContext({Date,Map,Promise,persistentState:{displays:{screen:{audioContentId:"announcement"}}},morningAnnouncementsReleaseTargets:new Map([["screen",{contentId:"announcement",clearId:"release-clear",cleared:false}]]),resolveDisplayTargets:ids=>ids,executeCommand:async command=>{ctx.persistentState.displays.screen.audioContentId=command.id},deferredAnnouncementAutomations:queue,classroomAutomations:{events:[event]},persistAutomations:()=>writes.push(JSON.parse(JSON.stringify(event))),
   shutdownRequested:false,fullExportFreeze:{requested:false},morningAnnouncementsReleaseRetryTimer:null,morningAnnouncementsLifecycle:Promise.resolve(),morningAnnouncementsLifecycleBusy:0,morningAnnouncementsRuntime:{active:false,releaseReconcilePending:true},
   setTimeout:fn=>{const t={fn,unref(){}};timers.push(t);return t},resyncCurrentDisplayAutomationsAfterAnnouncements:async()=>{calls.push("resync");return {results:[]}},
   setMorningAnnouncementPriorityTargets:async()=>calls.push("release"),backgroundMusicTick:async()=>calls.push("music")});
- for(const name of ["consumeDeferredAnnouncementAutomations","serializeMorningAnnouncementsLifecycle","scheduleMorningAnnouncementsReleaseRetry"])vm.runInContext(extract(name),ctx);
+ for(const name of ["clearMorningAnnouncementsReleaseTargets","consumeDeferredAnnouncementAutomations","serializeMorningAnnouncementsLifecycle","scheduleMorningAnnouncementsReleaseRetry"])vm.runInContext(extract(name),ctx);
  return {ctx,event,item,queue,writes,timers,calls,async fire(){assert.ok(timers.length);timers.shift().fn();await ctx.morningAnnouncementsLifecycle;await Promise.resolve()}};
 }
 test("successful deferred bookkeeping preserves event identity and all occurrence markers",()=>{
