@@ -707,6 +707,12 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Serialize accepted Background Music schedule writes and return the entire
+queued HTTP handler promise through Stop, persistence and reconciliation.
+Normalize each write against the preceding committed configuration. Only the
+still-current generation acquired by a successful schedule Stop may clear its
+schedule key or release manual Stop; preserve newer manual playback intent.
+
 Music Assistant connection metadata and its optional encrypted token are one
 SQLite transaction. Reset the persistent connection only after commit; failed
 saves leave the prior identity active. Omitted or blank tokens retain the stored
