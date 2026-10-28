@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+[Legacy configuration/secret imports](legacy-import-transaction.md) now preserve
+their previous authority when migration bookkeeping fails. Five baseline failures
+are repaired; all 41 targeted cases pass. The full Linux snapshot passes 2,480
+tests, zero failures and two root-only skips, all 23 Host Recovery and all 55 JVM
+cases. Checked delivery is pending. Authentication and stable receiver identity
+are the next review unit.
+
 [Legacy audit import transactions](audit-import-transaction.md) repair two
 reproduced data-loss/duplication paths. All 31 targeted cases pass; the full Linux
 snapshot passes 2,470 tests, zero failures and two root-only skips, all 23 Host

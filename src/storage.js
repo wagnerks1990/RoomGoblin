@@ -429,13 +429,13 @@ class ClassroomHubStorage{
   }
 
   migrateNormalizedObjects(){
-    for(const ns of NORMALIZED_NAMESPACES){if(this.hasNormalized(ns))continue;const row=this.db.prepare("SELECT value_json,source_file FROM object_store WHERE namespace=?").get(ns);if(!row)continue;const value=parseJson(row.value_json,null);if(value===null)continue;try{this.writeNormalized(ns,value);this.recordMigration(`sqlite:object_store/${ns}`,`sqlite:normalized/${ns}`,Array.isArray(value)?value.length:1,{schemaVersion:2});this.deleteObject(ns)}catch(err){console.warn(`Normalized migration failed for ${ns}: ${err.message}`)}}
+    for(const ns of NORMALIZED_NAMESPACES){if(this.hasNormalized(ns))continue;const row=this.db.prepare("SELECT value_json,source_file FROM object_store WHERE namespace=?").get(ns);if(!row)continue;const value=parseJson(row.value_json,null);if(value===null)continue;try{this.tx(()=>{this.writeNormalized(ns,value);this.recordMigration(`sqlite:object_store/${ns}`,`sqlite:normalized/${ns}`,Array.isArray(value)?value.length:1,{schemaVersion:2});this.deleteObject(ns)})}catch(err){console.warn(`Normalized migration failed for ${ns}: ${err.message}`)}}
   }
 
   readJson(file,fallback,{namespace=keyForFile(file),migrate=true}={}){
     if(NORMALIZED_NAMESPACES.has(namespace)&&this.hasNormalized(namespace))return this.readNormalized(namespace,fallback);
     if(this.hasObject(namespace))return this.getObject(namespace,fallback);
-    if(migrate&&fs.existsSync(file)){try{const value=JSON.parse(fs.readFileSync(file,"utf8"));if(NORMALIZED_NAMESPACES.has(namespace))this.writeNormalized(namespace,value);else this.putObject(namespace,value,file);this.recordMigration(file,NORMALIZED_NAMESPACES.has(namespace)?`sqlite:normalized/${namespace}`:`sqlite:object_store/${namespace}`,1,{type:"json"});return value}catch(err){console.warn(`Legacy JSON import failed for ${file}: ${err.message}`)}}
+    if(migrate&&fs.existsSync(file)){try{const value=JSON.parse(fs.readFileSync(file,"utf8"));this.tx(()=>{if(NORMALIZED_NAMESPACES.has(namespace))this.writeNormalized(namespace,value);else this.putObject(namespace,value,file);this.recordMigration(file,NORMALIZED_NAMESPACES.has(namespace)?`sqlite:normalized/${namespace}`:`sqlite:object_store/${namespace}`,1,{type:"json"})});return value}catch(err){console.warn(`Legacy JSON import failed for ${file}: ${err.message}`)}}
     return fallback;
   }
   writeJson(file,value,{namespace=keyForFile(file)}={}){if(NORMALIZED_NAMESPACES.has(namespace))this.writeNormalized(namespace,value);else this.putObject(namespace,value,file);if(this.legacyMirror){ensureParent(file);fs.writeFileSync(file,JSON.stringify(value,null,2))}}
@@ -564,7 +564,7 @@ class ClassroomHubStorage{
   hasSecret(name){return !!this.db.prepare("SELECT 1 ok FROM secret_store WHERE name=?").get(String(name))}
   listSecrets(){return this.db.prepare("SELECT name,metadata_json,created_at,updated_at FROM secret_store ORDER BY name").all().map(r=>({name:r.name,metadata:parseJson(r.metadata_json,{}),createdAt:r.created_at,updatedAt:r.updated_at}))}
   deleteSecret(name){this.db.prepare("DELETE FROM secret_store WHERE name=?").run(String(name))}
-  importSecretFile(name,file,metadata={}){if(this.hasSecret(name)||!fs.existsSync(file))return false;this.putSecret(name,fs.readFileSync(file),{...metadata,importedFrom:file});this.recordMigration(file,`sqlite:secret_store/${name}`,1,{type:"encrypted-secret"});return true}
+  importSecretFile(name,file,metadata={}){if(this.hasSecret(name)||!fs.existsSync(file))return false;this.tx(()=>{this.putSecret(name,fs.readFileSync(file),{...metadata,importedFrom:file});this.recordMigration(file,`sqlite:secret_store/${name}`,1,{type:"encrypted-secret"})});return true}
 
   putCertificate(name,pem,metadata={}){const now=iso();this.db.prepare(`INSERT INTO certificates(name,certificate_pem,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET certificate_pem=excluded.certificate_pem,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`).run(String(name),String(pem),JSON.stringify(metadata||{}),now,now)}
   getCertificate(name){return this.db.prepare("SELECT certificate_pem FROM certificates WHERE name=?").get(String(name))?.certificate_pem||null}

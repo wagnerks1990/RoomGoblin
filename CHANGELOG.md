@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Commit legacy configuration and secret imports with their migration records;
+  failed migration bookkeeping no longer leaves partially published state.
+
 - Roll back legacy audit imports on storage failures and commit their migration
   record with the imported rows before archiving the source.
 

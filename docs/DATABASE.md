@@ -40,6 +40,13 @@ failures. Imported rows and their migration record commit together before the
 source is archived. Failed writes or commits preserve the source for a complete
 retry; a recorded import is not duplicated on restart.
 
+Legacy JSON and secret-file imports also commit their migration records with
+the imported values. Normalized object migration additionally removes its old
+object-store row in that same transaction. A write, record, removal or commit
+failure leaves the previous authority and source intact. Existing database
+configuration still takes precedence over legacy files; encryption and file
+retention policies are unchanged.
+
 The storage abstraction also makes non-normalized application namespaces database-backed. A path such as `data/veyon-computers.json` is a legacy namespace identifier, not an instruction to use a JSON file at runtime. With `LEGACY_JSON_MIRROR=false` (the production default), reads and writes use SQLite `object_store` and do not maintain JSON mirrors.
 
 ### Veyon state
