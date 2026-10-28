@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve cancelled Ubuntu maintenance schedules and newer history/metadata
+  when a pending screen-assignment save completes.
+
 - Reject fresh Windows enrollment over an existing configuration and publish new
   identity files without overwriting a concurrently created destination.
 

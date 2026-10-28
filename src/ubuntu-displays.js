@@ -256,7 +256,7 @@ class UbuntuDisplays{
       this.ensureReceivers(config.screens);const deploymentConfig=structuredClone(config);
       this.storage.tx(()=>{if(this.storage.displayCredentialPolicy?.().authenticationRequired)for(const s of deploymentConfig.screens)s.enrollmentToken=this.storage.createDisplayEnrollment(s.receiverId,{ttlMinutes:60}).token});
       await this.rpc(d,"configure",{config:deploymentConfig});
-      this.storage.setPreference(STORE,this.records().map(row=>row.id===id?{...d,config}:row));return {ok:true};
+      this.storage.setPreference(STORE,this.records().map(row=>row.id===id?{...row,config}:row));return {ok:true};
     }finally{this.busy.delete(id);this.configuring=false}
   }
   async command(id,input){

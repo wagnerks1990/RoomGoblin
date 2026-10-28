@@ -171,7 +171,9 @@ precedes dispatch, preventing replay after a Hub crash or uncertain delivery. Th
 computer also retains up to 2048 request receipts for 32 days, rejecting additional
 jobs at that limit rather than forgetting unexpired receipts; restoring an older
 Hub backup cannot repeat an already accepted request. Cancel
-pending jobs explicitly. The Hub must be running and connected to dispatch; if it was
+pending jobs explicitly. Cancellation remains effective while a screen-assignment
+save is awaiting the computer: that save updates only configuration and preserves
+the latest schedule, history and other metadata. The Hub must be running and connected to dispatch; if it was
 unavailable beyond the grace period, nothing runs later without a new request. Recurring
 automatic installation policies are not enabled by this feature. Ubuntu's own unattended
 upgrade and Snap refresh policies remain in force; RoomGoblin does not silently disable
