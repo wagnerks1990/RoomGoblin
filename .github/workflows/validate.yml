@@ -299,6 +299,9 @@ jobs:
           echo 'bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01  '"$RUNNER_TEMP/gradle.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-9.6.0/bin" >> "$GITHUB_PATH"
+      - name: Verify Android listener shutdown ownership
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-socket-lifecycle.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Close active and queued Android management sockets when its service stops,
+  while preserving accepted clients during listener replacement.
+
 - Share pending Android capability reads across card refreshes and discard cache
   entries and replies belonging to removed or replaced enrollments.
 

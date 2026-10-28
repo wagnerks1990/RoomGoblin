@@ -44,12 +44,20 @@ deadline, COM object release and installer rollback/disable decisions. COM and
 service/task mutations use fixtures. One read-only probe checks a unique absent
 task through the real Windows COM interface; no task is created, enabled or run.
 That probe is skipped on non-Windows hosts; the remaining 23 cases still run.
-`python tools/test-native-enrollment-identity.py` adds ten cases against the
+`python tools/test-native-enrollment-identity.py` adds 18 cases against the
 actual Install body and configuration writer: existing/empty identity admission,
 one-use file admission, fresh success/failure, atomic publication collisions and
 prepublication ACL failures. File operations use temporary fixture roots; DPAPI
 and ACL execution are substituted. These cases verify protection dispatch and
 identity preservation, not Windows cryptography or effective ACLs.
+The additional origin cases reject embedded primary/fallback credentials and
+preserve the separate HTTP acknowledgements before any configuration/ACL work.
+
+The Android job runs `python3 tools/test-android-socket-lifecycle.py` before its
+APK build. Four JVM cases compile the actual listener, service fields and shutdown
+methods with Android callbacks replaced. Real loopback sockets verify closure of
+active/queued clients, overflow rejection, normal completion and listener
+replacement. This does not install an APK or exercise Android framework lifecycle.
 
 ## Conservative documentation-only PR selection
 
