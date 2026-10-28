@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+Native cancellation and enrollment ownership are integrated on merged main
+`5e1af23`. Before this note, `82980cd` is byte-identical to qualified `9911c30`;
+all 36 focused integration contracts pass again. Full qualification passes
+2,165 Linux tests, two root-only skips, 23 Host Recovery tests, six isolated
+native process cases on .NET 10 and 105 browser cases per engine. Required CI
+includes native .NET 8 process execution; exact publication and delivery follow.
+
 PR #318 passed all 14 fresh checks with resolved reviews and merged as `5e1af23`;
 exact publication and its backed-up update are pending. The separate
 [enrollment ownership repair](windows-enrollment-ownership.md) passes 16 new
