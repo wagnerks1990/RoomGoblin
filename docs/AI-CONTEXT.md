@@ -707,6 +707,11 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+General Music Assistant status retains the connection generation captured with
+its settings. Recheck before legacy player-list fallback and before success/error
+projection; retired reads return 409 and require refresh. Do not pair old
+configuration or players with a replacement connection's transport metadata.
+
 Each Background Music start failure advances recovery once. Its current-generation
 outer catch owns failed/requested accounting; an inner failed transition must not
 clear the confirmation wait and accidentally count the same command twice.
