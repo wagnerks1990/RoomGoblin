@@ -52,8 +52,14 @@ qualification. The [activity assignment repair](android-activity-assignment.md)
 fixes three reproduced failures while preserving redirected live sessions and
 explicit reload. All seven activity JVM cases pass, and the combined tree passes
 2,399 Linux tests with two root-only skips, all 23 Host Recovery cases and all
-four socket JVM cases. Unsupported management port admission has four reproduced
-failures under review.
+four socket JVM cases. PR #334 carries the socket and activity repairs and is
+running required checks.
+
+[Management port admission](android-management-ports.md) repairs four reproduced
+failures without migrating existing inventory. All 73 targeted cases pass. Final
+Linux qualification passes 2,428 tests with two root-only skips, all 23 Host
+Recovery cases and all 11 socket/activity JVM cases. Root-tool interruption has
+one reproduced process-cleanup failure under review.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),

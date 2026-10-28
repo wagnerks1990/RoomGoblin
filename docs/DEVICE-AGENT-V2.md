@@ -42,6 +42,14 @@ A feature being present in this experimental build does **not** mean it will rem
 
 The service listens on the configured LAN port, default `8765`, and requires the per-device `x-classroom-hub-agent-token` header. The token is generated and retained by the Hub maintenance service and is provisioned to the app through the existing trusted ADB configuration operation.
 
+Agent configuration and persistent-ADB bootstrap accept only whole-number target
+ports from 1024 through 65535, matching the Android configuration receiver.
+Invalid values return HTTP 400 before device commands or saved endpoint changes.
+Defaults remain 8765 for Agent HTTP and 5555 for persistent ADB. Existing general
+ADB enrollment endpoints and legacy inventory records are preserved; this is not
+an inventory migration. Disabling persistent ADB remains available for legacy
+settings, and inactive legacy target values do not block Agent configuration.
+
 The configuration broadcast remains exported only for the Android shell bootstrap and is guarded by the platform `android.permission.DUMP` permission. Ordinary installed applications cannot invoke it. The HTTP listener uses a fixed maximum of eight client workers, a sixteen-client queue, five-second socket timeouts, bounded headers and a 64 KiB request-body ceiling so unauthenticated slow clients cannot create an unbounded thread pool.
 
 Configuration is committed before the foreground service is signaled. A running service closes and rebinds its listener when the configured port changes, and closes it without stopping kiosk/audio service duties when Agent HTTP is disabled. The two exported settings-helper activities use the same shell-only `DUMP` permission boundary as configuration. Android 10+ foreground registration declares both `specialUse` and `mediaPlayback`, matching the manifest and native Sendspin responsibility.
