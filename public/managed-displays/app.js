@@ -2,13 +2,30 @@
 const $=id=>document.getElementById(id);let state={devices:[],profiles:[],adbAvailable:false},refreshTimer=null,refreshBusy=false;
 let enrollmentBusy=false,editVersion=0;
 let inventoryVersion=0,inventoryRead=null,inventoryProbeAgents=true;
-let shotVersion=0,shotDevice=null;
+let shotVersion=0,shotDevice=null,terminalVersion=0;
 const editingDevices=new Set(),deviceMessages=new Map();
 const deviceOperations=new Map(),controlStates=new WeakMap();
 async function api(path,opt={}){const r=await fetch(`/api/v1/maintenance${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});const text=await r.text();let j={};try{j=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}if(!r.ok||j.ok===false){const error=Error(j.error||`HTTP ${r.status}`);error.payload=j;error.httpStatus=r.status;throw error}return j}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function deviceById(id){return state.devices.find(d=>String(d.id)===String(id))}
+function applyLifecycleResult(id,action,result){
+  id=String(id);
+  const confirmed=action==='remove'
+    ? result?.removed===true&&String(result.deviceId)===id
+    : ['enable','disable'].includes(action)&&result?.removed===false&&String(result.device?.id)===id&&result.device.enabled===(action==='enable');
+  if(!confirmed)throw Error('Enrollment change was not confirmed. Refresh inventory before trying again.');
+  const focused=document.activeElement,restoreFocus=focused===document.body||(focused?.dataset?.lifecycleAction===action&&focused.closest('.card[data-id]')?.dataset.id===id);
+  inventoryVersion++;
+  if(action==='remove')state.devices=state.devices.filter(d=>String(d.id)!==id);
+  else{const current=deviceById(id);if(current)current.enabled=action==='enable'}
+  deviceMessage(id,action==='remove'?'Enrollment removed.':`Enrollment ${action==='enable'?'enabled':'disabled'}.`);
+  render();
+  if(action==='remove'&&$("editDialog").open&&$("editId").value===id){
+    $("editMsg").textContent='This enrollment was removed. Your unsaved draft is still shown.';updateEditAvailability();
+  }
+  if(restoreFocus)restoreDeviceFocus(id,'edit');
+}
 function profileFor(d){return state.profiles.find(p=>p.id===d.profileId)||null}
 function agentStatusHtml(d){const s=d.agentStatus;if(!s)return state.adbAvailable?'<span class="agent-state pending">Checking…</span>':'<span class="agent-state warn">ADB offline</span>';if(s.starting)return `<span class="agent-state pending">Starting…</span>${s.version?` <small>v${esc(s.version)}</small>`:''}`;if(s.error)return `<span class="agent-state bad">Unavailable</span> <small>${esc(s.error)}</small>`;if(!s.installed)return '<span class="agent-state bad">Not installed</span>';const run=s.running?'<span class="agent-state ok">Running</span>':'<span class="agent-state warn">Installed · stopped</span>';return `${run}${s.version?` <small>v${esc(s.version)}</small>`:''}`}
 function deviceStateHtml(d){if(d.uiRecovering)return '<span class="pill warn">Recovering…</span>';return `<span class="pill ${d.lastStatus?.online===true?'ok':'bad'}">${d.lastStatus?.online===true?'Online':'Unknown / offline'}</span>`}
@@ -23,6 +40,7 @@ function syncDeviceOperationControls(){
     if(!controlStates.has(button))controlStates.set(button,button.disabled);
     button.disabled=controlStates.get(button)||deviceOperations.has(String(card.dataset.id));
   }
+  updateShellAvailability();
 }
 function beginDeviceOperation(id,label='Request'){
   id=String(id);if(deviceOperations.has(id))return null;
@@ -33,7 +51,8 @@ function endDeviceOperation(id,operation){
   id=String(id);if(deviceOperations.get(id)!==operation)return;
   deviceOperations.delete(id);if(deviceMessages.get(id)===operation.message)deviceMessage(id,'');syncDeviceOperationControls();
 }
-function applyBridgeAvailability(){const disabled=!state.adbAvailable;const enrollButton=$("enroll")?.querySelector('button[type="submit"]');if(enrollButton){enrollButton.disabled=disabled||enrollmentBusy;enrollButton.title=disabled?'ADB bridge unavailable':enrollmentBusy?'Enrollment request pending':''}if($("runShell"))$("runShell").disabled=disabled;$("devices")?.querySelectorAll('.controls button:not([data-op="edit"])').forEach(button=>{const device=deviceById(button.closest('.card[data-id]')?.dataset.id);setDeviceControlDisabled(button,disabled||(button.dataset.op==='persistent'&&device?.agentStatus&&!device.agentStatus.installed));if(disabled)button.title='ADB bridge unavailable'})}
+function updateShellAvailability(){if($("runShell"))$("runShell").disabled=!state.adbAvailable||!$("shellDevice")?.value||deviceOperations.has(String($("shellDevice").value))}
+function applyBridgeAvailability(){const disabled=!state.adbAvailable;const enrollButton=$("enroll")?.querySelector('button[type="submit"]');if(enrollButton){enrollButton.disabled=disabled||enrollmentBusy;enrollButton.title=disabled?'ADB bridge unavailable':enrollmentBusy?'Enrollment request pending':''}updateShellAvailability();$("devices")?.querySelectorAll('.controls button:not([data-op="edit"])').forEach(button=>{const device=deviceById(button.closest('.card[data-id]')?.dataset.id);setDeviceControlDisabled(button,disabled||(button.dataset.op==='persistent'&&device?.agentStatus&&!device.agentStatus.installed));if(disabled)button.title='ADB bridge unavailable'})}
 function filterDisplayInventory(){
   const query=String($("deviceSearch")?.value||"").trim().toLowerCase();
   const connection=$("deviceFilter")?.value||"all";
@@ -131,16 +150,19 @@ async function recoverStatus(id,{timeoutMs=90000,intervalMs=1500}={}){
   const current=deviceById(id);if(current){current.uiRecovering=false;render()}
   throw Error(`Device did not recover within ${Math.round(timeoutMs/1000)} seconds${lastError?.message?`: ${lastError.message}`:''}`);
 }
-function terminalOutput(title,text){$("remoteShell").open=true;$("terminal").textContent=`${title}\n${text||'(no output)'}`;$("shellDevice").value=''}
-async function auditApps(id){const j=await runShell(id,"echo 'Third-party packages:'; pm list packages -3 | sed 's/^package://' | sort; echo; echo 'Disabled third-party packages:'; pm list packages -3 -d | sed 's/^package://' | sort",20000);terminalOutput('Managed Minimal Mode audit',j.stdout||j.stderr)}
-async function enableMinimalMode(id){if(!window.confirm('Managed Minimal Mode disables third-party apps for user 0 except the RoomGoblin Display Agent. Core Android/Google TV system packages are not removed. Continue?'))return;const script=`echo 'Disabling non-RoomGoblin third-party packages...'; for p in $(pm list packages -3 | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm disable-user --user 0 "$p" >/dev/null 2>&1 && echo "DISABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Managed Minimal Mode applied',j.stdout||j.stderr);await accelerateAgentStart(id)}
-async function restoreApps(id){if(!window.confirm('Re-enable disabled third-party packages for Android user 0?'))return;const script=`echo 'Restoring disabled third-party packages...'; for p in $(pm list packages -3 -d | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm enable "$p" >/dev/null 2>&1 && echo "ENABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Third-party apps restored',j.stdout||j.stderr);await accelerateAgentStart(id)}
+function beginTerminalOutput(id){return {version:++terminalVersion,id:String(id),operation:deviceOperations.get(String(id))}}
+function terminalOutputCurrent(owner){return owner?.version===terminalVersion}
+function terminalOutputSuperseded(owner){if(owner?.operation&&deviceMessages.get(owner.id)===owner.operation.message)deviceMessage(owner.id,'Request finished. Newer diagnostic output is displayed.')}
+function terminalOutput(title,text,owner){if(!terminalOutputCurrent(owner)){terminalOutputSuperseded(owner);return}$("remoteShell").open=true;$("terminal").textContent=`${title}\n${text||'(no output)'}`;$("shellDevice").value='';updateShellAvailability()}
+async function auditApps(id){const owner=beginTerminalOutput(id);const j=await runShell(id,"echo 'Third-party packages:'; pm list packages -3 | sed 's/^package://' | sort; echo; echo 'Disabled third-party packages:'; pm list packages -3 -d | sed 's/^package://' | sort",20000);terminalOutput('Managed Minimal Mode audit',j.stdout||j.stderr,owner)}
+async function enableMinimalMode(id){if(!window.confirm('Managed Minimal Mode disables third-party apps for user 0 except the RoomGoblin Display Agent. Core Android/Google TV system packages are not removed. Continue?'))return;const owner=beginTerminalOutput(id);const script=`echo 'Disabling non-RoomGoblin third-party packages...'; for p in $(pm list packages -3 | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm disable-user --user 0 "$p" >/dev/null 2>&1 && echo "DISABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Managed Minimal Mode applied',j.stdout||j.stderr,owner);await accelerateAgentStart(id)}
+async function restoreApps(id){if(!window.confirm('Re-enable disabled third-party packages for Android user 0?'))return;const owner=beginTerminalOutput(id);const script=`echo 'Restoring disabled third-party packages...'; for p in $(pm list packages -3 -d | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm enable "$p" >/dev/null 2>&1 && echo "ENABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Third-party apps restored',j.stdout||j.stderr,owner);await accelerateAgentStart(id)}
 function deviceMessage(id,text){
   deviceMessages.set(String(id),text);
   const card=[...$("devices").querySelectorAll(".card[data-id]")].find(card=>card.dataset.id===String(id)),message=card?.querySelector(".device-message");
   if(message){message.textContent=text;message.hidden=!text}
 }
-function updateEditAvailability(){const button=$("editForm").querySelector('button[type="submit"]');if(button){button.disabled=editingDevices.has($("editId").value);button.title=button.disabled?'Save pending':''}}
+function updateEditAvailability(){const id=$("editId").value,missing=!deviceById(id),button=$("editForm").querySelector('button[type="submit"]');if(button){button.disabled=missing||editingDevices.has(id);button.title=missing?'Enrollment no longer exists':button.disabled?'Save pending':''}}
 function restoreDeviceFocus(id,operation){const card=[...$("devices").querySelectorAll(".card[data-id]")].find(card=>card.dataset.id===String(id)),button=card?.querySelector(`[data-op="${operation}"]`);(button&&!button.disabled&&button.getClientRects().length?button:$("deviceSearch"))?.focus({preventScroll:true})}
 function editDraft(form){return Object.fromEntries(new FormData(form))}
 function openEdit(id){const d=deviceById(id);if(!d)return;editVersion++;$("editId").value=d.id;$("editName").value=d.name||'';$("editSchool").value=d.school||'';$("editBuilding").value=d.building||'';$("editRoom").value=d.room||'';$("editDisplayUrl").value=d.displayUrl||'';$("editProfile").innerHTML=state.profiles.map(p=>`<option value="${esc(p.id)}" ${p.id===d.profileId?'selected':''}>${esc(p.name)}</option>`).join('');$("editEndpoint").textContent=d.serial||`${d.host||''}:${d.port||''}`;$("editMsg").textContent='';updateEditAvailability();$("editDialog").showModal()}
@@ -169,6 +191,7 @@ $("enroll").addEventListener('submit',async e=>{
 });
 $("editForm").addEventListener('submit',async e=>{
   e.preventDefault();const form=e.currentTarget,id=$("editId").value;if(editingDevices.has(id))return;
+  if(!deviceById(id)){$("editMsg").textContent='This enrollment no longer exists. Your unsaved draft is still shown.';updateEditAvailability();return}
   const version=editVersion,draft=editDraft(form),signature=JSON.stringify(draft),body={...draft};delete body.id;
   for(const key of ['name','school','building','room','displayUrl'])body[key]=String(body[key]||'').trim();
   const current=()=>version===editVersion&&$("editDialog").open&&$("editId").value===id;
@@ -199,5 +222,15 @@ async function captureShot(id){
   }catch(error){if(current())$("shotStatus").textContent=`Screenshot unavailable: ${error.message}`}
 }
 $("devices").addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const id=e.target.closest('[data-id]')?.dataset.id;if(!id)return;if(b.dataset.op==='edit'){openEdit(id);return}if(!state.adbAvailable){window.alert('ADB bridge is unavailable. Refresh after the maintenance service recovers.');return}const operation=beginDeviceOperation(id,b.textContent);if(!operation)return;try{if(b.dataset.action){const action=b.dataset.action;await api(`/android/devices/${encodeURIComponent(id)}/action`,{method:'POST',body:JSON.stringify({action})});if(action==='reboot'){await recoverStatus(id,{timeoutMs:90000,intervalMs:1500})}else if(action==='launch'){const d=deviceById(id);if(d)d.agentStatus={...(d.agentStatus||{}),starting:true};render();setTimeout(()=>probeAgent(id),750)}}else if(b.dataset.op==='status'){const d=deviceById(id);if(d?.persistentAdb?.enabled)await recoverStatus(id,{timeoutMs:45000,intervalMs:1500});else{await api(`/android/devices/${encodeURIComponent(id)}/status`);await load()}}else if(b.dataset.op==='agent-status'){await probeAgent(id)}else if(b.dataset.op==='install'){const j=await api(`/android/devices/${encodeURIComponent(id)}/agent/install`,{method:'POST',body:'{}'});await probeAgent(id);window.alert(j.message||'Agent installed.')}else if(b.dataset.op==='configure'){await api(`/android/devices/${encodeURIComponent(id)}/agent/configure`,{method:'POST',body:'{}'});await accelerateAgentStart(id);window.alert('Agent configured and launch requested.')}else if(b.dataset.op==='persistent'){if(!window.confirm('Enable boot-restored wireless debugging and pin ADB to port 5555 on this trusted management network?'))return;const j=await api(`/android/devices/${encodeURIComponent(id)}/persistent-adb/bootstrap`,{method:'POST',body:JSON.stringify({targetPort:5555})});window.alert(j.message||'Persistent ADB enabled.');await load()}else if(b.dataset.op==='audit-apps'){await auditApps(id)}else if(b.dataset.op==='minimal'){await enableMinimalMode(id)}else if(b.dataset.op==='restore-apps'){await restoreApps(id)}else if(b.dataset.op==='screenshot'){await captureShot(id)}}catch(err){deviceMessage(id,err.message);window.alert(err.message)}finally{endDeviceOperation(id,operation);scheduleRefresh()}});
-$("runShell").onclick=async()=>{const id=$("shellDevice").value,command=$("shellCommand").value;if(!id||!command||!state.adbAvailable)return;$("terminal").textContent=`$ ${command}\n`;try{const j=await runShell(id,command,30000);$("terminal").textContent+=j.stdout||j.stderr||'(no output)'}catch(e){$("terminal").textContent+=`ERROR: ${e.message}`}};
+$("runShell").onclick=async()=>{
+  const id=$("shellDevice").value,command=$("shellCommand").value;if(!id||!command||!state.adbAvailable)return;
+  const operation=beginDeviceOperation(id,'Remote shell');if(!operation)return;
+  const owner=beginTerminalOutput(id);$("terminal").textContent=`${deviceById(id)?.name||id}\n$ ${command}\n`;
+  try{
+    const j=await runShell(id,command,30000);
+    if(terminalOutputCurrent(owner))$("terminal").textContent+=j.stdout||j.stderr||'(no output)';else terminalOutputSuperseded(owner);
+  }catch(error){if(terminalOutputCurrent(owner))$("terminal").textContent+=`ERROR: ${error.message}`;deviceMessage(id,`Remote shell: ${error.message}`)}
+  finally{endDeviceOperation(id,operation)}
+};
+$("shellDevice").addEventListener('change',syncDeviceOperationControls);
 $("shellCommand").addEventListener('keydown',e=>{if(e.key==='Enter')$("runShell").click()});$("closeShot").onclick=closeShot;$("shot").addEventListener('cancel',event=>{event.preventDefault();closeShot()});document.addEventListener('visibilitychange',()=>scheduleRefresh(document.hidden?15000:1000));load();
