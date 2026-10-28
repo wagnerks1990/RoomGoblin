@@ -37,5 +37,13 @@ run exposed an incorrect test interception (71 passes, one error). The fixture
 now intercepts fetch used by the module; the full passing runs retain all checks.
 Required GitHub checks and delivery remain pending. PR #308's multipart cleanup
 security repair is separate from this qualified controller snapshot.
+
+Final integration review also covers the legacy empty-target fallback using the
+actual receiver resolver: omitted/empty values still select only `tv1`, while
+an empty target array fails before dispatch. With this additional regression and
+the cancellation outcome changes, the final Linux snapshot passes 1,819 tests,
+zero failures and two root-only skips (1,821 total), plus all 23 Host Recovery
+tests and Node/controller/Python/Bash checks. All 73 workspace cases pass in
+Chromium and Firefox. Required GitHub delivery remains pending.
 No production receiver commands or playback experiments are part of this check.
 Completed-upload cancellation feedback and the presentation review remain open.

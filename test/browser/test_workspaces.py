@@ -531,6 +531,52 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertIn('Networking laboratory', page.locator('#targets').inner_text())
         self.evidence(page, errors, 'studio-populated-media-390')
 
+    def test_upload_cancel_reports_saved_media_in_both_controllers(self):
+        for kind in ('app', 'display'):
+            with self.subTest(controller=kind):
+                reads = []
+                def transport(req, target):
+                    if target == '/api/v1/media':
+                        reads.append(True)
+                        req.fulfill(json={'files': []})
+                        return True
+                    if target == '/api/v1/media/uploads':
+                        req.fulfill(json={'upload': {'id': 'fixture-upload', 'chunkBytes': 8,
+                                                    'totalChunks': 1, 'received': [0]}})
+                        return True
+                    if target == '/api/v1/media/uploads/fixture-upload/complete':
+                        req.fulfill(status=503, json={'error': 'Completion reply unavailable'})
+                        return True
+                    if target == '/api/v1/media/uploads/fixture-upload' and req.request.method == 'DELETE':
+                        req.fulfill(json={'ok': True, 'completed': True,
+                                          'file': {'storedName': 'saved.pdf', 'url': '/media/saved.pdf'}})
+                        return True
+                    return False
+                page, errors = self.page('/controller/' if kind == 'app' else '/controller/display.html', transport=transport)
+                if kind == 'app':
+                    page.evaluate("showPage('media')")
+                    page.locator('#mediaFile').set_input_files({'name': 'lesson.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.7'})
+                    page.locator('#mediaUploadForm button[type=submit]').click()
+                    status, cancel = '#uploadState', '#mediaUploadCancel'
+                else:
+                    page.locator('button[data-work="media"]').click()
+                    page.locator('#upload').set_input_files({'name': 'lesson.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.7'})
+                    page.get_by_role('button', name='Upload / Resume', exact=True).click()
+                    status, cancel = '#uploadStatus', '#uploadCancel'
+                page.wait_for_function('(id) => document.querySelector(id).textContent.includes("Completion reply unavailable")', arg=status)
+                before = len(reads)
+                if kind == 'display':
+                    page.get_by_text('Media URL & playback options', exact=True).click()
+                    page.locator('#mediaUrl').fill('/media/manual-selection.pdf')
+                page.locator(cancel).click()
+                page.wait_for_function('(id) => document.querySelector(id).textContent.includes("Upload already saved")', arg=status)
+                page.wait_for_timeout(100)
+                self.assertGreater(len(reads), before)
+                if kind == 'display':
+                    self.assertEqual(page.locator('#mediaUrl').input_value(), '/media/manual-selection.pdf')
+                self.assertFalse(page.locator(cancel).is_visible())
+                self.assertFalse(errors, errors)
+
     def test_media_cards_dispatch_documents_to_selected_receivers(self):
         devices = {name: {'name': name, 'enabled': True} for name in ('tv1', 'tv2')}
         files = [{'storedName': 'lesson.pdf', 'originalName': 'Lesson PDF', 'type': 'pdf',

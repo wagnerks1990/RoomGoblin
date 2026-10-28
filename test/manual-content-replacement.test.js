@@ -92,7 +92,8 @@ test("media library Show uses replacement dispatch for images, video, PDF and co
 
 function mediaRouteFixture(name,type,{converted=true}={}){
  const h=fixture();let handler;Object.assign(h.ctx,{app:{post:(_url,_guard,fn)=>handler=fn},requireCapability:()=>()=>{},fs:{existsSync:file=>converted||!file.endsWith("converted.pdf")},MEDIA_DIR:"/media",
- safeStoredName:x=>x,cleanId:x=>String(x).toLowerCase().replace(/[^a-z0-9._-]/g,""),mediaLibrary:{files:{[name]:{type,generatedPdf:"converted.pdf"}}},mediaUrl:n=>"/media/"+n,documentViewerUrl:n=>"/document-viewer/"+n,libraryRecordFromDisk:()=>({})});
+ safeStoredName:x=>x,cleanId:x=>String(x).toLowerCase().replace(/[^a-z0-9._-]/g,""),displayGroups:{all:["tv1","tv2"]},mediaLibrary:{files:{[name]:{type,generatedPdf:"converted.pdf"}}},mediaUrl:n=>"/media/"+n,documentViewerUrl:n=>"/document-viewer/"+n,libraryRecordFromDisk:()=>({})});
+ vm.runInContext(extract("resolveDisplayTargets"),h.ctx);
  const start=source.indexOf('app.post("/api/v1/media/:name/display"');vm.runInContext(source.slice(start,source.indexOf('\n\napp.use(',start)),h.ctx);
  h.call=async body=>{const r={status:200},res={status(n){r.status=n;return res},json(v){r.body=v;return res}};await handler({params:{name},body},res);return r};return h;
 }
@@ -106,6 +107,10 @@ test("library video honors explicit playback and appearance options and preserve
 });
 test("library image retains opacity and local-direct selection",async()=>{
  const h=mediaRouteFixture("image.png","image");await h.call({target:"tv1",opacity:.6,localDirect:false});assert.equal(h.sent[1].command.payload.opacity,.6);assert.equal(h.sent[1].command.payload.localDirect,false);
+});
+test("library omitted or empty target retains its legacy single-receiver default",async()=>{
+ for(const target of [undefined,"",null]){const h=mediaRouteFixture("lesson.pdf","pdf");assert.equal((await h.call({target})).status,200);for(const delivery of h.sent)assert.deepEqual(delivery.targets,["tv1"])}
+ const h=mediaRouteFixture("lesson.pdf","pdf");assert.equal((await h.call({target:[]})).status,400);assert.equal(h.sent.length,0);
 });
 test("unready documents and oversized or unknown targets cannot clear receivers",async()=>{
  const h=mediaRouteFixture("lesson.docx","document",{converted:false});assert.equal((await h.call({target:["tv1","tv2"]})).status,409);assert.equal(h.sent.length,0);

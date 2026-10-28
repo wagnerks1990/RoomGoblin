@@ -4,20 +4,53 @@ const {ResumableUploadStore}=require("../src/resumable-upload");
 const bytes=Buffer.from("%PDF-1.7"),digest=crypto.createHash("sha256").update(bytes).digest("hex");
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8").replace(/\r\n/g,"\n");
 function block(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>0&&b>a);return source.slice(a,b)}
-const code=block("function commitMediaLibraryRecord(","\nlet classroomAutomations=")+block("async function registerUploadedMedia(","\nconst storage = multer.diskStorage")+block("function libraryRecordFromDisk(","\nfunction listMediaLibrary(")+block('app.post("/api/v1/media/uploads/:id/complete"','\napp.delete("/api/v1/media/uploads/:id"');
+const code=block("function commitMediaLibraryRecord(","\nlet classroomAutomations=")+block("async function registerUploadedMedia(","\nconst storage = multer.diskStorage")+block("function libraryRecordFromDisk(","\nfunction listMediaLibrary(")+block('app.post("/api/v1/media/uploads/:id/complete"','\nconst mediaLibraryMutationLimit=');
 async function fixture(t){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-upload-receipt-"));assert.equal(path.dirname(root),path.resolve(os.tmpdir()));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  const media=path.join(root,"media");fs.mkdirSync(media);const h={root,media,names:0,audits:0,persisted:{files:{}},persist:()=>{},options:{root:path.join(root,"sessions"),destinationRoot:media,maxFileBytes:1024,maxOwnerBytes:8,chunkBytes:16,minFreeBytes:0,ttlMs:1000}};
  h.reopen=()=>{
-  h.store=new ResumableUploadStore(h.options);h.ctx=vm.createContext({app:{post:(_url,...args)=>h.route=args.at(-1)},mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:h.store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"file-"+(++h.names)+".pdf",MEDIA_DIR:media,MEDIA_LIBRARY_FILE:"library.json",path,fs,
+  h.store=new ResumableUploadStore(h.options);h.ctx=vm.createContext({app:{post:(_url,...args)=>h.route=args.at(-1),delete:(_url,...args)=>h.cancelRoute=args.at(-1)},rateLimit:()=>()=>{},mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:h.store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"file-"+(++h.names)+".pdf",MEDIA_DIR:media,MEDIA_LIBRARY_FILE:"library.json",path,fs,
   mediaLibrary:structuredClone(h.persisted),persistJson:(_file,next)=>{h.persist(next);h.persisted=JSON.parse(JSON.stringify(next))},contentFile:()=>{},safeStoredName:name=>name,classifyMedia:()=>"pdf",officeConvertible:()=>false,audit:()=>h.audits++,mediaUrl:name=>"/media/"+name});
   vm.runInContext(code,h.ctx);
  };
  h.reopen();h.meta=h.store.create({owner:"fixture",name:"lesson.pdf",mime:"application/pdf",size:bytes.length});await h.store.putChunk({id:h.meta.id,owner:"fixture",index:0,input:Readable.from(bytes),contentLength:bytes.length,digest});
  h.part=path.join(h.store.dir(h.meta.id),"0.part");
  h.call=async(overrides={},responseHook)=>{const result={status:200},res={status(v){result.status=v;return res},json(body){responseHook?.(body);result.body=body;return res}};await h.route({params:{id:h.meta.id},body:{sha256:digest},...overrides},res);return result};
+ h.cancel=async(overrides={})=>{const r={status:200},res={status(v){r.status=v;return res},json(v){r.body=v;return res}};await h.cancelRoute({params:{id:h.meta.id},...overrides},res);return r};
  h.file=()=>path.join(media,"file-1.pdf");return h;
 }
+test("cancelling an incomplete upload removes its session and reports no saved file",async t=>{
+ const h=await fixture(t),r=await h.cancel();assert.equal(r.status,200);assert.equal(r.body.completed,false);assert.equal(r.body.file,undefined);assert.equal(fs.existsSync(h.store.dir(h.meta.id)),false);assert.deepEqual(fs.readdirSync(h.media),[]);
+});
+test("cancellation after completion reports the public saved file without deleting media",async t=>{
+ const h=await fixture(t);await h.call();const r=await h.cancel();assert.equal(r.status,200);assert.equal(r.body.completed,true);assert.equal(r.body.file.storedName,"file-1.pdf");assert.deepEqual(fs.readFileSync(h.file()),bytes);assert.equal(fs.existsSync(h.store.dir(h.meta.id)),false);assert.doesNotMatch(JSON.stringify(r.body),/uploadSessionId|uploadDigest|"owner"|"sha256"/);
+});
+test("cancel recognizes saved media after registered-receipt persistence failed",async t=>{
+ const h=await fixture(t),checked=failReceipt(t,h,m=>m.completion?.registered);assert.equal((await h.call()).status,400);checked();const r=await h.cancel();assert.equal(r.body.completed,true);assert.deepEqual(fs.readFileSync(h.file()),bytes);
+});
+test("cancel waits for accepted conversion and reports its committed upload",async t=>{
+ const h=await fixture(t);let entered,release;const enteredPromise=new Promise(r=>entered=r),released=new Promise(r=>release=r);h.ctx.officeConvertible=()=>true;h.ctx.convertOfficeToPdf=async()=>{entered();await released;return "rendered.pdf"};
+ const completing=h.call();await enteredPromise;let ended=false;const cancelling=h.cancel().then(r=>{ended=true;return r});await Promise.resolve();assert.equal(ended,false);release();assert.equal((await completing).status,200);const r=await cancelling;assert.equal(r.body.completed,true);assert.equal(fs.existsSync(h.file()),true);
+});
+test("another owner cannot cancel or inspect a saved upload",async t=>{
+ const h=await fixture(t);await h.call();const r=await h.cancel({owner:"other"});assert.equal(r.status,404);assert.equal(r.body.file,undefined);assert.equal(fs.existsSync(h.store.dir(h.meta.id)),true);
+});
+test("cancel reports a missing completed file without returning stale library data",async t=>{
+ const h=await fixture(t);await h.call();fs.rmSync(h.file());const r=await h.cancel();assert.equal(r.body.completed,false);assert.equal(r.body.file,undefined);
+});
+test("cancel identity conflicts stay unknown without disclosing another library item",async t=>{
+ const h=await fixture(t);await h.call();h.ctx.mediaLibrary.files["file-1.pdf"].uploadSessionId="another";const r=await h.cancel();assert.equal(r.body.completed,null);assert.equal(r.body.file,undefined);assert.equal(fs.existsSync(h.file()),true);
+});
+test("cancel size conflicts stay unknown and preserve the changed file",async t=>{
+ const h=await fixture(t);await h.call();fs.appendFileSync(h.file(),"changed");const r=await h.cancel();assert.equal(r.body.completed,null);assert.equal(r.body.file,undefined);assert.equal(fs.readFileSync(h.file(),"utf8"),bytes.toString()+"changed");
+});
+test("a retirement marker alone does not falsely report cancellation of a retained library file",async t=>{
+ const h=await fixture(t);await h.call();h.store.retire(h.meta.id,"file-1.pdf",digest);const r=await h.cancel();assert.equal(r.body.completed,true);assert.equal(fs.existsSync(h.file()),true);
+});
+test("cancel observes a queued library deletion under the same file owner",async t=>{
+ const h=await fixture(t);await h.call();let release,entered;const ready=new Promise(r=>entered=r),held=new Promise(r=>release=r);
+ const deletion=h.ctx.withMediaFileWrite("file-1.pdf",async()=>{entered();await held;fs.rmSync(h.file());h.ctx.commitMediaLibraryRecord("file-1.pdf",null)});await ready;const cancelling=h.cancel();release();await deletion;const r=await cancelling;assert.equal(r.body.completed,false);assert.equal(r.body.file,undefined);
+});
 function failReceipt(t,h,predicate){
  const rename=fs.renameSync;let failed=false;
  t.mock.method(fs,"renameSync",function(from,to){if(to===h.store.metaFile(h.meta.id)&&!failed){const next=JSON.parse(fs.readFileSync(from,"utf8"));if(predicate(next)){failed=true;throw Error("receipt write unavailable")}}return rename.call(this,from,to)});

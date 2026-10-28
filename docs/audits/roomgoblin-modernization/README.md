@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **PR #307 delivered; PR #308 in CI; controller library fixes under validation**.
+Status: **PR #307 delivered; PR #308 merged and publishing; controller library/cancellation fixes qualified**.
 
 PR #307 is deployed and verified at `f3e8624`; see its
 [delivery receipt](upload-recovery-delivery.md).
@@ -8,8 +8,14 @@ Completion receipts have [23 new regressions](upload-completion-receipts.md).
 Group 8 conversion/deletion ownership (RG-MEDIA-007) has
 [30 new regressions](media-library-ownership.md). Document media-card dispatch
 (RG-MEDIA-008) and shared refresh ownership (RG-MEDIA-010) have
-[26 new Node regressions](media-library-controller.md); browser/full validation
-is underway. Completed-upload cancellation feedback remains open.
+[26 new Node regressions](media-library-controller.md), plus a final regression
+preserving the legacy empty-target default. Completed-upload cancellation feedback
+(RG-MEDIA-009) adds [20 regressions](upload-cancellation-outcome.md). Combined
+qualification passes 1,819 Linux tests, two root-only skips and all 23 Host
+Recovery tests; all 73 workspace cases pass in each browser. PR #308 merged
+as `43b4d83` after all 14 checks and resolved reviews. Exact images and its
+backed-up delivery remain pending. Presentation selection, dispatch, folder
+deletion, target choices and timing-draft defects are reproduced and remain open.
 
 The upload recovery batch is integrated on merged `55055f7`. Before this
 evidence note and trailing blank-line cleanup, its tree was byte-identical to

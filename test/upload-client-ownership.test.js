@@ -16,6 +16,15 @@ for(const status of [401,403,429,503]){
   const h=fixture(),p=h.api.upload(h.file);h.pending[0].resolve(response(status,{error:"lookup unavailable"}));await assert.rejects(p,/lookup unavailable/);assert.equal(JSON.parse(h.cache.get(h.key)).id,"old");assert.equal(h.calls.length,1);
  });
 }
+test("cancel returns saved-file evidence after completion wins",async()=>{
+ const h=fixture(),p=h.api.cancel(h.file);h.pending[0].resolve(response(200,{ok:true,completed:true,file:{storedName:"saved.pdf"}}));const r=await p;assert.equal(r.completed,true);assert.equal(r.file.storedName,"saved.pdf");assert.equal(h.cache.has(h.key),false);
+});
+test("missing receipt and missing local identity leave cancellation outcome unknown",async()=>{
+ const h=fixture(),p=h.api.cancel(h.file);h.pending[0].resolve(response(404));assert.equal((await p).completed,null);assert.equal((await h.api.cancel(h.file)).completed,null);assert.equal(h.calls.length,1);
+});
+test("confirmed incomplete-session cancellation returns false completion",async()=>{
+ const h=fixture(),p=h.api.cancel(h.file);h.pending[0].resolve(response(200,{ok:true,completed:false}));assert.equal((await p).completed,false);assert.equal(h.cache.has(h.key),false);
+});
 test("network cancellation failure preserves its session and permits an explicit retry",async()=>{
  const h=fixture(),p=h.api.cancel(h.file);h.pending[0].reject(Error("offline"));await assert.rejects(p,/offline/);assert.ok(h.cache.has(h.key));const q=h.api.cancel(h.file);h.pending[1].resolve(response(200,{ok:true}));await q;assert.equal(h.cache.has(h.key),false);
 });
