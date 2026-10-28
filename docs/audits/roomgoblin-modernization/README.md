@@ -1,5 +1,24 @@
 # RoomGoblin modernization audit
 
+The [discovery persistence repair](lighting-discovery-persistence.md) passes all
+25 new regressions and 72 combined focused cases; full qualification passes
+1,979 Linux tests, two root-only skips and all 23 Host Recovery tests.
+PR #312 is [deployed and verified](lighting-reliability-delivery.md) at `33ee5d0`.
+PR #313 passed all 14 checks without unresolved reviews and merged as `5cf4c81`;
+its exact images and backed-up update are pending. Registry and discovery repairs
+will follow together as the next focused Group 9 batch.
+
+Registry/discovery integration on merged `5cf4c81` is byte-identical to qualified
+`6c680e8` before this evidence note (`67366cd`). All 169 focused lighting,
+automation, announcement and music cases pass. Required CI and delivery remain
+separate gates; device dispatch identity and ESPHome review are still open.
+
+The [lighting registry save repair](lighting-registry-persistence.md) fixes three
+reproduced failed/invalid-save mutations and a group-name restart defect. All
+18 new regressions pass; full qualification passes 1,954 Linux tests, two
+root-only skips and all 23 Host Recovery tests. Configuration ordering is in
+PR #313 with all 14 required checks passing; delivery follows PR #312.
+
 The separate [lighting configuration repair](lighting-configuration-ordering.md)
 reproduces three save/read races and passes 17 new Node cases plus two new
 browser cases. Final qualification passes 1,936 Linux tests, two root-only skips
@@ -18,7 +37,7 @@ passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
 85 focused integration cases pass. The inventory batch remains qualified on
 `b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
 
-Status: **PR #311 delivered; PR #312 merged and publishing; lighting configuration ordering qualified**.
+Status: **PR #312 delivered; PR #313 merged and publishing; lighting registry/discovery repairs qualified**.
 
 PR #311 is deployed and verified at `fa5bb49`; see its
 [delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/
