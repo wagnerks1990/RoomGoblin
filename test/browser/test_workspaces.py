@@ -371,6 +371,26 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(page.locator('#loginPassword').input_value(), 'unfinished fixture login')
         self.assertFalse(errors, errors)
 
+    def test_account_open_does_not_defer_focus_over_keyboard_navigation(self):
+        page, errors = self.page('/controller/', width=390)
+        page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+        observed = page.evaluate("""() => {
+          const original = window.setTimeout, pending = [];
+          window.setTimeout = (fn, ms, ...args) => ms === 0 ? pending.push(() => fn(...args)) : original(fn, ms, ...args);
+          let initial;
+          try { openAccountModal(); initial = document.activeElement.id; }
+          finally { window.setTimeout = original; }
+          newPassword.focus(); pending.forEach(fn => fn());
+          return {initial, after: document.activeElement.id};
+        }""")
+        self.assertEqual(observed, {'initial': 'currentPassword', 'after': 'newPassword'})
+        page.locator('#accountModal button').last.focus()
+        page.keyboard.press('Tab')
+        self.assertEqual(page.locator(':focus').get_attribute('aria-label'), 'Close account dialog')
+        page.keyboard.press('Escape')
+        self.assertFalse(page.locator('#accountModal').is_visible())
+        self.assertFalse(errors, errors)
+
     def test_shared_workspace_code_warning_and_focus_contrast(self):
         for mode in ('light', 'dark', 'system'):
             page, errors = self.page('/controller/', theme={'mode': mode})

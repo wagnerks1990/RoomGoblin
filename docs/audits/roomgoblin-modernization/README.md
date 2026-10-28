@@ -1,5 +1,13 @@
 # RoomGoblin modernization audit
 
+The [account focus repair](account-dialog-focus.md) joins the pending Windows
+agent batch after its main-browser failure exposed a delayed focus callback.
+Qualification passes 2,169 Linux tests, two root-only skips, 23 Host Recovery
+tests, all 270 Chromium browser cases and 106 workspace/Veyon cases in Firefox.
+PR #318's browser rerun and exact image publication passed; its backed-up Hub-only
+update is running. Native process-output and download-body bounds are reproduced
+for the next repair. Group 10 and the remaining roadmap are still open.
+
 Native cancellation and enrollment ownership are integrated on merged main
 `5e1af23`. Before this note, `82980cd` is byte-identical to qualified `9911c30`;
 all 36 focused integration contracts pass again. Full qualification passes

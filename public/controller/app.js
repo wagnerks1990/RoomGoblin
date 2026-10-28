@@ -2404,7 +2404,7 @@ function openAccountModal(){
  accountReturnFocus=document.activeElement;
  window.dispatchEvent(new Event('roomgoblin:modalopen'));
  accountModal.style.display='flex';syncAuthModalInert();loadMySessions();
- setTimeout(()=>{if(accountModal.style.display==='flex')currentPassword.focus()},0);
+ currentPassword.focus();
 }
 function closeAccountModal(){
  const wasOpen=accountModal.style.display==='flex';

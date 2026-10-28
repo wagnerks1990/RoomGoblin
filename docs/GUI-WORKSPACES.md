@@ -36,6 +36,8 @@ inert. Closing My Account clears its password fields and returns focus to its
 visible opener, or to Menu when that opener is inside the closed mobile drawer.
 Session loss hides capability-bound navigation immediately. Repeated expired
 requests keep an unfinished login field focused rather than restarting entry.
+My Account establishes initial focus synchronously when it opens; no delayed
+opening callback may move focus after keyboard navigation or a later reopen.
 
 Weather combines current/seven-day forecasts, after-school/evening details,
 selectable date ranges and editable overlay fields. Preview is local; explicit
