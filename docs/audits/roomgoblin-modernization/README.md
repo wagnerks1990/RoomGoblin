@@ -1,6 +1,23 @@
 # RoomGoblin modernization audit
 
-Status: **PR #307 delivered; PR #308 merged and publishing; controller library/cancellation fixes qualified**.
+Status: **PR #309 delivered; PR #310 rate-limit repair qualified for fresh CI**.
+
+PR #309 is deployed and verified at `86ce127`; see its
+[delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
+missing limits on three newly queued presentation routes. The accepted-caller
+repair adds four HTTP regressions and passes 1,870 Linux tests with two root-only
+skips and all 23 Host Recovery tests; fresh CI is pending. The separate rebuild-admission repair is qualified on its retained
+development branch and will follow this PR.
+
+PR #308 is deployed and verified at `43b4d83`; see its
+[delivery receipt](media-library-recovery-delivery.md). PR #309 passed all 14
+checks and merged as `86ce127`; exact images and backed-up delivery are verified.
+The [presentation session/controller repairs](presentation-session-ownership.md)
+have 47 new Node regressions and three browser cases passing. Final qualification
+passes 1,866 Linux tests, two root-only skips and all 23 Host Recovery tests;
+all 76 workspace cases pass in Chromium and Firefox. Group 8 remains active:
+overlapping rebuild failure status is the next reproduced finding. Later groups
+remain queued.
 
 PR #307 is deployed and verified at `f3e8624`; see its
 [delivery receipt](upload-recovery-delivery.md).
@@ -14,8 +31,8 @@ preserving the legacy empty-target default. Completed-upload cancellation feedba
 qualification passes 1,819 Linux tests, two root-only skips and all 23 Host
 Recovery tests; all 73 workspace cases pass in each browser. PR #308 merged
 as `43b4d83` after all 14 checks and resolved reviews. Exact images and its
-backed-up delivery remain pending. Presentation selection, dispatch, folder
-deletion, target choices and timing-draft defects are reproduced and remain open.
+backed-up delivery are verified in the receipt above. Presentation selection,
+dispatch, folder deletion, target choices and timing-draft repairs are qualified.
 
 The upload recovery batch is integrated on merged `55055f7`. Before this
 evidence note and trailing blank-line cleanup, its tree was byte-identical to

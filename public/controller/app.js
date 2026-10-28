@@ -358,16 +358,45 @@ function presentationUrl(p,slide){
  const n=Math.max(1,Math.min(Number(slide)||1,p.slideCount));
  return `/presentations/${encodeURIComponent(p.id)}/slides/slide-${String(n).padStart(3,'0')}.jpg`;
 }
+let presentationLibraryGeneration=0,presentationStateGeneration=0,presentationPendingCommands=0;
+let presentationCommandTail=Promise.resolve(),presentationStateRead=null;
+function applyPresentationState(state){
+ PRES.state=state||null;
+ if(!PRES.selectedId&&state?.active&&state.presentationId)PRES.selectedId=state.presentationId;
+ renderPresenter();
+}
+function writePresentationState(url,body){
+ const generation=++presentationStateGeneration;presentationPendingCommands++;
+ const operation=presentationCommandTail.then(async()=>{
+  const j=await jpost(url,body);
+  if(generation===presentationStateGeneration)applyPresentationState(j.state);
+  return j;
+ }).finally(()=>{presentationPendingCommands--});
+ presentationCommandTail=operation.catch(()=>{});
+ return operation;
+}
+function refreshPresentationState(){
+ if(presentationPendingCommands)return Promise.resolve();
+ if(presentationStateRead?.generation===presentationStateGeneration)return presentationStateRead.promise;
+ const generation=++presentationStateGeneration;
+ const promise=api('/api/v1/presentations/state').then(j=>{
+  if(generation===presentationStateGeneration&&!presentationPendingCommands)applyPresentationState(j.state);
+ }).finally(()=>{if(presentationStateRead?.promise===promise)presentationStateRead=null});
+ presentationStateRead={generation,promise};return promise;
+}
 async function loadPresentations(){
+ const generation=++presentationLibraryGeneration,stateGeneration=presentationPendingCommands?null:++presentationStateGeneration;
  try{
   const j=await api('/api/v1/presentations');
-  PRES.folders=j.folders||[];PRES.presentations=j.presentations||[];PRES.state=j.state||null;PRES.displays=j.displays||[];
+  if(generation!==presentationLibraryGeneration)return;
+  PRES.folders=j.folders||[];PRES.presentations=j.presentations||[];PRES.displays=j.displays||[];
+  if(stateGeneration===presentationStateGeneration&&!presentationPendingCommands)PRES.state=j.state||null;
   if(!presFolder(PRES.currentFolder))PRES.currentFolder='root';
   if(PRES.selectedId&&!presFile(PRES.selectedId))PRES.selectedId=null;
   if(!PRES.selectedId&&PRES.state?.presentationId)PRES.selectedId=PRES.state.presentationId;
   if(PRES.state?.active&&PRES.state?.presentationId===PRES.selectedId)PRES.previewSlide=Number(PRES.state.slide||1);
   renderPresentationLibrary();renderPresentationTargets();renderPresenter();
- }catch(e){presentationRows.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
+ }catch(e){if(generation===presentationLibraryGeneration)presentationRows.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
 }
 function renderPresentationLibrary(){
  presFolderSelect.innerHTML=PRES.folders
@@ -454,9 +483,19 @@ async function rebuildPresentation(id){
  catch(e){presentationUploadState.textContent=e.message}
 }
 function renderPresentationTargets(){
- presTargets.innerHTML=PRES.displays.map((d,i)=>`<label style="display:flex;gap:5px;align-items:center">
-   <input type="checkbox" class="presTargetCheck" value="${esc(d.id)}" checked> ${esc(d.name||d.id)}
- </label>`).join('');
+ const existing=new Map([...presTargets.querySelectorAll('.presTargetCheck')].map(input=>[input.value,input.closest('label')]));
+ PRES.displays.forEach((d,index)=>{
+  let label=existing.get(d.id);existing.delete(d.id);
+  if(!label){
+   label=document.createElement('label');label.style.cssText='display:flex;gap:5px;align-items:center';
+   const input=document.createElement('input');input.type='checkbox';input.className='presTargetCheck';input.value=d.id;input.checked=!PRES.targetsInitialized;
+   label.append(input,document.createElement('span'));
+  }
+  label.querySelector('span').textContent=d.name||d.id;
+  if(presTargets.children[index]!==label)presTargets.insertBefore(label,presTargets.children[index]||null);
+ });
+ for(const label of existing.values())label.remove();
+ if(PRES.displays.length)PRES.targetsInitialized=true;
 }
 function selectedPresentationTargets(){
  return [...document.querySelectorAll('.presTargetCheck:checked')].map(x=>x.value);
@@ -465,14 +504,13 @@ async function startSelectedPresentation(){
  const p=presFile(PRES.selectedId);if(!p)return alert('Select a presentation first.');
  const targets=selectedPresentationTargets();if(!targets.length)return alert('Select at least one TV.');
  try{
-  const j=await jpost('/api/v1/presentations/'+encodeURIComponent(p.id)+'/start',{
+  await writePresentationState('/api/v1/presentations/'+encodeURIComponent(p.id)+'/start',{
     targets,
     slide:Number(presStartSlide.value)||1,
     autoAdvanceSeconds:Number(presStartAuto.value)||0,
     loop:presStartLoop.checked,
     targetSeconds:Number(presTargetSeconds.value)||0
   });
-  PRES.state=j.state;renderPresenter();
  }catch(e){alert(e.message)}
 }
 async function presentationControl(action,extra={}){
@@ -485,12 +523,20 @@ async function presentationControl(action,extra={}){
   return;
  }
  try{
-  const j=await jpost('/api/v1/presentations/control',{action,...extra});
-  PRES.state=j.state;if(j.state?.presentationId)PRES.selectedId=j.state.presentationId;renderPresenter();
+  await writePresentationState('/api/v1/presentations/control',{action,...extra,sessionId:PRES.state?.sessionId});
  }catch(e){alert(e.message)}
 }
 function presentationSetAuto(){
  presentationControl('set-auto',{seconds:Number(presAutoSeconds.value)||0,loop:presLoop.checked});
+}
+const presentationFieldStates=new WeakMap();
+function syncPresentationField(field,value,context){
+ const property=field.type==='checkbox'?'checked':'value',desired=property==='checked'?!!value:String(value);
+ const prior=presentationFieldStates.get(field),focused=document.activeElement===field;
+ const changedContext=prior&&prior.context!==context;
+ if(changedContext||(!focused&&(!prior||field[property]===prior.rendered)))field[property]=desired;
+ const rendered=field[property]===desired?desired:(changedContext?desired:(prior?.rendered??desired));
+ presentationFieldStates.set(field,{context,rendered});
 }
 function renderPresenter(){
  const p=presFile(PRES.selectedId),st=PRES.state||{};
@@ -502,10 +548,11 @@ function renderPresenter(){
    : Math.max(1,Math.min(Number(PRES.previewSlide||1),Number(p?.slideCount||1)));
  if(active)PRES.previewSlide=slide;
  presSlideMetric.textContent=p?`${slide} / ${p.slideCount||0}`:'—';
- presGoto.max=p?.slideCount||1;presGoto.value=slide;
- presTargetSeconds.value=Number(st.targetSeconds||0);
- presAutoSeconds.value=Number(st.autoAdvanceSeconds||0);
- presLoop.checked=!!st.loop;
+ const session=st.sessionId||'';
+ presGoto.max=p?.slideCount||1;syncPresentationField(presGoto,slide,session+'|'+PRES.selectedId);
+ syncPresentationField(presTargetSeconds,Number(st.targetSeconds||0),session);
+ syncPresentationField(presAutoSeconds,Number(st.autoAdvanceSeconds||0),session);
+ syncPresentationField(presLoop,!!st.loop,session);
  presPauseBtn.textContent=st.paused?'Resume':'Pause';
  presBlackBtn.textContent=st.black?'Return to Slides':'Black Screen';
  presTargetStatus.textContent=active?`Showing on: ${(st.targets||[]).join(', ')}`:'Preview only. Next, Previous and Go select the slide to start.';
@@ -514,12 +561,14 @@ function renderPresenter(){
    if(slide<p.slideCount){presNextImage.src=presentationUrl(p,slide+1);presNextImage.style.display='block';presNextEmpty.style.display='none'}
    else{presNextImage.style.display='none';presNextEmpty.style.display='inline'}
    presNotes.value=active?(st.notes||p.notes?.[slide-1]||''):(p.notes?.[slide-1]||'');
-   presThumbs.innerHTML=Array.from({length:p.slideCount},(_,i)=>`<button title="Slide ${i+1}" onclick="${active?`presentationControl('goto',{slide:${i+1}})`:`previewPresentationSlide(${i+1})`}" style="padding:3px;flex:0 0 120px">
+   const thumbKey=JSON.stringify([p.id,p.slideCount,!!active]);
+   if(PRES.thumbKey!==thumbKey)presThumbs.innerHTML=Array.from({length:p.slideCount},(_,i)=>`<button title="Slide ${i+1}" onclick="${active?`presentationControl('goto',{slide:${i+1}})`:`previewPresentationSlide(${i+1})`}" style="padding:3px;flex:0 0 120px">
       <img src="${presentationUrl(p,i+1)}" alt="Slide ${i+1}" style="width:100%;aspect-ratio:16/9;object-fit:contain">
       <div>${i+1}</div>
    </button>`).join('');
+   PRES.thumbKey=thumbKey;
  }else{
-   presCurrentImage.style.display='none';presCurrentEmpty.style.display='inline';presNextImage.style.display='none';presNextEmpty.style.display='inline';presNotes.value='';presThumbs.innerHTML='';
+   presCurrentImage.style.display='none';presCurrentEmpty.style.display='inline';presNextImage.style.display='none';presNextEmpty.style.display='inline';presNotes.value='';presThumbs.innerHTML='';PRES.thumbKey=null;
  }
  const timings=st.timings||{};
  presTimingHistory.innerHTML=Object.keys(timings).length?Object.entries(timings).sort((a,b)=>Number(a[0])-Number(b[0])).map(([n,v])=>`Slide ${n}: <b>${fmtTimer(v)}</b>`).join(' • '):'No timing data yet.';
@@ -546,9 +595,7 @@ function updatePresentationTimers(){
 setInterval(async()=>{
  if(!document.getElementById('presentations')?.classList.contains('active'))return;
  try{
-   const j=await api('/api/v1/presentations/state');
-   PRES.state=j.state;if(!PRES.selectedId&&j.state?.active&&j.state.presentationId)PRES.selectedId=j.state.presentationId;
-   renderPresenter();
+   await refreshPresentationState();
  }catch{}
 },1000);
 presentationUploadForm.addEventListener('submit',async e=>{

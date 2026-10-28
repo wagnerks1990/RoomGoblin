@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Order presentation starts, live controls and deletion by session; reject stale
+  controls and stop a live deck before removing its containing folder.
+
+- Preserve presentation previews, receiver choices, timing drafts and keyboard
+  focus through polling and overlapping controller requests.
+
 - Report when upload completion wins cancellation, retain saved media, and
   show an unknown outcome when its receipt is unavailable instead of claiming
   that a saved file was cancelled.
