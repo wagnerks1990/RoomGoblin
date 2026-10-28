@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Announcement recovery delivered; target and Live Watch fixes merged; active-target and Music queue follow-ups qualified**.
+Status: **Announcement recovery delivered; target, Live Watch, active-target and Music queue fixes merged; audio/session/connection follow-ups qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -44,8 +44,18 @@ Music queue response ownership and active announcement receiver ownership are
 integrated on `2f79567`, with a byte-identical tree to qualified `1541de6` before
 this evidence note. All 78 focused integration checks pass. Qualification includes
 1,421 native passes, zero failures, two root-only skips and 23 Host Recovery
-passes; all 16 Music cases pass in both Chromium and Firefox. Required CI,
-exact images and appliance delivery remain pending for this integration.
+passes; all 16 Music cases pass in both Chromium and Firefox. All 14 checks
+passed and this integration merged at `336a71d` (PR #300). Exact main images
+and the combined PR #299/#300 appliance delivery remain pending.
+Music Assistant socket ownership, announcement audio-content ownership,
+Background Music completion ownership and atomic connection saves are now
+integrated on `336a71d`. Before this evidence note, the complete tree was
+byte-identical to qualified `fbf4b61`; all 144 focused integration tests pass.
+The supported Linux snapshot passes 1,501 tests, zero failures and two root-only
+skips (1,503 total), plus all 23 Host Recovery tests and Node/controller/Python/Bash
+checks. Required CI, checked merge, exact images and appliance delivery remain
+pending for these follow-ups. Schedule-save ordering and coherent status/probe
+snapshots remain under review; the wider modernization is still in progress.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
