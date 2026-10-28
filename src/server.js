@@ -4573,8 +4573,8 @@ function colorParts(payload) {
 
 function goveeTargets(target){
   const t=cleanId(target);
-  if(goveeDevices[t]) return [t];
-  if(Array.isArray(goveeGroups[t])) return [...goveeGroups[t]];
+  if(Object.hasOwn(goveeDevices,t)&&goveeDevices[t]) return [t];
+  if(Object.hasOwn(goveeGroups,t)&&Array.isArray(goveeGroups[t])) return [...new Set(goveeGroups[t])];
   throw new Error(`Unknown Govee device/group: ${t}`);
 }
 
@@ -4591,9 +4591,9 @@ async function goveeUdpTemperature(device,kelvin){
   });
 }
 
-async function goveePublish(alias,payload){
-  const d=goveeDevices[alias];
-  if(!d) throw new Error(`Unknown Govee device ${alias}`);
+async function goveePublish(alias,payload,device){
+  const d=device||(Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null);
+  if(!d||typeof d.id!=="string"||!d.id.trim()) throw new Error(`Unknown Govee device ${alias}`);
   const started=Date.now();
   try{
     await mqttPublish(`gv2mqtt/light/${d.id}/command`,payload);
@@ -4609,19 +4609,26 @@ async function goveePublish(alias,payload){
 }
 
 async function directGoveeCommand(target,action,p={}){
+  p={...p};
   const aliases=validateGoveeCommand(target,action,p);
+  const targets=aliases.map(alias=>({alias,device:{...goveeDevices[alias]}}));
   const results=[];
-  for(const alias of aliases){
-    const d=goveeDevices[alias];
-    if(action==="on") results.push(await goveePublish(alias,{state:"ON"}));
-    else if(action==="off") results.push(await goveePublish(alias,{state:"OFF"}));
+  for(const {alias,device:d} of targets){
+    const current=Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null;
+    const nativeTemp=action==="temp"&&d.sku==="H618G"&&!!d.ip;
+    const currentNativeTemp=action==="temp"&&current?.sku==="H618G"&&!!current?.ip;
+    if(!current||current.id!==d.id||nativeTemp!==currentNativeTemp||(nativeTemp&&current.ip!==d.ip)){
+      throw new Error(`Govee device ${alias} changed or was removed; remaining commands were not sent. Earlier command delivery may be unconfirmed.`);
+    }
+    if(action==="on") results.push(await goveePublish(alias,{state:"ON"},d));
+    else if(action==="off") results.push(await goveePublish(alias,{state:"OFF"},d));
     else if(action==="brightness"){
       const level=Math.round(Number(p.level));
       if(!Number.isFinite(level)||level<1||level>100) throw new Error("Brightness must be 1-100");
-      results.push(await goveePublish(alias,{state:"ON",brightness:level}));
+      results.push(await goveePublish(alias,{state:"ON",brightness:level},d));
     } else if(action==="color"){
       const [r,g,b]=colorParts(p);
-      results.push(await goveePublish(alias,{state:"ON",color:{r,g,b}}));
+      results.push(await goveePublish(alias,{state:"ON",color:{r,g,b}},d));
     } else if(action==="temp"){
       const kelvin=Math.round(Number(p.kelvin));
       if(!Number.isFinite(kelvin)||kelvin<2000||kelvin>9000) throw new Error("Kelvin must be 2000-9000");
@@ -4629,19 +4636,31 @@ async function directGoveeCommand(target,action,p={}){
         results.push({device:alias,name:d.name,kelvin,...await goveeUdpTemperature(d,kelvin)});
       }else{
         const mired=Math.round(1000000/kelvin);
-        results.push(await goveePublish(alias,{state:"ON",color_temp:mired}));
+        results.push(await goveePublish(alias,{state:"ON",color_temp:mired},d));
       }
     } else if(action==="scene"){
       const scene=String(p.scene||"").trim();
       if(!scene) throw new Error("Scene is required");
-      results.push(await goveePublish(alias,{state:"ON",effect:scene}));
+      results.push(await goveePublish(alias,{state:"ON",effect:scene},d));
     } else throw new Error(`Unsupported Govee action ${action}`);
   }
   audit({kind:"govee.command",target,action,count:aliases.length});
   return {ok:true,target,action,count:aliases.length,results};
 }
 
-function validateGoveeCommand(target,action,p={}){const aliases=goveeTargets(target);if(action==="brightness"){const n=Number(p.level);if(!Number.isFinite(n)||n<1||n>100)throw new Error("Brightness must be 1-100")}else if(action==="color")colorParts(p);else if(action==="temp"){const n=Number(p.kelvin);if(!Number.isFinite(n)||n<2000||n>9000)throw new Error("Kelvin must be 2000-9000")}else if(action==="scene"){if(!String(p.scene||"").trim())throw new Error("Scene is required")}else if(!["on","off"].includes(action))throw new Error(`Unsupported Govee action ${action}`);return aliases}
+function validateGoveeCommand(target,action,p={}){
+  const aliases=goveeTargets(target);
+  for(const alias of aliases){
+    const d=Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null;
+    if(!d||typeof d.id!=="string"||!d.id.trim())throw new Error(`Unknown Govee device ${alias}`);
+  }
+  if(action==="brightness"){const n=Number(p.level);if(!Number.isFinite(n)||n<1||n>100)throw new Error("Brightness must be 1-100")}
+  else if(action==="color")colorParts(p);
+  else if(action==="temp"){const n=Number(p.kelvin);if(!Number.isFinite(n)||n<2000||n>9000)throw new Error("Kelvin must be 2000-9000")}
+  else if(action==="scene"){if(!String(p.scene||"").trim())throw new Error("Scene is required")}
+  else if(!["on","off"].includes(action))throw new Error(`Unsupported Govee action ${action}`);
+  return aliases;
+}
 
 function goveeInventory(){
   const states={},presence={},meta={};
@@ -4661,7 +4680,7 @@ function goveeInventory(){
 }
 
 function goveeScenes(alias){
-  const d=goveeDevices[cleanId(alias)];
+  const d=Object.hasOwn(goveeDevices,cleanId(alias))?goveeDevices[cleanId(alias)]:null;
   if(!d) throw new Error("Unknown Govee device");
   const cfg=goveeLiveConfigs[d.id]||{};
   const live=Array.isArray(cfg.effect_list)?cfg.effect_list:[];
@@ -5649,7 +5668,7 @@ app.put("/api/v1/govee/device/:target",requireControl,(req,res)=>{
 });
 app.get("/api/v1/govee/:target/status",requireClassroomRead,(req,res)=>{
   const alias=cleanId(req.params.target),d=goveeDevices[alias];
-  if(!d)return res.status(404).json({ok:false,error:"Unknown Govee device"});
+  if(!Object.hasOwn(goveeDevices,alias)||!d)return res.status(404).json({ok:false,error:"Unknown Govee device"});
   res.json({ok:true,device:alias,meta:d,state:goveeStates[d.id]||null});
 });
 app.get("/api/v1/govee/:target/scenes",requireClassroomRead,(req,res)=>{try{res.json(goveeScenes(req.params.target))}catch(e){res.status(400).json({ok:false,error:e.message})}});

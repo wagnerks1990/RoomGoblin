@@ -47,6 +47,15 @@ These operations update configuration only; they do not dispatch hardware comman
 
 ## Command completion
 
+Validate every selected group member before sending the first command. Only own
+device/group entries are targets; duplicate group aliases dispatch once. Capture
+the accepted group, payload and physical device metadata. Before each sequential
+write, require the same device ID and, for native temperature commands, the same
+transport and IP. A removed or replaced device stops the remaining batch without
+replaying earlier commands. Friendly-name refreshes retain the accepted identity.
+This is not an atomic multi-device operation: earlier sends may already have
+completed when a later target fails. No hardware confirmation is inferred.
+
 Shared MQTT publication and native UDP temperature writes have five-second
 completion deadlines. MQTT admission checks the captured client and runtime
 state, disables offline QoS-zero queuing and settles old connection owners on

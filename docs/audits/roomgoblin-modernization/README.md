@@ -1,5 +1,23 @@
 # RoomGoblin modernization audit
 
+PR #314 passed all 14 checks without unresolved reviews and merged as `5ffba81`;
+its exact publication and backed-up delivery are pending. Dispatch identity is
+integrated on that main: `5e9285f` is byte-identical to qualified `7faf08d` before
+this evidence note, and all 246 focused cases pass again. ESPHome quota work is
+separately qualified at `43f4dfd`; controller races remain under repair.
+
+PR #313 is [deployed and verified](lighting-configuration-delivery.md) at
+`5cf4c81`. PR #314's required validation is running; its security and both browser
+jobs pass. Dispatch identity is locally qualified and follows that persistence
+batch. ESPHome review has reproduced four rejected-caller quota failures and
+three controller inventory/management races for the next focused repairs.
+
+The [lighting dispatch identity repair](lighting-dispatch-identity.md) fixes three
+reproduced command-target failures. All 35 new regressions and 246 focused cases
+pass; full qualification passes 2,014 Linux tests, two root-only skips and all
+23 Host Recovery tests. Registry/discovery repairs are pushed as
+PR #314; checked delivery follows PR #313.
+
 The [discovery persistence repair](lighting-discovery-persistence.md) passes all
 25 new regressions and 72 combined focused cases; full qualification passes
 1,979 Linux tests, two root-only skips and all 23 Host Recovery tests.
@@ -37,7 +55,7 @@ passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
 85 focused integration cases pass. The inventory batch remains qualified on
 `b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
 
-Status: **PR #312 delivered; PR #313 merged and publishing; lighting registry/discovery repairs qualified**.
+Status: **PR #313 delivered; PR #314 in CI; lighting dispatch identity qualified; ESPHome review active**.
 
 PR #311 is deployed and verified at `fa5bb49`; see its
 [delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Validate complete lighting command targets before sending, preserve accepted
+  payloads and stop pending writes if a target's physical identity changes.
+
 - Honor disabled lighting enrollment across restarts and persist discovery/
   cleanup changes before publishing them; contain background persistence errors.
 
