@@ -27,8 +27,9 @@ Capture the prior runtime fields and content identities before replacement. If
 the failed attempt owns no changed content and every prior receiver still has
 its captured identity, retain the original target-array identity, mode, timestamps
 and holds. This also preserves ownership of prior delayed audio retries. Release
-only newly acquired non-pending holds. Never restore that old runtime after a
-partial takeover; the qualified conditional cleanup path still owns those failures.
+only newly acquired non-pending holds. Never restore that old content or delayed
+audio identity after a partial takeover. The later active-target follow-up refines
+partial failure to retain continuing lifecycle ownership until release or Resume.
 
 ## Qualification and limits
 
@@ -42,5 +43,5 @@ appliance delivery remain pending. All commands use deterministic fixtures, not
 production devices.
 
 Successful replacements with different target sets and partial failures affecting
-only some previously active receivers remain separate review. This patch does
-not claim to close every multi-target replacement transition.
+only some previously active receivers are covered by the separate
+[active-target follow-up](announcement-active-targets.md).

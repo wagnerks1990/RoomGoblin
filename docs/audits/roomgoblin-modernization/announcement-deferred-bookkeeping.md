@@ -33,5 +33,7 @@ held until retry bookkeeping succeeds.
 The native active-worktree snapshot passes 1,371 tests, zero failures and two
 root-only ownership skips (1,373 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact
-images and backed-up delivery remain pending. Separate reproduced release-clear and successor-hold
-defects remain open. No production fault or physical command was used.
+images and backed-up delivery completed in PR #298; see its
+[delivery receipt](announcement-start-failure.md#checked-appliance-delivery).
+The separate release-clear and successor-hold fixes shipped in that integration.
+No production fault or physical command was used.

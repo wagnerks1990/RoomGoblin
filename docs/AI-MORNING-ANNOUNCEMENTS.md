@@ -83,6 +83,14 @@ changed content and all prior content identities remain unchanged, preserve the
 prior runtime target-array identity and mandatory holds. Do not restore a stale
 session over a partially dispatched replacement.
 
+Starting selected receivers extends the active target set while dispatching only
+to that selection. Global Stop/automatic release must finish every active receiver.
+A partial failed replacement retains prior active ownership plus its newly owned
+receivers, with a fresh target-array identity; never restore old content or audio
+retries. Pending conditional cleanup waits until release while the session stays
+active. Explicit Resume repairs all tracked targets. Fresh failed starts retain
+the inactive retry path; fully unchanged failures retain the original identity.
+
 The Live Watch announcement-volume slider is a live control as well as persisted configuration. While an announcement owns targets, a volume update must send `display.web.audio` to those runtime-owned targets with `reload:false`; it must not clear, reload, or recreate the player. When no announcement is active, the value is saved for the next takeover.
 
 Live Watch form reads and saves own their submitted draft revisions. Preserve
