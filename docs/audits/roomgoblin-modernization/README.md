@@ -1,19 +1,26 @@
 # RoomGoblin modernization audit
 
-Status: **PR #309 delivered; PR #310 merged and publishing; rebuild follow-up integrated and qualified**.
+Status: **PR #309 delivered; PR #310 merged and publishing; rebuild follow-up and lighting inventory repairs qualified**.
 
-PR #310 passed all 14 checks with resolved security reviews and merged as
-`906e0ec`. Main validation, browser and security gates passed; exact image
-publication and its backed-up update remain pending. The rebuild follow-up is
-integrated on that merged main; before its evidence note, the complete tree was
-byte-identical to qualified `83a4b15`. All 60 focused checks pass again.
+The preliminary Group 9 [lighting inventory/feedback repair](lighting-inventory-ownership.md)
+has 15 new Node cases and two new browser cases passing. Final qualification
+passes 1,890 Linux tests, two root-only skips and all 23 Host Recovery tests;
+all 78 workspace cases pass in Chromium and Firefox. Configuration writes,
+backend transport/device ownership and ESPHome
+remain under review. Group 8 delivery is still pending for PR #310 and its rebuild
+follow-up. PR #310 passed all 14 checks with resolved security reviews and merged
+as `906e0ec`; exact images and its backed-up update remain pending.
 
 PR #309 is deployed and verified at `86ce127`; see its
 [delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
 missing limits on three newly queued presentation routes. The accepted-caller
 repair adds four HTTP regressions and passes 1,870 Linux tests with two root-only
-skips and all 23 Host Recovery tests; fresh CI passed. The separate rebuild
+skips and all 23 Host Recovery tests; fresh CI passed with resolved reviews. The separate rebuild
 admission repair is qualified with that repaired head and will follow it.
+
+The rebuild follow-up was integrated on merged `906e0ec`; before its evidence
+note, the complete tree was byte-identical to qualified `83a4b15`. All 60 focused
+checks passed again. Its required checks and delivery are tracked separately.
 
 PR #308 is deployed and verified at `43b4d83`; see its
 [delivery receipt](media-library-recovery-delivery.md). PR #309 passed all 14

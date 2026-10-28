@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve current lighting inventory across overlapping Lighting/scheduler
+  refreshes and keep newer command/save outcomes visible after late responses.
+
 - Reject duplicate presentation rebuilds while their render is still active,
   preserving the accepted conversion's final status and later retry behavior.
 

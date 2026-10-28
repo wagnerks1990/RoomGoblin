@@ -162,6 +162,12 @@ edits. Command status reserves a line even when empty, so acknowledgement cleari
 does not move an Apply button between pointer down and pointer up. Failed refreshes retain the inventory with an explicit stale-data message.
 Existing Govee endpoints, MQTT payloads and schedule/device identity remain unchanged.
 
+Lighting and the scheduler share inventory read ownership, so an older refresh
+cannot replace newer readings. Late refreshes and command/save replies preserve
+the latest action message. A successful device save followed by a failed refresh
+reports both outcomes and retains the last inventory; newer editor drafts remain
+intact.
+
 ## Styling ownership
 
 `public/shared/workspace.css` is the operator-only design layer. It is opt-in via

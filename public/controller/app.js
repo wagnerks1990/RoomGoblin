@@ -667,16 +667,32 @@ mediaUploadCancel.addEventListener('click',async()=>{const f=mediaUploadFile||me
 
 // Displays & AV owns its polling, drawers and receiver drafts in av-workspace.js.
 
-async function loadGovee(){
- try{S.govee=await api('/api/v1/govee');renderGovee();document.getElementById('goveeMessage').textContent=''}
- catch(e){document.getElementById('goveeMessage').textContent=`Lighting refresh failed: ${e.message}. Existing readings may be stale. Use Refresh to retry.`}
+let goveeInventoryRequest=null,goveeRenderGeneration=0,goveeMessageGeneration=0;
+function fetchGoveeInventory(){
+ const request=api('/api/v1/govee').then(inventory=>{
+  if(goveeInventoryRequest!==request)return goveeInventoryRequest;
+  S.govee=inventory;return inventory;
+ },error=>{if(goveeInventoryRequest!==request)return goveeInventoryRequest;throw error});
+ goveeInventoryRequest=request;return request;
+}
+async function loadGovee({messageGeneration=goveeMessageGeneration}={}){
+ const generation=++goveeRenderGeneration;
+ try{
+  await fetchGoveeInventory();
+  if(generation===goveeRenderGeneration){renderGovee();if(messageGeneration===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=''}
+  return {ok:true};
+ }catch(e){
+  if(generation===goveeRenderGeneration&&messageGeneration===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Lighting refresh failed: ${e.message}. Existing readings may be stale. Use Refresh to retry.`;
+  return {ok:false,error:e.message};
+ }
 }
 async function goveeCmd(target,action,body={}){
- try{const j=await jpost(`/api/v1/govee/${encodeURIComponent(target)}/${action}`,body);document.getElementById('goveeMessage').textContent=`${target}: ${action} command sent.`;
+ const generation=++goveeMessageGeneration;
+ try{const j=await jpost(`/api/v1/govee/${encodeURIComponent(target)}/${action}`,body);if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`${target}: ${action} command sent.`;
  const field={brightness:['b',body.level],color:['c',body.color],temp:['t',body.kelvin],scene:['s',body.scene]}[action];
  if(field)for(const card of document.querySelectorAll('#lights .lightCard')){if(card.dataset.lightTarget!==target)continue;const input=card.querySelector(`[data-light-control=${field[0]}]`);if(input&&input.value===String(field[1]))delete input.dataset.dirty}
- setTimeout(loadGovee,200);return j}
- catch(e){document.getElementById('goveeMessage').textContent=`${target}: ${e.message}`;return null}
+ setTimeout(()=>{if(generation===goveeMessageGeneration)loadGovee({messageGeneration:generation})},200);return j}
+ catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`${target}: ${e.message}`;return null}
 }
 async function setGoveeAutoAdd(enabled){
   try{
@@ -693,6 +709,7 @@ async function reconcileGoveeNow(){
   }catch(e){alert(e.message)}
 }
 async function saveGoveeDevice(alias){
+  const generation=++goveeMessageGeneration;
   try{
     const nameInput=document.getElementById(`edit_${alias}_name`),groupsInput=document.getElementById(`edit_${alias}_groups`);
     const name=nameInput.value.trim(),groups=groupsInput.value.split(/[,\s]+/).map(x=>x.trim()).filter(Boolean);
@@ -700,8 +717,9 @@ async function saveGoveeDevice(alias){
     await api('/api/v1/govee/device/'+encodeURIComponent(alias),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})});
     if(nameInput.value===sentName)delete nameInput.dataset.dirty;
     if(groupsInput.value===sentGroups)delete groupsInput.dataset.dirty;
-    await loadGovee();document.getElementById('goveeMessage').textContent='Device saved.';
-  }catch(e){document.getElementById('goveeMessage').textContent=`Device save failed: ${e.message}`}
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=refreshed.ok?'Device saved.':`Device saved. Lighting refresh failed: ${refreshed.error}. Existing readings may be stale.`;
+  }catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Device save failed: ${e.message}`}
 }
 function colorToHex(c){if(!c)return'#0f766e';const h=n=>Math.max(0,Math.min(255,Math.round(Number(n)||0))).toString(16).padStart(2,'0');return '#'+h(c.r)+h(c.g)+h(c.b)}
 function lightCard(target,name,state,isGroup=false,device=null,presence=null,meta=null){
@@ -2162,14 +2180,14 @@ async function checkMorningWatch(){
 
 async function loadSchedules(){
   try{
-    const [a,,g,cal,cls]=await Promise.all([
+    const [a,,,cal,cls]=await Promise.all([
       api('/api/v1/automations'),
       fetchMediaLibrary(),
-      api('/api/v1/govee'),
+      fetchGoveeInventory(),
       api('/api/v1/automations/calendar'),
       api('/api/v1/class-schedules')
     ]);
-    S.automations=a.events||[];S.govee=g;S.scheduler=a.scheduler||null;S.classes=cls.classes||[];S.classStatus={schoolCycle:cls.schoolCycle||null,calendarRule:cls.calendarRule||null,activeClass:cls.activeClass||null,nextClass:cls.nextClass||null};populateAutomationClassSelect(selectedAutomationClassIds());
+    S.automations=a.events||[];S.scheduler=a.scheduler||null;S.classes=cls.classes||[];S.classStatus={schoolCycle:cls.schoolCycle||null,calendarRule:cls.calendarRule||null,activeClass:cls.activeClass||null,nextClass:cls.nextClass||null};populateAutomationClassSelect(selectedAutomationClassIds());
     S.schedulerCalendar=cal.calendar||S.schedulerCalendar;S.scheduleProfile=cal.scheduleProfile||S.scheduleProfile;S.districtNoSchoolDates=cal.districtNoSchoolDates||[];
     renderSchedulerClock();renderSchedulerCalendar();renderAutomationList();loadMorningWatch();
     if(!autoId.value)newAutomation();
