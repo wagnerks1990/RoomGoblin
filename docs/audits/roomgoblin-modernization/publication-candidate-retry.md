@@ -20,3 +20,11 @@ qualification. The supported native snapshot passes all 2,537 Node cases with
 zero failures and two root-only skips, all 23 Host Recovery and 55 Android JVM
 cases, plus syntax/controller checks. This includes the unchanged image identity
 and workflow-name checks. Required CI and checked delivery remain pending.
+
+The final focused native snapshot at `e1728e6` passes all 31 publication,
+exact-image installation, main-selection and gate-policy cases, plus controller
+and shell syntax checks. Integration onto retention main `6a385d1` preserves that
+runtime/workflow/test source byte-for-byte. The Wiki mirrors the retry contract;
+both CI guides now defer to the effective squash-only main ruleset. No repository
+administrative setting was changed. This PR excludes the later browser-request
+batch, and exact-head CI/publication remain required.
