@@ -5829,8 +5829,8 @@ const sportsRuntime=require("./sports-routes").registerSportsRoutes(app,{
  weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,track:trackFullExportMutation
 });
 
-const weatherReadLimit=rateLimit({windowMs:60_000,limit:240,keyGenerator:()=>"weather-read",standardHeaders:"draft-8",legacyHeaders:false});
-const weatherWriteLimit=rateLimit({windowMs:60_000,limit:20,keyGenerator:()=>"weather-write",standardHeaders:"draft-8",legacyHeaders:false});
+const weatherReadLimit=rateLimit({windowMs:60_000,limit:240,keyGenerator:()=>"weather-read",skip:req=>req.route?.path==="/api/v1/weather/display"?!assetAccessAllowed(req):!controlAccessAllowed(req),standardHeaders:"draft-8",legacyHeaders:false});
+const weatherWriteLimit=rateLimit({windowMs:60_000,limit:20,keyGenerator:()=>"weather-write",skip:req=>!capabilityAccessAllowed(req,"schedule.manage")||!capabilityAccessAllowed(req,"automation.manage"),standardHeaders:"draft-8",legacyHeaders:false});
 app.get("/api/v1/weather",weatherReadLimit,requireControl,async(_req,res)=>{
   planningWeather.read(planningStudioConfig.weather);await planningWeather.settled();
   const weather=planningWeather.read(planningStudioConfig.weather);

@@ -16,7 +16,7 @@ w.alertsStatus='unavailable';w.widgets['weather-alerts']='Weather alerts unavail
     return json.loads(subprocess.check_output(['node', '-e', script], cwd=workspaces.ROOT, text=True, encoding='utf-8'))
 
 
-def weather_page(self, width=1440):
+def weather_page(self, width=1440, devices=None):
     weather = forecast()
     requests = []
 
@@ -36,7 +36,7 @@ def weather_page(self, width=1440):
 
     page, errors = self.page('/controller/', width, overrides={
         '/api/v1/weather': {'ok': True, 'config': {'enabled': True, 'latitude': 40, 'longitude': -77, 'unit': 'fahrenheit', 'label': 'Example School'}, 'weather': weather, 'status': {}, 'stale': False},
-        '/api/v1/devices': {'devices': {'tv1': {'name': 'Example display', 'enabled': True}}},
+        '/api/v1/devices': {'devices': devices or {'tv1': {'name': 'Example display', 'enabled': True}}},
     }, transport=transport)
     page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
     if width < 1000:

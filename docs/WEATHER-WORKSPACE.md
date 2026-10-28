@@ -62,15 +62,27 @@ Data older than one hour is marked stale. Inactive scenes cause no weather polli
 Existing receiver asset authorization gates the projection, which omits
 coordinates and raw upstream data. Operator reads require classroom control;
 location/unit saves require schedule and automation management. Separate fixed
-read/write quotas precede authorization. Draft edits survive polling.
+read/write quotas precede authorization and charge only requests admitted by the
+matching control, receiver-asset or combined settings-write predicate. Rejected
+callers cannot consume the accepted callers' appliance-wide allowance.
+Draft edits survive polling.
 A saved location/unit/source change retires the previous preview and any pending
 preview response. When no forecast is available, previous readings and alert
 content clear. Same-location refreshes preserve custom previews and selected
 receivers; sending after a change must obtain a valid current scene.
+Leaving Weather or changing authentication retires pending previews and actions,
+while a completed custom preview survives ordinary navigation. A pending Send
+retains its submitted display selection; changed targets require a new Send.
+An unfinished renderer load cannot leave a retired scene available for dispatch.
 A pending settings save disables another save while keeping draft fields editable.
 Completion preserves newer edits and discards reads that began before the write.
 Preview/send creation waits for the settings save to finish. Save failures remain
 visible and release the save control for retry.
+Location searches and choices belong to their current query and visible session.
+Editing the query, navigating away or changing authentication clears old choices
+and retires pending responses. A pending search cannot be submitted twice;
+changing the query starts a separate search, and current failures allow retry.
+Choosing a result changes the draft only and still requires an explicit save.
 Weather cards, readings, notices and source text use the shared light/dark/system
 workspace palette. The display scene preview retains its own selected colors.
 

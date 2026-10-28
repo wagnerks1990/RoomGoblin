@@ -1,5 +1,26 @@
 # RoomGoblin modernization audit
 
+PR #337 is [deployed and verified](weather-sports-delivery.md) at `f588de3`
+after the required main gates and exact image publication. The following Sports
+durability batch is in PR #338; the remaining roadmap is open.
+
+[Weather location search ownership](weather-location-search.md) repairs six
+reproduced stale-response and duplicate-submission failures. All 20 Weather
+cases pass in each browser. The supported Linux snapshot passes 2,445 tests,
+zero failures, two root-only skips, all 23 Host Recovery and all 55 JVM cases.
+
+[Weather request admission](weather-request-admission.md) repairs eight
+reproduced HTTP quota/denial failures. All 36 targeted Weather/Planning cases
+pass. The combined supported Linux snapshot passes 2,453 tests, zero failures,
+two root-only skips, all 23 Host Recovery and all 55 JVM cases.
+
+[Weather scene ownership](weather-scene-ownership.md) repairs six reproduced
+retired-render/send/workflow failures. The combined browser suite passes its
+29 cases per engine, including retirement during renderer loading. The final
+Weather batch passes 2,453 Linux tests, zero failures, two root-only skips, all
+23 Host Recovery and all 55 JVM cases. Checked delivery remains pending; the
+backend/API and database review is next.
+
 PR #336 is [deployed and verified](android-native-delivery.md) at `7ddeade`
 after all required checks and exact image publication. The next Sports batch
 repairs [refresh and Undo ownership](sports-refresh-ownership.md); three browser

@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- Retire pending Weather previews, sends and workflow actions after navigation
+  or authentication changes, and require unchanged explicit display targets.
+
+- Charge Weather read/write quotas only after matching the route's access
+  predicate, preserving legitimate callers' allowance and rejected callers' denial.
+
+- Keep Weather location results and errors tied to the current query and visible
+  session, clear retired choices, and prevent duplicate pending searches.
+
 - Commit Sports saves and Undo snapshots atomically, and reject board reads
   retired by settings or authentication changes before rendering or caching.
 
