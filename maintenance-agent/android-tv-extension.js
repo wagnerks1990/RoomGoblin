@@ -8,6 +8,7 @@ const {execFile,spawn}=require("child_process");
 const {promisify}=require("util");
 const execFileAsync=promisify(execFile);
 const {JsonStore,DEFAULT_PROFILE,publicDevice,cleanId,cleanHost,cleanPort,cleanSerial,cleanPackage,cleanShell,cleanText,makeId,adbArgsForAction}=require("./android-tv-lib");
+const {withConfiguration,assertConfigurationEditable}=require("./android-tv-configuration-owner");
 
 const ROOT=path.resolve(process.env.ANDROID_TV_DATA_ROOT||"/managed/classroom-hub/data/android-tv");
 const STORE=new JsonStore(ROOT);
@@ -168,8 +169,8 @@ function installRoutes(app){if(installed)return;installed=true;
   // arbitrary files from the writable Android data root bypassed the protected
   // artifact certificate and Device Admin transition checks.
   app.post("/android/devices/:id/agent/install",(_req,res)=>res.status(410).json({ok:false,error:"Legacy APK installation is disabled. Use the verified current-artifact installation route."}));
-  app.post("/android/devices/:id/agent/configure",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const pkg=cleanPackage(req.body?.package||d.agentPackage),url=String(req.body?.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url],{timeout:20000});const updated=STORE.updateDevice(d,{displayUrl:url,agentPackage:pkg});res.json({ok:true,device:publicDevice(updated)})}));
-  app.put("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);res.json({ok:true,device:publicDevice(STORE.upsertDevice({...d,...req.body,id:d.id,host:req.body?.host||d.host,serial:req.body?.serial||d.serial}))})}));
+  app.post("/android/devices/:id/agent/configure",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);await withConfiguration(d.id,async()=>{d=(await ensureDevice(d,{mdnsAttempts:4})).device;const pkg=cleanPackage(req.body?.package||d.agentPackage),url=String(req.body?.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url],{timeout:20000});const updated=STORE.updateDevice(d,{displayUrl:url,agentPackage:pkg});res.json({ok:true,device:publicDevice(updated)})})}));
+  app.put("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id),next={...d,...req.body,id:d.id,host:req.body?.host||d.host,serial:req.body?.serial||d.serial};assertConfigurationEditable(d,next);res.json({ok:true,device:publicDevice(STORE.upsertDevice(next))})}));
   app.delete("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);try{await adb(["disconnect",d.serial],{timeout:10000})}catch{}policyState.delete(d.id);res.json({ok:true,removed:STORE.deleteDevice(d.id,d),deviceId:d.id})}));
   app.put("/android/profiles/:id",asyncRoute(async(req,res)=>res.json({ok:true,profile:STORE.upsertProfile({...req.body,id:cleanId(req.params.id)})})));
   startPolicyLoop();

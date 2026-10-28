@@ -7,6 +7,7 @@ const {promisify}=require("util");
 const execFileAsync=promisify(execFile);
 const {STORE}=require("./android-tv-extension");
 const {cleanPackage,cleanPort,publicDevice}=require("./android-tv-lib");
+const {withConfiguration}=require("./android-tv-configuration-owner");
 
 const ROOT=process.env.ANDROID_TV_DATA_ROOT||"/managed/classroom-hub/data/android-tv";
 const ADB=String(process.env.ADB_BIN||"adb");
@@ -35,7 +36,9 @@ async function agentFetch(d,pathName,opt={}){
     if(!r.ok||json.ok===false){const e=Error(json.error||`Agent HTTP ${r.status}`);e.status=r.status||502;throw e}return json;
   }catch(error){if(error.name==="AbortError"){const e=Error("Device Agent v2 request timed out");e.status=504;throw e}throw error}finally{clearTimeout(timer)}
 }
-async function configure(d,body={}){
+async function configure(d,body={},configurationOwner){
+  return withConfiguration(d.id,async()=>{
+  d=STORE.requireCurrentDevice(STORE.list(),d);
   const pkg=cleanPackage(body.package||d.agentPackage||CURRENT_PACKAGE);
   const port=cleanPort(body.port||d.agentV2?.port||8765);
   const agentToken=body.rotateToken||!d.agentV2?.token?token():d.agentV2.token;
@@ -45,6 +48,7 @@ async function configure(d,body={}){
   await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url,"--ez","agent_enabled","true","--ei","agent_port",String(port),"--es","agent_token",agentToken,"--ez","persistent_adb",String(persistentAdb),"--ei","target_adb_port",String(targetAdbPort)],20000,[agentToken]);
   const updated=STORE.updateDevice(d,{displayUrl:url,agentPackage:pkg,agentV2:{enabled:true,port,token:agentToken,configuredAt:new Date().toISOString()}});
   return updated;
+  },configurationOwner);
 }
 async function packageInstalled(d,pkg){
   try{const result=await adb(["-s",d.serial,"shell","pm","path",pkg],15000);return /^package:/m.test(String(result.stdout||""))}catch{return false}
