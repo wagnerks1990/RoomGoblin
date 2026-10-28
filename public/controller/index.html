@@ -802,7 +802,7 @@ nav button{min-width:135px}
   </div>
   </details>
 
-  <details class="panel workspaceDisclosure" style="margin-bottom:14px">
+  <details id="morningWatchPanel" class="panel workspaceDisclosure" style="margin-bottom:14px">
     <summary><h2 class="sectionTitle" style="margin:0">Morning Announcements • Live Watch</h2> <span id="morningWatchState" class="pill">Loading…</span></summary>
     <div class="disclosureBody">
     <div class="top">
@@ -814,10 +814,11 @@ nav button{min-width:135px}
       <label>Stream URL<input id="morningWatchUrl" type="url" value=""></label>
       <label>Watch Start<input id="morningWatchStart" type="time" value="07:00"></label>
       <label>Watch End<input id="morningWatchEnd" type="time" value="08:30"></label>
-      <label>Announcement Volume<div class="toolbar" style="margin-top:5px"><input id="morningWatchVolume" type="range" min="0" max="100" value="100" style="flex:1" oninput="queueMorningWatchVolume(this.value)" onchange="queueMorningWatchVolume(this.value,true)"><span id="morningWatchVolumeValue" class="pill">100%</span></div><span class="muted">Applies immediately while announcements are playing.</span></label><label>Offline confirmations<input id="morningWatchOfflineConfirmations" type="number" min="1" max="8" value="2"></label><label>Check interval (seconds)<input id="morningWatchCheckInterval" type="number" min="10" max="120" value="15"></label><div><label>Announcement targets</label><div id="morningWatchTargets" class="panel" style="box-shadow:none;padding:10px;margin-top:4px"></div></div>
+      <label>Announcement Volume<div class="toolbar" style="margin-top:5px"><input id="morningWatchVolume" type="range" min="0" max="100" value="100" style="flex:1" oninput="queueMorningWatchVolume(this.value)" onchange="queueMorningWatchVolume(this.value,true)"><span id="morningWatchVolumeValue" class="pill">100%</span></div><span class="muted">Applies immediately while announcements are playing.</span><span id="morningWatchVolumeMsg" class="status" role="status" aria-live="polite"></span></label><label>Offline confirmations<input id="morningWatchOfflineConfirmations" type="number" min="1" max="8" value="2"></label><label>Check interval (seconds)<input id="morningWatchCheckInterval" type="number" min="10" max="120" value="15"></label><div><label>Announcement targets</label><div id="morningWatchTargets" class="panel" style="box-shadow:none;padding:10px;margin-top:4px"></div></div>
     </div>
-    <div class="toolbar"><button class="primary" onclick="saveMorningWatch()">Save Live Watch</button><button id="morningWatchCheckBtn" onclick="checkMorningWatch()">Check Stream Now</button><span id="morningWatchMsg" class="status"></span></div>
-    <div class="muted" style="margin-top:8px">Targets: all enabled displays. Two consecutive offline checks are required before an active announcement is ended, preventing a brief stream hiccup from blanking the TVs.</div>
+    <div class="toolbar"><button id="morningWatchSaveBtn" class="primary" onclick="saveMorningWatch()">Save Live Watch</button><button id="morningWatchCheckBtn" onclick="checkMorningWatch()">Check Stream Now</button><span id="morningWatchMsg" class="status"></span></div>
+    <div id="morningWatchDraftMsg" class="status" role="status" aria-live="polite"></div>
+    <div class="muted" style="margin-top:8px">Uses the selected displays and saved offline-confirmation threshold. Unknown probe results do not count as offline.</div>
   </div>
   </details>
 

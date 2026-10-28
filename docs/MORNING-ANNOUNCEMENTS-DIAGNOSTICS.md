@@ -45,6 +45,12 @@ saved settings; correct the error and retry the save. Clearing a stream URL uses
 the same transaction. A successful save does not by itself confirm receiver
 playback or a successful live volume command.
 
+Live Watch keeps newer edits when a read or earlier save finishes. Save is
+unavailable while that settings submission is pending; inputs remain editable,
+and newer edits are labeled unsaved. Volume changes are ordered with settings
+saves and settle on the latest slider value. A failed save retains the draft
+for retry. Save, volume and stream-check feedback are shown separately.
+
 Starting a replacement announcement retires the previous session's delayed
 audio retries, including when both sessions use the same displays.
 
@@ -70,6 +76,10 @@ If a start fails after changing display state, its owned content remains pending
 for cleanup and current-schedule reconciliation before music priority is released.
 Older pending recovery remains held too. The original start error is reported;
 unchanged or newer content is excluded from that failed attempt's cleanup.
+
+An empty or unresolved explicit start selection reports an error instead of
+using other configured displays. When replacement fails before changing content,
+an unchanged existing announcement retains its active lifecycle and audio hold.
 
 ## HLS player recovery
 

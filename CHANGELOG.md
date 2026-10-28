@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Preserve Live Watch drafts through delayed reads/saves and serialize settings
+  with coalesced live-volume writes, retaining clear save and volume feedback.
+
+- Reject empty explicit announcement targets and retain an unchanged active
+  session when a replacement fails before dispatch.
+
 - Recover partially dispatched announcement starts without discarding older
   pending priority holds or hiding the original start failure.
 
