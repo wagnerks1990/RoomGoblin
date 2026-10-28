@@ -17,6 +17,12 @@ Named-receiver audio, uncertain writes and reconnect ownership have
 Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
 Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
 The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
+Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
+complete tree was byte-identical to qualified `3c15e92`. Qualification includes
+1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
+and 14 token, 30 receiver and five audio cases in each browser. Ten new Node
+cases cover settings persistence and control validation. Checked delivery remains
+pending; PR #304 appliance delivery must complete before this integration merges.
 Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
 evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
 The supported Linux snapshot passes 1,648 tests, zero failures and two root-only
