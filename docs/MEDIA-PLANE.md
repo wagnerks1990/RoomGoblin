@@ -230,6 +230,12 @@ across controller and scheduler consumers; Refresh Media List fetches new data.
 These changes have their own current qualification record in
 [the modernization audit](audits/roomgoblin-modernization/media-library-controller.md).
 
+Cancelling an upload removes its temporary session. If its file already reached
+the library, the controller reports that it was saved and refreshes the library.
+If the receipt is missing or its identity cannot be verified, the controller asks
+the operator to check the library rather than claiming the file was cancelled.
+Saved media is removed only through the library's explicit Delete action.
+
 ## Production acceptance — 2026-09-18
 
 Alpha.84 was live-tested on the production classroom appliance after the media-plane, autoplay, preview, and CORP fixes.

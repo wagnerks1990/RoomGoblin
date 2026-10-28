@@ -45,10 +45,11 @@ async function cancel(file){
  const run=(async()=>{
   const starting=sessionStarts.get(name);if(starting)await starting.catch(()=>{});
   let saved;try{saved=JSON.parse(localStorage.getItem(name)||"null")}catch{}
-  if(!saved?.id)return;
+  if(!saved?.id)return {ok:true,completed:null};
   const response=await fetch(`/api/v1/media/uploads/${encodeURIComponent(saved.id)}`,{method:"DELETE"});
-  if(response.status!==404)await json(response);
+  const result=response.status===404?{ok:true,completed:null}:await json(response);
   forgetSession(file,saved.id);
+  return result;
  })();sessionCancels.set(name,run);
  try{return await run}finally{if(sessionCancels.get(name)===run)sessionCancels.delete(name)}
 }

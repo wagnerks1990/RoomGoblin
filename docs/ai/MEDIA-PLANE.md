@@ -6,6 +6,11 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Upload cancellation returns the owned metadata only internally, after session
+removal. Inspect its library outcome under the file owner after releasing the
+session lock. Return only public matching file information; keep ambiguous
+identity/size outcomes unknown. Cancellation cannot delete registered media.
+
 Library cards use the canonical media display route for document readiness and
 viewer selection. Preserve target arrays and explicit image/video options.
 Controller media/scheduler/picker requests share `fetchMediaLibrary` ownership;

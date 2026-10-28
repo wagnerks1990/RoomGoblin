@@ -616,7 +616,7 @@ async function runMediaUpload(){
 }
 mediaUploadForm.addEventListener('submit',async e=>{e.preventDefault();await runMediaUpload()});
 mediaUploadPause.addEventListener('click',()=>mediaUploadAbort?.abort());
-mediaUploadCancel.addEventListener('click',async()=>{const f=mediaUploadFile||mediaFile.files[0],generation=++mediaUploadGeneration;mediaUploadAbort?.abort();mediaUploadAbort=null;mediaUploadPause.style.display='none';try{if(f)await RoomGoblinUpload.cancel(f);if(generation!==mediaUploadGeneration)return;uploadState.textContent='Upload cancelled';mediaUploadCancel.style.display='none';mediaUploadFile=null}catch(error){if(generation===mediaUploadGeneration){uploadState.textContent=`Cancel failed: ${error.message}`;mediaUploadCancel.style.display=''}}});
+mediaUploadCancel.addEventListener('click',async()=>{const f=mediaUploadFile||mediaFile.files[0],generation=++mediaUploadGeneration;mediaUploadAbort?.abort();mediaUploadAbort=null;mediaUploadPause.style.display='none';try{const result=f?await RoomGoblinUpload.cancel(f):{completed:null};if(generation!==mediaUploadGeneration)return;uploadState.textContent=result?.completed===true?'Upload already saved; it is in the media library':result?.completed===false?'Upload cancelled':'Upload session closed; check the media library';mediaUploadCancel.style.display='none';mediaUploadFile=null;if(result?.completed!==false)loadMedia()}catch(error){if(generation===mediaUploadGeneration){uploadState.textContent=`Cancel failed: ${error.message}`;mediaUploadCancel.style.display=''}}});
 
 // Displays & AV owns its polling, drawers and receiver drafts in av-workspace.js.
 

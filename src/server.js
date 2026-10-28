@@ -8413,8 +8413,27 @@ app.post("/api/v1/media/uploads/:id/complete",mediaUploadCompletionLimit,require
     res.json({ok:true,file});
   }catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/media/uploads/:id",requireCapability("media.manage"),async(req,res)=>{
-  try{await resumableUploads.cancel(req.params.id,ownerKey(req));audit({kind:"media.upload.cancelled",uploadId:req.params.id});res.json({ok:true})}
+const mediaUploadCancelLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:30,keyGenerator:()=>"media-upload-cancel",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Upload cancellation limit reached; retry later"}
+});
+app.delete("/api/v1/media/uploads/:id",mediaUploadCancelLimit,requireCapability("media.manage"),async(req,res)=>{
+  try{
+    const meta=await resumableUploads.cancel(req.params.id,ownerKey(req));let outcome={completed:false};
+    if(meta.completion?.storedName){
+      const stored=safeStoredName(meta.completion.storedName);
+      outcome=await withMediaFileWrite(stored,async()=>{
+        const record=mediaLibrary.files[stored];
+        if(!record)return {completed:false};
+        if(record.uploadSessionId!==meta.id||record.uploadDigest!==meta.completion.digest)return {completed:null};
+        const file=libraryRecordFromDisk(stored);if(!file)return {completed:false};
+        return file.size===meta.size?{completed:true,file}:{completed:null};
+      });
+    }
+    audit({kind:"media.upload.cancelled",uploadId:req.params.id,completed:outcome.completed});res.json({ok:true,...outcome});
+  }
   catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 
@@ -8460,7 +8479,7 @@ app.post("/api/v1/media/:name/display",requireCapability("media.manage"),async(r
     const name=safeStoredName(req.params.name),full=path.join(MEDIA_DIR,name);
     if(!fs.existsSync(full))return res.status(404).json({ok:false,error:"File not found"});
     const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
-    const target=req.body?.target??"tv1";
+    const target=req.body?.target||"tv1";
     const payload=req.body||{};
     const appearance={fit:payload.fit||"contain"};
     for(const key of ["opacity","localDirect"])if(Object.hasOwn(payload,key))appearance[key]=payload[key];

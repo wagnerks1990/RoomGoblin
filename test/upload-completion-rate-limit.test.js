@@ -3,7 +3,7 @@ const test=require("node:test"),assert=require("node:assert/strict"),fs=require(
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8").replace(/\r\n/g,"\n");
 function block(a,b){const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>0&&end>start);return source.slice(start,end)}
 const authorization=block("function authenticationUnavailable(","\nfunction administratorAccessAllowed(")+block("function requireCapability(","\nfunction requireClassroomRead(");
-const completion=block("const mediaUploadCompletionLimit=rateLimit(","\napp.post(\"/api/v1/media\"")+block('app.post("/api/v1/media",','\napp.post("/api/v1/media/uploads",')+block('app.post("/api/v1/media/uploads/:id/complete"','\napp.delete("/api/v1/media/uploads/:id"');
+const completion=block("const mediaUploadCompletionLimit=rateLimit(","\napp.post(\"/api/v1/media\"")+block('app.post("/api/v1/media",','\napp.post("/api/v1/media/uploads",')+block('app.post("/api/v1/media/uploads/:id/complete"','\nconst mediaUploadCancelLimit=');
 async function fixture(t,{legacy=false,configured=true}={}){
  const app=express();app.use(express.json());let writes=0;
  const c=vm.createContext({app,rateLimit,upload:{single:()=> (_req,_res,next)=>next()},CONTROL_TOKEN:configured?"fixture-control":"",dbStore:{authEnabled:()=>!legacy,userCount:()=>0},secureTokenEqual:(a,b)=>a===b,
