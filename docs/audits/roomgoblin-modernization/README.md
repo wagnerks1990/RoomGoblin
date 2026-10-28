@@ -193,6 +193,19 @@ domains. Maintenance and the native Host Agent are distinct privileged boundarie
 they are not additional public browser services. Media bytes have their own
 process/listener but share the Hub's authorization and failure domain.
 
+## Music observation and ordering integration
+
+The schedule-save, player-probe, recovery-attempt, Live Watch manual-check and
+connection-status changes are integrated on merged `main` `1e52980`. Before
+this evidence note, the complete integration tree was byte-identical to
+qualified `01aa993`. All 97 focused integration tests pass. The supported
+Linux snapshot passed 1,545 tests, zero failures and two root-only ownership
+skips, plus all 23 Host Recovery tests and Node/controller/Python/Bash checks.
+Live Watch passed 27 cases and the workspace suite passed 70 cases in each
+of Chromium and Firefox. Required PR/main gates, exact images and this batch's
+backed-up appliance delivery remain pending. PR #301 delivery is in progress.
+TV audio restoration remains under review; the broader roadmap is still active.
+
 ## Inventory and review sequence
 
 These are review units, not proposed new services. Later units remain queued;
