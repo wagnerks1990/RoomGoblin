@@ -17,6 +17,12 @@ the existing required `windows-agent` job after its single locked build. Artifac
 retention is bounded to 14 days. The obsolete branch-patching workflow and its two
 source-rewriting helpers have been retired; source changes belong in reviewed PRs.
 
+Exact-image publication retries a failed registry push at most three times with
+five- and ten-second waits. Each attempt verifies the same local image identity
+and exact commit label; current and legacy aliases must identify that one scanned
+candidate. Retries never rebuild, retag another revision, skip scans or bypass the
+required workflow gates. Exhaustion or changed identity fails publication.
+
 Before packaging, the Windows job also runs
 `python tools/test-native-command-process.py` on .NET 8. It compiles the actual
 native process helper with nine isolated cases covering success, failure detail,

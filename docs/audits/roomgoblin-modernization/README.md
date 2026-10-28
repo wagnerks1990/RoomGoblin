@@ -9,6 +9,8 @@ PR #340 is [deployed and verified](database-transactions-delivery.md). The
 [rollback-aware retention repair](backup-retention-authority.md) passes native
 qualification with 2,537 Node cases, two root-only skips, all 23 Host Recovery
 and 55 Android JVM cases. Its documentation resolves RG-DOC-001's stale limits.
+The same qualified snapshot includes [bounded publication retries](publication-candidate-retry.md)
+that retain the exact scanned candidate and fail on identity drift or exhaustion.
 
 The receiver identity repair is pushed in PR #341. The next
 [diagnostics batch](diagnostic-evidence.md) repairs reproduced secret projection,
