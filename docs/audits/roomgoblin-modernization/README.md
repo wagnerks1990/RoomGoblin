@@ -1,6 +1,9 @@
 # RoomGoblin modernization audit
 
-Status: **Audio/session/connection fixes delivered; PR #302 merged with images pending; TV audio recovery and music search qualified**.
+Status: **PR #302 delivered; TV audio recovery and music search in PR #303; audio command ordering under validation**.
+
+PR #302 is deployed and verified at `4f9e3da`, including health, database/secrets,
+backup integrity and rollback. See [the delivery receipt](music-observation-delivery.md).
 
 PR #301 is deployed and verified at `1e52980`, including health, database/secrets,
 backup integrity and rollback. See [the delivery receipt](music-session-delivery.md).
@@ -8,6 +11,7 @@ TV audio restore ownership has [22 focused regressions](music-tv-restore-ownersh
 Music search has [two reproduced result-ownership defects](music-search-results.md).
 Named-receiver audio, uncertain writes and reconnect ownership have
 [46 new regression cases](music-tv-recovery.md).
+Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -210,7 +214,8 @@ Linux snapshot passed 1,545 tests, zero failures and two root-only ownership
 skips, plus all 23 Host Recovery tests and Node/controller/Python/Bash checks.
 Live Watch passed 27 cases and the workspace suite passed 70 cases in each
 of Chromium and Firefox. Required PR/main gates, exact images and this batch's
-backed-up appliance delivery remain pending. PR #301 delivery is now verified.
+backed-up appliance delivery passed in PR #302;
+see [the receipt](music-observation-delivery.md). PR #301 delivery is also verified.
 TV audio restoration remains under review; the broader roadmap is still active.
 
 ## TV audio and search integration
@@ -222,7 +227,7 @@ validation passes 1,613 tests, zero failures and two root-only ownership skips,
 plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All 17
 Music Studio and 70 workspace cases pass in each of Chromium and Firefox.
 Required PR/main checks, immutable images and this batch's backed-up delivery
-remain pending. PR #302 has passed main validation and awaits image publication.
+remain pending. PR #302 is now deployed and verified.
 Late audio-command persistence remains a separate reproduced review finding.
 
 ## Inventory and review sequence

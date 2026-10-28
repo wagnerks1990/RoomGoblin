@@ -6640,6 +6640,23 @@ const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
 function musicAssistantTvDeviceIdFromPlayerId(playerId){const value=String(playerId||"").toLowerCase(),prefix="classroom-hub-";if(!value.startsWith(prefix))return null;const id=value.slice(prefix.length);return Object.hasOwn(devices,id)&&devices[id]?.enabled!==false?id:null}
 function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
 function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
+const musicAssistantTvAudioWrites=new Map();
+function beginMusicAssistantTvAudioWrite(command,args){
+  const field=command==="players/cmd/volume_set"?"volume":command==="players/cmd/volume_mute"?"muted":null;
+  if(!field)return null;
+  const deviceId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);if(!deviceId)return null;
+  const key=JSON.stringify([deviceId,field]),state=musicAssistantTvAudioWrites.get(key)||{next:0,committed:0,pending:0};
+  musicAssistantTvAudioWrites.set(key,state);state.pending++;
+  return {key,state,sequence:++state.next,deviceId,field,value:field==="volume"?args.volume_level:args.muted,generation:maApiGeneration};
+}
+function commitMusicAssistantTvAudioWrite(write){
+  if(!write||write.generation!==maApiGeneration||write.sequence<=write.state.committed||musicAssistantTvDeviceIdFromPlayerId(`classroom-hub-${write.deviceId}`)!==write.deviceId)return false;
+  write.state.committed=write.sequence;
+  setMusicAssistantTvAudioState(write.deviceId,{[write.field]:write.value});return true;
+}
+function releaseMusicAssistantTvAudioWrite(write){
+  if(write&&--write.state.pending===0&&musicAssistantTvAudioWrites.get(write.key)===write.state)musicAssistantTvAudioWrites.delete(write.key);
+}
 function musicAssistantTvAttachPayload(deviceId,issued,extra={}){const audio=musicAssistantTvAudioState(deviceId);return {transport:"authenticated-ma-sendspin-proxy",proxyUrl:musicAssistantProxyPath(issued.ticket),playerId:issued.playerId,sdkVersion:"3.2.1",desiredVolume:audio.volume,desiredMuted:audio.muted,...extra}}
 function resetMusicAssistantTvAudioRestore(ws){
   ws.maAudioRestoreOperation=null;ws.maAudioRestorePending=false;ws.maAudioRestored=false;ws.maAudioRestoreUncertain=false;
@@ -7213,12 +7230,14 @@ app.get("/api/v1/music-assistant/background/queue",musicAssistantStatusLimit,req
   }catch(error){res.status(502).json({ok:false,error:error.message})}
 });
 app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireControl,async(req,res)=>{
+  const generation=maApiGeneration,changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh before sending another command."});let audioWrite=null;
   try{
     const command=String(req.body?.command||""),args=req.body?.args||{};
     const allowed=new Set(["players/all","players/cmd/play_pause","players/cmd/play","players/cmd/pause","players/cmd/stop","players/cmd/volume_set","players/cmd/volume_mute","player_queues/all","player_queues/items","player_queues/get","player_queues/get_active_queue","player_queues/next","player_queues/previous","player_queues/shuffle","player_queues/repeat","player_queues/seek","player_queues/play_index","player_queues/play_media","music/search","music/recently_played_items"]);
     if(!allowed.has(command))return res.status(400).json({ok:false,error:"Music Assistant command is not approved by RoomGoblin"});
     const startsPlayback=["players/cmd/play","players/cmd/play_pause","player_queues/next","player_queues/previous","player_queues/play_index","player_queues/play_media"].includes(command);
     if(backgroundMusicPriorityBlocked()&&startsPlayback)return res.status(409).json({ok:false,error:"Music is paused for priority audio"});
+    audioWrite=beginMusicAssistantTvAudioWrite(command,args);
     const owned=String(args.player_id||"")===String(backgroundMusicRuntime.activePlayerId||"")&&!!backgroundMusicRuntime.activePlayerId;
     let result;
     if(owned&&["players/cmd/pause","players/cmd/stop","players/cmd/play_pause"].includes(command)){
@@ -7228,12 +7247,13 @@ app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireCo
       else if(pause)result=await backgroundMusicPause("manual");
       else{backgroundMusicRuntime.manualStopped=false;result=await backgroundMusicResume("manual")}
     }else result=await musicAssistantCommand(command,args);
+    if(generation!==maApiGeneration)return changed();
     if(startsPlayback&&backgroundMusicPriorityBlocked()&&(args.player_id||args.queue_id))await musicAssistantCommand("players/cmd/pause",{player_id:args.player_id||args.queue_id});
-    const tvId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);
-    if(tvId&&command==="players/cmd/volume_set")setMusicAssistantTvAudioState(tvId,{volume:args.volume_level});
-    if(tvId&&command==="players/cmd/volume_mute")setMusicAssistantTvAudioState(tvId,{muted:args.muted});
+    if(generation!==maApiGeneration)return changed();
+    commitMusicAssistantTvAudioWrite(audioWrite);
     audit({kind:"musicassistant.command",command});res.json({ok:true,result});
-  }catch(e){res.status(502).json({ok:false,error:e.message})}
+  }catch(e){if(generation!==maApiGeneration)return changed();res.status(502).json({ok:false,error:e.message})}
+  finally{releaseMusicAssistantTvAudioWrite(audioWrite)}
 });
 
 const musicAssistantProxyTickets=new Map();

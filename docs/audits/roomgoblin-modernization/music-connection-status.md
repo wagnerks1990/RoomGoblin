@@ -27,7 +27,7 @@ protocol players, transport metadata and credential-free responses.
 
 The supported Linux active-worktree validation passes 1,545 tests with zero
 failures and two root-only ownership skips; all 23 Host Recovery tests and
-Node/controller/Python/Bash checks pass. Required CI, checked integration,
-exact images and backed-up delivery remain pending. Tests use deterministic transports and did
+Node/controller/Python/Bash checks pass. Required CI, exact images and backed-up
+delivery passed in PR #302; see [the receipt](music-observation-delivery.md). Tests use deterministic transports and did
 not change production connection settings or dispatch physical commands.
 The broader modernization remains active.
