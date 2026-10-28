@@ -62,6 +62,10 @@ replacement. This does not install an APK or exercise Android framework lifecycl
 actual URL and intent methods with a WebView substitute: first assignment,
 reassignment, placeholder recovery, unchanged redirected sessions, explicit
 reload, reload after reassignment and recovery of a missing current URL.
+`python3 tools/test-android-root-process.py` adds five JVM cases for normal and
+nonzero completion, bounded output, timeout and interruption. It compiles the
+actual RootTools fields and execution method, substituting privileged process
+creation with harmless local Java child processes. No root command is executed.
 
 ## Conservative documentation-only PR selection
 

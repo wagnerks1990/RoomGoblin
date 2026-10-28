@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Clean up the Android root-tool child process and its streams when a request is
+  interrupted, preserving existing policy gates, timeouts and output limits.
+
+- Reject unsupported Android management and persistent-ADB target ports before
+  dispatch, so saved endpoints match the ports accepted by the device.
+
 - Apply changed Android display assignments to an already-open WebView while
   preserving its live session on unchanged assignments and ordinary resume.
 

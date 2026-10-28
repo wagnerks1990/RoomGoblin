@@ -5,7 +5,7 @@ const {execFile}=require("child_process");
 const {promisify}=require("util");
 const execFileAsync=promisify(execFile);
 const {STORE}=require("./android-tv-extension");
-const {cleanPackage,cleanPort,publicDevice}=require("./android-tv-lib");
+const {cleanPackage,cleanPort,requireManagementPort,publicDevice}=require("./android-tv-lib");
 const {withConfiguration}=require("./android-tv-configuration-owner");
 
 const ROOT=process.env.ANDROID_TV_DATA_ROOT||"/managed/classroom-hub/data/android-tv";
@@ -45,6 +45,7 @@ async function broadcastPolicy(d,enabled,targetPort){
 }
 async function bootstrap(d,targetPort){
   return withConfiguration(d.id,async()=>{
+  targetPort=requireManagementPort(targetPort??5555);
   d=STORE.requireCurrentDevice(STORE.list(),d);
   d=await requireOnline(d);
   const pkg=cleanPackage(d.agentPackage||"org.roomgoblin.display");
@@ -70,7 +71,7 @@ async function bootstrap(d,targetPort){
 function installRoutes(app){if(installed)return;installed=true;
   app.get("/android/devices/:id/agent/status",route(async(req,res)=>res.json(await agentStatus(device(req.params.id)))));
   app.post("/android/devices/:id/persistent-adb/bootstrap",route(async(req,res)=>{
-    const targetPort=cleanPort(req.body?.targetPort||5555);
+    const targetPort=requireManagementPort(req.body?.targetPort??5555);
     const result=await bootstrap(device(req.params.id),targetPort);
     res.json({ok:true,targetPort,message:"Persistent wireless debugging boot policy enabled and fixed ADB endpoint configured.",...result,device:publicDevice(result.device)});
   }));
