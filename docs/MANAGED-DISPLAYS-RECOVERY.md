@@ -95,6 +95,13 @@ pending state; removal during recovery fails without recreating the display.
 These browser ownership rules do not cancel accepted ADB work or introduce a
 shared HTTP deadline.
 
+Agent v2 capability reads share one pending request for each enrollment and
+configuration identity, including across card redraws. The 30-second cache uses
+monotonic time and survives ordinary metadata edits. Replacing or removing an
+enrollment, changing its endpoint or reconfiguring Agent v2 retires the old cache.
+Late replies cannot overwrite a newer cache or render into a detached card;
+failed current reads permit a later retry. Inventory scans prune retired entries.
+
 ## Screenshot preview lifetime
 
 The Android screenshot dialog opens while capture is pending and displays capture
