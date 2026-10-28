@@ -577,6 +577,83 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 self.assertFalse(page.locator(cancel).is_visible())
                 self.assertFalse(errors, errors)
 
+    def test_presentation_refresh_preserves_receiver_choices_and_focus(self):
+        payload = {'folders': [{'id': 'root', 'name': 'Root', 'parentId': None}],
+                   'presentations': [], 'state': {'active': False},
+                   'displays': [{'id': 'tv1', 'name': 'One'}, {'id': 'tv2', 'name': 'Two'}]}
+        page, errors = self.page('/controller/', overrides={'/api/v1/presentations': payload})
+        page.evaluate("showPage('presentations')")
+        page.locator('.presTargetCheck').first.wait_for()
+        for checkbox in page.locator('.presTargetCheck').all():
+            checkbox.uncheck()
+        page.locator('.presTargetCheck').first.focus()
+        page.evaluate('window.originalPresentationTarget = document.activeElement')
+        page.evaluate('loadPresentations()')
+        self.assertEqual(page.locator('.presTargetCheck:checked').count(), 0)
+        self.assertTrue(page.evaluate('document.activeElement === originalPresentationTarget'))
+        payload['displays'][0]['name'] = 'Renamed one'
+        payload['displays'].append({'id': 'tv3', 'name': 'Three'})
+        page.evaluate('loadPresentations()')
+        self.assertEqual(page.locator('.presTargetCheck').count(), 3)
+        self.assertEqual(page.locator('.presTargetCheck:checked').count(), 0)
+        self.assertIn('Renamed one', page.locator('#presTargets').inner_text())
+        payload['displays'] = payload['displays'][1:]
+        page.evaluate('loadPresentations()')
+        self.assertEqual(page.locator('.presTargetCheck').count(), 2)
+        self.assertFalse(errors, errors)
+
+    def test_presentation_polling_preserves_timing_drafts_and_thumbnail_focus(self):
+        state = {'active': True, 'presentationId': 'deck', 'sessionId': 'session',
+                 'slide': 1, 'autoAdvanceSeconds': 5, 'targetSeconds': 10}
+        payload = {'folders': [{'id': 'root', 'name': 'Root', 'parentId': None}],
+                   'presentations': [{'id': 'deck', 'name': 'Deck', 'slideCount': 3, 'folderId': 'root'}],
+                   'state': state, 'displays': []}
+        page, errors = self.page('/controller/', overrides={
+            '/api/v1/presentations': payload, '/api/v1/presentations/state': {'state': state}})
+        page.evaluate("showPage('presentations')")
+        page.wait_for_function("document.getElementById('presAutoSeconds').value === '5'")
+        for field in ('presAutoSeconds', 'presTargetSeconds', 'presGoto'):
+            page.locator('#' + field).fill('2')
+            page.evaluate('refreshPresentationState()')
+            self.assertEqual(page.locator('#' + field).input_value(), '2')
+        page.locator('#presLoop').check()
+        page.locator('#presThumbs button').first.focus()
+        page.evaluate('window.originalPresentationThumb = document.activeElement')
+        page.evaluate('refreshPresentationState()')
+        for field in ('presAutoSeconds', 'presTargetSeconds', 'presGoto'):
+            self.assertEqual(page.locator('#' + field).input_value(), '2')
+        self.assertTrue(page.locator('#presLoop').is_checked())
+        self.assertTrue(page.evaluate('document.activeElement === originalPresentationThumb'))
+        self.assertFalse(errors, errors)
+
+    def test_presentation_late_control_preserves_selected_preview(self):
+        state = {'active': True, 'presentationId': 'live', 'sessionId': 'session', 'slide': 1}
+        payload = {'folders': [{'id': 'root', 'name': 'Root', 'parentId': None}],
+                   'presentations': [{'id': name, 'name': name, 'slideCount': 3, 'folderId': 'root'}
+                                     for name in ('live', 'preview')], 'state': state, 'displays': []}
+        page, errors = self.page('/controller/', overrides={
+            '/api/v1/presentations': payload, '/api/v1/presentations/state': {'state': state}})
+        page.evaluate("showPage('presentations')")
+        page.wait_for_function("PRES.selectedId === 'live'")
+        page.evaluate('''() => {
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => String(url) === '/api/v1/presentations/control'
+            ? new Promise(resolve => { window.resolvePresentationControl = resolve; window.presentationControlBody = JSON.parse(options.body); })
+            : originalFetch(url, options);
+          window.pendingPresentationControl = presentationControl('pause');
+        }''')
+        page.wait_for_function('typeof resolvePresentationControl === "function"')
+        page.evaluate("selectPresentation('preview'); previewPresentationSlide(2)")
+        page.evaluate('''async () => {
+          resolvePresentationControl(new Response(JSON.stringify({state:{active:true,presentationId:'live',sessionId:'session',slide:1,paused:true}})));
+          await pendingPresentationControl;
+        }''')
+        self.assertEqual(page.evaluate('PRES.selectedId'), 'preview')
+        self.assertEqual(page.evaluate('PRES.previewSlide'), 2)
+        self.assertEqual(page.evaluate('presentationControlBody.sessionId'), 'session')
+        self.assertEqual(page.locator('#presStateBadge').inner_text(), 'PREVIEW')
+        self.assertFalse(errors, errors)
+
     def test_media_cards_dispatch_documents_to_selected_receivers(self):
         devices = {name: {'name': name, 'enabled': True} for name in ('tv1', 'tv2')}
         files = [{'storedName': 'lesson.pdf', 'originalName': 'Lesson PDF', 'type': 'pdf',

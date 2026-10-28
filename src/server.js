@@ -2491,34 +2491,45 @@ function recordCurrentSlideTiming(){
   const key=String(presentationState.slide||1);
   presentationState.timings[key]=Number(presentationState.timings[key]||0)+elapsed;
 }
+// Start, live controls and removal share one session owner. Keep callers' returned
+// promises pending so HTTP and automatic-advance lifecycle tracking can drain it.
+let presentationSessionWrite=Promise.resolve();
+function withPresentationSession(task){
+  const run=presentationSessionWrite.then(task);presentationSessionWrite=run.catch(()=>{});return run;
+}
 async function sendPresentationSlide({clear=false}={}){
-  const rec=presentationLibrary.presentations[presentationState.presentationId];
-  if(!rec||!presentationState.active)return;
-  const url=presentationSlideUrl(rec.id,presentationState.slide);
-  const priorityError=announcementPriorityError(presentationState.targets);
+  const state=presentationState,rec=presentationLibrary.presentations[state.presentationId];
+  if(!rec||!state.active)return;
+  const slide=state.slide,targets=[...state.targets],sessionId=state.sessionId,black=state.black;
+  const ownsSession=()=>presentationState===state&&presentationState.active&&presentationState.sessionId===sessionId&&presentationState.slide===slide&&presentationState.black===black;
+  const assertOwner=()=>{if(!ownsSession())throw Object.assign(Error("Presentation session changed"),{status:409})};
+  const url=presentationSlideUrl(rec.id,slide);
+  const priorityError=announcementPriorityError(targets);
   if(priorityError)throw priorityError;
   // Clear overlays through the established command understood by older receivers.
-  if(clear)await executeCommand({type:"display.clear",target:presentationState.targets,payload:{presentation:true}},"presentation");
+  if(clear)await executeCommand({type:"display.clear",target:targets,payload:{presentation:true}},"presentation");
+  assertOwner();
   await executeCommand({
     // Use the established display.image command so already-open TV receivers
     // from earlier Hub versions can present slides without requiring a reload.
     type:"display.image",
-    target:presentationState.targets,
+    target:targets,
     payload:{
       presentationId:rec.id,
       presentation:true,
       name:rec.name,
-      slide:presentationState.slide,
+      slide,
       slideCount:rec.slideCount,
       url,
       fit:"contain",
       opacity:1
     }
   },"presentation");
-  if(presentationState.black){
+  assertOwner();
+  if(black){
     await executeCommand({
       type:"display.clear",
-      target:presentationState.targets,
+      target:targets,
       payload:{presentation:true,black:true}
     },"presentation");
   }
@@ -2550,7 +2561,21 @@ async function stopPresentation({clear=true}={}){
   broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
   return presentationStatePublic();
 }
-async function controlPresentation(action,body={}){
+function controlPresentation(action,body={}, {automatic=false}={}){
+  const sessionId=body.sessionId??presentationState.sessionId,slide=presentationState.slide,startedAt=presentationState.slideStartedAt;
+  return withPresentationSession(async()=>{
+    if(presentationState.sessionId!==sessionId){
+      if(automatic)return presentationStatePublic();
+      throw Object.assign(Error("Presentation session changed; refresh before sending another control"),{status:409});
+    }
+    if(automatic){
+      const seconds=Number(presentationState.autoAdvanceSeconds||0);
+      if(!presentationState.active||presentationState.paused||presentationState.slide!==slide||presentationState.slideStartedAt!==startedAt||seconds<=0||presentationElapsedSeconds(startedAt)<seconds)return presentationStatePublic();
+    }
+    return controlPresentationUnlocked(action,body);
+  });
+}
+async function controlPresentationUnlocked(action,body={}){
   action=String(action||"").toLowerCase();
   if(action==="stop")return stopPresentation({clear:body.clear!==false});
   if(!presentationState.active)throw new Error("No active presentation");
@@ -2629,7 +2654,7 @@ const presentationAutoAdvanceTimer=setInterval(async()=>{
     const seconds=Number(presentationState.autoAdvanceSeconds||0);
     if(seconds<=0)return;
     if(presentationElapsedSeconds(presentationState.slideStartedAt)>=seconds){
-      await controlPresentation("next",{});
+      await controlPresentation("next",{}, {automatic:true});
     }
   }catch(err){
     audit({kind:"presentation.auto.error",error:err.message});
@@ -8156,20 +8181,25 @@ app.put("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(r
     res.json({ok:true,folder});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(req,res)=>{
+app.delete("/api/v1/presentations/folders/:id",requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id);
     if(id==="root"||!presentationLibrary.folders[id])return res.status(400).json({ok:false,error:"Root folder cannot be deleted"});
     const recursive=String(req.query.recursive||"0")==="1";
-    const folders=presentationDescendantFolderIds(id);
-    const pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
+    let folders=presentationDescendantFolderIds(id);
+    let pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
     if(!recursive&&(folders.size>1||pres.length))return res.status(409).json({ok:false,error:"Folder is not empty; use recursive delete"});
+    if(presentationState.active&&pres.some(p=>p.id===presentationState.presentationId))await stopPresentation({clear:true});
+    // Library uploads and moves can finish while the selected live session stops.
+    // Commit against current membership, preserving decks moved out of the folder.
+    folders=presentationDescendantFolderIds(id);
+    pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
     for(const p of pres)deletePresentationRecord(p.id);
     for(const fid of folders)delete presentationLibrary.folders[fid];
     persistPresentationLibrary();
     res.json({ok:true,removedFolders:[...folders],removedPresentations:pres.map(p=>p.id)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
+}));
 
 app.post("/api/v1/presentations/upload",requireCapability("media.manage"),presentationUpload.single("presentation"),async(req,res)=>{
   if(!req.file)return res.status(400).json({ok:false,error:"No presentation uploaded"});
@@ -8236,7 +8266,7 @@ app.put("/api/v1/presentations/:id",requireCapability("media.manage"),(req,res)=
     res.json({ok:true,presentation:presentationPublicRecord(rec)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(req,res)=>{
+app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id);
     if(!presentationLibrary.presentations[id])return res.status(404).json({ok:false,error:"Presentation not found"});
@@ -8245,13 +8275,13 @@ app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(r
     audit({kind:"presentation.delete",id});
     res.json({ok:true,id});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),async(req,res)=>{
+}));
+app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id),rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
     if(rec.conversionStatus!=="ready"||!rec.slideCount)return res.status(409).json({ok:false,error:"Presentation rendering is not ready"});
-    const targets=resolveDisplayTargets(req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
+    const targets=resolveDisplayTargets(Array.isArray(req.body?.targets)||req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
     if(!targets.length)throw new Error("Select at least one display");
     const priorityError=announcementPriorityError(targets);
     if(priorityError)throw priorityError;
@@ -8275,10 +8305,10 @@ app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),asy
     broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
     res.json({ok:true,state:presentationStatePublic()});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
+}));
 app.post("/api/v1/presentations/control",requireCapability("media.manage"),async(req,res)=>{
   try{res.json({ok:true,state:await controlPresentation(req.body?.action,req.body||{})})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
+  catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 
 // Media Library uploads / documents
