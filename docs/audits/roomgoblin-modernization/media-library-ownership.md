@@ -54,6 +54,15 @@ skips (1,773 total), plus all 23 Host Recovery tests and Node/controller,
 Python and Bash checks. This run includes the final retirement guard and
 rollback chunk cleanup. Checked GitHub delivery remains pending.
 
+CodeQL on PR #308's initial head found uncontrolled path data in multipart
+failure cleanup. Cleanup now derives its destination from `safeStoredName`
+under `MEDIA_DIR`, instead of using the request file path. An additional
+actual-handler regression supplies a misleading path, traversal and invalid
+name, while preserving owned cleanup and committed-file protection. Isolated
+validation passes 1,772 tests, zero failures and two root-only skips (1,774
+total), plus all 23 Host Recovery tests and Node/controller/Python/Bash checks.
+Fresh required CI is pending; the failure was not suppressed.
+
 Temporary files and controlled converters establish operation ownership, not
 LibreOffice rendering quality or physical playback. Cancellation outcome wording,
 document-card dispatch and the broader presentation review remain open.

@@ -8366,7 +8366,10 @@ app.post("/api/v1/media",mediaUploadCompletionLimit,requireCapability("media.man
     inspectUpload(req.file.path,req.file.originalname);
     const file=await registerUploadedMedia({stored:req.file.filename,originalName:req.file.originalname,mime:req.file.mimetype,size:req.file.size});
     res.json({ok:true,file});
-  }catch(err){await withMediaFileWrite(req.file.filename,async()=>{if(!mediaLibrary.files[req.file.filename])fs.rmSync(req.file.path,{force:true})});throw err}
+  }catch(err){
+    const stored=safeStoredName(req.file.filename);
+    await withMediaFileWrite(stored,async()=>{if(!mediaLibrary.files[stored])fs.rmSync(path.join(MEDIA_DIR,stored),{force:true})});throw err;
+  }
 });
 
 app.post("/api/v1/media/uploads",requireCapability("media.manage"),(req,res)=>{
