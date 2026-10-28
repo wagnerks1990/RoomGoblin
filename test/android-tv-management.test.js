@@ -58,7 +58,7 @@ test("managed display enrollment and configuration are separate workflows",()=>{
   assert.match(html,/name="displayUrl" id="editDisplayUrl"/);
   assert.match(app,/data-op="edit"/);
   assert.match(app,/method:'PUT'/);
-  assert.match(app,/openEdit\(j\.device\.id\)/);
+  assert.match(app,/openEdit\(result\.device\.id\)/);
 });
 
 test("persistent ADB devices use fast bounded reboot recovery and agent launch acceleration",()=>{

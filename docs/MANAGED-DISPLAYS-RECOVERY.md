@@ -4,6 +4,17 @@
 
 Managed Displays is the administrator surface for Android / Google TV enrollment, assignment, remote control, agent deployment, screenshots and remote shell. The controller Overview links directly to `/managed-displays/` beside **Refresh**.
 
+## Enrollment feedback and form ownership
+
+Android enrollment captures its form before awaiting the server; browser event
+currentTarget is no longer available after dispatch. One enrollment request owns
+the form at a time, including during inventory redraws. Its submitted pairing
+code is cleared immediately, while a newly entered code/draft is retained.
+Accepted enrollment opens the new display editor only if the enrollment draft
+and editor context are unchanged. Rejected or incomplete replies retain ordinary
+fields and never repeat enrollment automatically. A failed inventory follow-up
+does not turn an accepted enrollment into a reported failure.
+
 ## ADB key-storage regression
 
 The maintenance container is intentionally hardened with a read-only root filesystem and all Linux capabilities dropped. Android `adb` still creates its persistent client identity beneath `$HOME/.android`. The Android integration points `HOME` and `ANDROID_USER_HOME` at `/managed/classroom-hub/data/android-tv`, so the effective key directory is `/managed/classroom-hub/data/android-tv/.android`.

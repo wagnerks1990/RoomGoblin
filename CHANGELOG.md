@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Complete accepted Android enrollment using the captured form, clear submitted
+  pairing codes, prevent duplicate requests and preserve newer drafts/editors.
+
+- Preserve accepted Ubuntu command/maintenance and saved metadata/schedule
+  outcomes when secondary computer-history persistence fails; show a warning
+  while retaining primary-write failures and scheduled dispatch claims.
+
 - Keep Ubuntu inventory refreshes current across writes, retain pending command
   feedback across redraws, preserve newer metadata/maintenance drafts, and discard
   preview captures after closing or replacing their dialog.

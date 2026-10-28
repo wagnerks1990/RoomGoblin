@@ -22,6 +22,7 @@
       if(!response.ok||value.ok===false)throw Error(value.error||`Request failed (${response.status})`);return value;
     }finally{if(writes){inventoryVersion++;inventoryWrites--;if(!inventoryWrites)void load()}}
   }
+  function outcomeMessage(text,result){return result?.warning?text+" "+result.warning:text}
   function computerMessage(id,text){computerMessages.set(id,text);for(const card of $("ubuntuComputers").querySelectorAll("[data-id]"))if(card.dataset.id===id)card.querySelector(".ubuntu-card-message").textContent=text}
   function message(text){$("ubuntuMessage").textContent=text}
   function wizardStep(value){step=value;document.querySelectorAll("[data-ubuntu-step]").forEach(el=>el.hidden=Number(el.dataset.ubuntuStep)!==value);$("ubuntuStep").textContent=["1 · Connect","2 · Assign screens","3 · Review installation","4 · Installation"][value];$("ubuntuBack").hidden=value===0||value===3;$("ubuntuNext").hidden=value===3;$("ubuntuNext").textContent=value===0?"Check computer":value===1?"Review installation":editing?"Save screen assignments":"Install RoomGoblin";message("")}
@@ -168,7 +169,7 @@
     if(action==="cancel-schedule"){
       if(!confirm("Cancel this computer’s scheduled maintenance?"))return;
       pendingCommands.add(device.id);computerMessage(device.id,"Cancelling scheduled maintenance…");render();
-      try{await request(`/${device.id}/schedule`,"DELETE",{});computerMessage(device.id,"Scheduled maintenance cancelled.");await load()}catch(e){computerMessage(device.id,e.message)}finally{pendingCommands.delete(device.id);render()}return;
+      try{const result=await request(`/${device.id}/schedule`,"DELETE",{});computerMessage(device.id,outcomeMessage("Scheduled maintenance cancelled.",result));await load()}catch(e){computerMessage(device.id,e.message)}finally{pendingCommands.delete(device.id);render()}return;
     }
     const confirmations={activate:"Activate this computer’s RoomGoblin kiosk? Its graphical session will restart.",reboot:"Reboot this computer and interrupt all its screens?",shutdown:"Shut down this computer and all its screens? Remote power-on is not guaranteed.",rollback:"Restore the computer’s pre-installation desktop configuration? This stops all RoomGoblin screen sessions.",remove:"Remove management enrollment? The computer keeps running and receiver assignments/data remain. Restore its previous desktop first if you also want to stop the kiosk."};
     if(confirmations[action]&&!confirm(confirmations[action]))return;
@@ -180,7 +181,7 @@
       if(action==="remove"){await request(`/${device.id}`,"DELETE",{confirm:true});await load();return}
       const result=await request(`/${device.id}/command`,"POST",{action,receiverId:button.dataset.screen,confirm:Boolean(confirmations[action])});
       if(action==="screenshot"&&capture===previewVersion&&$("ubuntuPreview").open){$("ubuntuPreviewImage").src="data:image/png;base64,"+result.png;$("ubuntuPreviewStatus").textContent=device.name+" · "+button.dataset.screen}
-      computerMessage(device.id,result.accepted?"Command accepted. Refresh status to verify its result.":"Completed.");
+      computerMessage(device.id,outcomeMessage(result.accepted?"Command accepted. Refresh status to verify its result.":"Completed.",result));
     }catch(e){computerMessage(device.id,e.message);if(capture===previewVersion&&$("ubuntuPreview").open)$("ubuntuPreviewStatus").textContent=e.message}finally{pendingCommands.delete(device.id);render()}
   });
   function closePreview(){
@@ -209,9 +210,9 @@
     try{
       const body={operation:draft.operation,confirm:draft.confirm};
       if(draft.when==="later")body.scheduleAt=new Date(draft.at).toISOString();
-      await request(`/${id}/maintenance`,"POST",body);
-      computerMessage(id,"Maintenance request accepted. Refresh status to verify its result.");
-      if(version===dialogVersion){if(JSON.stringify(draft)===JSON.stringify(maintenanceDraft())){$("ubuntuMaintenance").close();dialogVersion++}else $("ubuntuMaintenanceMessage").textContent="Submitted maintenance accepted. Your newer choices have not been sent."}await load();
+      const result=await request(`/${id}/maintenance`,"POST",body);
+      computerMessage(id,outcomeMessage("Maintenance request accepted. Refresh status to verify its result.",result));
+      if(version===dialogVersion){if(JSON.stringify(draft)===JSON.stringify(maintenanceDraft())){$("ubuntuMaintenance").close();dialogVersion++}else $("ubuntuMaintenanceMessage").textContent=outcomeMessage("Submitted maintenance accepted. Your newer choices have not been sent.",result)}await load();
     }catch(e){computerMessage(id,e.message);if(version===dialogVersion)$("ubuntuMaintenanceMessage").textContent=e.message}
     finally{pendingCommands.delete(id);render();if(version===dialogVersion)button.disabled=false}
   });
@@ -219,9 +220,9 @@
     event.preventDefault();const version=dialogVersion,id=detailsDevice,button=$("ubuntuDetailsSubmit");if(!id||pendingCommands.has(id))return;
     const draft=detailsDraft();pendingCommands.add(id);button.disabled=true;computerMessage(id,"Saving computer details…");render();
     try{
-      await request(`/${id}`,"PUT",draft);
-      computerMessage(id,"Computer details saved.");
-      if(version===dialogVersion){if(JSON.stringify(draft)===JSON.stringify(detailsDraft())){$("ubuntuDetails").close();dialogVersion++}else $("ubuntuDetailsMessage").textContent="Submitted changes saved. Your newer edits remain unsaved."}await load();
+      const result=await request(`/${id}`,"PUT",draft);
+      computerMessage(id,outcomeMessage("Computer details saved.",result));
+      if(version===dialogVersion){if(JSON.stringify(draft)===JSON.stringify(detailsDraft())){$("ubuntuDetails").close();dialogVersion++}else $("ubuntuDetailsMessage").textContent=outcomeMessage("Submitted changes saved. Your newer edits remain unsaved.",result)}await load();
     }catch(e){computerMessage(id,e.message);if(version===dialogVersion)$("ubuntuDetailsMessage").textContent=e.message}
     finally{pendingCommands.delete(id);render();if(version===dialogVersion)button.disabled=false}
   });
