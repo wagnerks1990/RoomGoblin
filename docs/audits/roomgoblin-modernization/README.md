@@ -1,5 +1,13 @@
 # RoomGoblin modernization audit
 
+The two Veyon repairs are integrated on merged `main` `f741866`. Before this
+evidence note, `3201487` is byte-identical to qualified `43d2645`; all 37 focused
+integration cases pass again. Final qualification passes 2,090 Linux tests,
+zero failures, two root-only skips, all 23 Host Recovery tests and 92 browser
+cases per engine. PR #316 passed all 14 fresh checks and merged; exact main
+publication and its backed-up update precede this batch's delivery. Windows
+inventory is separately qualified at `a225c26`; monitoring follow-ups remain open.
+
 Group 10 [Veyon inventory ownership](veyon-inventory-ownership.md) is qualified
 at `bc1c5c5`: 14 new Node regressions, three new browser cases, 2,078 Linux
 passes with two root-only skips, 23 Host Recovery passes, and 83 workspace plus
