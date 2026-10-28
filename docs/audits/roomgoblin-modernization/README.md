@@ -67,7 +67,8 @@ retains 2,428 Linux passes, two skips, all 23 Host Recovery cases and all 16 JVM
 cases. PR #335 carries the port and process repairs. Its CI encountered unrelated
 SQLite contention while seeding a fixture; the [bounded fixture repair](freeze-fixture-contention.md)
 passes 20 consecutive cases. All 14 fresh checks passed before PR #335 merged
-as `bfa6857`; exact publication and backed-up delivery remain pending.
+as `bfa6857`. Exact publication passed after a registry-error retry; its
+[backed-up delivery is verified](android-hardening-delivery.md).
 
 [Native PCM ownership](android-pcm-ownership.md) fixes two reproduced worker and
 failed-start defects. All five Kotlin fixture cases pass, and the combined tree
@@ -97,6 +98,11 @@ skips, all 23 Host Recovery cases and all 55 JVM cases.
 system-light contrast failures. All 13 Weather cases pass in each browser, with
 mobile/desktop visual inspection. Combined full Linux qualification passes 2,428
 tests, two root-only skips, all 23 Host Recovery cases and all 55 JVM cases.
+[Sports source identity](sports-source-identity.md) fixes nine reproduced
+service/HTTP failures. All 41 targeted cases pass, along with 2,438 Linux tests,
+two root-only skips, all 23 Host Recovery and all 55 JVM cases. Existing Sports
+browser cases pass 10 per engine. Checked delivery remains pending; Sports
+workspace review continues.
 The remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
