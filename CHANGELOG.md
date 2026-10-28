@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve newer Music schedule/connection drafts and tokens during saves,
+  prevent duplicate writes, and discard reads that predate a settings save.
+
 - Separate mandatory announcement audio holds from ordinary media priority,
   preserving hallway recovery holds and priority belonging to restored content.
 
