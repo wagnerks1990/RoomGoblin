@@ -60,6 +60,11 @@ There is no generic ESPHome service executor, firmware shell, lock/climate contr
 
 ## Reliability and command semantics
 
+The controller serializes enrollment and management writes, preserves newer
+form drafts, and ignores inventory/discovery replies from earlier writes or
+permission states. Management feedback survives polling. See
+[ESPHome workspace behavior](GUI-WORKSPACES.md#esphome-device-workspace).
+
 One supervised, unprivileged Python worker maintains persistent native API connections for enabled nodes. Connection establishment is bounded, reconnects use exponential backoff with jitter, and the registry is capped at 64 devices with 128 entities per device.
 
 Slow or offline ESPHome nodes do not block RoomGoblin health, Today, Morning Announcements, Background Music, scheduler recovery, Veyon, or display rendering.

@@ -536,7 +536,9 @@ success. See `docs/VEYON-MUSIC-INTEGRATIONS.md` for recovery semantics.
 ESPHome device management uses `src/esphome.js` and the private stdin/stdout
 `src/esphome/worker.py` worker with the pinned official `aioesphomeapi` client.
 Read `docs/ESPHOME-INTEGRATION.md` (or `ESPHOME-INTEGRATION.md` from docs).
-Preserve mandatory native encryption, private literal IPv4 targets, verified MAC
+Preserve native encryption for configured keys and explicitly intentional
+unencrypted nodes as documented in `ESPHOME-INTEGRATION.md`; never downgrade an
+unknown encrypted device. Preserve private literal IPv4 targets, verified MAC
 identity, composite subdevice/entity IDs, secret-store transactions, capability
 checks and Full Recovery Export writer drain. Unknown/disabled entities are not
 arbitrary native methods. Buttons/configuration controls require administrator

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Preserve ESPHome enrollment drafts and management feedback, serialize controller
+  management changes, and discard inventory/discovery replies from older writes
+  or permission states.
+
 - Preserve ESPHome API budgets for authorized callers by sharing the existing
   capability and administrator predicates with rate-limit admission.
 

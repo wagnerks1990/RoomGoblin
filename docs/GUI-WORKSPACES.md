@@ -260,6 +260,20 @@ The native device workspace is described in [ESPHome integration](ESPHOME-INTEGR
 Keep forms and expanded entity cards stable across polling, mark cached inventory
 stale after failed reads, and never infer physical confirmation from socket writes.
 
+One controller admits one ESPHome enrollment/management write at a time. Polls
+pause during those writes and discard replies from earlier management or
+permission revisions. Discovery has the same revision checks. A late reply
+cannot repopulate inventory after read access is removed. Management feedback
+survives ordinary polling; current read failures separately mark retained
+inventory stale and disable controls.
+
+Successful enrollment clears only the submitted draft. Newer field edits remain
+and retain the saved device identity for the next verified edit. Submitted API
+keys are cleared from the field and transient payload; a separately typed new
+key remains a new draft until submitted or explicitly cleared by existing
+cancel, navigation, disclosure and permission behavior. No device mutation is
+automatically retried.
+
 ## Planning rebuild (Unreleased)
 
 Calendar & Timetables joins Classes and Automations through shared, permission-aware

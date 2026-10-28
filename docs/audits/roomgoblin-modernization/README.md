@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+The [ESPHome inventory repair](esphome-inventory-ownership.md) reproduces five
+controller races and passes 21 new Node cases plus all five focused Chromium
+cases. Full qualification passes 2,044 Linux tests, two root-only skips, all 23
+Host Recovery tests and all 83 workspace cases in each browser. Lighting identity is
+pushed as PR #315; PR #314 is merged and publishing before its delivery.
+
 The [ESPHome admission repair](esphome-admission-budgets.md) reproduces five
 quota/predicate failures and passes all nine new cases plus the existing budget
 regression. Full qualification passes 2,023 Linux tests, two root-only skips and
