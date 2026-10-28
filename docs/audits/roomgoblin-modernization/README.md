@@ -89,6 +89,10 @@ separate. Weather/Sports review has started.
 stale-reading/preview failures. All seven Weather browser cases pass in Chromium
 and Firefox. Full Linux qualification passes 2,428 tests, two root-only skips,
 all 23 Host Recovery cases and all 55 JVM cases. Checked delivery remains pending.
+[Weather save ownership](weather-save-ownership.md) fixes three additional
+reproduced save/read races. All ten Weather browser cases pass in Chromium and
+Firefox. Combined full Linux qualification passes 2,428 tests, two root-only
+skips, all 23 Host Recovery cases and all 55 JVM cases.
 The remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
