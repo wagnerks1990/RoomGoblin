@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Merge Android asynchronous completion into the current enrollment record,
+  preserving newer metadata and disabled state without reviving removed devices.
+
 - Apply confirmed Android enrollment lifecycle results to current inventory
   without reloading the page, reviving removed cards or discarding drafts.
 

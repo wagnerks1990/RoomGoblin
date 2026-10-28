@@ -10,7 +10,7 @@ test('managed display lifecycle supports safe enable disable and remove',()=>{
   assert.match(source,/action==="enable"/);
   assert.match(source,/action==="disable"/);
   assert.match(source,/action==="remove"/);
-  assert.match(source,/STORE\.deleteDevice\(d\.id\)/);
+  assert.match(source,/STORE\.deleteDevice\(d\.id,d\)/);
   assert.match(source,/dataPreserved:true/);
   assert.match(source,/\/android\/devices\/:id\/lifecycle/);
 });
