@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Weather location results and errors tied to the current query and visible
+  session, clear retired choices, and prevent duplicate pending searches.
+
 - Commit Sports saves and Undo snapshots atomically, and reject board reads
   retired by settings or authentication changes before rendering or caching.
 

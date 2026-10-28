@@ -71,6 +71,11 @@ A pending settings save disables another save while keeping draft fields editabl
 Completion preserves newer edits and discards reads that began before the write.
 Preview/send creation waits for the settings save to finish. Save failures remain
 visible and release the save control for retry.
+Location searches and choices belong to their current query and visible session.
+Editing the query, navigating away or changing authentication clears old choices
+and retires pending responses. A pending search cannot be submitted twice;
+changing the query starts a separate search, and current failures allow retry.
+Choosing a result changes the draft only and still requires an explicit save.
 Weather cards, readings, notices and source text use the shared light/dark/system
 workspace palette. The display scene preview retains its own selected colors.
 

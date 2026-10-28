@@ -29,7 +29,20 @@
  const settings=el("details",undefined,"panel weatherSettings");settings.append(el("summary","Location, units & weather sources"));const settingsBody=el("div",undefined,"weatherOptions"),enabled=field(settingsBody,"Enable weather","checkbox"),label=field(settingsBody,"Weather location label"),latitude=field(settingsBody,"Weather latitude","number"),longitude=field(settingsBody,"Weather longitude","number"),unit=select(settingsBody,"Weather temperature unit",[["fahrenheit","Fahrenheit"],["celsius","Celsius"]]),nws=field(settingsBody,"Enable US National Weather Service alerts","checkbox");latitude.step=longitude.step="any";
  latitude.min="-90";latitude.max="90";longitude.min="-180";longitude.max="180";
  settingsBody.append(el("p","Forecast coordinates go to Open-Meteo. Optional US alerts send them to api.weather.gov. Requests stay on the Hub, use a bounded cache, and never stop scheduling. Weather alerts are informational; follow school and coach instructions."));
- const locationSearch=field(settingsBody,"Find a city or postal location"),results=el("div",undefined,"weatherLocations");button(settingsBody,"Find location",async()=>{const r=await api(`/api/v1/weather/locations?q=${encodeURIComponent(locationSearch.value)}`);results.replaceChildren();for(const place of r.locations||[])button(results,place.label,()=>{latitude.value=place.latitude;longitude.value=place.longitude;label.value=place.label.slice(0,80);enabled.checked=true;markDirty();notice.textContent="Location selected in draft. Save to apply."});if(!results.childElementCount)results.textContent="No locations found. Enter coordinates instead."});settingsBody.append(results);
+ const locationSearch=field(settingsBody,"Find a city or postal location"),results=el("div",undefined,"weatherLocations");let locationGeneration=0,pendingLocationSearch=null;
+ function canEdit(){return typeof userCan==="function"&&userCan("schedule.manage")&&userCan("automation.manage")}
+ function retireLocationSearch(){locationGeneration++;pendingLocationSearch=null;results.replaceChildren();auth()}
+ const findLocation=button(settingsBody,"Find location",async()=>{
+  if(pendingLocationSearch!==null||!canEdit()||page.dataset.authorized!=="true"||!page.classList.contains("active"))return;
+  const query=locationSearch.value,generation=++locationGeneration,current=()=>generation===locationGeneration&&query===locationSearch.value&&canEdit()&&page.dataset.authorized==="true"&&page.classList.contains("active");
+  pendingLocationSearch=generation;results.replaceChildren();auth();
+  try{
+   const r=await api(`/api/v1/weather/locations?q=${encodeURIComponent(query)}`);if(!current())return;
+   for(const place of r.locations||[])button(results,place.label,()=>{if(!current())return;latitude.value=place.latitude;longitude.value=place.longitude;label.value=place.label.slice(0,80);enabled.checked=true;markDirty();notice.textContent="Location selected in draft. Save to apply."});
+   if(!results.childElementCount)results.textContent="No locations found. Enter coordinates instead.";
+  }catch(error){if(current())notice.textContent=error.message}
+  finally{if(pendingLocationSearch===generation){pendingLocationSearch=null;auth()}}
+ });locationSearch.addEventListener("input",retireLocationSearch);settingsBody.append(results);
  function markDirty(){dirty=true;draftRevision++}
  const save=button(settingsBody,"Save weather location & units",async()=>{
   if(saving)return;
@@ -47,7 +60,7 @@
  const source=el("p",undefined,"weatherSource"),credit=el("a","Forecast data: Open-Meteo · CC BY 4.0"),radar=el("a","Open official NWS radar");credit.href="https://open-meteo.com/";radar.href="https://radar.weather.gov/";for(const a of [credit,radar]){a.target="_blank";a.rel="noopener noreferrer"}source.append(credit,document.createTextNode(" · US alerts: National Weather Service · "),radar);page.append(source);
  const fmt=(v,s="")=>v==null?"—":`${Math.round(v)}${s}`;
  const local=(t,opts)=>new Date(t*1000).toLocaleString(undefined,{timeZone:data?.weather?.timezone||"UTC",...opts});
- function auth(){const edit=typeof userCan==="function"&&userCan("schedule.manage")&&userCan("automation.manage");for(const n of settingsBody.querySelectorAll("input,select,button"))n.disabled=!edit;automation.hidden=!edit||mode.value==="overlay";overlay.hidden=!edit||mode.value!=="overlay";save.disabled=!edit||saving}
+ function auth(){const edit=canEdit();for(const n of settingsBody.querySelectorAll("input,select,button"))n.disabled=!edit;automation.hidden=!edit||mode.value==="overlay";overlay.hidden=!edit||mode.value!=="overlay";save.disabled=!edit||saving;findLocation.disabled=!edit||pendingLocationSearch!==null}
  function invalidateForecastPreview(){scene=null;sceneGeneration++;RoomGoblinScene.render(canvas,{layers:[],transparent:true},{reducedMotion:true})}
  function render(){const w=data?.weather,c=data?.config||{},key=JSON.stringify([c.enabled,c.latitude,c.longitude,c.unit,c.label,c.alertsEnabled]);auth();if(key!==forecastKey||!w)invalidateForecastPreview();forecastKey=key;if(!w){
   headline.textContent=c.label||"Local weather";temperature.textContent="—";condition.textContent="";
@@ -71,5 +84,5 @@
  function optionsChanged(){scene=null;sceneGeneration++;send.hidden=mode.value!=="fullscreen";overlayOptions.hidden=mode.value!=="overlay";fullOptions.hidden=mode.value==="overlay";view.closest("label").hidden=mode.value==="overlay";days.closest("label").hidden=mode.value==="overlay"||view.value!=="daily";offset.closest("label").hidden=mode.value==="overlay"||view.value!=="daily";auth()}
  options.addEventListener("change",optionsChanged);overlayOptions.addEventListener("change",optionsChanged);fullOptions.addEventListener("change",optionsChanged);
  function load(){if(page.dataset.authorized!=="true"||!page.classList.contains("active"))return Promise.resolve();if(pendingLoad)return pendingLoad;const revision=settingsRevision;pendingLoad=(async()=>{try{const next=await api("/api/v1/weather");if(revision!==settingsRevision)return;data=next;const c=data.config||{};if(!loadedConfig&&!dirty){enabled.checked=c.enabled;label.value=c.label||"";latitude.value=c.latitude??"";longitude.value=c.longitude??"";unit.value=c.unit||"fahrenheit";nws.checked=c.alertsEnabled===true;loadedConfig=true}render();if(!outputs.querySelector("input")){const r=await api("/api/v1/devices");if(revision!==settingsRevision)return;for(const [id,d]of Object.entries(r.devices||{})){if(d.enabled===false)continue;const input=field(outputs,d.name||id,"checkbox");input.value=id}}}catch(error){if(revision===settingsRevision)notice.textContent=error.message}})().finally(()=>{pendingLoad=null});return pendingLoad}
- new MutationObserver(()=>load()).observe(page,{attributes:true,attributeFilter:["class","data-authorized"]});window.addEventListener("roomgoblin:authchange",()=>{auth();load()});setInterval(()=>{if(!document.hidden)load()},60000);optionsChanged();
+ new MutationObserver(()=>{retireLocationSearch();load()}).observe(page,{attributes:true,attributeFilter:["class","data-authorized"]});window.addEventListener("roomgoblin:authchange",()=>{retireLocationSearch();load()});setInterval(()=>{if(!document.hidden)load()},60000);optionsChanged();
 })();
