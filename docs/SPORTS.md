@@ -150,6 +150,11 @@ details; failed saves preserve the previous configuration and undo snapshot.
 
 ## API and storage
 
+Save, source refresh and Undo permit one pending workspace write at a time.
+Refresh or Undo completion preserves edits made while waiting. Those newer edits
+retain their original revision; reload saved Sports to reconcile server changes
+before saving again. Failed requests preserve the draft and permit retry.
+
 `GET/PUT /api/v1/sports` reads/saves configuration. Saves require the current
 `revision` and return 409 for stale drafts. `POST /undo` swaps the preceding staff
 save; `POST /refresh` refreshes approved sources. `POST /import/roster` accepts a
@@ -158,6 +163,11 @@ Imports return review data and do not save or dispatch. `POST /boards/:id/scene`
 returns a normal shared scene; `GET /boards/:id/display` requires existing asset
 access and strips source URLs/operator settings from receiver content.
 
+Import reads and Apply actions belong to the visible draft and submitted input.
+Changing the team, draft, text or selected file requires a fresh review. Leaving
+the roster view clears its review. Pending reads cannot be submitted twice;
+failures preserve the draft and release retry.
+
 SQLite preferences `sports.workspace.v1`, `.previous` and `.sources` hold saved
 configuration, the prior staff save and bounded source-check status. Status survives
 restarts; changed source/team mappings do not inherit a prior successful check.
@@ -165,6 +175,10 @@ That identity check applies immediately after save, before the next refresh, and
 to late responses and persisted status after restart. Save/undo responses include
 the current source-status snapshot so the workspace cannot retain retired health.
 Friendly team-name edits preserve checks for the same source mapping.
+Staff saves and Undo commit the current and preceding snapshots together; storage
+or commit failure preserves both durable identities and the current in-memory
+configuration. Board reads invalidated by Sports or authentication changes cannot
+restore retired preview content or cache entries.
 Existing operational backups include these preferences;
 media follows the existing replaceable-media backup policy. Background refresh
 participates in Full Recovery Export writer draining. A stale in-flight refresh

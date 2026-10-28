@@ -3,7 +3,7 @@ const test=require("node:test"),assert=require("node:assert/strict");
 const model=require("../src/sports"),{createSportsService}=require("../src/sports-service");
 function fixture(fetchImpl=async()=>({body:Buffer.from('{"events":[]}')})){
  const config=model.normalize({teams:[{id:"team",name:"Example team",sport:"Soccer",category:"girls",season:"2026",level:"varsity",sources:[{id:"feed",url:"https://school.example/original",kind:"json",enabled:true,approved:true}]}],boards:[{id:"board",teamIds:["team"]}]});
- const values=new Map([[model.KEY,config]]),options={store:{getPreference:(key,fallback)=>values.get(key)??fallback,setPreference:(key,value)=>values.set(key,structuredClone(value))},now:()=>1000000,fetchImpl};
+ const values=new Map([[model.KEY,config]]),options={store:require('./helpers/preference-store.cjs')(values),now:()=>1000000,fetchImpl};
  return {service:createSportsService(options),options,values};
 }
 function unchecked(service){

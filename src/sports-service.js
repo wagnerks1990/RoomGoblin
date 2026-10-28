@@ -7,9 +7,15 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
  const sourceFingerprint=(team,source)=>imports.key(JSON.stringify([team.sport,team.category,team.level,team.season,source]));
  function currentStatus(team,source){const saved=status.get(team.id+':'+source.id);return saved?.fingerprint===sourceFingerprint(team,source)?saved:null}
  function currentStatuses(){return Object.fromEntries(config.teams.flatMap(team=>team.sources.flatMap(source=>{const saved=currentStatus(team,source);return saved?[[team.id+':'+source.id,saved]]:[]})))}
- function commit(next){next=model.assertBoardBounds(model.normalize({...next,revision:config.revision+1}));store.setPreference(model.KEY,next);config=next;return clone(config)}
- function save(input){if(input.revision!==config.revision)throw Object.assign(Error('Sports changed. Reload before saving to avoid overwriting another edit.'),{status:409});const next=model.assertBoardBounds(model.normalize(input));store.setPreference(model.KEY+'.previous',config);return commit(next)}
- function undo(revision){if(revision!==config.revision)throw Object.assign(Error('Reload Sports before undoing'),{status:409});const previous=store.getPreference(model.KEY+'.previous',null);if(!previous)throw Error('No previous Sports save');store.setPreference(model.KEY+'.previous',config);return commit(previous)}
+ function commit(next,remember=false){
+  next=model.assertBoardBounds(model.normalize({...next,revision:config.revision+1}));
+  if(remember)store.tx(()=>{store.setPreference(model.KEY+'.previous',config);store.setPreference(model.KEY,next)});
+  else store.setPreference(model.KEY,next);
+  // Publish memory only after the durable transaction (including COMMIT) succeeds.
+  config=next;return clone(config);
+ }
+ function save(input){if(input.revision!==config.revision)throw Object.assign(Error('Sports changed. Reload before saving to avoid overwriting another edit.'),{status:409});return commit(input,true)}
+ function undo(revision){if(revision!==config.revision)throw Object.assign(Error('Reload Sports before undoing'),{status:409});const previous=store.getPreference(model.KEY+'.previous',null);if(!previous)throw Error('No previous Sports save');return commit(previous,true)}
  async function refresh(force=false){if(pending)return pending;
   pending=(async()=>{
    const initial=clone(config),rosterChosen=new Set();let working=clone(config);let changed=false,downloads=0,requests=0;
