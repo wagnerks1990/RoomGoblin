@@ -12,6 +12,11 @@ does not start it; choose a source or press Play. Starting managed music on a
 different output stops the previously owned session first. RoomGoblin manages
 one output/group at a time; use Music Assistant groups for synchronized rooms.
 
+Playback status belongs to the current managed session. Late pause/stop results,
+player probes or recovery errors from an earlier session cannot replace the new
+session's state. Current errors remain visible, and priority audio is rechecked
+after a player lookup before recovery proceeds.
+
 **Find music** filters provider search to songs, stations, albums, artists or
 playlists. Results can play now, play next in the current queue, or become a
 favorite. A radio URL can be saved explicitly through the expandable stream
@@ -32,6 +37,12 @@ rejection remains visible instead of being reported as success.
 Queue refreshes retain the newest result for the selected output. An older
 response or error cannot replace it, including after switching to another output
 and back. Current queue errors remain visible and Refresh queue can retry them.
+
+Changing the Music Assistant connection retires its pending connection work.
+Delayed events from the old connection cannot disconnect the replacement, and
+an operation from before the change is not retried against the new connection.
+Current connection errors remain visible. Unanswered playback changes are not
+automatically replayed through the compatibility HTTP API.
 
 Sleep stops the managed session after the chosen interval. Explicit Pause/Stop
 and sleep expiry suppress watchdog recovery until the operator resumes or the
@@ -155,7 +166,10 @@ rejected. The queue response projects at most 50 safe metadata rows and omits
 stream details/credentials. Classroom control remains required for music;
 connection writes retain administrator authorization. Polling and mutations use
 the existing distinct appliance-wide Music Assistant rate budgets, registered
-directly before authorization on each route, and writer freeze. Audit entries contain command names, not playback URI payloads.
+directly before authorization on each route, and writer freeze. Connection
+settings and a supplied token commit together; a failed save retains the prior
+connection identity. An omitted or blank token retains the stored secret.
+Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 

@@ -51,8 +51,10 @@ and newer edits are labeled unsaved. Volume changes are ordered with settings
 saves and settle on the latest slider value. A failed save retains the draft
 for retry. Save, volume and stream-check feedback are shown separately.
 
-Starting a replacement announcement retires the previous session's delayed
-audio retries, including when both sessions use the same displays.
+Starting replacement content retires that receiver's earlier delayed audio
+retries. Adding another display preserves the retries for unchanged announcement
+playback. Live volume and delayed audio skip replacement content, including when
+it changes during dispatch. These controls do not reload the player.
 
 Announcement audio priority remains held through failed display reconciliation,
 including independent hallway displays. Once recovery succeeds, restored audible

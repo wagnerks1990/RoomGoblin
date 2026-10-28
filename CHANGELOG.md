@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- Save Music Assistant connection settings and its optional encrypted token
+  atomically, retaining the prior connection when persistence fails.
+
+- Keep late Background Music control responses, probes and recovery errors from
+  overwriting a newer managed session or its playback intent.
+
+- Preserve audio retries for continuing announcement receivers and bind delayed
+  audio/live volume to their current content through asynchronous delivery.
+
+- Retire old Music Assistant socket callbacks and pending work without disturbing
+  successor connections or replaying operations across a connection change.
+
 - Keep every active announcement receiver accounted for after additional selected
   starts or partial replacements, so Stop, automatic release and Resume include all.
 

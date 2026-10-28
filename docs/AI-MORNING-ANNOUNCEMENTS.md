@@ -37,10 +37,15 @@ SQLite remains authoritative: a commit failure after legacy-file replacement may
 leave that migration remnant redacted, but cannot commit partial database state.
 Live volume dispatch follows persistence and has its own observable outcome.
 
-Delayed audio retries belong to the exact takeover target-array identity. A new
-takeover replaces that identity even when receiver IDs are unchanged. Retired
-retries must not send volume/unmute commands into a successor session. Current
-retries retain the latest saved volume and existing freeze/shutdown guards.
+Delayed audio retries belong to each receiver's captured announcement content ID
+and require current active-target membership. An added receiver must not cancel
+needed retries for continuing unchanged playback. Changed content, a new takeover
+on the same receiver, or release retires those earlier retries. Preserve the
+latest saved volume, bounded timing and freeze/shutdown guards. Live volume
+selects only current announcement media. Both paths use internal conditional
+router ownership after async admission and between transport writes; audio must
+not replace its content ID or control newer content, and never broadcasts through
+a shared legacy alias. Report unapplied volume when all targets changed.
 
 ## Receiver-side safety net
 
@@ -86,8 +91,9 @@ session over a partially dispatched replacement.
 Starting selected receivers extends the active target set while dispatching only
 to that selection. Global Stop/automatic release must finish every active receiver.
 A partial failed replacement retains prior active ownership plus its newly owned
-receivers, with a fresh target-array identity; never restore old content or audio
-retries. Pending conditional cleanup waits until release while the session stays
+receivers, with a fresh target-array identity; never restore old content or retries
+for changed content. Unchanged receivers retain their content-owned audio retries.
+Pending conditional cleanup waits until release while the session stays
 active. Explicit Resume repairs all tracked targets. Fresh failed starts retain
 the inactive retry path; fully unchanged failures retain the original identity.
 
