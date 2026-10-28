@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Recover partially dispatched announcement starts without discarding older
+  pending priority holds or hiding the original start failure.
+
 - Recover failed announcement releases across successor sessions, retry clears
   only for their owned content, and preserve newer content through delivery races.
 

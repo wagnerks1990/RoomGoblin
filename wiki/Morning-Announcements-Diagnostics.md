@@ -47,6 +47,11 @@ A selected receiver mapped to the shared legacy broadcast topic fails closed
 instead of clearing unrelated receivers. These are command-ownership checks,
 not proof of physical playback or audible silence.
 
+If a start fails after changing display state, its owned content remains pending
+for cleanup and current-schedule reconciliation before music priority is released.
+Older pending recovery remains held too. The original start error is reported;
+unchanged or newer content is excluded from that failed attempt's cleanup.
+
 HLS probe deadlines cover the full playlist body, including a server that sends
 headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
 and 512 KiB. A timeout or oversized response is reported as unknown availability
