@@ -74,4 +74,48 @@ class MorningWatchBrowserTests(unittest.TestCase):
   h[0].fulfill(json={'ok':True,'config':cfg});p.evaluate('window.__watchSave');self.assertTrue(target.is_checked());self.assertTrue(target.evaluate('el=>el===document.activeElement'));self.assertFalse(e,e)
  def test_mobile_draft_status_and_controls_remain_readable(self):
   p,e,h,c,cfg=self.setup_page(390);p.locator('#morningWatchStart').fill('09:00');self.evidence(p,e,'morning-watch-mobile');p.locator('#morningWatchPanel').screenshot(path=str(workspaces.OUTPUT/'morning-watch-panel.png'))
+ def start_check(self,p):
+  checks=[];p.route('**/api/v1/automations/morning-announcements/check',lambda route:checks.append(route))
+  p.evaluate('()=>{window.__manualCheck=checkMorningWatch()}');self.captured(p,checks);return checks
+ def test_old_poll_does_not_replace_checking(self):
+  p,e,h,c,cfg=self.setup_page();c['hold_get']=True;p.evaluate('()=>{window.__oldRead=loadMorningWatch()}');self.captured(p,h)
+  checks=self.start_check(p);h[0].fulfill(json={'ok':True,'config':cfg,'runtime':{}});p.evaluate('window.__oldRead');state=p.locator('#morningWatchState').inner_text()
+  checks[0].fulfill(json={'ok':True,'live':True,'probe':'hls','runtime':{}});p.evaluate('window.__manualCheck');self.assertEqual(state,'CHECKING');self.assertFalse(e,e)
+ def test_old_poll_cannot_replace_completed_manual_result(self):
+  p,e,h,c,cfg=self.setup_page();c['hold_get']=True;p.evaluate('()=>{window.__oldRead=loadMorningWatch()}');self.captured(p,h)
+  checks=self.start_check(p);checks[0].fulfill(json={'ok':True,'live':True,'probe':'hls','runtime':{}});p.evaluate('window.__manualCheck')
+  h[0].fulfill(json={'ok':True,'config':cfg,'runtime':{}});p.evaluate('window.__oldRead');self.assertEqual(p.locator('#morningWatchState').inner_text(),'LIVE');self.assertFalse(e,e)
+ def test_capability_refresh_does_not_enable_a_pending_check(self):
+  p,e,h,c,cfg=self.setup_page();checks=self.start_check(p);p.evaluate('enforceCapabilityControls()');disabled=p.locator('#morningWatchCheckBtn').is_disabled()
+  checks[0].fulfill(json={'ok':True,'live':False,'runtime':{}});p.evaluate('window.__manualCheck');self.assertTrue(disabled);self.assertFalse(e,e)
+ def test_check_completion_preserves_lost_capability(self):
+  p,e,h,c,cfg=self.setup_page();checks=self.start_check(p);p.evaluate("()=>{AUTH_STATUS.user.capabilities=['schedule.manage'];AUTH_STATUS.user.role='teacher';enforceCapabilityControls()}")
+  checks[0].fulfill(json={'ok':True,'live':False,'runtime':{}});p.evaluate('window.__manualCheck');self.assertTrue(p.locator('#morningWatchCheckBtn').is_disabled());self.assertFalse(e,e)
+ def test_check_duplicate_calls_remain_single_flight_after_capability_refresh(self):
+  p,e,h,c,cfg=self.setup_page();checks=self.start_check(p);p.evaluate('()=>{enforceCapabilityControls();window.__duplicateCheck=checkMorningWatch()}');p.wait_for_timeout(100);self.assertEqual(len(checks),1)
+  checks[0].fulfill(json={'ok':True,'live':True,'probe':'hls','runtime':{}});p.evaluate('window.__manualCheck');p.evaluate('window.__duplicateCheck');self.assertFalse(p.locator('#morningWatchCheckBtn').is_disabled());self.assertFalse(e,e)
+ def test_current_check_error_allows_retry_and_preserves_draft(self):
+  p,e,h,c,cfg=self.setup_page();p.locator('#morningWatchStart').fill('09:15');checks=self.start_check(p);checks[0].fulfill(status=503,json={'error':'Probe unavailable'});p.evaluate('window.__manualCheck')
+  self.assertEqual(p.locator('#morningWatchState').inner_text(),'ERROR');self.assertIn('Probe unavailable',p.locator('#morningWatchMsg').inner_text());self.assertFalse(p.locator('#morningWatchCheckBtn').is_disabled())
+  retry=self.start_check(p);retry[0].fulfill(json={'ok':True,'live':None,'status':'unavailable','probe':'hls','durationMs':12,'attempts':[{'probe':'hls','status':'unavailable'}],'runtime':{}});p.evaluate('window.__manualCheck')
+  self.assertEqual(p.locator('#morningWatchState').inner_text(),'UNKNOWN');self.assertIn('12 ms',p.locator('#morningWatchMsg').inner_text());self.assertIn('hls=unavailable',p.locator('#morningWatchMsg').inner_text());self.assertEqual(p.locator('#morningWatchStart').input_value(),'09:15');self.assertFalse(e,e)
+ def test_poll_during_manual_check_does_not_start_another_read(self):
+  p,e,h,c,cfg=self.setup_page();checks=self.start_check(p);c['hold_get']=True;p.evaluate('()=>{window.__pollSettled=false;window.__duringPoll=loadMorningWatch().then(()=>{window.__pollSettled=true})}')
+  settled=p.evaluate('window.__pollSettled');count=len(h)
+  for route in h:route.fulfill(json={'ok':True,'config':cfg,'runtime':{}})
+  checks[0].fulfill(json={'ok':True,'live':False,'probe':'hls','runtime':{}});p.evaluate('window.__manualCheck');p.evaluate('window.__duringPoll');self.assertTrue(settled);self.assertEqual(count,0);self.assertEqual(p.locator('#morningWatchState').inner_text(),'OFFLINE');self.assertFalse(e,e)
+ def test_settings_write_retires_old_manual_check_success(self):
+  p,e,h,c,cfg=self.setup_page();checks=self.start_check(p);p.locator('#morningWatchUrl').fill('https://stream.example.test/new');p.evaluate('saveMorningWatch()')
+  checks[0].fulfill(json={'ok':True,'live':True,'probe':'old-stream','runtime':{}});p.evaluate('window.__manualCheck')
+  self.assertEqual(p.locator('#morningWatchState').inner_text(),'UNKNOWN');self.assertIn('Settings changed',p.locator('#morningWatchMsg').inner_text());self.assertNotIn('old-stream',p.locator('#morningWatchMsg').inner_text());self.assertFalse(p.locator('#morningWatchCheckBtn').is_disabled());self.assertFalse(e,e)
+ def test_settings_write_retires_old_manual_check_failure(self):
+  p,e,h,c,cfg=self.setup_page();checks=self.start_check(p);p.locator('#morningWatchStart').fill('09:15');p.evaluate('saveMorningWatch()')
+  checks[0].fulfill(status=503,json={'error':'Old stream unavailable'});p.evaluate('window.__manualCheck');self.assertEqual(p.locator('#morningWatchState').inner_text(),'UNKNOWN');self.assertNotIn('Old stream',p.locator('#morningWatchMsg').inner_text());self.assertFalse(e,e)
+ def test_late_poll_error_cannot_erase_manual_probe_result(self):
+  p,e,h,c,cfg=self.setup_page();c['hold_get']=True;p.evaluate('()=>{window.__oldRead=loadMorningWatch()}');self.captured(p,h);checks=self.start_check(p)
+  checks[0].fulfill(json={'ok':True,'live':True,'probe':'hls','runtime':{}});p.evaluate('window.__manualCheck');h[0].fulfill(status=503,json={'error':'Old poll failed'});p.evaluate('window.__oldRead')
+  self.assertEqual(p.locator('#morningWatchState').inner_text(),'LIVE');self.assertNotIn('Old poll failed',p.locator('#morningWatchMsg').inner_text());self.assertFalse(e,e)
+ def test_unauthorized_direct_check_dispatches_nothing(self):
+  p,e,h,c,cfg=self.setup_page();checks=[];p.route('**/api/v1/automations/morning-announcements/check',lambda route:checks.append(route));p.evaluate("()=>{AUTH_STATUS.user.capabilities=['schedule.manage'];AUTH_STATUS.user.role='teacher';enforceCapabilityControls()}");p.evaluate('checkMorningWatch()')
+  self.assertEqual(checks,[]);self.assertTrue(p.locator('#morningWatchCheckBtn').is_disabled());self.assertFalse(e,e)
 if __name__=='__main__':unittest.main()

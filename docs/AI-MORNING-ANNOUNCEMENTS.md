@@ -106,6 +106,13 @@ prevent duplicate full saves and recheck capability before each queued dispatch.
 Only matching successful revisions become clean. Keep save, volume and probe
 feedback separate so polling cannot erase an unsaved draft or volume error.
 
+Manual Live Watch checks retain a single pending promise and unavailable-button
+marker through capability refresh. Advance read ownership at check start and
+skip ordinary reads while it owns status; old poll success/errors must not
+overwrite CHECKING or its result. A settings write retires the check response
+with UNKNOWN/check-again feedback. Preserve current errors/retry, permission
+admission and the saved-configuration diagnostic boundary.
+
 An operator can deliberately clear or reload display content while the announcement lifecycle still owns its targets. **Resume Schedule** / **Resume Scheduled State** is the explicit recovery action: when Morning Announcements remain active, it must reassert that priority takeover on the runtime-owned targets instead of returning only a deferred result. This operator-triggered repair is distinct from periodic live probes, which must remain observe-only while active.
 
 ## HLS player
