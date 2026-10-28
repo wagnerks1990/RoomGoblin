@@ -89,6 +89,7 @@ Queued subsystem units below have not been marked audited.
 - [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)
 - [Music workspace save ownership](music-save-ownership.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
+- [Announcement release recovery ownership](announcement-release-ownership.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)
