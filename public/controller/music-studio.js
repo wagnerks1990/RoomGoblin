@@ -3,6 +3,7 @@
   const page=document.getElementById("music"),el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n};
   const send=(url,body,method="POST")=>api(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   let bg=null,status=null,busy=false,dirty=false,initialized=false,selected="listen",searchGeneration=0,queue=null,selectedOutput="",lastQueueLoad=0,connectionDirty=false;
+  let scheduleRevision=0,connectionRevision=0,tokenRevision=0,scheduleSaving=false,connectionSaving=false,loadGeneration=0,refreshPending=false,loadPromise=null;
   const panels=[...page.querySelectorAll(".panel")],schedule=panels.find(p=>p.querySelector("#bgmStart")),favorites=panels.find(p=>p.querySelector("#bgmFavorites")),search=panels.find(p=>p.querySelector("#maSearch")),outputs=panels.find(p=>p.querySelector("#maPlayers")),connection=page.querySelector("details");
   const nav=el("div",undefined,"musicTabs"),sections={};page.querySelector(".top").after(nav);
   function button(parent,text,fn,cls=""){const b=el("button",text,cls);b.type="button";b.dataset.musicControl="true";b.addEventListener("click",async()=>{try{await fn()}catch(error){message(error.message,true)}});parent.append(b);return b}
@@ -12,7 +13,7 @@
     const pane=el("section",undefined,"musicPane");pane.hidden=key!==selected;sections[key]=pane;
     const tab=button(nav,title,()=>{selected=key;for(const [id,p]of Object.entries(sections))p.hidden=id!==key;for(const b of nav.children)b.setAttribute("aria-pressed",String(b===tab));if(key==="listen")loadQueue()});tab.dataset.musicControl="false";tab.setAttribute("aria-pressed",String(key===selected));page.append(pane);
   }
-  sections.schedule.append(schedule);sections.favorites.append(favorites);sections.discover.append(search);sections.outputs.append(outputs,connection);connection.addEventListener("input",()=>connectionDirty=true);
+  sections.schedule.append(schedule);sections.favorites.append(favorites);sections.discover.append(search);sections.outputs.append(outputs,connection);connection.addEventListener("input",event=>{connectionDirty=true;connectionRevision++;if(event.target.id==="maToken")tokenRevision++});
   for(const grid of page.querySelectorAll(":scope > .grid2"))if(!grid.querySelector(".panel"))grid.remove();
   const notice=el("div",undefined,"musicNotice");notice.setAttribute("role","status");nav.after(notice);
   page.querySelector(".top .muted").textContent="Your music, your outputs, one clear view. Music gives way to classroom priority audio and recovers afterward.";
@@ -40,8 +41,9 @@
   const auto=el("input");auto.type="checkbox";auto.id="musicAutoRecover";label(schedule,"Automatically recover interrupted playback",auto);
   const stall=el("input");stall.type="number";stall.min="60";stall.max="600";stall.id="musicStallSeconds";label(schedule,"Detect stopped progress after seconds",stall);
   schedule.append(el("p","Recovery manages the chosen output or Music Assistant group. Use a group configured in Music Assistant for synchronized speakers. It cannot prove audible sound or fix a weak Wi-Fi link.","muted"));
-  schedule.addEventListener("input",()=>{dirty=true;document.getElementById("bgmSaveMsg").textContent="Unsaved schedule changes"});schedule.addEventListener("change",()=>dirty=true);
-  button(schedule,"Reload saved schedule",()=>{if(dirty&&!confirm("Discard unsaved music schedule changes?"))return;dirty=false;initialized=false;loadMusicAssistant()});
+  function markScheduleDirty(){dirty=true;scheduleRevision++;document.getElementById("bgmSaveMsg").textContent="Unsaved schedule changes"}
+  schedule.addEventListener("input",markScheduleDirty);schedule.addEventListener("change",markScheduleDirty);
+  const reloadSchedule=button(schedule,"Reload saved schedule",()=>{if(scheduleSaving)return;if(dirty&&!confirm("Discard unsaved music schedule changes?"))return;dirty=false;initialized=false;scheduleRevision++;loadGeneration++;return loadMusicAssistant()});
   function playerId(p){return String(p?.player_id||p?.playerId||p?.id||"")}
   function options(select,items,value){if(value&&!items.some(([id])=>id===value))items.push([value,"Saved selection · currently unavailable"]);const key=JSON.stringify(items);if(select.dataset.items!==key){select.replaceChildren();for(const [id,name]of items){const o=el("option",name);o.value=id;select.append(o)}select.dataset.items=key}select.value=value}
   function renderNow(){
@@ -57,7 +59,13 @@
     const favorites=bg.favorites||[],key=JSON.stringify(favorites);if(favoritesQuick.dataset.key!==key){favoritesQuick.dataset.key=key;favoritesQuick.replaceChildren();for(const favorite of favorites.slice(0,8))button(favoritesQuick,favorite.name,()=>playItem({...favorite,mediaType:favorite.mediaType||(/:\/\/radio\//.test(favorite.uri)?"radio":"unknown")}))}
     permissions();
   }
-  function permissions(){for(const input of connection.querySelectorAll('#maUrl,#maBrowserUrl,#maToken,button[onclick*="saveMusicAssistantConfig"]'))input.disabled=!userCan("admin");for(const b of page.querySelectorAll('[data-music-control="true"]'))b.disabled=busy||!userCan("classroom.control")}
+  function permissions(){
+    for(const input of connection.querySelectorAll("#maUrl,#maBrowserUrl,#maToken"))input.disabled=!userCan("admin");
+    for(const b of page.querySelectorAll('[data-music-control="true"]'))b.disabled=busy||!userCan("classroom.control");
+    connection.querySelector('button[onclick*="saveMusicAssistantConfig"]').disabled=connectionSaving||!userCan("admin");
+    schedule.querySelector('button[onclick*="saveBackgroundMusicSchedule"]').disabled=scheduleSaving||!userCan("classroom.control");
+    reloadSchedule.disabled=busy||scheduleSaving||!userCan("classroom.control");
+  }
   async function task(fn){if(busy)return;busy=true;permissions();try{const result=await fn();message("Request accepted. Checking the player…");return result}catch(error){message(error.message,true)}finally{busy=false;permissions();loadMusicAssistant()}}
   async function control(action){
     if(["pause","stop","resume"].includes(action)&&output.value!==bg?.runtime?.activePlayerId)return task(()=>maApi(`players/cmd/${action==="resume"?"play":action}`,{player_id:output.value}));
@@ -78,7 +86,7 @@
   function cards(parent,items,{saved=false}={}){
     const key=JSON.stringify(items);if(parent.dataset.key===key)return;parent.dataset.key=key;parent.replaceChildren();for(const item of items){const card=el("article",undefined,"musicItem"),content=el("div");content.append(el("h3",item.name),el("p",item.detail||item.mediaType||"Music"));card.append(content);const actions=el("div",undefined,"toolbar");button(actions,"Play",()=>playItem(item),"primary");
       button(actions,"Play next",()=>{if(!queue?.id)throw Error("Start playback before adding to the queue");return task(()=>maApi("player_queues/play_media",{queue_id:queue.id,media:item.uri,option:"next"}))});
-      if(saved){button(actions,"Use in schedule",()=>{bgmFavorite.value=item.id;dirty=true;message("Favorite selected in Schedule. Save the schedule to apply it.")});button(actions,"Remove",()=>deleteBgmFavorite(item.id))}
+      if(saved){button(actions,"Use in schedule",()=>{bgmFavorite.value=item.id;markScheduleDirty();message("Favorite selected in Schedule. Save the schedule to apply it.")});button(actions,"Remove",()=>deleteBgmFavorite(item.id))}
       else button(actions,"Save favorite",()=>task(()=>send("/api/v1/music-assistant/background/favorites",item)));
       card.append(actions);parent.append(card);
     }
@@ -101,11 +109,17 @@
     for(const [id,card]of playerCards)if(!ids.has(id)){card.root.remove();playerCards.delete(id)}
     if(!MA_PLAYERS.length&&!maPlayers.querySelector(".musicEmpty"))maPlayers.append(el("p","No registered outputs. Check the connection or attach a RoomGoblin display.","musicEmpty"));if(MA_PLAYERS.length)maPlayers.querySelector(".musicEmpty")?.remove();permissions();
   };
-  window.loadMusicAssistant=async function(){
-    if(window.musicStudioLoading)return;window.musicStudioLoading=true;
+  window.loadMusicAssistant=function(){
+    if(scheduleSaving||connectionSaving){refreshPending=true;return Promise.resolve()}
+    if(loadPromise){refreshPending=true;return loadPromise}
+    window.musicStudioLoading=true;
+    loadPromise=(async()=>{do{
+      refreshPending=false;const generation=loadGeneration;
     try{
-      const data=await Promise.all([api("/api/v1/music-assistant/status"),api("/api/v1/music-assistant/background")]);status=data[0];bg=data[1];MA_PLAYERS=status.players||[];
-      if(!initialized){classicSchedule(bg);auto.checked=bg.schedule.autoRecover!==false;stall.value=String(bg.schedule.stallSeconds||120);initialized=true}
+      const data=await Promise.all([api("/api/v1/music-assistant/status"),api("/api/v1/music-assistant/background")]);
+      if(generation!==loadGeneration||scheduleSaving||connectionSaving)continue;
+      status=data[0];bg=data[1];MA_PLAYERS=status.players||[];
+      if(!initialized&&!dirty){classicSchedule(bg);auto.checked=bg.schedule.autoRecover!==false;stall.value=String(bg.schedule.stallSeconds||120);initialized=true}
       BGM_FAVORITES=bg.favorites||[];BGM_SCHEDULE=bg.schedule||{};
       options(output,[["","Choose output…"],...MA_PLAYERS.map(p=>[playerId(p),`${p.display_name||p.name||playerId(p)}${p.available===false?" · offline":""}`])],selectedOutput||bg.runtime?.activePlayerId||bg.schedule.playerId||"");selectedOutput=output.value;
       if(!dirty){const current=bgmPlayer.value;options(bgmPlayer,[["","Choose scheduled output…"],...MA_PLAYERS.map(p=>[playerId(p),p.display_name||p.name||playerId(p)])],current||bg.schedule.playerId||"")}
@@ -120,13 +134,34 @@
       for(const [id,state]of bridgeRows){const input=[...maTvTargets.querySelectorAll("input")].find(n=>n.value===id);if(input?.parentElement.firstChild?.nodeType===3)input.parentElement.firstChild.textContent=`${id} · ${state?.state||"detached"}`}
       renderBgmFavorites();renderMaPlayers();renderNow();
       if(selected==="listen"&&(!queue||Date.now()-lastQueueLoad>15000))loadQueue();
-    }catch(error){message(error.message,true)}finally{window.musicStudioLoading=false}
+    }catch(error){if(generation===loadGeneration)message(error.message,true)}
+    }while(refreshPending&&!scheduleSaving&&!connectionSaving)})().finally(()=>{loadPromise=null;window.musicStudioLoading=false});
+    return loadPromise;
   };
-  window.saveBackgroundMusicSchedule=async function(){try{
+  window.saveBackgroundMusicSchedule=async function(){
+    if(scheduleSaving||!userCan("classroom.control"))return;
+    scheduleSaving=true;const revision=scheduleRevision;loadGeneration++;permissions();
+    try{
     const body={enabled:bgmEnabled.value==="1",startTime:bgmStart.value,endTime:bgmEnd.value,days:[...page.querySelectorAll('.bgmDay:checked')].map(x=>Number(x.value)),schoolDaysOnly:bgmSchoolDays.checked,playerId:bgmPlayer.value,favoriteId:bgmFavorite.value,volume:Number(bgmVolume.value),pauseForPriorityAudio:bgmPausePriority.checked,autoRecover:auto.checked,stallSeconds:Number(stall.value)};
-    await send("/api/v1/music-assistant/background/schedule",body,"PUT");dirty=false;document.getElementById("bgmSaveMsg").textContent="Saved";message("Music schedule saved");await loadMusicAssistant();
-  }catch(error){document.getElementById("bgmSaveMsg").textContent=error.message}};
-  window.saveMusicAssistantConfig=async function(){try{await send("/api/v1/music-assistant/config",{url:maUrl.value.trim(),browserUrl:maBrowserUrl.value.trim(),token:maToken.value||undefined,tvBridgeEnabled:status?.tvBridgeEnabled!==false},"PUT");connectionDirty=false;message("Music Assistant connection saved");await loadMusicAssistant()}catch(error){message(error.message,true)}finally{maToken.value=""}};
+    await send("/api/v1/music-assistant/background/schedule",body,"PUT");
+    if(revision===scheduleRevision)dirty=false;
+    document.getElementById("bgmSaveMsg").textContent=dirty?"Saved earlier changes; newer schedule edits are unsaved":"Saved";
+    message(dirty?"Earlier schedule saved. Save again to apply your newer edits.":"Music schedule saved");
+  }catch(error){document.getElementById("bgmSaveMsg").textContent=error.message}
+    finally{loadGeneration++;scheduleSaving=false;permissions();await loadMusicAssistant()}
+  };
+  window.saveMusicAssistantConfig=async function(){
+    if(connectionSaving||!userCan("admin"))return;
+    connectionSaving=true;const revision=connectionRevision,submittedTokenRevision=tokenRevision;loadGeneration++;permissions();
+    try{
+      await send("/api/v1/music-assistant/config",{url:maUrl.value.trim(),browserUrl:maBrowserUrl.value.trim(),token:maToken.value||undefined,tvBridgeEnabled:status?.tvBridgeEnabled!==false},"PUT");
+      if(revision===connectionRevision)connectionDirty=false;
+      message(connectionDirty?"Earlier connection settings saved. Newer edits are unsaved.":"Music Assistant connection saved");
+    }catch(error){message(error.message,true)}finally{
+      if(submittedTokenRevision===tokenRevision)maToken.value="";
+      loadGeneration++;connectionSaving=false;permissions();await loadMusicAssistant();
+    }
+  };
   window.bgmControl=control;window.bgmPlayFavorite=id=>{const item=bg?.favorites?.find(f=>f.id===id);if(item)return playItem(item)};
   window.playMaUri=uri=>playItem({uri,name:"Selected music"});
   window.addEventListener("roomgoblin:authchange",()=>{permissions();if(!userCan("classroom.control"))maToken.value=""});

@@ -41,6 +41,14 @@ end times, output, favorite, starting volume and the existing priority setting.
 Calendar closures and remote-day suppression remain unchanged. Polling does not
 overwrite unsaved schedule edits, connection edits or a focused volume field.
 
+Each settings form permits one pending save. Inputs stay editable; a completed
+save applies only to its submitted draft and leaves newer edits visibly unsaved.
+Connection completion clears the submitted token only when that field has not
+been edited again. Failed saves retain the draft and permit retry. Reload saved
+schedule is unavailable during its save, and edits made while reloading survive
+the response. Reads started before a save are discarded and followed by a fresh
+read before saved settings can repopulate the workspace.
+
 Manual song/station selections now enter the same managed recovery path as the
 schedule, including outside scheduled hours. A manual selection remains active
 until stopped, replaced, its sleep deadline, or normal finite-track completion;

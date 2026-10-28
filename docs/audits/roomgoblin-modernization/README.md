@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Planning fixes awaiting delivery; announcement lifecycle and audio-ownership fixes locally qualified**.
+Status: **Planning and announcement lifecycle fixes delivered; probe bounds and Music saves qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -16,8 +16,10 @@ integrity and rollback verified. Class-save and Calendar Today changes passed
 all 14 checks and deployed at `955195a` (PR #290), with health, backup integrity
 and rollback verified. Planning runtime fixes passed all gates and deployed at
 `407be9e` (PR #291), with health, backup integrity and rollback verified.
-Preview dates passed all 14 checks and merged at `fe8b68a` (PR #292); exact image
-publication and appliance delivery remain pending.
+Preview dates passed all 14 checks and deployed at `fe8b68a` (PR #292), with
+health, backup integrity and rollback verified. Announcement lifecycle fixes
+passed all 14 checks and deployed at `ac1ae40` (PR #293), with exact images,
+health, backup integrity and rollback verified.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -84,6 +86,8 @@ Queued subsystem units below have not been marked audited.
 - [Announcement audio retry ownership](announcement-audio-retries.md)
 - [Announcement and media priority ownership](announcement-priority.md)
 - [Announcement probe destination security review](announcement-probe-security.md)
+- [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)
+- [Music workspace save ownership](music-save-ownership.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)
 - [Recovery resource identity](scheduler-recovery-resources.md)

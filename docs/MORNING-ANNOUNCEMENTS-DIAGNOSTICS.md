@@ -68,6 +68,11 @@ The player uses bounded HLS retry/recovery behavior:
 
 A player error should not cause the Hub to clear the receiver unless the server-side live monitor independently confirms the stream has ended for the configured grace period.
 
+HLS probe deadlines cover the full playlist body, including a server that sends
+headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
+and 512 KiB. A timeout or oversized response is reported as unknown availability
+and does not count toward the offline release threshold.
+
 ## Receiver diagnostics
 
 Each physical display exposes:

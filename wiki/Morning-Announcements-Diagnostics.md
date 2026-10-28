@@ -34,6 +34,11 @@ including independent hallway displays. Once recovery succeeds, restored audible
 video or an existing manual takeover retains its own music-priority policy.
 A media-ended notification cannot release an active announcement hold.
 
+HLS probe deadlines cover the full playlist body, including a server that sends
+headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
+and 512 KiB. A timeout or oversized response is reported as unknown availability
+and does not count toward the offline release threshold.
+
 ## Receiver diagnostics
 
 On a display receiver:
