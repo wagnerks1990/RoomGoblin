@@ -707,6 +707,12 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Player probe cache/pending work belongs to its player and Music Assistant
+connection generation. Only the latest-started probe publishes the shared cache;
+retirement forbids a legacy lookup retry across connection identities. Status
+must recheck session/player/connection after awaiting telemetry and omit stale
+readings, retaining current errors without attaching another output's failure.
+
 Serialize accepted Background Music schedule writes and return the entire
 queued HTTP handler promise through Stop, persistence and reconciliation.
 Normalize each write against the preceding committed configuration. Only the

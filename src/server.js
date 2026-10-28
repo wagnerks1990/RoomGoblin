@@ -6854,28 +6854,33 @@ function backgroundMusicPriorityState(){
   }
   return {active:targets.size>0,targets:[...targets],independentTargets};
 }
-let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null};
-let backgroundMusicProbePending=null;
+let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null,generation:-1};
+let backgroundMusicProbePending=null,backgroundMusicProbeSequence=0;
 async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),force=false){
-  const pid=String(cfg.playerId||"").trim();
+  const pid=String(cfg.playerId||"").trim(),generation=maApiGeneration;
   if(!pid)return null;
-  if(backgroundMusicProbePending?.playerId===pid)return backgroundMusicProbePending.promise;
+  if(backgroundMusicProbePending?.playerId===pid&&backgroundMusicProbePending.generation===generation)return backgroundMusicProbePending.promise;
   const now=Date.now();
-  if(!force&&backgroundMusicPlayerProbe.playerId===pid&&(now-backgroundMusicPlayerProbe.at)<4000)return backgroundMusicPlayerProbe.state;
+  if(!force&&backgroundMusicPlayerProbe.playerId===pid&&backgroundMusicPlayerProbe.generation===generation&&(now-backgroundMusicPlayerProbe.at)<4000)return backgroundMusicPlayerProbe.state;
+  const sequence=++backgroundMusicProbeSequence,owns=()=>generation===maApiGeneration&&sequence===backgroundMusicProbeSequence;
   const promise=(async()=>{try{
     let players=[];
-    try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}
+    try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch(error){
+      if(generation!==maApiGeneration)return null;
+      players=await musicAssistantCommand("players/all",{});
+    }
+    if(generation!==maApiGeneration)return null;
     players=Array.isArray(players)?players:[];
     const p=players.find(x=>[x?.player_id,x?.playerId,x?.id,x?.provider_id].filter(Boolean).map(String).includes(pid))||null;
     const raw=String(p?.state||p?.playback_state||p?.playbackState||"").toLowerCase();
     const state=p?{found:true,playing:raw==="playing"||p?.is_playing===true||p?.isPlaying===true,paused:raw==="paused",raw,available:p?.available!==false,player:p}: {found:false,playing:false,paused:false,raw:"missing",available:false,player:null};
-    backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null};
+    if(owns())backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null,generation};
     return state;
   }catch(e){
-    backgroundMusicPlayerProbe={at:now,playerId:pid,state:null,error:e.message};
+    if(owns())backgroundMusicPlayerProbe={at:now,playerId:pid,state:null,error:e.message,generation};
     return null;
   }})();
-  backgroundMusicProbePending={playerId:pid,promise};
+  backgroundMusicProbePending={playerId:pid,generation,promise};
   try{return await promise}finally{if(backgroundMusicProbePending?.promise===promise)backgroundMusicProbePending=null}
 }
 async function backgroundMusicPause(reason="manual"){
@@ -7101,7 +7106,17 @@ const musicAssistantMutationLimit=rateLimit({
   standardHeaders:"draft-8",legacyHeaders:false,
   message:{ok:false,error:"Music Assistant configuration/attachment limit reached; retry later"}
 });
-app.get("/api/v1/music-assistant/background",musicAssistantStatusLimit,requireControl,async(_req,res)=>{const cfg=backgroundMusicSchedule();const actualPlayer=await backgroundMusicActualPlayerState({playerId:backgroundMusicRuntime.activePlayerId||cfg.playerId},true).catch(()=>null);res.json({ok:true,schedule:cfg,favorites:backgroundMusicFavorites(),runtime:{...backgroundMusicRuntime,recovery:backgroundMusicRecovery.snapshot(),priority:backgroundMusicPriorityState(),actualPlayer,playerProbeError:backgroundMusicPlayerProbe.error}})});
+app.get("/api/v1/music-assistant/background",musicAssistantStatusLimit,requireControl,async(_req,res)=>{
+  const initial=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||initial.playerId||"").trim();
+  const session=backgroundMusicRuntime.sessionGeneration,connection=maApiGeneration;
+  let actualPlayer=await backgroundMusicActualPlayerState({playerId},true).catch(()=>null);
+  const cfg=backgroundMusicSchedule(),currentPlayer=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();
+  const current=session===backgroundMusicRuntime.sessionGeneration&&connection===maApiGeneration&&playerId===currentPlayer;
+  if(!current)actualPlayer=null;
+  const playerProbeError=!current?"Playback changed during status lookup; refresh for current player status.":actualPlayer?null:
+    backgroundMusicPlayerProbe.playerId===playerId&&backgroundMusicPlayerProbe.generation===connection?backgroundMusicPlayerProbe.error:null;
+  res.json({ok:true,schedule:cfg,favorites:backgroundMusicFavorites(),runtime:{...backgroundMusicRuntime,recovery:backgroundMusicRecovery.snapshot(),priority:backgroundMusicPriorityState(),actualPlayer,playerProbeError}});
+});
 let backgroundMusicScheduleWrites=Promise.resolve();
 app.put("/api/v1/music-assistant/background/schedule",musicAssistantMutationLimit,requireControl,(req,res)=>{
   const save=async()=>{try{

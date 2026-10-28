@@ -130,6 +130,7 @@ Queued subsystem units below have not been marked audited.
 - [Background Music session ownership](background-session-ownership.md)
 - [Music Assistant configuration transaction](music-config-transaction.md)
 - [Background Music schedule save ordering](music-schedule-ordering.md)
+- [Background Music player probe ownership](music-probe-ownership.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
 - [Announcement release recovery ownership](announcement-release-ownership.md)
 - [Failed announcement start cleanup](announcement-start-failure.md)

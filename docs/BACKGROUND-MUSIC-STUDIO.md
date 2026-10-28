@@ -21,6 +21,11 @@ Schedule saves finish in the order they are accepted. A save that is waiting for
 an old output to stop cannot overwrite a newer manual Stop or playback session.
 Save failures remain visible, and later saves can be retried.
 
+Player readings belong to the connection and session that requested them. If
+music changes during a lookup, status asks for a refresh instead of showing the
+old output's reading beside the new session. A missing player and an unavailable
+status lookup remain distinct.
+
 **Find music** filters provider search to songs, stations, albums, artists or
 playlists. Results can play now, play next in the current queue, or become a
 favorite. A radio URL can be saved explicitly through the expandable stream
