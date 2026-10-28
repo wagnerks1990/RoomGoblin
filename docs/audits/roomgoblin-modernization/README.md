@@ -328,6 +328,19 @@ their ordering may change when the current unit's evidence warrants it.
 | 16 | Performance/resources; tests/CI/releases | Measured resource costs and independent release gates |
 | 17 | Documentation/AI/developer experience; final integration | Evidence reconciliation and cross-system acceptance |
 
+## Controller media and cancellation integration
+
+Document-card dispatch, shared library refresh and saved-upload cancellation
+outcomes are integrated on merged `main` `43b4d83`. Before this evidence note,
+the full tree was byte-identical to qualified `3150723`. Final qualification
+passes 1,819 Linux tests, zero failures and two root-only skips (1,821 total),
+plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All
+182 focused integration cases pass with two root-only skips (184 total), and
+all 73 workspace cases pass in Chromium and Firefox. These changes add 47 Node
+regressions and three browser cases. Checked PR/main delivery remains pending.
+PR #308 is merged; its exact image publication and appliance update are pending.
+The presentation review and later roadmap groups remain active.
+
 ## Decisions
 
 Retain Node/Express, CommonJS, SQLite, the separate media process and existing
