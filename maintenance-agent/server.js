@@ -576,7 +576,17 @@ app.post("/backups/retention",async(req,res)=>{try{
   const automaticKeep=Number(req.body?.automaticKeep??req.body?.keep??3),preKeep=Number(req.body?.preKeep??1);
   if(!Number.isInteger(automaticKeep)||automaticKeep<1||automaticKeep>50||!Number.isInteger(preKeep)||preKeep<1||preKeep>10)return res.status(400).json({ok:false,error:"Retention requires automaticKeep 1-50 and preKeep 1-10"});
   if(String(req.body?.confirm||"")!=="PRUNE_AUTOMATIC_BACKUPS")return res.status(400).json({ok:false,error:"Explicit confirmation required"});
-  let pinned="";try{const job=await hostAgentRequest("GET","/app-updates/job");if(job.revertAvailable===true)pinned=String(job.backupName||"")}catch{}
+  let job;
+  const unavailable=()=>res.status(503).json({ok:false,error:"Rollback backup status is unavailable; automatic retention did not run"});
+  try{job=await hostAgentRequest("GET","/app-updates/job")}catch{return unavailable()}
+  if(!job||typeof job!=="object"||Array.isArray(job)||Object.hasOwn(job,"stateReadError"))return unavailable();
+  if(job.revertAvailable!==true&&job.revertAvailable!==false&&job.phase!=="idle")return unavailable();
+  let pinned="";
+  if(job.revertAvailable===true){
+    pinned=String(job.backupName||"");
+    if(!pinned||path.basename(pinned)!==pinned)return unavailable();
+    try{if(!fs.statSync(path.join(BACKUP_DIR,pinned)).isFile())return unavailable()}catch{return unavailable()}
+  }
   const all=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));
   const pre=all.filter(x=>/^pre-.*\.zip$/.test(x.name));
   const automatic=all.filter(x=>/^(?:auto-operational-|classroom-hub-operational-).*\.zip$/.test(x.name));

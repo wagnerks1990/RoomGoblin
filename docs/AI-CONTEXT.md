@@ -601,11 +601,12 @@ append-only audit rows. Authentication must still validate every request, but
 non-security `last_used_at`/last-seen bookkeeping should be rate-limited to
 avoid needless WAL churn.
 
-Update safety archives use the `pre-*.zip` naming boundary. Verified app/host
-updates retain the newest ten automatic safety backups while preserving the
-currently pinned revert backup. Automatic retention must never match user-created
-archives or encrypted Full Recovery bundles. Diagnostic downloads are temporary
-and must be removed after transfer.
+Verified app/host updates retain three automatic operational ZIPs and one
+`pre-*.zip` safety archive, with the current revert backup retained inside its
+applicable limit. Never prune while rollback authority is unavailable, unreadable
+or incomplete, or when its pinned archive is missing. Automatic retention must
+never match user-created archives or encrypted Full Recovery bundles. Diagnostic
+downloads are temporary and must be removed after transfer.
 
 
 ### Database and local-storage hygiene

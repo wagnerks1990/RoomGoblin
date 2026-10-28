@@ -1,10 +1,14 @@
 # RoomGoblin modernization audit
 
-Receiver PR #341 merged as `3bdc179` after all 14 checks passed and every review
-finding was resolved. Its exact PR-head Linux run passed 2,516 cases, two root-only
-skips, all 23 Host Recovery and 55 Android JVM cases. Exact main publication and
-delivery remain pending. The diagnostics integration on this main passes all
-60 focused cases; later batches remain separate.
+Receiver PR #341 is deployed and verified at `3bdc179`. Its exact PR-head Linux
+run passed 2,516 cases, two root-only skips, all 23 Host Recovery and 55 Android
+JVM cases. Diagnostics PR #342 merged as `ea924b8` after all 14 checks passed;
+its 60 focused cases pass. Exact main publication and delivery remain pending.
+
+PR #340 is [deployed and verified](database-transactions-delivery.md). The
+[rollback-aware retention repair](backup-retention-authority.md) passes native
+qualification with 2,537 Node cases, two root-only skips, all 23 Host Recovery
+and 55 Android JVM cases. Its documentation resolves RG-DOC-001's stale limits.
 
 The receiver identity repair is pushed in PR #341. The next
 [diagnostics batch](diagnostic-evidence.md) repairs reproduced secret projection,
@@ -13,7 +17,7 @@ two root-only skips, 23 Host Recovery and 55 Android JVM cases, and all 130
 workspace/diagnostic cases in each browser. Checked delivery remains pending.
 
 The backend transaction batch merged in PR #340 as `8357bec` after all 15 checks;
-exact publication and delivery are pending. PR #339 is
+exact publication and delivery are verified. PR #339 is
 [deployed and verified](weather-workflow-delivery.md). The authentication
 [identity repair](display-identity-runtime.md) covers admission, saved/scheduled
 targets and integration observations. Its full Linux snapshot passes 2,509
