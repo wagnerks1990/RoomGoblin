@@ -2212,8 +2212,16 @@ async function loadSchedules(){
   }catch(e){automationList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
 }
 
-function diagBadge(ok,label,value=''){
-  return `<div class="card"><div class="muted">${esc(label)}</div><div class="kpi ${ok?'ok':'bad'}">${ok?'OK':'ISSUE'}</div>${value?`<div class="muted">${esc(value)}</div>`:''}</div>`;
+function diagnosticState(value={}){
+  if(value.status==='not-configured')return 'NOT CONFIGURED';
+  if(value.ok===false)return 'ISSUE';
+  if(value.ok===true&&value.verification==='reachability-only')return 'REACHABLE';
+  if(value.ok===true&&value.verification==='mqtt-publish')return 'PUBLISHED';
+  if(value.status==='observed')return 'OBSERVED';
+  return value.ok===true?'OK':'NOT CHECKED';
+}
+function diagBadge(ok,label,value='',state=''){
+  return `<div class="card"><div class="muted">${esc(label)}</div><div class="kpi ${ok===true?'ok':ok===false?'bad':'muted'}">${esc(state||diagnosticState({ok}))}</div>${value?`<div class="muted">${esc(value)}</div>`:''}</div>`;
 }
 function diagnosticRows(rows){
   if(!rows?.length)return '<div class="muted">No matching events.</div>';
@@ -2236,15 +2244,15 @@ async function loadDiagnostics(){
     diagSummary.innerHTML=[
       diagBadge(!!sv.classroomHub?.ok,'RoomGoblin',x.system?.version||''),
       diagBadge(!!sv.mqtt?.ok,'MQTT',sv.mqtt?.ok?'Connected':'Disconnected'),
-      diagBadge(!!sv.pluto?.ok,'Pluto',sv.pluto?.lastError||'Healthy'),
-      diagBadge(!!sv.govee?.ok,'Govee',sv.govee?.lastError||`${sv.govee?.configuredDevices||0} devices`),
-      diagBadge(!!sv.veyon?.ok,'Veyon',`Pool ${sv.veyon?.pool?.size||0}/${sv.veyon?.pool?.max||0}`),
+      diagBadge(sv.pluto?.ok,'Pluto',sv.pluto?.lastError||(sv.pluto?.lastSuccessAt?`Last response received: ${sv.pluto.lastSuccessAt}`:'No response recorded'),diagnosticState(sv.pluto)),
+      diagBadge(sv.govee?.ok,'Govee',sv.govee?.lastError||(sv.govee?.status==='disconnected'?'MQTT disconnected':sv.govee?.ok===true?'Device acknowledgment not verified':`${sv.govee?.configuredDevices||0} devices`),diagnosticState(sv.govee)),
+      diagBadge(sv.veyon?.ok,'Veyon',sv.veyon?.verification==='reachability-only'?'Authentication not verified':`Pool ${sv.veyon?.pool?.size||0}/${sv.veyon?.pool?.max||0}`,diagnosticState(sv.veyon)),
       diagBadge(!!sv.displays?.ok,'Displays',`${sv.displays?.online||0}/${sv.displays?.configured||0} online`),
       diagBadge(!!sv.database?.ok,'Database',sv.database?.ok?`Schema ${sv.database.schemaVersion||1} • ${sv.database.normalized?.displays||0} displays • ${sv.database.normalized?.automations||0} automations • ${sv.database.audits||0} audits • ${sv.database.telemetry||0} telemetry states`:'Unavailable')
     ].join('');
 
     diagServices.innerHTML=Object.entries(sv).map(([name,v])=>
-      `<div class="card" style="margin-bottom:8px"><b>${esc(name)}</b> <span class="pill">${v?.ok===false?'ISSUE':'OK'}</span><pre class="raw">${esc(JSON.stringify(v,null,2))}</pre></div>`
+      `<div class="card" style="margin-bottom:8px"><b>${esc(name)}</b> <span class="pill">${esc(diagnosticState(v))}</span><pre class="raw">${esc(JSON.stringify(v,null,2))}</pre></div>`
     ).join('');
 
     diagSystem.textContent=JSON.stringify(x.system||{},null,2);

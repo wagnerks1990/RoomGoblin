@@ -4603,15 +4603,15 @@ async function goveeUdpTemperature(device,kelvin){
 async function goveePublish(alias,payload,device){
   const d=device||(Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null);
   if(!d||typeof d.id!=="string"||!d.id.trim()) throw new Error(`Unknown Govee device ${alias}`);
-  const started=Date.now();
+  const started=Date.now(),observation=runtime.hardware.govee;
   try{
     await mqttPublish(`gv2mqtt/light/${d.id}/command`,payload);
-    runtime.hardware.govee.lastError=null;
-    runtime.hardware.govee.lastSuccessAt=new Date().toISOString();
+    observation.lastError=null;
+    observation.lastSuccessAt=new Date().toISOString();
     audit({kind:"service.action",component:"govee",operation:"mqttPublish",device:alias,durationMs:Date.now()-started,ok:true});
     return {device:alias,name:d.name,payload};
   }catch(err){
-    runtime.hardware.govee.lastError=err.message;
+    observation.lastError=err.message;
     diagnosticError(err,{component:"govee",operation:"mqttPublish",data:{device:alias}});
     throw err;
   }
@@ -4768,6 +4768,7 @@ async function directPluto(action,{signal}={}){
   finally{if(readTimer)clearTimeout(readTimer);if(!req.readOnly)plutoStatusReader.invalidate()}
 }
 async function performPlutoRequest(action,req,{signal}={}){
+  const observation=runtime.hardware.pluto;
   let last;
   const attempts=req.readOnly?Math.max(1,PLUTO_READ_RETRIES+1):1;
   const delays=[0,120,250,500,900];
@@ -4777,18 +4778,18 @@ async function performPlutoRequest(action,req,{signal}={}){
       if(n && delays[Math.min(n,delays.length-1)]) await plutoAbortableDelay(delays[Math.min(n,delays.length-1)],undefined,{signal});
       const raw=await plutoPostRaw(req.body,{signal});last=raw;
       if(raw?.comhead===req.expected){
-        runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
+        observation.lastError=null;observation.lastSuccessAt=new Date().toISOString();
         if(req.readOnly)return {type:action.action,data:raw,retries:n};
         if(action.action==="raw")return {type:"raw",data:raw};
         return {type:"ack",action:action.action,result:raw.result,ok:Number(raw.result)===1,raw};
       }
       if(!req.readOnly){
-        runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
+        observation.lastError=null;observation.lastSuccessAt=new Date().toISOString();
         return {type:"ack",action:action.action,ok:true,pendingVerify:true,message:`Write sent; Pluto returned stale ${raw?.comhead||"response"}. Verify on refresh.`,raw};
       }
     }catch(err){
-      if(signal?.aborted){runtime.hardware.pluto.lastError=signal.reason.message;throw signal.reason}
-      runtime.hardware.pluto.lastError=err.name==="AbortError"?`Timeout after ${PLUTO_TIMEOUT_MS} ms`:err.message;
+      if(signal?.aborted){observation.lastError=signal.reason.message;throw signal.reason}
+      observation.lastError=err.name==="AbortError"?`Timeout after ${PLUTO_TIMEOUT_MS} ms`:err.message;
       if(!req.readOnly||n===attempts-1)throw err;
     }
   }
@@ -6496,6 +6497,13 @@ app.post("/api/v1/config/groups/:id",requireControl,(req,res)=>{
 async function buildDiagnosticsSnapshot(){
   const r=publicRuntime();
   const now=new Date();
+  const observedHardware=(state,configured,verification)=>{
+    const status=!configured?"not-configured":state.lastError?"error":state.lastSuccessAt?"observed":"not-observed";
+    return {...diagnosticSanitize(state),configured,status,verification,ok:status==="observed"?true:status==="error"?false:null};
+  };
+  const pluto=observedHardware(runtime.hardware.pluto,Boolean(PLUTO_URL),"last-request");
+  const govee=observedHardware(runtime.hardware.govee,Object.keys(goveeDevices).length>0,"mqtt-publish");
+  if(govee.status==="observed"&&!runtime.mqtt.connected){govee.ok=false;govee.status="disconnected"}
   let veyonWebApi={ok:false};
   try{
     const response=await veyonFetch("/",{timeoutMs:2500});
@@ -6538,9 +6546,9 @@ async function buildDiagnosticsSnapshot(){
     services:{
       classroomHub:{ok:true,startedAt:runtime.startedAt,room:deviceConfig.room||ROOM_NAME},
       mqtt:{ok:!!runtime.mqtt.connected,...diagnosticSanitize(runtime.mqtt)},
-      pluto:{ok:!runtime.hardware.pluto.lastError,...diagnosticSanitize(runtime.hardware.pluto)},
-      govee:{ok:!runtime.hardware.govee.lastError,...diagnosticSanitize(runtime.hardware.govee),configuredDevices:Object.keys(goveeDevices).length},
-      veyon:{...veyonWebApi,pool:{size:veyonConnectionCache.size,max:VEYON_POOL_MAX,connections:veyonPool}},
+      pluto,
+      govee:{...govee,configuredDevices:Object.keys(goveeDevices).length},
+      veyon:{...diagnosticSanitize(veyonWebApi),pool:{size:veyonConnectionCache.size,max:VEYON_POOL_MAX,connections:veyonPool}},
       websocket:{ok:true,clients:runtime.websocketClients},
       displays:{
         ok:Object.values(r.displays).some(x=>x.online),
@@ -6551,7 +6559,7 @@ async function buildDiagnosticsSnapshot(){
       scheduler:{ok:true,...schedulerStatus()},
       database:{ok:true,...dbStore.databaseInfo()}
     },
-    configuration:{
+    configuration:diagnosticSanitize({
       room:deviceConfig.room||ROOM_NAME,
       mqtt:{url:MQTT_URL,jsonBridge:MQTT_JSON_BRIDGE,legacyBridge:MQTT_LEGACY_BRIDGE},
       pluto:{configured:Boolean(PLUTO_URL),url:PLUTO_URL,timeoutMs:PLUTO_TIMEOUT_MS,readRetries:PLUTO_READ_RETRIES},
@@ -6559,7 +6567,7 @@ async function buildDiagnosticsSnapshot(){
       scheduler:schedulerStatus(),
       displayGroups,
       lightingGroups:[...lightingGroups]
-    },
+    }),
     data:{
       classes:classScheduleStore.classes.length,
       automations:classroomAutomations.events.length,
@@ -6739,7 +6747,8 @@ app.put("/api/v1/admin/integration-connections",requireAdmin,async(req,res)=>{
     });
     plutoStatusReader.invalidate();
     applyIntegrationConnections(next);
-    runtime.hardware.pluto={...runtime.hardware.pluto,configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null};
+    runtime.hardware.pluto={...runtime.hardware.pluto,configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null,lastSuccessAt:null};
+    runtime.hardware.govee={...runtime.hardware.govee,lastError:null,lastSuccessAt:null};
     veyonConnectionCache.clear();veyonAuthInFlight.clear();
     reconnectMqtt();
     audit({kind:"admin.integrations.connections",mqttConfigured:Boolean(MQTT_URL),plutoConfigured:Boolean(PLUTO_URL),veyonConfigured:Boolean(VEYON_WEBAPI_URL)});

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Report the evidence behind optional integration status, redact endpoint secrets
+  throughout diagnostic snapshots, and retire observations when connections change.
+
 - Preserve exact receiver identity across HTTP, enrollment, WebSocket, saved and
   scheduled targets, media/audio controls and integration observations; reject
   ambiguous aliases and support legacy dotted media IDs.

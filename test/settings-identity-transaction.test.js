@@ -73,3 +73,10 @@ test('successful integration save commits metadata and both credentials before a
  assert.equal(h.ctx.veyonConnectionCache.size,0);assert.equal(h.ctx.veyonAuthInFlight.size,0);
  assert.equal(/fixture-|PRIVATE KEY/.test(JSON.stringify(result.body)),false);assert.equal(/fixture-|PRIVATE KEY/.test(JSON.stringify(h.store.getPreference(h.preference))),false);
 });
+test('accepted integration settings retire earlier hardware observation evidence',async t=>{
+ const h=fixture(t,'integrations');h.ctx.goveeDevices={lamp:{id:'fixture'}};
+ h.ctx.runtime.hardware.pluto.lastSuccessAt='2026-01-01T00:00:00.000Z';
+ h.ctx.runtime.hardware.govee={configured:true,lastSuccessAt:'2026-01-01T00:00:00.000Z',lastError:null};
+ const result=await h.save();assert.equal(result.status,200);
+ assert.equal(h.ctx.runtime.hardware.pluto.lastSuccessAt,null);assert.equal(h.ctx.runtime.hardware.govee.lastSuccessAt,null);
+});

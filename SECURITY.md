@@ -80,6 +80,11 @@ and signed media access remain bound to the exact stored receiver. Existing IDs
 and credentials are not renamed. Signed media tokens retain their format and
 support legacy IDs containing dots, with unchanged expiry and revocation checks.
 
+Diagnostic snapshots and exports redact endpoint query values and URL credentials
+in configuration and service errors, in addition to event redaction. Optional
+hardware without an observation is unknown, not healthy. Veyon reachability does
+not verify authentication; an MQTT publish does not acknowledge a Govee device.
+
 ## Classroom computer agents and student data
 
 Enroll every Windows classroom computer with a one-time GUI-generated command.
