@@ -77,26 +77,28 @@ class AndroidPcmSendspinPlayer(
     override fun start() {
         if (running.get()) return
         val audio = track ?: return
-        running.set(true)
         audio.play()
-        worker = Thread({ playbackLoop() }, "RoomGoblin-Sendspin-Audio").apply {
+        running.set(true)
+        worker = Thread({ playbackLoop(audio) }, "RoomGoblin-Sendspin-Audio").apply {
             priority = Thread.MAX_PRIORITY
             start()
         }
     }
 
-    private fun playbackLoop() {
-        while (running.get()) {
+    private fun playbackLoop(audio: AudioTrack) {
+        while (running.get() && track === audio) {
             try {
-                val chunk = buffer.poll()
+                val chunk = synchronized(this) {
+                    if (!running.get() || track !== audio) return
+                    buffer.poll()
+                }
                 if (chunk == null) {
                     val delayMicros = buffer.nextChunkDelayMicros() ?: 5_000L
                     Thread.sleep(min(10L, (delayMicros / 1_000L).coerceAtLeast(1L)))
                     continue
                 }
-                val audio = track ?: break
                 var offset = 0
-                while (running.get() && offset < chunk.data.size) {
+                while (running.get() && track === audio && offset < chunk.data.size) {
                     val written = audio.write(chunk.data, offset, chunk.data.size - offset, AudioTrack.WRITE_BLOCKING)
                     if (written <= 0) {
                         droppedDecode++

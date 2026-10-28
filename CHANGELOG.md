@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep retired Android PCM workers from consuming or writing a replacement audio
+  session, and allow retry after AudioTrack fails to start.
+
 - Clean up the Android root-tool child process and its streams when a request is
   interrupted, preserving existing policy gates, timeouts and output limits.
 

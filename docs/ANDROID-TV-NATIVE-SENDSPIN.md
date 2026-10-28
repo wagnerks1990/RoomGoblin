@@ -57,6 +57,13 @@ Consequences:
 
 `KioskWatchdog` also calls `ensureStarted()` while the agent process is alive so an enabled native player is reasserted independently of display activity lifecycle.
 
+Each PCM worker owns the AudioTrack with which it started. Stop/reconfiguration
+retires that ownership before another session can use the shared buffer. A late
+write from an old worker cannot switch to the replacement track or consume its
+queued frames. A failed AudioTrack start leaves the player eligible for retry.
+JVM tests exercise these decisions with audio substitutes; physical timing and
+HDMI playback still require the device validation below.
+
 ## Configuration
 
 Managed Displays exposes a **Native Sendspin** control group:

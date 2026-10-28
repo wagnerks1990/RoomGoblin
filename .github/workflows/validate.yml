@@ -308,6 +308,9 @@ jobs:
       - name: Verify Android child process cleanup
         if: steps.scope.outputs.full != 'false'
         run: python3 tools/test-android-root-process.py
+      - name: Verify Android PCM playback ownership
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-pcm-ownership.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv
