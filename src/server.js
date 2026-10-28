@@ -8460,12 +8460,14 @@ app.post("/api/v1/media/:name/display",requireCapability("media.manage"),async(r
     const name=safeStoredName(req.params.name),full=path.join(MEDIA_DIR,name);
     if(!fs.existsSync(full))return res.status(404).json({ok:false,error:"File not found"});
     const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
-    const target=cleanId(req.body?.target||"tv1");
+    const target=req.body?.target??"tv1";
     const payload=req.body||{};
+    const appearance={fit:payload.fit||"contain"};
+    for(const key of ["opacity","localDirect"])if(Object.hasOwn(payload,key))appearance[key]=payload[key];
     let command;
 
-    if(type==="image")command={type:"display.image",target,payload:{url:mediaUrl(name),fit:payload.fit||"contain"}};
-    else if(type==="video")command={type:"display.video",target,payload:{url:mediaUrl(name),fit:payload.fit||"contain",autoplay:true,muted:!!payload.muted,loop:!!payload.loop}};
+    if(type==="image")command={type:"display.image",target,payload:{url:mediaUrl(name),...appearance}};
+    else if(type==="video")command={type:"display.video",target,payload:{url:mediaUrl(name),...appearance,autoplay:payload.autoplay!==false,muted:!!payload.muted,loop:!!payload.loop}};
     else if(type==="pdf"){
       const viewer=documentViewerUrl(name,payload);
       command={type:"display.pdf",target,payload:{url:viewer,sourceUrl:mediaUrl(name)}};
