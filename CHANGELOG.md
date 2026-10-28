@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve a disabled legacy Windows task during native installation rollback;
+  fail admission on unknown task state or a rejected disable operation.
+
 - Bound native bootstrap/updater subprocess waits and diagnostics, and require
   confirmed service stop before replacing, deleting or rolling back files.
 

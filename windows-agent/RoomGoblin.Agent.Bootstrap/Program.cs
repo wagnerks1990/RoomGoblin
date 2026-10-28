@@ -102,8 +102,9 @@ int Install()
     try
     {
         Directory.CreateDirectory(installRoot);
-        legacyExisted = ScheduledTaskExists(legacyTask);
-        legacyWasEnabled = legacyExisted;
+        var legacyEnabled = ReadScheduledTaskEnabled(legacyTask);
+        legacyExisted = legacyEnabled.HasValue;
+        legacyWasEnabled = legacyEnabled == true;
         if (legacyExisted)
         {
             RunProcess(
@@ -113,7 +114,7 @@ int Install()
             RunProcess(
                 "schtasks.exe",
                 new[] { "/Change", "/TN", legacyTask, "/Disable" },
-                allowFailure: true);
+                capture: true);
         }
 
         nativeTouched = true;
@@ -528,13 +529,41 @@ void StopAndDeleteService(string name)
 
 bool ScheduledTaskExists(string name)
 {
-    var result = RunProcess(
-        "schtasks.exe",
-        new[] { "/Query", "/TN", name },
-        capture: true,
-        allowFailure: true);
+    return ReadScheduledTaskEnabled(name).HasValue;
+}
 
-    return result.ExitCode == 0;
+bool? ReadScheduledTaskEnabled(string name)
+{
+    // This read-only COM call has no cancellation API. Bound admission; a late
+    // result cannot mutate state, and the background worker ends with this CLI.
+    return Task.Run(() => ReadScheduledTaskEnabledCore(name))
+        .WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+}
+
+bool? ReadScheduledTaskEnabledCore(string name)
+{
+    object? service = null, folder = null, task = null;
+    try
+    {
+        var type = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)
+            ?? throw new InvalidOperationException("Windows Task Scheduler is unavailable.");
+        service = Activator.CreateInstance(type)
+            ?? throw new InvalidOperationException("Could not connect to Windows Task Scheduler.");
+        ((dynamic)service).Connect();
+        folder = ((dynamic)service).GetFolder(@"\");
+        try { task = ((dynamic)folder).GetTask(name); }
+        catch (Exception error) when ((error is COMException or FileNotFoundException) &&
+                                     error.HResult == unchecked((int)0x80070002))
+        {
+            return null; // HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), lookup only.
+        }
+        return (bool)((dynamic)task).Enabled;
+    }
+    finally
+    {
+        foreach (var value in new[] { task, folder, service })
+            if (value is not null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value);
+    }
 }
 
 bool WaitForFreshHealth(string healthPath, TimeSpan timeout)

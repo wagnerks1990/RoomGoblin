@@ -53,12 +53,13 @@ internal sealed class InstallFixture : IDisposable
 {
     private readonly string sourceRoot, installRoot, dataRoot, root, mode;
     private readonly bool fresh;
+    private readonly bool? legacyEnabled;
     private const string serviceName = "fixture-native", legacyTask = "fixture-legacy";
     private readonly Dictionary<string, string?> options = new();
     public readonly List<string> Calls = new();
-    public InstallFixture(string mode, bool fresh)
+    public InstallFixture(string mode, bool fresh, bool? legacyEnabled = true)
     {
-        this.mode = mode; this.fresh = fresh;
+        this.mode = mode; this.fresh = fresh; this.legacyEnabled = legacyEnabled;
         root = Path.Combine(AppContext.BaseDirectory, "owned-" + Guid.NewGuid().ToString("N"));
         sourceRoot = Path.Combine(root, "source"); installRoot = Path.Combine(root, "install"); dataRoot = Path.Combine(root, "data");
         Directory.CreateDirectory(sourceRoot); Directory.CreateDirectory(dataRoot);
@@ -73,10 +74,10 @@ internal sealed class InstallFixture : IDisposable
     private void VerifyPackageManifest(string[] files) => throw new Exception("Unexpected manifest path in fixture");
     private void WriteFreshEnrollmentConfigFromFile(string config, string file) => throw new Exception("Unexpected enrollment-file path in fixture");
     private void WriteFreshEnrollmentConfig(string config, Dictionary<string, string?> parsed) => File.WriteAllText(config, "synthetic-fresh-identity");
-    private bool ScheduledTaskExists(string task)
+    private bool? ReadScheduledTaskEnabled(string task)
     {
         if (mode == "query") throw new TimeoutException("Fixture query timeout");
-        return true;
+        return legacyEnabled;
     }
     private void StopAndDeleteService(string name)
     {
@@ -84,12 +85,14 @@ internal sealed class InstallFixture : IDisposable
         if (mode == "native-always" || mode == "native-once" && Calls.Count(x => x == "native-stop") == 1)
             throw new TimeoutException("Fixture native stop timeout");
     }
-    private bool WaitForFreshHealth(string file, TimeSpan timeout) => true;
+    private bool WaitForFreshHealth(string file, TimeSpan timeout) => mode != "health";
     private void RunProcess(string file, IEnumerable<string> arguments, bool capture = false, bool allowFailure = false)
     {
         var parts = arguments.ToArray(); Calls.Add(string.Join(" ", parts));
         if (mode == "end" && parts.Contains("/End") || mode == "disable" && parts.Contains("/Disable"))
             throw new TimeoutException("Fixture legacy timeout");
+        if (mode == "disable-rejected" && parts.Contains("/Disable") && !allowFailure)
+            throw new InvalidOperationException("Fixture disable access denied");
     }
     public void Dispose()
     {
