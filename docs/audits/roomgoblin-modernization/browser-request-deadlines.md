@@ -43,3 +43,15 @@ only after headers are observed, avoiding a machine-speed race in body coverage.
 
 No live device was commanded, enrolled or captured. This change does not impose
 a backend cancellation policy or infer whether an uncertain physical command ran.
+
+## Final integration
+
+The request batch integrates onto checked publication main `8d9e79f`. Comparing
+the complete tree with qualified snapshot `06779f7` finds documentation changes
+only: runtime, workflows and tests remain byte-identical to that snapshot's 2,581
+Node passes, zero failures and two root-only skips (2,583 total), all 23 Host
+Recovery and 55 Android JVM passes. The earlier 36 focused Node and 19-per-engine
+Veyon/request browser results apply to the unchanged request implementation.
+The Wiki mirrors the request and diagnostic contracts. Exact-head CI is still
+required, and deployment joins the remaining modernization batch after final
+main image publication.

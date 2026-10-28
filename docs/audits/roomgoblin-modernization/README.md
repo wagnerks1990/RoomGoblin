@@ -2,9 +2,11 @@
 
 Receiver PR #341 is [deployed and verified](receiver-identity-delivery.md) at
 `3bdc179`. Diagnostics PR #342 is [deployed and verified](diagnostics-delivery.md)
-at `ea924b8`. Retention PR #343 merged as `6a385d1` after all 14 checks passed;
-exact main publication and delivery are pending. The publication-retry integration
-preserves the source qualified by all 31 focused native policy cases.
+at `ea924b8`. Retention PR #343 merged as `6a385d1` and publication PR #344 as
+`8d9e79f`, each after all 14 checks passed. Their remaining production delivery
+is combined with the request-deadline and final documentation batches. The request
+integration preserves the full runtime qualified by 2,581 Node passes, two
+root-only skips, all 23 Host Recovery and 55 Android JVM cases.
 
 PR #340 is [deployed and verified](database-transactions-delivery.md). The
 [rollback-aware retention repair](backup-retention-authority.md) passes native
