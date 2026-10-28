@@ -1,5 +1,7 @@
 # Administrative settings and credential transactions
 
+[Finding classification and immutable source locations](finding-metadata.md#settings-identity-transaction).
+
 RG-API-001 reproduces seven failures using the actual administrative handlers
 and isolated encrypted SQLite storage. Update policy survived failed token
 replacement/deletion or COMMIT. Integration connections could replace an MQTT

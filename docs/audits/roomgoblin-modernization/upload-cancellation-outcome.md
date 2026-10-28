@@ -1,5 +1,7 @@
 # Completed upload cancellation feedback
 
+[Finding classification and immutable source locations](finding-metadata.md#upload-cancellation-outcome).
+
 ## RG-MEDIA-009
 
 An actual cancellation-handler reproduction returned no completion outcome

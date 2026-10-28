@@ -1,5 +1,7 @@
 # Android enrollment lifecycle outcomes
 
+[Finding classification and immutable source locations](finding-metadata.md#android-lifecycle-ownership).
+
 RG-LAB-031 reproduces four failures: confirmed removal leaves the inventory
 record available for redraw, enable and disable reload the page and discard
 drafts, and an incomplete successful HTTP reply removes the visible card.

@@ -1,5 +1,9 @@
 # Scheduler run-loop review
 
+Current reconciliation: [later-loop recovery is a documented compatibility
+limit](scheduler-recovery-boundary.md); cross-date class resolution has been
+repaired. The baseline findings and qualification history below are preserved.
+
 Baseline: `d3c41b1217ad14e2d896bc28fe239c0072b6e7d0`, alpha.85.
 Status: checked merge and appliance delivery completed in PR #277 on 2026-10-27.
 See the validation record and PR for the verified deployment receipt.

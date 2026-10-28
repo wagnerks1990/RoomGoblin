@@ -1,5 +1,7 @@
 # Media-card dispatch and library refresh ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#media-library-controller).
+
 Baseline: PR #308 head `d9f0aeb85472f6d3cc5d6ed28c50d8d05eeb979e`.
 
 ## RG-MEDIA-008: Document cards used image dispatch

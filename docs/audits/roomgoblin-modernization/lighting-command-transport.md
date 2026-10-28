@@ -1,5 +1,7 @@
 # Lighting command transport ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#lighting-command-transport).
+
 Baseline: qualified lighting inventory commit `b321a52`.
 
 ## RG-LIGHTS-003: Native UDP error and completion ownership

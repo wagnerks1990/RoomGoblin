@@ -1,5 +1,7 @@
 # Legacy configuration and secret import transactions
 
+[Finding classification and immutable source locations](finding-metadata.md#legacy-import-transaction).
+
 RG-DB-002 reproduces five partial migration failures. Legacy JSON writes could
 commit before their migration record failed, even while the caller received its
 fallback. Normalized object migration could publish new tables while retaining

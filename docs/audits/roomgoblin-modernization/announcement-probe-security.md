@@ -1,5 +1,7 @@
 # Announcement probe destination review
 
+[Finding classification and immutable source locations](finding-metadata.md#announcement-probe-security).
+
 PR #293 head `4054c06433e78773b931ef88f5411b7e526ecc26` reported four
 CodeQL findings. JavaScript analysis `2035724884` and check `122171652937`
 were reviewed before changing the tests or classifying an alert.

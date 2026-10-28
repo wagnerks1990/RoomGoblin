@@ -1,5 +1,7 @@
 # Ubuntu inventory, commands and dialog ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-ui-ownership).
+
 RG-LAB-019 covers stale inventory replies, command admission lost during redraws,
 late previews, and completed metadata/maintenance requests closing newer drafts.
 The inventory fixture fails six old-source assertions and passes two controls.

@@ -1,5 +1,7 @@
 # Weather workspace theme contrast
 
+[Finding classification and immutable source locations](finding-metadata.md#weather-theme-contrast).
+
 RG-WEATHER-003 reproduces unreadable light/system-light cards: normal metric text
 measured about 1.03:1 against its dark hardcoded background, with similarly low
 sports/day text and pale notices on the light page. Dark mode was the passing

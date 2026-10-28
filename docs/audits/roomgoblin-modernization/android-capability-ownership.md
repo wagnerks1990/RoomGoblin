@@ -1,5 +1,7 @@
 # Android capability cache and card ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-capability-ownership).
+
 RG-LAB-036 reproduces four failures: overlapping same-display readers duplicate
 transport, replacement enrollment inherits a cached result, retired completion
 overwrites a newer cache, and a removed enrollment can still serve cached data.

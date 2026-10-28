@@ -1,5 +1,7 @@
 # Android card command ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-command-ownership).
+
 RG-LAB-029 reproduces two duplicate-dispatch cases: a redrawn display card can
 send the same or another command while its first command is pending. Independent
 display operations and explicit retry after failure are passing baseline controls.

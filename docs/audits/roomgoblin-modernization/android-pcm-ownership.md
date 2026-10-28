@@ -1,5 +1,7 @@
 # Android PCM worker ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-pcm-ownership).
+
 RG-LAB-041 reproduces two native player failures. A stopped worker blocked in a
 write can observe the shared running flag become true for a replacement session,
 consume its queued frame and write through the new global AudioTrack. A failed

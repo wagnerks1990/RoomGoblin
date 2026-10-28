@@ -1,5 +1,7 @@
 # Export-freeze fixture setup contention
 
+[Finding classification and immutable source locations](finding-metadata.md#freeze-fixture-contention).
+
 PR #335's Validate run `40728610299`, job `122958510303`, failed before
 export-freeze admission. Its direct SQLite fixture connection attempted to seed
 last_seen_at while the running application held a write lock. The fixture had

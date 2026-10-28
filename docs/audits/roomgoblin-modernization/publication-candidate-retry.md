@@ -1,5 +1,7 @@
 # Bounded publication retries
 
+[Finding classification and immutable source locations](finding-metadata.md#publication-candidate-retry).
+
 PR #335 and PR #338 exact-image publication encountered registry `unknown blob`
 errors after their build, scan and smoke steps passed. Failed-job reruns eventually
 succeeded; no release gate was bypassed. This review adds a bounded push retry to

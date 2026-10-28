@@ -1,5 +1,9 @@
 # Complete occurrence ownership during recovery
 
+Current reconciliation: [later-loop recovery is a documented compatibility
+limit](scheduler-recovery-boundary.md); cross-date class resolution has been
+repaired. The baseline findings and qualification history below are preserved.
+
 ## Verified delivery
 
 All 14 PR checks passed before squash merge at `065e32e73b8c9c84068d2feb8a9760f4a8f4b4a8`. Main validation, browser regression, security, Wiki sync and exact image publication passed. The normal selective Hub update completed on 2026-10-27 at 10:00:35 UTC. Read-only appliance verification confirmed clean main, the exact Hub image revision, healthy control/media/maintenance/Host Agent endpoints, canonical SQLite integrity, all eight encrypted secrets, database/ADB permissions and expected authorization responses. The existing maintenance container remained healthy. Backup `auto-operational-2026-10-27T10-00-21-854Z.zip` (128,547,400 bytes, mode 0600) matched journal SHA-256 `c23d848469142d666df7637eb5e6f6fa67b60fcfbe4ee4ab2e18424770754743` and passed ZIP CRC, canonical-database-only and extracted SQLite checks. Rollback to `217588a` remains available. Served operator assets matched merged source. No physical classroom commands, receiver reloads or production fault injection were used.

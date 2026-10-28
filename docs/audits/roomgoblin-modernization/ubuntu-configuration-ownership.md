@@ -1,5 +1,7 @@
 # Ubuntu screen configuration owns only its configuration fields
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-configuration-ownership).
+
 RG-LAB-018 reproduces screen configuration restoring a maintenance schedule that
 was cancelled while the remote configure request was pending. The same stale
 record replacement discards the cancellation's history and newer metadata.

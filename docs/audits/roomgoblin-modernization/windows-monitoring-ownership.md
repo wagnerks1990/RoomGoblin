@@ -1,5 +1,7 @@
 # Windows monitoring request ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-monitoring-ownership).
+
 Baseline: qualified Windows inventory repair `a225c26`.
 
 RG-LAB-004 reproduced five actual-source failures: old browser history or its

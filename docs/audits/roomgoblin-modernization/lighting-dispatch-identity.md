@@ -1,5 +1,7 @@
 # Lighting command target identity
 
+[Finding classification and immutable source locations](finding-metadata.md#lighting-dispatch-identity).
+
 Baseline: PR #314 head `b631369`.
 
 RG-LIGHTS-008 reproduced three actual-source failures: inherited map properties

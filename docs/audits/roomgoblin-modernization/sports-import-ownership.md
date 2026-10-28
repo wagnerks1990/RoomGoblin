@@ -1,5 +1,7 @@
 # Sports import review ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#sports-import-ownership).
+
 RG-SPORTS-004 reproduces six browser failures: a roster read accepts changed team
 context or changed CSV input, a hidden review survives a tab redraw, changed event
 text can apply an old review, a workspace import replaces newer edits, and a

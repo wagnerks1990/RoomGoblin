@@ -1,5 +1,7 @@
 # Android screenshot preview lifetime
 
+[Finding classification and immutable source locations](finding-metadata.md#android-preview-ownership).
+
 RG-LAB-027 reproduces three failures on the reviewed source: no preview/progress
 while capture is pending, a late capture reopening a closed dialog, and an older
 capture replacing the newest requested image. The normal capture/close control

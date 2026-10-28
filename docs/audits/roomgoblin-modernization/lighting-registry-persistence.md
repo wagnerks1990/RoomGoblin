@@ -1,5 +1,7 @@
 # Lighting metadata and policy persistence
 
+[Finding classification and immutable source locations](finding-metadata.md#lighting-registry-persistence).
+
 Baseline: PR #313 head `44cb9c8`.
 
 RG-LIGHTS-006 has three actual-source failures: failed metadata persistence left

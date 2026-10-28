@@ -1,5 +1,7 @@
 # Ubuntu wizard browser-route readiness
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-wizard-route-fixture).
+
 PR #328 passed its 14 required checks before merge. Its main Firefox run then
 failed one of 289 browser cases: the wizard fingerprint test indexed the second
 held route after the request event but before its route callback had appended it.

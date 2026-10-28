@@ -1,5 +1,7 @@
 # Native Windows command cancellation
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-command-cancellation).
+
 Baseline: reviewed Windows monitoring PR #318 head `6dda633`.
 
 RG-LAB-007 reproduced caller cancellation leaving an owned child process alive

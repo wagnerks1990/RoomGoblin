@@ -1,5 +1,7 @@
 # Sports source refresh and undo ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#sports-refresh-ownership).
+
 RG-SPORTS-003 reproduces three browser failures: a delayed source refresh or Undo
 replaces newer draft edits, and a pending refresh allows overlapping writes.
 An unchanged-draft Undo control already passes.

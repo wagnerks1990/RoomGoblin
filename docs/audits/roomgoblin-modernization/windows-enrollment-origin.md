@@ -1,5 +1,7 @@
 # Native Windows enrollment origin validation
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-enrollment-origin).
+
 RG-LAB-035 reproduces three primary-URL failures: username/password, username-only
 and percent-encoded user information reached configuration and ACL preparation.
 The fallback writer already rejected embedded credentials. The new cases execute

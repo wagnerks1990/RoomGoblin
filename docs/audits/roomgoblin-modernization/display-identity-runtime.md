@@ -1,5 +1,7 @@
 # Receiver identity admission and media access
 
+[Finding classification and immutable source locations](finding-metadata.md#display-identity-runtime).
+
 RG-AUTH-IDENTITY-001 is reproduced with real application HTTP and WebSocket
 listeners and isolated SQLite identities. Exact uppercase IDs were lowercased
 into a different configured receiver, breaking lookup, enrollment and existing

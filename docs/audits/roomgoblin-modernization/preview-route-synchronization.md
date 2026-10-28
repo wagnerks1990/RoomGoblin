@@ -1,5 +1,7 @@
 # Automation preview route synchronization
 
+[Finding classification and immutable source locations](finding-metadata.md#preview-route-synchronization).
+
 Main `2f795675ef0baac86b99b18253574e8d052a639a` passed its PR gates, but the
 subsequent Firefox run failed one of 200 tests: automation obsolete-preview
 coverage asserted two held routes while the second request's route callback had

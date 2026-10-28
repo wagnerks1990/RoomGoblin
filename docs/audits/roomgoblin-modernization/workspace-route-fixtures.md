@@ -1,5 +1,7 @@
 # Workspace held-response fixture readiness
 
+[Finding classification and immutable source locations](finding-metadata.md#workspace-route-fixtures).
+
 PR #330 passed all 14 checks before merge. Its main Firefox run failed when the
 Android screenshot test received a request event before the route callback had
 appended the held response. The first `pending[-1]` access raised `IndexError`;

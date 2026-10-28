@@ -1,5 +1,7 @@
 # Account dialog initial focus
 
+[Finding classification and immutable source locations](finding-metadata.md#account-dialog-focus).
+
 PR #318 main validation failed the Chromium account-dialog keyboard containment
 case, blocking exact image publication. Review reproduced its delayed opening
 callback moving focus after the user selected another field: three actual-source

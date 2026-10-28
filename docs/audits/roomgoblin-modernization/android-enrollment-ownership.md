@@ -1,5 +1,7 @@
 # Android enrollment form and result ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-enrollment-ownership).
+
 RG-LAB-021 reproduces an accepted Android enrollment followed by a null
 currentTarget/reset error. In the real-browser fixture exactly one request was
 accepted, the pairing field stayed populated and the device editor never opened.

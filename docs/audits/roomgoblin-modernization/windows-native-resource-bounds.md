@@ -1,5 +1,7 @@
 # Native Windows command and transfer bounds
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-native-resource-bounds).
+
 Baseline: PR #319 head `32416c9`. RG-LAB-009 reproduces three actual-source
 failures: output buffering retained 67,472,752 bytes while receiving 32 MiB,
 and inherited output pipes outlived both the process deadline and caller

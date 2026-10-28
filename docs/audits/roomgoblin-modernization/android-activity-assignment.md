@@ -1,5 +1,7 @@
 # Android activity display assignments
 
+[Finding classification and immutable source locations](finding-metadata.md#android-activity-assignment).
+
 RG-LAB-038 reproduces three assignment failures in the actual MainActivity URL
 and intent methods. Configuration saves the new display URL and launches an
 existing activity, but its previous URL (or initial placeholder) prevents the

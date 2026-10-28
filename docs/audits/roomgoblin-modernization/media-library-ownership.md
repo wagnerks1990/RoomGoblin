@@ -1,5 +1,7 @@
 # Media conversion, deletion and upload cleanup ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#media-library-ownership).
+
 Baseline: `c338c4de005128141b41ba24ccad1ed9c6e568a1`.
 
 ## RG-MEDIA-007: A deleted document could publish a late PDF

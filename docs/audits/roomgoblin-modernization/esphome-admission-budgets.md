@@ -1,5 +1,7 @@
 # ESPHome authorized admission budgets
 
+[Finding classification and immutable source locations](finding-metadata.md#esphome-admission-budgets).
+
 Baseline: qualified lighting identity repair `e123147`, with PR #313 delivery
 evidence in `7faf08d`.
 

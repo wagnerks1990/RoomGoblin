@@ -1,5 +1,7 @@
 # Weather forecast identity
 
+[Finding classification and immutable source locations](finding-metadata.md#weather-forecast-identity).
+
 RG-WEATHER-001 begins Group 11 with the Weather workspace, scene factory,
 forecast/cache module, HTTP routes and their current tests. The broader Sports
 source review remains open.

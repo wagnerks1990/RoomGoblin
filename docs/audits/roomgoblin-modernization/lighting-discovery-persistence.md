@@ -1,5 +1,7 @@
 # Lighting discovery persistence
 
+[Finding classification and immutable source locations](finding-metadata.md#lighting-discovery-persistence).
+
 Baseline: qualified registry repair `55327cf` on PR #313 head `44cb9c8`.
 
 RG-LIGHTS-007 reproduced five actual-source failures: disabled enrollment

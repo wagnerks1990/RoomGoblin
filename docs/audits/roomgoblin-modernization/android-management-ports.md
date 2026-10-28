@@ -1,5 +1,7 @@
 # Android management port admission
 
+[Finding classification and immutable source locations](finding-metadata.md#android-management-ports).
+
 RG-LAB-039 reproduces four failures: Agent configuration accepts a port below
 1024, silently clamps an excessive port, truncates a fractional port, and
 persistent-ADB bootstrap accepts a target below the Android receiver's range.

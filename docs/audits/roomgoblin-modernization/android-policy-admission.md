@@ -1,5 +1,7 @@
 # Android policy dispatch admission
 
+[Finding classification and immutable source locations](finding-metadata.md#android-policy-admission).
+
 RG-LAB-033 reproduces five failures: disabling/removing an enrollment while
 connection or wake is pending still sends the following command, and overlapping
 policy passes duplicate dispatch. The unchanged enabled policy is a passing

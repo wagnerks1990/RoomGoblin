@@ -1,5 +1,7 @@
 # Receiver video continuity across token renewal
 
+[Finding classification and immutable source locations](finding-metadata.md#media-token-continuity).
+
 Baseline: `19c0cc63c087ed6694181a8362d018fe9120c649`.
 
 ## RG-MEDIA-001: Signed URL renewal replaced a healthy video session

@@ -1,5 +1,7 @@
 # Sports source status identity
 
+[Finding classification and immutable source locations](finding-metadata.md#sports-source-identity).
+
 RG-SPORTS-001 reproduces nine failures in service and loopback HTTP tests. Changed
 URLs, sport/category/level/season mappings and removed sources exposed retired
 status before refresh; late work and restart could also expose it. Save/undo

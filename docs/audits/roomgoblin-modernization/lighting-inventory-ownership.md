@@ -1,5 +1,7 @@
 # Lighting inventory and feedback ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#lighting-inventory-ownership).
+
 Baseline: qualified presentation rebuild integration `83a4b15`.
 
 ## RG-LIGHTS-001: Older reads replaced newer inventory

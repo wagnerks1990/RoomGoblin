@@ -1,5 +1,7 @@
 # Resumable upload completion receipts
 
+[Finding classification and immutable source locations](finding-metadata.md#upload-completion-receipts).
+
 Baseline: `7cff7fdcecfc0e1088fe2a62a3a65b6c1099cb9f`.
 
 ## RG-MEDIA-006: Lost completion replies cannot recover the registered item

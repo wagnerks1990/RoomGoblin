@@ -41,8 +41,11 @@ because they can persist identity/key metadata. Keep the maintenance inventory
 mirror in that barrier, while the read-only maintenance config mirror stays
 available to recovery. Preserve authoritative identity before projection.
 Read `APPLICATION-LIFECYCLE.md` before changing startup order or shutdown. The
-modernization audit records scoped coverage and remaining lifecycle work under
-`docs/audits/roomgoblin-modernization/`.
+modernization [audit index](audits/roomgoblin-modernization/README.md) maps the
+requested subsystems to scoped source review, validation, delivery receipts and
+acceptance limits. Its progress history preserves older status notes; historical
+"pending" statements do not override later delivery receipts. Do not infer a
+whole-repository line-by-line audit or physical-device acceptance from test counts.
 
 Automation timing and task ownership are documented in `AUTOMATION-FRAMEWORK.md`.
 Use monotonic wait duration and a one-second minimum continuing cycle. Keep

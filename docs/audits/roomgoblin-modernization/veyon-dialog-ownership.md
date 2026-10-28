@@ -1,5 +1,7 @@
 # Veyon information-dialog ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#veyon-dialog-ownership).
+
 Baseline: qualified inventory repair `bc1c5c5`.
 
 RG-LAB-002 reproduced a late feature reply overwriting another computer's details
