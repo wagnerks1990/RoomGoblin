@@ -1,5 +1,15 @@
 # RoomGoblin modernization audit
 
+ESPHome admission, controller ownership and worker containment are integrated on
+merged `main` `af76c5a` in three focused commits. Runtime, configuration and tests
+match qualified `f976056` byte for byte; only audit evidence differs. All 51
+focused integration cases pass again, with 2,064 full Linux passes, two root-only
+skips, 23 Host Recovery passes and 83 workspace passes in each browser. Required
+PR/main checks and this batch's backed-up delivery remain separate gates.
+[Group 9 coverage](lighting-esphome-review.md) records preserved capabilities and
+physical-acceptance limits. Group 10 review has reproduced four Veyon metadata/
+inventory races and two information-dialog races for the next focused repairs.
+
 The [ESPHome worker repair](esphome-worker-ownership.md) reproduces six process/
 pipe and discovery-completion failures. All 20 new regressions and 51 focused
 ESPHome cases pass. Final qualification passes 2,064 Linux tests, zero failures,
