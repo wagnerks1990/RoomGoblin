@@ -76,12 +76,13 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
   </section>
   <div class="top lab-inventory-heading"><h2>Computers <span id="inventoryCount" class="muted" role="status"></span></h2><div class="lab-filters"><label>Find a computer<input id="computerSearch" type="search" placeholder="Name, user or address" oninput="render()"></label><label>Status<select id="computerStatus" onchange="render()"><option value="all">All computers</option><option value="online">Online</option><option value="offline">Offline</option><option value="selected">Selected</option></select></label><label>View<select id="computerDensity" onchange="setComputerDensity(this.value)"><option value="compact">Compact</option><option value="comfortable">Comfortable</option></select></label></div></div>
 
+  <p id="labInventoryStatus" class="muted" role="status"></p>
   <div id="computerGrid" class="grid" data-density="compact"><div class="muted">Loading…</div></div>
 
   <dialog id="aiAlertDialog" aria-label="AI usage alerts">
     <div class="top">
       <div><h2>AI Usage Alerts</h2><div id="aiAlertMeta" class="muted"></div></div>
-      <button onclick="aiAlertDialog.close()">Close</button>
+      <button onclick="closeAiAlerts()">Close</button>
     </div>
     <div class="panel">
       <div class="toolbar">
@@ -231,7 +232,7 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
       <div class="toolbar">
         <button onclick="exportHistory('csv')">Export CSV</button>
         <button onclick="exportHistory('json')">Export JSON</button>
-        <button onclick="historyDialog.close()">Close</button>
+        <button onclick="closeHistoryView()">Close</button>
       </div>
     </div>
 
@@ -286,13 +287,32 @@ async function api(url,opt){const r=await fetch(url,opt);let j={};try{j=await r.
 function fmtUptime(s){s=Number(s)||0;const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);return d?`${d}d ${h}h`:`${h}h ${m}m`}
 function fmtTime(v){const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleString()}
 function cacheBustUrl(value){return `${String(value||'')}\u0026t=${Date.now()}`}
-async function loadAll(){try{inventory=await api('/api/v1/lab/computers');render();refreshAiSummary()}catch(e){computerGrid.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
+let labInventoryRevision=0,labInventoryBusy=false,labInventoryRefreshPending=false,labInventoryLoaded=false,labMetadataCount=0,labMetadataTail=Promise.resolve();
+function queueLabMetadata(action){
+ if(labMetadataCount>=16)return Promise.reject(Error('Computer changes are still pending. Wait for them to finish.'));
+ labInventoryRevision++;labMetadataCount++;labInventoryRefreshPending=true;
+ const work=labMetadataTail.then(action);labMetadataTail=work.catch(()=>{});
+ return work.finally(()=>{labInventoryRevision++;labMetadataCount--;if(!labMetadataCount)loadAll()});
+}
+async function loadAll(){
+ if(labInventoryBusy||labMetadataCount){labInventoryRefreshPending=true;return}
+ labInventoryBusy=true;labInventoryRefreshPending=false;const revision=labInventoryRevision;
+ try{
+  const next=await api('/api/v1/lab/computers');if(revision!==labInventoryRevision)return;
+  inventory=next;labInventoryLoaded=true;labInventoryStatus.textContent='';render();refreshAiSummary();
+ }catch(e){
+  if(revision!==labInventoryRevision)return;
+  labInventoryStatus.textContent=`Inventory could not refresh: ${e.message}. ${labInventoryLoaded?'Showing the last available inventory.':'Use Refresh to try again.'}`;
+  if(!labInventoryLoaded)computerGrid.innerHTML='<div class="muted">Computer inventory is unavailable.</div>';
+ }finally{labInventoryBusy=false;if(labInventoryRefreshPending&&!labMetadataCount)loadAll()}
+}
 function visibleComputers(){
  const query=computerSearch.value.trim().toLowerCase(),status=computerStatus.value;
  return inventory.computers.filter(c=>(status==='all'||(status==='online'&&c.online)||(status==='offline'&&!c.online)||(status==='selected'&&selected.has(c.id)))&&[c.name,c.hostname,c.id,c.ip,c.user].some(v=>String(v||'').toLowerCase().includes(query)));
 }
 function setComputerDensity(value){computerGrid.dataset.density=value==='comfortable'?'comfortable':'compact'}
 function render(){
+ const focused=document.activeElement,focusCard=focused?.closest('[data-computer-id]'),focusKey=focusCard&&computerGrid.contains(focused)?{id:focusCard.dataset.computerId,control:focused.dataset.labFocus}:null;
  total.textContent=inventory.summary.total;online.textContent=inventory.summary.online;offline.textContent=inventory.summary.offline;
  configState.textContent=inventory.configured?'Agent enrollment enabled':'LAB_AGENT_TOKEN NOT SET';configState.className='pill '+(inventory.configured?'good':'bad');
  const valid=new Set(inventory.computers.map(x=>x.id));for(const id of [...selected])if(!valid.has(id))selected.delete(id);
@@ -300,16 +320,17 @@ function render(){
  const expanded=new Set([...computerGrid.querySelectorAll('[data-computer-id] details[open]')].map(d=>d.closest('[data-computer-id]').dataset.computerId));
  const visible=visibleComputers();const hiddenSelected=selected.size-visible.filter(c=>selected.has(c.id)).length;selectionCount.textContent=`${selected.size} selected${hiddenSelected?` · ${hiddenSelected} hidden by filters`:""}`;inventoryCount.textContent=`${visible.length} / ${inventory.computers.length}`;
  computerGrid.innerHTML=visible.map(c=>{const site=c.latestWebsite,arg=jsArg(c.id);return `<div data-computer-id="${esc(c.id)}" class="card ${c.online?'online':'offline'} ${selected.has(c.id)?'selected':''}">
- <div class="computerHead"><label><input type="checkbox" ${selected.has(c.id)?'checked':''} onchange="toggle(${arg},this.checked)"> <b>${esc(c.name||c.hostname||c.id)}</b></label><span class="pill ${c.online?'good':'bad'}">${c.online?'ONLINE':'OFFLINE'}</span></div>
+ <div class="computerHead"><label><input data-lab-focus="select" type="checkbox" ${selected.has(c.id)?'checked':''} onchange="toggle(${arg},this.checked)"> <b>${esc(c.name||c.hostname||c.id)}</b></label><span class="pill ${c.online?'good':'bad'}">${c.online?'ONLINE':'OFFLINE'}</span></div>
  <div class="muted">${esc(c.hostname||c.id)} • ${esc(c.ip||'No IP')}</div>
  <div class="row"><b>User:</b><span>${esc(c.user||'No interactive user')}</span></div>
- <details class="computer-details" ${expanded.has(String(c.id))?'open':''}><summary>Device &amp; activity details</summary><div class="row"><b>OS:</b><span class="muted">${esc(c.os||'—')}</span></div>
+ <details class="computer-details" ${expanded.has(String(c.id))?'open':''}><summary data-lab-focus="details">Device &amp; activity details</summary><div class="row"><b>OS:</b><span class="muted">${esc(c.os||'—')}</span></div>
  <div class="row"><b>Uptime:</b><span>${fmtUptime(c.uptimeSeconds)}</span></div>
  <div style="margin-top:9px;border-top:1px solid var(--border);padding-top:8px"><div class="muted">Latest browser activity</div>
  ${site?`<b>${esc(site.title||site.domain||'Website')}</b><br><span class="url">${esc(site.domain||site.url)}</span><br><span class="muted">${fmtTime(site.visitTime)} • ${esc(site.browser||'Browser')}</span>`:'<span class="muted">No recent history reported.</span>'}</div>
- </details><div class="toolbar" style="margin-top:10px"><button onclick="showHistory(${arg})">History</button><button onclick="showScreen(${arg})">Screen</button><button onclick="quickMessage(${arg})">Message</button><button onclick="showLastCommand(${arg})">Last Command</button><button onclick="editComputer(${arg})">Edit</button></div>
+ </details><div class="toolbar" style="margin-top:10px"><button data-lab-focus="history" onclick="showHistory(${arg})">History</button><button data-lab-focus="screen" onclick="showScreen(${arg})">Screen</button><button data-lab-focus="message" onclick="quickMessage(${arg})">Message</button><button data-lab-focus="last-command" onclick="showLastCommand(${arg})">Last Command</button><button data-lab-focus="edit" onclick="editComputer(${arg})">Edit</button></div>
  ${c.lastCommand?`<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px"><div class="muted">Last command</div><b>${esc(c.lastCommand.action||'')}</b> • <span class="${c.lastCommand.status==='failed'?'bad':(c.lastCommand.status==='completed'?'good':'')}">${esc(c.lastCommand.status||'')}</span>${c.lastCommand.message?`<br><span class="muted">${esc(c.lastCommand.message)}</span>`:''}</div>`:''}
  </div>`}).join('')||(inventory.computers.length?'<div class="muted">No computers match these filters. Clear the search or change status.</div>':'<div class="muted">No lab agents enrolled yet.</div>');
+ if(focusKey?.control)computerGrid.querySelector(`[data-computer-id="${CSS.escape(focusKey.id)}"] [data-lab-focus="${CSS.escape(focusKey.control)}"]`)?.focus({preventScroll:true});
 }
 function toggle(id,on){if(on)selected.add(id);else selected.delete(id);render()}function selectAll(on){const visible=visibleComputers();selected.clear();if(on)visible.forEach(x=>selected.add(x.id));render()}
 function selectOnline(){const visible=visibleComputers();selected.clear();visible.filter(x=>x.online).forEach(x=>selected.add(x.id));render()}function targets(){const a=[...selected];if(!a.length)throw Error('Select at least one computer.');return a}
@@ -317,7 +338,14 @@ async function command(action,payload={}){const j=await api('/api/v1/lab/command
 async function sendAction(action){if(['restart','shutdown','logoff'].includes(action)&&!confirm(`${action.toUpperCase()} ${selected.size} selected computer(s)?`))return;try{await command(action)}catch(e){alert(e.message)}}
 async function sendMessage(){const text=prompt('Message to selected computers:');if(!text)return;try{await command('message',{title:'Message from Instructor',text})}catch(e){alert(e.message)}}
 async function quickMessage(id){selected.clear();selected.add(id);render();return sendMessage()}
-let currentHistoryComputer=null;
+let currentHistoryComputer=null,historyGeneration=0,historyReadGeneration=0;
+function currentHistory(id,generation,request=historyReadGeneration){return historyDialog.open&&currentHistoryComputer===id&&historyGeneration===generation&&historyReadGeneration===request}
+function closeHistoryView(closeDialog=true){
+ historyGeneration++;historyReadGeneration++;currentHistoryComputer=null;
+ historyRows.innerHTML='';historyMeta.textContent='';historyUser.innerHTML='<option value="">All users</option>';
+ if(closeDialog&&historyDialog.open)historyDialog.close();
+}
+historyDialog.addEventListener('close',()=>{if(!historyDialog.open)closeHistoryView(false)});
 function historyQuery(){
   const q=new URLSearchParams();
   const h=historyHours.value;if(h)q.set('hours',h);
@@ -329,7 +357,9 @@ function historyQuery(){
   return q;
 }
 async function showHistory(id){
-  currentHistoryComputer=id;
+  const generation=++historyGeneration,request=++historyReadGeneration;currentHistoryComputer=id;
+  historyRows.innerHTML='<tr><td colspan="14" class="muted">Loading…</td></tr>';
+  historyUser.innerHTML='<option value="">All users</option>';
   const comp=inventory.computers.find(x=>x.id===id);
   historyTitle.textContent=`Browser History — ${comp?.name||comp?.hostname||id}`;
   historyMeta.textContent=`Retention: ${inventory.retentionHours} hour(s) (${Math.round(inventory.retentionHours/24)} days)`;
@@ -337,19 +367,24 @@ async function showHistory(id){
 
   try{
     const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/history?hours=${inventory.retentionHours}&limit=5000`);
+    if(!currentHistory(id,generation))return;
+    const selectedProfile=historyUser.value;
     const users=[...new Set((j.history||[]).map(x=>String(x.profile||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     historyUser.innerHTML='<option value="">All users</option>'+users.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
+    if(users.includes(selectedProfile))historyUser.value=selectedProfile;
   }catch{
-    historyUser.innerHTML='<option value="">All users</option>';
+    if(currentHistory(id,generation,request))historyUser.innerHTML='<option value="">All users</option>';
   }
 
-  await applyHistoryFilters();
+  if(currentHistory(id,generation,request))await applyHistoryFilters();
 }
 async function applyHistoryFilters(){
-  if(!currentHistoryComputer)return;
+  if(!currentHistoryComputer||!historyDialog.open)return;
+  const id=currentHistoryComputer,generation=historyGeneration,request=++historyReadGeneration;
   historyRows.innerHTML='<tr><td colspan="14" class="muted">Loading…</td></tr>';
   try{
-    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(currentHistoryComputer)}/history?${historyQuery()}`);
+    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/history?${historyQuery()}`);
+    if(!currentHistory(id,generation,request))return;
     historyMeta.textContent=`Showing ${j.history.length} of ${j.total} matching record(s) • retention ${Math.round(inventory.retentionHours/24)} days`;
     historyRows.innerHTML=(j.history||[]).map(x=>`<tr>
       <td>${fmtTime(x.visitTime)}</td>
@@ -368,7 +403,7 @@ async function applyHistoryFilters(){
       <td>${esc(x.recordId||'')}</td>
     </tr>`).join('')||'<tr><td colspan="14" class="muted">No history matches these filters.</td></tr>';
   }catch(e){
-    historyRows.innerHTML=`<tr><td colspan="14" class="bad">${esc(e.message)}</td></tr>`;
+    if(currentHistory(id,generation,request))historyRows.innerHTML=`<tr><td colspan="14" class="bad">${esc(e.message)}</td></tr>`;
   }
 }
 function clearHistoryFilters(){
@@ -384,24 +419,48 @@ function exportHistory(format){
   const q=historyQuery();q.set('format',format);q.delete('limit');
   window.location=`/api/v1/lab/computers/${encodeURIComponent(currentHistoryComputer)}/history/export?${q}`;
 }
-async function editComputer(id){const c=inventory.computers.find(x=>x.id===id);if(!c)return;const name=prompt('Friendly name:',c.name||c.hostname||id);if(name===null)return;const groupsText=prompt('Groups (comma separated):',(c.groups||[]).join(', '));if(groupsText===null)return;const groups=groupsText.split(',').map(x=>x.trim()).filter(Boolean);try{await api(`/api/v1/lab/computers/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})});loadAll()}catch(e){alert(e.message)}}
+async function editComputer(id){const c=inventory.computers.find(x=>x.id===id);if(!c)return;const name=prompt('Friendly name:',c.name||c.hostname||id);if(name===null)return;const groupsText=prompt('Groups (comma separated):',(c.groups||[]).join(', '));if(groupsText===null)return;const groups=groupsText.split(',').map(x=>x.trim()).filter(Boolean);try{await queueLabMetadata(()=>api(`/api/v1/lab/computers/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})}))}catch(e){alert(e.message)}}
 
 
-let aiLoadTimer=null;
-function debouncedAiLoad(){clearTimeout(aiLoadTimer);aiLoadTimer=setTimeout(loadAiAlerts,300)}
+let aiLoadTimer=null,aiCaptureTimer=null,aiDialogGeneration=0,aiReadGeneration=0,aiSummaryGeneration=0,aiActionPending=false;
+function currentAiDialog(generation,request=aiReadGeneration){return aiAlertDialog.open&&generation===aiDialogGeneration&&request===aiReadGeneration}
+function closeAiAlerts(closeDialog=true){
+  aiDialogGeneration++;aiReadGeneration++;
+  clearTimeout(aiLoadTimer);clearTimeout(aiCaptureTimer);aiLoadTimer=null;aiCaptureTimer=null;
+  aiAlertList.innerHTML='';aiAlertMeta.textContent='';
+  if(closeDialog&&aiAlertDialog.open)aiAlertDialog.close();
+}
+aiAlertDialog.addEventListener('close',()=>{if(!aiAlertDialog.open)closeAiAlerts(false)});
+function debouncedAiLoad(){
+  aiReadGeneration++;clearTimeout(aiLoadTimer);
+  if(!aiAlertDialog.open)return;
+  const generation=aiDialogGeneration;
+  aiLoadTimer=setTimeout(()=>{if(currentAiDialog(generation))loadAiAlerts()},300);
+}
 async function refreshAiSummary(){
+  if(aiActionPending)return;
+  const request=++aiSummaryGeneration;
   try{
     const j=await api('/api/v1/lab/ai-monitor?hours=24&limit=5');
+    if(request!==aiSummaryGeneration)return;
     aiMonitorState.textContent=j.enabled?'ENABLED':'DISABLED';
     aiMonitorState.className='pill '+(j.enabled?'good':'bad');
     aiNewCount.textContent=j.summary.new;
     aiTotalCount.textContent=j.summary.total;
     const a=j.alerts?.[0];
     aiLatestSummary.textContent=a?`${a.profile||a.windowsUser||'Unknown user'} • ${a.domain} • ${fmtTime(a.createdAt)}`:'No AI alerts.';
-  }catch(e){aiMonitorState.textContent='ERROR';aiMonitorState.className='pill bad'}
+  }catch(e){if(request===aiSummaryGeneration){aiMonitorState.textContent='ERROR';aiMonitorState.className='pill bad'}}
 }
-async function openAiAlerts(){aiAlertDialog.showModal();await loadAiAlerts()}
+async function openAiAlerts(){
+  aiDialogGeneration++;aiReadGeneration++;clearTimeout(aiLoadTimer);clearTimeout(aiCaptureTimer);
+  aiAlertList.innerHTML='';aiAlertMeta.textContent='';aiAlertDialog.showModal();await loadAiAlerts();
+}
 async function loadAiAlerts(){
+  if(!aiAlertDialog.open)return;
+  clearTimeout(aiLoadTimer);
+  const generation=aiDialogGeneration,request=++aiReadGeneration;
+  if(aiActionPending){aiAlertMeta.textContent='An alert action is still pending. Wait for it to finish.';return}
+  aiAlertMeta.textContent='Loading alerts…';aiAlertList.innerHTML='';
   try{
     const q=new URLSearchParams();
     if(aiStatus.value)q.set('status',aiStatus.value);
@@ -410,6 +469,7 @@ async function loadAiAlerts(){
     if(aiTextSearch.value.trim())q.set('search',aiTextSearch.value.trim());
     q.set('limit','300');
     const j=await api(`/api/v1/lab/ai-monitor?${q}`);
+    if(!currentAiDialog(generation,request))return;
     aiAlertMeta.textContent=`${j.alerts.length} alert(s) shown • cooldown ${j.cooldownMinutes} min`;
     aiAlertList.innerHTML=(j.alerts||[]).map(a=>`<div class="card">
       <div class="computerHead">
@@ -427,22 +487,37 @@ async function loadAiAlerts(){
         <button onclick="setAiAlertStatus(${jsArg(a.id)},'dismissed')">Dismiss</button>
       </div>
     </div>`).join('')||'<div class="muted">No alerts match these filters.</div>';
-  }catch(e){aiAlertList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
+  }catch(e){if(currentAiDialog(generation,request)){aiAlertMeta.textContent='Alerts could not refresh.';aiAlertList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
 }
 
-async function captureAiAlert(id){
+async function performAiAlertAction(url,options,capture=false){
+  if(!aiAlertDialog.open)return false;
+  if(aiActionPending){aiAlertMeta.textContent='An alert action is still pending. Wait for it to finish.';return false}
+  const generation=aiDialogGeneration;
+  aiActionPending=true;aiReadGeneration++;aiSummaryGeneration++;
+  clearTimeout(aiLoadTimer);clearTimeout(aiCaptureTimer);aiAlertMeta.textContent='Sending alert action…';
+  let completed=false;
   try{
-    await api(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}/capture`,{method:'POST'});
-    aiAlertMeta.textContent='Screenshot requested. Refreshing…';
-    setTimeout(loadAiAlerts,1500);
-  }catch(e){alert(e.message)}
+    await api(url,options);completed=true;
+  }catch(e){if(currentAiDialog(generation))aiAlertMeta.textContent=`Alert action failed: ${e.message}`}
+  finally{aiActionPending=false;aiReadGeneration++;aiSummaryGeneration++;refreshAiSummary()}
+  if(!currentAiDialog(generation)){if(aiAlertDialog.open)loadAiAlerts();return completed}
+  if(completed){
+    if(capture){
+      aiAlertMeta.textContent='Screenshot requested. Refreshing…';
+      aiCaptureTimer=setTimeout(()=>{if(currentAiDialog(generation))loadAiAlerts()},1500);
+    }else await loadAiAlerts();
+  }
+  return completed;
+}
+async function captureAiAlert(id){
+  return performAiAlertAction(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}/capture`,{method:'POST'},true);
 }
 
 async function setAiAlertStatus(id,status){
-  await api(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}`,{
+  return performAiAlertAction(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}`,{
     method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})
   });
-  await loadAiAlerts();await refreshAiSummary();
 }
 
 
@@ -500,14 +575,17 @@ let currentScreenComputer=null;
 let liveScreenTimer=null;
 let liveScreenRequest=null;
 let liveScreenGeneration=0;
+let screenHistoryGeneration=0;
 
+function screenSurfaceVisible(){return !document.hidden&&window.RoomGoblinEmbeddedViewport?.visible!==false}
 async function captureScreenFrame(id,save=false){
+  if(!screenSurfaceVisible()||!screenDialog.open||currentScreenComputer!==id)return false;
   const generation=liveScreenGeneration;
   if(liveScreenRequest?.id===id&&!save)return;
   const request={id,generation};
   liveScreenRequest=request;
   try{
-    await api('/api/v1/lab/command',{
+    const result=await api('/api/v1/lab/command',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -516,15 +594,22 @@ async function captureScreenFrame(id,save=false){
         payload:{quality:save?85:65,save}
       })
     });
+    if(!Array.isArray(result.deliveries)||!result.deliveries.some(row=>row.id===id&&row.delivered===true))throw Error('Screenshot request was not delivered to this computer.');
 
     // Give the helper time to capture and Hub time to receive the JPEG.
     await new Promise(r=>setTimeout(r,1000));
 
-    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request)return;
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request||!screenDialog.open||!screenSurfaceVisible())return;
     screenImage.src=`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshot?t=${Date.now()}`;
-    screenMeta.textContent=`Live view updated • ${new Date().toLocaleTimeString()}`;
+    screenImage.hidden=false;
+    screenMeta.textContent='Capture requested. The latest available image may predate this request.';
+    liveScreenState.textContent='REFRESH • 5 sec';liveScreenState.className='pill good';
 
     if(save&&currentScreenComputer===id&&liveScreenGeneration===generation)await loadScreenHistory();
+    return true;
+  }catch(error){
+    if(currentScreenComputer===id&&liveScreenGeneration===generation&&liveScreenRequest===request&&screenDialog.open){screenMeta.textContent=`Capture unavailable: ${error.message}`;liveScreenState.textContent='CAPTURE UNCONFIRMED';liveScreenState.className='pill warn'}
+    return false;
   }finally{
     if(liveScreenRequest===request)liveScreenRequest=null;
   }
@@ -544,31 +629,35 @@ async function showScreen(id){
   currentScreenComputer=id;
   const comp=inventory.computers.find(x=>x.id===id);
   screenTitle.textContent=`Live Screen — ${comp?.name||comp?.hostname||id}`;
+  screenMeta.textContent='Requesting a capture…';
   screenDialog.showModal();
-  liveScreenState.textContent='LIVE • 5 sec';
+  liveScreenState.textContent='REFRESH • 5 sec';
   liveScreenState.className='pill good';
 
   await captureScreenFrame(id,false);
-  if(currentScreenComputer!==id||liveScreenGeneration!==generation)return;
+  if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open)return;
   await loadScreenHistory();
-  if(currentScreenComputer!==id||liveScreenGeneration!==generation)return;
+  if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open)return;
 
   liveScreenTimer=setInterval(()=>{
-    if(currentScreenComputer&&screenDialog.open)
+    if(currentScreenComputer&&screenDialog.open&&screenSurfaceVisible())
       captureScreenFrame(currentScreenComputer,false).catch(()=>{});
   },5000);
 }
 
 function closeScreenView(closeDialog=true){
-  liveScreenGeneration++;
+  liveScreenGeneration++;screenHistoryGeneration++;
   if(liveScreenTimer){
     clearInterval(liveScreenTimer);
     liveScreenTimer=null;
   }
   currentScreenComputer=null;
   liveScreenRequest=null;
+  screenImage.removeAttribute('src');screenImage.hidden=true;
+  screenHistory.innerHTML='';screenHistoryMeta.textContent='';screenMeta.textContent='';
   if(closeDialog&&screenDialog.open)screenDialog.close();
 }
+screenDialog.addEventListener('close',()=>{if(!screenDialog.open)closeScreenView(false)});
 
 async function refreshCurrentScreen(){
   if(currentScreenComputer)await captureScreenFrame(currentScreenComputer,false);
@@ -576,12 +665,14 @@ async function refreshCurrentScreen(){
 
 async function saveCurrentScreenshot(){
   if(!currentScreenComputer)return;
+  const id=currentScreenComputer,generation=liveScreenGeneration;
   try{
     screenMeta.textContent='Saving screenshot…';
-    await captureScreenFrame(currentScreenComputer,true);
-    screenMeta.textContent=`Screenshot saved • ${new Date().toLocaleTimeString()}`;
+    const accepted=await captureScreenFrame(id,true);
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open||!accepted)return;
+    screenMeta.textContent='Screenshot requested. Check saved history for completion.';
     await loadAll();
-  }catch(e){alert(e.message)}
+  }catch(e){if(currentScreenComputer===id&&liveScreenGeneration===generation&&screenDialog.open)alert(e.message)}
 }
 
 function downloadCurrentScreen(){
@@ -596,23 +687,30 @@ function openCurrentScreen(){
   window.open(`/api/v1/lab/computers/${encodeURIComponent(currentScreenComputer)}/screenshot?t=${Date.now()}`,'_blank');
 }
 async function loadScreenHistory(){
-  if(!currentScreenComputer)return;
+  if(!currentScreenComputer||!screenDialog.open)return;
+  const id=currentScreenComputer,generation=liveScreenGeneration,request=++screenHistoryGeneration;
   try{
-    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(currentScreenComputer)}/screenshots?limit=50`);
+    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshots?limit=50`);
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||screenHistoryGeneration!==request||!screenDialog.open)return;
     screenHistoryMeta.textContent=`${j.screenshots.length} saved screenshot(s) • retained ${j.retentionDays} day(s)`;
     screenHistory.innerHTML=(j.screenshots||[]).map(x=>`<div class="card">
       <img src="${esc(x.url)}&amp;t=${Date.now()}" alt="Screenshot" style="width:100%;max-height:150px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">
       <div style="margin-top:6px"><b>${fmtTime(x.capturedAt)}</b></div>
       <div class="muted">${x.bytes?Math.round(x.bytes/1024)+' KB':''}</div>
       <div class="toolbar" style="margin-top:6px">
-        <button onclick="screenImage.src=${jsArg(cacheBustUrl(x.url))}">View</button>
+        <button onclick="viewSavedScreenshot(${jsArg(x.url)})">View</button>
         <button onclick="window.open(${jsArg(x.url)},'_blank','noopener')">Full Size</button>
         <button onclick="window.location=${jsArg(x.downloadUrl)}">Download</button>
       </div>
     </div>`).join('')||'<div class="muted">No saved screenshots yet.</div>';
   }catch(e){
-    screenHistory.innerHTML=`<div class="bad">${esc(e.message)}</div>`;
+    if(currentScreenComputer===id&&liveScreenGeneration===generation&&screenHistoryGeneration===request&&screenDialog.open)screenHistory.innerHTML=`<div class="bad">${esc(e.message)}</div>`;
   }
+}
+
+function viewSavedScreenshot(url){
+  if(!currentScreenComputer||!screenDialog.open)return;
+  screenImage.src=cacheBustUrl(url);screenImage.hidden=false;
 }
 
 async function openPresetDialog(){

@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- Preserve current AI-alert filters and closed-view privacy, contain pending
+  action failures, and suspend Windows screenshot requests in hidden views.
+
+- Keep Windows history and screenshot replies with the current computer, clear
+  closed monitoring views, and distinguish capture requests from confirmed saves.
+
+- Preserve Windows lab inventory and keyboard focus through polling, report stale
+  reads clearly, and order metadata saves before refreshing current state.
+
 - Keep Veyon information dialogs owned by their current request and prevent late
   connection-pool cleanup from closing a newer computer-details dialog.
 

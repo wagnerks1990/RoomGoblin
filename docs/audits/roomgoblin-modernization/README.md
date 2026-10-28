@@ -1,5 +1,37 @@
 # RoomGoblin modernization audit
 
+PR #317 is [deployed and verified](veyon-reliability-delivery.md). PR #318's
+Windows monitoring review findings are repaired locally with three additional
+regressions. The [AI-alert and hidden-capture follow-up](windows-alert-ownership.md)
+is joining that batch after passing 2,146 Linux tests, two root-only skips, 23
+Host Recovery tests and 101 browser cases per engine. Final combined qualification
+passes all 66 focused cases, 2,149 Linux tests with two root-only skips, 23 Host
+Recovery tests and 103 browser cases per engine. Fresh CI and delivery follow.
+Native command cancellation remains reproduced for its own repair.
+
+Windows inventory and monitoring are integrated on merged main `1a005b2`.
+Runtime, configuration and tests in `1cf2b1f` match qualified `a37e087` byte for
+byte; only this audit retains the additional Veyon integration evidence. All 39
+focused integration cases pass again. Required PR/main checks and this batch's
+exact image delivery remain pending.
+
+Current delivery: PR #316 is [deployed and verified](esphome-reliability-delivery.md)
+at `f741866`. PR #317 passed all 14 checks and merged as `1a005b2`; its exact image
+publication precedes the backed-up update. The Windows inventory repair is
+qualified, and [monitoring ownership](windows-monitoring-ownership.md) now passes
+20 new Node cases, 39 focused cases, 2,122 Linux tests with two root-only skips,
+23 Host Recovery tests and 98 browser cases in each engine. AI-alert ownership,
+hidden captures and native command cancellation have reproduced follow-up
+findings; the rest of Group 10 remains in progress. Earlier entries below
+record their status at qualification time.
+
+The [Windows inventory repair](windows-inventory-ownership.md) is qualified with
+12 new Node regressions and three browser cases: 2,102 Linux passes, two root-only
+skips, 23 Host Recovery passes and 95 browser cases per engine. Five separate
+history/screenshot ownership defects are reproduced for the monitoring follow-up.
+PR #316 passed all 14 fresh checks and merged as `f741866`; its exact main
+publication and backed-up update are pending. Veyon integration follows that main.
+
 The two Veyon repairs are integrated on merged `main` `f741866`. Before this
 evidence note, `3201487` is byte-identical to qualified `43d2645`; all 37 focused
 integration cases pass again. Final qualification passes 2,090 Linux tests,
