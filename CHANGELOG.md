@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve newer Sports drafts during source refresh and Undo, and serialize
+  workspace writes so overlapping responses cannot replace current edits.
+
 - Preserve newer Sports edits during saves and reject delayed scene responses
   after a draft edit or board-view change.
 

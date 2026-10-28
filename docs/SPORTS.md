@@ -150,6 +150,11 @@ details; failed saves preserve the previous configuration and undo snapshot.
 
 ## API and storage
 
+Save, source refresh and Undo permit one pending workspace write at a time.
+Refresh or Undo completion preserves edits made while waiting. Those newer edits
+retain their original revision; reload saved Sports to reconcile server changes
+before saving again. Failed requests preserve the draft and permit retry.
+
 `GET/PUT /api/v1/sports` reads/saves configuration. Saves require the current
 `revision` and return 409 for stale drafts. `POST /undo` swaps the preceding staff
 save; `POST /refresh` refreshes approved sources. `POST /import/roster` accepts a

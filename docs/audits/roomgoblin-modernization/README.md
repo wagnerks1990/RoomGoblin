@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+PR #336 is [deployed and verified](android-native-delivery.md) at `7ddeade`
+after all required checks and exact image publication. The next Sports batch
+repairs [refresh and Undo ownership](sports-refresh-ownership.md); three browser
+failures are reproduced and fixed. Import review and the remaining roadmap
+continue separately.
+
 PR #330 is [deployed and verified](android-shell-lifecycle-delivery.md) at `92adafe`
 after all 14 PR checks, required main gates and exact publication passed. Its
 [shell/output](android-shell-ownership.md) and
