@@ -189,6 +189,10 @@ Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 
+Late volume or mute responses cannot overwrite newer acknowledged TV settings.
+Changing the Music Assistant connection retires pending command completions;
+refresh before sending another command. Current priority controls remain intact.
+
 If a TV audio command loses its response, Outputs & connection shows that audio
 settings are unconfirmed. RoomGoblin waits for matching receiver telemetry and
 does not automatically repeat the command. Reconnecting the display permits a

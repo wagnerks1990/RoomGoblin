@@ -1,5 +1,10 @@
 # AI Project Context
 
+Music command acknowledgments retain per-receiver/per-field order while their
+handlers are pending. Later confirmed writes win; failures do not erase older
+confirmed values. Release tracking in finally, and recheck connection generation
+before compensation or persistence. Preserve returned handler writer ownership.
+
 Music Assistant HTTP transport/body/parse failures retain uncertain execution
 through fallback. TV audio restoration must not replay them. Current matching
 telemetry may confirm audio without a write; explicit reconnect starts a new
