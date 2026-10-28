@@ -66,7 +66,9 @@ leak after interruption. All five process JVM cases pass; the combined source
 retains 2,428 Linux passes, two skips, all 23 Host Recovery cases and all 16 JVM
 cases. PR #335 carries the port and process repairs. Its CI encountered unrelated
 SQLite contention while seeding a fixture; the [bounded fixture repair](freeze-fixture-contention.md)
-passes 20 consecutive cases and requires fresh CI before merging.
+passes 20 consecutive cases. All 14 fresh checks passed before PR #335 merged
+as `bfa6857`. Exact publication passed after a registry-error retry; its
+[backed-up delivery is verified](android-hardening-delivery.md).
 
 [Native PCM ownership](android-pcm-ownership.md) fixes two reproduced worker and
 failed-start defects. All five Kotlin fixture cases pass, and the combined tree
@@ -83,7 +85,29 @@ implemented controls and their permission gates. All 22 capability cases pass.
 The combined native batch passes 2,428 Linux tests, zero failures, two root-only
 skips, all 23 Host Recovery cases and all 55 JVM cases. This finishes the native
 Android source-review batch; checked delivery and physical acceptance remain
-separate. Weather/Sports review follows; the remaining roadmap is open. Earlier delivery receipts include
+separate. Weather/Sports review has started.
+[Weather forecast identity](weather-forecast-identity.md) repairs three reproduced
+stale-reading/preview failures. All seven Weather browser cases pass in Chromium
+and Firefox. Full Linux qualification passes 2,428 tests, two root-only skips,
+all 23 Host Recovery cases and all 55 JVM cases. Checked delivery remains pending.
+[Weather save ownership](weather-save-ownership.md) fixes three additional
+reproduced save/read races. All ten Weather browser cases pass in Chromium and
+Firefox. Combined full Linux qualification passes 2,428 tests, two root-only
+skips, all 23 Host Recovery cases and all 55 JVM cases.
+[Weather theme contrast](weather-theme-contrast.md) repairs reproduced light and
+system-light contrast failures. All 13 Weather cases pass in each browser, with
+mobile/desktop visual inspection. Combined full Linux qualification passes 2,428
+tests, two root-only skips, all 23 Host Recovery cases and all 55 JVM cases.
+[Sports source identity](sports-source-identity.md) fixes nine reproduced
+service/HTTP failures. All 41 targeted cases pass, along with 2,438 Linux tests,
+two root-only skips, all 23 Host Recovery and all 55 JVM cases. Existing Sports
+browser cases pass 10 per engine. Checked delivery remains pending; Sports
+workspace review continues.
+[Sports save/scene ownership](sports-workspace-ownership.md) fixes four reproduced
+browser races. All 15 Sports cases pass in each engine. The final combined Linux
+qualification passes 2,438 tests, two root-only skips, all 23 Host Recovery cases
+and all 55 JVM cases.
+The remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
 [PR #326](ubuntu-repair-wizard-delivery.md),

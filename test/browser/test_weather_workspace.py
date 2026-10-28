@@ -101,3 +101,75 @@ class WeatherWorkspaceBrowserTests(unittest.TestCase):
         self.assertTrue(page.get_by_role('button', name='Send full-screen weather', exact=True).is_hidden())
         self.assertTrue(page.get_by_role('button', name='Create shared weather overlay', exact=True).is_visible())
         self.assertEqual(errors, [])
+
+    def test_unavailable_forecast_clears_previous_readings_and_preview(self):
+        page, errors, requests = weather_page(self)
+        page.get_by_role('button', name='Preview weather layout', exact=True).click()
+        page.locator('.weatherPreviewCanvas .rg-scene-layer').first.wait_for()
+        response = {'ok': True, 'config': {'enabled': False, 'label': 'New location'},
+                    'weather': None, 'status': {}, 'stale': False}
+        page.route('**/api/v1/weather', lambda route: route.fulfill(json=response))
+        page.get_by_role('button', name='Refresh weather', exact=True).click()
+        page.get_by_text('Enable weather and set a location to load current conditions and forecasts.', exact=True).wait_for()
+        self.assertEqual(page.locator('.weatherTemperature').inner_text(), '—')
+        self.assertEqual(page.locator('.weatherDay').count(), 0)
+        self.assertEqual(page.locator('.weatherSportsCard').count(), 0)
+        self.assertEqual(page.locator('.weatherTable table').count(), 0)
+        self.assertEqual(page.locator('.weatherPreviewCanvas .rg-scene-layer').count(), 0)
+        self.assertNotIn('Example School', page.locator('#weather').inner_text())
+        self.assertFalse(any('target' in r for r in requests))
+        self.assertEqual(errors, [])
+
+    def test_changed_location_retires_preview_before_send(self):
+        page, errors, requests = weather_page(self)
+        page.get_by_role('button', name='Preview weather layout', exact=True).click()
+        page.locator('.weatherPreviewCanvas .rg-scene-layer').first.wait_for()
+        weather = forecast()
+        weather['label'] = 'New location'
+        response = {'ok': True, 'config': {'enabled': True, 'latitude': 41,
+                    'longitude': -77, 'unit': 'fahrenheit', 'label': 'New location'},
+                    'weather': weather, 'status': {}, 'stale': False}
+        page.route('**/api/v1/weather', lambda route: route.fulfill(json=response))
+        page.get_by_role('button', name='Refresh weather', exact=True).click()
+        page.get_by_role('heading', name='New location', exact=True).wait_for()
+        # If the old scene survives, Send bypasses scene generation and dispatches it.
+        page.route('**/api/v1/weather/scene', lambda route: route.fulfill(
+            status=400, json={'ok': False, 'error': 'New forecast not ready'}))
+        page.get_by_label('Example display', exact=True).check()
+        page.get_by_role('button', name='Send full-screen weather', exact=True).click()
+        page.wait_for_function("/New forecast not ready|Weather sent/.test(document.querySelector('.weatherNotice').textContent)")
+        self.assertFalse(any('target' in r for r in requests))
+        self.assertIn('New forecast not ready', page.locator('.weatherNotice').inner_text())
+        self.assertEqual(page.locator('.weatherPreviewCanvas .rg-scene-layer').count(), 0)
+        self.assertEqual(errors, [])
+
+    def test_same_location_refresh_preserves_preview_and_selected_targets(self):
+        page, errors, _ = weather_page(self)
+        page.get_by_role('button', name='Preview weather layout', exact=True).click()
+        page.locator('.weatherPreviewCanvas .rg-scene-layer').first.wait_for()
+        page.get_by_label('Example display', exact=True).check()
+        before = page.locator('.weatherPreviewCanvas .rg-scene-layer').first.element_handle()
+        with page.expect_response(lambda response: response.url.endswith('/api/v1/weather')):
+            page.get_by_role('button', name='Refresh weather', exact=True).click()
+        self.assertTrue(before.evaluate('(node) => node.isConnected'))
+        self.assertTrue(page.get_by_label('Example display', exact=True).is_checked())
+        self.assertEqual(errors, [])
+
+    def test_late_preview_cannot_restore_a_retired_location(self):
+        page, errors, requests = weather_page(self)
+        held = []
+        page.route('**/api/v1/weather/scene', lambda route: held.append(route))
+        page.get_by_role('button', name='Preview weather layout', exact=True).click()
+        pending = workspaces.WorkspaceBrowserTests.held_route(self, page, held)
+        page.route('**/api/v1/weather', lambda route: route.fulfill(json={
+            'ok': True, 'config': {'enabled': False, 'label': 'New location'},
+            'weather': None, 'status': {}, 'stale': False}))
+        page.get_by_role('button', name='Refresh weather', exact=True).click()
+        page.get_by_text('Enable weather and set a location to load current conditions and forecasts.', exact=True).wait_for()
+        pending.fulfill(json={'ok': True, 'scene': {'layers': [
+            {'type': 'text', 'text': 'Retired forecast'}]}})
+        page.wait_for_function("/Layout changed|Preview ready/.test(document.querySelector('.weatherNotice').textContent)")
+        self.assertEqual(page.locator('.weatherPreviewCanvas .rg-scene-layer').count(), 0)
+        self.assertIn('Layout changed', page.locator('.weatherNotice').inner_text())
+        self.assertFalse(any('target' in r for r in requests))
+        self.assertEqual(errors, [])

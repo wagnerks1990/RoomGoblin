@@ -47,6 +47,12 @@ It is school-location weather, including on away-game pages. The clock updates
 locally in the configured Sports timezone. Weather keeps its provider attribution
 and stale indicator; weather does not cancel games.
 
+A pending Save Sports remains disabled across edits and tab redraws. Newer draft
+edits survive save completion and use the acknowledged server revision for their
+next save. Preview/send responses belong to the originating board view and draft;
+editing or leaving that view while a scene loads prevents its later dispatch.
+Save failures retain the draft and release retry.
+
 Saved workspace JSON can be loaded under **Sources > Import a Sports workspace**.
 It is validated into a draft for review; Save Sports remains a separate action.
 
@@ -155,6 +161,10 @@ access and strips source URLs/operator settings from receiver content.
 SQLite preferences `sports.workspace.v1`, `.previous` and `.sources` hold saved
 configuration, the prior staff save and bounded source-check status. Status survives
 restarts; changed source/team mappings do not inherit a prior successful check.
+That identity check applies immediately after save, before the next refresh, and
+to late responses and persisted status after restart. Save/undo responses include
+the current source-status snapshot so the workspace cannot retain retired health.
+Friendly team-name edits preserve checks for the same source mapping.
 Existing operational backups include these preferences;
 media follows the existing replaceable-media backup policy. Background refresh
 participates in Full Recovery Export writer draining. A stale in-flight refresh

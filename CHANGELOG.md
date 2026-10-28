@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+- Preserve newer Sports edits during saves and reject delayed scene responses
+  after a draft edit or board-view change.
+
+- Retire Sports feed health immediately when source/team mappings change and
+  return current source status after saves and undo.
+
+- Use the shared workspace theme colors for Weather cards and status text so
+  light and system-light modes retain readable contrast.
+
+- Keep newer Weather draft edits during a pending save, prevent overlapping saves
+  and discard refreshes that predate a successful settings write.
+
+- Clear retired Weather readings and previews when the saved forecast location
+  changes or becomes unavailable; reject late previews from the previous location.
+
 - Report planned and unimplemented native Android controls as unavailable while
   preserving implemented controls and their permission gates.
 
