@@ -189,6 +189,10 @@ Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 
+TV audio restoration stops if its receiver, Music Assistant connection or saved
+audio changes while a command is pending. Only the current restore can report
+success. Shutdown and recovery freeze also stop subsequent restore commands.
+
 Targeted tests execute the real tick/start and HTTP queue/command handlers, plus
 the recovery monitor: unavailable players, command confirmation/backoff, raw
 timestamp anchors across multiple stall windows, frozen-position reports,

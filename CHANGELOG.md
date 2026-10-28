@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Stop obsolete TV audio restoration after a receiver, connection or saved-audio
+  change; delayed completion cannot mark a replaced restore successful.
+
 - Retire Music Assistant connection-status reads when settings change, requiring
   refresh instead of returning old outputs or retrying against a new connection.
 

@@ -29,8 +29,9 @@ four validation-only fixtures. Initializing the fixture through the existing
 empty transaction makes its baseline explicit; no production check was changed.
 The supported Linux active-worktree suite passes 1,501 tests, zero failures and
 two root-only ownership skips (1,503 total), plus all 23 Host Recovery tests and
-Node/controller/Python/Bash checks. Required CI, checked integration, exact images
-and backed-up appliance delivery are pending. No production connection settings,
+Node/controller/Python/Bash checks. Required CI, exact images and backed-up
+appliance delivery passed in PR #301; see [the receipt](music-session-delivery.md).
+No production connection settings,
 tokens or classroom playback were changed for qualification.
 
 Schedule-save ordering and coherent status/probe snapshots remain separate

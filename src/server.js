@@ -6641,7 +6641,31 @@ function musicAssistantTvDeviceIdFromPlayerId(playerId){const m=/^classroom-hub-
 function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
 function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
 function musicAssistantTvAttachPayload(deviceId,issued,extra={}){const audio=musicAssistantTvAudioState(deviceId);return {transport:"authenticated-ma-sendspin-proxy",proxyUrl:musicAssistantProxyPath(issued.ticket),playerId:issued.playerId,sdkVersion:"3.2.1",desiredVolume:audio.volume,desiredMuted:audio.muted,...extra}}
-async function restoreMusicAssistantTvAudioState(deviceId,ws){const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId);for(let attempt=1;attempt<=8;attempt++){if(ws&&ws.readyState!==WebSocket.OPEN)return false;try{await musicAssistantCommand("players/cmd/volume_set",{player_id:playerId,volume_level:desired.volume});await musicAssistantCommand("players/cmd/volume_mute",{player_id:playerId,muted:desired.muted});if(ws)ws.maAudioRestored=true;audit({kind:"musicassistant.tv-audio.restore",deviceId,playerId,volume:desired.volume,muted:desired.muted,attempt});return true}catch(e){if(attempt===8){diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore",deviceId,playerId});return false}await new Promise(r=>setTimeout(r,700))}}return false}
+async function restoreMusicAssistantTvAudioState(deviceId,ws){
+  const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId),generation=maApiGeneration;
+  const current=()=>{
+    if(shutdownRequested||fullExportFreeze.requested||generation!==maApiGeneration)return false;
+    if(ws&&(ws.readyState!==WebSocket.OPEN||runtime.displays[deviceId]?.connectionId!==ws.connectionId))return false;
+    const latest=musicAssistantTvAudioState(deviceId);
+    return latest.volume===desired.volume&&latest.muted===desired.muted&&latest.updatedAt===desired.updatedAt;
+  };
+  for(let attempt=1;attempt<=8;attempt++){
+    if(!current())return false;
+    try{
+      await musicAssistantCommand("players/cmd/volume_set",{player_id:playerId,volume_level:desired.volume});
+      if(!current())return false;
+      await musicAssistantCommand("players/cmd/volume_mute",{player_id:playerId,muted:desired.muted});
+      if(!current())return false;
+      if(ws)ws.maAudioRestored=true;
+      audit({kind:"musicassistant.tv-audio.restore",deviceId,playerId,volume:desired.volume,muted:desired.muted,attempt});return true;
+    }catch(e){
+      if(!current())return false;
+      if(attempt===8){diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore",deviceId,playerId});return false}
+      await new Promise(r=>setTimeout(r,700));
+    }
+  }
+  return false;
+}
 
 // Persistent Music Assistant WebSocket API client. Music Assistant's WebSocket API is
 // the authoritative realtime control surface; REST remains a compatibility fallback.

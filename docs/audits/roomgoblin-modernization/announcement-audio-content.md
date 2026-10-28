@@ -48,6 +48,6 @@ The supported native active-worktree suite passes 1,460 tests, zero failures and
 two root-only ownership skips (1,462 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. After the independently qualified preview-route
 fixture was cherry-picked, restored runtime/Node files exactly matched the
-qualified stash snapshot. Required CI, checked integration, exact images and
-backed-up delivery remain pending. No physical commands or production failure
+qualified stash snapshot. Required CI, exact images and backed-up delivery passed
+in PR #301; see [the receipt](music-session-delivery.md). No physical commands or production failure
 injection were used. Background Music session reconciliation remains separate.
