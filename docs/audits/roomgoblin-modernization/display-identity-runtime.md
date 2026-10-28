@@ -51,3 +51,21 @@ install its SQLite trigger while an application writer held the database.
 Both trigger creation and removal now use the application's bounded five-second
 busy timeout. All 20 consecutive failure/recovery fixture repetitions pass;
 the shutdown assertions and production lock policy are unchanged.
+
+PR review exposed two additional identity paths. The actual receiver browser
+lowercased both canonical and legacy query URLs before its WebSocket hello, and
+scheduled expansion preferred a group alias over a uniquely resolved receiver.
+The browser now retains the configured URL identity. Direct and scheduled
+dispatch prefer the same receiver, reject ambiguous receiver aliases before any
+group fallback, and resolve group members through the same unique-alias policy.
+Punctuation is never stripped to manufacture a group match.
+
+Three baseline target-collision cases and two baseline browser cases failed.
+All 79 focused cases now pass, and all 33 receiver cases pass in each of Chromium
+and Firefox, including three actual browser hello/enrollment URL regressions.
+The [enrollment admission repair](display-enrollment-admission.md) also addresses
+the two CodeQL findings with a shared authorized-administrator quota. The combined
+development snapshot passes 2,544 Node cases, zero failures and two root-only
+skips, all 23 Host Recovery and 55 Android JVM cases, and syntax/controller checks.
+That snapshot includes the separately queued diagnostics, retention and
+publication batches. Updated exact-head PR gates remain required before merging.

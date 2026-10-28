@@ -21,12 +21,32 @@ test('scheduler groups cannot manufacture unknown receiver targets',()=>{
 test('all receiver expansion retains enabled configured identities',()=>{
  assert.deepEqual(expandDisplayTargets(['all'],options),['Screen-A','screen-a','OnlyUpper']);
 });
-const source=fs.readFileSync(require.resolve('../src/server'),'utf8');
+test('scheduler receivers take precedence over colliding group aliases',()=>{
+ const options={devices:{'screen-a':{enabled:true},other:{enabled:true}},displayGroups:{'Screen-A':['other']}};
+ assert.deepEqual(expandDisplayTargets(['screen-a'],options),['screen-a']);
+ assert.deepEqual(expandDisplayTargets(['Screen-A'],options),['screen-a']);
+});
+test('ambiguous receiver aliases cannot fall through to a group',()=>{
+ assert.deepEqual(expandDisplayTargets(['SCREEN-A'],{devices,displayGroups:{'screen-a':['OnlyUpper']}}),[]);
+});
+const source=fs.readFileSync(require.resolve('../src/server'),'utf8').replace(/\r\n/g,'\n');
 function block(a,b){const x=source.indexOf(a),y=source.indexOf(b,x+a.length);assert.ok(x>=0&&y>x,a);return source.slice(x,y)}
 function context(){
  const ctx=vm.createContext({devices,cleanId:v=>String(v||'').toLowerCase(),crypto:require('node:crypto'),musicAssistantProxyTickets:new Map(),musicAssistantProxyTicketByDevice:new Map()});
- vm.runInContext(block('function configuredDisplayId(','function cookieValue('),ctx);return ctx;
+ vm.runInContext(block('function cleanId(','function cookieValue('),ctx);return ctx;
 }
+test('direct dispatch rejects ambiguous and malformed aliases before group fallback',()=>{
+ const ctx=context();ctx.displayGroups={'screen-a':['OnlyUpper'],group:['OnlyUpper']};
+ vm.runInContext(block('function resolveDisplayTargets(','function commandId('),ctx);
+ assert.deepEqual(Array.from(ctx.resolveDisplayTargets('SCREEN-A')),[]);
+ assert.deepEqual(Array.from(ctx.resolveDisplayTargets('group!')),[]);
+ assert.deepEqual(Array.from(ctx.resolveDisplayTargets('GROUP')),['OnlyUpper']);
+});
+test('direct and scheduled group members resolve the same unique receiver aliases',()=>{
+ const ctx=context();ctx.displayGroups={group:['onlyupper','missing']};vm.runInContext(block('function resolveDisplayTargets(','function commandId('),ctx);
+ assert.deepEqual(Array.from(ctx.resolveDisplayTargets('group')),expandDisplayTargets(['group'],{devices,displayGroups:ctx.displayGroups}));
+ assert.deepEqual(Array.from(ctx.resolveDisplayTargets('group')),['OnlyUpper']);
+});
 test('physical announcement locks use the exact receiver output mapping',()=>{
  const ctx=context();vm.runInContext(block('function automationTvPowerPhysicalLocks(','function timerLinkedClassChain('),ctx);
  assert.deepEqual(Array.from(ctx.automationTvPowerPhysicalLocks({output:1},['Screen-A'])),['Screen-A']);

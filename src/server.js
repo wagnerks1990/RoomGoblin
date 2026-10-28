@@ -4122,12 +4122,12 @@ function resolveDisplayTargets(target) {
 
   const value=String(target || "all").trim(),id=configuredDisplayId(value);
   if(id)return devices[id].enabled!==false?[id]:[];
-  const t=Object.hasOwn(displayGroups,value)?value:cleanId(value);
+  if(Object.keys(devices).some(key=>key.toLowerCase()===value.toLowerCase()))return [];
+  const aliases=Object.keys(displayGroups).filter(key=>key.toLowerCase()===value.toLowerCase());
+  const t=Object.hasOwn(displayGroups,value)?value:aliases.length===1?aliases[0]:"";
 
   if (Array.isArray(displayGroups[t])) {
-    return displayGroups[t].filter(
-      (id) => devices[id] && devices[id].enabled !== false
-    );
+    return [...new Set(displayGroups[t].map(configuredDisplayId).filter(id=>id&&devices[id].enabled!==false))];
   }
 
   return [];
@@ -6688,10 +6688,16 @@ function displayCredentialAdminView(){
 }
 function disconnectRevokedDisplayCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="display"&&set.has(String(ws.displayCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display credential revoked")}
 function disconnectRevokedLabAgentCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="lab-agent"&&set.has(String(ws.labAgentCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Lab agent credential revoked")}
+const displayEnrollmentMutationLimit=rateLimit({
+  skip:req=>!administratorAccessAllowed(req),
+  windowMs:60_000,limit:120,keyGenerator:()=>"display-enrollment-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Display enrollment operation limit reached; retry later"}
+});
 app.get("/api/v1/admin/display-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...displayCredentialAdminView()}));
 app.put("/api/v1/admin/display-credentials/policy",requireAdmin,(req,res)=>{try{const state=displayCredentialAdminView();if(req.body?.authenticationRequired===true&&state.coverage.unenrolled.length&&req.body?.confirmEnableWithoutFullEnrollment!==true)return res.status(409).json({ok:false,error:`Enroll every enabled display before requiring credentials. Missing: ${state.coverage.unenrolled.join(", ")}`,unenrolled:state.coverage.unenrolled});const policy=dbStore.setDisplayCredentialPolicy(req.body||{});if(policy.authenticationRequired)for(const ws of wsClients)if(ws.role==="display"&&ws.displayAuthMode==="configured-display"&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display authentication is now required");audit({kind:"admin.display-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.post("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{try{const displayId=configuredDisplayId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{const displayId=configuredDisplayId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
+app.post("/api/v1/admin/displays/:id/enrollment",displayEnrollmentMutationLimit,requireAdmin,(req,res)=>{try{const displayId=configuredDisplayId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
+app.delete("/api/v1/admin/displays/:id/enrollment",displayEnrollmentMutationLimit,requireAdmin,(req,res)=>{const displayId=configuredDisplayId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
 app.delete("/api/v1/admin/display-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeDisplayCredential(id);if(revoked)disconnectRevokedDisplayCredentials([id]);audit({kind:"admin.display-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
 app.get("/api/v1/admin/lab-agent-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...dbStore.listLabAgentCredentials()}));
 app.put("/api/v1/admin/lab-agent-credentials/policy",requireAdmin,(req,res)=>{try{const policy=dbStore.setLabAgentCredentialPolicy(req.body||{});audit({kind:"admin.lab-agent-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
