@@ -38,6 +38,12 @@ includes 1,409 native passes, zero failures, two root-only skips, 23 Host Recove
 passes, 16 Live Watch cases in each browser and 70 workspace cases in each browser.
 These fixes passed all 14 checks and merged at `2f79567` (PR #299); main
 publication and appliance delivery remain pending.
+Music queue response ownership and active announcement receiver ownership are
+integrated on `2f79567`, with a byte-identical tree to qualified `1541de6` before
+this evidence note. All 78 focused integration checks pass. Qualification includes
+1,421 native passes, zero failures, two root-only skips and 23 Host Recovery
+passes; all 16 Music cases pass in both Chromium and Firefox. Required CI,
+exact images and appliance delivery remain pending for this integration.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
