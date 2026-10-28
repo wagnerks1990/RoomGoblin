@@ -201,16 +201,18 @@ A failure before source/runtime mutation leaves running services unchanged.
 
 ## Automatic safety-backup retention
 
-Runtime-changing RoomGoblin and Ubuntu host updates create an operational
-`pre-*.zip` safety backup before mutation. After the updated appliance passes
-health verification, the runner now asks the authenticated maintenance service to
-retain the newest **10** automatic `pre-*` archives and prune older automatic
-ones.
+After the updated appliance passes health verification, the runner asks the
+authenticated maintenance service to retain three automatic operational archives
+and one `pre-*` safety archive. Normal source updates create an
+`auto-operational-*.zip` backup before mutation. The classification and migration
+snapshot policy are described below.
 
 Retention is intentionally conservative:
 
-- the backup currently pinned for application revert is preserved even if it
-  falls outside the newest ten;
+- the backup currently pinned for application revert is retained inside the
+  applicable limit, ahead of newer unpinned archives;
+- unavailable or unreadable rollback status, an invalid pin or a missing pinned
+  archive stops cleanup before any deletion;
 - user-created backups and encrypted Full Recovery `.rgbak` archives are never
   included in automatic pruning;
 - cleanup failure is reported as a warning and does not convert an otherwise
@@ -251,6 +253,13 @@ Automatic cleanup after successful maintenance enforces:
 A rollback-pinned archive is preferentially retained inside the applicable
 limit. Manual operational exports and encrypted Full Recovery `.rgbak` bundles
 are excluded from automatic pruning.
+
+Cleanup fixes its candidate identities before reading rollback authority. It
+preserves new or replaced archives that appear during that read and reports the
+actual remaining counts; concurrent arrivals can temporarily exceed the limit.
+An incomplete update blocks cleanup, except for the native runner's final
+verifying phase with its selected active commit and published rollback identity.
+The runner retains its existing appliance lock during that automatic cleanup.
 
 
 ### Runtime retention convergence

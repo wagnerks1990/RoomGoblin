@@ -59,6 +59,7 @@ http.request=function(options,callback){
   request.end=()=>process.nextTick(()=>{
     let body={};try{body=JSON.parse(written.toString()||"{}")}catch{};fs.appendFileSync(process.env.HOST_CALL_LOG,JSON.stringify({method:options.method,path:options.path,body})+"\\n");
     const payload={ok:true,stdout:"",stderr:""};
+    if(options.path==="/app-updates/job")payload.phase="idle";
     if(options.path==="/recovery/export/freeze")payload.freezeToken="host-freeze-token";
     if(options.path==="/docker/exec"&&body.args?.[1]==="music-assistant-server"&&body.args?.[0]==="stop")musicRunning=false;
     if(options.path==="/docker/exec"&&body.args?.[1]==="music-assistant-server"&&body.args?.[0]==="start")musicRunning=true;
