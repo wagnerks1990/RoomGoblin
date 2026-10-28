@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Announcement recovery delivered; target, Live Watch, active-target and Music queue fixes merged; audio/session/connection follow-ups qualified**.
+Status: **Target, Live Watch, active-target and Music queue fixes delivered; audio/session/connection follow-ups merged; schedule/probe follow-ups qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -37,25 +37,28 @@ this documentation note. All 66 focused integration checks pass. Qualification
 includes 1,409 native passes, zero failures, two root-only skips, 23 Host Recovery
 passes, 16 Live Watch cases in each browser and 70 workspace cases in each browser.
 These fixes passed all 14 checks and merged at `2f79567` (PR #299). Its main
-Firefox run hit a route-capture race, so publication stopped and production
-remains on `4a41f00`. The [fixture correction](preview-route-synchronization.md)
-is included in PR #300; combined delivery requires its exact main gates/images.
+Firefox run hit a route-capture race, so that publication stopped. The
+[fixture correction](preview-route-synchronization.md) merged in PR #300;
+combined delivery is now verified at `336a71d`.
 Music queue response ownership and active announcement receiver ownership are
 integrated on `2f79567`, with a byte-identical tree to qualified `1541de6` before
 this evidence note. All 78 focused integration checks pass. Qualification includes
 1,421 native passes, zero failures, two root-only skips and 23 Host Recovery
 passes; all 16 Music cases pass in both Chromium and Firefox. All 14 checks
 passed and this integration merged at `336a71d` (PR #300). Exact main images
-and the combined PR #299/#300 appliance delivery remain pending.
+published and combined PR #299/#300 appliance delivery passed; see the
+[receipt](announcement-active-targets.md#verified-combined-appliance-delivery).
 Music Assistant socket ownership, announcement audio-content ownership,
 Background Music completion ownership and atomic connection saves are now
 integrated on `336a71d`. Before this evidence note, the complete tree was
 byte-identical to qualified `fbf4b61`; all 144 focused integration tests pass.
 The supported Linux snapshot passes 1,501 tests, zero failures and two root-only
 skips (1,503 total), plus all 23 Host Recovery tests and Node/controller/Python/Bash
-checks. Required CI, checked merge, exact images and appliance delivery remain
-pending for these follow-ups. Schedule-save ordering and coherent status/probe
-snapshots remain under review; the wider modernization is still in progress.
+checks. All 14 checks passed and these follow-ups merged at `1e52980` (PR #301);
+their exact main images and appliance delivery remain pending. Schedule-save
+ordering and player-probe/status ownership also pass native qualification.
+Recovery attempt accounting and Live Watch manual checks remain under review;
+the wider modernization is still in progress.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -131,6 +134,7 @@ Queued subsystem units below have not been marked audited.
 - [Music Assistant configuration transaction](music-config-transaction.md)
 - [Background Music schedule save ordering](music-schedule-ordering.md)
 - [Background Music player probe ownership](music-probe-ownership.md)
+- [Background Music recovery attempt accounting](music-recovery-attempts.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
 - [Announcement release recovery ownership](announcement-release-ownership.md)
 - [Failed announcement start cleanup](announcement-start-failure.md)

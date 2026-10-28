@@ -6937,7 +6937,7 @@ async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name
     backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav?.id||null;backgroundMusicRuntime.activeMedia=source;
     if(!recover){backgroundMusicRecovery.reset();backgroundMusicRuntime.manualSession=reason==="manual";backgroundMusicRuntime.sleepUntil=null}
     backgroundMusicRecovery.requested();
-    try{await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:source.uri})}catch(error){if(generation===backgroundMusicRuntime.sessionGeneration)backgroundMusicRecovery.failed(error.mayHaveExecuted===true);throw error}
+    await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:source.uri});
     if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked()){
       if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.paused){await musicAssistantCommand("players/cmd/pause",{player_id:pid});if(backgroundMusicRuntime.activePlayerId===pid&&backgroundMusicPriorityBlocked()){backgroundMusicRuntime.paused=true;backgroundMusicRuntime.pausedForPriority=true}}
       else if(backgroundMusicRuntime.manualStopped||!backgroundMusicRuntime.activePlayerId)await musicAssistantCommand("players/cmd/stop",{player_id:pid});

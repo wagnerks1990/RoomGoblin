@@ -46,8 +46,33 @@ explicit Resume. Tests use deterministic transports without physical commands.
 The supported native active-worktree suite passes 1,421 tests, zero failures and
 two root-only ownership skips (1,423 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact images
-and backed-up appliance delivery remain pending. Continuing receivers' delayed
+and backed-up appliance delivery passed as recorded below. Continuing receivers' delayed
 audio retries are covered by the [content-ownership follow-up](announcement-audio-content.md).
 That follow-up refines audio retirement to changed receiver content, preserving
 needed retries for unchanged continuing receivers. Background Music session
 reconciliation remains separate review.
+
+## Verified combined appliance delivery
+
+PR #300 passed all 14 checks and merged at
+`336a71d6002239e77e5084a804d526e475ef9369`. All five main workflows passed
+and its exact image pair published. The normal updater completed at
+`2026-10-28T02:41:58.118591+00:00`, delivering PR #299's target/Live Watch
+fixes together with PR #300's active-target/Music queue changes and fixture fix.
+
+The verified selective plan replaced only the Hub. Maintenance retained its
+healthy container at `20f8c501916f34e17bee2c643434e7cce0c919e6`; Host Agent was
+retained. Control/media health, readiness and alpha.85 version, clean main and
+an empty remaining reconciliation plan passed. Canonical SQLite integrity,
+all 8 encrypted secrets, DB/WAL/SHM shared modes, ADB volume mode, maintenance
+versus administrator authorization and served controller asset hashes passed.
+
+Backup: `auto-operational-2026-10-28T02-41-44-324Z.zip`,
+128,727,932 bytes, mode 0600, SHA-256
+`9424c11c183ac633814eedce32e87e4ecbb6848a239e663c6b8a8613cfb1ceb1`.
+Its checksum, archive CRC, operational manifest, sole canonical database
+snapshot and extracted SQLite integrity passed. Previous source/images
+`4a41f00afb65754a14e2d87f5855d3a35ab7d035` remain available for rollback.
+Verification issued no physical classroom commands or receiver reloads,
+injected no production faults and did not exercise rollback. The broader
+modernization remains active.

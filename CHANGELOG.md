@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Count a rejected Background Music start once when calculating recovery backoff,
+  retaining the observation wait for uncertain playback responses.
+
 - Keep Background Music player probes with their connection and current session;
   discard stale telemetry and unrelated output errors in status responses.
 
