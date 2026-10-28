@@ -113,8 +113,9 @@ jobs:
       - name: Publish the scanned candidate without rebuilding
         run: |
           set -euo pipefail
-          docker push '${{ matrix.image }}:sha-${{ github.sha }}'
-          docker push '${{ matrix.legacy_image }}:sha-${{ github.sha }}'
+          bash tools/publish-scanned-candidate.sh '${{ github.sha }}' \
+            '${{ matrix.image }}:sha-${{ github.sha }}' \
+            '${{ matrix.legacy_image }}:sha-${{ github.sha }}'
 
   promote:
     permissions:

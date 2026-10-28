@@ -1,14 +1,17 @@
 # RoomGoblin modernization audit
 
-Receiver PR #341 is deployed and verified at `3bdc179`. Its exact PR-head Linux
-run passed 2,516 cases, two root-only skips, all 23 Host Recovery and 55 Android
-JVM cases. Diagnostics PR #342 merged as `ea924b8` after all 14 checks passed;
-its 60 focused cases pass. Exact main publication and delivery remain pending.
+Receiver PR #341 is [deployed and verified](receiver-identity-delivery.md) at
+`3bdc179`. Diagnostics PR #342 is [deployed and verified](diagnostics-delivery.md)
+at `ea924b8`. Retention PR #343 merged as `6a385d1` after all 14 checks passed;
+exact main publication and delivery are pending. The publication-retry integration
+preserves the source qualified by all 31 focused native policy cases.
 
 PR #340 is [deployed and verified](database-transactions-delivery.md). The
 [rollback-aware retention repair](backup-retention-authority.md) passes native
 qualification with 2,537 Node cases, two root-only skips, all 23 Host Recovery
 and 55 Android JVM cases. Its documentation resolves RG-DOC-001's stale limits.
+The same qualified snapshot includes [bounded publication retries](publication-candidate-retry.md)
+that retain the exact scanned candidate and fail on identity drift or exhaustion.
 
 The receiver identity repair is pushed in PR #341. The next
 [diagnostics batch](diagnostic-evidence.md) repairs reproduced secret projection,
