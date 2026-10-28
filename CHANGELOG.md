@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Restore music result cards after repeated identical searches and retire older
+  results when a new submitted query is too short.
+
 - Stop obsolete TV audio restoration after a receiver, connection or saved-audio
   change; delayed completion cannot mark a replaced restore successful.
 
