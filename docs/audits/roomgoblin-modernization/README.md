@@ -1,5 +1,19 @@
 # RoomGoblin modernization audit
 
+PR #319 passed all 14 fresh checks and merged as `0f24c99`; exact main publication
+precedes its update. The native resource-bound repair passes 2,169 Linux tests,
+two root-only skips, 23 Host Recovery tests, nine native process cases and ten
+native transfer cases. Browser sources remain identical to qualified `32416c9`.
+The separate connection review reproduces a stalled primary handshake preventing
+fallback; its 15-second prototype passes the loopback reproduction.
+
+PR #318 is [deployed and verified](windows-monitoring-delivery.md) at `5e1af23`.
+PR #319 includes the qualified account-focus follow-up and is running fresh CI.
+The [native resource-bound repair](windows-native-resource-bounds.md) reproduces
+four failures and passes nine process plus ten transfer cases locally. Full
+Linux qualification and required .NET 8 CI precede delivery. Group 10 and the
+remaining roadmap are still open; earlier entries record qualification history.
+
 The [account focus repair](account-dialog-focus.md) joins the pending Windows
 agent batch after its main-browser failure exposed a delayed focus callback.
 Qualification passes 2,169 Linux tests, two root-only skips, 23 Host Recovery

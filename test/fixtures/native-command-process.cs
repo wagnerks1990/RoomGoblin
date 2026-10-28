@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 internal static class Program
 {
@@ -9,6 +10,9 @@ internal static class Program
     {
         if (args.Length > 0 && args[0] == "child") return await Child(args);
         var tests = new (string Name, Func<Task> Run)[] {
+            ("output EOF shares command deadline", () => PipeDeadline(false)),
+            ("output EOF honors caller cancellation", () => PipeDeadline(true)),
+            ("large output has bounded retained memory", OutputMemory),
             ("successful child preserves arguments", Success),
             ("failed child keeps bounded error detail", Failure),
             ("pre-cancelled request never attempts launch", PreCancelled),
@@ -30,6 +34,22 @@ internal static class Program
     {
         switch (args[1])
         {
+            case "pipe":
+                var pipeInfo = new ProcessStartInfo(Self) { UseShellExecute = false, CreateNoWindow = true };
+                foreach (var value in new[] { "child", "wait", args[2] }) pipeInfo.ArgumentList.Add(value);
+                using (var inherited = Process.Start(pipeInfo) ?? throw new Exception("Fixture launch failed"))
+                {
+                    var startup = Stopwatch.StartNew();
+                    while (!File.Exists(args[2]) && startup.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(10);
+                }
+                return 0;
+            case "verbose":
+                var chunk = new string('x', 8192);
+                for (var i=0;i<2048;i++) { Console.Out.Write(chunk); Console.Error.Write(chunk); }
+                Console.Out.Flush(); Console.Error.Flush(); WriteMarker(args[2]);
+                var outputWait = Stopwatch.StartNew();
+                while (!File.Exists(args[2]+".release") && outputWait.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(10);
+                return 0;
             case "success": return args[2] == ArgumentFixture ? 0 : 9;
             case "failure": Console.Error.Write("fixture-" + new string('x', 8192)); return 7;
             case "wait":
@@ -52,6 +72,60 @@ internal static class Program
     {
         File.WriteAllText(path + ".writing", Environment.ProcessId.ToString());
         File.Move(path + ".writing", path);
+    }
+
+    private static async Task PipeDeadline(bool cancel)
+    {
+        var marker = Path.Combine(AppContext.BaseDirectory, "pipe-" + Guid.NewGuid().ToString("N") + ".pid");
+        using var stop = new CancellationTokenSource();
+        var pending = RunProcessBoundedAsync(Self, new[] { "child", "pipe", marker }, TimeSpan.FromSeconds(cancel ? 20 : 2), stop.Token);
+        Process? owned = null;
+        try
+        {
+            var startup = Stopwatch.StartNew();
+            while (!File.Exists(marker) && startup.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(10);
+            if (!File.Exists(marker)) throw new Exception("Owned pipe fixture did not start");
+            owned = Process.GetProcessById(int.Parse(File.ReadAllText(marker)));
+            await Task.Delay(200);
+            if (cancel) stop.Cancel();
+            try { await pending.WaitAsync(TimeSpan.FromSeconds(4)); throw new Exception("Pipe incorrectly completed"); }
+            catch (OperationCanceledException error) when (cancel && error.CancellationToken == stop.Token) { }
+            catch (TimeoutException error) when (!cancel && error.Message.Contains("timed out after 2 seconds")) { }
+        }
+        finally
+        {
+            stop.Cancel();
+            if (owned is not null) { if (!owned.HasExited) owned.Kill(entireProcessTree:true); await owned.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3)); owned.Dispose(); }
+            try { await pending.WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
+            if (File.Exists(marker)) File.Delete(marker);
+        }
+    }
+
+    private static async Task OutputMemory()
+    {
+        await Success();
+        var marker = Path.Combine(AppContext.BaseDirectory, "output-"+Guid.NewGuid().ToString("N")+".pid");
+        using var stop = new CancellationTokenSource();
+        var before = GC.GetTotalMemory(true);
+        var pending = RunProcessBoundedAsync(Self, new[] { "child", "verbose", marker }, TimeSpan.FromSeconds(20), stop.Token);
+        try
+        {
+            var startup = Stopwatch.StartNew();
+            while (!File.Exists(marker) && startup.Elapsed < TimeSpan.FromSeconds(8)) await Task.Delay(10);
+            if (!File.Exists(marker)) throw new Exception("Verbose fixture did not finish writing");
+            // Keep both pipes open while measuring live buffers, not cumulative async allocations.
+            var retained = GC.GetTotalMemory(true) - before;
+            Console.WriteLine($"Retained output memory: {retained} bytes for 32 MiB of output");
+            if (retained > 16L * 1024 * 1024) throw new Exception("Output retention grew with the command's output");
+            File.WriteAllText(marker+".release", "release");
+            await pending;
+        }
+        finally
+        {
+            stop.Cancel();
+            try { await pending.WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
+            foreach (var path in new[] {marker,marker+".release"}) if(File.Exists(path)) File.Delete(path);
+        }
     }
 
     private static Task Success() => RunProcessBoundedAsync(Self,
@@ -121,4 +195,5 @@ internal static class Program
     }
 
 /* ACTUAL_PROCESS_HELPER */
+
 }

@@ -124,34 +124,44 @@ internal sealed class NativeUpdateClient
                     "/lab-agent/native/" +
                     Uri.EscapeDataString(file.Name));
 
-                using (var response=await http.GetAsync(source,HttpCompletionOption.ResponseHeadersRead,ct))
-                await using (var output =
-                    new FileStream(
-                        target,
-                        FileMode.CreateNew,
-                        FileAccess.Write,
-                        FileShare.None,
-                        1024 * 1024,
-                        FileOptions.WriteThrough))
+                using var download = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                download.CancelAfter(TimeSpan.FromSeconds(45));
+                try
                 {
-                    response.EnsureSuccessStatusCode();
-                    if(response.Content.Headers.ContentLength is long declared&&declared!=file.Bytes)
-                        throw new InvalidDataException($"Native update size mismatch for {file.Name}.");
-                    await using var input=await response.Content.ReadAsStreamAsync(ct);
-                    var buffer=new byte[1024*1024];
-                    long written=0;
-                    while(true)
+                    using (var response=await http.GetAsync(source,HttpCompletionOption.ResponseHeadersRead,download.Token))
+                    await using (var output =
+                        new FileStream(
+                            target,
+                            FileMode.CreateNew,
+                            FileAccess.Write,
+                            FileShare.None,
+                            1024 * 1024,
+                            FileOptions.WriteThrough))
                     {
-                        var count=await input.ReadAsync(buffer,ct);
-                        if(count==0)break;
-                        written+=count;
-                        if(written>file.Bytes||written>MaxFileBytes)
-                            throw new InvalidDataException($"Native update exceeds the declared size for {file.Name}.");
-                        await output.WriteAsync(buffer.AsMemory(0,count),ct);
+                        response.EnsureSuccessStatusCode();
+                        if(response.Content.Headers.ContentLength is long declared&&declared!=file.Bytes)
+                            throw new InvalidDataException($"Native update size mismatch for {file.Name}.");
+                        await using var input=await response.Content.ReadAsStreamAsync(download.Token);
+                        var buffer=new byte[1024*1024];
+                        long written=0;
+                        while(true)
+                        {
+                            var count=await input.ReadAsync(buffer,download.Token);
+                            if(count==0)break;
+                            written+=count;
+                            if(written>file.Bytes||written>MaxFileBytes)
+                                throw new InvalidDataException($"Native update exceeds the declared size for {file.Name}.");
+                            await output.WriteAsync(buffer.AsMemory(0,count),download.Token);
+                        }
+                        if(written!=file.Bytes)
+                            throw new InvalidDataException($"Native update size mismatch for {file.Name}.");
+                        await output.FlushAsync(download.Token);
                     }
-                    if(written!=file.Bytes)
-                        throw new InvalidDataException($"Native update size mismatch for {file.Name}.");
-                    await output.FlushAsync(ct);
+                }
+                catch (OperationCanceledException error)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    throw new TimeoutException($"Native update download timed out for {file.Name}.", error);
                 }
 
                 await using var verified=File.OpenRead(target);

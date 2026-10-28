@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Bound native Windows command output retention and keep cancellation/deadlines
+  active through output reads and native update download bodies.
+
 - Establish My Account focus when it opens so a delayed callback cannot interrupt
   keyboard navigation or move focus after a quick reopen.
 

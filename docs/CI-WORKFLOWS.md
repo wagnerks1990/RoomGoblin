@@ -19,9 +19,13 @@ source-rewriting helpers have been retired; source changes belong in reviewed PR
 
 Before packaging, the Windows job also runs
 `python tools/test-native-command-process.py` on .NET 8. It compiles the actual
-native process helper with six isolated child-process fixtures covering success,
-failure detail, pre-cancelled admission, cancellation, deadlines and descendants.
-It does not install or start the RoomGoblin agent service.
+native process helper with nine isolated cases covering success, failure detail,
+pre-cancelled admission, cancellation, deadlines, descendants, inherited output
+pipes and bounded retained output. `python tools/test-native-update-transfer.py`
+also runs ten actual-client cases for valid/fallback packages, cancellation,
+the real 45-second body deadline, invalid lengths/hashes and staging cleanup.
+These tests do not install or start the RoomGoblin agent service; Windows trust
+verification is replaced only in the transfer fixture, after real SHA-256 checks.
 
 ## Conservative documentation-only PR selection
 
