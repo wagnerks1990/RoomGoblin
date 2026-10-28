@@ -5,9 +5,10 @@ function block(a,b){const start=source.indexOf(a),end=source.indexOf(b,start);as
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(){
  const requests=[],renders=[],status={textContent:""},initial={devices:[{id:"one",name:"Before"}],receivers:{}};
- const ctx=vm.createContext({base:"/fixture",inventory:initial,polling:false,inventoryVersion:0,inventoryWrites:0,loadAgain:false,
+ const ctx=vm.createContext({URL,AbortController,DOMException,setTimeout,clearTimeout,base:"/fixture",inventory:initial,polling:false,inventoryVersion:0,inventoryWrites:0,loadAgain:false,
    $:()=>status,render(){renders.push(JSON.parse(JSON.stringify(ctx.inventory)))},
    fetch(url,options){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});requests.push({url,options,reply(value,code=200){resolve({ok:code<400,status:code,json:async()=>value})},reject});return promise}});
+ vm.runInContext(fs.readFileSync(path.join(__dirname,"../public/shared/request.js"),"utf8"),ctx);
  vm.runInContext(block("async function request(","function message(")+block("async function load(","function render("),ctx);
  return {ctx,requests,renders,status,initial,reads:()=>requests.filter(r=>r.options.method==="GET")};
 }

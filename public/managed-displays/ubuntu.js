@@ -18,8 +18,9 @@
     const writes=method!=="GET"&&path!=="/host-key"&&path!=="/probe"&&!(path.endsWith("/command")&&body?.action==="screenshot");
     if(writes){inventoryVersion++;inventoryWrites++;loadAgain=true}
     try{
-      const response=await fetch(base+path,options);
-      let value;try{value=await response.json()}catch{throw Error(`Request failed (${response.status}). Refresh computer status before retrying; delivery may be unconfirmed.`)}
+      const {response,value}=await RoomGoblinRequest.read(base+path,options,async response=>{
+        try{return await response.json()}catch(error){if(error.name==="AbortError")throw error;throw Error(`Request failed (${response.status}). Refresh computer status before retrying; delivery may be unconfirmed.`)}
+      });
       if(!response.ok||value.ok===false)throw Error(value.error||`Request failed (${response.status})`);return value;
     }finally{if(writes){inventoryVersion++;inventoryWrites--;if(!inventoryWrites)void load()}}
   }

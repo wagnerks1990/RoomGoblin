@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Bound operator API waits through response bodies, preserve caller cancellation,
+  and release pending controls with an unconfirmed outcome instead of retrying writes.
+
 - Report the evidence behind optional integration status, redact endpoint secrets
   throughout diagnostic snapshots, and retire observations when connections change.
 
