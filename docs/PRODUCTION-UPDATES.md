@@ -20,6 +20,10 @@ The browser never performs a Git pull itself and never treats a merge alone as d
 
 Automatic application updates use the same main-commit path during the configured maintenance window. The GitHub token remains optional for the public repository and is only used for read-only GitHub metadata access. The previous-release rollback control remains available independently of how the current main commit was selected.
 
+Saving update policy and replacing or clearing its optional GitHub token is one
+database transaction. A credential write or commit failure preserves the previous
+policy, including its automatic-update setting. Omitting the token retains it.
+
 ## Normal update
 
 Status polling remains available during a Full Recovery export freeze. It defers

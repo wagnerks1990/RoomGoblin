@@ -1,5 +1,25 @@
 # RoomGoblin modernization audit
 
+[Legacy configuration/secret imports](legacy-import-transaction.md) now preserve
+their previous authority when migration bookkeeping fails. Five baseline failures
+are repaired; all 41 targeted cases pass. The full Linux snapshot passes 2,480
+tests, zero failures and two root-only skips, all 23 Host Recovery and all 55 JVM
+cases. Checked delivery is pending. Authentication and stable receiver identity
+are the next review unit.
+
+[Legacy audit import transactions](audit-import-transaction.md) repair two
+reproduced data-loss/duplication paths. All 31 targeted cases pass; the full Linux
+snapshot passes 2,470 tests, zero failures and two root-only skips, all 23 Host
+Recovery and all 55 JVM cases. Checked delivery is pending.
+
+PR #338 is [deployed and verified](sports-durability-delivery.md) at `bdf521c`
+after all required gates. PR #339 is merged as `770d7a7`; its exact publication
+and delivery are pending. Backend/database review starts
+with [administrative settings transactions](settings-identity-transaction.md):
+seven reproduced failures are repaired and all 37 targeted cases pass. Its Linux
+snapshot passes 2,464 tests, zero failures and two root-only skips, all 23 Host
+Recovery and all 55 JVM cases. Checked delivery and the remaining roadmap are open.
+
 PR #337 is [deployed and verified](weather-sports-delivery.md) at `f588de3`
 after the required main gates and exact image publication. The following Sports
 durability batch is in PR #338; the remaining roadmap is open.

@@ -35,6 +35,18 @@ compatibility rows are then removed so the relational tables become authoritativ
 The application continues to consume the same JSON-shaped objects through the
 storage abstraction, so existing controller/API behavior is preserved.
 
+Legacy audit JSONL import skips malformed entries but propagates database write
+failures. Imported rows and their migration record commit together before the
+source is archived. Failed writes or commits preserve the source for a complete
+retry; a recorded import is not duplicated on restart.
+
+Legacy JSON and secret-file imports also commit their migration records with
+the imported values. Normalized object migration additionally removes its old
+object-store row in that same transaction. A write, record, removal or commit
+failure leaves the previous authority and source intact. Existing database
+configuration still takes precedence over legacy files; encryption and file
+retention policies are unchanged.
+
 The storage abstraction also makes non-normalized application namespaces database-backed. A path such as `data/veyon-computers.json` is a legacy namespace identifier, not an instruction to use a JSON file at runtime. With `LEGACY_JSON_MIRROR=false` (the production default), reads and writes use SQLite `object_store` and do not maintain JSON mirrors.
 
 ### Veyon state
@@ -58,6 +70,12 @@ database at `/etc/classroom-control-hub/master.key` and is mounted read-only int
 containers. A database backup without the master key cannot decrypt stored secrets.
 
 Veyon private keys, Music Assistant long-lived access tokens, MQTT passwords, and optional endpoint deployment credentials follow this same encrypted-secret model. Secrets are never returned to normal controller views; masked placeholders mean the encrypted value is retained unless explicitly replaced.
+
+Administrative integration saves validate input before writing, then commit
+connection metadata and supplied MQTT/Veyon credentials in one SQLite transaction.
+Runtime connections and caches change only after commit. System-update policy and
+its optional GitHub token replacement/clear likewise commit together; a validation
+or storage failure preserves the prior saved configuration and credentials.
 
 ## Schema version 3
 Alpha 4 adds `access_profiles` and `system_preferences`, retires the legacy runtime-config display overlay, and exposes the normalized configuration through supported administration APIs. The web controller is now the preferred configuration surface; direct SQLite edits are unsupported.

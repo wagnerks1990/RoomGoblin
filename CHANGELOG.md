@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- Commit legacy configuration and secret imports with their migration records;
+  failed migration bookkeeping no longer leaves partially published state.
+
+- Roll back legacy audit imports on storage failures and commit their migration
+  record with the imported rows before archiving the source.
+
+- Commit update policy and integration connection metadata together with their
+  requested credential changes, preserving the prior identity on storage failure.
+
 - Retire pending Weather previews, sends and workflow actions after navigation
   or authentication changes, and require unchanged explicit display targets.
 
