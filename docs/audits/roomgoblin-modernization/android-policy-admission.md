@@ -20,4 +20,17 @@ All 14 policy cases and 20 record-completion cases pass. Supported Linux
 qualification passes 2,362 tests with zero failures and two root-only skips,
 all 23 Host Recovery cases and syntax/controller/shell checks. Browser sources
 remain at qualified `aed79bd` (125 workspace cases per engine). No physical
-command was executed. Policy cache identity is under follow-up review.
+command was executed.
+
+The cache follow-up reproduced two failures: reused enrollment IDs inherited an
+old completion, and enabling profile launch did not reconcile an already-awake
+display. Completion now records enrollment/endpoint identity and relevant profile
+settings in a private cache context, retaining the existing status API values.
+Disabled/removed entries are pruned during reconciliation. Renaming a display
+does not repeat commands, and an endpoint recovered by mDNS owns the completed
+cache. An additional reproduced cleanup failure left a private context behind
+when reboot had already cleared its status marker. Reconciliation now prunes
+both cache key sets. All 20 policy and 20 record cases pass. Final combined Linux
+qualification passes 2,368 tests with zero failures and two root-only skips,
+all 23 Host Recovery cases and syntax/controller/shell checks. Browser sources
+remain unchanged from the 125-case-per-engine qualification.

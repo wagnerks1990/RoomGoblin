@@ -22,7 +22,7 @@ function boundedEnvironmentInteger(name,fallback,min,max){
   return value;
 }
 const POLICY_INTERVAL_MS=boundedEnvironmentInteger("ANDROID_TV_POLICY_INTERVAL_MS",60000,15000,300000);
-const policyState=new Map(),policyOperations=new Map();
+const policyState=new Map(),policyOperations=new Map(),policyContexts=new Map();
 let installed=false,policyTimer=null;
 
 function adbEnv(){return {...process.env,HOME:ROOT,ANDROID_USER_HOME:ROOT}}
@@ -121,6 +121,7 @@ function hhmmMinutes(v){const [h,m]=String(v).split(":").map(Number);return h*60
 function desiredAwake(profile,minutes){const wake=hhmmMinutes(profile.wakeTime),sleep=hhmmMinutes(profile.sleepTime);return wake===sleep?true:wake<sleep?(minutes>=wake&&minutes<sleep):(minutes>=wake||minutes<sleep)}
 async function applyDevicePolicy(device,profile,force=false){
   const clock=localClock(profile.timezone||"UTC"),awake=desiredAwake(profile,clock.minutes),key=`${clock.date}:${awake?"awake":"sleep"}`;
+  const contextFor=d=>JSON.stringify([d.createdAt,d.host,d.serial,d.androidId,d.profileId,d.agentPackage,profile.timezone,profile.wakeTime,profile.sleepTime,profile.launchOnBoot]);
   if(policyOperations.has(device.id))return {deviceId:device.id,changed:false,pending:true,desiredAwake:awake,clock};
   const currentDevice=expected=>{
     const data=STORE.list(),current=STORE.requireCurrentDevice(data,expected);
@@ -134,18 +135,18 @@ async function applyDevicePolicy(device,profile,force=false){
   const owner={};policyOperations.set(device.id,owner);let dispatched=false;
   try{
     currentDevice(device);
-    if(!force&&policyState.get(device.id)===key)return {deviceId:device.id,changed:false,desiredAwake:awake,clock};
+    if(!force&&policyState.get(device.id)===key&&policyContexts.get(device.id)===contextFor(device))return {deviceId:device.id,changed:false,desiredAwake:awake,clock};
     let managed=currentDevice((await ensureDevice(device,{mdnsAttempts:2})).device);
     await adb(adbArgsForAction(managed,awake?'wake':'sleep'));dispatched=true;
     if(awake&&profile.launchOnBoot){managed=currentDevice(managed);await adb(adbArgsForAction(managed,'launch'),{timeout:30000})}
-    currentDevice(managed);policyState.set(device.id,key);
+    managed=currentDevice(managed);policyState.set(device.id,key);policyContexts.set(device.id,contextFor(managed));
     return {deviceId:device.id,changed:true,desiredAwake:awake,clock};
   }catch(error){
     if(dispatched)return {deviceId:device.id,changed:true,incomplete:true,error:error.message,desiredAwake:awake,clock};
     throw error;
   }finally{if(policyOperations.get(device.id)===owner)policyOperations.delete(device.id)}
 }
-async function applyPolicies(force=false){const data=STORE.list(),profiles=new Map(data.profiles.map(x=>[x.id,x])),results=[];for(const device of data.devices.filter(x=>x.enabled!==false)){const profile=profiles.get(device.profileId)||DEFAULT_PROFILE;try{results.push(await applyDevicePolicy(device,profile,force))}catch(error){results.push({deviceId:device.id,changed:false,error:error.message})}}return {ok:true,checkedAt:new Date().toISOString(),results}}
+async function applyPolicies(force=false){const data=STORE.list(),profiles=new Map(data.profiles.map(x=>[x.id,x])),results=[],enabled=data.devices.filter(x=>x.enabled!==false),ids=new Set(enabled.map(d=>d.id));for(const id of new Set([...policyState.keys(),...policyContexts.keys()]))if(!ids.has(id)){policyState.delete(id);policyContexts.delete(id)}for(const device of enabled){const profile=profiles.get(device.profileId)||DEFAULT_PROFILE;try{results.push(await applyDevicePolicy(device,profile,force))}catch(error){results.push({deviceId:device.id,changed:false,error:error.message})}}return {ok:true,checkedAt:new Date().toISOString(),results}}
 function startPolicyLoop(){if(policyTimer)return;setTimeout(()=>applyPolicies(false).catch(()=>{}),5000);policyTimer=setInterval(()=>applyPolicies(false).catch(()=>{}),POLICY_INTERVAL_MS);policyTimer.unref?.()}
 
 function installRoutes(app){if(installed)return;installed=true;
