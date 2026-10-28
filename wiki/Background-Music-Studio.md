@@ -17,6 +17,10 @@ player probes or recovery errors from an earlier session cannot replace the new
 session's state. Current errors remain visible, and priority audio is rechecked
 after a player lookup before recovery proceeds.
 
+Schedule saves finish in the order they are accepted. A save that is waiting for
+an old output to stop cannot overwrite a newer manual Stop or playback session.
+Save failures remain visible, and later saves can be retried.
+
 **Find music** filters provider search to songs, stations, albums, artists or
 playlists. Results can play now, play next in the current queue, or become a
 favorite. A radio URL can be saved explicitly through the expandable stream

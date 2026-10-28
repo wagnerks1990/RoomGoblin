@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve Background Music schedule-save order and newer manual playback
+  intent while an earlier save waits for its output to stop.
+
 - Save Music Assistant connection settings and its optional encrypted token
   atomically, retaining the prior connection when persistence fails.
 
