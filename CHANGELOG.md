@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Preserve uncertain Music Assistant HTTP outcomes and stop automatic TV audio
+  replay until confirmation or reconnect; keep obsolete restore callbacks from
+  interfering with new attempts. Persist audio for configured named receivers.
+
 - Restore music result cards after repeated identical searches and retire older
   results when a new submitted query is too short.
 

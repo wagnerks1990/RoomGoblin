@@ -30,5 +30,6 @@ and Node/controller/Python/Bash checks. This change's checked PR, immutable imag
 and backed-up delivery remain pending.
 
 Uncertain-write retry behavior, reconnect scheduling ownership and named-player
-audio persistence remain separate review. No production audio command, receiver
+audio persistence are handled by the [recovery follow-up](music-tv-recovery.md).
+No production audio command, receiver
 reload or fault injection was used. The broader modernization remains active.
