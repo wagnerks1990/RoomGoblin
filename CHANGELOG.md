@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retain deferred announcement occurrences and restore prior execution markers
+  after storage failures; persist retry bookkeeping before display/music release.
+
 - Bound announcement probes through playlist body consumption, release redirect
   and error transports, and reject oversized playlists as unknown availability.
 

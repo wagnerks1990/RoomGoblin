@@ -57,6 +57,12 @@ mandatory hallway priority even after active runtime targets have cleared.
 
 The server owns the hard priority boundary. It serializes announcement start/stop transitions and rechecks the lock at every automation display delivery, including work that already passed an earlier check and then awaited a delay or network operation. Only display targets owned by the active announcement are deferred; lighting and other non-display work continues. If post-release display reconciliation fails, retain the Background Music priority hold and retry before resuming.
 
+Consume deferred occurrences only after their execution markers persist. On
+failure, retain the queue and restore the previous in-memory markers, including
+absent fields and existing event identities. Release retries must persist that
+bookkeeping before display reconciliation or music release; do not replay the
+deferred commands themselves.
+
 The Live Watch announcement-volume slider is a live control as well as persisted configuration. While an announcement owns targets, a volume update must send `display.web.audio` to those runtime-owned targets with `reload:false`; it must not clear, reload, or recreate the player. When no announcement is active, the value is saved for the next takeover.
 
 An operator can deliberately clear or reload display content while the announcement lifecycle still owns its targets. **Resume Schedule** / **Resume Scheduled State** is the explicit recovery action: when Morning Announcements remain active, it must reassert that priority takeover on the runtime-owned targets instead of returning only a deferred result. This operator-triggered repair is distinct from periodic live probes, which must remain observe-only while active.
