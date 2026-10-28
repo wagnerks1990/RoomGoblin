@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retain pending Android card-command ownership across refreshes and capability
+  updates, preventing duplicate ADB, Agent v2 and installation requests.
+
 - Serialize Android inventory refreshes, retire stale status probes, and keep
   recovery feedback attached to the current display record across refreshes.
 
