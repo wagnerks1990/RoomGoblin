@@ -1,6 +1,22 @@
 # RoomGoblin modernization audit
 
-Status: **PR #304 delivered; PR #305 merged and publishing; upload cleanup qualified; default media sessions under validation**.
+Status: **PR #305 delivered; PR #306 merged and publishing; browser/registration upload recovery qualified**.
+
+The upload recovery batch is integrated on merged `55055f7`. Before this
+evidence note and trailing blank-line cleanup, its tree was byte-identical to
+qualified `3dae4e7`. Qualification includes 1,713 Linux passes, zero failures,
+two root-only skips, 23 Host Recovery passes and 70 workspace cases in each
+browser. Its 39 new cases cover browser and backend ownership. Checked delivery
+remains pending. Lost-completion-response replay is separately reproduced and open.
+
+PR #307's CodeQL gate found missing completion rate limiting. The repair adds
+five regressions and passes 1,718 Linux tests with zero failures, two root-only
+skips and all 23 Host Recovery tests. Completion limits exclude rejected callers
+and do not limit chunk transfer; fresh required CI remains pending.
+
+PR #305 is deployed and verified at `daa378f`; see its
+[delivery receipt](media-reconnect-delivery.md).
+Upload registration recovery has [ten actual-store/route regressions](upload-registration-ownership.md).
 
 PR #304 is deployed and verified at `2f44c60`; see its
 [delivery receipt](music-command-delivery.md).
@@ -22,17 +38,18 @@ Bridge action and dispatch ordering has [18 route/router regressions](music-brid
 The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
 Upload expiry now has [eight regressions for active writer ownership](upload-cleanup-ownership.md).
 Default video commands have [eight regressions for shared playback identity](media-default-session.md).
+Upload browser ownership has [29 regressions for resume, cancellation and current UI state](upload-client-ownership.md).
 Upload cleanup and default video identity are integrated on merged `daa378f`.
 Before this note, the complete tree was byte-identical to qualified `f21eed4`.
 Qualification includes 1,674 Linux passes, zero failures, two root-only skips,
 23 Host Recovery passes and 16 new Node cases. Required gates and appliance
-delivery remain pending. Verify PR #305 delivery before merging this integration.
+delivery remain pending. PR #305 delivery is verified.
 Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
 complete tree was byte-identical to qualified `3c15e92`. Qualification includes
 1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
 and 14 token, 30 receiver and five audio cases in each browser. Ten new Node
-cases cover settings persistence and control validation. Checked delivery remains
-pending. PR #304 appliance delivery is now verified.
+cases cover settings persistence and control validation. PR #305 passed its
+gates, published exact images and completed the verified appliance update.
 Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
 evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
 The supported Linux snapshot passes 1,648 tests, zero failures and two root-only

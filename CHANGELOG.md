@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Retain verified upload chunks until media-library registration succeeds, and
+  preserve registered files when later cleanup or response handling fails.
+
+- Preserve upload resume IDs on temporary failures, report cancellation errors
+  and keep late upload results from overwriting the current controller operation.
+
 - Give video commands without a supplied session ID one stable command-owned
   playback identity for dispatch and reconnect replay.
 

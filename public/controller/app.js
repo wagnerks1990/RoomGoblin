@@ -592,19 +592,20 @@ async function showMedia(enc){
 }
 async function convertMedia(enc){try{uploadState.textContent='Converting…';await jpost('/api/v1/media/'+enc+'/convert',{});uploadState.textContent='Conversion complete';loadMedia()}catch(e){uploadState.textContent=e.message}}
 async function deleteMedia(enc,label){if(!confirm(`Delete "${label}" from RoomGoblin? This also removes its generated display PDF.`))return;try{await api('/api/v1/media/'+enc,{method:'DELETE'});loadMedia()}catch(e){alert(e.message)}}
-let mediaUploadAbort=null;
+let mediaUploadAbort=null,mediaUploadFile=null,mediaUploadGeneration=0;
 async function runMediaUpload(){
- const f=mediaFile.files[0];if(!f)return;mediaUploadAbort=new AbortController();mediaUploadPause.style.display='';mediaUploadCancel.style.display='';
+ const f=mediaFile.files[0];if(!f)return;const generation=++mediaUploadGeneration;mediaUploadAbort?.abort();const controller=new AbortController();mediaUploadAbort=controller;mediaUploadFile=f;mediaUploadPause.style.display='';mediaUploadCancel.style.display='';
  uploadState.textContent='Preparing upload…';
  try{
-  const j=await RoomGoblinUpload.upload(f,{signal:mediaUploadAbort.signal,onProgress:p=>{uploadState.textContent=`Uploading ${p.percent}% • ${fmtBytes(p.uploaded)} / ${fmtBytes(p.total)}`}});
-  uploadState.textContent=j.file?.conversionStatus==='failed'?'Uploaded; conversion failed':'Ready';mediaFile.value='';mediaUploadCancel.style.display='none';loadMedia();
- }catch(err){uploadState.textContent=err.name==='AbortError'?'Paused — select Upload to resume':err.message}
- finally{mediaUploadAbort=null;mediaUploadPause.style.display='none'}
+  const j=await RoomGoblinUpload.upload(f,{signal:controller.signal,onProgress:p=>{if(generation===mediaUploadGeneration)uploadState.textContent=`Uploading ${p.percent}% • ${fmtBytes(p.uploaded)} / ${fmtBytes(p.total)}`}});
+  if(generation!==mediaUploadGeneration)return;
+  uploadState.textContent=j.file?.conversionStatus==='failed'?'Uploaded; conversion failed':'Ready';if(mediaFile.files[0]===f)mediaFile.value='';mediaUploadFile=null;mediaUploadCancel.style.display='none';loadMedia();
+ }catch(err){if(generation===mediaUploadGeneration)uploadState.textContent=err.name==='AbortError'?'Paused — select Upload to resume':err.message}
+ finally{if(generation===mediaUploadGeneration){mediaUploadAbort=null;mediaUploadPause.style.display='none'}}
 }
 mediaUploadForm.addEventListener('submit',async e=>{e.preventDefault();await runMediaUpload()});
 mediaUploadPause.addEventListener('click',()=>mediaUploadAbort?.abort());
-mediaUploadCancel.addEventListener('click',async()=>{const f=mediaFile.files[0];mediaUploadAbort?.abort();if(f)await RoomGoblinUpload.cancel(f);uploadState.textContent='Upload cancelled';mediaUploadCancel.style.display='none'});
+mediaUploadCancel.addEventListener('click',async()=>{const f=mediaUploadFile||mediaFile.files[0],generation=++mediaUploadGeneration;mediaUploadAbort?.abort();mediaUploadAbort=null;mediaUploadPause.style.display='none';try{if(f)await RoomGoblinUpload.cancel(f);if(generation!==mediaUploadGeneration)return;uploadState.textContent='Upload cancelled';mediaUploadCancel.style.display='none';mediaUploadFile=null}catch(error){if(generation===mediaUploadGeneration){uploadState.textContent=`Cancel failed: ${error.message}`;mediaUploadCancel.style.display=''}}});
 
 // Displays & AV owns its polling, drawers and receiver drafts in av-workspace.js.
 

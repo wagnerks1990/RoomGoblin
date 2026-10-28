@@ -6,6 +6,21 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Resumable assembly awaits its internal registration callback before reclaiming
+chunks. Preserve session ownership through registration, and never delete a
+successfully registered file because subsequent cleanup or response handling
+failed. This does not provide a durable completion receipt.
+
+Keep completion rate middleware before `requireCapability("media.manage")` and
+use the same capability predicate to skip rejected callers. Its fixed appliance
+budget must not be multiplied by changing upload IDs or forwarding headers, or
+applied to chunk traffic needed for a normal large upload.
+
+Browser upload startup/cancel operations share same-file ownership within a page.
+Only confirmed missing/cancelled sessions may be forgotten, and only if their
+saved ID still matches. Keep both controllers' generation checks on progress,
+completion, error, cancellation and abort-handle cleanup.
+
 Video validation supplies the normalized command ID only when no session ID was
 provided. Preserve explicit occurrence/caller identity and legacy command strings.
 

@@ -888,15 +888,15 @@ window.routeSelected=async()=>{for(const id of selected)await cmd('av.route',id,
 
 function rgba(hex,a){const n=parseInt(hex.replace('#',''),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
 
-let mediaUploadAbort=null,mediaUploadFile=null;
+let mediaUploadAbort=null,mediaUploadFile=null,mediaUploadGeneration=0;
 async function uploadFile(f){
-  mediaUploadFile=f;mediaUploadAbort=new AbortController();el('uploadPause').style.display='';el('uploadCancel').style.display='';el('uploadStatus').textContent='Preparing upload…';
-  try{const j=await RoomGoblinUpload.upload(f,{signal:mediaUploadAbort.signal,onProgress:p=>{el('uploadStatus').textContent=`Uploading ${p.percent}%`}}),file=j.file;el('mediaUrl').value=file.url;el('uploadStatus').textContent='Uploaded: '+file.originalName;el('uploadCancel').style.display='none';await loadMedia();setResultSummary(`✓ Uploaded ${file.originalName}`,true,j)}
-  catch(e){el('uploadStatus').textContent=e.name==='AbortError'?'Paused — select Upload / Resume to continue':e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}
-  finally{mediaUploadAbort=null;el('uploadPause').style.display='none'}
+  const generation=++mediaUploadGeneration;mediaUploadAbort?.abort();const controller=new AbortController();mediaUploadFile=f;mediaUploadAbort=controller;el('uploadPause').style.display='';el('uploadCancel').style.display='';el('uploadStatus').textContent='Preparing upload…';
+  try{const j=await RoomGoblinUpload.upload(f,{signal:controller.signal,onProgress:p=>{if(generation===mediaUploadGeneration)el('uploadStatus').textContent=`Uploading ${p.percent}%`}}),file=j.file;if(generation!==mediaUploadGeneration)return;el('mediaUrl').value=file.url;el('uploadStatus').textContent='Uploaded: '+file.originalName;el('uploadCancel').style.display='none';mediaUploadFile=null;await loadMedia();if(generation===mediaUploadGeneration)setResultSummary(`✓ Uploaded ${file.originalName}`,true,j)}
+  catch(e){if(generation===mediaUploadGeneration){el('uploadStatus').textContent=e.name==='AbortError'?'Paused — select Upload / Resume to continue':e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}}
+  finally{if(generation===mediaUploadGeneration){mediaUploadAbort=null;el('uploadPause').style.display='none'}}
 }
 window.pauseMediaUpload=()=>mediaUploadAbort?.abort();
-window.cancelMediaUpload=async()=>{mediaUploadAbort?.abort();if(mediaUploadFile)await RoomGoblinUpload.cancel(mediaUploadFile);el('uploadStatus').textContent='Upload cancelled';el('uploadCancel').style.display='none'};
+window.cancelMediaUpload=async()=>{const file=mediaUploadFile,generation=++mediaUploadGeneration;mediaUploadAbort?.abort();mediaUploadAbort=null;el('uploadPause').style.display='none';try{if(file)await RoomGoblinUpload.cancel(file);if(generation!==mediaUploadGeneration)return;el('uploadStatus').textContent='Upload cancelled';el('uploadCancel').style.display='none';mediaUploadFile=null}catch(error){if(generation===mediaUploadGeneration){el('uploadStatus').textContent=`Cancel failed: ${error.message}`;el('uploadCancel').style.display='';setResultSummary('✕ Cancel failed: '+error.message,false,{error:error.message})}}};
 window.uploadMedia=async()=>{const f=el('upload').files[0];if(f)await uploadFile(f)};
 const dz=el('dropZone');
 dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag')};

@@ -8363,15 +8363,24 @@ app.put("/api/v1/media/uploads/:id/chunks/:index",requireCapability("media.manag
     res.json({ok:true,upload});
   }catch(err){if(!req.readableEnded)req.resume();res.status(err.status||400).json({ok:false,error:err.message})}
 });
-app.post("/api/v1/media/uploads/:id/complete",requireCapability("media.manage"),async(req,res)=>{
-  let destination="";
+const mediaUploadCompletionLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:12,keyGenerator:()=>"media-upload-completion",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Upload completion limit reached; retry later"}
+});
+app.post("/api/v1/media/uploads/:id/complete",mediaUploadCompletionLimit,requireCapability("media.manage"),async(req,res)=>{
+  let destination="",registered=false,file;
   try{
     const session=resumableUploads.owned(req.params.id,ownerKey(req)),stored=mediaStoredName(session.name);
     destination=path.join(MEDIA_DIR,stored);
-    const meta=await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination});
-    const file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size});
+    await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination,register:async meta=>{
+      file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size});
+      if(!file)throw Error("Uploaded file is unavailable after registration");
+      registered=true;
+    }});
     res.json({ok:true,file});
-  }catch(err){if(destination)fs.rmSync(destination,{force:true});res.status(err.status||400).json({ok:false,error:err.message})}
+  }catch(err){if(destination&&!registered)fs.rmSync(destination,{force:true});res.status(err.status||400).json({ok:false,error:err.message})}
 });
 app.delete("/api/v1/media/uploads/:id",requireCapability("media.manage"),async(req,res)=>{
   try{await resumableUploads.cancel(req.params.id,ownerKey(req));audit({kind:"media.upload.cancelled",uploadId:req.params.id});res.json({ok:true})}
