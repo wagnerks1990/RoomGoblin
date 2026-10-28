@@ -1,29 +1,29 @@
 # RoomGoblin modernization audit
 
-PR #327 is [deployed and verified](android-editor-preview-delivery.md) at `9de6079`.
-PR #326 is [deployed and verified](ubuntu-repair-wizard-delivery.md) at `865631d`,
-including the [screen-mapping repair](ubuntu-screen-mapping-ownership.md).
-[PR #325](managed-display-outcomes-delivery.md) and [PR #324](ubuntu-reliability-delivery.md)
-also have verified delivery receipts. PR #327 merged as `9de6079` and carries the [Android editor](android-editor-ownership.md)
-and [screenshot preview](android-preview-ownership.md) fixes with 2,280 Linux
-passes, two root-only skips, all 23 Host Recovery cases and 113 workspace cases
-per browser. The [inventory/status repair](android-inventory-ownership.md)
-reproduces 15 failures on old source and passes all 16 targeted cases, 2,296 Linux
-tests with two root-only skips, all 23 Host Recovery cases and 116 workspace
-cases per browser. PR #328's held-route timing repair passed 40 Firefox
-repetitions and 116 workspace cases per browser; all 14 checks passed before
-merge as `f76670b`. Exact publication and delivery follow. The separate [card-command fix](android-command-ownership.md)
-passes nine targeted cases, 2,305 Linux tests with two root-only skips, all 23
-Host Recovery cases and 119 workspace cases per browser. The [shell/output fix](android-shell-ownership.md)
-passes nine targeted cases, 2,314 Linux tests with two root-only skips, all 23
-Host Recovery cases and 122 workspace cases per browser. The [lifecycle fix](android-lifecycle-ownership.md)
-passes 2,328 Linux tests with two root-only skips, all 23 Host Recovery cases and
-125 workspace cases per browser after four reproduced failures. PR #329's initial
-14 checks passed. PR #328's main Firefox run hit a [wizard route-fixture race](ubuntu-wizard-route-fixture.md);
-publication stopped, production remains at #327, and a failed-job-only retry is
-running. The permanent fixture repair passed 20 Firefox repetitions. Three
-server-side Android record-completion failures are reproduced for the next fix.
-Remaining Group 10 and roadmap work is open.
+PR #328 is [deployed and verified](android-inventory-delivery.md) at `f76670b`.
+Its backed-up Hub-only update passed strict health, data, asset and rollback
+availability checks. PR #329 merged as `039a1fc` after all 14 fresh checks passed;
+its exact-main publication and delivery follow. The [card-command fix](android-command-ownership.md)
+passes 2,305 Linux tests with two root-only skips, all 23 Host Recovery cases and
+119 workspace cases per browser. Its [wizard fixture correction](ubuntu-wizard-route-fixture.md)
+also passed 20 Firefox repetitions.
+
+The combined [shell/output](android-shell-ownership.md) and
+[lifecycle](android-lifecycle-ownership.md) batch preserves current diagnostic
+output, command drafts and confirmed enrollment outcomes without page reloads.
+It passes all 77 related Android cases, 2,328 Linux tests with two root-only skips,
+all 23 Host Recovery cases and 125 workspace cases per browser. The integrated
+public sources and tests match qualified `aed79bd` exactly. No physical display
+command or enrollment was used.
+
+Separate server record-completion work passes 20 targeted cases, 2,348 Linux
+tests with two root-only skips and all 23 Host Recovery cases. Four policy
+admission failures are reproduced for the next review. Remaining Group 10 and
+roadmap work is open. Earlier delivery receipts include
+[PR #327](android-editor-preview-delivery.md),
+[PR #326](ubuntu-repair-wizard-delivery.md),
+[PR #325](managed-display-outcomes-delivery.md) and
+[PR #324](ubuntu-reliability-delivery.md).
 
 Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
