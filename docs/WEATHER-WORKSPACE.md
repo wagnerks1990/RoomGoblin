@@ -63,6 +63,10 @@ Existing receiver asset authorization gates the projection, which omits
 coordinates and raw upstream data. Operator reads require classroom control;
 location/unit saves require schedule and automation management. Separate fixed
 read/write quotas precede authorization. Draft edits survive polling.
+A saved location/unit/source change retires the previous preview and any pending
+preview response. When no forecast is available, previous readings and alert
+content clear. Same-location refreshes preserve custom previews and selected
+receivers; sending after a change must obtain a valid current scene.
 
 ## Validation, upgrade and rollback
 

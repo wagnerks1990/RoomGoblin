@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Clear retired Weather readings and previews when the saved forecast location
+  changes or becomes unavailable; reject late previews from the previous location.
+
 - Report planned and unimplemented native Android controls as unavailable while
   preserving implemented controls and their permission gates.
 
