@@ -43,7 +43,7 @@ async function configure(d,body={}){
   const persistentAdb=d.persistentAdb?.enabled===true;
   const targetAdbPort=cleanPort(d.persistentAdb?.targetPort||5555);
   await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url,"--ez","agent_enabled","true","--ei","agent_port",String(port),"--es","agent_token",agentToken,"--ez","persistent_adb",String(persistentAdb),"--ei","target_adb_port",String(targetAdbPort)],20000,[agentToken]);
-  const updated=STORE.upsertDevice({...d,displayUrl:url,agentPackage:pkg,agentV2:{enabled:true,port,token:agentToken,configuredAt:new Date().toISOString()}});
+  const updated=STORE.updateDevice(d,{displayUrl:url,agentPackage:pkg,agentV2:{enabled:true,port,token:agentToken,configuredAt:new Date().toISOString()}});
   return updated;
 }
 async function packageInstalled(d,pkg){
@@ -75,10 +75,10 @@ async function deactivateDeviceAdmin(d){
   }
 }
 function lifecycle(d,action){
-  if(action==="enable")return {removed:false,device:STORE.upsertDevice({...d,enabled:true})};
-  if(action==="disable")return {removed:false,device:STORE.upsertDevice({...d,enabled:false})};
+  if(action==="enable")return {removed:false,device:STORE.updateDevice(d,{enabled:true})};
+  if(action==="disable")return {removed:false,device:STORE.updateDevice(d,{enabled:false})};
   if(action==="remove"){
-    const removed=STORE.deleteDevice(d.id);
+    const removed=STORE.deleteDevice(d.id,d);
     if(!removed){const e=Error("Managed Android display not found");e.status=404;throw e}
     return {removed:true,deviceId:d.id,dataPreserved:true,message:"Managed display enrollment removed from RoomGoblin. The Android app, device data, and server-wide data were not deleted."};
   }

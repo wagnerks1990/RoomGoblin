@@ -1,5 +1,6 @@
 # RoomGoblin modernization audit
 
+PR #328 is [deployed and verified](android-inventory-delivery.md) at `f76670b`.
 PR #327 is [deployed and verified](android-editor-preview-delivery.md) at `9de6079`.
 PR #326 is [deployed and verified](ubuntu-repair-wizard-delivery.md) at `865631d`,
 including the [screen-mapping repair](ubuntu-screen-mapping-ownership.md).
@@ -12,17 +13,20 @@ reproduces 15 failures on old source and passes all 16 targeted cases, 2,296 Lin
 tests with two root-only skips, all 23 Host Recovery cases and 116 workspace
 cases per browser. PR #328's held-route timing repair passed 40 Firefox
 repetitions and 116 workspace cases per browser; all 14 checks passed before
-merge as `f76670b`. Exact publication and delivery follow. The separate [card-command fix](android-command-ownership.md)
+merge as `f76670b`. Its exact publication and delivery are verified. The [card-command fix](android-command-ownership.md)
 passes nine targeted cases, 2,305 Linux tests with two root-only skips, all 23
 Host Recovery cases and 119 workspace cases per browser. The [shell/output fix](android-shell-ownership.md)
 passes nine targeted cases, 2,314 Linux tests with two root-only skips, all 23
 Host Recovery cases and 122 workspace cases per browser. The [lifecycle fix](android-lifecycle-ownership.md)
 passes 2,328 Linux tests with two root-only skips, all 23 Host Recovery cases and
-125 workspace cases per browser after four reproduced failures. PR #329's initial
-14 checks passed. PR #328's main Firefox run hit a [wizard route-fixture race](ubuntu-wizard-route-fixture.md);
-publication stopped, production remains at #327, and a failed-job-only retry is
-running. The permanent fixture repair passed 20 Firefox repetitions. Three
-server-side Android record-completion failures are reproduced for the next fix.
+125 workspace cases per browser after four reproduced failures. PR #329 merged as
+`039a1fc` after all 14 fresh checks passed; exact publication and delivery follow.
+It includes the [wizard route-fixture repair](ubuntu-wizard-route-fixture.md),
+which passed 20 Firefox repetitions and 119 workspace cases per browser. The
+[record-completion fix](android-record-completion.md) passes 20 targeted cases
+after three reproduced failures, 2,348 Linux tests with two root-only skips and
+all 23 Host Recovery cases.
+Four policy-dispatch admission failures are reproduced for the next review.
 Remaining Group 10 and roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.
