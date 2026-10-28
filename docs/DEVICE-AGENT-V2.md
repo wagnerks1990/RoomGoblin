@@ -83,11 +83,18 @@ Expected to work on normal consumer Android TV firmware:
 - launch/reload own kiosk activity,
 - media volume control,
 - short wake-lock based wake request,
-- open/launch other launcher-visible applications,
-- user-confirmed package installation,
 - display content assignment and recovery.
 
 Android/OEM restrictions can still prevent background activity launch in some states. The service must remain independently healthy even if foreground kiosk launch is rejected.
+
+Capability availability describes implemented native Agent v2 operations.
+Launching other applications, app inventory, own-WebView snapshots, lock-task
+provisioning, native APK installation/self-update, power-off and generic settings
+writes are not implemented in that API and remain unavailable even when Android
+grants would permit future implementation. Existing keys remain in the response.
+The Hub's trusted ADB launch and verified APK installation paths are unchanged.
+Raw permission fields and implemented persistent-ADB recovery remain available
+for their actual purpose; a grant alone does not enable an unimplemented action.
 
 ### Tier 1 — ordinary user-granted permissions
 

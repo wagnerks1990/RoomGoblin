@@ -54,8 +54,8 @@ final class AgentCapabilities {
             c.put("volumeControl",cap(true,"native","AudioManager media volume"));
             c.put("wakeDisplay",cap(true,"native","wake lock plus kiosk launch"));
             c.put("sleepDisplay",cap(adminActive,"device-admin","requires active device-admin force-lock policy; normally disabled for always-on kiosk profiles"));
-            c.put("reboot",cap(deviceOwner,"device-owner","DevicePolicyManager.reboot requires device owner unless optional root tools are granted"));
-            c.put("lockTaskKiosk",cap(deviceOwner,"device-owner","fully managed lock-task requires device-owner allowlisting"));
+            c.put("reboot",cap(deviceOwner,"device-owner","the native reboot action requires DevicePolicyManager device-owner authority"));
+            c.put("lockTaskKiosk",cap(false,"not-implemented","native lock-task provisioning is not implemented"));
             c.put("persistentAdbSettings",cap(secure,"adb-bootstrap","WRITE_SECURE_SETTINGS must be granted once through trusted ADB, local ADB, or device-owner provisioning"));
             c.put("localAdbPairing",cap(true,"experimental","first-party local ADB client supports explicit pairing-code enrollment"));
             c.put("wirelessAdbDiscovery",cap(true,"experimental","first-party local ADB client uses Android mDNS discovery through libadb-android"));
@@ -71,16 +71,16 @@ final class AgentCapabilities {
             c.put("navigationBack",cap(accessibilityEnabled,"accessibility","GLOBAL_ACTION_BACK through the RoomGoblin Accessibility service"));
             c.put("navigationRecents",cap(accessibilityEnabled,"accessibility-oem","GLOBAL_ACTION_RECENTS request is available when Accessibility is enabled, but the OEM launcher may ignore it or expose no Recents UI"));
 
-            c.put("launchOtherApps",cap(true,"limited","launchable packages only; Android package visibility applies"));
-            c.put("installedAppInventory",cap(true,"limited","launcher-visible apps by default; broader inventory requires package-query/elevated management"));
+            c.put("launchOtherApps",cap(false,"not-implemented","native app launching is not implemented; trusted Hub ADB launch remains available"));
+            c.put("installedAppInventory",cap(false,"not-implemented","native installed-app inventory is not implemented"));
             c.put("screenCapture",cap(false,"user-consent","full-screen capture requires MediaProjection consent; ADB/root may offer unattended alternatives"));
-            c.put("ownDisplaySnapshot",cap(true,"planned","own WebView can be rendered without MediaProjection"));
-            c.put("silentApkInstall",cap(deviceOwner||rootCommandsAvailable,"elevated","device-owner or policy-enabled optional root tier required for unattended install"));
-            c.put("interactiveApkInstall",cap(true,"native","PackageInstaller can request user-confirmed installation"));
-            c.put("selfUpdate",cap(deviceOwner||rootCommandsAvailable,"mixed","silent only with elevated management; otherwise user-confirmed installer flow"));
-            c.put("powerOff",cap(rootCommandsAvailable,"root-only","ordinary Android apps cannot power off the device; optional root tools must be enabled"));
+            c.put("ownDisplaySnapshot",cap(false,"planned","own-WebView snapshot capture is not implemented"));
+            c.put("silentApkInstall",cap(false,"not-implemented","native unattended APK installation is not implemented; trusted Hub ADB installation remains available"));
+            c.put("interactiveApkInstall",cap(false,"not-implemented","native user-confirmed APK installation is not implemented"));
+            c.put("selfUpdate",cap(false,"not-implemented","native self-update is not implemented; the Hub manages verified APK installation"));
+            c.put("powerOff",cap(false,"not-implemented","the native action API has no power-off operation"));
             c.put("inputInjection",cap(false,"not-implemented","Agent v2 does not implement arbitrary key, text, tap, swipe, or coordinate injection; Accessibility provides supported global actions only"));
-            c.put("systemSettingsWrite",cap(secure||writeSettings||rootCommandsAvailable,"permission-dependent","secure/global settings need WRITE_SECURE_SETTINGS, WRITE_SETTINGS, or policy-enabled elevated privilege"));
+            c.put("systemSettingsWrite",cap(false,"not-implemented","generic settings writes are not implemented; persistentAdbSettings describes the supported ADB recovery action"));
             c.put("overlay",cap(overlay,"user-grant","SYSTEM_ALERT_WINDOW requires explicit approval"));
             c.put("deviceAdmin",cap(adminActive,"user-grant","legacy device-admin can lock but is not equivalent to device owner"));
             c.put("deviceOwnerProvisioning",cap(deviceOwner,"provisioning","normally requires provisioning/factory-reset workflow on consumer Android TV"));

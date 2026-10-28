@@ -76,6 +76,10 @@ dependency or Gradle version changes are needed.
 12 cases against the actual native manager. Substituted preferences and protocol
 clients verify partial settings, renames, persistent client IDs, connection
 failure cleanup and readiness states. No network or Android preferences are used.
+`python3 tools/test-android-capability-truth.py` checks 22 actual capability
+snapshots with substituted Android permissions. Planned operations remain
+unavailable even with grants, while implemented controls retain their permission
+and root-policy gates. No permission is granted on a real device.
 
 ## Conservative documentation-only PR selection
 
