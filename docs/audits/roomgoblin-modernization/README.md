@@ -1,5 +1,16 @@
 # RoomGoblin modernization audit
 
+PR #319 is [deployed and verified](windows-agent-delivery.md) at `0f24c99` after
+the planner's full reconciliation. PR #320 passed all 14 checks and merged as
+`d3a3937`; all main gates and exact image publication passed, and its backed-up
+update is running. The separate [native lifecycle repair](windows-native-lifecycle.md)
+reproduces 14 failures and passes 36 local process/polling/install-owner cases,
+2,169 Linux tests with two root-only skips, and all 23 Host Recovery cases.
+Required .NET 8 CI follows. Group 10 and later roadmap work remain open.
+
+Entries below retain earlier qualification and delivery history. The current
+status above supersedes their pending-state descriptions.
+
 The connection deadline repair is qualified with five native cases, 2,169 Linux
 passes, two root-only skips and 23 Host Recovery passes. It joins PR #320's native
 output and transfer bounds, giving 24 isolated native process/transfer/connection

@@ -31,6 +31,21 @@ required. `python tools/test-native-update-transfer.py` exercises the actual cli
 with loopback HTTP and temporary staging; its signature-verifier fixture checks
 dispatch after hashing, not Windows trust validation or service installation.
 
+Bootstrap/updater subprocesses have a 30-second default budget through process
+exit and captured output. Retained stdout/stderr are capped at 64 Ki characters
+each and thrown diagnostic details at 2,048 characters. Service-stop polling
+uses a monotonic remaining budget for each query and sleep. Only a successful
+STOPPED response or error 1060 (service not installed) confirms a safe stop;
+query errors and exhausted waits fail visibly before replacement/deletion.
+If stop confirmation fails during rollback, recovery cannot continue safely:
+the operation fails and retains the remaining configuration/package/backup files.
+Do not treat that failure as completed rollback or start the legacy task while
+the native service's state is unknown.
+Legacy-task shutdown/disable and install-directory preparation are inside the
+installer's failure handler. Failures before native-service work can recover
+the legacy task and clean a newly created config without stopping an untouched
+native service. Existing enrolled configuration remains preserved.
+
 The native package contains four self-contained `win-x64` executables:
 
 - `RoomGoblinAgent.exe` — Windows service running as `LocalSystem`. It maintains the outbound WebSocket connection, sends hello/heartbeat telemetry, dispatches constrained commands, collects browser history, and coordinates updates.

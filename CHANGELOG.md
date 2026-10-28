@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Bound native bootstrap/updater subprocess waits and diagnostics, and require
+  confirmed service stop before replacing, deleting or rolling back files.
+
 - Limit each native Windows WebSocket handshake to 15 seconds so a stalled
   primary cannot indefinitely prevent the configured fallback connection.
 
