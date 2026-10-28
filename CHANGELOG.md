@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve audio retries for continuing announcement receivers and bind delayed
+  audio/live volume to their current content through asynchronous delivery.
+
 - Retire old Music Assistant socket callbacks and pending work without disturbing
   successor connections or replaying operations across a connection change.
 

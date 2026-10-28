@@ -919,24 +919,28 @@ function morningAnnouncementsSchoolDay(now=new Date()){
 }
 function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
 function scheduleAnnouncementAudioRetries(targets){
-  // Target-array identity belongs to one takeover, even if its successor uses
-  // the same receiver IDs. Old retries must never control that newer session.
-  const owner=morningAnnouncementsRuntime.targets;
+  // Content identity belongs to one receiver takeover. Adding another receiver
+  // must not cancel retries still needed by unchanged announcement playback.
+  const expectedDisplayContent=new Map((targets||[]).map(id=>[id,[persistentState.displays[id]?.audioContentId]]).filter(([,ids])=>ids[0]));
   for(const delay of [1500,4500,10000,20000])setTimeout(()=>{
     if(shutdownRequested||fullExportFreeze.requested)return;
-    if(!morningAnnouncementsRuntime.active||morningAnnouncementsRuntime.targets!==owner)return;
+    if(!morningAnnouncementsRuntime.active)return;
     if(morningAnnouncementsRuntime.mode!=="manual"&&!morningAnnouncementsRuntime.live)return;
-    trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
+    const activeTargets=[...expectedDisplayContent.keys()].filter(id=>(morningAnnouncementsRuntime.targets||[]).includes(id)&&expectedDisplayContent.get(id).includes(persistentState.displays[id]?.audioContentId));
+    if(!activeTargets.length)return;
+    trackFullExportMutation(executeCommand({type:"display.web.audio",target:activeTargets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements",{expectedDisplayContent})).catch(()=>{});
   },delay);
 }
 async function applyMorningAnnouncementVolume(){
   if(!morningAnnouncementsRuntime.active)return {active:false,applied:false,targets:[]};
-  const targets=[...(morningAnnouncementsRuntime.targets||[])];
+  const targets=(morningAnnouncementsRuntime.targets||[]).filter(id=>persistentState.displays[id]?.media?.contentKind==="morning-announcements"&&persistentState.displays[id]?.audioContentId);
   if(!targets.length)return {active:true,applied:false,targets:[]};
   const volume=Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100));
-  await executeCommand({type:"display.web.audio",target:targets,payload:{unmute:volume>0,volume,reload:false,contentKind:"morning-announcements"}},"morning-announcements");
-  audit({kind:"automation.morning-announcements.volume",targets,volumePercent:morningAnnouncements.volumePercent});
-  return {active:true,applied:true,targets};
+  const expectedDisplayContent=new Map(targets.map(id=>[id,[persistentState.displays[id].audioContentId]]));
+  const result=await executeCommand({type:"display.web.audio",target:targets,payload:{unmute:volume>0,volume,reload:false,contentKind:"morning-announcements"}},"morning-announcements",{expectedDisplayContent});
+  const appliedTargets=result?.skipped?[]:(result?.command?.target||targets);
+  audit({kind:"automation.morning-announcements.volume",targets:appliedTargets,volumePercent:morningAnnouncements.volumePercent});
+  return {active:true,applied:appliedTargets.length>0,targets:appliedTargets};
 }
 async function setMorningAnnouncementPriorityTargets(targets,active){
   for(const id of targets||[]){if(active)morningAnnouncementsPriorityTargets.add(id);else morningAnnouncementsPriorityTargets.delete(id)}
@@ -4774,7 +4778,8 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
-  if(expectedDisplayContent&&(source!=="morning-announcements"||command.type!=="display.clear"))throw Error("Conditional display ownership is only supported for announcement release");
+  if(expectedDisplayContent&&(source!=="morning-announcements"||!(command.type==="display.clear"||(command.type==="display.web.audio"&&command.payload.contentKind==="morning-announcements"))))throw Error("Conditional display ownership is only supported for announcement release or audio");
+  const ownsConditionalContent=id=>(command.type==="display.clear"?[command.id]:expectedDisplayContent?.get(id))?.includes(persistentState.displays[id]?.audioContentId||"");
   // Manual whole-screen content replaces the selected receivers' prior scene.
   // Keep title/subtitle/timer edits and persistent media controls composable.
   const replacesContent=["http","media-library"].includes(source)&&
@@ -4858,7 +4863,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
 
     if (MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
       for (const id of targets) {
-        if(expectedDisplayContent&&persistentState.displays[id]?.audioContentId!==command.id)continue;
+        if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
         const topic = `classroom/v2/display/${id}/command`;
         await mqttPublish(topic, command);
         result.deliveries.mqttJson.push(topic);
@@ -4877,9 +4882,9 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
           result.deliveries.mqttLegacy.push("classroom/all");
         } else {
           for (const id of targets) {
-            if(expectedDisplayContent&&persistentState.displays[id]?.audioContentId!==command.id)continue;
+            if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
             const topic = devices[id]?.legacyTopic || `classroom/${id}`;
-            if(expectedDisplayContent&&topic==="classroom/all")throw Error("Announcement release cannot safely target a shared legacy broadcast topic");
+            if(expectedDisplayContent&&topic==="classroom/all")throw Error("Announcement command cannot safely target a shared legacy broadcast topic");
             await mqttPublish(topic, legacy);
             result.deliveries.mqttLegacy.push(topic);
           }
@@ -4903,7 +4908,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
   }
 
   if(expectedDisplayContent){
-    const owned=resolveDisplayTargets(command.target).filter(id=>persistentState.displays[id]?.audioContentId===command.id);
+    const owned=resolveDisplayTargets(command.target).filter(ownsConditionalContent);
     if(owned.length)backgroundMusicObserveDisplayCommand({...command,target:owned},source);
   }else backgroundMusicObserveDisplayCommand(command, source);
 
