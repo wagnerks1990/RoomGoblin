@@ -13,7 +13,14 @@ const {performance}=require("node:perf_hooks");
 const root=path.resolve(__dirname,"../..");
 const start=require("../../package.json").scripts.start;
 const linux={skip:process.platform!=="linux"?"Requires Linux signal and /proc child-lifecycle semantics":false,timeout:25000};
-async function port(){const server=net.createServer();server.listen(0,"127.0.0.1");await once(server,"listening");const value=server.address().port;await new Promise(resolve=>server.close(resolve));return value}
+async function ports(){
+  const reservations=[];
+  try{
+    // Keep both reservations alive until the OS has selected distinct ports.
+    for(let i=0;i<2;i++){const server=net.createServer();reservations.push(server);server.listen(0,"127.0.0.1");await once(server,"listening")}
+    return reservations.map(server=>server.address().port);
+  }finally{await Promise.all(reservations.map(server=>new Promise(resolve=>server.close(resolve))))}
+}
 async function waitFor(check,description){
   const end=performance.now()+10000;
   while(performance.now()<end){if(await check())return;await delay(40)}
@@ -22,7 +29,7 @@ async function waitFor(check,description){
 async function launch(t,{preload=null,directory=null,receivers=false,mockMqtt=false,gateway=false,maintenanceUrl=null}={}){
   const dir=directory||fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-lifecycle-"));
   if(receivers)fs.writeFileSync(path.join(dir,"runtime-config.json"),JSON.stringify({devices:{tv1:{name:"Test receiver",enabled:true}}}));
-  const control=await port(),media=await port();
+  const [control,media]=await ports();
   const master=path.join(dir,"master.key");fs.writeFileSync(master,Buffer.alloc(32,23),{mode:0o600});
   // Only test-owned configuration enters this subprocess; never inherit a
   // developer's configured classroom integrations or credentials.
@@ -41,10 +48,10 @@ async function launch(t,{preload=null,directory=null,receivers=false,mockMqtt=fa
     if(mediaPid)try{process.kill(mediaPid,"SIGKILL")}catch{}
     fs.rmSync(dir,{recursive:true,force:true});
   });
-  const healthy=async p=>{try{const response=await fetch(`http://127.0.0.1:${p}/health`,{signal:AbortSignal.timeout(300)});await response.arrayBuffer();return response.ok}catch{return false}};
+  const healthy=async(p,service)=>{try{const response=await fetch(`http://127.0.0.1:${p}/health`,{signal:AbortSignal.timeout(300)});const value=await response.json();return response.ok&&value.ok===true&&value.service===service}catch{return false}};
   await waitFor(async()=>{
     assert.equal(child.exitCode,null,output);assert.equal(child.signalCode,null,output);
-    return await healthy(control)&&await healthy(media);
+    return await healthy(control,"classroom-hub-backend")&&await healthy(media,"roomgoblin-media-plane");
   },"both npm-start listeners");
   const children=fs.readFileSync(`/proc/${child.pid}/task/${child.pid}/children`,"utf8").trim().split(/\s+/).filter(Boolean).map(Number);
   mediaPid=children.find(pid=>{try{return fs.readFileSync(`/proc/${pid}/cmdline`,"utf8").includes("media-server.js")}catch{return false}});

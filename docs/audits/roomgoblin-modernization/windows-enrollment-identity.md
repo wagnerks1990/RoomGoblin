@@ -22,3 +22,16 @@ failures and two root-only skips, all 23 Host Recovery cases and syntax/controll
 shell checks. Browser sources are unchanged from qualified `32416c9` (270 Chromium
 and 106 workspace/Veyon Firefox cases). Required .NET 8 CI, checked merge,
 exact publication and backed-up appliance verification precede delivery.
+
+PR #323's first Linux CI run failed a pre-existing recovery setup assertion with
+HTTP 405 instead of 201. The lifecycle fixture released its first ephemeral port
+before allocating the second and accepted any successful health response. The
+media listener returns that 405 for POST requests. Two deterministic old-source
+assertions reproduce duplicate allocation and false control readiness; three
+controls pass. Both reservations now stay open until selection completes and
+readiness checks the expected service identity. All five focused cases pass.
+The repair changes test setup only. The full supported Linux run passes 2,173
+tests, zero failures and two root-only skips, all 23 Host Recovery cases and
+syntax/controller/shell checks. Fresh required CI must pass before merge.
+The native Windows CI job, including all ten enrollment
+cases on .NET 8, passed on the initial head.

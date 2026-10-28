@@ -144,6 +144,15 @@ cannot mask a failed rerun. Workflow identities are regression checked against
 real files. Before changing branch/ruleset required checks, inspect repository
 settings; publication hardening must not weaken required checks.
 
+## Linux lifecycle listener fixtures
+
+Linux lifecycle fixtures reserve the control and media ports together before
+launching the application. Releasing the first reservation before choosing the
+second can let the OS reuse the same port. Readiness must also verify the expected
+service identity in each health response; two HTTP 200 responses alone cannot
+establish that both listeners started. Reservation failures release all fixture
+listeners. This test setup does not change application port selection.
+
 ## Transient Android dependency resolution
 
 The maintenance image builds the Android Agent from repository source. A hosted
