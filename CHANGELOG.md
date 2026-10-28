@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Charge Weather read/write quotas only after matching the route's access
+  predicate, preserving legitimate callers' allowance and rejected callers' denial.
+
 - Keep Weather location results and errors tied to the current query and visible
   session, clear retired choices, and prevent duplicate pending searches.
 

@@ -62,7 +62,10 @@ Data older than one hour is marked stale. Inactive scenes cause no weather polli
 Existing receiver asset authorization gates the projection, which omits
 coordinates and raw upstream data. Operator reads require classroom control;
 location/unit saves require schedule and automation management. Separate fixed
-read/write quotas precede authorization. Draft edits survive polling.
+read/write quotas precede authorization and charge only requests admitted by the
+matching control, receiver-asset or combined settings-write predicate. Rejected
+callers cannot consume the accepted callers' appliance-wide allowance.
+Draft edits survive polling.
 A saved location/unit/source change retires the previous preview and any pending
 preview response. When no forecast is available, previous readings and alert
 content clear. Same-location refreshes preserve custom previews and selected

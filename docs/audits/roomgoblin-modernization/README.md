@@ -9,6 +9,11 @@ reproduced stale-response and duplicate-submission failures. All 20 Weather
 cases pass in each browser. The supported Linux snapshot passes 2,445 tests,
 zero failures, two root-only skips, all 23 Host Recovery and all 55 JVM cases.
 
+[Weather request admission](weather-request-admission.md) repairs eight
+reproduced HTTP quota/denial failures. All 36 targeted Weather/Planning cases
+pass. The combined supported Linux snapshot passes 2,453 tests, zero failures,
+two root-only skips, all 23 Host Recovery and all 55 JVM cases.
+
 PR #336 is [deployed and verified](android-native-delivery.md) at `7ddeade`
 after all required checks and exact image publication. The next Sports batch
 repairs [refresh and Undo ownership](sports-refresh-ownership.md); three browser
