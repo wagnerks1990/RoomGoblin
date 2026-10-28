@@ -163,6 +163,11 @@ Imports return review data and do not save or dispatch. `POST /boards/:id/scene`
 returns a normal shared scene; `GET /boards/:id/display` requires existing asset
 access and strips source URLs/operator settings from receiver content.
 
+Import reads and Apply actions belong to the visible draft and submitted input.
+Changing the team, draft, text or selected file requires a fresh review. Leaving
+the roster view clears its review. Pending reads cannot be submitted twice;
+failures preserve the draft and release retry.
+
 SQLite preferences `sports.workspace.v1`, `.previous` and `.sources` hold saved
 configuration, the prior staff save and bounded source-check status. Status survives
 restarts; changed source/team mappings do not inherit a prior successful check.

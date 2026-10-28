@@ -6,6 +6,10 @@ repairs [refresh and Undo ownership](sports-refresh-ownership.md); three browser
 failures are reproduced and fixed. Import review and the remaining roadmap
 continue separately.
 
+[Sports import ownership](sports-import-ownership.md) repairs six reproduced
+browser failures involving retired responses, hidden reviews and duplicate reads.
+CSV/PDF and workspace application controls remain part of its qualification.
+
 PR #330 is [deployed and verified](android-shell-lifecycle-delivery.md) at `92adafe`
 after all 14 PR checks, required main gates and exact publication passed. Its
 [shell/output](android-shell-ownership.md) and

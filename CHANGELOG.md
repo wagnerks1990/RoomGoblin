@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Sports imports tied to their reviewed draft and input; reject retired
+  responses and require a fresh review after editing or leaving the view.
+
 - Preserve newer Sports drafts during source refresh and Undo, and serialize
   workspace writes so overlapping responses cannot replace current edits.
 
