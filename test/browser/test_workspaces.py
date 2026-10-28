@@ -117,6 +117,103 @@ class WorkspaceBrowserTests(unittest.TestCase):
                     page, errors = self.page(path, width)
                     self.evidence(page, errors, f'{path.strip("/").replace("/", "-")}-{width}')
 
+    def test_android_enrollment_keeps_its_form_owner_and_newer_drafts(self):
+        for width, newer in ((390, False), (1440, True)):
+            with self.subTest(width=width, newer=newer):
+                pending, enrolled = [], []
+                device = {**DEVICE, 'id': 'new-fixture', 'name': 'New fixture'}
+                def transport(route, target):
+                    if target == '/api/v1/maintenance/android/enroll':
+                        pending.append(route)
+                        return True
+                    if target == '/api/v1/maintenance/android/status':
+                        route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': enrolled, 'profiles': [{'id': 'default', 'name': 'Default'}]})
+                        return True
+                    return False
+                page, errors = self.page('/managed-displays/', width, transport=transport)
+                page.locator('.enroll-panel > summary').click()
+                page.locator('#enroll [name="host"]').fill('192.0.2.50')
+                page.locator('#enroll [name="name"]').fill('New fixture')
+                page.locator('#enroll [name="pairingCode"]').fill('123456')
+                with page.expect_request('**/android/enroll'):
+                    page.locator('#enroll button[type="submit"]').click()
+                self.assertEqual(page.locator('#enroll [name="pairingCode"]').input_value(), '')
+                page.locator('#enroll').evaluate("form => form.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}))")
+                with page.expect_request('**/android/status'):
+                    page.locator('#refresh').click()
+                self.assertTrue(page.locator('#enroll button[type="submit"]').is_disabled())
+                if newer:
+                    page.locator('#enroll [name="host"]').fill('192.0.2.51')
+                    page.locator('#enroll [name="pairingCode"]').fill('654321')
+                enrolled.append(device)
+                pending[0].fulfill(json={'ok': True, 'device': device})
+                if newer:
+                    page.wait_for_function("document.getElementById('enrollMsg').textContent.includes('newer enrollment draft')")
+                    self.assertFalse(page.locator('#editDialog').is_visible())
+                    self.assertEqual(page.locator('#enroll [name="host"]').input_value(), '192.0.2.51')
+                    self.assertEqual(page.locator('#enroll [name="pairingCode"]').input_value(), '654321')
+                else:
+                    page.locator('#editDialog').wait_for(state='visible')
+                    self.assertEqual(page.locator('#editId').input_value(), 'new-fixture')
+                    self.assertEqual(page.locator('#enroll [name="host"]').input_value(), '')
+                    self.assertEqual(page.locator('#enroll [name="connectPort"]').input_value(), '5555')
+                self.assertEqual(len(pending), 1)
+                self.assertNotIn('null', page.locator('#enrollMsg').inner_text())
+                self.evidence(page, errors, f'android-enrollment-owner-{width}')
+
+    def test_android_enrollment_does_not_replace_an_editor_opened_while_pending(self):
+        pending, enrolled = [], [DEVICE]
+        device = {**DEVICE, 'id': 'new-fixture', 'name': 'New fixture'}
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/enroll':
+                pending.append(route)
+                return True
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': enrolled, 'profiles': []})
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.locator('.enroll-panel > summary').click()
+        page.locator('#enroll [name="host"]').fill('192.0.2.51')
+        with page.expect_request('**/android/enroll'):
+            page.locator('#enroll button[type="submit"]').click()
+        page.locator('#devices [data-id="fixture-tv"] [data-op="edit"]').click()
+        page.locator('#editName').fill('Unsaved existing display')
+        enrolled.append(device)
+        pending[0].fulfill(json={'ok': True, 'device': device})
+        page.wait_for_function("document.getElementById('enrollMsg').textContent.includes('Use Edit')")
+        self.assertEqual(page.locator('#editId').input_value(), 'fixture-tv')
+        self.assertEqual(page.locator('#editName').input_value(), 'Unsaved existing display')
+        self.assertFalse(errors, errors)
+
+    def test_android_enrollment_rejection_or_unconfirmed_reply_keeps_fields_without_replay(self):
+        for status, response, message in ((503, {'ok': False, 'error': 'Fixture rejection'}, 'Fixture rejection'),
+                                          (200, {'ok': True}, 'could not be confirmed')):
+            with self.subTest(status=status):
+                writes = []
+                def transport(route, target):
+                    if target == '/api/v1/maintenance/android/enroll':
+                        writes.append(route.request.post_data_json)
+                        route.fulfill(status=status, json=response)
+                        return True
+                    if target == '/api/v1/maintenance/android/status':
+                        route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [], 'profiles': []})
+                        return True
+                    return False
+                page, errors = self.page('/managed-displays/', transport=transport)
+                page.clock.install()
+                page.locator('.enroll-panel > summary').click()
+                page.locator('#enroll [name="host"]').fill('192.0.2.50')
+                page.locator('#enroll [name="pairingCode"]').fill('123456')
+                page.locator('#enroll button[type="submit"]').click()
+                page.wait_for_function("text => document.getElementById('enrollMsg').textContent.includes(text)", arg=message)
+                self.assertEqual(page.locator('#enroll [name="host"]').input_value(), '192.0.2.50')
+                self.assertEqual(page.locator('#enroll [name="pairingCode"]').input_value(), '')
+                self.assertFalse(page.locator('#enroll button[type="submit"]').is_disabled())
+                page.clock.fast_forward(16000)
+                self.assertEqual(len(writes), 1)
+                self.assertFalse(errors, errors)
+
     def test_ubuntu_old_inventory_cannot_replace_a_completed_metadata_save(self):
         before = {'id': 'fixture', 'name': 'Before edit', 'address': '10.0.0.8', 'port': 22,
                   'config': {'screens': []}, 'live': {'online': False}, 'state': 'offline'}
@@ -635,6 +732,13 @@ class WorkspaceBrowserTests(unittest.TestCase):
             '/api/v1/admin/lab-agent-credentials': {'credentials': [], 'policy': {}}})
         page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
         page.evaluate("showPage('lab'); revealControllerOutput('labEnrollmentId')")
+        # The lazy Veyon frame above enrollment replaces its fallback height on
+        # load. Wait for that real layout before testing enrollment clicks.
+        page.wait_for_function("""() => {
+          const frame=document.getElementById('labVeyonFrame'),doc=frame.contentDocument;
+          return frame.dataset.naturalHeight==='true' && doc?.readyState==='complete'
+            && Math.abs(frame.getBoundingClientRect().height-(Math.ceil(doc.body.getBoundingClientRect().height)+2))<=1;
+        }""")
         page.evaluate("""() => {
           window.enrollmentWrites=[];const original=window.fetch;
           window.fetch=(url,options={}) => url.startsWith('/api/v1/admin/lab-agents/')&&url.endsWith('/enrollment')

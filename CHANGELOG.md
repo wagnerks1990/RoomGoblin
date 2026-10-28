@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Complete accepted Android enrollment using the captured form, clear submitted
+  pairing codes, prevent duplicate requests and preserve newer drafts/editors.
+
 - Preserve accepted Ubuntu command/maintenance and saved metadata/schedule
   outcomes when secondary computer-history persistence fails; show a warning
   while retaining primary-write failures and scheduled dispatch claims.

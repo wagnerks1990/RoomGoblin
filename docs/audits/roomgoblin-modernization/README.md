@@ -1,17 +1,17 @@
 # RoomGoblin modernization audit
 
-PR #322 is [deployed and verified](windows-legacy-task-state-delivery.md) at
-`ea64835`; PR #321's [delivery](windows-native-lifecycle-delivery.md) is also
-verified. PR #323 passed all 14 checks and merged as `7acaa7a`; main validation,
-browser and security gates pass while exact publication and delivery follow.
-PR #324 carries the qualified [Ubuntu configuration](ubuntu-configuration-ownership.md)
-and [interface ownership](ubuntu-ui-ownership.md) repairs and is running CI.
-The separate [history outcome repair](ubuntu-history-outcomes.md) passes 2,210
-Linux tests with two root-only skips, all 23 Host Recovery cases and 103 workspace
-cases in each browser. An Android browser reproduction confirms that accepted
-enrollment reports a null-currentTarget error, retains the pairing field and
-fails to open the editor. That repair, Ubuntu wizard probe/input ownership and
-the remaining Android review are next within Group 10. Later roadmap work remains.
+PR #323 is [deployed and verified](windows-enrollment-identity-delivery.md) at
+`7acaa7a`; PR #322's [delivery](windows-legacy-task-state-delivery.md) and PR #321's
+[delivery](windows-native-lifecycle-delivery.md) are also verified. PR #324 passed
+all 14 checks and merged as `fb1d1e6`; exact publication and delivery follow.
+The separate [history outcome repair](ubuntu-history-outcomes.md) is qualified
+with 2,210 Linux passes, two root-only skips, all 23 Host Recovery cases and
+103 workspace cases in each browser. The [Android enrollment repair](android-enrollment-ownership.md)
+passes ten source cases and three browser cases. Combined qualification passes
+2,220 Linux tests with two root-only skips, all 23 Host Recovery cases and 106
+workspace cases in each browser after the documented fixture repairs.
+Ubuntu wizard probe/input ownership and the remaining Android inventory, edit
+and preview review are next within Group 10. Later roadmap work remains.
 
 PR #322 carries the qualified legacy-task repair and is running required CI.
 The separate [enrollment identity repair](windows-enrollment-identity.md) fails
