@@ -26,7 +26,10 @@ which passed 20 Firefox repetitions and 119 workspace cases per browser. The
 [record-completion fix](android-record-completion.md) passes 20 targeted cases
 after three reproduced failures, 2,348 Linux tests with two root-only skips and
 all 23 Host Recovery cases.
-Four policy-dispatch admission failures are reproduced for the next review.
+[Policy admission](android-policy-admission.md) passes 14 cases after five
+reproduced failures, 2,362 Linux tests with two root-only skips and all 23 Host
+Recovery cases. Configuration concurrency has two reproduced failures queued;
+policy cache identity is also under review.
 Remaining Group 10 and roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.

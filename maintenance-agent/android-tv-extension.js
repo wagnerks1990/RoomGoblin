@@ -22,7 +22,7 @@ function boundedEnvironmentInteger(name,fallback,min,max){
   return value;
 }
 const POLICY_INTERVAL_MS=boundedEnvironmentInteger("ANDROID_TV_POLICY_INTERVAL_MS",60000,15000,300000);
-const policyState=new Map();
+const policyState=new Map(),policyOperations=new Map();
 let installed=false,policyTimer=null;
 
 function adbEnv(){return {...process.env,HOME:ROOT,ANDROID_USER_HOME:ROOT}}
@@ -119,7 +119,32 @@ async function enrollOne(body={}){
 function localClock(timeZone){const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));return {date:`${parts.year}-${parts.month}-${parts.day}`,clock:`${parts.hour}:${parts.minute}`,minutes:Number(parts.hour)*60+Number(parts.minute)}}
 function hhmmMinutes(v){const [h,m]=String(v).split(":").map(Number);return h*60+m}
 function desiredAwake(profile,minutes){const wake=hhmmMinutes(profile.wakeTime),sleep=hhmmMinutes(profile.sleepTime);return wake===sleep?true:wake<sleep?(minutes>=wake&&minutes<sleep):(minutes>=wake||minutes<sleep)}
-async function applyDevicePolicy(device,profile,force=false){const clock=localClock(profile.timezone||"UTC"),awake=desiredAwake(profile,clock.minutes),key=`${clock.date}:${awake?"awake":"sleep"}`;if(!force&&policyState.get(device.id)===key)return {deviceId:device.id,changed:false,desiredAwake:awake,clock};const managed=(await ensureDevice(device,{mdnsAttempts:2})).device;if(awake){await adb(adbArgsForAction(managed,"wake"));if(profile.launchOnBoot)await adb(adbArgsForAction(managed,"launch"),{timeout:30000})}else await adb(adbArgsForAction(managed,"sleep"));policyState.set(managed.id,key);return {deviceId:managed.id,changed:true,desiredAwake:awake,clock}}
+async function applyDevicePolicy(device,profile,force=false){
+  const clock=localClock(profile.timezone||"UTC"),awake=desiredAwake(profile,clock.minutes),key=`${clock.date}:${awake?"awake":"sleep"}`;
+  if(policyOperations.has(device.id))return {deviceId:device.id,changed:false,pending:true,desiredAwake:awake,clock};
+  const currentDevice=expected=>{
+    const data=STORE.list(),current=STORE.requireCurrentDevice(data,expected);
+    const currentProfile=data.profiles.find(p=>p.id===current.profileId)||DEFAULT_PROFILE;
+    const currentClock=localClock(profile.timezone||"UTC");
+    if(current.enabled===false||current.profileId!==device.profileId||['timezone','wakeTime','sleepTime','launchOnBoot'].some(field=>currentProfile[field]!==profile[field])||currentClock.date!==clock.date||desiredAwake(profile,currentClock.minutes)!==awake){
+      const error=Error('Android policy changed while the request was pending. Remaining commands were not sent.');error.status=409;throw error;
+    }
+    return current;
+  };
+  const owner={};policyOperations.set(device.id,owner);let dispatched=false;
+  try{
+    currentDevice(device);
+    if(!force&&policyState.get(device.id)===key)return {deviceId:device.id,changed:false,desiredAwake:awake,clock};
+    let managed=currentDevice((await ensureDevice(device,{mdnsAttempts:2})).device);
+    await adb(adbArgsForAction(managed,awake?'wake':'sleep'));dispatched=true;
+    if(awake&&profile.launchOnBoot){managed=currentDevice(managed);await adb(adbArgsForAction(managed,'launch'),{timeout:30000})}
+    currentDevice(managed);policyState.set(device.id,key);
+    return {deviceId:device.id,changed:true,desiredAwake:awake,clock};
+  }catch(error){
+    if(dispatched)return {deviceId:device.id,changed:true,incomplete:true,error:error.message,desiredAwake:awake,clock};
+    throw error;
+  }finally{if(policyOperations.get(device.id)===owner)policyOperations.delete(device.id)}
+}
 async function applyPolicies(force=false){const data=STORE.list(),profiles=new Map(data.profiles.map(x=>[x.id,x])),results=[];for(const device of data.devices.filter(x=>x.enabled!==false)){const profile=profiles.get(device.profileId)||DEFAULT_PROFILE;try{results.push(await applyDevicePolicy(device,profile,force))}catch(error){results.push({deviceId:device.id,changed:false,error:error.message})}}return {ok:true,checkedAt:new Date().toISOString(),results}}
 function startPolicyLoop(){if(policyTimer)return;setTimeout(()=>applyPolicies(false).catch(()=>{}),5000);policyTimer=setInterval(()=>applyPolicies(false).catch(()=>{}),POLICY_INTERVAL_MS);policyTimer.unref?.()}
 
