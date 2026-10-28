@@ -21,3 +21,8 @@ passes 2,305 tests with zero failures and two root-only skips, all 23 Host Recov
 cases and syntax/controller/shell checks. All 119 workspace cases pass in each
 of Chromium and Firefox. No real display command, install or enrollment was
 performed.
+
+The held-route readiness repair from PR #328 is included, and the new command
+fixtures use the same bounded readiness check. Both final browser suites again
+pass all 119 workspace cases; application code is unchanged from Linux
+qualification. The PR #327 verified delivery receipt accompanies this batch.
