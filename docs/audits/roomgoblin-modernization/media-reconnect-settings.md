@@ -23,7 +23,8 @@ of 0.25 instead of being interpreted as an omitted default. Preserve existing
 authentication, mutation quotas and returned handler ownership.
 
 Token renewal also reproduced an unwanted video replacement in the actual
-browser. That separate part of RG-MEDIA-001 remains open and is not fixed here.
+browser. That separate part of RG-MEDIA-001 is covered by the
+[receiver continuity follow-up](media-token-continuity.md).
 
 ## Validation and delivery boundary
 

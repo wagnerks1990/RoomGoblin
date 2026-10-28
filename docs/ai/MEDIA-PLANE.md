@@ -10,6 +10,10 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 points and projects volume/mute/rate onto the selected existing video snapshot.
 Preserve its session/content identity and leave transient playback operations
 receiver-owned. Do not persist a seek/restart action for reconnect replay.
+Receiver identity excludes the automatically injected asset token but includes
+the validated source URL and session ID. Keep URL validation, signed access and
+the media-plane shim intact. Failed-source token renewal retains element/position,
+uses current playback intent and has a three-attempt consecutive failure bound.
 
 The Node bootstrap in `src/startup-recovery.js` starts the supervised child
 through `src/media-plane-process.js`; `npm start` and the container wrapper share

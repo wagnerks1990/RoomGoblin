@@ -172,6 +172,8 @@ async function startVideoPlayback(video,m,reason='autoplay',explicit=false){
   if(session?.video!==video)return false;
   if(!explicit&&(m.autoplay===false||session.operatorPaused))return true;
   if(explicit)session.operatorPaused=false;
+  session.playbackRequested=true;
+  if(session.tokenRecovery){session.tokenRecovery.resume=true;return true}
   const operation=session.playbackOperation=(session.playbackOperation||0)+1;
   const current=()=>activeMediaSession===session&&session.playbackOperation===operation;
   video.muted=true;video.defaultMuted=true;
@@ -198,6 +200,26 @@ async function startVideoPlayback(video,m,reason='autoplay',explicit=false){
   }
   return current()&&!video.paused;
 }
+function renewVideoAccess(video){
+  const session=activeMediaSession;
+  if(session?.video!==video||(session.tokenRefreshCount||0)>=3)return false;
+  let next;try{next=authorizeAssetUrl(session.spec.url)}catch{return false}
+  if(next===session.loadedAuthorizedUrl)return false;
+  if(session.tokenRecovery?.authorizedUrl===next)return true;
+  const recovery={authorizedUrl:next,position:session.tokenRecovery?.position??Math.max(0,Number(video.currentTime)||0),resume:!session.operatorPaused&&!video.ended&&(session.playbackRequested===true||session.spec.autoplay!==false)};
+  session.tokenRecovery=recovery;session.tokenRefreshCount=(session.tokenRefreshCount||0)+1;
+  session.playbackOperation++;
+  // Let the existing one-time media-plane fallback finish handling this event.
+  // Keep the position captured before that fallback can reset the media source.
+  queueMicrotask(()=>{
+    if(activeMediaSession!==session||session.tokenRecovery!==recovery)return;
+    session.loadedAuthorizedUrl=next;session.spec.authorizedUrl=next;
+    video.autoplay=false;video.muted=true;video.defaultMuted=true;
+    video.src=next;video.load();
+    badge.textContent=`${id} renewing video access`;
+  });
+  return true;
+}
 function configureVideoSession(video,m){
   const start=Math.max(0,Number(m.startAtSeconds||0)),end=Number(m.endAtSeconds)>0?Number(m.endAtSeconds):null;
   const desiredVolume=Math.max(0,Math.min(1,Number(m.volume??1))),desiredRate=Math.max(.25,Math.min(4,Number(m.playbackRate||1)));
@@ -209,23 +231,25 @@ function configureVideoSession(video,m){
     reportMediaStatus('session-update');return
   }
   video.autoplay=m.autoplay!==false;video.muted=true;video.defaultMuted=true;video.volume=desiredVolume;video.loop=!!m.loop&&!end;video.playbackRate=desiredRate;video.playsInline=true;video.preload='auto';
+  activeMediaSession.loadedAuthorizedUrl=m.authorizedUrl;
   video.dataset.rgMediaSessionBound='1';
   const enforceEnd=()=>{const current=activeMediaSession?.spec||spec;if(!activeMediaSession||activeMediaSession.video!==video)return;const currentEnd=Number(current.endAtSeconds)>0?Number(current.endAtSeconds):null,currentStart=Math.max(0,Number(current.startAtSeconds||0));if(currentEnd&&video.currentTime>=currentEnd-.08){if(current.loop){video.currentTime=currentStart;startVideoPlayback(video,current,'loop').catch(()=>{})}else{video.pause();reportMediaStatus('clip-ended');if(ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:current.sessionId||null}))}catch{}}}}else reportMediaStatus('timeupdate')};
   const ownsSession=()=>activeMediaSession?.video===video;
   video.addEventListener('timeupdate',enforceEnd);
   for(const event of ['play','playing','pause','ratechange','volumechange'])video.addEventListener(event,()=>{if(ownsSession())reportMediaStatus(event)});
-  video.addEventListener('error',()=>{if(!ownsSession())return;reportMediaStatus('media-error');badge.textContent=`${id} video load error`});
-  video.addEventListener('loadedmetadata',()=>{if(!ownsSession())return;const current=activeMediaSession.spec,currentStart=Math.max(0,Number(current.startAtSeconds||0)),wanted=Math.min(Number.isFinite(video.duration)?video.duration:currentStart,currentStart);if(Math.abs(video.currentTime-wanted)>.2)video.currentTime=wanted;reportMediaStatus('loadedmetadata')});
-  video.oncanplay=()=>{if(!ownsSession())return;startVideoPlayback(video,activeMediaSession.spec,'canplay').catch(()=>{});reportMediaStatus('canplay')};
+  video.addEventListener('error',()=>{if(!ownsSession())return;reportMediaStatus('media-error');if(!renewVideoAccess(video))badge.textContent=`${id} video load error`});
+  video.addEventListener('loadedmetadata',()=>{if(!ownsSession())return;const current=activeMediaSession.spec,currentStart=activeMediaSession.tokenRecovery?.position??Math.max(0,Number(current.startAtSeconds||0)),wanted=Math.min(Number.isFinite(video.duration)?video.duration:currentStart,currentStart);if(Math.abs(video.currentTime-wanted)>.2)video.currentTime=wanted;reportMediaStatus('loadedmetadata')});
+  video.oncanplay=()=>{if(!ownsSession())return;const recovery=activeMediaSession.tokenRecovery;activeMediaSession.tokenRecovery=null;if(!recovery||recovery.resume){startVideoPlayback(video,activeMediaSession.spec,recovery?'token-refresh':'canplay',!!recovery&&!activeMediaSession.operatorPaused).catch(()=>{})}reportMediaStatus('canplay')};
+  video.addEventListener('playing',()=>{if(ownsSession())activeMediaSession.tokenRefreshCount=0});
   video.onended=()=>{if(!ownsSession())return;const current=activeMediaSession.spec;reportMediaStatus('ended');if(!video.loop&&ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:current.sessionId||null}))}catch{}}};
 }
 function applyMediaControl(p={}){
   const video=activeMediaSession?.video;if(!video)return false;const action=String(p.action||'').toLowerCase(),spec=activeMediaSession.spec||{};
   if(action==='play')startVideoPlayback(video,spec,'control-play',true).catch(()=>{});
-  else if(action==='pause'){activeMediaSession.operatorPaused=true;activeMediaSession.playbackOperation++;video.pause();}
-  else if(action==='stop'){activeMediaSession.operatorPaused=true;activeMediaSession.playbackOperation++;video.pause();video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));}
-  else if(action==='restart'){video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));startVideoPlayback(video,spec,'control-restart',true).catch(()=>{});}
-  else if(action==='seek'){const position=Math.max(0,Math.min(Number.isFinite(video.duration)?video.duration:Number.MAX_SAFE_INTEGER,Number(p.positionSeconds||0)));video.currentTime=position;spec.positionSeconds=position}
+  else if(action==='pause'){activeMediaSession.operatorPaused=true;activeMediaSession.playbackRequested=false;activeMediaSession.playbackOperation++;if(activeMediaSession.tokenRecovery)activeMediaSession.tokenRecovery.resume=false;video.pause();}
+  else if(action==='stop'){activeMediaSession.operatorPaused=true;activeMediaSession.playbackRequested=false;activeMediaSession.playbackOperation++;video.pause();video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));if(activeMediaSession.tokenRecovery)Object.assign(activeMediaSession.tokenRecovery,{position:video.currentTime,resume:false});}
+  else if(action==='restart'){video.currentTime=Math.max(0,Number(spec.startAtSeconds||0));if(activeMediaSession.tokenRecovery)activeMediaSession.tokenRecovery.position=video.currentTime;startVideoPlayback(video,spec,'control-restart',true).catch(()=>{});}
+  else if(action==='seek'){const position=Math.max(0,Math.min(Number.isFinite(video.duration)?video.duration:Number.MAX_SAFE_INTEGER,Number(p.positionSeconds||0)));video.currentTime=position;spec.positionSeconds=position;if(activeMediaSession.tokenRecovery)activeMediaSession.tokenRecovery.position=position}
   else if(action==='volume'){spec.volume=Math.max(0,Math.min(1,Number(p.volume??1)));video.volume=spec.volume;if(video.volume>0){spec.muted=false;video.muted=false;video.defaultMuted=false}}
   else if(action==='mute'){spec.muted=p.muted!==false;video.muted=spec.muted;video.defaultMuted=video.muted;}
   else if(action==='rate'){spec.playbackRate=Math.max(.25,Math.min(4,Number(p.playbackRate||1)));video.playbackRate=spec.playbackRate}
@@ -255,8 +279,8 @@ function applyDisplayAudio(p={}){
 }
 function renderMedia(m){
   if(preview&&(m?.type==='protected-preview'||m?.type==='video')){clearMediaPlayback();const box=document.createElement('div');box.dataset.previewMediaPlaceholder='1';box.style.cssText='font-size:72px;text-align:center;padding:80px;line-height:1.2';box.textContent=m?.type==='video'?'Video active on physical display':(m.label||'Protected live content is active on this display');media.appendChild(box);return}
-  let authorizedUrl='';if(m?.url){try{authorizedUrl=authorizeAssetUrl(m.url)}catch{badge.textContent=`${id} rejected invalid media URL`;return}}
-  if(m?.type==='video'&&activeMediaSession?.video&&activeMediaSession.spec?.sessionId&&m.sessionId===activeMediaSession.spec.sessionId&&authorizedUrl===activeMediaSession.spec.authorizedUrl){activeMediaSession.spec={...activeMediaSession.spec,...m,authorizedUrl};configureVideoSession(activeMediaSession.video,activeMediaSession.spec);return}
+  let authorizedUrl='',sourceUrl='';if(m?.url){try{authorizedUrl=authorizeAssetUrl(m.url);sourceUrl=authorizeMediaUrl(m.url,location.origin)}catch{badge.textContent=`${id} rejected invalid media URL`;return}}
+  if(m?.type==='video'&&activeMediaSession?.video&&activeMediaSession.spec?.sessionId&&m.sessionId===activeMediaSession.spec.sessionId&&sourceUrl===activeMediaSession.spec.sourceUrl){activeMediaSession.spec={...activeMediaSession.spec,...m,authorizedUrl,sourceUrl};configureVideoSession(activeMediaSession.video,activeMediaSession.spec);if(activeMediaSession.video.error)renewVideoAccess(activeMediaSession.video);return}
   clearMediaPlayback();if(!authorizedUrl)return;let n;
   if(m.type==='image'){
     n=document.createElement('img');n.decoding='async';n.src=authorizedUrl;let retries=0;
@@ -267,7 +291,7 @@ function renderMedia(m){
       mediaImageRetry=setTimeout(()=>{mediaImageRetry=null;if(n.parentElement===media)n.src=retryUrl.href},500*retries);
     };
   }
-  else if(m.type==='video'){n=document.createElement('video');configureVideoSession(n,{...m,authorizedUrl});n.src=authorizedUrl}
+  else if(m.type==='video'){n=document.createElement('video');configureVideoSession(n,{...m,authorizedUrl,sourceUrl});n.src=authorizedUrl}
   else if(m.type==='web'||m.type==='pdf'){n=document.createElement('iframe');const isWeb=m.type==='web';const integratedAntMedia=!!(isWeb&&m.forceAudio&&isAntMediaPlayerUrl(authorizedUrl));const spec={...m,url:authorizedUrl,integratedAntMedia};const frameUrl=integratedAntMedia?integratedAntMediaUrl(authorizedUrl,m.muted?0:m.volume??1):authorizedUrl;const framePath=new URL(frameUrl).pathname;if(new URL(frameUrl).origin!==location.origin||framePath.startsWith('/display-gateway/'))n.setAttribute('sandbox','allow-scripts allow-forms allow-presentation');n.src=frameUrl;if(isWeb){n.allow='autoplay; fullscreen; picture-in-picture';n.setAttribute('allowfullscreen','');n.setAttribute('webkitallowfullscreen','');if(m.localDirect!==false){n.dataset.loadPath='tv-local';n.referrerPolicy='no-referrer-when-downgrade'}activeWebFrame=n;activeWebSpec=spec;n.addEventListener('load',()=>{if(activeWebFrame===n&&(spec.forceAudio||spec.muted!==undefined))scheduleWebAudioRecovery()})}}
   if(n){n.style.objectFit=m.fit||'contain';n.style.opacity=String(m.opacity??1);media.appendChild(n);if(activeWebFrame&&(activeWebSpec?.forceAudio||activeWebSpec?.muted!==undefined))scheduleWebAudioRecovery()}
 }
