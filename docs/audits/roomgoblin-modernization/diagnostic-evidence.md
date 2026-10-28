@@ -26,3 +26,10 @@ skips (2,523 total), all 23 Host Recovery and all 55 Android JVM cases, plus
 Node/controller/Python/Bash checks. Checked delivery and later roadmap review remain open.
 No production credentials, hardware commands or service configuration were used
 for these failure injections.
+
+Integration on receiver main `3bdc179` passes all 60 focused diagnostic, settings,
+Pluto, Veyon and secret-projection cases. The shared development snapshot including
+the independent retention, publication and request-deadline work passes 2,572
+Node cases, zero failures and two root-only skips, all 23 Host Recovery and
+55 Android JVM cases. Those independent batches are not part of this diagnostics
+PR. Its exact-head CI and backed-up delivery remain pending.
