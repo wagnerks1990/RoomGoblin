@@ -26,3 +26,11 @@ root-only skips, all 23 Host Recovery cases and syntax/controller/shell checks.
 Public sources are unchanged from the 125-case Chromium/Firefox qualification,
 including the held-response repair. Required CI, checked merge, exact images and
 the normal backed-up update remain delivery gates.
+
+Packaging review found that the maintenance Dockerfile's explicit file list
+omitted the new shared helper. A dependency-closure regression reproduced the
+omission before deployment. The image now copies the helper, and the regression
+checks relative dependencies of every copied Android module. Final qualification
+passes 2,387 Linux tests, zero failures, two root-only skips and all 23 Host
+Recovery cases. Required image builds and smoke checks run again on the corrected
+PR head; the incomplete package was never deployed.

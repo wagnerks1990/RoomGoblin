@@ -29,7 +29,11 @@ separate batch awaiting checked delivery after PR #331. The
 [native enrollment origin repair](windows-enrollment-origin.md) joins that batch:
 three reproduced failures are fixed, all 18 native cases pass on .NET 10, and
 the combined tree retains 2,386 Linux passes, two skips and all 23 Host Recovery
-passes. Android capability caching has four reproduced failures queued next.
+passes. Packaging review repaired the maintenance image's missing shared helper;
+the new dependency regression fails before that repair and passes afterward.
+Final package qualification passes 2,387 Linux tests, two root-only skips and
+all 23 Host Recovery cases. Android capability caching has four reproduced
+failures queued next.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
