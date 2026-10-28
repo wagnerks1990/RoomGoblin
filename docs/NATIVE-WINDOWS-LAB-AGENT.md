@@ -107,6 +107,10 @@ Fresh enrollment has the following boundaries:
 - if a fresh install fails native health acceptance, the newly created enrollment configuration is removed rather than leaving a reusable enrollment secret behind.
 
 Existing enrolled computers continue to use `install` or `repair` without enrollment arguments. Their existing DPAPI-protected configuration is preserved.
+Fresh-enrollment arguments are rejected if configuration already exists, including
+an empty file, before an enrollment file is consumed or either runtime is changed.
+Publishing fresh configuration never overwrites an existing destination, so an
+identity created during preparation is preserved as well.
 
 ## Interactive-session boundary
 

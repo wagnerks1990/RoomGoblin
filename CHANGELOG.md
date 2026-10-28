@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Reject fresh Windows enrollment over an existing configuration and publish new
+  identity files without overwriting a concurrently created destination.
+
 - Preserve a disabled legacy Windows task during native installation rollback;
   fail admission on unknown task state or a rejected disable operation.
 

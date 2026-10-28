@@ -44,6 +44,12 @@ deadline, COM object release and installer rollback/disable decisions. COM and
 service/task mutations use fixtures. One read-only probe checks a unique absent
 task through the real Windows COM interface; no task is created, enabled or run.
 That probe is skipped on non-Windows hosts; the remaining 23 cases still run.
+`python tools/test-native-enrollment-identity.py` adds ten cases against the
+actual Install body and configuration writer: existing/empty identity admission,
+one-use file admission, fresh success/failure, atomic publication collisions and
+prepublication ACL failures. File operations use temporary fixture roots; DPAPI
+and ACL execution are substituted. These cases verify protection dispatch and
+identity preservation, not Windows cryptography or effective ACLs.
 
 ## Conservative documentation-only PR selection
 
@@ -137,6 +143,15 @@ Gate selection checks the latest run/attempt for each workflow; a prior success
 cannot mask a failed rerun. Workflow identities are regression checked against
 real files. Before changing branch/ruleset required checks, inspect repository
 settings; publication hardening must not weaken required checks.
+
+## Linux lifecycle listener fixtures
+
+Linux lifecycle fixtures reserve the control and media ports together before
+launching the application. Releasing the first reservation before choosing the
+second can let the OS reuse the same port. Readiness must also verify the expected
+service identity in each health response; two HTTP 200 responses alone cannot
+establish that both listeners started. Reservation failures release all fixture
+listeners. This test setup does not change application port selection.
 
 ## Transient Android dependency resolution
 

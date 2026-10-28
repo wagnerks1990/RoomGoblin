@@ -69,10 +69,27 @@ internal sealed class InstallFixture : IDisposable
         if (mode == "directory") File.WriteAllText(installRoot, "blocked-path");
     }
     public int Run() => Install();
+    public void SeedExistingIdentity(bool enrollmentFile = false, string identity = "synthetic-existing-identity")
+    {
+        File.WriteAllText(Path.Combine(dataRoot, "lab-agent.json"), identity);
+        if (enrollmentFile)
+        {
+            var file = Path.Combine(root, "untouched-enrollment.json");
+            File.WriteAllText(file, "synthetic-one-use-enrollment");
+            options["--enrollment-file"] = file;
+        }
+    }
+    public string? Identity => File.Exists(Path.Combine(dataRoot, "lab-agent.json")) ? File.ReadAllText(Path.Combine(dataRoot, "lab-agent.json")) : null;
+    public bool EnrollmentFileExists => options.TryGetValue("--enrollment-file", out var file) && File.Exists(file);
     public bool IdentitySafe => fresh ? !File.Exists(Path.Combine(dataRoot, "lab-agent.json")) : File.ReadAllText(Path.Combine(dataRoot, "lab-agent.json")) == "synthetic-existing-identity";
     private bool HasFreshEnrollmentArguments(Dictionary<string, string?> parsed) => fresh;
-    private void VerifyPackageManifest(string[] files) => throw new Exception("Unexpected manifest path in fixture");
-    private void WriteFreshEnrollmentConfigFromFile(string config, string file) => throw new Exception("Unexpected enrollment-file path in fixture");
+    private void VerifyPackageManifest(string[] files) => Calls.Add("verify-manifest");
+    private void WriteFreshEnrollmentConfigFromFile(string config, string file)
+    {
+        Calls.Add("consume-enrollment-file");
+        File.Delete(file);
+        File.WriteAllText(config, "synthetic-fresh-identity");
+    }
     private void WriteFreshEnrollmentConfig(string config, Dictionary<string, string?> parsed) => File.WriteAllText(config, "synthetic-fresh-identity");
     private bool? ReadScheduledTaskEnabled(string task)
     {
