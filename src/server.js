@@ -760,6 +760,7 @@ let morningAnnouncementsTimer=null;
 let morningAnnouncementsWatcherGeneration=0;
 let morningAnnouncementsReleaseRetryTimer=null;
 const morningAnnouncementsPriorityTargets=new Set();
+const morningAnnouncementsReleaseTargets=new Map();
 let morningAnnouncementsLifecycle=Promise.resolve();
 let morningAnnouncementsLifecycleBusy=0;
 function serializeMorningAnnouncementsLifecycle(task){
@@ -946,6 +947,7 @@ async function setMorningAnnouncementPriorityTargets(targets,active){
 async function assertMorningAnnouncements({mode="automatic",targetsOverride=null,urlOverride=null}={}){
   const targets=Array.isArray(targetsOverride)&&targetsOverride.length?automationDisplayTargets(targetsOverride):announcementTargets();if(!targets.length)return;
   const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
+  const clearId=commandId(),contentId=commandId();
   // Acquire both the display and audio priority state before sending any
   // takeover commands. Otherwise a scheduler tick can overwrite the display,
   // or Music Assistant can remain audible, while takeover is in flight.
@@ -958,13 +960,23 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
   // display content; do not invoke the master classroom clear because that would
   // pause lesson/session queues beyond the announcement window.
   try{
-    await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
-    await executeCommand({type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
+    await executeCommand({id:clearId,type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
+    await executeCommand({id:contentId,type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
     await priorityTask;
   }catch(error){
     await priorityTask.catch(()=>{});
     morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0;
-    await setMorningAnnouncementPriorityTargets(targets,false);
+    // Dispatch can fail after publishing state or some transports. Keep those
+    // owned changes under the normal conditional release/reconciliation path.
+    // Unchanged or superseding content must never become cleanup targets.
+    const owned=targets.filter(id=>[clearId,contentId].includes(persistentState.displays[id]?.audioContentId));
+    if(owned.length)queueMorningAnnouncementsReleaseTargets(owned);
+    if(morningAnnouncementsReleaseTargets.size){
+      morningAnnouncementsRuntime.releaseReconcilePending=true;
+      scheduleMorningAnnouncementsReleaseRetry([...morningAnnouncementsReleaseTargets.keys()],"start-failed");
+    }
+    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)),false)}
+    catch(cleanupError){diagnosticError(cleanupError,{component:"automation",operation:"morning-announcements-start-cleanup"})}
     throw error;
   }
   scheduleAnnouncementAudioRetries(targets);
@@ -1102,17 +1114,23 @@ async function runDisplayAutomationResync(event,winningTargets){
   return {ok:true,results};
 }
 function consumeDeferredAnnouncementAutomations(){
-  const queued=[...deferredAnnouncementAutomations.values()];
-  deferredAnnouncementAutomations.clear();
-  for(const item of queued){
-    const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
-    storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-    storedEvent.lastExecByClass[item.occurrenceKey]=item.scheduledMinuteKey;
-    storedEvent.lastExec=item.scheduledMinuteKey;
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
-    storedEvent.updatedAt=new Date().toISOString();
+  const queued=[...deferredAnnouncementAutomations.entries()],previous=new Map();
+  const fields=["lastExecByClass","lastExec","lastRun","updatedAt"];
+  try{
+    for(const [,item] of queued){
+      const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
+      if(!previous.has(storedEvent))previous.set(storedEvent,fields.map(key=>({key,present:Object.prototype.hasOwnProperty.call(storedEvent,key),value:storedEvent[key]})));
+      storedEvent.lastExecByClass={...(storedEvent.lastExecByClass||{}),[item.occurrenceKey]:item.scheduledMinuteKey};
+      storedEvent.lastExec=item.scheduledMinuteKey;
+      storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
+      storedEvent.updatedAt=new Date().toISOString();
+    }
+    if(queued.length)persistAutomations();
+  }catch(error){
+    for(const [event,values] of previous)for(const {key,present,value} of values){if(present)event[key]=value;else delete event[key]}
+    throw error;
   }
-  if(queued.length)persistAutomations();
+  for(const [key,item] of queued)if(deferredAnnouncementAutomations.get(key)===item)deferredAnnouncementAutomations.delete(key);
   return queued.length;
 }
 async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-ended"){
@@ -1144,6 +1162,29 @@ async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-
   audit({kind:"automation.morning-announcements.resync",reason,at:now.toISOString(),winnerCount:winners.length,results});
   return {winnerCount:winners.length,results,...(skipped?{skipped:true,reason:"test-clock-dry-run"}:{})};
 }
+function queueMorningAnnouncementsReleaseTargets(targets){
+  const clearId=commandId();
+  for(const id of targets)morningAnnouncementsReleaseTargets.set(id,{contentId:persistentState.displays[id]?.audioContentId||"",clearId,cleared:false});
+}
+async function clearMorningAnnouncementsReleaseTargets(){
+  const groups=new Map();
+  for(const [id,entry] of morningAnnouncementsReleaseTargets){
+    if(entry.cleared)continue;
+    const current=persistentState.displays[id]?.audioContentId||"";
+    if(!resolveDisplayTargets([id]).includes(id)||(current!==entry.contentId&&current!==entry.clearId)){entry.cleared=true;continue}
+    if(!groups.has(entry.clearId))groups.set(entry.clearId,[]);
+    groups.get(entry.clearId).push({id,entry});
+  }
+  let failure=null;
+  for(const [clearId,entries] of groups){
+    try{
+      const expectedDisplayContent=new Map(entries.map(({id,entry})=>[id,[entry.contentId,entry.clearId]]));
+      await executeCommand({id:clearId,type:"display.clear",target:entries.map(({id})=>id),payload:{reason:"morning-announcements-release"}},"morning-announcements",{expectedDisplayContent});
+      for(const {id,entry} of entries)if(morningAnnouncementsReleaseTargets.get(id)===entry)entry.cleared=true;
+    }catch(error){failure=failure||error}
+  }
+  if(failure)throw failure;
+}
 function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
   if(shutdownRequested||morningAnnouncementsReleaseRetryTimer)return;
   morningAnnouncementsReleaseRetryTimer=setTimeout(()=>{
@@ -1151,9 +1192,13 @@ function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
     if(shutdownRequested)return;
     if(fullExportFreeze.requested){scheduleMorningAnnouncementsReleaseRetry(targets,reason);return}
     serializeMorningAnnouncementsLifecycle(async()=>{
-      if(morningAnnouncementsRuntime.active)return;
+      if(morningAnnouncementsRuntime.active||!morningAnnouncementsReleaseTargets.size)return;
+      await clearMorningAnnouncementsReleaseTargets();
+      consumeDeferredAnnouncementAutomations();
       const retry=await resyncCurrentDisplayAutomationsAfterAnnouncements(`${reason}-retry`);
       if(retry.results.some(item=>item.ok===false))throw new Error("Post-announcement display reconciliation is still incomplete");
+      targets=[...morningAnnouncementsReleaseTargets.keys()];
+      morningAnnouncementsReleaseTargets.clear();
       morningAnnouncementsRuntime.releaseReconcilePending=false;
       await setMorningAnnouncementPriorityTargets(targets,false);
       await backgroundMusicTick();
@@ -1166,9 +1211,10 @@ function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
 }
 async function releaseMorningAnnouncements(reason="stream-ended"){
   if(!morningAnnouncementsRuntime.active)return;
-  const targets=morningAnnouncementsRuntime.targets?.length?[...morningAnnouncementsRuntime.targets]:announcementTargets();
+  queueMorningAnnouncementsReleaseTargets(morningAnnouncementsRuntime.targets?.length?[...morningAnnouncementsRuntime.targets]:announcementTargets());
+  const targets=[...morningAnnouncementsReleaseTargets.keys()];
   let deferredConsumed=0,resync={winnerCount:0,results:[]},releaseError=null;
-  try{if(targets.length)await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-release"}},"morning-announcements")}catch(error){releaseError=error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-clear",data:{reason}})}
+  try{await clearMorningAnnouncementsReleaseTargets()}catch(error){releaseError=error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-clear",data:{reason}})}
   try{deferredConsumed=consumeDeferredAnnouncementAutomations()}catch(error){releaseError=releaseError||error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-bookkeeping",data:{reason}})}
   try{resync=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason)}catch(error){releaseError=releaseError||error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-resync",data:{reason}})}
   const resyncComplete=!releaseError&&!resync.results.some(item=>item.ok===false);
@@ -1177,7 +1223,7 @@ async function releaseMorningAnnouncements(reason="stream-ended"){
     // emitted by the resync must not release audio priority early, but a failed
     // persistence/audit step must never leave the lock stuck forever.
     morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastEndedAt=new Date().toISOString();morningAnnouncementsRuntime.lastAssertAt=0;
-    if(resyncComplete){morningAnnouncementsRuntime.releaseReconcilePending=false;await setMorningAnnouncementPriorityTargets(targets,false);await backgroundMusicTick()}
+    if(resyncComplete){morningAnnouncementsReleaseTargets.clear();morningAnnouncementsRuntime.releaseReconcilePending=false;await setMorningAnnouncementPriorityTargets(targets,false);await backgroundMusicTick()}
     else{morningAnnouncementsRuntime.releaseReconcilePending=true;scheduleMorningAnnouncementsReleaseRetry(targets,reason)}
   }catch(error){releaseError=releaseError||error}
   audit({kind:"automation.morning-announcements.stop",reason,targets,deferredConsumed,resyncWinnerCount:resync.winnerCount,resyncResults:resync.results});
@@ -4713,10 +4759,11 @@ function markDisplaySeen(ws, extra = {}) {
 // Core command router
 // -----------------------------------------------------------------------------
 
-async function executeCommand(input, source = "api") {
+async function executeCommand(input, source = "api", {expectedDisplayContent=null} = {}) {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
+  if(expectedDisplayContent&&(source!=="morning-announcements"||command.type!=="display.clear"))throw Error("Conditional display ownership is only supported for announcement release");
   // Manual whole-screen content replaces the selected receivers' prior scene.
   // Keep title/subtitle/timer edits and persistent media controls composable.
   const replacesContent=["http","media-library"].includes(source)&&
@@ -4757,7 +4804,7 @@ async function executeCommand(input, source = "api") {
     command.type === "legacy.raw";
 
   if (isDisplayCommand) {
-    const targets = resolveDisplayTargets(command.target);
+    let targets = resolveDisplayTargets(command.target);
     if (!targets.length) {
       throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
     }
@@ -4767,6 +4814,11 @@ async function executeCommand(input, source = "api") {
     if(protectsAnnouncements){
       const priorityError=announcementPriorityError(targets);
       if(priorityError)throw priorityError;
+    }
+    if(expectedDisplayContent){
+      targets=targets.filter(id=>expectedDisplayContent.get(id)?.includes(persistentState.displays[id]?.audioContentId||""));
+      if(!targets.length)return {...result,skipped:true,reason:"display-content-changed"};
+      command.target=targets;
     }
 
     if(replacesContent){
@@ -4795,6 +4847,7 @@ async function executeCommand(input, source = "api") {
 
     if (MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
       for (const id of targets) {
+        if(expectedDisplayContent&&persistentState.displays[id]?.audioContentId!==command.id)continue;
         const topic = `classroom/v2/display/${id}/command`;
         await mqttPublish(topic, command);
         result.deliveries.mqttJson.push(topic);
@@ -4808,12 +4861,14 @@ async function executeCommand(input, source = "api") {
       if (runtime.mqtt.connected) {
         const rawTarget = cleanId(command.target);
 
-        if (rawTarget === "all") {
+        if (rawTarget === "all" && !expectedDisplayContent) {
           await mqttPublish("classroom/all", legacy);
           result.deliveries.mqttLegacy.push("classroom/all");
         } else {
           for (const id of targets) {
+            if(expectedDisplayContent&&persistentState.displays[id]?.audioContentId!==command.id)continue;
             const topic = devices[id]?.legacyTopic || `classroom/${id}`;
+            if(expectedDisplayContent&&topic==="classroom/all")throw Error("Announcement release cannot safely target a shared legacy broadcast topic");
             await mqttPublish(topic, legacy);
             result.deliveries.mqttLegacy.push(topic);
           }
@@ -4836,7 +4891,10 @@ async function executeCommand(input, source = "api") {
     throw new Error(`Unsupported command type: ${command.type}`);
   }
 
-  backgroundMusicObserveDisplayCommand(command, source);
+  if(expectedDisplayContent){
+    const owned=resolveDisplayTargets(command.target).filter(id=>persistentState.displays[id]?.audioContentId===command.id);
+    if(owned.length)backgroundMusicObserveDisplayCommand({...command,target:owned},source);
+  }else backgroundMusicObserveDisplayCommand(command, source);
 
   audit({
     kind: "command",
