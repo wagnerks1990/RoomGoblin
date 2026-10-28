@@ -70,6 +70,10 @@ A saved location/unit/source change retires the previous preview and any pending
 preview response. When no forecast is available, previous readings and alert
 content clear. Same-location refreshes preserve custom previews and selected
 receivers; sending after a change must obtain a valid current scene.
+Leaving Weather or changing authentication retires pending previews and actions,
+while a completed custom preview survives ordinary navigation. A pending Send
+retains its submitted display selection; changed targets require a new Send.
+An unfinished renderer load cannot leave a retired scene available for dispatch.
 A pending settings save disables another save while keeping draft fields editable.
 Completion preserves newer edits and discards reads that began before the write.
 Preview/send creation waits for the settings save to finish. Save failures remain

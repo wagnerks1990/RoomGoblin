@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retire pending Weather previews, sends and workflow actions after navigation
+  or authentication changes, and require unchanged explicit display targets.
+
 - Charge Weather read/write quotas only after matching the route's access
   predicate, preserving legitimate callers' allowance and rejected callers' denial.
 
