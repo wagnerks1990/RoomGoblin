@@ -1,18 +1,17 @@
 # RoomGoblin modernization audit
 
-PR #325 is [deployed and verified](managed-display-outcomes-delivery.md) at
-`312f753`; [PR #324's delivery](ubuntu-reliability-delivery.md) is also verified.
-PR #326 includes the qualified [screen-mapping repair](ubuntu-screen-mapping-ownership.md)
-and is running fresh required CI. Its combined tree passes 2,261 Linux tests
-with two root-only skips, all 23 Host Recovery cases and 109 workspace cases
-per browser. The [Android editor fix](android-editor-ownership.md) separately
-passes nine source cases, 2,258 Linux tests with two root-only skips, all 23 Host
-Recovery cases and 111 workspace cases per browser. The combined Android editor
-and [screenshot preview fix](android-preview-ownership.md) passes 2,280 Linux
-tests with two root-only skips, all 23 Host Recovery cases, and 113 workspace
-cases in each browser including final preview styling. Inventory ordering has
-six reproduced queue/ownership failures for the next change. Remaining Group 10
-and roadmap work is open.
+PR #326 is [deployed and verified](ubuntu-repair-wizard-delivery.md) at `865631d`,
+including the [screen-mapping repair](ubuntu-screen-mapping-ownership.md).
+[PR #325](managed-display-outcomes-delivery.md) and [PR #324](ubuntu-reliability-delivery.md)
+also have verified delivery receipts. PR #327 carries the [Android editor](android-editor-ownership.md)
+and [screenshot preview](android-preview-ownership.md) fixes with 2,280 Linux
+passes, two root-only skips, all 23 Host Recovery cases and 113 workspace cases
+per browser. The [inventory/status repair](android-inventory-ownership.md)
+reproduces 15 failures on old source and passes all 16 targeted cases, 2,296 Linux
+tests with two root-only skips, all 23 Host Recovery cases and 116 workspace
+cases per browser. Pending
+Android commands have two reproduced duplicate-dispatch cases for subsequent
+review. Remaining Group 10 and roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and

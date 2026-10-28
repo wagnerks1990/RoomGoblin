@@ -24,6 +24,20 @@ the original display card, including failures after the editor closes. A failed
 follow-up read does not relabel an accepted save as failed. Closing returns focus
 to the current Edit button or the inventory search when that card is unavailable.
 
+## Inventory and status refresh ownership
+
+Android inventory reads have one pending owner. Overlapping refresh requests
+retire that reply and share a subsequent fresh read; they do not start parallel
+inventory requests. Completion preserves current agent/recovery feedback instead
+of restoring a snapshot taken before the request. A superseded success or error
+cannot render or change bridge health. Background status refreshes wait for an
+inventory read and stop when a newer inventory generation owns the page.
+Dedicated agent probes retain the existing status endpoint and cannot redraw
+replaced records. Recovery completion and failure clear the current record's
+pending state; removal during recovery fails without recreating the display.
+These browser ownership rules do not cancel accepted ADB work or introduce a
+shared HTTP deadline.
+
 ## Screenshot preview lifetime
 
 The Android screenshot dialog opens while capture is pending and displays capture

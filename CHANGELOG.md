@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Serialize Android inventory refreshes, retire stale status probes, and keep
+  recovery feedback attached to the current display record across refreshes.
+
 - Open Android screenshots with progress, decode images before showing them,
   and ignore captures after closing or replacing the preview.
 
