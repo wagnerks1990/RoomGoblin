@@ -32,8 +32,14 @@ the combined tree retains 2,386 Linux passes, two skips and all 23 Host Recovery
 passes. Packaging review repaired the maintenance image's missing shared helper;
 the new dependency regression fails before that repair and passes afterward.
 Final package qualification passes 2,387 Linux tests, two root-only skips and
-all 23 Host Recovery cases. Android capability caching has four reproduced
-failures queued next.
+all 23 Host Recovery cases. PR #332 carries the corrected package and native
+enrollment validation through fresh CI.
+
+[Android capability ownership](android-capability-ownership.md) resolves four
+reproduced cache/read races. All 12 targeted and 37 related cases pass. The
+separate candidate passes 2,399 Linux tests, two root-only skips, all 23 Host
+Recovery cases and 126 workspace cases per browser. Native Android service
+shutdown remains under review.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),

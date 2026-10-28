@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Share pending Android capability reads across card refreshes and discard cache
+  entries and replies belonging to removed or replaced enrollments.
+
 - Reject embedded credentials in native Windows enrollment Hub URLs before
   configuration or ACL changes, matching the existing fallback-URL boundary.
 

@@ -722,6 +722,46 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(page.evaluate("document.activeElement.closest('[data-id]').dataset.id"), 'second-tv')
         self.assertFalse(errors, errors)
 
+    def test_android_capabilities_share_reads_and_retire_replaced_enrollment_results(self):
+        pending = []
+        devices = [{**DEVICE, 'createdAt': '2026-01-01T00:00:00Z'}]
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': devices, 'profiles': []})
+                return True
+            if target.endswith('/agent/v2/capabilities'):
+                pending.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', 390, transport=transport)
+        page.clock.install()
+        self.held_route(page, pending)
+        devices[0] = {**devices[0], 'name': 'Renamed original'}
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        page.wait_for_function("document.querySelector('#devices h3').textContent === 'Renamed original'")
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(len(pending), 1)
+        devices[0] = {**devices[0], 'name': 'Replacement display', 'createdAt': '2026-02-01T00:00:00Z', 'host': '192.0.2.51'}
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        self.held_route(page, pending, 1).fulfill(json={'ok': True, 'capabilities': {'accessibilityEnabled': True, 'capabilities': {'globalNavigation': {'available': True}}}})
+        page.wait_for_function("document.querySelector('[data-capability-summary]')?.textContent.includes('Home: Available')")
+        page.locator('#deviceSearch').fill('Replacement')
+        self.held_route(page, pending).fulfill(json={'ok': True, 'capabilities': {'accessibilityEnabled': False, 'capabilities': {'globalNavigation': {'available': False}}}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.evaluate('document.activeElement.id'), 'deviceSearch')
+        self.assertFalse(page.locator('[data-v2-action="home"]').is_disabled())
+        devices[0] = {**devices[0], 'name': 'Replacement refreshed'}
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        page.wait_for_function("document.querySelector('#devices h3').textContent === 'Replacement refreshed'")
+        page.wait_for_function("document.querySelector('[data-capability-summary]')?.textContent.includes('Home: Available')")
+        self.assertEqual(len(pending), 2)
+        self.assertFalse(page.locator('[data-v2-action="home"]').is_disabled())
+        page.locator('[data-disclosure="agent-v2"] > summary').click()
+        self.evidence(page, errors, 'android-capability-ownership-mobile')
+
     def test_android_preview_errors_remain_visible_and_late_errors_do_not_steal_focus(self):
         pending = []
         def transport(route, target):
