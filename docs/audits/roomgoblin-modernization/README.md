@@ -118,6 +118,7 @@ Queued subsystem units below have not been marked audited.
 - [Music queue response ownership](music-queue-ownership.md)
 - [Music Assistant connection ownership](music-socket-ownership.md)
 - [Background Music session ownership](background-session-ownership.md)
+- [Music Assistant configuration transaction](music-config-transaction.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
 - [Announcement release recovery ownership](announcement-release-ownership.md)
 - [Failed announcement start cleanup](announcement-start-failure.md)
