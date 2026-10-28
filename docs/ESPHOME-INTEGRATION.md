@@ -122,6 +122,13 @@ freeze and after manager close. Already accepted discovery remains tracked until
 it finishes; audit persistence is deferred until thaw, or drained before shutdown
 closes SQLite. Inventory reads retain their existing availability.
 
+Worker process and pipe errors, synchronous writes and non-object IPC responses
+fail the current connection owner once, releasing pending requests with an
+uncertain-delivery error and no command replay. Late events from a failed child
+cannot affect its replacement. Discovery waits for process/stdio closure before
+parsing its bounded output; its six-second deadline remains active until then.
+Stream failures terminate discovery without publishing cached success.
+
 Validation includes Node integration tests, real Express permission/rate-limit routes, encrypted SQLite transactions, pinned native-client Python tests, browser regressions in Chromium/Firefox, restrictive non-root image tests, image vulnerability scans, host-network/Compose smoke tests, and production-image import of the discovery/worker modules.
 
 These automated tests are **not physical-device acceptance**. After deployment, validate against representative real devices:

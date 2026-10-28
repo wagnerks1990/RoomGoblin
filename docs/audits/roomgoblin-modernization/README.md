@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+The [ESPHome worker repair](esphome-worker-ownership.md) reproduces six process/
+pipe and discovery-completion failures. All 20 new regressions and 51 focused
+ESPHome cases pass. Final qualification passes 2,064 Linux tests, zero failures,
+two root-only skips and all 23 Host Recovery tests. PR #314 is
+[deployed and verified](lighting-persistence-delivery.md) at `5ffba81`. PR #315
+passed all 14 checks and merged as `af76c5a`; exact publication precedes delivery.
+
 The [ESPHome inventory repair](esphome-inventory-ownership.md) reproduces five
 controller races and passes 21 new Node cases plus all five focused Chromium
 cases. Full qualification passes 2,044 Linux tests, two root-only skips, all 23
@@ -65,7 +72,7 @@ passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
 85 focused integration cases pass. The inventory batch remains qualified on
 `b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
 
-Status: **PR #313 delivered; PR #314 in CI; lighting dispatch identity qualified; ESPHome review active**.
+Status: **PR #314 delivered; PR #315 merged and publishing; ESPHome qualified for integration; lab review active**.
 
 PR #311 is deployed and verified at `fa5bb49`; see its
 [delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/

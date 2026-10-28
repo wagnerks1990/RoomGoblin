@@ -92,6 +92,7 @@ class ESPHomeManager{
         const line=buffer.slice(0,newline);buffer=buffer.slice(newline+1);
         if(Buffer.byteLength(line)>MAX_LINE){this.failWorker(child);return}
         let message;try{message=JSON.parse(line)}catch{this.failWorker(child);return}
+        if(!message||typeof message!=="object"||Array.isArray(message)){this.failWorker(child);return}
         if(message.event==="device"){
           const d=message.device,r=this.record(d?.id);
           if(r&&r.generation===d.generation&&Array.isArray(d.entities)&&d.entities.length<=128){
@@ -108,7 +109,8 @@ class ESPHomeManager{
         }
       }
     });
-    child.once("error",()=>this.failWorker(child));child.once("exit",()=>this.failWorker(child));
+    child.on("error",()=>this.failWorker(child));child.once("exit",()=>this.failWorker(child));
+    child.stdout.on("error",()=>this.failWorker(child));
     child.stdin.on("error",()=>this.failWorker(child));
     return child;
   }
@@ -133,7 +135,7 @@ class ESPHomeManager{
     return new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>this.failWorker(child),timeout);timer.unref();
       this.pending.set(requestId,{resolve,reject,timer});
-      child.stdin.write(line,error=>{if(error)this.failWorker(child)});
+      try{child.stdin.write(line,error=>{if(error)this.failWorker(child)})}catch{this.failWorker(child)}
     });
   }
   async discover({force=false}={}){
@@ -147,9 +149,10 @@ class ESPHomeManager{
       let output="",done=false;
       const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value)};
       const timer=setTimeout(()=>{try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery timed out.",504))},6000);timer.unref();
-      child.stdout.setEncoding("utf8");child.stdout.on("data",chunk=>{output+=chunk;if(Buffer.byteLength(output)>MAX_LINE){try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery returned too much data.",502))}});
-      child.once("error",()=>finish(failure("ESPHome discovery could not start.",503)));
-      child.once("exit",code=>{
+      child.stdout.setEncoding("utf8");child.stdout.on("data",chunk=>{if(done)return;output+=chunk;if(Buffer.byteLength(output)>MAX_LINE){try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery returned too much data.",502))}});
+      child.on("error",()=>{if(done)return;try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery could not start.",503))});
+      child.stdout.on("error",()=>{if(done)return;try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery output failed.",502))});
+      child.once("close",code=>{
         if(done)return;if(code!==0)return finish(failure("ESPHome discovery failed.",502));
         try{
           const parsed=JSON.parse(output),devices=Array.isArray(parsed.devices)?parsed.devices.slice(0,128):[];

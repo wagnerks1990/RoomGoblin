@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Contain ESPHome worker pipe/process errors and malformed IPC, release pending
+  commands without replay, and wait for discovery stdout to close before parsing.
+
 - Preserve ESPHome enrollment drafts and management feedback, serialize controller
   management changes, and discard inventory/discovery replies from older writes
   or permission states.
