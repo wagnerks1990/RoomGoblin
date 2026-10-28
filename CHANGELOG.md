@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Give video commands without a supplied session ID one stable command-owned
+  playback identity for dispatch and reconnect replay.
+
+- Keep resumable-upload expiry from deleting sessions owned by accepted or
+  queued chunk, assembly or cancel operations.
+
 - Keep receiver videos stable across token renewal, with bounded authenticated
   source recovery that preserves position and current playback controls.
 

@@ -6,10 +6,15 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Video validation supplies the normalized command ID only when no session ID was
+provided. Preserve explicit occurrence/caller identity and legacy command strings.
+
 `src/display-media.js` validates live media controls at HTTP and router entry
 points and projects volume/mute/rate onto the selected existing video snapshot.
 Preserve its session/content identity and leave transient playback operations
 receiver-owned. Do not persist a seek/restart action for reconnect replay.
+Resumable-upload cleanup must skip IDs in the existing per-session lock map,
+including queued operations. Only idle expired sessions can be reclaimed.
 Receiver identity excludes the automatically injected asset token but includes
 the validated source URL and session ID. Keep URL validation, signed access and
 the media-plane shim intact. Failed-source token renewal retains element/position,
