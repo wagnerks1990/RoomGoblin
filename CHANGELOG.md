@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Reject embedded credentials in native Windows enrollment Hub URLs before
+  configuration or ACL changes, matching the existing fallback-URL boundary.
+
+- Serialize Android agent and persistent-ADB configuration per display, including
+  APK restoration, and reject conflicting connection edits while it is pending.
+
 - Recheck Android enrollment and schedule state before each policy command and
   prevent overlapping policy passes from dispatching to the same display twice.
 

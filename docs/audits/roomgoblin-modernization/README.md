@@ -1,12 +1,14 @@
 # RoomGoblin modernization audit
 
-PR #329 is [deployed and verified](android-command-delivery.md) at `039a1fc`.
-PR #330 merged as `92adafe` after all 14 checks passed; exact-main publication
-and backed-up delivery follow. Its [shell/output](android-shell-ownership.md) and
+PR #330 is [deployed and verified](android-shell-lifecycle-delivery.md) at `92adafe`
+after all 14 PR checks, required main gates and exact publication passed. Its
+[shell/output](android-shell-ownership.md) and
 [lifecycle](android-lifecycle-ownership.md) fixes pass 2,328 Linux tests with two
 root-only skips, all 23 Host Recovery cases and 125 workspace cases per browser.
 
-The combined [record-completion](android-record-completion.md) and
+PR #331 merged as `e7c557a` after all 14 checks passed. Its exact images and
+backed-up maintenance update remain pending. The combined
+[record-completion](android-record-completion.md) and
 [policy-admission/cache](android-policy-admission.md) batch preserves current
 records, rejects retired enrollments, rechecks each policy dispatch and prevents
 stale or overlapping policy completion. All 40 targeted cases pass. Final Linux
@@ -15,10 +17,23 @@ qualification passes 2,368 tests with zero failures and two root-only skips, all
 public and Node test sources match qualified `2dc05d7` exactly. The
 [held-response fixture repair](workspace-route-fixtures.md) passes 20 Firefox
 repetitions and all 125 workspace cases in each browser. PR #330's required
-browser retry passed; exact image publication remains pending. No physical
+browser retry and exact image publication passed. No physical
 command was exercised.
 
-Configuration concurrency has two reproduced failures queued for the next fix.
+[Configuration admission](android-configuration-ownership.md) resolves two
+reproduced races across Agent v2, assignment, persistent ADB and APK restoration.
+All 18 configuration and 20 record cases pass; supported Linux qualification
+passes 2,386 tests with zero failures, two root-only skips and all 23 Host Recovery
+cases. Browser sources retain the 125-case-per-engine qualification. This is a
+separate batch awaiting checked delivery after PR #331. The
+[native enrollment origin repair](windows-enrollment-origin.md) joins that batch:
+three reproduced failures are fixed, all 18 native cases pass on .NET 10, and
+the combined tree retains 2,386 Linux passes, two skips and all 23 Host Recovery
+passes. Packaging review repaired the maintenance image's missing shared helper;
+the new dependency regression fails before that repair and passes afterward.
+Final package qualification passes 2,387 Linux tests, two root-only skips and
+all 23 Host Recovery cases. Android capability caching has four reproduced
+failures queued next.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
