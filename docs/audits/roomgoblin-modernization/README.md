@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Probe/Music fixes delivered; announcement recovery merged; target and Live Watch follow-ups qualified**.
+Status: **Announcement recovery delivered; target and Live Watch fixes merged; active-target and Music queue follow-ups qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -29,13 +29,23 @@ skips, plus all 23 Host Recovery tests. All 58 focused integration checks pass.
 The only test difference from the qualified snapshot is the independently
 qualified shared-layer browser route synchronization already merged in PR #297.
 These recovery follow-ups passed all 14 checks and merged at `4a41f00`
-(PR #298); exact images and appliance delivery remain pending.
+(PR #298); exact images published and appliance delivery is verified. See the
+[delivery receipt](announcement-start-failure.md#checked-appliance-delivery).
 Target admission and Live Watch draft/write fixes are integrated on that merged
 main commit with a byte-identical tree to the qualified `6f86b3f` snapshot before
 this documentation note. All 66 focused integration checks pass. Qualification
 includes 1,409 native passes, zero failures, two root-only skips, 23 Host Recovery
 passes, 16 Live Watch cases in each browser and 70 workspace cases in each browser.
-Their required CI and appliance delivery remain pending.
+These fixes passed all 14 checks and merged at `2f79567` (PR #299). Its main
+Firefox run hit a route-capture race, so publication stopped and production
+remains on `4a41f00`. The [fixture correction](preview-route-synchronization.md)
+is included in PR #300; combined delivery requires its exact main gates/images.
+Music queue response ownership and active announcement receiver ownership are
+integrated on `2f79567`, with a byte-identical tree to qualified `1541de6` before
+this evidence note. All 78 focused integration checks pass. Qualification includes
+1,421 native passes, zero failures, two root-only skips and 23 Host Recovery
+passes; all 16 Music cases pass in both Chromium and Firefox. Required CI,
+exact images and appliance delivery remain pending for this integration.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -104,10 +114,12 @@ Queued subsystem units below have not been marked audited.
 - [Announcement probe destination security review](announcement-probe-security.md)
 - [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)
 - [Music workspace save ownership](music-save-ownership.md)
+- [Music queue response ownership](music-queue-ownership.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
 - [Announcement release recovery ownership](announcement-release-ownership.md)
 - [Failed announcement start cleanup](announcement-start-failure.md)
 - [Announcement target admission and unchanged sessions](announcement-target-admission.md)
+- [Active announcement receiver ownership](announcement-active-targets.md)
 - [Live Watch drafts and write ordering](morning-watch-drafts.md)
 
 - [Complete recovery ownership](scheduler-complete-recovery-owner.md)

@@ -955,7 +955,9 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
   // Acquire both the display and audio priority state before sending any
   // takeover commands. Otherwise a scheduler tick can overwrite the display,
   // or Music Assistant can remain audible, while takeover is in flight.
-  morningAnnouncementsRuntime.active=true;morningAnnouncementsRuntime.mode=mode;morningAnnouncementsRuntime.targets=[...targets];morningAnnouncementsRuntime.lastAssertAt=Date.now();morningAnnouncementsRuntime.lastLiveAt=new Date().toISOString();
+  // A selected start leaves other active receivers playing. Keep them owned by
+  // the global announcement lifecycle so Stop/automatic release can finish all.
+  morningAnnouncementsRuntime.active=true;morningAnnouncementsRuntime.mode=mode;morningAnnouncementsRuntime.targets=[...new Set([...(previous.active?previous.targets||[]:[]),...targets])];morningAnnouncementsRuntime.lastAssertAt=Date.now();morningAnnouncementsRuntime.lastLiveAt=new Date().toISOString();
   // Start the potentially network-bound Music Assistant pause concurrently so
   // an unavailable audio service cannot delay urgent announcement video.
   const priorityTask=setMorningAnnouncementPriorityTargets(targets,true);
@@ -974,14 +976,17 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
     // Unchanged or superseding content must never become cleanup targets.
     const owned=targets.filter(id=>[clearId,contentId].includes(persistentState.displays[id]?.audioContentId));
     const restorePrevious=previous.active&&!owned.length&&[...previousContent].every(([id,content])=>persistentState.displays[id]?.audioContentId===content);
-    if(restorePrevious)Object.assign(morningAnnouncementsRuntime,previous);
+    // A prior announcement remains active until Stop, normal release or Resume.
+    // Account for partial additions too, without replaying old content or letting
+    // a retired audio-retry identity control the changed session.
+    if(previous.active)Object.assign(morningAnnouncementsRuntime,previous,{targets:restorePrevious?previous.targets:[...new Set([...(previous.targets||[]),...owned])]});
     else{morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0}
     if(owned.length)queueMorningAnnouncementsReleaseTargets(owned);
     if(morningAnnouncementsReleaseTargets.size){
       morningAnnouncementsRuntime.releaseReconcilePending=true;
       scheduleMorningAnnouncementsReleaseRetry([...morningAnnouncementsReleaseTargets.keys()],"start-failed");
     }
-    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)&&!(restorePrevious&&previousContent.has(id))),false)}
+    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)&&!(previous.active&&previousContent.has(id))),false)}
     catch(cleanupError){diagnosticError(cleanupError,{component:"automation",operation:"morning-announcements-start-cleanup"})}
     throw error;
   }

@@ -3,7 +3,7 @@
   const page=document.getElementById("music"),el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n};
   const send=(url,body,method="POST")=>api(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   let bg=null,status=null,busy=false,dirty=false,initialized=false,selected="listen",searchGeneration=0,queue=null,selectedOutput="",lastQueueLoad=0,connectionDirty=false;
-  let scheduleRevision=0,connectionRevision=0,tokenRevision=0,scheduleSaving=false,connectionSaving=false,loadGeneration=0,refreshPending=false,loadPromise=null;
+  let scheduleRevision=0,connectionRevision=0,tokenRevision=0,scheduleSaving=false,connectionSaving=false,loadGeneration=0,refreshPending=false,loadPromise=null,queueGeneration=0;
   const panels=[...page.querySelectorAll(".panel")],schedule=panels.find(p=>p.querySelector("#bgmStart")),favorites=panels.find(p=>p.querySelector("#bgmFavorites")),search=panels.find(p=>p.querySelector("#maSearch")),outputs=panels.find(p=>p.querySelector("#maPlayers")),connection=page.querySelector("details");
   const nav=el("div",undefined,"musicTabs"),sections={};page.querySelector(".top").after(nav);
   function button(parent,text,fn,cls=""){const b=el("button",text,cls);b.type="button";b.dataset.musicControl="true";b.addEventListener("click",async()=>{try{await fn()}catch(error){message(error.message,true)}});parent.append(b);return b}
@@ -76,12 +76,13 @@
   async function playItem(item){if(!output.value)throw Error("Choose a listening output first");return task(()=>send("/api/v1/music-assistant/background/control",{action:"play",playerId:output.value,uri:item.uri,name:item.name,mediaType:item.mediaType||"unknown"}));}
   async function queueCommand(command,args={}){if(!queue?.id)throw Error("Choose an output with an active queue first");await task(()=>maApi(`player_queues/${command}`,{queue_id:queue.id,...args}));await loadQueue()}
   async function loadQueue(){
+    const generation=++queueGeneration;
     if(!output.value)return;const pid=output.value;lastQueueLoad=Date.now();
-    try{const data=await api(`/api/v1/music-assistant/background/queue?playerId=${encodeURIComponent(pid)}`);if(pid!==output.value)return;queue=data.queue;queueRows.replaceChildren();
+    try{const data=await api(`/api/v1/music-assistant/background/queue?playerId=${encodeURIComponent(pid)}`);if(generation!==queueGeneration||pid!==output.value)return;queue=data.queue;queueRows.replaceChildren();
       shuffle.textContent=queue?.shuffle?"Shuffle on":"Shuffle off";repeat.value=queue?.repeat||"off";seek.closest("label").hidden=!(queue?.current?.duration>0);if(document.activeElement!==seek){seek.max=String(queue?.current?.duration||1);seek.value=String(Math.max(0,queue?.elapsed||0))}
       for(const [index,item]of (data.items||[]).entries()){const row=el("li"),text=el("span",item.name);row.append(text);button(row,index===0?"Play current":"Play this",()=>queueCommand("play_index",{index:item.id||index+(queue?.currentIndex||0)}));queueRows.append(row)}
       if(!data.items?.length)queueRows.append(el("li","No queued items. Live stations may not have an upcoming track list."));
-    }catch(error){if(pid===output.value)queueRows.replaceChildren(el("li",error.message))}
+    }catch(error){if(generation===queueGeneration&&pid===output.value)queueRows.replaceChildren(el("li",error.message))}
   }
   function cards(parent,items,{saved=false}={}){
     const key=JSON.stringify(items);if(parent.dataset.key===key)return;parent.dataset.key=key;parent.replaceChildren();for(const item of items){const card=el("article",undefined,"musicItem"),content=el("div");content.append(el("h3",item.name),el("p",item.detail||item.mediaType||"Music"));card.append(content);const actions=el("div",undefined,"toolbar");button(actions,"Play",()=>playItem(item),"primary");

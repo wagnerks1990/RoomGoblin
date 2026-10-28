@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Keep every active announcement receiver accounted for after additional selected
+  starts or partial replacements, so Stop, automatic release and Resume include all.
+
+- Keep newer Music queue results when older reads finish or the operator switches
+  away from an output and back; obsolete errors cannot erase the current queue.
+
 - Preserve Live Watch drafts through delayed reads/saves and serialize settings
   with coalesced live-volume writes, retaining clear save and volume feedback.
 

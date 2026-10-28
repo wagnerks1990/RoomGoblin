@@ -81,6 +81,12 @@ An empty or unresolved explicit start selection reports an error instead of
 using other configured displays. When replacement fails before changing content,
 an unchanged existing announcement retains its active lifecycle and audio hold.
 
+Starting additional selected displays leaves the other active announcement
+displays playing. Stop ends the announcement across all of them. If an additional
+start partially fails, the earlier session remains active and the changed
+displays stay accounted for. Use Resume Scheduled State to repair their playback,
+or Stop to finish the session; automatic release also finishes the whole session.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.
