@@ -19,6 +19,9 @@ Acceptance exposed [stale ADB recovery guidance](adb-recovery-guidance.md).
 Its documentation-only reconciliation preserves the verified runtime and mount
 permissions. The [final integration contract](final-integration.md) and delivery
 records distinguish source synchronization from service recreation.
+[PR #347](https://github.com/wagnerks1990/RoomGoblin/pull/347) records the
+guidance checks, Wiki synchronization and latest source acceptance; it retains
+PR #346 as the runtime deployment and rollback evidence.
 
 "Delivered" below means the documented fixes passed their recorded checks and
 backed-up delivery. It does not assert a line-by-line audit of every repository

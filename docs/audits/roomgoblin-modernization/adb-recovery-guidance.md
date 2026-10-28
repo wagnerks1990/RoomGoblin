@@ -14,7 +14,7 @@ developer guidance. **Category:** Documentation. **Priority:** P2.
 volume writable in the Hub and read-only in maintenance
 (`docker-compose.yml:70,134`; the override preserves the same boundary).
 `host-agent/app-update-runner.sh:119-123` checks maintenance readability.
-`test/live-upgrade-permissions.test.js:69-76` and
+`test/live-upgrade-permissions.test.js:69-75` and
 `test/managed-displays-regression.test.js:8-15` explicitly preserve read-only
 maintenance access. Final production acceptance independently confirmed both
 mount modes, Hub write access as UID 10001, maintenance readability under its
