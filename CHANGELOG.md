@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Apply native Android Sendspin player renames, retain saved URLs on partial
+  configuration, clean up failed connections and report protocol readiness accurately.
+
 - Keep retired Android PCM workers from consuming or writing a replacement audio
   session, and allow retry after AudioTrack fails to start.
 

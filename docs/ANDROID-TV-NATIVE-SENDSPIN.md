@@ -72,6 +72,12 @@ Managed Displays exposes a **Native Sendspin** control group:
 - **Status** — returns current transport/player state and buffer diagnostics;
 - **Reconnect** — restarts the native Sendspin connection without reloading the kiosk WebView.
 
+Changing the configured name reconnects the native player so Music Assistant
+receives the new name, while retaining its persistent client ID. Repeating an
+unchanged configuration preserves the current connection. Partial API updates
+may omit the URL to retain its saved value; an explicit invalid URL is rejected
+before changing settings. Connection failures release the attempted client.
+
 For Music Assistant's external Sendspin listener, the normal endpoint is:
 
 ```text
@@ -102,6 +108,10 @@ Future work should allow the Hub to propagate its database-backed `musicassistan
 - active baseline format.
 
 These fields are diagnostic state. Do not log protocol audio frames or any unrelated Music Assistant secrets.
+
+`connected` becomes true after the Sendspin handshake, during clock synchronization
+or streaming. Connecting and handshaking remain visible in `state` without
+claiming readiness. `playing` independently reports actual player activity.
 
 ## Foreground-service requirements
 

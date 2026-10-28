@@ -54,7 +54,8 @@ explicit reload. All seven activity JVM cases pass, and the combined tree passes
 2,399 Linux tests with two root-only skips, all 23 Host Recovery cases and all
 four socket JVM cases. PR #334 merged the socket and activity repairs as
 `8fcdc8b` after all 14 checks and PR #333's verified delivery. Exact publication
-and its backed-up update remain pending.
+and its [backed-up update are verified](android-runtime-delivery.md), including
+packaged/staged Android APK hashes and signature verification.
 
 [Management port admission](android-management-ports.md) repairs four reproduced
 failures without migrating existing inventory. All 73 targeted cases pass. Final
@@ -63,14 +64,20 @@ Recovery cases and all 11 socket/activity JVM cases. The separate
 [process-cleanup repair](android-process-cleanup.md) fixes a reproduced child
 leak after interruption. All five process JVM cases pass; the combined source
 retains 2,428 Linux passes, two skips, all 23 Host Recovery cases and all 16 JVM
-cases. PR #335 carries the port and process repairs and is running required checks.
+cases. PR #335 carries the port and process repairs. Its CI encountered unrelated
+SQLite contention while seeding a fixture; the [bounded fixture repair](freeze-fixture-contention.md)
+passes 20 consecutive cases and requires fresh CI before merging.
 
 [Native PCM ownership](android-pcm-ownership.md) fixes two reproduced worker and
 failed-start defects. All five Kotlin fixture cases pass, and the combined tree
 passes 2,428 Linux cases with two root-only skips, all 23 Host Recovery cases and
 all 21 JVM cases. The fixture uses the compiler in the existing pinned Gradle
-distribution; Android dependencies remain unchanged. Native Sendspin
-configuration and remaining Group 10 review continue.
+distribution; Android dependencies remain unchanged.
+[Native Sendspin configuration](android-sendspin-configuration.md) fixes four
+reproduced name, partial-setting, connection-cleanup and readiness defects. All
+12 manager cases pass, and the combined source retains 2,428 Linux passes, two
+skips, all 23 Host Recovery cases and all 33 JVM cases. Remaining Group 10 review
+continues.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
