@@ -76,6 +76,10 @@ those final changes and is not used as their qualification.
 
 Required PR/main checks, exact images and backed-up appliance delivery are pending.
 
+Integration on merged main `86ce127` produced a complete tree byte-identical to
+qualified `e1b534e` before this evidence note. All 51 focused integration checks
+also pass. PR #309's backed-up delivery must be verified before this batch merges.
+
 ## Follow-up still open
 
 RG-PRESENTATION-007: an actual rebuild-route reproduction sent two requests that
