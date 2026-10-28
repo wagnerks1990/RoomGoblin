@@ -707,6 +707,11 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Each Background Music start failure advances recovery once. Its current-generation
+outer catch owns failed/requested accounting; an inner failed transition must not
+clear the confirmation wait and accidentally count the same command twice.
+Preserve uncertain-execution observation and retired-session isolation.
+
 Player probe cache/pending work belongs to its player and Music Assistant
 connection generation. Only the latest-started probe publishes the shared cache;
 retirement forbids a legacy lookup retry across connection identities. Status

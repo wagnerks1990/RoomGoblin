@@ -39,7 +39,8 @@ receivers, a valid selected receiver, successful replacement and partial failure
 The supported native active-worktree suite passes 1,409 tests with zero failures
 and two root-only ownership skips (1,411 total), plus all 23 Host Recovery tests
 and Node/controller/Python/Bash checks. Required CI, checked integration and
-appliance delivery remain pending. All commands use deterministic fixtures, not
+combined PR #299/#300 appliance delivery passed; see the
+[receipt](announcement-active-targets.md#verified-combined-appliance-delivery). Test commands use deterministic fixtures, not
 production devices.
 
 Successful replacements with different target sets and partial failures affecting

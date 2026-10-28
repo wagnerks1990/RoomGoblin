@@ -26,6 +26,9 @@ music changes during a lookup, status asks for a refresh instead of showing the
 old output's reading beside the new session. A missing player and an unavailable
 status lookup remain distinct.
 
+One failed start advances recovery backoff once. A lost command response still
+waits for player observation before another attempt.
+
 **Find music** filters provider search to songs, stations, albums, artists or
 playlists. Results can play now, play next in the current queue, or become a
 favorite. A radio URL can be saved explicitly through the expandable stream

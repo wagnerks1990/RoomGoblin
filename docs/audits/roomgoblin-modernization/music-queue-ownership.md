@@ -27,5 +27,6 @@ deterministic transports; no physical music or receiver commands were issued.
 The supported native active-worktree suite passes 1,409 tests, zero failures and
 two root-only ownership skips (1,411 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact images
-and backed-up appliance delivery remain pending. Background Music runtime
+and backed-up appliance delivery passed in PR #300; see the
+[combined receipt](announcement-active-targets.md#verified-combined-appliance-delivery). Background Music runtime
 ownership and the wider modernization roadmap remain separate review.
