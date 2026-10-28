@@ -1966,7 +1966,7 @@ async function loadAutomationScenes(alias){
 }
 let morningWatchDraftRevision=0,morningWatchDraftDirty=false,morningWatchVolumeRevision=0,morningWatchVolumeDirty=false;
 let morningWatchReadGeneration=0,morningWatchWriteEpoch=0,morningWatchPendingWrites=0;
-let morningWatchSavePromise=null,morningWatchWriteTail=Promise.resolve(),morningWatchVolumeWorker=null;
+let morningWatchSavePromise=null,morningWatchWriteTail=Promise.resolve(),morningWatchVolumeWorker=null,morningWatchCheckPromise=null;
 let morningWatchVolumeTimer=null,morningWatchPendingVolume=null;
 function ensureMorningWatchDraftTracking(){
   const panel=document.getElementById('morningWatchPanel');
@@ -2000,6 +2000,7 @@ function paintMorningWatchRuntime(r){
 }
 async function loadMorningWatch(){
   ensureMorningWatchDraftTracking();
+  if(morningWatchCheckPromise)return;
   const generation=++morningWatchReadGeneration,revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision,epoch=morningWatchWriteEpoch,pending=morningWatchPendingWrites>0;
   try{
     const x=await api('/api/v1/automations/morning-announcements');
@@ -2062,16 +2063,26 @@ async function saveMorningWatch(){
   })();
   updateMorningWatchSaveButton();return morningWatchSavePromise;
 }
+function updateMorningWatchCheckButton(){
+  const btn=document.getElementById('morningWatchCheckBtn');if(!btn)return;
+  btn.dataset.commandUnavailable=String(!!morningWatchCheckPromise);
+  btn.disabled=!!morningWatchCheckPromise||!userCan('automation.manage');
+  btn.setAttribute('aria-disabled',String(btn.disabled));btn.textContent=morningWatchCheckPromise?'Checking…':'Check Stream Now';
+}
 async function checkMorningWatch(){
-  const btn=document.getElementById('morningWatchCheckBtn');
-  if(btn?.disabled)return;
-  if(btn){btn.disabled=true;btn.textContent='Checking…'}
+  if(morningWatchCheckPromise)return morningWatchCheckPromise;
+  if(!userCan('automation.manage'))return;
+  const generation=++morningWatchReadGeneration,epoch=morningWatchWriteEpoch;
+  const current=()=>generation===morningWatchReadGeneration&&epoch===morningWatchWriteEpoch&&!morningWatchPendingWrites;
+  const changed=()=>{morningWatchState.textContent='UNKNOWN';morningWatchState.className='pill';morningWatchMsg.textContent='Settings changed. Check the stream again.'};
   morningWatchMsg.textContent='Checking stream now…';
   morningWatchState.textContent='CHECKING';morningWatchState.className='pill';
+  morningWatchCheckPromise=(async()=>{
   try{
     // The manual action is deliberately independent of the configured watch window.
     // It always performs a real probe and returns the result directly to this click.
     const x=await jpost('/api/v1/automations/morning-announcements/check',{});
+    if(!current()){changed();return}
     const r=x.runtime||{};
     const state=x.live===true?'LIVE':(x.live===false?'OFFLINE':'UNKNOWN');
     morningWatchState.textContent=r.active?'PLAYING':state;
@@ -2082,11 +2093,12 @@ async function checkMorningWatch(){
     const attempts=Array.isArray(x.attempts)&&x.attempts.length?` • attempts: ${x.attempts.map(a=>`${a.probe||'?'}=${a.live===true?'live':(a.live===false?'offline':(a.status||a.httpStatus||a.error||'no-result'))}`).join(', ')}`:'';
     morningWatchMsg.textContent=`Probe: ${x.probe||'none'} • ${state}${detail}${checked}${duration}${attempts}`;
   }catch(e){
+    if(!current()){changed();return}
     morningWatchState.textContent='ERROR';morningWatchState.className='pill';
     morningWatchMsg.textContent=`Check failed: ${e.message}`;
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent='Check Stream Now'}
-  }
+  }finally{morningWatchCheckPromise=null;updateMorningWatchCheckButton()}
+  })();
+  updateMorningWatchCheckButton();return morningWatchCheckPromise;
 }
 
 async function loadSchedules(){

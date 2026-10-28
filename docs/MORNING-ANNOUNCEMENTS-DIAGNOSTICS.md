@@ -39,6 +39,11 @@ change while a check is pending, its obsolete response is rejected and you can
 check again. Saving settings retains one periodic watcher even when a previous
 probe or lifecycle operation is still pending.
 
+**Check Stream Now** stays unavailable while its one request is pending.
+Earlier polls cannot overwrite its progress or result. If settings change
+during the check, the panel shows UNKNOWN and asks you to check again. Current
+probe errors remain visible, and unsaved form edits are preserved.
+
 Settings are committed with the encrypted stream URL before the watcher or live
 volume control uses them. A storage failure preserves the previous active and
 saved settings; correct the error and retry the save. Clearing a stream URL uses

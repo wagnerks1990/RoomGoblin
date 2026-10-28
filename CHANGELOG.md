@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Live Watch manual-check progress and results from being replaced by
+  obsolete polls, and retain one pending check through capability refresh.
+
 - Count a rejected Background Music start once when calculating recovery backoff,
   retaining the observation wait for uncertain playback responses.
 

@@ -135,6 +135,7 @@ Queued subsystem units below have not been marked audited.
 - [Background Music schedule save ordering](music-schedule-ordering.md)
 - [Background Music player probe ownership](music-probe-ownership.md)
 - [Background Music recovery attempt accounting](music-recovery-attempts.md)
+- [Live Watch manual-check ownership](morning-watch-check-ownership.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
 - [Announcement release recovery ownership](announcement-release-ownership.md)
 - [Failed announcement start cleanup](announcement-start-failure.md)
