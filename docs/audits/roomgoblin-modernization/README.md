@@ -8,6 +8,11 @@ PR #313 passed all 14 checks without unresolved reviews and merged as `5cf4c81`;
 its exact images and backed-up update are pending. Registry and discovery repairs
 will follow together as the next focused Group 9 batch.
 
+Registry/discovery integration on merged `5cf4c81` is byte-identical to qualified
+`6c680e8` before this evidence note (`67366cd`). All 169 focused lighting,
+automation, announcement and music cases pass. Required CI and delivery remain
+separate gates; device dispatch identity and ESPHome review are still open.
+
 The [lighting registry save repair](lighting-registry-persistence.md) fixes three
 reproduced failed/invalid-save mutations and a group-name restart defect. All
 18 new regressions pass; full qualification passes 1,954 Linux tests, two
