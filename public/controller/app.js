@@ -1964,38 +1964,103 @@ async function loadAutomationScenes(alias){
     autoScene.innerHTML=j.scenes.map(x=>`<option>${esc(x)}</option>`).join('');
   }catch(e){autoEditorMsg.textContent=e.message}
 }
-async function loadMorningWatch(){
-  try{
-    const x=await api('/api/v1/automations/morning-announcements'),c=x.config||{},r=x.runtime||{};
-    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';morningWatchVolume.value=String(Number.isFinite(Number(c.volumePercent))?Number(c.volumePercent):100);morningWatchVolumeValue.textContent=morningWatchVolume.value+'%';if(window.morningWatchOfflineConfirmations)morningWatchOfflineConfirmations.value=String(c.offlineConfirmations??2);if(window.morningWatchCheckInterval)morningWatchCheckInterval.value=String(c.checkIntervalSeconds??15);if(window.morningWatchTargets){morningWatchTargets.innerHTML=configuredDisplayTargets(false).map(([id,name])=>`<label class="pill"><input type="checkbox" data-morning-target="${esc(id)}" ${(c.targets||['all']).includes('all')||(c.targets||[]).includes(id)?'checked':''}> ${esc(name)}</label>`).join('')}
-    const unknown=!r.active&&r.lastCheck&&r.probeStatus==='unavailable';
-    morningWatchState.textContent=r.active?'PLAYING':(r.live?'LIVE':(unknown?'UNKNOWN':'OFFLINE'));
-    morningWatchState.className='pill '+(r.active||r.live?'ok':'');
-    const extra=r.lastCheck?` • last check ${new Date(r.lastCheck).toLocaleTimeString()}`:'';
-    const duration=Number.isFinite(Number(r.probeDurationMs))?` • ${Number(r.probeDurationMs)} ms`:'';
-    const probeLabel=r.probe?(r.probeStatus?`${r.probe}: ${r.probeStatus}`:r.probe):'not checked';
-    morningWatchMsg.textContent=`${probeLabel}${extra}${duration}${r.lastError?' • '+r.lastError:''}`;
-  }catch(e){morningWatchMsg.textContent=e.message}
+let morningWatchDraftRevision=0,morningWatchDraftDirty=false,morningWatchVolumeRevision=0,morningWatchVolumeDirty=false;
+let morningWatchReadGeneration=0,morningWatchWriteEpoch=0,morningWatchPendingWrites=0;
+let morningWatchSavePromise=null,morningWatchWriteTail=Promise.resolve(),morningWatchVolumeWorker=null;
+let morningWatchVolumeTimer=null,morningWatchPendingVolume=null;
+function ensureMorningWatchDraftTracking(){
+  const panel=document.getElementById('morningWatchPanel');
+  if(!panel||panel.dataset.draftTracking)return;
+  panel.dataset.draftTracking='true';
+  const edited=event=>{
+    if(event.target.id==='morningWatchVolume'||!event.target.matches('input,select'))return;
+    morningWatchDraftRevision++;morningWatchDraftDirty=true;
+    morningWatchDraftMsg.textContent='Unsaved changes';
+  };
+  panel.addEventListener('input',edited);panel.addEventListener('change',edited);
 }
-let morningWatchVolumeTimer=null;
-async function applyMorningWatchVolume(value){
-  const volume=Math.max(0,Math.min(100,Number(value)||0));
+function paintMorningWatchConfig(c,{settings=true,volume=true}={}){
+  if(settings){
+    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';
+    morningWatchOfflineConfirmations.value=String(c.offlineConfirmations??2);morningWatchCheckInterval.value=String(c.checkIntervalSeconds??15);
+    const html=configuredDisplayTargets(false).map(([id,name])=>`<label class="pill"><input type="checkbox" data-morning-target="${esc(id)}" ${(c.targets||['all']).includes('all')||(c.targets||[]).includes(id)?'checked':''}> ${esc(name)}</label>`).join('');
+    if(morningWatchTargets.dataset.renderedChoices!==html){morningWatchTargets.innerHTML=html;morningWatchTargets.dataset.renderedChoices=html}
+    for(const input of morningWatchTargets.querySelectorAll('[data-morning-target]'))input.checked=(c.targets||['all']).includes('all')||(c.targets||[]).includes(input.dataset.morningTarget);
+  }
+  if(volume){morningWatchVolume.value=String(Number.isFinite(Number(c.volumePercent))?Number(c.volumePercent):100);morningWatchVolumeValue.textContent=morningWatchVolume.value+'%'}
+}
+function paintMorningWatchRuntime(r){
+  const unknown=!r.active&&r.lastCheck&&r.probeStatus==='unavailable';
+  morningWatchState.textContent=r.active?'PLAYING':(r.live?'LIVE':(unknown?'UNKNOWN':'OFFLINE'));
+  morningWatchState.className='pill '+(r.active||r.live?'ok':'');
+  const extra=r.lastCheck?` • last check ${new Date(r.lastCheck).toLocaleTimeString()}`:'';
+  const duration=Number.isFinite(Number(r.probeDurationMs))?` • ${Number(r.probeDurationMs)} ms`:'';
+  const probeLabel=r.probe?(r.probeStatus?`${r.probe}: ${r.probeStatus}`:r.probe):'not checked';
+  morningWatchMsg.textContent=`${probeLabel}${extra}${duration}${r.lastError?' • '+r.lastError:''}`;
+}
+async function loadMorningWatch(){
+  ensureMorningWatchDraftTracking();
+  const generation=++morningWatchReadGeneration,revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision,epoch=morningWatchWriteEpoch,pending=morningWatchPendingWrites>0;
   try{
-    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({volumePercent:volume})});
-    morningWatchMsg.textContent=x.liveVolume?.applied?`Volume ${volume}% applied live`:`Volume ${volume}% saved`;
-  }catch(e){morningWatchMsg.textContent=`Volume update failed: ${e.message}`}
+    const x=await api('/api/v1/automations/morning-announcements');
+    if(generation!==morningWatchReadGeneration||epoch!==morningWatchWriteEpoch||pending||morningWatchPendingWrites)return;
+    paintMorningWatchConfig(x.config||{},{settings:!morningWatchDraftDirty&&revision===morningWatchDraftRevision,volume:!morningWatchVolumeDirty&&volumeRevision===morningWatchVolumeRevision});
+    paintMorningWatchRuntime(x.runtime||{});
+  }catch(e){if(generation===morningWatchReadGeneration&&epoch===morningWatchWriteEpoch)morningWatchMsg.textContent=e.message}
+}
+function writeMorningWatch(body){
+  morningWatchWriteEpoch++;morningWatchPendingWrites++;
+  const task=morningWatchWriteTail.then(()=>{
+    if(!userCan('automation.manage'))throw Error('Permission required: automation.manage');
+    return api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  });
+  morningWatchWriteTail=task.catch(()=>{});
+  return task.finally(()=>{morningWatchWriteEpoch++;morningWatchPendingWrites--});
+}
+function updateMorningWatchSaveButton(){
+  const button=document.getElementById('morningWatchSaveBtn');
+  button.dataset.commandUnavailable=String(!!morningWatchSavePromise);
+  button.disabled=!!morningWatchSavePromise||!userCan('automation.manage');button.setAttribute('aria-disabled',String(button.disabled));
+}
+async function applyMorningWatchVolume(){
+  if(morningWatchVolumeWorker)return morningWatchVolumeWorker;
+  morningWatchVolumeWorker=(async()=>{
+    while(morningWatchPendingVolume){
+      const {volume,revision}=morningWatchPendingVolume;morningWatchPendingVolume=null;
+      try{
+        const x=await writeMorningWatch({volumePercent:volume});
+        if(revision===morningWatchVolumeRevision){morningWatchVolumeDirty=false;morningWatchVolumeMsg.textContent=x.liveVolume?.applied?`Volume ${volume}% applied live`:`Volume ${volume}% saved`}
+      }catch(e){if(revision===morningWatchVolumeRevision)morningWatchVolumeMsg.textContent=`Volume update failed: ${e.message}`}
+    }
+  })().finally(()=>{morningWatchVolumeWorker=null});
+  return morningWatchVolumeWorker;
 }
 function queueMorningWatchVolume(value,immediate=false){
+  ensureMorningWatchDraftTracking();if(!userCan('automation.manage'))return;
   const volume=Math.max(0,Math.min(100,Number(value)||0));
-  morningWatchVolumeValue.textContent=volume+'%';
+  morningWatchVolume.value=String(volume);morningWatchVolumeValue.textContent=volume+'%';
+  morningWatchVolumeDirty=true;morningWatchPendingVolume={volume,revision:++morningWatchVolumeRevision};
   if(morningWatchVolumeTimer)clearTimeout(morningWatchVolumeTimer);
-  morningWatchVolumeTimer=setTimeout(()=>{morningWatchVolumeTimer=null;applyMorningWatchVolume(volume)},immediate?0:150);
+  morningWatchVolumeTimer=setTimeout(()=>{morningWatchVolumeTimer=null;applyMorningWatchVolume()},immediate?0:150);
 }
 async function saveMorningWatch(){
-  try{
-    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:window.morningWatchTargets?[...morningWatchTargets.querySelectorAll('[data-morning-target]:checked')].map(x=>x.dataset.morningTarget):['all'],offlineConfirmations:Number(window.morningWatchOfflineConfirmations?.value||2),checkIntervalSeconds:Number(window.morningWatchCheckInterval?.value||15)})});
-    morningWatchMsg.textContent='Saved';await loadMorningWatch();return x;
-  }catch(e){morningWatchMsg.textContent=e.message}
+  ensureMorningWatchDraftTracking();if(morningWatchSavePromise)return morningWatchSavePromise;if(!userCan('automation.manage'))return;
+  const revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision;
+  const body={enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:[...morningWatchTargets.querySelectorAll('[data-morning-target]:checked')].map(x=>x.dataset.morningTarget),offlineConfirmations:Number(morningWatchOfflineConfirmations.value||2),checkIntervalSeconds:Number(morningWatchCheckInterval.value||15)};
+  if(morningWatchVolumeTimer){clearTimeout(morningWatchVolumeTimer);morningWatchVolumeTimer=null}
+  morningWatchPendingVolume=null;
+  morningWatchDraftMsg.textContent='Saving…';
+  morningWatchSavePromise=(async()=>{
+    try{
+      const x=await writeMorningWatch(body),settings=revision===morningWatchDraftRevision,volume=volumeRevision===morningWatchVolumeRevision;
+      if(settings)morningWatchDraftDirty=false;if(volume)morningWatchVolumeDirty=false;
+      if(x.config)paintMorningWatchConfig(x.config,{settings,volume});
+      morningWatchDraftMsg.textContent=settings?'Saved':'Saved earlier changes; newer edits are unsaved.';
+      return x;
+    }catch(e){morningWatchDraftMsg.textContent=`Save failed: ${e.message}`}
+    finally{morningWatchSavePromise=null;updateMorningWatchSaveButton()}
+  })();
+  updateMorningWatchSaveButton();return morningWatchSavePromise;
 }
 async function checkMorningWatch(){
   const btn=document.getElementById('morningWatchCheckBtn');
@@ -2192,7 +2257,7 @@ const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control']
 const ACTION_CAPABILITIES={
   admin:['saveDrawerTvGroups','saveAdminDisplaysStructured','addAdminDisplayGroup','removeAdminDisplayGroup','removeAdminDisplay','removeEmptyLegacyDisplayGroups','saveAdmin','loadAdmin','createLabAgentEnrollment','saveLabAgentPolicy','revokeLabAgentCredential','loadSystemManagement'],
   media:['presentationControl','startSelectedPresentation','newPresentationFolder','renamePresentation','movePresentation','deletePresentation','rebuildPresentation','showMedia','convertMedia','deleteMedia'],
-  automation:['toggleAutomationScheduler','saveAutomation','deleteAutomation','duplicateAutomation','runAutomation','testAutomationEditor','saveMorningWatch','checkMorningWatch'],
+  automation:['toggleAutomationScheduler','saveAutomation','deleteAutomation','duplicateAutomation','runAutomation','testAutomationEditor','saveMorningWatch','checkMorningWatch','queueMorningWatchVolume'],
   schedule:['saveClassSchedule','deleteClassSchedule','duplicateClassSchedule','saveSchedulerCalendar'],
   integrations:['goveeCmd','saveMusicAssistantConfig'],
   classroom:['plutoAction','route','toggleRowTvPower','powerAllAvTvs','drawerTvPower','drawerUpdateRoute','sourceDrawerPower','saveSourceDrawer','saveDrawerTvName','drawerTestImage','drawerClearDisplay','drawerReloadDisplay','toggleSystem','resumeScheduledAutomation','clearClassroom','overviewTestImage','overviewTvPower','reloadAllDisplays','bgmControl','bgmPlayFavorite','bgmUseFavorite','deleteBgmFavorite','maPlayerCmd','maMute','maSetVolume','musicAssistantTvBridge']

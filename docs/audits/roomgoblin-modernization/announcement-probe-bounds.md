@@ -39,7 +39,7 @@ All 11 pass with the patch; the expanded announcement/music/Sports suite passes
 The native active-worktree snapshot passes 1,350 tests, zero failures and two
 root-only ownership skips (1,352 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact
-image publication and normal backed-up delivery remain pending. Release retry ownership and music
+image publication and normal backed-up delivery subsequently completed in PR #297. Release retry ownership and music
 editor saves remain separate follow-ups; this does not close the subsystem.
 
 ## Combined integration qualification
@@ -50,5 +50,6 @@ commits; integration conflicts were limited to additive changelog/audit links.
 The combined native snapshot passes 1,365 tests, zero failures and two root-only
 ownership skips (1,367 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. All 40 focused probe/policy/configuration
-checks pass. Required CI, exact images and appliance delivery remain pending.
+checks pass. Required CI, exact images and appliance delivery are verified at
+`ce31357`; see the [combined delivery receipt](music-save-ownership.md#verified-probemusic-appliance-delivery).
 Release retry/clear ownership and deferred-bookkeeping recovery remain open.

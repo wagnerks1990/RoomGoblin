@@ -47,14 +47,14 @@ ownership skips (1,356 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks.
 
 Checked integration, required CI, exact images and normal backed-up delivery
-remain pending. Browser transports are deterministic fixtures;
+are complete in PR #297; see the receipt below. Browser transports are deterministic fixtures;
 no live credentials, music sessions or physical commands were used.
 
 The combined integration with the announcement probe bound on merged main
 `ac1ae40` preserves these implementation and browser-test files byte-for-byte.
 Its final native snapshot passes 1,365 tests, zero failures and two root-only
 ownership skips (1,367 total), plus all 23 Host Recovery tests and
-Node/controller/Python/Bash checks. Required CI and delivery remain pending.
+Node/controller/Python/Bash checks. PR #297 subsequently passed its CI and delivery gates.
 
 ## Firefox fixture synchronization
 
@@ -67,4 +67,21 @@ two requests and exercising the same obsolete-error ordering and UI assertions.
 No product code, expected outcome, workflow or check was relaxed.
 
 The corrected full workspace suite passes all 70 tests in Firefox and all 70
-in Chromium. Fresh required CI on the correction remains mandatory.
+in Chromium. Fresh required CI passed on corrected head `e587248`: all 14 checks succeeded.
+
+## Verified probe/Music appliance delivery
+
+PR #297 merged at `ce3135724550fb1d2c75e3ed42bb98d9eb638556`. All 14 PR checks
+and all five main workflows passed. The normal updater completed at
+`2026-10-28T01:41:08.469201+00:00`, replacing the Hub and retaining the healthy
+maintenance container. Control/media endpoints, maintenance/Host Agent health,
+all eight encrypted secrets, database/ADB modes, authorization and served assets
+passed verification. Main is clean; the selective plan has no remaining changes.
+
+Operational backup `auto-operational-2026-10-28T01-40-54-827Z.zip` is 128,693,307
+bytes, mode 0600, SHA-256
+`0d1f99b8f3d7eaa11f9db91b15f89591d93490aae6a15d63e94537ed1ba22706`.
+Archive CRC, manifest/canonical-database selection and extracted SQLite integrity
+passed. Rollback to `ac1ae4002adf3995d079836a13245e3e8449b636` and its images is
+available; rollback was not executed. No physical commands, receiver reloads or
+production fault injection were used.
