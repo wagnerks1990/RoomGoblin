@@ -22,6 +22,11 @@ Bridge action and dispatch ordering has [18 route/router regressions](music-brid
 The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
 Upload expiry now has [eight regressions for active writer ownership](upload-cleanup-ownership.md).
 Default video commands have [eight regressions for shared playback identity](media-default-session.md).
+Upload cleanup and default video identity are integrated on merged `daa378f`.
+Before this note, the complete tree was byte-identical to qualified `f21eed4`.
+Qualification includes 1,674 Linux passes, zero failures, two root-only skips,
+23 Host Recovery passes and 16 new Node cases. Required gates and appliance
+delivery remain pending. Verify PR #305 delivery before merging this integration.
 Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
 complete tree was byte-identical to qualified `3c15e92`. Qualification includes
 1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
