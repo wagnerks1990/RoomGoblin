@@ -51,6 +51,8 @@ test("authenticated reads preserve session activity throughout a canonical expor
   const setup=await fetch(`http://127.0.0.1:${app.control}/api/v1/setup/administrator`,{method:"POST",headers:{"content-type":"application/json","x-setup-token":"lifecycle-test-setup"},body:JSON.stringify({username:"freeze-admin",password:"test-only-long-password"})});
   assert.equal(setup.status,201);await setup.text();const cookie=setup.headers.get("set-cookie").split(";",1)[0];
   const db=new DatabaseSync(path.join(app.dir,"hub.db"));t.after(()=>db.close());
+  // Match the application's bounded writer wait while seeding the fixture.
+  db.exec("PRAGMA busy_timeout=5000");
   db.prepare("UPDATE user_sessions SET last_seen_at=?").run(old);
   const internal=(route,body)=>fetch(`http://127.0.0.1:${app.control}/api/v1/internal/maintenance/${route}`,{method:"POST",headers:{"content-type":"application/json","x-maintenance-token":"lifecycle-test-maintenance"},body:JSON.stringify(body)});
   const frozen=await internal("export-freeze",{confirm:"FREEZE_FULL_EXPORT"});assert.equal(frozen.status,200);const {freezeToken}=await frozen.json();
