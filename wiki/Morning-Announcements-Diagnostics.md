@@ -62,6 +62,12 @@ An empty or unresolved explicit start selection reports an error instead of
 using other configured displays. When replacement fails before changing content,
 an unchanged existing announcement retains its active lifecycle and audio hold.
 
+Starting additional selected displays leaves the other active announcement
+displays playing. Stop ends the announcement across all of them. If an additional
+start partially fails, the earlier session remains active and the changed
+displays stay accounted for. Use Resume Scheduled State to repair their playback,
+or Stop to finish the session; automatic release also finishes the whole session.
+
 HLS probe deadlines cover the full playlist body, including a server that sends
 headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
 and 512 KiB. A timeout or oversized response is reported as unknown availability

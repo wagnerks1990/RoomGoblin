@@ -38,6 +38,6 @@ test("a valid explicit selection dispatches only its selected receiver",async()=
 test("a successful replacement keeps its new session identity and mode",async()=>{
  const h=fixture(),targets=h.state.targets;await h.ctx.assertMorningAnnouncements({mode:"manual",targetsOverride:["old"]});assert.equal(h.state.active,true);assert.equal(h.state.mode,"manual");assert.notEqual(h.state.targets,targets);assert.notEqual(h.displays.old.audioContentId,"announcement-a");assert.equal(h.pending.size,0);
 });
-test("a partial replacement does not falsely restore the overwritten prior session",async()=>{
- const h=fixture(),targets=h.state.targets;h.controls.clearFailure=true;h.controls.failAfterState=true;await assert.rejects(h.ctx.assertMorningAnnouncements(),/clear/);assert.equal(h.state.active,false);assert.notEqual(h.state.targets,targets);assert.equal(h.pending.size,1);assert.equal(h.holds.has("old"),true);
+test("a partial replacement retains active ownership without restoring prior content",async()=>{
+ const h=fixture(),targets=h.state.targets;h.controls.clearFailure=true;h.controls.failAfterState=true;await assert.rejects(h.ctx.assertMorningAnnouncements(),/clear/);assert.equal(h.state.active,true);assert.notEqual(h.state.targets,targets);assert.notEqual(h.displays.old.audioContentId,"announcement-a");assert.equal(h.pending.size,1);assert.equal(h.holds.has("old"),true);
 });

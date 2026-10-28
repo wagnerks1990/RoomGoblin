@@ -49,10 +49,12 @@ passed 93 and failed one unchanged Linux directory-mode assertion; the native
 suite passes that unchanged check on its supported platform: 1,389 passed,
 zero failed and two root-only ownership skips (1,391 total), plus all 23 Host
 Recovery tests and Node/controller/Python/Bash checks. Required CI,
-checked integration, exact images and backed-up delivery remain pending. All
+checked integration, exact images and backed-up delivery completed in PR #298;
+see its [delivery receipt](announcement-start-failure.md#checked-appliance-delivery). All
 dispatches here use deterministic fixtures, not production receivers or music.
 
 Failed takeover-start cleanup has a separate
 [follow-up and qualification](announcement-start-failure.md). This patch's
 successor acceptance covers successful starts followed by release. Replacement
-of an already active session remains a separate review.
+of an already active session is covered by the separate
+[active-target follow-up](announcement-active-targets.md).
