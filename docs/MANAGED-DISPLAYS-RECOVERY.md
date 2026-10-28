@@ -24,6 +24,20 @@ the original display card, including failures after the editor closes. A failed
 follow-up read does not relabel an accepted save as failed. Closing returns focus
 to the current Edit button or the inventory search when that card is unavailable.
 
+## Enrollment lifecycle outcomes
+
+Enable, disable and removal require a reply confirming both the selected display
+and requested outcome. Accepted changes update the current inventory without a
+page reload. Removal retires older inventory/status work so it cannot redraw the
+removed card. Enable/disable preserve newer metadata. Existing confirmations and
+pending-command admission remain in force; incomplete replies are visible and
+never replay the mutation automatically.
+
+An open editor for a removed display retains its unsaved draft and explains why
+Save is disabled. Other editors and typed input keep their focus and contents.
+When the originating command has lost focus to the page body, completion returns
+focus to the surviving Edit control or the inventory search.
+
 ## Shell and diagnostic output ownership
 
 Remote shell uses the same per-display pending owner as card controls. Repeated
