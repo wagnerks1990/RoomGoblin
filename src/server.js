@@ -8256,6 +8256,7 @@ app.post("/api/v1/presentations/:id/rebuild",requireCapability("media.manage"),a
   try{
     const id=String(req.params.id);rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
+    if(presentationBuilds.has(id))return res.status(409).json({ok:false,error:"Presentation rendering is already in progress"});
     prior={conversionStatus:rec.conversionStatus,conversionError:rec.conversionError};
     rec.conversionStatus="converting";rec.conversionError=null;persistPresentationLibrary();
     await buildPresentationSlides(id);
