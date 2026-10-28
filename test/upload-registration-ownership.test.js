@@ -11,7 +11,10 @@ async function fixture(t){
  const store=new ResumableUploadStore({root:path.join(root,"sessions"),destinationRoot:media,maxFileBytes:1024,chunkBytes:16,minFreeBytes:0,ttlMs:1000}),meta=store.create({owner:"fixture",name:"lesson.pdf",mime:"application/pdf",size:bytes.length});
  await store.putChunk({id:meta.id,owner:"fixture",index:0,input:Readable.from(bytes),contentLength:bytes.length,digest});
  let route,index=0;const h={root,media,store,meta,register:async args=>({storedName:args.stored,url:"/media/"+args.stored})};
- const ctx=vm.createContext({app:{post:(_url,...args)=>route=args.at(-1)},mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"fixture-"+(++index)+".pdf",MEDIA_DIR:media,path,fs,registerUploadedMedia:args=>h.register(args)});
+ const library={files:{}};
+ const ctx=vm.createContext({app:{post:(_url,...args)=>route=args.at(-1)},mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"fixture-"+(++index)+".pdf",MEDIA_DIR:media,path,fs,mediaLibrary:library,
+ libraryRecordFromDisk:stored=>fs.existsSync(path.join(media,stored))?{storedName:stored,size:fs.statSync(path.join(media,stored)).size}:null,
+ registerUploadedMedia:async args=>{const result=await h.register(args);if(result)library.files[args.stored]={uploadSessionId:args.uploadSessionId,uploadDigest:args.uploadDigest};return result}});
  vm.runInContext(source.slice(a,b),ctx);
  h.call=async(overrides={},responseHook)=>{const result={status:200,body:null},res={status(v){result.status=v;return res},json(value){responseHook?.(value);result.body=value;return res}};await route({params:{id:meta.id},body:{sha256:digest},...overrides},res);return result};
  h.part=path.join(store.dir(meta.id),"0.part");return h;
@@ -19,7 +22,7 @@ async function fixture(t){
 test("failed registration retains verified chunks and an explicit retry can finish",async t=>{
  const h=await fixture(t);let calls=0;h.register=async args=>{if(++calls===1)throw Error("registration unavailable");return{storedName:args.stored}};
  const failed=await h.call();assert.equal(failed.status,400);assert.match(failed.body.error,/registration unavailable/);assert.deepEqual(fs.readFileSync(h.part),bytes);assert.deepEqual(fs.readdirSync(h.media),[]);assert.equal(h.store.locks.size,0);
- const retried=await h.call();assert.equal(retried.status,200);assert.equal(retried.body.file.storedName,"fixture-2.pdf");assert.deepEqual(fs.readFileSync(path.join(h.media,"fixture-2.pdf")),bytes);assert.equal(fs.existsSync(h.store.dir(h.meta.id)),false);
+ const retried=await h.call();assert.equal(retried.status,200);assert.equal(retried.body.file.storedName,"fixture-1.pdf");assert.deepEqual(fs.readFileSync(path.join(h.media,"fixture-1.pdf")),bytes);assert.equal(fs.existsSync(h.part),false);assert.equal(h.store.read(h.meta.id).completion.registered,true);
 });
 test("registration holds session ownership through await and blocks expiry",async t=>{
  const h=await fixture(t),entered=gate(),release=gate();h.register=async args=>{entered.resolve();await release.promise;return{storedName:args.stored}};
@@ -32,7 +35,7 @@ test("queued completion waits for failed registration and then retries intact ch
  const h=await fixture(t),entered=gate(),release=gate();let calls=0;h.register=async args=>{if(++calls===1){entered.resolve();await release.promise;throw Error("first registration failed")}return{storedName:args.stored}};
  const first=h.call();await entered.promise;const second=h.call();
  try{assert.equal(calls,1);assert.equal(h.store.cleanup(Date.now()+2000),0)}finally{release.resolve()}
- assert.equal((await first).status,400);assert.equal((await second).status,200);assert.equal(calls,2);assert.deepEqual(fs.readdirSync(h.media),["fixture-2.pdf"]);
+ assert.equal((await first).status,400);assert.equal((await second).status,200);assert.equal(calls,2);assert.deepEqual(fs.readdirSync(h.media),["fixture-1.pdf"]);
 });
 test("explicit cancel waits for registration failure before removing retained chunks",async t=>{
  const h=await fixture(t),entered=gate(),release=gate();h.register=async()=>{entered.resolve();await release.promise;throw Error("registration failed")};
@@ -42,12 +45,12 @@ test("explicit cancel waits for registration failure before removing retained ch
 });
 test("successful registration survives a later session cleanup failure",async t=>{
  const h=await fixture(t),remove=fs.rmSync;let reject=true;
- t.mock.method(fs,"rmSync",function(file,options){if(file===h.store.dir(h.meta.id)&&options?.recursive&&reject){reject=false;throw Error("session cleanup unavailable")}return remove.call(this,file,options)});
+ t.mock.method(fs,"rmSync",function(file,options){if(file===h.part&&reject){reject=false;throw Error("session cleanup unavailable")}return remove.call(this,file,options)});
  const result=await h.call();assert.equal(result.status,400);assert.match(result.body.error,/session cleanup unavailable/);assert.deepEqual(fs.readFileSync(path.join(h.media,"fixture-1.pdf")),bytes);assert.deepEqual(fs.readFileSync(h.part),bytes);assert.equal(h.store.locks.size,0);
 });
 test("a response failure cannot delete a successfully registered file",async t=>{
  const h=await fixture(t);let response=0;const result=await h.call({},()=>{if(++response===1)throw Error("response unavailable")});
- assert.equal(result.status,400);assert.deepEqual(fs.readFileSync(path.join(h.media,"fixture-1.pdf")),bytes);assert.equal(fs.existsSync(h.store.dir(h.meta.id)),false);
+ assert.equal(result.status,400);assert.deepEqual(fs.readFileSync(path.join(h.media,"fixture-1.pdf")),bytes);assert.equal(fs.existsSync(h.part),false);assert.equal(h.store.read(h.meta.id).completion.registered,true);
 });
 test("a missing registered file leaves chunks available and reports failure",async t=>{
  const h=await fixture(t);h.register=async()=>null;const result=await h.call();assert.equal(result.status,400);assert.match(result.body.error,/unavailable after registration/);assert.deepEqual(fs.readFileSync(h.part),bytes);assert.deepEqual(fs.readdirSync(h.media),[]);

@@ -74,7 +74,7 @@ class ResumableUploadStore{
     if(!name)throw Object.assign(new Error("File name is required"),{status:400});
     if(!Number.isSafeInteger(size)||size<1||size>this.maxFileBytes)throw Object.assign(new Error(`File size must be between 1 byte and ${this.maxFileBytes} bytes`),{status:413});
     this.cleanup();let activeOwnerBytes=0,activeBytes=0;
-    for(const entry of fs.readdirSync(this.root)){if(!SESSION_ID.test(entry))continue;try{const other=this.read(entry);activeBytes+=Number(other.size)||0;if(other.owner===owner)activeOwnerBytes+=Number(other.size)||0}catch{}}
+    for(const entry of fs.readdirSync(this.root)){if(!SESSION_ID.test(entry))continue;try{const other=this.read(entry);if(other.completion?.registered&&other.completion?.reclaimed)continue;activeBytes+=Number(other.size)||0;if(other.owner===owner)activeOwnerBytes+=Number(other.size)||0}catch{}}
     if(activeOwnerBytes+size>this.maxOwnerBytes)throw Object.assign(new Error("Active upload storage quota exceeded; finish or cancel an existing upload"),{status:413});
     const stat=fs.statfsSync(this.root),freeBytes=Number(stat.bavail)*Number(stat.bsize);
     if(freeBytes-activeBytes-size*2<this.minFreeBytes)throw Object.assign(new Error("Not enough free storage to upload and finalize this file"),{status:507});
@@ -106,10 +106,30 @@ class ResumableUploadStore{
     meta.received[index]={size:bytes,sha256:digest};meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(id),meta);return this.public(meta);
   }
   async assemble(args){return this.locked(String(args.id),()=>this._assemble(args))}
-  async _assemble({id,owner,digest,destination,register}){
+  finishReceipt(meta){
+    if(!meta.completion.registered){
+      meta.completion.registered=true;meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(meta.id),meta);
+    }
+    if(!meta.completion.reclaimed){
+      for(let i=0;i<meta.totalChunks;i++)fs.rmSync(path.join(this.dir(meta.id),`${i}.part`),{force:true});
+      meta.completion.reclaimed=true;atomicJson(this.metaFile(meta.id),meta);
+    }
+  }
+  async _assemble({id,owner,digest,destination,register,replay}){
     destination=path.resolve(destination);
     if(!destination.startsWith(this.destinationRoot+path.sep))throw Error("Upload destination is outside its configured root");
     const meta=this.owned(id,owner);digest=safeDigest(digest);
+    if(replay){
+      if(!meta.completion){meta.completion={storedName:path.basename(destination),digest:null,registered:false,reclaimed:false};atomicJson(this.metaFile(id),meta)}
+      const receipt=meta.completion,name=receipt.storedName;
+      if(typeof name!=="string"||!name||name!==path.basename(name)||name==="."||name==="..")throw Error("Invalid upload completion destination");
+      destination=path.join(this.destinationRoot,name);
+      if(receipt.digest&&receipt.digest!==digest)throw Object.assign(new Error("Completion retry does not match the verified file"),{status:409});
+      if(receipt.digest){
+        if(await replay(meta)){this.finishReceipt(meta);return meta}
+        if(receipt.registered)throw Object.assign(new Error("Completed upload is no longer available"),{status:410});
+      }else if(receipt.registered)throw Error("Invalid upload completion receipt");
+    }
     if(Object.keys(meta.received).length!==meta.totalChunks)throw Object.assign(new Error("Upload is incomplete"),{status:409});
     const tmp=`${destination}.${crypto.randomBytes(6).toString("hex")}.uploading`,hash=crypto.createHash("sha256");let bytes=0;
     const out=sharedWriteStream(tmp);
@@ -118,10 +138,11 @@ class ResumableUploadStore{
       await new Promise((resolve,reject)=>out.end(err=>err?reject(err):resolve()));
       if(bytes!==meta.size||hash.digest("hex")!==digest)throw Object.assign(new Error("Final file size or SHA-256 verification failed"),{status:400});
       inspectUpload(tmp,meta.name);contentFile(this.destinationRoot,tmp);fs.renameSync(tmp,destination);
+      if(replay){meta.completion.digest=digest;atomicJson(this.metaFile(id),meta)}
       // Registration remains inside the accepted session owner. Keep verified
       // chunks recoverable until the library has accepted their completed file.
       if(register)await register(meta);
-      fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
+      if(replay)this.finishReceipt(meta);else fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
     }catch(err){out.destroy();fs.rmSync(tmp,{force:true});throw err}
   }
   async cancel(id,owner){return this.locked(String(id),()=>{this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true})})}

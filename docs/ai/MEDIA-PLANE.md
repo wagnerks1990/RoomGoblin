@@ -9,7 +9,12 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 Resumable assembly awaits its internal registration callback before reclaiming
 chunks. Preserve session ownership through registration, and never delete a
 successfully registered file because subsequent cleanup or response handling
-failed. This does not provide a durable completion receipt.
+failed. Completion receipts pin destination and verified digest, persist private
+library/session identity, then record registration before chunk reclamation.
+Replay validates existing identity and availability; completed receipts never
+recreate missing media. Skip active-upload quota only after reclamation is
+recorded. Retain owner isolation, TTL, private metadata and accepted-caller
+rate limiting. See the completion receipt audit for failure/rollback boundaries.
 
 Keep completion rate middleware before `requireCapability("media.manage")` and
 use the same capability predicate to skip rejected callers. Its fixed appliance

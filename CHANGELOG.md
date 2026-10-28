@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Recover the same registered media item after a lost upload completion reply
+  with private, expiring receipts and retry-safe chunk reclamation.
+
 - Retain verified upload chunks until media-library registration succeeds, and
   preserve registered files when later cleanup or response handling fails.
 

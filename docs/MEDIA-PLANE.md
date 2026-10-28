@@ -89,6 +89,12 @@ at least twice the largest expected upload free beneath the persistent data root
 
 ## Range transport
 
+Completion retains an owner-isolated receipt for the existing session TTL
+(24 hours by default). A retry recovers the same registered library item after
+a lost reply; completed receipts do not recreate deleted media. Reclaimed
+receipts no longer reserve active-upload quota. Expiry/cancellation removes
+receipt metadata without deleting published media. See [completion receipts](audits/roomgoblin-modernization/upload-completion-receipts.md).
+
 Upload assembly retains its session lock and verified chunks through library
 registration. Failed registration permits an explicit retry; later cleanup or
 response errors preserve an already registered file. See [registration ownership](audits/roomgoblin-modernization/upload-registration-ownership.md).
