@@ -41,5 +41,6 @@ WebSocket/MQTT races and rejection of unrelated conditional dispatch.
 The supported Linux snapshot passes 1,648 tests with zero failures and two
 root-only skips (1,650 total), plus all 23 Host Recovery tests and the supported
 Node/controller/Python/Bash checks. Required gates, exact images and backed-up
-appliance delivery remain pending. No physical classroom commands, receiver reloads or
+appliance delivery passed in PR #304; see the [receipt](music-command-delivery.md).
+No physical classroom commands, receiver reloads or
 production fault injection were used. The broader modernization remains active.
