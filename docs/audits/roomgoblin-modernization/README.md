@@ -213,6 +213,18 @@ of Chromium and Firefox. Required PR/main gates, exact images and this batch's
 backed-up appliance delivery remain pending. PR #301 delivery is now verified.
 TV audio restoration remains under review; the broader roadmap is still active.
 
+## TV audio and search integration
+
+TV restore ownership, repeated-search results and named/uncertain audio recovery
+are integrated on merged `main` `4f9e3da`. Before this note, the complete tree
+matched qualified `aeb961e`. All 103 focused integration tests pass. Final native
+validation passes 1,613 tests, zero failures and two root-only ownership skips,
+plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All 17
+Music Studio and 70 workspace cases pass in each of Chromium and Firefox.
+Required PR/main checks, immutable images and this batch's backed-up delivery
+remain pending. PR #302 has passed main validation and awaits image publication.
+Late audio-command persistence remains a separate reproduced review finding.
+
 ## Inventory and review sequence
 
 These are review units, not proposed new services. Later units remain queued;
