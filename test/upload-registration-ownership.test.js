@@ -62,4 +62,3 @@ test("successful registration receives verified metadata and only then releases 
  const h=await fixture(t);h.register=async args=>{assert.equal(args.originalName,"lesson.pdf");assert.equal(args.mime,"application/pdf");assert.equal(args.size,8);assert.deepEqual(fs.readFileSync(path.join(h.media,args.stored)),bytes);assert.deepEqual(fs.readFileSync(h.part),bytes);assert.equal(h.store.locks.has(h.meta.id),true);return{storedName:args.stored}};
  assert.equal((await h.call()).status,200);assert.equal(fs.existsSync(h.part),false);
 });
-

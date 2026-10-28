@@ -21,4 +21,3 @@ is available with prior images. Rollback was not exercised.
 No physical receiver commands/reloads or production fault injection were used.
 This confirms appliance delivery, not long-file hardware playback acceptance.
 The remaining media/presentation and modernization reviews remain active.
-

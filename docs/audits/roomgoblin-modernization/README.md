@@ -1,6 +1,13 @@
 # RoomGoblin modernization audit
 
-Status: **PR #305 delivered; media ownership fixes in PR #306; upload browser fixes qualified; registration recovery under validation**.
+Status: **PR #305 delivered; PR #306 merged and publishing; browser/registration upload recovery qualified**.
+
+The upload recovery batch is integrated on merged `55055f7`. Before this
+evidence note and trailing blank-line cleanup, its tree was byte-identical to
+qualified `3dae4e7`. Qualification includes 1,713 Linux passes, zero failures,
+two root-only skips, 23 Host Recovery passes and 70 workspace cases in each
+browser. Its 39 new cases cover browser and backend ownership. Checked delivery
+remains pending. Lost-completion-response replay is separately reproduced and open.
 
 PR #305 is deployed and verified at `daa378f`; see its
 [delivery receipt](media-reconnect-delivery.md).
