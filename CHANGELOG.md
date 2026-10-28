@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- Report planned and unimplemented native Android controls as unavailable while
+  preserving implemented controls and their permission gates.
+
+- Apply native Android Sendspin player renames, retain saved URLs on partial
+  configuration, clean up failed connections and report protocol readiness accurately.
+
+- Keep retired Android PCM workers from consuming or writing a replacement audio
+  session, and allow retry after AudioTrack fails to start.
+
 - Clean up the Android root-tool child process and its streams when a request is
   interrupted, preserving existing policy gates, timeouts and output limits.
 

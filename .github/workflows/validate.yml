@@ -308,6 +308,15 @@ jobs:
       - name: Verify Android child process cleanup
         if: steps.scope.outputs.full != 'false'
         run: python3 tools/test-android-root-process.py
+      - name: Verify Android PCM playback ownership
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-pcm-ownership.py
+      - name: Verify Android native Sendspin configuration
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-sendspin-configuration.py
+      - name: Verify Android capability availability
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-capability-truth.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv

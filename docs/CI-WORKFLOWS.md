@@ -66,6 +66,20 @@ reload, reload after reassignment and recovery of a missing current URL.
 nonzero completion, bounded output, timeout and interruption. It compiles the
 actual RootTools fields and execution method, substituting privileged process
 creation with harmless local Java child processes. No root command is executed.
+`python3 tools/test-android-pcm-ownership.py` compiles the actual Kotlin PCM player
+with the compiler bundled in the existing pinned Gradle distribution. Five cases
+use Android audio/protocol substitutes to check playback, format rejection,
+stop/release, retired workers and failed-start retry. They do not exercise HDMI
+audio, Android framework timing or the real Sendspin transport. No application
+dependency or Gradle version changes are needed.
+`python3 tools/test-android-sendspin-configuration.py` uses the same compiler for
+12 cases against the actual native manager. Substituted preferences and protocol
+clients verify partial settings, renames, persistent client IDs, connection
+failure cleanup and readiness states. No network or Android preferences are used.
+`python3 tools/test-android-capability-truth.py` checks 22 actual capability
+snapshots with substituted Android permissions. Planned operations remain
+unavailable even with grants, while implemented controls retain their permission
+and root-policy gates. No permission is granted on a real device.
 
 ## Conservative documentation-only PR selection
 

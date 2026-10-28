@@ -57,6 +57,13 @@ Consequences:
 
 `KioskWatchdog` also calls `ensureStarted()` while the agent process is alive so an enabled native player is reasserted independently of display activity lifecycle.
 
+Each PCM worker owns the AudioTrack with which it started. Stop/reconfiguration
+retires that ownership before another session can use the shared buffer. A late
+write from an old worker cannot switch to the replacement track or consume its
+queued frames. A failed AudioTrack start leaves the player eligible for retry.
+JVM tests exercise these decisions with audio substitutes; physical timing and
+HDMI playback still require the device validation below.
+
 ## Configuration
 
 Managed Displays exposes a **Native Sendspin** control group:
@@ -64,6 +71,12 @@ Managed Displays exposes a **Native Sendspin** control group:
 - **Configure** — stores the Sendspin WebSocket URL and player name in the Android agent;
 - **Status** — returns current transport/player state and buffer diagnostics;
 - **Reconnect** — restarts the native Sendspin connection without reloading the kiosk WebView.
+
+Changing the configured name reconnects the native player so Music Assistant
+receives the new name, while retaining its persistent client ID. Repeating an
+unchanged configuration preserves the current connection. Partial API updates
+may omit the URL to retain its saved value; an explicit invalid URL is rejected
+before changing settings. Connection failures release the attempted client.
 
 For Music Assistant's external Sendspin listener, the normal endpoint is:
 
@@ -95,6 +108,10 @@ Future work should allow the Hub to propagate its database-backed `musicassistan
 - active baseline format.
 
 These fields are diagnostic state. Do not log protocol audio frames or any unrelated Music Assistant secrets.
+
+`connected` becomes true after the Sendspin handshake, during clock synchronization
+or streaming. Connecting and handshaking remain visible in `state` without
+claiming readiness. `playing` independently reports actual player activity.
 
 ## Foreground-service requirements
 
