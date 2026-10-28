@@ -1,5 +1,7 @@
 # Ubuntu repair completion and current records
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-repair-record-ownership).
+
 RG-LAB-022 reproduces repair success and failure replacing a computer's current
 record with the snapshot captured before its installer ran. Cancelling a pending
 maintenance schedule during installation is allowed, but repair completion could

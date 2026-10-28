@@ -1,5 +1,7 @@
 # Weather scene operation ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#weather-scene-ownership).
+
 RG-WEATHER-006 reproduces six browser failures: a delayed preview renders after
 navigation; a pending send dispatches after navigation or authentication changes;
 a send uses targets changed while its scene loads; and delayed schedule/overlay

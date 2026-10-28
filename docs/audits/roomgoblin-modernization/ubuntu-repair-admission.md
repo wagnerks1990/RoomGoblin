@@ -1,5 +1,7 @@
 # Ubuntu repair admission and announcement priority
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-repair-admission).
+
 RG-LAB-024 reproduces seven failures with the real manager and a gated synthetic
 transport: repair can overlap an existing owner, admit an announcement-locked
 computer, configure after announcements start during installation, overlook new

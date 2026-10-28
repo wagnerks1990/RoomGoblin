@@ -1,5 +1,7 @@
 # Native Windows enrollment identity preservation
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-enrollment-identity).
+
 RG-LAB-017 reproduces fresh-enrollment arguments replacing an enrolled computer's
 configuration and deleting it after failed native health acceptance. The final
 ten-case fixture fails five assertions against the original source: existing,

@@ -1,5 +1,7 @@
 # Sports durable saves and retired board reads
 
+[Finding classification and immutable source locations](finding-metadata.md#sports-persistence-cache).
+
 RG-SPORTS-005 reproduces four failures with real isolated SQLite databases.
 Save and Undo each replaced the recovery snapshot when either the current-row
 write or a deferred constraint at COMMIT failed. Three control cases pass before

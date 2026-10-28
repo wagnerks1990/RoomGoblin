@@ -1,5 +1,7 @@
 # Android inventory and status ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-inventory-ownership).
+
 RG-LAB-028 reproduces six inventory queue/volatile-state failures, six stale
 status/agent-probe failures and three recovery failures on the reviewed source.
 An older inventory read could replace a newer result, mark a healthy bridge

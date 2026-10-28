@@ -1,5 +1,7 @@
 # Display enrollment admission
 
+[Finding classification and immutable source locations](finding-metadata.md#display-enrollment-admission).
+
 PR #341's CodeQL check identified two enrollment routes without rate limiting.
 Three executable HTTP cases reproduce unlimited administrator creation/cancellation
 while checking rejected-profile and legacy-token boundaries.

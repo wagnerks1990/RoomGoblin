@@ -1,5 +1,7 @@
 # Android shell and diagnostic output ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-shell-ownership).
+
 RG-LAB-030 reproduces four failures: duplicate shell dispatch to one display,
 late success/failure mixed into a newer command result, and shell admission while
 the selected display has a pending card command. Normal stdout and unavailable

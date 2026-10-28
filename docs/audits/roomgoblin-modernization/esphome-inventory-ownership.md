@@ -1,5 +1,7 @@
 # ESPHome controller inventory and draft ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#esphome-inventory-ownership).
+
 Baseline: qualified admission repair `43f4dfd`.
 
 RG-ESP-002 reproduced five actual-source failures: a pre-management inventory

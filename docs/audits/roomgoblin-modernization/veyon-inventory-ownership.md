@@ -1,5 +1,7 @@
 # Veyon inventory and metadata ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#veyon-inventory-ownership).
+
 Baseline: integrated ESPHome qualification `a881bdb`.
 
 RG-LAB-001 reproduces four actual-source failures: old inventory restored a

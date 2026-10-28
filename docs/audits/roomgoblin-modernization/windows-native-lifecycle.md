@@ -1,5 +1,7 @@
 # Native Windows lifecycle process ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-native-lifecycle).
+
 RG-LAB-012 reproduces six actual-source failures in bootstrap and updater:
 unbounded thrown diagnostics, approximately 67.5 MB retained for 32 MiB of
 captured output, and owned child processes still running after 35 seconds.

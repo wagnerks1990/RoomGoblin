@@ -1,5 +1,7 @@
 # Native Android capability availability
 
+[Finding classification and immutable source locations](finding-metadata.md#android-capability-truth).
+
 RG-LAB-043 compares native capability advertisements with the implemented
 AgentService action dispatcher. Nine planned or unimplemented operations could
 be advertised as available solely because a platform API or grant existed.

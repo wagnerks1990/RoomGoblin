@@ -1,5 +1,7 @@
 # Presentation session and folder deletion ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#presentation-session-ownership).
+
 Baseline: PR #309 head `e2a3cb31c41bcaa9f5a25dbca63ad74d767a57df`.
 
 ## RG-PRESENTATION-002: Slide dispatch crossed session boundaries

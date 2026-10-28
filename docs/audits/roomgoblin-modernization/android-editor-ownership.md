@@ -1,5 +1,7 @@
 # Android editor submission and draft ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-editor-ownership).
+
 RG-LAB-025 reproduces four failures: old save completion closes another display's
 editor, closes a newer draft for the same display, overwrites a newer editor's
 feedback on failure, and admits a duplicate submission. The unchanged successful

@@ -1,5 +1,7 @@
 # Android configuration operation ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-configuration-ownership).
+
 RG-LAB-034 reproduces two failures: concurrent Agent v2 configuration dispatches
 two credential broadcasts, and a metadata save changes display assignment beneath
 pending configuration. An ordinary name edit is a passing baseline control.

@@ -1,5 +1,7 @@
 # Windows alert ownership and hidden captures
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-alert-ownership).
+
 Baseline: Windows inventory/monitoring PR #318 head `3d7a50e`.
 
 RG-LAB-005 reproduced five actual-source failures: stale filtered alert replies,

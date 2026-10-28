@@ -1,5 +1,7 @@
 # Weather settings save ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#weather-save-ownership).
+
 RG-WEATHER-002 reproduces three browser failures: a pending save leaves its button
 available, completion replaces newer unsaved inputs, and a pre-save refresh can
 restore the prior configuration after a successful save.

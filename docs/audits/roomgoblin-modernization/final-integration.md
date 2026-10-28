@@ -6,6 +6,12 @@ finding and intermediate failure in the progress history. It separates source
 review, test qualification and production evidence instead of treating them as
 interchangeable completion claims.
 
+The [metadata reconciliation](finding-metadata.md) classifies 99 findings across
+79 condensed notes. Every cited source range was checked against its immutable
+Git file object. Those are repair locations, not invented original-failure
+baselines or a claim that every line in each file was audited. Existing detailed
+findings retain their original classification and evidence.
+
 ## Qualified implementation
 
 The final runtime, workflow and test sources match qualified snapshot `06779f7`;

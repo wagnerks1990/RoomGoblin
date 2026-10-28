@@ -1,5 +1,7 @@
 # Weather location search ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#weather-location-search).
+
 RG-WEATHER-004 reproduces six browser failures: delayed results replace a newer
 search; changed input retains old choices; a retired error replaces a newer
 selection notice; navigation or an authentication change accepts an earlier

@@ -1,5 +1,7 @@
 # ESPHome worker error containment and discovery completion
 
+[Finding classification and immutable source locations](finding-metadata.md#esphome-worker-ownership).
+
 Baseline: qualified controller repair `d80389c`.
 
 RG-ESP-003 reproduced six actual-source failures: JSON null escaped the worker

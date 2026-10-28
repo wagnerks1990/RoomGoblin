@@ -11,8 +11,8 @@ The last standalone verified deployment is alpha.85 diagnostics PR #342,
 `ea924b8`; see its [delivery receipt](diagnostics-delivery.md).
 [Retention](backup-retention-authority.md) merged in PR #343 and
 [publication retries](publication-candidate-retry.md) in PR #344, each after all
-14 checks passed. [Request deadlines](browser-request-deadlines.md) are qualified
-locally and under exact-head CI in PR #345. The remaining changes use one final
+14 checks passed. [Request deadlines](browser-request-deadlines.md) merged in
+PR #345 after all 14 checks passed. The remaining changes use one final
 deployment; [final integration](final-integration.md) defines its qualification
 and the separate deployment record. This documentation batch is still in review.
 
@@ -27,6 +27,9 @@ linked evidence.
 The original 32 subsystems were organized into 17 sequential review units. The
 table maps every requested subsystem to its principal evidence. Additional
 focused findings and delivery receipts remain indexed in the progress history.
+The [metadata supplement](finding-metadata.md) supplies classifications and
+immutable repair locations for the condensed notes, preserving their existing
+IDs, original evidence and validation scope.
 
 | Requested subsystem | Principal evidence | Current state |
 | --- | --- | --- |

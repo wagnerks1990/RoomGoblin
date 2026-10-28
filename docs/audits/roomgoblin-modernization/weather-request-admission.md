@@ -1,5 +1,7 @@
 # Weather request allowance admission
 
+[Finding classification and immutable source locations](finding-metadata.md#weather-request-admission).
+
 RG-WEATHER-005 reproduces eight failures through the real extracted HTTP routes
 and express-rate-limit middleware. Rejected operator, receiver and partial-capability
 requests consumed the appliance-wide allowance. Exhaustion also changed the

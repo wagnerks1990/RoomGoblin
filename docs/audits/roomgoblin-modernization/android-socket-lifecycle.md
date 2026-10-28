@@ -1,5 +1,7 @@
 # Android service socket ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#android-socket-lifecycle).
+
 RG-LAB-037 reproduces service destruction leaving accepted clients open. The
 existing executor interrupts workers and discards queued tasks, but neither action
 closes their sockets. The initial real-socket fixture fails shutdown while queue

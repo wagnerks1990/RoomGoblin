@@ -1,5 +1,7 @@
 # Android child process cleanup
 
+[Finding classification and immutable source locations](finding-metadata.md#android-process-cleanup).
+
 RG-LAB-040 reproduces an interrupted RootTools request leaving its direct child
 alive. Agent service destruction interrupts executor workers; an InterruptedException
 from waitFor or output-drain joining previously bypassed process cleanup. Four

@@ -1,5 +1,7 @@
 # Native Android Sendspin configuration
 
+[Finding classification and immutable source locations](finding-metadata.md#android-sendspin-configuration).
+
 RG-LAB-042 reproduces four failures in the actual native manager: a changed name
 does not reach the active client, a partial configuration cannot retain its saved
 URL, a failed connection loses its cleanup reference, and CONNECTING/HANDSHAKING

@@ -1,5 +1,7 @@
 # Sports workspace save and scene ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#sports-workspace-ownership).
+
 RG-SPORTS-002 reproduces four browser failures: newer draft edits disappear after
 a save response, an edit/tab redraw re-enables a pending save, and delayed scene
 responses dispatch after either an edit or leaving the originating board view.

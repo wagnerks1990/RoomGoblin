@@ -1,5 +1,7 @@
 # Lighting configuration write ordering
 
+[Finding classification and immutable source locations](finding-metadata.md#lighting-configuration-ordering).
+
 Baseline: PR #312 head `98595a6`.
 
 RG-LIGHTS-005 has three actual-source reproductions: overlapping discovery

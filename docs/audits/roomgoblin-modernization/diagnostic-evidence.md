@@ -1,5 +1,7 @@
 # Diagnostic evidence and secret projection
 
+[Finding classification and immutable source locations](finding-metadata.md#diagnostic-evidence).
+
 The diagnostics review reproduces eight snapshot failures: unconfigured or
 unobserved hardware reported success; old Govee publish evidence survived MQTT
 disconnection; configuration changes could leave a stale configured flag; and

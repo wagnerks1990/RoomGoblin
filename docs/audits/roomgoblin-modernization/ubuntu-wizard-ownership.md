@@ -1,5 +1,7 @@
 # Ubuntu wizard input and request ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-wizard-ownership).
+
 RG-LAB-023 reproduces six failures: changed connection or withdrawn host trust
 still advances an old probe; duplicate submissions send two probes; old endpoint
 errors replace current feedback; older fingerprint replies replace the newer

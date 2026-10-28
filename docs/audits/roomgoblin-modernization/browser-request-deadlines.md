@@ -1,5 +1,7 @@
 # Operator request deadlines
 
+[Finding classification and immutable source locations](finding-metadata.md#browser-request-deadlines).
+
 RG-PERF-REQUEST-001 closes the browser-request follow-up from the Ubuntu inventory
 review. Controller, Veyon, Android and Ubuntu API wrappers could wait forever either
 before response headers or while reading the body, retaining pending UI ownership.

@@ -1,5 +1,7 @@
 # Confirmed Ubuntu screen mappings and uncertain targets
 
+[Finding classification and immutable source locations](finding-metadata.md#ubuntu-screen-mapping-ownership).
+
 RG-LAB-026 adds a pre-merge review of PR #326. Pending or failed repair replaced
 the last confirmed mapping before configuration was acknowledged. Five of six
 repair-mapping assertions fail on the reviewed source. Four additional ordinary

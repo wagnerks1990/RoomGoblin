@@ -1,5 +1,7 @@
 # Windows lab inventory ownership and focus
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-inventory-ownership).
+
 Baseline: qualified Veyon dialog repair `43d2645`.
 
 RG-LAB-003 reproduced four actual-source failures: overlapping polls, failed

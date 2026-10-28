@@ -1,5 +1,7 @@
 # Presentation rebuild admission
 
+[Finding classification and immutable source locations](finding-metadata.md#presentation-rebuild-admission).
+
 Baseline: PR #310 head `da4309b3634820338d6722b29969b4a53cf2ed00`.
 
 RG-PRESENTATION-007 reproduced two actual rebuild handlers sharing one failed

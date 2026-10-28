@@ -1,5 +1,7 @@
 # Android asynchronous record completion
 
+[Finding classification and immutable source locations](finding-metadata.md#android-record-completion).
+
 RG-LAB-032 reproduces three Agent v2 configuration failures: completion overwrites
 newer metadata, re-enables a concurrently disabled enrollment and recreates a
 removed enrollment. An unchanged configuration is the passing baseline control.

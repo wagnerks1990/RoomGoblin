@@ -1,5 +1,7 @@
 # Legacy audit import transaction
 
+[Finding classification and immutable source locations](finding-metadata.md#audit-import-transaction).
+
 RG-DB-001 reproduces two SQLite failures: a failed audit insert was swallowed as
 malformed input, allowing partial history to commit and the source to be archived;
 a failed migration marker left committed rows that a restart could duplicate.

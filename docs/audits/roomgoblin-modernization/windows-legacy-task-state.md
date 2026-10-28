@@ -1,5 +1,7 @@
 # Native Windows legacy-task admission
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-legacy-task-state).
+
 RG-LAB-015 reproduces a failed native installation re-enabling and starting an
 already-disabled legacy task. RG-LAB-016 reproduces successful native installation
 after Task Scheduler rejected disabling the legacy runtime. The enabled-task

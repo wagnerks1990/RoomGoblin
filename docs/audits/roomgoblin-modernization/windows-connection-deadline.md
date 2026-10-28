@@ -1,5 +1,7 @@
 # Native Windows connection deadline
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-connection-deadline).
+
 RG-LAB-011 reproduces a stalled primary WebSocket handshake preventing the
 configured fallback after an 18-second observation. The actual connection owner
 had only the service stopping token, so it could remain pending indefinitely.

@@ -1,5 +1,7 @@
 # Backup retention and rollback authority
 
+[Finding classification and immutable source locations](finding-metadata.md#backup-retention-authority).
+
 RG-DOC-001 is confirmed: earlier paragraphs in the update and AI guides still
 claimed ten safety archives, contradicting their later 3/1/3 policy and the
 implemented updater/maintenance defaults. Those paragraphs now agree with three

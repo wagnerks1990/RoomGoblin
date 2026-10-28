@@ -1,5 +1,7 @@
 # Windows enrollment request ownership
 
+[Finding classification and immutable source locations](finding-metadata.md#windows-enrollment-ownership).
+
 Baseline: qualified native cancellation repair `51ef31b`.
 
 RG-LAB-008 reproduced four actual-source failures: concurrent issuance, a prior
