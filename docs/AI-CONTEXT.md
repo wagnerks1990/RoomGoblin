@@ -1,5 +1,11 @@
 # AI Project Context
 
+TV audio bridge writes return their queued handler promises and normalize the
+latest desired targets in accepted order. Validate attach/detach and retain the
+admitted Music Assistant generation through route and router awaits. Conditional
+generation dispatch is private to bridge commands; preserve announcement guards,
+writer drain, one-use tickets and visible partial/uncertain delivery outcomes.
+
 Music command acknowledgments retain per-receiver/per-field order while their
 handlers are pending. Later confirmed writes win; failures do not erase older
 confirmed values. Release tracking in finally, and recheck connection generation

@@ -189,6 +189,10 @@ Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 
+Attach and Detach requests apply in accepted order. Changing the Music Assistant
+connection stops remaining bridge deliveries and requires refresh. Partial or
+uncertain delivery stays visible; RoomGoblin does not silently replay it.
+
 Late volume or mute responses cannot overwrite newer acknowledged TV settings.
 Changing the Music Assistant connection retires pending command completions;
 refresh before sending another command. Current priority controls remain intact.

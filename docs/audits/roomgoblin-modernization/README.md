@@ -12,6 +12,7 @@ Music search has [two reproduced result-ownership defects](music-search-results.
 Named-receiver audio, uncertain writes and reconnect ownership have
 [46 new regression cases](music-tv-recovery.md).
 Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
+Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all

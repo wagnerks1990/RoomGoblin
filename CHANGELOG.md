@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Serialize TV audio bridge Attach/Detach changes and stop stale connection
+  delivery across targets and transports; reject unknown bridge actions.
+
 - Keep older volume/mute acknowledgments from replacing newer saved TV audio,
   and retire command completion when Music Assistant settings change.
 
