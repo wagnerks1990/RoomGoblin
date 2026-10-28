@@ -173,7 +173,7 @@ test("resume is single-flight and uncertain failures wait before another attempt
 
 test("real queue route projects bounded safe metadata and priority blocks playback commands",async t=>{
  const express=require("express"),app=express();app.use(express.json());const calls=[];
- const ctx=vm.createContext({app,musicAssistantStatusLimit:(_q,_r,next)=>next(),musicAssistantMutationLimit:(_q,_r,next)=>next(),requireControl:(_q,_r,next)=>next(),backgroundMusicRuntime:{activePlayerId:"speaker"},backgroundMusicSchedule:()=>({}),backgroundMusicPriorityBlocked:()=>true,
+ const ctx=vm.createContext({app,maApiGeneration:0,releaseMusicAssistantTvAudioWrite:write=>assert.equal(write,null),musicAssistantStatusLimit:(_q,_r,next)=>next(),musicAssistantMutationLimit:(_q,_r,next)=>next(),requireControl:(_q,_r,next)=>next(),backgroundMusicRuntime:{activePlayerId:"speaker"},backgroundMusicSchedule:()=>({}),backgroundMusicPriorityBlocked:()=>true,
   musicAssistantCommand:async(command,args)=>{calls.push({command,args});return command==="player_queues/get_active_queue"?{queue_id:"speaker",state:"playing",current_index:0,current_item:{name:"Song",duration:180,stream_details:{url:"private-fixture-stream"}}}:Array.from({length:70},(_,i)=>({queue_item_id:String(i),name:`Song ${i}`,stream_details:{url:"private-fixture-stream"}}))}});
  const start=source.indexOf('app.get("/api/v1/music-assistant/background/queue"'),end=source.indexOf("\nconst musicAssistantProxyTickets",start);vm.runInContext(source.slice(start,end),ctx);
  const server=app.listen(0,"127.0.0.1");await new Promise(resolve=>server.once("listening",resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve)}));

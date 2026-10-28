@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Serialize TV audio bridge Attach/Detach changes and stop stale connection
+  delivery across targets and transports; reject unknown bridge actions.
+
+- Keep older volume/mute acknowledgments from replacing newer saved TV audio,
+  and retire command completion when Music Assistant settings change.
+
 - Preserve uncertain Music Assistant HTTP outcomes and stop automatic TV audio
   replay until confirmation or reconnect; keep obsolete restore callbacks from
   interfering with new attempts. Persist audio for configured named receivers.

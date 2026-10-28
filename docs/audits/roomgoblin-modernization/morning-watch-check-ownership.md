@@ -28,8 +28,8 @@ during a check, settings writes retiring success/error, and draft preservation.
 All 70 broader workspace tests also pass in both Chromium and Firefox.
 The supported Linux active-worktree suite passes 1,537 tests, zero failures and
 two root-only ownership skips (1,539 total), plus all 23 Host Recovery tests and
-Node/controller/Python/Bash checks. Required CI, checked integration, exact images
-and backed-up delivery remain pending.
+Node/controller/Python/Bash checks. Required CI, exact images and backed-up
+delivery passed in PR #302; see [the receipt](music-observation-delivery.md).
 
 Tests use the actual controller and deterministic HTTP responses. No live
 stream, physical classroom command, receiver reload or production fault injection

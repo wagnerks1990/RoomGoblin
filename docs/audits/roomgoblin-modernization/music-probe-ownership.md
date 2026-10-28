@@ -36,7 +36,7 @@ fixture now supplies the production generation fields; all its assertions remain
 
 The supported Linux active-worktree suite passes 1,531 tests, zero failures and
 two root-only ownership skips (1,533 total), plus all 23 Host Recovery tests and
-Node/controller/Python/Bash checks. Required CI, checked integration, exact images
-and backed-up delivery remain pending. No physical playback commands or production
+Node/controller/Python/Bash checks. Required CI, exact images and backed-up
+delivery passed in PR #302; see [the receipt](music-observation-delivery.md). No physical playback commands or production
 failure injection were used. Wider connection-status reads, Live Watch manual
 check responses and the remaining modernization roadmap remain under review.

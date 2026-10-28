@@ -1,6 +1,9 @@
 # RoomGoblin modernization audit
 
-Status: **Audio/session/connection fixes delivered; PR #302 merged with images pending; TV audio recovery and music search qualified**.
+Status: **PR #302 delivered; PR #303 merged and publishing; audio and bridge ordering qualified**.
+
+PR #302 is deployed and verified at `4f9e3da`, including health, database/secrets,
+backup integrity and rollback. See [the delivery receipt](music-observation-delivery.md).
 
 PR #301 is deployed and verified at `1e52980`, including health, database/secrets,
 backup integrity and rollback. See [the delivery receipt](music-session-delivery.md).
@@ -8,6 +11,14 @@ TV audio restore ownership has [22 focused regressions](music-tv-restore-ownersh
 Music search has [two reproduced result-ownership defects](music-search-results.md).
 Named-receiver audio, uncertain writes and reconnect ownership have
 [46 new regression cases](music-tv-recovery.md).
+Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
+Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
+Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
+evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
+The supported Linux snapshot passes 1,648 tests, zero failures and two root-only
+skips (1,650 total), plus all 23 Host Recovery tests. Required gates and appliance
+delivery remain pending. PR #303's exact main images and appliance delivery
+are also pending; these statuses do not imply physical audio acceptance.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -62,10 +73,10 @@ byte-identical to qualified `fbf4b61`; all 144 focused integration tests pass.
 The supported Linux snapshot passes 1,501 tests, zero failures and two root-only
 skips (1,503 total), plus all 23 Host Recovery tests and Node/controller/Python/Bash
 checks. All 14 checks passed and these follow-ups merged at `1e52980` (PR #301);
-their exact main images and appliance delivery remain pending. Schedule-save
-ordering and player-probe/status ownership also pass native qualification.
-Recovery attempt accounting and Live Watch manual checks remain under review;
-the wider modernization is still in progress.
+their exact main images and appliance delivery are verified in the linked receipt.
+Schedule-save ordering, player-probe/status ownership, recovery attempt accounting
+and Live Watch manual checks are also delivered through PR #302. The wider
+modernization is still in progress.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
@@ -210,7 +221,8 @@ Linux snapshot passed 1,545 tests, zero failures and two root-only ownership
 skips, plus all 23 Host Recovery tests and Node/controller/Python/Bash checks.
 Live Watch passed 27 cases and the workspace suite passed 70 cases in each
 of Chromium and Firefox. Required PR/main gates, exact images and this batch's
-backed-up appliance delivery remain pending. PR #301 delivery is now verified.
+backed-up appliance delivery passed in PR #302;
+see [the receipt](music-observation-delivery.md). PR #301 delivery is also verified.
 TV audio restoration remains under review; the broader roadmap is still active.
 
 ## TV audio and search integration
@@ -222,7 +234,7 @@ validation passes 1,613 tests, zero failures and two root-only ownership skips,
 plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All 17
 Music Studio and 70 workspace cases pass in each of Chromium and Firefox.
 Required PR/main checks, immutable images and this batch's backed-up delivery
-remain pending. PR #302 has passed main validation and awaits image publication.
+remain pending. PR #302 is now deployed and verified.
 Late audio-command persistence remains a separate reproduced review finding.
 
 ## Inventory and review sequence

@@ -4774,10 +4774,12 @@ function markDisplaySeen(ws, extra = {}) {
 // Core command router
 // -----------------------------------------------------------------------------
 
-async function executeCommand(input, source = "api", {expectedDisplayContent=null} = {}) {
+async function executeCommand(input, source = "api", {expectedDisplayContent=null,expectedMusicAssistantGeneration=null} = {}) {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
+  if(expectedMusicAssistantGeneration!==null&&(source!=="music-assistant-bridge"||!["music.assistant.attach","music.assistant.detach"].includes(command.type)))throw Error("Conditional music connection ownership is only supported for TV audio bridge changes");
+  const ownsMusicConnection=()=>expectedMusicAssistantGeneration===null||expectedMusicAssistantGeneration===maApiGeneration;
   if(expectedDisplayContent&&(source!=="morning-announcements"||!(command.type==="display.clear"||(command.type==="display.web.audio"&&command.payload.contentKind==="morning-announcements"))))throw Error("Conditional display ownership is only supported for announcement release or audio");
   const ownsConditionalContent=id=>(command.type==="display.clear"?[command.id]:expectedDisplayContent?.get(id))?.includes(persistentState.displays[id]?.audioContentId||"");
   // Manual whole-screen content replaces the selected receivers' prior scene.
@@ -4820,6 +4822,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
     command.type === "legacy.raw";
 
   if (isDisplayCommand) {
+    if(!ownsMusicConnection())return {...result,skipped:true,reason:"music-connection-changed"};
     let targets = resolveDisplayTargets(command.target);
     if (!targets.length) {
       throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
@@ -4863,6 +4866,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
 
     if (MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
       for (const id of targets) {
+        if(!ownsMusicConnection())break;
         if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
         const topic = `classroom/v2/display/${id}/command`;
         await mqttPublish(topic, command);
@@ -4873,7 +4877,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
     }
 
     const legacy = toLegacyCommand(command);
-    if (MQTT_LEGACY_BRIDGE && legacy) {
+    if (MQTT_LEGACY_BRIDGE && legacy && ownsMusicConnection()) {
       if (runtime.mqtt.connected) {
         const rawTarget = cleanId(command.target);
 
@@ -4882,6 +4886,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
           result.deliveries.mqttLegacy.push("classroom/all");
         } else {
           for (const id of targets) {
+            if(!ownsMusicConnection())break;
             if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
             const topic = devices[id]?.legacyTopic || `classroom/${id}`;
             if(expectedDisplayContent&&topic==="classroom/all")throw Error("Announcement command cannot safely target a shared legacy broadcast topic");
@@ -4910,7 +4915,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
   if(expectedDisplayContent){
     const owned=resolveDisplayTargets(command.target).filter(ownsConditionalContent);
     if(owned.length)backgroundMusicObserveDisplayCommand({...command,target:owned},source);
-  }else backgroundMusicObserveDisplayCommand(command, source);
+  }else if(ownsMusicConnection())backgroundMusicObserveDisplayCommand(command, source);
 
   audit({
     kind: "command",
@@ -6640,6 +6645,23 @@ const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
 function musicAssistantTvDeviceIdFromPlayerId(playerId){const value=String(playerId||"").toLowerCase(),prefix="classroom-hub-";if(!value.startsWith(prefix))return null;const id=value.slice(prefix.length);return Object.hasOwn(devices,id)&&devices[id]?.enabled!==false?id:null}
 function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
 function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
+const musicAssistantTvAudioWrites=new Map();
+function beginMusicAssistantTvAudioWrite(command,args){
+  const field=command==="players/cmd/volume_set"?"volume":command==="players/cmd/volume_mute"?"muted":null;
+  if(!field)return null;
+  const deviceId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);if(!deviceId)return null;
+  const key=JSON.stringify([deviceId,field]),state=musicAssistantTvAudioWrites.get(key)||{next:0,committed:0,pending:0};
+  musicAssistantTvAudioWrites.set(key,state);state.pending++;
+  return {key,state,sequence:++state.next,deviceId,field,value:field==="volume"?args.volume_level:args.muted,generation:maApiGeneration};
+}
+function commitMusicAssistantTvAudioWrite(write){
+  if(!write||write.generation!==maApiGeneration||write.sequence<=write.state.committed||musicAssistantTvDeviceIdFromPlayerId(`classroom-hub-${write.deviceId}`)!==write.deviceId)return false;
+  write.state.committed=write.sequence;
+  setMusicAssistantTvAudioState(write.deviceId,{[write.field]:write.value});return true;
+}
+function releaseMusicAssistantTvAudioWrite(write){
+  if(write&&--write.state.pending===0&&musicAssistantTvAudioWrites.get(write.key)===write.state)musicAssistantTvAudioWrites.delete(write.key);
+}
 function musicAssistantTvAttachPayload(deviceId,issued,extra={}){const audio=musicAssistantTvAudioState(deviceId);return {transport:"authenticated-ma-sendspin-proxy",proxyUrl:musicAssistantProxyPath(issued.ticket),playerId:issued.playerId,sdkVersion:"3.2.1",desiredVolume:audio.volume,desiredMuted:audio.muted,...extra}}
 function resetMusicAssistantTvAudioRestore(ws){
   ws.maAudioRestoreOperation=null;ws.maAudioRestorePending=false;ws.maAudioRestored=false;ws.maAudioRestoreUncertain=false;
@@ -7213,12 +7235,14 @@ app.get("/api/v1/music-assistant/background/queue",musicAssistantStatusLimit,req
   }catch(error){res.status(502).json({ok:false,error:error.message})}
 });
 app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireControl,async(req,res)=>{
+  const generation=maApiGeneration,changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh before sending another command."});let audioWrite=null;
   try{
     const command=String(req.body?.command||""),args=req.body?.args||{};
     const allowed=new Set(["players/all","players/cmd/play_pause","players/cmd/play","players/cmd/pause","players/cmd/stop","players/cmd/volume_set","players/cmd/volume_mute","player_queues/all","player_queues/items","player_queues/get","player_queues/get_active_queue","player_queues/next","player_queues/previous","player_queues/shuffle","player_queues/repeat","player_queues/seek","player_queues/play_index","player_queues/play_media","music/search","music/recently_played_items"]);
     if(!allowed.has(command))return res.status(400).json({ok:false,error:"Music Assistant command is not approved by RoomGoblin"});
     const startsPlayback=["players/cmd/play","players/cmd/play_pause","player_queues/next","player_queues/previous","player_queues/play_index","player_queues/play_media"].includes(command);
     if(backgroundMusicPriorityBlocked()&&startsPlayback)return res.status(409).json({ok:false,error:"Music is paused for priority audio"});
+    audioWrite=beginMusicAssistantTvAudioWrite(command,args);
     const owned=String(args.player_id||"")===String(backgroundMusicRuntime.activePlayerId||"")&&!!backgroundMusicRuntime.activePlayerId;
     let result;
     if(owned&&["players/cmd/pause","players/cmd/stop","players/cmd/play_pause"].includes(command)){
@@ -7228,12 +7252,13 @@ app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireCo
       else if(pause)result=await backgroundMusicPause("manual");
       else{backgroundMusicRuntime.manualStopped=false;result=await backgroundMusicResume("manual")}
     }else result=await musicAssistantCommand(command,args);
+    if(generation!==maApiGeneration)return changed();
     if(startsPlayback&&backgroundMusicPriorityBlocked()&&(args.player_id||args.queue_id))await musicAssistantCommand("players/cmd/pause",{player_id:args.player_id||args.queue_id});
-    const tvId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);
-    if(tvId&&command==="players/cmd/volume_set")setMusicAssistantTvAudioState(tvId,{volume:args.volume_level});
-    if(tvId&&command==="players/cmd/volume_mute")setMusicAssistantTvAudioState(tvId,{muted:args.muted});
+    if(generation!==maApiGeneration)return changed();
+    commitMusicAssistantTvAudioWrite(audioWrite);
     audit({kind:"musicassistant.command",command});res.json({ok:true,result});
-  }catch(e){res.status(502).json({ok:false,error:e.message})}
+  }catch(e){if(generation!==maApiGeneration)return changed();res.status(502).json({ok:false,error:e.message})}
+  finally{releaseMusicAssistantTvAudioWrite(audioWrite)}
 });
 
 const musicAssistantProxyTickets=new Map();
@@ -7242,7 +7267,40 @@ function pruneMusicAssistantProxyTickets(now=Date.now()){for(const [ticket,item]
 function issueMusicAssistantProxyTicket(deviceId){pruneMusicAssistantProxyTickets();deviceId=cleanId(deviceId);const prior=musicAssistantProxyTicketByDevice.get(deviceId);if(prior)musicAssistantProxyTickets.delete(prior);const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${deviceId}`;musicAssistantProxyTickets.set(ticket,{deviceId,playerId,expiresAt:Date.now()+60000});musicAssistantProxyTicketByDevice.set(deviceId,ticket);return {ticket,playerId}}
 function consumeMusicAssistantProxyTicket(ticket){ticket=String(ticket||"");pruneMusicAssistantProxyTickets();const item=musicAssistantProxyTickets.get(ticket);musicAssistantProxyTickets.delete(ticket);if(item&&musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId);return item||null}
 function musicAssistantProxyPath(ticket){return `/music-assistant/sendspin-proxy?ticket=${encodeURIComponent(ticket)}`}
-app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const cfg=musicAssistantConfig(),token=musicAssistantToken();if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);const action=String(req.body?.action||"attach");let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];dbStore.setPreference("musicassistant.tvBridgeTargets",attached);const deliveries=[];if(action==="detach"){const result=await executeCommand({type:"music.assistant.detach",target:targets,payload:{}},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}else{for(const target of targets){const issued=issueMusicAssistantProxyTicket(target);const result=await executeCommand({type:"music.assistant.attach",target,payload:musicAssistantTvAttachPayload(target,issued)},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}}res.json({ok:true,action,attachedTargets:attached,deliveries,musicAssistantUrl:cfg.url,note:"Ticketed Hub bridge: the backend relays raw Sendspin to the dedicated configured endpoint (normally port 8927). The long-lived token is used only by the separate Music Assistant control API."})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+let musicAssistantTvBridgeWrites=Promise.resolve();
+app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,requireControl,(req,res)=>{
+  const action=String(req.body?.action??"attach");
+  if(!["attach","detach"].includes(action))return res.status(400).json({ok:false,error:"Choose attach or detach for the TV audio bridge."});
+  const generation=maApiGeneration,changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh before changing display audio bridges."});
+  const run=musicAssistantTvBridgeWrites.then(async()=>{
+    try{
+      if(generation!==maApiGeneration)return changed();
+      const cfg=musicAssistantConfig(),token=musicAssistantToken();
+      if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});
+      const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);
+      let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];
+      if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];
+      dbStore.setPreference("musicassistant.tvBridgeTargets",attached);
+      const deliveries=[],options={expectedMusicAssistantGeneration:generation};
+      if(action==="detach"){
+        const result=await executeCommand({type:"music.assistant.detach",target:targets,payload:{}},"music-assistant-bridge",options);
+        if(generation!==maApiGeneration)return changed();
+        deliveries.push(...(result.deliveries?.websocket||[]));
+      }else{
+        for(const target of targets){
+          if(generation!==maApiGeneration)return changed();
+          const issued=issueMusicAssistantProxyTicket(target);
+          const result=await executeCommand({type:"music.assistant.attach",target,payload:musicAssistantTvAttachPayload(target,issued)},"music-assistant-bridge",options);
+          if(generation!==maApiGeneration)return changed();
+          deliveries.push(...(result.deliveries?.websocket||[]));
+        }
+      }
+      return res.json({ok:true,action,attachedTargets:attached,deliveries,musicAssistantUrl:cfg.url,note:"Ticketed Hub bridge: the backend relays raw Sendspin to the dedicated configured endpoint (normally port 8927). The long-lived token is used only by the separate Music Assistant control API."});
+    }catch(e){if(generation!==maApiGeneration)return changed();return res.status(400).json({ok:false,error:e.message})}
+  });
+  musicAssistantTvBridgeWrites=run.catch(()=>{});
+  return run;
+});
 app.get("/api/v1/database/status",requireAdmin,(_req,res)=>{res.json({ok:true,database:dbStore.databaseInfo(),secrets:dbStore.listSecrets(),certificates:dbStore.listCertificates()})});
 app.get("/api/v1/database/schema",requireAdmin,(_req,res)=>{const info=dbStore.databaseInfo();res.json({ok:true,schemaVersion:info.schemaVersion,normalized:info.normalized,migrations:dbStore.db.prepare("SELECT version,name,applied_at appliedAt FROM schema_migrations ORDER BY version").all()})});
 app.get("/api/v1/database/telemetry",requireAdmin,(req,res)=>{const limit=Math.max(1,Math.min(5000,Number(req.query.limit||500)));res.json({ok:true,count:dbStore.databaseInfo().telemetry||0,telemetry:dbStore.telemetryState(limit)})});
