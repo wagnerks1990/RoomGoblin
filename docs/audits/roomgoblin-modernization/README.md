@@ -1,13 +1,13 @@
 # RoomGoblin modernization audit
 
-Status: **PR #309 delivered; PR #310 rate-limit repair qualified for fresh CI**.
+Status: **PR #309 delivered; PR #310 repaired and in CI; rebuild follow-up qualified**.
 
 PR #309 is deployed and verified at `86ce127`; see its
 [delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
 missing limits on three newly queued presentation routes. The accepted-caller
 repair adds four HTTP regressions and passes 1,870 Linux tests with two root-only
-skips and all 23 Host Recovery tests; fresh CI is pending. The separate rebuild-admission repair is qualified on its retained
-development branch and will follow this PR.
+skips and all 23 Host Recovery tests; fresh CI is pending. The separate rebuild
+admission repair is qualified with that repaired head and will follow it.
 
 PR #308 is deployed and verified at `43b4d83`; see its
 [delivery receipt](media-library-recovery-delivery.md). PR #309 passed all 14
@@ -16,7 +16,11 @@ The [presentation session/controller repairs](presentation-session-ownership.md)
 have 47 new Node regressions and three browser cases passing. Final qualification
 passes 1,866 Linux tests, two root-only skips and all 23 Host Recovery tests;
 all 76 workspace cases pass in Chromium and Firefox. Group 8 remains active:
-overlapping rebuild failure status is the next reproduced finding. Later groups
+the [overlapping rebuild admission repair](presentation-rebuild-admission.md) is
+qualified with five new focused regressions, 1,871 Linux passes, two root-only
+skips and all 23 Host Recovery tests on its original snapshot. Combined qualification
+with PR #310's rate-limit repair passes 1,875 Linux tests, two root-only skips and
+all 23 Host Recovery tests, with all 60 focused integration cases passing. Later groups
 remain queued.
 
 PR #307 is deployed and verified at `f3e8624`; see its

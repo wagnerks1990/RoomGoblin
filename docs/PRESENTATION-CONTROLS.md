@@ -60,6 +60,12 @@ and image recovery procedure. No data schema or receiver identity changes occur.
 
 ## Interrupted conversion recovery
 
+Rebuild returns HTTP 409 while that deck already has an upload or rebuild render
+in progress. The accepted render keeps ownership of its status and assets; a
+duplicate request cannot leave a failed conversion marked as still converting.
+After it finishes, a later rebuild can retry normally. Different decks retain
+independent conversion owners.
+
 A conversion interrupted by a service restart remains failed/rebuildable unless
 an earlier rendered deck is available. Its original file is retained. At startup,
 RoomGoblin reclaims only recognized private render staging, before new conversion

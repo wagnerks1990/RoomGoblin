@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Reject duplicate presentation rebuilds while their render is still active,
+  preserving the accepted conversion's final status and later retry behavior.
+
 - Order presentation starts, live controls and deletion by session; reject stale
   controls and stop a live deck before removing its containing folder.
 

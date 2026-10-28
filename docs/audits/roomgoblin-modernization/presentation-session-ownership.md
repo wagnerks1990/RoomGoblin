@@ -93,10 +93,10 @@ The final Linux rerun passes 1,870 tests, zero failures and two root-only skips
 checks. Frontend source is unchanged from the 76-case passes in both browsers.
 Fresh GitHub gates remain pending. No gate is suppressed.
 
-## Follow-up still open
+## Rebuild follow-up
 
 RG-PRESENTATION-007: an actual rebuild-route reproduction sent two requests that
 shared one controlled converter rejection. The final record was `converting`
 instead of its earlier `ready` state because both handlers restored their own
-captured status. This reproduced failure remains for the next conversion-owner
-repair; it is not part of the completed session/controller changes above.
+captured status. The [separate admission repair](presentation-rebuild-admission.md)
+is now in qualification; it is not part of PR #310's session/controller changes.
