@@ -24,6 +24,18 @@ the original display card, including failures after the editor closes. A failed
 follow-up read does not relabel an accepted save as failed. Closing returns focus
 to the current Edit button or the inventory search when that card is unavailable.
 
+## Pending card commands
+
+Each Android display card has one pending operator-command owner shared by ADB,
+Agent v2, APK installation, enrollment lifecycle and Device Admin controls.
+Inventory redraws and capability updates retain that owner. Another display can
+operate independently. Completion releases only its own request, preserves
+capability restrictions and newer card messages, and keeps failures visible on
+the originating card. Repeated clicks while pending cannot dispatch again or
+repeat a confirmation. Legacy APK replacement and Android Device Administrator
+approval still require their existing explicit confirmations. Metadata editing
+retains its separate save owner; this guard does not cancel server-side work.
+
 ## Inventory and status refresh ownership
 
 Android inventory reads have one pending owner. Overlapping refresh requests

@@ -2,11 +2,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../public/managed-displays/app.js'),'utf8');
 function fixture(){
- const nodes={},handlers={},calls=[],alerts=[],focus=[];let decode=async()=>{};
- const $=id=>nodes[id]??=({open:false,src:'',textContent:'',setAttribute(){},addEventListener(name,handler){handlers[id+':'+name]=handler},showModal(){this.open=true},close(){this.open=false},removeAttribute(name){if(name==='src')this.src=''}});
- const ctx=vm.createContext({$,shotVersion:0,shotDevice:null,deviceById:id=>({id,name:id}),restoreDeviceFocus:id=>focus.push(id),Image:class{decode(){return decode(this.src)}},state:{adbAvailable:true},scheduleRefresh(){},window:{alert:m=>alerts.push(m)},
+ const nodes={},handlers={},calls=[],alerts=[],focus=[],deviceMessages=new Map();let decode=async()=>{};
+ const $=id=>nodes[id]??=({open:false,src:'',textContent:'',querySelectorAll:()=>[],setAttribute(){},addEventListener(name,handler){handlers[id+':'+name]=handler},showModal(){this.open=true},close(){this.open=false},removeAttribute(name){if(name==='src')this.src=''}});
+ const ctx=vm.createContext({$,deviceOperations:new Map(),controlStates:new WeakMap(),deviceMessages,deviceMessage:(id,message)=>deviceMessages.set(String(id),message),shotVersion:0,shotDevice:null,deviceById:id=>({id,name:id}),restoreDeviceFocus:id=>focus.push(id),Image:class{decode(){return decode(this.src)}},state:{adbAvailable:true},scheduleRefresh(){},window:{alert:m=>alerts.push(m)},
  api(path,options){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});calls.push({path,options,resolve,reject});return promise}});
- vm.runInContext(source.slice(source.includes('function closeShot(')?source.indexOf('function closeShot('):source.indexOf('$("devices").addEventListener'),source.indexOf('$("runShell").onclick'))+source.slice(source.indexOf('$("closeShot").onclick'),source.indexOf(';document.addEventListener(\'visibilitychange\'')),ctx);
+ vm.runInContext(source.slice(source.indexOf('function setDeviceControlDisabled('),source.indexOf('function applyBridgeAvailability('))+source.slice(source.includes('function closeShot(')?source.indexOf('function closeShot('):source.indexOf('$("devices").addEventListener'),source.indexOf('$("runShell").onclick'))+source.slice(source.indexOf('$("closeShot").onclick'),source.indexOf(';document.addEventListener(\'visibilitychange\'')),ctx);
  return {ctx,$,calls,alerts,focus,setDecode:f=>{decode=f},cancel:()=>handlers['shot:cancel']({preventDefault(){}}),click(id){const button={dataset:{op:'screenshot'},disabled:false};return handlers['devices:click']({target:{closest:selector=>selector==='button'?button:{dataset:{id}}}})},close(){ $('closeShot').onclick() }};
 }
 test('Android screenshot preview opens with progress while capture is pending',async()=>{const h=fixture(),run=h.click('one');assert.equal(h.$('shot').open,true);h.calls[0].resolve({base64:'synthetic-one'});await run});

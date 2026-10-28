@@ -1,17 +1,22 @@
 # RoomGoblin modernization audit
 
+PR #327 is [deployed and verified](android-editor-preview-delivery.md) at `9de6079`.
 PR #326 is [deployed and verified](ubuntu-repair-wizard-delivery.md) at `865631d`,
 including the [screen-mapping repair](ubuntu-screen-mapping-ownership.md).
 [PR #325](managed-display-outcomes-delivery.md) and [PR #324](ubuntu-reliability-delivery.md)
-also have verified delivery receipts. PR #327 carries the [Android editor](android-editor-ownership.md)
+also have verified delivery receipts. PR #327 merged as `9de6079` and carries the [Android editor](android-editor-ownership.md)
 and [screenshot preview](android-preview-ownership.md) fixes with 2,280 Linux
 passes, two root-only skips, all 23 Host Recovery cases and 113 workspace cases
 per browser. The [inventory/status repair](android-inventory-ownership.md)
 reproduces 15 failures on old source and passes all 16 targeted cases, 2,296 Linux
 tests with two root-only skips, all 23 Host Recovery cases and 116 workspace
-cases per browser. Pending
-Android commands have two reproduced duplicate-dispatch cases for subsequent
-review. Remaining Group 10 and roadmap work is open.
+cases per browser. It is PR #328; its held-route timing repair passed 40 Firefox
+repetitions and 116 workspace cases per browser, and fresh CI is running before
+merge. The separate [card-command fix](android-command-ownership.md)
+passes nine targeted cases, 2,305 Linux tests with two root-only skips, all 23
+Host Recovery cases and 119 workspace cases per browser. Remote shell output
+has four reproduced ownership failures queued next. Remaining Group 10 and
+roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
