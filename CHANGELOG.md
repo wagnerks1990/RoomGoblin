@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Use the shared workspace theme colors for Weather cards and status text so
+  light and system-light modes retain readable contrast.
+
 - Keep newer Weather draft edits during a pending save, prevent overlapping saves
   and discard refreshes that predate a successful settings write.
 
