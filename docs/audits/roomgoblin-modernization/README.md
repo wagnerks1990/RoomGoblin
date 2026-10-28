@@ -12,8 +12,11 @@ records, rejects retired enrollments, rechecks each policy dispatch and prevents
 stale or overlapping policy completion. All 40 targeted cases pass. Final Linux
 qualification passes 2,368 tests with zero failures and two root-only skips, all
 23 Host Recovery cases and syntax/controller/shell checks. Integrated maintenance,
-public and test sources match qualified `2dc05d7` exactly. Browser sources retain
-the 125-case-per-engine qualification. No physical command was exercised.
+public and Node test sources match qualified `2dc05d7` exactly. The
+[held-response fixture repair](workspace-route-fixtures.md) passes 20 Firefox
+repetitions and all 125 workspace cases in each browser. PR #330's required
+browser retry passed; exact image publication remains pending. No physical
+command was exercised.
 
 Configuration concurrency has two reproduced failures queued for the next fix.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
