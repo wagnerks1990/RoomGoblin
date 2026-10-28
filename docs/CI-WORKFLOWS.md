@@ -66,6 +66,12 @@ reload, reload after reassignment and recovery of a missing current URL.
 nonzero completion, bounded output, timeout and interruption. It compiles the
 actual RootTools fields and execution method, substituting privileged process
 creation with harmless local Java child processes. No root command is executed.
+`python3 tools/test-android-pcm-ownership.py` compiles the actual Kotlin PCM player
+with the compiler bundled in the existing pinned Gradle distribution. Five cases
+use Android audio/protocol substitutes to check playback, format rejection,
+stop/release, retired workers and failed-start retry. They do not exercise HDMI
+audio, Android framework timing or the real Sendspin transport. No application
+dependency or Gradle version changes are needed.
 
 ## Conservative documentation-only PR selection
 
