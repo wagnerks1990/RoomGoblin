@@ -707,6 +707,11 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Music queue reads own a generation and selected-output identity. Ignore obsolete
+successes and errors even after switching away and back to the same output;
+clearing the selection retires pending reads. Preserve current errors, explicit
+refresh recovery and the selected queue/item command boundary.
+
 Read `docs/BACKGROUND-MUSIC-STUDIO.md` before changing recovery. `src/background-music.js` distinguishes command acknowledgement from observed playback, supplies bounded retry/backoff and progress-based stall detection. Manual source selection is owned by the same recovery lifecycle; explicit Pause/Stop, sleep and priority audio suppress recovery. Never infer audible output from server elapsed telemetry. Retain Sendspin identities/transport, provider credentials, existing service ownership and the guarded deployment path.
 
 Reduced-motion scene fitting: shared attribution CSS must disable transitions
