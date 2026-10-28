@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retire Music Assistant connection-status reads when settings change, requiring
+  refresh instead of returning old outputs or retrying against a new connection.
+
 - Keep Live Watch manual-check progress and results from being replaced by
   obsolete polls, and retain one pending check through capability refresh.
 

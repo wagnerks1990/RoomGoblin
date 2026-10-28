@@ -26,6 +26,10 @@ music changes during a lookup, status asks for a refresh instead of showing the
 old output's reading beside the new session. A missing player and an unavailable
 status lookup remain distinct.
 
+If connection settings change during an output-status request, refresh to check
+the new connection. The earlier request cannot publish its old outputs or retry
+against the replacement connection.
+
 One failed start advances recovery backoff once. A lost command response still
 waits for player observation before another attempt.
 
