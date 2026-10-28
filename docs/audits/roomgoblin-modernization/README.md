@@ -18,8 +18,13 @@ repetitions and all 125 workspace cases in each browser. PR #330's required
 browser retry passed; exact image publication remains pending. No physical
 command was exercised.
 
-Configuration concurrency has two reproduced failures queued for the next fix.
-Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
+[Configuration admission](android-configuration-ownership.md) resolves two
+reproduced races across Agent v2, assignment, persistent ADB and APK restoration.
+All 18 configuration and 20 record cases pass; supported Linux qualification
+passes 2,386 tests with zero failures, two root-only skips and all 23 Host Recovery
+cases. Browser sources retain the 125-case-per-engine qualification. This is a
+separate batch awaiting checked delivery after PR #331. Remaining Group 10 and
+roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
 [PR #326](ubuntu-repair-wizard-delivery.md),

@@ -65,6 +65,22 @@ repeat a confirmation. Legacy APK replacement and Android Device Administrator
 approval still require their existing explicit confirmations. Metadata editing
 retains its separate save owner; this guard does not cancel server-side work.
 
+## Configuration operation admission
+
+The maintenance service admits one configuration operation per Android display.
+Agent v2 credentials, legacy display assignment, persistent-ADB bootstrap/disable
+and verified APK installation/restoration share that owner. Conflicting requests
+return HTTP 409 before their device work begins. Independent displays remain
+available; completion or failure releases the owner for an explicit later attempt.
+
+While configuration is pending, metadata saves cannot change connection identity,
+agent package/settings, persistent-ADB settings or display assignment. Ordinary
+names, room metadata and enabled state remain editable. APK restoration reuses
+its installation's internal owner and the current record; it cannot accidentally
+release the installation lock. Existing replacement and Device Admin confirmation
+requirements remain. This in-process admission does not cancel an accepted ADB
+command, replay uncertain work or create a durable restart claim.
+
 ## Inventory and status refresh ownership
 
 Android inventory reads have one pending owner. Overlapping refresh requests
