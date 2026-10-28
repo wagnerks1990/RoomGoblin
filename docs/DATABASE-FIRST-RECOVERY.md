@@ -499,8 +499,9 @@ the host:
 
 ADB private/public keys and the named
 `classroom-control-hub-android-adb` volume are reconciled as one trust identity.
-Recovery must prove the mounted ADB directory is writable and preserve existing
-pairing; it must not silently generate a new key and call the restore successful.
+Recovery must prove the Hub's mounted ADB directory is writable and maintenance's
+mount remains read-only and readable. Preserve existing pairing; do not silently
+generate a new key and call the restore successful.
 Android signing keystore and password are restored as a matched identity or not
 at all. The master key is likewise committed with its matching database so every
 `secret_store` row can be decrypted before acceptance.

@@ -407,8 +407,8 @@ Preserve these invariants:
 - Pair once to establish ADB trust and a stable managed-device ID; use Edit for school/building/room/profile/display URL changes.
 - Display Agent package is `org.roomgoblin.display`.
 - Android inventory and ADB key material under `data/android-tv/` are persistent runtime state.
-- The maintenance container has one deliberately writable persistent ADB-key path: `/managed/classroom-hub/data/android-tv/.android`, backed by the named Docker volume `classroom-control-hub-android-adb`.
-- Any release path that may change core Compose mounts must force-recreate the maintenance container. The GUI updater must not rely on plain `docker compose up -d`; it force-recreates core services and verifies the ADB key directory is writable before accepting the release.
+- The named Docker volume `classroom-control-hub-android-adb` is writable in the Hub at `/app/data/android-tv/.android` and read-only in maintenance at `/managed/classroom-hub/data/android-tv/.android`. Preserve the shared trust identity and this access boundary.
+- Any release path that may change core Compose mounts must force-recreate the affected core services. The GUI updater must not rely on plain `docker compose up -d`; its ADB storage check verifies maintenance readability. Release acceptance also checks Hub write access and unchanged trust keys. Do not make the maintenance mount writable to satisfy older guidance.
 - A blank Managed Displays page or permanent `Checking ADB…` after deployment may indicate Hub-to-maintenance network/proxy failure rather than lost pairing; inspect persistence before re-pairing.
 - Hub and maintenance use host networking; maintenance remains loopback-only at `127.0.0.1:${MAINTENANCE_PORT:-3010}` and token-authenticated. Do not reintroduce `maintenance-agent:3010` service-DNS assumptions.
 - Persistent ADB is opt-in and for trusted management networks only. The tested Onn preserves pairing trust but disables Wireless Debugging during reboot; the agent restores it and the managed endpoint returns on fixed port `5555`.
