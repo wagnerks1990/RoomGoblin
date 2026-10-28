@@ -36,6 +36,7 @@ blocked commands release no claimed audio owner; its original assertions remain.
 The supported Linux active-worktree suite passes 1,630 tests, zero failures and
 two root-only ownership skips, plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked PR, exact images and backed-up
-appliance delivery remain pending. No physical commands or production settings changes were used.
+appliance delivery passed in PR #304; see the [receipt](music-command-delivery.md).
+No physical commands or production settings changes were used.
 This is scoped to command acknowledgment persistence; the broader modernization
-and separate bridge-attachment review remain active.
+remains active; bridge-attachment ordering is also delivered through PR #304.
