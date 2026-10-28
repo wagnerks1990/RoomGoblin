@@ -221,6 +221,15 @@ verify both health endpoints, authorized and rejected media requests, and receiv
 play/pause/seek/stop while the controller remains responsive. Stop testing and use
 the documented updater rollback if health, authorization, or playback regresses.
 
+## Controller library behavior
+
+Controller library cards dispatch through the media-library API so PDFs and
+converted documents use their viewer. Multi-receiver selection and explicit
+image/video options remain intact. Library refreshes retain the newest result
+across controller and scheduler consumers; Refresh Media List fetches new data.
+These changes have their own current qualification record in
+[the modernization audit](audits/roomgoblin-modernization/media-library-controller.md).
+
 ## Production acceptance — 2026-09-18
 
 Alpha.84 was live-tested on the production classroom appliance after the media-plane, autoplay, preview, and CORP fixes.

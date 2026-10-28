@@ -531,6 +531,59 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertIn('Networking laboratory', page.locator('#targets').inner_text())
         self.evidence(page, errors, 'studio-populated-media-390')
 
+    def test_media_cards_dispatch_documents_to_selected_receivers(self):
+        devices = {name: {'name': name, 'enabled': True} for name in ('tv1', 'tv2')}
+        files = [{'storedName': 'lesson.pdf', 'originalName': 'Lesson PDF', 'type': 'pdf',
+                  'url': '/media/lesson.pdf', 'size': 1024},
+                 {'storedName': 'notes.docx', 'originalName': 'Lesson notes', 'type': 'document',
+                  'url': '/media/notes.docx', 'size': 2048}]
+        sent = []
+        def transport(req, target):
+            if target.startswith('/api/v1/media/') and target.endswith('/display'):
+                sent.append((target, req.request.post_data_json))
+                if target.endswith('notes.docx/display'):
+                    req.fulfill(status=409, json={'error': 'Document conversion is not ready'})
+                else:
+                    req.fulfill(json={'ok': True})
+                return True
+            return False
+        page, errors = self.page('/controller/display.html', devices=devices, transport=transport,
+                                 overrides={'/api/v1/media': {'files': files},
+                                            '/api/v1/devices': {'devices': devices, 'groups': {}, 'status': {}}})
+        page.locator('#targets input').first.wait_for()
+        for checkbox in page.locator('#targets input').all():
+            checkbox.check()
+        page.locator('button[data-work="media"]').click()
+        page.locator('#mediaGrid .mediaCard').first.get_by_role('button', name='Show', exact=True).click()
+        page.wait_for_function("document.getElementById('resultSummary').textContent.includes('sent to tv1, tv2')")
+        self.assertEqual(sent[0][0], '/api/v1/media/lesson.pdf/display')
+        self.assertEqual(sent[0][1]['target'], ['tv1', 'tv2'])
+        self.assertTrue(sent[0][1]['localDirect'])
+        page.locator('#mediaGrid .mediaCard').nth(1).get_by_role('button', name='Show', exact=True).click()
+        page.wait_for_function("document.getElementById('resultSummary').textContent.includes('conversion is not ready')")
+        self.assertEqual(sent[1][0], '/api/v1/media/notes.docx/display')
+        self.assertFalse(errors, errors)
+
+    def test_display_library_newest_failure_remains_visible(self):
+        page, errors = self.page('/controller/display.html')
+        page.locator('button[data-work="media"]').click()
+        page.evaluate('''() => {
+          window.libraryReads = [];
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => String(url) === '/api/v1/media'
+            ? new Promise((resolve, reject) => libraryReads.push({resolve, reject}))
+            : originalFetch(url, options);
+          window.oldLibraryRead = loadMedia(); window.newLibraryRead = loadMedia();
+          libraryReads[1].reject(new Error('Current library unavailable'));
+        }''')
+        page.wait_for_function("document.getElementById('mediaGrid').textContent.includes('Current library unavailable')")
+        page.evaluate('''async () => {
+          libraryReads[0].resolve(new Response(JSON.stringify({files:[{storedName:'old.pdf', type:'pdf', size:8}]})));
+          await oldLibraryRead; await newLibraryRead;
+        }''')
+        self.assertIn('Current library unavailable', page.locator('#mediaGrid').inner_text())
+        self.assertFalse(errors, errors)
+
     def test_light_branding_operator_pages(self):
         theme = {'mode': 'light', 'primary': '#0F766E', 'accent': '#15803D',
                  'background': '#F8FAFC', 'surface': '#FFFFFF', 'text': '#1E293B'}
