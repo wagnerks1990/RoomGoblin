@@ -67,6 +67,10 @@ A saved location/unit/source change retires the previous preview and any pending
 preview response. When no forecast is available, previous readings and alert
 content clear. Same-location refreshes preserve custom previews and selected
 receivers; sending after a change must obtain a valid current scene.
+A pending settings save disables another save while keeping draft fields editable.
+Completion preserves newer edits and discards reads that began before the write.
+Preview/send creation waits for the settings save to finish. Save failures remain
+visible and release the save control for retry.
 
 ## Validation, upgrade and rollback
 

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep newer Weather draft edits during a pending save, prevent overlapping saves
+  and discard refreshes that predate a successful settings write.
+
 - Clear retired Weather readings and previews when the saved forecast location
   changes or becomes unavailable; reject late previews from the previous location.
 
