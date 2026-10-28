@@ -50,8 +50,8 @@ disclosure, then used an ambiguous selector; it now opens the exact connection
 disclosure with unchanged visibility and focus assertions. The final supported
 Linux active-worktree run includes the inactive-bridge guard and passes 1,613
 tests, zero failures and two root-only ownership skips, plus all 23 Host Recovery
-tests and Node/controller/Python/Bash checks. Required CI, exact images and
-backed-up delivery remain pending.
+tests and Node/controller/Python/Bash checks. Required gates, exact images and
+backed-up delivery passed in PR #303; see the [receipt](music-tv-delivery.md).
 
 No physical audio commands, receiver reloads, production connection changes or
 fault injection were performed. This closes the demonstrated TV recovery cases;

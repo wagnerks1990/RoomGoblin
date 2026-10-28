@@ -1,6 +1,9 @@
 # RoomGoblin modernization audit
 
-Status: **PR #302 delivered; PR #303 merged and publishing; audio and bridge ordering qualified**.
+Status: **PR #303 delivered; PR #304 merged and publishing; media reconnect fixes under validation**.
+
+PR #303 is deployed and verified at `2b0c79a`; see its
+[delivery receipt](music-tv-delivery.md).
 
 PR #302 is deployed and verified at `4f9e3da`, including health, database/secrets,
 backup integrity and rollback. See [the delivery receipt](music-observation-delivery.md).
@@ -13,12 +16,19 @@ Named-receiver audio, uncertain writes and reconnect ownership have
 [46 new regression cases](music-tv-recovery.md).
 Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
 Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
+The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
+Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
+complete tree was byte-identical to qualified `3c15e92`. Qualification includes
+1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
+and 14 token, 30 receiver and five audio cases in each browser. Ten new Node
+cases cover settings persistence and control validation. Checked delivery remains
+pending; PR #304 appliance delivery must complete before this integration merges.
 Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
 evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
 The supported Linux snapshot passes 1,648 tests, zero failures and two root-only
-skips (1,650 total), plus all 23 Host Recovery tests. Required gates and appliance
-delivery remain pending. PR #303's exact main images and appliance delivery
-are also pending; these statuses do not imply physical audio acceptance.
+skips (1,650 total), plus all 23 Host Recovery tests. All 14 checks passed and
+the changes merged as `2f44c60` (PR #304); its exact main images and appliance
+delivery remain pending. These statuses do not imply physical audio acceptance.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all

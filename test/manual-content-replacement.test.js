@@ -10,7 +10,7 @@ function fixture(){
   const sent=[],observed=[],effects=[];
   const old={text:"Old body",title:"Old title",subtitle:"Old subtitle",textOptions:{scene:{layers:[{text:"Old scene"}]}},layers:[{id:"overlay"}],media:{type:"video",url:"/media/old.mp4"},presentationBlack:true,timer:{visible:true,running:true}};
   const ctx=vm.createContext({
-    Date,JSON,Buffer,path,crypto:require("node:crypto"),deviceConfig:{room:"test"},ROOM_NAME:"test",
+    Date,JSON,Buffer,path,crypto:require("node:crypto"),displayMedia:require("../src/display-media"),deviceConfig:{room:"test"},ROOM_NAME:"test",
     devices:{tv1:{},tv2:{}},persistentState:{displays:{tv1:structuredClone(old),tv2:structuredClone(old)}},
     persistState:()=>{},planningStudio:{scene:{normalize:s=>s}},
     resolveDisplayTargets:t=>t==="all"?["tv1","tv2"]:(Array.isArray(t)?t:[t]).filter(id=>["tv1","tv2"].includes(id)),
