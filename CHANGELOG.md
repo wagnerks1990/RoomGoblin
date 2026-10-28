@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retire Sports feed health immediately when source/team mappings change and
+  return current source status after saves and undo.
+
 - Use the shared workspace theme colors for Weather cards and status text so
   light and system-light modes retain readable contrast.
 

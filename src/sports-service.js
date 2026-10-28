@@ -4,6 +4,9 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{throw Error('Media cache unavailable')},now=Date.now,canRun=()=>true}){
  let config=model.normalize(store.getPreference(model.KEY,{})),pending=null;
  const status=new Map(Object.entries(store.getPreference(model.KEY+'.sources',{})||{}).slice(0,640));
+ const sourceFingerprint=(team,source)=>imports.key(JSON.stringify([team.sport,team.category,team.level,team.season,source]));
+ function currentStatus(team,source){const saved=status.get(team.id+':'+source.id);return saved?.fingerprint===sourceFingerprint(team,source)?saved:null}
+ function currentStatuses(){return Object.fromEntries(config.teams.flatMap(team=>team.sources.flatMap(source=>{const saved=currentStatus(team,source);return saved?[[team.id+':'+source.id,saved]]:[]})))}
  function commit(next){next=model.assertBoardBounds(model.normalize({...next,revision:config.revision+1}));store.setPreference(model.KEY,next);config=next;return clone(config)}
  function save(input){if(input.revision!==config.revision)throw Object.assign(Error('Sports changed. Reload before saving to avoid overwriting another edit.'),{status:409});const next=model.assertBoardBounds(model.normalize(input));store.setPreference(model.KEY+'.previous',config);return commit(next)}
  function undo(revision){if(revision!==config.revision)throw Object.assign(Error('Reload Sports before undoing'),{status:409});const previous=store.getPreference(model.KEY+'.previous',null);if(!previous)throw Error('No previous Sports save');store.setPreference(model.KEY+'.previous',config);return commit(previous)}
@@ -12,9 +15,9 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
    const initial=clone(config),rosterChosen=new Set();let working=clone(config);let changed=false,downloads=0,requests=0;
    // Visit the least recently attempted teams first, including forced refreshes.
    // Keep each team's preferred roster sources in their existing priority order.
-   const lastAttempt=team=>Math.min(...team.sources.filter(s=>s.enabled&&s.approved).map(s=>status.get(team.id+':'+s.id)?.at||0));
+   const lastAttempt=team=>Math.min(...team.sources.filter(s=>s.enabled&&s.approved).map(s=>currentStatus(team,s)?.at||0));
    sources: for(const team of initial.teams.filter(t=>t.enabled).sort((a,b)=>lastAttempt(a)-lastAttempt(b)))for(const source of [...team.sources].sort((a,b)=>a.priority-b.priority)){
-    if(!canRun()||requests>=12)break sources;if(!source.enabled||!source.approved)continue;const key=team.id+':'+source.id,fingerprint=imports.key(JSON.stringify([team.sport,team.category,team.level,team.season,source])),saved=status.get(key),prior=saved?.fingerprint===fingerprint?saved:null;if(!force&&prior&&now()-prior.at<300000)continue;
+    if(!canRun()||requests>=12)break sources;if(!source.enabled||!source.approved)continue;const key=team.id+':'+source.id,fingerprint=sourceFingerprint(team,source),prior=currentStatus(team,source);if(!force&&prior&&now()-prior.at<300000)continue;
     requests++;status.set(key,{at:now(),state:'loading',fingerprint,lastSuccessAt:prior?.lastSuccessAt||null});
     const staged=clone(working),chosen=new Set(rosterChosen);let sourceChanged=false;
     try{
@@ -58,9 +61,9 @@ function createSportsService({store,fetchImpl=fetchPublic,ingestMedia=async()=>{
    if(changed&&config.revision===initial.revision)commit(working);
    const configured=new Set(config.teams.flatMap(t=>t.sources.map(s=>t.id+':'+s.id)));for(const k of status.keys())if(!configured.has(k))status.delete(k);
    if(requests)store.setPreference(model.KEY+'.sources',Object.fromEntries(status));
-   return {config:clone(config),status:Object.fromEntries(status)};
+   return {config:clone(config),status:currentStatuses()};
   })().finally(()=>{pending=null});return pending;
  }
- return {read:()=>clone(config),save,undo,refresh,status:()=>Object.fromEntries(status)};
+ return {read:()=>clone(config),save,undo,refresh,status:currentStatuses};
 }
 module.exports={createSportsService};

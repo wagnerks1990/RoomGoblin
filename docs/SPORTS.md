@@ -155,6 +155,10 @@ access and strips source URLs/operator settings from receiver content.
 SQLite preferences `sports.workspace.v1`, `.previous` and `.sources` hold saved
 configuration, the prior staff save and bounded source-check status. Status survives
 restarts; changed source/team mappings do not inherit a prior successful check.
+That identity check applies immediately after save, before the next refresh, and
+to late responses and persisted status after restart. Save/undo responses include
+the current source-status snapshot so the workspace cannot retain retired health.
+Friendly team-name edits preserve checks for the same source mapping.
 Existing operational backups include these preferences;
 media follows the existing replaceable-media backup policy. Background refresh
 participates in Full Recovery Export writer draining. A stale in-flight refresh
