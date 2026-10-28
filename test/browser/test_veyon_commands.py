@@ -53,6 +53,60 @@ class VeyonCommandBrowserTests(unittest.TestCase):
             page.locator('#selectionCommands > summary').click()
         return page, errors, state
 
+    def test_information_dialog_ignores_previous_computer_reply_after_escape(self):
+        page, errors, state = self.command_page()
+        page.evaluate("""() => {
+          window.catalogReads=[]; const original=window.fetch;
+          window.fetch=(url,options={}) => url.endsWith('/catalog')
+            ? new Promise(resolve=>catalogReads.push({url,resolve})) : original(url,options);
+        }""")
+        page.locator('[data-device-menu="pc-0"] > summary').click()
+        page.locator('[data-devicefeatures="pc-0"]').click()
+        page.locator('#closeInfo').wait_for(state='visible')
+        page.keyboard.press('Escape')
+        page.locator('#infoModal').wait_for(state='hidden')
+        self.assertTrue(page.locator('[data-devicefeatures="pc-0"]').evaluate('el=>el===document.activeElement'))
+        page.locator('[data-device-menu="pc-1"] > summary').click()
+        page.locator('[data-devicefeatures="pc-1"]').click()
+        page.wait_for_function('catalogReads.length===2')
+        page.evaluate("catalogReads[1].resolve(new Response(JSON.stringify({features:[{label:'Current computer',detail:'B',advertised:true}]})))")
+        page.wait_for_function("document.querySelector('#infoBody').textContent.includes('Current computer')")
+        page.evaluate("async()=>{catalogReads[0].resolve(new Response(JSON.stringify({features:[{label:'Obsolete computer',detail:'A',advertised:true}]})));await new Promise(r=>setTimeout(r,25))}")
+        self.assertIn('Workstation 1', page.locator('#infoTitle').inner_text())
+        self.assertIn('Current computer', page.locator('#infoBody').inner_text())
+        self.assertNotIn('Obsolete computer', page.locator('#infoBody').inner_text())
+        self.assertFalse(state['submitted'])
+        self.evidence(page, errors, 'veyon-information-dialog-owner')
+
+    def test_pending_pool_close_does_not_close_newer_computer_details(self):
+        page, errors, state = self.command_page()
+        page.evaluate("""() => {
+          const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url==='/api/v1/veyon/connections')return Promise.resolve(new Response(JSON.stringify({size:1,max:4,connections:[]})));
+            if(url==='/api/v1/veyon/connections/close')return new Promise(resolve=>window.releasePoolClose=resolve);
+            if(url.endsWith('/catalog'))return Promise.resolve(new Response(JSON.stringify({features:[{label:'Current computer',detail:'B',advertised:true}]})));
+            return original(url,options);
+          };
+        }""")
+        page.get_by_text('Power, access and maintenance', exact=True).click()
+        page.locator('#pool').click()
+        page.locator('#closePool').wait_for()
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.locator('#closePool').click()
+        page.wait_for_function('typeof releasePoolClose==="function"')
+        self.assertTrue(page.locator('#closePool').is_disabled())
+        page.locator('#closeInfo').click()
+        page.locator('[data-device-menu="pc-1"] > summary').click()
+        page.locator('[data-devicefeatures="pc-1"]').click()
+        page.wait_for_function("document.querySelector('#infoBody').textContent.includes('Current computer')")
+        page.evaluate('async()=>{releasePoolClose(new Response(JSON.stringify({ok:true})));await new Promise(r=>setTimeout(r,25))}')
+        self.assertTrue(page.locator('#infoModal').is_visible())
+        self.assertIn('Current computer', page.locator('#infoBody').inner_text())
+        self.assertFalse(state['submitted'])
+        self.evidence(page, errors, 'veyon-pool-close-dialog-owner')
+
     def test_role_save_ignores_old_inventory_and_preserves_hidden_selection(self):
         page, errors, state = self.command_page()
         page.wait_for_function('!loadBusy')

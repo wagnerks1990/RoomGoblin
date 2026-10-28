@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Veyon information dialogs owned by their current request and prevent late
+  connection-pool cleanup from closing a newer computer-details dialog.
+
 - Order Veyon metadata changes and coalesce inventory refreshes so older replies
   cannot restore previous roles, lose post-save refreshes or prune selections.
 

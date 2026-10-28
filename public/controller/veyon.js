@@ -235,18 +235,20 @@ async function toggleRole(id){
   await setRole([id],c.role==='teacher'?'student':'teacher');
 }
 
-function openInfo(title,html){$('infoTitle').textContent=title;$('infoBody').innerHTML=html;$('infoModal').classList.add('open')}
-function closeInfo(){$('infoModal').classList.remove('open');$('infoBody').innerHTML=''}
+let infoGeneration=0;
+function openInfo(title,html){const generation=++infoGeneration;$('infoTitle').textContent=title;$('infoBody').innerHTML=html;$('infoModal').classList.add('open');return generation}
+function closeInfo(){infoGeneration++;$('infoModal').classList.remove('open');$('infoBody').innerHTML=''}
 $('closeInfo').onclick=closeInfo;$('infoModal').onclick=e=>{if(e.target===$('infoModal'))closeInfo()};
 
 async function showDeviceFeatures(id){
   const c=computers.find(x=>x.id===id);if(!c)return;
-  openInfo(`Browser features — ${c.name||c.ip}`,'Loading…');
+  const generation=openInfo(`Browser features — ${c.name||c.ip}`,'Loading…');
   try{
     const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
+    if(generation!==infoGeneration)return;
     const rows=(x.features||[]).map(f=>`<div class="featureRow"><span>${esc(f.label||f.name)}</span><span>${esc(f.detail)} · ${f.advertised?'Appliance advertised':'Not advertised'}</span></div>`).join('');
     $('infoBody').innerHTML=`<p>Browser workflows only. Advertisement does not verify endpoint support or delivery.</p><div class="featureList">${rows||'<span class="muted">No browser feature list returned.</span>'}</div>`;
-  }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
+  }catch(e){if(generation===infoGeneration)$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
 }
 async function showFeatures(){
   const c=visibleComputers().find(x=>x.online)||computers.find(x=>x.online);
@@ -254,12 +256,20 @@ async function showFeatures(){
   await showDeviceFeatures(c.id);
 }
 async function showPool(){
-  openInfo('Veyon Connection Pool','Loading…');
+  const generation=openInfo('Veyon Connection Pool','Loading…');
   try{
     const x=await api('/api/v1/veyon/connections');
+    if(generation!==infoGeneration)return;
     $('infoBody').innerHTML=`<div class="notice">${x.size} / ${x.max} cached connections</div><div class="featureList">${(x.connections||[]).map(r=>`<div class="featureRow"><span>${esc(r.host)}</span><span>idle ${r.idleSeconds}s • lifetime ${r.secondsRemaining}s</span></div>`).join('')}</div><div class="toolbar"><button id="closePool">Close All Cached Connections</button></div>`;
-    $('closePool').onclick=async()=>{if(!confirm('Close all cached Veyon connections? Active previews will reconnect.'))return;try{await api('/api/v1/veyon/connections/close',{method:'POST',body:JSON.stringify({ids:['all']})});closeInfo();await load()}catch(error){alert(error.message)}};
-  }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
+    const button=$('closePool');
+    button.onclick=async()=>{
+      if(generation!==infoGeneration||button.disabled||!confirm('Close all cached Veyon connections? Active previews will reconnect.'))return;
+      button.disabled=true;
+      try{await api('/api/v1/veyon/connections/close',{method:'POST',body:JSON.stringify({ids:['all']})});if(generation===infoGeneration)closeInfo();await load()}
+      catch(error){if(generation===infoGeneration)alert(error.message)}
+      finally{button.disabled=false}
+    };
+  }catch(e){if(generation===infoGeneration)$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
 }
 let veyonLoginTargets=[];
 function clearVeyonLogin(){veyonLoginTargets=[];$('veyonLoginPassword').value=''}

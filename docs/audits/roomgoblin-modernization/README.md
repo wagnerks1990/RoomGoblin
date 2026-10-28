@@ -1,5 +1,15 @@
 # RoomGoblin modernization audit
 
+Group 10 [Veyon inventory ownership](veyon-inventory-ownership.md) is qualified
+at `bc1c5c5`: 14 new Node regressions, three new browser cases, 2,078 Linux
+passes with two root-only skips, 23 Host Recovery passes, and 83 workspace plus
+seven command-page passes in each browser. The separate
+[dialog repair](veyon-dialog-ownership.md) passes 12 new regressions, 2,090 Linux
+tests with two root-only skips, 23 Host Recovery tests, and 83 workspace plus
+nine command-page cases in each browser. Windows inventory review
+has reproduced four overlapping-read, stale-save and failed-read presentation
+defects. PR #316's fresh head now passes CodeQL; other required checks continue.
+
 PR #315 is [deployed and verified](lighting-identity-delivery.md) at `af76c5a`.
 The ESPHome batch is pushed as PR #316. Its language analysis jobs uploaded
 successfully, but the separate CodeQL summary initially reported missing
