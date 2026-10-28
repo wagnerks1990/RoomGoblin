@@ -189,6 +189,12 @@ Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 
+If a TV audio command loses its response, Outputs & connection shows that audio
+settings are unconfirmed. RoomGoblin waits for matching receiver telemetry and
+does not automatically repeat the command. Reconnecting the display permits a
+fresh restore. Saved audio works with configured custom receiver names as well
+as legacy TV names; retired restore callbacks cannot change a newer attempt.
+
 Repeating a search restores its result cards even when the results are identical.
 Submitting fewer than two characters clears old results and retires a pending
 search without sending another request.

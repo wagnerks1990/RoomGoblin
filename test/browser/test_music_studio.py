@@ -337,3 +337,28 @@ class MusicStudioBrowserTests(unittest.TestCase):
         page.evaluate('searchMusicAssistant()')
         self.assertEqual(page.locator('#maSearchResults .musicItem').count(), 1)
         self.assertEqual(errors, [])
+
+    def test_bridge_audio_uncertainty_is_visible_and_preserves_selection_and_focus(self):
+        page, errors, requests = music_page(self)
+        page.wait_for_function('!window.musicStudioLoading')
+        state = page.evaluate("api('/api/v1/music-assistant/status')")
+        state['bridgeStatus'] = {'front-screen': {'state': 'registered', 'clientId': 'classroom-hub-front-screen', 'audioRestoreUnconfirmed': True}}
+        state['attachedTargets'] = ['front-screen']
+        page.route('**/api/v1/music-assistant/status', lambda route: route.fulfill(json=state))
+        page.get_by_role('button', name='Outputs & connection', exact=True).click()
+        page.get_by_text('Music Assistant Connection & TV Audio Bridge', exact=True).click()
+        page.evaluate('loadMusicAssistant()')
+        label = page.locator('#maTvTargets label')
+        self.assertIn('Audio settings unconfirmed', label.inner_text())
+        choice = label.locator('input')
+        choice.uncheck()
+        choice.focus()
+        page.evaluate('loadMusicAssistant()')
+        self.assertFalse(choice.is_checked())
+        self.assertTrue(choice.evaluate('(e)=>e===document.activeElement'))
+        state['bridgeStatus']['front-screen']['audioRestoreUnconfirmed'] = False
+        page.evaluate('loadMusicAssistant()')
+        self.assertNotIn('Audio settings unconfirmed', label.inner_text())
+        self.assertFalse(choice.is_checked())
+        self.assertTrue(choice.evaluate('(e)=>e===document.activeElement'))
+        self.assertEqual(errors, [])

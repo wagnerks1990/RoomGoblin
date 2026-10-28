@@ -1,5 +1,11 @@
 # AI Project Context
 
+Music Assistant HTTP transport/body/parse failures retain uncertain execution
+through fallback. TV audio restoration must not replay them. Current matching
+telemetry may confirm audio without a write; explicit reconnect starts a new
+restore owner. Keep operation identity on deferred timers and cleanup, and map
+player IDs only to configured enabled receivers using the protected legacy prefix.
+
 Music search submissions always retire prior response ownership, including
 short queries. Clear the result-card cache when replacing its DOM with search
 progress; the stable Favorites cache is independent.

@@ -1,11 +1,13 @@
 # RoomGoblin modernization audit
 
-Status: **Audio/session/connection fixes delivered; schedule/probe/Live Watch follow-ups in PR #302; TV audio restoration under review**.
+Status: **Audio/session/connection fixes delivered; PR #302 merged with images pending; TV audio recovery and music search qualified**.
 
 PR #301 is deployed and verified at `1e52980`, including health, database/secrets,
 backup integrity and rollback. See [the delivery receipt](music-session-delivery.md).
 TV audio restore ownership has [22 focused regressions](music-tv-restore-ownership.md).
 Music search has [two reproduced result-ownership defects](music-search-results.md).
+Named-receiver audio, uncertain writes and reconnect ownership have
+[46 new regression cases](music-tv-recovery.md).
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all

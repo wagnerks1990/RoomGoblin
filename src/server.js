@@ -6637,15 +6637,38 @@ function musicAssistantConfig(){const p=dbStore.getPreference("musicassistant.co
 function musicAssistantToken(){try{return String(dbStore.getSecret("musicassistant.token")||"")}catch{return ""}}
 
 const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
-function musicAssistantTvDeviceIdFromPlayerId(playerId){const m=/^classroom-hub-(tv\d+)$/i.exec(String(playerId||""));return m?m[1].toLowerCase():null}
+function musicAssistantTvDeviceIdFromPlayerId(playerId){const value=String(playerId||"").toLowerCase(),prefix="classroom-hub-";if(!value.startsWith(prefix))return null;const id=value.slice(prefix.length);return Object.hasOwn(devices,id)&&devices[id]?.enabled!==false?id:null}
 function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
 function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
 function musicAssistantTvAttachPayload(deviceId,issued,extra={}){const audio=musicAssistantTvAudioState(deviceId);return {transport:"authenticated-ma-sendspin-proxy",proxyUrl:musicAssistantProxyPath(issued.ticket),playerId:issued.playerId,sdkVersion:"3.2.1",desiredVolume:audio.volume,desiredMuted:audio.muted,...extra}}
+function resetMusicAssistantTvAudioRestore(ws){
+  ws.maAudioRestoreOperation=null;ws.maAudioRestorePending=false;ws.maAudioRestored=false;ws.maAudioRestoreUncertain=false;
+}
+function confirmMusicAssistantTvAudioRestore(ws,status){
+  if(!ws.maAudioRestoreUncertain||status.protocolActive!==true||ws.readyState!==WebSocket.OPEN||runtime.displays[ws.deviceId]?.connectionId!==ws.connectionId)return;
+  const desired=musicAssistantTvAudioState(ws.deviceId);
+  if(typeof status.volume==="number"&&Number.isFinite(status.volume)&&status.volume===desired.volume&&typeof status.muted==="boolean"&&status.muted===desired.muted){
+    ws.maAudioRestoreUncertain=false;ws.maAudioRestored=true;
+  }
+}
+function scheduleMusicAssistantTvAudioRestore(ws){
+  if(ws.maAudioRestored||ws.maAudioRestorePending||ws.maAudioRestoreUncertain)return false;
+  const operation={};ws.maAudioRestoreOperation=operation;ws.maAudioRestorePending=true;
+  setTimeout(()=>{
+    if(ws.maAudioRestoreOperation!==operation)return;
+    if(shutdownRequested||fullExportFreeze.requested){ws.maAudioRestorePending=false;return}
+    trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws))
+      .catch(error=>{if(ws.maAudioRestoreOperation===operation)diagnosticError(error,{component:"music-assistant",operation:"tv-audio-restore",deviceId:ws.deviceId})})
+      .finally(()=>{if(ws.maAudioRestoreOperation===operation)ws.maAudioRestorePending=false});
+  },250);
+  return true;
+}
 async function restoreMusicAssistantTvAudioState(deviceId,ws){
-  const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId),generation=maApiGeneration;
+  if(ws?.maAudioRestoreUncertain)return false;
+  const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId),generation=maApiGeneration,operation=ws?.maAudioRestoreOperation;
   const current=()=>{
     if(shutdownRequested||fullExportFreeze.requested||generation!==maApiGeneration)return false;
-    if(ws&&(ws.readyState!==WebSocket.OPEN||runtime.displays[deviceId]?.connectionId!==ws.connectionId))return false;
+    if(ws&&(ws.readyState!==WebSocket.OPEN||runtime.displays[deviceId]?.connectionId!==ws.connectionId||ws.maAudioRestoreOperation!==operation))return false;
     const latest=musicAssistantTvAudioState(deviceId);
     return latest.volume===desired.volume&&latest.muted===desired.muted&&latest.updatedAt===desired.updatedAt;
   };
@@ -6660,6 +6683,7 @@ async function restoreMusicAssistantTvAudioState(deviceId,ws){
       audit({kind:"musicassistant.tv-audio.restore",deviceId,playerId,volume:desired.volume,muted:desired.muted,attempt});return true;
     }catch(e){
       if(!current())return false;
+      if(e.mayHaveExecuted){if(ws)ws.maAudioRestoreUncertain=true;diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore-unconfirmed",deviceId,playerId});return false}
       if(attempt===8){diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore",deviceId,playerId});return false}
       await new Promise(r=>setTimeout(r,700));
     }
@@ -6770,11 +6794,18 @@ async function ensureMusicAssistantApi(){
 }
 async function musicAssistantHttpCommand(command,args={}){
   const cfg=musicAssistantConfig(),token=musicAssistantToken();
-  const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(musicAssistantCommandTimeout(command))});
-  const text=await r.text();
-  let j;
-  try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned invalid JSON (HTTP ${r.status})`)}
-  if(!r.ok||j?.error||j?.error_code!==undefined)throw Error(j?.error?.message||j?.error||j?.details||`Music Assistant HTTP ${r.status}`);
+  const body=JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args});
+  let r,j;
+  try{
+    r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body,signal:AbortSignal.timeout(musicAssistantCommandTimeout(command))});
+    const text=await r.text();
+    try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned invalid JSON (HTTP ${r.status})`)}
+  }catch(error){error.mayHaveExecuted=true;throw error}
+  if(!r.ok||j?.error||j?.error_code!==undefined){
+    const error=Error(j?.error?.message||j?.error||j?.details||`Music Assistant HTTP ${r.status}`);
+    if(!j?.error&&j?.error_code===undefined)error.mayHaveExecuted=true;
+    throw error;
+  }
   // The upstream HTTP API returns the command result directly, including null
   // for successful void commands. Retain wrapped-result compatibility too.
   return j?.result!==undefined?j.result:j;
@@ -6787,7 +6818,7 @@ async function musicAssistantCommand(command,args={}){
     // through HTTP can duplicate playback/queue changes and increase provider load.
     if(generation!==maApiGeneration||wsErr.connectionRetired)throw wsErr;
     if(wsErr.mayHaveExecuted&&!new Set(["players/all","player_queues/all","player_queues/get","player_queues/get_active_queue","player_queues/items","music/search"]).has(command))throw wsErr;
-    try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}
+    try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){const error=new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`);if(httpErr.mayHaveExecuted)error.mayHaveExecuted=true;throw error}
   }
 }
 
@@ -8525,8 +8556,7 @@ wss.on("connection", (ws, req) => {
           ws.displayCredentialId=displayCredential?.id||"";
           ws.displayAuthMode=authMode;
           clearTimeout(ws.helloTimer);
-          ws.maAudioRestored = false;
-          ws.maAudioRestorePending = false;
+          resetMusicAssistantTvAudioRestore(ws);
           markDisplaySeen(ws, {
             userAgent: req.headers["user-agent"] || "",
             meta: boundedWsObject(msg.meta,"Display metadata")
@@ -8617,9 +8647,10 @@ wss.on("connection", (ws, req) => {
 
       if (msg.type === "music.assistant.status" && ws.role === "display") {
         const previous=runtime.displays[ws.deviceId]||{},status=boundedWsObject(msg.status,"Music Assistant status");
-        runtime.displays[ws.deviceId]={...previous,musicAssistant:{...status,desiredAudio:musicAssistantTvAudioState(ws.deviceId),updatedAt:new Date().toISOString()}};
+        confirmMusicAssistantTvAudioRestore(ws,status);
+        runtime.displays[ws.deviceId]={...previous,musicAssistant:{...status,audioRestoreUnconfirmed:!!ws.maAudioRestoreUncertain,desiredAudio:musicAssistantTvAudioState(ws.deviceId),updatedAt:new Date().toISOString()}};
         broadcastControllers({type:"device.status",deviceId:ws.deviceId,status:publicDisplayStatus(ws.deviceId)});
-        if(status.protocolActive===true&&!ws.maAudioRestored&&!ws.maAudioRestorePending){ws.maAudioRestorePending=true;setTimeout(()=>{if(shutdownRequested||fullExportFreeze.requested){ws.maAudioRestorePending=false;return}trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws)).finally(()=>{ws.maAudioRestorePending=false})},250)}
+        if(status.protocolActive===true)scheduleMusicAssistantTvAudioRestore(ws);
         if(ws.maAudioRestored){const desired=musicAssistantTvAudioState(ws.deviceId),patch={};const n=Number(status.volume);if(Number.isFinite(n)&&Math.max(0,Math.min(100,n))!==desired.volume)patch.volume=n;if(status.muted!==undefined&&!!status.muted!==desired.muted)patch.muted=!!status.muted;if(Object.keys(patch).length)setMusicAssistantTvAudioState(ws.deviceId,patch)}
 
         // Reconcile scheduled Background Music after a display's persistent
@@ -8643,7 +8674,7 @@ wss.on("connection", (ws, req) => {
       if (msg.type === "music.assistant.reconnect.request" && ws.role === "display") {
         const attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
         if(Array.isArray(attached)&&attached.includes(ws.deviceId)&&musicAssistantToken()){
-          ws.maAudioRestored=false;ws.maAudioRestorePending=false;
+          resetMusicAssistantTvAudioRestore(ws);
           const issued=issueMusicAssistantProxyTicket(ws.deviceId);
           wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:ws.deviceId,payload:musicAssistantTvAttachPayload(ws.deviceId,issued,{reconnect:true})}});
           audit({kind:"musicassistant.sendspin.reconnect-issued",deviceId:ws.deviceId});

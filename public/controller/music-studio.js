@@ -129,10 +129,10 @@
       const bridgeRows=Object.entries(status.bridgeStatus||{}),bridgeKey=JSON.stringify(bridgeRows.map(([id])=>id));
       if(maTvTargets.dataset.inventory!==bridgeKey){
         const prior=new Set([...maTvTargets.querySelectorAll('.maTvTarget:checked')].map(n=>n.value)),first=maTvTargets.dataset.inventory===undefined,attached=new Set(status.attachedTargets||[]);maTvTargets.replaceChildren();
-        for(const [id,state]of bridgeRows){const input=el("input");input.type="checkbox";input.className="maTvTarget";input.value=id;input.checked=first?attached.has(id):prior.has(id);label(maTvTargets,`${id} · ${state?.state||"detached"}`,input)}maTvTargets.dataset.inventory=bridgeKey;
+        for(const [id,state]of bridgeRows){const input=el("input");input.type="checkbox";input.className="maTvTarget";input.value=id;input.checked=first?attached.has(id):prior.has(id);label(maTvTargets,`${id} · ${state?.state||"detached"}${state?.audioRestoreUnconfirmed?" · Audio settings unconfirmed; reconnect the display to retry":""}`,input)}maTvTargets.dataset.inventory=bridgeKey;
       }
 
-      for(const [id,state]of bridgeRows){const input=[...maTvTargets.querySelectorAll("input")].find(n=>n.value===id);if(input?.parentElement.firstChild?.nodeType===3)input.parentElement.firstChild.textContent=`${id} · ${state?.state||"detached"}`}
+      for(const [id,state]of bridgeRows){const input=[...maTvTargets.querySelectorAll("input")].find(n=>n.value===id);if(input?.parentElement.firstChild?.nodeType===3)input.parentElement.firstChild.textContent=`${id} · ${state?.state||"detached"}${state?.audioRestoreUnconfirmed?" · Audio settings unconfirmed; reconnect the display to retry":""}`}
       renderBgmFavorites();renderMaPlayers();renderNow();
       if(selected==="listen"&&(!queue||Date.now()-lastQueueLoad>15000))loadQueue();
     }catch(error){if(generation===loadGeneration)message(error.message,true)}
