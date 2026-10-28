@@ -59,6 +59,12 @@ containers. A database backup without the master key cannot decrypt stored secre
 
 Veyon private keys, Music Assistant long-lived access tokens, MQTT passwords, and optional endpoint deployment credentials follow this same encrypted-secret model. Secrets are never returned to normal controller views; masked placeholders mean the encrypted value is retained unless explicitly replaced.
 
+Administrative integration saves validate input before writing, then commit
+connection metadata and supplied MQTT/Veyon credentials in one SQLite transaction.
+Runtime connections and caches change only after commit. System-update policy and
+its optional GitHub token replacement/clear likewise commit together; a validation
+or storage failure preserves the prior saved configuration and credentials.
+
 ## Schema version 3
 Alpha 4 adds `access_profiles` and `system_preferences`, retires the legacy runtime-config display overlay, and exposes the normalized configuration through supported administration APIs. The web controller is now the preferred configuration surface; direct SQLite edits are unsupported.
 

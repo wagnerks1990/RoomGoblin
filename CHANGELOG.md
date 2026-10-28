@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Commit update policy and integration connection metadata together with their
+  requested credential changes, preserving the prior identity on storage failure.
+
 - Retire pending Weather previews, sends and workflow actions after navigation
   or authentication changes, and require unchanged explicit display targets.
 

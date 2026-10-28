@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+PR #338 is merged as `bdf521c` after all 14 checks; exact publication and delivery
+are pending. The final Weather batch is in PR #339. Backend/database review starts
+with [administrative settings transactions](settings-identity-transaction.md):
+seven reproduced failures are repaired and all 37 targeted cases pass. Its Linux
+snapshot passes 2,464 tests, zero failures and two root-only skips, all 23 Host
+Recovery and all 55 JVM cases. Checked delivery and the remaining roadmap are open.
+
 PR #337 is [deployed and verified](weather-sports-delivery.md) at `f588de3`
 after the required main gates and exact image publication. The following Sports
 durability batch is in PR #338; the remaining roadmap is open.
