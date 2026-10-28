@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Ubuntu wizard probes, fingerprints, key-file reads and submissions tied
+  to their current inputs; preserve newer drafts and prevent duplicate writes.
+
 - Preserve cancelled maintenance schedules and newer computer records when
   Ubuntu installation or repair completes or fails.
 

@@ -186,6 +186,13 @@ The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
 
+The wizard retires probe and fingerprint replies after relevant inputs or trust
+choices change. Key-file failures are visible and late reads cannot overwrite a
+newer pasted key. One wizard submission remains pending across close/reopen;
+completion cannot advance or close a newer draft. Accepted installation clears
+unchanged submitted credentials while preserving newer values. An unconfirmed
+reply requires a status refresh before an explicit retry; no write is replayed.
+
 Installation and repair completion update only their owned readiness state.
 Cancellation and history saved while the installer is pending remain intact on
 both success and failure. A failed completion save remains visible; it never

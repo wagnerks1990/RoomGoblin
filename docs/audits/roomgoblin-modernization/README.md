@@ -2,13 +2,14 @@
 
 PR #324 is [deployed and verified](ubuntu-reliability-delivery.md) at `fb1d1e6`.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
-[Android enrollment](android-enrollment-ownership.md) repairs and is running
-required checks after 2,220 Linux passes, two root-only skips, 23 Host Recovery
-passes and 106 workspace passes in each browser. The separate
-[Ubuntu repair completion fix](ubuntu-repair-record-ownership.md) passes all six
-regression cases, 2,226 Linux tests with two root-only skips and all 23 Host
-Recovery cases. Ubuntu wizard ownership is reproduced for the next repair.
-Android inventory, editing and preview review and later roadmap work remain.
+[Android enrollment](android-enrollment-ownership.md) repairs. All 14 checks
+passed before its squash merge as `312f753`; exact publication and delivery
+follow. The separate [repair completion](ubuntu-repair-record-ownership.md) and
+[wizard ownership](ubuntu-wizard-ownership.md) fixes pass 2,241 Linux tests with
+two root-only skips, all 23 Host Recovery cases and 109 workspace cases per browser.
+Repair admission/announcement guards have seven reproduced failures queued for
+the next change. Android inventory, editing and preview review and later roadmap
+work remain.
 
 Earlier status entries below are historical; their pending delivery statements
 are superseded by the current status and linked delivery receipts above.
