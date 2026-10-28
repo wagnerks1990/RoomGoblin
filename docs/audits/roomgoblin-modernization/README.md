@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+Windows inventory and monitoring are integrated on merged main `1a005b2`.
+Runtime, configuration and tests in `1cf2b1f` match qualified `a37e087` byte for
+byte; only this audit retains the additional Veyon integration evidence. All 39
+focused integration cases pass again. Required PR/main checks and this batch's
+exact image delivery remain pending.
+
 Current delivery: PR #316 is [deployed and verified](esphome-reliability-delivery.md)
 at `f741866`. PR #317 passed all 14 checks and merged as `1a005b2`; its exact image
 publication precedes the backed-up update. The Windows inventory repair is
