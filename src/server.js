@@ -1102,17 +1102,23 @@ async function runDisplayAutomationResync(event,winningTargets){
   return {ok:true,results};
 }
 function consumeDeferredAnnouncementAutomations(){
-  const queued=[...deferredAnnouncementAutomations.values()];
-  deferredAnnouncementAutomations.clear();
-  for(const item of queued){
-    const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
-    storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-    storedEvent.lastExecByClass[item.occurrenceKey]=item.scheduledMinuteKey;
-    storedEvent.lastExec=item.scheduledMinuteKey;
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
-    storedEvent.updatedAt=new Date().toISOString();
+  const queued=[...deferredAnnouncementAutomations.entries()],previous=new Map();
+  const fields=["lastExecByClass","lastExec","lastRun","updatedAt"];
+  try{
+    for(const [,item] of queued){
+      const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
+      if(!previous.has(storedEvent))previous.set(storedEvent,fields.map(key=>({key,present:Object.prototype.hasOwnProperty.call(storedEvent,key),value:storedEvent[key]})));
+      storedEvent.lastExecByClass={...(storedEvent.lastExecByClass||{}),[item.occurrenceKey]:item.scheduledMinuteKey};
+      storedEvent.lastExec=item.scheduledMinuteKey;
+      storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
+      storedEvent.updatedAt=new Date().toISOString();
+    }
+    if(queued.length)persistAutomations();
+  }catch(error){
+    for(const [event,values] of previous)for(const {key,present,value} of values){if(present)event[key]=value;else delete event[key]}
+    throw error;
   }
-  if(queued.length)persistAutomations();
+  for(const [key,item] of queued)if(deferredAnnouncementAutomations.get(key)===item)deferredAnnouncementAutomations.delete(key);
   return queued.length;
 }
 async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-ended"){
@@ -1152,6 +1158,7 @@ function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
     if(fullExportFreeze.requested){scheduleMorningAnnouncementsReleaseRetry(targets,reason);return}
     serializeMorningAnnouncementsLifecycle(async()=>{
       if(morningAnnouncementsRuntime.active)return;
+      consumeDeferredAnnouncementAutomations();
       const retry=await resyncCurrentDisplayAutomationsAfterAnnouncements(`${reason}-retry`);
       if(retry.results.some(item=>item.ok===false))throw new Error("Post-announcement display reconciliation is still incomplete");
       morningAnnouncementsRuntime.releaseReconcilePending=false;

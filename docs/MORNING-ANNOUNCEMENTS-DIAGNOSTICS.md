@@ -53,6 +53,11 @@ including independent hallway displays. Once recovery succeeds, restored audible
 video or an existing manual takeover retains its own music-priority policy.
 A media-ended notification cannot release an active announcement hold.
 
+If deferred-occurrence bookkeeping cannot be saved, its queued records and
+previous execution markers remain available for retry. Release recovery saves
+those markers before reconciling current display winners or releasing music;
+it does not replay the old deferred commands.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.
