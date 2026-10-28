@@ -45,6 +45,12 @@ saved settings; correct the error and retry the save. Clearing a stream URL uses
 the same transaction. A successful save does not by itself confirm receiver
 playback or a successful live volume command.
 
+Live Watch keeps newer edits when a read or earlier save finishes. Save is
+unavailable while that settings submission is pending; inputs remain editable,
+and newer edits are labeled unsaved. Volume changes are ordered with settings
+saves and settle on the latest slider value. A failed save retains the draft
+for retry. Save, volume and stream-check feedback are shown separately.
+
 Starting a replacement announcement retires the previous session's delayed
 audio retries, including when both sessions use the same displays.
 

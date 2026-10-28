@@ -85,6 +85,13 @@ session over a partially dispatched replacement.
 
 The Live Watch announcement-volume slider is a live control as well as persisted configuration. While an announcement owns targets, a volume update must send `display.web.audio` to those runtime-owned targets with `reload:false`; it must not clear, reload, or recreate the player. When no announcement is active, the value is saved for the next takeover.
 
+Live Watch form reads and saves own their submitted draft revisions. Preserve
+newer URL/time/target edits and the focused target checkbox. Settings saves and
+live-volume writes share one serialized queue; coalesce pending slider intent,
+prevent duplicate full saves and recheck capability before each queued dispatch.
+Only matching successful revisions become clean. Keep save, volume and probe
+feedback separate so polling cannot erase an unsaved draft or volume error.
+
 An operator can deliberately clear or reload display content while the announcement lifecycle still owns its targets. **Resume Schedule** / **Resume Scheduled State** is the explicit recovery action: when Morning Announcements remain active, it must reassert that priority takeover on the runtime-owned targets instead of returning only a deferred result. This operator-triggered repair is distinct from periodic live probes, which must remain observe-only while active.
 
 ## HLS player
