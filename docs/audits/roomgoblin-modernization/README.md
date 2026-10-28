@@ -1,8 +1,8 @@
 # RoomGoblin modernization audit
 
-PR #329 is [deployed and verified](android-command-delivery.md) at `039a1fc`.
-PR #330 merged as `92adafe` after all 14 checks passed; exact-main publication
-and backed-up delivery follow. Its [shell/output](android-shell-ownership.md) and
+PR #330 is [deployed and verified](android-shell-lifecycle-delivery.md) at `92adafe`
+after all 14 PR checks, required main gates and exact publication passed. Its
+[shell/output](android-shell-ownership.md) and
 [lifecycle](android-lifecycle-ownership.md) fixes pass 2,328 Linux tests with two
 root-only skips, all 23 Host Recovery cases and 125 workspace cases per browser.
 
@@ -15,7 +15,7 @@ qualification passes 2,368 tests with zero failures and two root-only skips, all
 public and Node test sources match qualified `2dc05d7` exactly. The
 [held-response fixture repair](workspace-route-fixtures.md) passes 20 Firefox
 repetitions and all 125 workspace cases in each browser. PR #330's required
-browser retry passed; exact image publication remains pending. No physical
+browser retry and exact image publication passed. No physical
 command was exercised.
 
 [Configuration admission](android-configuration-ownership.md) resolves two
