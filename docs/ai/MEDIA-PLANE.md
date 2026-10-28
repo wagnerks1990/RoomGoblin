@@ -6,6 +6,9 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Video validation supplies the normalized command ID only when no session ID was
+provided. Preserve explicit occurrence/caller identity and legacy command strings.
+
 `src/display-media.js` validates live media controls at HTTP and router entry
 points and projects volume/mute/rate onto the selected existing video snapshot.
 Preserve its session/content identity and leave transient playback operations

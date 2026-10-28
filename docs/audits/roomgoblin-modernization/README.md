@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **PR #304 delivered; media reconnect fixes in PR #305; upload cleanup qualified**.
+Status: **PR #304 delivered; PR #305 merged and publishing; upload cleanup qualified; default media sessions under validation**.
 
 PR #304 is deployed and verified at `2f44c60`; see its
 [delivery receipt](music-command-delivery.md).
@@ -21,6 +21,7 @@ Late audio-command persistence has [17 actual-handler regressions](music-audio-c
 Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
 The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
 Upload expiry now has [eight regressions for active writer ownership](upload-cleanup-ownership.md).
+Default video commands have [eight regressions for shared playback identity](media-default-session.md).
 Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
 complete tree was byte-identical to qualified `3c15e92`. Qualification includes
 1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,

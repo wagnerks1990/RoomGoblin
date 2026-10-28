@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Give video commands without a supplied session ID one stable command-owned
+  playback identity for dispatch and reconnect replay.
+
 - Keep resumable-upload expiry from deleting sessions owned by accepted or
   queued chunk, assembly or cancel operations.
 
