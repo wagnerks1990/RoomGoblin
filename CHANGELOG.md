@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Coordinate media conversion, deletion and upload cleanup by file identity;
+  retain deletion markers so interrupted completion cannot recreate deleted media.
+
 - Recover the same registered media item after a lost upload completion reply
   with private, expiring receipts and retry-safe chunk reclamation.
 

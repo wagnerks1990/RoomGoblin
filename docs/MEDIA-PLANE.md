@@ -99,9 +99,15 @@ Upload assembly retains its session lock and verified chunks through library
 registration. Failed registration permits an explicit retry; later cleanup or
 response errors preserve an already registered file. See [registration ownership](audits/roomgoblin-modernization/upload-registration-ownership.md).
 
-Completion accepts at most 12 authorized requests per minute across the appliance
+Completion and legacy multipart upload share at most 12 authorized requests per minute across the appliance
 and returns HTTP 429 with Retry-After when exhausted. Rejected callers do not
 consume the budget. Chunk transfers, resume status and cancellation are unaffected.
+
+Conversion and deletion share per-file operation ownership and a separate
+30-per-minute authorized-request budget. Deletion waits for conversion and
+removes its generated PDF, while other files remain independent. Upload-linked
+deletion saves a private marker before removing files so retries cannot recreate
+them. See [media-library ownership](audits/roomgoblin-modernization/media-library-ownership.md).
 
 Upload resume/cancel errors retain the browser's session ID. A confirmed missing
 session permits a fresh upload; confirmed cancellation forgets only its own ID.

@@ -1,12 +1,13 @@
 # RoomGoblin modernization audit
 
-Status: **PR #306 delivered; PR #307 rate-limit repair in CI; completion receipts under validation**.
+Status: **PR #306 delivered; PR #307 merged and publishing; completion receipts qualified; conversion ownership under validation**.
 
 PR #306 is deployed and verified at `55055f7`; see its
 [delivery receipt](media-ownership-delivery.md).
 Completion receipts have [23 new regressions](upload-completion-receipts.md).
-Group 8 also has reproduced conversion/deletion ownership (RG-MEDIA-007) and
-document media-card dispatch (RG-MEDIA-008) findings queued for fixes.
+Group 8 conversion/deletion ownership (RG-MEDIA-007) has
+[30 new regressions](media-library-ownership.md). Document media-card dispatch
+(RG-MEDIA-008) remains queued for its fix.
 
 The upload recovery batch is integrated on merged `55055f7`. Before this
 evidence note and trailing blank-line cleanup, its tree was byte-identical to

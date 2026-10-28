@@ -12,7 +12,7 @@ async function fixture(t){
  await store.putChunk({id:meta.id,owner:"fixture",index:0,input:Readable.from(bytes),contentLength:bytes.length,digest});
  let route,index=0;const h={root,media,store,meta,register:async args=>({storedName:args.stored,url:"/media/"+args.stored})};
  const library={files:{}};
- const ctx=vm.createContext({app:{post:(_url,...args)=>route=args.at(-1)},mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"fixture-"+(++index)+".pdf",MEDIA_DIR:media,path,fs,mediaLibrary:library,
+ const ctx=vm.createContext({app:{post:(_url,...args)=>route=args.at(-1)},withMediaFileWrite:(_name,task)=>task(),mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"fixture-"+(++index)+".pdf",MEDIA_DIR:media,path,fs,mediaLibrary:library,
  libraryRecordFromDisk:stored=>fs.existsSync(path.join(media,stored))?{storedName:stored,size:fs.statSync(path.join(media,stored)).size}:null,
  registerUploadedMedia:async args=>{const result=await h.register(args);if(result)library.files[args.stored]={uploadSessionId:args.uploadSessionId,uploadDigest:args.uploadDigest};return result}});
  vm.runInContext(source.slice(a,b),ctx);

@@ -589,6 +589,17 @@ if(!mediaLibrary.files || typeof mediaLibrary.files!=="object")mediaLibrary.file
 function persistMediaLibrary(){
   persistJson(MEDIA_LIBRARY_FILE,mediaLibrary);
 }
+function commitMediaLibraryRecord(name,record){
+  const files={...mediaLibrary.files};if(record===null)delete files[name];else files[name]=record;
+  const next={...mediaLibrary,files};persistJson(MEDIA_LIBRARY_FILE,next);mediaLibrary=next;
+}
+const mediaFileWrites=new Map();
+async function withMediaFileWrite(name,task){
+  name=safeStoredName(name);
+  const previous=mediaFileWrites.get(name)||Promise.resolve(),run=previous.catch(()=>{}).then(task);
+  mediaFileWrites.set(name,run);
+  try{return await run}finally{if(mediaFileWrites.get(name)===run)mediaFileWrites.delete(name)}
+}
 
 let classroomAutomations=readJson(AUTOMATIONS_FILE,{version:1,events:[]});
 if(!classroomAutomations || typeof classroomAutomations!=="object") classroomAutomations={version:1,events:[]};
@@ -8293,24 +8304,25 @@ function mediaStoredName(originalName){
   return `${crypto.randomUUID()}-${base}${ext}`;
 }
 async function registerUploadedMedia({stored,originalName,mime,size,uploadSessionId,uploadDigest}){
+ return withMediaFileWrite(stored,async()=>{
   contentFile(MEDIA_DIR,path.join(MEDIA_DIR,safeStoredName(stored)));
-  const type=classifyMedia(stored,mime),rec={
+  const type=classifyMedia(stored,mime);let rec={
     originalName,storedName:stored,mime,type,uploadedAt:new Date().toISOString(),
     generatedPdf:null,conversionStatus:null,conversionError:null
   };
   if(uploadSessionId){rec.uploadSessionId=uploadSessionId;rec.uploadDigest=uploadDigest}
   // Publish cache identity only after SQLite accepts the registration. A retry
   // must not mistake an uncommitted in-memory record for a completed upload.
-  const next={...mediaLibrary,files:{...mediaLibrary.files,[stored]:rec}};
-  persistJson(MEDIA_LIBRARY_FILE,next);mediaLibrary=next;
+  commitMediaLibraryRecord(stored,rec);
   if(officeConvertible(stored)){
-    rec.conversionStatus="converting";persistMediaLibrary();
-    try{rec.generatedPdf=await convertOfficeToPdf(stored);rec.conversionStatus="ready";rec.conversionError=null}
-    catch(err){rec.conversionStatus="failed";rec.conversionError=err.message}
-    persistMediaLibrary();
+    rec={...rec,conversionStatus:"converting"};commitMediaLibraryRecord(stored,rec);
+    try{rec={...rec,generatedPdf:await convertOfficeToPdf(stored),conversionStatus:"ready",conversionError:null}}
+    catch(err){rec={...rec,conversionStatus:"failed",conversionError:err.message}}
+    commitMediaLibraryRecord(stored,rec);
   }
   audit({kind:"media.upload",name:originalName,stored,mime,size,type,generatedPdf:rec.generatedPdf});
   return libraryRecordFromDisk(stored);
+ });
 }
 
 const storage = multer.diskStorage({
@@ -8342,13 +8354,19 @@ const upload = multer({
   }
 });
 
-app.post("/api/v1/media",requireCapability("media.manage"),upload.single("media"),async(req,res)=>{
+const mediaUploadCompletionLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:12,keyGenerator:()=>"media-upload-completion",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Upload completion limit reached; retry later"}
+});
+app.post("/api/v1/media",mediaUploadCompletionLimit,requireCapability("media.manage"),upload.single("media"),async(req,res)=>{
   if(!req.file)return res.status(400).json({ok:false,error:"No file uploaded"});
   try{
     inspectUpload(req.file.path,req.file.originalname);
     const file=await registerUploadedMedia({stored:req.file.filename,originalName:req.file.originalname,mime:req.file.mimetype,size:req.file.size});
     res.json({ok:true,file});
-  }catch(err){fs.rmSync(req.file.path,{force:true});throw err}
+  }catch(err){await withMediaFileWrite(req.file.filename,async()=>{if(!mediaLibrary.files[req.file.filename])fs.rmSync(req.file.path,{force:true})});throw err}
 });
 
 app.post("/api/v1/media/uploads",requireCapability("media.manage"),(req,res)=>{
@@ -8367,63 +8385,69 @@ app.put("/api/v1/media/uploads/:id/chunks/:index",requireCapability("media.manag
     res.json({ok:true,upload});
   }catch(err){if(!req.readableEnded)req.resume();res.status(err.status||400).json({ok:false,error:err.message})}
 });
-const mediaUploadCompletionLimit=rateLimit({
-  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
-  windowMs:60_000,limit:12,keyGenerator:()=>"media-upload-completion",
-  standardHeaders:"draft-8",legacyHeaders:false,
-  message:{ok:false,error:"Upload completion limit reached; retry later"}
-});
 app.post("/api/v1/media/uploads/:id/complete",mediaUploadCompletionLimit,requireCapability("media.manage"),async(req,res)=>{
-  let destination="",registered=false,file;
+  let file;
   try{
     const session=resumableUploads.owned(req.params.id,ownerKey(req));
-    destination=path.join(MEDIA_DIR,mediaStoredName(session.name));
+    const destination=path.join(MEDIA_DIR,mediaStoredName(session.name));
     await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination,register:async meta=>{
-      const stored=meta.completion.storedName;destination=path.join(MEDIA_DIR,stored);
+      const stored=meta.completion.storedName;
       file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size,uploadSessionId:meta.id,uploadDigest:meta.completion.digest});
       if(!file)throw Error("Uploaded file is unavailable after registration");
-      registered=true;
-    },replay:async meta=>{
+    },replay:async meta=>withMediaFileWrite(meta.completion.storedName,async()=>{
       const stored=meta.completion.storedName,record=mediaLibrary.files[stored];
       if(record&&(record.uploadSessionId!==meta.id||record.uploadDigest!==meta.completion.digest))throw Object.assign(new Error("Upload completion identity conflict"),{status:409});
       if(!record)return false;
       file=libraryRecordFromDisk(stored);
       if(!file)return false;
       if(file.size!==meta.size)throw Object.assign(new Error("Completed upload size changed"),{status:409});
-      registered=true;return true;
-    }});
+      return true;
+    }),discard:async(meta,failedDestination)=>withMediaFileWrite(meta.completion.storedName,async()=>{
+      // A committed library item survives conversion/receipt/cleanup errors.
+      // This runs inside the session owner, before another retry can assemble.
+      if(!mediaLibrary.files[meta.completion.storedName])fs.rmSync(failedDestination,{force:true});
+    })});
     res.json({ok:true,file});
-  }catch(err){if(destination&&!registered)fs.rmSync(destination,{force:true});res.status(err.status||400).json({ok:false,error:err.message})}
+  }catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 app.delete("/api/v1/media/uploads/:id",requireCapability("media.manage"),async(req,res)=>{
   try{await resumableUploads.cancel(req.params.id,ownerKey(req));audit({kind:"media.upload.cancelled",uploadId:req.params.id});res.json({ok:true})}
   catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 
-app.post("/api/v1/media/:name/convert",requireCapability("media.manage"),async(req,res)=>{
-  let rec=null,prior=null,name="";
+const mediaLibraryMutationLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:30,keyGenerator:()=>"media-library-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Media library operation limit reached; retry later"}
+});
+app.post("/api/v1/media/:name/convert",mediaLibraryMutationLimit,requireCapability("media.manage"),async(req,res)=>{
   try{
-    name=safeStoredName(req.params.name);rec=mediaLibrary.files[name]||{};
-    if(!fs.existsSync(path.join(MEDIA_DIR,name)))return res.status(404).json({ok:false,error:"File not found"});
-    if(!officeConvertible(name))return res.status(400).json({ok:false,error:"Only Word/PowerPoint/OpenDocument files require conversion"});
-    prior={generatedPdf:rec.generatedPdf,conversionStatus:rec.conversionStatus,conversionError:rec.conversionError};rec.originalName=rec.originalName||name;rec.storedName=name;rec.type=classifyMedia(name);rec.conversionStatus="converting";rec.conversionError=null;
-    mediaLibrary.files[name]=rec;persistMediaLibrary();
-    rec.generatedPdf=await convertOfficeToPdf(name);rec.conversionStatus="ready";persistMediaLibrary();
-    res.json({ok:true,file:libraryRecordFromDisk(name)});
-  }catch(err){if(rec&&name){rec.generatedPdf=prior?.generatedPdf||null;rec.conversionStatus=prior?.generatedPdf?"ready":"failed";rec.conversionError=err.message;mediaLibrary.files[name]=rec;persistMediaLibrary()}res.status(500).json({ok:false,error:err.message})}
+    const name=safeStoredName(req.params.name),file=await withMediaFileWrite(name,async()=>{
+      const prior=mediaLibrary.files[name]||{};
+      if(!fs.existsSync(path.join(MEDIA_DIR,name)))throw Object.assign(Error("File not found"),{status:404});
+      if(!officeConvertible(name))throw Object.assign(Error("Only Word/PowerPoint/OpenDocument files require conversion"),{status:400});
+      let rec={...prior,originalName:prior.originalName||name,storedName:name,type:classifyMedia(name),conversionStatus:"converting",conversionError:null};
+      commitMediaLibraryRecord(name,rec);
+      try{rec={...rec,generatedPdf:await convertOfficeToPdf(name),conversionStatus:"ready"}}
+      catch(err){commitMediaLibraryRecord(name,{...prior,conversionStatus:prior.generatedPdf?"ready":"failed",conversionError:err.message});throw err}
+      commitMediaLibraryRecord(name,rec);return libraryRecordFromDisk(name);
+    });res.json({ok:true,file});
+  }catch(err){res.status(err.status||500).json({ok:false,error:err.message})}
 });
 
-app.delete("/api/v1/media/:name",requireCapability("media.manage"),(req,res)=>{
+app.delete("/api/v1/media/:name",mediaLibraryMutationLimit,requireCapability("media.manage"),async(req,res)=>{
   try{
-    const name=safeStoredName(req.params.name),rec=mediaLibrary.files[name]||{};
-    const removed=[];
-    for(const n of [name,rec.generatedPdf].filter(Boolean)){
-      const full=path.join(MEDIA_DIR,safeStoredName(n));
-      if(fs.existsSync(full)){fs.rmSync(full,{force:true});removed.push(n)}
-    }
-    delete mediaLibrary.files[name];
-    persistMediaLibrary();
-    audit({kind:"media.delete",name,removed});
+    const name=safeStoredName(req.params.name),removed=await withMediaFileWrite(name,async()=>{
+      const rec=mediaLibrary.files[name]||{};
+      if(rec.uploadSessionId)resumableUploads.retire(rec.uploadSessionId,name,rec.uploadDigest);
+      const removed=[];
+      for(const n of [name,rec.generatedPdf].filter(Boolean)){
+        const full=path.join(MEDIA_DIR,safeStoredName(n));
+        if(fs.existsSync(full)){fs.rmSync(full,{force:true});removed.push(n)}
+      }
+      commitMediaLibraryRecord(name,null);audit({kind:"media.delete",name,removed});return removed;
+    });
     res.json({ok:true,removed});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });

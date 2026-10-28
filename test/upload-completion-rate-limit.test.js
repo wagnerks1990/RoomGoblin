@@ -3,18 +3,18 @@ const test=require("node:test"),assert=require("node:assert/strict"),fs=require(
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8").replace(/\r\n/g,"\n");
 function block(a,b){const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>0&&end>start);return source.slice(start,end)}
 const authorization=block("function authenticationUnavailable(","\nfunction administratorAccessAllowed(")+block("function requireCapability(","\nfunction requireClassroomRead(");
-const completion=block("const mediaUploadCompletionLimit=rateLimit(","\napp.delete(\"/api/v1/media/uploads/:id\"");
+const completion=block("const mediaUploadCompletionLimit=rateLimit(","\napp.post(\"/api/v1/media\"")+block('app.post("/api/v1/media",','\napp.post("/api/v1/media/uploads",')+block('app.post("/api/v1/media/uploads/:id/complete"','\napp.delete("/api/v1/media/uploads/:id"');
 async function fixture(t,{legacy=false,configured=true}={}){
  const app=express();app.use(express.json());let writes=0;
- const c=vm.createContext({app,rateLimit,CONTROL_TOKEN:configured?"fixture-control":"",dbStore:{authEnabled:()=>!legacy,userCount:()=>0},secureTokenEqual:(a,b)=>a===b,
+ const c=vm.createContext({app,rateLimit,upload:{single:()=> (_req,_res,next)=>next()},CONTROL_TOKEN:configured?"fixture-control":"",dbStore:{authEnabled:()=>!legacy,userCount:()=>0},secureTokenEqual:(a,b)=>a===b,
  requestUser:req=>req.get("x-fixture-role")?{id:"fixture",capabilities:req.get("x-fixture-role")==="media"?["media.manage"]:[]}:null,hasCapability:(user,cap)=>!!user?.capabilities.includes(cap),
  resumableUploads:{owned(){writes++;throw Object.assign(Error("fixture session not found"),{status:404})}},ownerKey:()=>"fixture"});
  vm.runInContext(authorization+completion,c);
  app.put("/api/v1/media/uploads/:id/chunks/:index",(_req,res)=>res.json({ok:true}));
  const server=app.listen(0,"127.0.0.1");await new Promise(r=>server.once("listening",r));t.after(async()=>{server.closeAllConnections();await new Promise(r=>server.close(r))});
  const base="http://127.0.0.1:"+server.address().port;
- return{writes:()=>writes,async request({role="media",token="",id="fixture",ip="198.51.100.1",chunk=false}={}){
- const response=await fetch(base+"/api/v1/media/uploads/"+id+(chunk?"/chunks/0":"/complete"),{method:chunk?"PUT":"POST",headers:{"content-type":"application/json","x-fixture-role":role,"x-control-token":token,"x-forwarded-for":ip},body:"{}"});const body=await response.json();return{response,body};
+ return{writes:()=>writes,async request({role="media",token="",id="fixture",ip="198.51.100.1",chunk=false,multipart=false}={}){
+ const response=await fetch(base+(multipart?"/api/v1/media":"/api/v1/media/uploads/"+id+(chunk?"/chunks/0":"/complete")),{method:chunk?"PUT":"POST",headers:{"content-type":"application/json","x-fixture-role":role,"x-control-token":token,"x-forwarded-for":ip},body:"{}"});const body=await response.json();return{response,body};
  }};
 }
 test("completion has a fixed shared budget and leaves chunk transfers independent",async t=>{
@@ -35,4 +35,10 @@ test("unconfigured authentication fails closed without reaching upload storage",
 });
 test("completion middleware remains before the media capability guard",()=>{
  assert.match(source,/app\.post\("\/api\/v1\/media\/uploads\/:id\/complete",mediaUploadCompletionLimit,requireCapability\("media\.manage"\),async/);
+});
+test("legacy multipart uploads share the completion budget before file parsing",async t=>{
+ const h=await fixture(t);assert.equal((await h.request({multipart:true,role:"viewer"})).response.status,403);
+ for(let i=0;i<11;i++)assert.equal((await h.request()).response.status,404);
+ assert.equal((await h.request({multipart:true})).response.status,400);
+ assert.equal((await h.request()).response.status,429);assert.equal((await h.request({multipart:true})).response.status,429);assert.equal(h.writes(),11);
 });
