@@ -1,6 +1,13 @@
 # RoomGoblin modernization audit
 
-Status: **PR #305 delivered; PR #306 merged and publishing; browser/registration upload recovery qualified**.
+Status: **PR #306 delivered; PR #307 merged and publishing; completion receipts qualified; conversion ownership under validation**.
+
+PR #306 is deployed and verified at `55055f7`; see its
+[delivery receipt](media-ownership-delivery.md).
+Completion receipts have [23 new regressions](upload-completion-receipts.md).
+Group 8 conversion/deletion ownership (RG-MEDIA-007) has
+[30 new regressions](media-library-ownership.md). Document media-card dispatch
+(RG-MEDIA-008) remains queued for its fix.
 
 The upload recovery batch is integrated on merged `55055f7`. Before this
 evidence note and trailing blank-line cleanup, its tree was byte-identical to
@@ -273,6 +280,20 @@ Music Studio and 70 workspace cases pass in each of Chromium and Firefox.
 Required PR/main checks, immutable images and this batch's backed-up delivery
 remain pending. PR #302 is now deployed and verified.
 Late audio-command persistence remains a separate reproduced review finding.
+
+## Upload completion and media-library integration
+
+Completion receipts and conversion/deletion ownership are integrated on merged
+`main` `f3e8624`. Before this evidence note and PR #307's delivery receipt, the
+complete tree matched qualified `8a81abd`. The supported Linux snapshot passes
+1,771 tests, zero failures and two root-only skips, plus all 23 Host Recovery
+tests and Node/controller/Python/Bash checks. All 90 focused Linux integration
+tests pass with two root-only skips (92 total). An additional native-Windows
+attempt was unsuitable because shared-permission fixtures require Linux
+`fchmod`; it is not counted as qualification. Required PR/main gates and exact
+image delivery for this batch remain pending. PR #307 is deployed and verified;
+see [the receipt](upload-recovery-delivery.md). Media-card document dispatch,
+cancellation outcome feedback and library refresh ownership remain under review.
 
 ## Inventory and review sequence
 

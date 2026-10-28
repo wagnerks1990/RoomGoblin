@@ -117,7 +117,8 @@ test("media registration and copied office PDF explicitly publish group-readable
   const ctx={fs,path,crypto,contentFile,MEDIA_DIR,DATA_DIR:root,safeStoredName:x=>x,
     execFileAsync:async(_cmd,args)=>fs.writeFileSync(path.join(args[args.indexOf("--outdir")+1],"lesson.pdf"),"%PDF-converted")};
   vm.createContext(ctx);vm.runInContext(section(source,"async function convertOfficeToPdf(","function documentViewerUrl("),ctx);
-  Object.assign(ctx,{classifyMedia:()=>"image",mediaLibrary:{files:{}},persistMediaLibrary(){},officeConvertible:()=>false,audit(){},libraryRecordFromDisk:x=>x});
+  Object.assign(ctx,{classifyMedia:()=>"image",mediaLibrary:{files:{}},MEDIA_LIBRARY_FILE:"library.json",persistJson(file,next){assert.equal(file,"library.json");assert.ok(next.files)},persistMediaLibrary(){},officeConvertible:()=>false,audit(){},libraryRecordFromDisk:x=>x});
+  vm.runInContext(section(source,"function commitMediaLibraryRecord(","let classroomAutomations="),ctx);
   vm.runInContext(section(source,"async function registerUploadedMedia(","const storage = multer.diskStorage("),ctx);
   for(const name of ["image.png","video.mp4","lesson.pptx"]){fs.writeFileSync(path.join(MEDIA_DIR,name),"fixture");await ctx.registerUploadedMedia({stored:name,originalName:name,mime:"fixture",size:7});assert.equal(mode(path.join(MEDIA_DIR,name)),0o640);}
   const pdf=await ctx.convertOfficeToPdf("lesson.pptx");assert.equal(mode(path.join(MEDIA_DIR,pdf)),0o640);
