@@ -295,6 +295,101 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(len(pending), 2)
         self.evidence(page, errors, 'android-editor-mobile-focus')
 
+    def android_diagnostic_page(self, width=1440):
+        shells, diagnostics = [], []
+        devices = [DEVICE, {**DEVICE, 'id': 'second-tv', 'name': 'Second display'}]
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': devices, 'profiles': []})
+                return True
+            if target.endswith('/shell'):
+                shells.append(route)
+                return True
+            if target.endswith('/agent/v2/status'):
+                diagnostics.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', width, transport=transport)
+        page.clock.install()
+        return page, errors, shells, diagnostics
+
+    def test_android_shell_keeps_newest_output_and_rejects_duplicate_pending_requests(self):
+        page, errors, shells, _ = self.android_diagnostic_page(390)
+        page.locator('#remoteShell > summary').click()
+        page.locator('#shellDevice').select_option('fixture-tv')
+        page.locator('#shellCommand').fill('echo first-fixture')
+        with page.expect_request('**/fixture-tv/shell'):
+            page.locator('#runShell').click()
+        self.assertTrue(page.locator('#runShell').is_disabled())
+        page.locator('#runShell').dispatch_event('click')
+        page.locator('#shellCommand').press('Enter')
+        self.assertEqual(len(shells), 1)
+        page.locator('#shellDevice').select_option('second-tv')
+        self.assertFalse(page.locator('#runShell').is_disabled())
+        page.locator('#shellCommand').fill('echo second-fixture')
+        with page.expect_request('**/second-tv/shell'):
+            page.locator('#runShell').click()
+        self.held_route(page, shells, 1).fulfill(json={'ok': True, 'stdout': 'new output'})
+        page.wait_for_function("document.getElementById('terminal').textContent.includes('new output')")
+        page.locator('#shellCommand').fill('new unsent draft')
+        self.held_route(page, shells).fulfill(json={'ok': True, 'stdout': 'old output'})
+        page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] .device-message').textContent.includes('Newer diagnostic')")
+        self.assertNotIn('old output', page.locator('#terminal').inner_text())
+        self.assertEqual(page.locator('#shellCommand').input_value(), 'new unsent draft')
+        self.assertEqual(page.evaluate('document.activeElement.id'), 'shellCommand')
+        self.assertEqual(len(shells), 2)
+        self.evidence(page, errors, 'android-shell-mobile-output-owner')
+
+    def test_android_shell_failure_does_not_replace_newer_agent_diagnostics(self):
+        page, errors, shells, diagnostics = self.android_diagnostic_page()
+        page.locator('#remoteShell > summary').click()
+        page.locator('#shellDevice').select_option('fixture-tv')
+        page.locator('#shellCommand').fill('echo first-fixture')
+        with page.expect_request('**/fixture-tv/shell'):
+            page.locator('#runShell').click()
+        page.locator('[data-id="second-tv"] .agent-v2-panel > summary').click()
+        with page.expect_request('**/second-tv/agent/v2/status'):
+            page.locator('[data-id="second-tv"] [data-v2-action="status"]').click()
+        self.held_route(page, diagnostics).fulfill(json={'ok': True, 'status': {'marker': 'new diagnostic'}})
+        page.wait_for_function("document.getElementById('terminal').textContent.includes('new diagnostic')")
+        self.held_route(page, shells).fulfill(status=503, json={'ok': False, 'error': 'old shell failure'})
+        page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] .device-message').textContent.includes('old shell failure')")
+        self.assertIn('new diagnostic', page.locator('#terminal').inner_text())
+        self.assertNotIn('old shell failure', page.locator('#terminal').inner_text())
+        self.assertFalse(page.locator('#runShell').is_disabled())
+        self.assertFalse(errors, errors)
+
+    def test_android_shell_result_retires_older_agent_or_app_audit_output(self):
+        for kind in ('agent', 'audit'):
+            with self.subTest(kind=kind):
+                page, errors, shells, diagnostics = self.android_diagnostic_page()
+                card = page.locator('[data-id="fixture-tv"]')
+                if kind == 'agent':
+                    card.locator('.agent-v2-panel > summary').click()
+                    with page.expect_request('**/fixture-tv/agent/v2/status'):
+                        card.locator('[data-v2-action="status"]').click()
+                else:
+                    card.locator('details[data-disclosure="device-tools"] > summary').click()
+                    with page.expect_request('**/fixture-tv/shell'):
+                        card.locator('[data-op="audit-apps"]').click()
+                page.locator('#remoteShell > summary').click()
+                page.locator('#shellDevice').select_option('second-tv')
+                page.locator('#shellCommand').fill('echo newest-fixture')
+                with page.expect_request('**/second-tv/shell'):
+                    page.locator('#runShell').click()
+                newest_index = 0 if kind == 'agent' else 1
+                self.held_route(page, shells, newest_index).fulfill(json={'ok': True, 'stdout': 'newest shell output'})
+                page.wait_for_function("document.getElementById('terminal').textContent.includes('newest shell output')")
+                if kind == 'agent':
+                    self.held_route(page, diagnostics).fulfill(json={'ok': True, 'status': {'marker': 'old agent output'}})
+                else:
+                    self.held_route(page, shells).fulfill(json={'ok': True, 'stdout': 'old audit output'})
+                page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] .device-message').textContent.includes('Newer diagnostic')")
+                self.assertIn('newest shell output', page.locator('#terminal').inner_text())
+                self.assertNotIn('old ', page.locator('#terminal').inner_text())
+                self.assertEqual(page.locator('#shellDevice').input_value(), 'second-tv')
+                self.assertFalse(errors, errors)
+
     def test_android_command_ownership_survives_refresh_across_adb_and_agent_controls(self):
         for selector, endpoint in (('[data-action="wake"]', '/action'), ('[data-v2-action="wake"]', '/agent/v2/action')):
             with self.subTest(selector=selector):

@@ -24,6 +24,21 @@ the original display card, including failures after the editor closes. A failed
 follow-up read does not relabel an accepted save as failed. Closing returns focus
 to the current Edit button or the inventory search when that card is unavailable.
 
+## Shell and diagnostic output ownership
+
+Remote shell uses the same per-display pending owner as card controls. Repeated
+Run/Enter submissions and commands to an already-busy display cannot dispatch
+again; selecting another available display permits independent work. Run reflects
+the selected display and current ADB availability. Completion preserves typed
+command drafts and releases only the initiating operation.
+
+Shell, app-audit, Agent v2, lifecycle/install and Device Admin diagnostics share
+an output generation claimed before their asynchronous work. A late result cannot
+append to or replace newer diagnostic output, clear its selected display or move
+focus. Superseded success leaves a short outcome on its original card when that
+card still shows its pending message; errors remain visible on the original card.
+The guard does not cancel accepted remote work or automatically replay requests.
+
 ## Pending card commands
 
 Each Android display card has one pending operator-command owner shared by ADB,

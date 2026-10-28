@@ -23,7 +23,7 @@
     }catch(error){artifactCache={at:Date.now(),value:{available:false,error:error.message}}}
     return artifactCache.value;
   }
-  function terminal(title,value){const shell=document.getElementById("remoteShell");if(shell)shell.open=true;const el=document.getElementById("terminal");if(el)el.textContent=`${title}\n${typeof value==='string'?value:JSON.stringify(value,null,2)}`}
+  function writeTerminal(title,value,owner){if(!terminalOutputCurrent(owner)){terminalOutputSuperseded(owner);return}const shell=document.getElementById("remoteShell");if(shell)shell.open=true;const el=document.getElementById("terminal");if(el)el.textContent=`${title}\n${typeof value==='string'?value:JSON.stringify(value,null,2)}`}
   function decorate(){
     for(const card of root.querySelectorAll(".card[data-id]")){
       const controls=card.querySelector(".controls");if(!controls)continue;
@@ -75,11 +75,12 @@
     finally{delete card.dataset.v2ProbeBusy}
   }
   root.addEventListener("click",async e=>{
+    let outputOwner;const terminal=(title,value)=>writeTerminal(title,value,outputOwner);
     const installButton=e.target.closest('button[data-op="install"]');
     if(installButton){
       e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
       const card=installButton.closest('.card[data-id]'),id=card?.dataset.id;if(!id||deviceOperations.has(String(id)))return;
-      const operation=beginDeviceOperation(id,installButton.textContent);if(!operation)return;
+      const operation=beginDeviceOperation(id,installButton.textContent);if(!operation)return;outputOwner=beginTerminalOutput(id);
       try{
         const artifact=await stagedArtifact(true);
         if(!artifact?.available)throw Error(artifact?.error||'No verified current Android agent APK is staged');
@@ -114,7 +115,7 @@
       const op=lifecycleButton.dataset.lifecycleAction;
       if(op==="remove"&&!window.confirm("Remove this managed display from RoomGoblin? This removes the Hub enrollment only. It will not uninstall the Android app, factory-reset the TV, or delete other RoomGoblin data."))return;
       if(op==="disable"&&!window.confirm("Disable this enrollment? RoomGoblin policy automation will ignore it until re-enabled."))return;
-      const operation=beginDeviceOperation(id,lifecycleButton.textContent);if(!operation)return;
+      const operation=beginDeviceOperation(id,lifecycleButton.textContent);if(!operation)return;outputOwner=beginTerminalOutput(id);
       try{const j=await maintenanceCall(id,"/lifecycle",{method:"POST",body:JSON.stringify({action:op})});terminal(`Managed display lifecycle: ${op}`,j);if(op==="remove")card.remove();else window.location.reload()}
       catch(err){deviceMessage(id,`Managed display lifecycle: ${err.message}`);window.alert(`Managed display lifecycle: ${err.message}`)}finally{endDeviceOperation(id,operation)}
       return;
@@ -122,7 +123,7 @@
     const b=e.target.closest("button[data-v2-action]");if(!b)return;
     e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
     const card=b.closest(".card[data-id]"),id=card?.dataset.id;if(!id||deviceOperations.has(String(id)))return;
-    const operation=beginDeviceOperation(id,b.textContent);if(!operation)return;
+    const operation=beginDeviceOperation(id,b.textContent);if(!operation)return;if(b.dataset.v2Action!=="configure")outputOwner=beginTerminalOutput(id);
     try{
       const op=b.dataset.v2Action;
       if(op==="configure"){
