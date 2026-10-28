@@ -1,10 +1,43 @@
 # RoomGoblin modernization audit
 
-PR #314 passed all 14 checks without unresolved reviews and merged as `5ffba81`;
-its exact publication and backed-up delivery are pending. Dispatch identity is
-integrated on that main: `5e9285f` is byte-identical to qualified `7faf08d` before
-this evidence note, and all 246 focused cases pass again. ESPHome quota work is
-separately qualified at `43f4dfd`; controller races remain under repair.
+PR #315 is [deployed and verified](lighting-identity-delivery.md) at `af76c5a`.
+The ESPHome batch is pushed as PR #316. Its language analysis jobs uploaded
+successfully, but the separate CodeQL summary initially reported missing
+configurations; merge awaits a complete fresh check result. Lab inventory and
+information-dialog ownership findings remain under review.
+
+ESPHome admission, controller ownership and worker containment are integrated on
+merged `main` `af76c5a` in three focused commits. Runtime, configuration and tests
+match qualified `f976056` byte for byte; only audit evidence differs. All 51
+focused integration cases pass again, with 2,064 full Linux passes, two root-only
+skips, 23 Host Recovery passes and 83 workspace passes in each browser. Required
+PR/main checks and this batch's backed-up delivery remain separate gates.
+[Group 9 coverage](lighting-esphome-review.md) records preserved capabilities and
+physical-acceptance limits. Group 10 review has reproduced four Veyon metadata/
+inventory races and two information-dialog races for the next focused repairs.
+
+The [ESPHome worker repair](esphome-worker-ownership.md) reproduces six process/
+pipe and discovery-completion failures. All 20 new regressions and 51 focused
+ESPHome cases pass. Final qualification passes 2,064 Linux tests, zero failures,
+two root-only skips and all 23 Host Recovery tests. PR #314 is
+[deployed and verified](lighting-persistence-delivery.md) at `5ffba81`. PR #315
+passed all 14 checks and merged as `af76c5a`; exact publication precedes delivery.
+
+The [ESPHome inventory repair](esphome-inventory-ownership.md) reproduces five
+controller races and passes 21 new Node cases plus all five focused Chromium
+cases. Full qualification passes 2,044 Linux tests, two root-only skips, all 23
+Host Recovery tests and all 83 workspace cases in each browser. Lighting identity is
+pushed as PR #315; PR #314 is merged and publishing before its delivery.
+
+The [ESPHome admission repair](esphome-admission-budgets.md) reproduces five
+quota/predicate failures and passes all nine new cases plus the existing budget
+regression. Full qualification passes 2,023 Linux tests, two root-only skips and
+all 23 Host Recovery tests. ESPHome controller races remain next.
+
+Dispatch identity was integrated on merged main `5ffba81`: `5e9285f` was
+byte-identical to qualified `7faf08d` before its evidence note, and all 246
+focused cases passed again. PR #314 delivery is now verified; PR #315 is
+merged as `af76c5a`, with exact publication and delivery pending.
 
 PR #313 is [deployed and verified](lighting-configuration-delivery.md) at
 `5cf4c81`. PR #314's required validation is running; its security and both browser
@@ -55,7 +88,7 @@ passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
 85 focused integration cases pass. The inventory batch remains qualified on
 `b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
 
-Status: **PR #313 delivered; PR #314 in CI; lighting dispatch identity qualified; ESPHome review active**.
+Status: **PR #314 delivered; PR #315 merged and publishing; ESPHome qualified for integration; lab review active**.
 
 PR #311 is deployed and verified at `fa5bb49`; see its
 [delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/

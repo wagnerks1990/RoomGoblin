@@ -9,11 +9,11 @@ esphome.ESPHomeManager=class extends Original{
     if(path.basename(args[1])!=="discovery.py")throw Error("Unexpected fixture worker");
     console.log("fixture-esphome-discovery-started");
     const child=new EventEmitter();child.stdout=new PassThrough();let timer,done=false;
-    child.kill=()=>{if(done)return false;done=true;clearTimeout(timer);child.stdout.destroy();child.emit("exit",null,"SIGKILL");return true};
+    child.kill=()=>{if(done)return false;done=true;clearTimeout(timer);child.stdout.once("close",()=>child.emit("close",null,"SIGKILL"));child.stdout.destroy();child.emit("exit",null,"SIGKILL");return true};
     const finish=()=>{
       if(done)return;
       if(!fs.existsSync(path.join(process.env.DATA_DIR,"release-discovery"))){timer=setTimeout(finish,10);return}
-      done=true;child.stdout.end(JSON.stringify({devices:[]}));child.emit("exit",0,null);
+      done=true;child.stdout.once("end",()=>child.emit("close",0,null));child.stdout.end(JSON.stringify({devices:[]}));child.emit("exit",0,null);
     };
     setImmediate(finish);return child;
   }})}

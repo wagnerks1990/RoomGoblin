@@ -92,6 +92,7 @@ class ESPHomeManager{
         const line=buffer.slice(0,newline);buffer=buffer.slice(newline+1);
         if(Buffer.byteLength(line)>MAX_LINE){this.failWorker(child);return}
         let message;try{message=JSON.parse(line)}catch{this.failWorker(child);return}
+        if(!message||typeof message!=="object"||Array.isArray(message)){this.failWorker(child);return}
         if(message.event==="device"){
           const d=message.device,r=this.record(d?.id);
           if(r&&r.generation===d.generation&&Array.isArray(d.entities)&&d.entities.length<=128){
@@ -108,7 +109,8 @@ class ESPHomeManager{
         }
       }
     });
-    child.once("error",()=>this.failWorker(child));child.once("exit",()=>this.failWorker(child));
+    child.on("error",()=>this.failWorker(child));child.once("exit",()=>this.failWorker(child));
+    child.stdout.on("error",()=>this.failWorker(child));
     child.stdin.on("error",()=>this.failWorker(child));
     return child;
   }
@@ -133,7 +135,7 @@ class ESPHomeManager{
     return new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>this.failWorker(child),timeout);timer.unref();
       this.pending.set(requestId,{resolve,reject,timer});
-      child.stdin.write(line,error=>{if(error)this.failWorker(child)});
+      try{child.stdin.write(line,error=>{if(error)this.failWorker(child)})}catch{this.failWorker(child)}
     });
   }
   async discover({force=false}={}){
@@ -147,9 +149,10 @@ class ESPHomeManager{
       let output="",done=false;
       const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value)};
       const timer=setTimeout(()=>{try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery timed out.",504))},6000);timer.unref();
-      child.stdout.setEncoding("utf8");child.stdout.on("data",chunk=>{output+=chunk;if(Buffer.byteLength(output)>MAX_LINE){try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery returned too much data.",502))}});
-      child.once("error",()=>finish(failure("ESPHome discovery could not start.",503)));
-      child.once("exit",code=>{
+      child.stdout.setEncoding("utf8");child.stdout.on("data",chunk=>{if(done)return;output+=chunk;if(Buffer.byteLength(output)>MAX_LINE){try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery returned too much data.",502))}});
+      child.on("error",()=>{if(done)return;try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery could not start.",503))});
+      child.stdout.on("error",()=>{if(done)return;try{child.kill("SIGKILL")}catch{};finish(failure("ESPHome discovery output failed.",502))});
+      child.once("close",code=>{
         if(done)return;if(code!==0)return finish(failure("ESPHome discovery failed.",502));
         try{
           const parsed=JSON.parse(output),devices=Array.isArray(parsed.devices)?parsed.devices.slice(0,128):[];
@@ -249,11 +252,12 @@ class ESPHomeManager{
   close(){this.closed=true;clearInterval(this.timer);if(this.child)this.failWorker(this.child)}
 }
 
-function registerESPHomeRoutes(app,{manager,requireRead,requireControl,requireAdmin,isAdmin,owner,track=task=>task,audit=()=>{}}){
-  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
-  const discoveryLimit=rateLimit({windowMs:60000,limit:12,keyGenerator:()=>"esphome-discovery",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome discovery request limit reached; retry later."}});
-  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
-  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
+function registerESPHomeRoutes(app,{manager,requireRead,requireControl,requireAdmin,canRead,canControl,isAdmin,owner,track=task=>task,audit=()=>{}}){
+  if([canRead,canControl,isAdmin].some(predicate=>typeof predicate!=="function"))throw new TypeError("ESPHome routes require shared authorization predicates");
+  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",skip:req=>!canRead(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
+  const discoveryLimit=rateLimit({windowMs:60000,limit:12,keyGenerator:()=>"esphome-discovery",skip:req=>!isAdmin(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome discovery request limit reached; retry later."}});
+  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",skip:req=>!isAdmin(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
+  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",skip:req=>!canControl(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
   const route=(action,kind)=>(req,res)=>{
     const task=(async()=>{
       try{const result=await action(req);if(kind)audit({kind:`esphome.${kind}`,deviceId:req.params.id||null,ok:true});res.json(result)}

@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Contain ESPHome worker pipe/process errors and malformed IPC, release pending
+  commands without replay, and wait for discovery stdout to close before parsing.
+
+- Preserve ESPHome enrollment drafts and management feedback, serialize controller
+  management changes, and discard inventory/discovery replies from older writes
+  or permission states.
+
+- Preserve ESPHome API budgets for authorized callers by sharing the existing
+  capability and administrator predicates with rate-limit admission.
+
 - Validate complete lighting command targets before sending, preserve accepted
   payloads and stop pending writes if a target's physical identity changes.
 

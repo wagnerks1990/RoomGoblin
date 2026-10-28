@@ -60,6 +60,11 @@ There is no generic ESPHome service executor, firmware shell, lock/climate contr
 
 ## Reliability and command semantics
 
+The controller serializes enrollment and management writes, preserves newer
+form drafts, and ignores inventory/discovery replies from earlier writes or
+permission states. Management feedback survives polling. See
+[ESPHome workspace behavior](GUI-WORKSPACES.md#esphome-device-workspace).
+
 One supervised, unprivileged Python worker maintains persistent native API connections for enabled nodes. Connection establishment is bounded, reconnects use exponential backoff with jitter, and the registry is capped at 64 devices with 128 entities per device.
 
 Slow or offline ESPHome nodes do not block RoomGoblin health, Today, Morning Announcements, Background Music, scheduler recovery, Veyon, or display rendering.
@@ -75,6 +80,12 @@ A stalled worker is terminated; pending commands fail and are not replayed. Conn
 Inventory requires `classroom.read`. Ordinary entity commands require `integrations.control`. Enrollment, edit, enable/disable, removal, and discovery require the existing administrator boundary. Backend/worker validation is authoritative; UI visibility is not an access-control boundary.
 
 Separate appliance-wide one-minute limits exist for inventory, discovery, management, and interactive commands. Rejected over-limit requests do not create worker jobs or queued device actions.
+
+Only callers accepted by the corresponding read, control or administrator guard
+consume these budgets. Rate middleware stays before the guards and uses their
+shared predicates, including legacy control-token mode. Rejected callers retain
+the normal authentication/permission response even when a budget is exhausted.
+Changing device IDs, endpoints or forwarded addresses does not create more quota.
 
 The ESPHome Noise transport is encrypted only when a device has an API encryption key. An intentionally unencrypted native API is plaintext on the local network. The current RoomGoblin alpha controller itself is HTTP-only, so a key entered through the browser is protected only by the trusted-network boundary until HTTPS is introduced. Do not expose RoomGoblin or ESPHome management surfaces directly to the public Internet.
 
@@ -110,6 +121,13 @@ or worker launch. New requests return HTTP 423 during export acquisition/active
 freeze and after manager close. Already accepted discovery remains tracked until
 it finishes; audit persistence is deferred until thaw, or drained before shutdown
 closes SQLite. Inventory reads retain their existing availability.
+
+Worker process and pipe errors, synchronous writes and non-object IPC responses
+fail the current connection owner once, releasing pending requests with an
+uncertain-delivery error and no command replay. Late events from a failed child
+cannot affect its replacement. Discovery waits for process/stdio closure before
+parsing its bounded output; its six-second deadline remains active until then.
+Stream failures terminate discovery without publishing cached success.
 
 Validation includes Node integration tests, real Express permission/rate-limit routes, encrypted SQLite transactions, pinned native-client Python tests, browser regressions in Chromium/Firefox, restrictive non-root image tests, image vulnerability scans, host-network/Compose smoke tests, and production-image import of the discovery/worker modules.
 

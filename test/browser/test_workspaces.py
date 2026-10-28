@@ -1122,6 +1122,104 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 page.wait_for_function("document.querySelector('[data-thumb=student-a]')?.naturalWidth > 0")
                 self.assertFalse(errors, errors)
 
+    def esphome_device(self, device_id='fixture'):
+        return {'id': device_id, 'generation': '1', 'name': 'Fixture relay',
+                'address': '10.200.0.8', 'port': 6053, 'mac': '02:00:00:00:00:01',
+                'enabled': True, 'hasKey': True, 'online': True,
+                'entities': [{'id': '0:1', 'domain': 'switch', 'name': 'Relay', 'writable': True}],
+                'states': {}}
+
+    def test_esphome_management_fences_old_inventory_and_disables_overlapping_changes(self):
+        fixture = {'ok': True, 'devices': [self.esphome_device(), self.esphome_device('second')]}
+        page, errors = self.page('/controller/', overrides={'/api/v1/esphome/devices': fixture})
+        page.evaluate("showPage('esphome')")
+        page.locator('#espInventory article').first.wait_for()
+        page.evaluate('''fixture => {
+          window.espLatest = structuredClone(fixture); window.espHoldRead = true;
+          const original = window.fetch;
+          window.fetch = (url, options = {}) => {
+            if (String(url) === '/api/v1/esphome/devices' && !options.method) {
+              if (window.espHoldRead) { window.espHoldRead = false;
+                return new Promise(resolve => window.espOldRead = () => resolve(new Response(JSON.stringify(fixture)))); }
+              return Promise.resolve(new Response(JSON.stringify(window.espLatest)));
+            }
+            if (String(url).endsWith('/fixture/enabled')) return new Promise(resolve => window.espWrite = () => {
+              window.espLatest.devices[0].enabled = false; window.espLatest.devices[0].online = false;
+              resolve(new Response(JSON.stringify(window.espLatest)));
+            });
+            return original(url, options);
+          };
+        }''', fixture)
+        page.locator('#espRefresh').click()
+        page.wait_for_function('!!window.espOldRead')
+        page.locator('#espInventory article').first.get_by_role('button', name='Disable', exact=True).click()
+        page.wait_for_function('!!window.espWrite')
+        self.assertTrue(page.locator('#espInventory article').nth(1).get_by_role('button', name='Disable', exact=True).is_disabled())
+        self.assertTrue(page.locator('#espSave').is_disabled())
+        page.evaluate('window.espWrite()')
+        page.locator('#espInventory article').first.get_by_role('button', name='Enable', exact=True).wait_for()
+        page.evaluate('window.espOldRead()')
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.locator('#espInventory article').first.get_by_role('button', name='Enable', exact=True).count(), 1)
+        self.assertIn('Device disabled.', page.locator('#espMessage').inner_text())
+        self.assertFalse(errors, errors)
+
+    def test_esphome_enrollment_retains_newer_draft_and_saved_identity(self):
+        page, errors = self.page('/controller/', overrides={'/api/v1/esphome/devices': {'ok': True, 'devices': []}})
+        page.evaluate("showPage('esphome')")
+        page.locator('#espEnrollment').evaluate('node => node.open = true')
+        page.locator('#espName').fill('Accepted name')
+        page.locator('#espAddress').fill('10.200.0.8')
+        page.locator('#espPort').fill('6053')
+        page.locator('#espKey').fill('A' * 43 + '=')
+        page.evaluate('''device => {
+          window.espSaved = {ok: true, devices: [device]}; window.espWrites = [];
+          const original = window.fetch;
+          window.fetch = (url, options = {}) => {
+            if (String(url).startsWith('/api/v1/esphome/devices') && ['POST', 'PUT'].includes(options.method)) {
+              window.espWrites.push({url: String(url), method: options.method});
+              return new Promise(resolve => window.espSaveReply = () => resolve(new Response(JSON.stringify(window.espSaved))));
+            }
+            if (String(url) === '/api/v1/esphome/devices' && !options.method) return Promise.resolve(new Response(JSON.stringify(window.espSaved)));
+            return original(url, options);
+          };
+        }''', self.esphome_device('created-node'))
+        page.locator('#espSave').click()
+        page.wait_for_function('!!window.espSaveReply')
+        self.assertEqual(page.locator('#espKey').input_value(), '')
+        page.locator('#espName').fill('Newer draft')
+        page.evaluate('window.espSaveReply()')
+        page.wait_for_function("document.getElementById('espFormMessage').textContent.includes('newer edits remain')")
+        self.assertEqual(page.locator('#espName').input_value(), 'Newer draft')
+        self.assertEqual(page.locator('#espSave').inner_text(), 'Verify & save changes')
+        page.locator('#espSave').click()
+        page.wait_for_function('window.espWrites.length === 2')
+        self.assertEqual(page.evaluate('window.espWrites[1]'), {'url': '/api/v1/esphome/devices/created-node', 'method': 'PUT'})
+        page.evaluate('window.espSaveReply()')
+        page.wait_for_function("document.getElementById('espName').value === ''")
+        self.assertFalse(errors, errors)
+
+    def test_esphome_management_reply_cannot_restore_inventory_after_permission_loss(self):
+        fixture = {'ok': True, 'devices': [self.esphome_device()]}
+        page, errors = self.page('/controller/', overrides={'/api/v1/esphome/devices': fixture})
+        page.evaluate("showPage('esphome')")
+        page.locator('#espInventory article').wait_for()
+        page.evaluate('''fixture => {
+          const original = window.fetch;
+          window.fetch = (url, options = {}) => String(url).endsWith('/fixture/enabled')
+            ? new Promise(resolve => window.espLateReply = () => resolve(new Response(JSON.stringify(fixture))))
+            : original(url, options);
+        }''', fixture)
+        page.locator('#espInventory').get_by_role('button', name='Disable', exact=True).click()
+        page.wait_for_function('!!window.espLateReply')
+        page.evaluate("window.AUTH_STATUS = {authEnabled:true,user:{id:'restricted',role:'viewer',capabilities:[]}}; applyAuthUi(window.AUTH_STATUS)")
+        self.assertEqual(page.locator('#espInventory article').count(), 0)
+        page.evaluate('window.espLateReply()')
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.locator('#espInventory article').count(), 0)
+        self.assertEqual(page.locator('#espKey').input_value(), '')
+        self.assertFalse(errors, errors)
+
     def test_esphome_inventory_permissions_refresh_and_controls(self):
         entity = {'id': '7:42', 'key': 42, 'deviceId': 7, 'name': 'Fixture brightness',
                   'domain': 'number', 'writable': True, 'adminOnly': False,
