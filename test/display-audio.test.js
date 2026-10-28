@@ -83,7 +83,7 @@ test("audio routes enforce control permission and fail closed on invalid, unknow
   const {ctx,sent}=fixture();Object.assign(ctx,{app,cleanId:String,
     schedulerReadLimit:(req,res,next)=>next(),schedulerMutationLimit:(req,res,next)=>next(),
     requireControl:(req,res,next)=>req.get("x-role")==="operator"?next():res.sendStatus(403),publicDisplayStatus:()=>({online:true})});
-  vm.runInContext(source.slice(source.indexOf('app.get("/api/v1/displays/audio"'),source.indexOf('function startManagedManualAutomation(')),ctx);
+  vm.runInContext(extract("configuredDisplayId")+"\n"+source.slice(source.indexOf('app.get("/api/v1/displays/audio"'),source.indexOf('function startManagedManualAutomation(')),ctx);
   const server=app.listen(0,"127.0.0.1");await new Promise(resolve=>server.once("listening",resolve));t.after(()=>server.close());
   const request=(url,body,role="operator")=>fetch(`http://127.0.0.1:${server.address().port}/api/v1/displays/${url}`,{method:body?"POST":"GET",headers:{"Content-Type":"application/json","x-role":role},...(body?{body:JSON.stringify(body)}:{})});
   assert.equal((await request("audio",null,"reader")).status,403);

@@ -45,7 +45,7 @@ function harness({devices,locked=[],reply,enabled=true}={}){
     audit:entry=>audits.push(plain(entry)),
     diagnosticError:()=>{}
   });
-  vm.runInContext(
+  vm.runInContext(productionFunction("function configuredDisplayId(","function cookieValue(")+"\n"+
     productionFunction("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     productionFunction("async function runClassroomAutomation","function safeStoredName"),context);
   return {

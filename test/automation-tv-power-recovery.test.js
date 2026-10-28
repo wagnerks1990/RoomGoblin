@@ -44,7 +44,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     directGoveeCommand:async()=>({ok:true}),
     audit:entry=>audits.push(plain(entry))
   });
-  vm.runInContext(
+  vm.runInContext(section("function configuredDisplayId(","function cookieValue(")+"\n"+
     section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
     section("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     section("function currentAutomationNonDisplayWinners","function automationOccurrenceIsActiveForContinuousRecovery")+"\n"+

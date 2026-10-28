@@ -30,13 +30,23 @@ function enabledDisplayIds(devices={}){
 
 function expandDisplayTargets(targets,{devices={},displayGroups={}}={}){
   const out=[];
-  const add=id=>{if(id&&!out.includes(id)&&devices[id]?.enabled!==false)out.push(id)};
+  const keyFor=(value,records)=>{
+    const id=String(value||"").trim();
+    if(Object.hasOwn(records,id))return id;
+    const matches=Object.keys(records).filter(key=>key.toLowerCase()===id.toLowerCase());
+    return matches.length>1?null:matches[0]||"";
+  };
+  const add=value=>{const id=keyFor(value,devices);if(id&&!out.includes(id)&&devices[id]?.enabled!==false)out.push(id)};
   for(const raw of Array.isArray(targets)?targets:[]){
-    const id=String(raw||"").trim().toLowerCase();
+    const id=String(raw||"").trim();
     if(!id)continue;
-    if(id==="all"){for(const key of enabledDisplayIds(devices))add(key);continue}
-    if(Array.isArray(displayGroups[id])){for(const member of displayGroups[id])add(String(member||"").trim().toLowerCase());continue}
-    if(devices[id])add(id);
+    if(id.toLowerCase()==="all"){for(const key of enabledDisplayIds(devices))add(key);continue}
+    const receiver=keyFor(id,devices);
+    if(receiver===null)continue;
+    if(receiver){add(receiver);continue}
+    const group=keyFor(id,displayGroups);
+    if(group&&Array.isArray(displayGroups[group])){for(const member of displayGroups[group])add(member);continue}
+    add(id);
   }
   return out;
 }

@@ -43,7 +43,7 @@ test("invalid numeric controls fail before any persisted state changes",()=>{
 });
 test("HTTP media control uses the same validation and keeps failures visible",async()=>{
  let route;const calls=[],ctx=vm.createContext({app:{post:(_p,...args)=>route=args.at(-1)},schedulerMutationLimit(){},requireControl(){},cleanId:String,devices:{tv1:{enabled:true},disabled:{enabled:false}},displayMedia,executeCommand:async c=>{calls.push(c);return{ok:true}},audit(){}});
- vm.runInContext(block('app.post("/api/v1/displays/:id/media/control"','\napp.get("/api/v1/displays/audio"'),ctx);
+ vm.runInContext(block("function configuredDisplayId(","function cookieValue(")+block('app.post("/api/v1/displays/:id/media/control"','\napp.get("/api/v1/displays/audio"'),ctx);
  async function send(body,id="tv1"){let status=200,response;const res={status(v){status=v;return res},json(v){response=v;return res}};await route({params:{id},body},res);return{status,response}}
  assert.equal((await send({action:"volume",volume:"bad"})).status,400);assert.equal(calls.length,0);
  assert.equal((await send({action:"volume",volume:.2},"disabled")).status,400);assert.equal(calls.length,0);

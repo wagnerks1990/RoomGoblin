@@ -28,7 +28,7 @@ function harness({live=false,revokeAfter=0}={}){
   persistPlutoSchedules:()=>{saved=plain(ctx.plutoSchedules)},diagnosticError:error=>errors.push(error),
   setInterval:()=>({unref(){}})
  });
- vm.runInContext(section("async function runSingleAutomationAction(","function timerLinkedClassChain(")+
+ vm.runInContext(section("function configuredDisplayId(","function cookieValue(")+"\n"+ section("async function runSingleAutomationAction(","function timerLinkedClassChain(")+
  section("async function runAutomationTimerOverlay(","function automationRunFailures(")+
  section("async function runDisplayAutomationResync(","function consumeDeferredAnnouncementAutomations(")+
  section("async function reconcileScheduledAutomationState(",'app.get("/api/v1/automation-control"')+

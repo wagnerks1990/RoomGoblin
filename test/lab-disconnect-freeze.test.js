@@ -44,11 +44,12 @@ test("aborted freeze acquisition flushes deferred lab disconnect metadata",linux
 for(const recover of [true,false])test(`deferred lab persistence ${recover?"retries":"fails honestly"} at shutdown`,linux,async t=>{
   const app=await setup(t),agent=await app.hello(),before=saved(app);
   const db=new DatabaseSync(path.join(app.dir,"hub.db"));
+  db.exec("PRAGMA busy_timeout=5000");
   try{db.exec("CREATE TRIGGER fixture_reject_lab BEFORE UPDATE ON object_store WHEN NEW.namespace='lab-computers' BEGIN SELECT RAISE(FAIL,'fixture lab write failure'); END")}finally{db.close()}
   const frozen=await app.internal("export-freeze",{confirm:"FREEZE_FULL_EXPORT"});assert.equal(frozen.status,200);const {freezeToken}=await frozen.json();
   await close(agent.ws);await waitFor(async()=>(await app.inventory()).online===false,"deferred disconnect");
   const thaw=await app.internal("export-thaw",{freezeToken});assert.equal(thaw.status,200);await thaw.text();assert.deepEqual(saved(app),before);
-  if(recover){const db=new DatabaseSync(path.join(app.dir,"hub.db"));try{db.exec("DROP TRIGGER fixture_reject_lab")}finally{db.close()}}
+  if(recover){const db=new DatabaseSync(path.join(app.dir,"hub.db"));try{db.exec("PRAGMA busy_timeout=5000; DROP TRIGGER fixture_reject_lab")}finally{db.close()}}
   app.child.kill("SIGTERM");assert.deepEqual(await app.exited,[recover?0:1,null],app.output());
   if(recover)assert.ok(saved(app).disconnectedAt);else assert.match(app.output(),/Shutdown lab disconnect writes are still pending/);
 });

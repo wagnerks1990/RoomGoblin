@@ -93,7 +93,7 @@ test("media library Show uses replacement dispatch for images, video, PDF and co
 function mediaRouteFixture(name,type,{converted=true}={}){
  const h=fixture();let handler;Object.assign(h.ctx,{app:{post:(_url,_guard,fn)=>handler=fn},requireCapability:()=>()=>{},fs:{existsSync:file=>converted||!file.endsWith("converted.pdf")},MEDIA_DIR:"/media",
  safeStoredName:x=>x,cleanId:x=>String(x).toLowerCase().replace(/[^a-z0-9._-]/g,""),displayGroups:{all:["tv1","tv2"]},mediaLibrary:{files:{[name]:{type,generatedPdf:"converted.pdf"}}},mediaUrl:n=>"/media/"+n,documentViewerUrl:n=>"/document-viewer/"+n,libraryRecordFromDisk:()=>({})});
- vm.runInContext(extract("resolveDisplayTargets"),h.ctx);
+ vm.runInContext(extract("configuredDisplayId")+"\n"+extract("resolveDisplayTargets"),h.ctx);
  const start=source.indexOf('app.post("/api/v1/media/:name/display"');vm.runInContext(source.slice(start,source.indexOf('\n\napp.use(',start)),h.ctx);
  h.call=async body=>{const r={status:200},res={status(n){r.status=n;return res},json(v){r.body=v;return res}};await handler({params:{name},body},res);return r};return h;
 }
