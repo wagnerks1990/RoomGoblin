@@ -171,7 +171,9 @@ precedes dispatch, preventing replay after a Hub crash or uncertain delivery. Th
 computer also retains up to 2048 request receipts for 32 days, rejecting additional
 jobs at that limit rather than forgetting unexpired receipts; restoring an older
 Hub backup cannot repeat an already accepted request. Cancel
-pending jobs explicitly. The Hub must be running and connected to dispatch; if it was
+pending jobs explicitly. Cancellation remains effective while a screen-assignment
+save is awaiting the computer: that save updates only configuration and preserves
+the latest schedule, history and other metadata. The Hub must be running and connected to dispatch; if it was
 unavailable beyond the grace period, nothing runs later without a new request. Recurring
 automatic installation policies are not enabled by this feature. Ubuntu's own unattended
 upgrade and Snap refresh policies remain in force; RoomGoblin does not silently disable
@@ -183,6 +185,15 @@ OS reinstall, BIOS/firmware and arbitrary remote shells are outside this fixed h
 The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
+
+The inventory has one shared refresh owner. A write invalidates older reads and
+queues a fresh read after outstanding writes settle; uncertain writes are not
+automatically repeated. Assignment editing uses the refreshed configuration.
+Computer commands, metadata saves and maintenance submissions retain per-computer
+admission and feedback across polling and filtering. Newer dialog drafts remain
+unsaved and visible after an older submission finishes. Closed-dialog failures
+remain on the original computer's card. Preview captures have their own lifetime:
+closing or requesting another capture retires the old result and clears its image.
 
 This release supports the dedicated Xorg kiosk on Ubuntu LTS x86-64. Windows,
 ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, recurring automatic OS upgrades and offline content caching are not

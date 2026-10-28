@@ -1,5 +1,18 @@
 # RoomGoblin modernization audit
 
+PR #322 is [deployed and verified](windows-legacy-task-state-delivery.md) at
+`ea64835`; PR #321's [delivery](windows-native-lifecycle-delivery.md) is also
+verified. PR #323 passed all 14 checks and merged as `7acaa7a`; exact publication
+and backed-up delivery follow. Its latest local run passes 2,173 Linux tests
+with two root-only skips and all 23 Host Recovery cases. The
+[Ubuntu configuration repair](ubuntu-configuration-ownership.md) and
+[interface ownership repair](ubuntu-ui-ownership.md) pass combined qualification:
+2,197 Linux tests with two root-only skips, all 23 Host Recovery cases, 275
+Chromium and 111 workspace/Veyon Firefox cases. Wizard probe/input ownership,
+reproduced post-dispatch per-computer history failure
+and Android managed displays remain open within Group 10; later roadmap work
+remains.
+
 PR #322 carries the qualified legacy-task repair and is running required CI.
 The separate [enrollment identity repair](windows-enrollment-identity.md) fails
 five regression assertions on old source and passes all ten with the fix,
