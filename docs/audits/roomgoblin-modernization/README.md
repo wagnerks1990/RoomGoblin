@@ -66,7 +66,8 @@ leak after interruption. All five process JVM cases pass; the combined source
 retains 2,428 Linux passes, two skips, all 23 Host Recovery cases and all 16 JVM
 cases. PR #335 carries the port and process repairs. Its CI encountered unrelated
 SQLite contention while seeding a fixture; the [bounded fixture repair](freeze-fixture-contention.md)
-passes 20 consecutive cases and requires fresh CI before merging.
+passes 20 consecutive cases. All 14 fresh checks passed before PR #335 merged
+as `bfa6857`; exact publication and backed-up delivery remain pending.
 
 [Native PCM ownership](android-pcm-ownership.md) fixes two reproduced worker and
 failed-start defects. All five Kotlin fixture cases pass, and the combined tree
@@ -83,7 +84,12 @@ implemented controls and their permission gates. All 22 capability cases pass.
 The combined native batch passes 2,428 Linux tests, zero failures, two root-only
 skips, all 23 Host Recovery cases and all 55 JVM cases. This finishes the native
 Android source-review batch; checked delivery and physical acceptance remain
-separate. Weather/Sports review follows; the remaining roadmap is open. Earlier delivery receipts include
+separate. Weather/Sports review has started.
+[Weather forecast identity](weather-forecast-identity.md) repairs three reproduced
+stale-reading/preview failures. All seven Weather browser cases pass in Chromium
+and Firefox. Full Linux qualification passes 2,428 tests, two root-only skips,
+all 23 Host Recovery cases and all 55 JVM cases. Checked delivery remains pending.
+The remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
 [PR #326](ubuntu-repair-wizard-delivery.md),
