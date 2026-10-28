@@ -1,6 +1,7 @@
 "use strict";
 const $=id=>document.getElementById(id);let state={devices:[],profiles:[],adbAvailable:false},refreshTimer=null,refreshBusy=false;
 let enrollmentBusy=false,editVersion=0;
+let inventoryVersion=0,inventoryRead=null,inventoryProbeAgents=true;
 let shotVersion=0,shotDevice=null;
 const editingDevices=new Set(),deviceMessages=new Map();
 async function api(path,opt={}){const r=await fetch(`/api/v1/maintenance${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});const text=await r.text();let j={};try{j=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}if(!r.ok||j.ok===false){const error=Error(j.error||`HTTP ${r.status}`);error.payload=j;error.httpStatus=r.status;throw error}return j}
@@ -43,32 +44,73 @@ function render(){
 function parseAgentProbe(text){const installed=/^INSTALLED=1$/m.test(text),running=/^RUNNING=1$/m.test(text),version=(String(text).match(/^VERSION=(.+)$/m)?.[1]||'').trim();return {installed,running:installed&&running,version}}
 async function runShell(id,script,timeoutMs=12000){return api(`/android/devices/${encodeURIComponent(id)}/shell`,{method:'POST',body:JSON.stringify({command:String(script),timeoutMs})})}
 async function probeAgent(id,rerender=true){const d=deviceById(id);if(!d)return null;if(!state.adbAvailable){d.agentStatus={error:'ADB bridge unavailable'};if(rerender)render();return d.agentStatus}if(d.lastStatus?.online!==true||d.uiRecovering){d.agentStatus={error:d.uiRecovering?'device recovering':'device offline'};if(rerender)render();return d.agentStatus}try{const pkg=d.agentPackage||'org.roomgoblin.display';const script=`if pm path ${pkg} 2>/dev/null | grep -q '^package:'; then echo INSTALLED=1; if pidof ${pkg} >/dev/null 2>&1; then echo RUNNING=1; else echo RUNNING=0; fi; else echo INSTALLED=0; fi`;const j=await runShell(id,script,8000);d.agentStatus=parseAgentProbe(j.stdout||'');}catch(e){d.agentStatus={error:e.message}}if(rerender)render();return d.agentStatus}
-async function probeAllAgents(){if(!state.adbAvailable)return;for(const d of state.devices)await probeAgent(d.id,false);render()}
+async function probeAllAgents(version=inventoryVersion){if(!state.adbAvailable)return;for(const d of state.devices){if(version!==inventoryVersion)return;await probeAgent(d.id,false)}if(version===inventoryVersion)render()}
 function scheduleRefresh(delay=5000){if(refreshTimer)clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>liveRefresh().catch(()=>{}),document.hidden?15000:delay)}
 async function liveRefresh(){
-  if(refreshBusy){scheduleRefresh();return}
+  if(refreshBusy||inventoryRead){scheduleRefresh();return}
   if(!state.adbAvailable){await load({probeAgents:false});return}
-  refreshBusy=true;
+  refreshBusy=true;const version=inventoryVersion;
   try{
     for(const d of state.devices){
+      if(version!==inventoryVersion)break;
       if(d.uiRecovering)continue;
       try{
         const j=await api(`/android/devices/${encodeURIComponent(d.id)}/status`);
+        if(version!==inventoryVersion||deviceById(d.id)!==d)break;
         Object.assign(d,j.device||{});
         await probeAgent(d.id,false);
       }catch{
+        if(version!==inventoryVersion||deviceById(d.id)!==d)break;
         d.lastStatus={...(d.lastStatus||{}),online:false,checkedAt:new Date().toISOString()};
       }
     }
-    render();
+    if(version===inventoryVersion)render();
   }finally{
     refreshBusy=false;
     scheduleRefresh();
   }
 }
-async function load({probeAgents=true}={}){const previous=new Map(state.devices.map(d=>[d.id,{agentStatus:d.agentStatus,uiRecovering:d.uiRecovering}]));try{const j=await api('/android/status');state.devices=(j.devices||[]).map(d=>({...d,agentStatus:previous.get(d.id)?.agentStatus,uiRecovering:previous.get(d.id)?.uiRecovering===true}));state.profiles=j.profiles||[];setBridge(j.adbAvailable!==false,{policyIntervalMs:j.policyIntervalMs});render();if(probeAgents&&state.adbAvailable)probeAllAgents().catch(()=>{});scheduleRefresh()}catch(e){const j=e.payload||{};if(Array.isArray(j.devices))state.devices=j.devices.map(d=>({...d,agentStatus:previous.get(d.id)?.agentStatus,uiRecovering:previous.get(d.id)?.uiRecovering===true}));if(Array.isArray(j.profiles))state.profiles=j.profiles;setBridge(false,{error:j.error||e.message,policyIntervalMs:j.policyIntervalMs});render();scheduleRefresh(5000)}}
+async function load({probeAgents=true}={}){
+  inventoryVersion++;inventoryProbeAgents=probeAgents;
+  if(inventoryRead)return inventoryRead;
+  inventoryRead=(async()=>{
+    const applyDevices=devices=>{
+      const previous=new Map(state.devices.map(d=>[d.id,{agentStatus:d.agentStatus,uiRecovering:d.uiRecovering}]));
+      state.devices=devices.map(d=>({...d,agentStatus:previous.get(d.id)?.agentStatus,uiRecovering:previous.get(d.id)?.uiRecovering===true}));
+    };
+    try{for(;;){
+      const version=inventoryVersion;
+      try{
+        const j=await api('/android/status');if(version!==inventoryVersion)continue;
+        applyDevices(j.devices||[]);state.profiles=j.profiles||[];
+        setBridge(j.adbAvailable!==false,{policyIntervalMs:j.policyIntervalMs});render();
+        if(inventoryProbeAgents&&state.adbAvailable)probeAllAgents(version).catch(()=>{});
+        scheduleRefresh();
+      }catch(e){
+        if(version!==inventoryVersion)continue;
+        const j=e.payload||{};if(Array.isArray(j.devices))applyDevices(j.devices);
+        if(Array.isArray(j.profiles))state.profiles=j.profiles;
+        setBridge(false,{error:j.error||e.message,policyIntervalMs:j.policyIntervalMs});render();scheduleRefresh(5000);
+      }
+      return;
+    }}finally{inventoryRead=null}
+  })();
+  return inventoryRead;
+}
 async function accelerateAgentStart(id){const d=deviceById(id);if(!d||!state.adbAvailable||d.lastStatus?.online!==true||!d.displayUrl)return false;const profile=profileFor(d);if(profile&&profile.launchOnBoot===false)return false;let status=await probeAgent(id,false);if(!status?.installed||status.running)return !!status?.running;d.agentStatus={...status,starting:true};render();try{await api(`/android/devices/${encodeURIComponent(id)}/action`,{method:'POST',body:JSON.stringify({action:'launch'})})}catch{}for(let i=0;i<12;i++){await sleep(750);status=await probeAgent(id,false);if(status?.running){render();return true}}render();return false}
-async function recoverStatus(id,{timeoutMs=90000,intervalMs=1500}={}){const d=deviceById(id);if(!d)throw Error('Managed display no longer exists');d.uiRecovering=true;d.agentStatus={error:'device recovering'};render();const deadline=Date.now()+timeoutMs;let lastError=null;while(Date.now()<deadline){try{const j=await api(`/android/devices/${encodeURIComponent(id)}/status`);Object.assign(d,j.device||{});d.uiRecovering=false;render();await accelerateAgentStart(id);await load({probeAgents:true});return true}catch(error){lastError=error;await sleep(intervalMs)}}d.uiRecovering=false;render();throw Error(`Device did not recover within ${Math.round(timeoutMs/1000)} seconds${lastError?.message?`: ${lastError.message}`:''}`)}
+async function recoverStatus(id,{timeoutMs=90000,intervalMs=1500}={}){
+  const d=deviceById(id);if(!d)throw Error('Managed display no longer exists');
+  d.uiRecovering=true;d.agentStatus={error:'device recovering'};render();
+  const deadline=Date.now()+timeoutMs;let lastError=null;
+  while(Date.now()<deadline){try{
+    const j=await api(`/android/devices/${encodeURIComponent(id)}/status`),current=deviceById(id);
+    if(!current)throw Error('Managed display no longer exists');
+    Object.assign(current,j.device||{});current.uiRecovering=false;render();
+    await accelerateAgentStart(id);await load({probeAgents:true});return true;
+  }catch(error){lastError=error;if(!deviceById(id))throw error;await sleep(intervalMs)}}
+  const current=deviceById(id);if(current){current.uiRecovering=false;render()}
+  throw Error(`Device did not recover within ${Math.round(timeoutMs/1000)} seconds${lastError?.message?`: ${lastError.message}`:''}`);
+}
 function terminalOutput(title,text){$("remoteShell").open=true;$("terminal").textContent=`${title}\n${text||'(no output)'}`;$("shellDevice").value=''}
 async function auditApps(id){const j=await runShell(id,"echo 'Third-party packages:'; pm list packages -3 | sed 's/^package://' | sort; echo; echo 'Disabled third-party packages:'; pm list packages -3 -d | sed 's/^package://' | sort",20000);terminalOutput('Managed Minimal Mode audit',j.stdout||j.stderr)}
 async function enableMinimalMode(id){if(!window.confirm('Managed Minimal Mode disables third-party apps for user 0 except the RoomGoblin Display Agent. Core Android/Google TV system packages are not removed. Continue?'))return;const script=`echo 'Disabling non-RoomGoblin third-party packages...'; for p in $(pm list packages -3 | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm disable-user --user 0 "$p" >/dev/null 2>&1 && echo "DISABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Managed Minimal Mode applied',j.stdout||j.stderr);await accelerateAgentStart(id)}

@@ -8,6 +8,7 @@ import base64
 import json
 import mimetypes
 import os
+import time
 from pathlib import Path
 import unittest
 from urllib.parse import urlparse
@@ -98,6 +99,14 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page.wait_for_function("document.readyState === 'complete'")
         page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
         return page, errors
+
+    def held_route(self, page, routes, index=0):
+        deadline = time.monotonic() + 5
+        while len(routes) <= index:
+            if time.monotonic() >= deadline:
+                self.fail(f'Expected held route {index + 1}; received {len(routes)}')
+            page.wait_for_timeout(10)
+        return routes[index]
 
     def evidence(self, page, errors, label):
         page.screenshot(path=str(OUTPUT / f'{self.engine}-{label}.png'), full_page=True)
@@ -273,18 +282,104 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page.locator('#devices [data-op="edit"]').click()
         self.assertTrue(page.locator('#editForm button[type="submit"]').is_disabled())
         page.locator('#editName').fill('Reopened draft')
-        pending[0].fulfill(status=503, json={'ok': False, 'error': 'Synthetic save rejection'})
+        self.held_route(page, pending).fulfill(status=503, json={'ok': False, 'error': 'Synthetic save rejection'})
         page.wait_for_function("!document.querySelector('#editForm button[type=submit]').disabled")
         self.assertEqual(page.locator('#editName').input_value(), 'Reopened draft')
         self.assertIn('Synthetic save rejection', page.locator('#devices .device-message').inner_text())
         with page.expect_request('**/android/devices/fixture-tv'):
             page.locator('#editForm button[type="submit"]').click()
-        pending[1].fulfill(json={'ok': True, 'device': DEVICE})
+        self.held_route(page, pending, 1).fulfill(json={'ok': True, 'device': DEVICE})
         page.locator('#editDialog').wait_for(state='hidden')
         page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
         self.assertEqual(page.evaluate('document.activeElement.dataset.op'), 'edit')
         self.assertEqual(len(pending), 2)
         self.evidence(page, errors, 'android-editor-mobile-focus')
+
+    def test_android_inventory_serializes_refreshes_and_keeps_the_fresh_result(self):
+        reads, pending = [], []
+        def transport(route, target):
+            if target != '/api/v1/maintenance/android/status':
+                return False
+            reads.append(route)
+            if len(reads) == 2:
+                pending.append(route)
+            else:
+                name = 'Original' if len(reads) == 1 else 'Newest inventory'
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [{**DEVICE, 'name': name}], 'profiles': []})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        for _ in range(4):
+            page.locator('#refresh').click()
+        self.assertEqual(len(reads), 2)
+        page.evaluate("() => { window.inventoryNames=[]; new MutationObserver(()=>window.inventoryNames.push(document.querySelector('#devices h3')?.textContent)).observe(document.getElementById('devices'),{childList:true}); }")
+        pending[0].fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [{**DEVICE, 'name': 'Stale inventory'}], 'profiles': []})
+        page.wait_for_function("document.querySelector('#devices h3').textContent === 'Newest inventory'")
+        self.assertEqual(len(reads), 3)
+        self.assertNotIn('Stale inventory', page.evaluate('window.inventoryNames'))
+        self.assertFalse(errors, errors)
+
+    def test_android_inventory_retired_agent_probe_keeps_current_card_focus(self):
+        probes = []
+        device = {**DEVICE, 'lastStatus': {'online': True}}
+        def transport(route, target):
+            if target.endswith('/agent/status'):
+                probes.append(route)
+                return True
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [device], 'profiles': []})
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        self.held_route(page, probes)
+        self.assertEqual(len(probes), 1)
+        with page.expect_request('**/fixture-tv/agent/status'):
+            page.locator('#refresh').click()
+        self.held_route(page, probes, 1)
+        self.assertEqual(len(probes), 2)
+        probes[1].fulfill(json={'ok': True, 'installed': True, 'running': True, 'version': 'new-version'})
+        page.wait_for_function("document.querySelector('#devices').textContent.includes('new-version')")
+        page.locator('[data-action="wake"]').focus()
+        probes[0].fulfill(json={'ok': True, 'installed': True, 'running': False, 'version': 'old-version'})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.evaluate('document.activeElement.dataset.action'), 'wake')
+        self.assertNotIn('old-version', page.locator('#devices').inner_text())
+        self.assertFalse(errors, errors)
+
+    def test_android_inventory_replacement_during_recovery_does_not_leave_recovering_state(self):
+        device = {**DEVICE, 'persistentAdb': {'enabled': True}}
+        reads, pending, status = [], [], []
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/status':
+                reads.append(route)
+                if len(reads) == 2:
+                    pending.append(route)
+                else:
+                    route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [device], 'profiles': []})
+                return True
+            if target == '/api/v1/maintenance/android/devices/fixture-tv/status':
+                status.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        page.locator('details[data-disclosure="device-tools"] > summary').click()
+        with page.expect_request('**/fixture-tv/status'):
+            page.locator('[data-op="status"]').click()
+        self.assertIn('Recovering', page.locator('#devices .card-head .pill').inner_text())
+        pending[0].fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [{**device, 'name': 'Refreshed display'}], 'profiles': []})
+        page.wait_for_function("document.querySelector('#devices h3').textContent === 'Refreshed display'")
+        self.assertIn('Recovering', page.locator('#devices .card-head .pill').inner_text())
+        device['lastStatus'] = {'online': True}
+        status[0].fulfill(json={'ok': True, 'device': device})
+        page.wait_for_function("document.querySelector('#devices .card-head .pill').textContent === 'Online'")
+        self.assertEqual(len(status), 1)
+        self.assertFalse(errors, errors)
 
     def test_android_preview_closing_and_newer_capture_retire_old_images(self):
         devices = [DEVICE, {**DEVICE, 'id': 'second-tv', 'name': 'Second display'}]
