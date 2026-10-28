@@ -15,6 +15,12 @@ checks with no unresolved reviews and merged as `fa5bb49`. Its exact images and
 backed-up update are pending. The qualified inventory and transport commits
 will be integrated together as the next focused lighting batch.
 
+The lighting commits are integrated on merged `fa5bb49`. All runtime,
+configuration and test files match qualified `e14302a`; only audit evidence
+differs. All 173 focused integration cases pass. Required CI and exact image
+delivery remain pending. Configuration-write ordering has three reproduced
+cases queued as the separate next lighting repair.
+
 The preliminary Group 9 [lighting inventory/feedback repair](lighting-inventory-ownership.md)
 has 15 new Node cases and two new browser cases passing. Final qualification
 passes 1,890 Linux tests, two root-only skips and all 23 Host Recovery tests;

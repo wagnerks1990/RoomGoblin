@@ -52,3 +52,9 @@ lighting, classroom receiver or production fault-injection commands were used.
 Lighting configuration-write ordering, device identity and ESPHome review remain
 open. Inventory and transport are two focused commits in the next lighting PR;
 checked delivery follows the presentation rebuild batch.
+
+Inventory and transport are integrated on merged main `fa5bb49` as `d0759f5`.
+Runtime, configuration and tests match qualified `e14302a` byte for byte; the
+only differences are audit status text and PR #311's retained rebuild integration
+evidence. The audit-only conflict retained both batches' evidence. All 173
+focused integration cases pass. Required CI and exact image delivery are pending.
