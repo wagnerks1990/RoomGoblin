@@ -12,6 +12,11 @@ does not start it; choose a source or press Play. Starting managed music on a
 different output stops the previously owned session first. RoomGoblin manages
 one output/group at a time; use Music Assistant groups for synchronized rooms.
 
+Playback status belongs to the current managed session. Late pause/stop results,
+player probes or recovery errors from an earlier session cannot replace the new
+session's state. Current errors remain visible, and priority audio is rechecked
+after a player lookup before recovery proceeds.
+
 **Find music** filters provider search to songs, stations, albums, artists or
 playlists. Results can play now, play next in the current queue, or become a
 favorite. A radio URL can be saved explicitly through the expandable stream

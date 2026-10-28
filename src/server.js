@@ -6879,9 +6879,10 @@ async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),fo
   try{return await promise}finally{if(backgroundMusicProbePending?.promise===promise)backgroundMusicProbePending=null}
 }
 async function backgroundMusicPause(reason="manual"){
-  backgroundMusicRuntime.sessionGeneration++;
+  const generation=++backgroundMusicRuntime.sessionGeneration;
   const cfg=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
   await musicAssistantCommand("players/cmd/pause",{player_id:playerId});
+  if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").trim())return false;
   backgroundMusicRecovery.awaitingUntil=0;backgroundMusicRecovery.retryAt=0;backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=true;backgroundMusicRuntime.lastAction=`pause:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
 }
 async function backgroundMusicResume(reason="resume"){
@@ -6899,12 +6900,13 @@ async function backgroundMusicResume(reason="resume"){
     return false;
   }
   backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.lastAction=`play:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;return true;
-  }catch(error){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message;throw error}finally{backgroundMusicResumeBusy=false}
+  }catch(error){if(generation===backgroundMusicRuntime.sessionGeneration){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}throw error}finally{backgroundMusicResumeBusy=false}
 }
 
 async function backgroundMusicStop(reason="manual",playerIdOverride=null){
-  backgroundMusicRuntime.sessionGeneration++;
+  const generation=++backgroundMusicRuntime.sessionGeneration;
   const cfg=backgroundMusicSchedule(),playerId=String(playerIdOverride||backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(playerId)await musicAssistantCommand("players/cmd/stop",{player_id:playerId});
+  if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").trim())return false;
   backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.activePlayerId=null;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.activeMedia=null;backgroundMusicRuntime.manualSession=false;backgroundMusicRuntime.sleepUntil=null;backgroundMusicRecovery.reset();backgroundMusicRuntime.lastAction=`stop:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
 }
 function backgroundMusicPriorityBlocked(){
@@ -6930,7 +6932,7 @@ async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name
     backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav?.id||null;backgroundMusicRuntime.activeMedia=source;
     if(!recover){backgroundMusicRecovery.reset();backgroundMusicRuntime.manualSession=reason==="manual";backgroundMusicRuntime.sleepUntil=null}
     backgroundMusicRecovery.requested();
-    try{await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:source.uri})}catch(error){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);throw error}
+    try{await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:source.uri})}catch(error){if(generation===backgroundMusicRuntime.sessionGeneration)backgroundMusicRecovery.failed(error.mayHaveExecuted===true);throw error}
     if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked()){
       if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.paused){await musicAssistantCommand("players/cmd/pause",{player_id:pid});if(backgroundMusicRuntime.activePlayerId===pid&&backgroundMusicPriorityBlocked()){backgroundMusicRuntime.paused=true;backgroundMusicRuntime.pausedForPriority=true}}
       else if(backgroundMusicRuntime.manualStopped||!backgroundMusicRuntime.activePlayerId)await musicAssistantCommand("players/cmd/stop",{player_id:pid});
@@ -6938,22 +6940,25 @@ async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name
     }
     backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.manualStopped=false;backgroundMusicRuntime.lastAction=`start:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;backgroundMusicPlayerProbe.at=0;
     return {playerId:pid,favorite:fav,media:source,pending:true};
-  }catch(error){if(!backgroundMusicRecovery.awaitingUntil)backgroundMusicRecovery.requested();backgroundMusicRecovery.failed(error.mayHaveExecuted===true);throw error}finally{backgroundMusicStartBusy=false}
+  }catch(error){if(generation===backgroundMusicRuntime.sessionGeneration){if(!backgroundMusicRecovery.awaitingUntil)backgroundMusicRecovery.requested();backgroundMusicRecovery.failed(error.mayHaveExecuted===true)}throw error}finally{backgroundMusicStartBusy=false}
 }
 
 async function backgroundMusicReconcilePriority({force=false}={}){
   const cfg=backgroundMusicSchedule();
   if(!force&&!cfg.pauseForPriorityAudio)return;
+  let generation=backgroundMusicRuntime.sessionGeneration;
+  const playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"");
   const priority=backgroundMusicPriorityState().active;
   if(priority&&!backgroundMusicRuntime.playing){
-    const actual=await backgroundMusicActualPlayerState({playerId:backgroundMusicRuntime.activePlayerId||cfg.playerId},true);
+    const actual=await backgroundMusicActualPlayerState({playerId},true);
+    if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"")||!backgroundMusicPriorityState().active)return;
     if(actual?.playing){backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.activePlayerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"");backgroundMusicRuntime.activeFavoriteId=backgroundMusicRuntime.activeFavoriteId||String(cfg.favoriteId||"")||null}
   }
   if(priority&&backgroundMusicRuntime.playing){
-    try{await backgroundMusicPause("priority-audio");backgroundMusicRuntime.pausedForPriority=true}catch(e){backgroundMusicRuntime.lastError=e.message}
+    try{const pending=backgroundMusicPause("priority-audio");generation=backgroundMusicRuntime.sessionGeneration;const paused=await pending;if(generation===backgroundMusicRuntime.sessionGeneration&&paused!==false)backgroundMusicRuntime.pausedForPriority=true}catch(e){if(generation===backgroundMusicRuntime.sessionGeneration)backgroundMusicRuntime.lastError=e.message}
   }else if(!priority&&backgroundMusicRuntime.pausedForPriority&&!backgroundMusicRuntime.manualStopped){
     if(Math.max(backgroundMusicRecovery.retryAt,backgroundMusicRecovery.awaitingUntil)>Date.now())return;
-    try{await backgroundMusicResume("priority-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}
+    try{const pending=backgroundMusicResume("priority-ended");generation=backgroundMusicRuntime.sessionGeneration;await pending}catch(e){if(generation===backgroundMusicRuntime.sessionGeneration)backgroundMusicRuntime.lastError=e.message}
   }
 }
 const manualMediaPriorityRuntime={active:false,targets:new Set(),pausedPlayers:new Set(),schedulerWasEnabled:false,lastStartedAt:null,lastSource:null,lastCommandType:null,lastError:null};
@@ -7041,11 +7046,13 @@ function backgroundMusicObserveDisplayCommand(command,source="api"){
 async function backgroundMusicTick(){
   if(shutdownRequested||fullExportFreeze.requested)return;
   if(backgroundMusicTickBusy)return;backgroundMusicTickBusy=true;
+  let generation=backgroundMusicRuntime.sessionGeneration;
+  const owns=()=>generation===backgroundMusicRuntime.sessionGeneration;
   try{
     const cfg=backgroundMusicSchedule(),now=new Date(),active=backgroundMusicWindowActive(cfg,now),key=backgroundMusicWindowKey(cfg,now);
-    if(backgroundMusicRuntime.sleepUntil&&Date.now()>=backgroundMusicRuntime.sleepUntil){await backgroundMusicStop("sleep-timer");backgroundMusicRuntime.manualStopped=true;return}
+    if(backgroundMusicRuntime.sleepUntil&&Date.now()>=backgroundMusicRuntime.sleepUntil){const pending=backgroundMusicStop("sleep-timer");generation=backgroundMusicRuntime.sessionGeneration;const stopped=await pending;if(owns()&&stopped!==false)backgroundMusicRuntime.manualStopped=true;return}
     if(!active&&!backgroundMusicRuntime.manualSession){
-      if(backgroundMusicRuntime.scheduleActive||backgroundMusicRuntime.startedKey){try{await backgroundMusicStop("schedule-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}}
+      if(backgroundMusicRuntime.scheduleActive||backgroundMusicRuntime.startedKey){try{const pending=backgroundMusicStop("schedule-ended");generation=backgroundMusicRuntime.sessionGeneration;const stopped=await pending;if(!owns()||stopped===false)return}catch(e){if(!owns())return;backgroundMusicRuntime.lastError=e.message}}
       backgroundMusicRuntime.scheduleActive=false;backgroundMusicRuntime.startedKey=null;return;
     }
     backgroundMusicRuntime.scheduleActive=active;
@@ -7054,12 +7061,14 @@ async function backgroundMusicTick(){
     if(backgroundMusicPriorityBlocked()){await backgroundMusicReconcilePriority({force:true});return}
     const playerId=backgroundMusicRuntime.activePlayerId||cfg.playerId;
     const actual=await backgroundMusicActualPlayerState({playerId});
+    if(!owns()||String(playerId||"")!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||""))return;
+    if(backgroundMusicPriorityBlocked()){await backgroundMusicReconcilePriority({force:true});return}
     if(!actual?.found||actual.available===false){
       backgroundMusicRuntime.playing=false;
       backgroundMusicRuntime.lastError=actual==null?"Music Assistant player status is unavailable":actual.found?"Background Music player is temporarily unavailable":"Background Music player has not registered yet";
       backgroundMusicRecovery.observe(actual);return;
     }
-    if(backgroundMusicRuntime.pausedForPriority){if(Math.max(backgroundMusicRecovery.retryAt,backgroundMusicRecovery.awaitingUntil)>Date.now())return;await backgroundMusicResume("priority-ended");backgroundMusicPlayerProbe.at=0;return}
+    if(backgroundMusicRuntime.pausedForPriority){if(Math.max(backgroundMusicRecovery.retryAt,backgroundMusicRecovery.awaitingUntil)>Date.now())return;const pending=backgroundMusicResume("priority-ended");generation=backgroundMusicRuntime.sessionGeneration;await pending;if(owns())backgroundMusicPlayerProbe.at=0;return}
     const decision=backgroundMusicRecovery.observe(actual,{stallSeconds:cfg.stallSeconds||120,finiteTrack:backgroundMusicRuntime.manualSession&&backgroundMusicRuntime.activeMedia?.mediaType==="track"});
     backgroundMusicRuntime.playing=actual.playing&&backgroundMusicRecovery.state!=="stalled";backgroundMusicRuntime.paused=actual.paused;
     if(decision.action==="none"){backgroundMusicRuntime.activePlayerId=String(playerId);backgroundMusicRuntime.lastError=null;return}
@@ -7068,15 +7077,15 @@ async function backgroundMusicTick(){
     if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.manualStopped)return;
     try{
       if(backgroundMusicRuntime.activeMedia&&decision.action==="resume"){
-        await backgroundMusicResume("recover-queue");
+        const pending=backgroundMusicResume("recover-queue");generation=backgroundMusicRuntime.sessionGeneration;const resumed=await pending;if(!owns()||resumed===false)return;
         backgroundMusicRuntime.lastAction="recover:resume-queue";
       }else{
         const source=backgroundMusicRuntime.activeMedia;
-        await backgroundMusicStart({playerId,...(source?source:{favoriteId:cfg.favoriteId}),recover:!!source,reason:source?"recovery":"schedule-player-idle"});
+        const pending=backgroundMusicStart({playerId,...(source?source:{favoriteId:cfg.favoriteId}),recover:!!source,reason:source?"recovery":"schedule-player-idle"});generation=backgroundMusicRuntime.sessionGeneration;await pending;if(!owns())return;
       }
       backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicPlayerProbe.at=0;
-    }catch(error){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}
-  }catch(e){backgroundMusicRuntime.lastError=e.message;diagnosticError(e,{component:"background-music",operation:"schedule-tick"})}
+    }catch(error){if(owns()){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}}
+  }catch(e){if(owns())backgroundMusicRuntime.lastError=e.message;diagnosticError(e,{component:"background-music",operation:"schedule-tick"})}
   finally{backgroundMusicRuntime.recovery=backgroundMusicRecovery.snapshot();backgroundMusicRuntime.retryAfter=backgroundMusicRecovery.retryAt;backgroundMusicTickBusy=false}
 }
 

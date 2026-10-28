@@ -80,7 +80,8 @@ test("post-announcement resync applies each candidate only to targets it won",()
 
 test("priority audio reconciliation observes Music Assistant instead of trusting restart-local flags",()=>{
   const reconcile=server.slice(server.indexOf("async function backgroundMusicReconcilePriority"),server.indexOf("function backgroundMusicObserveDisplayCommand"));
-  assert.match(reconcile,/backgroundMusicActualPlayerState\(\{playerId:backgroundMusicRuntime.activePlayerId\|\|cfg.playerId\},true\)/);
+  assert.match(reconcile,/const playerId=String\(backgroundMusicRuntime.activePlayerId\|\|cfg.playerId\|\|""\)/);
+  assert.match(reconcile,/backgroundMusicActualPlayerState\(\{playerId\},true\)/);
   assert.match(reconcile,/if\(!force&&!cfg\.pauseForPriorityAudio\)return/);
   assert.match(server,/backgroundMusicReconcilePriority\(\{force:true\}\)/);
   assert.match(reconcile,/if\(priority&&backgroundMusicRuntime\.playing\)/);

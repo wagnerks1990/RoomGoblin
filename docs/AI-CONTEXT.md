@@ -707,6 +707,14 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Background Music control completions, recovery errors and player probes must
+still own the session generation before updating shared runtime. Pause/Stop also
+retain their effective player. Recheck current priority after awaited probes;
+capture the generation acquired by an invoked control helper before awaiting it.
+Late sleep, schedule-end or recovery work cannot overwrite successor intent.
+Preserve current errors, manual-source ownership and late-play priority/Stop
+compensation; command acknowledgement is not observed playback.
+
 Music Assistant handshake callbacks, pending commands and timer cleanup belong
 to their exact socket. Retired events must not clear a successor connection or
 settle its requests. Recheck the returned authenticated socket after awaiting
