@@ -6,8 +6,8 @@ after all 14 PR checks, required main gates and exact publication passed. Its
 [lifecycle](android-lifecycle-ownership.md) fixes pass 2,328 Linux tests with two
 root-only skips, all 23 Host Recovery cases and 125 workspace cases per browser.
 
-PR #331 merged as `e7c557a` after all 14 checks passed. Its exact images and
-backed-up maintenance update remain pending. The combined
+PR #331 is [deployed and verified](android-record-policy-delivery.md) at `e7c557a`
+after all required checks and exact publication passed. The combined
 [record-completion](android-record-completion.md) and
 [policy-admission/cache](android-policy-admission.md) batch preserves current
 records, rejects retired enrollments, rechecks each policy dispatch and prevents
@@ -32,8 +32,9 @@ the combined tree retains 2,386 Linux passes, two skips and all 23 Host Recovery
 passes. Packaging review repaired the maintenance image's missing shared helper;
 the new dependency regression fails before that repair and passes afterward.
 Final package qualification passes 2,387 Linux tests, two root-only skips and
-all 23 Host Recovery cases. PR #332 carries the corrected package and native
-enrollment validation through fresh CI.
+all 23 Host Recovery cases. PR #332 merged the corrected package and native
+enrollment validation as `519ca69` after all 14 checks passed. Exact publication
+and its backed-up update remain pending.
 
 [Android capability ownership](android-capability-ownership.md) resolves four
 reproduced cache/read races. All 12 targeted and 37 related cases pass. The
