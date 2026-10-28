@@ -1,25 +1,23 @@
 # RoomGoblin modernization audit
 
-PR #328 is [deployed and verified](android-inventory-delivery.md) at `f76670b`.
-Its backed-up Hub-only update passed strict health, data, asset and rollback
-availability checks. PR #329 merged as `039a1fc` after all 14 fresh checks passed;
-its exact-main publication and delivery follow. The [card-command fix](android-command-ownership.md)
-passes 2,305 Linux tests with two root-only skips, all 23 Host Recovery cases and
-119 workspace cases per browser. Its [wizard fixture correction](ubuntu-wizard-route-fixture.md)
-also passed 20 Firefox repetitions.
+PR #329 is [deployed and verified](android-command-delivery.md) at `039a1fc`.
+PR #330 merged as `92adafe` after all 14 checks passed; exact-main publication
+and backed-up delivery follow. Its [shell/output](android-shell-ownership.md) and
+[lifecycle](android-lifecycle-ownership.md) fixes pass 2,328 Linux tests with two
+root-only skips, all 23 Host Recovery cases and 125 workspace cases per browser.
 
-The combined [shell/output](android-shell-ownership.md) and
-[lifecycle](android-lifecycle-ownership.md) batch preserves current diagnostic
-output, command drafts and confirmed enrollment outcomes without page reloads.
-It passes all 77 related Android cases, 2,328 Linux tests with two root-only skips,
-all 23 Host Recovery cases and 125 workspace cases per browser. The integrated
-public sources and tests match qualified `aed79bd` exactly. No physical display
-command or enrollment was used.
+The combined [record-completion](android-record-completion.md) and
+[policy-admission/cache](android-policy-admission.md) batch preserves current
+records, rejects retired enrollments, rechecks each policy dispatch and prevents
+stale or overlapping policy completion. All 40 targeted cases pass. Final Linux
+qualification passes 2,368 tests with zero failures and two root-only skips, all
+23 Host Recovery cases and syntax/controller/shell checks. Integrated maintenance,
+public and test sources match qualified `2dc05d7` exactly. Browser sources retain
+the 125-case-per-engine qualification. No physical command was exercised.
 
-Separate server record-completion work passes 20 targeted cases, 2,348 Linux
-tests with two root-only skips and all 23 Host Recovery cases. Four policy
-admission failures are reproduced for the next review. Remaining Group 10 and
-roadmap work is open. Earlier delivery receipts include
+Configuration concurrency has two reproduced failures queued for the next fix.
+Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
+[PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
 [PR #326](ubuntu-repair-wizard-delivery.md),
 [PR #325](managed-display-outcomes-delivery.md) and
