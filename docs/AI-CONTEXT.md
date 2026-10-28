@@ -707,6 +707,13 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Music Assistant handshake callbacks, pending commands and timer cleanup belong
+to their exact socket. Retired events must not clear a successor connection or
+settle its requests. Recheck the returned authenticated socket after awaiting
+connection. Explicit reset/configuration change/shutdown retires HTTP fallback;
+ordinary transport errors retain allowed read/unsent compatibility. Preserve
+the prohibition on replaying uncertain mutations and existing timeout bounds.
+
 Music queue reads own a generation and selected-output identity. Ignore obsolete
 successes and errors even after switching away and back to the same output;
 clearing the selection retires pending reads. Preserve current errors, explicit

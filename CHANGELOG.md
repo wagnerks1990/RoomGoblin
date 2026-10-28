@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retire old Music Assistant socket callbacks and pending work without disturbing
+  successor connections or replaying operations across a connection change.
+
 - Keep every active announcement receiver accounted for after additional selected
   starts or partial replacements, so Stop, automatic release and Resume include all.
 

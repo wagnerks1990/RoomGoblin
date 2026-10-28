@@ -33,6 +33,12 @@ Queue refreshes retain the newest result for the selected output. An older
 response or error cannot replace it, including after switching to another output
 and back. Current queue errors remain visible and Refresh queue can retry them.
 
+Changing the Music Assistant connection retires its pending connection work.
+Delayed events from the old connection cannot disconnect the replacement, and
+an operation from before the change is not retried against the new connection.
+Current connection errors remain visible. Unanswered playback changes are not
+automatically replayed through the compatibility HTTP API.
+
 Sleep stops the managed session after the chosen interval. Explicit Pause/Stop
 and sleep expiry suppress watchdog recovery until the operator resumes or the
 next scheduled window begins. Sleep and manual playback intent are process-local;
