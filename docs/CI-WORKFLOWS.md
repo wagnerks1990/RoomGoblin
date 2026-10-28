@@ -72,6 +72,10 @@ use Android audio/protocol substitutes to check playback, format rejection,
 stop/release, retired workers and failed-start retry. They do not exercise HDMI
 audio, Android framework timing or the real Sendspin transport. No application
 dependency or Gradle version changes are needed.
+`python3 tools/test-android-sendspin-configuration.py` uses the same compiler for
+12 cases against the actual native manager. Substituted preferences and protocol
+clients verify partial settings, renames, persistent client IDs, connection
+failure cleanup and readiness states. No network or Android preferences are used.
 
 ## Conservative documentation-only PR selection
 
