@@ -305,6 +305,9 @@ jobs:
       - name: Verify Android activity assignment and playback preservation
         if: steps.scope.outputs.full != 'false'
         run: python3 tools/test-android-activity-assignment.py
+      - name: Verify Android child process cleanup
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-root-process.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv

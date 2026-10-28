@@ -40,8 +40,8 @@ and its [backed-up update are verified](managed-configuration-delivery.md).
 reproduced cache/read races. All 12 targeted and 37 related cases pass. The
 separate candidate passes 2,399 Linux tests, two root-only skips, all 23 Host
 Recovery cases and 126 workspace cases per browser. PR #333 has passed all 14
-checks and merged as `2c68254` after PR #332's verified delivery. Exact image
-publication and its backed-up update remain pending.
+checks and is [deployed and verified](android-capability-delivery.md) as `2c68254`
+after required main workflows and exact image publication passed.
 
 [Android service socket ownership](android-socket-lifecycle.md) fixes reproduced
 shutdown leaks in active and queued connections. All four real-socket JVM cases,
@@ -52,14 +52,18 @@ qualification. The [activity assignment repair](android-activity-assignment.md)
 fixes three reproduced failures while preserving redirected live sessions and
 explicit reload. All seven activity JVM cases pass, and the combined tree passes
 2,399 Linux tests with two root-only skips, all 23 Host Recovery cases and all
-four socket JVM cases. PR #334 carries the socket and activity repairs and is
-running required checks.
+four socket JVM cases. PR #334 merged the socket and activity repairs as
+`8fcdc8b` after all 14 checks and PR #333's verified delivery. Exact publication
+and its backed-up update remain pending.
 
 [Management port admission](android-management-ports.md) repairs four reproduced
 failures without migrating existing inventory. All 73 targeted cases pass. Final
 Linux qualification passes 2,428 tests with two root-only skips, all 23 Host
-Recovery cases and all 11 socket/activity JVM cases. Root-tool interruption has
-one reproduced process-cleanup failure under review.
+Recovery cases and all 11 socket/activity JVM cases. The separate
+[process-cleanup repair](android-process-cleanup.md) fixes a reproduced child
+leak after interruption. All five process JVM cases pass; the combined source
+retains 2,428 Linux passes, two skips, all 23 Host Recovery cases and all 16 JVM
+cases. Native PCM worker replacement has two reproduced failures under review.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),

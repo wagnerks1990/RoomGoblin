@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Clean up the Android root-tool child process and its streams when a request is
+  interrupted, preserving existing policy gates, timeouts and output limits.
+
 - Reject unsupported Android management and persistent-ADB target ports before
   dispatch, so saved endpoints match the ports accepted by the device.
 
