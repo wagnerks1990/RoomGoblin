@@ -25,6 +25,11 @@ function boundedInt(value,fallback,min,max){const n=Number(value);return Number.
 function cleanId(value){const v=String(value||"").trim();if(!DEVICE_ID_RE.test(v))throw Error("Invalid device id");return v}
 function cleanHost(value){const v=String(value||"").trim();if(!HOST_RE.test(v)||v.includes(".."))throw Error("Invalid device host");return v}
 function cleanPort(value,fallback=5555){return boundedInt(value,fallback,1,65535)}
+function requireManagementPort(value){
+  const n=typeof value==="number"||(typeof value==="string"&&value.trim())?Number(value):NaN;
+  if(!Number.isInteger(n)||n<1024||n>65535){const e=Error("Android management port must be a whole number from 1024 through 65535");e.status=400;throw e}
+  return n;
+}
 function cleanSerial(value){const v=String(value||"").trim();if(!/^[A-Za-z0-9._:-]{1,300}$/.test(v))throw Error("Invalid ADB serial");return v}
 function cleanPackage(value){const v=String(value||"").trim();if(!PACKAGE_RE.test(v))throw Error("Invalid Android package name");return v}
 function cleanText(value,max=160){return String(value||"").replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,max)}
@@ -125,4 +130,4 @@ function adbArgsForAction(device,action,payload={}){
   throw Error(`Unsupported Android action: ${action}`);
 }
 
-module.exports={DEFAULT_PROFILE,KEYEVENTS,JsonStore,normalizeProfile,normalizePersistentAdb,normalizeAgentV2,normalizeDevice,publicDevice,cleanId,cleanHost,cleanPort,cleanSerial,cleanPackage,cleanShell,cleanText,makeId,adbArgsForAction};
+module.exports={DEFAULT_PROFILE,KEYEVENTS,JsonStore,normalizeProfile,normalizePersistentAdb,normalizeAgentV2,normalizeDevice,publicDevice,cleanId,cleanHost,cleanPort,requireManagementPort,cleanSerial,cleanPackage,cleanShell,cleanText,makeId,adbArgsForAction};

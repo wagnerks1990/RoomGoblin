@@ -28,7 +28,7 @@ test("new Windows enrollment prefers recorded Cloudflare HTTPS without removing 
 test("private control surfaces remain private during public-origin migration",()=>{
   assert.match(server,/VEYON_WEBAPI_URL \|\| "http:\/\/127\.0\.0\.1:11080"/);
   assert.equal(fs.existsSync(path.join(root,"src/veyon-ai.js")),false);
-  assert.match(androidV2,/http:\/\/\$\{d\.host\}:\$\{cleanPort\(cfg\.port\|\|8765\)\}/);
+  assert.match(androidV2,/http:\/\/\$\{d\.host\}:\$\{requireManagementPort\(cfg\.port\?\?8765\)\}/);
 });
 
 test("physical display media migration remains gated because port 3020 routing is HTTP-origin specific",()=>{
