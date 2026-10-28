@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+PR #314 passed all 14 checks without unresolved reviews and merged as `5ffba81`;
+its exact publication and backed-up delivery are pending. Dispatch identity is
+integrated on that main: `5e9285f` is byte-identical to qualified `7faf08d` before
+this evidence note, and all 246 focused cases pass again. ESPHome quota work is
+separately qualified at `43f4dfd`; controller races remain under repair.
+
 PR #313 is [deployed and verified](lighting-configuration-delivery.md) at
 `5cf4c81`. PR #314's required validation is running; its security and both browser
 jobs pass. Dispatch identity is locally qualified and follows that persistence
