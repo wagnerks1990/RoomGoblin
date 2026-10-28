@@ -106,7 +106,7 @@ class ResumableUploadStore{
     meta.received[index]={size:bytes,sha256:digest};meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(id),meta);return this.public(meta);
   }
   async assemble(args){return this.locked(String(args.id),()=>this._assemble(args))}
-  async _assemble({id,owner,digest,destination}){
+  async _assemble({id,owner,digest,destination,register}){
     destination=path.resolve(destination);
     if(!destination.startsWith(this.destinationRoot+path.sep))throw Error("Upload destination is outside its configured root");
     const meta=this.owned(id,owner);digest=safeDigest(digest);
@@ -117,7 +117,11 @@ class ResumableUploadStore{
       for(let i=0;i<meta.totalChunks;i++)await pipeline(fs.createReadStream(path.join(this.dir(id),`${i}.part`)),async function*(source){for await(const chunk of source){bytes+=chunk.length;hash.update(chunk);yield chunk}},out,{end:false});
       await new Promise((resolve,reject)=>out.end(err=>err?reject(err):resolve()));
       if(bytes!==meta.size||hash.digest("hex")!==digest)throw Object.assign(new Error("Final file size or SHA-256 verification failed"),{status:400});
-      inspectUpload(tmp,meta.name);contentFile(this.destinationRoot,tmp);fs.renameSync(tmp,destination);fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
+      inspectUpload(tmp,meta.name);contentFile(this.destinationRoot,tmp);fs.renameSync(tmp,destination);
+      // Registration remains inside the accepted session owner. Keep verified
+      // chunks recoverable until the library has accepted their completed file.
+      if(register)await register(meta);
+      fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
     }catch(err){out.destroy();fs.rmSync(tmp,{force:true});throw err}
   }
   async cancel(id,owner){return this.locked(String(id),()=>{this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true})})}
