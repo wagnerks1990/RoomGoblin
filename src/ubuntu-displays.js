@@ -210,7 +210,11 @@ class UbuntuDisplays{
     if(input.confirm!==true)throw fail("Review and confirm the kiosk installation first.");
     const auth=credentials(input),endpoint=target(input),fp=hostKey(input.fingerprint);
     const name=String(input.name||"").trim();if(!name||name.length>100||/[\x00-\x1f]/.test(name))throw fail("Enter a computer name.");
+    const existing=input.id?this.record(input.id):null,repairId=existing?.id;
+    if(repairId&&this.busy.has(repairId))throw fail("Computer is busy; wait for the current operation.",409);
+    if(existing&&!this.allowDisruption(existing))throw fail("Morning Announcements currently own a screen on this computer.",409);
     this.enrolling=true;
+    if(repairId)this.busy.add(repairId);
     try{
       const probe=await this.probe(input);this.check();
       let record=input.id?this.record(input.id):null;
@@ -218,6 +222,8 @@ class UbuntuDisplays{
       if(!record&&this.records().some(d=>d.machineId===probe.machineId||d.address===endpoint.address))throw fail("This computer is already enrolled. Use Repair instead.",409);
       if(!record&&this.records().length>=MAX_DEVICES)throw fail("Ubuntu inventory limit reached.",409);
       const config=screenConfig(input,probe,this.records().filter(d=>d.id!==record?.id),this.receivers(),probe.graphics!=="x11",record?.config.screens||[]);
+      const disruptionTargets={...record,config:{...config,screens:[...(record?.config.screens||[]),...config.screens]}};
+      if(!this.allowDisruption(disruptionTargets))throw fail("Morning Announcements currently own a selected screen.",409);
       const id=record?.id||crypto.randomUUID(),key=record?{privateKey:this.storage.getSecret(secretName(id))}:managementKey();
       if(!key.privateKey)throw fail("The saved management key is unavailable.",503);
       if(!key.publicKey)key.publicKey="ssh-rsa "+utils.parseKey(key.privateKey).getPublicSSH().toString("base64");
@@ -234,6 +240,8 @@ class UbuntuDisplays{
             command:(auth.username==="root"?"":"sudo -n ")+`python3 -c 'import json,sys; p=json.load(sys.stdin); exec(compile(p.pop("installer"),"installer.py","exec")); print(json.dumps(install(p)))'`,input:JSON.stringify(payload)});
           job.stage="Verifying restricted management access and receiver assignments";
           const status=await this.rpc(record,"status");if(status.identity!==id||status.machineId!==probe.machineId)throw fail("Installed identity verification failed.",409);
+          this.check();
+          if(!this.allowDisruption(disruptionTargets))throw fail("Morning Announcements started before screen configuration. Repair again after announcements finish.",409);
           this.ensureReceivers(config.screens);
           const deploymentConfig=structuredClone(config);
           this.storage.tx(()=>{
@@ -251,7 +259,7 @@ class UbuntuDisplays{
         }finally{job.finishedAt=new Date().toISOString();this.busy.delete(id);this.enrolling=false}
       })();
       this.track(task);return {ok:true,job:{...job}};
-    }catch(e){this.enrolling=false;throw e}
+    }catch(e){if(repairId)this.busy.delete(repairId);this.enrolling=false;throw e}
   }
   async configure(id,input){
     this.check();if(this.busy.has(id)||this.enrolling||this.configuring)throw fail("Computer is busy.",409);this.busy.add(id);this.configuring=true;

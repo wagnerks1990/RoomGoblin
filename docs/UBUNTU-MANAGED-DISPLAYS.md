@@ -186,6 +186,14 @@ The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
 
+Repair reserves the existing computer before its initial probe, so polling or
+another command cannot share that operation. Failed admission releases only the
+repair's own reservation. Installation checks announcement locks for both prior
+and proposed screen targets; it checks again before final configuration. If
+announcements or Full Recovery admission begin while installation is running,
+the job needs attention and does not send a new configuration write. Accepted
+installer work is not automatically undone or repeated.
+
 The wizard retires probe and fingerprint replies after relevant inputs or trust
 choices change. Key-file failures are visible and late reads cannot overwrite a
 newer pasted key. One wizard submission remains pending across close/reopen;

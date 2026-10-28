@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Reserve existing Ubuntu computers during repair probing and honor announcement
+  locks on old/new receivers before installation and final configuration.
+
 - Keep Ubuntu wizard probes, fingerprints, key-file reads and submissions tied
   to their current inputs; preserve newer drafts and prevent duplicate writes.
 

@@ -7,9 +7,11 @@ passed before its squash merge as `312f753`; exact publication and delivery
 follow. The separate [repair completion](ubuntu-repair-record-ownership.md) and
 [wizard ownership](ubuntu-wizard-ownership.md) fixes pass 2,241 Linux tests with
 two root-only skips, all 23 Host Recovery cases and 109 workspace cases per browser.
-Repair admission/announcement guards have seven reproduced failures queued for
-the next change. Android inventory, editing and preview review and later roadmap
-work remain.
+[Repair admission/announcement guards](ubuntu-repair-admission.md) now pass all
+eight source cases after seven reproduced failures. Combined Linux qualification
+passes 2,249 tests with two root-only skips and all 23 Host Recovery cases.
+Android editing has four reproduced failures queued next; inventory, preview and
+remaining managed-display review and later roadmap work remain.
 
 Earlier status entries below are historical; their pending delivery statements
 are superseded by the current status and linked delivery receipts above.
