@@ -185,6 +185,11 @@ an ad hoc image build or weaken the maintenance mount. Run the update in the
 administrator's authorized maintenance window, then check access without changing
 keys or contacting a physical receiver:
 
+The normal updater first requires the current appliance to pass health and
+maintenance-readability checks. If it cannot read the existing identity or
+inventory, preserve that error and follow the [database-first recovery contract](DATABASE-FIRST-RECOVERY.md).
+Do not bypass preflight or assume a normal update can repair every failed state.
+
 ```bash
 cd /opt/classroom-hub
 sudo bash deploy/update-production.sh

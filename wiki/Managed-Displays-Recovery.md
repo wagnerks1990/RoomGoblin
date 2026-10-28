@@ -39,7 +39,11 @@ Each successful probe records the device's Android ID. When DHCP or the randomiz
 
 For an affected appliance, use the supported updater during the administrator's
 authorized maintenance window. It verifies exact images and creates the required
-backup before reconciliation. Then perform these read-only storage checks:
+backup before reconciliation. It also requires current health and maintenance
+readability before changing source or services. If that preflight fails, preserve
+the error and follow the database-first recovery contract; do not bypass the gate
+or assume a normal update can repair an unreadable identity. After a successful
+update, perform these read-only storage checks:
 
 ```bash
 cd /opt/classroom-hub
