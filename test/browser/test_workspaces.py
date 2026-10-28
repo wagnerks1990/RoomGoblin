@@ -1514,6 +1514,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertFalse(errors, errors)
 
     def test_automation_obsolete_preview_failure_keeps_the_new_review(self):
+        import time
         from playwright.sync_api import expect
         page, errors, saved = self.studio_page()
         page.get_by_role('button', name='+ Automation', exact=True).click()
@@ -1526,6 +1527,10 @@ class WorkspaceBrowserTests(unittest.TestCase):
         editor.get_by_label('Automation name', exact=True).fill('Reviewed draft')
         with page.expect_request('**/api/v1/automations/draft/simulate'):
             editor.get_by_role('button', name='Preview & validate', exact=True).click()
+        # The request event can arrive before Playwright invokes the route handler.
+        deadline = time.monotonic() + 5
+        while len(held) < 2 and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
         self.assertEqual(len(held), 2)
         held[1].fulfill(json={'ok': True, 'resolved': {'targets': ['tv1']}})
         expect(editor.get_by_role('button', name='Save automation', exact=True)).to_be_enabled()
