@@ -34,13 +34,26 @@ the new dependency regression fails before that repair and passes afterward.
 Final package qualification passes 2,387 Linux tests, two root-only skips and
 all 23 Host Recovery cases. PR #332 merged the corrected package and native
 enrollment validation as `519ca69` after all 14 checks passed. Exact publication
-and its backed-up update remain pending.
+and its [backed-up update are verified](managed-configuration-delivery.md).
 
 [Android capability ownership](android-capability-ownership.md) resolves four
 reproduced cache/read races. All 12 targeted and 37 related cases pass. The
 separate candidate passes 2,399 Linux tests, two root-only skips, all 23 Host
-Recovery cases and 126 workspace cases per browser. Native Android service
-shutdown remains under review.
+Recovery cases and 126 workspace cases per browser. PR #333 has passed all 14
+checks and merged as `2c68254` after PR #332's verified delivery. Exact image
+publication and its backed-up update remain pending.
+
+[Android service socket ownership](android-socket-lifecycle.md) fixes reproduced
+shutdown leaks in active and queued connections. All four real-socket JVM cases,
+seven existing hardening cases, 2,399 Linux cases and all 23 Host Recovery cases
+pass, with two expected root-only skips. The same JVM fixture now runs in the
+existing Android CI job. Browser sources retain their 126-case-per-engine
+qualification. The [activity assignment repair](android-activity-assignment.md)
+fixes three reproduced failures while preserving redirected live sessions and
+explicit reload. All seven activity JVM cases pass, and the combined tree passes
+2,399 Linux tests with two root-only skips, all 23 Host Recovery cases and all
+four socket JVM cases. Unsupported management port admission has four reproduced
+failures under review.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),

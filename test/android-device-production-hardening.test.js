@@ -27,7 +27,7 @@ test("Device Agent listener has bounded clients, queue, headers, and idle time",
   assert.match(service,/new ArrayBlockingQueue<>\(MAX_QUEUED_CLIENTS\)/);
   assert.match(service,/CLIENT_TIMEOUT_MS=5000/);
   assert.match(service,/MAX_HEADER_LINES=32/);
-  assert.match(service,/catch\(RejectedExecutionException busy\)/);
+  assert.match(service,/catch\(RejectedExecutionException\|IOException unavailable\)\{closeClient\(socket\);\}/);
   assert.doesNotMatch(service,/newCachedThreadPool/);
   assert.match(service,/MAX_BODY_BYTES=65536/);
   assert.match(service,/writeJson\(out,413,error\("body_too_large"/);
