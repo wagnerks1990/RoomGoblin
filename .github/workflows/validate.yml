@@ -229,6 +229,10 @@ jobs:
         if: steps.scope.outputs.full != 'false'
         shell: pwsh
         run: python tools/test-native-legacy-state.py
+      - name: Verify native enrollment preserves existing identity
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-enrollment-identity.py
       - name: Build locked native Windows agent
         if: steps.scope.outputs.full != 'false'
         shell: pwsh

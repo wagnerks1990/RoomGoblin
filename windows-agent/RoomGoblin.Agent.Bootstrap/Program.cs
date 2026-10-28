@@ -71,6 +71,9 @@ int Install()
     {
         if (freshEnrollment)
         {
+            if (File.Exists(config))
+                throw new InvalidOperationException(
+                    "This computer already has RoomGoblin configuration. Run install or repair without enrollment arguments to preserve its identity.");
             if (options.TryGetValue("--enrollment-file", out var enrollmentFile) &&
                 !string.IsNullOrWhiteSpace(enrollmentFile))
             {
@@ -491,7 +494,7 @@ void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> p
         RunProcess(
             "icacls.exe",
             new[] { temp, "/inheritance:r", "/grant:r", "SYSTEM:(F)", "Administrators:(F)" });
-        File.Move(temp, configPath, overwrite: true);
+        File.Move(temp, configPath, overwrite: false);
         RunProcess(
             "icacls.exe",
             new[] { configPath, "/inheritance:r", "/grant:r", "SYSTEM:(F)", "Administrators:(F)" });

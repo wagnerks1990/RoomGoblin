@@ -1,5 +1,15 @@
 # RoomGoblin modernization audit
 
+PR #322 carries the qualified legacy-task repair and is running required CI.
+The separate [enrollment identity repair](windows-enrollment-identity.md) fails
+five regression assertions on old source and passes all ten with the fix,
+all 36 lifecycle and 24 task-state cases, 2,169 Linux tests with two root-only
+skips, all 23 Host Recovery cases and a clean locked bootstrap build. PR #321
+has passed its main validation/browser/security gates; exact publication and
+backed-up delivery remain pending. Production remains verified at `d3a3937`.
+Ubuntu configuration/cancellation and post-dispatch audit failures are reproduced
+for the next review within Group 10. The overall roadmap remains incomplete.
+
 PR #320 is [deployed and verified](windows-native-bounds-delivery.md) at
 `d3a3937`. PR #321 passed all 14 checks and merged as `395cb88`; exact publication
 precedes its backed-up update. The [legacy-task admission repair](windows-legacy-task-state.md)
