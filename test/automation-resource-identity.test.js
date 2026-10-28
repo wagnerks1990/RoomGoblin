@@ -34,7 +34,7 @@ function harness({devices={tv1:{enabled:true,avOutput:1},tv2:{enabled:true,avOut
     executeCommand:async command=>{display.push(plain(command));return {ok:true}},
     audit:()=>{},diagnosticError:()=>{}
   });
-  vm.runInContext(section("function automationTargetDomain(","function automationVariableContext(")+"\n"+
+  vm.runInContext(section("function configuredDisplayId(","function cookieValue(")+"\n"+ section("function automationTargetDomain(","function automationVariableContext(")+"\n"+
     section("function goveeTargets(","async function goveeUdpTemperature(")+"\n"+
     section("async function directGoveeCommand(","function goveeInventory(")+"\n"+
     section("async function runSingleAutomationAction(","function timerLinkedClassChain(")+"\n"+

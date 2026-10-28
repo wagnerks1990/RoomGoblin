@@ -733,7 +733,7 @@ function normalizeMorningAnnouncements(input={},existing={}){
     enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,
     streamUrl, startTime, endTime,
     volumePercent:finite(input.volumePercent??existing.volumePercent,100,0,100),
-    targets:Array.isArray(input.targets)&&input.targets.length?[...new Set(input.targets.map(cleanId).filter(Boolean))]:(Array.isArray(existing.targets)&&existing.targets.length?existing.targets:["all"]),
+    targets:Array.isArray(input.targets)&&input.targets.length?[...new Set(input.targets.map(value=>String(value||"").trim()).filter(Boolean))]:(Array.isArray(existing.targets)&&existing.targets.length?existing.targets:["all"]),
     checkIntervalSeconds:finite(input.checkIntervalSeconds??existing.checkIntervalSeconds,15,10,120),
     offlineConfirmations:finite(input.offlineConfirmations??existing.offlineConfirmations,2,1,8),
     updatedAt:new Date().toISOString()
@@ -1462,7 +1462,7 @@ function normalizeTimerOverlay(input,existing=null){
     background:String(merged.background||"rgba(0,0,0,.35)").slice(0,120),
     useEventTargets:merged.useEventTargets!==false,
     coverage:String(merged.coverage||"all-display-actions")==="action-1-only"?"action-1-only":"all-display-actions",
-    targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(cleanId).filter(Boolean))]:[],
+    targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(value=>String(value||"").trim()).filter(Boolean))]:[],
     followLinkedClasses:merged.followLinkedClasses!==false,
     followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120}),
     ...(merged.effects===undefined?{}:{effects:timerEffects.normalize(merged.effects)})
@@ -1491,7 +1491,7 @@ function normalizeAutomation(input={},existing={}){
   planningStudio.times({time,scheduleWindow});
   const primaryAction=String(input.action??existing.action??input.actionSequence?.[0]?.action??existing.actionSequence?.[0]?.action??"display.clear").trim();
   if(!AUTOMATION_ACTIONS.has(primaryAction))throw new Error(`Unsupported automation action: ${primaryAction||"(blank)"}`);
-  const primaryTargets=Array.isArray(input.targets)?input.targets.map(cleanId).filter(Boolean):
+  const primaryTargets=Array.isArray(input.targets)?input.targets.map(value=>String(value||"").trim()).filter(Boolean):
     (Array.isArray(existing.targets)?existing.targets:["tv1"]);
   const primaryPayload=(input.payload&&typeof input.payload==="object")?input.payload:(existing.payload||{});
 
@@ -1514,7 +1514,7 @@ function normalizeAutomation(input={},existing={}){
     actionId=cleanId(actionId).slice(0,100);
     if(!actionId||usedIds.has(actionId))actionId=cleanId(`${id.slice(0,60)}-action-${index+1}`).slice(0,100);
     usedIds.add(actionId);
-    const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
+    const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(value=>String(value||"").trim()).filter(Boolean))]:[];
     const normalized=normalizeSequenceAction({
       ...item,
       id:actionId,
@@ -1774,7 +1774,7 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
 function automationTvPowerPhysicalLocks(target,lockedReceivers){
   const blocked=[];
   for(const rawId of lockedReceivers){
-    const id=cleanId(rawId),receiver=devices[id];
+    const requested=String(rawId||"").trim(),id=configuredDisplayId(requested)||requested,receiver=Object.hasOwn(devices,id)?devices[id]:null;
     const explicit=receiver&&Object.prototype.hasOwnProperty.call(receiver,"avOutput");
     const value=explicit?receiver.avOutput:(/^tv[1-8]$/.test(id)?id.slice(2):null);
     const output=(typeof value==="number"||typeof value==="string"&&value.trim()!=="")?Number(value):NaN;
@@ -2712,7 +2712,7 @@ function normalizeClassSchedule(input={},existing={}){
   const anchorRaw=(input.anchorDate??existing.anchorDate??(scheduleMode==="alternating"?schoolCycleAnchor():""));const anchorDate=validDateKey(anchorRaw)?String(anchorRaw):"";
   const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
   const excludedDates=uniqueDateKeys(input.excludedDates===undefined?existing.excludedDates:input.excludedDates);
-  const defaultTargets=(Array.isArray(input.defaultTargets)?input.defaultTargets:(existing.defaultTargets||["all"])).map(cleanId).filter(Boolean);
+  const defaultTargets=(Array.isArray(input.defaultTargets)?input.defaultTargets:(existing.defaultTargets||["all"])).map(value=>String(value||"").trim()).filter(Boolean);
   const continuationOf=String(input.continuationOf??existing.continuationOf??"").trim().slice(0,80);
   return {...existing,id,name,shortName,startTime,endTime,scheduleWindow:planningStudio.windowRule(input.scheduleWindow??existing.scheduleWindow??{}),days:[...new Set(days)],scheduleMode,alternatePhase,anchorDate,includeDates,excludedDates,period,cycleDays,dayType,continuationOf,phaseALabel:String(input.phaseALabel??existing.phaseALabel??alternateGroupLabel("A")).trim().slice(0,30)||alternateGroupLabel("A"),phaseBLabel:String(input.phaseBLabel??existing.phaseBLabel??alternateGroupLabel("B")).trim().slice(0,30)||alternateGroupLabel("B"),defaultTargets:[...new Set(defaultTargets)],enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,notes:String(input.notes??existing.notes??"").slice(0,500),createdAt:existing.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
 }
@@ -4042,6 +4042,14 @@ function cleanId(value) {
     .slice(0, 80);
 }
 
+function configuredDisplayId(value) {
+  const id=String(value??"").trim();
+  if(!/^[a-zA-Z0-9._-]{1,80}$/.test(id))return "";
+  if(Object.hasOwn(devices,id))return id;
+  const matches=Object.keys(devices).filter(key=>key.toLowerCase()===id.toLowerCase());
+  return matches.length===1?matches[0]:"";
+}
+
 function cookieValue(req,name){
   const raw=String(req.headers?.cookie||"");
   for(const part of raw.split(";")){const i=part.indexOf("=");if(i<0)continue;const k=part.slice(0,i).trim();if(k===name)return decodeURIComponent(part.slice(i+1).trim())}
@@ -4112,8 +4120,9 @@ function resolveDisplayTargets(target) {
     return [...new Set(target.flatMap(resolveDisplayTargets))];
   }
 
-  const t = cleanId(target || "all");
-  if (devices[t] && devices[t].enabled !== false) return [t];
+  const value=String(target || "all").trim(),id=configuredDisplayId(value);
+  if(id)return devices[id].enabled!==false?[id]:[];
+  const t=Object.hasOwn(displayGroups,value)?value:cleanId(value);
 
   if (Array.isArray(displayGroups[t])) {
     return displayGroups[t].filter(
@@ -4469,7 +4478,7 @@ function connectMqtt() {
 
     const dm = topic.match(/^classroom\/v2\/display\/([^/]+)\/(state|presence)$/);
     if (dm) {
-      const id=cleanId(dm[1]);
+      const id=configuredDisplayId(dm[1]);
       if (!devices[id]) return;
       runtime.displays[id]={...(runtime.displays[id]||{}),lastSeen:new Date().toISOString(),source:"mqtt",[dm[2]]:payload};
       broadcastControllers({type:"device.status",deviceId:id,status:publicDisplayStatus(id)});
@@ -4801,7 +4810,7 @@ async function runLightingCommand(command){
 async function runAvCommand(command){
   return directPluto(plutoActionForCommand(command));
 }
-function plutoActionForCommand(command){const p=command.payload||{};if(command.type==="av.route")return {action:"route",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),input:Number(p.input)};if(command.type==="av.cecOutput")return {action:"cecOutput",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)};if(command.type==="av.cecAllOutputs")return {action:"cecAllOutputs",index:Number(p.index)};if(command.type==="av.cecAllHdmi")return {action:"cecAllHdmi",index:Number(p.index)};if(command.type==="av.cecAllHdbt")return {action:"cecAllHdbt",index:Number(p.index)};throw new Error(`Unsupported AV command: ${command.type}`)}
+function plutoActionForCommand(command){const p=command.payload||{};if(command.type==="av.route")return {action:"route",output:Number(p.output??devices[configuredDisplayId(command.target)]?.avOutput),input:Number(p.input)};if(command.type==="av.cecOutput")return {action:"cecOutput",output:Number(p.output??devices[configuredDisplayId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)};if(command.type==="av.cecAllOutputs")return {action:"cecAllOutputs",index:Number(p.index)};if(command.type==="av.cecAllHdmi")return {action:"cecAllHdmi",index:Number(p.index)};if(command.type==="av.cecAllHdbt")return {action:"cecAllHdbt",index:Number(p.index)};throw new Error(`Unsupported AV command: ${command.type}`)}
 
 // -----------------------------------------------------------------------------
 // WebSocket transport
@@ -5448,8 +5457,27 @@ function persistentAssetAccessKey(){
   }catch(error){diagnosticError(error,{component:"asset-access",operation:"key-load"});return crypto.randomBytes(32)}
 }
 const assetAccessKey=persistentAssetAccessKey();
-function issueAssetAccessToken(deviceId,credentialId="",ttlSeconds=900){const expires=Math.floor(Date.now()/1000)+ttlSeconds,credential=String(credentialId||"legacy").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,80)||"legacy",payload=`${cleanId(deviceId)}.${expires}.${credential}`,signature=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");return `${payload}.${signature}`}
-function validAssetAccessToken(token){const parts=String(token||"").split(".");if(parts.length!==4||!/^\d+$/.test(parts[1])||Number(parts[1])<Math.floor(Date.now()/1000))return false;const payload=`${parts[0]}.${parts[1]}.${parts[2]}`,expected=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");if(!secureTokenEqual(parts[3],expected)||!devices[cleanId(parts[0])]?.enabled)return false;const policy=dbStore.displayCredentialPolicy();if(parts[2]==="direct")return !policy.authenticationRequired;if(parts[2]==="legacy")return policy.legacySharedTokenAllowed;return dbStore.listDisplayCredentials().credentials.some(item=>item.id===parts[2]&&item.displayId===parts[0]&&!item.revokedAt)}
+function issueAssetAccessToken(deviceId,credentialId="",ttlSeconds=900){
+  const id=configuredDisplayId(deviceId);
+  if(!id)throw Error("Unknown display");
+  const expires=Math.floor(Date.now()/1000)+ttlSeconds;
+  const credential=String(credentialId||"legacy").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,80)||"legacy";
+  const payload=`${id}.${expires}.${credential}`;
+  const signature=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+function validAssetAccessToken(token){
+  // Read the fixed suffix from the right; legacy receiver IDs may contain dots.
+  const matched=String(token||"").match(/^([a-zA-Z0-9._-]{1,80})\.(\d{1,12})\.([a-zA-Z0-9_-]{1,80})\.([a-zA-Z0-9_-]{43})$/),parts=matched?.slice(1);
+  if(!parts||Number(parts[1])<Math.floor(Date.now()/1000))return false;
+  const payload=`${parts[0]}.${parts[1]}.${parts[2]}`;
+  const expected=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");
+  if(!secureTokenEqual(parts[3],expected)||!Object.hasOwn(devices,parts[0])||devices[parts[0]].enabled===false)return false;
+  const policy=dbStore.displayCredentialPolicy();
+  if(parts[2]==="direct")return !policy.authenticationRequired;
+  if(parts[2]==="legacy")return policy.legacySharedTokenAllowed;
+  return dbStore.listDisplayCredentials().credentials.some(item=>item.id===parts[2]&&item.displayId===parts[0]&&!item.revokedAt);
+}
 function assetAccessAllowed(req){return !!requestUser(req)||validAssetAccessToken(req.query.access_token)}
 function requireAssetAccess(req,res,next){if(assetAccessAllowed(req))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
 app.use("/media",requireAssetAccess,(req,res,next)=>path.extname(req.path).toLowerCase()===".svg"?res.status(415).json({ok:false,error:"Active SVG media is not served from the application origin"}):next(),express.static(MEDIA_DIR,{fallthrough:false}));
@@ -5485,7 +5513,7 @@ app.get("/display/:id", (req, res) => {
   res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma","no-cache");
   res.setHeader("Expires","0");
-  const id = cleanId(req.params.id);
+  const id = configuredDisplayId(req.params.id);
   if (!devices[id]) {
     return res.status(404).type("text/plain").send("Unknown display");
   }
@@ -5555,7 +5583,7 @@ app.get("/api/v1/devices",requireClassroomRead, (_req, res) => {
 });
 
 app.get("/api/v1/devices/:id",requireClassroomRead, (req, res) => {
-  const id = cleanId(req.params.id);
+  const id = configuredDisplayId(req.params.id);
   if (!devices[id]) {
     return res.status(404).json({ ok: false, error: "Unknown device" });
   }
@@ -6297,14 +6325,14 @@ app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroo
   }catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
 app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(req,res)=>{
-  const id=cleanId(req.params.id);
+  const id=configuredDisplayId(req.params.id);
   if(!id||!devices[id]||devices[id].enabled===false)return res.status(404).json({ok:false,error:"Unknown display"});
   res.json({ok:true,status:runtime.displays[id]?.mediaSession||null});
 });
 
 app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireControl,async(req,res)=>{
   try{
-    const id=cleanId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
+    const id=configuredDisplayId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
     const payload=displayMedia.validate(req.body),action=payload.action;
     const result=await executeCommand({type:"display.media.control",target:[id],payload},"controller");
     audit({kind:"display.media.control",deviceId:id,action});
@@ -6320,7 +6348,7 @@ app.get("/api/v1/displays/audio",schedulerReadLimit,requireControl,(req,res)=>{
 });
 app.post("/api/v1/displays/:id/audio",schedulerMutationLimit,requireControl,async(req,res)=>{
   try{
-    const id=cleanId(req.params.id);
+    const id=configuredDisplayId(req.params.id);
     if(!id||!devices[id]||devices[id].enabled===false)throw Error("Unknown display");
     const result=await executeCommand({type:"display.audio.control",target:[id],payload:req.body},"controller");
     audit({kind:"display.audio.control",deviceId:id});
@@ -6445,7 +6473,7 @@ app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,asy
 app.get("/api/v1/config",requireClassroomRead,(_req,res)=>res.json({ok:true,room:deviceConfig.room||ROOM_NAME,devices:publicDeviceConfigs(),displayGroups,lightingGroups:[...lightingGroups]}));
 
 app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
+ const id=configuredDisplayId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
  const cur=devices[id],b=req.body||{};
  let audioScope;try{audioScope=normalizeDisplayAudioScope(b.audioScope===undefined?cur.audioScope:b.audioScope)}catch(e){return res.status(400).json({ok:false,error:e.message})}
  devices[id]={...cur,
@@ -6460,7 +6488,7 @@ app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
 });
 
 app.post("/api/v1/config/groups/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id),members=Array.isArray(req.body?.members)?req.body.members.map(cleanId).filter(x=>devices[x]):[];
+ const requested=String(req.params.id||"").trim(),id=Object.hasOwn(displayGroups,requested)?requested:cleanId(requested),members=Array.isArray(req.body?.members)?req.body.members.map(configuredDisplayId).filter(Boolean):[];
  if(!id)return res.status(400).json({ok:false,error:"Group id required"});
  displayGroups[id]=[...new Set(members)];deviceConfig.displayGroups=displayGroups;persistRuntimeConfig();res.json({ok:true,id,members:displayGroups[id]});
 });
@@ -6662,8 +6690,8 @@ function disconnectRevokedDisplayCredentials(ids){const set=new Set([].concat(id
 function disconnectRevokedLabAgentCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="lab-agent"&&set.has(String(ws.labAgentCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Lab agent credential revoked")}
 app.get("/api/v1/admin/display-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...displayCredentialAdminView()}));
 app.put("/api/v1/admin/display-credentials/policy",requireAdmin,(req,res)=>{try{const state=displayCredentialAdminView();if(req.body?.authenticationRequired===true&&state.coverage.unenrolled.length&&req.body?.confirmEnableWithoutFullEnrollment!==true)return res.status(409).json({ok:false,error:`Enroll every enabled display before requiring credentials. Missing: ${state.coverage.unenrolled.join(", ")}`,unenrolled:state.coverage.unenrolled});const policy=dbStore.setDisplayCredentialPolicy(req.body||{});if(policy.authenticationRequired)for(const ws of wsClients)if(ws.role==="display"&&ws.displayAuthMode==="configured-display"&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display authentication is now required");audit({kind:"admin.display-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.post("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{try{const displayId=cleanId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{const displayId=cleanId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
+app.post("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{try{const displayId=configuredDisplayId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
+app.delete("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{const displayId=configuredDisplayId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
 app.delete("/api/v1/admin/display-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeDisplayCredential(id);if(revoked)disconnectRevokedDisplayCredentials([id]);audit({kind:"admin.display-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
 app.get("/api/v1/admin/lab-agent-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...dbStore.listLabAgentCredentials()}));
 app.put("/api/v1/admin/lab-agent-credentials/policy",requireAdmin,(req,res)=>{try{const policy=dbStore.setLabAgentCredentialPolicy(req.body||{});audit({kind:"admin.lab-agent-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
@@ -6739,9 +6767,26 @@ function musicAssistantConfig(){const p=dbStore.getPreference("musicassistant.co
 function musicAssistantToken(){try{return String(dbStore.getSecret("musicassistant.token")||"")}catch{return ""}}
 
 const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
-function musicAssistantTvDeviceIdFromPlayerId(playerId){const value=String(playerId||"").toLowerCase(),prefix="classroom-hub-";if(!value.startsWith(prefix))return null;const id=value.slice(prefix.length);return Object.hasOwn(devices,id)&&devices[id]?.enabled!==false?id:null}
-function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
-function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
+function musicAssistantTvDeviceIdFromPlayerId(playerId){
+  const value=String(playerId||""),prefix="classroom-hub-";
+  if(value!==value.trim()||!value.toLowerCase().startsWith(prefix))return null;
+  const id=configuredDisplayId(value.slice(prefix.length));
+  return id&&devices[id]?.enabled!==false?id:null;
+}
+function musicAssistantTvAudioState(deviceId){
+  const id=configuredDisplayId(deviceId),all=dbStore.getPreference("musicassistant.tvAudioState",{})||{};
+  const legacy=id.toLowerCase(),unique=id&&Object.keys(devices).filter(key=>key.toLowerCase()===legacy).length===1;
+  const saved=all&&typeof all==="object"?(all[id]||(unique?all[legacy]:null)||{}):{};
+  const raw=Number(saved.volume);
+  return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null};
+}
+function setMusicAssistantTvAudioState(deviceId,patch={}){
+  deviceId=configuredDisplayId(deviceId);if(!deviceId)throw Error("Unknown display");
+  const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};
+  if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}
+  if(patch.muted!==undefined)next.muted=!!patch.muted;
+  dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next;
+}
 const musicAssistantTvAudioWrites=new Map();
 function beginMusicAssistantTvAudioWrite(command,args){
   const field=command==="players/cmd/volume_set"?"volume":command==="players/cmd/volume_mute"?"muted":null;
@@ -7361,7 +7406,7 @@ app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireCo
 const musicAssistantProxyTickets=new Map();
 const musicAssistantProxyTicketByDevice=new Map(),MUSIC_ASSISTANT_PROXY_TICKET_MAX=256;
 function pruneMusicAssistantProxyTickets(now=Date.now()){for(const [ticket,item] of musicAssistantProxyTickets){if(item.expiresAt<=now){musicAssistantProxyTickets.delete(ticket);if(musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId)}}while(musicAssistantProxyTickets.size>=MUSIC_ASSISTANT_PROXY_TICKET_MAX){const [ticket,item]=musicAssistantProxyTickets.entries().next().value;musicAssistantProxyTickets.delete(ticket);if(musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId)}}
-function issueMusicAssistantProxyTicket(deviceId){pruneMusicAssistantProxyTickets();deviceId=cleanId(deviceId);const prior=musicAssistantProxyTicketByDevice.get(deviceId);if(prior)musicAssistantProxyTickets.delete(prior);const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${deviceId}`;musicAssistantProxyTickets.set(ticket,{deviceId,playerId,expiresAt:Date.now()+60000});musicAssistantProxyTicketByDevice.set(deviceId,ticket);return {ticket,playerId}}
+function issueMusicAssistantProxyTicket(deviceId){pruneMusicAssistantProxyTickets();deviceId=configuredDisplayId(deviceId);if(!deviceId)throw Error("Unknown display");const prior=musicAssistantProxyTicketByDevice.get(deviceId);if(prior)musicAssistantProxyTickets.delete(prior);const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${deviceId}`;musicAssistantProxyTickets.set(ticket,{deviceId,playerId,expiresAt:Date.now()+60000});musicAssistantProxyTicketByDevice.set(deviceId,ticket);return {ticket,playerId}}
 function consumeMusicAssistantProxyTicket(ticket){ticket=String(ticket||"");pruneMusicAssistantProxyTickets();const item=musicAssistantProxyTickets.get(ticket);musicAssistantProxyTickets.delete(ticket);if(item&&musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId);return item||null}
 function musicAssistantProxyPath(ticket){return `/music-assistant/sendspin-proxy?ticket=${encodeURIComponent(ticket)}`}
 let musicAssistantTvBridgeWrites=Promise.resolve();
@@ -8737,7 +8782,7 @@ wss.on("connection", (ws, req) => {
             const user=requestUser(req);if(!hasCapability(user,"classroom.read"))throw new Error("Permission required: classroom.read");
             ws.authUser=user;ws.sessionToken=cookieValue(req,"classroom_hub_session");
           }else if(!CONTROL_TOKEN||!secureTokenEqual(msg.token,CONTROL_TOKEN))throw new Error("Unauthorized preview");
-          const deviceId = cleanId(msg.deviceId);
+          const deviceId = configuredDisplayId(msg.deviceId);
           if (!devices[deviceId] || devices[deviceId].enabled === false) {
             throw new Error("Unknown or disabled preview display");
           }
@@ -8760,7 +8805,7 @@ wss.on("connection", (ws, req) => {
         }
 
         if (role === "display") {
-          const deviceId = cleanId(msg.deviceId);
+          const deviceId = configuredDisplayId(msg.deviceId);
           if (!devices[deviceId] || devices[deviceId].enabled === false) {
             throw new Error("Unknown or disabled display");
           }

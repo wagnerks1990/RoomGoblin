@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Preserve exact receiver identity across HTTP, enrollment, WebSocket, saved and
+  scheduled targets, media/audio controls and integration observations; reject
+  ambiguous aliases and support legacy dotted media IDs.
+
 - Commit legacy configuration and secret imports with their migration records;
   failed migration bookkeeping no longer leaves partially published state.
 

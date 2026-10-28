@@ -49,7 +49,7 @@ function harness({devices,locked=[],announcementActive=false,blocked=false,reply
     goveePublish:async(alias,payload)=>{commands.push({alias,payload:plain(payload)});lightState.set(alias,payload.state);return {ok:true}},
     audit:entry=>audits.push(plain(entry))
   });
-  vm.runInContext(
+  vm.runInContext(section("function configuredDisplayId(","function cookieValue(")+"\n"+
     section("function automationDeferredDisplayTargets(","function consumeDeferredAnnouncementAutomations(")+"\n"+section("function automationResourceKeys(","function automationConflictDiagnostics(")+"\n"+section("function goveeTargets(","async function goveeUdpTemperature(")+"\n"+section("async function directGoveeCommand(","function goveeInventory(")+"\n"+section("function resolveAutomationOccurrences","function resolveAutomationFromClass")+"\n"+
     section("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     section("function currentAutomationNonDisplayWinners","function automationOccurrenceIsActiveForContinuousRecovery")+"\n"+

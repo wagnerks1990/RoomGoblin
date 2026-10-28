@@ -1,5 +1,14 @@
 # RoomGoblin modernization audit
 
+The backend transaction batch merged in PR #340 as `8357bec` after all 15 checks;
+exact publication and delivery are pending. PR #339 is
+[deployed and verified](weather-workflow-delivery.md). The authentication
+[identity repair](display-identity-runtime.md) covers admission, saved/scheduled
+targets and integration observations. Its full Linux snapshot passes 2,509
+tests, zero failures and two root-only skips, plus 23 Host Recovery and 55 Android
+JVM cases. Checked delivery remains pending. Diagnostics and
+the later roadmap remain open.
+
 [Legacy configuration/secret imports](legacy-import-transaction.md) now preserve
 their previous authority when migration bookkeeping fails. Five baseline failures
 are repaired; all 41 targeted cases pass. The full Linux snapshot passes 2,480

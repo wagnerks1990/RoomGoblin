@@ -35,7 +35,7 @@ function harness({devices,locked=[],schedules={one:schedule()},failPersistAt=0,r
     diagnosticError:(error,context)=>errors.push({message:error.message,context}),
     setInterval:callback=>{tick=callback;return {unref(){}}}
   });
-  vm.runInContext(section("function automationTvPowerPhysicalLocks(","function timerLinkedClassChain(")+"\n"+
+  vm.runInContext(section("function configuredDisplayId(","function cookieValue(")+"\n"+ section("function automationTvPowerPhysicalLocks(","function timerLinkedClassChain(")+"\n"+
     section("// Legacy per-output Pluto schedules","connectMqtt();")+"\n"+
     section("function applicationWritersDrained(){","async function gracefulShutdown("),ctx);
   return {ctx,commands,atSend,errors,locked,tick:()=>tick(),get saved(){return copy(saved)},

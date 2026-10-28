@@ -8,7 +8,7 @@ function fixture(){
   dbStore:{getPreference:(k,f)=>prefs.has(k)?prefs.get(k):f,setPreference:(k,v)=>{if(failWrite)throw Error("storage unavailable");prefs.set(k,v)}},
   backgroundMusicRuntime:{},backgroundMusicPriorityBlocked:()=>blocked,audit:v=>audits.push(v),
   musicAssistantCommand:(command,args)=>new Promise((resolve,reject)=>calls.push({command,args,resolve,reject}))});
- vm.runInContext(source.slice(d,e)+source.slice(a,b),c);
+ vm.runInContext(source.slice(source.indexOf("function configuredDisplayId("),source.indexOf("function cookieValue("))+source.slice(d,e)+source.slice(a,b),c);
  return {c,calls,prefs,audits,block:()=>{blocked=true},failWrites:()=>{failWrite=true},
   count:()=>vm.runInContext("musicAssistantTvAudioWrites.size",c),
   state:(id="tv1")=>c.musicAssistantTvAudioState(id),
