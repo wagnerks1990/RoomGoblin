@@ -52,6 +52,10 @@ for cleanup and current-schedule reconciliation before music priority is release
 Older pending recovery remains held too. The original start error is reported;
 unchanged or newer content is excluded from that failed attempt's cleanup.
 
+An empty or unresolved explicit start selection reports an error instead of
+using other configured displays. When replacement fails before changing content,
+an unchanged existing announcement retains its active lifecycle and audio hold.
+
 HLS probe deadlines cover the full playlist body, including a server that sends
 headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
 and 512 KiB. A timeout or oversized response is reported as unknown availability

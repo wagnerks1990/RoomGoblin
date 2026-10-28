@@ -71,6 +71,10 @@ for cleanup and current-schedule reconciliation before music priority is release
 Older pending recovery remains held too. The original start error is reported;
 unchanged or newer content is excluded from that failed attempt's cleanup.
 
+An empty or unresolved explicit start selection reports an error instead of
+using other configured displays. When replacement fails before changing content,
+an unchanged existing announcement retains its active lifecycle and audio hold.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.

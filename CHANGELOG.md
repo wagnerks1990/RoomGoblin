@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Reject empty explicit announcement targets and retain an unchanged active
+  session when a replacement fails before dispatch.
+
 - Recover partially dispatched announcement starts without discarding older
   pending priority holds or hiding the original start failure.
 
