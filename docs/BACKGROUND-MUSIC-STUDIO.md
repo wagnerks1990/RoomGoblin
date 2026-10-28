@@ -29,6 +29,10 @@ Live radio or dynamic queues may have no upcoming list or may reject shuffle,
 repeat or seek. Supporting Music Assistant queue APIs are required; an upstream
 rejection remains visible instead of being reported as success.
 
+Queue refreshes retain the newest result for the selected output. An older
+response or error cannot replace it, including after switching to another output
+and back. Current queue errors remain visible and Refresh queue can retry them.
+
 Sleep stops the managed session after the chosen interval. Explicit Pause/Stop
 and sleep expiry suppress watchdog recovery until the operator resumes or the
 next scheduled window begins. Sleep and manual playback intent are process-local;
