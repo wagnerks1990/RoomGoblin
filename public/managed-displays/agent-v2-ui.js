@@ -116,7 +116,7 @@
       if(op==="remove"&&!window.confirm("Remove this managed display from RoomGoblin? This removes the Hub enrollment only. It will not uninstall the Android app, factory-reset the TV, or delete other RoomGoblin data."))return;
       if(op==="disable"&&!window.confirm("Disable this enrollment? RoomGoblin policy automation will ignore it until re-enabled."))return;
       const operation=beginDeviceOperation(id,lifecycleButton.textContent);if(!operation)return;outputOwner=beginTerminalOutput(id);
-      try{const j=await maintenanceCall(id,"/lifecycle",{method:"POST",body:JSON.stringify({action:op})});terminal(`Managed display lifecycle: ${op}`,j);if(op==="remove")card.remove();else window.location.reload()}
+      try{const j=await maintenanceCall(id,"/lifecycle",{method:"POST",body:JSON.stringify({action:op})});applyLifecycleResult(id,op,j);terminal(`Managed display lifecycle: ${op}`,j)}
       catch(err){deviceMessage(id,`Managed display lifecycle: ${err.message}`);window.alert(`Managed display lifecycle: ${err.message}`)}finally{endDeviceOperation(id,operation)}
       return;
     }

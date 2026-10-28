@@ -9,6 +9,23 @@ async function api(path,opt={}){const r=await fetch(`/api/v1/maintenance${path}`
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function deviceById(id){return state.devices.find(d=>String(d.id)===String(id))}
+function applyLifecycleResult(id,action,result){
+  id=String(id);
+  const confirmed=action==='remove'
+    ? result?.removed===true&&String(result.deviceId)===id
+    : ['enable','disable'].includes(action)&&result?.removed===false&&String(result.device?.id)===id&&result.device.enabled===(action==='enable');
+  if(!confirmed)throw Error('Enrollment change was not confirmed. Refresh inventory before trying again.');
+  const focused=document.activeElement,restoreFocus=focused===document.body||(focused?.dataset?.lifecycleAction===action&&focused.closest('.card[data-id]')?.dataset.id===id);
+  inventoryVersion++;
+  if(action==='remove')state.devices=state.devices.filter(d=>String(d.id)!==id);
+  else{const current=deviceById(id);if(current)current.enabled=action==='enable'}
+  deviceMessage(id,action==='remove'?'Enrollment removed.':`Enrollment ${action==='enable'?'enabled':'disabled'}.`);
+  render();
+  if(action==='remove'&&$("editDialog").open&&$("editId").value===id){
+    $("editMsg").textContent='This enrollment was removed. Your unsaved draft is still shown.';updateEditAvailability();
+  }
+  if(restoreFocus)restoreDeviceFocus(id,'edit');
+}
 function profileFor(d){return state.profiles.find(p=>p.id===d.profileId)||null}
 function agentStatusHtml(d){const s=d.agentStatus;if(!s)return state.adbAvailable?'<span class="agent-state pending">Checking…</span>':'<span class="agent-state warn">ADB offline</span>';if(s.starting)return `<span class="agent-state pending">Starting…</span>${s.version?` <small>v${esc(s.version)}</small>`:''}`;if(s.error)return `<span class="agent-state bad">Unavailable</span> <small>${esc(s.error)}</small>`;if(!s.installed)return '<span class="agent-state bad">Not installed</span>';const run=s.running?'<span class="agent-state ok">Running</span>':'<span class="agent-state warn">Installed · stopped</span>';return `${run}${s.version?` <small>v${esc(s.version)}</small>`:''}`}
 function deviceStateHtml(d){if(d.uiRecovering)return '<span class="pill warn">Recovering…</span>';return `<span class="pill ${d.lastStatus?.online===true?'ok':'bad'}">${d.lastStatus?.online===true?'Online':'Unknown / offline'}</span>`}
@@ -145,7 +162,7 @@ function deviceMessage(id,text){
   const card=[...$("devices").querySelectorAll(".card[data-id]")].find(card=>card.dataset.id===String(id)),message=card?.querySelector(".device-message");
   if(message){message.textContent=text;message.hidden=!text}
 }
-function updateEditAvailability(){const button=$("editForm").querySelector('button[type="submit"]');if(button){button.disabled=editingDevices.has($("editId").value);button.title=button.disabled?'Save pending':''}}
+function updateEditAvailability(){const id=$("editId").value,missing=!deviceById(id),button=$("editForm").querySelector('button[type="submit"]');if(button){button.disabled=missing||editingDevices.has(id);button.title=missing?'Enrollment no longer exists':button.disabled?'Save pending':''}}
 function restoreDeviceFocus(id,operation){const card=[...$("devices").querySelectorAll(".card[data-id]")].find(card=>card.dataset.id===String(id)),button=card?.querySelector(`[data-op="${operation}"]`);(button&&!button.disabled&&button.getClientRects().length?button:$("deviceSearch"))?.focus({preventScroll:true})}
 function editDraft(form){return Object.fromEntries(new FormData(form))}
 function openEdit(id){const d=deviceById(id);if(!d)return;editVersion++;$("editId").value=d.id;$("editName").value=d.name||'';$("editSchool").value=d.school||'';$("editBuilding").value=d.building||'';$("editRoom").value=d.room||'';$("editDisplayUrl").value=d.displayUrl||'';$("editProfile").innerHTML=state.profiles.map(p=>`<option value="${esc(p.id)}" ${p.id===d.profileId?'selected':''}>${esc(p.name)}</option>`).join('');$("editEndpoint").textContent=d.serial||`${d.host||''}:${d.port||''}`;$("editMsg").textContent='';updateEditAvailability();$("editDialog").showModal()}
@@ -174,6 +191,7 @@ $("enroll").addEventListener('submit',async e=>{
 });
 $("editForm").addEventListener('submit',async e=>{
   e.preventDefault();const form=e.currentTarget,id=$("editId").value;if(editingDevices.has(id))return;
+  if(!deviceById(id)){$("editMsg").textContent='This enrollment no longer exists. Your unsaved draft is still shown.';updateEditAvailability();return}
   const version=editVersion,draft=editDraft(form),signature=JSON.stringify(draft),body={...draft};delete body.id;
   for(const key of ['name','school','building','room','displayUrl'])body[key]=String(body[key]||'').trim();
   const current=()=>version===editVersion&&$("editDialog").open&&$("editId").value===id;

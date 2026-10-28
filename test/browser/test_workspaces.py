@@ -295,6 +295,95 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(len(pending), 2)
         self.evidence(page, errors, 'android-editor-mobile-focus')
 
+    def android_lifecycle_page(self, width=1440):
+        pending, reads, dialogs = [], [], []
+        control = {'devices': [DEVICE, {**DEVICE, 'id': 'second-tv', 'name': 'Second display'}], 'hold': False}
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/status':
+                if control['hold']:
+                    reads.append(route)
+                else:
+                    route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': control['devices'], 'profiles': []})
+                return True
+            if target.endswith('/lifecycle'):
+                pending.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', width, transport=transport)
+        page.clock.install()
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        def accept(dialog):
+            dialogs.append(dialog.message)
+            dialog.accept()
+        page.on('dialog', accept)
+        page.locator('[data-id="fixture-tv"] .agent-v2-panel > summary').click()
+        return page, errors, pending, reads, control, dialogs
+
+    def test_android_lifecycle_removal_retires_old_inventory_and_preserves_editor_drafts(self):
+        for editor in ('fixture-tv', 'second-tv'):
+            with self.subTest(editor=editor):
+                page, errors, pending, reads, control, dialogs = self.android_lifecycle_page(390)
+                control['hold'] = True
+                with page.expect_request('**/android/status'):
+                    page.locator('#refresh').click()
+                with page.expect_request('**/fixture-tv/lifecycle'):
+                    page.locator('[data-id="fixture-tv"] [data-lifecycle-action="remove"]').click()
+                page.locator(f'[data-id="{editor}"] [data-op="edit"]').click()
+                page.locator('#editName').fill('Retained lifecycle draft')
+                control['devices'] = [d for d in control['devices'] if d['id'] != 'fixture-tv']
+                control['hold'] = False
+                self.held_route(page, pending).fulfill(json={'ok': True, 'removed': True, 'deviceId': 'fixture-tv', 'dataPreserved': True})
+                page.wait_for_function("!document.querySelector('.card[data-id=\"fixture-tv\"]')")
+                self.held_route(page, reads).fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [DEVICE], 'profiles': []})
+                page.wait_for_function('inventoryRead === null')
+                self.assertEqual(page.locator('.card[data-id="fixture-tv"]').count(), 0)
+                self.assertEqual(page.locator('#editName').input_value(), 'Retained lifecycle draft')
+                self.assertTrue(page.locator('#editDialog').is_visible())
+                self.assertEqual(page.evaluate('document.activeElement.id'), 'editName')
+                self.assertEqual(page.locator('#editForm button[type="submit"]').is_disabled(), editor == 'fixture-tv')
+                if editor == 'fixture-tv':
+                    self.assertIn('removed', page.locator('#editMsg').inner_text())
+                self.assertEqual(len(pending), 1)
+                self.assertEqual(len(dialogs), 1)
+                self.evidence(page, errors, 'android-lifecycle-mobile-' + editor)
+
+    def test_android_lifecycle_enable_disable_keeps_the_page_and_newer_drafts(self):
+        for action in ('enable', 'disable'):
+            with self.subTest(action=action):
+                page, errors, pending, _, _, dialogs = self.android_lifecycle_page()
+                navigations = []
+                page.on('framenavigated', lambda frame: navigations.append(frame.url))
+                with page.expect_request('**/fixture-tv/lifecycle'):
+                    page.locator(f'[data-id="fixture-tv"] [data-lifecycle-action="{action}"]').click()
+                page.locator('[data-id="second-tv"] [data-op="edit"]').click()
+                page.locator('#editName').fill('Another unsaved draft')
+                self.held_route(page, pending).fulfill(json={'ok': True, 'removed': False, 'device': {**DEVICE, 'enabled': action == 'enable'}})
+                page.wait_for_function("!deviceOperations.has('fixture-tv')")
+                self.assertEqual(page.evaluate("deviceById('fixture-tv').enabled"), action == 'enable')
+                self.assertEqual(page.locator('#editName').input_value(), 'Another unsaved draft')
+                self.assertEqual(page.evaluate('document.activeElement.id'), 'editName')
+                self.assertEqual(navigations, [])
+                self.assertEqual(len(dialogs), 0 if action == 'enable' else 1)
+                self.assertFalse(errors, errors)
+
+    def test_android_lifecycle_unconfirmed_reply_stays_visible_until_explicit_retry(self):
+        page, errors, pending, _, _, dialogs = self.android_lifecycle_page()
+        remove = page.locator('[data-id="fixture-tv"] [data-lifecycle-action="remove"]')
+        with page.expect_request('**/fixture-tv/lifecycle'):
+            remove.click()
+        self.held_route(page, pending).fulfill(json={'ok': True})
+        page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] .device-message').textContent.includes('not confirmed')")
+        self.assertFalse(remove.is_disabled())
+        self.assertEqual(len(pending), 1)
+        with page.expect_request('**/fixture-tv/lifecycle'):
+            remove.click()
+        self.held_route(page, pending, 1).fulfill(json={'ok': True, 'removed': True, 'deviceId': 'fixture-tv'})
+        page.wait_for_function("!document.querySelector('.card[data-id=\"fixture-tv\"]')")
+        self.assertEqual(page.evaluate('document.activeElement.id'), 'deviceSearch')
+        self.assertEqual(len(pending), 2)
+        self.assertEqual(len(dialogs), 3)
+        self.assertFalse(errors, errors)
+
     def android_diagnostic_page(self, width=1440):
         shells, diagnostics = [], []
         devices = [DEVICE, {**DEVICE, 'id': 'second-tv', 'name': 'Second display'}]

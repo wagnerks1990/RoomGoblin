@@ -16,9 +16,14 @@ merge as `f76670b`. Exact publication and delivery follow. The separate [card-co
 passes nine targeted cases, 2,305 Linux tests with two root-only skips, all 23
 Host Recovery cases and 119 workspace cases per browser. The [shell/output fix](android-shell-ownership.md)
 passes nine targeted cases, 2,314 Linux tests with two root-only skips, all 23
-Host Recovery cases and 122 workspace cases per browser. Lifecycle inventory and
-page-reload behavior has four reproduced failures queued next. Remaining Group
-10 and roadmap work is open.
+Host Recovery cases and 122 workspace cases per browser. The [lifecycle fix](android-lifecycle-ownership.md)
+passes 2,328 Linux tests with two root-only skips, all 23 Host Recovery cases and
+125 workspace cases per browser after four reproduced failures. PR #329's initial
+14 checks passed. PR #328's main Firefox run hit a [wizard route-fixture race](ubuntu-wizard-route-fixture.md);
+publication stopped, production remains at #327, and a failed-job-only retry is
+running. The permanent fixture repair passed 20 Firefox repetitions. Three
+server-side Android record-completion failures are reproduced for the next fix.
+Remaining Group 10 and roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
