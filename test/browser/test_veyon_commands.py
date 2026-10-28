@@ -53,6 +53,92 @@ class VeyonCommandBrowserTests(unittest.TestCase):
             page.locator('#selectionCommands > summary').click()
         return page, errors, state
 
+    def test_role_save_ignores_old_inventory_and_preserves_hidden_selection(self):
+        page, errors, state = self.command_page()
+        page.wait_for_function('!loadBusy')
+        page.evaluate("""() => {
+          window.inventoryBefore = structuredClone(computers); window.heldReads = [];
+          const original = window.fetch;
+          window.fetch = (url, options = {}) => {
+            if (url === '/api/v1/veyon/computers' && !options.method)
+              return new Promise(resolve => heldReads.push(resolve));
+            if (url === '/api/v1/veyon/computers/role')
+              return Promise.resolve(new Response(JSON.stringify({ok:true})));
+            return original(url, options);
+          };
+          void load();
+        }""")
+        page.locator('[data-device-menu="pc-0"] > summary').click()
+        page.locator('[data-role="pc-0"]').click()
+        page.wait_for_function("computers.find(c=>c.id==='pc-0').role==='teacher'")
+        self.assertIn('1 hidden by filters', page.locator('#selectionCount').inner_text())
+        page.evaluate("heldReads[0](new Response(JSON.stringify({computers:inventoryBefore})))")
+        page.wait_for_function('heldReads.length === 2')
+        self.assertIn('1 hidden by filters', page.locator('#selectionCount').inner_text())
+        self.assertEqual(page.locator('[data-select="pc-0"]').count(), 0)
+        page.evaluate("heldReads[1](new Response(JSON.stringify({computers})))")
+        page.wait_for_function('!loadBusy')
+        page.locator('#showAll').click()
+        self.assertIn('TEACHER', page.locator('[data-select="pc-0"]').locator('xpath=ancestor::article').inner_text())
+        self.assertTrue(page.locator('[data-select="pc-0"]').is_checked())
+        self.assertFalse(state['submitted'], 'Metadata writes must not send classroom feature commands')
+        self.evidence(page, errors, 'veyon-role-inventory-ownership')
+
+    def test_bulk_role_changes_reach_server_in_accepted_order(self):
+        page, errors, state = self.command_page(width=390)
+        page.wait_for_function('!loadBusy')
+        page.get_by_text('Power, access and maintenance', exact=True).click()
+        page.evaluate("""() => {
+          window.roleWrites=[]; const original=window.fetch;
+          window.fetch=(url,options={}) => url==='/api/v1/veyon/computers/role'
+            ? new Promise(resolve=>roleWrites.push({body:JSON.parse(options.body),resolve}))
+            : original(url,options);
+        }""")
+        page.locator('#markTeacher').click()
+        page.locator('#markStudent').click()
+        self.assertEqual(page.evaluate('roleWrites.length'), 1)
+        self.assertEqual(page.evaluate('roleWrites[0].body.role'), 'teacher')
+        page.evaluate('roleWrites[0].resolve(new Response(JSON.stringify({ok:true})))')
+        page.wait_for_function('roleWrites.length === 2')
+        self.assertEqual(page.evaluate('roleWrites[1].body.role'), 'student')
+        self.assertEqual(page.evaluate('roleWrites[1].body.ids.length'), 24)
+        page.evaluate('roleWrites[1].resolve(new Response(JSON.stringify({ok:true})))')
+        page.wait_for_function('!inventoryMutationCount && !loadBusy')
+        self.assertEqual(page.locator('[data-select]').count(), 24)
+        self.assertIn('24 selected', page.locator('#selectionCount').inner_text())
+        self.assertFalse(state['submitted'])
+        self.evidence(page, errors, 'veyon-role-write-order')
+
+    def test_rename_refreshes_after_a_pre_save_inventory_read(self):
+        page, errors, state = self.command_page()
+        page.wait_for_function('!loadBusy')
+        page.evaluate("""() => {
+          window.inventoryBefore=structuredClone(computers); window.readCount=0;
+          const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url==='/api/v1/veyon/computers'&&!options.method){
+              if(++readCount===1)return new Promise(resolve=>window.releaseOldInventory=resolve);
+              return Promise.resolve(new Response(JSON.stringify({computers:inventoryBefore.map(c=>c.id==='pc-0'?{...c,name:'Renamed workstation'}:c)})));
+            }
+            if(url==='/api/v1/veyon/computers/pc-0'&&options.method==='PUT')
+              return Promise.resolve(new Response(JSON.stringify({ok:true})));
+            return original(url,options);
+          };
+          void load();
+        }""")
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.once('dialog', lambda dialog: dialog.accept('Renamed workstation'))
+        page.locator('[data-device-menu="pc-0"] > summary').click()
+        page.locator('[data-rename="pc-0"]').click()
+        page.wait_for_function('!inventoryMutationCount')
+        page.evaluate('releaseOldInventory(new Response(JSON.stringify({computers:inventoryBefore})))')
+        page.wait_for_function("computers.find(c=>c.id==='pc-0').name==='Renamed workstation'")
+        self.assertIn('Renamed workstation', page.locator('[data-select="pc-0"]').locator('xpath=ancestor::article').inner_text())
+        self.assertEqual(page.evaluate('readCount'), 2)
+        self.assertTrue(page.locator('[data-select="pc-0"]').is_checked())
+        self.assertFalse(state['submitted'])
+        self.evidence(page, errors, 'veyon-rename-after-old-read')
+
     def test_24_target_progress_distinguishes_acceptance_confirmation_and_failures(self):
         page, errors, state = self.command_page()
         page.locator('#lock').click()

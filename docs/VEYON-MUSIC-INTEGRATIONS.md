@@ -45,6 +45,12 @@ The Veyon workstation inventory is stored through the database-backed `veyon-com
 
 Legacy `data/veyon-computers.json` is migration input only. Startup recovery merges it into the SQLite namespace, verifies the record count, records the migration, and removes the active legacy file. Production runs with `LEGACY_JSON_MIRROR=false`, so subsequent writes remain database-only.
 
+Controller name, role and discovery changes execute in accepted order. Inventory
+polls coalesce during those changes and refresh afterwards; a response from an
+older metadata state cannot undo a saved role or remove current selections and
+preview resources. A failed write releases the queue without automatic retry.
+This metadata queue is separate from the tracked classroom command jobs below.
+
 Full Recovery treats Veyon reads as potential writers: inventory persists stable
 identity mappings/hostnames and authentication can remember key preferences.
 Already accepted reads finish before snapshot acknowledgment. New Veyon GET/HEAD

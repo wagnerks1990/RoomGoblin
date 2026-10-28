@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Order Veyon metadata changes and coalesce inventory refreshes so older replies
+  cannot restore previous roles, lose post-save refreshes or prune selections.
+
 - Contain ESPHome worker pipe/process errors and malformed IPC, release pending
   commands without replay, and wait for discovery stdout to close before parsing.
 
