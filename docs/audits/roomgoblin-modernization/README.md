@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Planning fixes delivered; announcement lifecycle fixes merged; Music save ownership in qualification**.
+Status: **Planning fixes delivered; announcement lifecycle fixes merged; probe bounds and Music saves qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all

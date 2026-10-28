@@ -41,3 +41,14 @@ root-only ownership skips (1,352 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Checked integration, required CI, exact
 image publication and normal backed-up delivery remain pending. Release retry ownership and music
 editor saves remain separate follow-ups; this does not close the subsystem.
+
+## Combined integration qualification
+
+The probe patch and Music save patch were integrated onto merged main `ac1ae40`.
+Their implementation and regression files are byte-identical to their qualified
+commits; integration conflicts were limited to additive changelog/audit links.
+The combined native snapshot passes 1,365 tests, zero failures and two root-only
+ownership skips (1,367 total), plus all 23 Host Recovery tests and
+Node/controller/Python/Bash checks. All 40 focused probe/policy/configuration
+checks pass. Required CI, exact images and appliance delivery remain pending.
+Release retry/clear ownership and deferred-bookkeeping recovery remain open.

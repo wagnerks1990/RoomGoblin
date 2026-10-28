@@ -49,3 +49,9 @@ Node/controller/Python/Bash checks.
 Checked integration, required CI, exact images and normal backed-up delivery
 remain pending. Browser transports are deterministic fixtures;
 no live credentials, music sessions or physical commands were used.
+
+The combined integration with the announcement probe bound on merged main
+`ac1ae40` preserves these implementation and browser-test files byte-for-byte.
+Its final native snapshot passes 1,365 tests, zero failures and two root-only
+ownership skips (1,367 total), plus all 23 Host Recovery tests and
+Node/controller/Python/Bash checks. Required CI and delivery remain pending.
