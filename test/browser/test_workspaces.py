@@ -286,6 +286,81 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(len(pending), 2)
         self.evidence(page, errors, 'android-editor-mobile-focus')
 
+    def test_android_preview_closing_and_newer_capture_retire_old_images(self):
+        devices = [DEVICE, {**DEVICE, 'id': 'second-tv', 'name': 'Second display'}]
+        pending = []
+        def transport(route, target):
+            if target.endswith('/screenshot'):
+                pending.append(route)
+                return True
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': devices, 'profiles': []})
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', 390, transport=transport)
+        page.locator('[data-id="fixture-tv"] details[data-disclosure="device-tools"] > summary').click()
+        with page.expect_request('**/fixture-tv/screenshot'):
+            page.locator('[data-id="fixture-tv"] [data-op="screenshot"]').click()
+        self.assertTrue(page.locator('#shot').is_visible())
+        self.assertIn('Capturing', page.locator('#shotStatus').inner_text())
+        self.assertFalse(page.locator('#shotImage').is_visible())
+        self.evidence(page, errors, 'android-preview-progress-mobile')
+        page.keyboard.press('Escape')
+        self.assertEqual(page.evaluate('document.activeElement.id'), 'deviceSearch')
+        page.locator('[data-id="second-tv"] details[data-disclosure="device-tools"] > summary').click()
+        with page.expect_request('**/second-tv/screenshot'):
+            page.locator('[data-id="second-tv"] [data-op="screenshot"]').click()
+        newest = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+        previous = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
+        pending[1].fulfill(json={'ok': True, 'contentType': 'image/png', 'base64': newest})
+        page.wait_for_function("document.getElementById('shotImage').naturalWidth === 1")
+        self.assertTrue(page.locator('#shotImage').is_visible())
+        pending[0].fulfill(json={'ok': True, 'base64': previous})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.locator('#shotImage').get_attribute('src'), 'data:image/png;base64,' + newest)
+        self.assertEqual(page.locator('#shotStatus').inner_text(), 'Second display screenshot')
+        self.assertIn('Second display', page.locator('#shot').get_attribute('aria-label'))
+        page.locator('#closeShot').click()
+        self.assertIsNone(page.locator('#shotImage').get_attribute('src'))
+        self.assertEqual(page.evaluate('document.activeElement.dataset.op'), 'screenshot')
+        self.assertEqual(page.evaluate("document.activeElement.closest('[data-id]').dataset.id"), 'second-tv')
+        self.assertFalse(errors, errors)
+
+    def test_android_preview_errors_remain_visible_and_late_errors_do_not_steal_focus(self):
+        pending = []
+        def transport(route, target):
+            if target.endswith('/screenshot'):
+                pending.append(route)
+                return True
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [DEVICE], 'profiles': []})
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.locator('details[data-disclosure="device-tools"] > summary').click()
+        dialogs = []
+        page.on('dialog', lambda dialog: dialogs.append(dialog.message))
+        for response, message in (({'base64': None}, 'invalid'), ({'base64': 'bm90IGFuIGltYWdl'}, 'could not be decoded')):
+            with self.subTest(message=message):
+                with page.expect_request('**/fixture-tv/screenshot'):
+                    page.locator('[data-op="screenshot"]').click()
+                pending[-1].fulfill(json={'ok': True, **response})
+                page.wait_for_function("text => document.getElementById('shotStatus').textContent.includes(text)", arg=message)
+                self.assertTrue(page.locator('#shot').is_visible())
+                self.assertIsNone(page.locator('#shotImage').get_attribute('src'))
+                page.keyboard.press('Escape')
+        with page.expect_request('**/fixture-tv/screenshot'):
+            page.locator('[data-op="screenshot"]').click()
+        page.keyboard.press('Escape')
+        page.locator('#deviceSearch').fill('Classroom')
+        pending[-1].fulfill(status=503, json={'ok': False, 'error': 'Synthetic capture failure'})
+        page.wait_for_function("!document.querySelector('[data-op=screenshot]').disabled")
+        self.assertFalse(page.locator('#shot').is_visible())
+        self.assertEqual(page.locator('#shotStatus').inner_text(), '')
+        self.assertEqual(page.evaluate('document.activeElement.id'), 'deviceSearch')
+        self.assertFalse(dialogs, dialogs)
+        self.assertFalse(errors, errors)
+
     def test_ubuntu_old_inventory_cannot_replace_a_completed_metadata_save(self):
         before = {'id': 'fixture', 'name': 'Before edit', 'address': '10.0.0.8', 'port': 22,
                   'config': {'screens': []}, 'live': {'online': False}, 'state': 'offline'}

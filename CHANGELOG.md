@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Open Android screenshots with progress, decode images before showing them,
+  and ignore captures after closing or replacing the preview.
+
 - Retain confirmed Ubuntu screen mappings until acknowledgment and persist
   uncertain receiver targets so announcement protection survives restart.
 

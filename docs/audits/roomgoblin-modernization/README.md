@@ -7,9 +7,12 @@ and is running fresh required CI. Its combined tree passes 2,261 Linux tests
 with two root-only skips, all 23 Host Recovery cases and 109 workspace cases
 per browser. The [Android editor fix](android-editor-ownership.md) separately
 passes nine source cases, 2,258 Linux tests with two root-only skips, all 23 Host
-Recovery cases and 111 workspace cases per browser. Screenshot lifetime has
-three reproduced failures; its candidate passes ten targeted cases and is
-entering browser qualification. Remaining Group 10 and roadmap work is open.
+Recovery cases and 111 workspace cases per browser. The combined Android editor
+and [screenshot preview fix](android-preview-ownership.md) passes 2,280 Linux
+tests with two root-only skips, all 23 Host Recovery cases, and 113 workspace
+cases in each browser including final preview styling. Inventory ordering has
+six reproduced queue/ownership failures for the next change. Remaining Group 10
+and roadmap work is open.
 
 Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
