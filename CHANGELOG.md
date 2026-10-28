@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve live video volume, mute and playback rate in receiver reconnect
+  snapshots, and reject nonfinite media-control values before dispatch.
+
 - Serialize TV audio bridge Attach/Detach changes and stop stale connection
   delivery across targets and transports; reject unknown bridge actions.
 

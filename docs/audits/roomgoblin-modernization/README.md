@@ -13,6 +13,7 @@ Named-receiver audio, uncertain writes and reconnect ownership have
 [46 new regression cases](music-tv-recovery.md).
 Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
 Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
+The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
 Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
 evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
 The supported Linux snapshot passes 1,648 tests, zero failures and two root-only
