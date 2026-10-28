@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Windows history and screenshot replies with the current computer, clear
+  closed monitoring views, and distinguish capture requests from confirmed saves.
+
 - Preserve Windows lab inventory and keyboard focus through polling, report stale
   reads clearly, and order metadata saves before refreshing current state.
 

@@ -1075,15 +1075,103 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 self.assertNotIn(obsolete, writes[0])
             self.assertFalse(errors, errors)
 
-    def lab_inventory_page(self):
+    def lab_inventory_page(self, transport=None):
         computers = [{'id': 'lab-a', 'name': 'Alpha workstation', 'groups': [], 'online': True},
                      {'id': 'lab-b', 'name': 'Beta workstation', 'groups': [], 'online': False}]
-        page, errors = self.page('/controller/lab.html', 390, overrides={
+        page, errors = self.page('/controller/lab.html', 390, transport=transport, overrides={
             '/api/v1/lab/computers': {'configured': True, 'retentionHours': 168,
                                      'computers': computers, 'summary': {'total': 2, 'online': 1, 'offline': 1}}})
         page.locator('[data-computer-id="lab-a"]').wait_for()
         page.wait_for_function('!labInventoryBusy')
         return page, errors
+
+    def test_lab_monitoring_history_stays_with_current_computer_after_escape(self):
+        page, errors = self.lab_inventory_page()
+        page.evaluate("""() => {
+          window.historyReads=[];const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url.includes('/history?')){
+              const id=url.includes('/lab-a/')?'lab-a':'lab-b';
+              if(url.includes('limit=5000'))return Promise.resolve(new Response(JSON.stringify({history:[{profile:id+' profile'}],total:1})));
+              return new Promise(resolve=>historyReads.push({id,resolve}));
+            }
+            return original(url,options);
+          };
+        }""")
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="history"]').click()
+        page.wait_for_function('historyReads.length===1')
+        page.keyboard.press('Escape')
+        page.locator('#historyDialog').wait_for(state='hidden')
+        # Native dialog close events are queued after the open state changes.
+        page.wait_for_function("document.querySelector('#historyRows').innerHTML === ''")
+        self.assertEqual(page.locator('#historyRows').inner_html(), '')
+        page.locator('[data-computer-id="lab-b"] [data-lab-focus="history"]').click()
+        page.wait_for_function('historyReads.length===2')
+        page.evaluate("historyReads[1].resolve(new Response(JSON.stringify({history:[{title:'Current B result'}],total:1})))")
+        page.wait_for_function("document.querySelector('#historyRows').textContent.includes('Current B result')")
+        page.evaluate("async()=>{historyReads[0].resolve(new Response(JSON.stringify({history:[{title:'Old A result'}],total:1})));await new Promise(r=>setTimeout(r,25))}")
+        self.assertIn('Beta workstation', page.locator('#historyTitle').inner_text())
+        self.assertIn('Current B result', page.locator('#historyRows').inner_text())
+        self.assertNotIn('Old A result', page.locator('#historyRows').inner_text())
+        self.assertIn('lab-b profile', page.locator('#historyUser').text_content())
+        self.evidence(page, errors, 'lab-history-current-computer')
+
+    def test_lab_monitoring_screen_switch_clears_previous_image_and_ignores_old_history(self):
+        def transport(route, target):
+            if target.endswith('/screenshot'):
+                route.fulfill(content_type='image/png', body=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))
+                return True
+            return False
+        page, errors = self.lab_inventory_page(transport=transport)
+        page.evaluate("""() => {
+          window.screenReads=[];const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url==='/api/v1/lab/command'){const command=JSON.parse(options.body);return Promise.resolve(new Response(JSON.stringify({deliveries:command.targets.map(id=>({id,delivered:true}))})));}
+            if(url.includes('/screenshots?'))return new Promise(resolve=>screenReads.push(resolve));
+            return original(url,options);
+          };
+        }""")
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="screen"]').click()
+        page.wait_for_function('screenReads.length===1')
+        self.assertIn('/lab-a/screenshot', page.locator('#screenImage').get_attribute('src'))
+        page.locator('#screenDialog').get_by_role('button', name='Close', exact=True).click()
+        self.assertIsNone(page.locator('#screenImage').get_attribute('src'))
+        page.locator('[data-computer-id="lab-b"] [data-lab-focus="screen"]').click()
+        self.assertIsNone(page.locator('#screenImage').get_attribute('src'))
+        self.assertTrue(page.locator('#screenImage').evaluate('el=>el.hidden'))
+        page.wait_for_function('screenReads.length===2')
+        page.evaluate('screenReads[1](new Response(JSON.stringify({screenshots:[],retentionDays:7})))')
+        page.wait_for_function("document.querySelector('#screenHistory').textContent.includes('No saved screenshots')")
+        page.evaluate("async()=>{screenReads[0](new Response(JSON.stringify({screenshots:[{url:'/old-a',downloadUrl:'/old-a/download',capturedAt:'2026-01-01T00:00:00Z'}],retentionDays:7})));await new Promise(r=>setTimeout(r,25))}")
+        self.assertIn('Beta workstation', page.locator('#screenTitle').inner_text())
+        self.assertIn('/lab-b/screenshot', page.locator('#screenImage').get_attribute('src'))
+        self.assertIn('No saved screenshots', page.locator('#screenHistory').inner_text())
+        self.assertNotIn('/old-a', page.locator('#screenHistory').inner_html())
+        page.keyboard.press('Escape')
+        page.locator('#screenDialog').wait_for(state='hidden')
+        page.wait_for_function('currentScreenComputer===null')
+        self.assertIsNone(page.locator('#screenImage').get_attribute('src'))
+        self.evidence(page, errors, 'lab-screen-current-computer')
+
+    def test_lab_monitoring_undelivered_capture_never_claims_saved(self):
+        page, errors = self.lab_inventory_page()
+        page.evaluate("""() => {
+          window.captureRequests=[];const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url==='/api/v1/lab/command'){const command=JSON.parse(options.body);captureRequests.push(command);return Promise.resolve(new Response(JSON.stringify({deliveries:command.targets.map(id=>({id,delivered:false}))})));}
+            if(url.includes('/screenshots?'))return Promise.resolve(new Response(JSON.stringify({screenshots:[],retentionDays:7})));
+            return original(url,options);
+          };
+        }""")
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="screen"]').click()
+        page.wait_for_function("document.querySelector('#liveScreenState').textContent==='CAPTURE UNCONFIRMED'")
+        self.assertIsNone(page.locator('#screenImage').get_attribute('src'))
+        page.locator('#screenDialog').get_by_role('button', name='Take Screenshot', exact=True).click()
+        page.wait_for_function('captureRequests.some(c=>c.payload.save) && !liveScreenRequest')
+        self.assertIn('not delivered', page.locator('#screenMeta').inner_text())
+        self.assertNotIn('Screenshot saved', page.locator('#screenMeta').inner_text())
+        self.assertEqual(page.evaluate('captureRequests.length'), 2)
+        self.evidence(page, errors, 'lab-capture-unconfirmed')
 
     def test_lab_inventory_poll_preserves_keyboard_focus_and_open_details(self):
         page, errors = self.lab_inventory_page()

@@ -120,6 +120,14 @@ stale feedback; an initial failed read shows unavailable rather than an empty
 lab. Name/group saves run in accepted order and older reads cannot restore
 previous metadata. Agent command delivery and monitoring permissions are unchanged.
 
+Windows history and saved-screenshot reads belong to the open computer and latest
+filter/refresh request. Closing a monitoring dialog, including Escape, clears
+its sensitive content and invalidates late replies. Changing computers clears
+the previous image before requesting a new capture. Screenshot feedback checks
+command delivery and reports a request, not confirmed capture/save completion;
+the latest available image can predate that request. Saved history remains the
+record of received screenshots. Permissions and retention are unchanged.
+
 Inventory filters change presentation only. A selection hidden by a Veyon or
 Windows filter still participates in an explicitly issued bulk command; the
 selection count warns about those targets. Destructive confirmations and all

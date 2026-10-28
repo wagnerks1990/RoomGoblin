@@ -232,7 +232,7 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
       <div class="toolbar">
         <button onclick="exportHistory('csv')">Export CSV</button>
         <button onclick="exportHistory('json')">Export JSON</button>
-        <button onclick="historyDialog.close()">Close</button>
+        <button onclick="closeHistoryView()">Close</button>
       </div>
     </div>
 
@@ -338,7 +338,14 @@ async function command(action,payload={}){const j=await api('/api/v1/lab/command
 async function sendAction(action){if(['restart','shutdown','logoff'].includes(action)&&!confirm(`${action.toUpperCase()} ${selected.size} selected computer(s)?`))return;try{await command(action)}catch(e){alert(e.message)}}
 async function sendMessage(){const text=prompt('Message to selected computers:');if(!text)return;try{await command('message',{title:'Message from Instructor',text})}catch(e){alert(e.message)}}
 async function quickMessage(id){selected.clear();selected.add(id);render();return sendMessage()}
-let currentHistoryComputer=null;
+let currentHistoryComputer=null,historyGeneration=0,historyReadGeneration=0;
+function currentHistory(id,generation,request=historyReadGeneration){return historyDialog.open&&currentHistoryComputer===id&&historyGeneration===generation&&historyReadGeneration===request}
+function closeHistoryView(closeDialog=true){
+ historyGeneration++;historyReadGeneration++;currentHistoryComputer=null;
+ historyRows.innerHTML='';historyMeta.textContent='';historyUser.innerHTML='<option value="">All users</option>';
+ if(closeDialog&&historyDialog.open)historyDialog.close();
+}
+historyDialog.addEventListener('close',()=>{if(!historyDialog.open)closeHistoryView(false)});
 function historyQuery(){
   const q=new URLSearchParams();
   const h=historyHours.value;if(h)q.set('hours',h);
@@ -350,7 +357,9 @@ function historyQuery(){
   return q;
 }
 async function showHistory(id){
-  currentHistoryComputer=id;
+  const generation=++historyGeneration,request=++historyReadGeneration;currentHistoryComputer=id;
+  historyRows.innerHTML='<tr><td colspan="14" class="muted">Loading…</td></tr>';
+  historyUser.innerHTML='<option value="">All users</option>';
   const comp=inventory.computers.find(x=>x.id===id);
   historyTitle.textContent=`Browser History — ${comp?.name||comp?.hostname||id}`;
   historyMeta.textContent=`Retention: ${inventory.retentionHours} hour(s) (${Math.round(inventory.retentionHours/24)} days)`;
@@ -358,19 +367,22 @@ async function showHistory(id){
 
   try{
     const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/history?hours=${inventory.retentionHours}&limit=5000`);
+    if(!currentHistory(id,generation,request))return;
     const users=[...new Set((j.history||[]).map(x=>String(x.profile||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     historyUser.innerHTML='<option value="">All users</option>'+users.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
   }catch{
-    historyUser.innerHTML='<option value="">All users</option>';
+    if(currentHistory(id,generation,request))historyUser.innerHTML='<option value="">All users</option>';
   }
 
-  await applyHistoryFilters();
+  if(currentHistory(id,generation,request))await applyHistoryFilters();
 }
 async function applyHistoryFilters(){
-  if(!currentHistoryComputer)return;
+  if(!currentHistoryComputer||!historyDialog.open)return;
+  const id=currentHistoryComputer,generation=historyGeneration,request=++historyReadGeneration;
   historyRows.innerHTML='<tr><td colspan="14" class="muted">Loading…</td></tr>';
   try{
-    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(currentHistoryComputer)}/history?${historyQuery()}`);
+    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/history?${historyQuery()}`);
+    if(!currentHistory(id,generation,request))return;
     historyMeta.textContent=`Showing ${j.history.length} of ${j.total} matching record(s) • retention ${Math.round(inventory.retentionHours/24)} days`;
     historyRows.innerHTML=(j.history||[]).map(x=>`<tr>
       <td>${fmtTime(x.visitTime)}</td>
@@ -389,7 +401,7 @@ async function applyHistoryFilters(){
       <td>${esc(x.recordId||'')}</td>
     </tr>`).join('')||'<tr><td colspan="14" class="muted">No history matches these filters.</td></tr>';
   }catch(e){
-    historyRows.innerHTML=`<tr><td colspan="14" class="bad">${esc(e.message)}</td></tr>`;
+    if(currentHistory(id,generation,request))historyRows.innerHTML=`<tr><td colspan="14" class="bad">${esc(e.message)}</td></tr>`;
   }
 }
 function clearHistoryFilters(){
@@ -521,6 +533,7 @@ let currentScreenComputer=null;
 let liveScreenTimer=null;
 let liveScreenRequest=null;
 let liveScreenGeneration=0;
+let screenHistoryGeneration=0;
 
 async function captureScreenFrame(id,save=false){
   const generation=liveScreenGeneration;
@@ -528,7 +541,7 @@ async function captureScreenFrame(id,save=false){
   const request={id,generation};
   liveScreenRequest=request;
   try{
-    await api('/api/v1/lab/command',{
+    const result=await api('/api/v1/lab/command',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -537,15 +550,22 @@ async function captureScreenFrame(id,save=false){
         payload:{quality:save?85:65,save}
       })
     });
+    if(!Array.isArray(result.deliveries)||!result.deliveries.some(row=>row.id===id&&row.delivered===true))throw Error('Screenshot request was not delivered to this computer.');
 
     // Give the helper time to capture and Hub time to receive the JPEG.
     await new Promise(r=>setTimeout(r,1000));
 
-    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request)return;
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request||!screenDialog.open)return;
     screenImage.src=`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshot?t=${Date.now()}`;
-    screenMeta.textContent=`Live view updated • ${new Date().toLocaleTimeString()}`;
+    screenImage.hidden=false;
+    screenMeta.textContent='Capture requested. The latest available image may predate this request.';
+    liveScreenState.textContent='REFRESH • 5 sec';liveScreenState.className='pill good';
 
     if(save&&currentScreenComputer===id&&liveScreenGeneration===generation)await loadScreenHistory();
+    return true;
+  }catch(error){
+    if(currentScreenComputer===id&&liveScreenGeneration===generation&&liveScreenRequest===request&&screenDialog.open){screenMeta.textContent=`Capture unavailable: ${error.message}`;liveScreenState.textContent='CAPTURE UNCONFIRMED';liveScreenState.className='pill warn'}
+    return false;
   }finally{
     if(liveScreenRequest===request)liveScreenRequest=null;
   }
@@ -565,14 +585,15 @@ async function showScreen(id){
   currentScreenComputer=id;
   const comp=inventory.computers.find(x=>x.id===id);
   screenTitle.textContent=`Live Screen — ${comp?.name||comp?.hostname||id}`;
+  screenMeta.textContent='Requesting a capture…';
   screenDialog.showModal();
-  liveScreenState.textContent='LIVE • 5 sec';
+  liveScreenState.textContent='REFRESH • 5 sec';
   liveScreenState.className='pill good';
 
   await captureScreenFrame(id,false);
-  if(currentScreenComputer!==id||liveScreenGeneration!==generation)return;
+  if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open)return;
   await loadScreenHistory();
-  if(currentScreenComputer!==id||liveScreenGeneration!==generation)return;
+  if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open)return;
 
   liveScreenTimer=setInterval(()=>{
     if(currentScreenComputer&&screenDialog.open)
@@ -581,15 +602,18 @@ async function showScreen(id){
 }
 
 function closeScreenView(closeDialog=true){
-  liveScreenGeneration++;
+  liveScreenGeneration++;screenHistoryGeneration++;
   if(liveScreenTimer){
     clearInterval(liveScreenTimer);
     liveScreenTimer=null;
   }
   currentScreenComputer=null;
   liveScreenRequest=null;
+  screenImage.removeAttribute('src');screenImage.hidden=true;
+  screenHistory.innerHTML='';screenHistoryMeta.textContent='';screenMeta.textContent='';
   if(closeDialog&&screenDialog.open)screenDialog.close();
 }
+screenDialog.addEventListener('close',()=>{if(!screenDialog.open)closeScreenView(false)});
 
 async function refreshCurrentScreen(){
   if(currentScreenComputer)await captureScreenFrame(currentScreenComputer,false);
@@ -597,12 +621,14 @@ async function refreshCurrentScreen(){
 
 async function saveCurrentScreenshot(){
   if(!currentScreenComputer)return;
+  const id=currentScreenComputer,generation=liveScreenGeneration;
   try{
     screenMeta.textContent='Saving screenshot…';
-    await captureScreenFrame(currentScreenComputer,true);
-    screenMeta.textContent=`Screenshot saved • ${new Date().toLocaleTimeString()}`;
+    const accepted=await captureScreenFrame(id,true);
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open||!accepted)return;
+    screenMeta.textContent='Screenshot requested. Check saved history for completion.';
     await loadAll();
-  }catch(e){alert(e.message)}
+  }catch(e){if(currentScreenComputer===id&&liveScreenGeneration===generation&&screenDialog.open)alert(e.message)}
 }
 
 function downloadCurrentScreen(){
@@ -617,9 +643,11 @@ function openCurrentScreen(){
   window.open(`/api/v1/lab/computers/${encodeURIComponent(currentScreenComputer)}/screenshot?t=${Date.now()}`,'_blank');
 }
 async function loadScreenHistory(){
-  if(!currentScreenComputer)return;
+  if(!currentScreenComputer||!screenDialog.open)return;
+  const id=currentScreenComputer,generation=liveScreenGeneration,request=++screenHistoryGeneration;
   try{
-    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(currentScreenComputer)}/screenshots?limit=50`);
+    const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshots?limit=50`);
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||screenHistoryGeneration!==request||!screenDialog.open)return;
     screenHistoryMeta.textContent=`${j.screenshots.length} saved screenshot(s) • retained ${j.retentionDays} day(s)`;
     screenHistory.innerHTML=(j.screenshots||[]).map(x=>`<div class="card">
       <img src="${esc(x.url)}&amp;t=${Date.now()}" alt="Screenshot" style="width:100%;max-height:150px;object-fit:cover;border-radius:6px;border:1px solid var(--border)">
@@ -632,7 +660,7 @@ async function loadScreenHistory(){
       </div>
     </div>`).join('')||'<div class="muted">No saved screenshots yet.</div>';
   }catch(e){
-    screenHistory.innerHTML=`<div class="bad">${esc(e.message)}</div>`;
+    if(currentScreenComputer===id&&liveScreenGeneration===generation&&screenHistoryGeneration===request&&screenDialog.open)screenHistory.innerHTML=`<div class="bad">${esc(e.message)}</div>`;
   }
 }
 

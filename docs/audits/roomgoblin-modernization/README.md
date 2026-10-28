@@ -1,5 +1,15 @@
 # RoomGoblin modernization audit
 
+Current delivery: PR #316 is [deployed and verified](esphome-reliability-delivery.md)
+at `f741866`. PR #317 passed all 14 checks and merged as `1a005b2`; its exact image
+publication precedes the backed-up update. The Windows inventory repair is
+qualified, and [monitoring ownership](windows-monitoring-ownership.md) now passes
+20 new Node cases, 39 focused cases, 2,122 Linux tests with two root-only skips,
+23 Host Recovery tests and 98 browser cases in each engine. AI-alert ownership,
+hidden captures and native command cancellation have reproduced follow-up
+findings; the rest of Group 10 remains in progress. Earlier entries below
+record their status at qualification time.
+
 The [Windows inventory repair](windows-inventory-ownership.md) is qualified with
 12 new Node regressions and three browser cases: 2,102 Linux passes, two root-only
 skips, 23 Host Recovery passes and 95 browser cases per engine. Five separate
