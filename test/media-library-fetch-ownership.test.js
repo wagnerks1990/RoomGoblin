@@ -6,7 +6,7 @@ function fixture(kind="app"){
  const ctx=vm.createContext({window:null,S:{},mediaRows:grid,api:url=>new Promise((resolve,reject)=>pending.push({url,resolve,reject})),esc:String,fmtBytes:String,inlineJsArg:JSON.stringify,el:()=>grid,document:{createElement:node},setResultSummary:(...v)=>notices.push(v),console:{warn:()=>{}},notify:(...v)=>notices.push(v)});ctx.window=ctx;
  function block(a,b){const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>0&&end>start);return source.slice(start,end)}
  vm.runInContext(kind==="app"?block("let mediaLibraryRequest=","\nasync function loadLabAgentCredentials"):block("let mediaLibraryGeneration=","\nwindow.loadScenes="),ctx);
- if(kind==="app")vm.runInContext(block("async function ensureAutomationMediaLibrary(","\nfunction automationMediaOptions("),ctx);
+ if(kind==="app")vm.runInContext(block("let goveeInventoryRequest=","\nasync function loadGovee(")+block("async function ensureAutomationMediaLibrary(","\nfunction automationMediaOptions("),ctx);
  return{ctx,grid,pending,notices,source,run:()=>ctx.loadMedia(),block};
 }
 const files=name=>({files:[{storedName:name,originalName:name,type:"pdf",url:"/media/"+name,size:8,modifiedAt:"2026-10-28"}]});

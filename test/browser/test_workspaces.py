@@ -577,6 +577,71 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 self.assertFalse(page.locator(cancel).is_visible())
                 self.assertFalse(errors, errors)
 
+    def test_lighting_inventory_keeps_newest_read_and_existing_control_focus(self):
+        payload = {'devices': {'lamp': {'name': 'Fixture lamp', 'id': 'fixture-lamp'}},
+                   'groups': {'all': ['lamp']}, 'states': {'lamp': {'state': 'ON', 'brightness': 50}},
+                   'presence': {'lamp': {'online': True}}, 'meta': {}, 'discovery': {}}
+        page, errors = self.page('/controller/', overrides={'/api/v1/govee': payload})
+        page.evaluate("showPage('lights')")
+        control = page.locator('#lightDevices [data-light-control=b]')
+        control.wait_for()
+        control.focus()
+        page.evaluate('window.originalLightControl = document.activeElement')
+        page.evaluate('''payload => {
+          window.lightingFixture = payload; window.lightingReads = [];
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => String(url) === '/api/v1/govee'
+            ? new Promise((resolve, reject) => lightingReads.push({resolve, reject}))
+            : originalFetch(url, options);
+          window.oldLightingRead = loadGovee(); window.newLightingRead = loadGovee();
+        }''', payload)
+        page.evaluate('''async () => {
+          const newest = structuredClone(lightingFixture); newest.states.lamp.brightness = 70;
+          lightingReads[1].resolve(new Response(JSON.stringify(newest))); await newLightingRead;
+          lightingReads[0].resolve(new Response(JSON.stringify(lightingFixture))); await oldLightingRead;
+        }''')
+        self.assertEqual(page.evaluate('S.govee.states.lamp.brightness'), 70)
+        self.assertTrue(page.evaluate('document.activeElement === originalLightControl'))
+        page.evaluate('originalLightControl.blur(); renderGovee()')
+        self.assertEqual(control.input_value(), '70')
+        control.evaluate("e => { e.value = '44'; e.dispatchEvent(new Event('input', {bubbles:true})); }")
+        page.evaluate('''async () => {
+          const read = loadGovee(), newest = structuredClone(lightingFixture); newest.states.lamp.brightness = 80;
+          lightingReads[2].resolve(new Response(JSON.stringify(newest))); await read;
+        }''')
+        self.assertEqual(control.input_value(), '44')
+        self.assertFalse(errors, errors)
+
+    def test_lighting_refresh_cannot_erase_newer_command_error(self):
+        payload = {'devices': {'lamp': {'name': 'Fixture lamp', 'id': 'fixture-lamp'}},
+                   'groups': {'all': ['lamp']}, 'states': {}, 'presence': {}, 'meta': {}, 'discovery': {}}
+        sent = []
+        def transport(req, target):
+            if target == '/api/v1/govee/lamp/on':
+                sent.append(req.request.post_data_json)
+                req.fulfill(status=503, json={'error': 'Fixture lighting command failed'})
+                return True
+            return False
+        page, errors = self.page('/controller/', overrides={'/api/v1/govee': payload}, transport=transport)
+        page.evaluate("showPage('lights')")
+        page.locator('#lightDevices .lightCard').wait_for()
+        page.evaluate('''() => {
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => String(url) === '/api/v1/govee'
+            ? new Promise(resolve => { window.resolveOldLightingRead = resolve; })
+            : originalFetch(url, options);
+          window.pendingLightingRead = loadGovee();
+          window.pendingLightingCommand = goveeCmd('lamp', 'on');
+        }''')
+        page.wait_for_function("document.getElementById('goveeMessage').textContent.includes('Fixture lighting command failed')")
+        page.evaluate('''async payload => {
+          resolveOldLightingRead(new Response(JSON.stringify(payload)));
+          await pendingLightingRead; await pendingLightingCommand;
+        }''', payload)
+        self.assertIn('Fixture lighting command failed', page.locator('#goveeMessage').inner_text())
+        self.assertEqual(len(sent), 1)
+        self.assertFalse(errors, errors)
+
     def test_presentation_refresh_preserves_receiver_choices_and_focus(self):
         payload = {'folders': [{'id': 'root', 'name': 'Root', 'parentId': None}],
                    'presentations': [], 'state': {'active': False},

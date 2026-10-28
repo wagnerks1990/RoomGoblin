@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Bound lighting UDP and shared MQTT command waits, contain socket errors,
+  release obsolete connection owners and disable offline QoS-zero command replay.
+
+- Preserve current lighting inventory across overlapping Lighting/scheduler
+  refreshes and keep newer command/save outcomes visible after late responses.
+
 - Reject duplicate presentation rebuilds while their render is still active,
   preserving the accepted conversion's final status and later retry behavior.
 

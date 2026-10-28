@@ -10,10 +10,10 @@ storage.ClassroomHubStorage=class extends Original{constructor(...args){super(..
 if(process.env.SHUTDOWN_MQTT_FIXTURE==="1"){
   const mqtt=require("mqtt"),{EventEmitter}=require("node:events");
   require.cache[require.resolve("mqtt")].exports={...mqtt,connect:()=>{
-    const client=new EventEmitter();client.subscribe=()=>{};
+    const client=new EventEmitter();client.connected=false;client.subscribe=()=>{};
     client.publish=(_topic,_payload,_options,callback)=>{console.log("fixture-mqtt-started");setTimeout(()=>callback(),800)};
     client.end=(_force,_options,callback)=>{callback?.()};
-    setImmediate(()=>client.emit("connect"));return client;
+    setImmediate(()=>{client.connected=true;client.emit("connect")});return client;
   }};
 }
 lifecycle.trackApplicationHandlers=(app,options)=>{

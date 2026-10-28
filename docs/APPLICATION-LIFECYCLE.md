@@ -109,6 +109,20 @@ music reconciliation, scheduler occurrences and update/status jobs. A WebSocket
 peer gets one second to acknowledge close before termination; server close
 callbacks finish before SQLite closes. MQTT close is awaited too.
 
+MQTT command publication has a five-second completion deadline. Accepted writes
+belong to their captured connection; close/offline/error/reconnect or explicit
+connection replacement rejects its pending owners without replaying commands.
+Both actual client state and runtime availability gate admission. QoS-zero
+offline queuing is disabled. A timeout or connection loss reports unconfirmed
+delivery: bytes already handed to a transport cannot be assumed undone. MQTT
+failure does not change WebSocket receiver persistence or other integration
+health. Late events from a replaced MQTT client cannot alter its successor.
+
+Native H618G temperature writes similarly own their UDP socket through callback,
+socket error, synchronous send failure or a five-second deadline. Completion
+closes the socket once and never retries an uncertain write. Returned Govee HTTP
+handlers remain tracked after browser disconnect until transport completion.
+
 Automation waits stop at the next action/dwell boundary (at most 500 ms during a
 dwell) with `interrupted` / `server-shutdown` recorded in the existing ledger.
 Already requested operator cancellation retains precedence and remains
