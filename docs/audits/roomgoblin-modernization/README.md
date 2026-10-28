@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+The [Windows inventory repair](windows-inventory-ownership.md) is qualified with
+12 new Node regressions and three browser cases: 2,102 Linux passes, two root-only
+skips, 23 Host Recovery passes and 95 browser cases per engine. Five separate
+history/screenshot ownership defects are reproduced for the monitoring follow-up.
+PR #316 passed all 14 fresh checks and merged as `f741866`; its exact main
+publication and backed-up update are pending. Veyon integration follows that main.
+
 The two Veyon repairs are integrated on merged `main` `f741866`. Before this
 evidence note, `3201487` is byte-identical to qualified `43d2645`; all 37 focused
 integration cases pass again. Final qualification passes 2,090 Linux tests,

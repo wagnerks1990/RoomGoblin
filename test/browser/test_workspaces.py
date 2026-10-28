@@ -1075,6 +1075,79 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 self.assertNotIn(obsolete, writes[0])
             self.assertFalse(errors, errors)
 
+    def lab_inventory_page(self):
+        computers = [{'id': 'lab-a', 'name': 'Alpha workstation', 'groups': [], 'online': True},
+                     {'id': 'lab-b', 'name': 'Beta workstation', 'groups': [], 'online': False}]
+        page, errors = self.page('/controller/lab.html', 390, overrides={
+            '/api/v1/lab/computers': {'configured': True, 'retentionHours': 168,
+                                     'computers': computers, 'summary': {'total': 2, 'online': 1, 'offline': 1}}})
+        page.locator('[data-computer-id="lab-a"]').wait_for()
+        page.wait_for_function('!labInventoryBusy')
+        return page, errors
+
+    def test_lab_inventory_poll_preserves_keyboard_focus_and_open_details(self):
+        page, errors = self.lab_inventory_page()
+        card = page.locator('[data-computer-id="lab-a"]')
+        card.locator('summary').click()
+        card.locator('[data-lab-focus="select"]').check()
+        for control in ('select', 'details', 'history', 'screen', 'message', 'last-command', 'edit'):
+            button = card.locator(f'[data-lab-focus="{control}"]')
+            button.focus()
+            page.evaluate('loadAll()')
+            page.wait_for_function('!labInventoryBusy')
+            self.assertTrue(button.evaluate('el=>el===document.activeElement'), control)
+            self.assertTrue(card.locator('details').evaluate('el=>el.open'))
+            self.assertTrue(card.locator('[data-lab-focus="select"]').is_checked())
+        self.evidence(page, errors, 'lab-inventory-focus-390')
+
+    def test_lab_inventory_read_failure_retains_filtered_inventory_and_selection(self):
+        page, errors = self.lab_inventory_page()
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="select"]').check()
+        page.locator('#computerSearch').fill('Beta')
+        page.evaluate("""() => {
+          const original=window.fetch;
+          window.fetch=(url,options) => url==='/api/v1/lab/computers'
+            ? Promise.resolve(new Response(JSON.stringify({error:'Inventory unavailable'}),{status:503}))
+            : original(url,options);
+        }""")
+        page.get_by_role('button', name='Refresh', exact=True).click()
+        page.wait_for_function("document.querySelector('#labInventoryStatus').textContent.includes('last available inventory')")
+        self.assertEqual(page.locator('#computerGrid [data-computer-id]').count(), 1)
+        self.assertEqual(page.locator('#computerGrid [data-computer-id]').get_attribute('data-computer-id'), 'lab-b')
+        self.assertIn('1 hidden by filters', page.locator('#selectionCount').inner_text())
+        self.assertEqual(page.locator('#computerSearch').input_value(), 'Beta')
+        self.evidence(page, errors, 'lab-inventory-unavailable-390')
+
+    def test_lab_inventory_discards_pre_edit_read_and_refreshes_saved_name(self):
+        page, errors = self.lab_inventory_page()
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="select"]').check()
+        page.evaluate("""() => {
+          window.beforeLabInventory=structuredClone(inventory); window.labReads=0; window.labSaves=[];
+          const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url==='/api/v1/lab/computers'&&!options.method){
+              if(++labReads===1)return new Promise(resolve=>window.releaseOldLabRead=resolve);
+              return Promise.resolve(new Response(JSON.stringify({...beforeLabInventory,computers:beforeLabInventory.computers.map(c=>c.id==='lab-a'?{...c,name:'Renamed workstation',groups:['Group A']}:c)})));
+            }
+            if(url==='/api/v1/lab/computers/lab-a'&&options.method==='PUT'){
+              labSaves.push(JSON.parse(options.body));return Promise.resolve(new Response(JSON.stringify({ok:true})));
+            }
+            return original(url,options);
+          };
+          void loadAll();
+        }""")
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        page.on('dialog', lambda dialog: dialog.accept('Renamed workstation' if dialog.message.startswith('Friendly') else 'Group A'))
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="edit"]').click()
+        page.wait_for_function('labSaves.length===1&&!labMetadataCount')
+        page.evaluate('releaseOldLabRead(new Response(JSON.stringify(beforeLabInventory)))')
+        page.wait_for_function("inventory.computers.find(c=>c.id==='lab-a').name==='Renamed workstation'")
+        self.assertEqual(page.evaluate('labReads'), 2)
+        self.assertEqual(page.evaluate('labSaves[0]'), {'name': 'Renamed workstation', 'groups': ['Group A']})
+        self.assertIn('Renamed workstation', page.locator('[data-computer-id="lab-a"]').inner_text())
+        self.assertTrue(page.locator('[data-computer-id="lab-a"] [data-lab-focus="select"]').is_checked())
+        self.evidence(page, errors, 'lab-inventory-after-edit-390')
+
     def test_lab_selection_respects_visible_inventory(self):
         computers = [{'id': 'lab-a', 'name': 'Alpha workstation', 'online': True},
                      {'id': 'lab-b', 'name': 'Beta workstation', 'online': True},

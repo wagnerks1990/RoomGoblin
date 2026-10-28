@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve Windows lab inventory and keyboard focus through polling, report stale
+  reads clearly, and order metadata saves before refreshing current state.
+
 - Keep Veyon information dialogs owned by their current request and prevent late
   connection-pool cleanup from closing a newer computer-details dialog.
 
