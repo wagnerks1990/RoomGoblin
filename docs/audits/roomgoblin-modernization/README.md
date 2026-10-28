@@ -9,6 +9,11 @@ two root-only skips, 23 Host Recovery passes and 70 workspace cases in each
 browser. Its 39 new cases cover browser and backend ownership. Checked delivery
 remains pending. Lost-completion-response replay is separately reproduced and open.
 
+PR #307's CodeQL gate found missing completion rate limiting. The repair adds
+five regressions and passes 1,718 Linux tests with zero failures, two root-only
+skips and all 23 Host Recovery tests. Completion limits exclude rejected callers
+and do not limit chunk transfer; fresh required CI remains pending.
+
 PR #305 is deployed and verified at `daa378f`; see its
 [delivery receipt](media-reconnect-delivery.md).
 Upload registration recovery has [ten actual-store/route regressions](upload-registration-ownership.md).

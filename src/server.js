@@ -8363,7 +8363,13 @@ app.put("/api/v1/media/uploads/:id/chunks/:index",requireCapability("media.manag
     res.json({ok:true,upload});
   }catch(err){if(!req.readableEnded)req.resume();res.status(err.status||400).json({ok:false,error:err.message})}
 });
-app.post("/api/v1/media/uploads/:id/complete",requireCapability("media.manage"),async(req,res)=>{
+const mediaUploadCompletionLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:12,keyGenerator:()=>"media-upload-completion",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Upload completion limit reached; retry later"}
+});
+app.post("/api/v1/media/uploads/:id/complete",mediaUploadCompletionLimit,requireCapability("media.manage"),async(req,res)=>{
   let destination="",registered=false,file;
   try{
     const session=resumableUploads.owned(req.params.id,ownerKey(req)),stored=mediaStoredName(session.name);

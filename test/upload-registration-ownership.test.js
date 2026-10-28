@@ -11,7 +11,7 @@ async function fixture(t){
  const store=new ResumableUploadStore({root:path.join(root,"sessions"),destinationRoot:media,maxFileBytes:1024,chunkBytes:16,minFreeBytes:0,ttlMs:1000}),meta=store.create({owner:"fixture",name:"lesson.pdf",mime:"application/pdf",size:bytes.length});
  await store.putChunk({id:meta.id,owner:"fixture",index:0,input:Readable.from(bytes),contentLength:bytes.length,digest});
  let route,index=0;const h={root,media,store,meta,register:async args=>({storedName:args.stored,url:"/media/"+args.stored})};
- const ctx=vm.createContext({app:{post:(_url,...args)=>route=args.at(-1)},requireCapability:()=>()=>{},resumableUploads:store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"fixture-"+(++index)+".pdf",MEDIA_DIR:media,path,fs,registerUploadedMedia:args=>h.register(args)});
+ const ctx=vm.createContext({app:{post:(_url,...args)=>route=args.at(-1)},mediaUploadCompletionLimit:()=>{},requireCapability:()=>()=>{},resumableUploads:store,ownerKey:req=>req.owner||"fixture",mediaStoredName:()=>"fixture-"+(++index)+".pdf",MEDIA_DIR:media,path,fs,registerUploadedMedia:args=>h.register(args)});
  vm.runInContext(source.slice(a,b),ctx);
  h.call=async(overrides={},responseHook)=>{const result={status:200,body:null},res={status(v){result.status=v;return res},json(value){responseHook?.(value);result.body=value;return res}};await route({params:{id:meta.id},body:{sha256:digest},...overrides},res);return result};
  h.part=path.join(store.dir(meta.id),"0.part");return h;
