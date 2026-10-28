@@ -15,6 +15,26 @@ and editor context are unchanged. Rejected or incomplete replies retain ordinary
 fields and never repeat enrollment automatically. A failed inventory follow-up
 does not turn an accepted enrollment into a reported failure.
 
+## Editor request ownership
+
+Each Android display retains one pending metadata save across inventory redraws
+and editor reopening. Completion closes only the unchanged submitting editor;
+newer drafts and another display's editor remain intact. Save outcomes stay on
+the original display card, including failures after the editor closes. A failed
+follow-up read does not relabel an accepted save as failed. Closing returns focus
+to the current Edit button or the inventory search when that card is unavailable.
+
+## Screenshot preview lifetime
+
+The Android screenshot dialog opens while capture is pending and displays capture
+or decoding errors in place. A result can appear only in its original, still-open
+preview; closing with Close or Escape clears the image and retires late success
+and failure replies. A newer capture cannot be replaced by an older reply or
+decoder. Images use allowlisted bitmap types, the existing 16 MiB capture ceiling
+and successful browser decoding before display. Closing restores focus to the
+current Screenshot control or the display search if the control is unavailable.
+Closing a preview does not cancel an ADB capture already accepted by the server.
+
 ## ADB key-storage regression
 
 The maintenance container is intentionally hardened with a read-only root filesystem and all Linux capabilities dropped. Android `adb` still creates its persistent client identity beneath `$HOME/.android`. The Android integration points `HOME` and `ANDROID_USER_HOME` at `/managed/classroom-hub/data/android-tv`, so the effective key directory is `/managed/classroom-hub/data/android-tv/.android`.
