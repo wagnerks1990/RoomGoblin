@@ -216,9 +216,9 @@ or GitHub environment approval is required. Main publication has read-only sourc
 permissions; only package aliases are promoted. Semantic release tags remain an
 optional compatibility mechanism for the existing GUI, not a required update lane.
 
-Enable merge commits, squash and rebase in Settings > General > Pull Requests
-and in the main ruleset's allowed merge methods. Preserve required status checks,
-review-thread resolution, non-fast-forward/deletion protection and security gates.
-Repository-level checkboxes alone do not override a squash-only ruleset. An AI
-connection without ruleset-administration writes must report that remaining
-owner action rather than claim it changed settings or bypass the ruleset.
+Use the merge methods allowed by the effective main ruleset; the current
+reviewed policy permits squash only. Preserve required status checks, up-to-date
+branches, resolved review threads, non-fast-forward/deletion protection and
+security gates. Repository-level checkboxes do not override that ruleset. Do not
+change merge policy or claim an administrative setting changed without explicit
+authorization and verified access.
