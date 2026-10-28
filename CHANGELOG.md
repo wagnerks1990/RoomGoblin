@@ -5,6 +5,15 @@
 
 ## Unreleased
 
+- Establish My Account focus when it opens so a delayed callback cannot interrupt
+  keyboard navigation or move focus after a quick reopen.
+
+- Keep one Windows enrollment request pending at a time and clear generated
+  packages on authentication changes or a new issuance attempt.
+
+- Stop owned native Windows command processes on caller cancellation, preserve
+  timeout/cancellation outcomes, and reject already-cancelled launches.
+
 - Preserve current AI-alert filters and closed-view privacy, contain pending
   action failures, and suspend Windows screenshot requests in hidden views.
 

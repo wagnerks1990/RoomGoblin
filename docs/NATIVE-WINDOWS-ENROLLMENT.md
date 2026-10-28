@@ -21,6 +21,13 @@ Issue #142 tracks the remaining signing/native-library-extraction hardening.
 
 ## Administrator workflow
 
+The controller admits one issuance request at a time and captures its computer
+ID and lifetime. Later form edits remain drafts. Starting another issuance clears
+the previous generated package; authentication changes clear it and invalidate
+late responses and old download handlers. A failed request permits an explicit
+retry and is never automatically replayed. Backend expiry and one-time credential
+exchange remain authoritative.
+
 In the controller's Windows Lab Agent enrollment panel:
 
 1. enter the stable computer ID;

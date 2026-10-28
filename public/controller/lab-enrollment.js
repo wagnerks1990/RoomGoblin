@@ -1,6 +1,13 @@
 /* Windows enrollment UI, loaded after the controller API helpers. */
 (()=>{
   'use strict';
+  let enrollmentPending=null,enrollmentGeneration=0;
+  const enrollmentAllowed=()=>typeof userCan==='function'&&userCan('admin');
+  function clearEnrollmentResult(){
+    const result=document.getElementById('labEnrollmentResult');
+    if(result){result.innerHTML='';result.style.display='none'}
+  }
+  window.addEventListener('roomgoblin:authchange',()=>{enrollmentGeneration++;clearEnrollmentResult()});
   // The admin enrollment API must keep returning the legacy PowerShell command for
   // compatibility, but the controller presents the native service path first. The
   // generated command downloads only the four manifest-listed binaries from the
@@ -52,11 +59,17 @@
   }
   function enhanceNativeEnrollment(){
     window.createLabAgentEnrollment=async function(){
+      if(!enrollmentAllowed()){clearEnrollmentResult();notify('Administrator access is required for enrollment.','error');return}
+      if(enrollmentPending){notify('An enrollment request is still pending. Wait for it to finish.','warn');return}
+      const request={},generation=++enrollmentGeneration;
+      enrollmentPending=request;clearEnrollmentResult();
       try{
         const id=document.getElementById('labEnrollmentId')?.value.trim();
         if(!id)throw Error('Enter a stable computer ID.');
         const ttl=Number(document.getElementById('labEnrollmentTtl')?.value||15);
+        if(!document.getElementById('labEnrollmentResult'))throw Error('The enrollment result view is unavailable.');
         const j=await api(`/api/v1/admin/lab-agents/${encodeURIComponent(id)}/enrollment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ttlMinutes:ttl})});
+        if(generation!==enrollmentGeneration||!enrollmentAllowed())return;
         const enrollment=j.enrollment,result=document.getElementById('labEnrollmentResult');
         if(!enrollment?.token||!enrollment?.installerUrl||!result)throw Error('RoomGoblin returned an incomplete enrollment package.');
         const nativeCommand=nativeEnrollmentCommand(enrollment);
@@ -66,9 +79,12 @@
         const transportNote=new URL(preferredOrigin).protocol==='https:'?`<span class="pill ok">HTTPS / WSS preferred</span>`:`<span class="pill">LAN HTTP fallback</span>`;
         const fallback=enrollment.fallbackInstallCommand?`<details style="margin-top:10px"><summary>Current-browser/LAN-origin fallback</summary><textarea class="raw" readonly style="width:100%;min-height:120px;margin-top:8px">${esc(enrollment.fallbackInstallCommand)}</textarea><div class="muted">Use only if the preferred HTTPS origin is unavailable from this computer. HTTP fallback requires the agent's explicit insecure-LAN acknowledgement.</div></details>`:'';
         result.innerHTML=`<b>Recommended: browser package + native bootstrap for ${esc(enrollment.agentId)}</b> ${transportNote}<div class="muted" style="margin-top:6px">Preferred Hub origin: <code>${esc(preferredOrigin)}</code>. HTTPS agents automatically use <code>wss://</code> for the long-lived RoomGoblin control channel.</div><div class="toolbar" style="margin-top:8px"><a class="buttonLink" href="/lab-agent/native/RoomGoblinNativeAgent.zip" download>1. Download native package</a><button type="button" data-native-enrollment-file>2. Download one-time enrollment file</button></div><div class="muted" style="margin-top:8px">On the Windows computer, extract the ZIP, place the downloaded enrollment JSON in the extracted folder, open an elevated Command Prompt or PowerShell there, and run <code>RoomGoblinAgentBootstrap.exe install --enrollment-file roomgoblin-enrollment-${esc(safe)}.json</code>. The bootstrap deletes the plaintext enrollment file immediately after reading it and verifies manifest.json plus all four native executable hashes before installation. Expires ${esc(new Date(enrollment.expiresAt).toLocaleString())}.</div><details style="margin-top:10px"><summary>Automated PowerShell native installer fallback</summary><textarea class="raw" readonly style="width:100%;min-height:190px;margin-top:8px">${esc(nativeCommand)}</textarea><div class="muted">Use only where endpoint-protection policy permits the PowerShell download-and-execute chain. The browser package workflow above is preferred.</div></details>${fallback}<details style="margin-top:10px"><summary>Legacy PowerShell scheduled-task installer</summary><textarea class="raw" readonly style="width:100%;min-height:110px;margin-top:8px">${esc(enrollment.installCommand||'')}</textarea><div class="muted">Compatibility fallback only.</div></details>`;
-        result.querySelector('[data-native-enrollment-file]')?.addEventListener('click',()=>downloadNativeEnrollmentFile(enrollment),{once:true});
+        result.querySelector('[data-native-enrollment-file]')?.addEventListener('click',()=>{
+          if(generation===enrollmentGeneration&&enrollmentAllowed())downloadNativeEnrollmentFile(enrollment);
+        },{once:true});
         await loadLabAgentCredentials();
-      }catch(error){notify(error.message,'error')}
+      }catch(error){if(generation===enrollmentGeneration&&enrollmentAllowed())notify(error.message,'error')}
+      finally{if(enrollmentPending===request)enrollmentPending=null}
     };
   }
 

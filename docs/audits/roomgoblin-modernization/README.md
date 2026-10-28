@@ -1,5 +1,36 @@
 # RoomGoblin modernization audit
 
+The [account focus repair](account-dialog-focus.md) joins the pending Windows
+agent batch after its main-browser failure exposed a delayed focus callback.
+Qualification passes 2,169 Linux tests, two root-only skips, 23 Host Recovery
+tests, all 270 Chromium browser cases and 106 workspace/Veyon cases in Firefox.
+PR #318's browser rerun and exact image publication passed; its backed-up Hub-only
+update is running. Native process-output and download-body bounds are reproduced
+for the next repair. Group 10 and the remaining roadmap are still open.
+
+Native cancellation and enrollment ownership are integrated on merged main
+`5e1af23`. Before this note, `82980cd` is byte-identical to qualified `9911c30`;
+all 36 focused integration contracts pass again. Full qualification passes
+2,165 Linux tests, two root-only skips, 23 Host Recovery tests, six isolated
+native process cases on .NET 10 and 105 browser cases per engine. Required CI
+includes native .NET 8 process execution; exact publication and delivery follow.
+
+PR #318 passed all 14 fresh checks with resolved reviews and merged as `5e1af23`;
+exact publication and its backed-up update are pending. The separate
+[enrollment ownership repair](windows-enrollment-ownership.md) passes 16 new
+Node regressions, 21 focused cases, 2,165 Linux tests with two root-only skips,
+23 Host Recovery tests and 105 browser cases in each engine. Integration with
+the qualified native cancellation repair and fresh CI follow.
+
+Reviewed Windows monitoring is pushed as PR #318 head `6dda633`, with 59 new
+Node regressions, 11 browser cases, 2,149 Linux passes, two root-only skips, 23
+Host Recovery passes and 103 browser cases per engine. Both review findings are
+resolved after their repairs; fresh CI precedes merge. The separate
+[native cancellation repair](windows-command-cancellation.md) passes six isolated
+local process cases and adds equivalent .NET 8 coverage to the Windows CI job.
+Its full Linux run passes 2,149 tests with two root-only skips, all 23 Host
+Recovery tests and syntax/controller checks. Fresh CI and delivery remain pending.
+
 PR #317 is [deployed and verified](veyon-reliability-delivery.md). PR #318's
 Windows monitoring review findings are repaired locally with three additional
 regressions. The [AI-alert and hidden-capture follow-up](windows-alert-ownership.md)
