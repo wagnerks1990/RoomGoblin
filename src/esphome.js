@@ -249,11 +249,12 @@ class ESPHomeManager{
   close(){this.closed=true;clearInterval(this.timer);if(this.child)this.failWorker(this.child)}
 }
 
-function registerESPHomeRoutes(app,{manager,requireRead,requireControl,requireAdmin,isAdmin,owner,track=task=>task,audit=()=>{}}){
-  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
-  const discoveryLimit=rateLimit({windowMs:60000,limit:12,keyGenerator:()=>"esphome-discovery",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome discovery request limit reached; retry later."}});
-  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
-  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
+function registerESPHomeRoutes(app,{manager,requireRead,requireControl,requireAdmin,canRead,canControl,isAdmin,owner,track=task=>task,audit=()=>{}}){
+  if([canRead,canControl,isAdmin].some(predicate=>typeof predicate!=="function"))throw new TypeError("ESPHome routes require shared authorization predicates");
+  const statusLimit=rateLimit({windowMs:60000,limit:600,keyGenerator:()=>"esphome-status",skip:req=>!canRead(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome inventory request limit reached; retry later."}});
+  const discoveryLimit=rateLimit({windowMs:60000,limit:12,keyGenerator:()=>"esphome-discovery",skip:req=>!isAdmin(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome discovery request limit reached; retry later."}});
+  const managementLimit=rateLimit({windowMs:60000,limit:60,keyGenerator:()=>"esphome-management",skip:req=>!isAdmin(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome management request limit reached; retry later."}});
+  const commandLimit=rateLimit({windowMs:60000,limit:240,keyGenerator:()=>"esphome-commands",skip:req=>!canControl(req),standardHeaders:"draft-8",legacyHeaders:false,message:{ok:false,error:"ESPHome command request limit reached; retry later. Commands are not queued."}});
   const route=(action,kind)=>(req,res)=>{
     const task=(async()=>{
       try{const result=await action(req);if(kind)audit({kind:`esphome.${kind}`,deviceId:req.params.id||null,ok:true});res.json(result)}

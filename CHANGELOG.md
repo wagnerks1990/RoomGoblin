@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve ESPHome API budgets for authorized callers by sharing the existing
+  capability and administrator predicates with rate-limit admission.
+
 - Validate complete lighting command targets before sending, preserve accepted
   payloads and stop pending writes if a target's physical identity changes.
 

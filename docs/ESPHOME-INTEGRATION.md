@@ -76,6 +76,12 @@ Inventory requires `classroom.read`. Ordinary entity commands require `integrati
 
 Separate appliance-wide one-minute limits exist for inventory, discovery, management, and interactive commands. Rejected over-limit requests do not create worker jobs or queued device actions.
 
+Only callers accepted by the corresponding read, control or administrator guard
+consume these budgets. Rate middleware stays before the guards and uses their
+shared predicates, including legacy control-token mode. Rejected callers retain
+the normal authentication/permission response even when a budget is exhausted.
+Changing device IDs, endpoints or forwarded addresses does not create more quota.
+
 The ESPHome Noise transport is encrypted only when a device has an API encryption key. An intentionally unencrypted native API is plaintext on the local network. The current RoomGoblin alpha controller itself is HTTP-only, so a key entered through the browser is protected only by the trusted-network boundary until HTTPS is introduced. Do not expose RoomGoblin or ESPHome management surfaces directly to the public Internet.
 
 ## Architecture

@@ -5597,7 +5597,7 @@ app.post("/api/v1/commands", requireControl, async (req, res) => {
 const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested});
 registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRead,
   requireControl:requireCapability("integrations.control"),requireAdmin,
-  isAdmin:req=>!dbStore.authEnabled()||(hasRole(requestUser(req),"admin")&&hasCapability(requestUser(req),"*")),
+  canRead:req=>capabilityAccessAllowed(req,"classroom.read"),canControl:req=>capabilityAccessAllowed(req,"integrations.control"),isAdmin:administratorAccessAllowed,
   owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
 
 const ubuntuDisplays=new UbuntuDisplays({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,

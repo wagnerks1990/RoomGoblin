@@ -1,10 +1,14 @@
 # RoomGoblin modernization audit
 
-PR #314 passed all 14 checks without unresolved reviews and merged as `5ffba81`;
-its exact publication and backed-up delivery are pending. Dispatch identity is
-integrated on that main: `5e9285f` is byte-identical to qualified `7faf08d` before
-this evidence note, and all 246 focused cases pass again. ESPHome quota work is
-separately qualified at `43f4dfd`; controller races remain under repair.
+The [ESPHome admission repair](esphome-admission-budgets.md) reproduces five
+quota/predicate failures and passes all nine new cases plus the existing budget
+regression. Full qualification passes 2,023 Linux tests, two root-only skips and
+all 23 Host Recovery tests. ESPHome controller races remain next.
+
+Dispatch identity was integrated on merged main `5ffba81`: `5e9285f` was
+byte-identical to qualified `7faf08d` before its evidence note, and all 246
+focused cases passed again. PR #314 delivery is now verified; PR #315 is
+merged as `af76c5a`, with exact publication and delivery pending.
 
 PR #313 is [deployed and verified](lighting-configuration-delivery.md) at
 `5cf4c81`. PR #314's required validation is running; its security and both browser
