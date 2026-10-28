@@ -52,7 +52,7 @@ Recovery tests and Node/controller/Python/Bash checks. Required CI,
 checked integration, exact images and backed-up delivery remain pending. All
 dispatches here use deterministic fixtures, not production receivers or music.
 
-Failed takeover-start cleanup is a separate remaining review: a successor that
-fails while starting may need to retain an older pending hold and clean up only
-its own partially dispatched content. This patch's successor acceptance covers
-successful starts followed by release, not that separate failure path.
+Failed takeover-start cleanup has a separate
+[follow-up and qualification](announcement-start-failure.md). This patch's
+successor acceptance covers successful starts followed by release. Replacement
+of an already active session remains a separate review.

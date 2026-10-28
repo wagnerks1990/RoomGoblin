@@ -66,6 +66,11 @@ A selected receiver mapped to the shared legacy broadcast topic fails closed
 instead of clearing unrelated receivers. These are command-ownership checks,
 not proof of physical playback or audible silence.
 
+If a start fails after changing display state, its owned content remains pending
+for cleanup and current-schedule reconciliation before music priority is released.
+Older pending recovery remains held too. The original start error is reported;
+unchanged or newer content is excluded from that failed attempt's cleanup.
+
 ## HLS player recovery
 
 `public/antmedia-player/index.html` is the same-origin player used for Morning Announcements. For the current HTTP deployment it runs HLS.js on the main thread (`enableWorker:false`) because the application Content Security Policy intentionally does not permit arbitrary blob workers. This avoids the repeated CSP worker rejection observed in browser diagnostics without broadly weakening the application CSP.

@@ -947,6 +947,7 @@ async function setMorningAnnouncementPriorityTargets(targets,active){
 async function assertMorningAnnouncements({mode="automatic",targetsOverride=null,urlOverride=null}={}){
   const targets=Array.isArray(targetsOverride)&&targetsOverride.length?automationDisplayTargets(targetsOverride):announcementTargets();if(!targets.length)return;
   const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
+  const clearId=commandId(),contentId=commandId();
   // Acquire both the display and audio priority state before sending any
   // takeover commands. Otherwise a scheduler tick can overwrite the display,
   // or Music Assistant can remain audible, while takeover is in flight.
@@ -959,13 +960,23 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
   // display content; do not invoke the master classroom clear because that would
   // pause lesson/session queues beyond the announcement window.
   try{
-    await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
-    await executeCommand({type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
+    await executeCommand({id:clearId,type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
+    await executeCommand({id:contentId,type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
     await priorityTask;
   }catch(error){
     await priorityTask.catch(()=>{});
     morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0;
-    await setMorningAnnouncementPriorityTargets(targets,false);
+    // Dispatch can fail after publishing state or some transports. Keep those
+    // owned changes under the normal conditional release/reconciliation path.
+    // Unchanged or superseding content must never become cleanup targets.
+    const owned=targets.filter(id=>[clearId,contentId].includes(persistentState.displays[id]?.audioContentId));
+    if(owned.length)queueMorningAnnouncementsReleaseTargets(owned);
+    if(morningAnnouncementsReleaseTargets.size){
+      morningAnnouncementsRuntime.releaseReconcilePending=true;
+      scheduleMorningAnnouncementsReleaseRetry([...morningAnnouncementsReleaseTargets.keys()],"start-failed");
+    }
+    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)),false)}
+    catch(cleanupError){diagnosticError(cleanupError,{component:"automation",operation:"morning-announcements-start-cleanup"})}
     throw error;
   }
   scheduleAnnouncementAudioRetries(targets);
