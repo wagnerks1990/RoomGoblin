@@ -8145,6 +8145,12 @@ const presentationUpload=multer({
   }
 });
 
+const presentationSessionMutationLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:30,keyGenerator:()=>"presentation-session-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Presentation start/removal limit reached; retry later"}
+});
 app.get("/api/v1/presentations",requireClassroomRead,(_req,res)=>{
   res.json({
     ok:true,
@@ -8181,7 +8187,7 @@ app.put("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(r
     res.json({ok:true,folder});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/presentations/folders/:id",requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
+app.delete("/api/v1/presentations/folders/:id",presentationSessionMutationLimit,requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id);
     if(id==="root"||!presentationLibrary.folders[id])return res.status(400).json({ok:false,error:"Root folder cannot be deleted"});
@@ -8266,7 +8272,7 @@ app.put("/api/v1/presentations/:id",requireCapability("media.manage"),(req,res)=
     res.json({ok:true,presentation:presentationPublicRecord(rec)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
+app.delete("/api/v1/presentations/:id",presentationSessionMutationLimit,requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id);
     if(!presentationLibrary.presentations[id])return res.status(404).json({ok:false,error:"Presentation not found"});
@@ -8276,7 +8282,7 @@ app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(r
     res.json({ok:true,id});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 }));
-app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
+app.post("/api/v1/presentations/:id/start",presentationSessionMutationLimit,requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id),rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});

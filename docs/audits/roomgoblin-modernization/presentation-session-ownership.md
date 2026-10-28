@@ -78,7 +78,20 @@ Required PR/main checks, exact images and backed-up appliance delivery are pendi
 
 Integration on merged main `86ce127` produced a complete tree byte-identical to
 qualified `e1b534e` before this evidence note. All 51 focused integration checks
-also pass. PR #309's backed-up delivery must be verified before this batch merges.
+also pass. PR #309's backed-up delivery is verified in the linked audit receipt.
+
+## Security-gate repair
+
+CodeQL on `da4309b` reported missing rate limiting on the newly queued start,
+deck-delete and folder-delete routes. They now share a fixed 30-per-minute
+appliance budget before authorization/session admission, using the same accepted
+caller predicate as the capability guard. Live controls remain independently
+available. Four actual HTTP/limiter regressions cover shared route/IP budgeting,
+rejected users/tokens and Stop after exhaustion; all 55 focused checks pass.
+The final Linux rerun passes 1,870 tests, zero failures and two root-only skips
+(1,872 total), plus all 23 Host Recovery tests and Node/controller/Python/Bash
+checks. Frontend source is unchanged from the 76-case passes in both browsers.
+Fresh GitHub gates remain pending. No gate is suppressed.
 
 ## Follow-up still open
 

@@ -1,10 +1,17 @@
 # RoomGoblin modernization audit
 
-Status: **PR #308 delivered; PR #309 merged and publishing; presentation session/controller repairs qualified**.
+Status: **PR #309 delivered; PR #310 rate-limit repair qualified for fresh CI**.
+
+PR #309 is deployed and verified at `86ce127`; see its
+[delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
+missing limits on three newly queued presentation routes. The accepted-caller
+repair adds four HTTP regressions and passes 1,870 Linux tests with two root-only
+skips and all 23 Host Recovery tests; fresh CI is pending. The separate rebuild-admission repair is qualified on its retained
+development branch and will follow this PR.
 
 PR #308 is deployed and verified at `43b4d83`; see its
 [delivery receipt](media-library-recovery-delivery.md). PR #309 passed all 14
-checks and merged as `86ce127`; exact images and backed-up delivery are pending.
+checks and merged as `86ce127`; exact images and backed-up delivery are verified.
 The [presentation session/controller repairs](presentation-session-ownership.md)
 have 47 new Node regressions and three browser cases passing. Final qualification
 passes 1,866 Linux tests, two root-only skips and all 23 Host Recovery tests;

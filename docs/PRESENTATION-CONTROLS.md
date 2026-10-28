@@ -39,6 +39,11 @@ Accepted HTTP handlers return the complete queued operation, including after
 browser disconnect. Shutdown and Full Recovery therefore retain their existing
 writer-drain ownership; automatic advancement keeps its existing busy owner.
 
+Start and deck/folder removal share a fixed appliance-wide limit of 30 accepted
+requests per minute, checked before session admission. Rejected authentication or
+capability checks do not consume it. Live controls, including Stop, stay available
+when that start/removal budget is exhausted.
+
 Morning Announcements retain priority: start validates the requested targets
 before replacing a prior presentation, and every presentation display command
 checks announcement priority again at dispatch. Silent slides do not acquire
