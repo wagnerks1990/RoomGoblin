@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+The [lighting dispatch identity repair](lighting-dispatch-identity.md) fixes three
+reproduced command-target failures. All 35 new regressions and 246 focused cases
+pass; full qualification passes 2,014 Linux tests, two root-only skips and all
+23 Host Recovery tests. Registry/discovery repairs are pushed as
+PR #314; checked delivery follows PR #313.
+
 The [discovery persistence repair](lighting-discovery-persistence.md) passes all
 25 new regressions and 72 combined focused cases; full qualification passes
 1,979 Linux tests, two root-only skips and all 23 Host Recovery tests.

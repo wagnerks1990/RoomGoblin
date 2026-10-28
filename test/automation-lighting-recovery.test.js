@@ -17,7 +17,7 @@ function section(start,end){
 
 // Exercise winner selection, dispatch planning, reconciliation and the real TV
 // handler together. No appliance, network, persistent database or credentials.
-function harness({devices,locked=[],announcementActive=false,blocked=false,reply,goveeDevices={lamp:{},other:{},third:{}},goveeGroups={all:["lamp","other","third"],group:["lamp"],pair:["lamp","other"],rear:["other","third"]},now=new Date(2026,9,27,10)}={}){
+function harness({devices,locked=[],announcementActive=false,blocked=false,reply,goveeDevices={lamp:{id:"0011223344556677"},other:{id:"8899AABBCCDDEEFF"},third:{id:"AABBCCDDEEFF0011"}},goveeGroups={all:["lamp","other","third"],group:["lamp"],pair:["lamp","other"],rear:["other","third"]},now=new Date(2026,9,27,10)}={}){
   devices=devices||Object.fromEntries(Array.from({length:8},(_,i)=>[`tv${i+1}`,{enabled:true,avOutput:i+1}]));
   const commands=[],audits=[],started=[],lightState=new Map();let ledgerState={version:1,runs:[]};
   const ledger=runtime.makeLedger({getPreference:()=>plain(ledgerState),setPreference:(_key,value)=>{ledgerState=plain(value)}});
