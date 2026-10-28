@@ -201,10 +201,20 @@ completion cannot advance or close a newer draft. Accepted installation clears
 unchanged submitted credentials while preserving newer values. An unconfirmed
 reply requires a status refresh before an explicit retry; no write is replayed.
 
-Installation and repair completion update only their owned readiness state.
+Installation and repair completion update their owned readiness state and
+acknowledged screen configuration.
 Cancellation and history saved while the installer is pending remain intact on
 both success and failure. A failed completion save remains visible; it never
 repeats the installer or restores an older scheduled job.
+
+Repair retains the last confirmed screen configuration until the computer
+acknowledges its replacement. Before repair or assignment dispatch, RoomGoblin
+persists the union of previous, proposed and still-uncertain receiver targets.
+Announcement checks keep protecting those targets across failures, restart and
+later repairs. Acknowledged configuration atomically promotes the new mapping
+and clears that protection. Unconfirmed mappings remain visible in health and
+are never automatically replayed. This tracks new operations; it cannot
+reconstruct mappings already lost by older releases.
 
 The inventory has one shared refresh owner. A write invalidates older reads and
 queues a fresh read after outstanding writes settle; uncertain writes are not

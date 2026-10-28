@@ -7,8 +7,10 @@ restore that schedule and discard its cancellation history. A newer metadata
 snapshot was also lost. Three baseline assertions fail; three identity, uncertain
 delivery and persistence-failure controls pass.
 
-Completion now updates only `state` on the current record, for both `ready` and
-`attention`. The initial transactional identity/configuration save, restricted
+The initial repair updated only `state` on the current record, for both `ready`
+and `attention`. The subsequent [mapping review](ubuntu-screen-mapping-ownership.md)
+also promotes configuration only after acknowledgment. The transactional identity
+save, restricted
 management key, installer verification, writer tracking and busy release remain
 unchanged. No remote operation is retried. A primary completion-persistence
 failure still fails visibly and preserves previously durable cancellation.

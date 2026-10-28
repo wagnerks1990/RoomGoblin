@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Retain confirmed Ubuntu screen mappings until acknowledgment and persist
+  uncertain receiver targets so announcement protection survives restart.
+
 - Reserve existing Ubuntu computers during repair probing and honor announcement
   locks on old/new receivers before installation and final configuration.
 

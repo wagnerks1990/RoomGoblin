@@ -109,6 +109,12 @@ class UbuntuDisplays{
   records(){const records=this.storage.getPreference(STORE,[]);if(!Array.isArray(records)||records.length>MAX_DEVICES)throw fail("Ubuntu inventory could not be read.",503);return records}
   record(id){const d=this.records().find(d=>d.id===id);if(!d)throw fail("Unknown Ubuntu computer.",404);return d}
   check(){if(this.closed||!this.canRun())throw fail("Appliance changes are temporarily locked.",423)}
+  screenTargets(record,config=record.config){
+    const pending=record.pendingReceiverIds??[];
+    if(!Array.isArray(pending)||pending.some(id=>typeof id!=="string"))throw fail("Pending screen configuration could not be read. Review this computer's recovery state.",503);
+    return [...new Set([...(record.config?.screens||[]).map(s=>s.receiverId),...pending,...(config?.screens||[]).map(s=>s.receiverId)])];
+  }
+  canDisrupt(record,config=record.config){return this.allowDisruption({...record,config:{...config,screens:this.screenTargets(record,config).map(receiverId=>({receiverId}))}})}
   list(){return {ok:true,package:{digest:this.packageDigest,version:require("./version").applicationVersion()},devices:this.records().map(d=>{
     const live=this.live.get(d.id),fresh=live&&Date.now()-live.at<90000;
     const current=fresh?live:{online:false,at:live?.at||null,error:"Not checked recently",lastSeenAt:d.lastSeenAt||null};
@@ -182,14 +188,14 @@ class UbuntuDisplays{
       const scheduled={id:crypto.randomUUID(),operation:input.operation,at:new Date(at).toISOString(),state:"scheduled"};
       this.updateRecord(id,{scheduled});return {ok:true,scheduled,...this.event(id,"scheduled",{operation:input.operation,scheduledAt:scheduled.at})};
     }
-    if(input.operation!=="check-updates"&&!this.allowDisruption(d))throw fail("Morning Announcements currently own a screen on this computer. Try after announcements finish.",409);
+    if(input.operation!=="check-updates"&&!this.canDisrupt(d))throw fail("Morning Announcements currently own a screen on this computer. Try after announcements finish.",409);
     this.busy.add(id);
     try{
       const status=await this.rpc(d,"status");
       if(status.identity!==id||status.machineId!==d.machineId)throw fail("Computer identity changed.",409);
       if(Number(status.protocolVersion)<2)throw fail("Use Repair with administrator SSH once to enable managed updates.",409);
       this.check();
-      if(input.operation!=="check-updates"&&!this.allowDisruption(d))throw fail("Morning Announcements started before maintenance dispatch.",409);
+      if(input.operation!=="check-updates"&&!this.canDisrupt(d))throw fail("Morning Announcements started before maintenance dispatch.",409);
       const result=await this.rpc(d,"maintenance",{operation:input.operation,confirm:true,requestId:input.requestId||crypto.randomUUID(),packageDigest:this.packageDigest,packageVersion:require("./version").applicationVersion()});
       return {ok:true,...result,...this.event(id,"maintenance",{operation:input.operation,state:"accepted",jobId:result.job?.id||null})};
     }finally{this.busy.delete(id)}
@@ -199,7 +205,7 @@ class UbuntuDisplays{
     if(this.closed||!this.canRun())return;const d=this.record(id),job=d.scheduled;
     if(job?.state!=="scheduled"||Date.parse(job.at)>Date.now()||this.busy.has(id))return;
     if(Date.now()-Date.parse(job.at)>3600000){this.updateRecord(id,{scheduled:{...job,state:"expired"}});this.event(id,"schedule-expired",{operation:job.operation});return}
-    if(!this.live.get(id)?.online||!this.allowDisruption(d))return;
+    if(!this.live.get(id)?.online||!this.canDisrupt(d))return;
     // Claim before dispatch: a crash or uncertain delivery cannot replay a disruptive operation.
     this.updateRecord(id,{scheduled:{...job,state:"dispatched"}});
     try{await this.maintenance(id,{operation:job.operation,confirm:true,requestId:job.id})}
@@ -212,7 +218,7 @@ class UbuntuDisplays{
     const name=String(input.name||"").trim();if(!name||name.length>100||/[\x00-\x1f]/.test(name))throw fail("Enter a computer name.");
     const existing=input.id?this.record(input.id):null,repairId=existing?.id;
     if(repairId&&this.busy.has(repairId))throw fail("Computer is busy; wait for the current operation.",409);
-    if(existing&&!this.allowDisruption(existing))throw fail("Morning Announcements currently own a screen on this computer.",409);
+    if(existing&&!this.canDisrupt(existing))throw fail("Morning Announcements currently own a screen on this computer.",409);
     this.enrolling=true;
     if(repairId)this.busy.add(repairId);
     try{
@@ -222,12 +228,13 @@ class UbuntuDisplays{
       if(!record&&this.records().some(d=>d.machineId===probe.machineId||d.address===endpoint.address))throw fail("This computer is already enrolled. Use Repair instead.",409);
       if(!record&&this.records().length>=MAX_DEVICES)throw fail("Ubuntu inventory limit reached.",409);
       const config=screenConfig(input,probe,this.records().filter(d=>d.id!==record?.id),this.receivers(),probe.graphics!=="x11",record?.config.screens||[]);
-      const disruptionTargets={...record,config:{...config,screens:[...(record?.config.screens||[]),...config.screens]}};
-      if(!this.allowDisruption(disruptionTargets))throw fail("Morning Announcements currently own a selected screen.",409);
+      const pendingReceiverIds=this.screenTargets(record||{config:{screens:[]}},config);
+      const disruptionTargets={...record,config,pendingReceiverIds};
+      if(!this.canDisrupt(disruptionTargets))throw fail("Morning Announcements currently own a selected screen.",409);
       const id=record?.id||crypto.randomUUID(),key=record?{privateKey:this.storage.getSecret(secretName(id))}:managementKey();
       if(!key.privateKey)throw fail("The saved management key is unavailable.",503);
       if(!key.publicKey)key.publicKey="ssh-rsa "+utils.parseKey(key.privateKey).getPublicSSH().toString("base64");
-      record={...record,id,name,...endpoint,fingerprint:fp,machineId:probe.machineId,config,state:"installing",createdAt:record?.createdAt||new Date().toISOString()};
+      record={...record,id,name,...endpoint,fingerprint:fp,machineId:probe.machineId,config:record?.config||config,pendingReceiverIds,state:"installing",createdAt:record?.createdAt||new Date().toISOString()};
       this.storage.tx(()=>{this.storage.putSecret(secretName(id),key.privateKey,{type:"ubuntu-restricted-ssh"});this.storage.setPreference(STORE,[...this.records().filter(d=>d.id!==id),record])});
       this.busy.add(id);
       const job={id:crypto.randomUUID(),deviceId:id,state:"running",stage:"Installing verified kiosk files and packages",startedAt:new Date().toISOString()};
@@ -241,7 +248,7 @@ class UbuntuDisplays{
           job.stage="Verifying restricted management access and receiver assignments";
           const status=await this.rpc(record,"status");if(status.identity!==id||status.machineId!==probe.machineId)throw fail("Installed identity verification failed.",409);
           this.check();
-          if(!this.allowDisruption(disruptionTargets))throw fail("Morning Announcements started before screen configuration. Repair again after announcements finish.",409);
+          if(!this.canDisrupt(disruptionTargets))throw fail("Morning Announcements started before screen configuration. Repair again after announcements finish.",409);
           this.ensureReceivers(config.screens);
           const deploymentConfig=structuredClone(config);
           this.storage.tx(()=>{
@@ -250,7 +257,7 @@ class UbuntuDisplays{
             }
           });
           await this.rpc(record,"configure",{config:deploymentConfig});
-          this.updateRecord(id,{state:"ready"});
+          this.updateRecord(id,{state:"ready",config,pendingReceiverIds:[]});
           job.stage="Installed. Activate the kiosk when ready.";job.state="completed";
           this.audit({kind:"ubuntu-display.install",deviceId:id,screenCount:config.screens.length,ok:true});
         }catch(error){
@@ -266,12 +273,14 @@ class UbuntuDisplays{
     try{
       const d=this.record(id),probe=await this.rpc(d,"status");
       if(probe.identity!==id||probe.machineId!==d.machineId)throw fail("Computer identity changed.",409);
-      this.check();if(!this.allowDisruption(d))throw fail("Morning Announcements currently own a screen on this computer.",409);
+      this.check();if(!this.canDisrupt(d))throw fail("Morning Announcements currently own a screen on this computer.",409);
       const config=screenConfig(input,probe,this.records().filter(d=>d.id!==id),this.receivers(),false,d.config.screens);
+      if(!this.canDisrupt(d,config))throw fail("Morning Announcements currently own a selected screen.",409);
+      this.updateRecord(id,{pendingReceiverIds:this.screenTargets(d,config)});
       this.ensureReceivers(config.screens);const deploymentConfig=structuredClone(config);
       this.storage.tx(()=>{if(this.storage.displayCredentialPolicy?.().authenticationRequired)for(const s of deploymentConfig.screens)s.enrollmentToken=this.storage.createDisplayEnrollment(s.receiverId,{ttlMinutes:60}).token});
       await this.rpc(d,"configure",{config:deploymentConfig});
-      this.storage.setPreference(STORE,this.records().map(row=>row.id===id?{...row,config}:row));return {ok:true};
+      this.storage.setPreference(STORE,this.records().map(row=>row.id===id?{...row,config,pendingReceiverIds:[]}:row));return {ok:true};
     }finally{this.busy.delete(id);this.configuring=false}
   }
   async command(id,input){
@@ -279,7 +288,7 @@ class UbuntuDisplays{
     const allowed=["identify","restart-screen","screenshot","activate","reboot","shutdown","rollback"];
     if(!allowed.includes(input.action))throw fail("Unsupported Ubuntu management action.");
     const d=this.record(id);
-    if(input.action!=="screenshot"&&!this.allowDisruption(d))throw fail("Morning Announcements currently own a screen on this computer.",409);
+    if(input.action!=="screenshot"&&!this.canDisrupt(d))throw fail("Morning Announcements currently own a screen on this computer.",409);
     if(["activate","reboot","shutdown","rollback"].includes(input.action)&&input.confirm!==true)throw fail("Explicit confirmation is required.");
     if(["restart-screen","screenshot"].includes(input.action)&&!d.config.screens.some(s=>s.receiverId===input.receiverId))throw fail("Unknown screen.");
     this.busy.add(id);
