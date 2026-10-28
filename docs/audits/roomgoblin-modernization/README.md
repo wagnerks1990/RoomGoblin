@@ -1,17 +1,29 @@
 # RoomGoblin modernization audit
 
-PR #323 is [deployed and verified](windows-enrollment-identity-delivery.md) at
-`7acaa7a`; PR #322's [delivery](windows-legacy-task-state-delivery.md) and PR #321's
-[delivery](windows-native-lifecycle-delivery.md) are also verified. PR #324 passed
-all 14 checks and merged as `fb1d1e6`; exact publication and delivery follow.
-The separate [history outcome repair](ubuntu-history-outcomes.md) is qualified
-with 2,210 Linux passes, two root-only skips, all 23 Host Recovery cases and
-103 workspace cases in each browser. The [Android enrollment repair](android-enrollment-ownership.md)
-passes ten source cases and three browser cases. Combined qualification passes
-2,220 Linux tests with two root-only skips, all 23 Host Recovery cases and 106
-workspace cases in each browser after the documented fixture repairs.
-Ubuntu wizard probe/input ownership and the remaining Android inventory, edit
-and preview review are next within Group 10. Later roadmap work remains.
+PR #325 is deployed and verified at `312f753`; PR #324's
+[delivery](ubuntu-reliability-delivery.md) is also verified. PR #326 is undergoing
+an additional [screen-mapping review](ubuntu-screen-mapping-ownership.md) before
+merge. Nine baseline assertions reproduced confirmed-mapping and uncertain-target
+gaps. Combined qualification passes 2,261 Linux tests with two root-only skips,
+all 23 Host Recovery cases and syntax/controller/shell checks. Browser code
+remains qualified by 109 workspace cases per engine. The fix is entering fresh
+required CI. Android editor and preview work follows within Group 10.
+
+Earlier qualification history follows.
+PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
+[Android enrollment](android-enrollment-ownership.md) repairs. All 14 checks
+passed before its squash merge as `312f753`; exact publication and delivery
+follow. The separate [repair completion](ubuntu-repair-record-ownership.md) and
+[wizard ownership](ubuntu-wizard-ownership.md) fixes pass 2,241 Linux tests with
+two root-only skips, all 23 Host Recovery cases and 109 workspace cases per browser.
+[Repair admission/announcement guards](ubuntu-repair-admission.md) now pass all
+eight source cases after seven reproduced failures. Combined Linux qualification
+passes 2,249 tests with two root-only skips and all 23 Host Recovery cases.
+Android editing has four reproduced failures queued next; inventory, preview and
+remaining managed-display review and later roadmap work remain.
+
+Earlier status entries below are historical; their pending delivery statements
+are superseded by the current status and linked delivery receipts above.
 
 PR #322 carries the qualified legacy-task repair and is running required CI.
 The separate [enrollment identity repair](windows-enrollment-identity.md) fails

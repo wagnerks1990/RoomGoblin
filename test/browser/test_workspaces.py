@@ -408,6 +408,96 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(page.evaluate('document.activeElement.dataset.screen'), 'two-screen')
         self.assertFalse(errors, errors)
 
+    def test_ubuntu_wizard_retires_changed_probe_and_older_fingerprints(self):
+        fingerprints, probes = [], []
+        def transport(route, target):
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/host-key'):
+                fingerprints.append(route)
+            elif target.endswith('/probe'):
+                probes.append(route)
+            else:
+                route.fulfill(json={'ok': True, 'devices': [], 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', 390, transport=transport)
+        page.locator('#ubuntuAdd').click()
+        page.locator('#ubuntuName').fill('Fixture computer')
+        page.locator('#ubuntuAddress').fill('10.0.0.8')
+        page.locator('#ubuntuPassword').fill('fixture-password')
+        for _ in range(2):
+            with page.expect_request('**/host-key'):
+                page.locator('#ubuntuGetFingerprint').click()
+        fingerprints[1].fulfill(json={'fingerprint': 'SHA256:' + 'B' * 43})
+        page.wait_for_function("document.getElementById('ubuntuFingerprint').value.includes('BBBB')")
+        page.locator('#ubuntuHostVerified').check()
+        fingerprints[0].fulfill(json={'fingerprint': 'SHA256:' + 'A' * 43})
+        with page.expect_request('**/probe'):
+            page.locator('#ubuntuNext').click()
+        page.locator('#ubuntuForm').evaluate("form=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))")
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(page.locator('#ubuntuFingerprint').input_value(), 'SHA256:' + 'B' * 43)
+        page.locator('#ubuntuAddress').fill('10.0.0.9')
+        probes[0].fulfill(json={'ok': True, 'hostname': 'Old computer', 'graphics': 'session-unavailable', 'outputs': []})
+        page.wait_for_function("document.getElementById('ubuntuMessage').textContent.includes('Connection details changed')")
+        self.assertIn('1 · Connect', page.locator('#ubuntuStep').inner_text())
+        self.assertFalse(page.locator('#ubuntuHostVerified').is_checked())
+        self.assertFalse(page.locator('#ubuntuNext').is_disabled())
+        self.evidence(page, errors, 'ubuntu-wizard-probe-owner-mobile')
+
+    def test_ubuntu_assignment_save_retains_newer_draft_without_duplicate_write(self):
+        pending = []
+        screen = {'connector': 'HDMI-1', 'monitorId': 'a' * 64, 'receiverId': 'fixture-screen',
+                  'name': 'Screen', 'mode': 'auto', 'rotation': 'normal', 'audioSink': 'default'}
+        device = self.ubuntu_fixture_computer()
+        device['config'] = {'hubUrl': 'http://127.0.0.1:31337', 'screens': [screen]}
+        device['live']['status'] = {'hostname': 'fixture', 'version': '24.04', 'outputs': [
+            {'connector': 'HDMI-1', 'connected': True, 'monitorId': 'a' * 64, 'modes': ['1920x1080']}]}
+        def transport(route, target):
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/screens'):
+                pending.append(route)
+            elif target.endswith('/refresh'):
+                route.fulfill(json={'ok': True})
+            else:
+                route.fulfill(json={'ok': True, 'devices': [device], 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.locator('#ubuntuComputers [data-action="edit"]').click()
+        page.locator('#ubuntuOutputRows [name="receiver"]').wait_for()
+        page.locator('#ubuntuNext').click()
+        with page.expect_request('**/screens'):
+            page.locator('#ubuntuNext').click()
+        page.locator('#ubuntuForm').evaluate("form=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))")
+        page.locator('#ubuntuBack').click()
+        page.locator('#ubuntuOutputRows [name="receiver"]').fill('newer-screen')
+        pending[0].fulfill(json={'ok': True})
+        page.wait_for_function("document.getElementById('ubuntuMessage').textContent.includes('newer edits remain unsaved')")
+        self.assertEqual(page.locator('#ubuntuOutputRows [name="receiver"]').input_value(), 'newer-screen')
+        self.assertTrue(page.locator('#ubuntuWizard').is_visible())
+        self.assertEqual(len(pending), 1)
+        self.assertFalse(page.locator('#ubuntuNext').is_disabled())
+        self.evidence(page, errors, 'ubuntu-wizard-save-draft')
+
+    def test_ubuntu_key_file_failure_and_newer_paste_keep_credential_ownership(self):
+        page, errors = self.page('/managed-displays/')
+        page.locator('#ubuntuAdd').click()
+        page.evaluate("() => {File.prototype.text=()=>Promise.reject(new Error('synthetic private detail'))}")
+        page.locator('#ubuntuKeyFile').set_input_files({'name': 'fixture.key', 'mimeType': 'text/plain', 'buffer': b'synthetic'})
+        page.wait_for_function("document.getElementById('ubuntuMessage').textContent.includes('could not be read')")
+        self.assertNotIn('private detail', page.locator('#ubuntuMessage').inner_text())
+        page.evaluate("() => {File.prototype.text=()=>new Promise(resolve=>window.finishKeyRead=resolve)}")
+        page.locator('#ubuntuKeyFile').set_input_files({'name': 'next.key', 'mimeType': 'text/plain', 'buffer': b'synthetic'})
+        page.wait_for_function("typeof window.finishKeyRead==='function'")
+        page.locator('#ubuntuKey').evaluate("element=>element.closest('details').open=true")
+        page.locator('#ubuntuKey').fill('New synthetic pasted key')
+        page.evaluate("async()=>{finishKeyRead('Old synthetic file');await Promise.resolve()}")
+        self.assertEqual(page.locator('#ubuntuKey').input_value(), 'New synthetic pasted key')
+        page.locator('#ubuntuClose').click()
+        self.assertEqual(page.locator('#ubuntuKey').input_value(), '')
+        self.assertFalse(errors, errors)
+
     def test_ubuntu_wizard_assigns_outputs_independently_and_keeps_drafts(self):
         monitor = 'a' * 64
         outputs = [{'connector': name, 'connected': True, 'monitorId': monitor, 'modes': ['1920x1080']} for name in ('HDMI-1', 'DP-1')]

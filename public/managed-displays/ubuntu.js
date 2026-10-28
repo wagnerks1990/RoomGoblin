@@ -4,6 +4,7 @@
   const $=id=>document.getElementById(id),base="/api/v1/ubuntu-displays";
   let inventory={devices:[],receivers:{}},probe=null,editing=null,repairing=null,step=0,polling=false,wizardVersion=0;
   const currentWizard=version=>version===wizardVersion&&$("ubuntuWizard").open;
+  let wizardPending=null,fingerprintVersion=0,keyFileVersion=0;
   const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const date=value=>value?new Date(typeof value==="number"?value*1000:value).toLocaleString():"Not yet checked";
   const percent=(part,total)=>Number.isFinite(part)&&total>0?Math.round(100*part/total)+"%":"Unavailable";
@@ -98,7 +99,7 @@
     if(focused?.action){const button=[...root.querySelectorAll('button[data-action]')].find(b=>b.closest('[data-id]').dataset.id===focused.id&&b.dataset.action===focused.action&&b.dataset.screen===focused.screen);(button&&!button.disabled?button:$("ubuntuSearch")).focus({preventScroll:true})}
   }
   async function openWizard(device=null,repair=false){
-    const version=++wizardVersion;$("ubuntuActivate").hidden=true;delete $("ubuntuActivate").dataset.device;$("ubuntuJobStatus").textContent="";$("ubuntuNext").disabled=false;
+    const version=++wizardVersion;$("ubuntuActivate").hidden=true;delete $("ubuntuActivate").dataset.device;$("ubuntuJobStatus").textContent="";$("ubuntuNext").disabled=Boolean(wizardPending);
     clearCredentials();$("ubuntuForm").reset();editing=null;repairing=null;probe=null;
     $("ubuntuHubUrl").value=location.origin;$("ubuntuUsername").value="root";$("ubuntuPort").value="22";$("ubuntuFingerprint").value="";$("ubuntuHostVerified").checked=false;
     wizardStep(0);$("ubuntuWizard").showModal();
@@ -116,15 +117,27 @@
   $("ubuntuClose").addEventListener("click",closeWizard);
   $("ubuntuWizard").addEventListener("cancel",event=>{event.preventDefault();closeWizard()});
   $("ubuntuBack").addEventListener("click",()=>wizardStep(Math.max(editing?1:0,step-1)));
-  $("ubuntuKeyFile").addEventListener("change",async()=>{const version=wizardVersion,file=$("ubuntuKeyFile").files[0];if(file&&file.size<=32768){const key=await file.text();if(currentWizard(version)&&$("ubuntuKeyFile").files[0]===file)$("ubuntuKey").value=key}else message("Choose an SSH private key under 32 KiB.")});
+  $("ubuntuKeyFile").addEventListener("change",async()=>{
+    const version=wizardVersion,token=++keyFileVersion,file=$("ubuntuKeyFile").files[0],previous=$("ubuntuKey").value;
+    const current=()=>currentWizard(version)&&token===keyFileVersion&&$("ubuntuKeyFile").files[0]===file&&$("ubuntuKey").value===previous;
+    if(!file||file.size>32768){message("Choose an SSH private key under 32 KiB.");return}
+    try{const key=await file.text();if(current())$("ubuntuKey").value=key}catch{if(current())message("The SSH key file could not be read. Choose it again or paste the key.")}
+  });
   for(const id of ["ubuntuAddress","ubuntuPort"])$(id).addEventListener("input",()=>{$("ubuntuFingerprint").value="";$("ubuntuHostVerified").checked=false});
-  $("ubuntuGetFingerprint").addEventListener("click",async()=>{const version=wizardVersion,address=$("ubuntuAddress").value.trim(),port=Number($("ubuntuPort").value);try{message("Reading SSH host fingerprint…");const result=await request("/host-key","POST",{address,port});if(!currentWizard(version)||address!==$("ubuntuAddress").value.trim()||port!==Number($("ubuntuPort").value))return;$("ubuntuFingerprint").value=result.fingerprint;$("ubuntuHostVerified").checked=false;message("Compare this fingerprint with the computer or your trusted SSH inventory, then accept it.")}catch(e){if(currentWizard(version))message(e.message)}});
+  $("ubuntuGetFingerprint").addEventListener("click",async()=>{
+    const version=wizardVersion,token=++fingerprintVersion,address=$("ubuntuAddress").value.trim(),port=Number($("ubuntuPort").value),previous=$("ubuntuFingerprint").value,verified=$("ubuntuHostVerified").checked;
+    const current=()=>currentWizard(version)&&token===fingerprintVersion&&address===$("ubuntuAddress").value.trim()&&port===Number($("ubuntuPort").value)&&previous===$("ubuntuFingerprint").value&&verified===$("ubuntuHostVerified").checked;
+    try{message("Reading SSH host fingerprint…");const result=await request("/host-key","POST",{address,port});if(!current())return;$("ubuntuFingerprint").value=result.fingerprint;$("ubuntuHostVerified").checked=false;message("Compare this fingerprint with the computer or your trusted SSH inventory, then accept it.")}catch(e){if(current())message(e.message)}
+  });
+  function wizardDraft(){return JSON.stringify({step,auth:auth(),name:$("ubuntuName").value,hubUrl:$("ubuntuHubUrl").value,verified:$("ubuntuHostVerified").checked,consent:$("ubuntuConsent").checked,screens:step>0?assignments():[]})}
   $("ubuntuForm").addEventListener("submit",async event=>{
-    event.preventDefault();const button=$("ubuntuNext"),version=wizardVersion;button.disabled=true;
+    event.preventDefault();if(wizardPending){message("A wizard request is still pending. Wait for it to finish.");return}
+    const button=$("ubuntuNext"),version=wizardVersion,owner={},draft=wizardDraft();wizardPending=owner;button.disabled=true;
+    const unchanged=()=>currentWizard(version)&&draft===wizardDraft();
     try{
       if(step===0){
         if(!$("ubuntuHostVerified").checked)throw Error("Verify and accept the SSH fingerprint before continuing.");
-        message("Checking Ubuntu, permissions and physical outputs…");const result=await request("/probe","POST",auth());if(!currentWizard(version))return;probe=result;screenRows(repairing?inventory.devices.find(d=>d.id===repairing)?.config:null);wizardStep(1);
+        message("Checking Ubuntu, permissions and physical outputs…");const result=await request("/probe","POST",auth());if(!unchanged()){if(currentWizard(version))message("Connection details changed. Check the computer again.");return}probe=result;screenRows(repairing?inventory.devices.find(d=>d.id===repairing)?.config:null);wizardStep(1);
       }else if(step===1){
         const screens=assignments();if((!screens.length&&(editing||probe.graphics==="x11"))||screens.some(s=>!s.receiverId))throw Error("Assign a unique receiver ID to every selected screen.");
         if(new Set(screens.map(s=>s.receiverId)).size!==screens.length)throw Error("Each output needs a different receiver ID.");
@@ -132,12 +145,21 @@
         $("ubuntuInstallDetails").hidden=Boolean(editing);wizardStep(2);
       }else if(step===2){
         const body={hubUrl:$("ubuntuHubUrl").value,screens:assignments()};
-        if(editing){await request(`/${editing}/screens`,"PUT",body);if(currentWizard(version))closeWizard();await load();return}
+        if(editing){const id=editing;await request(`/${id}/screens`,"PUT",body);computerMessage(id,"Screen assignments saved.");if(unchanged())closeWizard();else if(currentWizard(version))message("Screen assignments saved. Your newer edits remain unsaved.");await load();return}
         if(!$("ubuntuConsent").checked)throw Error("Confirm the installation changes before continuing.");
-        const result=await request("","POST",{...auth(),...body,name:$("ubuntuName").value,id:repairing||undefined,confirm:true});
-        if(!currentWizard(version))return;clearCredentials();wizardStep(3);watchJob(result.job.id,version);
+        const submitted=auth(),file=$("ubuntuKeyFile").files[0];
+        const result=await request("","POST",{...submitted,...body,name:$("ubuntuName").value,id:repairing||undefined,confirm:true});
+        if(!result.job?.id)throw Error("Installation acceptance could not be confirmed. Refresh inventory before retrying.");
+        if(!currentWizard(version))return;
+        if(!unchanged()){
+          for(const [id,key]of [["ubuntuPassword","password"],["ubuntuKey","privateKey"],["ubuntuPassphrase","passphrase"]])if($(id).value===submitted[key])$(id).value="";
+          if($("ubuntuKeyFile").files[0]===file)$("ubuntuKeyFile").value="";
+          message("Installation accepted. Your newer draft was kept. Refresh inventory to check this computer before another installation.");await load();return;
+        }
+        clearCredentials();wizardStep(3);watchJob(result.job.id,version);
       }
-    }catch(e){if(currentWizard(version))message(e.message)}finally{if(currentWizard(version))button.disabled=false}
+    }catch(e){if(unchanged())message(e.message);else if(currentWizard(version))message("The previous request could not be completed. Your newer draft was kept; refresh computer status before retrying.")}
+    finally{if(wizardPending===owner){wizardPending=null;button.disabled=false}}
   });
   async function watchJob(id,version){
     if(!currentWizard(version))return;

@@ -16,6 +16,7 @@ function health(d,live,receiverOnline){
     if(["failed","interrupted"].includes(job?.state))alerts.push({code:"maintenance",text:"The last maintenance operation needs attention."});
   }
   if(d.state!=="ready")alerts.push({code:"enrollment",text:"Installation requires repair."});
+  if(d.pendingReceiverIds?.length)alerts.push({code:"configuration",text:"Screen configuration is pending or unconfirmed. Check the computer before another change."});
   return {state:!live?.online?"offline":alerts.length?"attention":"healthy",alerts};
 }
 module.exports={health};

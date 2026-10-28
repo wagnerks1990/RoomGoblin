@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+- Retain confirmed Ubuntu screen mappings until acknowledgment and persist
+  uncertain receiver targets so announcement protection survives restart.
+
+- Reserve existing Ubuntu computers during repair probing and honor announcement
+  locks on old/new receivers before installation and final configuration.
+
+- Keep Ubuntu wizard probes, fingerprints, key-file reads and submissions tied
+  to their current inputs; preserve newer drafts and prevent duplicate writes.
+
+- Preserve cancelled maintenance schedules and newer computer records when
+  Ubuntu installation or repair completes or fails.
+
 - Complete accepted Android enrollment using the captured form, clear submitted
   pairing codes, prevent duplicate requests and preserve newer drafts/editors.
 

@@ -62,4 +62,22 @@ test("configuration continues to reject an overlapping second assignment",async(
  h.resolve({ok:true});await pending;
  assert.equal(h.calls.filter(c=>c.action==="configure").length,1);assert.equal(h.row().config.screens[0].rotation,"left");
 });
+test("screen assignments reject an announcement lock on a newly selected receiver",async()=>{
+ const h=fixture();h.next.screens[0].receiverId="new-screen";h.manager.allowDisruption=d=>!d.config.screens.some(s=>s.receiverId==="new-screen");h.resolve({ok:true});
+ await assert.rejects(h.manager.configure("fixture",h.next),/Announcements/);assert.equal(h.calls.filter(c=>c.action==="configure").length,0);
+});
+test("screen assignments durably protect old and new targets until their acknowledgment",async()=>{
+ const h=fixture();h.next.screens[0].receiverId="new-screen";const pending=h.manager.configure("fixture",h.next);await h.sent;
+ try{assert.deepEqual(h.row().pendingReceiverIds,["screen1","new-screen"])}finally{h.resolve({ok:true});await pending}
+ assert.deepEqual(h.row().pendingReceiverIds,[]);assert.equal(h.row().config.screens[0].receiverId,"new-screen");
+});
+test("uncertain assignment targets still block conflicting commands after manager restart",async()=>{
+ const h=fixture();h.next.screens[0].receiverId="new-screen";const pending=h.manager.configure("fixture",h.next);await h.sent;h.reject(Error("Synthetic uncertain reply"));await assert.rejects(pending,/uncertain reply/);
+ const restarted=new UbuntuDisplays({storage:h.manager.storage,autostart:false,transport:async()=>{throw Error("Unexpected dispatch")},allowDisruption:d=>!d.config.screens.some(s=>s.receiverId==="new-screen")});
+ await assert.rejects(restarted.command("fixture",{action:"identify"}),/Announcements/);assert.equal(h.row().config.screens[0].receiverId,"screen1");
+});
+test("failed assignment target persistence prevents any remote configuration write",async()=>{
+ const h=fixture();h.failSave();h.resolve({ok:true});await assert.rejects(h.manager.configure("fixture",h.next),/persistence unavailable/);
+ assert.equal(h.calls.filter(c=>c.action==="configure").length,0);assert.equal(h.manager.busy.size,0);assert.equal(h.manager.configuring,false);
+});
 

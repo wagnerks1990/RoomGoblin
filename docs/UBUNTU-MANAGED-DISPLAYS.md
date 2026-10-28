@@ -186,6 +186,36 @@ The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
 
+Repair reserves the existing computer before its initial probe, so polling or
+another command cannot share that operation. Failed admission releases only the
+repair's own reservation. Installation checks announcement locks for both prior
+and proposed screen targets; it checks again before final configuration. If
+announcements or Full Recovery admission begin while installation is running,
+the job needs attention and does not send a new configuration write. Accepted
+installer work is not automatically undone or repeated.
+
+The wizard retires probe and fingerprint replies after relevant inputs or trust
+choices change. Key-file failures are visible and late reads cannot overwrite a
+newer pasted key. One wizard submission remains pending across close/reopen;
+completion cannot advance or close a newer draft. Accepted installation clears
+unchanged submitted credentials while preserving newer values. An unconfirmed
+reply requires a status refresh before an explicit retry; no write is replayed.
+
+Installation and repair completion update their owned readiness state and
+acknowledged screen configuration.
+Cancellation and history saved while the installer is pending remain intact on
+both success and failure. A failed completion save remains visible; it never
+repeats the installer or restores an older scheduled job.
+
+Repair retains the last confirmed screen configuration until the computer
+acknowledges its replacement. Before repair or assignment dispatch, RoomGoblin
+persists the union of previous, proposed and still-uncertain receiver targets.
+Announcement checks keep protecting those targets across failures, restart and
+later repairs. Acknowledged configuration atomically promotes the new mapping
+and clears that protection. Unconfirmed mappings remain visible in health and
+are never automatically replayed. This tracks new operations; it cannot
+reconstruct mappings already lost by older releases.
+
 The inventory has one shared refresh owner. A write invalidates older reads and
 queues a fresh read after outstanding writes settle; uncertain writes are not
 automatically repeated. Assignment editing uses the refreshed configuration.
