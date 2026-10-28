@@ -6,6 +6,11 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Resumable assembly awaits its internal registration callback before reclaiming
+chunks. Preserve session ownership through registration, and never delete a
+successfully registered file because subsequent cleanup or response handling
+failed. This does not provide a durable completion receipt.
+
 Browser upload startup/cancel operations share same-file ownership within a page.
 Only confirmed missing/cancelled sessions may be forgotten, and only if their
 saved ID still matches. Keep both controllers' generation checks on progress,

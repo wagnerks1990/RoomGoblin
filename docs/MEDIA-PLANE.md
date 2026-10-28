@@ -89,6 +89,10 @@ at least twice the largest expected upload free beneath the persistent data root
 
 ## Range transport
 
+Upload assembly retains its session lock and verified chunks through library
+registration. Failed registration permits an explicit retry; later cleanup or
+response errors preserve an already registered file. See [registration ownership](audits/roomgoblin-modernization/upload-registration-ownership.md).
+
 Upload resume/cancel errors retain the browser's session ID. A confirmed missing
 session permits a fresh upload; confirmed cancellation forgets only its own ID.
 Same-page startup/cancel sequencing and controller operation ownership preserve

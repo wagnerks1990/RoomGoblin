@@ -1,6 +1,10 @@
 # RoomGoblin modernization audit
 
-Status: **PR #304 delivered; PR #305 publishing; media ownership fixes in PR #306; upload browser ownership under validation**.
+Status: **PR #305 delivered; media ownership fixes in PR #306; upload browser fixes qualified; registration recovery under validation**.
+
+PR #305 is deployed and verified at `daa378f`; see its
+[delivery receipt](media-reconnect-delivery.md).
+Upload registration recovery has [ten actual-store/route regressions](upload-registration-ownership.md).
 
 PR #304 is deployed and verified at `2f44c60`; see its
 [delivery receipt](music-command-delivery.md).
@@ -27,13 +31,13 @@ Upload cleanup and default video identity are integrated on merged `daa378f`.
 Before this note, the complete tree was byte-identical to qualified `f21eed4`.
 Qualification includes 1,674 Linux passes, zero failures, two root-only skips,
 23 Host Recovery passes and 16 new Node cases. Required gates and appliance
-delivery remain pending. Verify PR #305 delivery before merging this integration.
+delivery remain pending. PR #305 delivery is verified.
 Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
 complete tree was byte-identical to qualified `3c15e92`. Qualification includes
 1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
 and 14 token, 30 receiver and five audio cases in each browser. Ten new Node
-cases cover settings persistence and control validation. Checked delivery remains
-pending. PR #304 appliance delivery is now verified.
+cases cover settings persistence and control validation. PR #305 passed its
+gates, published exact images and completed the verified appliance update.
 Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
 evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
 The supported Linux snapshot passes 1,648 tests, zero failures and two root-only
