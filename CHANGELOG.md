@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep Background Music player probes with their connection and current session;
+  discard stale telemetry and unrelated output errors in status responses.
+
 - Preserve Background Music schedule-save order and newer manual playback
   intent while an earlier save waits for its output to stop.
 
