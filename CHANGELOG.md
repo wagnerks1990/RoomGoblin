@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve upload resume IDs on temporary failures, report cancellation errors
+  and keep late upload results from overwriting the current controller operation.
+
 - Give video commands without a supplied session ID one stable command-owned
   playback identity for dispatch and reconnect replay.
 
