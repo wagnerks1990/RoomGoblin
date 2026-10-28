@@ -18,10 +18,17 @@ internal sealed class ConfigFixture : IDisposable
     }
     public string Config=>Path.Combine(dataRoot,"lab-agent.json");
     public string[] Files=>Directory.GetFiles(dataRoot);
-    public void Run()=>WriteFreshEnrollmentConfig(Config,new Dictionary<string,string?> {
-        ["--hub-url"]="https://fixture.invalid",["--agent-id"]="fixture-agent",
-        ["--enrollment-token"]=new string('x',40)
-    });
+    public void Run(string hubUrl="https://fixture.invalid",string? fallback=null,bool allowHttp=false,bool allowFallback=false)
+    {
+        var options=new Dictionary<string,string?> {
+            ["--hub-url"]=hubUrl,["--agent-id"]="fixture-agent",
+            ["--enrollment-token"]=new string('x',40)
+        };
+        if(fallback is not null)options["--fallback-hub-url"]=fallback;
+        if(allowHttp)options["--allow-http"]="";
+        if(allowFallback)options["--allow-http-fallback"]="";
+        WriteFreshEnrollmentConfig(Config,options);
+    }
     private static class MachineDpapi
     {
         public static string ProtectString(string value)
@@ -61,7 +68,15 @@ internal static class Program
             ("writer preserves an identity published during preparation",()=>Write("race")),
             ("writer publishes protected fresh configuration",()=>Write("fresh")),
             ("data ACL failure publishes no configuration",()=>Write("data-acl")),
-            ("temporary ACL failure cleans unpublished configuration",()=>Write("temp-acl"))
+            ("temporary ACL failure cleans unpublished configuration",()=>Write("temp-acl")),
+            ("primary URL rejects embedded credentials",()=>Url("https://fixture-user:fixture-password@fixture.invalid",false)),
+            ("primary URL rejects username-only authority",()=>Url("https://fixture-user@fixture.invalid",false)),
+            ("primary URL rejects encoded user information",()=>Url("https://fixture%40user:fixture%3Apassword@fixture.invalid",false)),
+            ("fallback still rejects embedded credentials",()=>Url("https://fixture.invalid",false,"https://fixture-user@fallback.invalid")),
+            ("HTTP primary requires its explicit opt-in",()=>Url("http://fixture.invalid",false)),
+            ("HTTP primary accepts its explicit opt-in",()=>Url("http://fixture.invalid:3000",true,allowHttp:true)),
+            ("primary opt-in does not authorize HTTP fallback",()=>Url("https://fixture.invalid",false,"http://fallback.invalid",allowHttp:true)),
+            ("HTTPS and explicit HTTP fallback preserve origins",()=>Url("https://fixture.invalid:3443/path",true,"http://fallback.invalid:3000/path",allowFallback:true))
         };
         var failed=0;
         foreach(var test in tests) {
@@ -93,6 +108,22 @@ internal static class Program
             if(fixture.Run()!=(failure?20:0)||fixture.Identity!=(failure?null:"synthetic-fresh-identity"))
                 throw new Exception("Fresh installation or its health-failure cleanup changed");
         }finally{Console.SetError(previous);Console.SetOut(output);}
+    }
+    private static void Url(string hub,bool accepted,string? fallback=null,bool allowHttp=false,bool allowFallback=false)
+    {
+        using var fixture=new ConfigFixture("fresh");
+        Exception? error=null;
+        try{fixture.Run(hub,fallback,allowHttp,allowFallback);}catch(Exception caught){error=caught;}
+        if(!accepted) {
+            if(error is not ArgumentException||fixture.Calls.Count!=0||fixture.Files.Length!=0)
+                throw new Exception("Invalid URL reached configuration or ACL changes");
+            return;
+        }
+        if(error is not null)throw error;
+        using var json=JsonDocument.Parse(File.ReadAllText(fixture.Config));
+        if(json.RootElement.GetProperty("hubUrl").GetString()!=new Uri(hub).GetLeftPart(UriPartial.Authority)||
+           json.RootElement.GetProperty("fallbackHubUrl").GetString()!=(fallback is null?"":new Uri(fallback).GetLeftPart(UriPartial.Authority)))
+            throw new Exception("Configured primary or fallback origin changed");
     }
     private static void Write(string mode)
     {
