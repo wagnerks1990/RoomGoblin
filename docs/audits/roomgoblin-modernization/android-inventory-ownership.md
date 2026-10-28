@@ -24,3 +24,12 @@ apply helper, while the behavioral degraded-inventory case verifies its result.
 The final full Linux run passes 2,296 tests with zero failures and two root-only
 skips, all 23 Host Recovery cases and syntax/controller/shell checks. No physical
 display or enrollment was changed.
+
+PR #328's Firefox CI subsequently reported one error in 289 browser cases: the
+editor retry fixture accessed `pending[1]` before its route callback registered
+the held request. A bounded wait now checks actual held-route readiness before
+fulfillment; the agent-probe scenario uses the same readiness condition. It does
+not retry application requests, skip assertions or replace a failed result.
+Both affected scenarios pass 20 Firefox repetitions (40 cases total), and all
+116 workspace cases pass in each of Chromium and Firefox after this repair.
+Fresh required CI follows on the updated PR head.
