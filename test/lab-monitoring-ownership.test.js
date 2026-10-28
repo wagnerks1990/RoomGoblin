@@ -7,7 +7,7 @@ const shots=label=>({retentionDays:7,screenshots:[{url:"/"+label,capturedAt:labe
 function fixture(){
  const requests=[],alerts=[],intervals=new Map();let loads=0;
  const dialog=()=>({open:false,events:{},showModal(){this.open=true},close(){this.open=false},addEventListener(name,fn){this.events[name]=fn}});
- const c={inventory:{retentionHours:168,computers:[{id:"a",name:"A"},{id:"b",name:"B"}]},historyDialog:dialog(),screenDialog:dialog(),
+ const c={document:{hidden:false},window:{},inventory:{retentionHours:168,computers:[{id:"a",name:"A"},{id:"b",name:"B"}]},historyDialog:dialog(),screenDialog:dialog(),
  historyRows:{innerHTML:""},historyMeta:{textContent:""},historyTitle:{textContent:""},historyUser:{value:"",innerHTML:""},historyHours:{value:""},historyFrom:{value:""},historyTo:{value:""},historySearch:{value:""},
  screenHistory:{innerHTML:""},screenHistoryMeta:{textContent:""},screenMeta:{textContent:""},screenTitle:{textContent:""},liveScreenState:{textContent:"",className:""},screenImage:{hidden:true,removeAttribute(name){delete this[name]}},
  esc:String,fmtTime:String,jsArg:JSON.stringify,cacheBustUrl:x=>x,Date,Math,URLSearchParams,encodeURIComponent,alert:x=>alerts.push(x),loadAll:async()=>{loads++},
@@ -39,8 +39,8 @@ test("opening a different screen clears the previous image and history while wai
 test("old profile discovery cannot change the current computer filters or launch another read",async()=>{
  const h=fixture(),old=h.c.showHistory("a");h.c.closeHistoryView();const current=h.c.showHistory("b");h.requests[1].resolve({history:[{profile:"Current profile"}]});await flush();h.requests[2].resolve(rows("Current B"));await current;h.requests[0].resolve({history:[{profile:"Old profile"}]});await old;assert.match(h.c.historyUser.innerHTML,/Current profile/);assert.doesNotMatch(h.c.historyUser.innerHTML,/Old profile/);assert.equal(h.requests.length,3);
 });
-test("a filter action supersedes the initial profile request without losing its rows",async()=>{
- const h=fixture(),initial=h.c.showHistory("a");h.c.historySearch.value="current";const filtered=h.c.applyHistoryFilters();h.requests[1].resolve(rows("Current filter"));await filtered;h.requests[0].resolve({history:[{profile:"Old profile"}]});await initial;assert.match(h.c.historyRows.innerHTML,/Current filter/);assert.equal(h.requests.length,2);assert.doesNotMatch(h.c.historyUser.innerHTML,/Old profile/);
+test("a filter action retains its rows while same-computer profile discovery completes",async()=>{
+ const h=fixture(),initial=h.c.showHistory("a");h.c.historySearch.value="current";const filtered=h.c.applyHistoryFilters();h.requests[1].resolve(rows("Current filter"));await filtered;h.requests[0].resolve({history:[{profile:"Profile A"}]});await initial;assert.match(h.c.historyRows.innerHTML,/Current filter/);assert.equal(h.requests.length,2);assert.match(h.c.historyUser.innerHTML,/Profile A/);
 });
 test("closing history clears sensitive rows and ignores a late failure",async()=>{
  const h=fixture();h.history("a");h.c.historyRows.innerHTML="Private fixture";const pending=h.c.applyHistoryFilters();h.c.closeHistoryView();assert.equal(h.c.historyRows.innerHTML,"");assert.equal(h.state().currentHistoryComputer,null);h.requests[0].reject(Error("Old"));await pending;assert.equal(h.c.historyRows.innerHTML,"");
@@ -71,4 +71,39 @@ test("closed history views do not issue new requests",async()=>{
 });
 test("ordinary live capture remains single-flight and old cleanup cannot clear a newer owner",async()=>{
  const h=fixture();h.screen("a");const old=h.c.captureScreenFrame("a");await h.c.captureScreenFrame("a");assert.equal(h.requests.length,1);h.c.closeScreenView(false);h.screen("b");const current=h.c.captureScreenFrame("b");h.requests[0].resolve({deliveries:[{id:"a",delivered:true}]});await old;assert.equal(h.state().liveScreenRequest.id,"b");h.requests[1].resolve({deliveries:[{id:"b",delivered:true}]});assert.equal(await current,true);assert.equal(h.state().liveScreenRequest,null);assert.match(h.c.screenImage.src,/\/b\/screenshot/);
+});
+
+for(const mode of ['document','workspace'])for(const save of [false,true])test(`hidden ${mode} does not dispatch capture (save=${save})`,async()=>{
+ const h=fixture();h.screen('a');h.c.document.hidden=mode==='document';h.c.window.RoomGoblinEmbeddedViewport={visible:mode!=='workspace'};
+ assert.equal(await h.c.captureScreenFrame('a',save),false);assert.equal(h.requests.length,0);
+});
+
+test('a view hidden while capture is pending does not request image bytes',async()=>{
+ const h=fixture();h.screen('a');const pending=h.c.captureScreenFrame('a');h.c.document.hidden=true;
+ h.requests[0].resolve({deliveries:[{id:'a',delivered:true}]});await pending;assert.equal(h.c.screenImage.src,undefined);assert.equal(h.state().liveScreenRequest,null);
+});
+
+test('ordinary screen polling pauses while hidden and resumes without a second timer',async()=>{
+ const h=fixture(),opening=h.c.showScreen('a');h.requests[0].resolve({deliveries:[{id:'a',delivered:true}]});await flush();h.requests[1].resolve({screenshots:[],retentionDays:7});await opening;
+ assert.equal(h.intervals.size,1);const tick=[...h.intervals.values()][0];h.c.window.RoomGoblinEmbeddedViewport={visible:false};tick();await flush();assert.equal(h.requests.length,2);
+ h.c.window.RoomGoblinEmbeddedViewport.visible=true;tick();await flush();assert.equal(h.requests.length,3);tick();assert.equal(h.requests.length,3);
+ h.requests[2].resolve({deliveries:[{id:'a',delivered:true}]});await flush();assert.equal(h.intervals.size,1);h.c.closeScreenView();assert.equal(h.intervals.size,0);
+});
+
+test('closed or replaced screen targets cannot send capture requests',async()=>{
+ const h=fixture();h.screen('a');assert.equal(await h.c.captureScreenFrame('b'),false);h.c.screenDialog.open=false;assert.equal(await h.c.captureScreenFrame('a'),false);assert.equal(h.requests.length,0);
+});
+
+test('profile discovery preserves the selected user and does not replace its pending filtered read',async()=>{
+ const h=fixture(),opening=h.c.showHistory('a');h.c.historyUser.value='Profile B';const filtered=h.c.applyHistoryFilters();h.requests[0].resolve({history:[{profile:'Profile A'},{profile:'Profile B'}]});await opening;
+ assert.equal(h.c.historyUser.value,'Profile B');assert.match(h.requests[1].url,/profile=Profile\+B/);h.requests[1].resolve(rows('Profile B rows'));await filtered;assert.match(h.c.historyRows.innerHTML,/Profile B rows/);assert.equal(h.requests.length,2);
+});
+
+test('the saved screenshot View handler unhides an image after a failed live capture',async()=>{
+ const h=fixture();h.screen('a');h.c.jsArg=value=>"'"+value+"'";const capture=h.c.captureScreenFrame('a');h.requests[0].resolve({deliveries:[{id:'a',delivered:false}]});await capture;
+ const history=h.c.loadScreenHistory();h.requests[1].resolve(shots('saved-image'));await history;const handler=h.c.screenHistory.innerHTML.match(/<button onclick="([^"]+)">View/)[1];vm.runInContext(handler,h.c);assert.equal(h.c.screenImage.hidden,false);assert.match(h.c.screenImage.src,/saved-image/);
+});
+
+test('a saved screenshot handler cannot refill a closed screen view',()=>{
+ const h=fixture();h.screen('a');h.c.closeScreenView();h.c.viewSavedScreenshot('/old-image');assert.equal(h.c.screenImage.src,undefined);assert.equal(h.c.screenImage.hidden,true);
 });

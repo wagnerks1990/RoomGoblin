@@ -1085,6 +1085,133 @@ class WorkspaceBrowserTests(unittest.TestCase):
         page.wait_for_function('!labInventoryBusy')
         return page, errors
 
+    def test_lab_alert_current_filters_and_escape_own_the_results(self):
+        page, errors = self.lab_inventory_page()
+        page.evaluate("""() => {
+          window.alertReads=[];const original=window.fetch;
+          window.fetch=(url,options={}) => url.includes('/api/v1/lab/ai-monitor?')&&!url.includes('limit=5')
+            ? new Promise(resolve=>alertReads.push(resolve)) : original(url,options);
+        }""")
+        page.locator('#aiAlertPanel > summary').click()
+        page.get_by_role('button', name='View Alerts', exact=True).click()
+        page.wait_for_function('alertReads.length===1')
+        page.locator('#aiStatus').select_option('dismissed')
+        page.wait_for_function('alertReads.length===2')
+        page.evaluate("alertReads[1](new Response(JSON.stringify({alerts:[{id:'current',title:'Current filtered alert',status:'dismissed'}],cooldownMinutes:10})))")
+        page.wait_for_function("document.querySelector('#aiAlertList').textContent.includes('Current filtered alert')")
+        page.evaluate("async()=>{alertReads[0](new Response(JSON.stringify({alerts:[{id:'old',title:'Old alert'}],cooldownMinutes:10})));await new Promise(r=>setTimeout(r,25))}")
+        self.assertNotIn('Old alert', page.locator('#aiAlertList').inner_text())
+        page.locator('#aiStatus').select_option('new')
+        page.wait_for_function('alertReads.length===3')
+        page.keyboard.press('Escape')
+        page.wait_for_function("!aiAlertDialog.open && aiAlertList.innerHTML==='' ")
+        page.evaluate("async()=>{alertReads[2](new Response(JSON.stringify({alerts:[{id:'late',title:'Private fixture'}],cooldownMinutes:10})));await new Promise(r=>setTimeout(r,25))}")
+        self.assertEqual(page.locator('#aiAlertList').inner_html(), '')
+        self.evidence(page, errors, 'lab-alert-current-view')
+
+    def test_lab_alert_action_failure_is_visible_and_not_replayed(self):
+        page, errors = self.lab_inventory_page()
+        page.evaluate("""() => {
+          window.alertWrites=[];const original=window.fetch;
+          window.fetch=(url,options={}) => {
+            if(url.startsWith('/api/v1/lab/ai-monitor/')&&options.method)
+              return new Promise(resolve=>alertWrites.push({url,options,resolve}));
+            if(url.includes('/api/v1/lab/ai-monitor?')&&!url.includes('limit=5'))
+              return Promise.resolve(new Response(JSON.stringify({alerts:[{id:'fixture-alert',title:'Fixture alert',status:'new'}],cooldownMinutes:10})));
+            return original(url,options);
+          };
+        }""")
+        page.locator('#aiAlertPanel > summary').click()
+        page.get_by_role('button', name='View Alerts', exact=True).click()
+        page.locator('#aiAlertDialog').get_by_role('button', name='Acknowledge', exact=True).click()
+        page.wait_for_function('alertWrites.length===1')
+        page.locator('#aiAlertDialog').get_by_role('button', name='Dismiss', exact=True).click()
+        self.assertEqual(page.evaluate('alertWrites.length'), 1)
+        self.assertIn('still pending', page.locator('#aiAlertMeta').inner_text())
+        page.evaluate("alertWrites[0].resolve(new Response(JSON.stringify({error:'Fixture unavailable'}),{status:503}))")
+        page.wait_for_function('!aiActionPending')
+        self.assertIn('Alert action failed: Fixture unavailable', page.locator('#aiAlertMeta').inner_text())
+        page.locator('#aiAlertDialog').get_by_role('button', name='Capture Screen Now', exact=True).click()
+        page.wait_for_function('alertWrites.length===2')
+        page.keyboard.press('Escape')
+        page.wait_for_function("!aiAlertDialog.open && aiAlertList.innerHTML==='' ")
+        page.evaluate("async()=>{alertWrites[1].resolve(new Response(JSON.stringify({ok:true})));await new Promise(r=>setTimeout(r,25))}")
+        self.assertEqual(page.locator('#aiAlertMeta').inner_text(), '')
+        self.assertTrue(page.evaluate('aiCaptureTimer===null'))
+        self.evidence(page, errors, 'lab-alert-action-failure')
+
+    def test_lab_alert_screen_polling_pauses_in_hidden_workspace(self):
+        page, errors = self.lab_inventory_page()
+        page.evaluate("""() => {
+          window.captureRequests=[];window.screenTick=null;
+          const original=window.fetch,interval=window.setInterval;
+          window.setInterval=(fn,ms)=>{if(ms===5000){screenTick=fn;return 987654}return interval(fn,ms)};
+          window.fetch=(url,options={}) => {
+            if(url==='/api/v1/lab/command'){const command=JSON.parse(options.body);captureRequests.push(command);return Promise.resolve(new Response(JSON.stringify({deliveries:command.targets.map(id=>({id,delivered:false}))})));}
+            if(url.includes('/screenshots?'))return Promise.resolve(new Response(JSON.stringify({screenshots:[],retentionDays:7})));
+            return original(url,options);
+          };
+        }""")
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="screen"]').click()
+        page.wait_for_function('screenTick!==null && !liveScreenRequest')
+        page.evaluate("async()=>{window.RoomGoblinEmbeddedViewport={visible:false};screenTick();await refreshCurrentScreen()}")
+        self.assertEqual(page.evaluate('captureRequests.length'), 1)
+        page.evaluate('window.RoomGoblinEmbeddedViewport.visible=true;screenTick()')
+        page.wait_for_function('captureRequests.length===2 && !liveScreenRequest')
+        page.locator('#screenDialog').get_by_role('button', name='Close', exact=True).click()
+        self.assertTrue(page.evaluate('liveScreenTimer===null'))
+        self.evidence(page, errors, 'lab-screen-hidden-workspace')
+
+    def test_lab_monitoring_profiles_remain_available_after_an_early_filter_change(self):
+        page, errors = self.lab_inventory_page()
+        page.evaluate("""() => {
+          window.profileRead=null;window.filteredHistory=[];const original=window.fetch;
+          window.fetch=(url,options={})=>{
+            if(url.includes('/history?')){
+              if(url.includes('limit=5000'))return new Promise(resolve=>profileRead=resolve);
+              filteredHistory.push(url);return Promise.resolve(new Response(JSON.stringify({history:[{title:'Filtered history'}],total:1})));
+            }
+            return original(url,options);
+          };
+        }""")
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="history"]').click()
+        page.wait_for_function('profileRead!==null')
+        page.locator('#historySearch').fill('current')
+        page.locator('#historyDialog').get_by_role('button', name='Search', exact=True).click()
+        page.wait_for_function("historyRows.textContent.includes('Filtered history')")
+        page.evaluate("profileRead(new Response(JSON.stringify({history:[{profile:'Profile A'},{profile:'Profile B'}],total:2})))")
+        page.wait_for_function("historyUser.textContent.includes('Profile B')")
+        self.assertIn('Filtered history', page.locator('#historyRows').inner_text())
+        self.assertEqual(page.evaluate('filteredHistory.length'), 1)
+        page.locator('#historyUser').select_option('Profile B')
+        page.locator('#historyDialog').get_by_role('button', name='Search', exact=True).click()
+        page.wait_for_function("filteredHistory.some(url=>url.includes('profile=Profile+B'))")
+        self.assertEqual(page.locator('#historyUser').input_value(), 'Profile B')
+        self.evidence(page, errors, 'lab-history-profile-discovery')
+
+    def test_lab_monitoring_saved_screenshot_is_visible_after_failed_capture(self):
+        def transport(route, target):
+            if target == '/fixture-saved-image':
+                route.fulfill(content_type='image/png', body=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))
+                return True
+            return False
+        page, errors = self.lab_inventory_page(transport=transport)
+        page.evaluate("""() => {
+          const original=window.fetch;
+          window.fetch=(url,options={})=>{
+            if(url==='/api/v1/lab/command')return Promise.resolve(new Response(JSON.stringify({deliveries:[{id:'lab-a',delivered:false}]})));
+            if(url.includes('/screenshots?'))return Promise.resolve(new Response(JSON.stringify({retentionDays:7,screenshots:[{url:'/fixture-saved-image?fixture=1',downloadUrl:'/fixture-saved-image?download=1',capturedAt:'2026-01-01T00:00:00Z'}]})));
+            return original(url,options);
+          };
+        }""")
+        page.locator('[data-computer-id="lab-a"] [data-lab-focus="screen"]').click()
+        page.locator('#screenHistory').get_by_role('button', name='View', exact=True).wait_for()
+        self.assertTrue(page.locator('#screenImage').evaluate('el=>el.hidden'))
+        page.locator('#screenHistory').get_by_role('button', name='View', exact=True).click()
+        page.wait_for_function('!screenImage.hidden && screenImage.complete && screenImage.naturalWidth>0')
+        self.assertIn('/fixture-saved-image', page.locator('#screenImage').get_attribute('src'))
+        self.evidence(page, errors, 'lab-saved-screen-after-capture-failure')
+
     def test_lab_monitoring_history_stays_with_current_computer_after_escape(self):
         page, errors = self.lab_inventory_page()
         page.evaluate("""() => {

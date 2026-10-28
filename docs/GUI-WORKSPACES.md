@@ -127,6 +127,18 @@ the previous image before requesting a new capture. Screenshot feedback checks
 command delivery and reports a request, not confirmed capture/save completion;
 the latest available image can predate that request. Saved history remains the
 record of received screenshots. Permissions and retention are unchanged.
+Profile discovery belongs to the computer/dialog independently of filtered row
+reads, so early filter changes cannot remove the User choices. Viewing a saved
+screenshot explicitly restores image visibility after an unsuccessful live
+capture; changing or closing the computer still clears that image.
+
+AI-alert summaries and filtered lists discard older replies. Close/Escape clears
+alert content and cancels delayed refreshes; action responses cannot refill a
+closed dialog. One alert action may be pending at a time, with visible errors
+and no automatic write retry. Current filters refresh after a status change.
+Windows screen refreshes issue no capture requests while the document or embedded
+workspace is hidden and resume on the normal interval when visible. An already
+accepted capture is not cancelled on the workstation.
 
 Inventory filters change presentation only. A selection hidden by a Veyon or
 Windows filter still participates in an explicitly issued bulk command; the

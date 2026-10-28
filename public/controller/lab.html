@@ -82,7 +82,7 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
   <dialog id="aiAlertDialog" aria-label="AI usage alerts">
     <div class="top">
       <div><h2>AI Usage Alerts</h2><div id="aiAlertMeta" class="muted"></div></div>
-      <button onclick="aiAlertDialog.close()">Close</button>
+      <button onclick="closeAiAlerts()">Close</button>
     </div>
     <div class="panel">
       <div class="toolbar">
@@ -367,9 +367,11 @@ async function showHistory(id){
 
   try{
     const j=await api(`/api/v1/lab/computers/${encodeURIComponent(id)}/history?hours=${inventory.retentionHours}&limit=5000`);
-    if(!currentHistory(id,generation,request))return;
+    if(!currentHistory(id,generation))return;
+    const selectedProfile=historyUser.value;
     const users=[...new Set((j.history||[]).map(x=>String(x.profile||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     historyUser.innerHTML='<option value="">All users</option>'+users.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
+    if(users.includes(selectedProfile))historyUser.value=selectedProfile;
   }catch{
     if(currentHistory(id,generation,request))historyUser.innerHTML='<option value="">All users</option>';
   }
@@ -420,21 +422,45 @@ function exportHistory(format){
 async function editComputer(id){const c=inventory.computers.find(x=>x.id===id);if(!c)return;const name=prompt('Friendly name:',c.name||c.hostname||id);if(name===null)return;const groupsText=prompt('Groups (comma separated):',(c.groups||[]).join(', '));if(groupsText===null)return;const groups=groupsText.split(',').map(x=>x.trim()).filter(Boolean);try{await queueLabMetadata(()=>api(`/api/v1/lab/computers/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})}))}catch(e){alert(e.message)}}
 
 
-let aiLoadTimer=null;
-function debouncedAiLoad(){clearTimeout(aiLoadTimer);aiLoadTimer=setTimeout(loadAiAlerts,300)}
+let aiLoadTimer=null,aiCaptureTimer=null,aiDialogGeneration=0,aiReadGeneration=0,aiSummaryGeneration=0,aiActionPending=false;
+function currentAiDialog(generation,request=aiReadGeneration){return aiAlertDialog.open&&generation===aiDialogGeneration&&request===aiReadGeneration}
+function closeAiAlerts(closeDialog=true){
+  aiDialogGeneration++;aiReadGeneration++;
+  clearTimeout(aiLoadTimer);clearTimeout(aiCaptureTimer);aiLoadTimer=null;aiCaptureTimer=null;
+  aiAlertList.innerHTML='';aiAlertMeta.textContent='';
+  if(closeDialog&&aiAlertDialog.open)aiAlertDialog.close();
+}
+aiAlertDialog.addEventListener('close',()=>{if(!aiAlertDialog.open)closeAiAlerts(false)});
+function debouncedAiLoad(){
+  aiReadGeneration++;clearTimeout(aiLoadTimer);
+  if(!aiAlertDialog.open)return;
+  const generation=aiDialogGeneration;
+  aiLoadTimer=setTimeout(()=>{if(currentAiDialog(generation))loadAiAlerts()},300);
+}
 async function refreshAiSummary(){
+  if(aiActionPending)return;
+  const request=++aiSummaryGeneration;
   try{
     const j=await api('/api/v1/lab/ai-monitor?hours=24&limit=5');
+    if(request!==aiSummaryGeneration)return;
     aiMonitorState.textContent=j.enabled?'ENABLED':'DISABLED';
     aiMonitorState.className='pill '+(j.enabled?'good':'bad');
     aiNewCount.textContent=j.summary.new;
     aiTotalCount.textContent=j.summary.total;
     const a=j.alerts?.[0];
     aiLatestSummary.textContent=a?`${a.profile||a.windowsUser||'Unknown user'} • ${a.domain} • ${fmtTime(a.createdAt)}`:'No AI alerts.';
-  }catch(e){aiMonitorState.textContent='ERROR';aiMonitorState.className='pill bad'}
+  }catch(e){if(request===aiSummaryGeneration){aiMonitorState.textContent='ERROR';aiMonitorState.className='pill bad'}}
 }
-async function openAiAlerts(){aiAlertDialog.showModal();await loadAiAlerts()}
+async function openAiAlerts(){
+  aiDialogGeneration++;aiReadGeneration++;clearTimeout(aiLoadTimer);clearTimeout(aiCaptureTimer);
+  aiAlertList.innerHTML='';aiAlertMeta.textContent='';aiAlertDialog.showModal();await loadAiAlerts();
+}
 async function loadAiAlerts(){
+  if(!aiAlertDialog.open)return;
+  clearTimeout(aiLoadTimer);
+  const generation=aiDialogGeneration,request=++aiReadGeneration;
+  if(aiActionPending){aiAlertMeta.textContent='An alert action is still pending. Wait for it to finish.';return}
+  aiAlertMeta.textContent='Loading alerts…';aiAlertList.innerHTML='';
   try{
     const q=new URLSearchParams();
     if(aiStatus.value)q.set('status',aiStatus.value);
@@ -443,6 +469,7 @@ async function loadAiAlerts(){
     if(aiTextSearch.value.trim())q.set('search',aiTextSearch.value.trim());
     q.set('limit','300');
     const j=await api(`/api/v1/lab/ai-monitor?${q}`);
+    if(!currentAiDialog(generation,request))return;
     aiAlertMeta.textContent=`${j.alerts.length} alert(s) shown • cooldown ${j.cooldownMinutes} min`;
     aiAlertList.innerHTML=(j.alerts||[]).map(a=>`<div class="card">
       <div class="computerHead">
@@ -460,22 +487,37 @@ async function loadAiAlerts(){
         <button onclick="setAiAlertStatus(${jsArg(a.id)},'dismissed')">Dismiss</button>
       </div>
     </div>`).join('')||'<div class="muted">No alerts match these filters.</div>';
-  }catch(e){aiAlertList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
+  }catch(e){if(currentAiDialog(generation,request)){aiAlertMeta.textContent='Alerts could not refresh.';aiAlertList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
 }
 
-async function captureAiAlert(id){
+async function performAiAlertAction(url,options,capture=false){
+  if(!aiAlertDialog.open)return false;
+  if(aiActionPending){aiAlertMeta.textContent='An alert action is still pending. Wait for it to finish.';return false}
+  const generation=aiDialogGeneration;
+  aiActionPending=true;aiReadGeneration++;aiSummaryGeneration++;
+  clearTimeout(aiLoadTimer);clearTimeout(aiCaptureTimer);aiAlertMeta.textContent='Sending alert action…';
+  let completed=false;
   try{
-    await api(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}/capture`,{method:'POST'});
-    aiAlertMeta.textContent='Screenshot requested. Refreshing…';
-    setTimeout(loadAiAlerts,1500);
-  }catch(e){alert(e.message)}
+    await api(url,options);completed=true;
+  }catch(e){if(currentAiDialog(generation))aiAlertMeta.textContent=`Alert action failed: ${e.message}`}
+  finally{aiActionPending=false;aiReadGeneration++;aiSummaryGeneration++;refreshAiSummary()}
+  if(!currentAiDialog(generation)){if(aiAlertDialog.open)loadAiAlerts();return completed}
+  if(completed){
+    if(capture){
+      aiAlertMeta.textContent='Screenshot requested. Refreshing…';
+      aiCaptureTimer=setTimeout(()=>{if(currentAiDialog(generation))loadAiAlerts()},1500);
+    }else await loadAiAlerts();
+  }
+  return completed;
+}
+async function captureAiAlert(id){
+  return performAiAlertAction(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}/capture`,{method:'POST'},true);
 }
 
 async function setAiAlertStatus(id,status){
-  await api(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}`,{
+  return performAiAlertAction(`/api/v1/lab/ai-monitor/${encodeURIComponent(id)}`,{
     method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})
   });
-  await loadAiAlerts();await refreshAiSummary();
 }
 
 
@@ -535,7 +577,9 @@ let liveScreenRequest=null;
 let liveScreenGeneration=0;
 let screenHistoryGeneration=0;
 
+function screenSurfaceVisible(){return !document.hidden&&window.RoomGoblinEmbeddedViewport?.visible!==false}
 async function captureScreenFrame(id,save=false){
+  if(!screenSurfaceVisible()||!screenDialog.open||currentScreenComputer!==id)return false;
   const generation=liveScreenGeneration;
   if(liveScreenRequest?.id===id&&!save)return;
   const request={id,generation};
@@ -555,7 +599,7 @@ async function captureScreenFrame(id,save=false){
     // Give the helper time to capture and Hub time to receive the JPEG.
     await new Promise(r=>setTimeout(r,1000));
 
-    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request||!screenDialog.open)return;
+    if(currentScreenComputer!==id||liveScreenGeneration!==generation||liveScreenRequest!==request||!screenDialog.open||!screenSurfaceVisible())return;
     screenImage.src=`/api/v1/lab/computers/${encodeURIComponent(id)}/screenshot?t=${Date.now()}`;
     screenImage.hidden=false;
     screenMeta.textContent='Capture requested. The latest available image may predate this request.';
@@ -596,7 +640,7 @@ async function showScreen(id){
   if(currentScreenComputer!==id||liveScreenGeneration!==generation||!screenDialog.open)return;
 
   liveScreenTimer=setInterval(()=>{
-    if(currentScreenComputer&&screenDialog.open)
+    if(currentScreenComputer&&screenDialog.open&&screenSurfaceVisible())
       captureScreenFrame(currentScreenComputer,false).catch(()=>{});
   },5000);
 }
@@ -654,7 +698,7 @@ async function loadScreenHistory(){
       <div style="margin-top:6px"><b>${fmtTime(x.capturedAt)}</b></div>
       <div class="muted">${x.bytes?Math.round(x.bytes/1024)+' KB':''}</div>
       <div class="toolbar" style="margin-top:6px">
-        <button onclick="screenImage.src=${jsArg(cacheBustUrl(x.url))}">View</button>
+        <button onclick="viewSavedScreenshot(${jsArg(x.url)})">View</button>
         <button onclick="window.open(${jsArg(x.url)},'_blank','noopener')">Full Size</button>
         <button onclick="window.location=${jsArg(x.downloadUrl)}">Download</button>
       </div>
@@ -662,6 +706,11 @@ async function loadScreenHistory(){
   }catch(e){
     if(currentScreenComputer===id&&liveScreenGeneration===generation&&screenHistoryGeneration===request&&screenDialog.open)screenHistory.innerHTML=`<div class="bad">${esc(e.message)}</div>`;
   }
+}
+
+function viewSavedScreenshot(url){
+  if(!currentScreenComputer||!screenDialog.open)return;
+  screenImage.src=cacheBustUrl(url);screenImage.hidden=false;
 }
 
 async function openPresetDialog(){

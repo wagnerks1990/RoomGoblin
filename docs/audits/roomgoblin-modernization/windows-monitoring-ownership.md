@@ -28,3 +28,21 @@ through textContent. Neither adjustment removes an assertion.
 Transports are fixtures; no student history, actual
 capture, classroom command or live agent was used. Hidden-frame capture lifecycle,
 other monitoring controls and managed-device review remain separate open work.
+
+## PR #318 review follow-up
+
+Both review findings were reproduced with failing actual-source tests. Saved
+image View now explicitly unhides the image and refuses a closed screen view.
+Same-computer profile discovery retains dialog ownership independently of row
+filters, preserves a selected user, and cannot trigger a duplicate filtered
+read. Cross-computer/closed-dialog replies remain rejected. The original profile
+test incorrectly expected profile discovery to be discarded; it now verifies
+both retained filtered rows and available user choices. Three additional Node
+cases cover selected profiles, the rendered saved-image handler and closed views.
+All 66 combined focused cases pass. Final qualification passes 2,149 Linux tests,
+zero failures and two root-only skips (2,151 total), all 23 Host Recovery tests,
+syntax/controller checks and all 94 workspace plus nine Veyon command-page cases
+in Chromium and Firefox. Both new review-specific browser cases pass. Their
+first focused run used the wrong Search button label; the selector was corrected
+to the existing label. The selected-profile Node fixture likewise now uses the
+existing `profile` query parameter. Required fresh CI and delivery remain pending.

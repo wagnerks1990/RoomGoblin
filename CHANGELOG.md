@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve current AI-alert filters and closed-view privacy, contain pending
+  action failures, and suspend Windows screenshot requests in hidden views.
+
 - Keep Windows history and screenshot replies with the current computer, clear
   closed monitoring views, and distinguish capture requests from confirmed saves.
 
