@@ -39,8 +39,16 @@ and its backed-up update remain pending.
 [Android capability ownership](android-capability-ownership.md) resolves four
 reproduced cache/read races. All 12 targeted and 37 related cases pass. The
 separate candidate passes 2,399 Linux tests, two root-only skips, all 23 Host
-Recovery cases and 126 workspace cases per browser. Native Android service
-shutdown remains under review.
+Recovery cases and 126 workspace cases per browser. PR #333 has passed all 14
+checks and awaits delivery of PR #332 before merging.
+
+[Android service socket ownership](android-socket-lifecycle.md) fixes reproduced
+shutdown leaks in active and queued connections. All four real-socket JVM cases,
+seven existing hardening cases, 2,399 Linux cases and all 23 Host Recovery cases
+pass, with two expected root-only skips. The same JVM fixture now runs in the
+existing Android CI job. Browser sources retain their 126-case-per-engine
+qualification. Updating an already-running Android activity's display assignment
+has three reproduced failures under review.
 Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
