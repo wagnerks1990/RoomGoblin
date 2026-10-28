@@ -5,6 +5,7 @@ const THUMB_CONCURRENCY=4;
 const THUMB_REFRESH_MS=10000;
 const thumbState=new Map();
 let thumbTimer=null, previewsPaused=false, thumbnailQueueBusy=false, loadBusy=false;
+let inventoryRevision=0,inventoryRefreshPending=false,inventoryMutationCount=0,inventoryMutationTail=Promise.resolve();
 let liveController=null, liveObjectUrl=null, liveGeneration=0, liveFailures=0;
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{j={error:t}}if(!r.ok)throw new Error(j?.error?.message||j.error||`${r.status}`);return j}
@@ -72,20 +73,27 @@ async function status(){
   try{const x=await api('/api/v1/veyon/status');$('apiStatus').innerHTML=`Veyon service: <span class="online">REACHABLE</span> • Screens verified per computer`;$('apiStatus').title=`Service HTTP ${x.httpStatus??'unknown'}; ${Number(x.authenticatedConnections??x.pool?.size??0)} cached authenticated connections. Service reachability alone does not verify a screen preview.`}
   catch(e){$('apiStatus').innerHTML=`Veyon API: <span class="offline">OFFLINE</span> • ${esc(e.message)}`}
 }
+function queueInventoryMutation(action){
+  if(inventoryMutationCount>=16)return Promise.reject(new Error('Computer changes are still pending. Wait for them to finish.'));
+  inventoryRevision++;inventoryMutationCount++;inventoryRefreshPending=true;
+  const work=inventoryMutationTail.then(action);inventoryMutationTail=work.catch(()=>{});
+  return work.finally(()=>{inventoryRevision++;inventoryMutationCount--;if(!inventoryMutationCount)load()});
+}
 async function load(){
-  if(loadBusy)return;loadBusy=true;
+  if(loadBusy||inventoryMutationCount){inventoryRefreshPending=true;return}
+  loadBusy=true;inventoryRefreshPending=false;const revision=inventoryRevision;
   status();
   try{
-    const x=await api('/api/v1/veyon/computers');computers=x.computers||[];
+    const x=await api('/api/v1/veyon/computers');if(revision!==inventoryRevision)return;computers=x.computers||[];
     const known=new Set(computers.map(c=>c.id));selected=new Set([...selected].filter(id=>known.has(id)));
     for(const [id,state] of thumbState)if(!known.has(id)){state.controller?.abort();if(state.url)URL.revokeObjectURL(state.url);thumbState.delete(id)}
     $('inventoryStatus').textContent='';render();
-  }catch(e){$('inventoryStatus').textContent=`Inventory could not refresh: ${e.message}. Showing the last available inventory.`}
-  finally{loadBusy=false}
+  }catch(e){if(revision===inventoryRevision)$('inventoryStatus').textContent=`Inventory could not refresh: ${e.message}. Showing the last available inventory.`}
+  finally{loadBusy=false;if(inventoryRefreshPending&&!inventoryMutationCount)load()}
 }
 async function discover(){
   $('discover').disabled=true;$('discover').textContent='Scanning…';
-  try{await api('/api/v1/veyon/discover',{method:'POST',body:'{}'});await load()}
+  try{await queueInventoryMutation(()=>api('/api/v1/veyon/discover',{method:'POST',body:'{}'}))}
   catch(e){alert(e.message)}finally{$('discover').disabled=false;$('discover').textContent='Discover computers'}
 }
 const commandJobs=new Map(),commandSubmissions=new Set(),uncertainLockRequests=new Map(),commandIntents=new Map();
@@ -209,13 +217,16 @@ function setRoleFilter(role){
 }
 async function setRole(ids,role){
   if(!ids.length)return alert('Select at least one computer.');
+  const acceptedIds=[...ids];
   try{
-    await api('/api/v1/veyon/computers/role',{method:'POST',body:JSON.stringify({ids,role})});
-    ids.forEach(id=>{
-      const c=computers.find(x=>x.id===id);
-      if(c)c.role=role;
+    await queueInventoryMutation(async()=>{
+      await api('/api/v1/veyon/computers/role',{method:'POST',body:JSON.stringify({ids:acceptedIds,role})});
+      acceptedIds.forEach(id=>{
+        const c=computers.find(x=>x.id===id);
+        if(c)c.role=role;
+      });
+      render();
     });
-    render();
   }catch(e){alert(e.message)}
 }
 async function toggleRole(id){
@@ -224,18 +235,20 @@ async function toggleRole(id){
   await setRole([id],c.role==='teacher'?'student':'teacher');
 }
 
-function openInfo(title,html){$('infoTitle').textContent=title;$('infoBody').innerHTML=html;$('infoModal').classList.add('open')}
-function closeInfo(){$('infoModal').classList.remove('open');$('infoBody').innerHTML=''}
+let infoGeneration=0;
+function openInfo(title,html){const generation=++infoGeneration;$('infoTitle').textContent=title;$('infoBody').innerHTML=html;$('infoModal').classList.add('open');return generation}
+function closeInfo(){infoGeneration++;$('infoModal').classList.remove('open');$('infoBody').innerHTML=''}
 $('closeInfo').onclick=closeInfo;$('infoModal').onclick=e=>{if(e.target===$('infoModal'))closeInfo()};
 
 async function showDeviceFeatures(id){
   const c=computers.find(x=>x.id===id);if(!c)return;
-  openInfo(`Browser features — ${c.name||c.ip}`,'Loading…');
+  const generation=openInfo(`Browser features — ${c.name||c.ip}`,'Loading…');
   try{
     const x=await api(`/api/v1/veyon/computers/${encodeURIComponent(id)}/catalog`);
+    if(generation!==infoGeneration)return;
     const rows=(x.features||[]).map(f=>`<div class="featureRow"><span>${esc(f.label||f.name)}</span><span>${esc(f.detail)} · ${f.advertised?'Appliance advertised':'Not advertised'}</span></div>`).join('');
     $('infoBody').innerHTML=`<p>Browser workflows only. Advertisement does not verify endpoint support or delivery.</p><div class="featureList">${rows||'<span class="muted">No browser feature list returned.</span>'}</div>`;
-  }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
+  }catch(e){if(generation===infoGeneration)$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
 }
 async function showFeatures(){
   const c=visibleComputers().find(x=>x.online)||computers.find(x=>x.online);
@@ -243,12 +256,20 @@ async function showFeatures(){
   await showDeviceFeatures(c.id);
 }
 async function showPool(){
-  openInfo('Veyon Connection Pool','Loading…');
+  const generation=openInfo('Veyon Connection Pool','Loading…');
   try{
     const x=await api('/api/v1/veyon/connections');
+    if(generation!==infoGeneration)return;
     $('infoBody').innerHTML=`<div class="notice">${x.size} / ${x.max} cached connections</div><div class="featureList">${(x.connections||[]).map(r=>`<div class="featureRow"><span>${esc(r.host)}</span><span>idle ${r.idleSeconds}s • lifetime ${r.secondsRemaining}s</span></div>`).join('')}</div><div class="toolbar"><button id="closePool">Close All Cached Connections</button></div>`;
-    $('closePool').onclick=async()=>{if(!confirm('Close all cached Veyon connections? Active previews will reconnect.'))return;try{await api('/api/v1/veyon/connections/close',{method:'POST',body:JSON.stringify({ids:['all']})});closeInfo();await load()}catch(error){alert(error.message)}};
-  }catch(e){$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
+    const button=$('closePool');
+    button.onclick=async()=>{
+      if(generation!==infoGeneration||button.disabled||!confirm('Close all cached Veyon connections? Active previews will reconnect.'))return;
+      button.disabled=true;
+      try{await api('/api/v1/veyon/connections/close',{method:'POST',body:JSON.stringify({ids:['all']})});if(generation===infoGeneration)closeInfo();await load()}
+      catch(error){if(generation===infoGeneration)alert(error.message)}
+      finally{button.disabled=false}
+    };
+  }catch(e){if(generation===infoGeneration)$('infoBody').innerHTML=`<span class="offline">${esc(e.message)}</span>`}
 }
 let veyonLoginTargets=[];
 function clearVeyonLogin(){veyonLoginTargets=[];$('veyonLoginPassword').value=''}
@@ -307,7 +328,7 @@ async function stopBroadcast(){
 }
 async function renameComputer(id){
   const c=computers.find(x=>x.id===id);const name=prompt('Display name:',c?.name||'');if(!name)return;
-  try{await api('/api/v1/veyon/computers/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({name})});await load()}catch(e){alert(e.message)}
+  try{await queueInventoryMutation(()=>api('/api/v1/veyon/computers/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({name})}))}catch(e){alert(e.message)}
 }
 
 function thumbnailUrl(id){return `/api/v1/veyon/computers/${encodeURIComponent(id)}/framebuffer?format=jpeg&width=480&quality=55&t=${Date.now()}`}

@@ -73,6 +73,11 @@ confirmations remain in place. Veyon's custom live and information modal contain
 receive focus containment, Escape-to-close and return-focus handling through
 `public/controller/lab-accessibility.js`; native dialogs retain browser behavior.
 
+Veyon feature and connection-pool dialogs discard replies from an earlier
+computer or a closed dialog. Closing cached connections keeps its confirmation
+and one pending action; a late completion refreshes inventory without closing
+a newer dialog. Escape and return-focus behavior remain available.
+
 ## Refined operator workflow
 
 Today puts the school-day and display summaries first, with integration health in
