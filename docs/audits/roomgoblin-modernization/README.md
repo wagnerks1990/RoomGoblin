@@ -36,8 +36,10 @@ main commit with a byte-identical tree to the qualified `6f86b3f` snapshot befor
 this documentation note. All 66 focused integration checks pass. Qualification
 includes 1,409 native passes, zero failures, two root-only skips, 23 Host Recovery
 passes, 16 Live Watch cases in each browser and 70 workspace cases in each browser.
-These fixes passed all 14 checks and merged at `2f79567` (PR #299); main
-publication and appliance delivery remain pending.
+These fixes passed all 14 checks and merged at `2f79567` (PR #299). Its main
+Firefox run hit a route-capture race, so publication stopped and production
+remains on `4a41f00`. The [fixture correction](preview-route-synchronization.md)
+is included in PR #300; combined delivery requires its exact main gates/images.
 Music queue response ownership and active announcement receiver ownership are
 integrated on `2f79567`, with a byte-identical tree to qualified `1541de6` before
 this evidence note. All 78 focused integration checks pass. Qualification includes
