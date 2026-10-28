@@ -3,7 +3,7 @@
  const page=document.getElementById('sports');if(!page)return;
  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n};
  const request=(url,body,method='POST')=>api(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
- let sourceStatus={},config=null,dirty=false,loading=false,selectedTeam='',selectedBoard='',imported=null,importTeam='',scene=null;
+ let sourceStatus={},config=null,dirty=false,loading=false,saving=false,draftRevision=0,viewRevision=0,selectedTeam='',selectedBoard='',imported=null,importTeam='',scene=null;
  const id=()=>crypto.randomUUID(),notice=el('p','Load your school teams to begin.','sportsNotice');notice.setAttribute('role','status');
  function button(parent,text,fn,primary=false){const b=el('button',text,primary?'primary':'');b.type='button';b.addEventListener('click',async()=>{try{await fn()}catch(e){notice.textContent=e.message}});parent.append(b);return b}
  function input(parent,label,value='',type='text'){const l=el('label',label),n=el(type==='textarea'?'textarea':'input');if(type!=='textarea')n.type=type;if(type==='checkbox')n.checked=!!value;else n.value=value;n.setAttribute('aria-label',label);l.append(n);parent.append(l);return n}
@@ -15,12 +15,23 @@
  for(const [value,label]of [['boards','Boards'],['teams','Teams & rosters'],['events','Results & schedules'],['media','Photos & video'],['sources','Sources']])button(tabs,label,()=>{tab=value;render()});
  const admin=()=>userCan('admin')&&userCan('*');
  const edit=()=>typeof userCan==='function'&&userCan('schedule.manage')&&userCan('automation.manage');
- function changed(){dirty=true;notice.textContent='Unsaved Sports changes.';scene=null;saveButton.disabled=!edit()}
+ function changed(){draftRevision++;dirty=true;notice.textContent='Unsaved Sports changes.';scene=null;saveButton.disabled=!edit()||saving}
  function picker(parent,kind){const rows=config[kind];const chosen=kind==='teams'?selectedTeam:selectedBoard;const s=select(parent,kind==='teams'?'Team':'Board',rows.map(r=>[r.id,r.name+(kind==='teams'?' · '+r.level:'')]),chosen);s.dataset.ephemeral='true';s.onchange=()=>{if(kind==='teams')selectedTeam=s.value;else selectedBoard=s.value;render()};return rows.find(r=>r.id===s.value)}
- async function save(){if(!edit())throw Error('Schedule and automation permissions are required');if(!config)return;saveButton.disabled=true;try{const r=await request('/api/v1/sports',config,'PUT');config=r.config;if(r.status||r.sources)sourceStatus=r.status||r.sources;window.dispatchEvent(new Event('roomgoblin:sportschange'));dirty=false;notice.textContent='Sports saved. No display commands sent.';render()}finally{saveButton.disabled=!edit()}}
+ async function save(){
+  if(!edit())throw Error('Schedule and automation permissions are required');if(!config||saving)return;
+  const owner=config,draft=draftRevision;saving=true;viewRevision++;saveButton.disabled=true;
+  try{
+   const r=await request('/api/v1/sports',owner,'PUT');
+   window.dispatchEvent(new Event('roomgoblin:sportschange'));
+   if(config!==owner){notice.textContent='Sports saved. Reload saved Sports to view that result.';return}
+   if(r.status||r.sources)sourceStatus=r.status||r.sources;
+   if(draftRevision===draft){config=r.config;dirty=false;render();notice.textContent='Sports saved. No display commands sent.'}
+   else{config.revision=r.config.revision;dirty=true;notice.textContent='Sports saved. Newer edits remain unsaved.'}
+  }finally{saving=false;saveButton.disabled=!edit()}
+ }
  async function load(){if(loading||page.dataset.authorized!=='true'||!page.classList.contains('active')||config)return;loading=true;try{const r=await api('/api/v1/sports');config=r.config;if(r.status||r.sources)sourceStatus=r.status||r.sources;window.dispatchEvent(new Event('roomgoblin:sportschange'));selectedTeam=config.teams[0]?.id||'';selectedBoard=config.boards[0]?.id||'';render()}catch(e){notice.textContent=e.message}finally{loading=false}}
  const table=(parent,head,rows)=>{const wrap=el('div',null,'sportsTable'),t=el('table'),thead=el('thead'),tr=el('tr');head.forEach(h=>tr.append(el('th',h)));thead.append(tr);t.append(thead);const tbody=el('tbody');rows.forEach(row=>{const tr=el('tr');row.forEach(v=>{const td=el('td');typeof v==='string'?td.textContent=v:td.append(v);tr.append(td)});tbody.append(tr)});t.append(tbody);wrap.append(t);parent.append(wrap)};
- function render(){if(!config)return;body.replaceChildren();saveButton.disabled=!edit();
+ function render(){if(!config)return;viewRevision++;body.replaceChildren();saveButton.disabled=!edit()||saving;
   if(tab==='boards')boards();else if(tab==='teams')teams();else if(tab==='events')events();else if(tab==='media')media();else sources();
   body.querySelectorAll('input,select,textarea').forEach(n=>{if((n.oninput||n.onchange)&&!n.dataset.ephemeral)n.addEventListener(n.onchange?'change':'input',()=>changed())});
   if(!edit())for(const n of body.querySelectorAll('input,select,textarea,button'))if(!n.dataset.control&&!n.dataset.ephemeral)n.disabled=true;
@@ -35,7 +46,17 @@
   const selection=el('fieldset');selection.append(el('legend','Teams to rotate · varsity and JV stay separate'));for(const t of config.teams){const n=input(selection,t.name+' · '+t.level,b.teamIds.includes(t.id),'checkbox');n.onchange=()=>b.teamIds=n.checked?[...b.teamIds,t.id]:b.teamIds.filter(x=>x!==t.id)}body.append(selection);
   body.append(el('p','With sound enabled, this board holds room audio priority until replaced. Receiver autoplay restrictions may fall back to muted playback.','muted'));
   const actions=el('div',null,'toolbar'),frame=el('div',null,'sportsPreviewFrame'),canvas=el('div',null,'sportsPreviewCanvas');frame.append(canvas);body.append(actions,frame);
-  async function generate(){if(dirty)throw Error('Save the board before previewing or scheduling it');const r=await request('/api/v1/sports/boards/'+encodeURIComponent(b.id)+'/scene',{});scene=r.scene;RoomGoblinScene.render(canvas,scene,{previewSports:true});canvas.style.transform=`scale(${frame.clientWidth/1920})`;return scene}
+  let generating=false;
+  async function generate(){
+   if(dirty||saving)throw Error('Save the board before previewing or scheduling it');
+   if(generating)throw Error('A board preview is already loading');
+   const owner=config,draft=draftRevision,view=viewRevision;generating=true;
+   try{
+    const r=await request('/api/v1/sports/boards/'+encodeURIComponent(b.id)+'/scene',{});
+    if(config!==owner||draftRevision!==draft||viewRevision!==view||dirty||saving||!canvas.isConnected)throw Error('Sports changed while loading; preview again after saving.');
+    const generated=r.scene;scene=generated;RoomGoblinScene.render(canvas,generated,{previewSports:true});canvas.style.transform=`scale(${frame.clientWidth/1920})`;return generated;
+   }finally{generating=false}
+  }
   button(actions,'Preview board',generate,true).dataset.control='true';button(actions,'Schedule board',async()=>{const scene=await generate();startSportsAutomation(scene)});
   const targets=el('fieldset');targets.append(el('legend','Display targets'));body.append(targets);api('/api/v1/devices').then(r=>{if(!targets.isConnected)return;for(const [key,d]of Object.entries(r.devices||{})){if(d.enabled===false)continue;const n=input(targets,d.name||key,false,'checkbox');n.value=key}}).catch(()=>{});
   button(actions,'Send to selected displays',async()=>{const scene=await generate(),target=Array.from(targets.querySelectorAll('input:checked')).map(n=>n.value);if(!target.length)throw Error('Select at least one display');await request('/api/v1/commands',{type:'display.text',target,payload:{text:'',scene}});notice.textContent='Sports sent to the selected displays.'}).dataset.control='true';

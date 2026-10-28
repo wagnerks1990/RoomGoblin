@@ -103,6 +103,10 @@ service/HTTP failures. All 41 targeted cases pass, along with 2,438 Linux tests,
 two root-only skips, all 23 Host Recovery and all 55 JVM cases. Existing Sports
 browser cases pass 10 per engine. Checked delivery remains pending; Sports
 workspace review continues.
+[Sports save/scene ownership](sports-workspace-ownership.md) fixes four reproduced
+browser races. All 15 Sports cases pass in each engine. The final combined Linux
+qualification passes 2,438 tests, two root-only skips, all 23 Host Recovery cases
+and all 55 JVM cases.
 The remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
