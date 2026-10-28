@@ -5,7 +5,7 @@ let inventoryVersion=0,inventoryRead=null,inventoryProbeAgents=true;
 let shotVersion=0,shotDevice=null,terminalVersion=0;
 const editingDevices=new Set(),deviceMessages=new Map();
 const deviceOperations=new Map(),controlStates=new WeakMap();
-async function api(path,opt={}){const r=await fetch(`/api/v1/maintenance${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});const text=await r.text();let j={};try{j=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}if(!r.ok||j.ok===false){const error=Error(j.error||`HTTP ${r.status}`);error.payload=j;error.httpStatus=r.status;throw error}return j}
+async function api(path,opt={}){const {response:r,value:text}=await RoomGoblinRequest.read(`/api/v1/maintenance${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});let j={};try{j=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}if(!r.ok||j.ok===false){const error=Error(j.error||`HTTP ${r.status}`);error.payload=j;error.httpStatus=r.status;throw error}return j}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function deviceById(id){return state.devices.find(d=>String(d.id)===String(id))}

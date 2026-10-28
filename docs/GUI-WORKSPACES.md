@@ -51,6 +51,17 @@ item hidden by authorization. The shared stylesheet explicitly preserves the
 
 ## Surface behavior
 
+Controller, Veyon and Managed Displays API waits include response-body consumption in
+their deadline. Ordinary reads and Ubuntu requests allow one minute. Ordinary
+mutations and Android management allow ten minutes for existing multi-step work.
+Maintenance mutations, backup inspection, diagnostic bundles and full checks
+allow 45 minutes to preserve the existing long archive/restore paths. A caller's
+shorter cancellation still applies. Timeout releases the pending control and
+reports an unconfirmed mutation outcome; it does not retry or cancel the accepted
+server operation. Refresh status before deciding whether to submit again.
+Read failures preserve existing inventory. Direct downloads, resumable uploads,
+physical renderer requests and durable background jobs retain their own contracts.
+
 Diagnostics distinguishes unconfigured and unchecked integrations from failures.
 Pluto's observed state retains the last response time. Govee reports MQTT publish
 evidence without claiming device acknowledgment. Veyon reports WebAPI reachability

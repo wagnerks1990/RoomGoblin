@@ -8,7 +8,7 @@ let thumbTimer=null, previewsPaused=false, thumbnailQueueBusy=false, loadBusy=fa
 let inventoryRevision=0,inventoryRefreshPending=false,inventoryMutationCount=0,inventoryMutationTail=Promise.resolve();
 let liveController=null, liveObjectUrl=null, liveGeneration=0, liveFailures=0;
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-async function api(url,opt={}){const r=await fetch(url,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const t=await r.text();let j={};try{j=t?JSON.parse(t):{}}catch{j={error:t}}if(!r.ok)throw new Error(j?.error?.message||j.error||`${r.status}`);return j}
+async function api(url,opt={}){const {response:r,value:t}=await RoomGoblinRequest.read(url,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});let j={};try{j=t?JSON.parse(t):{}}catch{j={error:t}}if(!r.ok)throw new Error(j?.error?.message||j.error||`${r.status}`);return j}
 function updateSelectionCount(){
   const visible=new Set(visibleComputers().map(c=>c.id)), hidden=[...selected].filter(id=>!visible.has(id)).length;
   $('selectionCount').textContent=`${selected.size} selected${hidden?` · ${hidden} hidden by filters`:''}`;
