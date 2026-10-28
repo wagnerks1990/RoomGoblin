@@ -244,3 +244,96 @@ class MusicStudioBrowserTests(unittest.TestCase):
         self.assertEqual(page.locator('#bgmFavorite').input_value(), '')
         self.assertEqual(page.locator('#bgmStart').input_value(), '08:10')
         self.assertFalse(errors, errors)
+
+    def test_repeated_identical_search_keeps_result_cards(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Find music', exact=True).click()
+        page.locator('#maSearch').fill('same song')
+        for _ in range(3):
+            page.evaluate('searchMusicAssistant()')
+            self.assertEqual(page.locator('#maSearchResults .musicItem').count(), 1)
+            self.assertEqual(page.locator('#maSearchResults h3').inner_text(), 'New song')
+        self.assertEqual(errors, [])
+
+    def test_short_search_retires_pending_success_and_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                page, errors, requests = music_page(self)
+                page.get_by_role('button', name='Find music', exact=True).click()
+                held = []
+                page.route('**/api/v1/music-assistant/command', lambda route: held.append(route))
+                page.locator('#maSearch').fill('old song')
+                page.evaluate('void searchMusicAssistant()')
+                deadline = time.monotonic() + 5
+                while not held and time.monotonic() < deadline:
+                    page.wait_for_timeout(20)
+                self.assertEqual(len(held), 1)
+                page.locator('#maSearch').fill('a')
+                page.evaluate('searchMusicAssistant()')
+                with page.expect_request_finished(lambda req: '/music-assistant/command' in req.url):
+                    if failed:
+                        held[0].fulfill(status=502, json={'ok': False, 'error': 'Obsolete failure'})
+                    else:
+                        held[0].fulfill(json={'ok': True, 'result': {'tracks': [{'name': 'Obsolete song', 'uri': 'demo://obsolete', 'media_type': 'track'}]}})
+                page.wait_for_timeout(50)
+                self.assertEqual(page.locator('#maSearchResults').inner_text(), '')
+                self.assertIn('at least two characters', page.locator('.musicNotice').inner_text())
+                self.assertEqual(errors, [])
+                page.close()
+
+    def test_repeated_empty_search_retains_no_results_message(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Find music', exact=True).click()
+        page.route('**/api/v1/music-assistant/command', lambda route: route.fulfill(json={'ok': True, 'result': {'tracks': []}}))
+        page.locator('#maSearch').fill('no result')
+        for _ in range(2):
+            page.evaluate('searchMusicAssistant()')
+            self.assertIn('No results.', page.locator('#maSearchResults').inner_text())
+        self.assertEqual(errors, [])
+
+    def test_same_results_return_after_visible_search_failure(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Find music', exact=True).click()
+        page.locator('#maSearch').fill('same song')
+        page.evaluate('searchMusicAssistant()')
+        page.route('**/api/v1/music-assistant/command', lambda route: route.fulfill(status=502, json={'ok': False, 'error': 'Provider unavailable'}))
+        page.evaluate('searchMusicAssistant()')
+        self.assertIn('Provider unavailable', page.locator('#maSearchResults').inner_text())
+        page.unroute('**/api/v1/music-assistant/command')
+        page.evaluate('searchMusicAssistant()')
+        self.assertEqual(page.locator('#maSearchResults .musicItem').count(), 1)
+        self.assertEqual(errors, [])
+
+    def test_latest_valid_search_keeps_results_after_obsolete_success(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Find music', exact=True).click()
+        held = []
+        page.route('**/api/v1/music-assistant/command', lambda route: held.append(route))
+        for index in range(2):
+            page.locator('#maSearch').fill('query ' + str(index))
+            page.evaluate('void searchMusicAssistant()')
+            deadline = time.monotonic() + 5
+            while len(held) <= index and time.monotonic() < deadline:
+                page.wait_for_timeout(20)
+            self.assertEqual(len(held), index + 1)
+        for index, name in ((1, 'Current song'), (0, 'Obsolete song')):
+            with page.expect_request_finished(lambda req: '/music-assistant/command' in req.url):
+                held[index].fulfill(json={'ok': True, 'result': {'tracks': [{'name': name, 'uri': 'demo://song/' + str(index), 'media_type': 'track'}]}})
+            page.wait_for_timeout(50)
+        self.assertEqual(page.locator('#maSearchResults h3').inner_text(), 'Current song')
+        self.assertEqual(errors, [])
+
+    def test_short_search_clears_previous_result_without_another_request(self):
+        page, errors, requests = music_page(self)
+        page.get_by_role('button', name='Find music', exact=True).click()
+        page.locator('#maSearch').fill('same song')
+        page.evaluate('searchMusicAssistant()')
+        count = len(requests)
+        page.locator('#maSearch').fill('')
+        page.evaluate('searchMusicAssistant()')
+        self.assertEqual(page.locator('#maSearchResults').inner_text(), '')
+        self.assertEqual(len(requests), count)
+        page.locator('#maSearch').fill('same song')
+        page.evaluate('searchMusicAssistant()')
+        self.assertEqual(page.locator('#maSearchResults .musicItem').count(), 1)
+        self.assertEqual(errors, [])

@@ -1,5 +1,9 @@
 # AI Project Context
 
+Music search submissions always retire prior response ownership, including
+short queries. Clear the result-card cache when replacing its DOM with search
+progress; the stable Favorites cache is independent.
+
 TV audio restoration must recheck receiver connection identity, Music Assistant
 connection generation, saved audio and shutdown/recovery admission after every
 await. Retired restores cannot send mute, retry or mark the receiver restored.

@@ -189,6 +189,10 @@ Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 
+Repeating a search restores its result cards even when the results are identical.
+Submitting fewer than two characters clears old results and retires a pending
+search without sending another request.
+
 TV audio restoration stops if its receiver, Music Assistant connection or saved
 audio changes while a command is pending. Only the current restore can report
 success. Shutdown and recovery freeze also stop subsequent restore commands.

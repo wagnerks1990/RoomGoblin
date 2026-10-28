@@ -5,6 +5,7 @@ Status: **Audio/session/connection fixes delivered; schedule/probe/Live Watch fo
 PR #301 is deployed and verified at `1e52980`, including health, database/secrets,
 backup integrity and rollback. See [the delivery receipt](music-session-delivery.md).
 TV audio restore ownership has [22 focused regressions](music-tv-restore-ownership.md).
+Music search has [two reproduced result-ownership defects](music-search-results.md).
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
