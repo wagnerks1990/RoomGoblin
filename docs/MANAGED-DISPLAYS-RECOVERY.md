@@ -127,13 +127,19 @@ Do not fix this by making the whole Hub data directory world-writable, adding `p
 
 ## Permanent storage and inventory contract
 
-`docker-compose.override.yml` mounts the named volume `classroom-control-hub-android-adb` only at:
+The Compose files share the named volume `classroom-control-hub-android-adb`
+between two explicitly different mounts:
 
 ```text
-/managed/classroom-hub/data/android-tv/.android
+Hub:         /app/data/android-tv/.android           writable
+Maintenance: /managed/classroom-hub/data/android-tv/.android  read-only
 ```
 
-This gives platform-tools the one writable directory it needs while preserving the base Compose hardening and existing host-backed Android device inventory. The volume persists across maintenance-container rebuilds and recreations.
+The Hub can write its persistent client identity; maintenance can read that same
+identity without changing its keys. The native host updater owns permission repair.
+Keep the directory at 0750 and the key pair at 0640, owned by 10001:10001.
+The volume persists across both containers' rebuilds and recreations. Do not
+make the maintenance mount writable to satisfy historical recovery guidance.
 
 The nested volume is not sufficient by itself. Linux must traverse the host-backed parent directory before it can reach the nested mount. The supported host layout is:
 
@@ -149,7 +155,11 @@ The APK and metadata staged in that group-writable data tree are therefore not a
 
 Successful device probes persist the 16-hex-digit Android ID. Recovery first tries the saved endpoint or current DNS address. If DHCP changed the address, it may inspect already-authorized `_adb-tls-connect._tcp` mDNS endpoints, but it updates the record only when the observed Android ID matches. Missing or ambiguous identity fails closed instead of attaching a different classroom TV.
 
-`install.sh`, the GUI application updater, and rollback normalize this layout before maintenance starts. Both installer and updater also verify the ADB key directory is writable, and they fail instead of accepting a release when an existing inventory file is not readable.
+`install.sh`, the GUI application updater, and rollback normalize this layout
+before maintenance starts. The updater's `adb_storage_check` verifies maintenance
+can read the identity directory and any existing inventory file. Release acceptance
+also checks the Hub's write access, the maintenance mount's read-only flag and
+unchanged trust-key identity. An unreadable inventory is a failure, not an empty list.
 
 ### Why the UI once showed `0 devices`
 
@@ -167,28 +177,29 @@ Container recreation is part of the storage contract. Updating Compose source al
 
 Do not replace the updater deployment command with a plain `docker compose up -d` that can preserve an old maintenance-container mount set.
 
-## Manual recovery for an appliance already in the failed state
+## Recovery for an appliance already in the failed state
+
+Use the supported updater to reconcile storage and mounts with its verified
+image pair, operational backup and rollback. Do not bypass that transaction with
+an ad hoc image build or weaken the maintenance mount. Run the update in the
+administrator's authorized maintenance window, then check access without changing
+keys or contacting a physical receiver:
 
 ```bash
 cd /opt/classroom-hub
-sudo chown root:10001 /opt/classroom-hub/data/android-tv
-sudo chmod 2770 /opt/classroom-hub/data/android-tv
-if [ -f /opt/classroom-hub/data/android-tv/devices.json ]; then
-  sudo chown root:10001 /opt/classroom-hub/data/android-tv/devices.json
-  sudo chmod 0660 /opt/classroom-hub/data/android-tv/devices.json
-fi
-
-sudo docker compose up -d --build --force-recreate maintenance-agent
-sudo docker compose up -d --force-recreate classroom-hub
-
+sudo bash deploy/update-production.sh
+sudo docker compose exec -T classroom-hub sh -lc 'test -w /app/data/android-tv/.android'
 sudo docker compose exec maintenance-agent sh -lc '
-  test -w /managed/classroom-hub/data/android-tv/.android &&
-  test ! -e /managed/classroom-hub/data/android-tv/devices.json ||
-  test -r /managed/classroom-hub/data/android-tv/devices.json
+  test -r /managed/classroom-hub/data/android-tv/.android &&
+  { test ! -e /managed/classroom-hub/data/android-tv/devices.json ||
+    test -r /managed/classroom-hub/data/android-tv/devices.json; }
 '
+sudo docker inspect --format '{{range .Mounts}}{{if eq .Destination "/managed/classroom-hub/data/android-tv/.android"}}{{.Name}} writable={{.RW}}{{end}}{{end}}' classroom-control-hub-maintenance
 ```
 
-Then open **Managed Displays** and use **Refresh**. The status should report `ADB bridge ready`, and existing inventory should reappear without re-pairing.
+The final command must report the expected named volume with `writable=false`.
+Then open **Managed Displays** and use **Refresh**. Preserve existing inventory
+and pairing; investigate any reported access or transport failure before re-enrolling.
 
 ## Display Agent false `Not installed` regression
 

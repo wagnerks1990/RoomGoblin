@@ -7,16 +7,18 @@ preserves the original running notes, including statements that were accurate
 before later merges. Individual findings identify their baseline and validation
 scope; their historical "pending" text does not override a later delivery receipt.
 
-The last standalone verified deployment is alpha.85 diagnostics PR #342,
-`ea924b8`; see its [delivery receipt](diagnostics-delivery.md).
-[Retention](backup-retention-authority.md) merged in PR #343 and
-[publication retries](publication-candidate-retry.md) in PR #344, each after all
-14 checks passed. [Request deadlines](browser-request-deadlines.md) merged in
-PR #345 after all 14 checks passed. The remaining changes use one final
-deployment; [final integration](final-integration.md) defines its qualification.
-[PR #346](https://github.com/wagnerks1990/RoomGoblin/pull/346) is the current
-record for final CI, exact image publication and backed-up production acceptance.
-Its delivery receipt supersedes the pre-deployment states below once verified.
+The final runtime batch is verified at alpha.85 main `fab0e5f`:
+[PR #346](https://github.com/wagnerks1990/RoomGoblin/pull/346) records passing
+required CI, exact image publication and backed-up production acceptance,
+including retention PR #343, publication retry PR #344 and request deadlines
+PR #345. The rollback point is the earlier [diagnostics deployment](diagnostics-delivery.md).
+All 357 browser cases passed in each engine. ADB keys and Android signing identity
+are unchanged; the separately updated Apple Music provider is authenticated.
+
+Acceptance exposed [stale ADB recovery guidance](adb-recovery-guidance.md).
+Its documentation-only reconciliation preserves the verified runtime and mount
+permissions. The [final integration contract](final-integration.md) and delivery
+records distinguish source synchronization from service recreation.
 
 "Delivered" below means the documented fixes passed their recorded checks and
 backed-up delivery. It does not assert a line-by-line audit of every repository
@@ -60,13 +62,13 @@ IDs, original evidence and validation scope.
 | 23. Authentication and sessions | [Display admission](display-enrollment-admission.md), [identity delivery](receiver-identity-delivery.md) | Delivered within documented scope |
 | 24. Security and secret management | [Identity](display-identity-runtime.md), [diagnostic redaction](diagnostic-evidence.md) | Delivered within documented scope |
 | 25. Diagnostics and observability | [Evidence and redaction](diagnostic-evidence.md), [delivery](diagnostics-delivery.md) | Delivered within documented scope |
-| 26. Infrastructure and integrations | [Evidence boundaries](diagnostic-evidence.md), [retention authority](backup-retention-authority.md) | Qualified; final deployment batch |
-| 27. Backup and disaster recovery | [Lifecycle/drain evidence](validation.md), [retention authority](backup-retention-authority.md) | Qualified; final deployment batch |
-| 28. Updates, deployment and rollback | [Production update contract](../../PRODUCTION-UPDATES.md), [retention](backup-retention-authority.md) | Qualified; final deployment batch |
-| 29. Performance and resources | [Request deadlines](browser-request-deadlines.md), [AV read budgets](av-status.md), [native bounds](windows-native-resource-bounds.md) | Qualified; final deployment batch |
-| 30. Tests, CI and releases | [Publication retry](publication-candidate-retry.md), [CI contract](../../CI-WORKFLOWS.md) | Qualified; final deployment batch |
-| 31. Documentation and developer experience | This index, progress history and linked contracts | Reconciliation implemented; checked merge required |
-| 32. Cross-system integration | [Final qualification and acceptance](final-integration.md), delivery receipts | Qualified runtime; final deployment record required |
+| 26. Infrastructure and integrations | [Evidence boundaries](diagnostic-evidence.md), [retention authority](backup-retention-authority.md) | Delivered in PR #346 |
+| 27. Backup and disaster recovery | [Lifecycle/drain evidence](validation.md), [retention authority](backup-retention-authority.md) | Delivered in PR #346 |
+| 28. Updates, deployment and rollback | [Production update contract](../../PRODUCTION-UPDATES.md), [retention](backup-retention-authority.md) | Delivered in PR #346 |
+| 29. Performance and resources | [Request deadlines](browser-request-deadlines.md), [AV read budgets](av-status.md), [native bounds](windows-native-resource-bounds.md) | Delivered in PR #346 |
+| 30. Tests, CI and releases | [Publication retry](publication-candidate-retry.md), [CI contract](../../CI-WORKFLOWS.md) | Delivered in PR #346 |
+| 31. Documentation and developer experience | This index, [ADB guidance](adb-recovery-guidance.md), progress history and linked contracts | Guide reconciliation; see current delivery record |
+| 32. Cross-system integration | [Final qualification and acceptance](final-integration.md), delivery receipts | Runtime accepted; documented scope limits |
 
 ## Architecture and compatibility decisions
 
