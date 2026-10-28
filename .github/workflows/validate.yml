@@ -314,6 +314,9 @@ jobs:
       - name: Verify Android native Sendspin configuration
         if: steps.scope.outputs.full != 'false'
         run: python3 tools/test-android-sendspin-configuration.py
+      - name: Verify Android capability availability
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-capability-truth.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv

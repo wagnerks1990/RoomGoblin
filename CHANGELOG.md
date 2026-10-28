@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Report planned and unimplemented native Android controls as unavailable while
+  preserving implemented controls and their permission gates.
+
 - Apply native Android Sendspin player renames, retain saved URLs on partial
   configuration, clean up failed connections and report protocol readiness accurately.
 

@@ -76,9 +76,14 @@ distribution; Android dependencies remain unchanged.
 [Native Sendspin configuration](android-sendspin-configuration.md) fixes four
 reproduced name, partial-setting, connection-cleanup and readiness defects. All
 12 manager cases pass, and the combined source retains 2,428 Linux passes, two
-skips, all 23 Host Recovery cases and all 33 JVM cases. Remaining Group 10 review
-continues.
-Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
+skips, all 23 Host Recovery cases and all 33 JVM cases.
+[Native capability availability](android-capability-truth.md) repairs 13
+reproduced assertions across nine unimplemented operations while preserving
+implemented controls and their permission gates. All 22 capability cases pass.
+The combined native batch passes 2,428 Linux tests, zero failures, two root-only
+skips, all 23 Host Recovery cases and all 55 JVM cases. This finishes the native
+Android source-review batch; checked delivery and physical acceptance remain
+separate. Weather/Sports review follows; the remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
 [PR #326](ubuntu-repair-wizard-delivery.md),
