@@ -93,6 +93,10 @@ all 23 Host Recovery cases and all 55 JVM cases. Checked delivery remains pendin
 reproduced save/read races. All ten Weather browser cases pass in Chromium and
 Firefox. Combined full Linux qualification passes 2,428 tests, two root-only
 skips, all 23 Host Recovery cases and all 55 JVM cases.
+[Weather theme contrast](weather-theme-contrast.md) repairs reproduced light and
+system-light contrast failures. All 13 Weather cases pass in each browser, with
+mobile/desktop visual inspection. Combined full Linux qualification passes 2,428
+tests, two root-only skips, all 23 Host Recovery cases and all 55 JVM cases.
 The remaining roadmap is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
