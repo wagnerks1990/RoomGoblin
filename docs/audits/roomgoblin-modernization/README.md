@@ -115,6 +115,7 @@ Queued subsystem units below have not been marked audited.
 - [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)
 - [Music workspace save ownership](music-save-ownership.md)
 - [Music queue response ownership](music-queue-ownership.md)
+- [Music Assistant connection ownership](music-socket-ownership.md)
 - [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
 - [Announcement release recovery ownership](announcement-release-ownership.md)
 - [Failed announcement start cleanup](announcement-start-failure.md)
