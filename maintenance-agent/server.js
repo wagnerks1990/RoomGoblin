@@ -576,25 +576,40 @@ app.post("/backups/retention",async(req,res)=>{try{
   const automaticKeep=Number(req.body?.automaticKeep??req.body?.keep??3),preKeep=Number(req.body?.preKeep??1);
   if(!Number.isInteger(automaticKeep)||automaticKeep<1||automaticKeep>50||!Number.isInteger(preKeep)||preKeep<1||preKeep>10)return res.status(400).json({ok:false,error:"Retention requires automaticKeep 1-50 and preKeep 1-10"});
   if(String(req.body?.confirm||"")!=="PRUNE_AUTOMATIC_BACKUPS")return res.status(400).json({ok:false,error:"Explicit confirmation required"});
+  // Fix the candidate identities before awaiting authority. A concurrent update
+  // may publish another backup while the Host Agent reads its durable status.
+  const all=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>{
+    const file=path.join(BACKUP_DIR,n);return {...statInfo(file,BACKUP_DIR),identity:fs.statSync(file)};
+  }).filter(item=>item.identity.isFile()).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));
   let job;
   const unavailable=()=>res.status(503).json({ok:false,error:"Rollback backup status is unavailable; automatic retention did not run"});
   try{job=await hostAgentRequest("GET","/app-updates/job")}catch{return unavailable()}
   if(!job||typeof job!=="object"||Array.isArray(job)||Object.hasOwn(job,"stateReadError"))return unavailable();
   if(job.revertAvailable!==true&&job.revertAvailable!==false&&job.phase!=="idle")return unavailable();
+  const settled=["idle","completed","failed"].includes(job.phase)&&job.running!==true;
+  // The native runner invokes cleanup after health/identity verification, while
+  // retaining its appliance lock and before publishing its completed phase.
+  const verifiedUpdate=job.phase==="verifying"&&/^[0-9a-f]{40}$/.test(String(job.targetCommit||""))&&job.activeCommit===job.targetCommit&&
+    (job.revertAvailable===true||job.action==="revert"&&job.revertAvailable===false&&!job.backupName);
+  if(!settled&&!verifiedUpdate)return unavailable();
   let pinned="";
   if(job.revertAvailable===true){
     pinned=String(job.backupName||"");
     if(!pinned||path.basename(pinned)!==pinned)return unavailable();
     try{if(!fs.statSync(path.join(BACKUP_DIR,pinned)).isFile())return unavailable()}catch{return unavailable()}
   }
-  const all=fs.readdirSync(BACKUP_DIR).filter(n=>n.endsWith(".zip")).map(n=>statInfo(path.join(BACKUP_DIR,n),BACKUP_DIR)).sort((a,b)=>b.modifiedAt.localeCompare(a.modifiedAt));
   const pre=all.filter(x=>/^pre-.*\.zip$/.test(x.name));
   const automatic=all.filter(x=>/^(?:auto-operational-|classroom-hub-operational-).*\.zip$/.test(x.name));
   const choose=(items,limit)=>{const keep=[];if(pinned){const pin=items.find(x=>x.name===pinned);if(pin)keep.push(pin)}for(const item of items)if(!keep.some(x=>x.name===item.name)&&keep.length<limit)keep.push(item);return new Set(keep.map(x=>x.name))};
   const keepPre=choose(pre,preKeep),keepAutomatic=choose(automatic,automaticKeep);
   const doomed=[...pre.filter(x=>!keepPre.has(x.name)),...automatic.filter(x=>!keepAutomatic.has(x.name))];
-  let bytes=0;for(const x of doomed){const p=path.join(BACKUP_DIR,x.name);bytes+=fs.statSync(p).size;fs.unlinkSync(p)}
-  res.json({ok:true,automaticKeep,preKeep,pinned:pinned||null,removed:doomed.length,bytesFreed:bytes,remainingAutomatic:automatic.length-automatic.filter(x=>!keepAutomatic.has(x.name)).length,remainingPre:pre.length-pre.filter(x=>!keepPre.has(x.name)).length})
+  let bytes=0,removed=0;for(const x of doomed){
+    const p=path.join(BACKUP_DIR,x.name);let current;try{current=fs.statSync(p)}catch(e){if(e.code==="ENOENT")continue;throw e}
+    if(!current.isFile()||["dev","ino","size","mtimeMs","ctimeMs"].some(key=>current[key]!==x.identity[key]))continue;
+    fs.unlinkSync(p);bytes+=current.size;removed++;
+  }
+  const remaining=fs.readdirSync(BACKUP_DIR);
+  res.json({ok:true,automaticKeep,preKeep,pinned:pinned||null,removed,bytesFreed:bytes,remainingAutomatic:remaining.filter(n=>/^(?:auto-operational-|classroom-hub-operational-).*\.zip$/.test(n)).length,remainingPre:remaining.filter(n=>/^pre-.*\.zip$/.test(n)).length})
 }catch(e){res.status(500).json({ok:false,error:e.message})}});
 app.get("/backup/:name",(req,res)=>{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Backup not found"});res.download(p,name)});
 app.get("/backup/:name/inspect",(req,res)=>{try{const name=cleanName(req.params.name),p=path.join(BACKUP_DIR,name);if(!fs.existsSync(p))return res.status(404).json({ok:false,error:"Backup not found"});if(name.endsWith(".rgbak"))return res.status(405).json({ok:false,error:"Encrypted recovery inspection requires the authenticated restore-plan workflow"});const zip=new AdmZip(p),entries=zip.getEntries();let manifest=null;const m=entries.find(e=>e.entryName==="backup-manifest.json");if(m)try{manifest=JSON.parse(m.getData().toString("utf8"))}catch{}res.json({ok:true,name,size:fs.statSync(p).size,manifest,entries:entries.length,preview:entries.slice(0,100).map(e=>({name:e.entryName,size:e.header.size,directory:e.isDirectory}))})}catch(e){res.status(400).json({ok:false,error:e.message})}});

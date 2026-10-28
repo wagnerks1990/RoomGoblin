@@ -254,6 +254,13 @@ A rollback-pinned archive is preferentially retained inside the applicable
 limit. Manual operational exports and encrypted Full Recovery `.rgbak` bundles
 are excluded from automatic pruning.
 
+Cleanup fixes its candidate identities before reading rollback authority. It
+preserves new or replaced archives that appear during that read and reports the
+actual remaining counts; concurrent arrivals can temporarily exceed the limit.
+An incomplete update blocks cleanup, except for the native runner's final
+verifying phase with its selected active commit and published rollback identity.
+The runner retains its existing appliance lock during that automatic cleanup.
+
 
 ### Runtime retention convergence
 
