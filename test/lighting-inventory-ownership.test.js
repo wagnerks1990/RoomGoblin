@@ -45,7 +45,7 @@ test("late device save and refresh cannot erase a newer command failure",async()
  const h=fixture(),save=h.ctx.saveGoveeDevice("lamp"),command=h.ctx.goveeCmd("other","on");h.commands[0].reject(Error("latest command failed"));await command;h.requests[0].resolve({ok:true});await new Promise(r=>setImmediate(r));h.requests[1].resolve({revision:2});await save;assert.match(h.message(),/latest command failed/);assert.equal(h.ctx.S.govee.revision,2);
 });
 test("a failed device save remains visible after an earlier read completes",async()=>{
- const h=fixture(),read=h.ctx.loadGovee(),save=h.ctx.saveGoveeDevice("lamp");h.requests[1].reject(Error("save unavailable"));await save;h.requests[0].resolve({revision:1});await read;assert.match(h.message(),/^Device save failed: save unavailable/);assert.equal(h.nodes.edit_lamp_name.dataset.dirty,"true");
+ const h=fixture(),read=h.ctx.loadGovee(),save=h.ctx.saveGoveeDevice("lamp");h.requests[1].reject(Error("save unavailable"));await save;h.requests[0].resolve({revision:1});await new Promise(r=>setImmediate(r));h.requests[2].resolve({revision:2});await read;assert.match(h.message(),/^Device save failed: save unavailable/);assert.equal(h.ctx.S.govee.revision,2);assert.equal(h.nodes.edit_lamp_name.dataset.dirty,"true");
 });
 test("successful save acknowledgments preserve newer device drafts",async()=>{
  const h=fixture(),save=h.ctx.saveGoveeDevice("lamp");h.nodes.edit_lamp_name.value="New draft";h.requests[0].resolve({ok:true});await new Promise(r=>setImmediate(r));h.requests[1].resolve({revision:2});await save;assert.equal(h.nodes.edit_lamp_name.dataset.dirty,"true");assert.equal(h.nodes.edit_lamp_groups.dataset.dirty,undefined);assert.equal(h.message(),"Device saved.");

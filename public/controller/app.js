@@ -668,11 +668,22 @@ mediaUploadCancel.addEventListener('click',async()=>{const f=mediaUploadFile||me
 // Displays & AV owns its polling, drawers and receiver drafts in av-workspace.js.
 
 let goveeInventoryRequest=null,goveeRenderGeneration=0,goveeMessageGeneration=0;
+let goveeConfigurationTail=Promise.resolve(),goveeConfigurationPending=0,goveeConfigurationRevision=0,goveeDiscoveryDraft=null;
+function writeGoveeConfiguration(write){
+ const previous=goveeConfigurationPending?goveeConfigurationTail:null;
+ goveeConfigurationPending++;goveeConfigurationRevision++;
+ let request;try{request=previous?previous.then(write):write()}catch(error){request=Promise.reject(error)}
+ const result=Promise.resolve(request).finally(()=>{goveeConfigurationPending--});
+ goveeConfigurationTail=result.catch(()=>{});return result;
+}
 function fetchGoveeInventory(){
- const request=api('/api/v1/govee').then(inventory=>{
+ const revision=goveeConfigurationRevision;
+ const read=goveeConfigurationPending?goveeConfigurationTail.then(()=>api('/api/v1/govee')):api('/api/v1/govee');
+ const request=read.then(inventory=>{
   if(goveeInventoryRequest!==request)return goveeInventoryRequest;
+  if(revision!==goveeConfigurationRevision)return fetchGoveeInventory();
   S.govee=inventory;return inventory;
- },error=>{if(goveeInventoryRequest!==request)return goveeInventoryRequest;throw error});
+ },error=>{if(goveeInventoryRequest!==request)return goveeInventoryRequest;if(revision!==goveeConfigurationRevision)return fetchGoveeInventory();throw error});
  goveeInventoryRequest=request;return request;
 }
 async function loadGovee({messageGeneration=goveeMessageGeneration}={}){
@@ -695,18 +706,25 @@ async function goveeCmd(target,action,body={}){
  catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`${target}: ${e.message}`;return null}
 }
 async function setGoveeAutoAdd(enabled){
+  const generation=++goveeMessageGeneration,draft={enabled:!!enabled};goveeDiscoveryDraft=draft;renderGoveeDiscovery();
   try{
-    const j=await api('/api/v1/govee/discovery',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoAdd:enabled})});
-    if(S.govee)S.govee.discovery=j.discovery;renderGoveeDiscovery();
-  }catch(e){alert(e.message);loadGovee()}
+    const j=await writeGoveeConfiguration(()=>api('/api/v1/govee/discovery',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoAdd:draft.enabled})}));
+    if(S.govee)S.govee.discovery=j.discovery;
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=refreshed.ok?'Discovery setting saved.':`Discovery setting saved. Lighting refresh failed: ${refreshed.error}. Existing readings may be stale.`;
+  }catch(e){
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Discovery save failed: ${e.message}${refreshed.ok?'':'. Existing readings may be stale.'}`;
+  }finally{if(goveeDiscoveryDraft===draft){goveeDiscoveryDraft=null;renderGoveeDiscovery()}}
 }
 async function reconcileGoveeNow(){
+  const generation=++goveeMessageGeneration;
   try{
-    const j=await api('/api/v1/govee/discovery/reconcile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})});
-    S.govee=j.inventory;renderGovee();
+    const j=await writeGoveeConfiguration(()=>api('/api/v1/govee/discovery/reconcile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})}));
     const total=(j.migrated||0)+(j.removed||0);
-    alert(`Govee cleanup complete. Immediately removed ${total} stale/synthetic entr${total===1?'y':'ies'}.`);
-  }catch(e){alert(e.message)}
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Govee cleanup complete. Removed ${total} stale/synthetic entr${total===1?'y':'ies'}.${refreshed.ok?'':` Lighting refresh failed: ${refreshed.error}. Existing readings may be stale.`}`;
+  }catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Govee cleanup failed: ${e.message}`}
 }
 async function saveGoveeDevice(alias){
   const generation=++goveeMessageGeneration;
@@ -714,7 +732,7 @@ async function saveGoveeDevice(alias){
     const nameInput=document.getElementById(`edit_${alias}_name`),groupsInput=document.getElementById(`edit_${alias}_groups`);
     const name=nameInput.value.trim(),groups=groupsInput.value.split(/[,\s]+/).map(x=>x.trim()).filter(Boolean);
     const sentName=nameInput.value,sentGroups=groupsInput.value;
-    await api('/api/v1/govee/device/'+encodeURIComponent(alias),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})});
+    await writeGoveeConfiguration(()=>api('/api/v1/govee/device/'+encodeURIComponent(alias),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})}));
     if(nameInput.value===sentName)delete nameInput.dataset.dirty;
     if(groupsInput.value===sentGroups)delete groupsInput.dataset.dirty;
     const refreshed=await loadGovee({messageGeneration:generation});
@@ -740,7 +758,7 @@ function lightCard(target,name,state,isGroup=false,device=null,presence=null,met
 }
 function renderGoveeDiscovery(){
  const d=S.govee?.discovery||{};
- if(typeof goveeAutoAdd!=='undefined')goveeAutoAdd.checked=d.autoAdd!==false;
+ if(typeof goveeAutoAdd!=='undefined')goveeAutoAdd.checked=goveeDiscoveryDraft?goveeDiscoveryDraft.enabled:d.autoAdd!==false;
  if(typeof goveeDiscoveryStatus!=='undefined'){
   const when=d.lastDiscoveryAt?new Date(d.lastDiscoveryAt).toLocaleString():'none yet';
   goveeDiscoveryStatus.textContent=`${d.totalCount||0} physical devices • ${d.discoveredCount||0} auto-discovered • last discovery ${when} • stale auto-devices removed after ${Math.round((d.reconcileGraceSeconds||600)/60)} min`;

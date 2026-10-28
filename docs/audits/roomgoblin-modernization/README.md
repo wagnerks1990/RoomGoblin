@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+The separate [lighting configuration repair](lighting-configuration-ordering.md)
+reproduces three save/read races and passes 17 new Node cases plus two new
+browser cases. Final qualification passes 1,936 Linux tests, two root-only skips
+and all 23 Host Recovery tests; all 80 workspace cases pass in each browser.
+PR #312 passed all 14 checks without unresolved reviews and merged as `33ee5d0`;
+its exact images and backed-up update are pending.
+
 The Group 9 [command transport repair](lighting-command-transport.md) reproduces
 six UDP/MQTT failures and passes 29 new regressions, including actual library,
 loopback socket and disconnected-handler ownership checks. Final qualification
@@ -7,7 +14,11 @@ passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
 85 focused integration cases pass. The inventory batch remains qualified on
 `b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
 
-Status: **PR #310 delivered; PR #311 merged and publishing; lighting inventory and command transport qualified**.
+Status: **PR #311 delivered; PR #312 merged and publishing; lighting configuration ordering qualified**.
+
+PR #311 is deployed and verified at `fa5bb49`; see its
+[delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/
+discovery persistence failures are reproduced for the next lighting repair.
 
 PR #310 is deployed and verified at `906e0ec`; see its
 [delivery receipt](presentation-session-delivery.md). PR #311 passed all 14
