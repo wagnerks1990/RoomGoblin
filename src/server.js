@@ -8292,13 +8292,17 @@ function mediaStoredName(originalName){
   const base=path.basename(originalName||"media",ext).replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100);
   return `${crypto.randomUUID()}-${base}${ext}`;
 }
-async function registerUploadedMedia({stored,originalName,mime,size}){
+async function registerUploadedMedia({stored,originalName,mime,size,uploadSessionId,uploadDigest}){
   contentFile(MEDIA_DIR,path.join(MEDIA_DIR,safeStoredName(stored)));
   const type=classifyMedia(stored,mime),rec={
     originalName,storedName:stored,mime,type,uploadedAt:new Date().toISOString(),
     generatedPdf:null,conversionStatus:null,conversionError:null
   };
-  mediaLibrary.files[stored]=rec;persistMediaLibrary();
+  if(uploadSessionId){rec.uploadSessionId=uploadSessionId;rec.uploadDigest=uploadDigest}
+  // Publish cache identity only after SQLite accepts the registration. A retry
+  // must not mistake an uncommitted in-memory record for a completed upload.
+  const next={...mediaLibrary,files:{...mediaLibrary.files,[stored]:rec}};
+  persistJson(MEDIA_LIBRARY_FILE,next);mediaLibrary=next;
   if(officeConvertible(stored)){
     rec.conversionStatus="converting";persistMediaLibrary();
     try{rec.generatedPdf=await convertOfficeToPdf(stored);rec.conversionStatus="ready";rec.conversionError=null}
@@ -8372,12 +8376,21 @@ const mediaUploadCompletionLimit=rateLimit({
 app.post("/api/v1/media/uploads/:id/complete",mediaUploadCompletionLimit,requireCapability("media.manage"),async(req,res)=>{
   let destination="",registered=false,file;
   try{
-    const session=resumableUploads.owned(req.params.id,ownerKey(req)),stored=mediaStoredName(session.name);
-    destination=path.join(MEDIA_DIR,stored);
+    const session=resumableUploads.owned(req.params.id,ownerKey(req));
+    destination=path.join(MEDIA_DIR,mediaStoredName(session.name));
     await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination,register:async meta=>{
-      file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size});
+      const stored=meta.completion.storedName;destination=path.join(MEDIA_DIR,stored);
+      file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size,uploadSessionId:meta.id,uploadDigest:meta.completion.digest});
       if(!file)throw Error("Uploaded file is unavailable after registration");
       registered=true;
+    },replay:async meta=>{
+      const stored=meta.completion.storedName,record=mediaLibrary.files[stored];
+      if(record&&(record.uploadSessionId!==meta.id||record.uploadDigest!==meta.completion.digest))throw Object.assign(new Error("Upload completion identity conflict"),{status:409});
+      if(!record)return false;
+      file=libraryRecordFromDisk(stored);
+      if(!file)return false;
+      if(file.size!==meta.size)throw Object.assign(new Error("Completed upload size changed"),{status:409});
+      registered=true;return true;
     }});
     res.json({ok:true,file});
   }catch(err){if(destination&&!registered)fs.rmSync(destination,{force:true});res.status(err.status||400).json({ok:false,error:err.message})}
