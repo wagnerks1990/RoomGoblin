@@ -1,846 +1,106 @@
 # RoomGoblin modernization audit
 
-Receiver PR #341 is [deployed and verified](receiver-identity-delivery.md) at
-`3bdc179`. Diagnostics PR #342 is [deployed and verified](diagnostics-delivery.md)
-at `ea924b8`. Retention PR #343 merged as `6a385d1` and publication PR #344 as
-`8d9e79f`, each after all 14 checks passed. Their remaining production delivery
-is combined with the request-deadline and final documentation batches. The request
-integration preserves the full runtime qualified by 2,581 Node passes, two
-root-only skips, all 23 Host Recovery and 55 Android JVM cases.
-
-PR #340 is [deployed and verified](database-transactions-delivery.md). The
-[rollback-aware retention repair](backup-retention-authority.md) passes native
-qualification with 2,537 Node cases, two root-only skips, all 23 Host Recovery
-and 55 Android JVM cases. Its documentation resolves RG-DOC-001's stale limits.
-The same qualified snapshot includes [bounded publication retries](publication-candidate-retry.md)
-that retain the exact scanned candidate and fail on identity drift or exhaustion.
-
-The receiver identity repair is pushed in PR #341. The next
-[diagnostics batch](diagnostic-evidence.md) repairs reproduced secret projection,
-health-label and retired-observation failures. It passes 2,521 Linux cases with
-two root-only skips, 23 Host Recovery and 55 Android JVM cases, and all 130
-workspace/diagnostic cases in each browser. Checked delivery remains pending.
-
-The backend transaction batch merged in PR #340 as `8357bec` after all 15 checks;
-exact publication and delivery are verified. PR #339 is
-[deployed and verified](weather-workflow-delivery.md). The authentication
-[identity repair](display-identity-runtime.md) covers admission, saved/scheduled
-targets and integration observations. Its full Linux snapshot passes 2,509
-tests, zero failures and two root-only skips, plus 23 Host Recovery and 55 Android
-JVM cases. Checked delivery remains pending. Diagnostics and
-the later roadmap remain open.
-
-[Legacy configuration/secret imports](legacy-import-transaction.md) now preserve
-their previous authority when migration bookkeeping fails. Five baseline failures
-are repaired; all 41 targeted cases pass. The full Linux snapshot passes 2,480
-tests, zero failures and two root-only skips, all 23 Host Recovery and all 55 JVM
-cases. Checked delivery is pending. Authentication and stable receiver identity
-are the next review unit.
-
-[Legacy audit import transactions](audit-import-transaction.md) repair two
-reproduced data-loss/duplication paths. All 31 targeted cases pass; the full Linux
-snapshot passes 2,470 tests, zero failures and two root-only skips, all 23 Host
-Recovery and all 55 JVM cases. Checked delivery is pending.
-
-PR #338 is [deployed and verified](sports-durability-delivery.md) at `bdf521c`
-after all required gates. PR #339 is merged as `770d7a7`; its exact publication
-and delivery are pending. Backend/database review starts
-with [administrative settings transactions](settings-identity-transaction.md):
-seven reproduced failures are repaired and all 37 targeted cases pass. Its Linux
-snapshot passes 2,464 tests, zero failures and two root-only skips, all 23 Host
-Recovery and all 55 JVM cases. Checked delivery and the remaining roadmap are open.
-
-PR #337 is [deployed and verified](weather-sports-delivery.md) at `f588de3`
-after the required main gates and exact image publication. The following Sports
-durability batch is in PR #338; the remaining roadmap is open.
-
-[Weather location search ownership](weather-location-search.md) repairs six
-reproduced stale-response and duplicate-submission failures. All 20 Weather
-cases pass in each browser. The supported Linux snapshot passes 2,445 tests,
-zero failures, two root-only skips, all 23 Host Recovery and all 55 JVM cases.
-
-[Weather request admission](weather-request-admission.md) repairs eight
-reproduced HTTP quota/denial failures. All 36 targeted Weather/Planning cases
-pass. The combined supported Linux snapshot passes 2,453 tests, zero failures,
-two root-only skips, all 23 Host Recovery and all 55 JVM cases.
-
-[Weather scene ownership](weather-scene-ownership.md) repairs six reproduced
-retired-render/send/workflow failures. The combined browser suite passes its
-29 cases per engine, including retirement during renderer loading. The final
-Weather batch passes 2,453 Linux tests, zero failures, two root-only skips, all
-23 Host Recovery and all 55 JVM cases. Checked delivery remains pending; the
-backend/API and database review is next.
-
-PR #336 is [deployed and verified](android-native-delivery.md) at `7ddeade`
-after all required checks and exact image publication. The next Sports batch
-repairs [refresh and Undo ownership](sports-refresh-ownership.md); three browser
-failures are reproduced and fixed. Import review and the remaining roadmap
-continue separately.
-
-[Sports import ownership](sports-import-ownership.md) repairs six reproduced
-browser failures involving retired responses, hidden reviews and duplicate reads.
-CSV/PDF and workspace application controls remain part of its qualification.
-
-[Sports persistence and cache ownership](sports-persistence-cache.md) repairs
-four real SQLite failure cases and two late-response browser failures. The final
-batch retains source/import review and explicit-save/command boundaries.
-
-PR #330 is [deployed and verified](android-shell-lifecycle-delivery.md) at `92adafe`
-after all 14 PR checks, required main gates and exact publication passed. Its
-[shell/output](android-shell-ownership.md) and
-[lifecycle](android-lifecycle-ownership.md) fixes pass 2,328 Linux tests with two
-root-only skips, all 23 Host Recovery cases and 125 workspace cases per browser.
-
-PR #331 is [deployed and verified](android-record-policy-delivery.md) at `e7c557a`
-after all required checks and exact publication passed. The combined
-[record-completion](android-record-completion.md) and
-[policy-admission/cache](android-policy-admission.md) batch preserves current
-records, rejects retired enrollments, rechecks each policy dispatch and prevents
-stale or overlapping policy completion. All 40 targeted cases pass. Final Linux
-qualification passes 2,368 tests with zero failures and two root-only skips, all
-23 Host Recovery cases and syntax/controller/shell checks. Integrated maintenance,
-public and Node test sources match qualified `2dc05d7` exactly. The
-[held-response fixture repair](workspace-route-fixtures.md) passes 20 Firefox
-repetitions and all 125 workspace cases in each browser. PR #330's required
-browser retry and exact image publication passed. No physical
-command was exercised.
-
-[Configuration admission](android-configuration-ownership.md) resolves two
-reproduced races across Agent v2, assignment, persistent ADB and APK restoration.
-All 18 configuration and 20 record cases pass; supported Linux qualification
-passes 2,386 tests with zero failures, two root-only skips and all 23 Host Recovery
-cases. Browser sources retain the 125-case-per-engine qualification. This is a
-separate batch awaiting checked delivery after PR #331. The
-[native enrollment origin repair](windows-enrollment-origin.md) joins that batch:
-three reproduced failures are fixed, all 18 native cases pass on .NET 10, and
-the combined tree retains 2,386 Linux passes, two skips and all 23 Host Recovery
-passes. Packaging review repaired the maintenance image's missing shared helper;
-the new dependency regression fails before that repair and passes afterward.
-Final package qualification passes 2,387 Linux tests, two root-only skips and
-all 23 Host Recovery cases. PR #332 merged the corrected package and native
-enrollment validation as `519ca69` after all 14 checks passed. Exact publication
-and its [backed-up update are verified](managed-configuration-delivery.md).
-
-[Android capability ownership](android-capability-ownership.md) resolves four
-reproduced cache/read races. All 12 targeted and 37 related cases pass. The
-separate candidate passes 2,399 Linux tests, two root-only skips, all 23 Host
-Recovery cases and 126 workspace cases per browser. PR #333 has passed all 14
-checks and is [deployed and verified](android-capability-delivery.md) as `2c68254`
-after required main workflows and exact image publication passed.
-
-[Android service socket ownership](android-socket-lifecycle.md) fixes reproduced
-shutdown leaks in active and queued connections. All four real-socket JVM cases,
-seven existing hardening cases, 2,399 Linux cases and all 23 Host Recovery cases
-pass, with two expected root-only skips. The same JVM fixture now runs in the
-existing Android CI job. Browser sources retain their 126-case-per-engine
-qualification. The [activity assignment repair](android-activity-assignment.md)
-fixes three reproduced failures while preserving redirected live sessions and
-explicit reload. All seven activity JVM cases pass, and the combined tree passes
-2,399 Linux tests with two root-only skips, all 23 Host Recovery cases and all
-four socket JVM cases. PR #334 merged the socket and activity repairs as
-`8fcdc8b` after all 14 checks and PR #333's verified delivery. Exact publication
-and its [backed-up update are verified](android-runtime-delivery.md), including
-packaged/staged Android APK hashes and signature verification.
-
-[Management port admission](android-management-ports.md) repairs four reproduced
-failures without migrating existing inventory. All 73 targeted cases pass. Final
-Linux qualification passes 2,428 tests with two root-only skips, all 23 Host
-Recovery cases and all 11 socket/activity JVM cases. The separate
-[process-cleanup repair](android-process-cleanup.md) fixes a reproduced child
-leak after interruption. All five process JVM cases pass; the combined source
-retains 2,428 Linux passes, two skips, all 23 Host Recovery cases and all 16 JVM
-cases. PR #335 carries the port and process repairs. Its CI encountered unrelated
-SQLite contention while seeding a fixture; the [bounded fixture repair](freeze-fixture-contention.md)
-passes 20 consecutive cases. All 14 fresh checks passed before PR #335 merged
-as `bfa6857`. Exact publication passed after a registry-error retry; its
-[backed-up delivery is verified](android-hardening-delivery.md).
-
-[Native PCM ownership](android-pcm-ownership.md) fixes two reproduced worker and
-failed-start defects. All five Kotlin fixture cases pass, and the combined tree
-passes 2,428 Linux cases with two root-only skips, all 23 Host Recovery cases and
-all 21 JVM cases. The fixture uses the compiler in the existing pinned Gradle
-distribution; Android dependencies remain unchanged.
-[Native Sendspin configuration](android-sendspin-configuration.md) fixes four
-reproduced name, partial-setting, connection-cleanup and readiness defects. All
-12 manager cases pass, and the combined source retains 2,428 Linux passes, two
-skips, all 23 Host Recovery cases and all 33 JVM cases.
-[Native capability availability](android-capability-truth.md) repairs 13
-reproduced assertions across nine unimplemented operations while preserving
-implemented controls and their permission gates. All 22 capability cases pass.
-The combined native batch passes 2,428 Linux tests, zero failures, two root-only
-skips, all 23 Host Recovery cases and all 55 JVM cases. This finishes the native
-Android source-review batch; checked delivery and physical acceptance remain
-separate. Weather/Sports review has started.
-[Weather forecast identity](weather-forecast-identity.md) repairs three reproduced
-stale-reading/preview failures. All seven Weather browser cases pass in Chromium
-and Firefox. Full Linux qualification passes 2,428 tests, two root-only skips,
-all 23 Host Recovery cases and all 55 JVM cases. Checked delivery remains pending.
-[Weather save ownership](weather-save-ownership.md) fixes three additional
-reproduced save/read races. All ten Weather browser cases pass in Chromium and
-Firefox. Combined full Linux qualification passes 2,428 tests, two root-only
-skips, all 23 Host Recovery cases and all 55 JVM cases.
-[Weather theme contrast](weather-theme-contrast.md) repairs reproduced light and
-system-light contrast failures. All 13 Weather cases pass in each browser, with
-mobile/desktop visual inspection. Combined full Linux qualification passes 2,428
-tests, two root-only skips, all 23 Host Recovery cases and all 55 JVM cases.
-[Sports source identity](sports-source-identity.md) fixes nine reproduced
-service/HTTP failures. All 41 targeted cases pass, along with 2,438 Linux tests,
-two root-only skips, all 23 Host Recovery and all 55 JVM cases. Existing Sports
-browser cases pass 10 per engine. Checked delivery remains pending; Sports
-workspace review continues.
-[Sports save/scene ownership](sports-workspace-ownership.md) fixes four reproduced
-browser races. All 15 Sports cases pass in each engine. The final combined Linux
-qualification passes 2,438 tests, two root-only skips, all 23 Host Recovery cases
-and all 55 JVM cases.
-The remaining roadmap is open. Earlier delivery receipts include
-[PR #328](android-inventory-delivery.md),
-[PR #327](android-editor-preview-delivery.md),
-[PR #326](ubuntu-repair-wizard-delivery.md),
-[PR #325](managed-display-outcomes-delivery.md) and
-[PR #324](ubuntu-reliability-delivery.md).
-
-Earlier qualification history follows; current delivery status is above.
-PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
-[Android enrollment](android-enrollment-ownership.md) repairs. All 14 checks
-passed before its squash merge as `312f753`; exact publication and delivery
-follow. The separate [repair completion](ubuntu-repair-record-ownership.md) and
-[wizard ownership](ubuntu-wizard-ownership.md) fixes pass 2,241 Linux tests with
-two root-only skips, all 23 Host Recovery cases and 109 workspace cases per browser.
-[Repair admission/announcement guards](ubuntu-repair-admission.md) now pass all
-eight source cases after seven reproduced failures. Combined Linux qualification
-passes 2,249 tests with two root-only skips and all 23 Host Recovery cases.
-Android editing has four reproduced failures queued next; inventory, preview and
-remaining managed-display review and later roadmap work remain.
-
-Earlier status entries below are historical; their pending delivery statements
-are superseded by the current status and linked delivery receipts above.
-
-PR #322 carries the qualified legacy-task repair and is running required CI.
-The separate [enrollment identity repair](windows-enrollment-identity.md) fails
-five regression assertions on old source and passes all ten with the fix,
-all 36 lifecycle and 24 task-state cases, 2,169 Linux tests with two root-only
-skips, all 23 Host Recovery cases and a clean locked bootstrap build. PR #321
-has passed its main validation/browser/security gates; exact publication and
-backed-up delivery remain pending. Production remains verified at `d3a3937`.
-Ubuntu configuration/cancellation and post-dispatch audit failures are reproduced
-for the next review within Group 10. The overall roadmap remains incomplete.
-
-PR #320 is [deployed and verified](windows-native-bounds-delivery.md) at
-`d3a3937`. PR #321 passed all 14 checks and merged as `395cb88`; exact publication
-precedes its backed-up update. The [legacy-task admission repair](windows-legacy-task-state.md)
-reproduces two failures and passes 24 state/migration cases, all 36 lifecycle
-cases, a locked bootstrap build with zero warnings/errors, 2,169 Linux tests
-with two root-only skips, and all 23 Host Recovery cases. Fresh-enrollment
-replacement of an existing configuration is reproduced for a separate repair.
-Ubuntu/Android managed-display review and roadmap groups 11-17 remain open.
-
-The status above is current. Entries below retain earlier qualification and
-delivery history, including their then-pending descriptions.
-
-PR #319 is [deployed and verified](windows-agent-delivery.md) at `0f24c99` after
-the planner's full reconciliation. PR #320 passed all 14 checks and merged as
-`d3a3937`; all main gates and exact image publication passed, and its backed-up
-update is running. The separate [native lifecycle repair](windows-native-lifecycle.md)
-reproduces 14 failures and passes 36 local process/polling/install-owner cases,
-2,169 Linux tests with two root-only skips, and all 23 Host Recovery cases.
-Required .NET 8 CI follows. Group 10 and later roadmap work remain open.
-
-Entries below retain earlier qualification and delivery history. The current
-status above supersedes their pending-state descriptions.
-
-The connection deadline repair is qualified with five native cases, 2,169 Linux
-passes, two root-only skips and 23 Host Recovery passes. It joins PR #320's native
-output and transfer bounds, giving 24 isolated native process/transfer/connection
-cases across the batch. Browser sources remain at qualified `32416c9`; fresh CI
-is required for the combined head. Bootstrap/updater subprocess ownership remains
-under review. PR #319 exact publication and backed-up delivery are pending.
-
-PR #320 contains the qualified native output/transfer repair and awaits CI and
-PR #319's verified delivery. The [connection deadline](windows-connection-deadline.md)
-follow-up preserves configured primary/fallback order while bounding each
-handshake to 15 seconds. Its actual-source fixture covers five loopback cases;
-full qualification follows. The deployed baseline remains PR #318 `5e1af23`.
-
-PR #319 passed all 14 fresh checks and merged as `0f24c99`; exact main publication
-precedes its update. The native resource-bound repair passes 2,169 Linux tests,
-two root-only skips, 23 Host Recovery tests, nine native process cases and ten
-native transfer cases. Browser sources remain identical to qualified `32416c9`.
-The separate connection review reproduces a stalled primary handshake preventing
-fallback; its 15-second prototype passes the loopback reproduction.
-
-PR #318 is [deployed and verified](windows-monitoring-delivery.md) at `5e1af23`.
-PR #319 includes the qualified account-focus follow-up and is running fresh CI.
-The [native resource-bound repair](windows-native-resource-bounds.md) reproduces
-four failures and passes nine process plus ten transfer cases locally. Full
-Linux qualification and required .NET 8 CI precede delivery. Group 10 and the
-remaining roadmap are still open; earlier entries record qualification history.
-
-The [account focus repair](account-dialog-focus.md) joins the pending Windows
-agent batch after its main-browser failure exposed a delayed focus callback.
-Qualification passes 2,169 Linux tests, two root-only skips, 23 Host Recovery
-tests, all 270 Chromium browser cases and 106 workspace/Veyon cases in Firefox.
-PR #318's browser rerun and exact image publication passed; its backed-up Hub-only
-update is running. Native process-output and download-body bounds are reproduced
-for the next repair. Group 10 and the remaining roadmap are still open.
-
-Native cancellation and enrollment ownership are integrated on merged main
-`5e1af23`. Before this note, `82980cd` is byte-identical to qualified `9911c30`;
-all 36 focused integration contracts pass again. Full qualification passes
-2,165 Linux tests, two root-only skips, 23 Host Recovery tests, six isolated
-native process cases on .NET 10 and 105 browser cases per engine. Required CI
-includes native .NET 8 process execution; exact publication and delivery follow.
-
-PR #318 passed all 14 fresh checks with resolved reviews and merged as `5e1af23`;
-exact publication and its backed-up update are pending. The separate
-[enrollment ownership repair](windows-enrollment-ownership.md) passes 16 new
-Node regressions, 21 focused cases, 2,165 Linux tests with two root-only skips,
-23 Host Recovery tests and 105 browser cases in each engine. Integration with
-the qualified native cancellation repair and fresh CI follow.
-
-Reviewed Windows monitoring is pushed as PR #318 head `6dda633`, with 59 new
-Node regressions, 11 browser cases, 2,149 Linux passes, two root-only skips, 23
-Host Recovery passes and 103 browser cases per engine. Both review findings are
-resolved after their repairs; fresh CI precedes merge. The separate
-[native cancellation repair](windows-command-cancellation.md) passes six isolated
-local process cases and adds equivalent .NET 8 coverage to the Windows CI job.
-Its full Linux run passes 2,149 tests with two root-only skips, all 23 Host
-Recovery tests and syntax/controller checks. Fresh CI and delivery remain pending.
-
-PR #317 is [deployed and verified](veyon-reliability-delivery.md). PR #318's
-Windows monitoring review findings are repaired locally with three additional
-regressions. The [AI-alert and hidden-capture follow-up](windows-alert-ownership.md)
-is joining that batch after passing 2,146 Linux tests, two root-only skips, 23
-Host Recovery tests and 101 browser cases per engine. Final combined qualification
-passes all 66 focused cases, 2,149 Linux tests with two root-only skips, 23 Host
-Recovery tests and 103 browser cases per engine. Fresh CI and delivery follow.
-Native command cancellation remains reproduced for its own repair.
-
-Windows inventory and monitoring are integrated on merged main `1a005b2`.
-Runtime, configuration and tests in `1cf2b1f` match qualified `a37e087` byte for
-byte; only this audit retains the additional Veyon integration evidence. All 39
-focused integration cases pass again. Required PR/main checks and this batch's
-exact image delivery remain pending.
-
-Current delivery: PR #316 is [deployed and verified](esphome-reliability-delivery.md)
-at `f741866`. PR #317 passed all 14 checks and merged as `1a005b2`; its exact image
-publication precedes the backed-up update. The Windows inventory repair is
-qualified, and [monitoring ownership](windows-monitoring-ownership.md) now passes
-20 new Node cases, 39 focused cases, 2,122 Linux tests with two root-only skips,
-23 Host Recovery tests and 98 browser cases in each engine. AI-alert ownership,
-hidden captures and native command cancellation have reproduced follow-up
-findings; the rest of Group 10 remains in progress. Earlier entries below
-record their status at qualification time.
-
-The [Windows inventory repair](windows-inventory-ownership.md) is qualified with
-12 new Node regressions and three browser cases: 2,102 Linux passes, two root-only
-skips, 23 Host Recovery passes and 95 browser cases per engine. Five separate
-history/screenshot ownership defects are reproduced for the monitoring follow-up.
-PR #316 passed all 14 fresh checks and merged as `f741866`; its exact main
-publication and backed-up update are pending. Veyon integration follows that main.
-
-The two Veyon repairs are integrated on merged `main` `f741866`. Before this
-evidence note, `3201487` is byte-identical to qualified `43d2645`; all 37 focused
-integration cases pass again. Final qualification passes 2,090 Linux tests,
-zero failures, two root-only skips, all 23 Host Recovery tests and 92 browser
-cases per engine. PR #316 passed all 14 fresh checks and merged; exact main
-publication and its backed-up update precede this batch's delivery. Windows
-inventory is separately qualified at `a225c26`; monitoring follow-ups remain open.
-
-Group 10 [Veyon inventory ownership](veyon-inventory-ownership.md) is qualified
-at `bc1c5c5`: 14 new Node regressions, three new browser cases, 2,078 Linux
-passes with two root-only skips, 23 Host Recovery passes, and 83 workspace plus
-seven command-page passes in each browser. The separate
-[dialog repair](veyon-dialog-ownership.md) passes 12 new regressions, 2,090 Linux
-tests with two root-only skips, 23 Host Recovery tests, and 83 workspace plus
-nine command-page cases in each browser. Windows inventory review
-has reproduced four overlapping-read, stale-save and failed-read presentation
-defects. PR #316's fresh head now passes CodeQL; other required checks continue.
-
-PR #315 is [deployed and verified](lighting-identity-delivery.md) at `af76c5a`.
-The ESPHome batch is pushed as PR #316. Its language analysis jobs uploaded
-successfully, but the separate CodeQL summary initially reported missing
-configurations; merge awaits a complete fresh check result. Lab inventory and
-information-dialog ownership findings remain under review.
-
-ESPHome admission, controller ownership and worker containment are integrated on
-merged `main` `af76c5a` in three focused commits. Runtime, configuration and tests
-match qualified `f976056` byte for byte; only audit evidence differs. All 51
-focused integration cases pass again, with 2,064 full Linux passes, two root-only
-skips, 23 Host Recovery passes and 83 workspace passes in each browser. Required
-PR/main checks and this batch's backed-up delivery remain separate gates.
-[Group 9 coverage](lighting-esphome-review.md) records preserved capabilities and
-physical-acceptance limits. Group 10 review has reproduced four Veyon metadata/
-inventory races and two information-dialog races for the next focused repairs.
-
-The [ESPHome worker repair](esphome-worker-ownership.md) reproduces six process/
-pipe and discovery-completion failures. All 20 new regressions and 51 focused
-ESPHome cases pass. Final qualification passes 2,064 Linux tests, zero failures,
-two root-only skips and all 23 Host Recovery tests. PR #314 is
-[deployed and verified](lighting-persistence-delivery.md) at `5ffba81`. PR #315
-passed all 14 checks and merged as `af76c5a`; exact publication precedes delivery.
-
-The [ESPHome inventory repair](esphome-inventory-ownership.md) reproduces five
-controller races and passes 21 new Node cases plus all five focused Chromium
-cases. Full qualification passes 2,044 Linux tests, two root-only skips, all 23
-Host Recovery tests and all 83 workspace cases in each browser. Lighting identity is
-pushed as PR #315; PR #314 is merged and publishing before its delivery.
-
-The [ESPHome admission repair](esphome-admission-budgets.md) reproduces five
-quota/predicate failures and passes all nine new cases plus the existing budget
-regression. Full qualification passes 2,023 Linux tests, two root-only skips and
-all 23 Host Recovery tests. ESPHome controller races remain next.
-
-Dispatch identity was integrated on merged main `5ffba81`: `5e9285f` was
-byte-identical to qualified `7faf08d` before its evidence note, and all 246
-focused cases passed again. PR #314 delivery is now verified; PR #315 is
-merged as `af76c5a`, with exact publication and delivery pending.
-
-PR #313 is [deployed and verified](lighting-configuration-delivery.md) at
-`5cf4c81`. PR #314's required validation is running; its security and both browser
-jobs pass. Dispatch identity is locally qualified and follows that persistence
-batch. ESPHome review has reproduced four rejected-caller quota failures and
-three controller inventory/management races for the next focused repairs.
-
-The [lighting dispatch identity repair](lighting-dispatch-identity.md) fixes three
-reproduced command-target failures. All 35 new regressions and 246 focused cases
-pass; full qualification passes 2,014 Linux tests, two root-only skips and all
-23 Host Recovery tests. Registry/discovery repairs are pushed as
-PR #314; checked delivery follows PR #313.
-
-The [discovery persistence repair](lighting-discovery-persistence.md) passes all
-25 new regressions and 72 combined focused cases; full qualification passes
-1,979 Linux tests, two root-only skips and all 23 Host Recovery tests.
-PR #312 is [deployed and verified](lighting-reliability-delivery.md) at `33ee5d0`.
-PR #313 passed all 14 checks without unresolved reviews and merged as `5cf4c81`;
-its exact images and backed-up update are pending. Registry and discovery repairs
-will follow together as the next focused Group 9 batch.
-
-Registry/discovery integration on merged `5cf4c81` is byte-identical to qualified
-`6c680e8` before this evidence note (`67366cd`). All 169 focused lighting,
-automation, announcement and music cases pass. Required CI and delivery remain
-separate gates; device dispatch identity and ESPHome review are still open.
-
-The [lighting registry save repair](lighting-registry-persistence.md) fixes three
-reproduced failed/invalid-save mutations and a group-name restart defect. All
-18 new regressions pass; full qualification passes 1,954 Linux tests, two
-root-only skips and all 23 Host Recovery tests. Configuration ordering is in
-PR #313 with all 14 required checks passing; delivery follows PR #312.
-
-The separate [lighting configuration repair](lighting-configuration-ordering.md)
-reproduces three save/read races and passes 17 new Node cases plus two new
-browser cases. Final qualification passes 1,936 Linux tests, two root-only skips
-and all 23 Host Recovery tests; all 80 workspace cases pass in each browser.
-PR #312 passed all 14 checks without unresolved reviews and merged as `33ee5d0`;
-its exact images and backed-up update are pending.
-
-Configuration ordering is integrated on that merged main. Before the evidence
-note, `e2d6b1d` matched qualified `f35df0b` byte for byte; all 190 focused
-integration cases pass. Its separate required CI and delivery remain pending.
-
-The Group 9 [command transport repair](lighting-command-transport.md) reproduces
-six UDP/MQTT failures and passes 29 new regressions, including actual library,
-loopback socket and disconnected-handler ownership checks. Final qualification
-passes 1,919 Linux tests, two root-only skips and all 23 Host Recovery tests;
-85 focused integration cases pass. The inventory batch remains qualified on
-`b321a52`; its unchanged frontend passes all 78 workspace cases in each browser.
-
-Status: **PR #314 delivered; PR #315 merged and publishing; ESPHome qualified for integration; lab review active**.
-
-PR #311 is deployed and verified at `fa5bb49`; see its
-[delivery receipt](presentation-rebuild-delivery.md). Three backend metadata/
-discovery persistence failures are reproduced for the next lighting repair.
-
-PR #310 is deployed and verified at `906e0ec`; see its
-[delivery receipt](presentation-session-delivery.md). PR #311 passed all 14
-checks with no unresolved reviews and merged as `fa5bb49`. Its exact images and
-backed-up update are pending. The qualified inventory and transport commits
-will be integrated together as the next focused lighting batch.
-
-The lighting commits are integrated on merged `fa5bb49`. All runtime,
-configuration and test files match qualified `e14302a`; only audit evidence
-differs. All 173 focused integration cases pass. Required CI and exact image
-delivery remain pending. Configuration-write ordering has three reproduced
-cases queued as the separate next lighting repair.
-
-The preliminary Group 9 [lighting inventory/feedback repair](lighting-inventory-ownership.md)
-has 15 new Node cases and two new browser cases passing. Final qualification
-passes 1,890 Linux tests, two root-only skips and all 23 Host Recovery tests;
-all 78 workspace cases pass in Chromium and Firefox. Configuration writes,
-backend transport/device ownership and ESPHome
-remain under review. Group 8 delivery is still pending for the rebuild follow-up.
-PR #310 passed all 14 checks with resolved security reviews and merged as
-`906e0ec`; exact images and its backed-up update are verified.
-
-PR #309 is deployed and verified at `86ce127`; see its
-[delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
-missing limits on three newly queued presentation routes. The accepted-caller
-repair adds four HTTP regressions and passes 1,870 Linux tests with two root-only
-skips and all 23 Host Recovery tests; fresh CI passed with resolved reviews. The separate rebuild
-admission repair is qualified with that repaired head and will follow it.
-
-The rebuild follow-up was integrated on merged `906e0ec`; before its evidence
-note, the complete tree was byte-identical to qualified `83a4b15`. All 60 focused
-checks passed again. Its required checks and delivery are tracked separately.
-
-PR #308 is deployed and verified at `43b4d83`; see its
-[delivery receipt](media-library-recovery-delivery.md). PR #309 passed all 14
-checks and merged as `86ce127`; exact images and backed-up delivery are verified.
-The [presentation session/controller repairs](presentation-session-ownership.md)
-have 47 new Node regressions and three browser cases passing. Final qualification
-passes 1,866 Linux tests, two root-only skips and all 23 Host Recovery tests;
-all 76 workspace cases pass in Chromium and Firefox. Group 8 remains active:
-the [overlapping rebuild admission repair](presentation-rebuild-admission.md) is
-qualified with five new focused regressions, 1,871 Linux passes, two root-only
-skips and all 23 Host Recovery tests on its original snapshot. Combined qualification
-with PR #310's rate-limit repair passes 1,875 Linux tests, two root-only skips and
-all 23 Host Recovery tests, with all 60 focused integration cases passing. Later groups
-remain queued.
-
-PR #307 is deployed and verified at `f3e8624`; see its
-[delivery receipt](upload-recovery-delivery.md).
-Completion receipts have [23 new regressions](upload-completion-receipts.md).
-Group 8 conversion/deletion ownership (RG-MEDIA-007) has
-[30 new regressions](media-library-ownership.md). Document media-card dispatch
-(RG-MEDIA-008) and shared refresh ownership (RG-MEDIA-010) have
-[26 new Node regressions](media-library-controller.md), plus a final regression
-preserving the legacy empty-target default. Completed-upload cancellation feedback
-(RG-MEDIA-009) adds [20 regressions](upload-cancellation-outcome.md). Combined
-qualification passes 1,819 Linux tests, two root-only skips and all 23 Host
-Recovery tests; all 73 workspace cases pass in each browser. PR #308 merged
-as `43b4d83` after all 14 checks and resolved reviews. Exact images and its
-backed-up delivery are verified in the receipt above. Presentation selection,
-dispatch, folder deletion, target choices and timing-draft repairs are qualified.
-
-The upload recovery batch is integrated on merged `55055f7`. Before this
-evidence note and trailing blank-line cleanup, its tree was byte-identical to
-qualified `3dae4e7`. Qualification includes 1,713 Linux passes, zero failures,
-two root-only skips, 23 Host Recovery passes and 70 workspace cases in each
-browser. Its original 39 new cases cover browser and backend ownership. Checked
-delivery is now verified; lost-completion-response replay is in PR #308.
-
-PR #307's CodeQL gate found missing completion rate limiting. The repair adds
-five regressions and passes 1,718 Linux tests with zero failures, two root-only
-skips and all 23 Host Recovery tests. Completion limits exclude rejected callers
-and do not limit chunk transfer; fresh required CI and appliance delivery passed.
-
-PR #305 is deployed and verified at `daa378f`; see its
-[delivery receipt](media-reconnect-delivery.md).
-Upload registration recovery has [ten actual-store/route regressions](upload-registration-ownership.md).
-
-PR #304 is deployed and verified at `2f44c60`; see its
-[delivery receipt](music-command-delivery.md).
-
-PR #303 is deployed and verified at `2b0c79a`; see its
-[delivery receipt](music-tv-delivery.md).
-
-PR #302 is deployed and verified at `4f9e3da`, including health, database/secrets,
-backup integrity and rollback. See [the delivery receipt](music-observation-delivery.md).
-
-PR #301 is deployed and verified at `1e52980`, including health, database/secrets,
-backup integrity and rollback. See [the delivery receipt](music-session-delivery.md).
-TV audio restore ownership has [22 focused regressions](music-tv-restore-ownership.md).
-Music search has [two reproduced result-ownership defects](music-search-results.md).
-Named-receiver audio, uncertain writes and reconnect ownership have
-[46 new regression cases](music-tv-recovery.md).
-Late audio-command persistence has [17 actual-handler regressions](music-audio-command-ordering.md).
-Bridge action and dispatch ordering has [18 route/router regressions](music-bridge-ordering.md).
-The media review has reproduced [lost reconnect settings and token-driven video replacement](media-reconnect-settings.md).
-Upload expiry now has [eight regressions for active writer ownership](upload-cleanup-ownership.md).
-Default video commands have [eight regressions for shared playback identity](media-default-session.md).
-Upload browser ownership has [29 regressions for resume, cancellation and current UI state](upload-client-ownership.md).
-Upload cleanup and default video identity are integrated on merged `daa378f`.
-Before this note, the complete tree was byte-identical to qualified `f21eed4`.
-Qualification includes 1,674 Linux passes, zero failures, two root-only skips,
-23 Host Recovery passes and 16 new Node cases. Required gates and appliance
-delivery remain pending. PR #305 delivery is verified.
-Both fixes are integrated on merged `2f44c60`. Before this evidence note, the
-complete tree was byte-identical to qualified `3c15e92`. Qualification includes
-1,658 Linux passes, zero failures, two root-only skips, 23 Host Recovery passes,
-and 14 token, 30 receiver and five audio cases in each browser. Ten new Node
-cases cover settings persistence and control validation. PR #305 passed its
-gates, published exact images and completed the verified appliance update.
-Audio and bridge ordering are integrated on merged `2b0c79a`. Before this
-evidence note, the complete tree was byte-identical to qualified `5fb7bad`.
-The supported Linux snapshot passes 1,648 tests, zero failures and two root-only
-skips (1,650 total), plus all 23 Host Recovery tests. All 14 checks passed and
-the changes merged as `2f44c60` (PR #304); its exact main images and appliance
-delivery are verified in the linked receipt. These statuses do not imply physical audio acceptance.
-The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
-recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
-with health, backup integrity and rollback verified. Display timing passed all
-gates and is deployed/verified at `217588a` (PR #285).
-Resource identity and complete ownership passed all 14 checks and merged at
-`065e32e` (PR #286); exact images published and the appliance update is verified.
-Date/preview fixes passed all gates and deployed at `3978311` (PR #287), with
-health, backup integrity and rollback verified.
-Automation save ownership passed all gates and deployed at `68f36c4` (PR #288),
-with health, backup integrity and rollback verified. Calendar draft ownership
-passed all 14 checks and deployed at `dd23fb4` (PR #289), with health, backup
-integrity and rollback verified. Class-save and Calendar Today changes passed
-all 14 checks and deployed at `955195a` (PR #290), with health, backup integrity
-and rollback verified. Planning runtime fixes passed all gates and deployed at
-`407be9e` (PR #291), with health, backup integrity and rollback verified.
-Preview dates passed all 14 checks and deployed at `fe8b68a` (PR #292), with
-health, backup integrity and rollback verified. Announcement lifecycle fixes
-passed all 14 checks and deployed at `ac1ae40` (PR #293), with exact images,
-health, backup integrity and rollback verified.
-Probe bounds and Music saves passed all 14 checks and deployed at `ce31357`
-(PR #297), with health, backup integrity and rollback verified.
-The deferred-bookkeeping, release-ownership and failed-start follow-ups are
-integrated on that main commit with byte-identical qualified runtime/Node tests.
-The full native snapshot passed 1,401 tests, with zero failures and two root-only
-skips, plus all 23 Host Recovery tests. All 58 focused integration checks pass.
-The only test difference from the qualified snapshot is the independently
-qualified shared-layer browser route synchronization already merged in PR #297.
-These recovery follow-ups passed all 14 checks and merged at `4a41f00`
-(PR #298); exact images published and appliance delivery is verified. See the
-[delivery receipt](announcement-start-failure.md#checked-appliance-delivery).
-Target admission and Live Watch draft/write fixes are integrated on that merged
-main commit with a byte-identical tree to the qualified `6f86b3f` snapshot before
-this documentation note. All 66 focused integration checks pass. Qualification
-includes 1,409 native passes, zero failures, two root-only skips, 23 Host Recovery
-passes, 16 Live Watch cases in each browser and 70 workspace cases in each browser.
-These fixes passed all 14 checks and merged at `2f79567` (PR #299). Its main
-Firefox run hit a route-capture race, so that publication stopped. The
-[fixture correction](preview-route-synchronization.md) merged in PR #300;
-combined delivery is now verified at `336a71d`.
-Music queue response ownership and active announcement receiver ownership are
-integrated on `2f79567`, with a byte-identical tree to qualified `1541de6` before
-this evidence note. All 78 focused integration checks pass. Qualification includes
-1,421 native passes, zero failures, two root-only skips and 23 Host Recovery
-passes; all 16 Music cases pass in both Chromium and Firefox. All 14 checks
-passed and this integration merged at `336a71d` (PR #300). Exact main images
-published and combined PR #299/#300 appliance delivery passed; see the
-[receipt](announcement-active-targets.md#verified-combined-appliance-delivery).
-Music Assistant socket ownership, announcement audio-content ownership,
-Background Music completion ownership and atomic connection saves are now
-integrated on `336a71d`. Before this evidence note, the complete tree was
-byte-identical to qualified `fbf4b61`; all 144 focused integration tests pass.
-The supported Linux snapshot passes 1,501 tests, zero failures and two root-only
-skips (1,503 total), plus all 23 Host Recovery tests and Node/controller/Python/Bash
-checks. All 14 checks passed and these follow-ups merged at `1e52980` (PR #301);
-their exact main images and appliance delivery are verified in the linked receipt.
-Schedule-save ordering, player-probe/status ownership, recovery attempt accounting
-and Live Watch manual checks are also delivered through PR #302. The wider
-modernization is still in progress.
-Scheduler timing/task
-ownership delivery completed in PR #277. AV backend delivery completed in
-PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
-delivery completed in PR #274. Today/live monitoring and shared
-frontend delivery completed in PRs #273 and #272. Core Architecture
-and Application Lifecycle is complete for its enumerated entry-point scope. The first
-implementation covers the bootstrap, media-process ownership, scheduled music
-readiness and owned timer cleanup. The follow-up adds a bounded writer drain,
-automation interruption/restart policy and export-thaw coordination. The next
-follow-up makes route-bridge installation explicit and adds composition tests.
-The export follow-up carries mutating handler ownership past HTTP response closure.
-The media-stop follow-up propagates child failures without discarding accepted writes.
-The discovery follow-up closes lifecycle admission before cache or worker access.
-The feature-owner follow-up adds canonical Sports/Ubuntu/presentation lifecycle
-and restart coverage without changing their runtime behavior.
-The read-housekeeping follow-up closes authentication and update-status writes
-during snapshot freeze while retaining read access and authorization checks.
-The Veyon read follow-up includes persistent identity/key reads in the snapshot
-admission and drain barrier, preserving save-before-project stable IDs.
-The presentation recovery follow-up bounds startup reclamation of interrupted
-render staging while preserving originals and rebuild behavior.
-The connection-cleanup follow-up tracks the two detached Veyon close paths and
-pauses idle timer admission while the lifecycle lock is held.
-The lab-close follow-up defers disconnect metadata during recovery freeze and
-ignores obsolete socket closures without hiding current offline status.
-The startup scheduler follow-up defers recovery until snapshot thaw and retains
-one pending pass so currently applicable automation winners still recover.
-The import-callback follow-up exposes the Sports PDF-processing promise to the
-existing drain, including disconnected clients and processing errors.
-The enumerated lifecycle entry-point source review, final CI and appliance
-delivery are complete through PR #271. This is not a whole-server business
-logic or physical-device acceptance claim. Other subsystem units remain queued.
-
-Baseline: `c2808c8ba861b852e6bbe8dec8c52d8251227756`, `main`,
-`1.0.0-alpha.85`. Original finding locations belong to that revision. The RG-ARCH-004 follow-up
-uses `ea53e2deff70dbb151ca551ddd27b89c633d6afd` as its exact baseline.
-The bridge-composition follow-up uses `38db6b8d9bf8fad328fa2639c592b4f739dcca3a`.
-The export-handler follow-up uses `da6bb77187bd23787239347db903ab842fbc6683`.
-The media-stop follow-up uses `446a9523da9a160bc510e679397269c9097aeb1d`.
-The discovery follow-up uses `4ca4f7c4fc81a4b53321e88319e7ea5768d4d211`.
-
-Appliance delivery through PR [#271](https://github.com/wagnerks1990/RoomGoblin/pull/271)
-was verified on 2026-10-27 UTC at `40b88c197b2e4d4dbed448348a9d1a9805949dbf`.
-The selective update replaced the Hub and retained the healthy maintenance
-container at `20f8c501916f34e17bee2c643434e7cce0c919e6`. Health, database/secret
-integrity, backup checksum/archive/SQLite integrity and rollback were verified.
-No physical classroom commands were issued. See the PR for delivery evidence.
-
-The shared frontend review starts at that same source commit. Its first patch
-separates feature presentation from navigation, repairs account/login focus
-handoffs and improves default light-theme contrast. See [findings](shared-frontend.md).
-Queued subsystem units below have not been marked audited.
-
-- [Automation editor dates and preview responses](automation-editor-dates.md)
-- [Automation editor save ownership](automation-save-ownership.md)
-- [Planning draft ownership](planning-draft-ownership.md)
-- [Class editor save ownership](class-save-ownership.md)
-- [Calendar current-day navigation](planning-current-day.md)
-- [Class offsets, recovery and timer dates](planning-class-boundaries.md)
-- [Timetable occurrence identity and class references](planning-block-identities.md)
-- [Planning preview dispatch dates](planning-preview-dates.md)
-- [Announcement monitor ownership and offline evidence](announcement-monitoring.md)
-- [Announcement configuration transaction](announcement-configuration.md)
-- [Announcement audio retry ownership](announcement-audio-retries.md)
-- [Announcement audio content ownership](announcement-audio-content.md)
-- [Announcement and media priority ownership](announcement-priority.md)
-- [Announcement probe destination security review](announcement-probe-security.md)
-- [Announcement playlist deadlines and size bounds](announcement-probe-bounds.md)
-- [Music workspace save ownership](music-save-ownership.md)
-- [Music queue response ownership](music-queue-ownership.md)
-- [Music Assistant connection ownership](music-socket-ownership.md)
-- [Background Music session ownership](background-session-ownership.md)
-- [Music Assistant configuration transaction](music-config-transaction.md)
-- [Background Music schedule save ordering](music-schedule-ordering.md)
-- [Background Music player probe ownership](music-probe-ownership.md)
-- [Background Music recovery attempt accounting](music-recovery-attempts.md)
-- [Live Watch manual-check ownership](morning-watch-check-ownership.md)
-- [Music Assistant connection-status ownership](music-connection-status.md)
-- [Deferred announcement bookkeeping](announcement-deferred-bookkeeping.md)
-- [Announcement release recovery ownership](announcement-release-ownership.md)
-- [Failed announcement start cleanup](announcement-start-failure.md)
-- [Announcement target admission and unchanged sessions](announcement-target-admission.md)
-- [Active announcement receiver ownership](announcement-active-targets.md)
-- [Live Watch drafts and write ordering](morning-watch-drafts.md)
-
-- [Complete recovery ownership](scheduler-complete-recovery-owner.md)
-- [Recovery resource identity](scheduler-recovery-resources.md)
-
-- [Display recovery timing](scheduler-display-recovery.md)
-- [Scheduler dispatch permission](scheduler-dispatch-permission.md)
-- [Legacy TV scheduler findings](legacy-tv-scheduler.md)
-
-- [Scheduler cancellation persistence](scheduler-cancellation.md)
-
-- [TV and lighting recovery timing](scheduler-recovery-timing.md)
-
-- [Scheduler Stop retention](scheduler-stop-retention.md)
-
-- [Scheduler resource identity findings](scheduler-resources.md)
-
-- [Scheduler replacement ordering](scheduler-dispatch-order.md)
-- [Scheduler timing, task ownership and remaining review](scheduler.md)
-- [Scheduled sequence test-clock findings](scheduler-simulation.md)
-- [Displays & AV backend read bounds](av-status.md)
-- [Displays & AV workspace findings](displays-av.md)
-- [Display receiver browser-runtime findings](display-receiver.md)
-- [Today and live-display monitoring findings](today-dashboard.md)
-- [Shared frontend findings and coverage](shared-frontend.md)
-- [Core lifecycle findings and coverage](core-lifecycle.md)
-- [Validation evidence](validation.md)
-- [Current lifecycle contract](../../APPLICATION-LIFECYCLE.md)
-
-## Architecture map
-
-```mermaid
-flowchart TD
-  entry[npm start / container exec] --> preload[Display gateway preload]
-  preload --> recovery[Startup recovery]
-  recovery --> media[Supervised media child :3020]
-  recovery --> bridges[Ordered compatibility bridges]
-  bridges --> hub[Hub server :3000]
-  hub --> sqlite[SQLite and encrypted secret storage]
-  hub --> operators[Operator UI and receiver WebSockets]
-  hub --> integrations[Schedulers and device integrations]
-  hub --> maintenance[Authenticated maintenance service]
-  maintenance --> host[Native Host Agent]
-  media -->|Loopback authorization HEAD| hub
-```
-
-The browser remains framework-free. The main Express server still owns multiple
-domains. Maintenance and the native Host Agent are distinct privileged boundaries;
-they are not additional public browser services. Media bytes have their own
-process/listener but share the Hub's authorization and failure domain.
-
-## Music observation and ordering integration
-
-The schedule-save, player-probe, recovery-attempt, Live Watch manual-check and
-connection-status changes are integrated on merged `main` `1e52980`. Before
-this evidence note, the complete integration tree was byte-identical to
-qualified `01aa993`. All 97 focused integration tests pass. The supported
-Linux snapshot passed 1,545 tests, zero failures and two root-only ownership
-skips, plus all 23 Host Recovery tests and Node/controller/Python/Bash checks.
-Live Watch passed 27 cases and the workspace suite passed 70 cases in each
-of Chromium and Firefox. Required PR/main gates, exact images and this batch's
-backed-up appliance delivery passed in PR #302;
-see [the receipt](music-observation-delivery.md). PR #301 delivery is also verified.
-TV audio restoration remains under review; the broader roadmap is still active.
-
-## TV audio and search integration
-
-TV restore ownership, repeated-search results and named/uncertain audio recovery
-are integrated on merged `main` `4f9e3da`. Before this note, the complete tree
-matched qualified `aeb961e`. All 103 focused integration tests pass. Final native
-validation passes 1,613 tests, zero failures and two root-only ownership skips,
-plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All 17
-Music Studio and 70 workspace cases pass in each of Chromium and Firefox.
-Required PR/main checks, immutable images and this batch's backed-up delivery
-remain pending. PR #302 is now deployed and verified.
-Late audio-command persistence remains a separate reproduced review finding.
-
-## Upload completion and media-library integration
-
-Completion receipts and conversion/deletion ownership are integrated on merged
-`main` `f3e8624`. Before this evidence note and PR #307's delivery receipt, the
-complete tree matched qualified `8a81abd`. The supported Linux snapshot passes
-1,771 tests, zero failures and two root-only skips, plus all 23 Host Recovery
-tests and Node/controller/Python/Bash checks. All 90 focused Linux integration
-tests pass with two root-only skips (92 total). An additional native-Windows
-attempt was unsuitable because shared-permission fixtures require Linux
-`fchmod`; it is not counted as qualification. Required PR/main gates and exact
-image delivery for this batch remain pending. PR #307 is deployed and verified;
-see [the receipt](upload-recovery-delivery.md). Media-card document dispatch,
-cancellation outcome feedback and library refresh ownership remain under review.
-
-## Inventory and review sequence
-
-These are review units, not proposed new services. Later units remain queued;
-their ordering may change when the current unit's evidence warrants it.
-
-| Order | Review units | Principal boundaries |
+## Current status
+
+This index is the current status authority. The [progress history](progress-history.md)
+preserves the original running notes, including statements that were accurate
+before later merges. Individual findings identify their baseline and validation
+scope; their historical "pending" text does not override a later delivery receipt.
+
+The last standalone verified deployment is alpha.85 diagnostics PR #342,
+`ea924b8`; see its [delivery receipt](diagnostics-delivery.md).
+[Retention](backup-retention-authority.md) merged in PR #343 and
+[publication retries](publication-candidate-retry.md) in PR #344, each after all
+14 checks passed. [Request deadlines](browser-request-deadlines.md) are qualified
+locally and under exact-head CI in PR #345. The remaining changes use one final
+deployment; [final integration](final-integration.md) defines its qualification
+and the separate deployment record. This documentation batch is still in review.
+
+"Delivered" below means the documented fixes passed their recorded checks and
+backed-up delivery. It does not assert a line-by-line audit of every repository
+file or physical acceptance of every device. Full versus targeted source review,
+reproductions, intermediate failures and untested boundaries remain in the
+linked evidence.
+
+## Scope and evidence
+
+The original 32 subsystems were organized into 17 sequential review units. The
+table maps every requested subsystem to its principal evidence. Additional
+focused findings and delivery receipts remain indexed in the progress history.
+
+| Requested subsystem | Principal evidence | Current state |
 | --- | --- | --- |
-| 1 | Core architecture and application lifecycle | Bootstrap, bridges, child processes, timers, writer drain |
-| 2 | Shared frontend architecture/design system; navigation/controller workspace | Shared styles, workspace shell, capability-hidden controls |
-| 3 | Today; live displays monitoring | Overview rendering, previews, distinct health signals |
-| 4 | Display receiver/kiosk; Displays & AV | Persistent renderer, stable receivers, original routing matrix |
-| 5 | Scheduler; automation editor | Occurrences, priority, cancellation, action sequences |
-| 6 | Planning/calendar/timetables; class schedules | Saved profiles, exceptions, continuation rules |
-| 7 | Morning Announcements; Background Music/audio priority | Priority lock, reconciliation, bounded recovery |
-| 8 | Media playback; presentations; media/document library | Content transport, presenter state, uploads, previews |
-| 9 | Lighting/Govee; ESPHome | Device lifecycle, discovery, command delivery |
-| 10 | Lab/Veyon/Windows agent; managed Ubuntu/Android displays | Enrollment, identity, preview transport, maintenance |
-| 11 | Weather and Sports | Fetch budgets, persistence, scene integration |
-| 12 | Backend/API; database/migrations | Domain ownership, writer coordination, schema compatibility |
-| 13 | Authentication/authorization/sessions; security/privacy/secrets | Fail-closed capabilities and protected identities |
-| 14 | Diagnostics/observability; infrastructure/integrations | Accurate health, bounded probes, adoption ownership |
-| 15 | Backup/recovery; updates/deployment/rollback | Cooperative snapshots, immutable images, durable transactions |
-| 16 | Performance/resources; tests/CI/releases | Measured resource costs and independent release gates |
-| 17 | Documentation/AI/developer experience; final integration | Evidence reconciliation and cross-system acceptance |
+| 1. Core architecture and lifecycle | [Lifecycle ownership](core-lifecycle.md), [validation history](validation.md) | Delivered within documented scope |
+| 2. Shared frontend and design system | [Shared styles, shell and focus](shared-frontend.md) | Delivered within documented scope |
+| 3. Navigation and controller workspace | [Shared frontend](shared-frontend.md), [account dialog focus](account-dialog-focus.md) | Delivered within documented scope |
+| 4. Today dashboard | [Overview and preview ownership](today-dashboard.md) | Delivered within documented scope |
+| 5. Live displays monitoring | [Today/live monitoring](today-dashboard.md), [receiver runtime](display-receiver.md) | Delivered within documented scope |
+| 6. Receiver and kiosk engine | [Receiver runtime](display-receiver.md), [identity delivery](receiver-identity-delivery.md) | Delivered within documented scope |
+| 7. Displays and AV routing | [Workspace](displays-av.md), [bounded status transport](av-status.md) | Delivered within documented scope |
+| 8. Automation scheduler | [Scheduler findings](scheduler.md), [recovery limits](scheduler-recovery-boundary.md) | Delivered; recovery limit documented |
+| 9. Automation editor | [Save ownership](automation-save-ownership.md), [date handling](automation-editor-dates.md) | Delivered within documented scope |
+| 10. Planning, calendar and timetables | [Draft ownership](planning-draft-ownership.md), [date boundaries](planning-class-boundaries.md) | Delivered within documented scope |
+| 11. Class schedule management | [Class save ownership](class-save-ownership.md), [block identities](planning-block-identities.md) | Delivered within documented scope |
+| 12. Morning Announcements and Live Watch | [Priority](announcement-priority.md), [monitoring](announcement-monitoring.md) | Delivered within documented scope |
+| 13. Background Music and audio priority | [Session delivery](music-session-delivery.md), [TV recovery](music-tv-recovery.md) | Delivered within documented scope |
+| 14. Media playback and content | [Media ownership delivery](media-ownership-delivery.md), [reconnect delivery](media-reconnect-delivery.md) | Delivered within documented scope |
+| 15. Presentation library and console | [Session delivery](presentation-session-delivery.md), [rebuild delivery](presentation-rebuild-delivery.md) | Delivered within documented scope |
+| 16. Media and document library | [Library recovery](media-library-recovery-delivery.md), [controller delivery](media-controller-delivery.md) | Delivered within documented scope |
+| 17. Lighting and Govee | [Reliability](lighting-reliability-delivery.md), [configuration](lighting-configuration-delivery.md) | Delivered within documented scope |
+| 18. ESPHome devices | [Reliability delivery](esphome-reliability-delivery.md) | Delivered within documented scope |
+| 19. Lab, Veyon and managed agents | [Veyon](veyon-reliability-delivery.md), [Windows](windows-native-bounds-delivery.md), [Ubuntu](ubuntu-reliability-delivery.md), [Android](android-native-delivery.md) | Delivered within documented scope |
+| 20. Weather and Sports | [Weather workflow](weather-workflow-delivery.md), [Sports durability](sports-durability-delivery.md) | Delivered within documented scope |
+| 21. Backend services and API | [Settings transactions](settings-identity-transaction.md), [database delivery](database-transactions-delivery.md) | Delivered within documented scope |
+| 22. Database and migrations | [Legacy imports](legacy-import-transaction.md), [audit imports](audit-import-transaction.md) | Delivered within documented scope |
+| 23. Authentication and sessions | [Display admission](display-enrollment-admission.md), [identity delivery](receiver-identity-delivery.md) | Delivered within documented scope |
+| 24. Security and secret management | [Identity](display-identity-runtime.md), [diagnostic redaction](diagnostic-evidence.md) | Delivered within documented scope |
+| 25. Diagnostics and observability | [Evidence and redaction](diagnostic-evidence.md), [delivery](diagnostics-delivery.md) | Delivered within documented scope |
+| 26. Infrastructure and integrations | [Evidence boundaries](diagnostic-evidence.md), [retention authority](backup-retention-authority.md) | Qualified; final deployment batch |
+| 27. Backup and disaster recovery | [Lifecycle/drain evidence](validation.md), [retention authority](backup-retention-authority.md) | Qualified; final deployment batch |
+| 28. Updates, deployment and rollback | [Production update contract](../../PRODUCTION-UPDATES.md), [retention](backup-retention-authority.md) | Qualified; final deployment batch |
+| 29. Performance and resources | [Request deadlines](browser-request-deadlines.md), [AV read budgets](av-status.md), [native bounds](windows-native-resource-bounds.md) | Qualified; final deployment batch |
+| 30. Tests, CI and releases | [Publication retry](publication-candidate-retry.md), [CI contract](../../CI-WORKFLOWS.md) | Qualified; final deployment batch |
+| 31. Documentation and developer experience | This index, progress history and linked contracts | Reconciliation implemented; checked merge required |
+| 32. Cross-system integration | [Final qualification and acceptance](final-integration.md), delivery receipts | Qualified runtime; final deployment record required |
 
-## Controller media and cancellation integration
+## Architecture and compatibility decisions
 
-Document-card dispatch, shared library refresh and saved-upload cancellation
-outcomes are integrated on merged `main` `43b4d83`. Before this evidence note,
-the full tree was byte-identical to qualified `3150723`. Final qualification
-passes 1,819 Linux tests, zero failures and two root-only skips (1,821 total),
-plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All
-182 focused integration cases pass with two root-only skips (184 total), and
-all 73 workspace cases pass in Chromium and Firefox. These changes add 47 Node
-regressions and three browser cases. Checked PR/main delivery remains pending.
-PR #308 is merged; its exact image publication and appliance update are pending.
-The presentation review and later roadmap groups remain active.
+Retain Node/Express, CommonJS, SQLite and the framework-free browser. The Hub owns
+operator APIs, scheduling and integration coordination; uploaded-media bytes use
+their dedicated process/listener. Maintenance and the native Host Agent remain
+separate authenticated privilege boundaries. Compatibility bridges are registered
+explicitly per application after writer tracking.
 
-## Decisions
+Keep current deployment/service names, persistent identities, receiver IDs,
+databases, secrets and signing/ADB material. Preserve Morning Announcements
+priority, Background Music reconciliation, timer continuation rules, the original
+TV routing matrix and persistent receiver media sessions. Shared operator styling
+stays scoped to `body.rg-workspace`; physical display rendering remains independent.
 
-Retain Node/Express, CommonJS, SQLite, the separate media process and existing
-browser architecture. No framework migration or dependency upgrade is needed
-for the demonstrated lifecycle defects. Preserve compatibility identifiers and
-all operational data. Use focused PRs; production deployment remains separate.
+No broad framework rewrite, arbitrary root command API or dependency migration is
+needed for these reproduced defects. Production acceptance uses the normal updater,
+an integrity-checked operational backup, exact published image identity and a
+verified rollback point.
 
-RG-UI-001 (workspace shell ownership) is revalidated in the shared frontend review.
-RG-DOC-001 (backup retention documentation) remains queued for its own review unit.
+RG-UI-001 is closed by the shared frontend delivery. RG-DOC-001's stale backup
+limits are corrected in merged retention PR #343 and included in the final batch.
+
+## Acceptance limits
+
+- The linked tests use simulated failures and device adapters. Health, source
+  hashes and read-only configuration checks do not prove physical TV, lighting,
+  audio, kiosk or receiver behavior. No physical command or production fault
+  injection is claimed.
+- Scheduler recovery restores current winners and complete continuous occurrences.
+  Later-loop phase and adapter latency are not reconstructed; see the
+  [documented recovery boundary](scheduler-recovery-boundary.md).
+- A browser deadline ends the browser wait and retires late responses. It does not
+  prove server cancellation or a failed physical command; uncertain writes require
+  status inspection before retry.
+- The non-root full Linux run reports two skipped ownership tests. Both passed
+  separately in an isolated root WSL fixture run; see [final integration](final-integration.md).
+  CI supplies container, scan, platform and browser qualification. Local results
+  and live deployment receipts are recorded separately.
+- The optional physical Securly kiosk and external services keep their established
+  ownership. This review does not replace site-specific hardware acceptance or
+  claim every optional integration is configured.

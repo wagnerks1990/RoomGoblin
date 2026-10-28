@@ -1,5 +1,9 @@
 # Class offsets, recovery and timer dates
 
+Current reconciliation: [later-loop recovery is a documented compatibility
+limit](scheduler-recovery-boundary.md); cross-date class resolution has been
+repaired. The baseline findings and qualification history below are preserved.
+
 Baseline: locally qualified editor commit
 `511f9d0fea971dba1972f03146121645fb2d203a`. Its scheduler source is unchanged
 from checked main `3978311`. The qualified patch and companion identity fixes
