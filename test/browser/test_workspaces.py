@@ -1563,6 +1563,7 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertFalse(errors, errors)
 
     def test_shared_layer_obsolete_preview_failure_keeps_the_new_review(self):
+        import time
         from playwright.sync_api import expect
         page, errors, saved = self.studio_page()
         page.get_by_role('button', name='Shared layers', exact=True).click()
@@ -1576,6 +1577,9 @@ class WorkspaceBrowserTests(unittest.TestCase):
         editor.get_by_label('Layer rule name', exact=True).fill('Reviewed rule')
         with page.expect_request('**/api/v1/planning/studio/preview'):
             editor.get_by_role('button', name='Preview rule', exact=True).click()
+        deadline = time.monotonic() + 5
+        while len(held) < 2 and time.monotonic() < deadline:
+            page.wait_for_timeout(10)
         self.assertEqual(len(held), 2)
         held[1].fulfill(json={'matches': [], 'previewHash': 'reviewed-rule'})
         expect(editor.get_by_role('button', name='Save shared layer', exact=True)).to_be_enabled()

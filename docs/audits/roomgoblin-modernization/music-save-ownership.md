@@ -55,3 +55,16 @@ The combined integration with the announcement probe bound on merged main
 Its final native snapshot passes 1,365 tests, zero failures and two root-only
 ownership skips (1,367 total), plus all 23 Host Recovery tests and
 Node/controller/Python/Bash checks. Required CI and delivery remain pending.
+
+## Firefox fixture synchronization
+
+PR #297's first Firefox job (`122567489152`, run `40612597609`, head `af08a26`)
+passed all ten Music tests but failed one existing shared-layer preview test:
+the second request event fired before its route callback appended the second
+held request (`1 != 2`). The job ran 184 tests with one failure. The fixture now
+waits at most five seconds for both route callbacks before asserting exactly
+two requests and exercising the same obsolete-error ordering and UI assertions.
+No product code, expected outcome, workflow or check was relaxed.
+
+The corrected full workspace suite passes all 70 tests in Firefox and all 70
+in Chromium. Fresh required CI on the correction remains mandatory.

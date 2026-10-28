@@ -1,6 +1,6 @@
 # RoomGoblin modernization audit
 
-Status: **Planning fixes delivered; announcement lifecycle fixes merged; probe bounds and Music saves qualified**.
+Status: **Planning and announcement lifecycle fixes delivered; probe bounds and Music saves qualified**.
 The scheduler safeguards through PR #283 are deployed and verified. TV/lighting
 recovery timing and ownership passed all gates and deployed at `2bd5ce9` (PR #284),
 with health, backup integrity and rollback verified. Display timing passed all
@@ -18,8 +18,8 @@ and rollback verified. Planning runtime fixes passed all gates and deployed at
 `407be9e` (PR #291), with health, backup integrity and rollback verified.
 Preview dates passed all 14 checks and deployed at `fe8b68a` (PR #292), with
 health, backup integrity and rollback verified. Announcement lifecycle fixes
-passed all 14 checks and merged at `ac1ae40` (PR #293); exact image publication
-and appliance delivery remain pending.
+passed all 14 checks and deployed at `ac1ae40` (PR #293), with exact images,
+health, backup integrity and rollback verified.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime

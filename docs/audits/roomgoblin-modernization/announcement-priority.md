@@ -46,3 +46,24 @@ Checked integration, required CI, exact images and normal
 backed-up delivery remain pending. No physical media or music command was used.
 Release-clear failures, retry ownership across replacement announcements and
 remaining Background Music lifecycle behavior remain under separate review.
+
+## Verified combined delivery
+
+PR #293 passed all 14 checks and merged at
+`ac1ae4002adf3995d079836a13245e3e8449b636`. All five main workflows passed,
+including exact image publication and Wiki synchronization. Its normal update
+completed on 2026-10-28 at 01:12:28 UTC. The Hub runs that exact revision with
+zero restarts; the unchanged maintenance container remains healthy.
+
+Verification confirms clean main, healthy control/media/maintenance/Host Agent,
+SQLite integrity, all eight encrypted secrets, database/ADB modes, authorization
+boundaries, served assets and an empty selective update plan. Rollback to
+`fe8b68a` and its images remains available.
+
+Operational backup `auto-operational-2026-10-28T01-12-14-721Z.zip` is 128,669,737
+bytes, mode 0600, SHA-256
+`825119e81913d98f2d9a554295466ef9e69b23e043e4a07d5d5023291c098f9d`.
+Archive CRC, canonical database-only membership and extracted SQLite integrity
+passed. This receipt covers the monitor, configuration, audio-retry and separate
+priority patches plus their security review. No physical commands, receiver
+reloads or production fault injection were used.
