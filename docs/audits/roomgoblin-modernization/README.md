@@ -30,6 +30,12 @@ The only test difference from the qualified snapshot is the independently
 qualified shared-layer browser route synchronization already merged in PR #297.
 These recovery follow-ups passed all 14 checks and merged at `4a41f00`
 (PR #298); exact images and appliance delivery remain pending.
+Target admission and Live Watch draft/write fixes are integrated on that merged
+main commit with a byte-identical tree to the qualified `6f86b3f` snapshot before
+this documentation note. All 66 focused integration checks pass. Qualification
+includes 1,409 native passes, zero failures, two root-only skips, 23 Host Recovery
+passes, 16 Live Watch cases in each browser and 70 workspace cases in each browser.
+Their required CI and appliance delivery remain pending.
 Scheduler timing/task
 ownership delivery completed in PR #277. AV backend delivery completed in
 PR #276. The operator workspace is deployed through PR #275; receiver browser-runtime
