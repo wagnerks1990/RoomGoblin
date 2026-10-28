@@ -302,6 +302,9 @@ jobs:
       - name: Verify Android listener shutdown ownership
         if: steps.scope.outputs.full != 'false'
         run: python3 tools/test-android-socket-lifecycle.py
+      - name: Verify Android activity assignment and playback preservation
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-activity-assignment.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv

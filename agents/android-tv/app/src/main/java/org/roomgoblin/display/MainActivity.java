@@ -21,6 +21,7 @@ public class MainActivity extends Activity {
     private static final long POLICY_INTERVAL_MS=30000L;
     private static final String EXTRA_RELOAD="agent_reload";
     private WebView webView;
+    private String loadedDisplayUrl;
     private final Handler policyHandler=new Handler(Looper.getMainLooper());
     private final Runnable policyWatchdog=new Runnable(){
         @Override public void run(){
@@ -59,8 +60,8 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         enterImmersive();
-        if(intent!=null&&intent.getBooleanExtra(EXTRA_RELOAD,false)&&webView!=null)webView.reload();
-        else ensureConfiguredUrlLoaded();
+        boolean loaded=ensureConfiguredUrlLoaded();
+        if(!loaded&&intent!=null&&intent.getBooleanExtra(EXTRA_RELOAD,false)&&webView!=null)webView.reload();
     }
 
     private void enterImmersive(){
@@ -71,15 +72,25 @@ public class MainActivity extends Activity {
 
     private void loadConfiguredUrl(){
         if(webView==null)return;
-        String url=HubStorage.prefs(this).getString("display_url","");
-        if(url==null||url.trim().isEmpty())webView.loadData("<html><body style='background:#0b1017;color:white;font-family:sans-serif;padding:8vw'><h1>RoomGoblin Display</h1><p>This device is installed but has not been assigned a display URL.</p></body></html>","text/html","UTF-8");
+        String url=configuredDisplayUrl();
+        if(url.isEmpty())webView.loadData("<html><body style='background:#0b1017;color:white;font-family:sans-serif;padding:8vw'><h1>RoomGoblin Display</h1><p>This device is installed but has not been assigned a display URL.</p></body></html>","text/html","UTF-8");
         else webView.loadUrl(url);
+        loadedDisplayUrl=url;
     }
 
-    private void ensureConfiguredUrlLoaded(){
-        if(webView==null)return;
+    private String configuredDisplayUrl(){
+        String url=HubStorage.prefs(this).getString("display_url","");
+        return url==null?"":url.trim();
+    }
+
+    private boolean ensureConfiguredUrlLoaded(){
+        if(webView==null)return false;
         String current=webView.getUrl();
-        if(current==null||current.trim().isEmpty())loadConfiguredUrl();
+        if(current==null||current.trim().isEmpty()||!configuredDisplayUrl().equals(loadedDisplayUrl)){
+            loadConfiguredUrl();
+            return true;
+        }
+        return false;
     }
 
     private void startPolicyWatchdog(){

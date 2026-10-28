@@ -127,11 +127,12 @@ test("managed browser display preserves its WebView across ordinary resume and l
   const onResume=source.match(/@Override protected void onResume\(\)\{([\s\S]*?)\n    \}/)?.[1]||"";
   const onNewIntent=source.match(/@Override protected void onNewIntent\(Intent intent\)\{([\s\S]*?)\n    \}/)?.[1]||"";
   assert.match(source,/settings\.setMediaPlaybackRequiresUserGesture\(false\)/);
-  assert.match(source,/private void ensureConfiguredUrlLoaded\(\)/);
+  assert.match(source,/private boolean ensureConfiguredUrlLoaded\(\)/);
   assert.match(onResume,/ensureConfiguredUrlLoaded\(\)/);
   assert.doesNotMatch(onResume,/loadConfiguredUrl\(\)/);
   assert.match(onNewIntent,/EXTRA_RELOAD/);
   assert.match(onNewIntent,/webView\.reload\(\)/);
-  assert.match(onNewIntent,/else ensureConfiguredUrlLoaded\(\)/);
+  assert.match(onNewIntent,/boolean loaded=ensureConfiguredUrlLoaded\(\)/);
+  assert.match(onNewIntent,/if\(!loaded&&intent!=null/);
   assert.doesNotMatch(onNewIntent,/else loadConfiguredUrl\(\)/);
 });
