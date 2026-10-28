@@ -37,3 +37,8 @@ checked delivery follows PR #312.
 This retains the controller's existing fetch lifetime. Shared browser API request
 budgets remain part of the backend/API review; this queue does not claim that a
 browser disconnect or timeout cancels a server-side write.
+
+Integration on merged main `33ee5d0` produced `e2d6b1d`, whose full tree matches
+qualified `f35df0b` byte for byte before this evidence note. All 190 focused
+integration cases pass. Required CI, exact images and backed-up delivery remain
+pending, after PR #312 completes verified delivery.

@@ -7,6 +7,10 @@ and all 23 Host Recovery tests; all 80 workspace cases pass in each browser.
 PR #312 passed all 14 checks without unresolved reviews and merged as `33ee5d0`;
 its exact images and backed-up update are pending.
 
+Configuration ordering is integrated on that merged main. Before the evidence
+note, `e2d6b1d` matched qualified `f35df0b` byte for byte; all 190 focused
+integration cases pass. Its separate required CI and delivery remain pending.
+
 The Group 9 [command transport repair](lighting-command-transport.md) reproduces
 six UDP/MQTT failures and passes 29 new regressions, including actual library,
 loopback socket and disconnected-handler ownership checks. Final qualification
