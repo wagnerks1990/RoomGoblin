@@ -53,8 +53,8 @@ zero failures and two root-only ownership skips (1,491 total), plus all 23 Host
 Recovery tests and Node/controller/Python/Bash checks. Neither failure was
 bypassed; the directory-mode assertion passes on native Linux.
 
-Required CI, checked integration, exact images and
-backed-up appliance delivery remain pending. Fixtures execute actual functions
+Required CI, exact images and backed-up appliance delivery passed in PR #301;
+see [the receipt](music-session-delivery.md). Fixtures execute actual functions
 with deterministic transport/probe completion; they do not establish audible
 playback. No physical commands or production failure injection were used.
 Background Music configuration writes and coherent status/probe-cache snapshots
