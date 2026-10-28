@@ -12,7 +12,7 @@
   }
   function set(card,op,enabled,label,title){
     const b=card.querySelector(`button[data-v2-action="${op}"]`);if(!b)return;
-    b.disabled=!enabled;if(label&&b.textContent!==label)b.textContent=label;if(b.title!==(title||""))b.title=title||"";
+    setDeviceControlDisabled(b,!enabled);if(label&&b.textContent!==label)b.textContent=label;if(b.title!==(title||""))b.title=title||"";
   }
   function badge(name,on,detail){const row=document.createElement("div"),strong=document.createElement("strong");strong.textContent=name;row.append(strong,`: ${on?"Available":"Unavailable"}${detail?` · ${String(detail)}`:""}`);return row;}
   function render(card,s){

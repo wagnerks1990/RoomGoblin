@@ -295,6 +295,123 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(len(pending), 2)
         self.evidence(page, errors, 'android-editor-mobile-focus')
 
+    def test_android_command_ownership_survives_refresh_across_adb_and_agent_controls(self):
+        for selector, endpoint in (('[data-action="wake"]', '/action'), ('[data-v2-action="wake"]', '/agent/v2/action')):
+            with self.subTest(selector=selector):
+                pending = []
+                devices = [DEVICE, {**DEVICE, 'id': 'second-tv'}]
+                def transport(route, target):
+                    if target == '/api/v1/maintenance/android/status':
+                        route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': devices, 'profiles': []})
+                        return True
+                    if target.endswith('/agent/v2/capabilities'):
+                        route.fulfill(json={'ok': True, 'capabilities': {'capabilities': {'globalNavigation': {'available': False}}}})
+                        return True
+                    if route.request.method == 'POST' and target.endswith('/action'):
+                        pending.append(route)
+                        return True
+                    return False
+                page, errors = self.page('/managed-displays/', transport=transport)
+                page.clock.install()
+                first = page.locator('#devices [data-id="fixture-tv"]')
+                if 'v2' in selector:
+                    first.locator('.agent-v2-panel > summary').click()
+                with page.expect_request('**/fixture-tv' + endpoint):
+                    first.locator(selector).click()
+                with page.expect_request('**/android/status'):
+                    page.locator('#refresh').click()
+                page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] .device-message').textContent.includes('in progress')")
+                for control in ('[data-action="wake"]', '[data-v2-action="wake"]', '[data-device-admin-remove]', '[data-lifecycle-action="remove"]'):
+                    self.assertTrue(first.locator(control).is_disabled())
+                first.locator('[data-action="wake"]').dispatch_event('click')
+                first.locator('[data-v2-action="wake"]').dispatch_event('click')
+                self.assertEqual(len(pending), 1)
+                with page.expect_request('**/second-tv/action'):
+                    page.locator('[data-id="second-tv"] [data-action="wake"]').click()
+                pending[1].fulfill(json={'ok': True})
+                pending[0].fulfill(json={'ok': True})
+                page.wait_for_function("!document.querySelector('[data-id=\"fixture-tv\"] [data-action=wake]').disabled")
+                page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] [data-v2-action=home]').title === 'Requires Accessibility approval.'")
+                self.assertTrue(first.locator('[data-v2-action="home"]').is_disabled())
+                self.assertEqual(len(pending), 2)
+                self.assertFalse(errors, errors)
+
+    def test_android_command_device_admin_failure_releases_owner_without_repeating_confirmation(self):
+        pending, dialogs = [], []
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [DEVICE], 'profiles': []})
+                return True
+            if target.endswith('/device-admin/deactivate'):
+                pending.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        def answer(dialog):
+            dialogs.append((dialog.type, dialog.message))
+            dialog.accept() if dialog.type == 'confirm' else dialog.dismiss()
+        page.on('dialog', answer)
+        page.locator('.agent-v2-panel > summary').click()
+        with page.expect_request('**/device-admin/deactivate'):
+            page.locator('[data-device-admin-remove]').click()
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        self.assertTrue(page.locator('[data-device-admin-remove]').is_disabled())
+        page.locator('[data-device-admin-remove]').dispatch_event('click')
+        self.assertEqual(len([d for d in dialogs if d[0] == 'confirm']), 1)
+        pending[0].fulfill(status=503, json={'ok': False, 'error': 'Synthetic command rejection'})
+        page.wait_for_function("!document.querySelector('[data-device-admin-remove]').disabled")
+        self.assertIn('Synthetic command rejection', page.locator('.device-message').inner_text())
+        with page.expect_request('**/device-admin/deactivate'):
+            page.locator('[data-device-admin-remove]').click()
+        pending[1].fulfill(json={'ok': True})
+        page.wait_for_function("!document.querySelector('[data-device-admin-remove]').disabled")
+        self.assertEqual(len(pending), 2)
+        self.assertFalse(errors, errors)
+
+    def test_android_command_install_owner_preserves_legacy_and_device_admin_confirmations(self):
+        writes, pending, dialogs = [], [], []
+        def transport(route, target):
+            if target == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [DEVICE], 'profiles': []})
+                return True
+            if target == '/api/v1/maintenance/android/agent/artifact':
+                route.fulfill(json={'artifact': {'available': True, 'versionName': 'fixture-version'}})
+                return True
+            if target.endswith('/agent/artifact/install'):
+                writes.append(route.request.post_data_json)
+                if len(writes) == 1:
+                    route.fulfill(status=409, json={'ok': False, 'code': 'legacy_package_reinstall_required'})
+                else:
+                    pending.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        page.remove_listener('dialog', page._fixture_dialog_handler)
+        def answer(dialog):
+            dialogs.append(dialog.message)
+            dialog.accept() if dialog.type == 'confirm' else dialog.dismiss()
+        page.on('dialog', answer)
+        page.locator('details[data-disclosure="device-tools"] > summary').click()
+        page.locator('[data-op="install"]').click()
+        page.wait_for_function("document.querySelector('[data-op=install]').disabled")
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual([v['replaceExisting'] for v in writes], [False, True])
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        self.assertTrue(page.locator('[data-op="install"]').is_disabled())
+        page.locator('[data-op="install"]').dispatch_event('click')
+        pending[0].fulfill(status=409, json={'ok': False, 'code': 'device_admin_confirmation_required'})
+        page.wait_for_function("!document.querySelector('[data-op=install]').disabled")
+        self.assertIn('Android Device Admin confirmation required', page.locator('#terminal').inner_text())
+        self.assertTrue(any('old Android app must be uninstalled' in text for text in dialogs))
+        self.assertTrue(any('Disable the old RoomGoblin' in text for text in dialogs))
+        self.assertEqual(len(writes), 2)
+        self.assertFalse(errors, errors)
+
     def test_android_inventory_serializes_refreshes_and_keeps_the_fresh_result(self):
         reads, pending = [], []
         def transport(route, target):

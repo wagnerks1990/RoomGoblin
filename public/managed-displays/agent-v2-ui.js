@@ -55,8 +55,8 @@
           const b=document.createElement("button");b.type="button";b.textContent=label;b.dataset.lifecycleAction=op;if(op==="remove")b.className="danger";lifecycleBox.appendChild(b);
         }
       }
-      panel.querySelectorAll("button[data-v2-action]").forEach(b=>{b.disabled=false;if(b.dataset.v2Action==="enable-device-admin")b.title="Opens Android's Device Administrator approval flow on the TV.";else if(b.dataset.v2Action==="enable-accessibility")b.title="Opens Android Accessibility settings so Home/Back/Recents can be granted.";else if(b.dataset.v2Action?.startsWith("sendspin-"))b.title="Native Music Assistant Sendspin playback runs inside the Android agent, independently of the WebView.";else b.title="Uses Device Agent v2; ADB is not required after initial v2 configuration."});
-      lifecycleBox.querySelectorAll("button").forEach(b=>{b.disabled=false;b.title="Changes only RoomGoblin enrollment state; it does not factory-reset the TV or uninstall the agent."});
+      panel.querySelectorAll("button[data-v2-action]").forEach(b=>{setDeviceControlDisabled(b,false);if(b.dataset.v2Action==="enable-device-admin")b.title="Opens Android's Device Administrator approval flow on the TV.";else if(b.dataset.v2Action==="enable-accessibility")b.title="Opens Android Accessibility settings so Home/Back/Recents can be granted.";else if(b.dataset.v2Action?.startsWith("sendspin-"))b.title="Native Music Assistant Sendspin playback runs inside the Android agent, independently of the WebView.";else b.title="Uses Device Agent v2; ADB is not required after initial v2 configuration."});
+      lifecycleBox.querySelectorAll("button").forEach(b=>{setDeviceControlDisabled(b,false);b.title="Changes only RoomGoblin enrollment state; it does not factory-reset the TV or uninstall the agent."});
       probe(card).catch(()=>{});
     }
   }
@@ -78,8 +78,8 @@
     const installButton=e.target.closest('button[data-op="install"]');
     if(installButton){
       e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-      const card=installButton.closest('.card[data-id]'),id=card?.dataset.id;if(!id)return;
-      installButton.disabled=true;
+      const card=installButton.closest('.card[data-id]'),id=card?.dataset.id;if(!id||deviceOperations.has(String(id)))return;
+      const operation=beginDeviceOperation(id,installButton.textContent);if(!operation)return;
       try{
         const artifact=await stagedArtifact(true);
         if(!artifact?.available)throw Error(artifact?.error||'No verified current Android agent APK is staged');
@@ -104,25 +104,25 @@
         window.alert(result.message||`Installed RoomGoblin Display Agent ${artifact.versionName}.`);
         await new Promise(resolve=>setTimeout(resolve,1200));
         await probe(card);
-      }catch(error){window.alert(`Android agent install: ${error.message}`)}finally{installButton.disabled=false}
+      }catch(error){deviceMessage(id,`Android agent install: ${error.message}`);window.alert(`Android agent install: ${error.message}`)}finally{endDeviceOperation(id,operation)}
       return;
     }
     const lifecycleButton=e.target.closest("button[data-lifecycle-action]");
     if(lifecycleButton){
       e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-      const card=lifecycleButton.closest(".card[data-id]"),id=card?.dataset.id;if(!id)return;
+      const card=lifecycleButton.closest(".card[data-id]"),id=card?.dataset.id;if(!id||deviceOperations.has(String(id)))return;
       const op=lifecycleButton.dataset.lifecycleAction;
       if(op==="remove"&&!window.confirm("Remove this managed display from RoomGoblin? This removes the Hub enrollment only. It will not uninstall the Android app, factory-reset the TV, or delete other RoomGoblin data."))return;
       if(op==="disable"&&!window.confirm("Disable this enrollment? RoomGoblin policy automation will ignore it until re-enabled."))return;
-      lifecycleButton.disabled=true;
+      const operation=beginDeviceOperation(id,lifecycleButton.textContent);if(!operation)return;
       try{const j=await maintenanceCall(id,"/lifecycle",{method:"POST",body:JSON.stringify({action:op})});terminal(`Managed display lifecycle: ${op}`,j);if(op==="remove")card.remove();else window.location.reload()}
-      catch(err){window.alert(`Managed display lifecycle: ${err.message}`)}finally{lifecycleButton.disabled=false}
+      catch(err){deviceMessage(id,`Managed display lifecycle: ${err.message}`);window.alert(`Managed display lifecycle: ${err.message}`)}finally{endDeviceOperation(id,operation)}
       return;
     }
     const b=e.target.closest("button[data-v2-action]");if(!b)return;
     e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-    const card=b.closest(".card[data-id]"),id=card?.dataset.id;if(!id)return;
-    b.disabled=true;
+    const card=b.closest(".card[data-id]"),id=card?.dataset.id;if(!id||deviceOperations.has(String(id)))return;
+    const operation=beginDeviceOperation(id,b.textContent);if(!operation)return;
     try{
       const op=b.dataset.v2Action;
       if(op==="configure"){
@@ -151,7 +151,7 @@
         const j=await call(id,"/action",{method:"POST",body:JSON.stringify({action:op})});terminal(`Device Agent v2 action: ${op}`,j.result);
       }
       await probe(card);
-    }catch(err){window.alert(`Device Agent v2: ${err.message}`)}finally{b.disabled=false}
+    }catch(err){deviceMessage(id,`Device Agent v2: ${err.message}`);window.alert(`Device Agent v2: ${err.message}`)}finally{endDeviceOperation(id,operation)}
   },true);
   // Inventory rendering replaces cards directly under #devices. Watching all
   // descendants creates a feedback loop because this decorator and the capability
