@@ -4,6 +4,13 @@ RoomGoblin includes a native Windows service implementation of the Lab Agent und
 
 ## Architecture
 
+Allowed command child processes are stopped on caller cancellation as well as
+deadline expiry. Caller cancellation remains cancellation; a deadline reports a
+timeout. Requests cancelled before launch do not start a process. The Windows
+Validate job compiles the actual process helper with isolated process fixtures
+using `python tools/test-native-command-process.py` on .NET 8; it does not install
+or start the agent service. Enrollment and the command allowlist are unchanged.
+
 The native package contains four self-contained `win-x64` executables:
 
 - `RoomGoblinAgent.exe` — Windows service running as `LocalSystem`. It maintains the outbound WebSocket connection, sends hello/heartbeat telemetry, dispatches constrained commands, collects browser history, and coordinates updates.

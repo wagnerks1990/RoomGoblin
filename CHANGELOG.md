@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Stop owned native Windows command processes on caller cancellation, preserve
+  timeout/cancellation outcomes, and reject already-cancelled launches.
+
 - Preserve current AI-alert filters and closed-view privacy, contain pending
   action failures, and suspend Windows screenshot requests in hidden views.
 

@@ -1,5 +1,14 @@
 # RoomGoblin modernization audit
 
+Reviewed Windows monitoring is pushed as PR #318 head `6dda633`, with 59 new
+Node regressions, 11 browser cases, 2,149 Linux passes, two root-only skips, 23
+Host Recovery passes and 103 browser cases per engine. Both review findings are
+resolved after their repairs; fresh CI precedes merge. The separate
+[native cancellation repair](windows-command-cancellation.md) passes six isolated
+local process cases and adds equivalent .NET 8 coverage to the Windows CI job.
+Its full Linux run passes 2,149 tests with two root-only skips, all 23 Host
+Recovery tests and syntax/controller checks. Fresh CI and delivery remain pending.
+
 PR #317 is [deployed and verified](veyon-reliability-delivery.md). PR #318's
 Windows monitoring review findings are repaired locally with three additional
 regressions. The [AI-alert and hidden-capture follow-up](windows-alert-ownership.md)

@@ -17,6 +17,12 @@ the existing required `windows-agent` job after its single locked build. Artifac
 retention is bounded to 14 days. The obsolete branch-patching workflow and its two
 source-rewriting helpers have been retired; source changes belong in reviewed PRs.
 
+Before packaging, the Windows job also runs
+`python tools/test-native-command-process.py` on .NET 8. It compiles the actual
+native process helper with six isolated child-process fixtures covering success,
+failure detail, pre-cancelled admission, cancellation, deadlines and descendants.
+It does not install or start the RoomGoblin agent service.
+
 ## Conservative documentation-only PR selection
 
 `tools/ci-scope.py` skips expensive image, native/Android build and browser steps

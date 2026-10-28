@@ -51,6 +51,7 @@ internal sealed partial class AgentWorker
         TimeSpan timeout,
         CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
@@ -88,7 +89,6 @@ internal sealed partial class AgentWorker
                 timeoutCts.Token);
         }
         catch (OperationCanceledException)
-            when (!ct.IsCancellationRequested)
         {
             try
             {
@@ -99,6 +99,7 @@ internal sealed partial class AgentWorker
             {
             }
 
+            ct.ThrowIfCancellationRequested();
             throw new TimeoutException(
                 $"{Path.GetFileName(fileName)} timed out after {(int)timeout.TotalSeconds} seconds.");
         }
