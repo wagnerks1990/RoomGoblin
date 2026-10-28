@@ -45,8 +45,8 @@ image pair, rather than relying on the unchanged alpha.85 version text.
 
 [Diagnostics PR #342](diagnostics-delivery.md) is the last standalone verified
 deployment. The remaining retention, publication, request and documentation
-changes use one final backed-up update. The pull request that merges this final
-audit records its current CI and deployment status and, after acceptance, the
+changes use one final backed-up update. [PR #346](https://github.com/wagnerks1990/RoomGoblin/pull/346)
+records its current CI and deployment status and, after acceptance, the
 exact commit, backup checksum and rollback identity. A merged source commit
 alone is not a claim of production delivery.
 

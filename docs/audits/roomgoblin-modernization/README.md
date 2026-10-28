@@ -13,8 +13,10 @@ The last standalone verified deployment is alpha.85 diagnostics PR #342,
 [publication retries](publication-candidate-retry.md) in PR #344, each after all
 14 checks passed. [Request deadlines](browser-request-deadlines.md) merged in
 PR #345 after all 14 checks passed. The remaining changes use one final
-deployment; [final integration](final-integration.md) defines its qualification
-and the separate deployment record. This documentation batch is still in review.
+deployment; [final integration](final-integration.md) defines its qualification.
+[PR #346](https://github.com/wagnerks1990/RoomGoblin/pull/346) is the current
+record for final CI, exact image publication and backed-up production acceptance.
+Its delivery receipt supersedes the pre-deployment states below once verified.
 
 "Delivered" below means the documented fixes passed their recorded checks and
 backed-up delivery. It does not assert a line-by-line audit of every repository
