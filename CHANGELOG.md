@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Save Music Assistant connection settings and its optional encrypted token
+  atomically, retaining the prior connection when persistence fails.
+
 - Keep late Background Music control responses, probes and recovery errors from
   overwriting a newer managed session or its playback intent.
 

@@ -166,7 +166,10 @@ rejected. The queue response projects at most 50 safe metadata rows and omits
 stream details/credentials. Classroom control remains required for music;
 connection writes retain administrator authorization. Polling and mutations use
 the existing distinct appliance-wide Music Assistant rate budgets, registered
-directly before authorization on each route, and writer freeze. Audit entries contain command names, not playback URI payloads.
+directly before authorization on each route, and writer freeze. Connection
+settings and a supplied token commit together; a failed save retains the prior
+connection identity. An omitted or blank token retains the stored secret.
+Audit entries contain command names, not playback URI payloads.
 
 ## Validation and deployment
 

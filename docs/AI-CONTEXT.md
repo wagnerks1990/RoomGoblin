@@ -707,6 +707,11 @@ absent override must never become Unix epoch or restart an elapsed countdown.
 
 ## Background Music Studio development
 
+Music Assistant connection metadata and its optional encrypted token are one
+SQLite transaction. Reset the persistent connection only after commit; failed
+saves leave the prior identity active. Omitted or blank tokens retain the stored
+secret, and browser responses never contain it.
+
 Background Music control completions, recovery errors and player probes must
 still own the session generation before updating shared runtime. Pause/Stop also
 retain their effective player. Recheck current priority after awaited probes;
