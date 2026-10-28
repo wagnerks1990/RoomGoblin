@@ -531,6 +531,105 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertIn('Networking laboratory', page.locator('#targets').inner_text())
         self.evidence(page, errors, 'studio-populated-media-390')
 
+    def test_upload_cancel_reports_saved_media_in_both_controllers(self):
+        for kind in ('app', 'display'):
+            with self.subTest(controller=kind):
+                reads = []
+                def transport(req, target):
+                    if target == '/api/v1/media':
+                        reads.append(True)
+                        req.fulfill(json={'files': []})
+                        return True
+                    if target == '/api/v1/media/uploads':
+                        req.fulfill(json={'upload': {'id': 'fixture-upload', 'chunkBytes': 8,
+                                                    'totalChunks': 1, 'received': [0]}})
+                        return True
+                    if target == '/api/v1/media/uploads/fixture-upload/complete':
+                        req.fulfill(status=503, json={'error': 'Completion reply unavailable'})
+                        return True
+                    if target == '/api/v1/media/uploads/fixture-upload' and req.request.method == 'DELETE':
+                        req.fulfill(json={'ok': True, 'completed': True,
+                                          'file': {'storedName': 'saved.pdf', 'url': '/media/saved.pdf'}})
+                        return True
+                    return False
+                page, errors = self.page('/controller/' if kind == 'app' else '/controller/display.html', transport=transport)
+                if kind == 'app':
+                    page.evaluate("showPage('media')")
+                    page.locator('#mediaFile').set_input_files({'name': 'lesson.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.7'})
+                    page.locator('#mediaUploadForm button[type=submit]').click()
+                    status, cancel = '#uploadState', '#mediaUploadCancel'
+                else:
+                    page.locator('button[data-work="media"]').click()
+                    page.locator('#upload').set_input_files({'name': 'lesson.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.7'})
+                    page.get_by_role('button', name='Upload / Resume', exact=True).click()
+                    status, cancel = '#uploadStatus', '#uploadCancel'
+                page.wait_for_function('(id) => document.querySelector(id).textContent.includes("Completion reply unavailable")', arg=status)
+                before = len(reads)
+                if kind == 'display':
+                    page.get_by_text('Media URL & playback options', exact=True).click()
+                    page.locator('#mediaUrl').fill('/media/manual-selection.pdf')
+                page.locator(cancel).click()
+                page.wait_for_function('(id) => document.querySelector(id).textContent.includes("Upload already saved")', arg=status)
+                page.wait_for_timeout(100)
+                self.assertGreater(len(reads), before)
+                if kind == 'display':
+                    self.assertEqual(page.locator('#mediaUrl').input_value(), '/media/manual-selection.pdf')
+                self.assertFalse(page.locator(cancel).is_visible())
+                self.assertFalse(errors, errors)
+
+    def test_media_cards_dispatch_documents_to_selected_receivers(self):
+        devices = {name: {'name': name, 'enabled': True} for name in ('tv1', 'tv2')}
+        files = [{'storedName': 'lesson.pdf', 'originalName': 'Lesson PDF', 'type': 'pdf',
+                  'url': '/media/lesson.pdf', 'size': 1024},
+                 {'storedName': 'notes.docx', 'originalName': 'Lesson notes', 'type': 'document',
+                  'url': '/media/notes.docx', 'size': 2048}]
+        sent = []
+        def transport(req, target):
+            if target.startswith('/api/v1/media/') and target.endswith('/display'):
+                sent.append((target, req.request.post_data_json))
+                if target.endswith('notes.docx/display'):
+                    req.fulfill(status=409, json={'error': 'Document conversion is not ready'})
+                else:
+                    req.fulfill(json={'ok': True})
+                return True
+            return False
+        page, errors = self.page('/controller/display.html', devices=devices, transport=transport,
+                                 overrides={'/api/v1/media': {'files': files},
+                                            '/api/v1/devices': {'devices': devices, 'groups': {}, 'status': {}}})
+        page.locator('#targets input').first.wait_for()
+        for checkbox in page.locator('#targets input').all():
+            checkbox.check()
+        page.locator('button[data-work="media"]').click()
+        page.locator('#mediaGrid .mediaCard').first.get_by_role('button', name='Show', exact=True).click()
+        page.wait_for_function("document.getElementById('resultSummary').textContent.includes('sent to tv1, tv2')")
+        self.assertEqual(sent[0][0], '/api/v1/media/lesson.pdf/display')
+        self.assertEqual(sent[0][1]['target'], ['tv1', 'tv2'])
+        self.assertTrue(sent[0][1]['localDirect'])
+        page.locator('#mediaGrid .mediaCard').nth(1).get_by_role('button', name='Show', exact=True).click()
+        page.wait_for_function("document.getElementById('resultSummary').textContent.includes('conversion is not ready')")
+        self.assertEqual(sent[1][0], '/api/v1/media/notes.docx/display')
+        self.assertFalse(errors, errors)
+
+    def test_display_library_newest_failure_remains_visible(self):
+        page, errors = self.page('/controller/display.html')
+        page.locator('button[data-work="media"]').click()
+        page.evaluate('''() => {
+          window.libraryReads = [];
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => String(url) === '/api/v1/media'
+            ? new Promise((resolve, reject) => libraryReads.push({resolve, reject}))
+            : originalFetch(url, options);
+          window.oldLibraryRead = loadMedia(); window.newLibraryRead = loadMedia();
+          libraryReads[1].reject(new Error('Current library unavailable'));
+        }''')
+        page.wait_for_function("document.getElementById('mediaGrid').textContent.includes('Current library unavailable')")
+        page.evaluate('''async () => {
+          libraryReads[0].resolve(new Response(JSON.stringify({files:[{storedName:'old.pdf', type:'pdf', size:8}]})));
+          await oldLibraryRead; await newLibraryRead;
+        }''')
+        self.assertIn('Current library unavailable', page.locator('#mediaGrid').inner_text())
+        self.assertFalse(errors, errors)
+
     def test_light_branding_operator_pages(self):
         theme = {'mode': 'light', 'primary': '#0F766E', 'accent': '#15803D',
                  'background': '#F8FAFC', 'surface': '#FFFFFF', 'text': '#1E293B'}

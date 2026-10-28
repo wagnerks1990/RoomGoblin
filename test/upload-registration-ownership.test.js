@@ -2,7 +2,7 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),os=require("node:os"),path=require("node:path"),crypto=require("node:crypto"),vm=require("node:vm"),{Readable}=require("node:stream");
 const {ResumableUploadStore}=require("../src/resumable-upload");
 const bytes=Buffer.from("%PDF-1.7"),digest=crypto.createHash("sha256").update(bytes).digest("hex");
-const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8").replace(/\r\n/g,"\n"),a=source.indexOf('app.post("/api/v1/media/uploads/:id/complete"'),b=source.indexOf('\napp.delete("/api/v1/media/uploads/:id"',a);
+const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8").replace(/\r\n/g,"\n"),a=source.indexOf('app.post("/api/v1/media/uploads/:id/complete"'),b=source.indexOf('\nconst mediaUploadCancelLimit=',a);
 assert.ok(a>0&&b>a);
 function gate(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return{promise,resolve,reject}}
 async function fixture(t){

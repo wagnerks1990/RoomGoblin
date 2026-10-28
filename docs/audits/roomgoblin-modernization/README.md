@@ -1,25 +1,33 @@
 # RoomGoblin modernization audit
 
-Status: **PR #306 delivered; PR #307 merged and publishing; completion receipts qualified; conversion ownership under validation**.
+Status: **PR #307 delivered; PR #308 merged and publishing; controller library/cancellation fixes qualified**.
 
-PR #306 is deployed and verified at `55055f7`; see its
-[delivery receipt](media-ownership-delivery.md).
+PR #307 is deployed and verified at `f3e8624`; see its
+[delivery receipt](upload-recovery-delivery.md).
 Completion receipts have [23 new regressions](upload-completion-receipts.md).
 Group 8 conversion/deletion ownership (RG-MEDIA-007) has
 [30 new regressions](media-library-ownership.md). Document media-card dispatch
-(RG-MEDIA-008) remains queued for its fix.
+(RG-MEDIA-008) and shared refresh ownership (RG-MEDIA-010) have
+[26 new Node regressions](media-library-controller.md), plus a final regression
+preserving the legacy empty-target default. Completed-upload cancellation feedback
+(RG-MEDIA-009) adds [20 regressions](upload-cancellation-outcome.md). Combined
+qualification passes 1,819 Linux tests, two root-only skips and all 23 Host
+Recovery tests; all 73 workspace cases pass in each browser. PR #308 merged
+as `43b4d83` after all 14 checks and resolved reviews. Exact images and its
+backed-up delivery remain pending. Presentation selection, dispatch, folder
+deletion, target choices and timing-draft defects are reproduced and remain open.
 
 The upload recovery batch is integrated on merged `55055f7`. Before this
 evidence note and trailing blank-line cleanup, its tree was byte-identical to
 qualified `3dae4e7`. Qualification includes 1,713 Linux passes, zero failures,
 two root-only skips, 23 Host Recovery passes and 70 workspace cases in each
-browser. Its 39 new cases cover browser and backend ownership. Checked delivery
-remains pending. Lost-completion-response replay is separately reproduced and open.
+browser. Its original 39 new cases cover browser and backend ownership. Checked
+delivery is now verified; lost-completion-response replay is in PR #308.
 
 PR #307's CodeQL gate found missing completion rate limiting. The repair adds
 five regressions and passes 1,718 Linux tests with zero failures, two root-only
 skips and all 23 Host Recovery tests. Completion limits exclude rejected callers
-and do not limit chunk transfer; fresh required CI remains pending.
+and do not limit chunk transfer; fresh required CI and appliance delivery passed.
 
 PR #305 is deployed and verified at `daa378f`; see its
 [delivery receipt](media-reconnect-delivery.md).
@@ -319,6 +327,19 @@ their ordering may change when the current unit's evidence warrants it.
 | 15 | Backup/recovery; updates/deployment/rollback | Cooperative snapshots, immutable images, durable transactions |
 | 16 | Performance/resources; tests/CI/releases | Measured resource costs and independent release gates |
 | 17 | Documentation/AI/developer experience; final integration | Evidence reconciliation and cross-system acceptance |
+
+## Controller media and cancellation integration
+
+Document-card dispatch, shared library refresh and saved-upload cancellation
+outcomes are integrated on merged `main` `43b4d83`. Before this evidence note,
+the full tree was byte-identical to qualified `3150723`. Final qualification
+passes 1,819 Linux tests, zero failures and two root-only skips (1,821 total),
+plus all 23 Host Recovery tests and Node/controller/Python/Bash checks. All
+182 focused integration cases pass with two root-only skips (184 total), and
+all 73 workspace cases pass in Chromium and Firefox. These changes add 47 Node
+regressions and three browser cases. Checked PR/main delivery remains pending.
+PR #308 is merged; its exact image publication and appliance update are pending.
+The presentation review and later roadmap groups remain active.
 
 ## Decisions
 

@@ -163,7 +163,7 @@ class ResumableUploadStore{
       if(replay)this.finishReceipt(meta);else fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
     }catch(err){out.destroy();fs.rmSync(tmp,{force:true});if(published&&discard)await discard(meta,destination);throw err}
   }
-  async cancel(id,owner){return this.locked(String(id),()=>{this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true})})}
+  async cancel(id,owner){return this.locked(String(id),()=>{const meta=this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true});return meta})}
   // Accepted writers (including queued assembly/cancel work) own their session
   // until the final lock settles. Expiry must never unlink their active inputs.
   cleanup(now=Date.now()){let removed=0;for(const name of fs.readdirSync(this.root)){if(!SESSION_ID.test(name)||this.locks.has(name))continue;try{const meta=this.read(name);if(now-Date.parse(meta.updatedAt)>this.ttlMs){fs.rmSync(this.dir(name),{recursive:true,force:true});removed++}}catch{try{const st=fs.statSync(path.join(this.root,name));if(now-st.mtimeMs>this.ttlMs){fs.rmSync(path.join(this.root,name),{recursive:true,force:true});removed++}}catch{}}}return removed}

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- Report when upload completion wins cancellation, retain saved media, and
+  show an unknown outcome when its receipt is unavailable instead of claiming
+  that a saved file was cancelled.
+
+- Route library documents through their PDF viewer, preserve multiple selected
+  receivers and playback options, and prevent stale library refreshes from
+  overwriting newer controller or scheduler results.
+
 - Coordinate media conversion, deletion and upload cleanup by file identity;
   retain deletion markers so interrupted completion cannot recreate deleted media.
 
