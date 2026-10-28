@@ -8,6 +8,9 @@
 - Retain confirmed Ubuntu screen mappings until acknowledgment and persist
   uncertain receiver targets so announcement protection survives restart.
 
+- Preserve newer Android display editor drafts and feedback while saves settle;
+  block duplicate saves across reopening and return focus to the current card.
+
 - Reserve existing Ubuntu computers during repair probing and honor announcement
   locks on old/new receivers before installation and final configuration.
 

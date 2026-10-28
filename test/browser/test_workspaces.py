@@ -214,6 +214,78 @@ class WorkspaceBrowserTests(unittest.TestCase):
                 self.assertEqual(len(writes), 1)
                 self.assertFalse(errors, errors)
 
+    def test_android_editor_completion_preserves_newer_drafts_and_other_editors(self):
+        for target in ('fixture-tv', 'second-tv'):
+            with self.subTest(target=target):
+                devices = [DEVICE, {**DEVICE, 'id': 'second-tv', 'name': 'Second display'}]
+                pending = []
+                def transport(route, path):
+                    if path == '/api/v1/maintenance/android/status':
+                        route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': devices, 'profiles': []})
+                        return True
+                    if path == '/api/v1/maintenance/android/devices/fixture-tv' and route.request.method == 'PUT':
+                        pending.append(route)
+                        return True
+                    return False
+                page, errors = self.page('/managed-displays/', transport=transport)
+                page.clock.install()
+                page.locator('#devices [data-id="fixture-tv"] [data-op="edit"]').click()
+                page.locator('#editName').fill('Submitted name')
+                with page.expect_request('**/android/devices/fixture-tv'):
+                    page.locator('#editForm button[type="submit"]').click()
+                if target == 'second-tv':
+                    page.locator('#cancelEdit').click()
+                    page.locator('#devices [data-id="second-tv"] [data-op="edit"]').click()
+                page.locator('#editName').fill('Newer draft')
+                devices[0] = {**devices[0], 'name': 'Submitted name'}
+                pending[0].fulfill(json={'ok': True, 'device': devices[0]})
+                page.wait_for_function("document.querySelector('[data-id=\"fixture-tv\"] .device-message').textContent.includes('Changes saved')")
+                page.clock.fast_forward(500)
+                self.assertTrue(page.locator('#editDialog').is_visible())
+                self.assertEqual(page.locator('#editId').input_value(), target)
+                self.assertEqual(page.locator('#editName').input_value(), 'Newer draft')
+                self.assertEqual(len(pending), 1)
+                if target == 'fixture-tv':
+                    self.assertIn('newer edits remain unsaved', page.locator('#editMsg').inner_text())
+                else:
+                    self.assertEqual(page.locator('#editMsg').inner_text(), '')
+                self.assertFalse(errors, errors)
+
+    def test_android_editor_pending_save_survives_refresh_reopening_and_rejection(self):
+        pending = []
+        def transport(route, path):
+            if path == '/api/v1/maintenance/android/status':
+                route.fulfill(json={'ok': True, 'adbAvailable': True, 'devices': [DEVICE], 'profiles': []})
+                return True
+            if path == '/api/v1/maintenance/android/devices/fixture-tv' and route.request.method == 'PUT':
+                pending.append(route)
+                return True
+            return False
+        page, errors = self.page('/managed-displays/', 390, transport=transport)
+        page.locator('#devices [data-op="edit"]').click()
+        page.locator('#editName').fill('Submitted name')
+        with page.expect_request('**/android/devices/fixture-tv'):
+            page.locator('#editForm button[type="submit"]').click()
+        page.locator('#editForm').evaluate("form=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))")
+        page.locator('#cancelEdit').click()
+        with page.expect_request('**/android/status'):
+            page.locator('#refresh').click()
+        page.locator('#devices [data-op="edit"]').click()
+        self.assertTrue(page.locator('#editForm button[type="submit"]').is_disabled())
+        page.locator('#editName').fill('Reopened draft')
+        pending[0].fulfill(status=503, json={'ok': False, 'error': 'Synthetic save rejection'})
+        page.wait_for_function("!document.querySelector('#editForm button[type=submit]').disabled")
+        self.assertEqual(page.locator('#editName').input_value(), 'Reopened draft')
+        self.assertIn('Synthetic save rejection', page.locator('#devices .device-message').inner_text())
+        with page.expect_request('**/android/devices/fixture-tv'):
+            page.locator('#editForm button[type="submit"]').click()
+        pending[1].fulfill(json={'ok': True, 'device': DEVICE})
+        page.locator('#editDialog').wait_for(state='hidden')
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.evaluate('document.activeElement.dataset.op'), 'edit')
+        self.assertEqual(len(pending), 2)
+        self.evidence(page, errors, 'android-editor-mobile-focus')
+
     def test_ubuntu_old_inventory_cannot_replace_a_completed_metadata_save(self):
         before = {'id': 'fixture', 'name': 'Before edit', 'address': '10.0.0.8', 'port': 22,
                   'config': {'screens': []}, 'live': {'online': False}, 'state': 'offline'}

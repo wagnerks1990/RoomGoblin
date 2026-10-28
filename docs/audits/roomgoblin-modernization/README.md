@@ -1,15 +1,17 @@
 # RoomGoblin modernization audit
 
-PR #325 is deployed and verified at `312f753`; PR #324's
-[delivery](ubuntu-reliability-delivery.md) is also verified. PR #326 is undergoing
-an additional [screen-mapping review](ubuntu-screen-mapping-ownership.md) before
-merge. Nine baseline assertions reproduced confirmed-mapping and uncertain-target
-gaps. Combined qualification passes 2,261 Linux tests with two root-only skips,
-all 23 Host Recovery cases and syntax/controller/shell checks. Browser code
-remains qualified by 109 workspace cases per engine. The fix is entering fresh
-required CI. Android editor and preview work follows within Group 10.
+PR #325 is [deployed and verified](managed-display-outcomes-delivery.md) at
+`312f753`; [PR #324's delivery](ubuntu-reliability-delivery.md) is also verified.
+PR #326 includes the qualified [screen-mapping repair](ubuntu-screen-mapping-ownership.md)
+and is running fresh required CI. Its combined tree passes 2,261 Linux tests
+with two root-only skips, all 23 Host Recovery cases and 109 workspace cases
+per browser. The [Android editor fix](android-editor-ownership.md) separately
+passes nine source cases, 2,258 Linux tests with two root-only skips, all 23 Host
+Recovery cases and 111 workspace cases per browser. Screenshot lifetime has
+three reproduced failures; its candidate passes ten targeted cases and is
+entering browser qualification. Remaining Group 10 and roadmap work is open.
 
-Earlier qualification history follows.
+Earlier qualification history follows; current delivery status is above.
 PR #325 carries the [history outcome](ubuntu-history-outcomes.md) and
 [Android enrollment](android-enrollment-ownership.md) repairs. All 14 checks
 passed before its squash merge as `312f753`; exact publication and delivery

@@ -15,6 +15,15 @@ and editor context are unchanged. Rejected or incomplete replies retain ordinary
 fields and never repeat enrollment automatically. A failed inventory follow-up
 does not turn an accepted enrollment into a reported failure.
 
+## Editor request ownership
+
+Each Android display retains one pending metadata save across inventory redraws
+and editor reopening. Completion closes only the unchanged submitting editor;
+newer drafts and another display's editor remain intact. Save outcomes stay on
+the original display card, including failures after the editor closes. A failed
+follow-up read does not relabel an accepted save as failed. Closing returns focus
+to the current Edit button or the inventory search when that card is unavailable.
+
 ## ADB key-storage regression
 
 The maintenance container is intentionally hardened with a read-only root filesystem and all Linux capabilities dropped. Android `adb` still creates its persistent client identity beneath `$HOME/.android`. The Android integration points `HOME` and `ANDROID_USER_HOME` at `/managed/classroom-hub/data/android-tv`, so the effective key directory is `/managed/classroom-hub/data/android-tv/.android`.
