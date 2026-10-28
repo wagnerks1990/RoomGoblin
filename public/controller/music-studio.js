@@ -93,7 +93,7 @@
     }
     if(!items.length)parent.append(el("p",saved?"No favorites yet. Find music and save the sources you use most.":"No results. Try another title or station name.","muted"));permissions();
   }
-  window.searchMusicAssistant=async function(){const query=maSearch.value.trim();if(query.length<2){message("Enter at least two characters to search");return}const generation=++searchGeneration;maSearchResults.textContent="Searching music providers…";
+  window.searchMusicAssistant=async function(){const query=maSearch.value.trim(),generation=++searchGeneration;delete maSearchResults.dataset.key;if(query.length<2){maSearchResults.replaceChildren();message("Enter at least two characters to search");return}maSearchResults.textContent="Searching music providers…";
     try{const result=await maApi("music/search",{search_query:query,media_types:kind.value==="all"?["track","radio","album","playlist","artist"]:[kind.value],limit:20});if(generation!==searchGeneration)return;
       const rows=[];for(const [type,list]of Object.entries(result||{}))if(Array.isArray(list))for(const item of list.slice(0,20))if(item.uri)rows.push({uri:item.uri,name:item.name||"Music item",mediaType:item.media_type||type.replace(/s$/,""),detail:[type,Array.isArray(item.artists)?item.artists.map(a=>a.name).join(", "):item.artist?.name,item.album?.name].filter(Boolean).join(" · ")});cards(maSearchResults,rows);
     }catch(error){if(generation===searchGeneration)maSearchResults.textContent=error.message}
@@ -129,10 +129,10 @@
       const bridgeRows=Object.entries(status.bridgeStatus||{}),bridgeKey=JSON.stringify(bridgeRows.map(([id])=>id));
       if(maTvTargets.dataset.inventory!==bridgeKey){
         const prior=new Set([...maTvTargets.querySelectorAll('.maTvTarget:checked')].map(n=>n.value)),first=maTvTargets.dataset.inventory===undefined,attached=new Set(status.attachedTargets||[]);maTvTargets.replaceChildren();
-        for(const [id,state]of bridgeRows){const input=el("input");input.type="checkbox";input.className="maTvTarget";input.value=id;input.checked=first?attached.has(id):prior.has(id);label(maTvTargets,`${id} · ${state?.state||"detached"}`,input)}maTvTargets.dataset.inventory=bridgeKey;
+        for(const [id,state]of bridgeRows){const input=el("input");input.type="checkbox";input.className="maTvTarget";input.value=id;input.checked=first?attached.has(id):prior.has(id);label(maTvTargets,`${id} · ${state?.state||"detached"}${state?.audioRestoreUnconfirmed?" · Audio settings unconfirmed; reconnect the display to retry":""}`,input)}maTvTargets.dataset.inventory=bridgeKey;
       }
 
-      for(const [id,state]of bridgeRows){const input=[...maTvTargets.querySelectorAll("input")].find(n=>n.value===id);if(input?.parentElement.firstChild?.nodeType===3)input.parentElement.firstChild.textContent=`${id} · ${state?.state||"detached"}`}
+      for(const [id,state]of bridgeRows){const input=[...maTvTargets.querySelectorAll("input")].find(n=>n.value===id);if(input?.parentElement.firstChild?.nodeType===3)input.parentElement.firstChild.textContent=`${id} · ${state?.state||"detached"}${state?.audioRestoreUnconfirmed?" · Audio settings unconfirmed; reconnect the display to retry":""}`}
       renderBgmFavorites();renderMaPlayers();renderNow();
       if(selected==="listen"&&(!queue||Date.now()-lastQueueLoad>15000))loadQueue();
     }catch(error){if(generation===loadGeneration)message(error.message,true)}

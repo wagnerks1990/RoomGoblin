@@ -50,8 +50,9 @@ timer delay. The corrected baseline still fails all eight original cases.
 
 The supported native active-worktree suite passes 1,445 tests, zero failures and
 two root-only ownership skips (1,447 total), plus all 23 Host Recovery tests and
-Node/controller/Python/Bash checks. Required CI, checked integration, exact images
-and backed-up appliance delivery remain pending. Tests use deterministic transports;
+Node/controller/Python/Bash checks. Required CI, exact images and backed-up
+appliance delivery passed in PR #301; see [the receipt](music-session-delivery.md).
+Tests use deterministic transports;
 no production Music Assistant commands or failure injection were used. Background
 Music session reconciliation and continuing-announcement audio retries remain
 separate review.
