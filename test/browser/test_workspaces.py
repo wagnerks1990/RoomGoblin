@@ -787,17 +787,18 @@ class WorkspaceBrowserTests(unittest.TestCase):
         for _ in range(2):
             with page.expect_request('**/host-key'):
                 page.locator('#ubuntuGetFingerprint').click()
-        fingerprints[1].fulfill(json={'fingerprint': 'SHA256:' + 'B' * 43})
+        self.held_route(page, fingerprints, 1).fulfill(json={'fingerprint': 'SHA256:' + 'B' * 43})
         page.wait_for_function("document.getElementById('ubuntuFingerprint').value.includes('BBBB')")
         page.locator('#ubuntuHostVerified').check()
-        fingerprints[0].fulfill(json={'fingerprint': 'SHA256:' + 'A' * 43})
+        self.held_route(page, fingerprints).fulfill(json={'fingerprint': 'SHA256:' + 'A' * 43})
         with page.expect_request('**/probe'):
             page.locator('#ubuntuNext').click()
         page.locator('#ubuntuForm').evaluate("form=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))")
+        self.held_route(page, probes)
         self.assertEqual(len(probes), 1)
         self.assertEqual(page.locator('#ubuntuFingerprint').input_value(), 'SHA256:' + 'B' * 43)
         page.locator('#ubuntuAddress').fill('10.0.0.9')
-        probes[0].fulfill(json={'ok': True, 'hostname': 'Old computer', 'graphics': 'session-unavailable', 'outputs': []})
+        self.held_route(page, probes).fulfill(json={'ok': True, 'hostname': 'Old computer', 'graphics': 'session-unavailable', 'outputs': []})
         page.wait_for_function("document.getElementById('ubuntuMessage').textContent.includes('Connection details changed')")
         self.assertIn('1 · Connect', page.locator('#ubuntuStep').inner_text())
         self.assertFalse(page.locator('#ubuntuHostVerified').is_checked())
