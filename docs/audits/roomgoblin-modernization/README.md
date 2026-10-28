@@ -1,5 +1,18 @@
 # RoomGoblin modernization audit
 
+The connection deadline repair is qualified with five native cases, 2,169 Linux
+passes, two root-only skips and 23 Host Recovery passes. It joins PR #320's native
+output and transfer bounds, giving 24 isolated native process/transfer/connection
+cases across the batch. Browser sources remain at qualified `32416c9`; fresh CI
+is required for the combined head. Bootstrap/updater subprocess ownership remains
+under review. PR #319 exact publication and backed-up delivery are pending.
+
+PR #320 contains the qualified native output/transfer repair and awaits CI and
+PR #319's verified delivery. The [connection deadline](windows-connection-deadline.md)
+follow-up preserves configured primary/fallback order while bounding each
+handshake to 15 seconds. Its actual-source fixture covers five loopback cases;
+full qualification follows. The deployed baseline remains PR #318 `5e1af23`.
+
 PR #319 passed all 14 fresh checks and merged as `0f24c99`; exact main publication
 precedes its update. The native resource-bound repair passes 2,169 Linux tests,
 two root-only skips, 23 Host Recovery tests, nine native process cases and ten

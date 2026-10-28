@@ -11,6 +11,12 @@ Validate job compiles the actual process helper with isolated process fixtures
 using `python tools/test-native-command-process.py` on .NET 8; it does not install
 or start the agent service. Enrollment and the command allowlist are unchanged.
 
+Each configured WebSocket origin has a 15-second connection/handshake budget.
+A failed or timed-out origin is disposed before trying the next configured
+origin; service cancellation stops immediately and preserves the caller token.
+Healthy primary connections retain preference. Existing HTTPS validation,
+explicit LAN fallback policy, heartbeat and reconnect backoff remain unchanged.
+
 Command output is drained under the same cancellation/deadline as process exit,
 retaining at most 64 Ki characters from each stream for diagnostics. Error text
 remains capped at 2,048 characters. Waiting for an inherited output pipe cannot

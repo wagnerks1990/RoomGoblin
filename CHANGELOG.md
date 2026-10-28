@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Limit each native Windows WebSocket handshake to 15 seconds so a stalled
+  primary cannot indefinitely prevent the configured fallback connection.
+
 - Bound native Windows command output retention and keep cancellation/deadlines
   active through output reads and native update download bodies.
 

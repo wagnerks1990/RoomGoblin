@@ -26,6 +26,10 @@ also runs ten actual-client cases for valid/fallback packages, cancellation,
 the real 45-second body deadline, invalid lengths/hashes and staging cleanup.
 These tests do not install or start the RoomGoblin agent service; Windows trust
 verification is replaced only in the transfer fixture, after real SHA-256 checks.
+`python tools/test-native-connection.py` additionally exercises five actual-source
+loopback cases for primary preference, the real 15-second handshake deadline,
+caller/pre-cancelled admission and errors from all configured origins. It sends
+no enrollment credential and does not test certificate trust or the live Hub.
 
 ## Conservative documentation-only PR selection
 
