@@ -416,6 +416,66 @@ class WorkspaceBrowserTests(unittest.TestCase):
             self.assertGreaterEqual(values['toast'], 4.5, (mode, values))
             self.assertFalse(errors, errors)
 
+    def enrollment_owner_page(self):
+        page, errors = self.page('/controller/', overrides={
+            '/api/v1/admin/lab-agent-credentials': {'credentials': [], 'policy': {}}})
+        page.wait_for_function("window.AUTH_STATUS?.user?.role === 'admin'")
+        page.evaluate("showPage('lab'); revealControllerOutput('labEnrollmentId')")
+        page.evaluate("""() => {
+          window.enrollmentWrites=[];const original=window.fetch;
+          window.fetch=(url,options={}) => url.startsWith('/api/v1/admin/lab-agents/')&&url.endsWith('/enrollment')
+            ? new Promise(resolve=>enrollmentWrites.push({url,body:JSON.parse(options.body),resolve})) : original(url,options);
+          window.finishEnrollment=(index,id)=>enrollmentWrites[index].resolve(new Response(JSON.stringify({enrollment:{agentId:id,token:'synthetic-browser-enrollment',installerUrl:'https://example.test/install.ps1',expiresAt:'2030-01-01T00:00:00Z'}}),{status:201}));
+        }""")
+        return page, errors
+
+    def test_lab_enrollment_pending_request_preserves_drafts_and_clears_previous_package(self):
+        page, errors = self.enrollment_owner_page()
+        page.evaluate("labEnrollmentResult.innerHTML='Previous synthetic package';labEnrollmentResult.style.display='block'")
+        page.locator('#labEnrollmentId').fill('fixture-a')
+        page.locator('#labEnrollmentTtl').fill('20')
+        button = page.get_by_role('button', name='Create One-Time Installer', exact=True)
+        button.click()
+        page.wait_for_function('enrollmentWrites.length===1')
+        self.assertEqual(page.locator('#labEnrollmentResult').inner_html(), '')
+        page.locator('#labEnrollmentId').fill('fixture-b')
+        page.locator('#labEnrollmentTtl').fill('30')
+        button.click()
+        self.assertEqual(page.evaluate('enrollmentWrites.length'), 1)
+        self.assertIn('still pending', page.locator('#hubToast').inner_text())
+        page.evaluate("finishEnrollment(0,'fixture-a')")
+        page.wait_for_function("labEnrollmentResult.textContent.includes('native bootstrap for fixture-a')")
+        self.assertEqual(page.locator('#labEnrollmentId').input_value(), 'fixture-b')
+        self.assertEqual(page.locator('#labEnrollmentTtl').input_value(), '30')
+        self.assertEqual(page.evaluate('enrollmentWrites[0].body'), {'ttlMinutes': 20})
+        button.click()
+        page.wait_for_function('enrollmentWrites.length===2')
+        self.assertEqual(page.locator('#labEnrollmentResult').inner_html(), '')
+        page.evaluate("finishEnrollment(1,'fixture-b')")
+        page.wait_for_function("labEnrollmentResult.textContent.includes('native bootstrap for fixture-b')")
+        self.evidence(page, errors, 'lab-enrollment-request-owner')
+
+    def test_lab_enrollment_authorization_change_clears_packages_and_late_replies(self):
+        page, errors = self.enrollment_owner_page()
+        downloads = []
+        page.on('download', lambda download: downloads.append(download.suggested_filename))
+        page.locator('#labEnrollmentId').fill('fixture-a')
+        page.get_by_role('button', name='Create One-Time Installer', exact=True).click()
+        page.wait_for_function('enrollmentWrites.length===1')
+        page.evaluate("finishEnrollment(0,'fixture-a')")
+        page.locator('[data-native-enrollment-file]').wait_for()
+        page.evaluate("window.previousEnrollmentButton=document.querySelector('[data-native-enrollment-file]');applyAuthUi({authEnabled:true,user:null});previousEnrollmentButton.click()")
+        self.assertEqual(page.locator('#labEnrollmentResult').inner_html(), '')
+        self.assertFalse(downloads)
+        page.evaluate("applyAuthUi({authEnabled:true,user:{username:'replacement-fixture',displayName:'Replacement operator',role:'admin',capabilities:['*']}});showPage('lab');revealControllerOutput('labEnrollmentId')")
+        page.locator('#labEnrollmentId').fill('fixture-b')
+        page.get_by_role('button', name='Create One-Time Installer', exact=True).click()
+        page.wait_for_function('enrollmentWrites.length===2')
+        page.evaluate("async()=>{applyAuthUi({authEnabled:true,user:null});finishEnrollment(1,'fixture-b');await new Promise(r=>setTimeout(r,25))}")
+        self.assertEqual(page.locator('#labEnrollmentResult').inner_html(), '')
+        self.assertFalse(downloads)
+        self.evidence(page, errors, 'lab-enrollment-cleared-auth')
+
     def test_controller_feature_modules_keep_enrollment_and_update_bindings(self):
         writes = []
         enrollment = {'agentId': 'fixture-pc', 'token': "fixture-'opaque-token",

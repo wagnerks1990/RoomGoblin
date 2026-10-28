@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep one Windows enrollment request pending at a time and clear generated
+  packages on authentication changes or a new issuance attempt.
+
 - Stop owned native Windows command processes on caller cancellation, preserve
   timeout/cancellation outcomes, and reject already-cancelled launches.
 

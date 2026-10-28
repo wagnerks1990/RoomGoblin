@@ -1,5 +1,12 @@
 # RoomGoblin modernization audit
 
+PR #318 passed all 14 fresh checks with resolved reviews and merged as `5e1af23`;
+exact publication and its backed-up update are pending. The separate
+[enrollment ownership repair](windows-enrollment-ownership.md) passes 16 new
+Node regressions, 21 focused cases, 2,165 Linux tests with two root-only skips,
+23 Host Recovery tests and 105 browser cases in each engine. Integration with
+the qualified native cancellation repair and fresh CI follow.
+
 Reviewed Windows monitoring is pushed as PR #318 head `6dda633`, with 59 new
 Node regressions, 11 browser cases, 2,149 Linux passes, two root-only skips, 23
 Host Recovery passes and 103 browser cases per engine. Both review findings are
