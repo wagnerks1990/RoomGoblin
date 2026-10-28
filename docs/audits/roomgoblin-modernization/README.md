@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+The [lighting registry save repair](lighting-registry-persistence.md) fixes three
+reproduced failed/invalid-save mutations and a group-name restart defect. All
+18 new regressions pass; full qualification passes 1,954 Linux tests, two
+root-only skips and all 23 Host Recovery tests. Configuration ordering is in
+PR #313 with all 14 required checks passing; delivery follows PR #312.
+
 The separate [lighting configuration repair](lighting-configuration-ordering.md)
 reproduces three save/read races and passes 17 new Node cases plus two new
 browser cases. Final qualification passes 1,936 Linux tests, two root-only skips

@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Persist lighting metadata and discovery preferences before changing live
+  settings, and preserve group names as ordinary data during registry rebuilds.
+
 - Keep lighting configuration saves in accepted order and prevent pre-save
   inventory responses from restoring older settings or removed devices.
 

@@ -307,8 +307,9 @@ if(!goveeDiscovery || typeof goveeDiscovery!=="object")goveeDiscovery={version:1
 if(!goveeDiscovery.devices || typeof goveeDiscovery.devices!=="object")goveeDiscovery.devices={};
 if(goveeDiscovery.autoAdd===undefined)goveeDiscovery.autoAdd=true;
 
-function persistGoveeDiscovery(){
-  persistJson(GOVEE_DISCOVERY_FILE,goveeDiscovery);
+function persistGoveeDiscovery(next=goveeDiscovery){
+  persistJson(GOVEE_DISCOVERY_FILE,next);
+  goveeDiscovery=next;
 }
 function goveeAliasForId(deviceId){
   const id=normalizeGoveePhysicalId(deviceId);
@@ -435,7 +436,7 @@ function applyGoveeRegistryEntry(entry){
   for(const group of Array.isArray(entry.groups)?entry.groups:[]){
     const gid=cleanId(group);
     if(!gid||gid==="all")continue;
-    if(!Array.isArray(goveeGroups[gid]))goveeGroups[gid]=[];
+    if(!Object.hasOwn(goveeGroups,gid)||!Array.isArray(goveeGroups[gid]))Object.defineProperty(goveeGroups,gid,{value:[],writable:true,enumerable:true,configurable:true});
     if(!goveeGroups[gid].includes(alias))goveeGroups[gid].push(alias);
   }
 }
@@ -520,33 +521,34 @@ function goveeDeviceOnline(deviceId){
 function updateGoveeDevice(alias,input={}){
   alias=cleanId(alias);
   const d=goveeDevices[alias];
-  if(!d)throw new Error("Unknown Govee device");
-  let entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===String(d.id));
-  if(!entry){
-    entry={id:String(d.id),alias,name:d.name||alias,sku:d.sku||"",ip:d.ip||"",groups:[],discovered:false,firstSeen:new Date().toISOString(),lastSeen:null,source:"configured"};
-    goveeDiscovery.devices[alias]=entry;
-  }
+  if(!Object.hasOwn(goveeDevices,alias)||!d)throw new Error("Unknown Govee device");
+  const existing=Object.entries(goveeDiscovery.devices).find(([,entry])=>entry?.id===String(d.id));
+  const entry=existing?{...existing[1]}:{id:String(d.id),alias,name:d.name||alias,sku:d.sku||"",ip:d.ip||"",groups:[],discovered:false,firstSeen:new Date().toISOString(),lastSeen:null,source:"configured"};
+  const nextGroups={...goveeGroups};
   if(input.name!==undefined){
     const name=String(input.name||"").trim().slice(0,100);
     if(!name)throw new Error("Name cannot be blank");
-    entry.name=name;d.name=name;
+    entry.name=name;
   }
   if(Array.isArray(input.groups)){
     const groups=[...new Set(input.groups.map(cleanId).filter(x=>x&&x!=="all"))];
     // Remove the alias from all editable groups, then add requested groups.
     for(const [gid,members] of Object.entries(goveeGroups)){
       if(gid==="all"||!Array.isArray(members))continue;
-      goveeGroups[gid]=members.filter(x=>x!==alias);
-      if(!goveeGroups[gid].length && !Object.values(goveeDiscovery.devices).some(x=>(x.groups||[]).includes(gid)))delete goveeGroups[gid];
+      nextGroups[gid]=members.filter(x=>x!==alias);
+      if(!nextGroups[gid].length && !Object.values(goveeDiscovery.devices).some(x=>(x.groups||[]).includes(gid)))delete nextGroups[gid];
     }
     entry.groups=groups;
     for(const gid of groups){
-      if(!Array.isArray(goveeGroups[gid]))goveeGroups[gid]=[];
-      if(!goveeGroups[gid].includes(alias))goveeGroups[gid].push(alias);
+      const members=Array.isArray(nextGroups[gid])?nextGroups[gid]:[];
+      Object.defineProperty(nextGroups,gid,{value:members.includes(alias)?members:[...members,alias],writable:true,enumerable:true,configurable:true});
     }
   }
+  const next={...goveeDiscovery,devices:{...goveeDiscovery.devices,[existing?existing[0]:alias]:entry}};
+  persistGoveeDiscovery(next);
+  for(const gid of Object.keys(goveeGroups))if(!Object.hasOwn(nextGroups,gid))delete goveeGroups[gid];
+  for(const [gid,members] of Object.entries(nextGroups))Object.defineProperty(goveeGroups,gid,{value:members,writable:true,enumerable:true,configurable:true});
   applyGoveeRegistryEntry(entry);
-  persistGoveeDiscovery();
   return {alias,device:goveeDevices[alias],groups:entry.groups||[]};
 }
 
@@ -5619,8 +5621,9 @@ app.post("/api/v1/integrations/pluto/status",requireCapability("integrations.con
 // v0.8 direct Govee APIs
 app.get("/api/v1/govee",requireClassroomRead,(_req,res)=>res.json(goveeInventory()));
 app.put("/api/v1/govee/discovery",requireControl,(req,res)=>{
-  if(req.body?.autoAdd!==undefined)goveeDiscovery.autoAdd=!!req.body.autoAdd;
-  persistGoveeDiscovery();
+  const next={...goveeDiscovery};
+  if(req.body?.autoAdd!==undefined)next.autoAdd=!!req.body.autoAdd;
+  persistGoveeDiscovery(next);
   res.json({ok:true,discovery:goveeInventory().discovery});
 });
 app.post("/api/v1/govee/discovery/reconcile",requireControl,(req,res)=>{

@@ -380,6 +380,14 @@ Major integrations include MQTT/Govee, Pluto Mark I, Music Assistant / Sendspin,
 
 Integration health must be independent. A Pluto failure must not make MQTT/Govee appear offline. Optional/slow hardware probes should run asynchronously and must not block the Overview screen.
 
+Govee metadata and discovery-preference saves stage their candidate registry,
+persist it, then publish live projections. Rejected validation or persistence
+must leave current names, groups and enrollment policy unchanged. Keep physical
+IDs, legacy registry keys, configured groups and name normalization compatible;
+group names are own data properties during both saves and registry rebuilds.
+See [Govee lighting ownership](GOVEE-LIGHTING.md) for read/write and transport
+boundaries. Discovery enrollment/reconciliation has separate persistence paths.
+
 Music Assistant managed Docker deployment uses host networking so local multicast discovery works and keeps its persistent `/data` outside the container. Native `veyon.service` and `veyon-webapi.service` are host-managed; the retired Veyon proxy container is not a supported managed add-on or recovery root.
 RoomGoblin-managed Music Assistant recreations also install `/data/.roomgoblin-compat/sitecustomize.py` and set `PYTHONPATH` to it. This guard filters only Linux adapters whose `operstate` is explicitly `down` before Music Assistant/ifaddr builds Zeroconf interface lists; it exists to prevent dual-stack startup failure on hosts with Tailscale IPv6 plus inactive addressed Docker bridges. Preserve active/unknown interfaces and fail open when state cannot be read. RoomGoblin-owned containers require an explicit recreate to gain the guard, and that recreate must not be blocked by an offline Music Assistant authentication preflight. Foreign/adopted containers must refuse destructive recreate until their `/data` is migrated into the managed services root.
 A live 2026-09-18 appliance also retains a separate legacy Compose deployment at `/opt/music-assistant` with `/opt/music-assistant/data:/data`. Its permanent repair is an in-place `.roomgoblin-compat/sitecustomize.py` plus `PYTHONPATH=/data/.roomgoblin-compat`; do not migrate that data root merely to apply the Zeroconf guard. Post-reboot acceptance proved Tailscale IPv6 can remain enabled, down Docker bridges can remain addressed, and 8095/8097/8927 remain healthy. Background Music scheduled startup must wait until the configured MA player is present/available and back off transient start failures rather than hammering `play_media` during provider initialization.
