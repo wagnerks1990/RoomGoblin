@@ -4223,6 +4223,7 @@ function validateCommandForDispatch(command){
   }
   if(URL_BEARING_DISPLAY_COMMANDS.has(command.type)){
     const payload={...(command.payload||{}),url:safeMediaUrl(command.payload?.url)};
+    if(command.type==="display.video"&&!payload.sessionId)payload.sessionId=command.id;
     for(const [name,min,max] of [["opacity",0,1],["volume",0,1],["playbackRate",0.25,4],["startAtSeconds",0,86400],["endAtSeconds",0,86400]])if(payload[name]!==undefined&&payload[name]!==null){const n=Number(payload[name]);if(!Number.isFinite(n)||n<min||n>max)throw new Error(`${name} must be a finite number from ${min} to ${max}`);payload[name]=n}
     if(Number(payload.endAtSeconds)>0&&Number(payload.endAtSeconds)<=Number(payload.startAtSeconds||0))throw new Error("endAtSeconds must be greater than startAtSeconds");
     command.payload=payload;
