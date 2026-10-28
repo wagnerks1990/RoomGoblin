@@ -6,7 +6,9 @@ after all 14 PR checks, required main gates and exact publication passed. Its
 [lifecycle](android-lifecycle-ownership.md) fixes pass 2,328 Linux tests with two
 root-only skips, all 23 Host Recovery cases and 125 workspace cases per browser.
 
-The combined [record-completion](android-record-completion.md) and
+PR #331 merged as `e7c557a` after all 14 checks passed. Its exact images and
+backed-up maintenance update remain pending. The combined
+[record-completion](android-record-completion.md) and
 [policy-admission/cache](android-policy-admission.md) batch preserves current
 records, rejects retired enrollments, rechecks each policy dispatch and prevents
 stale or overlapping policy completion. All 40 targeted cases pass. Final Linux
@@ -23,8 +25,12 @@ reproduced races across Agent v2, assignment, persistent ADB and APK restoration
 All 18 configuration and 20 record cases pass; supported Linux qualification
 passes 2,386 tests with zero failures, two root-only skips and all 23 Host Recovery
 cases. Browser sources retain the 125-case-per-engine qualification. This is a
-separate batch awaiting checked delivery after PR #331. Remaining Group 10 and
-roadmap work is open. Earlier delivery receipts include
+separate batch awaiting checked delivery after PR #331. The
+[native enrollment origin repair](windows-enrollment-origin.md) joins that batch:
+three reproduced failures are fixed, all 18 native cases pass on .NET 10, and
+the combined tree retains 2,386 Linux passes, two skips and all 23 Host Recovery
+passes. Android capability caching has four reproduced failures queued next.
+Remaining Group 10 and roadmap work is open. Earlier delivery receipts include
 [PR #328](android-inventory-delivery.md),
 [PR #327](android-editor-preview-delivery.md),
 [PR #326](ubuntu-repair-wizard-delivery.md),

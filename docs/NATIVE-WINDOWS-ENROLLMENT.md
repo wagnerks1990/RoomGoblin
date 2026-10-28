@@ -55,6 +55,11 @@ After an authenticated handshake, an updated agent may accept a server-advertise
 
 HTTP primary or fallback origins require explicit insecure-LAN acknowledgement during bootstrap. Existing agents therefore retain a local path when Cloudflare or the Internet is unavailable.
 
+Primary and fallback URLs must not contain embedded usernames or passwords.
+Bootstrap rejects them before changing configuration or ACLs. The primary HTTP
+acknowledgement does not also authorize an HTTP fallback; each requires its own
+explicit option. Valid origins retain their configured scheme, host and port.
+
 Cloudflare Access on the main RoomGoblin hostname can require interactive browser authentication. Do not assume unattended agents can satisfy that challenge; use an Access-compatible machine policy before combining those features.
 
 ## Native package and enrollment file

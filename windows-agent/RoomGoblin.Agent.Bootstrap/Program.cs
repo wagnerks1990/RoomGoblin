@@ -439,9 +439,10 @@ void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> p
 
     if (!Uri.TryCreate(hubUrl, UriKind.Absolute, out var hubUri) ||
         string.IsNullOrWhiteSpace(hubUri.Host) ||
+        !string.IsNullOrWhiteSpace(hubUri.UserInfo) ||
         (hubUri.Scheme != Uri.UriSchemeHttps && hubUri.Scheme != Uri.UriSchemeHttp))
     {
-        throw new ArgumentException("--hub-url must be an absolute http:// or https:// URL.");
+        throw new ArgumentException("--hub-url must be an absolute http:// or https:// URL without embedded credentials.");
     }
 
     if (hubUri.Scheme == Uri.UriSchemeHttp && !allowHttp)
