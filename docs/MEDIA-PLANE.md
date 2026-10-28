@@ -8,6 +8,13 @@ The control plane remains on the normal RoomGoblin listener (default `3000`). Up
 
 ## Runtime model
 
+Live video volume, mute and playback rate are saved on the existing receiver
+session for reconnect replay. Positive volume unmutes; zero volume preserves
+mute intent. Control values must be finite. Playback operations and position
+remain receiver-owned; reconnect snapshots do not replay seeks or restarts.
+See [the reconnect review](audits/roomgoblin-modernization/media-reconnect-settings.md)
+for qualification and the separate token-renewal issue still under review.
+
 - Control plane: `http://<hub>:3000`
   - controller UI
   - REST API

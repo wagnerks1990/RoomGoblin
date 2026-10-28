@@ -40,6 +40,7 @@ const planningEngine=require("./planning");
 const planningMigration=require("./planning-migration");
 const planningStudio=require("./planning-studio");
 const displayAudio=require("./display-audio");
+const displayMedia=require("./display-media");
 const timerEffects=require("../public/shared/timer-effects");
 const {PlaybackRecovery,mediaSelection,sleepDeadline}=require("./background-music");
 const {musicAssistantTokenConfigured,closeMusicAssistantReadiness}=require("./music-assistant-readiness");
@@ -4123,6 +4124,11 @@ function updateStateFromCommand(command, targets) {
       case "display.audio.control":
         setDisplayState(id,displayAudio.apply(persistentState.displays[id],p));
         break;
+      case "display.media.control": {
+        const media=displayMedia.applySettings(persistentState.displays[id]?.media,p);
+        if(media)setDisplayState(id,{media});
+        break;
+      }
       case "display.text":
         setDisplayState(id, { text: p.text ?? "", textOptions: p });
         break;
@@ -4208,6 +4214,7 @@ function safeMediaUrl(value) {
 const URL_BEARING_DISPLAY_COMMANDS=new Set(["display.image","display.video","display.web","display.pdf","display.document","display.ppt","display.presentation"]);
 function validateCommandForDispatch(command){
   if(command.type==="display.audio.control")command.payload=displayAudio.validate(command.payload);
+  if(command.type==="display.media.control")command.payload=displayMedia.validate(command.payload);
   if(command.type==="display.text"&&command.payload?.scene)command.payload={...command.payload,scene:planningStudio.scene.normalize(command.payload.scene)};
   if(command.type==="display.layers"){
     const rows=command.payload?.layers;
@@ -6202,13 +6209,7 @@ app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(r
 app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireControl,async(req,res)=>{
   try{
     const id=cleanId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
-    const action=String(req.body?.action||"").trim().toLowerCase();
-    if(!["play","pause","stop","restart","seek","volume","mute","rate"].includes(action))throw new Error("Unsupported media control action");
-    const payload={action};
-    if(action==="seek")payload.positionSeconds=Math.max(0,Number(req.body?.positionSeconds||0));
-    if(action==="volume")payload.volume=Math.max(0,Math.min(1,Number(req.body?.volume??1)));
-    if(action==="mute")payload.muted=req.body?.muted!==false;
-    if(action==="rate")payload.playbackRate=Math.max(.25,Math.min(4,Number(req.body?.playbackRate||1)));
+    const payload=displayMedia.validate(req.body),action=payload.action;
     const result=await executeCommand({type:"display.media.control",target:[id],payload},"controller");
     audit({kind:"display.media.control",deviceId:id,action});
     res.json({ok:true,result});
