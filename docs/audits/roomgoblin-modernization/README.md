@@ -1,5 +1,11 @@
 # RoomGoblin modernization audit
 
+The receiver identity repair is pushed in PR #341. The next
+[diagnostics batch](diagnostic-evidence.md) repairs reproduced secret projection,
+health-label and retired-observation failures. It passes 2,521 Linux cases with
+two root-only skips, 23 Host Recovery and 55 Android JVM cases, and all 130
+workspace/diagnostic cases in each browser. Checked delivery remains pending.
+
 The backend transaction batch merged in PR #340 as `8357bec` after all 15 checks;
 exact publication and delivery are pending. PR #339 is
 [deployed and verified](weather-workflow-delivery.md). The authentication

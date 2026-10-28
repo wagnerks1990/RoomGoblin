@@ -51,6 +51,12 @@ item hidden by authorization. The shared stylesheet explicitly preserves the
 
 ## Surface behavior
 
+Diagnostics distinguishes unconfigured and unchecked integrations from failures.
+Pluto's observed state retains the last response time. Govee reports MQTT publish
+evidence without claiming device acknowledgment. Veyon reports WebAPI reachability
+separately from authentication. Saving integration connections retires earlier
+observations; late responses from those connections cannot replace current status.
+
 Managed Displays also contains an independent Ubuntu computer inventory. Its
 wizard verifies SSH identity, checks readiness, assigns each physical output,
 reviews installation changes and reports asynchronous progress. Computer-level
