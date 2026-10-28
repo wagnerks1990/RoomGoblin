@@ -642,6 +642,75 @@ class WorkspaceBrowserTests(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertFalse(errors, errors)
 
+    def test_lighting_discovery_changes_keep_last_choice_while_saves_are_queued(self):
+        payload = {'devices': {}, 'groups': {}, 'states': {}, 'presence': {}, 'meta': {},
+                   'discovery': {'autoAdd': True}}
+        page, errors = self.page('/controller/', overrides={'/api/v1/govee': payload})
+        page.evaluate("showPage('lights')")
+        page.locator('#goveeAutoAdd').evaluate("e => { e.closest('details').open = true; }")
+        page.evaluate('''payload => {
+          window.lightingFixture = payload; window.lightingWrites = [];
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => {
+            if (String(url) === '/api/v1/govee/discovery') {
+              const body = JSON.parse(options.body);
+              return new Promise(resolve => lightingWrites.push({body, complete: () => {
+                lightingFixture.discovery.autoAdd = body.autoAdd;
+                resolve(new Response(JSON.stringify({ok:true, discovery:structuredClone(lightingFixture.discovery)})));
+              }}));
+            }
+            if (String(url) === '/api/v1/govee') return Promise.resolve(new Response(JSON.stringify(lightingFixture)));
+            return originalFetch(url, options);
+          };
+        }''', payload)
+        checkbox = page.locator('#goveeAutoAdd')
+        checkbox.uncheck()
+        checkbox.check()
+        self.assertEqual(page.evaluate('lightingWrites.length'), 1)
+        page.evaluate('lightingWrites[0].complete()')
+        page.wait_for_function('lightingWrites.length === 2')
+        self.assertTrue(checkbox.is_checked())
+        self.assertFalse(page.evaluate('lightingFixture.discovery.autoAdd'))
+        page.evaluate('lightingWrites[1].complete()')
+        page.wait_for_function("document.getElementById('goveeMessage').textContent === 'Discovery setting saved.'")
+        self.assertTrue(checkbox.is_checked())
+        self.assertEqual(page.evaluate('lightingWrites.map(write => write.body.autoAdd)'), [False, True])
+        self.assertTrue(page.evaluate('S.govee.discovery.autoAdd'))
+        self.assertFalse(errors, errors)
+
+    def test_lighting_cleanup_cannot_be_undone_by_a_pre_cleanup_read(self):
+        payload = {'devices': {'old': {'name': 'Old fixture light', 'id': 'fixture-old'}},
+                   'groups': {'all': ['old']}, 'states': {}, 'presence': {}, 'meta': {},
+                   'discovery': {'autoAdd': True}}
+        page, errors = self.page('/controller/', overrides={'/api/v1/govee': payload})
+        page.evaluate("showPage('lights')")
+        page.locator('#lightDevices .lightCard').wait_for()
+        page.evaluate('''payload => {
+          window.oldLightingFixture = payload; window.lightingFixture = structuredClone(payload);
+          window.lightingReadCount = 0; window.lightingCleanupCount = 0;
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => {
+            if (String(url) === '/api/v1/govee' && ++lightingReadCount === 1)
+              return new Promise(resolve => { window.resolvePreCleanupRead = resolve; });
+            if (String(url) === '/api/v1/govee') return Promise.resolve(new Response(JSON.stringify(lightingFixture)));
+            if (String(url) === '/api/v1/govee/discovery/reconcile') {
+              lightingCleanupCount++; lightingFixture.devices = {}; lightingFixture.groups.all = [];
+              return Promise.resolve(new Response(JSON.stringify({inventory:lightingFixture, removed:1})));
+            }
+            return originalFetch(url, options);
+          };
+          window.preCleanupRead = loadGovee();
+        }''', payload)
+        page.evaluate('reconcileGoveeNow()')
+        self.assertEqual(page.locator('#lightDevices .lightCard').count(), 0)
+        page.evaluate('''async () => {
+          resolvePreCleanupRead(new Response(JSON.stringify(oldLightingFixture))); await preCleanupRead;
+        }''')
+        self.assertEqual(page.locator('#lightDevices .lightCard').count(), 0)
+        self.assertEqual(page.evaluate('lightingCleanupCount'), 1)
+        self.assertIn('cleanup complete', page.locator('#goveeMessage').inner_text())
+        self.assertFalse(errors, errors)
+
     def test_presentation_refresh_preserves_receiver_choices_and_focus(self):
         payload = {'folders': [{'id': 'root', 'name': 'Root', 'parentId': None}],
                    'presentations': [], 'state': {'active': False},

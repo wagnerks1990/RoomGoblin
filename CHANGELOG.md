@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Keep lighting configuration saves in accepted order and prevent pre-save
+  inventory responses from restoring older settings or removed devices.
+
 - Bound lighting UDP and shared MQTT command waits, contain socket errors,
   release obsolete connection owners and disable offline QoS-zero command replay.
 

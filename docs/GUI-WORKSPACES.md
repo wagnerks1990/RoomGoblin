@@ -168,6 +168,15 @@ the latest action message. A successful device save followed by a failed refresh
 reports both outcomes and retains the last inventory; newer editor drafts remain
 intact.
 
+Within one controller, device metadata, automatic enrollment and cleanup writes
+run in accepted order. Form values are captured when Save is selected; later
+drafts remain editable. Inventory reads wait for accepted configuration writes,
+and responses predating a newer write refresh before publishing. Discovery
+checkboxes retain the latest pending choice. Setting and cleanup results appear
+inline, including successful writes whose follow-up refresh fails. Failed writes
+release the queue without an automatic mutation retry. This does not serialize
+independent administrators in other browser sessions.
+
 ## Styling ownership
 
 `public/shared/workspace.css` is the operator-only design layer. It is opt-in via
