@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Commit Sports saves and Undo snapshots atomically, and reject board reads
+  retired by settings or authentication changes before rendering or caching.
+
 - Keep Sports imports tied to their reviewed draft and input; reject retired
   responses and require a fresh review after editing or leaving the view.
 

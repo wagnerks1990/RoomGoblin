@@ -175,6 +175,10 @@ That identity check applies immediately after save, before the next refresh, and
 to late responses and persisted status after restart. Save/undo responses include
 the current source-status snapshot so the workspace cannot retain retired health.
 Friendly team-name edits preserve checks for the same source mapping.
+Staff saves and Undo commit the current and preceding snapshots together; storage
+or commit failure preserves both durable identities and the current in-memory
+configuration. Board reads invalidated by Sports or authentication changes cannot
+restore retired preview content or cache entries.
 Existing operational backups include these preferences;
 media follows the existing replaceable-media backup policy. Background refresh
 participates in Full Recovery Export writer draining. A stale in-flight refresh

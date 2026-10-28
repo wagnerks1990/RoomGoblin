@@ -10,6 +10,10 @@ continue separately.
 browser failures involving retired responses, hidden reviews and duplicate reads.
 CSV/PDF and workspace application controls remain part of its qualification.
 
+[Sports persistence and cache ownership](sports-persistence-cache.md) repairs
+four real SQLite failure cases and two late-response browser failures. The final
+batch retains source/import review and explicit-save/command boundaries.
+
 PR #330 is [deployed and verified](android-shell-lifecycle-delivery.md) at `92adafe`
 after all 14 PR checks, required main gates and exact publication passed. Its
 [shell/output](android-shell-ownership.md) and

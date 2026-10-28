@@ -2,13 +2,17 @@
 "use strict";
 (()=>{
  const instances=new Map(),audioControls=new Map(),previewCache=new Map();
+ let cacheRevision=0;
  async function loadBoard(id,signal){
   const cached=previewCache.get(id);if(cached&&cached.until>Date.now())return cached.value;
+  const revision=cacheRevision;
   const r=await fetch('/api/v1/sports/boards/'+encodeURIComponent(id)+'/display',{credentials:'same-origin',signal});if(!r.ok)throw Error('Sports data unavailable');const value=await r.json();
+  if(revision!==cacheRevision||signal?.aborted)throw Error('Sports data changed while loading');
   if(value.ok&&Array.isArray(value.pages)){if(previewCache.size>=30)previewCache.delete(previewCache.keys().next().value);previewCache.set(id,{until:Date.now()+30000,value})}return value;
  }
- window.addEventListener('roomgoblin:authchange',()=>previewCache.clear());
- window.addEventListener('roomgoblin:sportschange',()=>previewCache.clear());
+ const invalidate=()=>{cacheRevision++;previewCache.clear()};
+ window.addEventListener('roomgoblin:authchange',invalidate);
+ window.addEventListener('roomgoblin:sportschange',invalidate);
  const contentKey=data=>JSON.stringify([data.board,data.school,data.logo,data.timezone,data.pages]);
  const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n};
  function mount(host,boardId,{resolveAsset=n=>'/media/'+encodeURIComponent(n),loadSports=loadBoard,preview=false,audio=false,volume=1}={}){
