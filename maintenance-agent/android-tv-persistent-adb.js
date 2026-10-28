@@ -59,7 +59,7 @@ async function bootstrap(d,targetPort){
   const fixedSerial=`${d.host}:${targetPort}`;
   await adb(["connect",fixedSerial],15000);
   await adb(["-s",fixedSerial,"get-state"],7000);
-  const updated=STORE.upsertDevice({...d,port:targetPort,serial:fixedSerial,persistentAdb:{enabled:true,targetPort,bootRestore:true,bootstrapAt:new Date().toISOString()},lastStatus:{online:true,source:"persistent-adb-bootstrap",checkedAt:new Date().toISOString()}});
+  const updated=STORE.updateDevice(d,{port:targetPort,serial:fixedSerial,persistentAdb:{enabled:true,targetPort,bootRestore:true,bootstrapAt:new Date().toISOString()},lastStatus:{online:true,source:"persistent-adb-bootstrap",checkedAt:new Date().toISOString()}});
   return {device:updated,tcpipMessage};
 }
 
@@ -74,7 +74,7 @@ function installRoutes(app){if(installed)return;installed=true;
     let d=await requireOnline(device(req.params.id));
     const targetPort=cleanPort(d.persistentAdb?.targetPort||d.port||5555);
     await broadcastPolicy(d,false,targetPort);
-    d=STORE.upsertDevice({...d,persistentAdb:{enabled:false,targetPort,bootRestore:false,disabledAt:new Date().toISOString()}});
+    d=STORE.updateDevice(d,{persistentAdb:{enabled:false,targetPort,bootRestore:false,disabledAt:new Date().toISOString()}});
     res.json({ok:true,device:publicDevice(d),message:"Persistent ADB boot restoration disabled. Current ADB session was left connected intentionally."});
   }));
 }

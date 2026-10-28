@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Recheck Android enrollment and schedule state before each policy command and
+  prevent overlapping policy passes from dispatching to the same display twice.
+
+- Merge Android asynchronous completion into the current enrollment record,
+  preserving newer metadata and disabled state without reviving removed devices.
+
 - Apply confirmed Android enrollment lifecycle results to current inventory
   without reloading the page, reviving removed cards or discarding drafts.
 

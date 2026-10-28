@@ -22,7 +22,7 @@ function boundedEnvironmentInteger(name,fallback,min,max){
   return value;
 }
 const POLICY_INTERVAL_MS=boundedEnvironmentInteger("ANDROID_TV_POLICY_INTERVAL_MS",60000,15000,300000);
-const policyState=new Map();
+const policyState=new Map(),policyOperations=new Map(),policyContexts=new Map();
 let installed=false,policyTimer=null;
 
 function adbEnv(){return {...process.env,HOME:ROOT,ANDROID_USER_HOME:ROOT}}
@@ -94,7 +94,7 @@ async function ensureDevice(device,opts={}){
   if(endpoint){await connect(endpoint.serial);status=await probe(endpoint.serial);if(d.androidId&&!sameAndroidIdentity(d,status)){try{await adb(["disconnect",endpoint.serial],{timeout:5000})}catch{};endpoint=null;status=null}}
   if(!endpoint){const matched=await discoverConnectEndpointByIdentity(d,Number(opts.mdnsAttempts||6));endpoint=matched?.endpoint||null;status=matched?.status||null}
   if(!endpoint){const e=Error(`Unable to reconnect ${d.name||d.id}. No authorized wireless ADB endpoint matched its saved device identity.`);e.status=503;throw e}
-  d=STORE.upsertDevice({...d,host:endpoint.host,port:endpoint.port,serial:endpoint.serial,...status,lastStatus:{...status,source:"adb-mdns-recovery",checkedAt:new Date().toISOString()}});
+  d=STORE.updateDevice(d,{host:endpoint.host,port:endpoint.port,serial:endpoint.serial,...status,lastStatus:{...status,source:"adb-mdns-recovery",checkedAt:new Date().toISOString()}});
   return {device:d,status,recovered:true,endpoint};
 }
 async function rebootDevice(serial){
@@ -119,8 +119,34 @@ async function enrollOne(body={}){
 function localClock(timeZone){const parts=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));return {date:`${parts.year}-${parts.month}-${parts.day}`,clock:`${parts.hour}:${parts.minute}`,minutes:Number(parts.hour)*60+Number(parts.minute)}}
 function hhmmMinutes(v){const [h,m]=String(v).split(":").map(Number);return h*60+m}
 function desiredAwake(profile,minutes){const wake=hhmmMinutes(profile.wakeTime),sleep=hhmmMinutes(profile.sleepTime);return wake===sleep?true:wake<sleep?(minutes>=wake&&minutes<sleep):(minutes>=wake||minutes<sleep)}
-async function applyDevicePolicy(device,profile,force=false){const clock=localClock(profile.timezone||"UTC"),awake=desiredAwake(profile,clock.minutes),key=`${clock.date}:${awake?"awake":"sleep"}`;if(!force&&policyState.get(device.id)===key)return {deviceId:device.id,changed:false,desiredAwake:awake,clock};const managed=(await ensureDevice(device,{mdnsAttempts:2})).device;if(awake){await adb(adbArgsForAction(managed,"wake"));if(profile.launchOnBoot)await adb(adbArgsForAction(managed,"launch"),{timeout:30000})}else await adb(adbArgsForAction(managed,"sleep"));policyState.set(managed.id,key);return {deviceId:managed.id,changed:true,desiredAwake:awake,clock}}
-async function applyPolicies(force=false){const data=STORE.list(),profiles=new Map(data.profiles.map(x=>[x.id,x])),results=[];for(const device of data.devices.filter(x=>x.enabled!==false)){const profile=profiles.get(device.profileId)||DEFAULT_PROFILE;try{results.push(await applyDevicePolicy(device,profile,force))}catch(error){results.push({deviceId:device.id,changed:false,error:error.message})}}return {ok:true,checkedAt:new Date().toISOString(),results}}
+async function applyDevicePolicy(device,profile,force=false){
+  const clock=localClock(profile.timezone||"UTC"),awake=desiredAwake(profile,clock.minutes),key=`${clock.date}:${awake?"awake":"sleep"}`;
+  const contextFor=d=>JSON.stringify([d.createdAt,d.host,d.serial,d.androidId,d.profileId,d.agentPackage,profile.timezone,profile.wakeTime,profile.sleepTime,profile.launchOnBoot]);
+  if(policyOperations.has(device.id))return {deviceId:device.id,changed:false,pending:true,desiredAwake:awake,clock};
+  const currentDevice=expected=>{
+    const data=STORE.list(),current=STORE.requireCurrentDevice(data,expected);
+    const currentProfile=data.profiles.find(p=>p.id===current.profileId)||DEFAULT_PROFILE;
+    const currentClock=localClock(profile.timezone||"UTC");
+    if(current.enabled===false||current.profileId!==device.profileId||['timezone','wakeTime','sleepTime','launchOnBoot'].some(field=>currentProfile[field]!==profile[field])||currentClock.date!==clock.date||desiredAwake(profile,currentClock.minutes)!==awake){
+      const error=Error('Android policy changed while the request was pending. Remaining commands were not sent.');error.status=409;throw error;
+    }
+    return current;
+  };
+  const owner={};policyOperations.set(device.id,owner);let dispatched=false;
+  try{
+    currentDevice(device);
+    if(!force&&policyState.get(device.id)===key&&policyContexts.get(device.id)===contextFor(device))return {deviceId:device.id,changed:false,desiredAwake:awake,clock};
+    let managed=currentDevice((await ensureDevice(device,{mdnsAttempts:2})).device);
+    await adb(adbArgsForAction(managed,awake?'wake':'sleep'));dispatched=true;
+    if(awake&&profile.launchOnBoot){managed=currentDevice(managed);await adb(adbArgsForAction(managed,'launch'),{timeout:30000})}
+    managed=currentDevice(managed);policyState.set(device.id,key);policyContexts.set(device.id,contextFor(managed));
+    return {deviceId:device.id,changed:true,desiredAwake:awake,clock};
+  }catch(error){
+    if(dispatched)return {deviceId:device.id,changed:true,incomplete:true,error:error.message,desiredAwake:awake,clock};
+    throw error;
+  }finally{if(policyOperations.get(device.id)===owner)policyOperations.delete(device.id)}
+}
+async function applyPolicies(force=false){const data=STORE.list(),profiles=new Map(data.profiles.map(x=>[x.id,x])),results=[],enabled=data.devices.filter(x=>x.enabled!==false),ids=new Set(enabled.map(d=>d.id));for(const id of new Set([...policyState.keys(),...policyContexts.keys()]))if(!ids.has(id)){policyState.delete(id);policyContexts.delete(id)}for(const device of enabled){const profile=profiles.get(device.profileId)||DEFAULT_PROFILE;try{results.push(await applyDevicePolicy(device,profile,force))}catch(error){results.push({deviceId:device.id,changed:false,error:error.message})}}return {ok:true,checkedAt:new Date().toISOString(),results}}
 function startPolicyLoop(){if(policyTimer)return;setTimeout(()=>applyPolicies(false).catch(()=>{}),5000);policyTimer=setInterval(()=>applyPolicies(false).catch(()=>{}),POLICY_INTERVAL_MS);policyTimer.unref?.()}
 
 function installRoutes(app){if(installed)return;installed=true;
@@ -134,17 +160,17 @@ function installRoutes(app){if(installed)return;installed=true;
   app.post("/android/enroll/bulk",asyncRoute(async(req,res)=>{const items=Array.isArray(req.body?.devices)?req.body.devices:[];if(!items.length||items.length>100){const e=Error("Bulk enrollment requires 1-100 devices");e.status=400;throw e}const results=[];for(const item of items){try{const r=await enrollOne(item);results.push({ok:true,id:r.device.id,name:r.device.name})}catch(error){results.push({ok:false,name:cleanText(item?.name||item?.host,120),error:error.message})}}res.status(results.some(x=>!x.ok)?207:201).json({ok:results.every(x=>x.ok),results})}));
   app.get("/android/policies/status",asyncRoute(async(_req,res)=>res.json({ok:true,intervalMs:POLICY_INTERVAL_MS,state:Object.fromEntries(policyState)})));
   app.post("/android/policies/apply",asyncRoute(async(_req,res)=>res.json(await applyPolicies(true))));
-  app.get("/android/devices/:id/status",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);try{const result=await ensureDevice(d,{mdnsAttempts:8});const updated=STORE.upsertDevice({...result.device,...result.status,lastStatus:{...result.status,source:result.endpoint?"adb-mdns-recovery":"adb-status",checkedAt:new Date().toISOString()}});res.json({ok:true,device:publicDevice(updated),status:result.status,recovered:result.recovered,endpoint:result.endpoint||null})}catch(error){const updated=STORE.upsertDevice({...d,lastStatus:{online:false,error:error.message,checkedAt:new Date().toISOString()}});res.status(503).json({ok:false,error:error.message,device:publicDevice(updated)})}}));
-  app.post("/android/devices/:id/action",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);const action=cleanText(req.body?.action,40);if(action==="screenshot"){const e=Error("Use the screenshot endpoint");e.status=400;throw e}d=(await ensureDevice(d,{mdnsAttempts:4})).device;if(action==="reboot"){const result=await rebootDevice(d.serial);policyState.delete(d.id);STORE.upsertDevice({...d,lastStatus:{online:false,rebooting:true,checkedAt:new Date().toISOString()}});res.status(202).json({ok:true,deviceId:d.id,action,...result});return}const result=await adb(adbArgsForAction(d,action,req.body||{}),{timeout:30000});res.json({ok:true,deviceId:d.id,action,stdout:result.stdout,stderr:result.stderr})}));
+  app.get("/android/devices/:id/status",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);try{const result=await ensureDevice(d,{mdnsAttempts:8});const updated=STORE.updateDevice(result.device,{...result.status,lastStatus:{...result.status,source:result.endpoint?"adb-mdns-recovery":"adb-status",checkedAt:new Date().toISOString()}});res.json({ok:true,device:publicDevice(updated),status:result.status,recovered:result.recovered,endpoint:result.endpoint||null})}catch(error){const updated=STORE.updateDevice(d,{lastStatus:{online:false,error:error.message,checkedAt:new Date().toISOString()}});res.status(503).json({ok:false,error:error.message,device:publicDevice(updated)})}}));
+  app.post("/android/devices/:id/action",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);const action=cleanText(req.body?.action,40);if(action==="screenshot"){const e=Error("Use the screenshot endpoint");e.status=400;throw e}d=(await ensureDevice(d,{mdnsAttempts:4})).device;if(action==="reboot"){const result=await rebootDevice(d.serial);policyState.delete(d.id);STORE.updateDevice(d,{lastStatus:{online:false,rebooting:true,checkedAt:new Date().toISOString()}});res.status(202).json({ok:true,deviceId:d.id,action,...result});return}const result=await adb(adbArgsForAction(d,action,req.body||{}),{timeout:30000});res.json({ok:true,deviceId:d.id,action,stdout:result.stdout,stderr:result.stderr})}));
   app.post("/android/devices/:id/shell",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const command=cleanShell(req.body?.command);const result=await adb(["-s",d.serial,"shell","sh","-c",command],{timeout:Number(req.body?.timeoutMs||30000)});res.json({ok:true,deviceId:d.id,command,stdout:result.stdout,stderr:result.stderr})}));
   app.get("/android/devices/:id/screenshot",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const {stdout}=await execFileAsync(ADB,["-s",d.serial,"exec-out","screencap","-p"],{encoding:"buffer",timeout:30000,maxBuffer:16*1024*1024,env:adbEnv()});res.json({ok:true,deviceId:d.id,contentType:"image/png",base64:Buffer.from(stdout).toString("base64")})}));
   // Retain the old path only as a fail-closed compatibility response. Installing
   // arbitrary files from the writable Android data root bypassed the protected
   // artifact certificate and Device Admin transition checks.
   app.post("/android/devices/:id/agent/install",(_req,res)=>res.status(410).json({ok:false,error:"Legacy APK installation is disabled. Use the verified current-artifact installation route."}));
-  app.post("/android/devices/:id/agent/configure",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const pkg=cleanPackage(req.body?.package||d.agentPackage),url=String(req.body?.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url],{timeout:20000});const updated=STORE.upsertDevice({...d,displayUrl:url,agentPackage:pkg});res.json({ok:true,device:publicDevice(updated)})}));
+  app.post("/android/devices/:id/agent/configure",asyncRoute(async(req,res)=>{let d=findDevice(req.params.id);d=(await ensureDevice(d,{mdnsAttempts:4})).device;const pkg=cleanPackage(req.body?.package||d.agentPackage),url=String(req.body?.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url],{timeout:20000});const updated=STORE.updateDevice(d,{displayUrl:url,agentPackage:pkg});res.json({ok:true,device:publicDevice(updated)})}));
   app.put("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);res.json({ok:true,device:publicDevice(STORE.upsertDevice({...d,...req.body,id:d.id,host:req.body?.host||d.host,serial:req.body?.serial||d.serial}))})}));
-  app.delete("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);try{await adb(["disconnect",d.serial],{timeout:10000})}catch{}policyState.delete(d.id);res.json({ok:true,removed:STORE.deleteDevice(d.id),deviceId:d.id})}));
+  app.delete("/android/devices/:id",asyncRoute(async(req,res)=>{const d=findDevice(req.params.id);try{await adb(["disconnect",d.serial],{timeout:10000})}catch{}policyState.delete(d.id);res.json({ok:true,removed:STORE.deleteDevice(d.id,d),deviceId:d.id})}));
   app.put("/android/profiles/:id",asyncRoute(async(req,res)=>res.json({ok:true,profile:STORE.upsertProfile({...req.body,id:cleanId(req.params.id)})})));
   startPolicyLoop();
 }
