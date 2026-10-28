@@ -44,3 +44,13 @@ total), all 23 Host Recovery and 55 Android JVM cases, and syntax/controller
 checks. This snapshot also includes the separately queued diagnostics,
 publication-retry and browser-request-deadline batches; it is not an isolated
 retention PR result. Production backups were not modified by these tests.
+
+## Exact retention integration
+
+PR #343 integrates the retention repair on checked diagnostics main `ea924b8`.
+Its native snapshot at `d8a8fe5` passes 2,547 Node tests, zero failures and two
+root-only skips (2,549 total), all 23 Host Recovery and 55 Android JVM cases,
+and Node/controller/Python/Bash checks. Later changes only record this evidence
+and align the Wiki retention guidance. Publication retry and browser request
+changes are excluded from this PR. Required CI and backed-up delivery remain
+separate release gates.

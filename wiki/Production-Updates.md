@@ -201,12 +201,24 @@ A failure before source/runtime mutation leaves running services unchanged.
 Before a runtime-changing application or Ubuntu host update, RoomGoblin creates
 an operational `pre-*.zip` safety backup. After health verification succeeds,
 the update runner retains the newest 3 automatic operational archives and 1 `pre-*` safety archive and prunes
-older automatic ones. A backup pinned for application revert is preserved even
-when older than that window.
+older automatic ones. A backup pinned for application revert is preferentially
+retained inside its applicable limit, even when older than the ordinary window.
 
 This cleanup never targets user-created backups or encrypted Full Recovery
 `.rgbak` archives. Cleanup failure is a warning only after the new runtime has
 already passed health verification.
+
+Cleanup requires readable Host Agent rollback status and a valid existing pin
+when rollback is available. Missing or incomplete authority returns an error
+before deleting archives. The candidate file identities are captured before
+reading that status; new or replaced files are preserved and remaining counts
+reflect the actual directory. Concurrent arrivals may temporarily exceed the
+limit until a later authoritative cleanup.
+
+Incomplete application updates block cleanup. The native runner can still prune
+during its final verifying phase after publishing the selected active commit and
+rollback identity, while retaining its existing appliance lock. No extra lock or
+new privileged endpoint is required.
 
 Diagnostic support bundles are temporary download artifacts and are deleted
 after transfer rather than being retained with recovery backups.
