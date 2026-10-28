@@ -24,3 +24,8 @@ the supported full Linux snapshot: 1,875 passes, zero failures and two root-only
 skips (1,877 total), plus all 23 Host Recovery tests and syntax/controller checks.
 The only cherry-pick conflict was audit status text; current delivery and
 security-gate evidence were preserved. Checked delivery still follows PR #310.
+
+Integration on merged main `906e0ec` produced `0555993`, whose complete tree
+matches qualified `83a4b15` byte for byte before this evidence note. All 60
+focused presentation checks pass again. Required PR checks, exact image
+publication and this follow-up's backed-up appliance update remain pending.

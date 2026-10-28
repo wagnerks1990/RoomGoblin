@@ -1,12 +1,18 @@
 # RoomGoblin modernization audit
 
-Status: **PR #309 delivered; PR #310 repaired and in CI; rebuild follow-up qualified**.
+Status: **PR #309 delivered; PR #310 merged and publishing; rebuild follow-up integrated and qualified**.
+
+PR #310 passed all 14 checks with resolved security reviews and merged as
+`906e0ec`. Main validation, browser and security gates passed; exact image
+publication and its backed-up update remain pending. The rebuild follow-up is
+integrated on that merged main; before its evidence note, the complete tree was
+byte-identical to qualified `83a4b15`. All 60 focused checks pass again.
 
 PR #309 is deployed and verified at `86ce127`; see its
 [delivery receipt](media-controller-delivery.md). PR #310's CodeQL gate reported
 missing limits on three newly queued presentation routes. The accepted-caller
 repair adds four HTTP regressions and passes 1,870 Linux tests with two root-only
-skips and all 23 Host Recovery tests; fresh CI is pending. The separate rebuild
+skips and all 23 Host Recovery tests; fresh CI passed. The separate rebuild
 admission repair is qualified with that repaired head and will follow it.
 
 PR #308 is deployed and verified at `43b4d83`; see its
