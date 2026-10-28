@@ -29,9 +29,9 @@ published media. Chunk requests and the accepted-caller completion budget remain
 unchanged. Legacy direct assembly callers keep their existing cleanup contract.
 
 This is application-level retry recovery, not a cross-filesystem/SQLite atomic
-transaction or power-loss durability claim. Before a completed receipt is saved,
-deletion concurrent with a committed registration still needs media-identity
-coordination; that is tracked with RG-MEDIA-007. Office-conversion recovery and
+transaction or power-loss durability claim. Concurrent deletion now has
+[media-identity coordination and retirement checks](media-library-ownership.md)
+under RG-MEDIA-007, including the gap before receipt publication. Office-conversion recovery and
 the browser message when completion wins a cancellation race remain open.
 An older application can expire/cancel these additive session records but does
 not support replaying their reclaimed chunks; registered media remains separate.

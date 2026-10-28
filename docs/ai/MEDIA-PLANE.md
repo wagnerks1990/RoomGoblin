@@ -6,6 +6,17 @@ This file is the machine/assistant handoff for RoomGoblin uploaded-media transpo
 
 ## Port ownership
 
+Media registration/conversion/deletion/replay share `withMediaFileWrite`.
+Commit record changes into the latest library only after persistence succeeds.
+Resumable discard stays inside its session owner and acquires the file owner;
+preserve already committed media. Deletion must persist a validated retirement
+marker before removing an upload-linked file, without awaiting the session lock
+while holding the file owner. Recheck retirement after async replay/assembly and
+before publishing either the file or completion receipt. Keep both mutation
+rate budgets restricted to accepted callers and separate from chunk transfer.
+Retirement reclaims retry chunks after recording deletion so legacy assembly
+cannot reuse them after rollback; record reclamation before releasing quota.
+
 Resumable assembly awaits its internal registration callback before reclaiming
 chunks. Preserve session ownership through registration, and never delete a
 successfully registered file because subsequent cleanup or response handling
