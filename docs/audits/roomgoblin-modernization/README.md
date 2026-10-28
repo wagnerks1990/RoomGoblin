@@ -281,8 +281,6 @@ Required PR/main checks, immutable images and this batch's backed-up delivery
 remain pending. PR #302 is now deployed and verified.
 Late audio-command persistence remains a separate reproduced review finding.
 
-## Inventory and review sequence
-
 ## Upload completion and media-library integration
 
 Completion receipts and conversion/deletion ownership are integrated on merged
