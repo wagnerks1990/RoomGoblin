@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep Ubuntu inventory refreshes current across writes, retain pending command
+  feedback across redraws, preserve newer metadata/maintenance drafts, and discard
+  preview captures after closing or replacing their dialog.
+
 - Preserve cancelled Ubuntu maintenance schedules and newer history/metadata
   when a pending screen-assignment save completes.
 

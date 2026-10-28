@@ -186,6 +186,15 @@ The GUI never treats an update check as evidence an update has been installed.
 
 ## Limits and validation
 
+The inventory has one shared refresh owner. A write invalidates older reads and
+queues a fresh read after outstanding writes settle; uncertain writes are not
+automatically repeated. Assignment editing uses the refreshed configuration.
+Computer commands, metadata saves and maintenance submissions retain per-computer
+admission and feedback across polling and filtering. Newer dialog drafts remain
+unsaved and visible after an older submission finishes. Closed-dialog failures
+remain on the original computer's card. Preview captures have their own lifetime:
+closing or requesting another capture retires the old result and clears its image.
+
 This release supports the dedicated Xorg kiosk on Ubuntu LTS x86-64. Windows,
 ARM, Wayland kiosk sessions, Wake-on-LAN, per-monitor hardware power, recurring automatic OS upgrades and offline content caching are not
 implemented. Browser-level volume follows the existing receiver controls. Each screen can

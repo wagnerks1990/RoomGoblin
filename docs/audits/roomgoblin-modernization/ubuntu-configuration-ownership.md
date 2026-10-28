@@ -20,3 +20,9 @@ from their preceding qualification. Required CI, checked merge, exact publicatio
 and backed-up appliance verification precede delivery. No SSH
 request or command reached a real display. Post-dispatch per-computer history
 failure handling and frontend refresh/dialog ownership remain under review.
+
+Combined qualification with the [interface ownership repair](ubuntu-ui-ownership.md)
+passes 2,197 Linux tests with two root-only skips, all 23 Host Recovery cases,
+275 Chromium cases and 111 workspace/Veyon Firefox cases. The interface work
+resolves inventory, card, preview and metadata/maintenance dialog ownership;
+wizard probe/input ownership and post-dispatch history persistence remain open.

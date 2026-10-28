@@ -117,6 +117,167 @@ class WorkspaceBrowserTests(unittest.TestCase):
                     page, errors = self.page(path, width)
                     self.evidence(page, errors, f'{path.strip("/").replace("/", "-")}-{width}')
 
+    def test_ubuntu_old_inventory_cannot_replace_a_completed_metadata_save(self):
+        before = {'id': 'fixture', 'name': 'Before edit', 'address': '10.0.0.8', 'port': 22,
+                  'config': {'screens': []}, 'live': {'online': False}, 'state': 'offline'}
+        current, pending, writes = [before], [], []
+        reads = 0
+        def transport(route, target):
+            nonlocal reads
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if route.request.method == 'PUT':
+                writes.append(route.request.post_data_json)
+                current[0] = {**before, **writes[-1]}
+                route.fulfill(json={'ok': True})
+            else:
+                reads += 1
+                if reads == 2:
+                    pending.append(route)
+                else:
+                    route.fulfill(json={'devices': current, 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.locator('#ubuntuComputers h3').wait_for()
+        with page.expect_request('**/api/v1/ubuntu-displays'):
+            page.locator('#refresh').click()
+        page.locator('#ubuntuComputers [data-action="details"]').click()
+        page.locator('#ubuntuDetailName').fill('Saved name')
+        page.locator('#ubuntuDetailsSubmit').click()
+        page.locator('#ubuntuDetails').wait_for(state='hidden')
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(len(pending), 1)
+        pending[0].fulfill(json={'devices': [before], 'receivers': {}})
+        page.wait_for_function("document.querySelector('#ubuntuComputers h3').textContent === 'Saved name'")
+        self.assertEqual(reads, 3)
+        self.evidence(page, errors, 'ubuntu-inventory-save-ownership')
+
+    def test_ubuntu_assignments_use_the_refreshed_computer_configuration(self):
+        monitor = 'a' * 64
+        screen = {'connector': 'HDMI-1', 'monitorId': monitor, 'receiverId': 'old-screen',
+                  'name': 'Screen', 'mode': 'auto', 'rotation': 'normal', 'audioSink': 'default'}
+        status = {'hostname': 'fixture', 'version': '24.04', 'outputs': [
+            {'connector': 'HDMI-1', 'connected': True, 'monitorId': monitor, 'modes': ['1920x1080']}]}
+        device = {'id': 'fixture', 'name': 'Computer', 'address': '10.0.0.8', 'port': 22,
+                  'config': {'hubUrl': 'http://127.0.0.1:31337', 'screens': [screen]},
+                  'live': {'online': True, 'at': 1750000000000, 'status': status}}
+        refreshed = False
+        def transport(route, target):
+            nonlocal refreshed
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/refresh'):
+                refreshed = True
+                route.fulfill(json={'ok': True})
+            else:
+                current = {**device, 'config': {**device['config'], 'screens': [
+                    {**screen, 'receiverId': 'fresh-screen' if refreshed else 'old-screen'}]}}
+                route.fulfill(json={'devices': [current], 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.locator('#ubuntuComputers [data-action="edit"]').click()
+        page.locator('#ubuntuOutputRows [name="receiver"]').wait_for()
+        self.assertEqual(page.locator('#ubuntuOutputRows [name="receiver"]').input_value(), 'fresh-screen')
+        self.evidence(page, errors, 'ubuntu-refreshed-assignments')
+
+    def ubuntu_fixture_computer(self, identity='fixture'):
+        return {'id': identity, 'name': 'Computer ' + identity, 'address': '10.0.0.8', 'port': 22,
+                'config': {'screens': [{'receiverId': identity + '-screen', 'name': 'Screen',
+                    'connector': 'HDMI-1', 'mode': 'auto', 'rotation': 'normal'}]},
+                'live': {'online': True, 'at': 1750000000000, 'status': {'protocolVersion': '2'}}}
+
+    def test_ubuntu_dialog_acceptance_keeps_newer_drafts_and_rejects_duplicate_submits(self):
+        for kind in ('Details', 'Maintenance'):
+            with self.subTest(dialog=kind):
+                device, pending = self.ubuntu_fixture_computer(), []
+                def transport(route, target):
+                    if not target.startswith('/api/v1/ubuntu-displays'):
+                        return False
+                    if route.request.method in ('POST', 'PUT'):
+                        pending.append(route)
+                    else:
+                        route.fulfill(json={'devices': [device], 'receivers': {}})
+                    return True
+                page, errors = self.page('/managed-displays/', transport=transport)
+                if kind == 'Maintenance':
+                    page.locator('#ubuntuComputers summary', has_text='Software & updates').click()
+                page.locator('#ubuntuComputers [data-action="' + kind.lower() + '"]').click()
+                if kind == 'Maintenance':
+                    page.locator('#ubuntuMaintenanceConfirm').check()
+                with page.expect_request(lambda request: request.method in ('PUT', 'POST') and '/ubuntu-displays/' in request.url):
+                    page.locator('#ubuntu' + kind + 'Submit').click()
+                field = page.locator('#ubuntuDetailName' if kind == 'Details' else '#ubuntuOperation')
+                if kind == 'Details':
+                    field.fill('Newer draft')
+                else:
+                    field.select_option('update-os')
+                page.locator('#ubuntu' + kind + 'Form').evaluate("form => form.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}))")
+                self.assertEqual(len(pending), 1)
+                pending[0].fulfill(json={'ok': True, 'accepted': True})
+                page.wait_for_function("id => document.getElementById(id).textContent.includes('newer')", arg='ubuntu' + kind + 'Message')
+                self.assertTrue(page.locator('#ubuntu' + kind).is_visible())
+                self.assertEqual(field.input_value(), 'Newer draft' if kind == 'Details' else 'update-os')
+                self.assertFalse(page.locator('#ubuntu' + kind + 'Submit').is_disabled())
+                self.assertFalse(errors, errors)
+
+    def test_ubuntu_command_ownership_survives_inventory_redraws(self):
+        device, pending = self.ubuntu_fixture_computer(), []
+        def transport(route, target):
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/command'):
+                pending.append(route)
+            else:
+                route.fulfill(json={'devices': [device], 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        page.clock.install()
+        with page.expect_request('**/fixture/command'):
+            page.locator('#ubuntuComputers [data-action="identify"]').click()
+        page.locator('#ubuntuSearch').fill('Computer')
+        self.assertTrue(page.locator('#ubuntuComputers [data-action="identify"]').is_disabled())
+        self.assertEqual(len(pending), 1)
+        pending[0].fulfill(json={'ok': True, 'accepted': True})
+        page.wait_for_function("document.querySelector('.ubuntu-card-message').textContent.includes('accepted')")
+        page.clock.fast_forward(16000)
+        self.assertIn('accepted', page.locator('.ubuntu-card-message').inner_text())
+        self.assertFalse(page.locator('#ubuntuComputers [data-action="identify"]').is_disabled())
+        self.assertEqual(len(pending), 1)
+        self.assertFalse(errors, errors)
+
+    def test_ubuntu_preview_ownership_ignores_closed_and_superseded_captures(self):
+        devices = [self.ubuntu_fixture_computer(key) for key in ('one', 'two')]
+        pending = []
+        def transport(route, target):
+            if not target.startswith('/api/v1/ubuntu-displays'):
+                return False
+            if target.endswith('/command'):
+                self.assertEqual(route.request.post_data_json['action'], 'screenshot')
+                pending.append(route)
+            else:
+                route.fulfill(json={'devices': devices, 'receivers': {}})
+            return True
+        page, errors = self.page('/managed-displays/', transport=transport)
+        with page.expect_request('**/one/command'):
+            page.locator('[data-id="one"] [data-action="screenshot"]').click()
+        self.assertTrue(page.locator('#ubuntuPreview').is_visible())
+        page.keyboard.press('Escape')
+        self.assertEqual(page.evaluate('document.activeElement.id'), 'ubuntuSearch')
+        with page.expect_request('**/two/command'):
+            page.locator('[data-id="two"] [data-action="screenshot"]').click()
+        newest = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+        previous = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
+        pending[1].fulfill(json={'ok': True, 'png': newest})
+        page.wait_for_function("src => document.getElementById('ubuntuPreviewImage').getAttribute('src') === src", arg='data:image/png;base64,' + newest)
+        page.wait_for_function("document.getElementById('ubuntuPreviewImage').naturalWidth === 1")
+        pending[0].fulfill(json={'ok': True, 'png': previous})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        self.assertEqual(page.locator('#ubuntuPreviewImage').get_attribute('src'), 'data:image/png;base64,' + newest)
+        page.keyboard.press('Escape')
+        self.assertIsNone(page.locator('#ubuntuPreviewImage').get_attribute('src'))
+        self.assertEqual(page.evaluate('document.activeElement.dataset.screen'), 'two-screen')
+        self.assertFalse(errors, errors)
+
     def test_ubuntu_wizard_assigns_outputs_independently_and_keeps_drafts(self):
         monitor = 'a' * 64
         outputs = [{'connector': name, 'connected': True, 'monitorId': monitor, 'modes': ['1920x1080']} for name in ('HDMI-1', 'DP-1')]

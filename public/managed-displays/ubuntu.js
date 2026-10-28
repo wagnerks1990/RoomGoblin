@@ -9,11 +9,20 @@
   const percent=(part,total)=>Number.isFinite(part)&&total>0?Math.round(100*part/total)+"%":"Unavailable";
   const maintenanceCopy={"check-updates":"Refresh Ubuntu’s package lists and report available updates. This does not install packages.","update-os":"Install available updates from this computer’s configured Ubuntu package sources. Preserve configuration files; do not remove packages or upgrade Ubuntu to another release. A reboot may be required and remains a separate action. Package updates do not have an automatic OS rollback.","update-browser":"Update the installed Chromium Snap. Stop and restart the managed graphical session so every screen can use the new browser.","revert-browser":"Ask Snap to restore its previous retained Chromium revision. Restart all screen sessions. A retained revision must be available.","update-agent":"Install the agent package matching this Hub from trusted RoomGoblin main. Verify its content, retain the previous agent and restart all screen sessions. A failed package verification restores the previous agent.","revert-agent":"Restore the previous retained RoomGoblin agent and restart all screen sessions. Screen assignments and browser profiles are preserved."};
   let maintenanceDevice=null,detailsDevice=null,dialogVersion=0;
+  let inventoryVersion=0,inventoryWrites=0,loadAgain=false;
+  const pendingCommands=new Set(),computerMessages=new Map();
+  let previewVersion=0,previewFocus=null;
   async function request(path="",method="GET",body){
-    const response=await fetch(base+path,{method,credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})});
-    let value;try{value=await response.json()}catch{throw Error(`Request failed (${response.status}). Refresh computer status before retrying; delivery may be unconfirmed.`)}
-    if(!response.ok||value.ok===false)throw Error(value.error||`Request failed (${response.status})`);return value;
+    const options={method,credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{})};
+    const writes=method!=="GET"&&path!=="/host-key"&&path!=="/probe"&&!(path.endsWith("/command")&&body?.action==="screenshot");
+    if(writes){inventoryVersion++;inventoryWrites++;loadAgain=true}
+    try{
+      const response=await fetch(base+path,options);
+      let value;try{value=await response.json()}catch{throw Error(`Request failed (${response.status}). Refresh computer status before retrying; delivery may be unconfirmed.`)}
+      if(!response.ok||value.ok===false)throw Error(value.error||`Request failed (${response.status})`);return value;
+    }finally{if(writes){inventoryVersion++;inventoryWrites--;if(!inventoryWrites)void load()}}
   }
+  function computerMessage(id,text){computerMessages.set(id,text);for(const card of $("ubuntuComputers").querySelectorAll("[data-id]"))if(card.dataset.id===id)card.querySelector(".ubuntu-card-message").textContent=text}
   function message(text){$("ubuntuMessage").textContent=text}
   function wizardStep(value){step=value;document.querySelectorAll("[data-ubuntu-step]").forEach(el=>el.hidden=Number(el.dataset.ubuntuStep)!==value);$("ubuntuStep").textContent=["1 · Connect","2 · Assign screens","3 · Review installation","4 · Installation"][value];$("ubuntuBack").hidden=value===0||value===3;$("ubuntuNext").hidden=value===3;$("ubuntuNext").textContent=value===0?"Check computer":value===1?"Review installation":editing?"Save screen assignments":"Install RoomGoblin";message("")}
   function clearCredentials(){for(const id of ["ubuntuPassword","ubuntuKey","ubuntuPassphrase"])$(id).value="";$("ubuntuKeyFile").value=""}
@@ -44,10 +53,17 @@
     }
   }
   async function load(){
-    if(polling)return;polling=true;
-    try{inventory=await request();render()}
-    catch(e){$("ubuntuStatus").textContent=e.message}
-    finally{polling=false}
+    if(inventoryWrites){loadAgain=true;return false}
+    if(polling)return polling;
+    loadAgain=false;const version=inventoryVersion;
+    const pending=(async()=>{
+      let accepted=false;
+      try{const value=await request();if(version===inventoryVersion&&!inventoryWrites){inventory=value;render();accepted=true}else loadAgain=true}
+      catch(e){if(version===inventoryVersion&&!inventoryWrites)$("ubuntuStatus").textContent=e.message+" Showing last available inventory.";else loadAgain=true}
+      finally{polling=false}
+      return loadAgain&&!inventoryWrites?load():accepted;
+    })();
+    polling=pending;return pending;
   }
   function render(){
     const root=$("ubuntuComputers"),open=new Set([...root.querySelectorAll("details[open]")].map(d=>d.dataset.computer));
@@ -72,8 +88,13 @@
       ${details("maintenance","Computer maintenance",'<div class="controls"><button data-action="activate">Activate / restart kiosk</button><button data-action="reboot">Reboot computer</button><button data-action="shutdown">Shut down</button><button data-action="rollback">Restore previous desktop</button><button data-action="remove">Remove enrollment</button></div><p class="subtle">Computer actions affect all its screens. Desktop rollback restores the pre-installation configuration; it does not roll back Ubuntu packages.</p>')}
       ${details("history","Health & maintenance history",`<ol class="ubuntu-history">${[...(status?.maintenance?.history||[]).map(e=>({at:e.finishedAt,kind:e.operation,state:e.state})),...(device.history||[])].sort((a,b)=>new Date(typeof b.at==="number"?b.at*1000:b.at)-new Date(typeof a.at==="number"?a.at*1000:a.at)).slice(0,30).map(e=>`<li><time>${esc(date(e.at))}</time> · ${esc(e.kind)} · ${esc(e.state||e.operation||e.action||e.message||"")}${e.alerts?.length?`<br>${e.alerts.map(a=>esc(a.text)).join(" · ")}`:""}</li>`).join("")||'<li>No recorded events yet.</li>'}</ol>`)}<p class="ubuntu-card-message" role="status"></p></article>`;
     }).join("")||`<p class="empty">${inventory.devices.length?"No computers match these filters.":"Add an Ubuntu computer to manage each connected monitor as an independent screen."}</p>`;
+    for(const id of computerMessages.keys())if(!pendingCommands.has(id)&&!inventory.devices.some(d=>d.id===id))computerMessages.delete(id);
+    for(const card of root.querySelectorAll("[data-id]")){
+      card.querySelector(".ubuntu-card-message").textContent=computerMessages.get(card.dataset.id)||"";
+      if(pendingCommands.has(card.dataset.id))card.querySelectorAll("button").forEach(button=>button.disabled=true);
+    }
     if(focused?.detail)[...root.querySelectorAll("details[data-computer]")].find(d=>d.dataset.computer===focused.detail)?.querySelector("summary")?.focus({preventScroll:true});
-    if(focused?.action)[...root.querySelectorAll('button[data-action]')].find(b=>b.closest('[data-id]').dataset.id===focused.id&&b.dataset.action===focused.action&&b.dataset.screen===focused.screen)?.focus({preventScroll:true});
+    if(focused?.action){const button=[...root.querySelectorAll('button[data-action]')].find(b=>b.closest('[data-id]').dataset.id===focused.id&&b.dataset.action===focused.action&&b.dataset.screen===focused.screen);(button&&!button.disabled?button:$("ubuntuSearch")).focus({preventScroll:true})}
   }
   async function openWizard(device=null,repair=false){
     const version=++wizardVersion;$("ubuntuActivate").hidden=true;delete $("ubuntuActivate").dataset.device;$("ubuntuJobStatus").textContent="";$("ubuntuNext").disabled=false;
@@ -86,7 +107,7 @@
       if(repair){repairing=device.id;message("Use the original administrator SSH access to repair/update this computer. Its management identity and browser profiles will be retained.")}
       else{
         editing=device.id;
-        try{await request(`/${device.id}/refresh`,"POST",{});const freshInventory=await request();if(!currentWizard(version))return;inventory=freshInventory;const fresh=inventory.devices.find(d=>d.id===device.id);probe=fresh.live?.status;if(!probe)throw Error("Computer could not be checked.");screenRows(device.config);wizardStep(1)}catch(e){if(currentWizard(version))message(e.message)}
+        try{await request(`/${device.id}/refresh`,"POST",{});const accepted=await load();if(!currentWizard(version))return;if(!accepted)throw Error("Computer status could not be refreshed. Try again.");const fresh=inventory.devices.find(d=>d.id===device.id);probe=fresh?.live?.status;if(!probe)throw Error("Computer could not be checked.");screenRows(fresh.config);wizardStep(1)}catch(e){if(currentWizard(version))message(e.message)}
       }
     }
   }
@@ -132,7 +153,8 @@
   });
   $("ubuntuComputers").addEventListener("click",async event=>{
     const button=event.target.closest("button[data-action]"),card=button?.closest("[data-id]");if(!card)return;
-    const device=inventory.devices.find(d=>d.id===card.dataset.id),action=button.dataset.action,notice=card.querySelector(".ubuntu-card-message");
+    const device=inventory.devices.find(d=>d.id===card.dataset.id),action=button.dataset.action;
+    if(!device||pendingCommands.has(device.id))return;
     if(action==="edit"||action==="repair"){openWizard(device,action==="repair");return}
     if(action==="details"){
       dialogVersion++;detailsDevice=device.id;$("ubuntuDetailsForm").reset();$("ubuntuDetailsMessage").textContent="";$("ubuntuDetailsSubmit").disabled=false;
@@ -145,20 +167,29 @@
     }
     if(action==="cancel-schedule"){
       if(!confirm("Cancel this computer’s scheduled maintenance?"))return;
-      try{await request(`/${device.id}/schedule`,"DELETE",{});await load()}catch(e){notice.textContent=e.message}return;
+      pendingCommands.add(device.id);computerMessage(device.id,"Cancelling scheduled maintenance…");render();
+      try{await request(`/${device.id}/schedule`,"DELETE",{});computerMessage(device.id,"Scheduled maintenance cancelled.");await load()}catch(e){computerMessage(device.id,e.message)}finally{pendingCommands.delete(device.id);render()}return;
     }
     const confirmations={activate:"Activate this computer’s RoomGoblin kiosk? Its graphical session will restart.",reboot:"Reboot this computer and interrupt all its screens?",shutdown:"Shut down this computer and all its screens? Remote power-on is not guaranteed.",rollback:"Restore the computer’s pre-installation desktop configuration? This stops all RoomGoblin screen sessions.",remove:"Remove management enrollment? The computer keeps running and receiver assignments/data remain. Restore its previous desktop first if you also want to stop the kiosk."};
     if(confirmations[action]&&!confirm(confirmations[action]))return;
-    button.disabled=true;notice.textContent="Working…";
+    pendingCommands.add(device.id);computerMessage(device.id,"Working…");render();
+    let capture=0;
+    if(action==="screenshot"){capture=++previewVersion;previewFocus={id:device.id,screen:button.dataset.screen};$("ubuntuPreviewImage").removeAttribute("src");$("ubuntuPreviewStatus").textContent="Capturing "+device.name+"…";$("ubuntuPreview").showModal()}
     try{
-      if(action==="refresh"){await request(`/${device.id}/refresh`,"POST",{});await load();return}
+      if(action==="refresh"){await request(`/${device.id}/refresh`,"POST",{});computerMessage(device.id,"Computer status refreshed.");await load();return}
       if(action==="remove"){await request(`/${device.id}`,"DELETE",{confirm:true});await load();return}
       const result=await request(`/${device.id}/command`,"POST",{action,receiverId:button.dataset.screen,confirm:Boolean(confirmations[action])});
-      if(action==="screenshot"){$("ubuntuPreviewImage").src="data:image/png;base64,"+result.png;$("ubuntuPreview").showModal()}
-      notice.textContent=result.accepted?"Command accepted. Refresh status to verify its result.":"Completed.";
-    }catch(e){notice.textContent=e.message}finally{button.disabled=false}
+      if(action==="screenshot"&&capture===previewVersion&&$("ubuntuPreview").open){$("ubuntuPreviewImage").src="data:image/png;base64,"+result.png;$("ubuntuPreviewStatus").textContent=device.name+" · "+button.dataset.screen}
+      computerMessage(device.id,result.accepted?"Command accepted. Refresh status to verify its result.":"Completed.");
+    }catch(e){computerMessage(device.id,e.message);if(capture===previewVersion&&$("ubuntuPreview").open)$("ubuntuPreviewStatus").textContent=e.message}finally{pendingCommands.delete(device.id);render()}
   });
-  $("ubuntuPreviewClose").addEventListener("click",()=>{$("ubuntuPreview").close();$("ubuntuPreviewImage").removeAttribute("src")});
+  function closePreview(){
+    previewVersion++;$("ubuntuPreview").close();$("ubuntuPreviewImage").removeAttribute("src");$("ubuntuPreviewStatus").textContent="";
+    const button=[...$("ubuntuComputers").querySelectorAll('[data-action="screenshot"]')].find(b=>b.closest('[data-id]').dataset.id===previewFocus?.id&&b.dataset.screen===previewFocus?.screen);
+    (button&&!button.disabled?button:$("ubuntuSearch")).focus({preventScroll:true});previewFocus=null;
+  }
+  $("ubuntuPreviewClose").addEventListener("click",closePreview);
+  $("ubuntuPreview").addEventListener("cancel",event=>{event.preventDefault();closePreview()});
   function updateMaintenanceForm(){
     $("ubuntuOperationDetail").textContent=maintenanceCopy[$("ubuntuOperation").value];
     $("ubuntuScheduleLabel").hidden=$("ubuntuMaintenanceWhen").value!=="later";
@@ -170,23 +201,29 @@
     $(button).addEventListener("click",()=>{dialogVersion++;$(dialog).close()});
     $(dialog).addEventListener("cancel",()=>{dialogVersion++});
   }
+  function maintenanceDraft(){return {operation:$("ubuntuOperation").value,confirm:$("ubuntuMaintenanceConfirm").checked,when:$("ubuntuMaintenanceWhen").value,at:$("ubuntuScheduleAt").value}}
+  function detailsDraft(){return {name:$("ubuntuDetailName").value,location:$("ubuntuDetailLocation").value,address:$("ubuntuDetailAddress").value,port:Number($("ubuntuDetailPort").value),notes:$("ubuntuDetailNotes").value}}
   $("ubuntuMaintenanceForm").addEventListener("submit",async event=>{
-    event.preventDefault();const version=dialogVersion,id=maintenanceDevice,button=$("ubuntuMaintenanceSubmit");button.disabled=true;
+    event.preventDefault();const version=dialogVersion,id=maintenanceDevice,button=$("ubuntuMaintenanceSubmit");if(!id||pendingCommands.has(id))return;
+    const draft=maintenanceDraft();pendingCommands.add(id);button.disabled=true;computerMessage(id,"Submitting maintenance request…");render();
     try{
-      const body={operation:$("ubuntuOperation").value,confirm:$("ubuntuMaintenanceConfirm").checked};
-      if($("ubuntuMaintenanceWhen").value==="later")body.scheduleAt=new Date($("ubuntuScheduleAt").value).toISOString();
+      const body={operation:draft.operation,confirm:draft.confirm};
+      if(draft.when==="later")body.scheduleAt=new Date(draft.at).toISOString();
       await request(`/${id}/maintenance`,"POST",body);
-      if(version===dialogVersion){$("ubuntuMaintenance").close();dialogVersion++}await load();
-    }catch(e){if(version===dialogVersion)$("ubuntuMaintenanceMessage").textContent=e.message}
-    finally{if(version===dialogVersion)button.disabled=false}
+      computerMessage(id,"Maintenance request accepted. Refresh status to verify its result.");
+      if(version===dialogVersion){if(JSON.stringify(draft)===JSON.stringify(maintenanceDraft())){$("ubuntuMaintenance").close();dialogVersion++}else $("ubuntuMaintenanceMessage").textContent="Submitted maintenance accepted. Your newer choices have not been sent."}await load();
+    }catch(e){computerMessage(id,e.message);if(version===dialogVersion)$("ubuntuMaintenanceMessage").textContent=e.message}
+    finally{pendingCommands.delete(id);render();if(version===dialogVersion)button.disabled=false}
   });
   $("ubuntuDetailsForm").addEventListener("submit",async event=>{
-    event.preventDefault();const version=dialogVersion,id=detailsDevice,button=$("ubuntuDetailsSubmit");button.disabled=true;
+    event.preventDefault();const version=dialogVersion,id=detailsDevice,button=$("ubuntuDetailsSubmit");if(!id||pendingCommands.has(id))return;
+    const draft=detailsDraft();pendingCommands.add(id);button.disabled=true;computerMessage(id,"Saving computer details…");render();
     try{
-      await request(`/${id}`,"PUT",{name:$("ubuntuDetailName").value,location:$("ubuntuDetailLocation").value,address:$("ubuntuDetailAddress").value,port:Number($("ubuntuDetailPort").value),notes:$("ubuntuDetailNotes").value});
-      if(version===dialogVersion){$("ubuntuDetails").close();dialogVersion++}await load();
-    }catch(e){if(version===dialogVersion)$("ubuntuDetailsMessage").textContent=e.message}
-    finally{if(version===dialogVersion)button.disabled=false}
+      await request(`/${id}`,"PUT",draft);
+      computerMessage(id,"Computer details saved.");
+      if(version===dialogVersion){if(JSON.stringify(draft)===JSON.stringify(detailsDraft())){$("ubuntuDetails").close();dialogVersion++}else $("ubuntuDetailsMessage").textContent="Submitted changes saved. Your newer edits remain unsaved."}await load();
+    }catch(e){computerMessage(id,e.message);if(version===dialogVersion)$("ubuntuDetailsMessage").textContent=e.message}
+    finally{pendingCommands.delete(id);render();if(version===dialogVersion)button.disabled=false}
   });
   $("ubuntuSearch").addEventListener("input",render);$("ubuntuFilter").addEventListener("change",render);
   $("refresh").addEventListener("click",load);
