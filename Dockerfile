@@ -24,6 +24,26 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
  && test -s /out/RoomGoblinAgentBootstrap.exe \
  && test -s /out/RoomGoblinAgentUpdater.exe
 
+# Optional code-only Windows sign-in is a separate package. Never add it to the
+# four-file lab-agent update contract or activate it during an agent update.
+RUN RELEASE_VERSION="$(cat VERSION)" \
+ && dotnet restore windows-agent/daily-signin/RoomGoblin.SignIn.csproj --locked-mode \
+ && dotnet publish windows-agent/daily-signin/RoomGoblin.SignIn.csproj -c Release -r win-x64 --self-contained true --no-restore \
+      -p:Version="$RELEASE_VERSION" -p:InformationalVersion="$RELEASE_VERSION" -o /signin
+
+# Bookworm's MinGW headers predate credentialprovider.h. Keep the newer Windows
+# cross-compiler isolated from both the existing .NET builder and runtime image.
+FROM ubuntu:24.04 AS signin-provider-build
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends g++-mingw-w64-x86-64-posix \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY windows-agent/daily-signin/provider.cpp windows-agent/daily-signin/provider.def ./
+RUN mkdir -p /signin \
+ && x86_64-w64-mingw32-g++ -std=c++17 -O2 -shared -static -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 \
+      provider.cpp provider.def -o /signin/RoomGoblinCredentialProvider.dll \
+      -lole32 -luuid -ladvapi32 -lsecur32 -lcredui -lshell32
+
 FROM node:22-bookworm-slim AS browser-build
 
 WORKDIR /build
@@ -74,6 +94,10 @@ RUN PYTHONDONTWRITEBYTECODE=1 /opt/esphome/bin/python -m unittest discover -s te
  && rm -rf /app/test
 COPY config ./config
 COPY public ./public
+COPY --from=native-agent-build /signin/RoomGoblinSignIn.exe ./public/lab-agent/daily-signin/RoomGoblinSignIn.exe
+COPY --from=signin-provider-build /signin/RoomGoblinCredentialProvider.dll ./public/lab-agent/daily-signin/RoomGoblinCredentialProvider.dll
+COPY tools/package-daily-signin.js ./tools/package-daily-signin.js
+RUN node tools/package-daily-signin.js
 COPY --from=browser-build /build/public/display/sendspin.bundle.js ./public/display/sendspin.bundle.js
 COPY --from=native-agent-build /out/RoomGoblinAgent.exe ./public/lab-agent/native/RoomGoblinAgent.exe
 COPY --from=native-agent-build /out/RoomGoblinSessionAgent.exe ./public/lab-agent/native/RoomGoblinSessionAgent.exe

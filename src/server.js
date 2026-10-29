@@ -5623,6 +5623,8 @@ app.post("/api/v1/commands", requireControl, async (req, res) => {
 
 // Optional native ESPHome connections share the unprivileged application identity.
 // Registry/key writes and asynchronous enrollment/commands participate in export drain.
+require("./daily-signin").registerDailySignInRoutes(app,{storage:dbStore,requireAdmin,isAdmin:administratorAccessAllowed,
+  canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,audit,trustProxyHops:TRUST_PROXY_HOPS});
 const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested});
 registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRead,
   requireControl:requireCapability("integrations.control"),requireAdmin,

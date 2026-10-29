@@ -2,6 +2,10 @@
 
 Six workflows have distinct responsibilities:
 
+The browser job uses Ubuntu 24.04 explicitly because the locked Playwright 1.57
+browser bundle does not support Ubuntu 26.04. Upgrade the runner and browser
+dependency together after qualifying both Chromium and Firefox.
+
 | Workflow | Required work |
 | --- | --- |
 | Validate | Locked dependency audits, syntax, Node/Python regressions, Windows parsing/native artifact qualification, Android debug APK, restrictive-context Hub build, maintenance build, two Trivy scans and appliance smoke tests |

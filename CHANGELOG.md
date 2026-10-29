@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Add an optional Windows daily-code sign-in pilot with administrator group/code
+  controls, encrypted computer-bound enrollment, offline local validation and a
+  separate recoverable installer. Existing lab-agent updates never enable it;
+  physical Windows sign-in and recovery acceptance remain required before rollout.
+
 - Bound operator API waits through response bodies, preserve caller cancellation,
   and release pending controls with an unconfirmed outcome instead of retrying writes.
 

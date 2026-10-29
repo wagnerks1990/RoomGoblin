@@ -17,7 +17,8 @@ concurrency:
 
 jobs:
   display-browser:
-    runs-on: ubuntu-latest
+    # Playwright 1.57 does not support the Ubuntu 26.04 latest runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false

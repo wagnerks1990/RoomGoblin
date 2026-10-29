@@ -278,6 +278,11 @@ See `.env.example`, `INSTALL.md`, and `docs/CONFIGURATION.md`.
 
 ## Windows lab agents
 
+The optional [daily-code Windows sign-in pilot](docs/WINDOWS-DAILY-SIGNIN.md)
+lets selected standard local accounts use a staff-visible daily RoomGoblin code
+without contacting the Hub at sign-in. It uses a separate installer and requires
+spare-PC/VM acceptance; ordinary Lab Agent updates never enable it.
+
 Because the appliance is temporarily HTTP-only, Windows lab-agent enrollment requires the explicit `-AllowHttp` switch and should be limited to trusted classroom/admin networks.
 
 ```powershell
