@@ -13,6 +13,9 @@ using RoomGoblin.SignIn;
 int checks=0;
 void Check(bool ok) { if(!ok) throw new Exception("Sign-in contract failed at check " + (checks+1)); checks++; }
 void Reject(Action action) { bool rejected=false; try { action(); } catch { rejected=true; } Check(rejected); }
+Reject(()=>AccountPolicy.RequireNonExpiringPassword(0x200)); // Ordinary expiring local account.
+Reject(()=>AccountPolicy.RequireNonExpiringPassword(0));
+AccountPolicy.RequireNonExpiringPassword(0x10200); Check(true); // Dedicated nonexpiring account.
 using var fixture=JsonDocument.Parse(File.ReadAllText(args[0])); var f=fixture.RootElement;
 var seed=Convert.FromBase64String(f.GetProperty("seed").GetString()!);var id=f.GetProperty("groupId").GetString()!;
 foreach(var v in f.GetProperty("vectors").EnumerateArray()) {

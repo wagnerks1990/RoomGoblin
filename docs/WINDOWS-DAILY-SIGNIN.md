@@ -34,6 +34,12 @@ application control or Windows protections to install it.
 
 On a spare PC or VM:
 
+The dedicated standard local account must already have **Password never expires**
+enabled. Installation checks this before changing the account and does not modify
+Windows password-expiry policy. The hidden Windows credential cannot complete an
+interactive expired-password change. If device policy requires periodic Windows
+password changes, this first pilot is not compatible with that policy.
+
 1. Take a VM snapshot or tested system backup. Keep the separate local
    administrator account's password and recovery access available.
 2. Sign the esports account out completely, including disconnected sessions.

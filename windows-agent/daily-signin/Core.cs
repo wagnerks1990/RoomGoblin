@@ -9,6 +9,15 @@ namespace RoomGoblin.SignIn;
 internal sealed record Enrollment(string Format, string GroupId, string GroupName, string TimeZone,
     string ComputerName, string Username, string Seed, DateTimeOffset IssuedAt, DateTimeOffset ExpiresAt);
 internal sealed record Envelope(string Format, int Iterations, string Salt, string Nonce, string Ciphertext, string Tag);
+internal static class AccountPolicy
+{
+    internal static void RequireNonExpiringPassword(uint flags)
+    {
+        const uint DontExpirePassword = 0x10000; // USER_INFO_23 UF_DONT_EXPIRE_PASSWD.
+        if ((flags & DontExpirePassword) == 0)
+            throw new InvalidOperationException("This pilot requires Password never expires on the dedicated local account. Ask the device administrator to review its account policy before installation; RoomGoblin does not change that policy.");
+    }
+}
 internal static class Codes
 {
     internal const string Format = "roomgoblin-daily-signin-v1";

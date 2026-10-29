@@ -56,7 +56,7 @@ internal static class Installer
         if (input.Length is < 1 or > 16384) throw new InvalidDataException();
         var bytes = new byte[(int)input.Length]; input.ReadExactly(bytes);
         var policy = Codes.Decrypt(bytes, ReadSecret("Enrollment passphrase (hidden): "), DateTimeOffset.UtcNow, Environment.MachineName);
-        var sid = AccountSid(policy.Username);
+        var sid = AccountSid(policy.Username, forInstallation:true);
         if (IsAdministrator(policy.Username) || sid.EndsWith("-500", StringComparison.Ordinal) || WindowsIdentity.GetCurrent().User?.Value == sid)
             throw new InvalidOperationException("The esports account must be a separate standard local account.");
         using var administrator = WindowsIdentity.GetCurrent();
@@ -185,11 +185,17 @@ internal static class Installer
         if (!process.WaitForExit(20000)) { process.Kill(true); throw new TimeoutException(); }
         if (process.ExitCode != 0) throw new IOException("Service operation failed.");
     }
-    internal static string AccountSid(string username)
+    internal static string AccountSid(string username, bool forInstallation = false)
     {
         int result = NetUserGetInfo(null, username, 23, out var data);
         if (result != 0) throw new Win32Exception(result);
-        try { var info = Marshal.PtrToStructure<User23>(data); if ((info.Flags & 2) != 0) throw new InvalidOperationException(); return new SecurityIdentifier(info.Sid).Value; }
+        try
+        {
+            var info = Marshal.PtrToStructure<User23>(data);
+            if ((info.Flags & 2) != 0) throw new InvalidOperationException();
+            if (forInstallation) AccountPolicy.RequireNonExpiringPassword(info.Flags);
+            return new SecurityIdentifier(info.Sid).Value;
+        }
         finally { NetApiBufferFree(data); }
     }
     internal static bool IsAdministrator(string username)
