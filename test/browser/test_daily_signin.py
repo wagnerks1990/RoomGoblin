@@ -13,6 +13,29 @@ class DailySignInTests(unittest.TestCase):
     tearDownClass = classmethod(workspaces.WorkspaceBrowserTests.tearDownClass.__func__)
     page = workspaces.WorkspaceBrowserTests.page
 
+    def test_lab_link_is_available_to_the_current_administrator(self):
+        page, errors = self.page('/controller/lab.html', overrides={
+            '/api/v1/auth/me': {'ok': True, 'user': {'role': 'admin', 'capabilities': ['*']}}})
+        expect(page.locator('#dailySignInLink')).to_be_visible()
+        self.assertEqual(errors, [])
+
+    def test_retired_lab_auth_response_cannot_restore_the_link(self):
+        held = []
+        def transport(route, target):
+            if target == '/api/v1/auth/me':
+                held.append(route)
+                return True
+            return False
+        page, errors = self.page('/controller/lab.html', transport=transport)
+        old = workspaces.WorkspaceBrowserTests.held_route(self, page, held)
+        page.evaluate("window.dispatchEvent(new Event('roomgoblin:authchange'))")
+        current = workspaces.WorkspaceBrowserTests.held_route(self, page, held, 1)
+        current.fulfill(status=401, json={'ok': False, 'user': None})
+        old.fulfill(json={'ok': True, 'user': {'role': 'admin', 'capabilities': ['*']}})
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.locator('#dailySignInLink')).to_be_hidden()
+        self.assertEqual(errors, [])
+
     def open_page(self, transport=None, width=1440):
         result = self.page('/controller/daily-signin.html', width=width,
                            overrides={BASE: {'ok': True, 'groups': GROUPS}}, transport=transport)

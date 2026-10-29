@@ -4,10 +4,15 @@
   const base="/api/v1/admin/daily-signin";
   if(!root){
     const link=document.getElementById("dailySignInLink");
-    if(link)fetch("/api/v1/auth/me",{cache:"no-store",signal:AbortSignal.timeout(10000)}).then(r=>r.json()).then(j=>{
-      link.hidden=!(j.user?.role==="admin"&&j.user?.capabilities?.includes("*"));
-    }).catch(()=>{link.hidden=true});
-    window.addEventListener("roomgoblin:authchange",()=>{if(link)link.hidden=true;});
+    let revision=0;
+    async function checkLink(){
+      if(!link)return;const owner=++revision;link.hidden=true;
+      try{
+        const response=await fetch("/api/v1/auth/me",{cache:"no-store",signal:AbortSignal.timeout(10000)}),result=await response.json();
+        if(owner===revision)link.hidden=!(response.ok&&result.user?.role==="admin"&&result.user?.capabilities?.includes("*"));
+      }catch{if(owner===revision)link.hidden=true;}
+    }
+    window.addEventListener("roomgoblin:authchange",checkLink);checkLink();
     return;
   }
   const $=id=>document.getElementById(id);
