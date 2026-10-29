@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(RoomGoblinCredentialProvider LANGUAGES CXX)
-add_library(RoomGoblinCredentialProvider SHARED provider.cpp)
+add_library(RoomGoblinCredentialProvider SHARED provider.cpp provider.def)
 target_compile_features(RoomGoblinCredentialProvider PRIVATE cxx_std_17)
 target_compile_definitions(RoomGoblinCredentialProvider PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00)
 target_link_libraries(RoomGoblinCredentialProvider PRIVATE ole32 uuid advapi32 secur32 credui shell32)

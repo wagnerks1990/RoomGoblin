@@ -34,7 +34,7 @@ RUN RELEASE_VERSION="$(cat VERSION)" \
  && dotnet publish windows-agent/daily-signin/RoomGoblin.SignIn.csproj -c Release -r win-x64 --self-contained true --no-restore \
       -p:Version="$RELEASE_VERSION" -p:InformationalVersion="$RELEASE_VERSION" -o /signin \
  && x86_64-w64-mingw32-g++ -std=c++17 -O2 -shared -static -DUNICODE -D_UNICODE -D_WIN32_WINNT=0x0A00 \
-      windows-agent/daily-signin/provider.cpp -o /signin/RoomGoblinCredentialProvider.dll \
+      windows-agent/daily-signin/provider.cpp windows-agent/daily-signin/provider.def -o /signin/RoomGoblinCredentialProvider.dll \
       -lole32 -luuid -ladvapi32 -lsecur32 -lcredui -lshell32
 
 FROM node:22-bookworm-slim AS browser-build

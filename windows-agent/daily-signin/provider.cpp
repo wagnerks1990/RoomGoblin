@@ -204,9 +204,9 @@ public:
     IFACEMETHODIMP CreateInstance(IUnknown* outer,REFIID id,void** result) override {if(outer)return CLASS_E_NOAGGREGATION;auto p=new(std::nothrow) Provider();if(!p)return E_OUTOFMEMORY;auto hr=p->QueryInterface(id,result);p->Release();return hr;}
     IFACEMETHODIMP LockServer(BOOL lock) override {if(lock)InterlockedIncrement(&objects);else InterlockedDecrement(&objects);return S_OK;}
 };
-extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(REFCLSID id,REFIID iid,void** result) {
+STDAPI DllGetClassObject(REFCLSID id,REFIID iid,void** result) {
     if(id!=ClassId)return CLASS_E_CLASSNOTAVAILABLE;auto factory=new(std::nothrow) Factory();if(!factory)return E_OUTOFMEMORY;
     auto hr=factory->QueryInterface(iid,result);factory->Release();return hr;
 }
-extern "C" __declspec(dllexport) HRESULT __stdcall DllCanUnloadNow(){return objects==0?S_OK:S_FALSE;}
+STDAPI DllCanUnloadNow(){return objects==0?S_OK:S_FALSE;}
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD reason,LPVOID){if(reason==DLL_PROCESS_ATTACH)DisableThreadLibraryCalls(instance);return TRUE;}
