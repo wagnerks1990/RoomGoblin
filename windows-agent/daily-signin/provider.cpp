@@ -114,7 +114,7 @@ class Credential final : public ICredentialProviderCredential2 {
     void Clear() { SecureZeroMemory(code,sizeof(code)); if(events) events->SetFieldString(this,1,L""); }
 public:
     explicit Credential(CREDENTIAL_PROVIDER_USAGE_SCENARIO value):scenario(value),sid(Setting(L"AccountSid")) { InterlockedIncrement(&objects); }
-    ~Credential() { Clear(); if(events) events->Release(); InterlockedDecrement(&objects); }
+    ~Credential() { SecureZeroMemory(code,sizeof(code)); if(events) events->Release(); InterlockedDecrement(&objects); }
     IFACEMETHODIMP QueryInterface(REFIID id,void** out) override {
         if(!out)return E_POINTER; *out=nullptr;
         if(id==IID_IUnknown || id==IID_ICredentialProviderCredential || id==IID_ICredentialProviderCredential2) *out=static_cast<ICredentialProviderCredential2*>(this);
