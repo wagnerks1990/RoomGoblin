@@ -259,6 +259,17 @@ Run repository validation and search for unintended stale current-baseline versi
 
 ## Operator GUI contract
 
+The optional Windows daily-code sign-in pilot is documented in
+`docs/WINDOWS-DAILY-SIGNIN.md`. Keep its installer, SYSTEM service and credential
+provider separate from the existing four-file Lab Agent updater. No Hub/agent
+update may activate it, change a Windows password or replace a loaded sign-in DLL.
+Preserve explicit local installation, a separate administrator recovery account,
+encrypted computer-bound enrollment, SYSTEM-only IPC, durable attempt/recovery
+state and protected account SID checks. Never expose seeds, Windows passwords or
+daily codes through logs, ordinary inventory or receiver projections. Physical
+Windows sign-in/recovery and alternate-provider acceptance are required before
+production rollout; algorithm tests and compilation do not establish acceptance.
+
 Ubuntu managed display computers use `src/ubuntu-displays.js` and the fixed
 `src/ubuntu-display/` SSH installer/control/session package. Read
 `docs/UBUNTU-MANAGED-DISPLAYS.md` before changing this feature. Preserve pinned SSH

@@ -180,7 +180,7 @@ jobs:
 
   windows-agent:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select conservative PR validation scope
@@ -237,6 +237,22 @@ jobs:
         if: steps.scope.outputs.full != 'false'
         shell: pwsh
         run: .\windows-agent\scripts\Build-Native-Agent.ps1
+      - name: Build optional Windows daily sign-in package
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: .\windows-agent\scripts\Build-Daily-SignIn.ps1
+      - name: Test daily sign-in offline codes and enrollment
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-daily-signin.py
+      - name: Upload optional daily sign-in pilot
+        if: steps.scope.outputs.full != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: RoomGoblin-daily-signin-win-x64
+          path: windows-agent/artifacts/daily-signin/RoomGoblinDailySignIn.zip
+          if-no-files-found: error
+          retention-days: 14
       - name: Verify native artifact set
         if: steps.scope.outputs.full != 'false'
         shell: pwsh

@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="/shared/attribution.css">
 <script src="/shared/branding.js" defer></script>
 <script src="/shared/attribution.js" defer></script>
+<script src="/controller/daily-signin.js" defer></script>
 <style>
 :root{--bg:var(--brand-background,#0b0f12);--panel:var(--brand-surface,#11171c);--card:color-mix(in srgb,var(--brand-surface,#151d23) 88%,white);--border:#2a3640;--text:var(--brand-text,#eef4f7);--muted:#aab8c1;--green:var(--brand-primary,#39e58c);--red:#ff6b6b;--amber:#ffc857;--blue:#66b3ff}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,Segoe UI,Arial,sans-serif}main{padding:16px;max-width:1600px;margin:auto}
@@ -31,6 +32,7 @@ dialog{width:min(1800px,98vw);background:var(--panel);color:var(--text);border:1
   </div>
 
   <div class="panel lab-summary"><div class="toolbar">
+    <a id="dailySignInLink" href="/controller/daily-signin.html" hidden>Daily computer sign-in</a>
     <div><div class="muted">Total</div><div id="total" class="kpi">0</div></div>
     <div><div class="muted">Online</div><div id="online" class="kpi good">0</div></div>
     <div><div class="muted">Offline</div><div id="offline" class="kpi bad">0</div></div>

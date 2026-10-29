@@ -1,5 +1,9 @@
 # Native Windows Lab Agent
 
+The optional [daily-code Windows sign-in pilot](WINDOWS-DAILY-SIGNIN.md) is a
+separate installer/service/credential-provider package. It is never activated or
+updated by this agent's four-file update protocol.
+
 RoomGoblin includes a native Windows service implementation of the Lab Agent under `windows-agent/`. It is intended to replace the PowerShell scheduled-task runtime after staged rollout while preserving the existing Hub protocol, enrollment credentials, and rollback path.
 
 ## Architecture
