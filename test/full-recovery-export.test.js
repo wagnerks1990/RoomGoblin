@@ -7,10 +7,13 @@ const os=require("node:os");
 const path=require("node:path");
 const net=require("node:net");
 const http=require("node:http");
+const crypto=require("node:crypto");
+const {DatabaseSync}=require("node:sqlite");
 const {spawn,spawnSync}=require("node:child_process");
 const AdmZip=require("adm-zip");
 const {decryptRecoveryEnvelope,encryptRecoveryEnvelope}=require("../maintenance-agent/recovery-envelope");
 const {archiveInventory,recoveryTopology}=require("../maintenance-agent/backup-policy");
+const {ClassroomHubStorage}=require("../src/storage");
 
 const ROOT=path.resolve(__dirname,"..");
 
@@ -24,13 +27,21 @@ function freePort(){
 
 function put(file,contents){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,contents)}
 
-async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,managedMusicRunning=false,startupFullExportJournal=false,startupLegacyRollback=false}={}){
+async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,managedMusicRunning=false,startupFullExportJournal=false,startupLegacyRollback=false,realDatabase=false}={}){
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"roomgoblin-full-recovery-"));
   const hub=path.join(temp,"classroom-hub"),services=path.join(temp,"services"),signing=path.join(temp,"signing"),staging=path.join(temp,"host-backups","recovery-staging"),veyon=path.join(temp,"veyon"),bin=path.join(temp,"bin"),master=path.join(temp,"master.key");
   fs.mkdirSync(bin,{recursive:true});fs.mkdirSync(path.join(hub,"data","backups"),{recursive:true});fs.mkdirSync(services,{recursive:true});fs.mkdirSync(signing,{recursive:true});
   put(path.join(hub,"VERSION"),"1.0.0-test\n");
   if(database)put(path.join(hub,"data","classroom-control-hub.db"),"SQLITE_SNAPSHOT_SENTINEL");
   if(masterKey)put(master,"ab".repeat(32));
+  const drill={rejectState:null};
+  if(realDatabase){
+    fs.rmSync(path.join(hub,"data","classroom-control-hub.db"),{force:true});
+    const store=new ClassroomHubStorage({dataDir:path.join(hub,"data"),masterKeyFile:master});
+    store.setPreference("restore-drill.state","archived");
+    store.putSecret("restore-drill.secret","synthetic archived value !#$\\\";");
+    store.db.close();
+  }
   if(startupFullExportJournal)put(path.join(hub,"data","backups",".full-export-quiescence.json"),JSON.stringify({version:1,phase:"quiescing",services:[{id:"music-assistant",container:"music-assistant-server",image:"ghcr.io/music-assistant/server:2.9.13"}]}));
   if(startupLegacyRollback){
     put(path.join(hub,"data","classroom-control-hub.db"),"INTERRUPTED_RESTORE_SENTINEL");
@@ -43,6 +54,17 @@ async function startAgent(t,{database=true,masterKey=true,envelopeMaxMb=64,manag
   }
   const fakeSqlite=path.join(bin,"sqlite3");
   put(fakeSqlite,"#!/usr/bin/env node\nconst fs=require('fs');const command=process.argv[3]||'';const match=command.match(/^\\.backup '(.+)'$/);if(match)fs.copyFileSync(process.argv[2],match[1].replace(/''/g,\"'\"));else if(command==='PRAGMA quick_check;')process.stdout.write('ok\\n');else if(command.includes('schema_migrations'))process.stdout.write('1\\n');else process.exit(2);\n");
+  if(realDatabase)put(fakeSqlite,`#!/usr/bin/env python3
+import re, sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as source:
+    match = re.fullmatch(r"\\.backup '(.+)'", sys.argv[2])
+    if match:
+        with sqlite3.connect(match[1].replace("''", "'")) as target:
+            source.backup(target)
+    else:
+        for row in source.execute(sys.argv[2]):
+            print('|'.join(str(value) for value in row))
+`);
   fs.chmodSync(fakeSqlite,0o755);
   const adbCalls=path.join(temp,"adb-calls.jsonl"),fakeAdb=path.join(bin,"adb"),fakeKeytool=path.join(bin,"keytool");put(fakeAdb,"#!/usr/bin/env node\nconst fs=require('node:fs');fs.appendFileSync(process.env.ADB_CALL_LOG,JSON.stringify(process.argv.slice(2))+'\\n');if(process.argv[2]==='pubkey')process.stdout.write('QUJDRA==\\n');else process.exit(2);\n");put(fakeKeytool,"#!/bin/sh\n[ -n \"$ROOMGOBLIN_RECOVERY_KEYSTORE_PASSWORD\" ]\n");fs.chmodSync(fakeAdb,0o755);fs.chmodSync(fakeKeytool,0o755);
   const hostSocket=path.join(temp,"host-agent.sock"),hostMock=path.join(temp,"mock-host-agent.cjs"),hostCalls=path.join(temp,"host-calls.jsonl");
@@ -70,15 +92,32 @@ http.request=function(options,callback){
 };
 `);
   const mainCalls=path.join(temp,"main-calls.jsonl");
-  const mainPort=await freePort(),main=http.createServer((req,res)=>{const chunks=[];req.on("data",chunk=>chunks.push(chunk));req.on("end",()=>{let body={};try{body=JSON.parse(Buffer.concat(chunks).toString()||"{}")}catch{};fs.appendFileSync(mainCalls,JSON.stringify({method:req.method,path:req.url,body})+"\n");res.setHeader("content-type","application/json");if(req.url==="/api/v1/internal/maintenance/export-freeze")return res.end(JSON.stringify({ok:true,freezeToken:"main-freeze-token"}));res.end(JSON.stringify({ok:true,database:{file:"/app/data/classroom-control-hub.db",schemaVersion:1}}))})});
+  const mainPort=await freePort(),main=http.createServer((req,res)=>{const chunks=[];req.on("data",chunk=>chunks.push(chunk));req.on("end",()=>{let body={};try{body=JSON.parse(Buffer.concat(chunks).toString()||"{}")}catch{};fs.appendFileSync(mainCalls,JSON.stringify({method:req.method,path:req.url,body})+"\n");res.setHeader("content-type","application/json");if(req.url==="/api/v1/internal/maintenance/export-freeze")return res.end(JSON.stringify({ok:true,freezeToken:"main-freeze-token"}));
+    if(realDatabase){
+      let db;
+      try{
+        db=new DatabaseSync(path.join(hub,"data","classroom-control-hub.db"),{readOnly:true});
+        assert.equal(db.prepare("PRAGMA quick_check").get().quick_check,"ok");
+        const state=JSON.parse(db.prepare("SELECT value_json FROM system_preferences WHERE key=?").get("restore-drill.state").value_json);
+        if(state===drill.rejectState)throw Error("Simulated post-restore readiness failure");
+        const key=Buffer.from(fs.readFileSync(master,"utf8").trim(),"hex");
+        for(const row of db.prepare("SELECT cipher_text,iv,auth_tag FROM secret_store").all()){
+          const decipher=crypto.createDecipheriv("aes-256-gcm",key,Buffer.from(row.iv,"base64"));
+          decipher.setAuthTag(Buffer.from(row.auth_tag,"base64"));
+          decipher.update(Buffer.from(row.cipher_text,"base64"));decipher.final();
+        }
+      }catch{res.statusCode=503;res.end(JSON.stringify({ok:false,error:"Fixture database is not ready"}));return}
+      finally{db?.close()}
+    }
+    res.end(JSON.stringify({ok:true,database:{file:"/app/data/classroom-control-hub.db",schemaVersion:1}}))})});
   await new Promise((resolve,reject)=>main.listen(mainPort,"127.0.0.1",resolve).once("error",reject));
   const port=await freePort(),token="full-recovery-test-token";
-  const child=spawn(process.execPath,[path.join(ROOT,"maintenance-agent/server.js")],{env:{...process.env,PORT:String(port),MAINTENANCE_TOKEN:token,MANAGED_HUB_ROOT:hub,MANAGED_SERVICES_ROOT:services,MASTER_KEY_FILE:master,ANDROID_AGENT_SIGNING_ROOT:signing,VEYON_RECOVERY_ROOT:veyon,RECOVERY_STAGING_ROOT:staging,RECOVERY_ENVELOPE_MAX_MB:String(envelopeMaxMb),MAINTENANCE_WORK_DIR:path.join(temp,"uploads"),HOST_AGENT_SOCKET:hostSocket,HOST_CALL_LOG:hostCalls,ADB_CALL_LOG:adbCalls,MANAGED_MUSIC_RUNNING:managedMusicRunning?"1":"0",MAIN_APP_URL:`http://127.0.0.1:${mainPort}`,APP_UID:String(process.getuid?.()??10001),APP_GID:String(process.getgid?.()??10001),NODE_OPTIONS:`--require=${hostMock}`,PATH:`${bin}:${process.env.PATH}`},stdio:["ignore","pipe","pipe"]});
+  const child=spawn(process.execPath,[path.join(ROOT,"maintenance-agent/server.js")],{env:{...process.env,PORT:String(port),MAINTENANCE_TOKEN:token,MANAGED_HUB_ROOT:hub,MANAGED_SERVICES_ROOT:services,MASTER_KEY_FILE:master,ANDROID_AGENT_SIGNING_ROOT:signing,VEYON_RECOVERY_ROOT:veyon,RECOVERY_STAGING_ROOT:staging,RECOVERY_ENVELOPE_MAX_MB:String(envelopeMaxMb),RESTORE_HEALTH_TIMEOUT_MS:"5000",MAINTENANCE_WORK_DIR:path.join(temp,"uploads"),HOST_AGENT_SOCKET:hostSocket,HOST_CALL_LOG:hostCalls,ADB_CALL_LOG:adbCalls,MANAGED_MUSIC_RUNNING:managedMusicRunning?"1":"0",MAIN_APP_URL:`http://127.0.0.1:${mainPort}`,APP_UID:String(process.getuid?.()??10001),APP_GID:String(process.getgid?.()??10001),NODE_OPTIONS:`--require=${hostMock}`,PATH:`${bin}:${process.env.PATH}`},stdio:["ignore","pipe","pipe"]});
   let output="";child.stdout.on("data",chunk=>output+=chunk);child.stderr.on("data",chunk=>output+=chunk);
   t.after(()=>{if(child.exitCode==null)child.kill("SIGKILL");main.close();fs.rmSync(temp,{recursive:true,force:true})});
   const base=`http://127.0.0.1:${port}`;
   for(let attempt=0;attempt<50;attempt++){
-    try{await fetch(`${base}/backups`,{headers:{"x-maintenance-token":token}});return {base,token,hub,services,signing,staging,veyon,master,bin,hostCalls,mainCalls,adbCalls,output:()=>output}}catch{}
+    try{await fetch(`${base}/backups`,{headers:{"x-maintenance-token":token}});return {base,token,hub,services,signing,staging,veyon,master,bin,hostCalls,mainCalls,adbCalls,drill,output:()=>output}}catch{}
     await new Promise(resolve=>setTimeout(resolve,20));
   }
   throw Error(`maintenance agent did not start: ${output}`);
@@ -381,6 +420,67 @@ test("configuration-data restore replaces runtime data and verifies application 
   assert.equal(fs.existsSync(path.join(agent.hub,"data","backups",created.body.name)),true,"managed backups survive a data restore");
 });
 
+
+function setDrillState(agent,state){
+  const store=new ClassroomHubStorage({dataDir:path.join(agent.hub,"data"),masterKeyFile:agent.master});
+  try{
+    store.setPreference("restore-drill.state",state);
+    store.putSecret("restore-drill.secret",`synthetic ${state} value !#$\\\";`);
+  }finally{store.db.close()}
+}
+
+function assertDrillState(agent,state){
+  const db=new DatabaseSync(path.join(agent.hub,"data","classroom-control-hub.db"),{readOnly:true});
+  try{
+    assert.equal(db.prepare("PRAGMA quick_check").get().quick_check,"ok");
+    assert.equal(JSON.parse(db.prepare("SELECT value_json FROM system_preferences WHERE key=?").get("restore-drill.state").value_json),state);
+    const row=db.prepare("SELECT cipher_text,iv,auth_tag FROM secret_store WHERE name=?").get("restore-drill.secret");
+    const decipher=crypto.createDecipheriv("aes-256-gcm",Buffer.from(fs.readFileSync(agent.master,"utf8").trim(),"hex"),Buffer.from(row.iv,"base64"));
+    decipher.setAuthTag(Buffer.from(row.auth_tag,"base64"));
+    const plaintext=Buffer.concat([decipher.update(Buffer.from(row.cipher_text,"base64")),decipher.final()]);
+    assert.equal(plaintext.toString("utf8"),`synthetic ${state} value !#$\\\";`);
+  }finally{db.close()}
+}
+
+test("isolated operational restore preserves real SQLite settings and encrypted secrets",async t=>{
+  for(const mode of ["configuration","configuration-data"]){
+    await t.test(mode,async t=>{
+      const agent=await startAgent(t,{realDatabase:true});
+      const keyBefore=fs.readFileSync(agent.master);
+      const asset=path.join(agent.hub,"data","presentations","lesson.txt"),media=path.join(agent.hub,"data","media","lesson.txt");
+      put(asset,"archived presentation");put(media,"replaceable media");
+      const created=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
+      assert.equal(created.status,200,JSON.stringify(created.body));
+      setDrillState(agent,"current");put(asset,"current presentation");put(media,"current media");
+      const restored=await request(agent,`/backup/${created.body.name}/restore`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({mode,confirm:"RESTORE"})});
+      assert.equal(restored.status,200,JSON.stringify(restored.body));
+      assert.equal(restored.body.healthVerified,true);
+      assertDrillState(agent,"archived");
+      assert.deepEqual(fs.readFileSync(agent.master),keyBefore);
+      assert.equal(fs.readFileSync(asset,"utf8"),mode==="configuration"?"current presentation":"archived presentation");
+      assert.equal(fs.readFileSync(media,"utf8"),"current media");
+      assert.ok(fs.existsSync(path.join(agent.hub,"data","backups",restored.body.safetyBackup)));
+      assert.equal(fs.existsSync(path.join(agent.hub,"data","backups",".legacy-restore-transaction.json")),false);
+    });
+  }
+});
+
+test("isolated restore readiness failure rolls real SQLite data and secrets back together",async t=>{
+  const agent=await startAgent(t,{realDatabase:true}),asset=path.join(agent.hub,"data","presentations","lesson.txt");
+  put(asset,"archived presentation");
+  const created=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
+  assert.equal(created.status,200,JSON.stringify(created.body));
+  setDrillState(agent,"current");put(asset,"current presentation");
+  agent.drill.rejectState="archived";
+  const restored=await request(agent,`/backup/${created.body.name}/restore`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({mode:"configuration-data",confirm:"RESTORE"})});
+  assert.equal(restored.status,500,JSON.stringify(restored.body));
+  assert.equal(restored.body.rollback.attempted,true);
+  assert.equal(restored.body.rollback.ok,true,JSON.stringify(restored.body));
+  assertDrillState(agent,"current");
+  assert.equal(fs.readFileSync(asset,"utf8"),"current presentation");
+  assert.ok(fs.existsSync(path.join(agent.hub,"data","backups",restored.body.safetyBackup)));
+  assert.equal(fs.existsSync(path.join(agent.hub,"data","backups",".legacy-restore-transaction.json")),false);
+});
 
 test("operational backup uses ZIP64 streaming writer instead of AdmZip buffering",()=>{
   const source=fs.readFileSync(path.join(ROOT,"maintenance-agent","server.js"),"utf8");

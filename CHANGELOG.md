@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Qualify operational restore with real SQLite settings, encrypted fixture values
+  and safety-backup rollback after a simulated readiness failure.
+
 - Add an optional Windows daily-code sign-in pilot with administrator group/code
   controls, encrypted computer-bound enrollment, offline local validation and a
   separate recoverable installer. Existing lab-agent updates never enable it;

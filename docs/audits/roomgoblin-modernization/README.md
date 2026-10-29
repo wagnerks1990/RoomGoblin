@@ -23,6 +23,12 @@ records distinguish source synchronization from service recreation.
 guidance checks, Wiki synchronization and latest source acceptance; it retains
 PR #346 as the runtime deployment and rollback evidence.
 
+The [2026-10-29 acceptance follow-up](live-acceptance-follow-up.md) records refreshed
+appliance/provider checks, the unavailable physical test target and the operator
+session prerequisite. It adds an isolated restore drill with real SQLite data,
+encrypted fixture values and rollback after failed readiness. Physical acceptance
+remains explicitly separate from those passing fixtures.
+
 "Delivered" below means the documented fixes passed their recorded checks and
 backed-up delivery. It does not assert a line-by-line audit of every repository
 file or physical acceptance of every device. Full versus targeted source review,
