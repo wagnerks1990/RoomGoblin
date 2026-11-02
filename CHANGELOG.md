@@ -11,6 +11,605 @@
 - Support native local Ollama structured scoring alongside explicitly selected compatible APIs and OpenAI. Preserve provider-key separation, input/output bounds, grading budgets, and revision checks.
 - Add a companion-window SCORM launcher with checked percentage commits; live Schoology acceptance remains required.
 
+### Other pending changes
+
+- Qualify operational restore with real SQLite settings, encrypted fixture values
+  and safety-backup rollback after a simulated readiness failure.
+
+- Add an optional Windows daily-code sign-in pilot with administrator group/code
+  controls, encrypted computer-bound enrollment, offline local validation and a
+  separate recoverable installer. Existing lab-agent updates never enable it;
+  physical Windows sign-in and recovery acceptance remain required before rollout.
+
+- Bound operator API waits through response bodies, preserve caller cancellation,
+  and release pending controls with an unconfirmed outcome instead of retrying writes.
+
+- Report the evidence behind optional integration status, redact endpoint secrets
+  throughout diagnostic snapshots, and retire observations when connections change.
+
+- Preserve exact receiver identity across HTTP, enrollment, WebSocket, saved and
+  scheduled targets, media/audio controls and integration observations; reject
+  ambiguous aliases and support legacy dotted media IDs.
+
+- Commit legacy configuration and secret imports with their migration records;
+  failed migration bookkeeping no longer leaves partially published state.
+
+- Roll back legacy audit imports on storage failures and commit their migration
+  record with the imported rows before archiving the source.
+
+- Commit update policy and integration connection metadata together with their
+  requested credential changes, preserving the prior identity on storage failure.
+
+- Retire pending Weather previews, sends and workflow actions after navigation
+  or authentication changes, and require unchanged explicit display targets.
+
+- Charge Weather read/write quotas only after matching the route's access
+  predicate, preserving legitimate callers' allowance and rejected callers' denial.
+
+- Keep Weather location results and errors tied to the current query and visible
+  session, clear retired choices, and prevent duplicate pending searches.
+
+- Commit Sports saves and Undo snapshots atomically, and reject board reads
+  retired by settings or authentication changes before rendering or caching.
+
+- Keep Sports imports tied to their reviewed draft and input; reject retired
+  responses and require a fresh review after editing or leaving the view.
+
+- Preserve newer Sports drafts during source refresh and Undo, and serialize
+  workspace writes so overlapping responses cannot replace current edits.
+
+- Preserve newer Sports edits during saves and reject delayed scene responses
+  after a draft edit or board-view change.
+
+- Retire Sports feed health immediately when source/team mappings change and
+  return current source status after saves and undo.
+
+- Use the shared workspace theme colors for Weather cards and status text so
+  light and system-light modes retain readable contrast.
+
+- Keep newer Weather draft edits during a pending save, prevent overlapping saves
+  and discard refreshes that predate a successful settings write.
+
+- Clear retired Weather readings and previews when the saved forecast location
+  changes or becomes unavailable; reject late previews from the previous location.
+
+- Report planned and unimplemented native Android controls as unavailable while
+  preserving implemented controls and their permission gates.
+
+- Apply native Android Sendspin player renames, retain saved URLs on partial
+  configuration, clean up failed connections and report protocol readiness accurately.
+
+- Keep retired Android PCM workers from consuming or writing a replacement audio
+  session, and allow retry after AudioTrack fails to start.
+
+- Clean up the Android root-tool child process and its streams when a request is
+  interrupted, preserving existing policy gates, timeouts and output limits.
+
+- Reject unsupported Android management and persistent-ADB target ports before
+  dispatch, so saved endpoints match the ports accepted by the device.
+
+- Apply changed Android display assignments to an already-open WebView while
+  preserving its live session on unchanged assignments and ordinary resume.
+
+- Close active and queued Android management sockets when its service stops,
+  while preserving accepted clients during listener replacement.
+
+- Share pending Android capability reads across card refreshes and discard cache
+  entries and replies belonging to removed or replaced enrollments.
+
+- Reject embedded credentials in native Windows enrollment Hub URLs before
+  configuration or ACL changes, matching the existing fallback-URL boundary.
+
+- Serialize Android agent and persistent-ADB configuration per display, including
+  APK restoration, and reject conflicting connection edits while it is pending.
+
+- Recheck Android enrollment and schedule state before each policy command and
+  prevent overlapping policy passes from dispatching to the same display twice.
+
+- Merge Android asynchronous completion into the current enrollment record,
+  preserving newer metadata and disabled state without reviving removed devices.
+
+- Apply confirmed Android enrollment lifecycle results to current inventory
+  without reloading the page, reviving removed cards or discarding drafts.
+
+- Keep Android shell and diagnostic output with the newest request, preserve
+  typed commands, and share pending-device admission with card controls.
+
+- Retain pending Android card-command ownership across refreshes and capability
+  updates, preventing duplicate ADB, Agent v2 and installation requests.
+
+- Serialize Android inventory refreshes, retire stale status probes, and keep
+  recovery feedback attached to the current display record across refreshes.
+
+- Open Android screenshots with progress, decode images before showing them,
+  and ignore captures after closing or replacing the preview.
+
+- Retain confirmed Ubuntu screen mappings until acknowledgment and persist
+  uncertain receiver targets so announcement protection survives restart.
+
+- Preserve newer Android display editor drafts and feedback while saves settle;
+  block duplicate saves across reopening and return focus to the current card.
+
+- Reserve existing Ubuntu computers during repair probing and honor announcement
+  locks on old/new receivers before installation and final configuration.
+
+- Keep Ubuntu wizard probes, fingerprints, key-file reads and submissions tied
+  to their current inputs; preserve newer drafts and prevent duplicate writes.
+
+- Preserve cancelled maintenance schedules and newer computer records when
+  Ubuntu installation or repair completes or fails.
+
+- Complete accepted Android enrollment using the captured form, clear submitted
+  pairing codes, prevent duplicate requests and preserve newer drafts/editors.
+
+- Preserve accepted Ubuntu command/maintenance and saved metadata/schedule
+  outcomes when secondary computer-history persistence fails; show a warning
+  while retaining primary-write failures and scheduled dispatch claims.
+
+- Keep Ubuntu inventory refreshes current across writes, retain pending command
+  feedback across redraws, preserve newer metadata/maintenance drafts, and discard
+  preview captures after closing or replacing their dialog.
+
+- Preserve cancelled Ubuntu maintenance schedules and newer history/metadata
+  when a pending screen-assignment save completes.
+
+- Reject fresh Windows enrollment over an existing configuration and publish new
+  identity files without overwriting a concurrently created destination.
+
+- Preserve a disabled legacy Windows task during native installation rollback;
+  fail admission on unknown task state or a rejected disable operation.
+
+- Bound native bootstrap/updater subprocess waits and diagnostics, and require
+  confirmed service stop before replacing, deleting or rolling back files.
+
+- Limit each native Windows WebSocket handshake to 15 seconds so a stalled
+  primary cannot indefinitely prevent the configured fallback connection.
+
+- Bound native Windows command output retention and keep cancellation/deadlines
+  active through output reads and native update download bodies.
+
+- Establish My Account focus when it opens so a delayed callback cannot interrupt
+  keyboard navigation or move focus after a quick reopen.
+
+- Keep one Windows enrollment request pending at a time and clear generated
+  packages on authentication changes or a new issuance attempt.
+
+- Stop owned native Windows command processes on caller cancellation, preserve
+  timeout/cancellation outcomes, and reject already-cancelled launches.
+
+- Preserve current AI-alert filters and closed-view privacy, contain pending
+  action failures, and suspend Windows screenshot requests in hidden views.
+
+- Keep Windows history and screenshot replies with the current computer, clear
+  closed monitoring views, and distinguish capture requests from confirmed saves.
+
+- Preserve Windows lab inventory and keyboard focus through polling, report stale
+  reads clearly, and order metadata saves before refreshing current state.
+
+- Keep Veyon information dialogs owned by their current request and prevent late
+  connection-pool cleanup from closing a newer computer-details dialog.
+
+- Order Veyon metadata changes and coalesce inventory refreshes so older replies
+  cannot restore previous roles, lose post-save refreshes or prune selections.
+
+- Contain ESPHome worker pipe/process errors and malformed IPC, release pending
+  commands without replay, and wait for discovery stdout to close before parsing.
+
+- Preserve ESPHome enrollment drafts and management feedback, serialize controller
+  management changes, and discard inventory/discovery replies from older writes
+  or permission states.
+
+- Preserve ESPHome API budgets for authorized callers by sharing the existing
+  capability and administrator predicates with rate-limit admission.
+
+- Validate complete lighting command targets before sending, preserve accepted
+  payloads and stop pending writes if a target's physical identity changes.
+
+- Honor disabled lighting enrollment across restarts and persist discovery/
+  cleanup changes before publishing them; contain background persistence errors.
+
+- Persist lighting metadata and discovery preferences before changing live
+  settings, and preserve group names as ordinary data during registry rebuilds.
+
+- Keep lighting configuration saves in accepted order and prevent pre-save
+  inventory responses from restoring older settings or removed devices.
+
+- Bound lighting UDP and shared MQTT command waits, contain socket errors,
+  release obsolete connection owners and disable offline QoS-zero command replay.
+
+- Preserve current lighting inventory across overlapping Lighting/scheduler
+  refreshes and keep newer command/save outcomes visible after late responses.
+
+- Reject duplicate presentation rebuilds while their render is still active,
+  preserving the accepted conversion's final status and later retry behavior.
+
+- Order presentation starts, live controls and deletion by session; reject stale
+  controls and stop a live deck before removing its containing folder.
+
+- Preserve presentation previews, receiver choices, timing drafts and keyboard
+  focus through polling and overlapping controller requests.
+
+- Report when upload completion wins cancellation, retain saved media, and
+  show an unknown outcome when its receipt is unavailable instead of claiming
+  that a saved file was cancelled.
+
+- Route library documents through their PDF viewer, preserve multiple selected
+  receivers and playback options, and prevent stale library refreshes from
+  overwriting newer controller or scheduler results.
+
+- Coordinate media conversion, deletion and upload cleanup by file identity;
+  retain deletion markers so interrupted completion cannot recreate deleted media.
+
+- Recover the same registered media item after a lost upload completion reply
+  with private, expiring receipts and retry-safe chunk reclamation.
+
+- Retain verified upload chunks until media-library registration succeeds, and
+  preserve registered files when later cleanup or response handling fails.
+
+- Preserve upload resume IDs on temporary failures, report cancellation errors
+  and keep late upload results from overwriting the current controller operation.
+
+- Give video commands without a supplied session ID one stable command-owned
+  playback identity for dispatch and reconnect replay.
+
+- Keep resumable-upload expiry from deleting sessions owned by accepted or
+  queued chunk, assembly or cancel operations.
+
+- Keep receiver videos stable across token renewal, with bounded authenticated
+  source recovery that preserves position and current playback controls.
+
+- Preserve live video volume, mute and playback rate in receiver reconnect
+  snapshots, and reject nonfinite media-control values before dispatch.
+
+- Serialize TV audio bridge Attach/Detach changes and stop stale connection
+  delivery across targets and transports; reject unknown bridge actions.
+
+- Keep older volume/mute acknowledgments from replacing newer saved TV audio,
+  and retire command completion when Music Assistant settings change.
+
+- Preserve uncertain Music Assistant HTTP outcomes and stop automatic TV audio
+  replay until confirmation or reconnect; keep obsolete restore callbacks from
+  interfering with new attempts. Persist audio for configured named receivers.
+
+- Restore music result cards after repeated identical searches and retire older
+  results when a new submitted query is too short.
+
+- Stop obsolete TV audio restoration after a receiver, connection or saved-audio
+  change; delayed completion cannot mark a replaced restore successful.
+
+- Retire Music Assistant connection-status reads when settings change, requiring
+  refresh instead of returning old outputs or retrying against a new connection.
+
+- Keep Live Watch manual-check progress and results from being replaced by
+  obsolete polls, and retain one pending check through capability refresh.
+
+- Count a rejected Background Music start once when calculating recovery backoff,
+  retaining the observation wait for uncertain playback responses.
+
+- Keep Background Music player probes with their connection and current session;
+  discard stale telemetry and unrelated output errors in status responses.
+
+- Preserve Background Music schedule-save order and newer manual playback
+  intent while an earlier save waits for its output to stop.
+
+- Save Music Assistant connection settings and its optional encrypted token
+  atomically, retaining the prior connection when persistence fails.
+
+- Keep late Background Music control responses, probes and recovery errors from
+  overwriting a newer managed session or its playback intent.
+
+- Preserve audio retries for continuing announcement receivers and bind delayed
+  audio/live volume to their current content through asynchronous delivery.
+
+- Retire old Music Assistant socket callbacks and pending work without disturbing
+  successor connections or replaying operations across a connection change.
+
+- Keep every active announcement receiver accounted for after additional selected
+  starts or partial replacements, so Stop, automatic release and Resume include all.
+
+- Keep newer Music queue results when older reads finish or the operator switches
+  away from an output and back; obsolete errors cannot erase the current queue.
+
+- Preserve Live Watch drafts through delayed reads/saves and serialize settings
+  with coalesced live-volume writes, retaining clear save and volume feedback.
+
+- Reject empty explicit announcement targets and retain an unchanged active
+  session when a replacement fails before dispatch.
+
+- Recover partially dispatched announcement starts without discarding older
+  pending priority holds or hiding the original start failure.
+
+- Recover failed announcement releases across successor sessions, retry clears
+  only for their owned content, and preserve newer content through delivery races.
+
+- Retain deferred announcement occurrences and restore prior execution markers
+  after storage failures; persist retry bookkeeping before display/music release.
+
+- Bound announcement probes through playlist body consumption, release redirect
+  and error transports, and reject oversized playlists as unknown availability.
+
+- Preserve newer Music schedule/connection drafts and tokens during saves,
+  prevent duplicate writes, and discard reads that predate a settings save.
+
+- Separate mandatory announcement audio holds from ordinary media priority,
+  preserving hallway recovery holds and priority belonging to restored content.
+
+- Retire delayed announcement audio retries when their takeover is replaced,
+  including replacements that target the same receivers.
+
+- Commit announcement settings and their encrypted stream URL together before
+  applying them, preserving prior settings and safe retries after storage errors.
+
+- Retain one announcement watcher across settings changes, discard obsolete
+  probe results, and require consecutive automatic offline evidence for release.
+
+- Show actual dispatch dates for linked-class previews and day offsets for
+  timetable blocks that run across midnight, including year and leap-day changes.
+
+- Keep simultaneous timetable blocks distinct during execution and recovery,
+  honor legacy run/Stop markers, and protect timetable references on class deletion.
+
+- Align class-offset recovery with live scheduling across midnight, preserve
+  resolved timer dates, and exclude power/lighting steps beyond class end.
+
+- Refresh Calendar Today from the current appliance date without reloading the
+  draft; delayed lookups preserve newer edits, navigation and pending saves.
+
+- Keep class save retries on one draft identity and prevent older saves from
+  clearing newer work or reopening a closed class editor.
+
+- Preserve newer calendar drafts across delayed reloads and CSV reads, and keep
+  in-flight saves from losing their draft or revision to a reload.
+
+- Prevent overlapping automation/shared-layer editor writes and retain a new
+  automation's draft identity across retries after an uncertain save response.
+
+- Refresh Today only from the appliance's current planning date and preserve
+  newer date edits while its lookup is pending. Ignore obsolete automation and
+  shared-layer preview responses so only the current reviewed draft enables Save.
+
+- Restart continuous occurrences only while they own their complete target scope,
+  preventing partially superseded groups or mixed-action loops from overwriting winners.
+
+- Resolve lighting recovery winners by device and TV winners by physical transport
+  and output, preserving partial All scope and delayed/stopped occurrence ownership.
+
+
+- Reconcile only due display actions and timers, preserving configured delays,
+  current content, composed layers and delayed continuous-run ownership.
+- Use the scheduler clock consistently during display recovery and leave skipped
+  occurrences unconsumed when no output is due.
+- Respect pre-action delays and preceding dwell times during TV/lighting recovery;
+  restore the later eligible action when one occurrence has equal-time steps.
+- Preserve delayed continuous-run ownership separately from currently due actions
+  so a pending or stopped winner cannot revive a superseded loop.
+
+- Retain scheduled Stop identities independently of diagnostic history, with real-date
+  cleanup and bounded storage, so history traffic cannot revive cancelled loops.
+
+- Recheck test-clock live permission at scheduled command, reconciliation and
+  legacy TV dispatch boundaries; save scheduler pause changes before applying them.
+
+- Save automation cancellation selections atomically before stopping execution,
+  and honor retained Stop requests during continuous-run restart recovery.
+
+- Protect legacy per-output TV schedules with all physical announcement locks
+  and persist claims before CEC dispatch so uncertain writes cannot replay.
+- Report legacy scheduler persistence errors and release its busy/drain ownership
+  even when a final status save fails.
+
+- Stop scheduled sequences at their next checkpoint when test-clock live permission
+  expires or is disabled; prevent new timer overlays while retaining manual runs.
+
+- Match automation conflict and replacement resources to default display targets,
+  lighting group members and actual TV connection/output/broadcast intent.
+
+- Wait for older overlapping automation tasks before replacement dispatch while
+  keeping discovery responsive; recheck cancellation before class-end overlays.
+
+- Enforce the continuous-automation one-second cycle floor while keeping
+  cancellation responsive and configured waits stable across clock corrections.
+- Release scheduled/manual/recovered task ownership even when ledger or final
+  persistence fails; retain accepted work through shutdown and recovery drain.
+
+- Share matrix status scans across callers, cap aggregate/named reads at eight
+  seconds and invalidate cached readings on command or connection changes.
+- Bound matrix response bodies to 64 KiB, stop retry waits on cancellation and
+  fail immediately when the optional matrix is unconfigured; writes remain single-attempt.
+
+- Give Displays & AV a dedicated workspace owner; isolate bounded browser reads,
+  retain unavailable inventories and preserve focused matrix controls on refresh.
+- Report rejected matrix commands and unknown telemetry accurately; preserve TV
+  drawer drafts during power/routing and support native keyboard modal behavior.
+- Match AV controls to server permissions and validate setup receiver IDs before
+  side effects while preserving existing receiver/group keys.
+
+- Honor explicit receiver Play/Restart when initial autoplay is disabled; keep
+  Pause/Stop authoritative over pending playback and late canplay callbacks.
+- Cancel obsolete image retries and retain page-local enrollment credentials when
+  browser storage is unavailable. Correct the body-text stylesheet newline and
+  converge renderer/cache references on `dynamic-fit-20261027-1`.
+
+- Load Today inventory and classes without waiting for optional AV probes; retain
+  last-known displays on read failures and report independent MQTT/AV availability.
+- Preserve live-display preview sessions and keyboard focus during status refresh;
+  distinguish receiver connectivity from physical TV power and show command errors.
+- Guard Today test images with unique enabled receiver mappings and align
+  automation controls with the existing server permissions and availability.
+
+- Separate Windows enrollment and System Updates presentation from the navigation
+  shell while preserving controls, enrollment downloads and updater requests.
+- Close mobile navigation before account/login dialogs, contain keyboard focus,
+  clear stale navigation permissions on session loss and retain unfinished login
+  input when concurrent requests report an expired session.
+- Improve operator light-theme contrast for code, brand lockups, warning badges
+  and keyboard focus without changing physical display styling.
+
+- Keep Sports roster PDF imports owned until processing finishes after a browser
+  disconnects. Shutdown and Full Recovery now drain the returned route promise;
+  upload limits, parser isolation and review-before-save behavior remain intact.
+
+- Keep startup automation reconciliation outside Full Recovery freezes. Retry
+  a deferred startup pass on the existing scheduler timer after thaw, using the
+  current winners and the same tracked drain without replaying cancelled runs.
+
+- Defer lab-agent disconnect metadata until Full Recovery thaws, while showing
+  the live offline state immediately. Ignore replaced sockets' close events and
+  retain failed metadata writes for retry before a clean shutdown.
+
+- Drain detached Veyon connection cleanup before shutdown or recovery freeze
+  completes. Pause the idle cleanup timer during freeze/shutdown and retain
+  final cleanup audits without delaying the computer-removal response.
+
+- Reclaim bounded, recognized presentation render staging at startup after an
+  interrupted conversion. Preserve originals, published assets and unknown or
+  linked entries; interrupted presentations remain explicitly rebuildable.
+
+- Include Veyon reads that initialize or update persistent identity/key metadata
+  in Full Recovery admission and drain. Accepted reads finish before snapshot;
+  new Veyon views and administrator key/config projections pause until thaw.
+
+- Keep authentication activity/expiry housekeeping and update-status history from
+  writing during Full Recovery freeze. Reads, credential validation and expiry
+  enforcement remain available; normal housekeeping resumes after thaw.
+
+- Add canonical-process regression coverage for accepted Sports refreshes,
+  scheduled Ubuntu maintenance acknowledgments and presentation conversion across
+  shutdown/export freeze, including conversion deadline and restart recovery.
+
+- Pause new ESPHome discovery requests during Full Recovery freezes and after
+  manager shutdown, including cached requests. Existing discovery drains safely
+  and its deferred audit record is retained through thaw or shutdown.
+
+- Report media-child shutdown failures instead of clean Hub exits. Retain child
+  ownership after signaling errors and finish accepted writes before reporting
+  failure, within the existing ten-second shutdown deadline.
+
+- Keep Full Recovery waiting for accepted HTTP writes after a response finishes
+  or disconnects. Preserve export-proxy progress, authenticated one-use thaw and
+  the existing acquisition timeout when a writer cannot finish.
+
+- Install compatibility routes explicitly on the owning Hub application instead
+  of modifying Express globally when modules load. Preserve route guards,
+  maintenance mirrors, Veyon identities, Music Assistant aliases and writer drain.
+
+- Drain accepted HTTP/WebSocket and tracked background writes before shutdown
+  closes SQLite. Preserve Full Recovery thaw, record automation shutdown as an
+  interruption, and report deadline/checkpoint failures instead of clean exits.
+
+- Add live volume up/down, percentage volume, mute and unmute in Sports and
+  Automation, with saved action audio settings. Preserve active playback,
+  receiver reconnect settings, announcement priority and independent hallway audio.
+
+- Start newly installed Ubuntu maintenance services without resetting an unloaded
+  systemd unit, and report proxy error responses without blindly retrying jobs.
+
+- Align `npm start` with the appliance bootstrap, await media-child shutdown,
+  clear remaining owned startup/periodic timers and use explicit scheduled music
+  readiness instead of replacing global timers. Record scoped modernization
+  findings and remaining lifecycle work.
+
+- Keep Ubuntu screen cards, wizard fields, status text and primary buttons readable
+  in both light and dark operator themes.
+
+- Add Ubuntu fleet health, durable history, verified address changes, managed
+  Ubuntu/Chromium/agent updates and one-time maintenance scheduling. Keep fixed
+  restricted commands, announcement-aware dispatch, verified agent rollback,
+  stable screen identities and muted unavailable audio assignments.
+
+- Clear selected receivers before manual media/library replacement, including
+  persisted scene, text, timer and blackout layers. Stop retired video/web
+  playback and ignore stale video callbacks; preserve announcement priority,
+  independent hallway audio and persistent live media controls.
+
+- Keep Ubuntu wizard replies and activation controls scoped to their current
+  session so a closed installation cannot change a later computer's wizard.
+
+- Add Ubuntu managed display computers with an SSH enrollment wizard, verified
+  host identity, independent receiver/profile per physical output, resolution and
+  rotation controls, previews, individual browser recovery, computer maintenance
+  and a retained pre-installation desktop rollback. Preserve Android management.
+- Patch compatible Hub body-parser and multer dependencies for GHSA-27r3-jxmh-p828
+  and GHSA-q7qp-rjg7-q26m without changing upload behavior or dependency policy.
+
+- Refresh Sports sources in fair, bounded five-minute passes; persist and show
+  source health. Import verified public Arbiter team schedules/results and apply
+  time-based board changes without requiring a saved configuration revision or
+  restarting unchanged media.
+
+- Patch the Hub and maintenance `ip-address` lockfile dependency to 10.7.4 for
+  GHSA-rxp7-6hxx-x8q5, retaining the existing dependency and audit policies.
+
+- Interpret Music Assistant's timestamped playback positions before detecting a
+  Background Music stall, preventing repeated recovery restarts during healthy
+  playback. Keep estimated position separate from reported-progress diagnostics.
+
+- Keep Scene Studio text readable on receivers using reduced motion. Disable
+  implicit font-size transitions during synchronous fitting; preserve authored
+  text/geometry and containment. Renderer/cache revision: `dynamic-fit-20261022-1`.
+
+- Add independent receiver audio priority for hallway signage. Audible hallway
+  Sports and hallway-only manual media leave classroom music and scheduling
+  running, while Morning Announcements and classroom media retain priority.
+
+### 1.0.0-alpha.85
+
+- Advance the application/receiver version so connected displays load the staged timer renderer after upgrading. Fix speech cue variable shadowing and refit finish messages when only their displayed value changes.
+
+- Add optional staged timer overlays with configurable five/two-minute cues, six styles, bounded animation and enlargement, progress, finish messages, optional sound, reusable presets and a silent draggable receiver preview. Preserve countdown deadlines, media sessions and classic timer defaults.
+
+- Add optional school Sports boards with separate varsity/JV pages, continuous rosters, previous/next events, dated media, current/evening weather and existing automation scheduling.
+- Add reviewed PDF/CSV roster and schedule imports, revision-safe saves/undo, approved public-source refresh and bounded media caching. Preserve receiver authorization, announcement priority and silent-board Background Music.
+
+- Add a Weather workspace with current conditions, seven-day/full date-range forecasts, integrated after-school/evening details, hourly tables, optional NWS alerts and explicit display/scheduling controls.
+- Add customizable weather overlay fields and live widget-data refresh without restarting underlying media. Move provider credit to a discreet footer; preserve bounded caching, receiver authorization, stale/unavailable states and school configuration.
+
+### Background Music Studio and recovery
+
+- Add focused Now Playing, music/station search, favorites, schedule and output views, queue controls and sleep timers. Preserve unsaved drafts and focused controls across polling.
+- Track manual source/output selections in recovery instead of issuing unowned search playback. Distinguish accepted commands, reported playback and actual progress telemetry.
+- Add readiness-aware, bounded-backoff recovery, resume-before-reload, suspected-stall detection, finite-track completion and explicit repair without changing listener volume on recovery.
+- Preserve announcement/room-audio priority, operator Stop and receiver sessions; handle priority/Stop during pending play. Project bounded queue metadata without stream details.
+- Register shared music rate limits directly before route authorization, and verify changed-output schedule saves through real HTTP regression tests.
+
+### Planning and Scene Studio
+
+- Replace everyday class and automation forms with searchable libraries and focused, responsive dialogs; add compact timetable rows, cycle-aware month badges, month navigation and date-range drafts.
+- Add date-only classes, date windows, excluded dates, bounded clock repeats and timetable-block automation links for lunch, transitions, homeroom and assemblies. Warn when a non-teaching block has no display action.
+- Add a drag-and-drop screen editor with text/image/shape layers, clock/date/class/countdown/cycle/progress/weather widgets, typography, glow, motion, layer order, locking, undo/redo and receiver-shape previews.
+- Add scoped shared visual layers that accompany display actions without replacing native media sessions; retain existing automation/device identities, announcement priority and BGM rules.
+- Fit scenes through the existing display layout engine and contain-scaled canvas. Bound rotated layers and uploaded image references; honor reduced motion and expire shared layers.
+- Fix duration-overlay reconciliation coercing an absent deadline to Unix epoch and preserve original countdown deadlines across resync. Add explicit end-at-clock timers.
+- Use the existing incremental SHA-256 fallback for chunk uploads on trusted-LAN HTTP where SubtleCrypto is unavailable.
+
+### Planning save transaction repair
+
+- Fix reviewed Planning saves failing with a nested SQLite transaction error when the normalized class writer runs inside the profile/class save transaction.
+- Use nested savepoints while preserving the outer immediate transaction and atomic rollback. Add real SQLite route regressions for successful saves, failed class writes, and retries.
+
+### Automatic Planning upgrade import
+
+- Populate the new Planning workspace from existing SQLite classes, calendar, cycle profile, exception rules and special-day patterns on first startup.
+- Preserve shared-period transitions, weekly opening/closing blocks, Bison continuations, per-class targets and all existing automation records; retain the active scheduler until Planning is explicitly enabled.
+- Commit the original snapshot, validated imported profile and completion marker atomically; preserve later edits across restarts and retain existing behavior on failed or invalid imports.
+- Add SQLite rollback/idempotency regressions, import status in the GUI and upgrade/recovery documentation. Supplied UI parity review retained all 85 legacy Planning/editor control IDs; no site-specific source data is committed.
+
+### Planning calendar and timetable rebuild
+
+- Connect Calendar & Timetables, Classes and Automations with capability-aware Planning navigation and progressive editors.
+- Add opt-in school-year/weekday rules, explicit date overrides, reviewed CSV calendar import and the configurable A–H / Green / White / Bison preset.
+- Resolve period timing from reusable timetables, including multiple teaching segments for one class and separate class-end deadlines around lunch.
+- Preview date plans, fixed/class-linked automation times, overlaps and 14-day changes before a stale-protected transactional save.
+- Preserve legacy timing, identifiers, classes, automation action sequences and device priority; document setup, migration, import and rollback.
+
+
+### Reusable special-day schedules
+
+- Add named, date-assigned timetables in School Calendar Rules with per-class times and explicit omission.
+- Preserve class/automation IDs, class-linked offsets and timer deadlines; return to normal times on unassigned dates.
+- Keep closure/remote suppression and cycle rules; validate dates/intervals and report special-day conflicts separately.
+- Document reusable setup, split-lunch class blocks and rollback in docs and the Wiki mirror.
+
 ### Repository convergence follow-up
 
 - Consolidate native Windows artifact qualification into Validate, remove the
@@ -56,6 +655,20 @@
 - Use the same verified main-commit path for automatic maintenance-window updates and reject dirty/divergent source, stale selections and arbitrary SHAs.
 - Correct updater systemd ordering to the canonical `classroom-hub-host-agent.service`, retire the stale old-name unit during install/refresh, and normalize no-request manual oneshot failures without hiding real deployment failures.
 
+### Uploaded content no longer blocks safety backups
+
+- Preserve maintenance-owned private backup archives during installer data
+  ownership normalization so the verified rollback snapshot stays readable.
+
+- Explicitly publish uploaded media, presentation originals, converted PDFs/slides,
+  resumable metadata and chunks with shared-group readability despite the private
+  runtime umask; preserve ownership and all secret/identity protections.
+- Stage presentation conversion outside the operational-backup tree and exclude
+  uncommitted resumable temporary paths consistently from validation and ZIPs.
+- Add Linux upload/conversion and actual shared-group streaming-backup regressions,
+  including the original permission-denied failure and private-state boundaries.
+- Document the separately approved bounded repair required for existing private
+  presentation assets; retain mandatory backups and normal update/rollback gates.
 
 ### Scheduled all-TV power handoff
 

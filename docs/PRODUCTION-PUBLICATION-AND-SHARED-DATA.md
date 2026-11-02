@@ -18,7 +18,7 @@ Retries do not weaken validation. If the APK still cannot be built, or if packag
 
 ## Shared persistent-data permissions
 
-The Hub runs as UID/GID `10001:10001`. The maintenance container must be able to read persistent application assets for operational and full-recovery backups. Newly created Hub files therefore use runtime umask `0027`, producing normal files as `0640` and directories as `0750` unless a more restrictive explicit mode is required.
+The Hub runs as UID/GID `10001:10001`. The wrapper starts with umask `0027`, but storage/startup deliberately imposes private umask `0077`. Creation modes alone are therefore insufficient. Publish ordinary uploaded content explicitly as `0640` files and `0750` directories; keep the private process umask and secret protections unchanged. The maintenance container reads these content assets through shared GID 10001 without extra capabilities.
 
 This preserves the intended boundary:
 
@@ -30,13 +30,13 @@ The Hub startup wrapper `tools/start-roomgoblin.sh` establishes the umask before
 
 ### Resumable upload session permissions
 
-In-progress resumable uploads are included in operational backups. Session directories therefore use `0750` and chunk/metadata files `0640`, matching the shared-data contract. Explicit `0700` directories or `0600` chunk files block maintenance backup traversal and cause production updates to fail safely before mutation.
+Published resumable session metadata and committed chunks are included in operational backups. Session directories use `0750` and files `0640`, applied explicitly after creation or on their write descriptors. Unpublished `.tmp` session trees and temporary chunk/metadata files are excluded from both validation and ZIP creation. Presentation conversion stays in the existing excluded `presentation-upload-tmp` root until complete readable originals/PDFs/slides are published. Backups still fail closed on unreadable committed content.
 
 ### Media-upload incident
 
 A large uploaded MP4 was observed as mode `0600`. The Hub itself could use the file, but the maintenance container could not read it during the mandatory operational safety backup. The update then stopped before service mutation with an apparently generic preflight failure.
 
-The immediate repair for an affected installation is to restore group-read permission to the affected application-owned media file:
+The following historical media repair is not an instruction to widen access automatically. Existing affected assets require a separately approved bounded repair, with original modes/ownership/inodes recorded and symlinks, special files and hard-linked files rejected. See the uploaded-content section in [Production Updates](PRODUCTION-UPDATES.md). For one verified application-owned media file, the mode-only change would be:
 
 ```bash
 sudo chmod 0640 /opt/classroom-hub/data/media/<file>
@@ -78,7 +78,7 @@ Future automated changes must preserve all of the following:
 - complete Hub + maintenance image-pair publication before main source deployment;
 - no separate source-branch promotion requirement during active development;
 - bounded/fail-closed retry behavior for transient Android dependency resolution;
-- Hub UID/GID `10001:10001` and runtime umask `0027` for ordinary shared application data;
+- Hub UID/GID `10001:10001`, the initial wrapper umask `0027`, private storage/startup umask `0077`, and explicit `0750`/`0640` content publication;
 - maintenance read access to backed-up application assets without granting world access;
 - mandatory successful operational backup before runtime mutation;
 - compatibility aliases, legacy command/journal names, data identities and the native main updater's recovery contract.

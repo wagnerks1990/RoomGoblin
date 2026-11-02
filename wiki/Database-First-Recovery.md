@@ -43,6 +43,12 @@ all restarts are verified. Following a Maintenance or host restart, startup
 reconciliation restores those services before the maintenance API listens; a
 failed restart remains visible and the journal stays available for retry.
 
+The Hub's writer freeze waits for accepted mutating HTTP handlers even after
+their response finishes or disconnects. Its own freeze/thaw calls and the
+initiating export proxy are excluded from this count. Acquisition fails at the
+existing 30-second deadline if a handler remains unfinished, without issuing a
+freeze token; a later retry can proceed after the write settles.
+
 ## `.rgbak` security
 
 The envelope uses AES-256-GCM with a scrypt-derived key

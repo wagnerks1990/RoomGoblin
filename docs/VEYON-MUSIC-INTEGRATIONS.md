@@ -45,6 +45,21 @@ The Veyon workstation inventory is stored through the database-backed `veyon-com
 
 Legacy `data/veyon-computers.json` is migration input only. Startup recovery merges it into the SQLite namespace, verifies the record count, records the migration, and removes the active legacy file. Production runs with `LEGACY_JSON_MIRROR=false`, so subsequent writes remain database-only.
 
+Controller name, role and discovery changes execute in accepted order. Inventory
+polls coalesce during those changes and refresh afterwards; a response from an
+older metadata state cannot undo a saved role or remove current selections and
+preview resources. A failed write releases the queue without automatic retry.
+This metadata queue is separate from the tracked classroom command jobs below.
+
+Full Recovery treats Veyon reads as potential writers: inventory persists stable
+identity mappings/hostnames and authentication can remember key preferences.
+Already accepted reads finish before snapshot acknowledgment. New Veyon GET/HEAD
+requests, administrator config/keyring projections and the maintenance inventory
+mirror return HTTP 423 while acquisition/freeze is held; retry after thaw.
+The token-protected maintenance config mirror remains readable because it does
+not apply the keyring projection. Stable IDs are still persisted before being
+returned, and existing preview capabilities and native Veyon ownership remain.
+
 ### Veyon authentication material
 
 The authoritative Veyon private authentication key is stored encrypted in `secret_store` under `veyon.private-key`. The Veyon public key and non-secret deployment metadata may be stored as managed-integration configuration.
@@ -204,6 +219,12 @@ finish. Use Unlock to reverse a lock. Retry controls are limited to reversible
 locks and exclude targets with a newer command. Dispatch checks the actor's
 current permissions and current inventory identity. Recovery export pauses new
 queue work and drains active workers before snapshotting the ownership journal.
+
+Idle connection cleanup also pauses during recovery freeze or shutdown. Accepted
+idle cleanup and the detached connection close after computer removal participate
+in the same drain, retaining their final audit. Computer removal still responds
+without waiting for the WebAPI close. Existing close/lifecycle deadlines apply;
+cleanup exceeding the total deadline must not be reported as a clean stop.
 
 Validation uses simulated multi-computer and outage fixtures. Actual latency
 still depends on endpoint availability, authentication, and the Veyon service;

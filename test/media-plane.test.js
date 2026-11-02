@@ -70,9 +70,6 @@ test("application remains PID1 while startup recovery supervises the media child
   const launcher=fs.readFileSync(path.join(__dirname,"..","tools","start-roomgoblin.sh"),"utf8");
   const startup=fs.readFileSync(path.join(__dirname,"..","src","startup-recovery.js"),"utf8");
   assert.match(launcher,/exec node --require \.\/src\/direct-display-compat\.js src\/startup-recovery\.js/);
-  assert.match(startup,/function startMediaPlane\(\)/);
-  assert.match(startup,/spawn\(process\.execPath,\[path\.join\(__dirname,"media-server\.js"\)\]/);
-  assert.match(startup,/child\.once\("exit"/);
-  assert.match(startup,/process\.exit\(1\)/);
+  assert.match(startup,/require\("\.\/media-plane-process"\)/);
   assert.match(startup,/startMediaPlane\(\);/);
 });

@@ -74,6 +74,17 @@ stores only its SHA-256 hash. Disable the legacy shared `DISPLAY_TOKEN` after
 migration. Raw display credentials and enrollment codes must not appear in
 logs, diagnostics, database records, or administrative read APIs.
 
+Receiver admission preserves an exact configured ID before considering a unique
+case-insensitive alias. Ambiguous or malformed aliases fail closed; credentials
+and signed media access remain bound to the exact stored receiver. Existing IDs
+and credentials are not renamed. Signed media tokens retain their format and
+support legacy IDs containing dots, with unchanged expiry and revocation checks.
+
+Diagnostic snapshots and exports redact endpoint query values and URL credentials
+in configuration and service errors, in addition to event redaction. Optional
+hardware without an observation is unknown, not healthy. Veyon reachability does
+not verify authentication; an MQTT publish does not acknowledge a Govee device.
+
 ## Classroom computer agents and student data
 
 Enroll every Windows classroom computer with a one-time GUI-generated command.

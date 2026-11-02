@@ -17,5 +17,5 @@ export function getDisplayId(){
   // Support both the canonical /display/<id> receiver URL and the legacy
   // static-page form /display/?id=<id>. Setup/enrollment links have used both.
   const raw=m?.[1]||new URLSearchParams(location.search).get("id")||"";
-  try{return decodeURIComponent(raw).trim().toLowerCase()}catch{return ""}
+  try{return decodeURIComponent(raw).trim()}catch{return ""}
 }

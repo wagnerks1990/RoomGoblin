@@ -55,6 +55,50 @@ The Media workspace includes a live playback panel for the selected receiver wit
 
 Receivers report bounded `display.media.status` telemetry containing session ID, position, duration, volume, mute, loop and playback-rate state. This telemetry is operational state only; it does not replace persisted automation configuration.
 
+### Live audio controls
+
+Open **Planning > Automation > Live audio**, choose the display, then use
+**Volume down**, **Volume up**, the **Live volume (%)** slider, **Mute** or
+**Unmute**. Sports provides the same panel filtered to the selected board.
+Each button changes volume by ten percentage points. Mute retains the volume;
+Unmute restores sound at that level (0% remains silent).
+
+Controls affect the current video, compatible website player and Sports widgets
+on that receiver, including scheduled content. They do not rerun the automation,
+reset a countdown, seek a video or restart a Sports rotation. Requested settings
+survive receiver reconnects and Sports clip/page changes. The next content action
+uses its saved settings; change an automation's action to set future-run audio.
+The action editor exposes percentage volume and mute for video, website and
+Sports scenes. Existing website actions retain their previous behavior until
+audio is explicitly configured.
+
+The panel reports requested settings, not proof of audible output. Offline
+receivers retain the setting for reconnect and delivery warnings remain visible.
+Cross-origin websites must support the existing audio messaging protocol;
+RoomGoblin cannot control every embedded player. Previews stay silent.
+
+`GET /api/v1/displays/audio` returns bounded audio summaries and opaque content
+identities, without media URLs. `POST /api/v1/displays/:id/audio` accepts `volume`
+(0–1), `muted` (boolean) and optional `contentKey`. Both require classroom control
+permission and existing scheduler rate limits. The controller always supplies
+the identity; a changed screen rejects stale controls. `display.audio.control`
+updates persisted receiver state and active playback in place. The command router
+rechecks Morning Announcements after asynchronous work, including generic command
+API/WebSocket callers. The announcement volume control remains separate.
+
+Muting scheduled classroom audio releases its Background Music priority;
+unmuting reacquires it. Independent hallway receivers retain their audio scope.
+Manual takeover, explicit Background Music Stop and announcement release
+reconciliation keep their existing rules.
+
+Regression coverage: `test/display-audio.test.js`,
+`test/hallway-audio-priority.test.js` and `test/browser/test_audio_controls.py`.
+Browser fixtures cover operator controls, stable video/iframe/widget instances,
+replay and Sports clip changes; they do not verify physical sound output.
+No database migration is required. Deploy through the guarded updater after CI
+and exact-image publication, reload controllers and receivers, and verify sound
+on a selected physical display. Roll back with the normal previous-deployment path.
+
 ### Safety and priority invariants
 
 - Morning Announcements remain the highest-priority display/audio owner.

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoomGoblin — Daily computer sign-in</title>
+<link rel="stylesheet" href="/shared/workspace.css"><link rel="stylesheet" href="/shared/attribution.css">
+<link rel="stylesheet" href="/controller/daily-signin.css">
+<script src="/shared/branding.js" defer></script><script src="/shared/attribution.js" defer></script>
+<script src="/controller/daily-signin.js" defer></script>
+</head>
+<body class="rg-workspace">
+<main id="dailySignIn">
+<nav aria-label="Lab navigation"><a href="/controller/lab.html">Back to Lab Computers</a></nav>
+<div data-brand-lockup></div><h1>Daily computer sign-in</h1>
+<p>Give selected Windows computers a code that changes at midnight in your chosen timezone. Enrolled computers check the code offline.</p>
+<p class="notice">Windows pilot: test on a spare PC or virtual machine first. Installation replaces blank-password automatic sign-in on a standard local account. Keep a separate administrator account for recovery.</p>
+<p id="status" role="status" aria-live="polite">Checking administrator access…</p>
+<div id="controls" hidden>
+<section aria-labelledby="codeHeading"><h2 id="codeHeading">Today's code</h2>
+<label for="groups">Computer group</label><select id="groups"></select>
+<button id="refresh" type="button">Refresh groups</button><button id="reveal" type="button">Show today's code</button><button id="hide" type="button">Hide code</button>
+<output id="code" aria-live="polite"></output><p id="codeDate"></p>
+<p>A group shares one code. Anyone who knows it can use its enrolled computers. Removing an enrollment file does not revoke a computer that already has it.</p></section>
+<details><summary>Create a group</summary><form id="create">
+<label for="groupName">Group name</label><input id="groupName" required maxlength="80" placeholder="Esports">
+<label for="zone">Timezone</label><input id="zone" required maxlength="80" placeholder="America/New_York">
+<p>The timezone cannot be changed after enrollment. Create a new group and reenroll computers to change it.</p>
+<button type="submit">Create group</button></form></details>
+<section aria-labelledby="installHeading"><h2 id="installHeading">Enroll a selected computer</h2>
+<p>Use the exact Windows computer name and its existing local account name. Each file is restricted to that computer and expires for installation after 24 hours.</p>
+<form id="enroll" autocomplete="off">
+<label for="computer">Windows computer name</label><input id="computer" required maxlength="15" list="computers" pattern="[A-Za-z0-9][A-Za-z0-9-]{0,14}"><datalist id="computers"></datalist>
+<label for="username">Local esports account</label><input id="username" required maxlength="20" autocomplete="off">
+<label for="passphrase">Enrollment file passphrase</label><input id="passphrase" type="password" required minlength="16" maxlength="1024" autocomplete="new-password">
+<p>Use at least 16 characters. Enter this passphrase at the PC during installation. RoomGoblin does not save it.</p>
+<button type="submit">Download encrypted enrollment</button></form>
+<ol>
+<li>Download the <a href="/lab-agent/daily-signin/RoomGoblinDailySignIn.zip">Windows x64 sign-in package</a> from this RoomGoblin release and extract it.</li>
+<li>Sign the esports account out, then sign in with a separate local administrator account.</li>
+<li>Open an elevated terminal in the extracted folder. Run <code>.\RoomGoblinSignIn.exe install "C:\path\enrollment.json"</code> and enter the passphrase privately.</li>
+<li>Keep administrator recovery available while testing today's code, restart, lock/unlock and offline access.</li>
+</ol>
+<p>To remove the requirement, sign in as the administrator and run <code>&amp; "C:\Program Files\RoomGoblin\SignIn\RoomGoblinSignIn.exe" recover</code> in an elevated PowerShell window. It sets a new manual Windows password and keeps automatic sign-in disabled.</p>
+<p>Downloading a file does not install the feature. Installation is local and explicit. An offline computer cannot receive immediate code revocations or group changes.</p>
+</section>
+</div>
+</main></body></html>

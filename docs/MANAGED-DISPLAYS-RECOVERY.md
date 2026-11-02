@@ -4,6 +4,115 @@
 
 Managed Displays is the administrator surface for Android / Google TV enrollment, assignment, remote control, agent deployment, screenshots and remote shell. The controller Overview links directly to `/managed-displays/` beside **Refresh**.
 
+## Enrollment feedback and form ownership
+
+Android enrollment captures its form before awaiting the server; browser event
+currentTarget is no longer available after dispatch. One enrollment request owns
+the form at a time, including during inventory redraws. Its submitted pairing
+code is cleared immediately, while a newly entered code/draft is retained.
+Accepted enrollment opens the new display editor only if the enrollment draft
+and editor context are unchanged. Rejected or incomplete replies retain ordinary
+fields and never repeat enrollment automatically. A failed inventory follow-up
+does not turn an accepted enrollment into a reported failure.
+
+## Editor request ownership
+
+Each Android display retains one pending metadata save across inventory redraws
+and editor reopening. Completion closes only the unchanged submitting editor;
+newer drafts and another display's editor remain intact. Save outcomes stay on
+the original display card, including failures after the editor closes. A failed
+follow-up read does not relabel an accepted save as failed. Closing returns focus
+to the current Edit button or the inventory search when that card is unavailable.
+
+## Enrollment lifecycle outcomes
+
+Enable, disable and removal require a reply confirming both the selected display
+and requested outcome. Accepted changes update the current inventory without a
+page reload. Removal retires older inventory/status work so it cannot redraw the
+removed card. Enable/disable preserve newer metadata. Existing confirmations and
+pending-command admission remain in force; incomplete replies are visible and
+never replay the mutation automatically.
+
+An open editor for a removed display retains its unsaved draft and explains why
+Save is disabled. Other editors and typed input keep their focus and contents.
+When the originating command has lost focus to the page body, completion returns
+focus to the surviving Edit control or the inventory search.
+
+## Shell and diagnostic output ownership
+
+Remote shell uses the same per-display pending owner as card controls. Repeated
+Run/Enter submissions and commands to an already-busy display cannot dispatch
+again; selecting another available display permits independent work. Run reflects
+the selected display and current ADB availability. Completion preserves typed
+command drafts and releases only the initiating operation.
+
+Shell, app-audit, Agent v2, lifecycle/install and Device Admin diagnostics share
+an output generation claimed before their asynchronous work. A late result cannot
+append to or replace newer diagnostic output, clear its selected display or move
+focus. Superseded success leaves a short outcome on its original card when that
+card still shows its pending message; errors remain visible on the original card.
+The guard does not cancel accepted remote work or automatically replay requests.
+
+## Pending card commands
+
+Each Android display card has one pending operator-command owner shared by ADB,
+Agent v2, APK installation, enrollment lifecycle and Device Admin controls.
+Inventory redraws and capability updates retain that owner. Another display can
+operate independently. Completion releases only its own request, preserves
+capability restrictions and newer card messages, and keeps failures visible on
+the originating card. Repeated clicks while pending cannot dispatch again or
+repeat a confirmation. Legacy APK replacement and Android Device Administrator
+approval still require their existing explicit confirmations. Metadata editing
+retains its separate save owner; this guard does not cancel server-side work.
+
+## Configuration operation admission
+
+The maintenance service admits one configuration operation per Android display.
+Agent v2 credentials, legacy display assignment, persistent-ADB bootstrap/disable
+and verified APK installation/restoration share that owner. Conflicting requests
+return HTTP 409 before their device work begins. Independent displays remain
+available; completion or failure releases the owner for an explicit later attempt.
+
+While configuration is pending, metadata saves cannot change connection identity,
+agent package/settings, persistent-ADB settings or display assignment. Ordinary
+names, room metadata and enabled state remain editable. APK restoration reuses
+its installation's internal owner and the current record; it cannot accidentally
+release the installation lock. Existing replacement and Device Admin confirmation
+requirements remain. This in-process admission does not cancel an accepted ADB
+command, replay uncertain work or create a durable restart claim.
+
+## Inventory and status refresh ownership
+
+Android inventory reads have one pending owner. Overlapping refresh requests
+retire that reply and share a subsequent fresh read; they do not start parallel
+inventory requests. Completion preserves current agent/recovery feedback instead
+of restoring a snapshot taken before the request. A superseded success or error
+cannot render or change bridge health. Background status refreshes wait for an
+inventory read and stop when a newer inventory generation owns the page.
+Dedicated agent probes retain the existing status endpoint and cannot redraw
+replaced records. Recovery completion and failure clear the current record's
+pending state; removal during recovery fails without recreating the display.
+These browser ownership rules do not cancel accepted ADB work or introduce a
+shared HTTP deadline.
+
+Agent v2 capability reads share one pending request for each enrollment and
+configuration identity, including across card redraws. The 30-second cache uses
+monotonic time and survives ordinary metadata edits. Replacing or removing an
+enrollment, changing its endpoint or reconfiguring Agent v2 retires the old cache.
+Late replies cannot overwrite a newer cache or render into a detached card;
+failed current reads permit a later retry. Inventory scans prune retired entries.
+
+## Screenshot preview lifetime
+
+The Android screenshot dialog opens while capture is pending and displays capture
+or decoding errors in place. A result can appear only in its original, still-open
+preview; closing with Close or Escape clears the image and retires late success
+and failure replies. A newer capture cannot be replaced by an older reply or
+decoder. Images use allowlisted bitmap types, the existing 16 MiB capture ceiling
+and successful browser decoding before display. Closing restores focus to the
+current Screenshot control or the display search if the control is unavailable.
+Closing a preview does not cancel an ADB capture already accepted by the server.
+
 ## ADB key-storage regression
 
 The maintenance container is intentionally hardened with a read-only root filesystem and all Linux capabilities dropped. Android `adb` still creates its persistent client identity beneath `$HOME/.android`. The Android integration points `HOME` and `ANDROID_USER_HOME` at `/managed/classroom-hub/data/android-tv`, so the effective key directory is `/managed/classroom-hub/data/android-tv/.android`.
@@ -18,13 +127,19 @@ Do not fix this by making the whole Hub data directory world-writable, adding `p
 
 ## Permanent storage and inventory contract
 
-`docker-compose.override.yml` mounts the named volume `classroom-control-hub-android-adb` only at:
+The Compose files share the named volume `classroom-control-hub-android-adb`
+between two explicitly different mounts:
 
 ```text
-/managed/classroom-hub/data/android-tv/.android
+Hub:         /app/data/android-tv/.android           writable
+Maintenance: /managed/classroom-hub/data/android-tv/.android  read-only
 ```
 
-This gives platform-tools the one writable directory it needs while preserving the base Compose hardening and existing host-backed Android device inventory. The volume persists across maintenance-container rebuilds and recreations.
+The Hub can write its persistent client identity; maintenance can read that same
+identity without changing its keys. The native host updater owns permission repair.
+Keep the directory at 0750 and the key pair at 0640, owned by 10001:10001.
+The volume persists across both containers' rebuilds and recreations. Do not
+make the maintenance mount writable to satisfy historical recovery guidance.
 
 The nested volume is not sufficient by itself. Linux must traverse the host-backed parent directory before it can reach the nested mount. The supported host layout is:
 
@@ -40,7 +155,11 @@ The APK and metadata staged in that group-writable data tree are therefore not a
 
 Successful device probes persist the 16-hex-digit Android ID. Recovery first tries the saved endpoint or current DNS address. If DHCP changed the address, it may inspect already-authorized `_adb-tls-connect._tcp` mDNS endpoints, but it updates the record only when the observed Android ID matches. Missing or ambiguous identity fails closed instead of attaching a different classroom TV.
 
-`install.sh`, the GUI application updater, and rollback normalize this layout before maintenance starts. Both installer and updater also verify the ADB key directory is writable, and they fail instead of accepting a release when an existing inventory file is not readable.
+`install.sh`, the GUI application updater, and rollback normalize this layout
+before maintenance starts. The updater's `adb_storage_check` verifies maintenance
+can read the identity directory and any existing inventory file. Release acceptance
+also checks the Hub's write access, the maintenance mount's read-only flag and
+unchanged trust-key identity. An unreadable inventory is a failure, not an empty list.
 
 ### Why the UI once showed `0 devices`
 
@@ -58,28 +177,34 @@ Container recreation is part of the storage contract. Updating Compose source al
 
 Do not replace the updater deployment command with a plain `docker compose up -d` that can preserve an old maintenance-container mount set.
 
-## Manual recovery for an appliance already in the failed state
+## Recovery for an appliance already in the failed state
+
+Use the supported updater to reconcile storage and mounts with its verified
+image pair, operational backup and rollback. Do not bypass that transaction with
+an ad hoc image build or weaken the maintenance mount. Run the update in the
+administrator's authorized maintenance window, then check access without changing
+keys or contacting a physical receiver:
+
+The normal updater first requires the current appliance to pass health and
+maintenance-readability checks. If it cannot read the existing identity or
+inventory, preserve that error and follow the [database-first recovery contract](DATABASE-FIRST-RECOVERY.md).
+Do not bypass preflight or assume a normal update can repair every failed state.
 
 ```bash
 cd /opt/classroom-hub
-sudo chown root:10001 /opt/classroom-hub/data/android-tv
-sudo chmod 2770 /opt/classroom-hub/data/android-tv
-if [ -f /opt/classroom-hub/data/android-tv/devices.json ]; then
-  sudo chown root:10001 /opt/classroom-hub/data/android-tv/devices.json
-  sudo chmod 0660 /opt/classroom-hub/data/android-tv/devices.json
-fi
-
-sudo docker compose up -d --build --force-recreate maintenance-agent
-sudo docker compose up -d --force-recreate classroom-hub
-
+sudo bash deploy/update-production.sh
+sudo docker compose exec -T classroom-hub sh -lc 'test -w /app/data/android-tv/.android'
 sudo docker compose exec maintenance-agent sh -lc '
-  test -w /managed/classroom-hub/data/android-tv/.android &&
-  test ! -e /managed/classroom-hub/data/android-tv/devices.json ||
-  test -r /managed/classroom-hub/data/android-tv/devices.json
+  test -r /managed/classroom-hub/data/android-tv/.android &&
+  { test ! -e /managed/classroom-hub/data/android-tv/devices.json ||
+    test -r /managed/classroom-hub/data/android-tv/devices.json; }
 '
+sudo docker inspect --format '{{range .Mounts}}{{if eq .Destination "/managed/classroom-hub/data/android-tv/.android"}}{{.Name}} writable={{.RW}}{{end}}{{end}}' classroom-control-hub-maintenance
 ```
 
-Then open **Managed Displays** and use **Refresh**. The status should report `ADB bridge ready`, and existing inventory should reappear without re-pairing.
+The final command must report the expected named volume with `writable=false`.
+Then open **Managed Displays** and use **Refresh**. Preserve existing inventory
+and pairing; investigate any reported access or transport failure before re-enrolling.
 
 ## Display Agent false `Not installed` regression
 

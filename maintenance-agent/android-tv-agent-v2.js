@@ -6,7 +6,8 @@ const {execFile}=require("child_process");
 const {promisify}=require("util");
 const execFileAsync=promisify(execFile);
 const {STORE}=require("./android-tv-extension");
-const {cleanPackage,cleanPort,publicDevice}=require("./android-tv-lib");
+const {cleanPackage,requireManagementPort,publicDevice}=require("./android-tv-lib");
+const {withConfiguration}=require("./android-tv-configuration-owner");
 
 const ROOT=process.env.ANDROID_TV_DATA_ROOT||"/managed/classroom-hub/data/android-tv";
 const ADB=String(process.env.ADB_BIN||"adb");
@@ -30,21 +31,24 @@ async function agentFetch(d,pathName,opt={}){
   const cfg=agentSettings(d);if(!cfg){const e=Error("Device Agent v2 is not configured for this display");e.status=409;throw e}
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),Math.max(1000,Math.min(Number(opt.timeout||8000),30000)));
   try{
-    const r=await fetch(`http://${d.host}:${cleanPort(cfg.port||8765)}${pathName}`,{method:opt.method||"GET",headers:{"x-classroom-hub-agent-token":cfg.token,"content-type":"application/json"},body:opt.body===undefined?undefined:JSON.stringify(opt.body),signal:controller.signal});
+    const r=await fetch(`http://${d.host}:${requireManagementPort(cfg.port??8765)}${pathName}`,{method:opt.method||"GET",headers:{"x-classroom-hub-agent-token":cfg.token,"content-type":"application/json"},body:opt.body===undefined?undefined:JSON.stringify(opt.body),signal:controller.signal});
     const text=await r.text();let json={};try{json=JSON.parse(text)}catch{json={ok:false,error:text||`Agent HTTP ${r.status}`}}
     if(!r.ok||json.ok===false){const e=Error(json.error||`Agent HTTP ${r.status}`);e.status=r.status||502;throw e}return json;
   }catch(error){if(error.name==="AbortError"){const e=Error("Device Agent v2 request timed out");e.status=504;throw e}throw error}finally{clearTimeout(timer)}
 }
-async function configure(d,body={}){
+async function configure(d,body={},configurationOwner){
+  return withConfiguration(d.id,async()=>{
+  d=STORE.requireCurrentDevice(STORE.list(),d);
   const pkg=cleanPackage(body.package||d.agentPackage||CURRENT_PACKAGE);
-  const port=cleanPort(body.port||d.agentV2?.port||8765);
+  const port=requireManagementPort(body.port??d.agentV2?.port??8765);
   const agentToken=body.rotateToken||!d.agentV2?.token?token():d.agentV2.token;
   const url=String(body.displayUrl||d.displayUrl||"").trim();if(!/^https?:\/\//i.test(url)){const e=Error("A valid HTTP(S) display URL is required");e.status=400;throw e}
   const persistentAdb=d.persistentAdb?.enabled===true;
-  const targetAdbPort=cleanPort(d.persistentAdb?.targetPort||5555);
+  const targetAdbPort=persistentAdb?requireManagementPort(d.persistentAdb?.targetPort??5555):5555;
   await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--es","display_url",url,"--ez","agent_enabled","true","--ei","agent_port",String(port),"--es","agent_token",agentToken,"--ez","persistent_adb",String(persistentAdb),"--ei","target_adb_port",String(targetAdbPort)],20000,[agentToken]);
-  const updated=STORE.upsertDevice({...d,displayUrl:url,agentPackage:pkg,agentV2:{enabled:true,port,token:agentToken,configuredAt:new Date().toISOString()}});
+  const updated=STORE.updateDevice(d,{displayUrl:url,agentPackage:pkg,agentV2:{enabled:true,port,token:agentToken,configuredAt:new Date().toISOString()}});
   return updated;
+  },configurationOwner);
 }
 async function packageInstalled(d,pkg){
   try{const result=await adb(["-s",d.serial,"shell","pm","path",pkg],15000);return /^package:/m.test(String(result.stdout||""))}catch{return false}
@@ -75,10 +79,10 @@ async function deactivateDeviceAdmin(d){
   }
 }
 function lifecycle(d,action){
-  if(action==="enable")return {removed:false,device:STORE.upsertDevice({...d,enabled:true})};
-  if(action==="disable")return {removed:false,device:STORE.upsertDevice({...d,enabled:false})};
+  if(action==="enable")return {removed:false,device:STORE.updateDevice(d,{enabled:true})};
+  if(action==="disable")return {removed:false,device:STORE.updateDevice(d,{enabled:false})};
   if(action==="remove"){
-    const removed=STORE.deleteDevice(d.id);
+    const removed=STORE.deleteDevice(d.id,d);
     if(!removed){const e=Error("Managed Android display not found");e.status=404;throw e}
     return {removed:true,deviceId:d.id,dataPreserved:true,message:"Managed display enrollment removed from RoomGoblin. The Android app, device data, and server-wide data were not deleted."};
   }

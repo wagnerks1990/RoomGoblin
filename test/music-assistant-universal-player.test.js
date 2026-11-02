@@ -3,8 +3,7 @@
 const assert=require("node:assert/strict");
 const path=require("node:path");
 
-// The bridge is intentionally loaded before server.js in production and patches
-// Express route registration. Its exported normalization helpers are pure and
+// The application explicitly installs this bridge. Its normalization helpers
 // keep this regression independent of a live Music Assistant instance.
 const bridge=require(path.join(__dirname,"..","src","maintenance-route-bridge"));
 

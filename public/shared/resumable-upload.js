@@ -11,11 +11,19 @@ class Sha256{
 Sha256.k=new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
 function key(file){return `roomgoblin-upload:${file.name}:${file.size}:${file.lastModified}`}
 async function json(response){let body={};try{body=await response.json()}catch{}if(!response.ok)throw Error(body.error||`Upload failed (HTTP ${response.status})`);return body}
-async function chunkDigest(bytes){return hex(await crypto.subtle.digest("SHA-256",bytes))}
-async function startOrResume(file){
+async function chunkDigest(bytes){return global.crypto?.subtle?hex(await global.crypto.subtle.digest("SHA-256",bytes)):new Sha256().update(bytes).digest()}
+const sessionStarts=new Map(),sessionCancels=new Map();
+function forgetSession(file,id){let saved;try{saved=JSON.parse(localStorage.getItem(key(file))||"null")}catch{return}if(saved?.id===id)localStorage.removeItem(key(file))}
+async function lookupSession(file){
  let saved=null;try{saved=JSON.parse(localStorage.getItem(key(file))||"null")}catch{}
- if(saved?.id){const r=await fetch(`/api/v1/media/uploads/${encodeURIComponent(saved.id)}`);if(r.ok)return (await r.json()).upload;localStorage.removeItem(key(file))}
+ if(saved?.id){const r=await fetch(`/api/v1/media/uploads/${encodeURIComponent(saved.id)}`);if(r.ok)return (await r.json()).upload;if(r.status!==404)await json(r);forgetSession(file,saved.id)}
  const response=await fetch("/api/v1/media/uploads",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:file.name,size:file.size,mime:file.type})}),body=await json(response);localStorage.setItem(key(file),JSON.stringify({id:body.upload.id}));return body.upload;
+}
+async function startOrResume(file){
+ const name=key(file),cancelling=sessionCancels.get(name);if(cancelling)await cancelling.catch(()=>{});
+ const pending=sessionStarts.get(name);if(pending)return pending;
+ const run=lookupSession(file);sessionStarts.set(name,run);
+ try{return await run}finally{if(sessionStarts.get(name)===run)sessionStarts.delete(name)}
 }
 async function upload(file,{signal,onProgress=()=>{}}={}){
  if(!file||file.size<1||file.size>MAX_BYTES)throw Error("Choose a file between 1 byte and 5 GB.");
@@ -30,8 +38,20 @@ async function upload(file,{signal,onProgress=()=>{}}={}){
   }
   uploaded=end;onProgress({uploaded,total:file.size,percent:Math.floor(uploaded/file.size*100),uploadId:session.id});
  }
- const response=await fetch(`/api/v1/media/uploads/${encodeURIComponent(session.id)}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha256:full.digest()}),signal}),body=await json(response);localStorage.removeItem(key(file));return body;
+ const response=await fetch(`/api/v1/media/uploads/${encodeURIComponent(session.id)}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sha256:full.digest()}),signal}),body=await json(response);forgetSession(file,session.id);return body;
 }
-async function cancel(file){let saved;try{saved=JSON.parse(localStorage.getItem(key(file))||"null")}catch{}if(saved?.id)await fetch(`/api/v1/media/uploads/${encodeURIComponent(saved.id)}`,{method:"DELETE"});localStorage.removeItem(key(file))}
+async function cancel(file){
+ const name=key(file),pending=sessionCancels.get(name);if(pending)return pending;
+ const run=(async()=>{
+  const starting=sessionStarts.get(name);if(starting)await starting.catch(()=>{});
+  let saved;try{saved=JSON.parse(localStorage.getItem(name)||"null")}catch{}
+  if(!saved?.id)return {ok:true,completed:null};
+  const response=await fetch(`/api/v1/media/uploads/${encodeURIComponent(saved.id)}`,{method:"DELETE"});
+  const result=response.status===404?{ok:true,completed:null}:await json(response);
+  forgetSession(file,saved.id);
+  return result;
+ })();sessionCancels.set(name,run);
+ try{return await run}finally{if(sessionCancels.get(name)===run)sessionCancels.delete(name)}
+}
 global.RoomGoblinUpload={upload,cancel,MAX_BYTES};
 })(window);

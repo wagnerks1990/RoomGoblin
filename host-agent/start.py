@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import server as core
 
-core.VERSION='1.0.0-alpha.84'
+core.VERSION='1.0.0-alpha.85'
 
 # Supported first-class add-ons. Existing containers outside this set can still
 # be adopted for inspect/log/start/stop/restart; creation and removal remain

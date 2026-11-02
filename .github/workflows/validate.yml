@@ -180,7 +180,7 @@ jobs:
 
   windows-agent:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select conservative PR validation scope
@@ -209,10 +209,50 @@ jobs:
             }
           }
           if ($failed) { throw 'Windows PowerShell parsing failed.' }
+      - name: Verify native command process cancellation and deadlines
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-command-process.py
+      - name: Verify native update transfer budgets and integrity
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-update-transfer.py
+      - name: Verify native connection deadlines and fallback
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-connection.py
+      - name: Verify native lifecycle process bounds and confirmed stops
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-lifecycle-process.py
+      - name: Verify native migration preserves legacy task state
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-legacy-state.py
+      - name: Verify native enrollment preserves existing identity
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-native-enrollment-identity.py
       - name: Build locked native Windows agent
         if: steps.scope.outputs.full != 'false'
         shell: pwsh
         run: .\windows-agent\scripts\Build-Native-Agent.ps1
+      - name: Build optional Windows daily sign-in package
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: .\windows-agent\scripts\Build-Daily-SignIn.ps1
+      - name: Test daily sign-in offline codes and enrollment
+        if: steps.scope.outputs.full != 'false'
+        shell: pwsh
+        run: python tools/test-daily-signin.py
+      - name: Upload optional daily sign-in pilot
+        if: steps.scope.outputs.full != 'false'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: RoomGoblin-daily-signin-win-x64
+          path: windows-agent/artifacts/daily-signin/RoomGoblinDailySignIn.zip
+          if-no-files-found: error
+          retention-days: 14
       - name: Verify native artifact set
         if: steps.scope.outputs.full != 'false'
         shell: pwsh
@@ -275,6 +315,24 @@ jobs:
           echo 'bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01  '"$RUNNER_TEMP/gradle.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/gradle-9.6.0/bin" >> "$GITHUB_PATH"
+      - name: Verify Android listener shutdown ownership
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-socket-lifecycle.py
+      - name: Verify Android activity assignment and playback preservation
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-activity-assignment.py
+      - name: Verify Android child process cleanup
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-root-process.py
+      - name: Verify Android PCM playback ownership
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-pcm-ownership.py
+      - name: Verify Android native Sendspin configuration
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-sendspin-configuration.py
+      - name: Verify Android capability availability
+        if: steps.scope.outputs.full != 'false'
+        run: python3 tools/test-android-capability-truth.py
       - name: Build debug APK
         if: steps.scope.outputs.full != 'false'
         working-directory: agents/android-tv

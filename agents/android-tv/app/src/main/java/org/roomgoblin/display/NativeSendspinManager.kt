@@ -26,6 +26,7 @@ object NativeSendspinManager {
 
     @Volatile private var client: SendSpinClient? = null
     @Volatile private var activeUrl: String = ""
+    @Volatile private var activeName: String = ""
     @Volatile private var lastError: String = ""
 
     private class PrefStore(private val context: Context) : ClientSettingsStore {
@@ -48,9 +49,13 @@ object NativeSendspinManager {
             lastError = "Sendspin URL is not configured"
             return
         }
-        if (client != null && activeUrl == url) return
+        if (client != null && activeUrl == url && activeName == playerName(context)) return
         connect(context.applicationContext, url)
     }
+
+    private fun playerName(context: Context): String =
+        HubStorage.prefs(context).getString(PREF_NAME, "")?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: "RoomGoblin ${Build.MODEL}"
 
     @Synchronized
     private fun connect(context: Context, url: String) {
@@ -62,8 +67,7 @@ object NativeSendspinManager {
                 clientId = UUID.randomUUID().toString()
                 prefs.edit().putString(PREF_CLIENT_ID, clientId).apply()
             }
-            val name = prefs.getString(PREF_NAME, "")?.trim().takeUnless { it.isNullOrEmpty() }
-                ?: "RoomGoblin ${Build.MODEL}"
+            val name = playerName(context)
             val preferences = ClientPreferences(
                 supportedFormats = listOf(AudioFormat("pcm", 2, 48_000, 16)),
                 artworkChannels = emptyList(),
@@ -97,12 +101,12 @@ object NativeSendspinManager {
             )
             client = created
             activeUrl = url
+            activeName = name
             lastError = ""
             created.connect(url)
             Log.i(TAG, "Native Sendspin connection started for $name")
         } catch (error: Exception) {
-            client = null
-            activeUrl = ""
+            stop("connect-failed")
             lastError = error.message ?: error.javaClass.simpleName
             Log.e(TAG, "Unable to start native Sendspin player", error)
         }
@@ -110,11 +114,12 @@ object NativeSendspinManager {
 
     @Synchronized
     fun configure(context: Context, enabled: Boolean, url: String?, name: String?): JSONObject {
-        val cleanUrl = url?.trim().orEmpty()
+        val prefs = HubStorage.prefs(context)
+        val cleanUrl = (url ?: prefs.getString(PREF_URL, ""))?.trim().orEmpty()
         if (enabled && !(cleanUrl.startsWith("ws://") || cleanUrl.startsWith("wss://"))) {
             throw IllegalArgumentException("sendspinUrl must be ws:// or wss:// when native Sendspin is enabled")
         }
-        val edit = HubStorage.prefs(context).edit().putBoolean(PREF_ENABLED, enabled)
+        val edit = prefs.edit().putBoolean(PREF_ENABLED, enabled)
         if (url != null) edit.putString(PREF_URL, cleanUrl)
         if (name != null) edit.putString(PREF_NAME, name.trim())
         edit.apply()
@@ -136,18 +141,20 @@ object NativeSendspinManager {
         try { client?.disconnect(reason) } catch (_: Exception) {}
         client = null
         activeUrl = ""
+        activeName = ""
     }
 
     fun status(context: Context): JSONObject {
         val prefs = HubStorage.prefs(context)
         val c = client
+        val state = c?.state?.value?.name
         val out = JSONObject()
         out.put("enabled", prefs.getBoolean(PREF_ENABLED, false))
         out.put("configured", !prefs.getString(PREF_URL, "").isNullOrBlank())
         out.put("url", prefs.getString(PREF_URL, ""))
         out.put("name", prefs.getString(PREF_NAME, ""))
-        out.put("connected", c != null && c.state.value.name !in setOf("IDLE", "DISCONNECTED", "ERROR"))
-        out.put("state", c?.state?.value?.name ?: "STOPPED")
+        out.put("connected", state in setOf("CLOCK_SYNCING", "STREAMING"))
+        out.put("state", state ?: "STOPPED")
         out.put("serverName", c?.serverName?.value ?: "")
         out.put("playing", c?.audioPlayer?.isPlaying ?: false)
         out.put("bufferedChunks", c?.audioBuffer?.size ?: 0)

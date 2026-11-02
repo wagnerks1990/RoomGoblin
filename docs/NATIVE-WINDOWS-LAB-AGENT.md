@@ -1,8 +1,60 @@
 # Native Windows Lab Agent
 
+The optional [daily-code Windows sign-in pilot](WINDOWS-DAILY-SIGNIN.md) is a
+separate installer/service/credential-provider package. It is never activated or
+updated by this agent's four-file update protocol.
+
 RoomGoblin includes a native Windows service implementation of the Lab Agent under `windows-agent/`. It is intended to replace the PowerShell scheduled-task runtime after staged rollout while preserving the existing Hub protocol, enrollment credentials, and rollback path.
 
 ## Architecture
+
+Allowed command child processes are stopped on caller cancellation as well as
+deadline expiry. Caller cancellation remains cancellation; a deadline reports a
+timeout. Requests cancelled before launch do not start a process. The Windows
+Validate job compiles the actual process helper with isolated process fixtures
+using `python tools/test-native-command-process.py` on .NET 8; it does not install
+or start the agent service. Enrollment and the command allowlist are unchanged.
+
+Each configured WebSocket origin has a 15-second connection/handshake budget.
+A failed or timed-out origin is disposed before trying the next configured
+origin; service cancellation stops immediately and preserves the caller token.
+Healthy primary connections retain preference. Existing HTTPS validation,
+explicit LAN fallback policy, heartbeat and reconnect backoff remain unchanged.
+
+Command output is drained under the same cancellation/deadline as process exit,
+retaining at most 64 Ki characters from each stream for diagnostics. Error text
+remains capped at 2,048 characters. Waiting for an inherited output pipe cannot
+extend the command budget. This bounds the read; it does not establish ownership
+of a detached descendant whose parent already exited.
+
+Native update downloads have a 45-second per-file transfer deadline covering
+headers, body reads and file writes. Cancellation preserves the caller's token;
+deadline failures report a timeout. Partial stages are removed on either outcome.
+Declared/actual lengths, package limits, SHA-256 and publisher verification remain
+required. `python tools/test-native-update-transfer.py` exercises the actual client
+with loopback HTTP and temporary staging; its signature-verifier fixture checks
+dispatch after hashing, not Windows trust validation or service installation.
+
+Bootstrap/updater subprocesses have a 30-second default budget through process
+exit and captured output. Retained stdout/stderr are capped at 64 Ki characters
+each and thrown diagnostic details at 2,048 characters. Service-stop polling
+uses a monotonic remaining budget for each query and sleep. Only a successful
+STOPPED response or error 1060 (service not installed) confirms a safe stop;
+query errors and exhausted waits fail visibly before replacement/deletion.
+If stop confirmation fails during rollback, recovery cannot continue safely:
+the operation fails and retains the remaining configuration/package/backup files.
+Do not treat that failure as completed rollback or start the legacy task while
+the native service's state is unknown.
+Legacy-task shutdown/disable and install-directory preparation are inside the
+installer's failure handler. Failures before native-service work can recover
+the legacy task and clean a newly created config without stopping an untouched
+native service. Existing enrolled configuration remains preserved.
+Migration reads the registered legacy task's enabled property before changing
+either runtime. Only an explicit missing-task lookup establishes absence;
+access, connection and property-read errors fail admission. A 30-second wait
+bounds this read-only COM query; Windows exposes no cancellation for the call,
+so a late background read cannot apply changes and ends when the bootstrap exits.
+If disabling the legacy task is rejected, native installation does not begin.
 
 The native package contains four self-contained `win-x64` executables:
 
@@ -59,6 +111,10 @@ Fresh enrollment has the following boundaries:
 - if a fresh install fails native health acceptance, the newly created enrollment configuration is removed rather than leaving a reusable enrollment secret behind.
 
 Existing enrolled computers continue to use `install` or `repair` without enrollment arguments. Their existing DPAPI-protected configuration is preserved.
+Fresh-enrollment arguments are rejected if configuration already exists, including
+an empty file, before an enrollment file is consumed or either runtime is changed.
+Publishing fresh configuration never overwrites an existing destination, so an
+identity created during preparation is preserved as well.
 
 ## Interactive-session boundary
 
@@ -135,7 +191,10 @@ The PowerShell scheduled-task agent remains in the repository during migration. 
 6. starts the native service;
 7. waits for a fresh native health report.
 
-If the native service fails acceptance, the bootstrap removes it, re-enables the legacy task, and starts the legacy agent again. `uninstall` similarly restores the legacy task when available.
+If the native service fails acceptance, the bootstrap removes it and restores
+the legacy task only when that task was enabled before this installation.
+An already-disabled task remains disabled. Explicit `uninstall` retains its
+documented behavior of restoring the legacy task when available.
 
 Do not remove the legacy package until the native rollout and upgrade path have been accepted across the intended fleet.
 

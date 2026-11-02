@@ -173,6 +173,7 @@ internal sealed partial class AgentWorker
         AgentConfig config,
         CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         Exception? lastError = null;
         foreach (var hub in HubCandidates(config))
         {
@@ -184,12 +185,15 @@ internal sealed partial class AgentWorker
                 _logger.LogInformation(
                     "Connecting RoomGoblin native agent to {Hub}.",
                     uri.GetLeftPart(UriPartial.Authority));
-                await socket.ConnectAsync(uri, ct);
+                using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                attempt.CancelAfter(TimeSpan.FromSeconds(15));
+                await socket.ConnectAsync(uri, attempt.Token);
                 return (socket, uri);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 socket.Dispose();
+                ct.ThrowIfCancellationRequested();
                 throw;
             }
             catch (Exception ex)

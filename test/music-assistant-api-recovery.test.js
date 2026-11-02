@@ -1,7 +1,7 @@
 "use strict";
 const test=require("node:test"),assert=require("node:assert/strict");
 const fs=require("node:fs"),vm=require("node:vm"),http=require("node:http"),crypto=require("node:crypto");
-const source=fs.readFileSync(require.resolve("../src/server.js"),"utf8");
+const source=fs.readFileSync(require.resolve("../src/server.js"),"utf8").replace(/\r\n/g,"\n");
 const start=source.indexOf("let maApiSocket="),end=source.indexOf("\n\n\n//",start);
 
 function fixture(overrides={}){
@@ -13,7 +13,7 @@ function fixture(overrides={}){
     fetch:async(...args)=>{requests.push(args);return {ok:true,status:200,text:async()=>"null"}},...overrides});
   vm.runInContext(source.slice(start,end),context);
   context.socket=socket;
-  vm.runInContext("ensureMusicAssistantApi=async()=>{};maApiSocket=socket",context);
+  vm.runInContext("ensureMusicAssistantApi=async()=>socket;maApiSocket=socket;maApiAuthenticated=true",context);
   return {context,timers,sent,requests,socket};
 }
 

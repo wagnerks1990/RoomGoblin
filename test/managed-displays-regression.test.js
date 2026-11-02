@@ -25,7 +25,7 @@ test('classroom overview exposes Managed Displays beside Refresh',()=>{
 test('managed displays preserves inventory while adb is unavailable',()=>{
   const source=read('public/managed-displays/app.js');
   assert.match(source,/error\.payload=j/);
-  assert.match(source,/if\(Array\.isArray\(j\.devices\)\)state\.devices=/);
+  assert.match(source,/if\(Array\.isArray\(j\.devices\)\)applyDevices\(j\.devices\)/);
   assert.match(source,/setBridge\(false/);
   assert.match(source,/\.controls button:not\(\[data-op="edit"\]\)/);
   assert.match(source,/classroom-control-hub-android-adb volume is mounted/);

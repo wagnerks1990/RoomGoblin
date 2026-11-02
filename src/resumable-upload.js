@@ -4,6 +4,7 @@ const fs=require("fs");
 const path=require("path");
 const crypto=require("crypto");
 const {pipeline}=require("stream/promises");
+const {contentDirectory,contentFile}=require("./content-permissions");
 
 const MIB=1024*1024;
 const DEFAULT_CHUNK_BYTES=45*MIB;
@@ -57,11 +58,11 @@ function ownerKey(req){
 }
 
 class ResumableUploadStore{
-  constructor({root,maxFileBytes,chunkBytes=DEFAULT_CHUNK_BYTES,ttlMs=24*60*60*1000,maxOwnerBytes=maxFileBytes*2,minFreeBytes=1024*MIB}){
+  constructor({root,destinationRoot=root,maxFileBytes,chunkBytes=DEFAULT_CHUNK_BYTES,ttlMs=24*60*60*1000,maxOwnerBytes=maxFileBytes*2,minFreeBytes=1024*MIB}){
     this.root=root;this.maxFileBytes=maxFileBytes;this.chunkBytes=Math.min(chunkBytes,ABSOLUTE_CHUNK_BYTES);this.ttlMs=ttlMs;this.maxOwnerBytes=maxOwnerBytes;this.minFreeBytes=minFreeBytes;
     this.locks=new Map();
-    fs.mkdirSync(root,{recursive:true,mode:0o750});
-    fs.chmodSync(root,0o750);
+    this.destinationRoot=path.resolve(destinationRoot);
+    contentDirectory(root);
   }
   async locked(id,task){const prior=this.locks.get(id)||Promise.resolve(),run=prior.catch(()=>{}).then(task);this.locks.set(id,run);try{return await run}finally{if(this.locks.get(id)===run)this.locks.delete(id)}}
   dir(id){return path.join(this.root,safeSessionId(id))}
@@ -73,13 +74,18 @@ class ResumableUploadStore{
     if(!name)throw Object.assign(new Error("File name is required"),{status:400});
     if(!Number.isSafeInteger(size)||size<1||size>this.maxFileBytes)throw Object.assign(new Error(`File size must be between 1 byte and ${this.maxFileBytes} bytes`),{status:413});
     this.cleanup();let activeOwnerBytes=0,activeBytes=0;
-    for(const entry of fs.readdirSync(this.root)){if(!SESSION_ID.test(entry))continue;try{const other=this.read(entry);activeBytes+=Number(other.size)||0;if(other.owner===owner)activeOwnerBytes+=Number(other.size)||0}catch{}}
+    for(const entry of fs.readdirSync(this.root)){if(!SESSION_ID.test(entry))continue;try{const other=this.read(entry);if((other.completion?.registered||other.completion?.deleted)&&other.completion?.reclaimed)continue;activeBytes+=Number(other.size)||0;if(other.owner===owner)activeOwnerBytes+=Number(other.size)||0}catch{}}
     if(activeOwnerBytes+size>this.maxOwnerBytes)throw Object.assign(new Error("Active upload storage quota exceeded; finish or cancel an existing upload"),{status:413});
     const stat=fs.statfsSync(this.root),freeBytes=Number(stat.bavail)*Number(stat.bsize);
     if(freeBytes-activeBytes-size*2<this.minFreeBytes)throw Object.assign(new Error("Not enough free storage to upload and finalize this file"),{status:507});
     const id=crypto.randomUUID(),now=new Date().toISOString(),totalChunks=Math.ceil(size/this.chunkBytes);
     const meta={id,owner,name,size,mime:String(mime||"application/octet-stream").slice(0,160),chunkBytes:this.chunkBytes,totalChunks,received:{},createdAt:now,updatedAt:now};
-    fs.mkdirSync(this.dir(id),{recursive:false,mode:0o750});fs.chmodSync(this.dir(id),0o750);atomicJson(this.metaFile(id),meta);return meta;
+    // Publish the session only after its directory and metadata are readable.
+    // Operational backups exclude these uncommitted .tmp paths.
+    const staged=path.join(this.root,`.${id}.tmp`);
+    try{contentDirectory(this.root,staged,{recursive:false});atomicJson(path.join(staged,"session.json"),meta);fs.renameSync(staged,this.dir(id))}
+    catch(error){fs.rmSync(staged,{recursive:true,force:true});throw error}
+    return meta;
   }
   public(meta){return {id:meta.id,name:meta.name,size:meta.size,mime:meta.mime,chunkBytes:meta.chunkBytes,totalChunks:meta.totalChunks,received:Object.keys(meta.received).map(Number).sort((a,b)=>a-b),createdAt:meta.createdAt,updatedAt:meta.updatedAt}}
   async putChunk(args){return this.locked(String(args.id),()=>this._putChunk(args))}
@@ -96,24 +102,71 @@ class ResumableUploadStore{
     const tmp=path.join(this.dir(id),`.${index}.${crypto.randomBytes(6).toString("hex")}.tmp`),target=path.join(this.dir(id),`${index}.part`);
     const hash=crypto.createHash("sha256");let bytes=0;
     input.on("data",chunk=>{bytes+=chunk.length;hash.update(chunk)});
-    try{await pipeline(input,sharedWriteStream(tmp));const actual=hash.digest("hex");if(bytes!==expected||actual!==digest)throw Object.assign(new Error("Chunk size or digest verification failed"),{status:400});fs.renameSync(tmp,target)}catch(err){fs.rmSync(tmp,{force:true});throw err}
+    try{await pipeline(input,sharedWriteStream(tmp));const actual=hash.digest("hex");if(bytes!==expected||actual!==digest)throw Object.assign(new Error("Chunk size or digest verification failed"),{status:400});contentFile(this.root,tmp);fs.renameSync(tmp,target)}catch(err){fs.rmSync(tmp,{force:true});throw err}
     meta.received[index]={size:bytes,sha256:digest};meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(id),meta);return this.public(meta);
   }
   async assemble(args){return this.locked(String(args.id),()=>this._assemble(args))}
-  async _assemble({id,owner,digest,destination}){
+  assertNotRetired(id){if(this.read(id).completion?.deleted)throw Object.assign(new Error("Completed upload was deleted"),{status:410})}
+  // The library file owner may retire an upload while its registration is
+  // finishing. Do not await this session lock while holding that file owner.
+  retire(id,storedName,digest){
+    let meta;try{meta=this.read(id)}catch(error){if(error.status===404)return;throw error}
+    if(meta.completion?.storedName!==storedName||meta.completion?.digest!==digest)throw Object.assign(new Error("Upload deletion identity conflict"),{status:409});
+    meta.completion.deleted=true;atomicJson(this.metaFile(id),meta);
+    // Remove retry inputs as well: an older runtime does not understand the
+    // deletion marker and must not assemble these bytes after rollback.
+    if(!meta.completion.reclaimed){
+      for(let i=0;i<meta.totalChunks;i++)fs.rmSync(path.join(this.dir(id),`${i}.part`),{force:true});
+      meta.completion.reclaimed=true;atomicJson(this.metaFile(id),meta);
+    }
+  }
+  finishReceipt(meta){
+    this.assertNotRetired(meta.id);
+    if(!meta.completion.registered){
+      meta.completion.registered=true;meta.updatedAt=new Date().toISOString();atomicJson(this.metaFile(meta.id),meta);
+    }
+    if(!meta.completion.reclaimed){
+      for(let i=0;i<meta.totalChunks;i++)fs.rmSync(path.join(this.dir(meta.id),`${i}.part`),{force:true});
+      meta.completion.reclaimed=true;atomicJson(this.metaFile(meta.id),meta);
+    }
+  }
+  async _assemble({id,owner,digest,destination,register,replay,discard}){
+    destination=path.resolve(destination);
+    if(!destination.startsWith(this.destinationRoot+path.sep))throw Error("Upload destination is outside its configured root");
     const meta=this.owned(id,owner);digest=safeDigest(digest);
+    if(replay){
+      this.assertNotRetired(id);
+      if(!meta.completion){meta.completion={storedName:path.basename(destination),digest:null,registered:false,reclaimed:false};atomicJson(this.metaFile(id),meta)}
+      const receipt=meta.completion,name=receipt.storedName;
+      if(typeof name!=="string"||!name||name!==path.basename(name)||name==="."||name==="..")throw Error("Invalid upload completion destination");
+      destination=path.join(this.destinationRoot,name);
+      if(receipt.digest&&receipt.digest!==digest)throw Object.assign(new Error("Completion retry does not match the verified file"),{status:409});
+      if(receipt.digest){
+        if(await replay(meta)){this.finishReceipt(meta);return meta}
+        this.assertNotRetired(id);
+        if(receipt.registered)throw Object.assign(new Error("Completed upload is no longer available"),{status:410});
+      }else if(receipt.registered)throw Error("Invalid upload completion receipt");
+    }
     if(Object.keys(meta.received).length!==meta.totalChunks)throw Object.assign(new Error("Upload is incomplete"),{status:409});
     const tmp=`${destination}.${crypto.randomBytes(6).toString("hex")}.uploading`,hash=crypto.createHash("sha256");let bytes=0;
-    const out=sharedWriteStream(tmp);
+    const out=sharedWriteStream(tmp);let published=false;
     try{
       for(let i=0;i<meta.totalChunks;i++)await pipeline(fs.createReadStream(path.join(this.dir(id),`${i}.part`)),async function*(source){for await(const chunk of source){bytes+=chunk.length;hash.update(chunk);yield chunk}},out,{end:false});
       await new Promise((resolve,reject)=>out.end(err=>err?reject(err):resolve()));
       if(bytes!==meta.size||hash.digest("hex")!==digest)throw Object.assign(new Error("Final file size or SHA-256 verification failed"),{status:400});
-      inspectUpload(tmp,meta.name);fs.renameSync(tmp,destination);fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
-    }catch(err){out.destroy();fs.rmSync(tmp,{force:true});throw err}
+      if(replay)this.assertNotRetired(id);
+      inspectUpload(tmp,meta.name);contentFile(this.destinationRoot,tmp);fs.renameSync(tmp,destination);published=true;
+      if(replay){meta.completion.digest=digest;atomicJson(this.metaFile(id),meta)}
+      // Registration remains inside the accepted session owner. Keep verified
+      // chunks recoverable until the library has accepted their completed file.
+      if(register)await register(meta);
+      if(replay)this.finishReceipt(meta);else fs.rmSync(this.dir(id),{recursive:true,force:true});return meta;
+    }catch(err){out.destroy();fs.rmSync(tmp,{force:true});if(published&&discard)await discard(meta,destination);throw err}
   }
-  async cancel(id,owner){return this.locked(String(id),()=>{this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true})})}
-  cleanup(now=Date.now()){let removed=0;for(const name of fs.readdirSync(this.root)){if(!SESSION_ID.test(name))continue;try{const meta=this.read(name);if(now-Date.parse(meta.updatedAt)>this.ttlMs){fs.rmSync(this.dir(name),{recursive:true,force:true});removed++}}catch{try{const st=fs.statSync(path.join(this.root,name));if(now-st.mtimeMs>this.ttlMs){fs.rmSync(path.join(this.root,name),{recursive:true,force:true});removed++}}catch{}}}return removed}
+  async cancel(id,owner){return this.locked(String(id),()=>{const meta=this.owned(id,owner);fs.rmSync(this.dir(id),{recursive:true,force:true});return meta})}
+  // Accepted writers (including queued assembly/cancel work) own their session
+  // until the final lock settles. Expiry must never unlink their active inputs.
+  cleanup(now=Date.now()){let removed=0;for(const name of fs.readdirSync(this.root)){if(!SESSION_ID.test(name)||this.locks.has(name))continue;try{const meta=this.read(name);if(now-Date.parse(meta.updatedAt)>this.ttlMs){fs.rmSync(this.dir(name),{recursive:true,force:true});removed++}}catch{try{const st=fs.statSync(path.join(this.root,name));if(now-st.mtimeMs>this.ttlMs){fs.rmSync(path.join(this.root,name),{recursive:true,force:true});removed++}}catch{}}}return removed}
 }
 
 module.exports={ResumableUploadStore,ownerKey,inspectUpload,DEFAULT_CHUNK_BYTES,ABSOLUTE_CHUNK_BYTES,MIB};

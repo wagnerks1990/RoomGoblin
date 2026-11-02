@@ -13,3 +13,8 @@ Administrators may opt into per-browser credentials under **Settings → Classro
 The Hub then rejects missing, revoked, or mismatched credentials. Turning the option off restores stable URL access. Existing credentials can remain stored for later use.
 
 Protected media and presentation files always use short-lived signed asset URLs. `DISPLAY_TOKEN` is only a legacy fallback when credential authentication is required.
+
+When browser storage is unavailable, enrollment credentials remain in memory for
+the current receiver page and are removed from its URL. A later reload may need
+a fresh one-use enrollment link. Server authentication and revocation checks
+remain unchanged.

@@ -5,9 +5,7 @@
 // The mirrored handlers are the application's existing database-backed handlers,
 // so encrypted secrets and live runtime apply logic remain owned by server.js.
 const crypto=require("crypto");
-const express=require("express");
-const fs=require("fs");
-const {DatabaseSync}=require("node:sqlite");
+const {musicAssistantTokenConfigured}=require("./music-assistant-readiness");
 
 const TOKEN=String(process.env.MAINTENANCE_TOKEN||"");
 function tokenEqual(actual,expected){
@@ -19,34 +17,6 @@ function requireMaintenance(req,res,next){
   if(!tokenEqual(req.get("x-maintenance-token"),TOKEN))return res.status(401).json({ok:false,error:"Unauthorized"});
   next();
 }
-
-// Background Music is intentionally dormant until Music Assistant credentials
-// exist. Older alpha.71 behavior invoked the scheduler every five seconds even
-// when no token was configured, generating repeated WebSocket/HTTP 401 errors.
-// This startup guard preserves the saved schedule and automatically begins
-// normal polling as soon as the encrypted token appears in SQLite.
-let integrationReadDb=null,integrationReadDbIdentity=null;
-function databaseIdentity(file){const stat=fs.statSync(file);return `${stat.dev}:${stat.ino}`}
-function closeIntegrationReadDb(){if(integrationReadDb){try{integrationReadDb.close()}catch{}}integrationReadDb=null;integrationReadDbIdentity=null}
-function musicAssistantTokenConfigured(){
-  const file=String(process.env.DATABASE_FILE||"").trim();if(!file)return false;
-  try{
-    const identity=databaseIdentity(file);
-    if(integrationReadDb&&integrationReadDbIdentity!==identity)closeIntegrationReadDb();
-    if(!integrationReadDb){integrationReadDb=new DatabaseSync(file,{readOnly:true});integrationReadDbIdentity=identity}
-    return !!integrationReadDb.prepare("SELECT 1 FROM secret_store WHERE name='musicassistant.token' LIMIT 1").get();
-  }catch{closeIntegrationReadDb();return false}
-}
-function isBackgroundMusicTimer(fn,delay){return Number(delay)<=5000&&/backgroundMusicTick/.test(String(fn||""))}
-const nativeSetInterval=global.setInterval,nativeSetTimeout=global.setTimeout;
-global.setInterval=function(fn,delay,...args){
-  if(typeof fn==="function"&&isBackgroundMusicTimer(fn,delay))return nativeSetInterval.call(global,()=>{if(musicAssistantTokenConfigured())return fn(...args)},delay);
-  return nativeSetInterval.call(global,fn,delay,...args);
-};
-global.setTimeout=function(fn,delay,...args){
-  if(typeof fn==="function"&&isBackgroundMusicTimer(fn,delay))return nativeSetTimeout.call(global,()=>{if(musicAssistantTokenConfigured())return fn(...args)},delay);
-  return nativeSetTimeout.call(global,fn,delay,...args);
-};
 
 // Music Assistant 2.9+ can expose both a Universal Player and one or more
 // protocol children for the same physical device. RoomGoblin asks for protocol
@@ -129,54 +99,56 @@ function wrapVeyonStatusHandler(handler){
   }
 }
 
-const originalGet=express.application.get;
-express.application.get=function(route,...handlers){
-  if(route==="/api/v1/admin/config"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalGet.call(this,"/api/v1/internal/maintenance/config",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/music-assistant/status"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    const wrapped=wrapMusicAssistantStatusHandler(handler);
-    originalGet.call(this,"/api/v1/internal/maintenance/music-assistant/status",requireMaintenance,wrapped);
-    handlers[handlers.length-1]=wrapped;
-  }
-  if(route==="/api/v1/veyon/computers"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalGet.call(this,"/api/v1/internal/maintenance/veyon/computers",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/veyon/status"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalGet.call(this,"/api/v1/internal/maintenance/veyon/status",requireMaintenance,wrapVeyonStatusHandler(handler));
-    handlers[handlers.length-1]=wrapVeyonStatusHandler(handler);
-  }
-  return originalGet.call(this,route,...handlers);
-};
+function installMaintenanceBridge(app){
+  const originalGet=app.get;
+  app.get=function(route,...handlers){
+    if(route==="/api/v1/admin/config"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalGet.call(this,"/api/v1/internal/maintenance/config",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/music-assistant/status"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      const wrapped=wrapMusicAssistantStatusHandler(handler);
+      originalGet.call(this,"/api/v1/internal/maintenance/music-assistant/status",requireMaintenance,wrapped);
+      handlers[handlers.length-1]=wrapped;
+    }
+    if(route==="/api/v1/veyon/computers"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalGet.call(this,"/api/v1/internal/maintenance/veyon/computers",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/veyon/status"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalGet.call(this,"/api/v1/internal/maintenance/veyon/status",requireMaintenance,wrapVeyonStatusHandler(handler));
+      handlers[handlers.length-1]=wrapVeyonStatusHandler(handler);
+    }
+    return originalGet.call(this,route,...handlers);
+  };
 
-const originalPut=express.application.put;
-express.application.put=function(route,...handlers){
-  if(route==="/api/v1/admin/integration-connections"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalPut.call(this,"/api/v1/internal/maintenance/integration-connections",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/music-assistant/config"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    originalPut.call(this,"/api/v1/internal/maintenance/music-assistant/config",requireMaintenance,handler);
-  }
-  if(route==="/api/v1/music-assistant/background/schedule"&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
-  }
-  return originalPut.call(this,route,...handlers);
-};
+  const originalPut=app.put;
+  app.put=function(route,...handlers){
+    if(route==="/api/v1/admin/integration-connections"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalPut.call(this,"/api/v1/internal/maintenance/integration-connections",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/music-assistant/config"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      originalPut.call(this,"/api/v1/internal/maintenance/music-assistant/config",requireMaintenance,handler);
+    }
+    if(route==="/api/v1/music-assistant/background/schedule"&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
+    }
+    return originalPut.call(this,route,...handlers);
+  };
 
-const originalPost=express.application.post;
-express.application.post=function(route,...handlers){
-  if((route==="/api/v1/music-assistant/command"||route==="/api/v1/music-assistant/background/control")&&handlers.length){
-    const handler=handlers[handlers.length-1];
-    handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
-  }
-  return originalPost.call(this,route,...handlers);
-};
+  const originalPost=app.post;
+  app.post=function(route,...handlers){
+    if((route==="/api/v1/music-assistant/command"||route==="/api/v1/music-assistant/background/control")&&handlers.length){
+      const handler=handlers[handlers.length-1];
+      handlers[handlers.length-1]=function(req,res,next){canonicalizeMusicAssistantRequest(route,req);return handler(req,res,next)};
+    }
+    return originalPost.call(this,route,...handlers);
+  };
+}
 
-module.exports={musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId,musicAssistantTokenConfigured};
+module.exports={installMaintenanceBridge,musicAssistantNormalizePlayers,musicAssistantCanonicalPlayerId,musicAssistantTokenConfigured};

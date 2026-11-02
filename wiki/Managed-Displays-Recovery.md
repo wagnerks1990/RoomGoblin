@@ -4,15 +4,24 @@ The Classroom Overview has a **Managed Displays** link beside **Refresh**. It op
 
 ## ADB key storage and inventory permissions
 
-The maintenance container intentionally runs with a read-only root filesystem and all Linux capabilities dropped. ADB needs one writable persistent directory for its client keys. RoomGoblin supplies the named Docker volume `classroom-control-hub-android-adb` at:
+The maintenance container intentionally runs with a read-only root filesystem and
+all Linux capabilities dropped. RoomGoblin shares the named Docker volume
+`classroom-control-hub-android-adb` using separate access modes:
 
 ```text
-/managed/classroom-hub/data/android-tv/.android
+Hub:         /app/data/android-tv/.android           writable
+Maintenance: /managed/classroom-hub/data/android-tv/.android  read-only
 ```
 
-This is deliberately narrower than making `/opt/classroom-hub/data` broadly writable and does not require privileged mode or added capabilities.
+The Hub can write its persistent client identity; maintenance can read the same
+keys without changing them. Native host layout repair owns permission changes:
+0750 for the directory and 0640 for the key pair, owned by 10001:10001. Do not
+make the maintenance mount writable, grant privileged mode or add capabilities.
 
-A Compose-file update is not enough by itself: Docker must recreate the existing maintenance container before a new mount is applied. The supported installer and GUI application updater force-recreate the maintenance service, and the updater verifies this directory is writable before an update is considered healthy.
+A Compose-file update is not enough by itself: Docker must recreate the affected
+core containers before new mounts apply. The updater verifies maintenance can
+read its ADB identity directory and existing inventory. Release acceptance also
+checks Hub write access, maintenance's read-only mount and unchanged trust keys.
 
 The nested mount also depends on the host-backed parent directory being traversable. The supported layout is:
 
@@ -28,22 +37,25 @@ The staged Android APK and JSON metadata are not a trust anchor because they liv
 
 Each successful probe records the device's Android ID. When DHCP or the randomized ADB port changes, recovery accepts an already-authorized mDNS endpoint only when that ID matches; a common firmware/build fingerprint is never sufficient.
 
-If an appliance is already affected:
+For an affected appliance, use the supported updater during the administrator's
+authorized maintenance window. It verifies exact images and creates the required
+backup before reconciliation. It also requires current health and maintenance
+readability before changing source or services. If that preflight fails, preserve
+the error and follow the database-first recovery contract; do not bypass the gate
+or assume a normal update can repair an unreadable identity. After a successful
+update, perform these read-only storage checks:
 
 ```bash
 cd /opt/classroom-hub
-sudo chown root:10001 /opt/classroom-hub/data/android-tv
-sudo chmod 2770 /opt/classroom-hub/data/android-tv
-if [ -f /opt/classroom-hub/data/android-tv/devices.json ]; then
-  sudo chown root:10001 /opt/classroom-hub/data/android-tv/devices.json
-  sudo chmod 0660 /opt/classroom-hub/data/android-tv/devices.json
-fi
-sudo docker compose up -d --build --force-recreate maintenance-agent
-sudo docker compose up -d --force-recreate classroom-hub
-sudo docker compose exec maintenance-agent sh -lc 'test -w /managed/classroom-hub/data/android-tv/.android && echo writable'
+sudo bash deploy/update-production.sh
+sudo docker compose exec -T classroom-hub sh -lc 'test -w /app/data/android-tv/.android'
+sudo docker compose exec -T maintenance-agent sh -lc 'test -r /managed/classroom-hub/data/android-tv/.android'
+sudo docker inspect --format '{{range .Mounts}}{{if eq .Destination "/managed/classroom-hub/data/android-tv/.android"}}{{.Name}} writable={{.RW}}{{end}}{{end}}' classroom-control-hub-maintenance
 ```
 
-Refresh **Managed Displays**. Existing inventory should return without re-pairing.
+The final command must show the named volume with `writable=false`. Refresh
+**Managed Displays** and investigate any remaining error without replacing trust
+keys or blindly re-pairing. Do not bypass the supported transaction with ad hoc builds.
 
 ## Display Agent says `Not installed` but Launch Agent works
 

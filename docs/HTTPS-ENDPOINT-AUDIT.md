@@ -51,7 +51,7 @@ This audit separates browser/agent endpoints that should prefer the configured p
 - `src/cloudflare.js` and `src/cloudflare-bridge.js`: saved public hostname, Cloudflare API and tunnel management.
 - `deploy/configure-cloudflare-tunnel.sh`: loopback RoomGoblin origin and connector service.
 - `src/network.js` / `maintenance-agent/network.js`: host-mode alias normalization and local HTTP endpoints.
-- `public/controller/workspace.js`: Windows native enrollment origin and install command generation.
+- `public/controller/lab-enrollment.js`: Windows native enrollment origin and install command generation.
 - `public/lab-agent/ClassroomHubAgent.ps1`: converts HTTPS -> WSS and HTTP -> WS for the lab agent.
 - `windows-agent/*`: validates the Hub URL; HTTPS is preferred and HTTP requires explicit acknowledgement.
 - `public/display/index.html`: display same-origin WebSocket.

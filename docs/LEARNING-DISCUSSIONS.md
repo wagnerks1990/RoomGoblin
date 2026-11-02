@@ -172,4 +172,3 @@ Local checks: `npm run check`, `node --test test/learning.test.js`,
 On Windows run the supported full suite through
 `py -3.11 C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`.
 Browser tests use synthetic accounts, a synthetic model, and a synthetic LMS.
-

@@ -13,6 +13,73 @@ PLAYING + sustained confirmed OFFLINE -> RELEASE once
 
 The current deployment target is a 15-second probe cadence and six consecutive confirmed-offline results, approximately 90 seconds, before release.
 
+Unknown results and probe errors reset the consecutive-offline streak. Manual
+**Check** requests show diagnostics but cannot advance the automatic release
+threshold; live or unknown diagnostic evidence resets the streak. If settings
+change while a check is pending, its obsolete response is rejected and you can
+check again. Saving settings retains one periodic watcher even when a previous
+probe or lifecycle operation is still pending.
+
+**Check Stream Now** stays unavailable while its one request is pending.
+Earlier polls cannot overwrite its progress or result. If settings change
+during the check, the panel shows UNKNOWN and asks you to check again. Current
+probe errors remain visible, and unsaved form edits are preserved.
+
+Settings are committed with the encrypted stream URL before the watcher or live
+volume control uses them. A storage failure preserves the previous active and
+saved settings; correct the error and retry the save. Clearing a stream URL uses
+the same transaction. A successful save does not by itself confirm receiver
+playback or a successful live volume command.
+
+Live Watch keeps newer edits when a read or earlier save finishes. Save is
+unavailable while that settings submission is pending; inputs remain editable,
+and newer edits are labeled unsaved. Volume changes are ordered with settings
+saves and settle on the latest slider value. A failed save retains the draft
+for retry. Save, volume and stream-check feedback are shown separately.
+
+Starting replacement content retires that receiver's earlier delayed audio
+retries. Adding another display preserves the retries for unchanged announcement
+playback. Live volume and delayed audio skip replacement content, including when
+it changes during dispatch. These controls do not reload the player.
+
+Announcement audio priority remains held through failed display reconciliation,
+including independent hallway displays. Once recovery succeeds, restored audible
+video or an existing manual takeover retains its own music-priority policy.
+A media-ended notification cannot release an active announcement hold.
+
+If deferred-occurrence bookkeeping cannot be saved, its queued records and
+previous execution markers remain available for retry. Release recovery saves
+those markers before reconciling current display winners or releasing music;
+it does not replay the old deferred commands.
+
+Failed release clears remain pending. A retry clears only content still owned
+by that release; newer content and its audio priority are preserved. If another
+announcement starts first, its later release also finishes the older pending
+work before music can resume. Removed receivers retire their pending records.
+A selected receiver mapped to the shared legacy broadcast topic fails closed
+instead of clearing unrelated receivers. These are command-ownership checks,
+not proof of physical playback or audible silence.
+
+If a start fails after changing display state, its owned content remains pending
+for cleanup and current-schedule reconciliation before music priority is released.
+Older pending recovery remains held too. The original start error is reported;
+unchanged or newer content is excluded from that failed attempt's cleanup.
+
+An empty or unresolved explicit start selection reports an error instead of
+using other configured displays. When replacement fails before changing content,
+an unchanged existing announcement retains its active lifecycle and audio hold.
+
+Starting additional selected displays leaves the other active announcement
+displays playing. Stop ends the announcement across all of them. If an additional
+start partially fails, the earlier session remains active and the changed
+displays stay accounted for. Use Resume Scheduled State to repair their playback,
+or Stop to finish the session; automatic release also finishes the whole session.
+
+HLS probe deadlines cover the full playlist body, including a server that sends
+headers and then stalls. Each primary/adaptive attempt is bounded to 3.5 seconds
+and 512 KiB. A timeout or oversized response is reported as unknown availability
+and does not count toward the offline release threshold.
+
 ## Receiver diagnostics
 
 On a display receiver:

@@ -16,7 +16,7 @@ The maintenance image builds the Android Agent APK from source. If external Mave
 
 ## Shared persistent-data mode
 
-The Hub runs as UID/GID `10001:10001`. Maintenance must read backed-up application assets. The Hub startup wrapper establishes umask `0027`, so ordinary new files are `0640` and directories are `0750` unless code deliberately chooses a stricter mode.
+The Hub runs as UID/GID `10001:10001`. The wrapper starts with umask `0027`, but storage/startup deliberately imposes private umask `0077`. Creation modes alone are therefore insufficient. Publish ordinary uploaded content explicitly as `0640` files and `0750` directories; keep the private process umask and secret protections unchanged. Maintenance reads these assets through shared GID 10001 without extra capabilities.
 
 This gives the owner read/write, shared group read/traverse, and no access to other users.
 
@@ -24,13 +24,13 @@ Do not remove `tools/start-roomgoblin.sh`, inherit an unknown runtime umask, use
 
 ### Resumable upload session permissions
 
-In-progress resumable uploads are included in operational backups. Session directories therefore use `0750` and chunk/metadata files `0640`, matching the shared-data contract. Explicit `0700` directories or `0600` chunk files block maintenance backup traversal and cause production updates to fail safely before mutation.
+Published resumable session metadata and committed chunks are included in operational backups. Session directories use `0750` and files `0640`, applied explicitly after creation or on their write descriptors. Unpublished `.tmp` session trees and temporary chunk/metadata files are excluded from both validation and ZIP creation. Presentation conversion stays in the existing excluded `presentation-upload-tmp` root until complete readable originals/PDFs/slides are published. Backups still fail closed on unreadable committed content.
 
 ## Media upload / backup failure
 
 A large uploaded MP4 was observed as `0600`. The Hub could read it, but maintenance could not include it in the mandatory safety backup. The updater correctly stopped before changing services.
 
-For an affected application-owned media file:
+Existing affected assets require a separately approved bounded repair, with original modes/ownership/inodes recorded and symlinks, special files and hard-linked files rejected. See [Production Updates](Production-Updates). For one verified application-owned media file, the mode-only change would be:
 
 ```bash
 sudo chmod 0640 /opt/classroom-hub/data/media/<file>
@@ -62,7 +62,7 @@ Never bypass the mandatory safety backup to force an update through.
 
 ## AI / contributor rules
 
-Preserve exact-SHA publication gating, the complete Hub+maintenance image pair, bounded Android dependency retries, Hub UID/GID `10001:10001`, runtime umask `0027`, maintenance read access without world access, and the mandatory pre-mutation operational backup. Main is the sole integration/update source; preserve legacy command names without restoring a separate branch-promotion requirement.
+Preserve exact-SHA publication gating, the complete Hub+maintenance image pair, bounded Android dependency retries, Hub UID/GID `10001:10001`, the initial wrapper umask `0027`, private storage/startup umask `0077`, explicit content modes, maintenance read access without world access, and the mandatory pre-mutation operational backup. Main is the sole integration/update source; preserve legacy command names without restoring a separate branch-promotion requirement.
 ## Large operational archives and restore semantics
 
 Operational backups intentionally exclude `classroom-hub/data/media`; uploaded media is replaceable content and is not part of the mandatory pre-update rollback set. Eligible operational state is streamed with system Info-ZIP/ZIP64 instead of being buffered into a single Node/AdmZip allocation. The archive still carries the SQLite snapshot and recovery manifest and retains the existing path, symlink/special-file, and private-permission protections. Top-level database identities under `classroom-hub/data` are excluded from the filesystem traversal and ZIP command; only the SQLite-safe canonical snapshot is added back. This prevents stale legacy databases from blocking or contaminating an operational backup.

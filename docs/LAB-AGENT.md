@@ -76,6 +76,13 @@ policy or use the supported Veyon control plane for that behavior.
 
 ## Updates and recovery
 
+The Hub reports a disconnected agent offline immediately. During a Full Recovery
+snapshot, its disconnect timestamp stays in memory until the freeze is released;
+it must not change the frozen database. Failed persistence is diagnosed and
+retried on subsequent inventory saves or shutdown. A clean shutdown requires the
+pending metadata to be saved. Closing an older replaced socket does not mark the
+new connection disconnected. Enrollment and credential revocation are unchanged.
+
 An agent update is downloaded to a restricted staging directory, checked against
 the Hub SHA-256 manifest, and checked against the configured Authenticode publisher
 when one is pinned. A detached updater atomically replaces the script, restarts

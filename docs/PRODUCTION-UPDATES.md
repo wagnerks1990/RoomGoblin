@@ -20,7 +20,62 @@ The browser never performs a Git pull itself and never treats a merge alone as d
 
 Automatic application updates use the same main-commit path during the configured maintenance window. The GitHub token remains optional for the public repository and is only used for read-only GitHub metadata access. The previous-release rollback control remains available independently of how the current main commit was selected.
 
+Saving update policy and replacing or clearing its optional GitHub token is one
+database transaction. A credential write or commit failure preserves the previous
+policy, including its automatic-update setting. Omitting the token retains it.
+
 ## Normal update
+
+Status polling remains available during a Full Recovery export freeze. It defers
+the Hub's history-cache write until the next unfrozen poll, including responses
+that arrive after freeze acquisition. The native transaction journal remains the
+authoritative update record; installation, backup and rollback policy is unchanged.
+
+### Uploaded content and backup permissions
+
+The Hub's storage/startup modules deliberately set `umask 0077` for private
+runtime state. A requested `mode: 0750` or `0640` at creation is still filtered
+by that umask; rename preserves the restrictive mode and converters inherit it.
+Uploaded presentation originals, rendered PDFs/JPEGs, media and committed
+resumable-upload files therefore explicitly apply `0750` directories / `0640`
+files before publication through `src/content-permissions.js`. Ownership stays
+with the application; no process-wide umask, capabilities or secret modes change.
+
+Installer ownership normalization excludes `data/backups`: maintenance-owned
+private `0600` rollback archives must not become application-owned, because the
+hardened maintenance container cannot override their owner permissions. Existing
+archive ownership is preserved; no unrelated private state is relaxed.
+
+Presentation conversion runs in `data/presentation-upload-tmp`, which operational
+backups already exclude. In-flight resumable `.tmp` files/directories are also
+excluded consistently from validation and ZIP creation. Complete presentation
+assets, session metadata and committed chunks remain in operational backups;
+the existing replaceable `data/media` exclusion is unchanged. Backups must still
+fail on unreadable committed state instead of skipping it or bypassing the gate.
+
+Existing `0700`/`0600` presentation assets need a separately approved, bounded
+repair before an old installed updater can create its required backup. Do not
+recursively chmod/chown `data/`, add host users to GID 10001, grant world access,
+or weaken the maintenance container. Inventory only the affected presentation
+subtrees, reject symlinks/special files/hard-linked files and unexpected ownership,
+and save a root-private manifest of each path, inode, owner/group and original
+mode before changing only verified application-owned directories to `0750` and
+files to `0640`. GID 10001 receives read/traverse access, not write access. Leave
+Android trust, signing, credentials, screenshots and all other state untouched.
+Restore the recorded modes only on the matching paths/inodes if repair is aborted.
+
+After approved repair, require a successful ordinary operational backup, archive
+inspection, checksum verification and SQLite integrity check. Deploy the fix only
+after its tests pass, it is reviewed/merged with authorization and the exact main
+image pair is published; use the normal updater below. Retain previous immutable
+images, environment and matching backup for the runner's normal rollback. Test a
+new presentation conversion and an active resumable upload followed by another
+operational backup; do not use classroom playback commands as a permission test.
+
+Regression coverage: `node --test test/content-backup-permissions.test.js` on
+Linux, including a root-only fixture that drops to a different UID in GID 10001
+and invokes the real streaming ZIP writer. It also reproduces the old `EACCES`,
+keeps private staging/secrets excluded and checks that `0077` remains unchanged.
 
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
@@ -146,16 +201,18 @@ A failure before source/runtime mutation leaves running services unchanged.
 
 ## Automatic safety-backup retention
 
-Runtime-changing RoomGoblin and Ubuntu host updates create an operational
-`pre-*.zip` safety backup before mutation. After the updated appliance passes
-health verification, the runner now asks the authenticated maintenance service to
-retain the newest **10** automatic `pre-*` archives and prune older automatic
-ones.
+After the updated appliance passes health verification, the runner asks the
+authenticated maintenance service to retain three automatic operational archives
+and one `pre-*` safety archive. Normal source updates create an
+`auto-operational-*.zip` backup before mutation. The classification and migration
+snapshot policy are described below.
 
 Retention is intentionally conservative:
 
-- the backup currently pinned for application revert is preserved even if it
-  falls outside the newest ten;
+- the backup currently pinned for application revert is retained inside the
+  applicable limit, ahead of newer unpinned archives;
+- unavailable or unreadable rollback status, an invalid pin or a missing pinned
+  archive stops cleanup before any deletion;
 - user-created backups and encrypted Full Recovery `.rgbak` archives are never
   included in automatic pruning;
 - cleanup failure is reported as a warning and does not convert an otherwise
@@ -197,6 +254,13 @@ A rollback-pinned archive is preferentially retained inside the applicable
 limit. Manual operational exports and encrypted Full Recovery `.rgbak` bundles
 are excluded from automatic pruning.
 
+Cleanup fixes its candidate identities before reading rollback authority. It
+preserves new or replaced archives that appear during that read and reports the
+actual remaining counts; concurrent arrivals can temporarily exceed the limit.
+An incomplete update blocks cleanup, except for the native runner's final
+verifying phase with its selected active commit and published rollback identity.
+The runner retains its existing appliance lock during that automatic cleanup.
+
 
 ### Runtime retention convergence
 
@@ -237,3 +301,13 @@ rollback identities and environment snapshot. Restart recovery remains owned by
 the existing updater; no second installer journal or metadata-only rollback is
 introduced. `--build-local` is available only for fresh isolated development
 installation. See `INSTALL.md` for bootstrap and interrupted-install boundaries.
+
+## Planning import after upgrade (Unreleased)
+
+The first Hub startup automatically imports existing schedule/profile/calendar data
+into a Planning draft, after SQLite/legacy-file reconciliation. One transaction
+saves the original snapshot, converted profile and completion marker. Subsequent
+starts preserve operator edits. Class/automation IDs, targets and runtime scheduler
+state remain intact; the new resolver is not enabled by import. Invalid or failed
+imports retain existing scheduling and report status in Planning. The native
+updater backup/rollback contract is unchanged. See [Planning automatic import](PLANNING.md#automatic-import-on-upgrade).

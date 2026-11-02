@@ -20,7 +20,7 @@ test('idle navigation previews locally and never dispatches live commands',async
 test('live navigation still dispatches and updates the presenter',async()=>{
  const requests=[];let renders=0;
  const ctx={PRES:{selectedId:'deck',state:{active:true,presentationId:'deck'}},jpost:async(url,body)=>{requests.push({url,body});return {state:{active:true,presentationId:'deck',slide:2}};},renderPresenter:()=>renders++,alert:message=>assert.fail(message)};
- vm.createContext(ctx);vm.runInContext(section(controller,'async function presentationControl(','function presentationSetAuto('),ctx);
+ vm.createContext(ctx);vm.runInContext(section(controller,'let presentationLibraryGeneration=','function refreshPresentationState(')+section(controller,'async function presentationControl(','function presentationSetAuto('),ctx);
  await ctx.presentationControl('next');assert.equal(requests[0].body.action,'next');assert.equal(ctx.PRES.state.slide,2);assert.equal(renders,1);
 });
 test('preview navigation clamps bounds and chooses the starting slide',()=>{

@@ -14,6 +14,11 @@ RoomGoblin controls real classroom infrastructure and should be treated as an ad
 - Back up production state securely.
 - Keep direct HTTP transport restricted to the trusted management network; use reviewed HTTPS for remote access.
 
+Diagnostic snapshots and exports redact endpoint query values and URL credentials
+in configuration and service errors, in addition to event redaction. Optional
+hardware without an observation is unknown, not healthy. Veyon reachability does
+not verify authentication; an MQTT publish does not acknowledge a Govee device.
+
 ## Trusted-LAN HTTP and optional remote HTTPS
 
 The appliance retains direct trusted-LAN HTTP on TCP/3000. Optional managed Cloudflare HTTPS terminates through the same-host loopback connector; Caddy is not part of the current deployment.

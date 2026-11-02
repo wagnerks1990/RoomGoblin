@@ -1,5 +1,10 @@
 # Architecture
 
+Startup automation reconciliation respects the Full Recovery freeze. If its
+initial five-second pass is deferred, the existing scheduler timer retries one
+pending pass after thaw using current winners. Accepted work retains writer-drain
+ownership, and the ordinary scheduler cannot overlap that startup pass.
+
 See [Host Networking](Host-Networking) for the current Linux container topology, loopback-only maintenance API, explicit add-on migration, listener ports and recovery rules.
 
 RoomGoblin separates the classroom application, browser display clients, persistence, maintenance functions, host-level administration, and external integrations.
@@ -39,6 +44,24 @@ Ubuntu host
 The Node.js service provides controller UI/API, scheduler, display orchestration, class/calendar rules, automation execution, media control, announcement handling, integrations, diagnostics, and persistence access.
 
 The main application does not require unrestricted host privileges. Runtime state is mounted into the container rather than baked into the image.
+
+Canonical-process lifecycle regressions cover accepted Sports refreshes, scheduled
+Ubuntu maintenance acknowledgments and presentation conversions during shutdown
+and Full Recovery freeze. They verify final SQLite/asset persistence, audit flush
+after thaw, non-replayed Ubuntu jobs and interrupted-conversion rebuild after a
+failed shutdown deadline. External feed/SSH transports and rasterization use
+controlled adapters; physical device and visual rendering acceptance are separate.
+
+Full Recovery freeze also pauses authentication housekeeping and update-history
+cache writes from read requests. Authentication still checks expiry, revocation
+and enabled identities, and status remains readable. Normal maintenance resumes
+after thaw; the native update transaction journal remains authoritative.
+
+Veyon reads can persist inventory identities, hostnames or key preferences.
+Recovery therefore drains accepted Veyon GET/HEAD handlers and pauses new ones,
+including administrator config/keyring projections and the maintenance inventory
+mirror, until thaw. The separate token-protected maintenance config read remains
+available to recovery. Stable computer IDs are persisted before projection.
 
 ## Display clients
 

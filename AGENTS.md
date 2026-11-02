@@ -24,6 +24,18 @@ Receiver tools/group saves must require a unique enabled output mapping, never a
 guessed `tvN`. Preserve long group keys and references; wrap them for readability
 instead of automatically stripping historical `display-` prefixes.
 
+Matrix reads use the shared `src/pluto-transport.js` status owner: one pending
+scan, two-second monotonic cache, eight-second total read budgets and bounded
+64 KiB response bodies. Keep cancellation active through bodies and retry waits.
+Invalidate readings on command/connection changes without replaying uncertain
+writes. Preserve returned handler ownership after browser disconnect and the
+existing announcement, audit-freeze and shutdown contracts.
+
+Legacy per-output TV schedules must use all physical announcement locks, save an
+exact-minute claim before sending CEC and never replay an uncertain write after
+restart. Persistence failures must release scheduler ownership and remain visible.
+See `docs/TV-POWER-AUTOMATION.md` for the legacy and canonical contracts.
+
 
 For alpha.84 live-upgrade fixes, read `docs/ALPHA82-UPGRADE-RECOVERY.md`.
 Keep SQLite database/WAL/SHM access shared with maintenance (0660), ADB trust
@@ -49,6 +61,19 @@ This file is the authoritative project context for AI coding assistants and huma
 
 ## Source of truth
 
+Read `docs/APPLICATION-LIFECYCLE.md` before changing startup or shutdown.
+Install compatibility bridges explicitly through `src/application-bridges.js`
+after handler tracking. Preserve their order and per-application registration;
+do not restore import-time Express prototype patches.
+Return HTTP handler promises and explicitly track detached writers so shutdown
+can drain them before SQLite closes. Preserve the independent Full Recovery
+freeze/thaw ownership and the ten-second failure deadline. Automation shutdown
+is an interruption; never turn it into operator cancellation that prevents
+current-winner restart recovery.
+Full Recovery must also drain returned mutating HTTP handler promises after
+response finish/disconnect. Keep freeze/thaw and the initiating export proxy
+outside that mutation count so export cannot wait on itself.
+
 Use the repository on `main` as the source of truth. Read this file before changing application behavior. Then consult, in order:
 
 1. `VERSION` and `CHANGELOG.md`
@@ -63,7 +88,7 @@ Do not infer production configuration from public defaults. Site-specific config
 
 ## Current baseline
 
-The current review baseline is `1.0.0-alpha.84`.
+The current review baseline is `1.0.0-alpha.85`.
 
 Verified live-test/recovery behaviors inherited by this baseline include:
 
@@ -168,7 +193,7 @@ Operational backups intentionally exclude `data/media`; uploaded media is replac
 
 The GUI updater selects only the latest merged commit on trusted `main` and delegates the exact SHA to the durable `published` transaction in `classroom-hub-app-update.service`; semantic-release handling remains a compatibility backend path. Preserve its invariant: every update has a matching operational backup, version-aware health check, and automatic source/database rollback. Automatic updates remain opt-in and bounded by the database-backed maintenance window.
 
-Core service recreation is also part of the updater contract. A release can change mounts, read-only/writable paths, environment, or networking without changing an image ID. The updater must therefore force-recreate `maintenance-agent` and `classroom-hub` when deployment inputs/configuration change or when rolling back a release. Published-source selective updates may retain unchanged components only after per-running-image source comparison and a verified deployment-configuration hash; unknown inputs/history must trigger full reconciliation. Read `docs/PRODUCTION-UPDATES.md`. In particular, Managed Displays depends on the dedicated `classroom-control-hub-android-adb` volume mounted at `/managed/classroom-hub/data/android-tv/.android`; the updater must verify this path is writable before declaring the release healthy. Do not replace the force-recreate deployment with a plain `docker compose up -d` unless equivalent tested mount reconciliation exists. See `docs/MANAGED-DISPLAYS-RECOVERY.md`.
+Core service recreation is also part of the updater contract. A release can change mounts, read-only/writable paths, environment, or networking without changing an image ID. The updater must therefore force-recreate `maintenance-agent` and `classroom-hub` when deployment inputs/configuration change or when rolling back a release. Published-source selective updates may retain unchanged components only after per-running-image source comparison and a verified deployment-configuration hash; unknown inputs/history must trigger full reconciliation. Read `docs/PRODUCTION-UPDATES.md`. Managed Displays shares the dedicated `classroom-control-hub-android-adb` identity volume: the Hub mounts it writable at `/app/data/android-tv/.android`, while maintenance mounts it read-only at `/managed/classroom-hub/data/android-tv/.android`. Preserve that split. The updater checks maintenance readability; release acceptance also verifies Hub write access and unchanged trust keys. Never grant maintenance write access to satisfy an obsolete recovery instruction. Do not replace the force-recreate deployment with a plain `docker compose up -d` unless equivalent tested mount reconciliation exists. See `docs/MANAGED-DISPLAYS-RECOVERY.md`.
 
 ## Database identity and recovery
 
@@ -233,6 +258,33 @@ matching version text is not sufficient source identity.
 Run repository validation and search for unintended stale current-baseline version strings before release.
 
 ## Operator GUI contract
+
+The optional Windows daily-code sign-in pilot is documented in
+`docs/WINDOWS-DAILY-SIGNIN.md`. Keep its installer, SYSTEM service and credential
+provider separate from the existing four-file Lab Agent updater. No Hub/agent
+update may activate it, change a Windows password or replace a loaded sign-in DLL.
+Preserve explicit local installation, a separate administrator recovery account,
+encrypted computer-bound enrollment, SYSTEM-only IPC, durable attempt/recovery
+state and protected account SID checks. Never expose seeds, Windows passwords or
+daily codes through logs, ordinary inventory or receiver projections. Physical
+Windows sign-in/recovery and alternate-provider acceptance are required before
+production rollout; algorithm tests and compilation do not establish acceptance.
+
+Ubuntu managed display computers use `src/ubuntu-displays.js` and the fixed
+`src/ubuntu-display/` SSH installer/control/session package. Read
+`docs/UBUNTU-MANAGED-DISPLAYS.md` before changing this feature. Preserve pinned SSH
+host identities, ephemeral bootstrap credentials, encrypted per-computer keys,
+forced-command management, non-sudo kiosk sessions, first-install rollback and
+Full Recovery writer drain. Protocol 2 maintenance is the fixed native
+`lifecycle.py` worker, with a computer-wide lock, durable jobs and independent
+boot recovery. Agent updates fetch fixed trusted-main files and must match the
+running Hub package digest; never accept caller-provided code, URLs or arbitrary
+revisions. Keep announcement-aware dispatch, claimed-before-send schedules,
+non-replayed uncertain operations, native security-update policies and explicit
+OS rollback limits. Every physical output has its own stable receiver;
+monitor/connector changes fail closed. Do not share profiles/receiver IDs, guess
+AV matrix mappings, expose arbitrary remote root commands, or couple Ubuntu
+inventory to ADB health. Existing Android enrollment remains compatible.
 
 Read `docs/GUI-WORKSPACES.md` before changing operator navigation or layout.
 Scope shared workspace styles to `body.rg-workspace`; never load them into the

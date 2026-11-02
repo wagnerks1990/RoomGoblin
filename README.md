@@ -4,6 +4,12 @@
 
 ## Displays & AV
 
+[Ubuntu managed displays](docs/UBUNTU-MANAGED-DISPLAYS.md) enrolls an Ubuntu
+computer with an independent RoomGoblin receiver on each connected display output.
+Managed Displays includes the SSH setup wizard, screen assignment, preview,
+diagnostics, fleet health/history, scheduled Ubuntu/Chromium/agent maintenance,
+verified agent rollback and desktop rollback alongside Android devices.
+
 Use the [TV Routing Matrix](docs/TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has
 been removed. Existing names, receiver IDs, mappings, labels, groups and credentials
 are preserved. Receiver setup uses count/IDs again; Settings manages receivers
@@ -16,6 +22,12 @@ cleanup. Reload the controller after upgrading.
 *Run the room. Manage the lab.*
 
 RoomGoblin is the branded successor to Classroom Control Hub. The product name, operator interface, setup experience, device-facing presentation, and documentation use **RoomGoblin**. Compatibility-sensitive internal identifiers from earlier releases are intentionally retained until an explicit migration is tested and documented.
+
+Background Music development: [Music Studio and recovery](docs/BACKGROUND-MUSIC-STUDIO.md).
+
+Weather displays: [Weather workspace, forecasts and adjustable overlays](docs/WEATHER-WORKSPACE.md).
+
+Sports displays: [School boards, roster imports and approved source refresh](docs/SPORTS.md).
 
 ## Compatibility contract
 
@@ -35,7 +47,7 @@ Do not rename these merely for cosmetic consistency. A future internal-identifie
 
 RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](docs/HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
-> **Status:** `1.0.0-alpha.84` — alpha software. Production deployment remains limited to reviewed, backed-up `amd64` installations. Normal administration may use the trusted-LAN HTTP deployment; recovery passphrases require loopback or HTTPS through a same-host proxy.
+> **Status:** `1.0.0-alpha.85` — alpha software. Production deployment remains limited to reviewed, backed-up `amd64` installations. Normal administration may use the trusted-LAN HTTP deployment; recovery passphrases require loopback or HTTPS through a same-host proxy.
 
 ## What it does
 
@@ -49,6 +61,10 @@ RoomGoblin provides a single web controller for classroom and lab operations, in
 - encrypted native [ESPHome devices](docs/ESPHOME-INTEGRATION.md) with verified enrollment, sensor states and supported entity controls (Unreleased)
 - lighting integrations through MQTT
 - class schedules, cycle days, closures, delays, half-days, and remote-day rules
+- automatic upgrade import of existing schedules into Planning drafts, preserving current scheduling and automation records (Unreleased)
+- visual [Planning and Scene Studio](docs/PLANNING-STUDIO.md) with temporary/block-based scheduling, shared overlays, drag-and-drop scenes and fitted live widgets (Unreleased)
+- unified [Planning workspace](docs/PLANNING.md) with school calendar, A–H/Green/White/Bison mapping, reusable timetables, split class segments and reviewed date changes (Unreleased)
+- reusable [special-day timetables](docs/SPECIAL-DAY-SCHEDULES.md) for date-assigned class times (Unreleased)
 - lab/client management integrations
 - appliance-wide Docker inventory/lifecycle controls
 - optional managed integration deployment/adoption
@@ -261,6 +277,11 @@ Important optional settings include:
 See `.env.example`, `INSTALL.md`, and `docs/CONFIGURATION.md`.
 
 ## Windows lab agents
+
+The optional [daily-code Windows sign-in pilot](docs/WINDOWS-DAILY-SIGNIN.md)
+lets selected standard local accounts use a staff-visible daily RoomGoblin code
+without contacting the Hub at sign-in. It uses a separate installer and requires
+spare-PC/VM acceptance; ordinary Lab Agent updates never enable it.
 
 Because the appliance is temporarily HTTP-only, Windows lab-agent enrollment requires the explicit `-AllowHttp` switch and should be limited to trusted classroom/admin networks.
 

@@ -19,6 +19,31 @@ The direct source tree on `main` is canonical.
 
 ## Local workflow
 
+Use `npm start` with isolated development data and unused local ports. It runs
+the same Node bootstrap as the container wrapper, including recovery, configured
+display-gateway compatibility, route bridges and the media child. Direct
+`node src/server.js` remains a control-only test entry point. See
+[application lifecycle](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/APPLICATION-LIFECYCLE.md).
+
+Both entry points install the ordered compatibility bridges explicitly on the
+Hub application through `src/application-bridges.js`, after handler tracking.
+Importing bridge modules leaves Express prototypes unchanged. Keep the existing
+administrator and maintenance guards and the bridge order; loopback composition
+tests cover these boundaries without contacting classroom integrations.
+
+Shutdown waits for accepted handler/background writes and records interrupted
+scheduled loops for current-winner recovery on restart. Operator cancellation
+remains terminal. Active recovery exports retain their authenticated thaw path;
+a ten-second drain timeout or failed SQLite checkpoint exits unsuccessfully.
+Media-child failure or forced termination also exits unsuccessfully, after the
+remaining accepted writers drain. Signaling errors retain child ownership until
+exit; they do not substitute for reaping the child.
+Full Recovery acquisition also waits for returned mutating HTTP handlers after
+response finish/disconnect. Freeze/thaw and the initiating export proxy are
+excluded from the mutation count, preventing self-wait; the existing 30-second
+acquisition deadline fails closed if work remains.
+See [modernization coverage](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/audits/roomgoblin-modernization/README.md).
+
 ```bash
 git clone https://github.com/wagnerks1990/RoomGoblin.git
 cd RoomGoblin

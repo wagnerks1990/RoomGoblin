@@ -1,0 +1,13 @@
+body.rg-workspace{margin:0;font:16px/1.5 system-ui,Segoe UI,sans-serif;background:var(--brand-background,#f4f7f8);color:var(--brand-text,#172e3c)}
+body.rg-workspace main{max-width:960px;margin:auto;padding:24px}
+body.rg-workspace section,body.rg-workspace details{border:1px solid #82959c;border-radius:10px;padding:20px;margin:20px 0;background:var(--brand-surface,#fff)}
+body.rg-workspace label{display:block;margin-top:12px;font-weight:600}
+body.rg-workspace input,body.rg-workspace select,body.rg-workspace button{font:inherit;padding:9px;border:1px solid #6a7f88;border-radius:6px;max-width:100%;color:inherit;background:var(--brand-surface,#fff)}
+body.rg-workspace input{width:min(100%,440px);box-sizing:border-box}
+body.rg-workspace button{margin:10px 4px 4px 0;cursor:pointer}
+body.rg-workspace button:disabled{opacity:.6;cursor:wait}
+body.rg-workspace :focus-visible{outline:3px solid #078a83;outline-offset:3px}
+body.rg-workspace .notice{border-left:5px solid #be831a;padding:12px;background:var(--brand-surface,#fff)}
+body.rg-workspace #code{display:block;font:700 2.5rem ui-monospace,monospace;letter-spacing:.12em;margin-top:12px}
+body.rg-workspace code{overflow-wrap:anywhere}
+body.rg-workspace summary{cursor:pointer;font-weight:600}

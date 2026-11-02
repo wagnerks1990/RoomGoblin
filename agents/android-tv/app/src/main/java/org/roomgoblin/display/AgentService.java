@@ -28,6 +28,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
@@ -36,7 +37,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Collections;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -57,6 +60,7 @@ public class AgentService extends Service {
     private volatile ServerSocket server;
     private volatile Thread listenerThread;
     private volatile int boundPort=-1;
+    private final Set<Socket> clients=ConcurrentHashMap.newKeySet();
     private final ExecutorService workers=new ThreadPoolExecutor(
         2,MAX_CLIENT_WORKERS,30L,TimeUnit.SECONDS,
         new ArrayBlockingQueue<>(MAX_QUEUED_CLIENTS),
@@ -88,7 +92,9 @@ public class AgentService extends Service {
         stopping=true;
         closeListener();
         if(listenerThread!=null)listenerThread.interrupt();
+        for(Socket client:clients)closeClient(client);
         workers.shutdownNow();
+        clients.clear();
         NativeSendspinManager.INSTANCE.stop("agent-service-destroyed");
         KioskWatchdog.stop();
         super.onDestroy();
@@ -118,14 +124,22 @@ public class AgentService extends Service {
         Log.i(TAG,"Agent v2 HTTP management listening on "+port);
         try{
             while(!stopping&&!owned.isClosed()){
-                Socket socket=owned.accept();socket.setSoTimeout(CLIENT_TIMEOUT_MS);
-                try{workers.execute(()->handle(socket));}catch(RejectedExecutionException busy){try{socket.close();}catch(Exception ignored){}}
+                Socket socket=owned.accept();
+                synchronized(listenerLock){
+                    if(stopping||server!=owned||owned.isClosed()){closeClient(socket);continue;}
+                    clients.add(socket);
+                }
+                try{
+                    socket.setSoTimeout(CLIENT_TIMEOUT_MS);
+                    workers.execute(()->{try{handle(socket);}finally{closeClient(socket);}});
+                }catch(RejectedExecutionException|IOException unavailable){closeClient(socket);}
             }
         }catch(Exception e){if(!stopping&&!owned.isClosed())Log.e(TAG,"Agent management listener failed",e);}
-        finally{synchronized(listenerLock){if(server==owned){server=null;boundPort=-1;listenerThread=null;}}}
+        finally{try{owned.close();}catch(IOException ignored){}synchronized(listenerLock){if(server==owned){server=null;boundPort=-1;listenerThread=null;}}}
     }
 
     private void closeListener(){synchronized(listenerLock){closeListenerLocked();}}
+    private void closeClient(Socket socket){try{socket.close();}catch(IOException ignored){}finally{clients.remove(socket);}}
     private void closeListenerLocked(){ServerSocket old=server;server=null;boundPort=-1;Thread oldThread=listenerThread;listenerThread=null;try{if(old!=null)old.close();}catch(Exception ignored){}if(oldThread!=null)oldThread.interrupt();}
 
     private void handle(Socket socket){try(Socket s=socket;BufferedInputStream in=new BufferedInputStream(s.getInputStream());BufferedOutputStream out=new BufferedOutputStream(s.getOutputStream())){String requestLine=readLine(in);if(requestLine==null||requestLine.isEmpty())return;String[] first=requestLine.split(" ",3);if(first.length<2){writeJson(out,400,error("bad_request","Malformed request"));return;}String method=first[0].toUpperCase(Locale.ROOT),path=first[1];int contentLength=0,headerLines=0;boolean contentLengthSeen=false;String token="";for(;;){if(++headerLines>MAX_HEADER_LINES){writeJson(out,431,error("headers_too_large","Too many request headers"));return;}String line=readLine(in);if(line==null||line.isEmpty())break;int colon=line.indexOf(':');if(colon<1)continue;String name=line.substring(0,colon).trim().toLowerCase(Locale.ROOT),value=line.substring(colon+1).trim();if("content-length".equals(name)){if(contentLengthSeen){writeJson(out,400,error("bad_request","Duplicate Content-Length"));return;}contentLengthSeen=true;try{contentLength=Integer.parseInt(value);}catch(Exception invalid){writeJson(out,400,error("bad_request","Invalid Content-Length"));return;}if(contentLength<0){writeJson(out,400,error("bad_request","Invalid Content-Length"));return;}if(contentLength>MAX_BODY_BYTES){writeJson(out,413,error("body_too_large","Request body exceeds 64 KiB"));return;}}if("transfer-encoding".equals(name)){writeJson(out,400,error("bad_request","Transfer-Encoding is not supported"));return;}if("x-classroom-hub-agent-token".equals(name))token=value;}if(!authorized(token)){writeJson(out,401,error("unauthorized","Valid device-agent token required"));return;}byte[] body=contentLength>0?readExact(in,contentLength):new byte[0];JSONObject input=body.length>0?new JSONObject(new String(body,StandardCharsets.UTF_8)):new JSONObject();if("GET".equals(method)&&"/v1/status".equals(path)){writeJson(out,200,status());return;}if("GET".equals(method)&&"/v1/capabilities".equals(path)){writeJson(out,200,AgentCapabilities.snapshot(this));return;}if("POST".equals(method)&&"/v1/action".equals(path)){JSONObject result=action(input);writeJson(out,result.optBoolean("ok",true)?200:409,result);return;}writeJson(out,404,error("not_found","Unknown agent endpoint"));}catch(Exception e){Log.w(TAG,"Agent request failed",e);}}

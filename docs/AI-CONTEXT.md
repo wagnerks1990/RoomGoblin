@@ -1,5 +1,69 @@
 # AI Project Context
 
+TV audio bridge writes return their queued handler promises and normalize the
+latest desired targets in accepted order. Validate attach/detach and retain the
+admitted Music Assistant generation through route and router awaits. Conditional
+generation dispatch is private to bridge commands; preserve announcement guards,
+writer drain, one-use tickets and visible partial/uncertain delivery outcomes.
+
+Music command acknowledgments retain per-receiver/per-field order while their
+handlers are pending. Later confirmed writes win; failures do not erase older
+confirmed values. Release tracking in finally, and recheck connection generation
+before compensation or persistence. Preserve returned handler writer ownership.
+
+Music Assistant HTTP transport/body/parse failures retain uncertain execution
+through fallback. TV audio restoration must not replay them. Current matching
+telemetry may confirm audio without a write; explicit reconnect starts a new
+restore owner. Keep operation identity on deferred timers and cleanup, and map
+player IDs only to configured enabled receivers using the protected legacy prefix.
+
+Music search submissions always retire prior response ownership, including
+short queries. Clear the result-card cache when replacing its DOM with search
+progress; the stable Favorites cache is independent.
+
+TV audio restoration must recheck receiver connection identity, Music Assistant
+connection generation, saved audio and shutdown/recovery admission after every
+await. Retired restores cannot send mute, retry or mark the receiver restored.
+See `audits/roomgoblin-modernization/music-tv-restore-ownership.md`.
+
+The supported application bootstrap is shared by `npm start` and the container
+wrapper. `src/application-bridges.js` explicitly installs ordered compatibility
+routes on the Hub after handler tracking; importing bridges must not mutate
+Express prototypes. Media child ownership is in `src/media-plane-process.js`; scheduled
+music readiness is explicit, never a global timer override. HTTP handlers must
+return their async work; detached writers need explicit tracking. Shutdown drains
+accepted work before SQLite close and distinguishes automation interruption from
+operator cancellation. Preserve the independent Full Recovery freeze/thaw path.
+Full Recovery also drains returned mutating HTTP promises past response closure;
+its freeze/thaw and initiating export proxy are excluded to prevent self-wait.
+Veyon GET/HEAD routes and administrator config/keyring projections are included
+because they can persist identity/key metadata. Keep the maintenance inventory
+mirror in that barrier, while the read-only maintenance config mirror stays
+available to recovery. Preserve authoritative identity before projection.
+Read `APPLICATION-LIFECYCLE.md` before changing startup order or shutdown. The
+modernization [audit index](audits/roomgoblin-modernization/README.md) maps the
+requested subsystems to scoped source review, validation, delivery receipts and
+acceptance limits. Its progress history preserves older status notes; historical
+"pending" statements do not override later delivery receipts. Do not infer a
+whole-repository line-by-line audit or physical-device acceptance from test counts.
+
+Automation timing and task ownership are documented in `AUTOMATION-FRAMEWORK.md`.
+Use monotonic wait duration and a one-second minimum continuing cycle. Keep
+scheduled, recovered and manual task registration ahead of execution, with
+unconditional cleanup outside fallible ledger/final-save work. Failure diagnostics
+remain inside the owned recovery/shutdown task; interruption is not cancellation.
+
+Ubuntu display lifecycle uses bounded background monitoring and the fixed native
+maintenance worker, verified package digest/rollback and non-replayed scheduled
+jobs. Read `UBUNTU-MANAGED-DISPLAYS.md`; preserve enrollment/receiver identity,
+announcement-aware dispatch and Full Recovery drain.
+
+Weather uses the existing scene/layout engine, a bounded server-owned cache and
+authorized receiver projection. Keep provider credits in the footer, editable
+overlay field selections, integrated sports-hour forecasts and unavailable/stale
+states. Weather updates must not replace native media sessions or timer deadlines.
+See `WEATHER-WORKSPACE.md` for source, permission and rollback boundaries.
+
 Presentation start clears selected receivers before the first slide; idle Next,
 Previous, Go and thumbnails preview locally and set the starting slide. Polling
 must preserve a separately selected preview deck. See `PRESENTATION-CONTROLS.md`
@@ -24,6 +88,18 @@ and AV-label stores; leave `room.topology` archived and untouched. Do not restor
 topology scripts, request wrappers or preference projections. Keep unchanged
 matrix controls stable across polling and surface save failures.
 
+Matrix reads use the shared `src/pluto-transport.js` status owner: one pending
+scan, two-second monotonic cache, eight-second total read budgets and bounded
+64 KiB response bodies. Keep cancellation active through bodies and retry waits.
+Invalidate readings on command/connection changes without replaying uncertain
+writes. Preserve returned handler ownership after browser disconnect and the
+existing announcement, audit-freeze and shutdown contracts.
+
+Legacy per-output TV schedules must use all physical announcement locks, save an
+exact-minute claim before sending CEC and never replay an uncertain write after
+restart. Persistence failures must release scheduler ownership and remain visible.
+See `docs/TV-POWER-AUTOMATION.md` for the legacy and canonical contracts.
+
 
 Alpha.82 live-upgrade corrections and acceptance limits are documented in
 `ALPHA82-UPGRADE-RECOVERY.md`. Preserve shared SQLite/ADB access under GID 10001
@@ -36,6 +112,13 @@ RoomGoblin uses least-privilege networking per service. The core Hub and mainten
 This document gives AI assistants a compact operational model of RoomGoblin. `AGENTS.md` is the primary contributor contract; this document expands the technical context.
 
 ## Purpose
+
+Ubuntu multi-output enrollment and the restricted SSH kiosk runtime are documented
+in [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md). Keep one unique receiver
+per enabled physical connector, stable EDID/connector checks and isolated profiles.
+The installer snapshots desktop configuration; activation is explicit. Routine
+management uses a forced command under a separate restricted key, never stored
+bootstrap passwords or an arbitrary remote root shell.
 
 RoomGoblin is a centralized classroom/lab control platform. It coordinates browser displays, scheduled automations, AV routing, lighting, Morning Announcements, Background Music, class schedules, school-cycle rules, Veyon lab management, diagnostics, backup/recovery, Docker integrations, Android/Google TV managed displays, and host-management functions.
 
@@ -162,6 +245,16 @@ A Git update must preserve them.
 
 The shared `data/` root is intentionally root-owned with group `10001` access so both the non-root application and hardened maintenance container can traverse it. Application-owned files remain UID/GID `10001:10001`; `data/backups` is maintained by the maintenance layer. Do not reintroduce code that chmods the entire shared data root to `0700`.
 
+Upload/conversion publication must explicitly apply `0750` content directories
+and `0640` content files after creation: storage/startup's private `0077` umask
+filters creation modes, copied modes and converter output. Use the narrowly scoped
+content helpers, never relax the global umask or identities. Keep partial
+presentation conversion in the excluded `presentation-upload-tmp` root and
+uncommitted resumable `.tmp` paths out of both operational validation and ZIP
+creation. Existing private assets require separately approved bounded repair;
+the updater still fails closed on unreadable committed content. See
+`docs/PRODUCTION-UPDATES.md` and `test/content-backup-permissions.test.js`.
+
 The current master key path is `/etc/classroom-control-hub/master.key`. Upgrades from older installations must preserve `/etc/classroom-hub/master.key` by migrating it rather than silently generating a replacement.
 
 ## Current known-good baseline
@@ -215,6 +308,9 @@ Alpha.80 Full Recovery invariants:
   freeze before database selection; it drains in-flight HTTP/WebSocket and
   scheduler/announcement/presentation/session/audio/update work, queues audits,
   and fails closed after 30 seconds rather than mixing points in time;
+- authentication reads pause cleanup/activity writes during export freeze while
+  still enforcing expiry/revocation. Update-status reads defer history writes
+  until an unfrozen poll; neither read path may mutate a frozen SQLite snapshot;
 - master, ADB, signing and native Veyon identities are stable-copied and
   revalidated under that host lock, and both freeze tokens are released on every
   success/failure path (with a bounded crash lease);
@@ -287,6 +383,14 @@ Major integrations include MQTT/Govee, Pluto Mark I, Music Assistant / Sendspin,
 
 Integration health must be independent. A Pluto failure must not make MQTT/Govee appear offline. Optional/slow hardware probes should run asynchronously and must not block the Overview screen.
 
+Govee metadata and discovery-preference saves stage their candidate registry,
+persist it, then publish live projections. Rejected validation or persistence
+must leave current names, groups and enrollment policy unchanged. Keep physical
+IDs, legacy registry keys, configured groups and name normalization compatible;
+group names are own data properties during both saves and registry rebuilds.
+See [Govee lighting ownership](GOVEE-LIGHTING.md) for read/write and transport
+boundaries. Discovery enrollment/reconciliation has separate persistence paths.
+
 Music Assistant managed Docker deployment uses host networking so local multicast discovery works and keeps its persistent `/data` outside the container. Native `veyon.service` and `veyon-webapi.service` are host-managed; the retired Veyon proxy container is not a supported managed add-on or recovery root.
 RoomGoblin-managed Music Assistant recreations also install `/data/.roomgoblin-compat/sitecustomize.py` and set `PYTHONPATH` to it. This guard filters only Linux adapters whose `operstate` is explicitly `down` before Music Assistant/ifaddr builds Zeroconf interface lists; it exists to prevent dual-stack startup failure on hosts with Tailscale IPv6 plus inactive addressed Docker bridges. Preserve active/unknown interfaces and fail open when state cannot be read. RoomGoblin-owned containers require an explicit recreate to gain the guard, and that recreate must not be blocked by an offline Music Assistant authentication preflight. Foreign/adopted containers must refuse destructive recreate until their `/data` is migrated into the managed services root.
 A live 2026-09-18 appliance also retains a separate legacy Compose deployment at `/opt/music-assistant` with `/opt/music-assistant/data:/data`. Its permanent repair is an in-place `.roomgoblin-compat/sitecustomize.py` plus `PYTHONPATH=/data/.roomgoblin-compat`; do not migrate that data root merely to apply the Zeroconf guard. Post-reboot acceptance proved Tailscale IPv6 can remain enabled, down Docker bridges can remain addressed, and 8095/8097/8927 remain healthy. Background Music scheduled startup must wait until the configured MA player is present/available and back off transient start failures rather than hammering `play_media` during provider initialization.
@@ -303,8 +407,8 @@ Preserve these invariants:
 - Pair once to establish ADB trust and a stable managed-device ID; use Edit for school/building/room/profile/display URL changes.
 - Display Agent package is `org.roomgoblin.display`.
 - Android inventory and ADB key material under `data/android-tv/` are persistent runtime state.
-- The maintenance container has one deliberately writable persistent ADB-key path: `/managed/classroom-hub/data/android-tv/.android`, backed by the named Docker volume `classroom-control-hub-android-adb`.
-- Any release path that may change core Compose mounts must force-recreate the maintenance container. The GUI updater must not rely on plain `docker compose up -d`; it force-recreates core services and verifies the ADB key directory is writable before accepting the release.
+- The named Docker volume `classroom-control-hub-android-adb` is writable in the Hub at `/app/data/android-tv/.android` and read-only in maintenance at `/managed/classroom-hub/data/android-tv/.android`. Preserve the shared trust identity and this access boundary.
+- Any release path that may change core Compose mounts must force-recreate the affected core services. The GUI updater must not rely on plain `docker compose up -d`; its ADB storage check verifies maintenance readability. Release acceptance also checks Hub write access and unchanged trust keys. Do not make the maintenance mount writable to satisfy older guidance.
 - A blank Managed Displays page or permanent `Checking ADB…` after deployment may indicate Hub-to-maintenance network/proxy failure rather than lost pairing; inspect persistence before re-pairing.
 - Hub and maintenance use host networking; maintenance remains loopback-only at `127.0.0.1:${MAINTENANCE_PORT:-3010}` and token-authenticated. Do not reintroduce `maintenance-agent:3010` service-DNS assumptions.
 - Persistent ADB is opt-in and for trusted management networks only. The tested Onn preserves pairing trust but disables Wireless Debugging during reboot; the agent restores it and the managed endpoint returns on fixed port `5555`.
@@ -392,7 +496,7 @@ Authenticated maintenance mutations share an appliance-wide limit of 30 requests
 
 ## Display merge review boundaries (2026-09-09)
 
-PR #27 retains one logical layout owner and adds `public/display/security.mjs` for receiver URL/proxy/identify validation. Never return a rejected raw URL from a catch block. External media is an explicit HTTP(S) signage feature, not permission to load javascript/data/file schemes or to navigate the top-level receiver. Keep external frames isolated, proxy paths same-Hub and identify resources bounded. See `docs/DISPLAY-LAYOUT-CONTRACT.md` for behavior and browser verification. Renderer revision: `dynamic-fit-20261012-1`; active title/subtitle/body/timer objects dynamically share the logical canvas and hard containment remains mandatory.
+PR #27 retains one logical layout owner and adds `public/display/security.mjs` for receiver URL/proxy/identify validation. Never return a rejected raw URL from a catch block. External media is an explicit HTTP(S) signage feature, not permission to load javascript/data/file schemes or to navigate the top-level receiver. Keep external frames isolated, proxy paths same-Hub and identify resources bounded. See `docs/DISPLAY-LAYOUT-CONTRACT.md` for behavior and browser verification. Renderer revision: `dynamic-fit-20261027-1`; active title/subtitle/body/timer objects dynamically share the logical canvas and hard containment remains mandatory.
 
 ## Host installer group prerequisite
 
@@ -435,7 +539,9 @@ success. See `docs/VEYON-MUSIC-INTEGRATIONS.md` for recovery semantics.
 ESPHome device management uses `src/esphome.js` and the private stdin/stdout
 `src/esphome/worker.py` worker with the pinned official `aioesphomeapi` client.
 Read `docs/ESPHOME-INTEGRATION.md` (or `ESPHOME-INTEGRATION.md` from docs).
-Preserve mandatory native encryption, private literal IPv4 targets, verified MAC
+Preserve native encryption for configured keys and explicitly intentional
+unencrypted nodes as documented in `ESPHOME-INTEGRATION.md`; never downgrade an
+unknown encrypted device. Preserve private literal IPv4 targets, verified MAC
 identity, composite subdevice/entity IDs, secret-store transactions, capability
 checks and Full Recovery Export writer drain. Unknown/disabled entities are not
 arbitrary native methods. Buttons/configuration controls require administrator
@@ -498,11 +604,12 @@ append-only audit rows. Authentication must still validate every request, but
 non-security `last_used_at`/last-seen bookkeeping should be rate-limited to
 avoid needless WAL churn.
 
-Update safety archives use the `pre-*.zip` naming boundary. Verified app/host
-updates retain the newest ten automatic safety backups while preserving the
-currently pinned revert backup. Automatic retention must never match user-created
-archives or encrypted Full Recovery bundles. Diagnostic downloads are temporary
-and must be removed after transfer.
+Verified app/host updates retain three automatic operational ZIPs and one
+`pre-*.zip` safety archive, with the current revert backup retained inside its
+applicable limit. Never prune while rollback authority is unavailable, unreadable
+or incomplete, or when its pinned archive is missing. Automatic retention must
+never match user-created archives or encrypted Full Recovery bundles. Diagnostic
+downloads are temporary and must be removed after transfer.
 
 
 ### Database and local-storage hygiene
@@ -530,7 +637,7 @@ Automation `repeatDelaySeconds` means the dwell/stay time **after an action exec
 
 Timer Overlay is event-level. Its `coverage` setting defaults to `all-display-actions`, which means RoomGoblin reasserts the same countdown after every display-content action (text, URL, media, image/document, or clear) so replacing the base display content does not remove the timer. `action-1-only` preserves the one-time overlay behavior. Reasserting a manual-duration timer must keep the original deadline rather than restarting its duration; class-end timers continue to resolve against the same class-end deadline. Morning Announcements priority still wins.
 
-Live-TV containment note: renderer `dynamic-fit-20261012-1` retains a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
+Live-TV containment note: renderer `dynamic-fit-20261022-1` retains a browser-independent mathematical ceiling before binary fitting. Title/subtitle are bounded by logical line height and intrinsic single-line width; timer chrome is bounded conservatively for its label/value stack. This guard exists because a live Chromium receiver reported apparently acceptable overflow metrics while visibly clipping glyphs at component caps.
 
 
 
@@ -600,9 +707,18 @@ overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
 
+## Planning (Unreleased)
+
+Read `PLANNING.md` before changing calendar/cycle/timetable behavior. The new
+resolver is opt-in. Preserve A–H cycle identity separately from Green/White groups
+and regular/Bison period membership. Repeated teaching segments share one class
+ID; preserve per-segment deadlines, legacy fallbacks, transactional profile/class
+membership migration and revision-checked preview/save. Calendar imports stage
+locally and never infer district dates or dispatch devices.
+
 ## Display fallback and recovery status snapshots
 
-Renderer `dynamic-fit-20261012-1` allows visible fallback glyph ink outside its
+Renderer `dynamic-fit-20261022-1` allows visible fallback glyph ink outside its
 own line box only when the display region, natural-size probe and painted ranges
 still contain it. Do not replace those region checks with a minimum font size or
 restore child-height clipping for visible text. See `DISPLAY-LAYOUT-CONTRACT.md`.
@@ -612,3 +728,76 @@ the job-start guard. A worker finishing during a poll keeps `running:true` until
 the next poll rather than pairing stale `quiescing` with `running:false`. Preserve
 failed-rollback journals and the event-driven completion-boundary regression in
 `host-agent/test_full_recovery.py`; do not mask the race with test sleeps.
+
+Planning startup conversion lives in `src/planning-migration.js` and runs after
+class loading, before listeners/scheduler ticks. Preserve its SQLite transaction,
+original snapshot, idempotent completion marker and existing-native-plan guard.
+Import class-specific timings without merging transition/teaching records by
+period. Do not replace saved cycle configuration with the preset, rewrite
+automations/classes or enable the new resolver as a side effect of import.
+
+## Planning and Scene Studio
+
+Read `PLANNING-STUDIO.md` for timetable block links, temporary schedules,
+shared visual layers, date-only classes, scene limits and widget data. Keep
+`public/shared/scene.js` shared by the controller and receiver and continue using
+`public/display/layout.mjs` for text fitting. Never load operator workspace CSS
+on receivers. Explicit clock/block deadlines are required for lunch timers; an
+absent override must never become Unix epoch or restart an elapsed countdown.
+
+## Background Music Studio development
+
+General Music Assistant status retains the connection generation captured with
+its settings. Recheck before legacy player-list fallback and before success/error
+projection; retired reads return 409 and require refresh. Do not pair old
+configuration or players with a replacement connection's transport metadata.
+
+Each Background Music start failure advances recovery once. Its current-generation
+outer catch owns failed/requested accounting; an inner failed transition must not
+clear the confirmation wait and accidentally count the same command twice.
+Preserve uncertain-execution observation and retired-session isolation.
+
+Player probe cache/pending work belongs to its player and Music Assistant
+connection generation. Only the latest-started probe publishes the shared cache;
+retirement forbids a legacy lookup retry across connection identities. Status
+must recheck session/player/connection after awaiting telemetry and omit stale
+readings, retaining current errors without attaching another output's failure.
+
+Serialize accepted Background Music schedule writes and return the entire
+queued HTTP handler promise through Stop, persistence and reconciliation.
+Normalize each write against the preceding committed configuration. Only the
+still-current generation acquired by a successful schedule Stop may clear its
+schedule key or release manual Stop; preserve newer manual playback intent.
+
+Music Assistant connection metadata and its optional encrypted token are one
+SQLite transaction. Reset the persistent connection only after commit; failed
+saves leave the prior identity active. Omitted or blank tokens retain the stored
+secret, and browser responses never contain it.
+
+Background Music control completions, recovery errors and player probes must
+still own the session generation before updating shared runtime. Pause/Stop also
+retain their effective player. Recheck current priority after awaited probes;
+capture the generation acquired by an invoked control helper before awaiting it.
+Late sleep, schedule-end or recovery work cannot overwrite successor intent.
+Preserve current errors, manual-source ownership and late-play priority/Stop
+compensation; command acknowledgement is not observed playback.
+
+Music Assistant handshake callbacks, pending commands and timer cleanup belong
+to their exact socket. Retired events must not clear a successor connection or
+settle its requests. Recheck the returned authenticated socket after awaiting
+connection. Explicit reset/configuration change/shutdown retires HTTP fallback;
+ordinary transport errors retain allowed read/unsent compatibility. Preserve
+the prohibition on replaying uncertain mutations and existing timeout bounds.
+
+Music queue reads own a generation and selected-output identity. Ignore obsolete
+successes and errors even after switching away and back to the same output;
+clearing the selection retires pending reads. Preserve current errors, explicit
+refresh recovery and the selected queue/item command boundary.
+
+Read `docs/BACKGROUND-MUSIC-STUDIO.md` before changing recovery. `src/background-music.js` distinguishes command acknowledgement from observed playback, supplies bounded retry/backoff and progress-based stall detection. Manual source selection is owned by the same recovery lifecycle; explicit Pause/Stop, sleep and priority audio suppress recovery. Never infer audible output from server elapsed telemetry. Retain Sendspin identities/transport, provider credentials, existing service ownership and the guarded deployment path.
+
+Reduced-motion scene fitting: shared attribution CSS must disable transitions
+with `transition:none!important`, not a tiny nonzero duration. The latter creates
+implicit font-size transitions and makes the synchronous receiver fitter measure
+stale glyph sizes, collapsing scene bodies. Preserve the single fit engine and
+painted-range checks. See `DISPLAY-LAYOUT-CONTRACT.md` and browser test 23.

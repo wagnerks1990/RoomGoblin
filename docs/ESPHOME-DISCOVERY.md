@@ -30,6 +30,12 @@ Only private addresses are shown. Current enrollment still pins the selected pri
 
 Discovery is administrator-only, rate-limited, bounded to 128 results, cached briefly, and runs without access to RoomGoblin secrets. It does not queue commands or alter a discovered device.
 
+Full Recovery temporarily pauses new discovery requests, including cached or
+forced requests, with HTTP 423. Try again after the export finishes. An already
+accepted scan is allowed to finish before freeze acknowledgment or shutdown;
+its success audit follows the existing deferred-write policy during a freeze.
+Closing the manager prevents further scans from starting or joining pending work.
+
 ## Security boundary
 
 An unencrypted ESPHome API exposes its native protocol in plaintext on the local network. Discovery does not make that condition safer or worse; it simply reports the advertisement. RoomGoblin clearly distinguishes encrypted versus unencrypted enrolled connections. Prefer API encryption for devices that can be updated safely.

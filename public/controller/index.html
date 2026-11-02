@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>RoomGoblin</title>
 <link rel="stylesheet" href="/shared/attribution.css">
+<link rel="stylesheet" href="/controller/planning.css">
 <script src="/shared/branding.js" defer></script>
 <style>
 :root{
@@ -276,8 +277,13 @@ nav button{min-width:135px}
 </style>
 <link rel="stylesheet" href="/shared/workspace.css">
 <link rel="stylesheet" href="/controller/workspace.css">
+<link rel="stylesheet" href="/controller/system-updates-workspace.css">
 <link rel="stylesheet" href="/controller/lighting.css">
 <link rel="stylesheet" href="/controller/esphome.css">
+<link rel="stylesheet" href="/shared/scene.css">
+<link rel="stylesheet" href="/controller/planning-studio.css">
+<link rel="stylesheet" href="/controller/music-studio.css">
+<link rel="stylesheet" href="/controller/weather-workspace.css">
 </head>
 <body class="rg-workspace rg-controller">
 <a class="rg-skip" href="#workspaceMain">Skip to content</a>
@@ -303,14 +309,14 @@ nav button{min-width:135px}
     <button data-page="overview" class="active" aria-current="page">Today</button>
     <details class="rg-nav-group" open><summary>Room controls</summary>
       <button data-page="av">Displays & AV</button><button data-page="lights">Lighting</button><button data-page="esphome">ESPHome devices</button>
-      <button data-page="display">Display content</button><button data-page="music">Background music</button>
+      <button data-page="display">Display content</button><button data-page="music">Background music</button><button data-page="weather">Weather</button><button data-page="sports">Sports</button>
       <button data-page="lab">Lab computers</button>
     </details>
     <details class="rg-nav-group"><summary>Content library</summary>
       <button data-page="presentations">Presentations</button><button data-page="media">Media library</button>
     </details>
     <details class="rg-nav-group"><summary>Planning</summary>
-      <button data-page="classes">Classes</button><button data-page="schedules">Automation</button>
+      <button data-page="planning">Calendar & Timetables</button><button data-page="classes">Classes</button><button data-page="schedules">Automation</button>
     </details>
     <details class="rg-nav-group"><summary>Administration</summary>
       <button data-page="settings">Settings</button><button data-page="diagnostics">Diagnostics</button>
@@ -333,7 +339,7 @@ nav button{min-width:135px}
 <section id="overview" class="page active">
   <div class="top">
     <div><h1>Today</h1><div class="muted">Everything you need to run the room.</div></div>
-    <div class="toolbar"><span id="todayAutomationState" class="pill">Automation…</span><button id="todayAutomationToggle" onclick="toggleAutomationScheduler()">Pause Automation</button><button onclick="resumeScheduledAutomation()">Resume Schedule</button><button onclick="refreshOverview()">Refresh status</button></div>
+    <div class="toolbar"><span id="todayAutomationState" class="pill">Automation…</span><button id="todayAutomationToggle" disabled data-command-unavailable="true" onclick="toggleAutomationScheduler()">Pause Automation</button><button onclick="resumeScheduledAutomation()">Resume Schedule</button><button onclick="refreshOverview()">Refresh status</button></div>
   </div>
 
   <div class="grid2 rg-day-summary">
@@ -351,7 +357,7 @@ nav button{min-width:135px}
 
   <div class="rg-health-strip" aria-label="Integration health">
     <div><span>RoomGoblin</span><strong id="hubState">…</strong></div>
-    <div><span>MQTT / Govee</span><strong id="mqttState">…</strong></div>
+    <div><span>MQTT broker</span><strong id="mqttState">…</strong></div>
     <div><span>Pluto Mark I</span><strong id="plutoState">…</strong></div>
   </div>
 
@@ -390,6 +396,8 @@ nav button{min-width:135px}
 
 
 
+<section id="weather" class="page"></section>
+<section id="sports" class="page"></section>
 <section id="music" class="page">
   <div class="top"><div><h1>Background Music</h1><div class="muted">Independent all-day music scheduling. Visual display content continues normally; automation or announcement audio temporarily pauses background music and it resumes afterward.</div></div><div class="toolbar"><button onclick="loadMusicAssistant()">Refresh</button><button onclick="openMusicAssistantUi()">Open Music Assistant</button></div></div>
 
@@ -597,12 +605,13 @@ nav button{min-width:135px}
 </section>
 
 <section id="av" class="page">
-<div class="top"><div><h1>Displays & AV</h1><div class="muted">Route content sources to TVs and control each TV from one place.</div></div><div class="toolbar"><span id="avHealth" class="pill">Checking matrix…</span><button onclick="refreshPluto()">Refresh</button><button onclick="toggleAvAdvanced()">⚙ Advanced</button><span id="avMsg" class="status"></span></div></div>
+<div class="top"><div><h1>Displays & AV</h1><div class="muted">Route content sources to TVs and control each TV from one place.</div></div><div class="toolbar"><span id="avHealth" class="pill">Checking matrix…</span><button onclick="refreshPluto()">Refresh</button><button onclick="toggleAvAdvanced()">⚙ Advanced</button><span id="avMsg" class="status" role="status"></span><span id="avReadMsg" class="muted" role="status"></span></div></div>
 <div class="panel avRoutingPanel"><h2 class="sectionTitle">TV Routing Matrix</h2><div class="muted">Click a source to route it. Click a TV name for TV-specific controls.</div><div id="matrix" class="matrix avMatrix av40Matrix" style="margin-top:12px"></div><div id="routeAll" class="toolbar" style="margin-top:12px"></div></div>
 <div class="av40Summary"><div class="card"><div class="muted">Matrix Status</div><div class="kpi" id="av40MatrixSummary" style="font-size:20px">Checking…</div><div class="muted" id="av40Firmware"></div></div><div class="card"><div class="muted">Routing Summary</div><div class="kpi" id="av40RouteSummary" style="font-size:20px">—</div></div><div class="card"><div class="muted">Quick Controls</div><div class="toolbar"><button class="on" onclick="powerAllAvTvs(0)">Power All On</button><button class="danger" onclick="powerAllAvTvs(1)">Power All Off</button></div></div></div>
 <details id="avAdvanced" class="panel" style="margin-top:14px"><summary><b>Matrix & Diagnostics</b> <span class="muted">System, network and raw troubleshooting only</span></summary><div style="margin-top:14px"><div class="grid2"><div class="card"><h3>Matrix System</h3><div id="systemInfo" class="muted">Loading…</div><div class="toolbar"><button onclick="toggleSystem('panelLock')">Panel Lock</button><button onclick="toggleSystem('beep')">Beep</button><button class="danger" onclick="confirm('Reboot Pluto Mark I?')&&plutoAction({action:'reboot'})">Reboot Matrix</button></div></div><div class="card"><h3>Network</h3><div id="networkInfo" class="muted">Loading…</div></div></div><div class="toolbar" style="margin-top:12px"><button onclick="renderAvRawStatus()">Raw Matrix Status</button></div><pre id="avRawStatus" class="raw" style="display:none"></pre></div></details><details id="receiverSettings" class="card" ontoggle="if(this.open)loadReceiverSettings()">
 <summary>Receiver names, mappings &amp; groups</summary>
 <p>Receiver IDs identify browser displays. AV outputs identify physical matrix ports. Edit the assignments below to match your room; leave an output blank for an independent display.</p>
+<p class="muted">Set Audio priority to Independent (hallway) for a display outside the classroom. Its audio will not pause classroom music or take over classroom scheduling. Morning Announcements still have priority. Routing and schedule targets stay as configured.</p>
 <div id="cfgMappingWarnings" class="muted" role="status"></div>
 <div id="cfgDisplayEditor"></div>
 <h3>Display groups</h3>
@@ -612,7 +621,7 @@ nav button{min-width:135px}
 <div class="toolbar" style="margin-top:12px"><button class="primary" onclick="saveAdminDisplaysStructured()">Save Receivers &amp; Groups</button><button onclick="reloadReceiverSettings()">Reload Saved Settings</button></div>
 <div id="cfgDisplaysMsg" role="status" class="muted"></div>
 </details><div id="avTvConfig" style="display:none"></div><div id="avSourceConfig" style="display:none"></div><div id="avGroupEditor" style="display:none"></div><input id="avNewGroup" aria-label="New AV group name" style="display:none"><span id="avConfigMsg" style="display:none"></span><table style="display:none"><tbody id="outputRows"></tbody><tbody id="inputRows"></tbody></table>
-<div id="avTvDrawerBackdrop" class="avDrawerBackdrop" onclick="closeAvTvDrawer();closeAvSourceDrawer()"></div><aside id="avTvDrawer" class="avTvDrawer"><div class="avDrawerHead"><div><h2 id="avDrawerTitle">TV</h2><div id="avDrawerSubtitle" class="muted"></div></div><button onclick="closeAvTvDrawer()">✕</button></div><div class="card"><h3>TV</h3><input id="avDrawerTvName" aria-label="TV name" style="width:100%"><button class="primary" style="width:100%;margin-top:8px" onclick="saveDrawerTvName()">Save Name</button><div id="avDrawerPowerStatus" class="av42StatusNote"></div></div><div class="card"><h3>Power & Route</h3><div class="toolbar"><button class="on" onclick="drawerTvPower(0)">Power On</button><button class="danger" onclick="drawerTvPower(1)">Power Off</button></div><div class="muted" style="margin-top:10px">Current Source</div><div id="avDrawerCurrentSource" class="avCurrentSource">—</div><select id="avDrawerSource" aria-label="TV source"></select><button class="primary" style="width:100%;margin-top:10px" onclick="drawerUpdateRoute()">Update Route</button></div><div class="card"><h3>Display Tools</h3><div class="toolbar"><button onclick="drawerTestImage()">Test Image</button><button onclick="drawerClearDisplay()">Clear</button><button onclick="drawerReloadDisplay()">Reload</button></div><div id="avDrawerToolStatus" class="muted" style="margin-top:8px"></div></div><div class="card"><h3>Groups</h3><button onclick="openReceiverSettings()">Edit Receivers &amp; Groups</button><div id="avDrawerGroups" class="av42GroupGrid"></div><button style="width:100%;margin-top:8px" onclick="saveDrawerTvGroups()">Save Groups</button></div><div class="card"><h3>Status</h3><div id="avDrawerInfo" class="muted">—</div></div></aside><aside id="avSourceDrawer" class="avTvDrawer"><div class="avDrawerHead"><div><h2 id="avSourceDrawerTitle">Content Source</h2><div id="avSourceDrawerSubtitle" class="muted"></div></div><button onclick="closeAvSourceDrawer()">✕</button></div><div class="card"><h3>Source</h3><input id="avSourceDrawerName" aria-label="Content source name" style="width:100%"><label style="margin-top:10px">Browser / kiosk endpoint ID<input id="avSourceDrawerEndpoint" style="width:100%"></label><button class="primary" style="width:100%;margin-top:8px" onclick="saveSourceDrawer()">Save Source</button></div><div class="card"><h3>Source Controls</h3><div id="avSourceDrawerInfo" class="muted">—</div><div class="toolbar" style="margin-top:10px"><button class="on" onclick="sourceDrawerPower(1)">Power Source On</button><button class="danger" onclick="sourceDrawerPower(2)">Power Source Off</button></div></div><div class="card"><h3>EDID</h3><div class="muted">Advanced source compatibility setting. Leave unchanged unless troubleshooting.</div><div class="toolbar" style="margin-top:8px"><input id="avSourceDrawerEdid" aria-label="Content source EDID profile" type="number" min="0" max="255" style="width:90px"><button onclick="saveSourceDrawerEdid()">Apply EDID</button></div></div></aside>
+<div id="avTvDrawerBackdrop" class="avDrawerBackdrop" onclick="closeAvTvDrawer();closeAvSourceDrawer()"></div><dialog id="avTvDrawer" class="avTvDrawer" aria-labelledby="avDrawerTitle"><div class="avDrawerHead"><div><h2 id="avDrawerTitle">TV</h2><div id="avDrawerSubtitle" class="muted"></div></div><button aria-label="Close TV controls" onclick="closeAvTvDrawer()">✕</button></div><div class="card"><h3>TV</h3><input id="avDrawerTvName" aria-label="TV name" style="width:100%"><button class="primary" style="width:100%;margin-top:8px" onclick="saveDrawerTvName()">Save Name</button><div id="avDrawerPowerStatus" class="av42StatusNote"></div></div><div class="card"><h3>Power & Route</h3><div class="toolbar"><button class="on" onclick="drawerTvPower(0)">Power On</button><button class="danger" onclick="drawerTvPower(1)">Power Off</button></div><div class="muted" style="margin-top:10px">Current Source</div><div id="avDrawerCurrentSource" class="avCurrentSource">—</div><select id="avDrawerSource" aria-label="TV source"></select><button class="primary" style="width:100%;margin-top:10px" onclick="drawerUpdateRoute()">Update Route</button></div><div class="card"><h3>Display Tools</h3><div class="toolbar"><button onclick="drawerTestImage()">Test Image</button><button onclick="drawerClearDisplay()">Clear</button><button onclick="drawerReloadDisplay()">Reload</button></div><div id="avDrawerToolStatus" class="muted" style="margin-top:8px"></div></div><div class="card"><h3>Groups</h3><button onclick="openReceiverSettings()">Edit Receivers &amp; Groups</button><div id="avDrawerGroups" class="av42GroupGrid"></div><button style="width:100%;margin-top:8px" onclick="saveDrawerTvGroups()">Save Groups</button></div><div class="card"><h3>Status</h3><div id="avDrawerInfo" class="muted">—</div></div></dialog><dialog id="avSourceDrawer" class="avTvDrawer" aria-labelledby="avSourceDrawerTitle"><div class="avDrawerHead"><div><h2 id="avSourceDrawerTitle">Content Source</h2><div id="avSourceDrawerSubtitle" class="muted"></div></div><button aria-label="Close source controls" onclick="closeAvSourceDrawer()">✕</button></div><div class="card"><h3>Source</h3><input id="avSourceDrawerName" aria-label="Content source name" style="width:100%"><label style="margin-top:10px">Browser / kiosk endpoint ID<input id="avSourceDrawerEndpoint" style="width:100%"></label><button class="primary" style="width:100%;margin-top:8px" onclick="saveSourceDrawer()">Save Source</button></div><div class="card"><h3>Source Controls</h3><div id="avSourceDrawerInfo" class="muted">—</div><div class="toolbar" style="margin-top:10px"><button class="on" onclick="sourceDrawerPower(1)">Power Source On</button><button class="danger" onclick="sourceDrawerPower(2)">Power Source Off</button></div></div><div class="card"><h3>EDID</h3><div class="muted">Advanced source compatibility setting. Leave unchanged unless troubleshooting.</div><div class="toolbar" style="margin-top:8px"><input id="avSourceDrawerEdid" aria-label="Content source EDID profile" type="number" min="0" max="255" style="width:90px"><button onclick="saveSourceDrawerEdid()">Apply EDID</button></div></div></dialog>
 </section>
 
 <section id="esphome" class="page">
@@ -667,8 +676,43 @@ nav button{min-width:135px}
 </section>
 
 
+<section id="planning" class="page">
+  <div class="planningHeader"><div><h1>Planning</h1><p class="muted">School dates, cycle rotation, and the timetable that classes and automations follow.</p></div><div class="toolbar"><button type="button" id="planningReload">Reload saved plan</button><button type="button" id="planningPreview" class="primary">Preview changes</button><button type="button" id="planningPublish" disabled>Save reviewed plan</button></div></div>
+  <div id="planningImportStatus" class="planningNotice" role="status" hidden></div>
+  <div id="planningMessage" role="status" class="status"></div>
+  <div class="toolbar" aria-label="Planning view"><button type="button" id="planningCalendarTab" aria-pressed="true">Calendar</button><button type="button" id="planningTimetableTab" aria-pressed="false">Timetables</button><button type="button" id="planningRotationTab" aria-pressed="false">School year & rotation</button></div>
+  <div id="planningCalendarPane" class="planningSplit" style="margin-top:18px">
+    <div class="panel planningFields"><h2 class="sectionTitle">Choose a date</h2>
+      <label for="planningDate">Planning date</label><input id="planningDate" type="date">
+      <div id="planningMonth" class="planningMonth" aria-label="Dates in selected month"></div>
+      <label>School status<select id="planningDayStatus"><option value="school">School day</option><option value="no-school">No school</option><option value="remote">Remote learning</option></select></label>
+      <label>Cycle day<select id="planningCycleOverride"><option value="">Follow calculated rotation</option></select></label>
+      <label>Timetable<select id="planningDayTimetable"><option value="">Follow regular / calendar exceptions</option></select></label>
+      <label>Note<input id="planningDayNote" maxlength="240"></label>
+      <div class="toolbar"><button type="button" id="planningStageDate">Add / update date in draft</button><button type="button" id="planningRemoveDate">Use normal rules for date</button></div>
+      <p class="muted">A cycle-day override changes only this date. Closing or reopening a day changes the calculated rotation afterward. Imported explicit cycle days stay fixed.</p>
+      <details><summary>Import school calendar dates (CSV)</summary><p class="muted">Columns: date,status,cycleDay,timetableId,note. Status: school, no-school, or remote. Cycle and timetable may be blank. Import adds to this draft; review before saving.</p><label>Calendar CSV<input id="planningImport" type="file" accept=".csv,text/csv"></label><div id="planningImportSummary" role="status"></div></details>
+    </div>
+    <div class="panel"><h2 class="sectionTitle">Resolved day plan</h2><div id="planningDayHeading" class="muted">Preview a date to see its classes and automation times.</div><div id="planningDayRows"></div><div id="planningWarnings" role="status"></div><details style="margin-top:14px"><summary>Changes over the next 14 days</summary><div id="planningChanges"></div></details></div>
+  </div>
+  <div id="planningTimetablePane" hidden style="margin-top:18px">
+    <div class="planningHeader"><div><h2>Timetables</h2><div class="muted">Edit period times and order once. Multiple blocks for the same period form one class with separate teaching segments.</div></div><div class="toolbar"><button type="button" id="planningTableNew">New timetable</button><button type="button" id="planningTableImport">Copy existing class times</button><button type="button" id="planningTableCopy">Duplicate</button><button type="button" id="planningTableRemove">Remove</button></div></div>
+    <div class="grid2"><label>Timetable<select id="planningTableSelect"></select></label><label>Regular timetable<select id="planningDefaultTable"><option value="">Keep existing class times</option></select></label></div>
+    <div id="planningTableFields" class="panel" style="margin-top:14px" hidden><label>Timetable name<input id="planningTableName" maxlength="120"></label><div id="planningBlocks"></div><button type="button" id="planningBlockAdd">Add block</button><p class="muted">Use period keys 1–8 or BISON-1 through BISON-8. Select a specific class only when it needs different times from other classes in that period. Use the same class selection on all its teaching segments. Teaching blocks are ordered by time. Break/event blocks are shown in the plan; use a linked class or a fixed-time automation to control devices during them.</p></div>
+  </div>
+  <div id="planningRotationPane" hidden class="panel planningFields" style="margin-top:18px">
+    <h2 class="sectionTitle">School year & rotation</h2>
+    <label>Use the new calendar and timetable resolver<select id="planningEnabled"><option value="0">Off — retain existing scheduling</option><option value="1">On — use this reviewed plan</option></select></label>
+    <div class="grid2"><label>School year starts<input id="planningYearStart" type="date"></label><label>School year ends<input id="planningYearEnd" type="date"></label><label>Cycle anchor date<input id="planningAnchor" type="date"></label><label>Cycle sequence (comma-separated)<input id="planningCycleLetters"></label></div>
+    <div id="planningWeekdays" class="toolbar" aria-label="Regular school weekdays"></div>
+    <button type="button" id="planningPreset">Use Green / White A–H and Bison mapping</button>
+    <p class="muted">Green: A, C, E, G → Periods 1–4. White: B, D, F, H → Periods 5–7. Bison pairs: B → 1/2; D → 3/4; F → 5/6; H → 7/8. This button changes the draft only.</p>
+    <div id="planningGroups" class="planningMapping"></div><h3>Period-to-cycle membership</h3><div id="planningPeriodMapping" class="planningMapping"></div>
+    <p class="muted">Class records that exactly follow the old period mapping follow a changed mapping after review. Explicit custom class-cycle selections and stable class/automation IDs are retained.</p>
+  </div>
+</section>
 <section id="classes" class="page">
-  <div class="top"><div><h1>Class Schedule</h1><div class="muted">Define classes once, then let schedules and timers follow their real start/end times and A/B days.</div></div><div class="toolbar"><button onclick="loadClassSchedules()">Refresh</button><button class="primary" onclick="newClassSchedule()">+ Add Class</button></div></div>
+  <div class="top"><div><h1>Class Schedule</h1><div class="muted">Define class identity and period membership. Planning supplies the daily times, including split teaching segments.</div></div><div class="toolbar"><button onclick="loadClassSchedules()">Refresh</button><button class="primary" onclick="newClassSchedule()">+ Add Class</button></div></div>
   <div id="classCurrentStatus" class="panel">Loading…</div>
   <div class="grid2">
     <div class="panel"><h2 class="sectionTitle">Classes</h2><div id="classScheduleList"></div></div>
@@ -677,7 +721,7 @@ nav button{min-width:135px}
       <div class="grid2">
         <label>Name<input id="className"></label>
         <label>Short Name<input id="classShortName"></label>
-        <label>Period / Block<input id="classPeriod" placeholder="Example: 1 or Advisory" onchange="applyClassPeriodPreset()"></label>
+        <label>Period / Block<input list="planningPeriodKeys" id="classPeriod" placeholder="Example: 1 or Advisory" onchange="applyClassPeriodPreset()"></label>
         <label>Continuation Of<input id="classContinuationOf" placeholder="Optional class ID"></label>
         <label>Start<input id="classStart" type="time" value="08:00"></label>
         <label>End<input id="classEnd" type="time" value="09:00"></label>
@@ -685,6 +729,7 @@ nav button{min-width:135px}
       <div class="grid2" style="margin-top:10px">
         <label>Schedule
           <select id="classScheduleMode" onchange="renderClassScheduleMode()">
+            <option value="dates">Specific dates / special days</option>
             <option value="schoolcycle">School Cycle</option>
             <option value="weekly">Weekly</option>
             <option value="alternating">Alternating Day Groups</option>
@@ -715,7 +760,8 @@ nav button{min-width:135px}
   </div>
 
   <details class="panel workspaceDisclosure" style="margin-bottom:14px">
-    <summary><h2 class="sectionTitle">School Calendar Rules</h2></summary>
+    <summary><h2 class="sectionTitle">School Calendar Rules (compatibility tools)</h2></summary>
+    <p class="muted">Use Planning → Calendar & Timetables for the daily workflow. These tools retain existing exception rules and advanced profile settings.</p>
     <div class="disclosureBody">
 
     <div class="muted" style="margin-bottom:10px">Configure your school’s cycle, day-group names, period mappings, and calendar exceptions. Dates use YYYY-MM-DD.</div>
@@ -730,8 +776,20 @@ nav button{min-width:135px}
       <label><b>Period-to-Cycle Mapping (JSON)</b><textarea id="schoolProfilePeriodMap" rows="6" placeholder='{"1":["A"],"2":["B"]}'></textarea></label>
       <label><b>Exception Time Rules (JSON)</b><textarea id="schoolProfileExceptionRules" rows="6" placeholder='{"half-day":{"periodTimes":{}}}'></textarea></label>
     </div>
+    <details class="advanced"><summary>Reusable special-day schedules</summary>
+      <p class="muted">Save a named timetable and assign YYYY-MM-DD dates. Included classes keep their automation links; omitted classes do not run. Normal times return on other dates. School-cycle and weekday rules still apply. Fixed-time automations keep their clock times.</p>
+      <label for="specialDaySelect">Timetable</label><select id="specialDaySelect" aria-label="Special-day timetable"></select>
+      <div class="toolbar"><button type="button" id="specialDayNew">New timetable</button><button type="button" id="specialDayDelete">Remove timetable</button></div>
+      <div id="specialDayFields" hidden>
+        <label for="specialDayName">Timetable name</label><input id="specialDayName" maxlength="120">
+        <label for="specialDayDates">Assigned dates (one per line; leave blank to keep for future use)</label><textarea id="specialDayDates" rows="3"></textarea>
+        <p class="muted">Check classes to include and enter their special times. For a split lunch, create separate before/after-lunch classes in Classes and link both to the automation. The timer stops at each block end. Create special-only blocks with specific-date scheduling so they do not run on normal days.</p>
+        <div id="specialDayRows" class="scroll"></div>
+      </div>
+      <p id="specialDayMessage" class="muted" role="status">Changes are drafts until Save School Calendar Rules is used.</p>
+    </details>
     <label class="pill" style="margin:8px 0"><input id="schoolProfileLegacyContinuation" type="checkbox"> Enable compatibility for imported legacy continuation blocks</label>
-    <div class="muted" style="margin-bottom:10px">If a date appears in more than one category, priority is: No-School → Remote → Half Day → 2-Hour Delay → 1-Hour Delay.</div>
+    <div class="muted" style="margin-bottom:10px">If a date appears in more than one category, priority is: No-School → Remote → Special-day timetable → Half Day → 2-Hour Delay → 1-Hour Delay.</div>
     <div class="grid2">
       <label><b>District No-School Dates</b><span class="muted">No classroom automation runs and the configured school-day cycle pauses.</span><textarea id="calendarExcludedDates" rows="8" placeholder="YYYY-MM-DD" style="width:100%;resize:vertical;margin-top:6px"></textarea></label>
       <label><b>District Remote Day Dates</b><span class="muted">The school-day cycle still advances, but classroom automation, Morning Announcements, legacy TV schedules, and scheduled Background Music do not run.</span><textarea id="calendarRemoteDates" rows="8" placeholder="YYYY-MM-DD" style="width:100%;resize:vertical;margin-top:6px"></textarea></label>
@@ -744,7 +802,7 @@ nav button{min-width:135px}
   </div>
   </details>
 
-  <details class="panel workspaceDisclosure" style="margin-bottom:14px">
+  <details id="morningWatchPanel" class="panel workspaceDisclosure" style="margin-bottom:14px">
     <summary><h2 class="sectionTitle" style="margin:0">Morning Announcements • Live Watch</h2> <span id="morningWatchState" class="pill">Loading…</span></summary>
     <div class="disclosureBody">
     <div class="top">
@@ -756,10 +814,11 @@ nav button{min-width:135px}
       <label>Stream URL<input id="morningWatchUrl" type="url" value=""></label>
       <label>Watch Start<input id="morningWatchStart" type="time" value="07:00"></label>
       <label>Watch End<input id="morningWatchEnd" type="time" value="08:30"></label>
-      <label>Announcement Volume<div class="toolbar" style="margin-top:5px"><input id="morningWatchVolume" type="range" min="0" max="100" value="100" style="flex:1" oninput="queueMorningWatchVolume(this.value)" onchange="queueMorningWatchVolume(this.value,true)"><span id="morningWatchVolumeValue" class="pill">100%</span></div><span class="muted">Applies immediately while announcements are playing.</span></label><label>Offline confirmations<input id="morningWatchOfflineConfirmations" type="number" min="1" max="8" value="2"></label><label>Check interval (seconds)<input id="morningWatchCheckInterval" type="number" min="10" max="120" value="15"></label><div><label>Announcement targets</label><div id="morningWatchTargets" class="panel" style="box-shadow:none;padding:10px;margin-top:4px"></div></div>
+      <label>Announcement Volume<div class="toolbar" style="margin-top:5px"><input id="morningWatchVolume" type="range" min="0" max="100" value="100" style="flex:1" oninput="queueMorningWatchVolume(this.value)" onchange="queueMorningWatchVolume(this.value,true)"><span id="morningWatchVolumeValue" class="pill">100%</span></div><span class="muted">Applies immediately while announcements are playing.</span><span id="morningWatchVolumeMsg" class="status" role="status" aria-live="polite"></span></label><label>Offline confirmations<input id="morningWatchOfflineConfirmations" type="number" min="1" max="8" value="2"></label><label>Check interval (seconds)<input id="morningWatchCheckInterval" type="number" min="10" max="120" value="15"></label><div><label>Announcement targets</label><div id="morningWatchTargets" class="panel" style="box-shadow:none;padding:10px;margin-top:4px"></div></div>
     </div>
-    <div class="toolbar"><button class="primary" onclick="saveMorningWatch()">Save Live Watch</button><button id="morningWatchCheckBtn" onclick="checkMorningWatch()">Check Stream Now</button><span id="morningWatchMsg" class="status"></span></div>
-    <div class="muted" style="margin-top:8px">Targets: all enabled displays. Two consecutive offline checks are required before an active announcement is ended, preventing a brief stream hiccup from blanking the TVs.</div>
+    <div class="toolbar"><button id="morningWatchSaveBtn" class="primary" onclick="saveMorningWatch()">Save Live Watch</button><button id="morningWatchCheckBtn" onclick="checkMorningWatch()">Check Stream Now</button><span id="morningWatchMsg" class="status"></span></div>
+    <div id="morningWatchDraftMsg" class="status" role="status" aria-live="polite"></div>
+    <div class="muted" style="margin-top:8px">Uses the selected displays and saved offline-confirmation threshold. Unknown probe results do not count as offline.</div>
   </div>
   </details>
 
@@ -871,12 +930,14 @@ nav button{min-width:135px}
               <select id="autoTimerOverlaySource" onchange="renderTimerOverlayFields()">
                 <option value="class-end">Linked Class End Time</option>
                 <option value="duration">Manual Duration</option>
+                <option value="end-time">End at a clock time</option>
               </select>
             </label>
             <label id="autoTimerOverlayClassWrap">Timer Class
               <select id="autoTimerOverlayClass"></select>
             </label>
 
+            <label id="autoTimerOverlayEndWrap" style="display:none">Countdown ends at<input id="autoTimerOverlayEndTime" type="time"></label>
             <label id="autoTimerOverlayDurationWrap" style="display:none">Duration Minutes
               <input id="autoTimerOverlayMinutes" type="number" min="1" max="720" value="10">
             </label>
@@ -1394,7 +1455,28 @@ curl -s http://localhost:3000/api/v1/veyon/connections | jq</pre>
 <div id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle" style="display:none;position:fixed;inset:0;z-index:50000;background:rgba(3,7,12,.96);align-items:center;justify-content:center;padding:20px"><div class="panel" style="width:min(420px,100%);margin:0"><h2 id="loginTitle">Sign in to RoomGoblin</h2><div class="muted">Enter your local RoomGoblin account.</div><div class="formField"><label for="loginUser">Username</label><input id="loginUser" autocomplete="username"></div><div class="formField"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password"></div><label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input id="loginRemember" type="checkbox" style="width:auto"> Remember for 7 days</label><div class="toolbar"><button class="primary" onclick="performLogin()">Sign In</button></div><div id="loginMsg" class="bad" role="alert" aria-live="assertive" style="margin-top:8px"></div></div></div>
 <div id="accountModal" class="authModal" role="dialog" aria-modal="true" aria-labelledby="accountTitle"><div class="panel"><div class="top"><div><h2 id="accountTitle">My Account</h2><div id="accountIdentity" class="muted"></div></div><button onclick="closeAccountModal()" aria-label="Close account dialog">Close</button></div><div class="grid2" style="margin-top:12px"><div class="card"><h3>Change Password</h3><div class="formField"><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password"></div><div class="formField"><label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password"></div><div class="formField"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" autocomplete="new-password"></div><div class="toolbar"><button class="primary" onclick="changeMyPassword()">Change Password</button></div><div id="passwordMsg" class="muted" aria-live="polite"></div></div><div class="card"><div class="top"><div><h3>Active Sessions</h3><div class="muted">Current and recent signed-in browsers.</div></div><button onclick="logoutOtherSessions()">Sign out others</button></div><div id="sessionList" class="subtle">Loading…</div></div></div></div></div>
 <script src="/shared/resumable-upload.js"></script>
+<script src="/controller/special-day-schedules.js"></script>
+<script src="/shared/request.js"></script>
 <script src="/controller/app.js"></script>
+<link rel="stylesheet" href="/controller/av-workspace.css">
+<script src="/controller/av-workspace.js"></script>
+<script src="/controller/planning.js"></script>
+<link rel="stylesheet" href="/shared/sports-board.css">
+<script src="/shared/sports-playback.js"></script>
+<script src="/shared/sports-board.js"></script>
+<script src="/shared/scene.js"></script>
+<script src="/controller/scene-editor.js"></script>
+<script src="/shared/timer-effects.js"></script>
+<script src="/controller/timer-effects-editor.js"></script>
+<script src="/controller/display-audio-controls.js"></script>
+<script src="/controller/automation-studio.js"></script>
+<script src="/controller/class-studio.js"></script>
+<script src="/controller/music-studio.js"></script>
+<link rel="stylesheet" href="/controller/sports-workspace.css">
+<script src="/controller/sports-workspace.js"></script>
+<script src="/controller/weather-workspace.js"></script>
+<script src="/controller/system-updates-workspace.js"></script>
+<script src="/controller/lab-enrollment.js"></script>
 <script src="/controller/workspace.js"></script>
 <script src="/controller/esphome.js"></script>
 <script src="/controller/embedded-workspaces.js"></script>

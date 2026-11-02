@@ -111,6 +111,11 @@ lighting mappings and unrelated receiver fields remain intact. Save with
 send routing, power or display commands. Polling and reopening the disclosure
 preserve drafts; **Reload Saved Settings** explicitly discards them.
 
+**Audio priority → Independent (hallway)** separates an out-of-room receiver's
+ordinary playback from classroom music and manual media takeover. Morning
+Announcements retain priority. It does not change its AV port, membership or
+automation targets. See [Background Music](BACKGROUND-MUSIC-STUDIO.md#independent-hallway-displays).
+
 The matrix now reports missing and shared receiver assignments. It never guesses
 `tvN` from output N. Test Image, Clear, Reload and drawer group saves require a
 unique mapped receiver. Hardware routing/power remain available for every port.
@@ -130,3 +135,59 @@ Browser regressions cover shared/missing mappings, draft retention, field and
 membership preservation, reload persistence, save errors, administrator-only save
 controls and absence of command writes from configuration changes. Physical
 receiver assignments and routing still require operator verification.
+
+
+## Status, command feedback and keyboard use
+
+The operator controller loads matrix controls from `av-workspace.js` and scoped
+`av-workspace.css`. Configuration and receiver health refresh independently of
+matrix status. A failed read retains the last inventory with an unavailable/stale
+message; receiver tools and mapping-dependent saves require available receiver
+configuration/status. Repeated Refresh clicks share one active browser read;
+the backend independently bounds and shares its hardware scan as described below.
+
+Missing power/signal values remain Unknown. A rejected matrix acknowledgement is
+an error and does not update saved power intent. A successful acknowledgement or
+last command is still not physical panel confirmation. Polling preserves routing
+button identity/focus even when another receiver changes status, and command
+feedback remains separate from read health.
+
+TV/source drawers are keyboard modals: focus starts in the name field, Tab stays
+inside, and Escape/Close returns to the initiating control. Login/account dialogs
+close an open drawer. Power and route changes preserve unsaved names and group
+choices. Controls reflect existing server permissions: classroom control for
+commands/labels and administrator access for receiver/group configuration.
+
+Setup validates receiver IDs before any save and reports errors beside the form.
+IDs use 1–40 letters, numbers, underscores or hyphens; existing casing and group
+keys are preserved. Invalid input is not silently renamed. Current backend
+identity normalization is unchanged; any future migration requires explicit
+compatibility and credential-preservation coverage.
+
+
+## Backend matrix read bounds
+
+The status endpoint shares one six-query scan across callers and retains its
+result for two seconds using a monotonic expiry. The whole scan has an eight-second
+budget, including fetch bodies and retry delays. Named diagnostic/read-back
+queries outside that scan have the same total budget. The configured per-attempt
+timeout and read retry count apply inside this ceiling; writes keep one attempt.
+An unconfigured optional matrix fails immediately without network retries.
+
+Partial scans remain HTTP 207 with individual query errors and an `observedAt`
+timestamp. Labels are read fresh even when the hardware snapshot is cached.
+Command admission/completion and connection changes invalidate the cache and
+abort an older scan; a cancelled scan cannot populate the new cache. One browser
+disconnecting does not cancel a scan shared with others, but the server budget
+still terminates it and lifecycle tracking retains its returned promise.
+
+Matrix responses are limited to 64 KiB by both declared and streamed size. Error
+responses are cancelled, and malformed JSON errors do not reproduce raw upstream
+text. These are control/status safeguards, not physical power confirmation.
+No stored configuration, CEC write retries or announcement lock policy changes.
+
+Matrix requests reject redirects, including same-host redirects, so neither a
+read nor a command can be forwarded beyond the explicitly configured endpoint.
+Configure the final HTTP(S) matrix URL. Only an enabled full administrator or
+the authenticated internal maintenance service can change this destination;
+normal classroom commands cannot supply a URL.

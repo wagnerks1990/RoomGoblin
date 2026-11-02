@@ -2,7 +2,7 @@
 
 const fs=require("fs");
 const path=require("path");
-const {spawn}=require("child_process");
+const {startMediaPlane}=require("./media-plane-process");
 const {DatabaseSync}=require("node:sqlite");
 process.umask(0o077);
 
@@ -102,31 +102,6 @@ function reconcileVeyonSecretMetadata(db){
   console.warn(`Startup recovery reconciled Veyon private-key metadata to '${keyName}'.`);
 }
 
-function startMediaPlane(){
-  const child=spawn(process.execPath,[path.join(__dirname,"media-server.js")],{
-    env:process.env,
-    stdio:"inherit"
-  });
-  let intentional=false;
-  const stop=()=>{
-    if(intentional)return;
-    intentional=true;
-    try{child.kill("SIGTERM")}catch{}
-  };
-  process.once("exit",stop);
-  child.once("error",error=>{
-    console.error(`RoomGoblin media plane failed to start: ${error.message}`);
-    if(!intentional){intentional=true;process.exit(1)}
-  });
-  child.once("exit",(code,signal)=>{
-    if(intentional)return;
-    intentional=true;
-    console.error(`RoomGoblin media plane exited unexpectedly (${signal||code||"unknown"}).`);
-    process.exit(1);
-  });
-  return child;
-}
-
 adoptSynchronizedVeyonKeyName();
 const dbFile=canonicalDatabaseFile();
 process.env.DATABASE_FILE=dbFile;
@@ -145,13 +120,6 @@ if(fs.existsSync(dbFile)){
 // so restart policy restores a converged pair.
 startMediaPlane();
 
-// Register scoped route bridges before server.js creates the Express routes.
-// The Veyon bridges preserve legacy-key compatibility, move mutable DHCP
-// addresses behind stable hostname identities, and expose guarded lifecycle
-// checks/updates. The maintenance bridge then mirrors established handlers.
-require("./veyon-keyring-bridge");
-require("./veyon-dhcp-identity-bridge");
-require("./veyon-update-bridge");
-require("./cloudflare-bridge");
-require("./maintenance-route-bridge");
+// server.js explicitly installs the compatibility bridges on its own Express
+// application after writer tracking and before registering application routes.
 require("./server");

@@ -142,7 +142,7 @@ test("synchronous worker spawn failures enter the same restart cooldown",async()
 test("real HTTP routes enforce read/control/admin boundaries, hide key material and track async export mutations",async()=>{
   const h=harness(),app=express();let active=0,role="none";app.use(express.json());
   const gate=allowed=>(_req,res,next)=>allowed.includes(role)?next():res.status(403).json({error:"denied"});
-  registerESPHomeRoutes(app,{manager:h.manager,requireRead:gate(["viewer","operator","admin"]),requireControl:gate(["operator","admin"]),requireAdmin:gate(["admin"]),isAdmin:()=>role==="admin",owner:()=>role,track:task=>{active++;return task.finally(()=>active--)}});
+  registerESPHomeRoutes(app,{manager:h.manager,requireRead:gate(["viewer","operator","admin"]),requireControl:gate(["operator","admin"]),requireAdmin:gate(["admin"]),canRead:()=>["viewer","operator","admin"].includes(role),canControl:()=>["operator","admin"].includes(role),isAdmin:()=>role==="admin",owner:()=>role,track:task=>{active++;return task.finally(()=>active--)}});
   const server=app.listen(0,"127.0.0.1");await new Promise(r=>server.once("listening",r));const base=`http://127.0.0.1:${server.address().port}/api/v1/esphome/devices`;
   const request=(url,body,method="POST")=>fetch(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   try{

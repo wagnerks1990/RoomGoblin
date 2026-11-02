@@ -134,7 +134,9 @@ fi
 
 mkdir -p "$TARGET/data/backups" "$TARGET/config/schema"
 touch "$TARGET/.classroom-hub-installation"
-chown -R 10001:10001 "$TARGET/data"
+# Private backup archives belong to maintenance, which has no DAC override.
+# Making its 0600 rollback snapshot application-owned would make it unreadable.
+find "$TARGET/data" -mindepth 1 -maxdepth 1 ! -name backups -exec chown -R 10001:10001 -- {} +
 chown root:10001 "$TARGET/data" "$TARGET/data/backups"
 chmod 0770 "$TARGET/data"
 chmod 0700 "$TARGET/data/backups"

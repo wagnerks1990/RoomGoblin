@@ -53,7 +53,7 @@ test("post-announcement reconciliation failure keeps Background Music paused for
 });
 
 test("Background Music controls retain the player that actually started playback",()=>{
-  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf("// Appliance-wide budgets"));
+  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf('app.get("/api/v1/music-assistant/status"'));
   assert.match(music,/activePlayerId:null/);
   assert.match(music,/backgroundMusicRuntime\.activePlayerId\|\|cfg\.playerId/);
   assert.match(music,/backgroundMusicRuntime\.activePlayerId=pid/);
@@ -61,16 +61,14 @@ test("Background Music controls retain the player that actually started playback
   assert.match(music,/prior\.playerId!==cfg\.playerId\|\|prior\.favoriteId!==cfg\.favoriteId/);
 });
 
-test("scheduled Background Music waits for player readiness and backs off transient starts",()=>{
-  const music=server.slice(server.indexOf("const backgroundMusicRuntime"),server.indexOf("// Appliance-wide budgets"));
-  const tick=music.slice(music.indexOf("async function backgroundMusicTick"),music.indexOf('app.get("/api/v1/music-assistant/background"'));
-  assert.match(music,/retryAfter:0/);
+test("scheduled Background Music observes readiness before consulting its recovery monitor",()=>{
+  const tick=server.slice(server.indexOf("async function backgroundMusicTick"),server.indexOf('app.get("/api/v1/music-assistant/background"'));
   assert.match(tick,/if\(!actual\?\.found\|\|actual\.available===false\)/);
   assert.match(tick,/Background Music player has not registered yet/);
   assert.match(tick,/Background Music player is temporarily unavailable/);
-  assert.match(tick,/retryAfter\|\|0\)>Date\.now\(\)/);
-  assert.match(tick,/retryAfter=Date\.now\(\)\+30000/);
-  assert.ok(tick.indexOf("if(!actual?.found||actual.available===false)")<tick.indexOf('await backgroundMusicStart({reason:"schedule-player-idle"})'));
+  assert.ok(tick.indexOf("if(!actual?.found||actual.available===false)")<tick.indexOf("backgroundMusicRecovery.observe(actual,{"));
+  assert.match(tick,/decision.action===\"wait\"/);
+  assert.match(tick,/backgroundMusicPriorityBlocked\(\)\|\|backgroundMusicRuntime.manualStopped/);
 });
 
 test("post-announcement resync applies each candidate only to targets it won",()=>{
@@ -82,7 +80,8 @@ test("post-announcement resync applies each candidate only to targets it won",()
 
 test("priority audio reconciliation observes Music Assistant instead of trusting restart-local flags",()=>{
   const reconcile=server.slice(server.indexOf("async function backgroundMusicReconcilePriority"),server.indexOf("function backgroundMusicObserveDisplayCommand"));
-  assert.match(reconcile,/backgroundMusicActualPlayerState\(cfg,true\)/);
+  assert.match(reconcile,/const playerId=String\(backgroundMusicRuntime.activePlayerId\|\|cfg.playerId\|\|""\)/);
+  assert.match(reconcile,/backgroundMusicActualPlayerState\(\{playerId\},true\)/);
   assert.match(reconcile,/if\(!force&&!cfg\.pauseForPriorityAudio\)return/);
   assert.match(server,/backgroundMusicReconcilePriority\(\{force:true\}\)/);
   assert.match(reconcile,/if\(priority&&backgroundMusicRuntime\.playing\)/);
@@ -154,7 +153,9 @@ test("scheduler discovery is non-blocking and class occurrences still honor glob
   const scheduler=server.slice(server.indexOf("// Unified Classroom Automation scheduler"),server.indexOf("// Legacy per-output Pluto schedules"));
   const tick=scheduler.slice(scheduler.indexOf("async function automationSchedulerTick"));
   assert.match(tick,/automationRunLedger\.claim/);
-  assert.match(tick,/automationRunningOccurrences\.set/);
+  assert.match(tick,/startOwnedAutomationOccurrence\(id,/);
+  assert.match(scheduler,/automationRunningOccurrences\.set\(id,task\)/);
+  assert.doesNotMatch(tick,/await startOwnedAutomationOccurrence/);
   assert.match(tick,/isAutomationSuppressed\(now\)\.blocked/);
   assert.doesNotMatch(tick,/await runClassroomAutomation\(event\)/);
   assert.match(scheduler,/async function executeScheduledAutomationOccurrence/);
@@ -186,7 +187,7 @@ test("manual video/audio playback pauses scheduler, Background Music, and active
   assert.match(server,/if\(type==="display\.video"\)return true/);
   assert.match(server,/players\/cmd\/pause/);
   assert.match(server,/if\(automationSchedulerEnabled\)setAutomationSchedulerEnabled\(false\)/);
-  assert.match(server,/automationCancellationReasons\.set\(id,"manual-media-priority"\)/);
+  assert.match(server,/requestAutomationRunCancellation\(ids,"manual-media-priority"\)/);
   assert.match(server,/backgroundMusicPriorityTargets\.add\(id\)/);
   assert.match(server,/releaseManualMediaPriority\("schedule-resumed"\)/);
   assert.match(server,/if\(schedulerWasEnabled&&!automationSchedulerEnabled\)setAutomationSchedulerEnabled\(true\)/);

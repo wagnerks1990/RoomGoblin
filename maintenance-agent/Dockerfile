@@ -96,6 +96,7 @@ COPY maintenance-agent/network.js ./
 COPY maintenance-agent/backup-policy.js ./
 COPY maintenance-agent/recovery-envelope.js ./
 COPY maintenance-agent/android-tv-lib.js ./
+COPY maintenance-agent/android-tv-configuration-owner.js ./
 COPY maintenance-agent/android-tv-extension.js ./
 COPY maintenance-agent/android-tv-persistent-adb.js ./
 COPY maintenance-agent/android-tv-agent-v2.js ./

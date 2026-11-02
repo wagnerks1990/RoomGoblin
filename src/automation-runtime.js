@@ -30,13 +30,23 @@ function enabledDisplayIds(devices={}){
 
 function expandDisplayTargets(targets,{devices={},displayGroups={}}={}){
   const out=[];
-  const add=id=>{if(id&&!out.includes(id)&&devices[id]?.enabled!==false)out.push(id)};
+  const keyFor=(value,records)=>{
+    const id=String(value||"").trim();
+    if(Object.hasOwn(records,id))return id;
+    const matches=Object.keys(records).filter(key=>key.toLowerCase()===id.toLowerCase());
+    return matches.length>1?null:matches[0]||"";
+  };
+  const add=value=>{const id=keyFor(value,devices);if(id&&!out.includes(id)&&devices[id]?.enabled!==false)out.push(id)};
   for(const raw of Array.isArray(targets)?targets:[]){
-    const id=String(raw||"").trim().toLowerCase();
+    const id=String(raw||"").trim();
     if(!id)continue;
-    if(id==="all"){for(const key of enabledDisplayIds(devices))add(key);continue}
-    if(Array.isArray(displayGroups[id])){for(const member of displayGroups[id])add(String(member||"").trim().toLowerCase());continue}
-    if(devices[id])add(id);
+    if(id.toLowerCase()==="all"){for(const key of enabledDisplayIds(devices))add(key);continue}
+    const receiver=keyFor(id,devices);
+    if(receiver===null)continue;
+    if(receiver){add(receiver);continue}
+    const group=keyFor(id,displayGroups);
+    if(group&&Array.isArray(displayGroups[group])){for(const member of displayGroups[group])add(member);continue}
+    add(id);
   }
   return out;
 }
@@ -86,6 +96,27 @@ function expandTvTargets(targets,options={}){
   return rows;
 }
 
+function tvPowerIntent(targets,{devices={},payload={}}={}){
+  const requested=[...new Set((Array.isArray(targets)?targets:[]).map(value=>String(value||"").trim().toLowerCase()).filter(Boolean))];
+  const candidate=requested.includes("all")?"all":requested.length===1?requested[0]:null;
+  const selector=["all","hdmi-all","hdbt-all"].includes(candidate)?candidate:null;
+  const mapped=expandTvTargets(requested,{devices,connection:payload.connection||"hdbt"});
+  let resolvedTargets=mapped;
+  if(selector){
+    // Broadcasts address fixed physical ports, independently of receiver aliases.
+    // Unmapped ports use a diagnostic transport/port label, never a receiver ID.
+    const connections=selector==="all"?["hdmi","hdbt"]:[selector==="hdmi-all"?"hdmi":"hdbt"];
+    resolvedTargets=connections.flatMap(connection=>Array.from({length:8},(_,index)=>{
+      const output=index+1,alias=mapped.find(row=>row.connection===connection&&row.output===output);
+      return {id:alias?.id||`${connection}:${output}`,connection,output};
+    }));
+  }else if(!requested.some(id=>["all","hdmi-all","hdbt-all"].includes(id))&&mapped.length===1){
+    const output=Number(payload.output);
+    if(Number.isInteger(output)&&output>=1&&output<=8)resolvedTargets=[{...mapped[0],output}];
+  }
+  return {targets:requested,selector,resolvedTargets};
+}
+
 function summarizeAdapterResult(result){
   if(result===undefined||result===null)return {ok:false,status:"unknown",reason:"No adapter result"};
   if(result.ok===false)return {ok:false,status:"rejected",reason:String(result.error||result.message||"Adapter rejected the command")};
@@ -117,14 +148,88 @@ class SchedulerClock{
   status(){const active=!!this.simulated;return {mode:active?"simulated":"real",active,timezone:this.timezone,schedulerTime:this.now().toISOString(),observedAt:new Date().toISOString(),liveCommands:active&&this.commandsAllowed(),liveExpiresAt:this.liveExpiresAt?new Date(this.liveExpiresAt).toISOString():null}}
 }
 
-function occurrenceId(event,dateKey,time){return `${String(event?.id||"unknown")}:${String(event?.classId||"manual")}:${dateKey}:${time}`}
+function automationOccurrenceKey(event){return String(event?.classId||(event?._planningBlockId?`block:${event._planningBlockId}`:"manual"))}
+function occurrenceId(event,dateKey,time){return `${String(event?.id||"unknown")}:${automationOccurrenceKey(event)}:${dateKey}:${time}`}
 
-function makeLedger(store,{key="automation.run-ledger",limit=500}={}){
-  function read(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {version:1,runs:Array.isArray(value.runs)?value.runs:[]}}
-  function write(value){store.setPreference(key,{version:1,runs:value.runs.slice(-limit)})}
-  function record(entry){const state=read();state.runs.push({...entry,observedAt:new Date().toISOString()});write(state);return entry}
-  function claim(id,details={}){const state=read();const existing=[...state.runs].reverse().find(run=>run.occurrenceId===id&&["claimed","running","succeeded"].includes(run.status));if(existing)return {claimed:false,existing};const row={occurrenceId:id,status:"claimed",...details};state.runs.push({...row,observedAt:new Date().toISOString()});write(state);return {claimed:true,row}}
-  return {read,record,claim};
+function assertAutomationCommandsAllowed(clock,{manual=false}={}){
+  if(!manual&&!clock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
 }
 
-module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,summarizeAdapterResult,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger};
+function firstPassDueActions(sequence,elapsedSeconds){
+  const due=[];let elapsed=0;
+  if(!Number.isFinite(elapsedSeconds)||elapsedSeconds<0)return due;
+  for(const step of sequence){
+    elapsed+=Math.max(0,Number(step.delaySeconds||0));
+    if(elapsed>elapsedSeconds)break;
+    due.push(step);
+    elapsed+=Math.max(0,Number(step.repeatDelaySeconds||0));
+  }
+  return due;
+}
+
+function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLimit=5000,now=()=>new Date()}={}){
+  if(!Number.isSafeInteger(cancellationLimit)||cancellationLimit<1||cancellationLimit>5000)throw new Error("Automation cancellation retention limit is invalid");
+  const cancellationStatus=status=>status==="cancel-requested"||status==="cancelled";
+  const dateKey=date=>`${String(date.getFullYear()).padStart(4,"0")}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  function occurrenceDate(id){
+    if(typeof id!=="string")return null;
+    const match=/^.+:.+:(\d{4}-\d{2}-\d{2}):(\d{2}):(\d{2})$/.exec(id);
+    if(!match||Number(match[2])>23||Number(match[3])>59)return null;
+    const date=new Date(`${match[1]}T12:00:00`);
+    return Number.isFinite(date.getTime())&&dateKey(date)===match[1]?match[1]:null;
+  }
+  function retainedCancellations(value){
+    const saved=value.cancelledOccurrences===undefined?[]:value.cancelledOccurrences;
+    if(!Array.isArray(saved)||saved.length>5000)throw new Error("Automation cancellation state is invalid or exceeds its limit");
+    // Retention follows real local dates, never the operator's simulated clock.
+    // Keep yesterday for overnight occurrences, today and future live-test IDs.
+    const cutoff=new Date(now());
+    if(!Number.isFinite(cutoff.getTime()))throw new Error("Automation cancellation retention date is invalid");
+    cutoff.setHours(0,0,0,0);cutoff.setDate(cutoff.getDate()-1);
+    const firstDate=dateKey(cutoff),ids=new Set();let bytes=2;
+    const add=(id,strict=false)=>{
+      const date=occurrenceDate(id);
+      if(!date){if(strict)throw new Error("Automation cancellation identity is invalid");return}
+      if(date<firstDate||ids.has(id))return;
+      bytes+=Buffer.byteLength(JSON.stringify(id),"utf8")+1;
+      if(ids.size>=cancellationLimit||bytes>1024*1024)throw new Error("Automation cancellation retention limit reached");
+      ids.add(id);
+    };
+    for(const id of saved)add(id,true);
+    for(const row of value.runs||[])if(cancellationStatus(row.status))add(row.occurrenceId);
+    return [...ids];
+  }
+  function readValue(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {...value,runs:Array.isArray(value.runs)?value.runs:[]}}
+  function read(){const value=readValue();return {version:1,runs:value.runs}}
+  function readState(){const value=readValue();return {...value,cancelledOccurrences:retainedCancellations(value)}}
+  function write(value){
+    // Migrate legacy history and retain newly requested Stops before truncation,
+    // in the same atomic preference write as the diagnostic rows.
+    const cancelledOccurrences=retainedCancellations(value);
+    store.setPreference(key,{version:1,runs:value.runs.slice(-limit),cancelledOccurrences});
+  }
+  function cancelledOccurrenceIds(){
+    const state=readState();
+    return new Set([...state.cancelledOccurrences,...state.runs.filter(row=>cancellationStatus(row.status)).map(row=>row.occurrenceId)]);
+  }
+  function recordMany(entries){
+    if(!entries.length)return entries;
+    // Never acknowledge a batch after dropping some of its own new records.
+    if(entries.length>limit)throw new Error("Automation ledger batch exceeds its history limit");
+    const state=readState(),observedAt=new Date().toISOString();
+    write({...state,runs:[...state.runs,...entries.map(entry=>({...entry,observedAt}))]});
+    return entries;
+  }
+  function record(entry){recordMany([entry]);return entry}
+  function claim(id,details={},{legacyIds=[]}={}){
+    const state=readState(),identities=new Set([id,...legacyIds]);
+    const stopped=state.cancelledOccurrences.find(value=>identities.has(value));
+    if(stopped)return {claimed:false,existing:{occurrenceId:stopped,status:"cancelled"}};
+    const existing=[...state.runs].reverse().find(run=>identities.has(run.occurrenceId)&&["claimed","running","succeeded"].includes(run.status));
+    if(existing)return {claimed:false,existing};
+    const row={occurrenceId:id,status:"claimed",...details};write({...state,runs:[...state.runs,{...row,observedAt:new Date().toISOString()}]});return {claimed:true,row};
+  }
+  return {read,record,recordMany,claim,cancelledOccurrenceIds};
+}
+
+module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,tvPowerIntent,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,automationOccurrenceKey,occurrenceId,makeLedger};

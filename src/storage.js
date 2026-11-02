@@ -23,11 +23,14 @@ const SESSION_LAST_SEEN_INTERVAL_MS=60*1000;
 const CREDENTIAL_LAST_USED_INTERVAL_MS=5*60*1000;
 
 class ClassroomHubStorage{
-  constructor({dataDir,dbFile,masterKeyFile,legacyMirror=false}){
+  constructor({dataDir,dbFile,masterKeyFile,legacyMirror=false,canMaintainAuth=()=>true}){
     this.dataDir=path.resolve(dataDir);
     this.dbFile=path.resolve(dbFile||path.join(this.dataDir,"classroom-control-hub.db"));
     this.masterKeyFile=masterKeyFile||"/run/secrets/classroom-control-hub-master-key";
     this.legacyMirror=!!legacyMirror;
+    // Snapshot/shutdown owners can pause housekeeping without weakening
+    // credential validation, expiry filtering or revocation checks.
+    this.canMaintainAuth=canMaintainAuth;
     this.lastSessionCleanupAt=0;
     ensureParent(this.dbFile);
     // The production data root is shared with the hardened maintenance service
@@ -280,7 +283,20 @@ class ClassroomHubStorage{
     }catch(error){this.db.exec("ROLLBACK");throw error}
   }
 
-  tx(fn){this.db.exec("BEGIN IMMEDIATE");try{const out=fn();this.db.exec("COMMIT");return out}catch(err){this.db.exec("ROLLBACK");throw err}}
+  tx(fn){
+    const depth=this.transactionDepth||0,savepoint=`roomgoblin_tx_${depth}`;
+    this.db.exec(depth?`SAVEPOINT ${savepoint}`:"BEGIN IMMEDIATE");
+    this.transactionDepth=depth+1;
+    try{
+      const out=fn();
+      this.db.exec(depth?`RELEASE SAVEPOINT ${savepoint}`:"COMMIT");
+      return out;
+    }catch(err){
+      if(depth){this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);this.db.exec(`RELEASE SAVEPOINT ${savepoint}`)}
+      else this.db.exec("ROLLBACK");
+      throw err;
+    }finally{this.transactionDepth=depth}
+  }
   loadMasterKey(){try{const raw=fs.readFileSync(this.masterKeyFile),text=raw.toString("utf8").trim();if(/^[0-9a-f]{64}$/i.test(text))return Buffer.from(text,"hex");if(raw.length===32)return raw;if(text){const b=Buffer.from(text,"base64");if(b.length===32)return b}}catch{}return null}
 
   databaseInfo(){
@@ -413,13 +429,13 @@ class ClassroomHubStorage{
   }
 
   migrateNormalizedObjects(){
-    for(const ns of NORMALIZED_NAMESPACES){if(this.hasNormalized(ns))continue;const row=this.db.prepare("SELECT value_json,source_file FROM object_store WHERE namespace=?").get(ns);if(!row)continue;const value=parseJson(row.value_json,null);if(value===null)continue;try{this.writeNormalized(ns,value);this.recordMigration(`sqlite:object_store/${ns}`,`sqlite:normalized/${ns}`,Array.isArray(value)?value.length:1,{schemaVersion:2});this.deleteObject(ns)}catch(err){console.warn(`Normalized migration failed for ${ns}: ${err.message}`)}}
+    for(const ns of NORMALIZED_NAMESPACES){if(this.hasNormalized(ns))continue;const row=this.db.prepare("SELECT value_json,source_file FROM object_store WHERE namespace=?").get(ns);if(!row)continue;const value=parseJson(row.value_json,null);if(value===null)continue;try{this.tx(()=>{this.writeNormalized(ns,value);this.recordMigration(`sqlite:object_store/${ns}`,`sqlite:normalized/${ns}`,Array.isArray(value)?value.length:1,{schemaVersion:2});this.deleteObject(ns)})}catch(err){console.warn(`Normalized migration failed for ${ns}: ${err.message}`)}}
   }
 
   readJson(file,fallback,{namespace=keyForFile(file),migrate=true}={}){
     if(NORMALIZED_NAMESPACES.has(namespace)&&this.hasNormalized(namespace))return this.readNormalized(namespace,fallback);
     if(this.hasObject(namespace))return this.getObject(namespace,fallback);
-    if(migrate&&fs.existsSync(file)){try{const value=JSON.parse(fs.readFileSync(file,"utf8"));if(NORMALIZED_NAMESPACES.has(namespace))this.writeNormalized(namespace,value);else this.putObject(namespace,value,file);this.recordMigration(file,NORMALIZED_NAMESPACES.has(namespace)?`sqlite:normalized/${namespace}`:`sqlite:object_store/${namespace}`,1,{type:"json"});return value}catch(err){console.warn(`Legacy JSON import failed for ${file}: ${err.message}`)}}
+    if(migrate&&fs.existsSync(file)){try{const value=JSON.parse(fs.readFileSync(file,"utf8"));this.tx(()=>{if(NORMALIZED_NAMESPACES.has(namespace))this.writeNormalized(namespace,value);else this.putObject(namespace,value,file);this.recordMigration(file,NORMALIZED_NAMESPACES.has(namespace)?`sqlite:normalized/${namespace}`:`sqlite:object_store/${namespace}`,1,{type:"json"})});return value}catch(err){console.warn(`Legacy JSON import failed for ${file}: ${err.message}`)}}
     return fallback;
   }
   writeJson(file,value,{namespace=keyForFile(file)}={}){if(NORMALIZED_NAMESPACES.has(namespace))this.writeNormalized(namespace,value);else this.putObject(namespace,value,file);if(this.legacyMirror){ensureParent(file);fs.writeFileSync(file,JSON.stringify(value,null,2))}}
@@ -432,7 +448,23 @@ class ClassroomHubStorage{
   }
   telemetryState(limit=500){limit=Math.max(1,Math.min(5000,Number(limit)||500));return this.db.prepare("SELECT key,kind,payload_json,first_seen,last_seen,count FROM telemetry_state ORDER BY last_seen DESC LIMIT ?").all(limit).map(r=>({...r,payload:parseJson(r.payload_json,{})}))}
   recentAudit(limit=250,{kind=null}={}){limit=Math.max(1,Math.min(5000,Number(limit)||250));const rows=kind?this.db.prepare("SELECT payload_json FROM audit_events WHERE kind=? ORDER BY id DESC LIMIT ?").all(kind,limit):this.db.prepare("SELECT payload_json FROM audit_events ORDER BY id DESC LIMIT ?").all(limit);return rows.map(r=>parseJson(r.payload_json,{raw:r.payload_json})).reverse()}
-  importAuditJsonl(file,{archive=true}={}){if(this.migrationDone(file,"sqlite:audit_events")||!fs.existsSync(file))return {imported:0,skipped:true};const lines=fs.readFileSync(file,"utf8").split(/\r?\n/).filter(Boolean),stmt=this.db.prepare("INSERT INTO audit_events(at,kind,payload_json) VALUES(?,?,?)");this.db.exec("BEGIN");let imported=0;try{for(const line of lines){try{const e=JSON.parse(line);stmt.run(String(e.at||iso()),String(e.kind||""),JSON.stringify(e));imported++}catch{}}this.db.exec("COMMIT")}catch(err){this.db.exec("ROLLBACK");throw err}this.recordMigration(file,"sqlite:audit_events",imported,{type:"jsonl"});if(archive&&imported){const dir=path.join(this.dataDir,"legacy");fs.mkdirSync(dir,{recursive:true});fs.renameSync(file,path.join(dir,`audit-imported-${Date.now()}.jsonl`))}return {imported,skipped:false}}
+  importAuditJsonl(file,{archive=true}={}){
+    if(this.migrationDone(file,"sqlite:audit_events")||!fs.existsSync(file))return {imported:0,skipped:true};
+    const lines=fs.readFileSync(file,"utf8").split(/\r?\n/).filter(Boolean),stmt=this.db.prepare("INSERT INTO audit_events(at,kind,payload_json) VALUES(?,?,?)");
+    let imported=0;
+    this.tx(()=>{
+      for(const line of lines){
+        let values;
+        try{const entry=JSON.parse(line);values=[String(entry.at||iso()),String(entry.kind||""),JSON.stringify(entry)]}catch{continue}
+        // Malformed legacy lines may be skipped; storage failures must roll back.
+        stmt.run(...values);
+        imported++;
+      }
+      this.recordMigration(file,"sqlite:audit_events",imported,{type:"jsonl"});
+    });
+    if(archive&&imported){const dir=path.join(this.dataDir,"legacy");fs.mkdirSync(dir,{recursive:true});fs.renameSync(file,path.join(dir,`audit-imported-${Date.now()}.jsonl`))}
+    return {imported,skipped:false};
+  }
   migrationDone(source,target){return !!this.db.prepare("SELECT 1 ok FROM migration_history WHERE source=? AND target=? LIMIT 1").get(String(source),String(target))}
   recordMigration(source,target,records=0,details={}){this.db.prepare("INSERT INTO migration_history(source,target,records,details_json,migrated_at) VALUES(?,?,?,?,?)").run(String(source),String(target),Number(records)||0,JSON.stringify(details||{}),iso())}
 
@@ -474,7 +506,7 @@ class ClassroomHubStorage{
     displayId=String(displayId||"");const hash=this.tokenHash(token),now=iso();
     return this.tx(()=>{const row=this.db.prepare("SELECT e.*,d.enabled FROM display_enrollment_codes e JOIN display_devices d ON d.id=e.display_id WHERE e.display_id=? AND e.token_hash=?").get(displayId,hash);if(!row||row.consumed_at||row.expires_at<=now||!row.enabled)return null;const credential=crypto.randomBytes(32).toString("base64url"),id=crypto.randomUUID();this.db.prepare("UPDATE display_enrollment_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL").run(now,row.id);this.db.prepare("INSERT INTO display_credentials(id,display_id,label,token_hash,created_at,last_used_at) VALUES(?,?,?,?,?,?)").run(id,displayId,String(label||"Classroom display").slice(0,120),this.tokenHash(credential),now,now);return {id,displayId,credential,createdAt:now}})
   }
-  authenticateDisplay(displayId,token){const now=iso(),row=this.db.prepare(`SELECT c.id,c.display_id displayId,c.label,c.created_at createdAt,c.last_used_at lastUsedAt FROM display_credentials c JOIN display_devices d ON d.id=c.display_id WHERE c.display_id=? AND c.token_hash=? AND c.revoked_at IS NULL AND d.enabled=1`).get(String(displayId||""),this.tokenHash(token));if(!row)return null;const touched=Date.parse(row.lastUsedAt||"");if(!Number.isFinite(touched)||Date.now()-touched>=CREDENTIAL_LAST_USED_INTERVAL_MS){this.db.prepare("UPDATE display_credentials SET last_used_at=? WHERE id=?").run(now,row.id);row.lastUsedAt=now}return row}
+  authenticateDisplay(displayId,token){const now=iso(),row=this.db.prepare(`SELECT c.id,c.display_id displayId,c.label,c.created_at createdAt,c.last_used_at lastUsedAt FROM display_credentials c JOIN display_devices d ON d.id=c.display_id WHERE c.display_id=? AND c.token_hash=? AND c.revoked_at IS NULL AND d.enabled=1`).get(String(displayId||""),this.tokenHash(token));if(!row)return null;const touched=Date.parse(row.lastUsedAt||"");if(this.canMaintainAuth()&&(!Number.isFinite(touched)||Date.now()-touched>=CREDENTIAL_LAST_USED_INTERVAL_MS)){this.db.prepare("UPDATE display_credentials SET last_used_at=? WHERE id=?").run(now,row.id);row.lastUsedAt=now}return row}
   listDisplayCredentials(){const now=iso(),policy=this.displayCredentialPolicy(),rows=this.db.prepare("SELECT id,display_id displayId,label,created_at createdAt,last_used_at lastUsedAt,revoked_at revokedAt FROM display_credentials ORDER BY display_id,created_at DESC").all(),pending=this.db.prepare("SELECT id,display_id displayId,created_at createdAt,expires_at expiresAt FROM display_enrollment_codes WHERE consumed_at IS NULL AND expires_at>? ORDER BY display_id,created_at DESC").all(now);return {policy,credentials:rows,pending}}
   revokeDisplayCredential(id){const at=iso();return this.db.prepare("UPDATE display_credentials SET revoked_at=? WHERE id=? AND revoked_at IS NULL").run(at,String(id)).changes>0}
   revokeDisplayCredentials(displayId){const at=iso();return this.db.prepare("UPDATE display_credentials SET revoked_at=? WHERE display_id=? AND revoked_at IS NULL").run(at,String(displayId)).changes}
@@ -484,7 +516,7 @@ class ClassroomHubStorage{
   setLabAgentCredentialPolicy(value={}){const current=this.labAgentCredentialPolicy(),next={legacySharedTokenAllowed:value.legacySharedTokenAllowed??current.legacySharedTokenAllowed,enrollmentTtlMinutes:Math.max(5,Math.min(60,Number(value.enrollmentTtlMinutes)||current.enrollmentTtlMinutes))};this.setPreference("lab-agent.credentials.policy",next);return next}
   createLabAgentEnrollment(agentId,{ttlMinutes=null}={}){agentId=String(agentId||"").trim().toLowerCase();if(!/^[a-z0-9._-]{1,120}$/.test(agentId))throw Error("Valid lab agent ID required");const now=new Date(),ttl=Math.max(5,Math.min(60,Number(ttlMinutes)||this.labAgentCredentialPolicy().enrollmentTtlMinutes)),expires=new Date(now.getTime()+ttl*60000),token=crypto.randomBytes(32).toString("base64url"),id=crypto.randomUUID();this.tx(()=>{this.db.prepare("DELETE FROM lab_agent_enrollment_codes WHERE consumed_at IS NOT NULL OR expires_at<=?").run(now.toISOString());this.db.prepare("DELETE FROM lab_agent_enrollment_codes WHERE agent_id=? AND consumed_at IS NULL").run(agentId);this.db.prepare("INSERT INTO lab_agent_enrollment_codes(id,agent_id,token_hash,created_at,expires_at) VALUES(?,?,?,?,?)").run(id,agentId,this.tokenHash(token),now.toISOString(),expires.toISOString())});return {id,agentId,token,createdAt:now.toISOString(),expiresAt:expires.toISOString()}}
   consumeLabAgentEnrollment(agentId,token,{label="Windows classroom agent"}={}){agentId=String(agentId||"");const hash=this.tokenHash(token),now=iso();return this.tx(()=>{const row=this.db.prepare("SELECT * FROM lab_agent_enrollment_codes WHERE agent_id=? AND token_hash=?").get(agentId,hash);if(!row||row.consumed_at||row.expires_at<=now)return null;const credential=crypto.randomBytes(32).toString("base64url"),id=crypto.randomUUID();this.db.prepare("UPDATE lab_agent_enrollment_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL").run(now,row.id);this.db.prepare("INSERT INTO lab_agent_credentials(id,agent_id,label,token_hash,created_at,last_used_at) VALUES(?,?,?,?,?,?)").run(id,agentId,String(label||"Windows classroom agent").slice(0,120),this.tokenHash(credential),now,now);return {id,agentId,credential,createdAt:now}})}
-  authenticateLabAgent(agentId,token){const now=iso(),row=this.db.prepare("SELECT id,agent_id agentId,label,created_at createdAt,last_used_at lastUsedAt FROM lab_agent_credentials WHERE agent_id=? AND token_hash=? AND revoked_at IS NULL").get(String(agentId||""),this.tokenHash(token));if(!row)return null;const touched=Date.parse(row.lastUsedAt||"");if(!Number.isFinite(touched)||Date.now()-touched>=CREDENTIAL_LAST_USED_INTERVAL_MS){this.db.prepare("UPDATE lab_agent_credentials SET last_used_at=? WHERE id=?").run(now,row.id);row.lastUsedAt=now}return row}
+  authenticateLabAgent(agentId,token){const now=iso(),row=this.db.prepare("SELECT id,agent_id agentId,label,created_at createdAt,last_used_at lastUsedAt FROM lab_agent_credentials WHERE agent_id=? AND token_hash=? AND revoked_at IS NULL").get(String(agentId||""),this.tokenHash(token));if(!row)return null;const touched=Date.parse(row.lastUsedAt||"");if(this.canMaintainAuth()&&(!Number.isFinite(touched)||Date.now()-touched>=CREDENTIAL_LAST_USED_INTERVAL_MS)){this.db.prepare("UPDATE lab_agent_credentials SET last_used_at=? WHERE id=?").run(now,row.id);row.lastUsedAt=now}return row}
   listLabAgentCredentials(){const now=iso(),policy=this.labAgentCredentialPolicy(),credentials=this.db.prepare("SELECT id,agent_id agentId,label,created_at createdAt,last_used_at lastUsedAt,revoked_at revokedAt FROM lab_agent_credentials ORDER BY agent_id,created_at DESC").all(),pending=this.db.prepare("SELECT id,agent_id agentId,created_at createdAt,expires_at expiresAt FROM lab_agent_enrollment_codes WHERE consumed_at IS NULL AND expires_at>? ORDER BY agent_id,created_at DESC").all(now);return {policy,credentials,pending}}
   revokeLabAgentCredential(id){return this.db.prepare("UPDATE lab_agent_credentials SET revoked_at=? WHERE id=? AND revoked_at IS NULL").run(iso(),String(id)).changes>0}
   revokeLabAgentCredentials(agentId){return this.db.prepare("UPDATE lab_agent_credentials SET revoked_at=? WHERE agent_id=? AND revoked_at IS NULL").run(iso(),String(agentId)).changes}
@@ -516,7 +548,7 @@ class ClassroomHubStorage{
   deleteUser(id){return this.tx(()=>{const changes=this.db.prepare("DELETE FROM users WHERE id=?").run(String(id)).changes;this.assertEffectiveAdministrator();return changes})}
   verifyUser(username,password){const r=this.db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE AND enabled=1").get(String(username||"").trim());if(!r)return null;const got=this.hashPassword(password,r.password_salt),a=Buffer.from(got,"hex"),b=Buffer.from(r.password_hash,"hex");if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return null;return {id:r.id,username:r.username,displayName:r.display_name,role:r.role,profileId:r.profile_id,enabled:!!r.enabled}}
   createSession(user,{remoteAddr="",userAgent="",ttlHours=null}={}){this.cleanupSessions({force:true});const policy=this.authPolicy(),hours=Math.max(1,Math.min(720,Number(ttlHours)||policy.standardHours)),token=crypto.randomBytes(32).toString("base64url"),hash=crypto.createHash("sha256").update(token).digest("hex"),id=crypto.randomUUID(),now=new Date(),exp=new Date(now.getTime()+hours*3600000);this.db.prepare("INSERT INTO user_sessions(id,user_id,token_hash,created_at,expires_at,last_seen_at,remote_addr,user_agent) VALUES(?,?,?,?,?,?,?,?)").run(id,user.id,hash,now.toISOString(),exp.toISOString(),now.toISOString(),String(remoteAddr||""),String(userAgent||"").slice(0,500));this.db.prepare("UPDATE users SET last_login_at=?,updated_at=? WHERE id=?").run(now.toISOString(),now.toISOString(),user.id);const sessions=this.listUserSessions(user.id);for(const extra of sessions.slice(policy.maxSessions))this.deleteUserSession(user.id,extra.id);return {token,expiresAt:exp.toISOString()}}
-  sessionUser(token){if(!token)return null;this.cleanupSessions();const now=iso(),hash=crypto.createHash("sha256").update(String(token)).digest("hex"),r=this.db.prepare(`SELECT s.id sessionId,s.expires_at expiresAt,s.last_seen_at lastSeenAt,u.id,u.username,u.display_name displayName,u.role,u.profile_id profileId,u.enabled FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.enabled=1 AND s.expires_at>?`).get(hash,now);if(!r)return null;const lastSeen=Date.parse(r.lastSeenAt||"");if(!Number.isFinite(lastSeen)||Date.now()-lastSeen>=SESSION_LAST_SEEN_INTERVAL_MS)this.db.prepare("UPDATE user_sessions SET last_seen_at=? WHERE id=?").run(now,r.sessionId);const {lastSeenAt:_lastSeenAt,...user}=r;return {...user,enabled:!!r.enabled}}
+  sessionUser(token){if(!token)return null;this.cleanupSessions();const now=iso(),hash=crypto.createHash("sha256").update(String(token)).digest("hex"),r=this.db.prepare(`SELECT s.id sessionId,s.expires_at expiresAt,s.last_seen_at lastSeenAt,u.id,u.username,u.display_name displayName,u.role,u.profile_id profileId,u.enabled FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.enabled=1 AND s.expires_at>?`).get(hash,now);if(!r)return null;const lastSeen=Date.parse(r.lastSeenAt||"");if(this.canMaintainAuth()&&(!Number.isFinite(lastSeen)||Date.now()-lastSeen>=SESSION_LAST_SEEN_INTERVAL_MS))this.db.prepare("UPDATE user_sessions SET last_seen_at=? WHERE id=?").run(now,r.sessionId);const {lastSeenAt:_lastSeenAt,...user}=r;return {...user,enabled:!!r.enabled}}
   deleteSession(token){if(!token)return;const hash=crypto.createHash("sha256").update(String(token)).digest("hex");this.db.prepare("DELETE FROM user_sessions WHERE token_hash=?").run(hash)}
   listUserSessions(userId){this.cleanupSessions();return this.db.prepare("SELECT id,created_at createdAt,expires_at expiresAt,last_seen_at lastSeenAt,remote_addr remoteAddr,user_agent userAgent FROM user_sessions WHERE user_id=? AND expires_at>? ORDER BY last_seen_at DESC").all(String(userId),iso())}
   deleteUserSession(userId,sessionId){return this.db.prepare("DELETE FROM user_sessions WHERE id=? AND user_id=?").run(String(sessionId),String(userId)).changes>0}
@@ -525,14 +557,14 @@ class ClassroomHubStorage{
   resetUserPassword(userId,newPassword){if(String(newPassword??"").length<10)throw Error("New password must be at least 10 characters");const user=this.listUsers().find(x=>x.id===String(userId));if(!user)throw Error("User not found");const updated=this.putUser(user,{password:newPassword});this.deleteAllUserSessions(user.id);return updated}
   verifyUserPassword(userId,password){const r=this.db.prepare("SELECT password_salt,password_hash FROM users WHERE id=? AND enabled=1").get(String(userId));if(!r)return false;const got=this.hashPassword(password,r.password_salt),a=Buffer.from(got,"hex"),b=Buffer.from(r.password_hash,"hex");return a.length===b.length&&crypto.timingSafeEqual(a,b)}
   changeUserPassword(userId,currentPassword,newPassword){if(String(newPassword??"").length<10)throw Error("New password must be at least 10 characters");if(!this.verifyUserPassword(userId,currentPassword))throw Error("Current password is incorrect");const user=this.listUsers().find(x=>x.id===String(userId));if(!user)throw Error("User not found");return this.putUser(user,{password:newPassword})}
-  cleanupSessions({force=false}={}){const now=Date.now();if(!force&&now-this.lastSessionCleanupAt<SESSION_MAINTENANCE_INTERVAL_MS)return 0;const changes=this.db.prepare("DELETE FROM user_sessions WHERE expires_at<=?").run(new Date(now).toISOString()).changes;this.lastSessionCleanupAt=now;return changes}
+  cleanupSessions({force=false}={}){if(!this.canMaintainAuth())return 0;const now=Date.now();if(!force&&now-this.lastSessionCleanupAt<SESSION_MAINTENANCE_INTERVAL_MS)return 0;const changes=this.db.prepare("DELETE FROM user_sessions WHERE expires_at<=?").run(new Date(now).toISOString()).changes;this.lastSessionCleanupAt=now;return changes}
   requireMasterKey(){if(!this.masterKey)throw Error(`Encrypted secret storage unavailable; master key not readable at ${this.masterKeyFile}`);return this.masterKey}
   putSecret(name,value,metadata={}){const key=this.requireMasterKey(),iv=crypto.randomBytes(12),cipher=crypto.createCipheriv("aes-256-gcm",key,iv),ciphertext=Buffer.concat([cipher.update(Buffer.isBuffer(value)?value:Buffer.from(String(value),"utf8")),cipher.final()]),tag=cipher.getAuthTag(),now=iso();this.db.prepare(`INSERT INTO secret_store(name,cipher_text,iv,auth_tag,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET cipher_text=excluded.cipher_text,iv=excluded.iv,auth_tag=excluded.auth_tag,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`).run(String(name),ciphertext.toString("base64"),iv.toString("base64"),tag.toString("base64"),JSON.stringify(metadata||{}),now,now)}
   getSecret(name,{asBuffer=false}={}){const row=this.db.prepare("SELECT * FROM secret_store WHERE name=?").get(String(name));if(!row)return null;const decipher=crypto.createDecipheriv("aes-256-gcm",this.requireMasterKey(),Buffer.from(row.iv,"base64"));decipher.setAuthTag(Buffer.from(row.auth_tag,"base64"));const plain=Buffer.concat([decipher.update(Buffer.from(row.cipher_text,"base64")),decipher.final()]);return asBuffer?plain:plain.toString("utf8")}
   hasSecret(name){return !!this.db.prepare("SELECT 1 ok FROM secret_store WHERE name=?").get(String(name))}
   listSecrets(){return this.db.prepare("SELECT name,metadata_json,created_at,updated_at FROM secret_store ORDER BY name").all().map(r=>({name:r.name,metadata:parseJson(r.metadata_json,{}),createdAt:r.created_at,updatedAt:r.updated_at}))}
   deleteSecret(name){this.db.prepare("DELETE FROM secret_store WHERE name=?").run(String(name))}
-  importSecretFile(name,file,metadata={}){if(this.hasSecret(name)||!fs.existsSync(file))return false;this.putSecret(name,fs.readFileSync(file),{...metadata,importedFrom:file});this.recordMigration(file,`sqlite:secret_store/${name}`,1,{type:"encrypted-secret"});return true}
+  importSecretFile(name,file,metadata={}){if(this.hasSecret(name)||!fs.existsSync(file))return false;this.tx(()=>{this.putSecret(name,fs.readFileSync(file),{...metadata,importedFrom:file});this.recordMigration(file,`sqlite:secret_store/${name}`,1,{type:"encrypted-secret"})});return true}
 
   putCertificate(name,pem,metadata={}){const now=iso();this.db.prepare(`INSERT INTO certificates(name,certificate_pem,metadata_json,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET certificate_pem=excluded.certificate_pem,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`).run(String(name),String(pem),JSON.stringify(metadata||{}),now,now)}
   getCertificate(name){return this.db.prepare("SELECT certificate_pem FROM certificates WHERE name=?").get(String(name))?.certificate_pem||null}

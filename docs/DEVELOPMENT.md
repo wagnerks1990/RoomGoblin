@@ -8,6 +8,19 @@ The direct source tree on `main` is canonical. The temporary `source-archive/` m
 
 ## Source layout
 
+### Application entry point
+
+Use `npm start` with a separate development data directory, database, master key
+and unused local ports. It runs the same Node command as
+`tools/start-roomgoblin.sh`: the display-gateway preload, startup recovery,
+ordered compatibility bridges, then the Hub and supervised media child.
+Launching `node src/server.js` directly is a control-only test entry point; it
+does not provide the complete appliance startup contract.
+
+See [application lifecycle](APPLICATION-LIFECYCLE.md) for ownership, shutdown
+limits and the remaining review scope. Modernization evidence is tracked in
+[the audit record](audits/roomgoblin-modernization/README.md).
+
 ```text
 classroom-control-hub/
 ├── src/                    # main Node.js backend and startup recovery

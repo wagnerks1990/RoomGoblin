@@ -22,6 +22,58 @@ Automatic application updates use the same main-commit path during the configure
 
 ## Normal update
 
+Status polling remains available during a Full Recovery export freeze. It defers
+the Hub's history-cache write until the next unfrozen poll, including responses
+that arrive after freeze acquisition. The native transaction journal remains the
+authoritative update record; installation, backup and rollback policy is unchanged.
+
+### Uploaded content and backup permissions
+
+The Hub's storage/startup modules deliberately set `umask 0077` for private
+runtime state. A requested `mode: 0750` or `0640` at creation is still filtered
+by that umask; rename preserves the restrictive mode and converters inherit it.
+Uploaded presentation originals, rendered PDFs/JPEGs, media and committed
+resumable-upload files therefore explicitly apply `0750` directories / `0640`
+files before publication through `src/content-permissions.js`. Ownership stays
+with the application; no process-wide umask, capabilities or secret modes change.
+
+Installer ownership normalization excludes `data/backups`: maintenance-owned
+private `0600` rollback archives must not become application-owned, because the
+hardened maintenance container cannot override their owner permissions. Existing
+archive ownership is preserved; no unrelated private state is relaxed.
+
+Presentation conversion runs in `data/presentation-upload-tmp`, which operational
+backups already exclude. In-flight resumable `.tmp` files/directories are also
+excluded consistently from validation and ZIP creation. Complete presentation
+assets, session metadata and committed chunks remain in operational backups;
+the existing replaceable `data/media` exclusion is unchanged. Backups must still
+fail on unreadable committed state instead of skipping it or bypassing the gate.
+
+Existing `0700`/`0600` presentation assets need a separately approved, bounded
+repair before an old installed updater can create its required backup. Do not
+recursively chmod/chown `data/`, add host users to GID 10001, grant world access,
+or weaken the maintenance container. Inventory only the affected presentation
+subtrees, reject symlinks/special files/hard-linked files and unexpected ownership,
+and save a root-private manifest of each path, inode, owner/group and original
+mode before changing only verified application-owned directories to `0750` and
+files to `0640`. GID 10001 receives read/traverse access, not write access. Leave
+Android trust, signing, credentials, screenshots and all other state untouched.
+Restore the recorded modes only on the matching paths/inodes if repair is aborted.
+
+After approved repair, require a successful ordinary operational backup, archive
+inspection, checksum verification and SQLite integrity check. Deploy the fix only
+after its tests pass, it is reviewed/merged with authorization and the exact main
+image pair is published; use the normal updater below. Retain previous immutable
+images, environment and matching backup for the runner's normal rollback. Test a
+new presentation conversion and an active resumable upload followed by another
+operational backup; do not use classroom playback commands as a permission test.
+
+Regression coverage: `node --test test/content-backup-permissions.test.js` on
+Linux, including a root-only fixture that drops to a different UID in GID 10001
+and invokes the real streaming ZIP writer. It also reproduces the old `EACCES`,
+keeps private staging/secrets excluded and checks that `0077` remains unchanged.
+
+
 ```bash
 sudo bash /opt/classroom-hub/deploy/update-production.sh --plan
 sudo bash /opt/classroom-hub/deploy/update-production.sh
@@ -149,12 +201,24 @@ A failure before source/runtime mutation leaves running services unchanged.
 Before a runtime-changing application or Ubuntu host update, RoomGoblin creates
 an operational `pre-*.zip` safety backup. After health verification succeeds,
 the update runner retains the newest 3 automatic operational archives and 1 `pre-*` safety archive and prunes
-older automatic ones. A backup pinned for application revert is preserved even
-when older than that window.
+older automatic ones. A backup pinned for application revert is preferentially
+retained inside its applicable limit, even when older than the ordinary window.
 
 This cleanup never targets user-created backups or encrypted Full Recovery
 `.rgbak` archives. Cleanup failure is a warning only after the new runtime has
 already passed health verification.
+
+Cleanup requires readable Host Agent rollback status and a valid existing pin
+when rollback is available. Missing or incomplete authority returns an error
+before deleting archives. The candidate file identities are captured before
+reading that status; new or replaced files are preserved and remaining counts
+reflect the actual directory. Concurrent arrivals may temporarily exceed the
+limit until a later authoritative cleanup.
+
+Incomplete application updates block cleanup. The native runner can still prune
+during its final verifying phase after publishing the selected active commit and
+rollback identity, while retaining its existing appliance lock. No extra lock or
+new privileged endpoint is required.
 
 Diagnostic support bundles are temporary download artifacts and are deleted
 after transfer rather than being retained with recovery backups.
@@ -218,3 +282,13 @@ The same restart rollback protects reinstalls and normal updates. Fresh
 bootstrap and isolated local builds remain supported; local builds do not
 reinstall existing appliances. Read `INSTALL.md` and
 `docs/PRODUCTION-UPDATES.md` before attempting recovery.
+
+## Planning import after upgrade (Unreleased)
+
+The first Hub startup automatically imports existing schedule/profile/calendar data
+into a Planning draft, after SQLite/legacy-file reconciliation. One transaction
+saves the original snapshot, converted profile and completion marker. Subsequent
+starts preserve operator edits. Class/automation IDs, targets and runtime scheduler
+state remain intact; the new resolver is not enabled by import. Invalid or failed
+imports retain existing scheduling and report status in Planning. The native
+updater backup/rollback contract is unchanged. See [Planning automatic import](Planning#automatic-import-on-upgrade).

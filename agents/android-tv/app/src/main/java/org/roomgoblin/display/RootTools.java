@@ -62,10 +62,21 @@ final class RootTools {
             }catch(Exception ignored){}
         },"RoomGoblin-RootTools-Output");
         drain.setDaemon(true);drain.start();
-        boolean finished=process.waitFor(timeoutSeconds,TimeUnit.SECONDS);
-        if(!finished){process.destroy();if(!process.waitFor(500,TimeUnit.MILLISECONDS))process.destroyForcibly();}
-        drain.join(1000);
-        int exit=finished?process.exitValue():-1;
-        return new Result(exit,!finished,new String(captured.toByteArray(),StandardCharsets.UTF_8));
+        try{
+            boolean finished=process.waitFor(timeoutSeconds,TimeUnit.SECONDS);
+            if(!finished){process.destroy();if(!process.waitFor(500,TimeUnit.MILLISECONDS))process.destroyForcibly();}
+            drain.join(1000);
+            int exit=finished?process.exitValue():-1;
+            return new Result(exit,!finished,new String(captured.toByteArray(),StandardCharsets.UTF_8));
+        }finally{
+            if(process.isAlive()){
+                process.destroyForcibly();
+                try{process.waitFor(500,TimeUnit.MILLISECONDS);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
+            }
+            try{process.getInputStream().close();}catch(Exception ignored){}
+            try{process.getOutputStream().close();}catch(Exception ignored){}
+            try{process.getErrorStream().close();}catch(Exception ignored){}
+            drain.interrupt();
+        }
     }
 }

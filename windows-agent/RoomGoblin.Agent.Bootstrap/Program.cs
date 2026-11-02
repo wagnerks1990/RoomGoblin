@@ -71,6 +71,9 @@ int Install()
     {
         if (freshEnrollment)
         {
+            if (File.Exists(config))
+                throw new InvalidOperationException(
+                    "This computer already has RoomGoblin configuration. Run install or repair without enrollment arguments to preserve its identity.");
             if (options.TryGetValue("--enrollment-file", out var enrollmentFile) &&
                 !string.IsNullOrWhiteSpace(enrollmentFile))
             {
@@ -96,26 +99,28 @@ int Install()
         return 12;
     }
 
-    Directory.CreateDirectory(installRoot);
-
-    var legacyExisted = ScheduledTaskExists(legacyTask);
-    var legacyWasEnabled = legacyExisted;
-
-    if (legacyExisted)
-    {
-        RunProcess(
-            "schtasks.exe",
-            new[] { "/End", "/TN", legacyTask },
-            allowFailure: true);
-
-        RunProcess(
-            "schtasks.exe",
-            new[] { "/Change", "/TN", legacyTask, "/Disable" },
-            allowFailure: true);
-    }
-
+    var legacyExisted = false;
+    var legacyWasEnabled = false;
+    var nativeTouched = false;
     try
     {
+        Directory.CreateDirectory(installRoot);
+        var legacyEnabled = ReadScheduledTaskEnabled(legacyTask);
+        legacyExisted = legacyEnabled.HasValue;
+        legacyWasEnabled = legacyEnabled == true;
+        if (legacyExisted)
+        {
+            RunProcess(
+                "schtasks.exe",
+                new[] { "/End", "/TN", legacyTask },
+                allowFailure: true);
+            RunProcess(
+                "schtasks.exe",
+                new[] { "/Change", "/TN", legacyTask, "/Disable" },
+                capture: true);
+        }
+
+        nativeTouched = true;
         StopAndDeleteService(serviceName);
 
         foreach (var name in required)
@@ -183,7 +188,7 @@ int Install()
     {
         Console.Error.WriteLine(ex);
 
-        StopAndDeleteService(serviceName);
+        if (nativeTouched) StopAndDeleteService(serviceName);
 
         if (legacyExisted && legacyWasEnabled)
         {
@@ -434,9 +439,10 @@ void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> p
 
     if (!Uri.TryCreate(hubUrl, UriKind.Absolute, out var hubUri) ||
         string.IsNullOrWhiteSpace(hubUri.Host) ||
+        !string.IsNullOrWhiteSpace(hubUri.UserInfo) ||
         (hubUri.Scheme != Uri.UriSchemeHttps && hubUri.Scheme != Uri.UriSchemeHttp))
     {
-        throw new ArgumentException("--hub-url must be an absolute http:// or https:// URL.");
+        throw new ArgumentException("--hub-url must be an absolute http:// or https:// URL without embedded credentials.");
     }
 
     if (hubUri.Scheme == Uri.UriSchemeHttp && !allowHttp)
@@ -489,7 +495,7 @@ void WriteFreshEnrollmentConfig(string configPath, Dictionary<string, string?> p
         RunProcess(
             "icacls.exe",
             new[] { temp, "/inheritance:r", "/grant:r", "SYSTEM:(F)", "Administrators:(F)" });
-        File.Move(temp, configPath, overwrite: true);
+        File.Move(temp, configPath, overwrite: false);
         RunProcess(
             "icacls.exe",
             new[] { configPath, "/inheritance:r", "/grant:r", "SYSTEM:(F)", "Administrators:(F)" });
@@ -527,13 +533,41 @@ void StopAndDeleteService(string name)
 
 bool ScheduledTaskExists(string name)
 {
-    var result = RunProcess(
-        "schtasks.exe",
-        new[] { "/Query", "/TN", name },
-        capture: true,
-        allowFailure: true);
+    return ReadScheduledTaskEnabled(name).HasValue;
+}
 
-    return result.ExitCode == 0;
+bool? ReadScheduledTaskEnabled(string name)
+{
+    // This read-only COM call has no cancellation API. Bound admission; a late
+    // result cannot mutate state, and the background worker ends with this CLI.
+    return Task.Run(() => ReadScheduledTaskEnabledCore(name))
+        .WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+}
+
+bool? ReadScheduledTaskEnabledCore(string name)
+{
+    object? service = null, folder = null, task = null;
+    try
+    {
+        var type = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)
+            ?? throw new InvalidOperationException("Windows Task Scheduler is unavailable.");
+        service = Activator.CreateInstance(type)
+            ?? throw new InvalidOperationException("Could not connect to Windows Task Scheduler.");
+        ((dynamic)service).Connect();
+        folder = ((dynamic)service).GetFolder(@"\");
+        try { task = ((dynamic)folder).GetTask(name); }
+        catch (Exception error) when ((error is COMException or FileNotFoundException) &&
+                                     error.HResult == unchecked((int)0x80070002))
+        {
+            return null; // HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), lookup only.
+        }
+        return (bool)((dynamic)task).Enabled;
+    }
+    finally
+    {
+        foreach (var value in new[] { task, folder, service })
+            if (value is not null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value);
+    }
 }
 
 bool WaitForFreshHealth(string healthPath, TimeSpan timeout)
@@ -570,36 +604,36 @@ bool WaitForFreshHealth(string healthPath, TimeSpan timeout)
     return false;
 }
 
-void WaitForServiceStopped(string name, TimeSpan timeout)
+void WaitForServiceStopped(string serviceName, TimeSpan timeout)
 {
-    var deadline = DateTimeOffset.UtcNow + timeout;
-
-    while (DateTimeOffset.UtcNow < deadline)
+    var elapsed = Stopwatch.StartNew();
+    while (elapsed.Elapsed < timeout)
     {
+        var remaining = timeout - elapsed.Elapsed;
+        if (remaining <= TimeSpan.Zero) break;
         var result = RunProcess(
-            "sc.exe",
-            new[] { "query", name },
-            capture: true,
-            allowFailure: true);
-
-        if (result.ExitCode != 0 ||
-            result.Output.Contains(
-                "STOPPED",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        Thread.Sleep(500);
+            "sc.exe", new[] { "query", serviceName },
+            capture: true, allowFailure: true, timeout: remaining);
+        if (result.ExitCode == 1060) return; // ERROR_SERVICE_DOES_NOT_EXIST
+        if (result.ExitCode != 0)
+            throw new InvalidOperationException($"Could not confirm that {serviceName} stopped (query exit code {result.ExitCode}).");
+        if (result.Output.Contains("STOPPED", StringComparison.OrdinalIgnoreCase)) return;
+        remaining = timeout - elapsed.Elapsed;
+        if (remaining > TimeSpan.Zero)
+            Thread.Sleep(remaining < TimeSpan.FromMilliseconds(500) ? remaining : TimeSpan.FromMilliseconds(500));
     }
+    throw new TimeoutException($"Timed out waiting for {serviceName} to stop.");
 }
 
 ProcessResult RunProcess(
     string file,
     IEnumerable<string> arguments,
     bool capture = false,
-    bool allowFailure = false)
+    bool allowFailure = false,
+    TimeSpan? timeout = null)
 {
+    var budget = timeout ?? TimeSpan.FromSeconds(30);
+    if (budget <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
     var psi = new ProcessStartInfo
     {
         FileName = file,
@@ -608,34 +642,46 @@ ProcessResult RunProcess(
         RedirectStandardOutput = capture,
         RedirectStandardError = capture
     };
-
-    foreach (var argument in arguments)
-        psi.ArgumentList.Add(argument);
-
+    foreach (var argument in arguments) psi.ArgumentList.Add(argument);
     using var process = Process.Start(psi)
         ?? throw new InvalidOperationException($"Could not start {file}.");
-
-    var outputTask = capture
-        ? process.StandardOutput.ReadToEndAsync()
-        : Task.FromResult("");
-
-    var errorTask = capture
-        ? process.StandardError.ReadToEndAsync()
-        : Task.FromResult("");
-
-    process.WaitForExit();
-
+    using var deadline = new CancellationTokenSource(budget);
+    var outputTask = capture ? ReadProcessOutputAsync(process.StandardOutput, deadline.Token) : Task.FromResult("");
+    var errorTask = capture ? ReadProcessOutputAsync(process.StandardError, deadline.Token) : Task.FromResult("");
+    try
+    {
+        Task.WhenAll(process.WaitForExitAsync(deadline.Token), outputTask, errorTask).GetAwaiter().GetResult();
+    }
+    catch (OperationCanceledException)
+    {
+        try { process.Kill(entireProcessTree: true); } catch { }
+        throw new TimeoutException($"{file} timed out after {budget.TotalSeconds:0.###} seconds.");
+    }
     var output = outputTask.GetAwaiter().GetResult();
     var error = errorTask.GetAwaiter().GetResult();
-
     if (process.ExitCode != 0 && !allowFailure)
     {
+        var detail = error.Trim();
+        if (detail.Length > 2048) detail = detail[..2048];
         throw new InvalidOperationException(
             $"{file} failed with exit code {process.ExitCode}" +
-            (string.IsNullOrWhiteSpace(error) ? "" : $": {error.Trim()}"));
+            (detail.Length == 0 ? "" : $": {detail}"));
     }
-
     return new ProcessResult(process.ExitCode, output, error);
+}
+
+async Task<string> ReadProcessOutputAsync(StreamReader reader, CancellationToken ct)
+{
+    const int maxChars = 64 * 1024;
+    var retained = new StringBuilder();
+    var buffer = new char[4096];
+    while (true)
+    {
+        var count = await reader.ReadAsync(buffer.AsMemory(), ct);
+        if (count == 0) return retained.ToString();
+        var keep = Math.Min(count, maxChars - retained.Length);
+        if (keep > 0) retained.Append(buffer, 0, keep);
+    }
 }
 
 bool IsAdministrator()

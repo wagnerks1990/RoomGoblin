@@ -115,7 +115,7 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
       <a class="studio-back" href="/controller/">← RoomGoblin</a>
       <div data-brand-lockup></div>
       <h1>Display studio</h1>
-      <div class="muted">Choose screens, create content, and send it to the room. • v1.0.0-alpha.84</div>
+      <div class="muted">Choose screens, create content, and send it to the room. • v1.0.0-alpha.85</div>
     </div>
     <div id="conn" class="muted" role="status">Connecting…</div>
   </div>
@@ -463,6 +463,8 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
             <div><label>Lighting alias</label><input id="configLight" aria-label="Display lighting alias" type="text"></div>
           </div>
           <label>Tags</label><input id="configTags" aria-label="Display tags" type="text" placeholder="classroom,hallway">
+          <label for="configAudioScope">Audio priority</label><select id="configAudioScope"><option value="room">Classroom (shared)</option><option value="independent">Independent (hallway)</option></select>
+          <p class="muted">Independent display audio does not pause classroom music or take over classroom scheduling. Morning Announcements still have priority. This does not change routing or schedule targets.</p>
           <label><input id="configEnabled" type="checkbox" checked> Enabled</label>
           <div class="toolbar"><button class="primary" onclick="saveDeviceConfig()">Save Display</button></div>
 
@@ -886,23 +888,36 @@ window.routeSelected=async()=>{for(const id of selected)await cmd('av.route',id,
 
 function rgba(hex,a){const n=parseInt(hex.replace('#',''),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
 
-let mediaUploadAbort=null,mediaUploadFile=null;
+let mediaUploadAbort=null,mediaUploadFile=null,mediaUploadGeneration=0;
 async function uploadFile(f){
-  mediaUploadFile=f;mediaUploadAbort=new AbortController();el('uploadPause').style.display='';el('uploadCancel').style.display='';el('uploadStatus').textContent='Preparing upload…';
-  try{const j=await RoomGoblinUpload.upload(f,{signal:mediaUploadAbort.signal,onProgress:p=>{el('uploadStatus').textContent=`Uploading ${p.percent}%`}}),file=j.file;el('mediaUrl').value=file.url;el('uploadStatus').textContent='Uploaded: '+file.originalName;el('uploadCancel').style.display='none';await loadMedia();setResultSummary(`✓ Uploaded ${file.originalName}`,true,j)}
-  catch(e){el('uploadStatus').textContent=e.name==='AbortError'?'Paused — select Upload / Resume to continue':e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}
-  finally{mediaUploadAbort=null;el('uploadPause').style.display='none'}
+  const generation=++mediaUploadGeneration;mediaUploadAbort?.abort();const controller=new AbortController();mediaUploadFile=f;mediaUploadAbort=controller;el('uploadPause').style.display='';el('uploadCancel').style.display='';el('uploadStatus').textContent='Preparing upload…';
+  try{const j=await RoomGoblinUpload.upload(f,{signal:controller.signal,onProgress:p=>{if(generation===mediaUploadGeneration)el('uploadStatus').textContent=`Uploading ${p.percent}%`}}),file=j.file;if(generation!==mediaUploadGeneration)return;el('mediaUrl').value=file.url;el('uploadStatus').textContent='Uploaded: '+file.originalName;el('uploadCancel').style.display='none';mediaUploadFile=null;await loadMedia();if(generation===mediaUploadGeneration)setResultSummary(`✓ Uploaded ${file.originalName}`,true,j)}
+  catch(e){if(generation===mediaUploadGeneration){el('uploadStatus').textContent=e.name==='AbortError'?'Paused — select Upload / Resume to continue':e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}}
+  finally{if(generation===mediaUploadGeneration){mediaUploadAbort=null;el('uploadPause').style.display='none'}}
 }
 window.pauseMediaUpload=()=>mediaUploadAbort?.abort();
-window.cancelMediaUpload=async()=>{mediaUploadAbort?.abort();if(mediaUploadFile)await RoomGoblinUpload.cancel(mediaUploadFile);el('uploadStatus').textContent='Upload cancelled';el('uploadCancel').style.display='none'};
+window.cancelMediaUpload=async()=>{const file=mediaUploadFile,generation=++mediaUploadGeneration;mediaUploadAbort?.abort();mediaUploadAbort=null;el('uploadPause').style.display='none';try{const result=file?await RoomGoblinUpload.cancel(file):{completed:null};if(generation!==mediaUploadGeneration)return;el('uploadStatus').textContent=result?.completed===true?'Upload already saved; it is in the media library':result?.completed===false?'Upload cancelled':'Upload session closed; check the media library';el('uploadCancel').style.display='none';mediaUploadFile=null;if(result?.completed!==false)await loadMedia()}catch(error){if(generation===mediaUploadGeneration){el('uploadStatus').textContent=`Cancel failed: ${error.message}`;el('uploadCancel').style.display='';setResultSummary('✕ Cancel failed: '+error.message,false,{error:error.message})}}};
 window.uploadMedia=async()=>{const f=el('upload').files[0];if(f)await uploadFile(f)};
 const dz=el('dropZone');
 dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag')};
 dz.ondragleave=()=>dz.classList.remove('drag');
 dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag');if(e.dataTransfer.files[0])uploadFile(e.dataTransfer.files[0])};
 
+let mediaLibraryGeneration=0;
+window.showLibraryMedia=async file=>{
+ try{
+  const target=targetArg(),label=file.originalName||file.storedName||'Uploaded media';
+  const body={target,fit:el('mediaFit').value,opacity:Number(el('mediaOpacity').value),autoplay:el('videoAutoplay').checked,loop:el('videoLoop').checked,muted:el('videoMuted').checked,localDirect:el('mediaLocalDirect').checked};
+  el('mediaUrl').value=file.url;
+    const j=await api(`/api/v1/media/${encodeURIComponent(file.storedName)}/display`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    setResultSummary(`✓ ${label} sent to ${Array.isArray(target)?target.join(', '):target}`,true,j);
+  }catch(e){setResultSummary('✕ '+e.message,false,{error:e.message})}
+};
 window.loadMedia=async()=>{
-  const j=await api('/api/v1/media'),w=el('mediaGrid');w.innerHTML='';
+ const generation=++mediaLibraryGeneration;
+ try{
+  const j=await api('/api/v1/media');if(generation!==mediaLibraryGeneration)return;
+  const w=el('mediaGrid');w.innerHTML='';
   for(const f of j.files||[]){
     const card=document.createElement('div');card.className='mediaCard';
     const thumb=document.createElement('div');thumb.className='mediaThumb';
@@ -915,9 +930,10 @@ window.loadMedia=async()=>{
     const m=document.createElement('div');m.className='mediaMeta';m.textContent=`${f.type} • ${(f.size/1024/1024).toFixed(1)} MB`;
     const tb=document.createElement('div');tb.className='toolbar';
     const use=document.createElement('button');use.textContent='Select';use.onclick=()=>{el('mediaUrl').value=f.url;setResultSummary(`Selected ${label}`,true,f)};
-    const show=document.createElement('button');show.textContent=f.type==='video'?'Play':'Show';show.onclick=()=>{el('mediaUrl').value=f.url;sendMedia(f.type==='video'?'display.video':'display.image')};
+    const show=document.createElement('button');show.textContent=f.type==='video'?'Play':'Show';show.onclick=()=>showLibraryMedia(f);
     tb.append(use,show);body.append(n,m,tb);card.append(thumb,body);w.appendChild(card);
   }
+ }catch(e){if(generation===mediaLibraryGeneration){el('mediaGrid').textContent='Unable to load media library: '+e.message;setResultSummary('✕ '+e.message,false,{error:e.message})}}
 };
 
 window.loadScenes=async()=>{
@@ -977,10 +993,10 @@ function setupSettings(){
 function loadDeviceConfig(){
   const id=el('configDevice').value,d=devices[id];if(!d)return;
   el('configName').value=d.name||'';el('configAv').value=d.avOutput||'';el('configLight').value=d.lightingAlias||'';
-  el('configTags').value=(d.tags||[]).join(',');el('configEnabled').checked=d.enabled!==false;
+  el('configTags').value=(d.tags||[]).join(',');el('configEnabled').checked=d.enabled!==false;el('configAudioScope').value=d.audioScope==='independent'?'independent':'room';
 }
 window.saveDeviceConfig=async()=>{
-  const id=el('configDevice').value,body={name:el('configName').value,avOutput:Number(el('configAv').value),lightingAlias:el('configLight').value||null,tags:el('configTags').value.split(',').map(x=>x.trim()).filter(Boolean),enabled:el('configEnabled').checked};
+  const id=el('configDevice').value,body={name:el('configName').value,avOutput:Number(el('configAv').value),lightingAlias:el('configLight').value||null,tags:el('configTags').value.split(',').map(x=>x.trim()).filter(Boolean),enabled:el('configEnabled').checked,audioScope:el('configAudioScope').value};
   const j=await api(`/api/v1/config/devices/${encodeURIComponent(id)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   devices[id]=j.device;renderTargets(window._status);setupPreview();setupSettings();setResultSummary(`✓ Updated ${id}`,true,j);
 };

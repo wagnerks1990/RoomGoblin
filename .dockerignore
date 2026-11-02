@@ -5,6 +5,9 @@ data
 backups
 node_modules
 **/node_modules
+windows-agent/**/bin
+windows-agent/**/obj
+windows-agent/artifacts
 *.db
 *.sqlite
 *.sqlite3

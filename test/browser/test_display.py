@@ -173,7 +173,12 @@ class DisplayBrowserTests(unittest.TestCase):
             encoded=base64.b64encode((ROOT/'public/display/fonts'/name).read_bytes()).decode()
             css=css.replace('/display/fonts/'+name,'data:font/ttf;base64,'+encoded)
         html=re.sub(r'<link rel="stylesheet" href="/display/layout.css[^"]*">',lambda _: '<style>'+css+'</style>',html)
-        html=re.sub(r'<link rel="stylesheet" href="/shared/attribution.css">','',html)
+        attribution=(ROOT/'public/shared/attribution.css').read_text()
+        html=re.sub(r'<link rel="stylesheet" href="/shared/attribution.css[^"]*">',lambda _: '<style>'+attribution+'</style>',html)
+        for name in ['scene.js', 'scene.css']:
+            source=(ROOT/'public/shared'/name).read_text()
+            tag=f'<script src="/shared/{name}"></script>' if name.endswith('.js') else f'<link rel="stylesheet" href="/shared/{name}">'
+            html=html.replace(tag, '<script>'+source+'</script>' if name.endswith('.js') else '<style>'+source+'</style>')
         loc="{pathname:'/display/tv7',protocol:'http:',host:'127.0.0.1:31337',origin:'http://127.0.0.1:31337',search:'',hash:'',href:'http://127.0.0.1:31337/display/tv7'}"
         def shared(match):
             name=match[1]
@@ -181,10 +186,13 @@ class DisplayBrowserTests(unittest.TestCase):
             return '<script>(function(location){'+source+'})('+loc+');</script>'
         html=re.sub(r'<script src="/shared/(branding.js|attribution.js)[^"]*" defer></script>',shared,html)
         module=(ROOT/'public/display/layout.mjs').read_text().replace('export ','')
+        timer_module=(ROOT/'public/display/timer-effects.mjs').read_text().replace('export ','')
+        html=html.replace('<script src="/shared/timer-effects.js"></script>','<script>'+(ROOT/'public/shared/timer-effects.js').read_text()+'</script>')
+        html=html.replace('<link rel="stylesheet" href="/display/timer-effects.css">','<style>'+(ROOT/'public/display/timer-effects.css').read_text()+'</style>')
         common=(ROOT/'public/shared/common.js').read_text().replace('export ','')
         security=(ROOT/'public/display/security.mjs').read_text().replace('export ','')
         html=re.sub(r'^import .*?;?$', '', html, flags=re.M)
-        html=html.replace('<script type="module">', '<script type="module">const location='+loc+';'+module+common+security+';class SendspinPlayer {}')
+        html=html.replace('<script type="module">', '<script type="module">const location='+loc+';'+module+timer_module+common+security+';class SendspinPlayer {}')
         page.set_content(html,wait_until='load')
 
     def reload_renderer(self, page):
@@ -233,6 +241,139 @@ class DisplayBrowserTests(unittest.TestCase):
         # Compare untransformed DOM geometry, not round-tripped paint coordinates.
         # Firefox quantizes transformed rects; containment still checks those rects.
         return {name:(round(p['font'],2),*[p['logicalBox'][d] for d in ['x','y','w','h']]) for name,p in data['parts'].items()}
+
+    def test_manual_content_clear_removes_scene_timer_blackout_and_web_audio(self):
+        page = self.page()
+        scene = {'width': 1920, 'height': 1080, 'layers': [
+            {'id': 'old', 'type': 'text', 'text': 'Old scene', 'fontSize': 60}]}
+        state = copy.deepcopy(P7)
+        state.update(textOptions={'scene': scene}, presentationBlack=True,
+                     layers=[{'id': 'old-overlay', 'expiresAt': NOW + 60000, 'scene': scene}],
+                     media={'type': 'web', 'url': '/document-viewer/', 'forceAudio': True})
+        self.replay(page, state)
+        page.evaluate("window.__oldFrame=document.querySelector('#media iframe')")
+        self.command(page, 'display.identify', {'durationMs': 30000})
+        # This is the legacy-compatible sequence emitted by both manual entry points.
+        self.command(page, 'display.clear', {})
+        self.command(page, 'display.image', {'url': '/test-images/tv1.svg'})
+        result = page.evaluate("""() => ({
+            oldFrameConnected:__oldFrame.isConnected, oldFrameUrl:__oldFrame.src,
+            layers:document.querySelectorAll('#sceneBase > *, #sceneShared > *').length,
+            text:['title','subtitle','text'].map(id=>document.getElementById(id).textContent),
+            timer:getComputedStyle(document.getElementById('timerOverlay')).display,
+            black:getComputedStyle(document.getElementById('presentationBlack')).display,
+            identify:getComputedStyle(document.getElementById('identify')).display,
+            media:[...document.getElementById('media').children].map(n=>n.tagName)
+        })""")
+        self.assertFalse(result['oldFrameConnected'])
+        self.assertEqual(result['oldFrameUrl'], 'about:blank')
+        self.assertEqual(result['layers'], 0)
+        self.assertEqual(result['text'], ['', '', ''])
+        for key in ['timer', 'black', 'identify']:
+            self.assertEqual(result[key], 'none')
+        self.assertEqual(result['media'], ['IMG'])
+        self.assertFalse(self.errors)
+
+    def test_retired_video_cannot_resume_audio_or_report_successor_ended(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/old.mp4', 'sessionId': 'old', 'autoplay': False})
+        page.evaluate("""() => {
+            const video=window.__oldVideo=document.querySelector('#media video');
+            window.__lateCanPlay=video.oncanplay; window.__lateEnded=video.onended;
+            window.__playCount=0;
+            video.play=()=>{window.__playCount++;return new Promise(resolve=>window.__finishPlay=resolve)};
+        }""")
+        # Replay keeps the same session; its play promise is still pending on replacement.
+        self.replay(page, {'media': {'type': 'video', 'url': '/media/old.mp4', 'sessionId': 'old', 'autoplay': True}})
+        page.evaluate("window.__lateCanPlay()")
+        self.command(page, 'display.clear', {})
+        self.command(page, 'display.image', {'url': '/test-images/tv1.svg'})
+        page.evaluate("""async () => {
+            window.__sent=[];window.__badgeBefore=document.getElementById('badge').textContent;
+            __finishPlay();await Promise.resolve();__lateCanPlay();__lateEnded();
+            for(const name of ['error','loadedmetadata','playing'])__oldVideo.dispatchEvent(new Event(name));
+        }""")
+        page.wait_for_timeout(180)
+        self.assertEqual(page.evaluate("__playCount"), 1)
+        self.assertTrue(page.evaluate("__oldVideo.paused && __oldVideo.muted && !__oldVideo.hasAttribute('src') && !__oldVideo.isConnected"))
+        self.assertEqual(page.evaluate("document.getElementById('badge').textContent"), page.evaluate("__badgeBefore"))
+        self.assertFalse(page.evaluate("__sent.some(m=>m.type==='display.media.ended'||m.type==='display.media.status')"))
+        self.assertEqual(page.locator('#media img').count(), 1)
+        self.assertFalse(self.errors)
+
+    def test_media_controls_and_same_session_replay_keep_video_element(self):
+        page = self.page()
+        media = {'type': 'video', 'url': '/media/clip.mp4', 'sessionId': 'live', 'autoplay': False, 'volume': .5}
+        self.replay(page, {'media': media})
+        page.evaluate("window.__video=document.querySelector('#media video')")
+        self.command(page, 'display.media.control', {'action': 'volume', 'volume': .25})
+        self.command(page, 'display.media.control', {'action': 'pause'})
+        self.assertEqual(page.evaluate('__video.volume'), .25)
+        self.replay(page, {'media': {**media, 'volume': .25}})
+        self.assertTrue(page.evaluate("__video===document.querySelector('#media video')"))
+        self.assertEqual(page.evaluate('__video.volume'), .25)
+        self.assertFalse(self.errors)
+
+    def test_explicit_play_starts_autoplay_disabled_video(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/manual.mp4', 'sessionId': 'manual', 'autoplay': False, 'muted': True})
+        page.evaluate("""() => {
+          const video=document.querySelector('#media video');window.__playCount=0;
+          video.play=()=>{window.__playCount++;return Promise.resolve()};
+        }""")
+        self.command(page, 'display.media.control', {'action': 'play'})
+        self.assertEqual(page.evaluate('__playCount'), 1)
+        self.command(page, 'display.media.control', {'action': 'pause'})
+        self.command(page, 'display.media.control', {'action': 'restart'})
+        self.assertEqual(page.evaluate('__playCount'), 2)
+        self.assertFalse(self.errors)
+
+    def test_pause_wins_over_pending_video_start(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/pending.mp4', 'sessionId': 'pending', 'autoplay': True})
+        page.evaluate("""() => {
+          const video=window.__video=document.querySelector('#media video');
+          window.__playCount=0;window.__paused=true;
+          Object.defineProperty(video,'paused',{get:()=>window.__paused});
+          video.pause=()=>{window.__paused=true};
+          video.play=()=>{window.__paused=false;window.__playCount++;return new Promise(resolve=>window.__finishPlay=resolve)};
+          video.oncanplay();
+        }""")
+        self.command(page, 'display.media.control', {'action': 'pause'})
+        page.evaluate('__finishPlay()')
+        page.wait_for_timeout(220)
+        self.assertEqual(page.evaluate('__playCount'), 1)
+        self.assertTrue(page.evaluate('__paused'))
+        page.evaluate('__video.oncanplay()')
+        self.assertEqual(page.evaluate('__playCount'), 1)
+        self.assertFalse(self.errors)
+
+    def test_cleared_image_cancels_pending_retry(self):
+        page = self.page()
+        requests = []
+        def unavailable(route):
+            requests.append(route.request.url)
+            route.fulfill(status=503, body='Unavailable fixture image')
+        page.route('**/media/retry.svg*', unavailable)
+        self.command(page, 'display.image', {'url': '/media/retry.svg'})
+        self.assertTrue(requests)
+        self.command(page, 'display.clear', {})
+        before = len(requests)
+        page.wait_for_timeout(1100)
+        self.assertEqual(len(requests), before)
+        self.assertEqual(page.locator('#media img').count(), 0)
+        self.assertFalse(self.errors)
+
+    def test_enrollment_handshake_survives_unavailable_browser_storage(self):
+        page = self.page()
+        page.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Storage unavailable','SecurityError')}})")
+        page.goto('http://127.0.0.1:31337/display/tv7#enrollmentToken=fixture-one-use-enrollment')
+        page.reload()
+        page.wait_for_function("window.__sent?.some(message=>message.type==='hello')")
+        hello = page.evaluate("__sent.find(message=>message.type==='hello')")
+        self.assertEqual(hello['enrollmentToken'], 'fixture-one-use-enrollment')
+        self.assertEqual(page.evaluate('location.hash'), '')
+        self.assertFalse(self.errors)
 
     def test_01_p6_p7_cross_resolution_and_reload(self):
         baseline={}
@@ -457,7 +598,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertLessEqual(title['font']*1.2,title['logicalBox']['h']+1)
         self.assertLessEqual(subtitle['font']*1.2,subtitle['logicalBox']['h']+1)
         self.assertLessEqual(timer['font']*1.98+8,timer['logicalBox']['h']+2)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261027-1')
 
     def test_16_timer_only_overlay_is_visible_and_positioned(self):
         page=self.page(1548,1266,1)
@@ -477,14 +618,14 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertGreaterEqual(timer['font'],24)
         self.assertGreater(timer['logicalBox']['y'],700)
         self.assertLess(timer['logicalBox']['h'],250)
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261027-1')
 
 
     def test_17_live_tv8_text_does_not_false_collapse(self):
         page=self.page(1548,1273,1)
         self.replay(page,TV8_LIVE_DYNAMIC)
         data=self.measure(page,'live-tv8-false-containment-regression')
-        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(data['diagnostics']['revision'],'dynamic-fit-20261027-1')
         for name in ['title','subtitle','body']:
             self.assertGreaterEqual(data['parts'][name]['font'],12, name)
             self.assertGreater(data['diagnostics']['components'][name]['scale'],0.95, name)
@@ -505,7 +646,7 @@ class DisplayBrowserTests(unittest.TestCase):
         self.command(page,'display.clear',{})
         self.replay(page,TV8_LIVE_DYNAMIC)
         second=self.measure(page,'transition-recovery-second')
-        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261012-1')
+        self.assertEqual(second['diagnostics']['revision'],'dynamic-fit-20261027-1')
         self.assertEqual(second['diagnostics']['components']['body']['status'],'fit')
         self.assertGreaterEqual(second['parts']['body']['font'],12)
         self.assertGreater(second['diagnostics']['components']['body']['scale'],0.95)
@@ -539,6 +680,132 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertTrue(result['visible'],'visible glyphs contained by the region must fit')
         self.assertFalse(result['clipped'],'a clipping child must still reject overflow')
         self.assertFalse(result['outsideRegion'],'glyphs must never escape the region')
+
+
+
+    def test_20_scene_layers_fit_across_receiver_shapes_and_reload(self):
+        scene = {'background': '#101d2c', 'layers': [
+            {'id': 'heading', 'type': 'text', 'text': 'Special school schedule', 'x': 6, 'y': 8,
+             'w': 88, 'h': 18, 'fontSize': 150, 'bold': True, 'glow': 12},
+            {'id': 'message', 'type': 'text', 'text': 'A clear announcement that remains fully visible on every receiver. ' * 6,
+             'x': 8, 'y': 30, 'w': 84, 'h': 40, 'fontSize': 140},
+            {'id': 'timer', 'type': 'widget', 'widget': 'countdown', 'x': 65, 'y': 80,
+             'w': 30, 'h': 14, 'fontSize': 96}],
+            'data': {'className': 'Example class', 'startAt': 1788970000000,
+                     'endAt': 1788970600000}}
+        for width, height in [(1280,720),(1920,1080),(3840,2160),(1280,800),(1024,768),(2560,1080),(1080,1920)]:
+            with self.subTest(width=width, height=height):
+                page = self.page(width,height)
+                self.replay(page, {'textOptions': {'scene': scene}, 'timer': {'visible': False}})
+                data = page.evaluate("""() => {
+                    const stage=document.getElementById('stage').getBoundingClientRect();
+                    const layers=[...document.querySelectorAll('#sceneBase .rg-scene-layer')].map(el=>{
+                        const r=el.getBoundingClientRect(),inner=el.firstChild,range=document.createRange();range.selectNodeContents(inner);
+                        return {font:parseFloat(getComputedStyle(inner).fontSize),left:r.left,right:r.right,top:r.top,bottom:r.bottom,
+                          clips:[...range.getClientRects()].some(q=>q.left<r.left-1||q.right>r.right+1||q.top<r.top-1||q.bottom>r.bottom+1),
+                          overflowing:inner.scrollWidth>el.clientWidth+1||inner.scrollHeight>el.clientHeight+1};
+                    });return {stage:{left:stage.left,right:stage.right,top:stage.top,bottom:stage.bottom},layers};
+                }""")
+                self.assertEqual(len(data['layers']),3)
+                for layer in data['layers']:
+                    self.assertFalse(layer['clips'],data)
+                    self.assertFalse(layer['overflowing'],data)
+                    self.assertGreaterEqual(layer['font'],12)
+                    self.assertGreaterEqual(layer['left'],data['stage']['left']-1)
+                    self.assertLessEqual(layer['right'],data['stage']['right']+1)
+                page.screenshot(path=str(OUTPUT/f'{self.engine}-scene-{width}x{height}.png'))
+                self.command(page,'display.clear',{})
+                self.replay(page, {'textOptions': {'scene': scene}})
+                self.assertEqual(page.locator('#sceneBase [data-layer-id]').count(),3)
+                self.assertFalse(self.errors,self.errors)
+
+    def test_21_shared_layers_preserve_media_node_and_expire(self):
+        page = self.page()
+        self.command(page,'display.video',{'url':'/media/fixture.webm','muted':True,'loop':True,'sessionId':'native-session'})
+        page.evaluate("window.sceneMediaBefore=document.querySelector('#media video')")
+        layer={'id':'global','expiresAt':1788970000100,'scene':{'transparent':True,'layers':[
+            {'id':'notice','type':'text','text':'Shared notice','x':5,'y':80,'w':90,'h':10}]}}
+        self.command(page,'display.layers',{'layers':[layer]})
+        self.assertEqual(page.locator('#sceneShared [data-layer-id]').count(),1)
+        self.assertTrue(page.evaluate("window.sceneMediaBefore === document.querySelector('#media video')"))
+        page.evaluate('window.__now+=200')
+        page.wait_for_timeout(150)
+        self.assertEqual(page.locator('#sceneShared [data-layer-id]').count(),0)
+        self.assertTrue(page.evaluate("window.sceneMediaBefore === document.querySelector('#media video')"))
+        self.assertFalse(self.errors,self.errors)
+
+    def test_22_weather_updates_shared_widgets_without_replacing_media(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/fixture.webm', 'muted': True, 'loop': True, 'sessionId': 'weather-native-session'})
+        page.evaluate("window.weatherMediaBefore=document.querySelector('#media video')")
+        page.route('**/api/v1/weather/display*', lambda route: route.fulfill(json={'ok': True, 'weather': {
+            'text': 'Updated weather', 'widgets': {'weather-temperature': '80°F', 'weather-condition': 'Clear'},
+            'updatedAt': NOW, 'source': 'Weather data: Open-Meteo · CC BY 4.0'}}))
+        self.command(page, 'display.layers', {'layers': [{'id': 'weather', 'expiresAt': NOW + 3600000, 'scene': {
+            'transparent': True, 'data': {'weather': 'Old weather', 'weatherUpdatedAt': NOW}, 'layers': [
+                {'id': 'weather', 'type': 'widget', 'widget': 'weather', 'weatherFields': ['temperature', 'condition'],
+                 'x': 55, 'y': 70, 'w': 44, 'h': 10, 'fontSize': 32}]}}]})
+        page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+        page.wait_for_function("document.querySelector('#sceneShared [data-layer-id=weather]')?.textContent.includes('80°F')")
+        self.assertNotIn('Open-Meteo', page.locator('#sceneShared [data-layer-id=weather]').inner_text())
+        self.assertIn('Open-Meteo', page.locator('#sceneShared .rg-weather-credit').inner_text())
+        self.assertTrue(page.evaluate("window.weatherMediaBefore === document.querySelector('#media video')"))
+        self.assertFalse(self.errors, self.errors)
+
+
+    def test_23_reduced_motion_scene_text_survives_action_changes(self):
+        body = ('*Read the classroom instructions and place your materials in the designated storage area '
+                'before starting the lesson or beginning the assigned activity.  \n\n'
+                '*Check that all equipment is ready before starting the assigned activity.\n\n'
+                '*Read the directions carefully and ask for help when necessary. ')
+        scene = {'background': '#101d2c', 'layers': [
+            {'id': 'title', 'type': 'text', 'text': 'Classroom reminders',
+             'x': 5, 'y': 4, 'w': 90, 'h': 18, 'fontSize': 88, 'bold': True},
+            {'id': 'body', 'type': 'text', 'text': body,
+             'x': 6, 'y': 25, 'w': 88, 'h': 40, 'fontSize': 50},
+            {'id': 'subtitle', 'type': 'text', 'text': 'Be ready to begin',
+             'x': 6, 'y': 70, 'w': 88, 'h': 8, 'fontSize': 38}]}
+        state = {'textOptions': {'scene': scene}, 'timer': copy.deepcopy(P7['timer'])}
+        # This uses the real reduced-motion stylesheet and browser layout, not
+        # mocked measurements. A nonzero global transition duration used to
+        # animate font-size during the synchronous fit loop, collapsing Body.
+        for width, height, dpr in [(1280,720,1), (1920,1080,1), (3840,2160,1), (800,1200,2)]:
+            with self.subTest(width=width, height=height, dpr=dpr):
+                page = self.page(width, height, dpr)
+                def assert_scene():
+                    data = page.evaluate("""() => [...document.querySelectorAll('#sceneBase .rg-scene-layer')].map(box=>{
+                        const el=box.firstChild,r=box.getBoundingClientRect(),range=document.createRange();
+                        range.selectNodeContents(el);const s=getComputedStyle(el);
+                        return {id:box.dataset.layerId,text:el.textContent,font:parseFloat(s.fontSize),transform:s.transform,
+                            clips:[...range.getClientRects()].some(q=>q.width>0&&q.height>0&&(q.left<r.left-.75||q.right>r.right+.75||q.top<r.top-.75||q.bottom>r.bottom+.75))};
+                    })""")
+                    self.assertEqual(len(data), 3)
+                    self.assertEqual(data[1]['text'], body)
+                    for layer in data:
+                        self.assertGreaterEqual(layer['font'], 24, data)
+                        self.assertEqual(layer['transform'], 'none', data)
+                        self.assertFalse(layer['clips'], data)
+                    self.assertFalse(self.errors, self.errors)
+                    return [layer['font'] for layer in data]
+                self.replay(page, state)
+                normal_fonts = assert_scene()
+                page.emulate_media(reduced_motion='reduce')
+                # Actual action-to-action commands, with no reload between them.
+                for _ in range(2):
+                    self.command(page, 'display.text', {'scene': {'layers': [
+                        {'id': 'body', 'type': 'text', 'text': 'First action', 'fontSize': 50}]}})
+                    self.command(page, 'display.text', {'scene': scene})
+                    self.assertEqual(assert_scene(), normal_fonts)
+                self.command(page, 'display.clear', {})
+                self.replay(page, state)
+                self.assertEqual(assert_scene(), normal_fonts)
+                page.set_viewport_size({'width': width + 17, 'height': height + 23})
+                self.settle(page)
+                assert_scene()
+                self.reload_renderer(page)
+                self.replay(page, state)
+                assert_scene()
+                page.screenshot(path=str(OUTPUT/f'{self.engine}-reduced-motion-scene-{width}x{height}.png'))
 
 
 if __name__ == '__main__':

@@ -2,6 +2,17 @@
 
 ## Veyon
 
+During Full Recovery snapshot acquisition/freeze, Veyon views and administrator
+config/keyring reads temporarily return HTTP 423. These reads can persist computer
+identities, hostnames and key preferences, so recovery waits for accepted requests
+to finish and pauses new requests until thaw. The maintenance inventory mirror
+follows this policy; the separate token-protected maintenance config read remains
+available. Retry the view after the export finishes.
+
+Idle connection cleanup pauses during export freeze/shutdown, and accepted
+cleanup drains before those boundaries complete. Removing a computer still
+responds promptly while its tracked connection close retains the final audit.
+
 RoomGoblin uses the native Ubuntu Veyon services when they are already installed:
 
 ```text

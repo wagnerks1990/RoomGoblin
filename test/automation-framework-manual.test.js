@@ -7,7 +7,7 @@ const controller=fs.readFileSync("public/controller/app.js","utf8");
 
 test("manual automation tests do not weaken scheduled class-date enforcement",()=>{
   assert.match(server,/async function runAutomationTimerOverlay\(event,\{manual=false,commandSource="automation",targetsOverride=null,endAtOverride=null\}=\{\}\)/);
-  assert.match(server,/if\(!manual&&!classScheduleMatchesDate\(cls,now\)\)/);
+  assert.match(server,/if\(!manual&&!classScheduleMatchesDate\(cls,resolvedClassReferenceDate\(event,now\)\)\)/);
   assert.match(server,/runAutomationTimerOverlay\(event,\{manual,targetsOverride:sourceTargets,endAtOverride:manualOverlayEndAt\}\)/);
   assert.match(server,/resolveAutomationForManualTest\(event\)/);
 });
@@ -51,8 +51,10 @@ test("continuous scheduled automations recover after restart or operator resume"
   assert.match(server,/sequenceHasContinuousActions\(automationActionSequence\(event\)\)/);
   assert.match(server,/continuousRecovery=await recoverContinuousAutomationOccurrences\("operator-resume"\)/);
   assert.match(server,/recoverContinuousAutomationOccurrences\("startup-reconcile"\)/);
-  assert.match(server,/latest\?\.status==="cancelled"/);
-  assert.match(server,/status:cancelled\?"cancelled":"failed"/);
+  const recovery=server.slice(server.indexOf("async function recoverContinuousAutomationOccurrences("),server.indexOf("async function reconcileScheduledAutomationState("));
+  assert.match(recovery,/cancelled=automationRunLedger\.cancelledOccurrenceIds\(\)/);
+  assert.match(recovery,/if\(cancelled\.has\(id\)\|\|event\._planningBlockId&&cancelled\.has\(occurrenceId\(\{\.\.\.event,_planningBlockId:null\},dateKey,event\.time\)\)\)continue/);
+  assert.match(server,/status:cancelled\?"cancelled":interrupted\?"interrupted":"failed"/);
 });
 
 test("automation trace recording appends without recursive helper calls",()=>{
@@ -85,7 +87,7 @@ test("any manual run replaces overlapping managed manual loops",()=>{
 
 test("continuous recovery only restarts current winners",()=>{
   assert.match(server,/function currentContinuousRecoveryWinnerIdentities\(now=schedulerClock\.now\(\)\)/);
-  assert.match(server,/for\(const candidate of currentAutomationDisplayWinners\(now\)\)/);
-  assert.match(server,/for\(const candidate of currentAutomationNonDisplayWinners\(now\)\)/);
+  assert.match(server,/for\(const candidate of currentAutomationDisplayWinners\(now,\{forRecoveryOwnership:true\}\)\)/);
+  assert.match(server,/for\(const candidate of currentAutomationNonDisplayWinners\(now,\{forRecoveryOwnership:true\}\)\)/);
   assert.match(server,/if\(!winnerIdentities\.has\(automationOccurrenceIdentity\(storedEvent,event\)\)\)continue/);
 });

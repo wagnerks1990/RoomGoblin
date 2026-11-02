@@ -23,8 +23,8 @@ function harness({devices,locked=[],reply,enabled=true}={}){
   const commands=[],otherCommands=[],audits=[];
   const cancelled=new Set();
   const context=vm.createContext({
-    ...schema,...runtime,devices,Date,Set,Map,setTimeout,clearTimeout,
-    schedulerClock:{now:()=>new Date("2026-10-08T19:00:00Z")},
+    ...schema,...runtime,devices,Date,performance,Set,Map,setTimeout,clearTimeout,shuttingDown:false,
+    schedulerClock:{now:()=>new Date("2026-10-08T19:00:00Z"),commandsAllowed:()=>true},
     automationTargetDomain:runtime.actionResourceDomain,
     normalizeTimerOverlay:()=>null,
     expandAutomationPayload:payload=>plain(payload),
@@ -45,7 +45,7 @@ function harness({devices,locked=[],reply,enabled=true}={}){
     audit:entry=>audits.push(plain(entry)),
     diagnosticError:()=>{}
   });
-  vm.runInContext(
+  vm.runInContext(productionFunction("function configuredDisplayId(","function cookieValue(")+"\n"+
     productionFunction("async function runSingleAutomationAction","function timerLinkedClassChain")+"\n"+
     productionFunction("async function runClassroomAutomation","function safeStoredName"),context);
   return {

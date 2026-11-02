@@ -5,7 +5,7 @@ const express=require("express"),{rateLimit}=require("express-rate-limit");
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8");
 function limiters(){
   const start=source.indexOf("const musicAssistantStatusLimit=rateLimit({");
-  const end=source.indexOf('app.get("/api/v1/music-assistant/status",',start);
+  const end=source.indexOf('app.get("/api/v1/music-assistant/background",',start);
   assert.ok(start>=0&&end>start);
   return vm.runInNewContext(source.slice(start,end)+";[musicAssistantStatusLimit,musicAssistantMutationLimit]",{rateLimit},{timeout:1000});
 }

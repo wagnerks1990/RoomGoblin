@@ -4,7 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const app = fs.readFileSync('public/controller/app.js', 'utf8');
-const lighting = app.slice(app.indexOf('async function loadGovee()'), app.indexOf("const days=['Sun'"));
+const lightingStart = app.indexOf('let goveeInventoryRequest=');
+const lightingEnd = app.indexOf("const days=['Sun'", lightingStart);
+assert.ok(lightingStart >= 0 && lightingEnd > lightingStart, 'actual Lighting source boundaries must exist');
+const lighting = app.slice(lightingStart, lightingEnd);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
 test('lighting cards escape names and aliases while retaining command routes and settings IDs', () => {

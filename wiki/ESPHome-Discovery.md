@@ -13,3 +13,8 @@ If an encrypted key has been lost, recovery requires a device-side firmware/OTA 
 Same-subnet mDNS works with RoomGoblin's host-network deployment. Routed VLANs may require an mDNS reflector. Discovery may show mDNS hostnames and IPv6 addresses, but the current control endpoint remains a pinned private IPv4 address plus hardware MAC; hostname/IPv6 enrollment is follow-up work.
 
 Discovery is administrator-only, rate-limited, bounded, briefly cached, read-only, and has no access to stored ESPHome credentials. See `docs/ESPHOME-DISCOVERY.md` for the complete security and operating contract.
+
+New scans and cached discovery requests pause with HTTP 423 during a Full Recovery
+export. Retry after the export finishes. Already accepted discovery drains before
+freeze acknowledgment or shutdown; its audit record follows the normal deferred
+write policy during a freeze. Closing the manager prevents new discovery work.

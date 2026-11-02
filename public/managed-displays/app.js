@@ -1,15 +1,58 @@
 "use strict";
 const $=id=>document.getElementById(id);let state={devices:[],profiles:[],adbAvailable:false},refreshTimer=null,refreshBusy=false;
-async function api(path,opt={}){const r=await fetch(`/api/v1/maintenance${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});const text=await r.text();let j={};try{j=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}if(!r.ok||j.ok===false){const error=Error(j.error||`HTTP ${r.status}`);error.payload=j;error.httpStatus=r.status;throw error}return j}
+let enrollmentBusy=false,editVersion=0;
+let inventoryVersion=0,inventoryRead=null,inventoryProbeAgents=true;
+let shotVersion=0,shotDevice=null,terminalVersion=0;
+const editingDevices=new Set(),deviceMessages=new Map();
+const deviceOperations=new Map(),controlStates=new WeakMap();
+async function api(path,opt={}){const {response:r,value:text}=await RoomGoblinRequest.read(`/api/v1/maintenance${path}`,{credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json",...(opt.headers||{})},...opt});let j={};try{j=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}if(!r.ok||j.ok===false){const error=Error(j.error||`HTTP ${r.status}`);error.payload=j;error.httpStatus=r.status;throw error}return j}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function deviceById(id){return state.devices.find(d=>String(d.id)===String(id))}
+function applyLifecycleResult(id,action,result){
+  id=String(id);
+  const confirmed=action==='remove'
+    ? result?.removed===true&&String(result.deviceId)===id
+    : ['enable','disable'].includes(action)&&result?.removed===false&&String(result.device?.id)===id&&result.device.enabled===(action==='enable');
+  if(!confirmed)throw Error('Enrollment change was not confirmed. Refresh inventory before trying again.');
+  const focused=document.activeElement,restoreFocus=focused===document.body||(focused?.dataset?.lifecycleAction===action&&focused.closest('.card[data-id]')?.dataset.id===id);
+  inventoryVersion++;
+  if(action==='remove')state.devices=state.devices.filter(d=>String(d.id)!==id);
+  else{const current=deviceById(id);if(current)current.enabled=action==='enable'}
+  deviceMessage(id,action==='remove'?'Enrollment removed.':`Enrollment ${action==='enable'?'enabled':'disabled'}.`);
+  render();
+  if(action==='remove'&&$("editDialog").open&&$("editId").value===id){
+    $("editMsg").textContent='This enrollment was removed. Your unsaved draft is still shown.';updateEditAvailability();
+  }
+  if(restoreFocus)restoreDeviceFocus(id,'edit');
+}
 function profileFor(d){return state.profiles.find(p=>p.id===d.profileId)||null}
 function agentStatusHtml(d){const s=d.agentStatus;if(!s)return state.adbAvailable?'<span class="agent-state pending">Checking…</span>':'<span class="agent-state warn">ADB offline</span>';if(s.starting)return `<span class="agent-state pending">Starting…</span>${s.version?` <small>v${esc(s.version)}</small>`:''}`;if(s.error)return `<span class="agent-state bad">Unavailable</span> <small>${esc(s.error)}</small>`;if(!s.installed)return '<span class="agent-state bad">Not installed</span>';const run=s.running?'<span class="agent-state ok">Running</span>':'<span class="agent-state warn">Installed · stopped</span>';return `${run}${s.version?` <small>v${esc(s.version)}</small>`:''}`}
 function deviceStateHtml(d){if(d.uiRecovering)return '<span class="pill warn">Recovering…</span>';return `<span class="pill ${d.lastStatus?.online===true?'ok':'bad'}">${d.lastStatus?.online===true?'Online':'Unknown / offline'}</span>`}
 function bridgeMessage(message){const text=String(message||'ADB command failed').trim();if(/\.android/i.test(text)&&/permission denied|cannot mkdir/i.test(text))return 'ADB key storage is not writable. Recreate the maintenance service after updating so the dedicated classroom-control-hub-android-adb volume is mounted.';return text}
 function setBridge(available,{error='',policyIntervalMs=60000}={}){state.adbAvailable=!!available;const bridge=$("bridge"),detail=$("bridgeDetail");if(available){bridge.className='pill ok';bridge.textContent=`ADB bridge ready · policy ${Math.round((policyIntervalMs||60000)/1000)}s`;if(detail){detail.hidden=true;detail.textContent=''}}else{bridge.className='pill bad';bridge.textContent='ADB unavailable';if(detail){detail.hidden=false;detail.textContent=bridgeMessage(error)}}}
-function applyBridgeAvailability(){const disabled=!state.adbAvailable;const enrollButton=$("enroll")?.querySelector('button[type="submit"]');if(enrollButton){enrollButton.disabled=disabled;enrollButton.title=disabled?'ADB bridge unavailable':''}if($("runShell"))$("runShell").disabled=disabled;if(disabled)$("devices")?.querySelectorAll('.controls button:not([data-op="edit"])').forEach(button=>{button.disabled=true;button.title='ADB bridge unavailable'})}
+function setDeviceControlDisabled(button,disabled){
+  controlStates.set(button,!!disabled);
+  button.disabled=!!disabled||deviceOperations.has(String(button.closest('.card[data-id]')?.dataset.id));
+}
+function syncDeviceOperationControls(){
+  for(const card of $("devices").querySelectorAll('.card[data-id]'))for(const button of card.querySelectorAll('button:not([data-op="edit"])')){
+    if(!controlStates.has(button))controlStates.set(button,button.disabled);
+    button.disabled=controlStates.get(button)||deviceOperations.has(String(card.dataset.id));
+  }
+  updateShellAvailability();
+}
+function beginDeviceOperation(id,label='Request'){
+  id=String(id);if(deviceOperations.has(id))return null;
+  const operation={message:`${String(label||'Request').trim()} in progress…`};deviceOperations.set(id,operation);
+  deviceMessage(id,operation.message);syncDeviceOperationControls();return operation;
+}
+function endDeviceOperation(id,operation){
+  id=String(id);if(deviceOperations.get(id)!==operation)return;
+  deviceOperations.delete(id);if(deviceMessages.get(id)===operation.message)deviceMessage(id,'');syncDeviceOperationControls();
+}
+function updateShellAvailability(){if($("runShell"))$("runShell").disabled=!state.adbAvailable||!$("shellDevice")?.value||deviceOperations.has(String($("shellDevice").value))}
+function applyBridgeAvailability(){const disabled=!state.adbAvailable;const enrollButton=$("enroll")?.querySelector('button[type="submit"]');if(enrollButton){enrollButton.disabled=disabled||enrollmentBusy;enrollButton.title=disabled?'ADB bridge unavailable':enrollmentBusy?'Enrollment request pending':''}updateShellAvailability();$("devices")?.querySelectorAll('.controls button:not([data-op="edit"])').forEach(button=>{const device=deviceById(button.closest('.card[data-id]')?.dataset.id);setDeviceControlDisabled(button,disabled||(button.dataset.op==='persistent'&&device?.agentStatus&&!device.agentStatus.installed));if(disabled)button.title='ADB bridge unavailable'})}
 function filterDisplayInventory(){
   const query=String($("deviceSearch")?.value||"").trim().toLowerCase();
   const connection=$("deviceFilter")?.value||"all";
@@ -30,53 +73,164 @@ function render(){
   const selectedShell=$("shellDevice").value;
   $("summary").textContent=`${state.devices.length} device${state.devices.length===1?'':'s'}`;
   $("shellDevice").innerHTML='<option value="">Select display…</option>'+state.devices.map(d=>`<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
-  $("devices").innerHTML=state.devices.length?state.devices.map(d=>`<article class="card" data-id="${esc(d.id)}"><div class="card-head"><div><h3>${esc(d.name)}</h3><small>${esc(d.manufacturer)} ${esc(d.model)} · Android ${esc(d.androidVersion||'?')}</small></div>${deviceStateHtml(d)}</div><dl><dt>Address</dt><dd>${esc(d.serial)}</dd><dt>School / room</dt><dd>${esc([d.school,d.building,d.room].filter(Boolean).join(' · ')||'Unassigned')}</dd><dt>Profile</dt><dd>${esc(d.profileId)}</dd><dt>Display URL</dt><dd>${esc(d.displayUrl||'Not assigned')}</dd><dt>Display Agent</dt><dd>${agentStatusHtml(d)}</dd><dt>Persistent ADB</dt><dd>${d.persistentAdb?.enabled?`Enabled · ${esc(d.host)}:${esc(d.persistentAdb.targetPort||5555)}`:'Not enabled'}</dd><dt>Last check</dt><dd>${esc(d.lastStatus?.checkedAt||d.lastSeenAt||'Not checked')}</dd></dl><div class="controls"><button data-op="edit">Edit</button><button data-action="wake">Wake</button><button data-action="sleep">Sleep</button></div><details data-disclosure="device-tools"><summary>Device controls & maintenance</summary><div class="controls"><button data-action="home">Home</button><button data-action="back">Back</button><button data-action="select">OK</button><button data-action="volume_up">Vol +</button><button data-action="volume_down">Vol −</button><button data-action="mute">Mute</button><button data-action="launch">Launch Agent</button><button data-op="install">${d.agentStatus?.installed?'Reinstall Agent':'Install Agent'}</button><button data-op="agent-status">Check Agent</button><button data-op="configure">Configure Agent</button><button data-op="persistent" ${d.agentStatus&&!d.agentStatus.installed?'disabled title="Install the Display Agent first"':''}>Enable Persistent ADB</button><button data-op="audit-apps">Audit Apps</button><button data-op="minimal">Minimal Mode</button><button data-op="restore-apps">Restore Apps</button><button data-op="status">Status</button><button data-op="screenshot">Screenshot</button><button class="danger" data-action="reboot">Reboot</button></div></details></article>`).join(''):'<p class="empty">No managed Android displays yet.</p>';
+  $("devices").innerHTML=state.devices.length?state.devices.map(d=>`<article class="card" data-id="${esc(d.id)}"><div class="card-head"><div><h3>${esc(d.name)}</h3><small>${esc(d.manufacturer)} ${esc(d.model)} · Android ${esc(d.androidVersion||'?')}</small></div>${deviceStateHtml(d)}</div><dl><dt>Address</dt><dd>${esc(d.serial)}</dd><dt>School / room</dt><dd>${esc([d.school,d.building,d.room].filter(Boolean).join(' · ')||'Unassigned')}</dd><dt>Profile</dt><dd>${esc(d.profileId)}</dd><dt>Display URL</dt><dd>${esc(d.displayUrl||'Not assigned')}</dd><dt>Display Agent</dt><dd>${agentStatusHtml(d)}</dd><dt>Persistent ADB</dt><dd>${d.persistentAdb?.enabled?`Enabled · ${esc(d.host)}:${esc(d.persistentAdb.targetPort||5555)}`:'Not enabled'}</dd><dt>Last check</dt><dd>${esc(d.lastStatus?.checkedAt||d.lastSeenAt||'Not checked')}</dd></dl><div class="controls"><button data-op="edit">Edit</button><button data-action="wake">Wake</button><button data-action="sleep">Sleep</button></div><p class="device-message" role="status" ${deviceMessages.get(String(d.id))?"":"hidden"}>${esc(deviceMessages.get(String(d.id))||"")}</p><details data-disclosure="device-tools"><summary>Device controls & maintenance</summary><div class="controls"><button data-action="home">Home</button><button data-action="back">Back</button><button data-action="select">OK</button><button data-action="volume_up">Vol +</button><button data-action="volume_down">Vol −</button><button data-action="mute">Mute</button><button data-action="launch">Launch Agent</button><button data-op="install">${d.agentStatus?.installed?'Reinstall Agent':'Install Agent'}</button><button data-op="agent-status">Check Agent</button><button data-op="configure">Configure Agent</button><button data-op="persistent" ${d.agentStatus&&!d.agentStatus.installed?'disabled title="Install the Display Agent first"':''}>Enable Persistent ADB</button><button data-op="audit-apps">Audit Apps</button><button data-op="minimal">Minimal Mode</button><button data-op="restore-apps">Restore Apps</button><button data-op="status">Status</button><button data-op="screenshot">Screenshot</button><button class="danger" data-action="reboot">Reboot</button></div></details></article>`).join(''):'<p class="empty">No managed Android displays yet.</p>';
   $("shellDevice").value=selectedShell;
   for(const detail of $("devices").querySelectorAll("details"))detail.open=openDetails.has(`${detail.closest("[data-id]")?.dataset.id}:${detail.dataset.disclosure}`);
   for(const card of $("devices").querySelectorAll(".card[data-id]"))card.dataset.agentExpanded=String(openDetails.has(`${card.dataset.id}:agent-v2`));
   applyBridgeAvailability();
-  filterDisplayInventory();
+  filterDisplayInventory();syncDeviceOperationControls();
 }
 function parseAgentProbe(text){const installed=/^INSTALLED=1$/m.test(text),running=/^RUNNING=1$/m.test(text),version=(String(text).match(/^VERSION=(.+)$/m)?.[1]||'').trim();return {installed,running:installed&&running,version}}
 async function runShell(id,script,timeoutMs=12000){return api(`/android/devices/${encodeURIComponent(id)}/shell`,{method:'POST',body:JSON.stringify({command:String(script),timeoutMs})})}
 async function probeAgent(id,rerender=true){const d=deviceById(id);if(!d)return null;if(!state.adbAvailable){d.agentStatus={error:'ADB bridge unavailable'};if(rerender)render();return d.agentStatus}if(d.lastStatus?.online!==true||d.uiRecovering){d.agentStatus={error:d.uiRecovering?'device recovering':'device offline'};if(rerender)render();return d.agentStatus}try{const pkg=d.agentPackage||'org.roomgoblin.display';const script=`if pm path ${pkg} 2>/dev/null | grep -q '^package:'; then echo INSTALLED=1; if pidof ${pkg} >/dev/null 2>&1; then echo RUNNING=1; else echo RUNNING=0; fi; else echo INSTALLED=0; fi`;const j=await runShell(id,script,8000);d.agentStatus=parseAgentProbe(j.stdout||'');}catch(e){d.agentStatus={error:e.message}}if(rerender)render();return d.agentStatus}
-async function probeAllAgents(){if(!state.adbAvailable)return;for(const d of state.devices)await probeAgent(d.id,false);render()}
+async function probeAllAgents(version=inventoryVersion){if(!state.adbAvailable)return;for(const d of state.devices){if(version!==inventoryVersion)return;await probeAgent(d.id,false)}if(version===inventoryVersion)render()}
 function scheduleRefresh(delay=5000){if(refreshTimer)clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>liveRefresh().catch(()=>{}),document.hidden?15000:delay)}
 async function liveRefresh(){
-  if(refreshBusy){scheduleRefresh();return}
+  if(refreshBusy||inventoryRead){scheduleRefresh();return}
   if(!state.adbAvailable){await load({probeAgents:false});return}
-  refreshBusy=true;
+  refreshBusy=true;const version=inventoryVersion;
   try{
     for(const d of state.devices){
+      if(version!==inventoryVersion)break;
       if(d.uiRecovering)continue;
       try{
         const j=await api(`/android/devices/${encodeURIComponent(d.id)}/status`);
+        if(version!==inventoryVersion||deviceById(d.id)!==d)break;
         Object.assign(d,j.device||{});
         await probeAgent(d.id,false);
       }catch{
+        if(version!==inventoryVersion||deviceById(d.id)!==d)break;
         d.lastStatus={...(d.lastStatus||{}),online:false,checkedAt:new Date().toISOString()};
       }
     }
-    render();
+    if(version===inventoryVersion)render();
   }finally{
     refreshBusy=false;
     scheduleRefresh();
   }
 }
-async function load({probeAgents=true}={}){const previous=new Map(state.devices.map(d=>[d.id,{agentStatus:d.agentStatus,uiRecovering:d.uiRecovering}]));try{const j=await api('/android/status');state.devices=(j.devices||[]).map(d=>({...d,agentStatus:previous.get(d.id)?.agentStatus,uiRecovering:previous.get(d.id)?.uiRecovering===true}));state.profiles=j.profiles||[];setBridge(j.adbAvailable!==false,{policyIntervalMs:j.policyIntervalMs});render();if(probeAgents&&state.adbAvailable)probeAllAgents().catch(()=>{});scheduleRefresh()}catch(e){const j=e.payload||{};if(Array.isArray(j.devices))state.devices=j.devices.map(d=>({...d,agentStatus:previous.get(d.id)?.agentStatus,uiRecovering:previous.get(d.id)?.uiRecovering===true}));if(Array.isArray(j.profiles))state.profiles=j.profiles;setBridge(false,{error:j.error||e.message,policyIntervalMs:j.policyIntervalMs});render();scheduleRefresh(5000)}}
+async function load({probeAgents=true}={}){
+  inventoryVersion++;inventoryProbeAgents=probeAgents;
+  if(inventoryRead)return inventoryRead;
+  inventoryRead=(async()=>{
+    const applyDevices=devices=>{
+      const previous=new Map(state.devices.map(d=>[d.id,{agentStatus:d.agentStatus,uiRecovering:d.uiRecovering}]));
+      state.devices=devices.map(d=>({...d,agentStatus:previous.get(d.id)?.agentStatus,uiRecovering:previous.get(d.id)?.uiRecovering===true}));
+    };
+    try{for(;;){
+      const version=inventoryVersion;
+      try{
+        const j=await api('/android/status');if(version!==inventoryVersion)continue;
+        applyDevices(j.devices||[]);state.profiles=j.profiles||[];
+        setBridge(j.adbAvailable!==false,{policyIntervalMs:j.policyIntervalMs});render();
+        if(inventoryProbeAgents&&state.adbAvailable)probeAllAgents(version).catch(()=>{});
+        scheduleRefresh();
+      }catch(e){
+        if(version!==inventoryVersion)continue;
+        const j=e.payload||{};if(Array.isArray(j.devices))applyDevices(j.devices);
+        if(Array.isArray(j.profiles))state.profiles=j.profiles;
+        setBridge(false,{error:j.error||e.message,policyIntervalMs:j.policyIntervalMs});render();scheduleRefresh(5000);
+      }
+      return;
+    }}finally{inventoryRead=null}
+  })();
+  return inventoryRead;
+}
 async function accelerateAgentStart(id){const d=deviceById(id);if(!d||!state.adbAvailable||d.lastStatus?.online!==true||!d.displayUrl)return false;const profile=profileFor(d);if(profile&&profile.launchOnBoot===false)return false;let status=await probeAgent(id,false);if(!status?.installed||status.running)return !!status?.running;d.agentStatus={...status,starting:true};render();try{await api(`/android/devices/${encodeURIComponent(id)}/action`,{method:'POST',body:JSON.stringify({action:'launch'})})}catch{}for(let i=0;i<12;i++){await sleep(750);status=await probeAgent(id,false);if(status?.running){render();return true}}render();return false}
-async function recoverStatus(id,{timeoutMs=90000,intervalMs=1500}={}){const d=deviceById(id);if(!d)throw Error('Managed display no longer exists');d.uiRecovering=true;d.agentStatus={error:'device recovering'};render();const deadline=Date.now()+timeoutMs;let lastError=null;while(Date.now()<deadline){try{const j=await api(`/android/devices/${encodeURIComponent(id)}/status`);Object.assign(d,j.device||{});d.uiRecovering=false;render();await accelerateAgentStart(id);await load({probeAgents:true});return true}catch(error){lastError=error;await sleep(intervalMs)}}d.uiRecovering=false;render();throw Error(`Device did not recover within ${Math.round(timeoutMs/1000)} seconds${lastError?.message?`: ${lastError.message}`:''}`)}
-function terminalOutput(title,text){$("remoteShell").open=true;$("terminal").textContent=`${title}\n${text||'(no output)'}`;$("shellDevice").value=''}
-async function auditApps(id){const j=await runShell(id,"echo 'Third-party packages:'; pm list packages -3 | sed 's/^package://' | sort; echo; echo 'Disabled third-party packages:'; pm list packages -3 -d | sed 's/^package://' | sort",20000);terminalOutput('Managed Minimal Mode audit',j.stdout||j.stderr)}
-async function enableMinimalMode(id){if(!window.confirm('Managed Minimal Mode disables third-party apps for user 0 except the RoomGoblin Display Agent. Core Android/Google TV system packages are not removed. Continue?'))return;const script=`echo 'Disabling non-RoomGoblin third-party packages...'; for p in $(pm list packages -3 | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm disable-user --user 0 "$p" >/dev/null 2>&1 && echo "DISABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Managed Minimal Mode applied',j.stdout||j.stderr);await accelerateAgentStart(id)}
-async function restoreApps(id){if(!window.confirm('Re-enable disabled third-party packages for Android user 0?'))return;const script=`echo 'Restoring disabled third-party packages...'; for p in $(pm list packages -3 -d | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm enable "$p" >/dev/null 2>&1 && echo "ENABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Third-party apps restored',j.stdout||j.stderr);await accelerateAgentStart(id)}
-function openEdit(id){const d=deviceById(id);if(!d)return;$("editId").value=d.id;$("editName").value=d.name||'';$("editSchool").value=d.school||'';$("editBuilding").value=d.building||'';$("editRoom").value=d.room||'';$("editDisplayUrl").value=d.displayUrl||'';$("editProfile").innerHTML=state.profiles.map(p=>`<option value="${esc(p.id)}" ${p.id===d.profileId?'selected':''}>${esc(p.name)}</option>`).join('');$("editEndpoint").textContent=d.serial||`${d.host||''}:${d.port||''}`;$("editMsg").textContent='';$("editDialog").showModal()}
-function closeEdit(){$("editDialog").close();$("editMsg").textContent=''}
+async function recoverStatus(id,{timeoutMs=90000,intervalMs=1500}={}){
+  const d=deviceById(id);if(!d)throw Error('Managed display no longer exists');
+  d.uiRecovering=true;d.agentStatus={error:'device recovering'};render();
+  const deadline=Date.now()+timeoutMs;let lastError=null;
+  while(Date.now()<deadline){try{
+    const j=await api(`/android/devices/${encodeURIComponent(id)}/status`),current=deviceById(id);
+    if(!current)throw Error('Managed display no longer exists');
+    Object.assign(current,j.device||{});current.uiRecovering=false;render();
+    await accelerateAgentStart(id);await load({probeAgents:true});return true;
+  }catch(error){lastError=error;if(!deviceById(id))throw error;await sleep(intervalMs)}}
+  const current=deviceById(id);if(current){current.uiRecovering=false;render()}
+  throw Error(`Device did not recover within ${Math.round(timeoutMs/1000)} seconds${lastError?.message?`: ${lastError.message}`:''}`);
+}
+function beginTerminalOutput(id){return {version:++terminalVersion,id:String(id),operation:deviceOperations.get(String(id))}}
+function terminalOutputCurrent(owner){return owner?.version===terminalVersion}
+function terminalOutputSuperseded(owner){if(owner?.operation&&deviceMessages.get(owner.id)===owner.operation.message)deviceMessage(owner.id,'Request finished. Newer diagnostic output is displayed.')}
+function terminalOutput(title,text,owner){if(!terminalOutputCurrent(owner)){terminalOutputSuperseded(owner);return}$("remoteShell").open=true;$("terminal").textContent=`${title}\n${text||'(no output)'}`;$("shellDevice").value='';updateShellAvailability()}
+async function auditApps(id){const owner=beginTerminalOutput(id);const j=await runShell(id,"echo 'Third-party packages:'; pm list packages -3 | sed 's/^package://' | sort; echo; echo 'Disabled third-party packages:'; pm list packages -3 -d | sed 's/^package://' | sort",20000);terminalOutput('Managed Minimal Mode audit',j.stdout||j.stderr,owner)}
+async function enableMinimalMode(id){if(!window.confirm('Managed Minimal Mode disables third-party apps for user 0 except the RoomGoblin Display Agent. Core Android/Google TV system packages are not removed. Continue?'))return;const owner=beginTerminalOutput(id);const script=`echo 'Disabling non-RoomGoblin third-party packages...'; for p in $(pm list packages -3 | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm disable-user --user 0 "$p" >/dev/null 2>&1 && echo "DISABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Managed Minimal Mode applied',j.stdout||j.stderr,owner);await accelerateAgentStart(id)}
+async function restoreApps(id){if(!window.confirm('Re-enable disabled third-party packages for Android user 0?'))return;const owner=beginTerminalOutput(id);const script=`echo 'Restoring disabled third-party packages...'; for p in $(pm list packages -3 -d | sed 's/^package://'); do if [ "$p" != "org.roomgoblin.display" ]; then pm enable "$p" >/dev/null 2>&1 && echo "ENABLED=$p"; fi; done; echo 'DONE'`;const j=await runShell(id,script,60000);terminalOutput('Third-party apps restored',j.stdout||j.stderr,owner);await accelerateAgentStart(id)}
+function deviceMessage(id,text){
+  deviceMessages.set(String(id),text);
+  const card=[...$("devices").querySelectorAll(".card[data-id]")].find(card=>card.dataset.id===String(id)),message=card?.querySelector(".device-message");
+  if(message){message.textContent=text;message.hidden=!text}
+}
+function updateEditAvailability(){const id=$("editId").value,missing=!deviceById(id),button=$("editForm").querySelector('button[type="submit"]');if(button){button.disabled=missing||editingDevices.has(id);button.title=missing?'Enrollment no longer exists':button.disabled?'Save pending':''}}
+function restoreDeviceFocus(id,operation){const card=[...$("devices").querySelectorAll(".card[data-id]")].find(card=>card.dataset.id===String(id)),button=card?.querySelector(`[data-op="${operation}"]`);(button&&!button.disabled&&button.getClientRects().length?button:$("deviceSearch"))?.focus({preventScroll:true})}
+function editDraft(form){return Object.fromEntries(new FormData(form))}
+function openEdit(id){const d=deviceById(id);if(!d)return;editVersion++;$("editId").value=d.id;$("editName").value=d.name||'';$("editSchool").value=d.school||'';$("editBuilding").value=d.building||'';$("editRoom").value=d.room||'';$("editDisplayUrl").value=d.displayUrl||'';$("editProfile").innerHTML=state.profiles.map(p=>`<option value="${esc(p.id)}" ${p.id===d.profileId?'selected':''}>${esc(p.name)}</option>`).join('');$("editEndpoint").textContent=d.serial||`${d.host||''}:${d.port||''}`;$("editMsg").textContent='';updateEditAvailability();$("editDialog").showModal()}
+function closeEdit(){const id=$("editId").value;editVersion++;$("editDialog").close();$("editMsg").textContent='';restoreDeviceFocus(id,"edit")}
 $("refresh").onclick=()=>load();
 for(const id of ["deviceSearch","deviceFilter","deviceDensity"]){$(id)?.addEventListener(id==="deviceSearch"?"input":"change",filterDisplayInventory);}
-$("enroll").addEventListener('submit',async e=>{e.preventDefault();const msg=$("enrollMsg"),body=Object.fromEntries(new FormData(e.currentTarget));for(const k of ['pairingPort','connectPort'])if(body[k])body[k]=Number(body[k]);msg.textContent='Pairing, connecting and probing…';try{const j=await api('/android/enroll',{method:'POST',body:JSON.stringify(body)});msg.textContent=`Enrolled ${j.device.name}. Use Edit to assign school, room, profile and display content.`;e.currentTarget.reset();e.currentTarget.elements.connectPort.value='5555';await load();openEdit(j.device.id)}catch(err){msg.textContent=err.message}});
-$("editForm").addEventListener('submit',async e=>{e.preventDefault();const id=$("editId").value,msg=$("editMsg"),body=Object.fromEntries(new FormData(e.currentTarget));delete body.id;for(const k of ['name','school','building','room','displayUrl'])body[k]=String(body[k]||'').trim();msg.textContent='Saving…';try{await api(`/android/devices/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(body)});msg.textContent='Saved.';await load();setTimeout(closeEdit,250)}catch(err){msg.textContent=err.message}});
+function enrollmentDraft(form){return Object.fromEntries(new FormData(form))}
+$("enroll").addEventListener('submit',async e=>{
+  e.preventDefault();if(enrollmentBusy||!state.adbAvailable)return;
+  const form=e.currentTarget,msg=$("enrollMsg"),version=editVersion,draft=enrollmentDraft(form),body={...draft};
+  for(const key of ['pairingPort','connectPort'])if(body[key])body[key]=Number(body[key]);
+  form.elements.pairingCode.value='';draft.pairingCode='';const signature=JSON.stringify(draft);
+  enrollmentBusy=true;applyBridgeAvailability();msg.textContent='Pairing, connecting and probing…';
+  try{
+    const result=await api('/android/enroll',{method:'POST',body:JSON.stringify(body)});
+    if(!result.device?.id)throw Error('Enrollment response could not be confirmed. Refresh inventory before retrying.');
+    const accepted=`Enrolled ${result.device.name||result.device.id}.`;msg.textContent=accepted;
+    let refreshed=true;try{await load()}catch{refreshed=false}
+    const unchanged=JSON.stringify(enrollmentDraft(form))===signature;
+    if(unchanged){form.reset();form.elements.connectPort.value='5555'}
+    msg.textContent=accepted+(unchanged?' Use Edit to assign school, room, profile and display content.':' Your newer enrollment draft was kept. Use Edit to assign the enrolled display.');
+    if(!refreshed||!deviceById(result.device.id))msg.textContent+=' Refresh inventory to edit this display.';
+    else if(unchanged&&version===editVersion&&!$("editDialog").open)openEdit(result.device.id);
+  }catch(err){msg.textContent=err.message}
+  finally{body.pairingCode='';enrollmentBusy=false;applyBridgeAvailability()}
+});
+$("editForm").addEventListener('submit',async e=>{
+  e.preventDefault();const form=e.currentTarget,id=$("editId").value;if(editingDevices.has(id))return;
+  if(!deviceById(id)){$("editMsg").textContent='This enrollment no longer exists. Your unsaved draft is still shown.';updateEditAvailability();return}
+  const version=editVersion,draft=editDraft(form),signature=JSON.stringify(draft),body={...draft};delete body.id;
+  for(const key of ['name','school','building','room','displayUrl'])body[key]=String(body[key]||'').trim();
+  const current=()=>version===editVersion&&$("editDialog").open&&$("editId").value===id;
+  editingDevices.add(id);updateEditAvailability();deviceMessage(id,'Saving changes…');$("editMsg").textContent='Saving…';
+  try{
+    await api(`/android/devices/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(body)});
+    let refreshed=true;try{await load()}catch{refreshed=false}
+    const accepted='Changes saved.'+(refreshed?'':' Refresh inventory to see the current display.');deviceMessage(id,accepted);
+    if(current()){if(JSON.stringify(editDraft(form))===signature)closeEdit();else $("editMsg").textContent=accepted+' Your newer edits remain unsaved.'}
+  }catch(error){deviceMessage(id,error.message);if(current())$("editMsg").textContent=error.message}
+  finally{editingDevices.delete(id);updateEditAvailability()}
+});
 $("closeEdit").onclick=closeEdit;$("cancelEdit").onclick=closeEdit;
-$("devices").addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const id=e.target.closest('[data-id]')?.dataset.id;if(!id)return;if(b.dataset.op==='edit'){openEdit(id);return}if(!state.adbAvailable){window.alert('ADB bridge is unavailable. Refresh after the maintenance service recovers.');return}b.disabled=true;try{if(b.dataset.action){const action=b.dataset.action;await api(`/android/devices/${encodeURIComponent(id)}/action`,{method:'POST',body:JSON.stringify({action})});if(action==='reboot'){await recoverStatus(id,{timeoutMs:90000,intervalMs:1500})}else if(action==='launch'){const d=deviceById(id);if(d)d.agentStatus={...(d.agentStatus||{}),starting:true};render();setTimeout(()=>probeAgent(id),750)}}else if(b.dataset.op==='status'){const d=deviceById(id);if(d?.persistentAdb?.enabled)await recoverStatus(id,{timeoutMs:45000,intervalMs:1500});else{await api(`/android/devices/${encodeURIComponent(id)}/status`);await load()}}else if(b.dataset.op==='agent-status'){await probeAgent(id)}else if(b.dataset.op==='install'){const j=await api(`/android/devices/${encodeURIComponent(id)}/agent/install`,{method:'POST',body:'{}'});await probeAgent(id);window.alert(j.message||'Agent installed.')}else if(b.dataset.op==='configure'){await api(`/android/devices/${encodeURIComponent(id)}/agent/configure`,{method:'POST',body:'{}'});await accelerateAgentStart(id);window.alert('Agent configured and launch requested.')}else if(b.dataset.op==='persistent'){if(!window.confirm('Enable boot-restored wireless debugging and pin ADB to port 5555 on this trusted management network?'))return;const j=await api(`/android/devices/${encodeURIComponent(id)}/persistent-adb/bootstrap`,{method:'POST',body:JSON.stringify({targetPort:5555})});window.alert(j.message||'Persistent ADB enabled.');await load()}else if(b.dataset.op==='audit-apps'){await auditApps(id)}else if(b.dataset.op==='minimal'){await enableMinimalMode(id)}else if(b.dataset.op==='restore-apps'){await restoreApps(id)}else if(b.dataset.op==='screenshot'){const j=await api(`/android/devices/${encodeURIComponent(id)}/screenshot`);$("shotImage").src=`data:${j.contentType||'image/png'};base64,${j.base64}`;$("shot").showModal()}}catch(err){window.alert(err.message)}finally{b.disabled=false;scheduleRefresh()}});
-$("runShell").onclick=async()=>{const id=$("shellDevice").value,command=$("shellCommand").value;if(!id||!command||!state.adbAvailable)return;$("terminal").textContent=`$ ${command}\n`;try{const j=await runShell(id,command,30000);$("terminal").textContent+=j.stdout||j.stderr||'(no output)'}catch(e){$("terminal").textContent+=`ERROR: ${e.message}`}};
-$("shellCommand").addEventListener('keydown',e=>{if(e.key==='Enter')$("runShell").click()});$("closeShot").onclick=()=>{$("shot").close();$("shotImage").removeAttribute('src')};document.addEventListener('visibilitychange',()=>scheduleRefresh(document.hidden?15000:1000));load();
+$("editDialog").addEventListener('cancel',()=>{editVersion++});
+function closeShot(){const id=shotDevice;shotVersion++;shotDevice=null;$("shot").close();$("shotImage").removeAttribute('src');$("shotStatus").textContent='';if(id)restoreDeviceFocus(id,"screenshot")}
+async function captureShot(id){
+  const version=++shotVersion,name=deviceById(id)?.name||'Display';shotDevice=id;
+  const current=()=>version===shotVersion&&$("shot").open;
+  $("shotImage").removeAttribute('src');$("shotImage").alt=`Screenshot of ${name}`;
+  $("shotStatus").textContent=`Capturing ${name}…`;$("shot").setAttribute('aria-label',`Screenshot of ${name}`);$("shot").showModal();
+  try{
+    const result=await api(`/android/devices/${encodeURIComponent(id)}/screenshot`);if(!current())return;
+    const type=result.contentType||'image/png',data=result.base64;
+    if(!['image/png','image/jpeg','image/webp'].includes(type)||typeof data!=='string'||!data.length||data.length>4*Math.ceil(16*1024*1024/3))throw Error('The screenshot response is invalid or too large.');
+    const candidate=new Image();candidate.src=`data:${type};base64,${data}`;
+    try{await candidate.decode()}catch{throw Error('The screenshot could not be decoded.')}
+    if(current()){$("shotImage").src=candidate.src;$("shotStatus").textContent=`${name} screenshot`}
+  }catch(error){if(current())$("shotStatus").textContent=`Screenshot unavailable: ${error.message}`}
+}
+$("devices").addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const id=e.target.closest('[data-id]')?.dataset.id;if(!id)return;if(b.dataset.op==='edit'){openEdit(id);return}if(!state.adbAvailable){window.alert('ADB bridge is unavailable. Refresh after the maintenance service recovers.');return}const operation=beginDeviceOperation(id,b.textContent);if(!operation)return;try{if(b.dataset.action){const action=b.dataset.action;await api(`/android/devices/${encodeURIComponent(id)}/action`,{method:'POST',body:JSON.stringify({action})});if(action==='reboot'){await recoverStatus(id,{timeoutMs:90000,intervalMs:1500})}else if(action==='launch'){const d=deviceById(id);if(d)d.agentStatus={...(d.agentStatus||{}),starting:true};render();setTimeout(()=>probeAgent(id),750)}}else if(b.dataset.op==='status'){const d=deviceById(id);if(d?.persistentAdb?.enabled)await recoverStatus(id,{timeoutMs:45000,intervalMs:1500});else{await api(`/android/devices/${encodeURIComponent(id)}/status`);await load()}}else if(b.dataset.op==='agent-status'){await probeAgent(id)}else if(b.dataset.op==='install'){const j=await api(`/android/devices/${encodeURIComponent(id)}/agent/install`,{method:'POST',body:'{}'});await probeAgent(id);window.alert(j.message||'Agent installed.')}else if(b.dataset.op==='configure'){await api(`/android/devices/${encodeURIComponent(id)}/agent/configure`,{method:'POST',body:'{}'});await accelerateAgentStart(id);window.alert('Agent configured and launch requested.')}else if(b.dataset.op==='persistent'){if(!window.confirm('Enable boot-restored wireless debugging and pin ADB to port 5555 on this trusted management network?'))return;const j=await api(`/android/devices/${encodeURIComponent(id)}/persistent-adb/bootstrap`,{method:'POST',body:JSON.stringify({targetPort:5555})});window.alert(j.message||'Persistent ADB enabled.');await load()}else if(b.dataset.op==='audit-apps'){await auditApps(id)}else if(b.dataset.op==='minimal'){await enableMinimalMode(id)}else if(b.dataset.op==='restore-apps'){await restoreApps(id)}else if(b.dataset.op==='screenshot'){await captureShot(id)}}catch(err){deviceMessage(id,err.message);window.alert(err.message)}finally{endDeviceOperation(id,operation);scheduleRefresh()}});
+$("runShell").onclick=async()=>{
+  const id=$("shellDevice").value,command=$("shellCommand").value;if(!id||!command||!state.adbAvailable)return;
+  const operation=beginDeviceOperation(id,'Remote shell');if(!operation)return;
+  const owner=beginTerminalOutput(id);$("terminal").textContent=`${deviceById(id)?.name||id}\n$ ${command}\n`;
+  try{
+    const j=await runShell(id,command,30000);
+    if(terminalOutputCurrent(owner))$("terminal").textContent+=j.stdout||j.stderr||'(no output)';else terminalOutputSuperseded(owner);
+  }catch(error){if(terminalOutputCurrent(owner))$("terminal").textContent+=`ERROR: ${error.message}`;deviceMessage(id,`Remote shell: ${error.message}`)}
+  finally{endDeviceOperation(id,operation)}
+};
+$("shellDevice").addEventListener('change',syncDeviceOperationControls);
+$("shellCommand").addEventListener('keydown',e=>{if(e.key==='Enter')$("runShell").click()});$("closeShot").onclick=closeShot;$("shot").addEventListener('cancel',event=>{event.preventDefault();closeShot()});document.addEventListener('visibilitychange',()=>scheduleRefresh(document.hidden?15000:1000));load();

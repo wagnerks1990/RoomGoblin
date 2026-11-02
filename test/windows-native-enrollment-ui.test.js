@@ -6,7 +6,7 @@ const fs=require("node:fs");
 const path=require("node:path");
 
 const ROOT=path.resolve(__dirname,"..");
-const source=fs.readFileSync(path.join(ROOT,"public/controller/workspace.js"),"utf8");
+const source=fs.readFileSync(path.join(ROOT,"public/controller/lab-enrollment.js"),"utf8");
 
 test("controller prefers the browser package and native enrollment file",()=>{
   assert.match(source,/window\.createLabAgentEnrollment=async function/);

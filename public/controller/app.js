@@ -1,10 +1,10 @@
 const S={pluto:{},govee:null,displayDevices:{},schedules:{},automations:[],mediaFiles:[],classes:[],classStatus:null,scheduler:null,schedulerCalendar:{excludedDates:[]},scheduleProfile:{cycleDays:['A','B'],dayGroups:[{label:'Day A',cycleDays:['A']},{label:'Day B',cycleDays:['B']}]},districtNoSchoolDates:[]};
 const PRES={folders:[],presentations:[],state:null,currentFolder:'root',selectedId:null,displays:[],previewSlide:1};
-async function api(url,opt={}){const r=await fetch(url,{cache:'no-store',credentials:'same-origin',...opt});const t=await r.text();let j;try{j=JSON.parse(t)}catch{j={raw:t}}if(r.status===401&&(j.authRequired||window.AUTH_STATUS?.authEnabled)){window.AUTH_STATUS={...(window.AUTH_STATUS||{}),user:null};applyAuthUi(window.AUTH_STATUS);showLogin();throw Error('Authentication required')}if(!r.ok)throw Error(j.error||j.message||('HTTP '+r.status));return j}
+async function api(url,opt={}){const {response:r,value:t}=await RoomGoblinRequest.read(url,{cache:'no-store',credentials:'same-origin',...opt});let j;try{j=JSON.parse(t)}catch{j={raw:t}}if(r.status===401&&(j.authRequired||window.AUTH_STATUS?.authEnabled)){window.AUTH_STATUS={...(window.AUTH_STATUS||{}),user:null};applyAuthUi(window.AUTH_STATUS);showLogin();throw Error('Authentication required')}if(!r.ok)throw Error(j.error||j.message||('HTTP '+r.status));return j}
 function jpost(url,obj){return api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)})}
 let toastTimer=null;function notify(message,type='info'){const el=document.getElementById('hubToast');if(!el)return;el.textContent=String(message||'');el.style.display='block';el.style.borderColor=type==='error'?'#9b3a3a':type==='success'?'#2d8a57':'#3a4a5a';clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',4500)}
 
-const CLASSROOM_HUB_VERSION='1.0.0-alpha.84';
+const CLASSROOM_HUB_VERSION='1.0.0-alpha.85';
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&loginOverlay?.style.display==='flex'&&document.activeElement===loginPassword)performLogin()});
 let brandCycleState=null;
 
@@ -100,7 +100,7 @@ function showLabConsole(kind){
   const active=windows?wf:vf;if(!active.src)active.src=active.dataset.lazySrc;
   labConsoleHelp.textContent=windows?'The Windows agent provides enrolled-computer inventory, screenshots, browser-history review, and supported power/session commands.':'Veyon monitoring uses the configured Veyon WebAPI integration.';
 }
-function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media'){loadMedia();ensureMediaSessionControls();refreshMediaSessionControls();}if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
+function showPage(id){const page=document.getElementById(id);if(!page||page.dataset.authorized==='false')return notify('Your account does not have access to that classroom feature.','error');document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===id));activateLazyPageFrame(id);if(id==='av'||id==='tvs')refreshPluto();if(id==='presentations')loadPresentations();if(id==='media'){loadMedia();ensureMediaSessionControls();refreshMediaSessionControls();}if(id==='lights')loadGovee();if(id==='lab')loadLabAgentCredentials();if(id==='planning')loadPlanning();if(id==='classes')loadClassSchedules();if(id==='schedules'){loadAutomationControl();loadSchedules();ensureAutomationMediaLibrary().then(refreshAutomationMediaPickers);}if(id==='diagnostics')loadDiagnostics();if(id==='settings')loadAdminConfiguration();if(id==='system')loadSystemManagement();if(id==='music')loadMusicAssistant()}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 
 function overviewContentSummary(state={}){
@@ -132,7 +132,7 @@ function overviewDisplayName(id,config={}){
 }
 function overviewResolutionParts(value){
   const m=String(value||'').match(/^(\d+)x(\d+)$/i);
-  if(!m)return {width:1920,height:1080,label:'Unknown resolution'};
+  if(!m||Number(m[1])<1||Number(m[2])<1||Number(m[1])>16384||Number(m[2])>16384)return {width:1920,height:1080,label:'Unknown resolution'};
   return {width:Number(m[1]),height:Number(m[2]),label:`${m[1]}x${m[2]}`};
 }
 function scaleOverviewDisplayPreviews(){
@@ -150,54 +150,92 @@ function scaleOverviewDisplayPreviews(){
     frame.style.transform=`translate(${Math.max(0,(w-scaledW)/2)}px,${Math.max(0,(h-scaledH)/2)}px) scale(${scale})`;
   });
 }
-function overviewAvStatusLine(id,config){const o=Number(config.avOutput||0),p=S.overviewPluto||{},input=Number(p.videoStatus?.allsource?.[o-1]||0),labels=p.labels||{},source=labels.inputs?.[input-1]||`Content Source ${input||'—'}`;return o?`<div class="overviewAvLine"><b>HDBT ${o}</b> • Source: <b>${esc(source)}</b></div>`:''}
-async function overviewTestImage(id,output){if(!output)return;await sendTvTestImage(id,output);notify(`Test image sent to ${overviewDisplayName(id,(S.avConfig?.devices||{})[id]||{})}.`,'success')}
-async function overviewTvPower(output,index){if(!output)return;await plutoAction({action:'cecOutput',output:Number(output),connection:'hdbt',index},false)}
+const overviewSnapshot={devices:null,status:null,inventoryError:false,statusError:false};
+let overviewRefreshPending=null,overviewPlutoPending=null;
+function overviewOutput(config={}){const output=Number(config.avOutput);return Number.isInteger(output)&&output>=1&&output<=8?output:0}
+function overviewUniqueMapping(id,output){
+  const hits=Object.entries(overviewSnapshot.devices?.devices||{}).filter(([,d])=>d?.enabled!==false&&overviewOutput(d)===output);
+  return !!output&&hits.length===1&&hits[0][0]===id;
+}
+function overviewAvStatusLine(id,config){
+  const output=overviewOutput(config);if(!output)return 'AV output not assigned';
+  const p=S.overviewPluto,input=Number(p?.videoStatus?.allsource?.[output-1]);
+  const source=Number.isInteger(input)&&input>=1&&input<=8?(p.labels?.inputs?.[input-1]||`Content Source ${input}`):'Unavailable';
+  return `<b>HDBT ${output}</b> • Source: <b>${esc(source)}</b>`;
+}
+async function overviewTestImage(id,output){
+  try{
+    if(overviewSnapshot.inventoryError||!overviewUniqueMapping(id,Number(output)))throw Error('Test image requires one enabled receiver with a unique AV output mapping. Refresh status and check Displays & AV.');
+    await sendTvTestImage(id,Number(output));
+    notify(`Test image sent to ${overviewDisplayName(id,overviewSnapshot.devices.devices[id])}.`,'success');
+  }catch(error){notify(error.message,'error')}
+}
+async function overviewTvPower(output,index){
+  try{
+    if(!overviewOutput({avOutput:output}))throw Error('Assign a valid AV output in Displays & AV before using TV power.');
+    const result=await plutoAction({action:'cecOutput',output:Number(output),connection:'hdbt',index},false);
+    notify(result?.data?.result===1?'TV power command confirmed.':'TV power command sent; physical power is not confirmed.','success');
+  }catch(error){notify(error.message,'error')}
+}
 function renderOverviewDisplays(devicesResponse,statusResponse){
   const configs=devicesResponse?.devices||{};
-  const statuses=devicesResponse?.status||statusResponse?.runtime?.displays||{};
+  const statuses=(!overviewSnapshot.statusError&&statusResponse?.runtime?.displays)||devicesResponse?.status||{};
   const states=statusResponse?.state?.displays||{};
   const ids=Object.keys(configs).filter(id=>configs[id]?.enabled!==false).sort((a,b)=>a.localeCompare(b,{numeric:true}));
+  const stale=overviewSnapshot.inventoryError||overviewSnapshot.statusError;
   const onlineCount=ids.filter(id=>statuses[id]?.online).length;
-
-  overviewDisplaySummary.textContent=`${onlineCount} / ${ids.length} Online`;
-  overviewDisplaySummary.className='kpi '+(onlineCount===ids.length&&ids.length?'ok':onlineCount?'':'bad');
-  overviewDisplayDetail.textContent=ids.length
-    ? `${ids.length-onlineCount} offline • ${ids.length} configured display${ids.length===1?'':'s'}`
-    : 'No displays configured.';
-
-  overviewDisplays.innerHTML=ids.length?ids.map(id=>{
-    const config=configs[id]||{},status=statuses[id]||{},state=states[id]||{};
-    const online=!!status.online;
-    const resolution=status.meta?.resolution||status.resolution||'';
-    const logical=overviewResolutionParts(resolution);
-    const content=overviewContentSummary(state);
-    return `<div class="displayOverviewCard">
-      <div class="displayPreview">
-        ${online
-          ? `<iframe data-overview-preview="${esc(id)}" data-logical-width="${logical.width}" data-logical-height="${logical.height}" src="/display/${encodeURIComponent(id)}?preview=1&overview=${Date.now()}" title="${esc(id)} preview"></iframe>`
-          : `<div class="displayPreviewOffline"><div style="text-align:center"><b>${esc(overviewDisplayName(id,config))}</b><br>Display offline</div></div>`}
-      </div>
-      <div class="displayOverviewBody">
-        <div class="displayOverviewTitle">
-          <div class="displayOverviewName">${esc(overviewDisplayName(id,config))}</div>
-          <div class="${online?'displayStatusOnline':'displayStatusOffline'}">${online?'ONLINE':'OFFLINE'}</div>
-        </div>
-        <div class="displayMeta">
-          ID: ${esc(id)} • ${esc(logical.label)}<br>
-          Last seen: ${esc(overviewLastSeen(status))}
-        </div>
-        <div style="margin-top:7px">${content.map(x=>`<span class="contentBadge">${esc(x)}</span>`).join('')}</div>
-        ${overviewAvStatusLine(id,config)}
-        <div class="toolbar" style="margin-top:10px">
-          <button onclick="overviewTestImage(${inlineJsArg(id)},${Number(config.avOutput)||0})">Test Image</button>
-          <button onclick="overviewTvPower(${Number(config.avOutput)||0},0)">Power On</button>
-          <button onclick="overviewTvPower(${Number(config.avOutput)||0},1)">Power Off</button>
-          <button onclick="window.open(${inlineJsArg(`/display/${encodeURIComponent(id)}?preview=1`)},'_blank','noopener')">Preview</button>
-        </div>
-      </div>
-    </div>`;
-  }).join(''):'<div class="muted">No displays configured.</div>';
+  overviewDisplaySummary.textContent=devicesResponse?`${onlineCount} / ${ids.length} Online${stale?' (last known)':''}`:'Unavailable';
+  overviewDisplaySummary.className='kpi '+(!stale&&onlineCount===ids.length&&ids.length?'ok':'');
+  overviewDisplayDetail.textContent=stale
+    ? `${overviewSnapshot.inventoryError?'Display inventory':'Content status'} unavailable. ${devicesResponse?'Showing last known data; refresh to retry.':'Refresh to retry.'}`
+    : ids.length?`${ids.length-onlineCount} receiver${ids.length-onlineCount===1?'':'s'} offline • ${ids.length} configured. Receiver connection does not confirm TV power.`:'No displays configured.';
+  const existing=new Map([...overviewDisplays.querySelectorAll('.displayOverviewCard')].map(card=>[card.dataset.overviewId,card]));
+  for(const [id,card] of existing)if(!ids.includes(id))card.remove();
+  for(const child of [...overviewDisplays.children])if(!child.classList.contains('displayOverviewCard'))child.remove();
+  if(!ids.length){
+    const empty=document.createElement('div');empty.dataset.overviewEmpty='';empty.className='muted';
+    empty.textContent=stale||!devicesResponse?'Display inventory unavailable. Refresh to retry.':'No displays configured.';overviewDisplays.append(empty);
+  }
+  ids.forEach((id,index)=>{
+    const config=configs[id]||{},status=statuses[id]||{},state=states[id];
+    const online=!!status.online,logical=overviewResolutionParts(status.meta?.resolution||status.resolution||'');
+    let card=existing.get(id);
+    if(!card){
+      card=document.createElement('div');card.className='displayOverviewCard';card.dataset.overviewId=id;
+      card.innerHTML=`<div class="displayPreview"></div><div class="displayOverviewBody">
+        <div class="displayOverviewTitle"><div class="displayOverviewName"></div><div data-overview-connection></div></div>
+        <div class="displayMeta"></div><div data-overview-content style="margin-top:7px"></div><div class="overviewAvLine"></div>
+        <div class="toolbar" style="margin-top:10px"><button data-overview-test>Test Image</button><button data-overview-power="0">Power On</button><button data-overview-power="1">Power Off</button><button data-overview-open>Preview</button></div></div>`;
+    }
+    // Moving an unchanged iframe reloads its browsing context. Leave existing cards in place.
+    if(!card.isConnected)overviewDisplays.insertBefore(card,overviewDisplays.children[index]||null);
+    card.querySelector('.displayOverviewName').textContent=overviewDisplayName(id,config);
+    const connection=card.querySelector('[data-overview-connection]');
+    connection.textContent=`RECEIVER ${online?'ONLINE':'OFFLINE'}${stale?' • Last known':''}`;
+    connection.className=online?'displayStatusOnline':'displayStatusOffline';
+    card.querySelector('.displayMeta').textContent=`ID: ${id} • ${logical.label} • Last seen: ${overviewLastSeen(status)}`;
+    card.querySelector('[data-overview-content]').innerHTML=(state?overviewContentSummary(state):['Content unavailable']).map(x=>`<span class="contentBadge">${esc(x)}</span>`).join('');
+    card.querySelector('.overviewAvLine').innerHTML=overviewAvStatusLine(id,config);
+    const viewport=card.querySelector('.displayPreview');let frame=viewport.querySelector('iframe');
+    if(online){
+      if(!frame){
+        viewport.innerHTML=`<iframe data-overview-preview="${esc(id)}" src="/display/${encodeURIComponent(id)}?preview=1" title="${esc(id)} preview"></iframe>`;frame=viewport.firstElementChild;
+      }
+      frame.dataset.logicalWidth=logical.width;frame.dataset.logicalHeight=logical.height;
+    }else if(frame||!viewport.firstElementChild){
+      viewport.innerHTML='<div class="displayPreviewOffline">Receiver offline • TV power controls remain available when mapped.</div>';
+    }
+    const output=overviewOutput(config),test=card.querySelector('[data-overview-test]');
+    test.setAttribute('onclick',`overviewTestImage(${inlineJsArg(id)},${output})`);
+    test.dataset.commandUnavailable=String(overviewSnapshot.inventoryError||!overviewUniqueMapping(id,output));
+    test.title=test.dataset.commandUnavailable==='true'?'Requires current inventory and one enabled receiver mapped to this AV output.':'';
+    card.querySelectorAll('[data-overview-power]').forEach(button=>{
+      button.setAttribute('onclick',`overviewTvPower(${output},${button.dataset.overviewPower})`);
+      button.dataset.commandUnavailable=String(!output);button.title=output?'Sends a power command; receiver connection is a separate status.':'Assign a valid AV output in Displays & AV.';
+    });
+    card.querySelector('[data-overview-open]').onclick=()=>window.open(`/display/${encodeURIComponent(id)}?preview=1`,'_blank','noopener');
+    enforceCapabilityControls(card);
+  });
   requestAnimationFrame(scaleOverviewDisplayPreviews);
 }
 function refreshOverviewDisplayPreviews(){
@@ -238,51 +276,66 @@ async function reloadAllDisplays(){
 const overviewPreviewResizeObserver=new ResizeObserver(()=>scaleOverviewDisplayPreviews());
 const overviewDisplaysObserverTarget=document.getElementById('overviewDisplays');
 if(overviewDisplaysObserverTarget)overviewPreviewResizeObserver.observe(overviewDisplaysObserverTarget);
-async function refreshOverview(){
+function overviewHealth(element,state){
+  const text=state?.configured===false?'NOT CONFIGURED':state?.connected===true?'ONLINE':state?.connected===false?'OFFLINE':'UNAVAILABLE';
+  element.textContent=text;element.className='kpi '+(text==='ONLINE'?'ok':text==='OFFLINE'?'bad':'');
+}
+function refreshOverviewPluto(){
+  if(overviewPlutoPending)return overviewPlutoPending;
+  overviewPlutoPending=(async()=>{
+    try{
+      const pluto=await api('/api/v1/pluto/status',{signal:AbortSignal.timeout(30000)});
+      S.overviewPluto=pluto;
+      overviewHealth(plutoState,{connected:pluto.systemStatus? !pluto.systemStatus.error:undefined});
+    }catch{S.overviewPluto=null;overviewHealth(plutoState,null)}
+    finally{
+      for(const card of overviewDisplays.querySelectorAll('.displayOverviewCard'))card.querySelector('.overviewAvLine').innerHTML=overviewAvStatusLine(card.dataset.overviewId,overviewSnapshot.devices?.devices?.[card.dataset.overviewId]||{});
+      overviewPlutoPending=null;
+    }
+  })();
+  return overviewPlutoPending;
+}
+function refreshOverview(){
+  if(overviewRefreshPending)return overviewRefreshPending;
   loadAutomationControl();
-  try{
-    const [st,intg,dev,classes,pluto]=await Promise.all([
-      api('/api/v1/status'),
-      api('/api/v1/integrations/check').catch(e=>({ok:false,error:e.message})),
-      api('/api/v1/devices').catch(()=>({devices:{},status:{}})),
-      api('/api/v1/class-schedules').catch(()=>({})),
-      api('/api/v1/pluto/status').catch(()=>({}))
-    ]);
-    S.displayDevices=dev.devices||S.displayDevices||{};
-    populateDisplaySelect(window.mediaTarget);
-
-    hubState.textContent=st.ok?'ONLINE':'ERROR';
-    hubState.className='kpi '+(st.ok?'ok':'bad');
-
-    mqttState.textContent=intg.mqtt?.connected?'ONLINE':'OFFLINE';
-    mqttState.className='kpi '+(intg.mqtt?.connected?'ok':'bad');
-
-    plutoState.textContent=intg.hardware?.pluto?.reachable?'ONLINE':'OFFLINE';
-    plutoState.className='kpi '+(intg.hardware?.pluto?.reachable?'ok':'bad');
-
-    const cy=classes.schoolCycle||brandCycleState||{};
-    if(cy.isStudentSchoolDay){
-      overviewSchoolDay.textContent=`${cy.dayColor} Day • Cycle ${cy.cycleDay}`;
-      overviewSchoolDay.className='kpi ok';
-    }else{
-      overviewSchoolDay.textContent='No Student Cycle Today';
-      overviewSchoolDay.className='kpi';
-    }
-
-    if(classes.activeClass){
-      const end=classes.activeClass.endTime||new Date(classes.activeClass.endAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-      overviewClassStatus.innerHTML=`<b>Current:</b> ${esc(classes.activeClass.name)} • ends ${esc(end)}`;
-    }else if(classes.nextClass){
-      const next=new Date(classes.nextClass.nextStartAt);
-      overviewClassStatus.innerHTML=`<b>Next:</b> ${esc(classes.nextClass.name)} • ${esc(next.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))}`;
-    }else{
-      overviewClassStatus.textContent=cy.reason?`No active class • ${cy.reason}`:'No active or upcoming class.';
-    }
-
-    S.overviewPluto=pluto; renderOverviewDisplays(dev,st);
-  }catch(e){
-    if(window.overviewDisplays)overviewDisplays.innerHTML=`<div class="bad">Overview error: ${esc(e.message)}</div>`;
-  }
+  // Optional AV probes must never gate the room inventory or current class.
+  refreshOverviewPluto();
+  const paint=()=>renderOverviewDisplays(overviewSnapshot.devices,overviewSnapshot.status);
+  overviewRefreshPending=Promise.all([
+    (async()=>{
+      try{
+        const st=await api('/api/v1/status',{signal:AbortSignal.timeout(10000)});
+        overviewSnapshot.status=st;overviewSnapshot.statusError=false;
+        hubState.textContent=st.ok?'ONLINE':'ERROR';hubState.className='kpi '+(st.ok?'ok':'bad');
+        overviewHealth(mqttState,st.runtime?.mqtt);
+      }catch{overviewSnapshot.statusError=true;hubState.textContent='UNAVAILABLE';hubState.className='kpi';overviewHealth(mqttState,null)}
+      paint();
+    })(),
+    (async()=>{
+      try{
+        const dev=await api('/api/v1/devices',{signal:AbortSignal.timeout(10000)});
+        if(!dev.devices||typeof dev.devices!=='object'||Array.isArray(dev.devices))throw Error('Invalid display inventory');
+        overviewSnapshot.devices=dev;overviewSnapshot.inventoryError=false;
+        S.displayDevices=dev.devices;populateDisplaySelect(window.mediaTarget);
+      }catch{overviewSnapshot.inventoryError=true}
+      paint();
+    })(),
+    (async()=>{
+      try{
+        const classes=await api('/api/v1/class-schedules',{signal:AbortSignal.timeout(10000)}),cy=classes.schoolCycle||brandCycleState;
+        overviewSchoolDay.textContent=cy?(cy.isStudentSchoolDay?`${cy.dayColor} Day • Cycle ${cy.cycleDay}`:'No Student Cycle Today'):'School cycle unavailable';
+        overviewSchoolDay.className='kpi '+(cy?.isStudentSchoolDay?'ok':'');
+        if(classes.activeClass){
+          const end=classes.activeClass.endTime||new Date(classes.activeClass.endAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+          overviewClassStatus.innerHTML=`<b>Current:</b> ${esc(classes.activeClass.name)} • ends ${esc(end)}`;
+        }else if(classes.nextClass){
+          const next=new Date(classes.nextClass.nextStartAt);
+          overviewClassStatus.innerHTML=`<b>Next:</b> ${esc(classes.nextClass.name)} • ${esc(next.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))}`;
+        }else overviewClassStatus.textContent=cy?.reason?`No active class • ${cy.reason}`:'No active or upcoming class.';
+      }catch{overviewSchoolDay.textContent='School cycle unavailable';overviewSchoolDay.className='kpi';overviewClassStatus.textContent='Class schedule unavailable. Refresh to retry.'}
+    })()
+  ]).finally(()=>{overviewRefreshPending=null});
+  return overviewRefreshPending;
 }
 async function clearClassroom(){if(!confirm('Blank ALL enabled classroom displays?'))return;const j=await jpost('/api/v1/classroom/clear-all',{});alert(`Classroom cleared on ${(j.targets||[]).length} display(s).`)}
 
@@ -305,16 +358,45 @@ function presentationUrl(p,slide){
  const n=Math.max(1,Math.min(Number(slide)||1,p.slideCount));
  return `/presentations/${encodeURIComponent(p.id)}/slides/slide-${String(n).padStart(3,'0')}.jpg`;
 }
+let presentationLibraryGeneration=0,presentationStateGeneration=0,presentationPendingCommands=0;
+let presentationCommandTail=Promise.resolve(),presentationStateRead=null;
+function applyPresentationState(state){
+ PRES.state=state||null;
+ if(!PRES.selectedId&&state?.active&&state.presentationId)PRES.selectedId=state.presentationId;
+ renderPresenter();
+}
+function writePresentationState(url,body){
+ const generation=++presentationStateGeneration;presentationPendingCommands++;
+ const operation=presentationCommandTail.then(async()=>{
+  const j=await jpost(url,body);
+  if(generation===presentationStateGeneration)applyPresentationState(j.state);
+  return j;
+ }).finally(()=>{presentationPendingCommands--});
+ presentationCommandTail=operation.catch(()=>{});
+ return operation;
+}
+function refreshPresentationState(){
+ if(presentationPendingCommands)return Promise.resolve();
+ if(presentationStateRead?.generation===presentationStateGeneration)return presentationStateRead.promise;
+ const generation=++presentationStateGeneration;
+ const promise=api('/api/v1/presentations/state').then(j=>{
+  if(generation===presentationStateGeneration&&!presentationPendingCommands)applyPresentationState(j.state);
+ }).finally(()=>{if(presentationStateRead?.promise===promise)presentationStateRead=null});
+ presentationStateRead={generation,promise};return promise;
+}
 async function loadPresentations(){
+ const generation=++presentationLibraryGeneration,stateGeneration=presentationPendingCommands?null:++presentationStateGeneration;
  try{
   const j=await api('/api/v1/presentations');
-  PRES.folders=j.folders||[];PRES.presentations=j.presentations||[];PRES.state=j.state||null;PRES.displays=j.displays||[];
+  if(generation!==presentationLibraryGeneration)return;
+  PRES.folders=j.folders||[];PRES.presentations=j.presentations||[];PRES.displays=j.displays||[];
+  if(stateGeneration===presentationStateGeneration&&!presentationPendingCommands)PRES.state=j.state||null;
   if(!presFolder(PRES.currentFolder))PRES.currentFolder='root';
   if(PRES.selectedId&&!presFile(PRES.selectedId))PRES.selectedId=null;
   if(!PRES.selectedId&&PRES.state?.presentationId)PRES.selectedId=PRES.state.presentationId;
   if(PRES.state?.active&&PRES.state?.presentationId===PRES.selectedId)PRES.previewSlide=Number(PRES.state.slide||1);
   renderPresentationLibrary();renderPresentationTargets();renderPresenter();
- }catch(e){presentationRows.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
+ }catch(e){if(generation===presentationLibraryGeneration)presentationRows.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
 }
 function renderPresentationLibrary(){
  presFolderSelect.innerHTML=PRES.folders
@@ -401,9 +483,19 @@ async function rebuildPresentation(id){
  catch(e){presentationUploadState.textContent=e.message}
 }
 function renderPresentationTargets(){
- presTargets.innerHTML=PRES.displays.map((d,i)=>`<label style="display:flex;gap:5px;align-items:center">
-   <input type="checkbox" class="presTargetCheck" value="${esc(d.id)}" checked> ${esc(d.name||d.id)}
- </label>`).join('');
+ const existing=new Map([...presTargets.querySelectorAll('.presTargetCheck')].map(input=>[input.value,input.closest('label')]));
+ PRES.displays.forEach((d,index)=>{
+  let label=existing.get(d.id);existing.delete(d.id);
+  if(!label){
+   label=document.createElement('label');label.style.cssText='display:flex;gap:5px;align-items:center';
+   const input=document.createElement('input');input.type='checkbox';input.className='presTargetCheck';input.value=d.id;input.checked=!PRES.targetsInitialized;
+   label.append(input,document.createElement('span'));
+  }
+  label.querySelector('span').textContent=d.name||d.id;
+  if(presTargets.children[index]!==label)presTargets.insertBefore(label,presTargets.children[index]||null);
+ });
+ for(const label of existing.values())label.remove();
+ if(PRES.displays.length)PRES.targetsInitialized=true;
 }
 function selectedPresentationTargets(){
  return [...document.querySelectorAll('.presTargetCheck:checked')].map(x=>x.value);
@@ -412,14 +504,13 @@ async function startSelectedPresentation(){
  const p=presFile(PRES.selectedId);if(!p)return alert('Select a presentation first.');
  const targets=selectedPresentationTargets();if(!targets.length)return alert('Select at least one TV.');
  try{
-  const j=await jpost('/api/v1/presentations/'+encodeURIComponent(p.id)+'/start',{
+  await writePresentationState('/api/v1/presentations/'+encodeURIComponent(p.id)+'/start',{
     targets,
     slide:Number(presStartSlide.value)||1,
     autoAdvanceSeconds:Number(presStartAuto.value)||0,
     loop:presStartLoop.checked,
     targetSeconds:Number(presTargetSeconds.value)||0
   });
-  PRES.state=j.state;renderPresenter();
  }catch(e){alert(e.message)}
 }
 async function presentationControl(action,extra={}){
@@ -432,12 +523,20 @@ async function presentationControl(action,extra={}){
   return;
  }
  try{
-  const j=await jpost('/api/v1/presentations/control',{action,...extra});
-  PRES.state=j.state;if(j.state?.presentationId)PRES.selectedId=j.state.presentationId;renderPresenter();
+  await writePresentationState('/api/v1/presentations/control',{action,...extra,sessionId:PRES.state?.sessionId});
  }catch(e){alert(e.message)}
 }
 function presentationSetAuto(){
  presentationControl('set-auto',{seconds:Number(presAutoSeconds.value)||0,loop:presLoop.checked});
+}
+const presentationFieldStates=new WeakMap();
+function syncPresentationField(field,value,context){
+ const property=field.type==='checkbox'?'checked':'value',desired=property==='checked'?!!value:String(value);
+ const prior=presentationFieldStates.get(field),focused=document.activeElement===field;
+ const changedContext=prior&&prior.context!==context;
+ if(changedContext||(!focused&&(!prior||field[property]===prior.rendered)))field[property]=desired;
+ const rendered=field[property]===desired?desired:(changedContext?desired:(prior?.rendered??desired));
+ presentationFieldStates.set(field,{context,rendered});
 }
 function renderPresenter(){
  const p=presFile(PRES.selectedId),st=PRES.state||{};
@@ -449,10 +548,11 @@ function renderPresenter(){
    : Math.max(1,Math.min(Number(PRES.previewSlide||1),Number(p?.slideCount||1)));
  if(active)PRES.previewSlide=slide;
  presSlideMetric.textContent=p?`${slide} / ${p.slideCount||0}`:'—';
- presGoto.max=p?.slideCount||1;presGoto.value=slide;
- presTargetSeconds.value=Number(st.targetSeconds||0);
- presAutoSeconds.value=Number(st.autoAdvanceSeconds||0);
- presLoop.checked=!!st.loop;
+ const session=st.sessionId||'';
+ presGoto.max=p?.slideCount||1;syncPresentationField(presGoto,slide,session+'|'+PRES.selectedId);
+ syncPresentationField(presTargetSeconds,Number(st.targetSeconds||0),session);
+ syncPresentationField(presAutoSeconds,Number(st.autoAdvanceSeconds||0),session);
+ syncPresentationField(presLoop,!!st.loop,session);
  presPauseBtn.textContent=st.paused?'Resume':'Pause';
  presBlackBtn.textContent=st.black?'Return to Slides':'Black Screen';
  presTargetStatus.textContent=active?`Showing on: ${(st.targets||[]).join(', ')}`:'Preview only. Next, Previous and Go select the slide to start.';
@@ -461,12 +561,14 @@ function renderPresenter(){
    if(slide<p.slideCount){presNextImage.src=presentationUrl(p,slide+1);presNextImage.style.display='block';presNextEmpty.style.display='none'}
    else{presNextImage.style.display='none';presNextEmpty.style.display='inline'}
    presNotes.value=active?(st.notes||p.notes?.[slide-1]||''):(p.notes?.[slide-1]||'');
-   presThumbs.innerHTML=Array.from({length:p.slideCount},(_,i)=>`<button title="Slide ${i+1}" onclick="${active?`presentationControl('goto',{slide:${i+1}})`:`previewPresentationSlide(${i+1})`}" style="padding:3px;flex:0 0 120px">
+   const thumbKey=JSON.stringify([p.id,p.slideCount,!!active]);
+   if(PRES.thumbKey!==thumbKey)presThumbs.innerHTML=Array.from({length:p.slideCount},(_,i)=>`<button title="Slide ${i+1}" onclick="${active?`presentationControl('goto',{slide:${i+1}})`:`previewPresentationSlide(${i+1})`}" style="padding:3px;flex:0 0 120px">
       <img src="${presentationUrl(p,i+1)}" alt="Slide ${i+1}" style="width:100%;aspect-ratio:16/9;object-fit:contain">
       <div>${i+1}</div>
    </button>`).join('');
+   PRES.thumbKey=thumbKey;
  }else{
-   presCurrentImage.style.display='none';presCurrentEmpty.style.display='inline';presNextImage.style.display='none';presNextEmpty.style.display='inline';presNotes.value='';presThumbs.innerHTML='';
+   presCurrentImage.style.display='none';presCurrentEmpty.style.display='inline';presNextImage.style.display='none';presNextEmpty.style.display='inline';presNotes.value='';presThumbs.innerHTML='';PRES.thumbKey=null;
  }
  const timings=st.timings||{};
  presTimingHistory.innerHTML=Object.keys(timings).length?Object.entries(timings).sort((a,b)=>Number(a[0])-Number(b[0])).map(([n,v])=>`Slide ${n}: <b>${fmtTimer(v)}</b>`).join(' • '):'No timing data yet.';
@@ -493,9 +595,7 @@ function updatePresentationTimers(){
 setInterval(async()=>{
  if(!document.getElementById('presentations')?.classList.contains('active'))return;
  try{
-   const j=await api('/api/v1/presentations/state');
-   PRES.state=j.state;if(!PRES.selectedId&&j.state?.active&&j.state.presentationId)PRES.selectedId=j.state.presentationId;
-   renderPresenter();
+   await refreshPresentationState();
  }catch{}
 },1000);
 presentationUploadForm.addEventListener('submit',async e=>{
@@ -511,11 +611,22 @@ presentationUploadForm.addEventListener('submit',async e=>{
 });
 
 function fmtBytes(n){n=Number(n||0);if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(1)+' GB'}
+let mediaLibraryRequest=null,mediaLibraryPending=false,mediaLibraryRenderGeneration=0;
+function fetchMediaLibrary(){
+ const request=api('/api/v1/media').then(j=>{
+  if(mediaLibraryRequest!==request)return mediaLibraryRequest;
+  S.mediaFiles=j.files||[];mediaLibraryPending=false;return S.mediaFiles;
+ },error=>{
+  if(mediaLibraryRequest!==request)return mediaLibraryRequest;
+  mediaLibraryPending=false;throw error;
+ });
+ mediaLibraryRequest=request;mediaLibraryPending=true;return request;
+}
 async function loadMedia(){
+ const generation=++mediaLibraryRenderGeneration;
  try{
-  const j=await api('/api/v1/media');
-  S.mediaFiles=j.files||[];
-  mediaRows.innerHTML=(j.files||[]).map(f=>{
+  const files=await fetchMediaLibrary();if(generation!==mediaLibraryRenderGeneration)return;
+  mediaRows.innerHTML=files.map(f=>{
    const conv=f.conversionStatus?`${esc(f.conversionStatus)}${f.conversionError?`<br><span class="bad">${esc(f.conversionError)}</span>`:''}`:'—';
    const showable=['image','video','pdf','presentation','document'].includes(f.type);
    return `<tr><td style="text-align:left"><b>${esc(f.originalName||f.storedName)}</b><br><span class="muted">${esc(f.storedName)}</span></td>
@@ -527,10 +638,9 @@ async function loadMedia(){
      <button class="danger" onclick="deleteMedia(${inlineJsArg(encodeURIComponent(f.storedName))},${inlineJsArg(f.originalName||f.storedName)})">Delete</button>
    </div></td></tr>`;
   }).join('')||'<tr><td colspan="6">No uploaded files.</td></tr>';
- }catch(e){mediaRows.innerHTML=`<tr><td colspan="6" class="bad">${esc(e.message)}</td></tr>`}
+ }catch(e){if(generation===mediaLibraryRenderGeneration)mediaRows.innerHTML=`<tr><td colspan="6" class="bad">${esc(e.message)}</td></tr>`}
 }
 async function loadLabAgentCredentials(){try{const j=await api('/api/v1/admin/lab-agent-credentials');labLegacySharedToken.checked=j.policy?.legacySharedTokenAllowed!==false;const active=(j.credentials||[]).filter(x=>!x.revokedAt);labAgentCredentials.innerHTML=`<table><thead><tr><th>Computer</th><th>Label</th><th>Created</th><th>Last Used</th><th></th></tr></thead><tbody>${active.map(x=>`<tr><td><code>${esc(x.agentId)}</code></td><td>${esc(x.label||'Windows classroom agent')}</td><td>${esc(new Date(x.createdAt).toLocaleString())}</td><td>${x.lastUsedAt?esc(new Date(x.lastUsedAt).toLocaleString()):'Never'}</td><td><button class="danger" onclick="revokeLabAgentCredential(${inlineJsArg(x.id)})">Revoke</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">No individually enrolled Windows agents.</td></tr>'}</tbody></table>`}catch(e){labAgentCredentials.innerHTML=`<div class="muted">Agent enrollment requires an administrator: ${esc(e.message)}</div>`}}
-async function createLabAgentEnrollment(){try{const id=labEnrollmentId.value.trim();if(!id)throw Error('Enter a stable computer ID.');const j=await api(`/api/v1/admin/lab-agents/${encodeURIComponent(id)}/enrollment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ttlMinutes:Number(labEnrollmentTtl.value||15)})}),e=j.enrollment;labEnrollmentResult.style.display='block';labEnrollmentResult.innerHTML=`<b>Run once in elevated PowerShell on ${esc(e.agentId)}</b><textarea class="raw" readonly style="width:100%;min-height:120px;margin-top:8px">${esc(e.installCommand)}</textarea><div class="muted">Expires ${esc(new Date(e.expiresAt).toLocaleString())}. The raw enrollment token is shown only in this command.</div>`;await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
 async function revokeLabAgentCredential(id){if(!confirm('Revoke this computer credential and disconnect its agent?'))return;try{await api(`/api/v1/admin/lab-agent-credentials/${encodeURIComponent(id)}`,{method:'DELETE'});await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
 async function saveLabAgentPolicy(){try{await api('/api/v1/admin/lab-agent-credentials/policy',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({legacySharedTokenAllowed:labLegacySharedToken.checked,enrollmentTtlMinutes:Number(labEnrollmentTtl.value||15)})});notify('Lab agent security policy saved.','success');await loadLabAgentCredentials()}catch(e){notify(e.message,'error')}}
 async function showMedia(enc){
@@ -540,234 +650,94 @@ async function showMedia(enc){
 }
 async function convertMedia(enc){try{uploadState.textContent='Converting…';await jpost('/api/v1/media/'+enc+'/convert',{});uploadState.textContent='Conversion complete';loadMedia()}catch(e){uploadState.textContent=e.message}}
 async function deleteMedia(enc,label){if(!confirm(`Delete "${label}" from RoomGoblin? This also removes its generated display PDF.`))return;try{await api('/api/v1/media/'+enc,{method:'DELETE'});loadMedia()}catch(e){alert(e.message)}}
-let mediaUploadAbort=null;
+let mediaUploadAbort=null,mediaUploadFile=null,mediaUploadGeneration=0;
 async function runMediaUpload(){
- const f=mediaFile.files[0];if(!f)return;mediaUploadAbort=new AbortController();mediaUploadPause.style.display='';mediaUploadCancel.style.display='';
+ const f=mediaFile.files[0];if(!f)return;const generation=++mediaUploadGeneration;mediaUploadAbort?.abort();const controller=new AbortController();mediaUploadAbort=controller;mediaUploadFile=f;mediaUploadPause.style.display='';mediaUploadCancel.style.display='';
  uploadState.textContent='Preparing upload…';
  try{
-  const j=await RoomGoblinUpload.upload(f,{signal:mediaUploadAbort.signal,onProgress:p=>{uploadState.textContent=`Uploading ${p.percent}% • ${fmtBytes(p.uploaded)} / ${fmtBytes(p.total)}`}});
-  uploadState.textContent=j.file?.conversionStatus==='failed'?'Uploaded; conversion failed':'Ready';mediaFile.value='';mediaUploadCancel.style.display='none';loadMedia();
- }catch(err){uploadState.textContent=err.name==='AbortError'?'Paused — select Upload to resume':err.message}
- finally{mediaUploadAbort=null;mediaUploadPause.style.display='none'}
+  const j=await RoomGoblinUpload.upload(f,{signal:controller.signal,onProgress:p=>{if(generation===mediaUploadGeneration)uploadState.textContent=`Uploading ${p.percent}% • ${fmtBytes(p.uploaded)} / ${fmtBytes(p.total)}`}});
+  if(generation!==mediaUploadGeneration)return;
+  uploadState.textContent=j.file?.conversionStatus==='failed'?'Uploaded; conversion failed':'Ready';if(mediaFile.files[0]===f)mediaFile.value='';mediaUploadFile=null;mediaUploadCancel.style.display='none';loadMedia();
+ }catch(err){if(generation===mediaUploadGeneration)uploadState.textContent=err.name==='AbortError'?'Paused — select Upload to resume':err.message}
+ finally{if(generation===mediaUploadGeneration){mediaUploadAbort=null;mediaUploadPause.style.display='none'}}
 }
 mediaUploadForm.addEventListener('submit',async e=>{e.preventDefault();await runMediaUpload()});
 mediaUploadPause.addEventListener('click',()=>mediaUploadAbort?.abort());
-mediaUploadCancel.addEventListener('click',async()=>{const f=mediaFile.files[0];mediaUploadAbort?.abort();if(f)await RoomGoblinUpload.cancel(f);uploadState.textContent='Upload cancelled';mediaUploadCancel.style.display='none'});
+mediaUploadCancel.addEventListener('click',async()=>{const f=mediaUploadFile||mediaFile.files[0],generation=++mediaUploadGeneration;mediaUploadAbort?.abort();mediaUploadAbort=null;mediaUploadPause.style.display='none';try{const result=f?await RoomGoblinUpload.cancel(f):{completed:null};if(generation!==mediaUploadGeneration)return;uploadState.textContent=result?.completed===true?'Upload already saved; it is in the media library':result?.completed===false?'Upload cancelled':'Upload session closed; check the media library';mediaUploadCancel.style.display='none';mediaUploadFile=null;if(result?.completed!==false)loadMedia()}catch(error){if(generation===mediaUploadGeneration){uploadState.textContent=`Cancel failed: ${error.message}`;mediaUploadCancel.style.display=''}}});
 
-async function plutoAction(p,refresh=true){
- try{
-  const j=await jpost('/api/v1/pluto',p);
-  const ack=j?.data?.result===1?'confirmed':(j.pendingVerify?'sent; verification pending':'acknowledged');
-  avMsg.textContent=`${friendlyAvAction(p)} — ${ack}`;
-  if(refresh)setTimeout(refreshPluto,180);
-  return j;
- }catch(e){avMsg.textContent=e.message;throw e}
-}
-function friendlyAvAction(p){
- if(p.action==='route')return `${avOutputLabel(p.output)} → ${avInputLabel(p.input)}`;
- if(p.action==='cecOutput')return `${avOutputLabel(p.output)} power ${Number(p.index)===0?'on':'off'}`;
- if(p.action==='cecInput')return `${avInputLabel(p.input)} power ${Number(p.index)===1?'on':'off'}`;
- return String(p.action||'Matrix command');
-}
-function defaultAvLabels(){return {outputs:Array.from({length:8},(_,i)=>`TV ${i+1}`),inputs:Array.from({length:8},(_,i)=>`Content Source ${i+1}`),sourceEndpoints:Array.from({length:8},(_,i)=>`source${i+1}`)}}
-function avLabels(){const d=defaultAvLabels(),x=S.pluto?.labels||{};return {outputs:Array.from({length:8},(_,i)=>String(x.outputs?.[i]||d.outputs[i])),inputs:Array.from({length:8},(_,i)=>String(x.inputs?.[i]||d.inputs[i])),sourceEndpoints:Array.from({length:8},(_,i)=>String(x.sourceEndpoints?.[i]||d.sourceEndpoints[i]))}}
-function avOutputLabel(n){return avLabels().outputs[Number(n)-1]||`TV ${n}`}
-function avInputLabel(n){return avLabels().inputs[Number(n)-1]||`Content Source ${n}`}
-async function refreshPluto(){
- try{
-  const [j,cfg,dev]=await Promise.all([api('/api/v1/pluto/status'),api('/api/v1/config'),api('/api/v1/devices').catch(()=>({status:{}}))]);S.pluto=j;S.avConfig=cfg||{};S.avDeviceStatus=dev.status||{};syncDisplayTargetNames(cfg.devices||{});
-  syncAvOutputLabelsFromDisplays();renderMatrix();renderTV();
-  avHealth.textContent=j.ok?'Matrix Online':'Matrix Partial';avHealth.className='pill '+(j.ok?'ok':'bad');avMsg.textContent=j.ok?'Ready':'Some matrix status queries failed';
- }catch(e){avHealth.textContent='Matrix Offline';avHealth.className='pill bad';avMsg.textContent=e.message}
-}
-let avLivePollBusy=false;setInterval(async()=>{if(avLivePollBusy||!document.getElementById('av')?.classList.contains('active'))return;avLivePollBusy=true;try{await refreshPluto();}catch{}finally{avLivePollBusy=false}},5000);
-function avTvDisplayId(output){return displayByAvOutput(output)?.[0]||null}
-function avTvOnline(output){const id=avTvDisplayId(output);return !!id&&S.avConfig?.devices?.[id]?.enabled!==false&&!!S.avDeviceStatus?.[id]?.online}
-function requireAvReceiver(output){
- const id=avTvDisplayId(output);
- if(!id)throw new Error(`HDBT ${output} has no unique receiver mapping. Open Edit Receivers & Groups before using display tools or groups.`);
- if(S.avConfig?.devices?.[id]?.enabled===false)throw new Error(`Receiver ${id} is disabled. Open Edit Receivers & Groups.`);
- return id;
-}
-function avReportedPowerState(output){
- const o=Number(output),sources=[S.pluto?.cecStatus||{},S.pluto?.outputStatus||{}];
- for(const src of sources){for(const key of ['hdbtPower','hdbt_power','hdbtPowerState','hdbt_power_state','allhdbtpower','allhdbtpowerstate']){const a=src?.[key];if(Array.isArray(a)&&a.length>=o){const v=a[o-1];if(v===true||Number(v)===1)return {known:true,on:true,source:key};if(v===false||Number(v)===0)return {known:true,on:false,source:key}}}}
- return {known:false,on:null,source:null};
-}
-function storedAvPowerStates(){try{const value=JSON.parse(localStorage.getItem('classroomHub.avPowerStates')||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}catch{return {}}}
-function avPowerStateInfo(output){const live=avReportedPowerState(output);if(live.known)return {...live,verified:true,label:live.on?'On':'Off'};const m=storedAvPowerStates(),v=m[output];if(v&&typeof v==='object'&&(v.on===true||v.on===false))return {known:true,on:v.on,verified:false,label:v.on?'On':'Off',at:v.at||null};if(v===true||v===false)return {known:true,on:v,verified:false,label:v?'On':'Off'};return {known:false,on:null,verified:false,label:'Unknown'}}
-function avPowerState(output){return avPowerStateInfo(output).on===true}
-function saveAvPowerState(output,on){const m=storedAvPowerStates();m[output]={on:!!on,at:new Date().toISOString()};try{localStorage.setItem('classroomHub.avPowerStates',JSON.stringify(m))}catch{}}
-let avMatrixMarkup='',avRouteAllMarkup='';
-function renderMatrix(){
- const routes=S.pluto.videoStatus?.allsource||[],L=avLabels();
- let markup='<div class="mh">TV / SOURCE →</div>'+L.inputs.map((n,i)=>`<div class="mh"><button class="av40SourceHead" onclick="openAvSourceDrawer(${i+1})">${esc(n)}</button><small>Input ${i+1}</small></div>`).join('');
- for(let o=1;o<=8;o++){
-  const online=avTvOnline(o),ps=avPowerStateInfo(o),cls=ps.known?(ps.on?'on':'off'):'unknown',title=ps.verified?`Live reported power: ${ps.label}. Click to toggle.`:ps.known?`Last RoomGoblin command: ${ps.label}. Hardware does not currently report live TV power. Click to toggle.`:'TV power state is not reported by the matrix. Click to send Power On.';
-  markup+=`<div class="mh av40TvCell"><button class="av40TvName" onclick="openAvTvDrawer(${o})"><b>${esc(L.outputs[o-1])}</b><small>HDBT ${o} • ${esc(avReceiverSummary(o,online))}</small></button><button class="av40PowerMini ${cls} ${ps.verified?'reported':''}" title="${esc(title)}" onclick="event.stopPropagation();toggleRowTvPower(${o})">⏻</button></div>`;
-  for(let i=1;i<=8;i++)markup+=`<button class="route ${Number(routes[o-1])===i?'active':''}" onclick="route(${o},${i})">${Number(routes[o-1])===i?'●':'○'} ${esc(L.inputs[i-1])}</button>`;
- }
- // Avoid repeatedly parsing the growing grid and replacing unchanged controls on polling.
- if(markup!==avMatrixMarkup){matrix.innerHTML=markup;avMatrixMarkup=markup;}
- const allMarkup='<b>Route all TVs:</b>'+L.inputs.map((n,i)=>`<button onclick="routeAllTo(${i+1})">All → ${esc(n)}</button>`).join('');
- if(allMarkup!==avRouteAllMarkup){routeAll.innerHTML=allMarkup;avRouteAllMarkup=allMarkup;}
- renderAv40Summary();
-}
-async function toggleRowTvPower(output){const ps=avPowerStateInfo(output),turnOn=ps.known?!ps.on:true;try{await plutoAction({action:'cecOutput',output:Number(output),connection:'hdbt',index:turnOn?0:1},false);saveAvPowerState(output,turnOn);renderMatrix();avMsg.textContent=`${avOutputLabel(output)} power ${turnOn?'on':'off'} sent`;}catch(e){notify(e.message,'error')}}
-function renderAv40Summary(){const routes=S.pluto.videoStatus?.allsource||[],L=avLabels(),counts={};routes.forEach(x=>counts[x]=(counts[x]||0)+1);const best=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];av40MatrixSummary.textContent=S.pluto?.ok?'Operational':'Needs Attention';av40MatrixSummary.className='kpi '+(S.pluto?.ok?'ok':'bad');av40Firmware.textContent=`Firmware ${S.pluto.systemStatus?.main||'—'}`;av40RouteSummary.textContent=best?`${best[1]} TV(s) → ${L.inputs[Number(best[0])-1]||'Unknown'}`:'No routes reported'}
-async function route(o,i){await plutoAction({action:'route',output:o,input:i},false);for(let n=0;n<4;n++){await new Promise(r=>setTimeout(r,120*(n+1)));const v=(await jpost('/api/v1/pluto',{action:'videoStatus'})).data;if(Number(v.allsource?.[o-1])===i){S.pluto.videoStatus=v;renderMatrix();avMsg.textContent=`Verified: ${avOutputLabel(o)} → ${avInputLabel(i)}`;if(S.avDrawerOutput===o)renderAvDrawer();return}}avMsg.textContent=`Route sent but not verified: ${avOutputLabel(o)} → ${avInputLabel(i)}`}
-async function routeAllTo(i){if(!confirm(`Route all TVs to ${avInputLabel(i)}?`))return;for(let o=1;o<=8;o++)await route(o,i);refreshPluto()}
-async function powerAllAvTvs(index){if(!confirm(`Power all TVs ${index===0?'on':'off'}?`))return;for(let o=1;o<=8;o++){await plutoAction({action:'cecOutput',output:o,connection:'hdbt',index},false);saveAvPowerState(o,index===0)}renderMatrix();setTimeout(refreshPluto,300)}
-function toggleAvAdvanced(){avAdvanced.open=!avAdvanced.open;if(avAdvanced.open)avAdvanced.scrollIntoView({behavior:'smooth',block:'start'})}
-function openAvTvDrawer(output){S.avDrawerOutput=Number(output);renderAvDrawer();avTvDrawer.classList.add('open');avTvDrawerBackdrop.classList.add('open')}
-function closeAvTvDrawer(){avTvDrawer.classList.remove('open');if(!avSourceDrawer.classList.contains('open'))avTvDrawerBackdrop.classList.remove('open')}
-function openAvSourceDrawer(input){S.avDrawerInput=Number(input);renderAvSourceDrawer();avSourceDrawer.classList.add('open');avTvDrawerBackdrop.classList.add('open')}
-function closeAvSourceDrawer(){avSourceDrawer.classList.remove('open');if(!avTvDrawer.classList.contains('open'))avTvDrawerBackdrop.classList.remove('open')}
-function renderAvSourceDrawer(){const i=Number(S.avDrawerInput||1),L=avLabels(),x=S.pluto.inputStatus||{},inactive=Number(x.inactive?.[i-1]),edid=x.edid?.[i-1];avSourceDrawerTitle.textContent=L.inputs[i-1];avSourceDrawerSubtitle.textContent=`Matrix Input ${i}`;avSourceDrawerName.value=L.inputs[i-1];avSourceDrawerEndpoint.value=L.sourceEndpoints[i-1]||`source${i}`;avSourceDrawerEdid.value=edid??15;avSourceDrawerInfo.innerHTML=`Signal: <b>${inactive===0?'Detected':inactive===1?'No signal':'Unknown'}</b><br>EDID profile: ${esc(edid??'Unknown')}<br>Endpoint: ${esc(L.sourceEndpoints[i-1]||`source${i}`)}`}
-async function sourceDrawerPower(index){const i=Number(S.avDrawerInput||1);await plutoAction({action:'cecInput',input:i,index},false);notify(`${avInputLabel(i)} power ${index===1?'on':'off'} command sent.`,'success')}
-async function saveSourceDrawerEdid(){const i=Number(S.avDrawerInput||1),profile=Number(avSourceDrawerEdid.value);if(!Number.isFinite(profile)||profile<0||profile>255)return notify('EDID profile must be 0-255.','error');if(!confirm(`Change ${avInputLabel(i)} EDID profile to ${profile}? Only change EDID when troubleshooting source compatibility.`))return;await plutoAction({action:'setEdid',input:i,profile});setTimeout(refreshPluto,250)}
-async function saveSourceDrawer(){
- try{
-  const i=Number(S.avDrawerInput),L=avLabels(),name=avSourceDrawerName.value.trim()||`Content Source ${i}`,endpoint=avSourceDrawerEndpoint.value.trim()||`source${i}`;
-  L.inputs[i-1]=name;L.sourceEndpoints[i-1]=endpoint;
-  const j=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(L)});
-  S.pluto.labels=j.labels;renderMatrix();renderAvSourceDrawer();notify('Source saved.','success');
- }catch(e){notify(`Source was not saved: ${e.message}`,'error')}
-}
-function renderAvDrawer(){const o=Number(S.avDrawerOutput||1),L=avLabels(),input=Number(S.pluto.videoStatus?.allsource?.[o-1]||1),hit=displayByAvOutput(o),id=hit?.[0]||null,st=S.avDeviceStatus?.[id]||{},sig=Number(S.pluto.inputStatus?.inactive?.[input-1])===0,ps=avPowerStateInfo(o);avDrawerTitle.textContent=L.outputs[o-1];avDrawerTvName.value=L.outputs[o-1];avDrawerSubtitle.textContent=`HDBT ${o} • ${id?'Receiver '+id:'No unique receiver mapping'}`;avDrawerCurrentSource.textContent=L.inputs[input-1]||`Content Source ${input}`;avDrawerSource.innerHTML=L.inputs.map((n,i)=>`<option value="${i+1}" ${i+1===input?'selected':''}>${esc(n)} (Input ${i+1})</option>`).join('');avDrawerPowerStatus.textContent=ps.verified?`Power: ${ps.label} • live matrix report`:(ps.known?`Power: ${ps.label} • last RoomGoblin command; not hardware-confirmed`:'Power: Unknown • this matrix firmware is not reporting live TV power');avDrawerInfo.innerHTML=`Receiver: <b>${!id?'No unique mapping':hit[1].enabled===false?'Disabled':st.online?'Online':'Offline'}</b><br>Current Source: ${esc(L.inputs[input-1]||'—')}<br>Source Signal: ${sig?'Detected':'Not detected'}<br>Resolution: ${esc(st.meta?.resolution||'Unknown')}<br>Last Seen: ${esc(overviewLastSeen(st))}`;renderDrawerTvGroups(id)}
-async function drawerTvPower(index){const o=Number(S.avDrawerOutput);await plutoAction({action:'cecOutput',output:o,connection:'hdbt',index},false);saveAvPowerState(o,index===0);renderMatrix();renderAvDrawer();notify(`${avOutputLabel(o)} power ${index===0?'on':'off'} sent.`,'success')}
-async function saveDrawerTvName(){
- let receiverSaved=false;
- try{
-  const o=Number(S.avDrawerOutput),name=avDrawerTvName.value.trim()||`TV ${o}`,hit=displayByAvOutput(o);
-  // A matrix output can exist without a RoomGoblin receiver. Rename its label only.
-  if(hit){
-   const [id]=hit,devices={...(S.avConfig.devices||{})};devices[id]={...devices[id],name};
-   const saved=await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({devices,displayGroups:S.avConfig?.displayGroups||{}})});
-   S.avConfig.devices=saved.devices;syncDisplayTargetNames(saved.devices);receiverSaved=true;
-  }
-  const L=avLabels();L.outputs[o-1]=name;
-  const j=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(L)});
-  S.pluto.labels=j.labels;renderMatrix();renderAvDrawer();notify('TV name saved.','success');
- }catch(e){notify(`${receiverSaved?'Receiver name saved, but the matrix label was not saved':'TV name was not saved'}: ${e.message}`,'error')}
-}
-function renderDrawerTvGroups(id){const groups=S.avConfig?.displayGroups||{};avDrawerGroups.innerHTML=id?Object.entries(groups).filter(([n])=>n!=='all').map(([name,members])=>`<label><input type="checkbox" data-drawer-tv-group="${esc(name)}" ${(members||[]).includes(id)?'checked':''}><span>${esc(name)}</span></label>`).join('')||'<span class="muted">No optional groups configured.</span>':'<span class="muted">No unique receiver mapping. Open Edit Receivers & Groups.</span>'}
-async function saveDrawerTvGroups(){try{const o=Number(S.avDrawerOutput),id=requireAvReceiver(o),groups={...(S.avConfig?.displayGroups||{})};document.querySelectorAll('[data-drawer-tv-group]').forEach(cb=>{const n=cb.dataset.drawerTvGroup,m=new Set(groups[n]||[]);cb.checked?m.add(id):m.delete(id);groups[n]=[...m]});if(groups.all&&!groups.all.includes(id))groups.all=[...groups.all,id];const saved=await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:S.avConfig?.room,devices:S.avConfig?.devices||{},displayGroups:groups,lightingGroups:S.avConfig?.lightingGroups||[]})});S.avConfig.displayGroups=saved.displayGroups;notify('TV groups saved.','success')}catch(e){notify(`TV groups were not saved: ${e.message}`,'error')}}
-function drawerUpdateRoute(){return route(Number(S.avDrawerOutput),Number(avDrawerSource.value))}
-async function sendTvTestImage(id,output){return api('/api/v1/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'display.image',target:id,payload:{url:`/test-images/tv${output}.svg`,fit:'contain'}})})}
-async function drawerTestImage(){try{const o=Number(S.avDrawerOutput),id=requireAvReceiver(o);if(!S.avDeviceStatus?.[id]?.online)throw new Error(`${avOutputLabel(o)} receiver ${id} is offline`);await sendTvTestImage(id,o);avDrawerToolStatus.textContent=`Test image sent to ${id}`;notify(`Test image sent to ${avOutputLabel(o)}.`,'success')}catch(e){avDrawerToolStatus.textContent=e.message;notify(e.message,'error')}}
-async function drawerDisplayCommand(type,label){const o=Number(S.avDrawerOutput),id=requireAvReceiver(o),st=S.avDeviceStatus?.[id];if(!st?.online)throw new Error(`${avOutputLabel(o)} receiver ${id} is offline`);avDrawerToolStatus.textContent=`Sending ${label} to ${id}…`;const j=await api('/api/v1/commands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,target:id,payload:{requestedAt:new Date().toISOString()}})});avDrawerToolStatus.textContent=`${label} sent to ${id}`;notify(`${label} sent to ${avOutputLabel(o)}.`,'success');return j}
-async function drawerClearDisplay(){try{return await drawerDisplayCommand('display.clear','Clear Display')}catch(e){avDrawerToolStatus.textContent=e.message;notify(e.message,'error')}}
-async function drawerReloadDisplay(){try{return await drawerDisplayCommand('display.reload','Reload Display')}catch(e){avDrawerToolStatus.textContent=e.message;notify(e.message,'error')}}
-function renderAvTargets(){
- const L=avLabels();
- avTvTargets.innerHTML=L.outputs.map((n,i)=>`<label class="avTarget"><input type="checkbox" class="avTvTarget" value="${i+1}"><b>${esc(n)}</b><span class="muted">HDBT ${i+1}</span></label>`).join('');
- avBulkSource.innerHTML=L.inputs.map((n,i)=>`<option value="${i+1}">${esc(n)} (Input ${i+1})</option>`).join('');
-}
-function selectedAvTvs(){return [...document.querySelectorAll('.avTvTarget:checked')].map(x=>Number(x.value))}
-function setAllAvTvTargets(state){document.querySelectorAll('.avTvTarget').forEach(x=>x.checked=state)}
-async function routeSelectedTvs(){const outs=selectedAvTvs(),input=Number(avBulkSource.value);if(!outs.length)return alert('Select at least one TV.');for(const o of outs)await route(o,input);refreshPluto()}
-async function powerSelectedTvs(index){const outs=selectedAvTvs();if(!outs.length)return alert('Select at least one TV.');for(const o of outs)await plutoAction({action:'cecOutput',output:o,connection:'hdbt',index},false);avMsg.textContent=`Power ${index===0?'On':'Off'} sent to ${outs.map(avOutputLabel).join(', ')}`;setTimeout(refreshPluto,250)}
-function renderSourceSelector(){
- const L=avLabels(),old=Number(avSourceDevice.value)||1;
- avSourceDevice.innerHTML=L.inputs.map((n,i)=>`<option value="${i+1}">${esc(n)} (Input ${i+1})</option>`).join('');avSourceDevice.value=String(Math.min(8,Math.max(1,old)));updateSourceSignal();
- avSourceDevice.onchange=updateSourceSignal;
-}
-function updateSourceSignal(){const i=Number(avSourceDevice.value)||1,x=S.pluto.inputStatus||{},inactive=Number(x.inactive?.[i-1]);avSourceSignal.textContent=inactive===0?'Signal detected':inactive===1?'No signal':'Unknown';avSourceSignal.className='pill '+(inactive===0?'ok':'')}
-function sourcePower(index){return plutoAction({action:'cecInput',input:Number(avSourceDevice.value),index})}
-function selScaler(type,o,val){return `<select onchange="plutoAction({action:'${type}Scaler',output:${o},mode:Number(this.value)})"><option value="0" ${val==0?'selected':''}>Bypass</option><option value="1" ${val==1?'selected':''}>4K→1080p</option><option value="3" ${val==3?'selected':''}>Auto</option></select>`}
-function renderOutputs(){
- const x=S.pluto.outputStatus||{},r=x.allsource||S.pluto.videoStatus?.allsource||[],L=avLabels();outputRows.innerHTML='';
- for(let o=1;o<=8;o++)outputRows.innerHTML+=`<tr><td><b>${esc(L.outputs[o-1])}</b><br><span class="muted">HDBT ${o}</span></td><td>${esc(avInputLabel(r[o-1]??0))}</td>
- <td><button onclick="plutoAction({action:'hdbtStream',output:${o},state:${!Number(x.allhdbtout?.[o-1])}})">${Number(x.allhdbtout?.[o-1])?'ON':'OFF'}</button></td>
- <td>${selScaler('hdbt',o,x.allhdbtscaler?.[o-1]??0)}</td>
- <td><button onclick="plutoAction({action:'txHdcp',output:${o},state:${!Number(x.allhdcp?.[o-1])}})">${Number(x.allhdcp?.[o-1])?'ON':'OFF'}</button></td></tr>`;
-}
-function renderInputs(){
- const x=S.pluto.inputStatus||{},L=avLabels();inputRows.innerHTML='';
- for(let i=1;i<=8;i++){
-  const inactive=Number(x.inactive?.[i-1]),signal=inactive===0?'Detected':inactive===1?'None':'?';
-  inputRows.innerHTML+=`<tr><td><b>${esc(L.inputs[i-1])}</b><br><span class="muted">Input ${i}</span></td><td><span class="pill ${inactive===0?'ok':''}">${signal}</span></td><td>${x.edid?.[i-1]??'?'}</td><td><input id="edid${i}" type="number" min="0" max="255" value="${x.edid?.[i-1]??15}" style="width:70px"><button onclick="plutoAction({action:'setEdid',input:${i},profile:Number(edid${i}.value)})">Set</button></td><td><button class="on" onclick="plutoAction({action:'cecInput',input:${i},index:1})">On</button><button class="danger" onclick="plutoAction({action:'cecInput',input:${i},index:2})">Off</button></td></tr>`;
- }
-}
-function displaysByAvOutput(output){return Object.entries(S.avConfig?.devices||{}).filter(([,d])=>Number(d?.avOutput)===Number(output))}
-function displayByAvOutput(output){const hits=displaysByAvOutput(output);return hits.length===1?hits[0]:null}
-function avReceiverSummary(output,online){const hits=displaysByAvOutput(output);return hits.length>1?`Multiple receivers: ${hits.map(([id])=>id).join(', ')}`:hits.length?`${hits[0][0]} • Receiver ${online?'online':'offline'}`:'No receiver assigned'}
-function syncDisplayTargetNames(devices){
- const changed=JSON.stringify(S.displayDevices)!==JSON.stringify(devices);S.displayDevices=devices;
- if(!changed)return;
- const selected=[...document.querySelectorAll('[data-classtarget]:checked')].map(x=>x.dataset.classtarget);
- renderClassDefaultTargets(selected.length?selected:['all']);populateDisplaySelect(window.mediaTarget);
- if(window.autoTargets&&window.autoAction&&!autoAction.value.startsWith('govee.'))renderAutoTargets([...document.querySelectorAll('[data-autotarget]:checked')].map(x=>x.dataset.autotarget));
-}
-function syncAvOutputLabelsFromDisplays(){
- const L=avLabels();
- const outputs=L.outputs.map((fallback,i)=>{const hit=displayByAvOutput(i+1);return hit?String(hit[1]?.name||hit[0]):fallback;});
- S.pluto.labels={...L,outputs};
-}
-function renderDisplayAvConfiguration(){
- const cfg=S.avConfig||{},ds=cfg.devices||{},groups=cfg.displayGroups||{},L=avLabels();
- avTvConfig.innerHTML=Array.from({length:8},(_,idx)=>{
-   const out=idx+1,hit=displayByAvOutput(out),id=hit?.[0]||`tv${out}`,d=hit?.[1]||{};
-   return `<div class="card" data-av-tv-output="${out}" style="box-shadow:none;margin:7px 0"><div class="row"><b>HDBT ${out}</b><span class="pill">TV</span></div><label>Friendly name<input data-av-tv-name value="${esc(d.name||`TV ${out}`)}"></label><div class="grid2" style="margin-top:7px"><label>Receiver ID<input data-av-tv-id value="${esc(id)}" ${hit?'readonly':''}></label><label>Lighting mapping<input data-av-tv-light value="${esc(d.lightingAlias||'')}" placeholder="optional"></label></div><label style="display:flex;gap:7px;align-items:center;margin-top:7px"><input type="checkbox" data-av-tv-enabled ${d.enabled!==false?'checked':''}> Enabled</label></div>`;
- }).join('');
- avSourceConfig.innerHTML=Array.from({length:8},(_,idx)=>`<div class="card" data-av-source-input="${idx+1}" style="box-shadow:none;margin:7px 0"><div class="row"><b>Input ${idx+1}</b><span class="pill">SOURCE</span></div><label>Friendly name<input data-av-source-name value="${esc(L.inputs[idx])}"></label><label style="margin-top:7px">Browser / kiosk endpoint ID<input data-av-source-endpoint value="${esc(L.sourceEndpoints[idx])}" placeholder="source${idx+1}"></label></div>`).join('');
- avGroupEditor.innerHTML=Object.entries(groups).map(([name,members])=>avGroupCard(name,members,ds)).join('')||'<div class="muted">No TV groups configured.</div>';
-}
-function avGroupCard(name,members,devices){return `<div class="groupCard" data-av-group="${esc(name)}"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(name)}</b>${name==='all'?'<span class="pill">Core</span>':`<button class="danger" onclick="removeAvDisplayGroup(${inlineJsArg(name)})">Remove</button>`}</div><div class="checkGrid">${Object.keys(devices).map(id=>`<label class="checkItem"><input type="checkbox" value="${esc(id)}" ${(members||[]).includes(id)?'checked':''}>${esc(devices[id]?.name||id)}</label>`).join('')}</div></div>`}
-function addAvDisplayGroup(){const n=avNewGroup.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'-');if(!n)return;S.avConfig.displayGroups=S.avConfig.displayGroups||{};if(S.avConfig.displayGroups[n])return alert('That group already exists.');S.avConfig.displayGroups[n]=[];avNewGroup.value='';renderDisplayAvConfiguration()}
-function removeAvDisplayGroup(name){if(!confirm(`Remove TV group ${name}?`))return;delete S.avConfig.displayGroups[name];renderDisplayAvConfiguration()}
-async function saveDisplayAvConfiguration(){
- try{
-   const old=S.avConfig?.devices||{},devices={...old};
-   document.querySelectorAll('[data-av-tv-output]').forEach(card=>{const output=Number(card.dataset.avTvOutput),id=card.querySelector('[data-av-tv-id]').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'-')||`tv${output}`,base={...(old[id]||{})};base.name=card.querySelector('[data-av-tv-name]').value.trim()||`TV ${output}`;base.enabled=card.querySelector('[data-av-tv-enabled]').checked;base.avOutput=output;base.lightingAlias=card.querySelector('[data-av-tv-light]').value.trim()||null;base.tags=Array.from(new Set([...(base.tags||[]),'classroom']));devices[id]=base});
-   const displayGroups={};avGroupEditor.querySelectorAll('[data-av-group]').forEach(card=>displayGroups[card.dataset.avGroup]=[...card.querySelectorAll('input[type="checkbox"]:checked')].map(x=>x.value));
-   if(!displayGroups.all)displayGroups.all=Object.keys(devices).filter(id=>devices[id].enabled!==false);
-   const inputs=[],sourceEndpoints=[];document.querySelectorAll('[data-av-source-input]').forEach(card=>{inputs.push(card.querySelector('[data-av-source-name]').value.trim()||`Content Source ${card.dataset.avSourceInput}`);sourceEndpoints.push(card.querySelector('[data-av-source-endpoint]').value.trim()||`source${card.dataset.avSourceInput}`)});
-   const outputs=Array.from({length:8},(_,i)=>displayByAvOutput(i+1)?.[1]?.name||document.querySelector(`[data-av-tv-output="${i+1}"] [data-av-tv-name]`)?.value.trim()||`TV ${i+1}`);
-   await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:S.avConfig?.room,devices,displayGroups,lightingGroups:S.avConfig?.lightingGroups||[]})});
-   const lab=await api('/api/v1/pluto/labels',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({outputs,inputs,sourceEndpoints})});S.pluto.labels=lab.labels;avConfigMsg.textContent='TV, source and group mapping saved.';await refreshPluto();
- }catch(e){avConfigMsg.textContent=e.message}
-}
-function renderAvRawStatus(){avRawStatus.style.display='block';avRawStatus.textContent=JSON.stringify({video:S.pluto.videoStatus,outputs:S.pluto.outputStatus,inputs:S.pluto.inputStatus,cec:S.pluto.cecStatus,system:S.pluto.systemStatus,network:S.pluto.networkStatus},null,2)}
-function renderTV(){const s=S.pluto.systemStatus||{},n=S.pluto.networkStatus||{};systemInfo.innerHTML=`Power: <b>${esc(s.power)}</b><br>Firmware: ${esc(s.main)}<br>Sub1: ${esc(s.sub1)}<br>Sub2: ${esc(s.sub2)}<br>CPLD: ${esc(s.cpld)}<br>Panel Lock: ${esc(s.lock)}<br>Beep: ${esc(s.beep)}`;networkInfo.innerHTML=`Model: <b>${esc(n.model)}</b><br>Hostname: ${esc(n.hostname)}<br>IP: ${esc(n.ipaddress)}<br>Subnet: ${esc(n.subnet)}<br>Gateway: ${esc(n.gateway)}<br>MAC: ${esc(n.macaddress)}<br>TCP: ${esc(n.tcpport)} • Telnet: ${esc(n.telnetport)}`}
-function toggleSystem(action){const s=S.pluto.systemStatus||{},state=action==='panelLock'?!Number(s.lock):!Number(s.beep);plutoAction({action,state})}
+// Displays & AV owns its polling, drawers and receiver drafts in av-workspace.js.
 
-async function loadGovee(){
- try{S.govee=await api('/api/v1/govee');renderGovee();document.getElementById('goveeMessage').textContent=''}
- catch(e){document.getElementById('goveeMessage').textContent=`Lighting refresh failed: ${e.message}. Existing readings may be stale. Use Refresh to retry.`}
+let goveeInventoryRequest=null,goveeRenderGeneration=0,goveeMessageGeneration=0;
+let goveeConfigurationTail=Promise.resolve(),goveeConfigurationPending=0,goveeConfigurationRevision=0,goveeDiscoveryDraft=null;
+function writeGoveeConfiguration(write){
+ const previous=goveeConfigurationPending?goveeConfigurationTail:null;
+ goveeConfigurationPending++;goveeConfigurationRevision++;
+ let request;try{request=previous?previous.then(write):write()}catch(error){request=Promise.reject(error)}
+ const result=Promise.resolve(request).finally(()=>{goveeConfigurationPending--});
+ goveeConfigurationTail=result.catch(()=>{});return result;
+}
+function fetchGoveeInventory(){
+ const revision=goveeConfigurationRevision;
+ const read=goveeConfigurationPending?goveeConfigurationTail.then(()=>api('/api/v1/govee')):api('/api/v1/govee');
+ const request=read.then(inventory=>{
+  if(goveeInventoryRequest!==request)return goveeInventoryRequest;
+  if(revision!==goveeConfigurationRevision)return fetchGoveeInventory();
+  S.govee=inventory;return inventory;
+ },error=>{if(goveeInventoryRequest!==request)return goveeInventoryRequest;if(revision!==goveeConfigurationRevision)return fetchGoveeInventory();throw error});
+ goveeInventoryRequest=request;return request;
+}
+async function loadGovee({messageGeneration=goveeMessageGeneration}={}){
+ const generation=++goveeRenderGeneration;
+ try{
+  await fetchGoveeInventory();
+  if(generation===goveeRenderGeneration){renderGovee();if(messageGeneration===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=''}
+  return {ok:true};
+ }catch(e){
+  if(generation===goveeRenderGeneration&&messageGeneration===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Lighting refresh failed: ${e.message}. Existing readings may be stale. Use Refresh to retry.`;
+  return {ok:false,error:e.message};
+ }
 }
 async function goveeCmd(target,action,body={}){
- try{const j=await jpost(`/api/v1/govee/${encodeURIComponent(target)}/${action}`,body);document.getElementById('goveeMessage').textContent=`${target}: ${action} command sent.`;
+ const generation=++goveeMessageGeneration;
+ try{const j=await jpost(`/api/v1/govee/${encodeURIComponent(target)}/${action}`,body);if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`${target}: ${action} command sent.`;
  const field={brightness:['b',body.level],color:['c',body.color],temp:['t',body.kelvin],scene:['s',body.scene]}[action];
  if(field)for(const card of document.querySelectorAll('#lights .lightCard')){if(card.dataset.lightTarget!==target)continue;const input=card.querySelector(`[data-light-control=${field[0]}]`);if(input&&input.value===String(field[1]))delete input.dataset.dirty}
- setTimeout(loadGovee,200);return j}
- catch(e){document.getElementById('goveeMessage').textContent=`${target}: ${e.message}`;return null}
+ setTimeout(()=>{if(generation===goveeMessageGeneration)loadGovee({messageGeneration:generation})},200);return j}
+ catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`${target}: ${e.message}`;return null}
 }
 async function setGoveeAutoAdd(enabled){
+  const generation=++goveeMessageGeneration,draft={enabled:!!enabled};goveeDiscoveryDraft=draft;renderGoveeDiscovery();
   try{
-    const j=await api('/api/v1/govee/discovery',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoAdd:enabled})});
-    if(S.govee)S.govee.discovery=j.discovery;renderGoveeDiscovery();
-  }catch(e){alert(e.message);loadGovee()}
+    const j=await writeGoveeConfiguration(()=>api('/api/v1/govee/discovery',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoAdd:draft.enabled})}));
+    if(S.govee)S.govee.discovery=j.discovery;
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=refreshed.ok?'Discovery setting saved.':`Discovery setting saved. Lighting refresh failed: ${refreshed.error}. Existing readings may be stale.`;
+  }catch(e){
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Discovery save failed: ${e.message}${refreshed.ok?'':'. Existing readings may be stale.'}`;
+  }finally{if(goveeDiscoveryDraft===draft){goveeDiscoveryDraft=null;renderGoveeDiscovery()}}
 }
 async function reconcileGoveeNow(){
+  const generation=++goveeMessageGeneration;
   try{
-    const j=await api('/api/v1/govee/discovery/reconcile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})});
-    S.govee=j.inventory;renderGovee();
+    const j=await writeGoveeConfiguration(()=>api('/api/v1/govee/discovery/reconcile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:true})}));
     const total=(j.migrated||0)+(j.removed||0);
-    alert(`Govee cleanup complete. Immediately removed ${total} stale/synthetic entr${total===1?'y':'ies'}.`);
-  }catch(e){alert(e.message)}
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Govee cleanup complete. Removed ${total} stale/synthetic entr${total===1?'y':'ies'}.${refreshed.ok?'':` Lighting refresh failed: ${refreshed.error}. Existing readings may be stale.`}`;
+  }catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Govee cleanup failed: ${e.message}`}
 }
 async function saveGoveeDevice(alias){
+  const generation=++goveeMessageGeneration;
   try{
     const nameInput=document.getElementById(`edit_${alias}_name`),groupsInput=document.getElementById(`edit_${alias}_groups`);
     const name=nameInput.value.trim(),groups=groupsInput.value.split(/[,\s]+/).map(x=>x.trim()).filter(Boolean);
     const sentName=nameInput.value,sentGroups=groupsInput.value;
-    await api('/api/v1/govee/device/'+encodeURIComponent(alias),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})});
+    await writeGoveeConfiguration(()=>api('/api/v1/govee/device/'+encodeURIComponent(alias),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,groups})}));
     if(nameInput.value===sentName)delete nameInput.dataset.dirty;
     if(groupsInput.value===sentGroups)delete groupsInput.dataset.dirty;
-    await loadGovee();document.getElementById('goveeMessage').textContent='Device saved.';
-  }catch(e){document.getElementById('goveeMessage').textContent=`Device save failed: ${e.message}`}
+    const refreshed=await loadGovee({messageGeneration:generation});
+    if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=refreshed.ok?'Device saved.':`Device saved. Lighting refresh failed: ${refreshed.error}. Existing readings may be stale.`;
+  }catch(e){if(generation===goveeMessageGeneration)document.getElementById('goveeMessage').textContent=`Device save failed: ${e.message}`}
 }
 function colorToHex(c){if(!c)return'#0f766e';const h=n=>Math.max(0,Math.min(255,Math.round(Number(n)||0))).toString(16).padStart(2,'0');return '#'+h(c.r)+h(c.g)+h(c.b)}
 function lightCard(target,name,state,isGroup=false,device=null,presence=null,meta=null){
@@ -788,7 +758,7 @@ function lightCard(target,name,state,isGroup=false,device=null,presence=null,met
 }
 function renderGoveeDiscovery(){
  const d=S.govee?.discovery||{};
- if(typeof goveeAutoAdd!=='undefined')goveeAutoAdd.checked=d.autoAdd!==false;
+ if(typeof goveeAutoAdd!=='undefined')goveeAutoAdd.checked=goveeDiscoveryDraft?goveeDiscoveryDraft.enabled:d.autoAdd!==false;
  if(typeof goveeDiscoveryStatus!=='undefined'){
   const when=d.lastDiscoveryAt?new Date(d.lastDiscoveryAt).toLocaleString():'none yet';
   goveeDiscoveryStatus.textContent=`${d.totalCount||0} physical devices • ${d.discoveredCount||0} auto-discovered • last discovery ${when} • stale auto-devices removed after ${Math.round((d.reconcileGraceSeconds||600)/60)} min`;
@@ -915,6 +885,7 @@ function classTargetSummary(targets){
 }
 
 let currentClassEdit={days:[1,2,3,4,5],scheduleMode:'weekly',alternatePhase:'A',anchorDate:''};
+function newClassDraftId(){return `class-${globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,11)}`}`}
 
 function minutesFromTime(value){
   const [h,m]=String(value||'00:00').split(':').map(Number);
@@ -976,6 +947,7 @@ function applyClassPeriodPreset(){
   if(day)day.value=color==='Mixed'?'Any':color;
 }
 function classDaySummary(cls){
+  if(cls.scheduleMode==='dates')return `${(cls.includeDates||[]).length} specific dates`;
   if(cls.scheduleMode==='schoolcycle'){
     const cycle=cls.cycleDays?.length?cls.cycleDays:periodPresetCycleDays(cls.period);
     const color=cls.dayType&&cls.dayType!=='Any'?cls.dayType:cycleDayColor(cycle);
@@ -1051,7 +1023,8 @@ function clearAutomationClassLinks(){
 
 async function loadClassSchedules(){
   try{
-    const x=await api('/api/v1/class-schedules');
+    const [x,calendar]=await Promise.all([api('/api/v1/class-schedules'),api('/api/v1/automations/calendar')]);
+    S.scheduleProfile=calendar.scheduleProfile||S.scheduleProfile;
     S.classes=x.classes||[];
     S.classStatus={schoolCycle:x.schoolCycle||null,activeClass:x.activeClass||null,nextClass:x.nextClass||null};
     if(window.classCurrentStatus){renderClassCurrentStatus();renderClassScheduleList()}
@@ -1080,6 +1053,10 @@ function renderClassScheduleMode(data=currentClassEdit){
     return;
   }
 
+  if(mode==='dates'){
+    classScheduleModeFields.innerHTML=`<label>Class dates (one per line)<textarea id="classIncludeDates" rows="4">${esc((currentClassEdit.includeDates||[]).join('\n'))}</textarea></label><div class="muted">Only these school dates. Add this class to the selected timetable when Planning supplies the day.</div>`;
+    return;
+  }
   if(mode==='weekly'){
     const n=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     classScheduleModeFields.innerHTML=`<b>Meeting Days</b><div class="toolbar">${n.map((x,i)=>`<label><input type="checkbox" data-classday="${i}" ${(currentClassEdit.days||[]).includes(i)?'checked':''}> ${x}</label>`).join('')}</div>`;
@@ -1096,7 +1073,7 @@ function newClassSchedule(){
   classContinuationOf.value='';
   classStart.value='08:00';classEnd.value='09:00';renderClassDefaultTargets(['all']);classNotes.value='';
   classScheduleMode.value='schoolcycle';
-  currentClassEdit={days:[1,2,3,4,5],scheduleMode:'schoolcycle',alternatePhase:'A',anchorDate:S.scheduleProfile?.anchorDate||'',cycleDays:[],dayType:'Any',enabled:true};
+  currentClassEdit={id:newClassDraftId(),days:[1,2,3,4,5],scheduleMode:'schoolcycle',alternatePhase:'A',anchorDate:S.scheduleProfile?.anchorDate||'',cycleDays:[],dayType:'Any',enabled:true};
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Add Class';classEditorMsg.textContent='';
 }
 function editClassSchedule(id){
@@ -1105,20 +1082,25 @@ function editClassSchedule(id){
   classContinuationOf.value=x.continuationOf||'';
   classStart.value=x.startTime;classEnd.value=x.endTime;renderClassDefaultTargets(x.defaultTargets?.length?x.defaultTargets:['all']);
   classNotes.value=x.notes||'';classScheduleMode.value=x.scheduleMode||'schoolcycle';
-  currentClassEdit={days:x.days||[1,2,3,4,5],scheduleMode:x.scheduleMode||'schoolcycle',alternatePhase:x.alternatePhase||'A',anchorDate:x.anchorDate||S.scheduleProfile?.anchorDate||'',cycleDays:x.cycleDays||periodPresetCycleDays(x.period),dayType:x.dayType||cycleDayColor(x.cycleDays||[]),enabled:x.enabled!==false};
+  currentClassEdit={...x,days:x.days||[1,2,3,4,5],scheduleMode:x.scheduleMode||'schoolcycle',alternatePhase:x.alternatePhase||'A',anchorDate:x.anchorDate||S.scheduleProfile?.anchorDate||'',cycleDays:x.cycleDays||periodPresetCycleDays(x.period),dayType:x.dayType||cycleDayColor(x.cycleDays||[]),enabled:x.enabled!==false};
   renderClassScheduleMode(currentClassEdit);classEditorTitle.textContent='Edit Class';
 }
 async function saveClassSchedule(){
+  const owner=currentClassEdit;
   try{
+    if(!classId.value&&!owner.id)owner.id=newClassDraftId();
     const mode=classScheduleMode.value;
     const cycleDays=mode==='schoolcycle'?selectedClassCycleDays():[];
     const body={
+      id:owner.id,
       name:className.value.trim(),shortName:classShortName.value.trim(),period:classPeriod.value,continuationOf:classContinuationOf.value.trim(),
       startTime:classStart.value,endTime:classEnd.value,scheduleMode:mode,
       days:mode==='weekly'?[...classScheduleModeFields.querySelectorAll('[data-classday]:checked')].map(x=>Number(x.dataset.classday)):[1,2,3,4,5],
       alternatePhase:mode==='alternating'?(document.getElementById('classAlternatePhase')?.value||'A'):'A',
       anchorDate:S.scheduleProfile?.anchorDate||'',
       dayType:mode==='schoolcycle'?(document.getElementById('classDayType')?.value||cycleDayColor(cycleDays)):(mode==='alternating'?scheduleGroup(document.getElementById('classAlternatePhase')?.value==='B'?1:0).label:'Any'),
+      includeDates:mode==='dates'?parseDateLines(document.getElementById('classIncludeDates')?.value||''):[],
+      scheduleWindow:{...(currentClassEdit.scheduleWindow||{}),startDate:document.getElementById('classStudioFrom')?.value||'',endDate:document.getElementById('classStudioThrough')?.value||''},
       cycleDays,defaultTargets:selectedClassDefaultTargets(),notes:classNotes.value,enabled:currentClassEdit.enabled!==false
     };
     if(!body.name)throw Error('Class name is required');
@@ -1126,8 +1108,11 @@ async function saveClassSchedule(){
     const id=classId.value;
     if(id)await api('/api/v1/class-schedules/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     else await jpost('/api/v1/class-schedules',body);
-    classEditorMsg.textContent='Saved';await loadClassSchedules();await loadSchedules();newClassSchedule();
-  }catch(e){classEditorMsg.textContent=e.message}
+    if(currentClassEdit===owner)classEditorMsg.textContent='Saved';
+    await loadClassSchedules();await loadSchedules();
+    if(currentClassEdit!==owner)return false;
+    newClassSchedule(false);return true;
+  }catch(e){const message=!classId.value&&e.message==='Class ID already exists'?'This class draft already exists. Close the editor and refresh classes to check the earlier save.':e.message;if(currentClassEdit===owner)classEditorMsg.textContent=message;else notify(`An earlier class save failed: ${e.message}`,'error')}
 }
 async function deleteClassSchedule(id){const x=S.classes.find(c=>c.id===id);if(!confirm(`Delete "${x?.name||id}"?`))return;await api('/api/v1/class-schedules/'+encodeURIComponent(id),{method:'DELETE'});await loadClassSchedules();await loadSchedules()}
 async function duplicateClassSchedule(id){
@@ -1144,11 +1129,11 @@ async function duplicateClassSchedule(id){
 
 let AUTOMATION_CONTROL=null;
 async function loadAutomationControl(){
-  try{const j=await api('/api/v1/automation-control');AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){if(window.automationControlSummary)automationControlSummary.textContent=`Scheduler control error: ${e.message}`}
+  try{const j=await api('/api/v1/automation-control',{signal:AbortSignal.timeout(10000)});AUTOMATION_CONTROL=j;paintAutomationControl(j)}catch(e){if(window.automationControlSummary)automationControlSummary.textContent=`Scheduler control error: ${e.message}`;if(window.todayAutomationState){todayAutomationState.textContent='Automation unavailable';todayAutomationState.className='pill warn';todayAutomationToggle.dataset.commandUnavailable='true';enforceCapabilityControls(todayAutomationToggle.parentElement)}}
 }
 function paintAutomationControl(j={}){
   if(!window.automationControlSummary)return;const clock=j.clock||{},mode=clock.active?'TEST CLOCK':'Real time';automationControlSummary.textContent=`${j.enabled!==false?'Automatic runs ON':'Automatic runs PAUSED'} • ${mode} • ${clock.schedulerTime?new Date(clock.schedulerTime).toLocaleString():''}`;
-  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);if(window.todayAutomationState){todayAutomationState.textContent=j.enabled!==false?'Automation Active':'Automation Paused';todayAutomationState.className='pill '+(j.enabled!==false?'ok':'warn')}if(window.todayAutomationToggle)todayAutomationToggle.textContent=j.enabled!==false?'Pause Automation':'Enable Automation';
+  automationToggleBtn.textContent=j.enabled!==false?'Pause Automatic Runs':'Enable Automatic Runs';automationToggleBtn.classList.toggle('danger',j.enabled!==false);if(window.todayAutomationState){todayAutomationState.textContent=j.enabled!==false?'Automation Active':'Automation Paused';todayAutomationState.className='pill '+(j.enabled!==false?'ok':'warn')}if(window.todayAutomationToggle){todayAutomationToggle.textContent=j.enabled!==false?'Pause Automation':'Enable Automation';todayAutomationToggle.dataset.commandUnavailable='false';enforceCapabilityControls(todayAutomationToggle.parentElement)};
   automationSimulationBanner.textContent=clock.active?`TEST CLOCK ACTIVE — ${new Date(clock.schedulerTime).toLocaleString()} • ${clock.liveCommands?'REAL DEVICE COMMANDS ENABLED':'dry-run only'}`:'';
   automationSimulationBanner.className=`status ${clock.active?(clock.liveCommands?'bad':'warn'):''}`;
 }
@@ -1437,13 +1422,13 @@ function moveAutomationStep(i,d){
   renderAutomationSteps();
 }
 
-async function ensureAutomationMediaLibrary(){
-  if(S.mediaFiles?.length)return S.mediaFiles;
+async function ensureAutomationMediaLibrary({refresh=false}={}){
+  if(!refresh&&!mediaLibraryPending&&S.mediaFiles?.length)return S.mediaFiles;
   try{
-    const j=await api('/api/v1/media');
-    S.mediaFiles=j.files||[];
+    await (!refresh&&mediaLibraryPending?mediaLibraryRequest:fetchMediaLibrary());
   }catch(e){
     console.warn('Unable to load media library for scheduler:',e.message);
+    if(refresh)notify('Unable to refresh media library: '+e.message,'error');
   }
   return S.mediaFiles||[];
 }
@@ -1574,7 +1559,7 @@ function stepPayloadHtml(step,i){
     </label>
     <div class="toolbar" style="margin-top:8px">
       <button type="button" onclick="previewAutomationMedia(${i})">Preview Selected Media</button>
-      <button type="button" onclick="ensureAutomationMediaLibrary().then(()=>{refreshAutomationMediaPickers()})">Refresh Media List</button>
+      <button type="button" onclick="ensureAutomationMediaLibrary({refresh:true}).then(()=>{refreshAutomationMediaPickers()})">Refresh Media List</button>
     </div>
     <div class="muted">Choose an image, video, PDF, presentation, or document already uploaded to RoomGoblin. You no longer need the internal stored filename.</div>`;
   }
@@ -1737,12 +1722,14 @@ function populateTimerOverlayClassSelect(selected=''){
   autoTimerOverlayClass.value=current;
 }
 
+let currentTimerEffects;
 function renderTimerOverlayFields(data=undefined){
+  if(data!==undefined)currentTimerEffects=data?.effects?structuredClone(data.effects):undefined;
   // Passing null means "this event has no timer overlay". Reset the UI fully
   // instead of retaining the state from the previously edited event.
   if(data===null){
     autoTimerOverlayEnabled.checked=false;
-    autoTimerOverlaySource.value='class-end';
+    autoTimerOverlaySource.value='class-end';if(window.autoTimerOverlayEndTime)autoTimerOverlayEndTime.value='';
     populateTimerOverlayClassSelect('');
     autoTimerOverlayMinutes.value='10';
     autoTimerOverlayPosition.value='bottom';
@@ -1758,9 +1745,9 @@ function renderTimerOverlayFields(data=undefined){
     autoTimerOverlayFollowLinkedClasses.checked=true;if(window.autoTimerOverlayFollowGap)autoTimerOverlayFollowGap.value=String(S.scheduleProfile?.continuation?.maximumGapMinutes??15);
   }else if(data&&typeof data==='object'){
     autoTimerOverlayEnabled.checked=!!data.enabled;
-    autoTimerOverlaySource.value=data.source||'class-end';
+    autoTimerOverlaySource.value=data.source||'class-end';if(window.autoTimerOverlayEndTime)autoTimerOverlayEndTime.value=data.endTime||'';
     populateTimerOverlayClassSelect(data.classId||'');
-    autoTimerOverlayMinutes.value=String(Math.max(1,Math.round(Number(data.durationSeconds||600)/60)));
+    autoTimerOverlayMinutes.value=String(Math.max(1,Number(data.durationSeconds??600)/60));
     autoTimerOverlayPosition.value=data.position||'bottom';
     autoTimerOverlaySize.value=String(data.fontSize||64);
     autoTimerOverlayTextColor.value=data.textColor||'#ffffff';
@@ -1780,12 +1767,15 @@ function renderTimerOverlayFields(data=undefined){
   autoTimerOverlayFields.style.display=enabled?'block':'none';
   autoTimerOverlayDurationWrap.style.display=(enabled&&autoTimerOverlaySource.value==='duration')?'block':'none';
   autoTimerOverlayClassWrap.style.display=(enabled&&autoTimerOverlaySource.value==='class-end')?'block':'none';
+  if(window.autoTimerOverlayEndWrap)autoTimerOverlayEndWrap.style.display=(enabled&&autoTimerOverlaySource.value==='end-time')?'block':'none';
 }
 function readTimerOverlay(){
   if(!autoTimerOverlayEnabled.checked)return null;
   return {
     enabled:true,
     source:autoTimerOverlaySource.value,
+    ...(currentTimerEffects===undefined?{}:{effects:structuredClone(currentTimerEffects)}),
+    endTime:autoTimerOverlaySource.value==='end-time'?(window.autoTimerOverlayEndTime?.value||''):'',
     classId:autoTimerOverlaySource.value==='class-end'?(window.autoTimerOverlayClass?.value||''):'',
     durationSeconds:Math.max(60,Number(autoTimerOverlayMinutes.value||10)*60),
     position:autoTimerOverlayPosition.value,
@@ -1961,6 +1951,7 @@ function renderSchedulerCalendar(){
   schoolProfileAdditionalGroups.value=JSON.stringify(groups.slice(2),null,2);
   schoolProfilePeriodMap.value=JSON.stringify(p.periodCycleDays||{},null,2);
   schoolProfileExceptionRules.value=JSON.stringify(p.exceptionRules||{},null,2);
+  specialDayEditor.load(p.specialDaySchedules||[],S.classes||[]);
   calendarExcludedDates.value=(c.noSchoolDates||c.excludedDates||[]).join('\n');
   calendarHalfDayDates.value=(c.halfDayDates||[]).join('\n');
   calendarOneHourDelayDates.value=(c.oneHourDelayDates||[]).join('\n');
@@ -1989,6 +1980,7 @@ async function saveSchedulerCalendar(){
         ],
         periodCycleDays:parseObject(schoolProfilePeriodMap.value,'Period mapping'),
         exceptionRules:parseObject(schoolProfileExceptionRules.value,'Exception rules'),
+        specialDaySchedules:specialDayEditor.value(),
         continuation:{maximumGapMinutes:Number(schoolProfileContinuationGap.value||15),legacyBisonCompatibility:schoolProfileLegacyContinuation.checked}
       }
     };
@@ -2067,49 +2059,125 @@ async function loadAutomationScenes(alias){
     autoScene.innerHTML=j.scenes.map(x=>`<option>${esc(x)}</option>`).join('');
   }catch(e){autoEditorMsg.textContent=e.message}
 }
-async function loadMorningWatch(){
-  try{
-    const x=await api('/api/v1/automations/morning-announcements'),c=x.config||{},r=x.runtime||{};
-    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';morningWatchVolume.value=String(Number.isFinite(Number(c.volumePercent))?Number(c.volumePercent):100);morningWatchVolumeValue.textContent=morningWatchVolume.value+'%';if(window.morningWatchOfflineConfirmations)morningWatchOfflineConfirmations.value=String(c.offlineConfirmations??2);if(window.morningWatchCheckInterval)morningWatchCheckInterval.value=String(c.checkIntervalSeconds??15);if(window.morningWatchTargets){morningWatchTargets.innerHTML=configuredDisplayTargets(false).map(([id,name])=>`<label class="pill"><input type="checkbox" data-morning-target="${esc(id)}" ${(c.targets||['all']).includes('all')||(c.targets||[]).includes(id)?'checked':''}> ${esc(name)}</label>`).join('')}
-    const unknown=!r.active&&r.lastCheck&&r.probeStatus==='unavailable';
-    morningWatchState.textContent=r.active?'PLAYING':(r.live?'LIVE':(unknown?'UNKNOWN':'OFFLINE'));
-    morningWatchState.className='pill '+(r.active||r.live?'ok':'');
-    const extra=r.lastCheck?` • last check ${new Date(r.lastCheck).toLocaleTimeString()}`:'';
-    const duration=Number.isFinite(Number(r.probeDurationMs))?` • ${Number(r.probeDurationMs)} ms`:'';
-    const probeLabel=r.probe?(r.probeStatus?`${r.probe}: ${r.probeStatus}`:r.probe):'not checked';
-    morningWatchMsg.textContent=`${probeLabel}${extra}${duration}${r.lastError?' • '+r.lastError:''}`;
-  }catch(e){morningWatchMsg.textContent=e.message}
+let morningWatchDraftRevision=0,morningWatchDraftDirty=false,morningWatchVolumeRevision=0,morningWatchVolumeDirty=false;
+let morningWatchReadGeneration=0,morningWatchWriteEpoch=0,morningWatchPendingWrites=0;
+let morningWatchSavePromise=null,morningWatchWriteTail=Promise.resolve(),morningWatchVolumeWorker=null,morningWatchCheckPromise=null;
+let morningWatchVolumeTimer=null,morningWatchPendingVolume=null;
+function ensureMorningWatchDraftTracking(){
+  const panel=document.getElementById('morningWatchPanel');
+  if(!panel||panel.dataset.draftTracking)return;
+  panel.dataset.draftTracking='true';
+  const edited=event=>{
+    if(event.target.id==='morningWatchVolume'||!event.target.matches('input,select'))return;
+    morningWatchDraftRevision++;morningWatchDraftDirty=true;
+    morningWatchDraftMsg.textContent='Unsaved changes';
+  };
+  panel.addEventListener('input',edited);panel.addEventListener('change',edited);
 }
-let morningWatchVolumeTimer=null;
-async function applyMorningWatchVolume(value){
-  const volume=Math.max(0,Math.min(100,Number(value)||0));
+function paintMorningWatchConfig(c,{settings=true,volume=true}={}){
+  if(settings){
+    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';
+    morningWatchOfflineConfirmations.value=String(c.offlineConfirmations??2);morningWatchCheckInterval.value=String(c.checkIntervalSeconds??15);
+    const html=configuredDisplayTargets(false).map(([id,name])=>`<label class="pill"><input type="checkbox" data-morning-target="${esc(id)}" ${(c.targets||['all']).includes('all')||(c.targets||[]).includes(id)?'checked':''}> ${esc(name)}</label>`).join('');
+    if(morningWatchTargets.dataset.renderedChoices!==html){morningWatchTargets.innerHTML=html;morningWatchTargets.dataset.renderedChoices=html}
+    for(const input of morningWatchTargets.querySelectorAll('[data-morning-target]'))input.checked=(c.targets||['all']).includes('all')||(c.targets||[]).includes(input.dataset.morningTarget);
+  }
+  if(volume){morningWatchVolume.value=String(Number.isFinite(Number(c.volumePercent))?Number(c.volumePercent):100);morningWatchVolumeValue.textContent=morningWatchVolume.value+'%'}
+}
+function paintMorningWatchRuntime(r){
+  const unknown=!r.active&&r.lastCheck&&r.probeStatus==='unavailable';
+  morningWatchState.textContent=r.active?'PLAYING':(r.live?'LIVE':(unknown?'UNKNOWN':'OFFLINE'));
+  morningWatchState.className='pill '+(r.active||r.live?'ok':'');
+  const extra=r.lastCheck?` • last check ${new Date(r.lastCheck).toLocaleTimeString()}`:'';
+  const duration=Number.isFinite(Number(r.probeDurationMs))?` • ${Number(r.probeDurationMs)} ms`:'';
+  const probeLabel=r.probe?(r.probeStatus?`${r.probe}: ${r.probeStatus}`:r.probe):'not checked';
+  morningWatchMsg.textContent=`${probeLabel}${extra}${duration}${r.lastError?' • '+r.lastError:''}`;
+}
+async function loadMorningWatch(){
+  ensureMorningWatchDraftTracking();
+  if(morningWatchCheckPromise)return;
+  const generation=++morningWatchReadGeneration,revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision,epoch=morningWatchWriteEpoch,pending=morningWatchPendingWrites>0;
   try{
-    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({volumePercent:volume})});
-    morningWatchMsg.textContent=x.liveVolume?.applied?`Volume ${volume}% applied live`:`Volume ${volume}% saved`;
-  }catch(e){morningWatchMsg.textContent=`Volume update failed: ${e.message}`}
+    const x=await api('/api/v1/automations/morning-announcements');
+    if(generation!==morningWatchReadGeneration||epoch!==morningWatchWriteEpoch||pending||morningWatchPendingWrites)return;
+    paintMorningWatchConfig(x.config||{},{settings:!morningWatchDraftDirty&&revision===morningWatchDraftRevision,volume:!morningWatchVolumeDirty&&volumeRevision===morningWatchVolumeRevision});
+    paintMorningWatchRuntime(x.runtime||{});
+  }catch(e){if(generation===morningWatchReadGeneration&&epoch===morningWatchWriteEpoch)morningWatchMsg.textContent=e.message}
+}
+function writeMorningWatch(body){
+  morningWatchWriteEpoch++;morningWatchPendingWrites++;
+  const task=morningWatchWriteTail.then(()=>{
+    if(!userCan('automation.manage'))throw Error('Permission required: automation.manage');
+    return api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  });
+  morningWatchWriteTail=task.catch(()=>{});
+  return task.finally(()=>{morningWatchWriteEpoch++;morningWatchPendingWrites--});
+}
+function updateMorningWatchSaveButton(){
+  const button=document.getElementById('morningWatchSaveBtn');
+  button.dataset.commandUnavailable=String(!!morningWatchSavePromise);
+  button.disabled=!!morningWatchSavePromise||!userCan('automation.manage');button.setAttribute('aria-disabled',String(button.disabled));
+}
+async function applyMorningWatchVolume(){
+  if(morningWatchVolumeWorker)return morningWatchVolumeWorker;
+  morningWatchVolumeWorker=(async()=>{
+    while(morningWatchPendingVolume){
+      const {volume,revision}=morningWatchPendingVolume;morningWatchPendingVolume=null;
+      try{
+        const x=await writeMorningWatch({volumePercent:volume});
+        if(revision===morningWatchVolumeRevision){morningWatchVolumeDirty=false;morningWatchVolumeMsg.textContent=x.liveVolume?.applied?`Volume ${volume}% applied live`:`Volume ${volume}% saved`}
+      }catch(e){if(revision===morningWatchVolumeRevision)morningWatchVolumeMsg.textContent=`Volume update failed: ${e.message}`}
+    }
+  })().finally(()=>{morningWatchVolumeWorker=null});
+  return morningWatchVolumeWorker;
 }
 function queueMorningWatchVolume(value,immediate=false){
+  ensureMorningWatchDraftTracking();if(!userCan('automation.manage'))return;
   const volume=Math.max(0,Math.min(100,Number(value)||0));
-  morningWatchVolumeValue.textContent=volume+'%';
+  morningWatchVolume.value=String(volume);morningWatchVolumeValue.textContent=volume+'%';
+  morningWatchVolumeDirty=true;morningWatchPendingVolume={volume,revision:++morningWatchVolumeRevision};
   if(morningWatchVolumeTimer)clearTimeout(morningWatchVolumeTimer);
-  morningWatchVolumeTimer=setTimeout(()=>{morningWatchVolumeTimer=null;applyMorningWatchVolume(volume)},immediate?0:150);
+  morningWatchVolumeTimer=setTimeout(()=>{morningWatchVolumeTimer=null;applyMorningWatchVolume()},immediate?0:150);
 }
 async function saveMorningWatch(){
-  try{
-    const x=await api('/api/v1/automations/morning-announcements',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:window.morningWatchTargets?[...morningWatchTargets.querySelectorAll('[data-morning-target]:checked')].map(x=>x.dataset.morningTarget):['all'],offlineConfirmations:Number(window.morningWatchOfflineConfirmations?.value||2),checkIntervalSeconds:Number(window.morningWatchCheckInterval?.value||15)})});
-    morningWatchMsg.textContent='Saved';await loadMorningWatch();return x;
-  }catch(e){morningWatchMsg.textContent=e.message}
+  ensureMorningWatchDraftTracking();if(morningWatchSavePromise)return morningWatchSavePromise;if(!userCan('automation.manage'))return;
+  const revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision;
+  const body={enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:[...morningWatchTargets.querySelectorAll('[data-morning-target]:checked')].map(x=>x.dataset.morningTarget),offlineConfirmations:Number(morningWatchOfflineConfirmations.value||2),checkIntervalSeconds:Number(morningWatchCheckInterval.value||15)};
+  if(morningWatchVolumeTimer){clearTimeout(morningWatchVolumeTimer);morningWatchVolumeTimer=null}
+  morningWatchPendingVolume=null;
+  morningWatchDraftMsg.textContent='Saving…';
+  morningWatchSavePromise=(async()=>{
+    try{
+      const x=await writeMorningWatch(body),settings=revision===morningWatchDraftRevision,volume=volumeRevision===morningWatchVolumeRevision;
+      if(settings)morningWatchDraftDirty=false;if(volume)morningWatchVolumeDirty=false;
+      if(x.config)paintMorningWatchConfig(x.config,{settings,volume});
+      morningWatchDraftMsg.textContent=settings?'Saved':'Saved earlier changes; newer edits are unsaved.';
+      return x;
+    }catch(e){morningWatchDraftMsg.textContent=`Save failed: ${e.message}`}
+    finally{morningWatchSavePromise=null;updateMorningWatchSaveButton()}
+  })();
+  updateMorningWatchSaveButton();return morningWatchSavePromise;
+}
+function updateMorningWatchCheckButton(){
+  const btn=document.getElementById('morningWatchCheckBtn');if(!btn)return;
+  btn.dataset.commandUnavailable=String(!!morningWatchCheckPromise);
+  btn.disabled=!!morningWatchCheckPromise||!userCan('automation.manage');
+  btn.setAttribute('aria-disabled',String(btn.disabled));btn.textContent=morningWatchCheckPromise?'Checking…':'Check Stream Now';
 }
 async function checkMorningWatch(){
-  const btn=document.getElementById('morningWatchCheckBtn');
-  if(btn?.disabled)return;
-  if(btn){btn.disabled=true;btn.textContent='Checking…'}
+  if(morningWatchCheckPromise)return morningWatchCheckPromise;
+  if(!userCan('automation.manage'))return;
+  const generation=++morningWatchReadGeneration,epoch=morningWatchWriteEpoch;
+  const current=()=>generation===morningWatchReadGeneration&&epoch===morningWatchWriteEpoch&&!morningWatchPendingWrites;
+  const changed=()=>{morningWatchState.textContent='UNKNOWN';morningWatchState.className='pill';morningWatchMsg.textContent='Settings changed. Check the stream again.'};
   morningWatchMsg.textContent='Checking stream now…';
   morningWatchState.textContent='CHECKING';morningWatchState.className='pill';
+  morningWatchCheckPromise=(async()=>{
   try{
     // The manual action is deliberately independent of the configured watch window.
     // It always performs a real probe and returns the result directly to this click.
     const x=await jpost('/api/v1/automations/morning-announcements/check',{});
+    if(!current()){changed();return}
     const r=x.runtime||{};
     const state=x.live===true?'LIVE':(x.live===false?'OFFLINE':'UNKNOWN');
     morningWatchState.textContent=r.active?'PLAYING':state;
@@ -2120,31 +2188,40 @@ async function checkMorningWatch(){
     const attempts=Array.isArray(x.attempts)&&x.attempts.length?` • attempts: ${x.attempts.map(a=>`${a.probe||'?'}=${a.live===true?'live':(a.live===false?'offline':(a.status||a.httpStatus||a.error||'no-result'))}`).join(', ')}`:'';
     morningWatchMsg.textContent=`Probe: ${x.probe||'none'} • ${state}${detail}${checked}${duration}${attempts}`;
   }catch(e){
+    if(!current()){changed();return}
     morningWatchState.textContent='ERROR';morningWatchState.className='pill';
     morningWatchMsg.textContent=`Check failed: ${e.message}`;
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent='Check Stream Now'}
-  }
+  }finally{morningWatchCheckPromise=null;updateMorningWatchCheckButton()}
+  })();
+  updateMorningWatchCheckButton();return morningWatchCheckPromise;
 }
 
 async function loadSchedules(){
   try{
-    const [a,m,g,cal,cls]=await Promise.all([
+    const [a,,,cal,cls]=await Promise.all([
       api('/api/v1/automations'),
-      api('/api/v1/media'),
-      api('/api/v1/govee'),
+      fetchMediaLibrary(),
+      fetchGoveeInventory(),
       api('/api/v1/automations/calendar'),
       api('/api/v1/class-schedules')
     ]);
-    S.automations=a.events||[];S.mediaFiles=m.files||[];S.govee=g;S.scheduler=a.scheduler||null;S.classes=cls.classes||[];S.classStatus={schoolCycle:cls.schoolCycle||null,calendarRule:cls.calendarRule||null,activeClass:cls.activeClass||null,nextClass:cls.nextClass||null};populateAutomationClassSelect(selectedAutomationClassIds());
+    S.automations=a.events||[];S.scheduler=a.scheduler||null;S.classes=cls.classes||[];S.classStatus={schoolCycle:cls.schoolCycle||null,calendarRule:cls.calendarRule||null,activeClass:cls.activeClass||null,nextClass:cls.nextClass||null};populateAutomationClassSelect(selectedAutomationClassIds());
     S.schedulerCalendar=cal.calendar||S.schedulerCalendar;S.scheduleProfile=cal.scheduleProfile||S.scheduleProfile;S.districtNoSchoolDates=cal.districtNoSchoolDates||[];
     renderSchedulerClock();renderSchedulerCalendar();renderAutomationList();loadMorningWatch();
     if(!autoId.value)newAutomation();
   }catch(e){automationList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}
 }
 
-function diagBadge(ok,label,value=''){
-  return `<div class="card"><div class="muted">${esc(label)}</div><div class="kpi ${ok?'ok':'bad'}">${ok?'OK':'ISSUE'}</div>${value?`<div class="muted">${esc(value)}</div>`:''}</div>`;
+function diagnosticState(value={}){
+  if(value.status==='not-configured')return 'NOT CONFIGURED';
+  if(value.ok===false)return 'ISSUE';
+  if(value.ok===true&&value.verification==='reachability-only')return 'REACHABLE';
+  if(value.ok===true&&value.verification==='mqtt-publish')return 'PUBLISHED';
+  if(value.status==='observed')return 'OBSERVED';
+  return value.ok===true?'OK':'NOT CHECKED';
+}
+function diagBadge(ok,label,value='',state=''){
+  return `<div class="card"><div class="muted">${esc(label)}</div><div class="kpi ${ok===true?'ok':ok===false?'bad':'muted'}">${esc(state||diagnosticState({ok}))}</div>${value?`<div class="muted">${esc(value)}</div>`:''}</div>`;
 }
 function diagnosticRows(rows){
   if(!rows?.length)return '<div class="muted">No matching events.</div>';
@@ -2167,15 +2244,15 @@ async function loadDiagnostics(){
     diagSummary.innerHTML=[
       diagBadge(!!sv.classroomHub?.ok,'RoomGoblin',x.system?.version||''),
       diagBadge(!!sv.mqtt?.ok,'MQTT',sv.mqtt?.ok?'Connected':'Disconnected'),
-      diagBadge(!!sv.pluto?.ok,'Pluto',sv.pluto?.lastError||'Healthy'),
-      diagBadge(!!sv.govee?.ok,'Govee',sv.govee?.lastError||`${sv.govee?.configuredDevices||0} devices`),
-      diagBadge(!!sv.veyon?.ok,'Veyon',`Pool ${sv.veyon?.pool?.size||0}/${sv.veyon?.pool?.max||0}`),
+      diagBadge(sv.pluto?.ok,'Pluto',sv.pluto?.lastError||(sv.pluto?.lastSuccessAt?`Last response received: ${sv.pluto.lastSuccessAt}`:'No response recorded'),diagnosticState(sv.pluto)),
+      diagBadge(sv.govee?.ok,'Govee',sv.govee?.lastError||(sv.govee?.status==='disconnected'?'MQTT disconnected':sv.govee?.ok===true?'Device acknowledgment not verified':`${sv.govee?.configuredDevices||0} devices`),diagnosticState(sv.govee)),
+      diagBadge(sv.veyon?.ok,'Veyon',sv.veyon?.verification==='reachability-only'?'Authentication not verified':`Pool ${sv.veyon?.pool?.size||0}/${sv.veyon?.pool?.max||0}`,diagnosticState(sv.veyon)),
       diagBadge(!!sv.displays?.ok,'Displays',`${sv.displays?.online||0}/${sv.displays?.configured||0} online`),
       diagBadge(!!sv.database?.ok,'Database',sv.database?.ok?`Schema ${sv.database.schemaVersion||1} • ${sv.database.normalized?.displays||0} displays • ${sv.database.normalized?.automations||0} automations • ${sv.database.audits||0} audits • ${sv.database.telemetry||0} telemetry states`:'Unavailable')
     ].join('');
 
     diagServices.innerHTML=Object.entries(sv).map(([name,v])=>
-      `<div class="card" style="margin-bottom:8px"><b>${esc(name)}</b> <span class="pill">${v?.ok===false?'ISSUE':'OK'}</span><pre class="raw">${esc(JSON.stringify(v,null,2))}</pre></div>`
+      `<div class="card" style="margin-bottom:8px"><b>${esc(name)}</b> <span class="pill">${esc(diagnosticState(v))}</span><pre class="raw">${esc(JSON.stringify(v,null,2))}</pre></div>`
     ).join('');
 
     diagSystem.textContent=JSON.stringify(x.system||{},null,2);
@@ -2276,64 +2353,77 @@ async function provisionCloudflare(){if(!confirm('Provision or reconcile the con
 async function restartRoomGoblinForCloudflare(){if(!confirm('Restart only the RoomGoblin application container now? Classroom-managed device services remain separate. The controller will briefly reconnect.'))return;try{cfgCloudflareStatus.textContent='Scheduling RoomGoblin restart…';await api('/api/v1/admin/cloudflare/restart',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});setTimeout(()=>location.reload(),4000)}catch(e){cfgCloudflareStatus.innerHTML=`<span class="bad">${esc(e.message)}</span>`}}
 async function saveIntegrationConnections(){try{cfgConnectionsMsg.textContent='Validating and applying…';const body={mqtt:{url:cfgMqttUrl.value.trim(),username:cfgMqttUsername.value.trim(),jsonBridge:cfgMqttJsonBridge.checked,legacyBridge:cfgMqttLegacyBridge.checked},pluto:{url:cfgPlutoUrl.value.trim(),timeoutMs:Number(cfgPlutoTimeout.value),readRetries:Number(cfgPlutoRetries.value)},veyon:{url:cfgVeyonUrl.value.trim(),keyName:cfgVeyonKeyName.value.trim(),scanSubnet:cfgVeyonSubnet.value.trim(),scanStart:Number(cfgVeyonScanStart.value),scanEnd:Number(cfgVeyonScanEnd.value),poolMax:Number(cfgVeyonPool.value),authRetries:Number(cfgVeyonRetries.value),thumbnailConcurrency:Number(cfgVeyonThumbs.value)}};if(cfgMqttPassword.value)body.mqtt.password=cfgMqttPassword.value;if(cfgVeyonPrivateKey.value)body.veyon.privateKey=cfgVeyonPrivateKey.value;const j=await api('/api/v1/admin/integration-connections',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});renderIntegrationConnections(j.integrationConnections||{});ADMINCFG.integrationConnections=j.integrationConnections;cfgConnectionsMsg.textContent='Saved in the database and applied live.';notify('Integration connection settings applied.','success');await refreshOverview()}catch(e){cfgConnectionsMsg.textContent=e.message;notify(e.message,'error')}}
 function renderAdminSummary(j){const c=j.counts||{},d=j.database||{};cfgSummary.innerHTML=`<div class="card"><div class="muted">TVs</div><div class="kpi">${c.displays||0}</div></div><div class="card"><div class="muted">TV Groups</div><div class="kpi">${c.displayGroups||0}</div></div><div class="card"><div class="muted">Lighting Devices</div><div class="kpi">${c.lightingDevices||0}</div></div><div class="card"><div class="muted">Access Profiles</div><div class="kpi">${c.accessProfiles||0}</div></div><div class="card"><div class="muted">DB Schema</div><div class="kpi">v${d.schemaVersion||0}</div></div>`}
-let RECEIVERCFG=null,receiverSettingsLoading=false;
-async function loadReceiverSettings(){
- if(RECEIVERCFG||receiverSettingsLoading)return;
- receiverSettingsLoading=true;cfgDisplaysMsg.textContent='Loading receivers…';
- try{RECEIVERCFG=await api('/api/v1/config');renderAdminDisplayEditor();cfgDisplaysMsg.textContent='';}
- catch(e){cfgDisplaysMsg.textContent=`Could not load receivers: ${e.message}`}
- finally{receiverSettingsLoading=false}
-}
-async function reloadReceiverSettings(){if(RECEIVERCFG&&!confirm('Discard unsaved receiver and group edits and reload saved settings?'))return;RECEIVERCFG=null;await loadReceiverSettings()}
-function openReceiverSettings(){closeAvTvDrawer();receiverSettings.open=true;loadReceiverSettings();receiverSettings.scrollIntoView({block:'start'})}
-function isEmptyLegacyDisplayGroup(name,members){return /^(?:display-){2,}/.test(name)&&Array.isArray(members)&&members.length===0}
-function renderAdminDisplayEditor(){
- const ds=RECEIVERCFG?.devices||{},groups=RECEIVERCFG?.displayGroups||{};
- cfgDisplayEditor.innerHTML=Object.entries(ds).map(([id,d])=>`<div class="receiverRow" data-display-id="${esc(id)}"><div class="receiverId"><b>Receiver ID:</b> <code>${esc(id)}</code></div><label>Name<input data-f="name" value="${esc(d.name||id)}"></label><label>Enabled<select data-f="enabled"><option value="1" ${d.enabled!==false?'selected':''}>Yes</option><option value="0" ${d.enabled===false?'selected':''}>No</option></select></label><label>AV Output<input data-f="avOutput" type="number" min="1" max="64" value="${esc(d.avOutput??'')}" placeholder="Not assigned"></label><label>Lighting<input data-f="lightingAlias" value="${esc(d.lightingAlias||'')}"></label><label>Tags<input data-f="tags" value="${esc((d.tags||[]).join(', '))}"></label><button class="danger" onclick="removeAdminDisplay(${inlineJsArg(id)})">Remove Receiver</button></div>`).join('');
- cfgGroupEditor.innerHTML=Object.entries(groups).map(([name,members])=>adminGroupCard(name,members,ds)).join('')||'<div class="muted">No groups configured.</div>';
- const outputs=new Map();for(const [id,d] of Object.entries(ds)){if(d.avOutput){const n=Number(d.avOutput);outputs.set(n,[...(outputs.get(n)||[]),id])}}
- const shared=[...outputs].filter(([,ids])=>ids.length>1).map(([n,ids])=>`Output ${n}: ${ids.join(', ')}`);
- cfgMappingWarnings.textContent=shared.length?`Shared output assignments — review if unintended. ${shared.join('; ')}. Receiver tools need a unique assignment; routing still works.`:'';
-}
-function adminGroupCard(name,members,devices){return `<div class="groupCard" data-group="${esc(name)}"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(name)}</b>${name==='all'?'<span class="pill">Core</span>':`<button class="danger" onclick="removeAdminDisplayGroup(${inlineJsArg(name)})">Remove</button>`}</div><div class="checkGrid">${Object.keys(devices).map(id=>`<label class="checkItem"><input type="checkbox" value="${esc(id)}" ${(members||[]).includes(id)?'checked':''}>${esc(devices[id]?.name||id)} (${esc(id)})</label>`).join('')}</div></div>`}
-function collectAdminDisplays(){
- if(!RECEIVERCFG)throw Error('Load receiver settings first.');
- const old=RECEIVERCFG.devices||{},devices={};
- cfgDisplayEditor.querySelectorAll('[data-display-id]').forEach(row=>{const id=row.dataset.displayId,d={...(old[id]||{})};d.name=row.querySelector('[data-f="name"]').value.trim()||id;d.enabled=row.querySelector('[data-f="enabled"]').value==='1';const av=row.querySelector('[data-f="avOutput"]').value;d.avOutput=av===''?null:Number(av);if(d.avOutput!==null&&(!Number.isInteger(d.avOutput)||d.avOutput<1||d.avOutput>64))throw Error(`Invalid AV output for ${id}. Use 1–64 or leave blank.`);d.lightingAlias=row.querySelector('[data-f="lightingAlias"]').value.trim()||null;d.tags=row.querySelector('[data-f="tags"]').value.split(',').map(x=>x.trim()).filter(Boolean);devices[id]=d});
- const displayGroups={};cfgGroupEditor.querySelectorAll('[data-group]').forEach(card=>{displayGroups[card.dataset.group]=[...card.querySelectorAll('input[type="checkbox"]:checked')].map(x=>x.value)});
- return {...RECEIVERCFG,devices,displayGroups};
-}
-async function saveAdminDisplaysStructured(){try{const v=collectAdminDisplays();const j=await api('/api/v1/admin/displays',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({devices:v.devices,displayGroups:v.displayGroups})});RECEIVERCFG={...v,devices:j.devices,displayGroups:j.displayGroups};S.avConfig=RECEIVERCFG;syncDisplayTargetNames(j.devices);syncAvOutputLabelsFromDisplays();renderMatrix();renderAdminDisplayEditor();cfgDisplaysMsg.textContent='Receivers and groups saved.';}catch(e){cfgDisplaysMsg.textContent=`Not saved: ${e.message}`}}
-function removeAdminDisplay(id){if(!RECEIVERCFG||!confirm(`Remove display ${id}? Existing schedules referencing it may need review. Save to apply.`))return;RECEIVERCFG=collectAdminDisplays();delete RECEIVERCFG.devices[id];for(const g of Object.keys(RECEIVERCFG.displayGroups||{}))RECEIVERCFG.displayGroups[g]=(RECEIVERCFG.displayGroups[g]||[]).filter(x=>x!==id);renderAdminDisplayEditor()}
-function addAdminDisplayGroup(){if(!RECEIVERCFG)return;const n=cfgNewGroup.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'-');if(!n)return;RECEIVERCFG=collectAdminDisplays();if(Object.prototype.hasOwnProperty.call(RECEIVERCFG.displayGroups,n))return alert('That group already exists.');Object.defineProperty(RECEIVERCFG.displayGroups,n,{value:[],enumerable:true,writable:true,configurable:true});cfgNewGroup.value='';renderAdminDisplayEditor()}
-function removeAdminDisplayGroup(name){if(!RECEIVERCFG||name==='all'||!confirm(`Remove display group ${name}? Existing schedules referencing it may need review. Save to apply.`))return;RECEIVERCFG=collectAdminDisplays();delete RECEIVERCFG.displayGroups[name];renderAdminDisplayEditor()}
-function removeEmptyLegacyDisplayGroups(){if(!RECEIVERCFG)return;const v=collectAdminDisplays(),names=Object.entries(v.displayGroups).filter(([n,m])=>isEmptyLegacyDisplayGroup(n,m)).map(([n])=>n);if(!names.length)return notify('No empty legacy groups found.');if(!confirm(`Remove these empty legacy groups: ${names.join(', ')}? Existing schedule references remain unchanged. Save to apply.`))return;for(const n of names)delete v.displayGroups[n];RECEIVERCFG=v;renderAdminDisplayEditor();cfgDisplaysMsg.textContent='Empty legacy groups removed from draft. Save to apply.'}
 function renderAdminIntegrationCards(){const hw=ADMINCFG?.hardware||{},g=hw.govee||{},p=hw.pluto||{};cfgIntegrationCards.innerHTML=`<div class="integrationCard"><div><b>Pluto AV Matrix</b><div class="muted">${esc(p.name||'AV matrix')}</div><div class="integrationState"><span class="pill">${esc(p.host||'Host not configured')}</span><span class="pill">External hardware</span></div></div><button onclick="showPage('av')">Open Displays & AV</button></div><div class="integrationCard"><div><b>Govee Lighting</b><div class="muted">${Object.keys(g.devices||{}).length} devices • ${Object.keys(g.groups||{}).length} groups</div><div class="integrationState"><span class="pill">MQTT-backed</span><span class="pill">Encrypted secrets supported</span></div></div><button onclick="showPage('lights')">Open Lighting</button></div>`}
 async function saveAdminSite(){try{const body={school:cfgSchool.value.trim(),room:cfgRoom.value.trim(),displayPrefix:cfgDisplayPrefix.value.trim()||'TV',timezone:cfgTimezone.value.trim(),theme:{mode:cfgThemeMode.value,primary:cfgThemePrimary.value,accent:cfgThemeAccent.value,background:cfgThemeBackground.value,surface:cfgThemeSurface.value,text:cfgThemeText.value}};const j=await api('/api/v1/admin/site',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});cfgSiteMsg.textContent=`Saved to database (revision ${j.site.revision}).`;ADMINCFG&&(ADMINCFG.site=j.site);applySiteBranding(j.site||{})}catch(e){cfgSiteMsg.textContent=e.message}}
 async function saveAdminHardware(){try{const v=JSON.parse(cfgHardware.value);await api('/api/v1/admin/hardware',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(v)});ADMINCFG.hardware=v;renderAdminIntegrationCards();cfgHardwareMsg.textContent='Hardware configuration validated and saved. Restart RoomGoblin if integration endpoints changed.'}catch(e){cfgHardwareMsg.textContent=e.message}}
-function showLogin(){document.body.classList.add('auth-locked');loginOverlay.style.display='flex';setTimeout(()=>loginUser.focus(),50)}
-function hideLogin(){document.body.classList.remove('auth-locked');loginOverlay.style.display='none';loginMsg.textContent=''}
-const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control'],lights:['integrations.control'],esphome:['classroom.read'],display:['classroom.control'],presentations:['media.manage'],media:['media.manage'],music:['classroom.control'],lab:['lab.read'],classes:['schedule.manage'],schedules:['schedule.manage','automation.manage'],diagnostics:['diagnostics.read'],settings:['admin'],system:['admin']};
+function syncAuthModalInert(){
+ const open=document.body.classList.contains('auth-locked')||accountModal.style.display==='flex';
+ document.querySelectorAll('.app,.rg-mobilebar,.rg-skip').forEach(el=>{el.inert=open});
+}
+function showLogin(){
+ window.dispatchEvent(new Event('roomgoblin:modalopen'));
+ document.body.classList.add('auth-locked');
+ closeAccountModal();
+ loginOverlay.style.display='flex';syncAuthModalInert();
+ setTimeout(()=>{if(document.body.classList.contains('auth-locked')&&!loginOverlay.contains(document.activeElement))loginUser.focus()},50);
+}
+function hideLogin(){document.body.classList.remove('auth-locked');loginOverlay.style.display='none';loginMsg.textContent='';syncAuthModalInert()}
+const PAGE_CAPABILITIES={overview:['classroom.read'],av:['integrations.control'],lights:['integrations.control'],esphome:['classroom.read'],display:['classroom.control'],presentations:['media.manage'],media:['media.manage'],music:['classroom.control'],weather:['classroom.control'],sports:['classroom.control'],lab:['lab.read'],planning:['schedule.manage'],classes:['schedule.manage'],schedules:['schedule.manage','automation.manage'],diagnostics:['diagnostics.read'],settings:['admin'],system:['admin']};
 const ACTION_CAPABILITIES={
-  admin:['saveAdminDisplaysStructured','addAdminDisplayGroup','removeAdminDisplayGroup','removeAdminDisplay','removeEmptyLegacyDisplayGroups','saveAdmin','loadAdmin','createLabAgentEnrollment','saveLabAgentPolicy','revokeLabAgentCredential','loadSystemManagement'],
+  admin:['saveDrawerTvGroups','saveAdminDisplaysStructured','addAdminDisplayGroup','removeAdminDisplayGroup','removeAdminDisplay','removeEmptyLegacyDisplayGroups','saveAdmin','loadAdmin','createLabAgentEnrollment','saveLabAgentPolicy','revokeLabAgentCredential','loadSystemManagement'],
   media:['presentationControl','startSelectedPresentation','newPresentationFolder','renamePresentation','movePresentation','deletePresentation','rebuildPresentation','showMedia','convertMedia','deleteMedia'],
-  automation:['saveAutomation','deleteAutomation','duplicateAutomation','runAutomation','testAutomationEditor','saveMorningWatch','checkMorningWatch'],
+  automation:['toggleAutomationScheduler','saveAutomation','deleteAutomation','duplicateAutomation','runAutomation','testAutomationEditor','saveMorningWatch','checkMorningWatch','queueMorningWatchVolume'],
   schedule:['saveClassSchedule','deleteClassSchedule','duplicateClassSchedule','saveSchedulerCalendar'],
-  integrations:['goveeCmd','plutoAction','route','powerAllAvTvs','drawerTvPower','drawerUpdateRoute','sourceDrawerPower','saveMusicAssistantConfig'],
-  classroom:['clearClassroom','overviewTestImage','overviewTvPower','reloadAllDisplays','bgmControl','bgmPlayFavorite','bgmUseFavorite','deleteBgmFavorite','maPlayerCmd','maMute','maSetVolume','musicAssistantTvBridge']
+  integrations:['goveeCmd','saveMusicAssistantConfig'],
+  classroom:['plutoAction','route','toggleRowTvPower','powerAllAvTvs','drawerTvPower','drawerUpdateRoute','sourceDrawerPower','saveSourceDrawer','saveDrawerTvName','drawerTestImage','drawerClearDisplay','drawerReloadDisplay','toggleSystem','resumeScheduledAutomation','clearClassroom','overviewTestImage','overviewTvPower','reloadAllDisplays','bgmControl','bgmPlayFavorite','bgmUseFavorite','deleteBgmFavorite','maPlayerCmd','maMute','maSetVolume','musicAssistantTvBridge']
 };
 function userCan(capability){const u=window.AUTH_STATUS?.user;if(!u)return false;if(capability==='admin')return u.role==='admin';const caps=Array.isArray(u.capabilities)?u.capabilities:[];return caps.includes('*')||caps.includes(capability)}
 function actionCapability(code=''){for(const name of ACTION_CAPABILITIES.admin)if(code.includes(name))return 'admin';for(const name of ACTION_CAPABILITIES.media)if(code.includes(name))return 'media.manage';for(const name of ACTION_CAPABILITIES.automation)if(code.includes(name))return 'automation.manage';for(const name of ACTION_CAPABILITIES.schedule)if(code.includes(name))return 'schedule.manage';for(const name of ACTION_CAPABILITIES.integrations)if(code.includes(name))return 'integrations.control';for(const name of ACTION_CAPABILITIES.classroom)if(code.includes(name))return 'classroom.control';return null}
 function enforceCapabilityControls(root=document){for(const el of root.querySelectorAll?.('button[onclick],input[onchange],select[onchange]')||[]){const required=actionCapability(el.getAttribute('onclick')||el.getAttribute('onchange')||'');if(!required)continue;const allowed=userCan(required);el.disabled=!allowed||el.dataset.commandUnavailable==='true';el.setAttribute('aria-disabled',String(el.disabled));if(!allowed)el.title=`Permission required: ${required}`}}
 const capabilityObserver=new MutationObserver(records=>{if(!window.AUTH_STATUS?.user)return;for(const record of records)for(const node of record.addedNodes)if(node.nodeType===Node.ELEMENT_NODE){if(node.matches?.('button[onclick],input[onchange],select[onchange]'))enforceCapabilityControls(node.parentElement||document);else enforceCapabilityControls(node)}});
 capabilityObserver.observe(document.body,{childList:true,subtree:true});
-function applyAuthUi(j){window.AUTH_STATUS=j||{};const u=j?.user;if(u){authAccount.style.display='block';authAccountName.textContent=u.displayName||u.username;authAccountRole.textContent=(u.role||'').toUpperCase();accountIdentity.textContent=`${u.displayName||u.username} • ${u.username} • ${u.role}`;for(const [pageId,required] of Object.entries(PAGE_CAPABILITIES)){const allowed=required.every(userCan),page=document.getElementById(pageId),nav=document.querySelector(`nav button[data-page="${pageId}"]`);if(page)page.dataset.authorized=String(allowed);if(nav){nav.hidden=!allowed;nav.setAttribute('aria-hidden',String(!allowed))}}enforceCapabilityControls();const active=document.querySelector('.page.active');if(active?.dataset.authorized==='false'){const first=[...document.querySelectorAll('nav button[data-page]')].find(x=>!x.hidden);if(first)showPage(first.dataset.page)}}else{authAccount.style.display='none'}window.dispatchEvent(new Event('roomgoblin:authchange'))}
+function applyAuthUi(j){
+ window.AUTH_STATUS=j||{};
+ const u=j?.user;
+ authAccount.style.display=u?'block':'none';
+ if(u){
+  authAccountName.textContent=u.displayName||u.username;
+  authAccountRole.textContent=(u.role||'').toUpperCase();
+  accountIdentity.textContent=`${u.displayName||u.username} • ${u.username} • ${u.role}`;
+ }
+ for(const [pageId,required] of Object.entries(PAGE_CAPABILITIES)){
+  const allowed=required.every(userCan),page=document.getElementById(pageId),nav=document.querySelector(`nav button[data-page="${pageId}"]`);
+  if(page)page.dataset.authorized=String(allowed);
+  if(nav){nav.hidden=!allowed;nav.setAttribute('aria-hidden',String(!allowed))}
+ }
+ enforceCapabilityControls();
+ const active=document.querySelector('.page.active');
+ if(u&&active?.dataset.authorized==='false'){
+  const first=[...document.querySelectorAll('nav button[data-page]')].find(x=>!x.hidden);
+  if(first)showPage(first.dataset.page);
+ }
+ window.dispatchEvent(new Event('roomgoblin:authchange'));
+}
 async function performLogin(){try{loginMsg.textContent='';const r=await fetch('/api/v1/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginUser.value,password:loginPassword.value,remember:loginRemember.checked})}),j=await r.json();if(!r.ok)throw Error(j.error||'Login failed');loginPassword.value='';await bootstrapController()}catch(e){loginMsg.textContent=e.message}}
 async function performLogout(){try{await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin'});}finally{window.AUTH_STATUS={authEnabled:true,user:null};applyAuthUi(window.AUTH_STATUS);showLogin();closeAccountModal();controllerBootstrapped=false;if(window.ws&&typeof window.ws.close==='function')try{window.ws.close()}catch{} }}
 async function checkAuthentication(){try{const r=await fetch('/api/v1/auth/status',{cache:'no-store',credentials:'same-origin'}),j=await r.json();window.AUTH_STATUS=j;applyAuthUi(j);if(j.authEnabled&&!j.user){showLogin();return false}hideLogin();return true}catch(e){showLogin();loginMsg.textContent='Unable to verify authentication';return false}}
 let accountReturnFocus=null;
-function openAccountModal(){accountReturnFocus=document.activeElement;accountModal.style.display='flex';loadMySessions();setTimeout(()=>currentPassword.focus(),0)}
-function closeAccountModal(){accountModal.style.display='none';currentPassword.value='';newPassword.value='';confirmPassword.value='';passwordMsg.textContent='';accountReturnFocus?.focus?.()}
+function openAccountModal(){
+ accountReturnFocus=document.activeElement;
+ window.dispatchEvent(new Event('roomgoblin:modalopen'));
+ accountModal.style.display='flex';syncAuthModalInert();loadMySessions();
+ currentPassword.focus();
+}
+function closeAccountModal(){
+ const wasOpen=accountModal.style.display==='flex';
+ accountModal.style.display='none';currentPassword.value='';newPassword.value='';confirmPassword.value='';passwordMsg.textContent='';
+ syncAuthModalInert();
+ if(wasOpen&&!document.body.classList.contains('auth-locked')){
+  const target=[accountReturnFocus,document.getElementById('workspaceMenu'),document.getElementById('workspaceMain')].find(el=>el?.getClientRects().length&&getComputedStyle(el).visibility==='visible'&&!el.closest('[inert]'));
+  target?.focus();
+ }
+ accountReturnFocus=null;
+}
 async function loadMySessions(){try{const j=await api('/api/v1/auth/sessions');sessionList.innerHTML=(j.sessions||[]).map(x=>`<div class="sessionRow"><div><b>${x.current?'Current session':'Session'}</b><div class="meta">${esc(x.remoteAddr||'')} • ${esc(new Date(x.lastSeenAt||x.createdAt).toLocaleString())}<br>${esc((x.userAgent||'').slice(0,120))}</div></div><div>${x.current?'<span class="pill ok">CURRENT</span>':`<button class="danger" onclick="revokeMySession(${inlineJsArg(x.id)})">Revoke</button>`}</div></div>`).join('')||'<div class="muted">No active sessions.</div>'}catch(e){sessionList.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
 async function revokeMySession(id){try{await api('/api/v1/auth/sessions/'+encodeURIComponent(id),{method:'DELETE'});await loadMySessions()}catch(e){alert(e.message)}}
 async function logoutOtherSessions(){if(!confirm('Sign out every other RoomGoblin session for this account?'))return;try{const j=await api('/api/v1/auth/logout-others',{method:'POST'});alert(`Signed out ${j.removed||0} other session(s).`);await loadMySessions()}catch(e){alert(e.message)}}
@@ -2506,7 +2596,7 @@ async function maPlayerCmd(playerId,command){try{await maApi(command,{player_id:
 async function maMute(playerId,muted){try{await maApi('players/cmd/volume_mute',{player_id:playerId,muted:!!muted});setTimeout(loadMusicAssistant,400)}catch(e){alert(e.message)}}
 async function maSetVolume(playerId,value){try{await maApi('players/cmd/volume_set',{player_id:playerId,volume_level:Math.max(0,Math.min(100,Number(value)||0))});setTimeout(loadMusicAssistant,400)}catch(e){alert(e.message)}}
 async function searchMusicAssistant(){const q=maSearch.value.trim();if(q.length<2)return;maSearchResults.textContent='Searching…';try{const r=await maApi('music/search',{search_query:q,media_types:['track','album','artist','playlist','radio'],limit:12});const rows=[];for(const [kind,list] of Object.entries(r||{})){if(!Array.isArray(list))continue;for(const x of list.slice(0,12)){const uri=x.uri||'',name=x.name||x.sort_name||uri;if(!uri)continue;const artist=Array.isArray(x.artists)?x.artists.map(a=>a.name).filter(Boolean).join(', '):(x.artist?.name||''),album=x.album?.name||'',detail=[kind.replace(/s$/,''),artist,album].filter(Boolean).join(' • ');rows.push(`<div class="card" style="box-shadow:none;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:12px"><div><b>${esc(name)}</b><div class="muted">${esc(detail)}</div><div class="muted" style="font-size:11px">${esc(uri)}</div></div><div class="toolbar"><button data-bgm-play="${esc(uri)}">Play</button><button class="primary" data-bgm-save="${esc(uri)}" data-bgm-name="${esc(name)}" data-bgm-detail="${esc(detail)}">Save Favorite</button></div></div>`)}}maSearchResults.innerHTML=rows.join('')||'<div class="muted">No results.</div>';maSearchResults.querySelectorAll('[data-bgm-play]').forEach(b=>b.addEventListener('click',()=>playMaUri(b.dataset.bgmPlay)));maSearchResults.querySelectorAll('[data-bgm-save]').forEach(b=>b.addEventListener('click',()=>saveBgmFavorite(b.dataset.bgmSave,b.dataset.bgmName,b.dataset.bgmDetail)))}catch(e){maSearchResults.innerHTML=`<div class="bad">${esc(e.message)}</div>`}}
-async function playMaUri(uri){const pid=bgmPlayer.value||MA_SELECTED_PLAYER;if(!pid)return alert('Select a Music Assistant player first.');try{await maApi('player_queues/play_media',{queue_id:pid,media:uri});setTimeout(loadMusicAssistant,900)}catch(e){alert(e.message)}}
+async function playMaUri(uri){const pid=bgmPlayer.value||MA_SELECTED_PLAYER;if(!pid)return alert('Select a Music Assistant player first.');try{await api('/api/v1/music-assistant/background/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'play',playerId:pid,uri})});setTimeout(loadMusicAssistant,900)}catch(e){alert(e.message)}}
 maSearch?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchMusicAssistant()}});
 const MODULE_FIELDS={
   mosquitto:[
@@ -2569,5 +2659,16 @@ async function loadDiagnosticInfrastructure(){
 }
 
 for(const control of [window.appUpdateChannel,window.appUpdateAutomatic,window.appUpdateInterval,window.appUpdateStart,window.appUpdateEnd])control?.addEventListener('change',clearSelectedAppRelease);
-document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(accountModal?.style.display==='flex')closeAccountModal()});
+document.addEventListener('keydown',event=>{
+ const modal=document.body.classList.contains('auth-locked')?loginOverlay:accountModal.style.display==='flex'?accountModal:null;
+ if(!modal)return;
+ if(event.key==='Escape'&&modal===accountModal){event.preventDefault();closeAccountModal();return}
+ if(event.key!=='Tab')return;
+ const items=[...modal.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
+ const first=items[0],last=items.at(-1);
+ if(!first)return;
+ if(!modal.contains(document.activeElement)){event.preventDefault();(event.shiftKey?last:first).focus()}
+ else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+ else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+});
 bootstrapController();

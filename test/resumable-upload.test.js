@@ -123,3 +123,13 @@ test("browser incremental SHA-256 matches the platform digest",()=>{
  const hash=new context.window.RoomGoblinUpload.Sha256();hash.update(new TextEncoder().encode("large "));hash.update(new TextEncoder().encode("upload"));
  assert.equal(hash.digest(),digest("large upload"));assert.equal(context.window.RoomGoblinUpload.MAX_BYTES,5*1024*1024*1024);
 });
+
+
+test("trusted-LAN HTTP uploads hash chunks even when SubtleCrypto is unavailable",async()=>{
+ let source=fs.readFileSync(path.join(__dirname,"../public/shared/resumable-upload.js"),"utf8");
+ source=source.replace("global.RoomGoblinUpload={upload,cancel,MAX_BYTES};","global.RoomGoblinUpload={upload,cancel,MAX_BYTES,chunkDigest};");
+ for(const native of [false,true]){
+  const context={window:{crypto:native?crypto.webcrypto:undefined},TextEncoder,Uint8Array,fetch:()=>{},localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}}};vm.runInNewContext(source,context);
+  for(const length of [0,3,55,56,64,65,4097]){const bytes=crypto.randomBytes(length);assert.equal(await context.window.RoomGoblinUpload.chunkDigest(bytes),digest(bytes))}
+ }
+});

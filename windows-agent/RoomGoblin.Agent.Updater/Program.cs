@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 var options = ParseArgs(args);
@@ -170,38 +171,36 @@ static bool WaitForHealth(
     return false;
 }
 
-static void WaitForServiceStopped(
-    string serviceName,
-    TimeSpan timeout)
+static void WaitForServiceStopped(string serviceName, TimeSpan timeout)
 {
-    var deadline = DateTimeOffset.UtcNow + timeout;
-
-    while (DateTimeOffset.UtcNow < deadline)
+    var elapsed = Stopwatch.StartNew();
+    while (elapsed.Elapsed < timeout)
     {
+        var remaining = timeout - elapsed.Elapsed;
+        if (remaining <= TimeSpan.Zero) break;
         var result = RunProcess(
-            "sc.exe",
-            new[] { "query", serviceName },
-            capture: true,
-            allowFailure: true);
-
-        if (result.ExitCode != 0 ||
-            result.Output.Contains(
-                "STOPPED",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        Thread.Sleep(500);
+            "sc.exe", new[] { "query", serviceName },
+            capture: true, allowFailure: true, timeout: remaining);
+        if (result.ExitCode == 1060) return; // ERROR_SERVICE_DOES_NOT_EXIST
+        if (result.ExitCode != 0)
+            throw new InvalidOperationException($"Could not confirm that {serviceName} stopped (query exit code {result.ExitCode}).");
+        if (result.Output.Contains("STOPPED", StringComparison.OrdinalIgnoreCase)) return;
+        remaining = timeout - elapsed.Elapsed;
+        if (remaining > TimeSpan.Zero)
+            Thread.Sleep(remaining < TimeSpan.FromMilliseconds(500) ? remaining : TimeSpan.FromMilliseconds(500));
     }
+    throw new TimeoutException($"Timed out waiting for {serviceName} to stop.");
 }
 
 static ProcessResult RunProcess(
     string file,
     IEnumerable<string> arguments,
     bool capture = false,
-    bool allowFailure = false)
+    bool allowFailure = false,
+    TimeSpan? timeout = null)
 {
+    var budget = timeout ?? TimeSpan.FromSeconds(30);
+    if (budget <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
     var psi = new ProcessStartInfo
     {
         FileName = file,
@@ -210,34 +209,46 @@ static ProcessResult RunProcess(
         RedirectStandardOutput = capture,
         RedirectStandardError = capture
     };
-
-    foreach (var argument in arguments)
-        psi.ArgumentList.Add(argument);
-
+    foreach (var argument in arguments) psi.ArgumentList.Add(argument);
     using var process = Process.Start(psi)
         ?? throw new InvalidOperationException($"Could not start {file}.");
-
-    var outputTask = capture
-        ? process.StandardOutput.ReadToEndAsync()
-        : Task.FromResult("");
-
-    var errorTask = capture
-        ? process.StandardError.ReadToEndAsync()
-        : Task.FromResult("");
-
-    process.WaitForExit();
-
+    using var deadline = new CancellationTokenSource(budget);
+    var outputTask = capture ? ReadProcessOutputAsync(process.StandardOutput, deadline.Token) : Task.FromResult("");
+    var errorTask = capture ? ReadProcessOutputAsync(process.StandardError, deadline.Token) : Task.FromResult("");
+    try
+    {
+        Task.WhenAll(process.WaitForExitAsync(deadline.Token), outputTask, errorTask).GetAwaiter().GetResult();
+    }
+    catch (OperationCanceledException)
+    {
+        try { process.Kill(entireProcessTree: true); } catch { }
+        throw new TimeoutException($"{file} timed out after {budget.TotalSeconds:0.###} seconds.");
+    }
     var output = outputTask.GetAwaiter().GetResult();
     var error = errorTask.GetAwaiter().GetResult();
-
     if (process.ExitCode != 0 && !allowFailure)
     {
+        var detail = error.Trim();
+        if (detail.Length > 2048) detail = detail[..2048];
         throw new InvalidOperationException(
             $"{file} failed with exit code {process.ExitCode}" +
-            (string.IsNullOrWhiteSpace(error) ? "" : $": {error.Trim()}"));
+            (detail.Length == 0 ? "" : $": {detail}"));
     }
-
     return new ProcessResult(process.ExitCode, output, error);
+}
+
+static async Task<string> ReadProcessOutputAsync(StreamReader reader, CancellationToken ct)
+{
+    const int maxChars = 64 * 1024;
+    var retained = new StringBuilder();
+    var buffer = new char[4096];
+    while (true)
+    {
+        var count = await reader.ReadAsync(buffer.AsMemory(), ct);
+        if (count == 0) return retained.ToString();
+        var keep = Math.Min(count, maxChars - retained.Length);
+        if (keep > 0) retained.Append(buffer, 0, keep);
+    }
 }
 
 static Dictionary<string, string> ParseArgs(string[] args)

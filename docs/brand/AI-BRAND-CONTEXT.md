@@ -23,7 +23,7 @@ Read this file before generating RoomGoblin UI, documentation, marketing copy, c
 ## Core modules
 Devices; Students; Announcements; Schedules; Digital Signage; Room Controls; Reports; Classes; Safety; Integrations; Settings.
 
-For interface renderings, prefer the actual operator workspace vocabulary documented in `docs/GUI-WORKSPACES.md`: Today; Displays & AV; Lighting; ESPHome devices; Display content; Background Music; Lab Computers; Presentations; Media Library; Classes; Automation; Managed Displays; Settings; Diagnostics; Infrastructure & Recovery; System Updates; and Setup. Do not invent unrelated commerce, retail, or generic SaaS modules.
+For interface renderings, prefer the actual operator workspace vocabulary documented in `docs/GUI-WORKSPACES.md`: Today; Displays & AV; Lighting; ESPHome devices; Display content; Background Music; Lab Computers; Presentations; Media Library; Calendar & Timetables; Classes; Automation; Managed Displays; Settings; Diagnostics; Infrastructure & Recovery; System Updates; and Setup. Do not invent unrelated commerce, retail, or generic SaaS modules.
 
 ## Compatibility rule
 The RoomGoblin rebrand must not casually rename persistent storage, environment variables, Android package IDs, service/socket names, container identities, database fields, enrollment identifiers, API contracts, or deployment paths. Legacy internal identifiers such as `classroom-hub`, `CLASSROOM_HUB_*`, `/opt/classroom-hub`, and `org.roomgoblin.display` remain compatibility identifiers until an explicit migration is designed, tested, documented, and reversible.
@@ -68,3 +68,9 @@ artwork after truncated originals were found; never infer dimensions from those
 filenames. New art must not silently replace the supplied mascot.
 Branding regressions must decode bundled PNG streams, not merely check file
 extensions or PNG signatures.
+
+Operator code, warning text and keyboard outlines use the theme-aware
+`--rg-code`, `--rg-warning` and `--rg-focus` tokens in shared workspace CSS.
+Compact lockups inherit operator text color. Preserve these scoped contrast
+overrides when loading global brand styles; do not apply them to physical
+display/document/video renderers or replace configurable brand colors globally.

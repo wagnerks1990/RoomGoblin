@@ -1,0 +1,29 @@
+body.rg-workspace .musicTabs{display:flex;gap:6px;flex-wrap:wrap;margin:20px 0}
+body.rg-workspace .musicTabs [aria-pressed="true"]{background:var(--rg-primary,#0f766e);color:#fff}
+body.rg-workspace .musicPane[hidden]{display:none!important}
+body.rg-workspace .musicHero{display:grid;grid-template-columns:160px 1fr;gap:28px;align-items:center;padding:28px;border:1px solid var(--border);border-radius:20px;background:var(--panel,#1e293b)}
+body.rg-workspace .musicDisc{display:grid;place-items:center;width:150px;height:150px;border-radius:50%;background:radial-gradient(circle,#152a35 0 18%,#0f766e 19% 22%,#182a35 23% 38%,#243845 39% 40%,#152a35 41% 58%,#243845 59% 60%,#10232f 61%);font-size:48px;color:#9ce5d3;box-shadow:0 12px 26px #0003}
+body.rg-workspace .musicEyebrow{font-size:11px;letter-spacing:2px;font-weight:800;color:var(--muted)}
+body.rg-workspace .musicTrackInfo{min-width:0;overflow-wrap:anywhere}
+body.rg-workspace .musicTrackInfo h2{font-size:clamp(24px,3vw,42px);line-height:1.15;margin:12px 0}
+body.rg-workspace #bgmRuntime{display:inline-block;border-radius:20px;padding:6px 12px;background:#8882;text-transform:capitalize}
+body.rg-workspace #bgmRuntime[data-state="playing"]{background:#16a34a25;color:#71df9b}
+body.rg-workspace .musicTransport,body.rg-workspace .musicTools,body.rg-workspace .musicQuick{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0}
+body.rg-workspace .musicTransport label,body.rg-workspace .musicTools label{display:flex;gap:8px;align-items:center;min-width:0}
+body.rg-workspace .musicTransport select{max-width:290px}
+body.rg-workspace .musicTransport input[type="range"]{width:150px}
+body.rg-workspace .musicPane .panel{margin-top:18px}
+body.rg-workspace .musicItem{display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid var(--border);border-radius:14px;padding:18px;margin:10px 0}
+body.rg-workspace .musicItem h3{margin:0 0 6px}
+body.rg-workspace .musicItem p{margin:0;color:var(--muted)}
+body.rg-workspace .musicItem>div{min-width:0;overflow-wrap:anywhere}
+body.rg-workspace .musicItem .toolbar{flex-shrink:0}
+body.rg-workspace .musicQueue ol{padding:0;list-style:none}
+body.rg-workspace .musicQueue li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)}
+body.rg-workspace .musicNotice:not(:empty){padding:10px 14px;border-left:3px solid var(--accent,#0f766e);margin:10px 0}
+body.rg-workspace .musicReliability{padding:16px;border:1px solid var(--border);border-radius:12px;overflow-wrap:anywhere}
+body.rg-workspace .musicPane #maSearch{min-width:0!important}
+body.rg-workspace .musicPane #bgmRuntime{margin-top:8px}
+body.rg-workspace .musicPane details>summary{cursor:pointer}
+body.rg-workspace .musicPane [data-music-control]:disabled{opacity:.55}
+@media(max-width:650px){body.rg-workspace .musicHero{grid-template-columns:72px 1fr;padding:18px;gap:16px}body.rg-workspace .musicDisc{width:72px;height:72px;font-size:32px}body.rg-workspace .musicTransport label{width:100%;justify-content:space-between}body.rg-workspace .musicTransport select{max-width:70%}body.rg-workspace .musicItem{align-items:stretch;flex-direction:column}body.rg-workspace .musicItem .toolbar{flex-wrap:wrap}}

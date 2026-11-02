@@ -342,6 +342,15 @@ and queues audit persistence until thaw. Failure to drain fails closed. Both
 freezes have a 30-minute crash lease and are released after every success or
 failure before the browser receives its final response.
 
+Accepted mutating HTTP handlers remain part of the drain until their returned
+promises settle, even after the response finishes or the client disconnects.
+Freeze/thaw and the browser's initiating export proxy remain excluded from this
+mutation count so they cannot wait on their own export. A stuck handler fails
+acquisition at the existing 30-second deadline without issuing a freeze token;
+the application remains available for the handler to finish and a later retry.
+See [application lifecycle](APPLICATION-LIFECYCLE.md) for the scoped ownership
+and regression coverage.
+
 Master, ADB, Android signing and native Veyon identity files are copied into a
 private temporary snapshot while the host lock is held, re-read to detect a
 concurrent change, and cryptographically/structurally validated from that copy.
@@ -490,8 +499,9 @@ the host:
 
 ADB private/public keys and the named
 `classroom-control-hub-android-adb` volume are reconciled as one trust identity.
-Recovery must prove the mounted ADB directory is writable and preserve existing
-pairing; it must not silently generate a new key and call the restore successful.
+Recovery must prove the Hub's mounted ADB directory is writable and maintenance's
+mount remains read-only and readable. Preserve existing pairing; do not silently
+generate a new key and call the restore successful.
 Android signing keystore and password are restored as a matched identity or not
 at all. The master key is likewise committed with its matching database so every
 `secret_store` row can be decrypted before acceptance.

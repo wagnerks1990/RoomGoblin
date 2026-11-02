@@ -5,7 +5,8 @@ const {execFile}=require("child_process");
 const {promisify}=require("util");
 const execFileAsync=promisify(execFile);
 const {STORE}=require("./android-tv-extension");
-const {cleanPackage,cleanPort,publicDevice}=require("./android-tv-lib");
+const {cleanPackage,cleanPort,requireManagementPort,publicDevice}=require("./android-tv-lib");
+const {withConfiguration}=require("./android-tv-configuration-owner");
 
 const ROOT=process.env.ANDROID_TV_DATA_ROOT||"/managed/classroom-hub/data/android-tv";
 const ADB=String(process.env.ADB_BIN||"adb");
@@ -43,6 +44,9 @@ async function broadcastPolicy(d,enabled,targetPort){
   await adb(["-s",d.serial,"shell","am","broadcast","-a","org.roomgoblin.display.CONFIGURE","-p",pkg,"--ez","persistent_adb",enabled?"true":"false","--ei","target_adb_port",String(targetPort)],15000);
 }
 async function bootstrap(d,targetPort){
+  return withConfiguration(d.id,async()=>{
+  targetPort=requireManagementPort(targetPort??5555);
+  d=STORE.requireCurrentDevice(STORE.list(),d);
   d=await requireOnline(d);
   const pkg=cleanPackage(d.agentPackage||"org.roomgoblin.display");
   const packages=(await adb(["-s",d.serial,"shell","pm","path",pkg],10000)).stdout||"";
@@ -59,23 +63,26 @@ async function bootstrap(d,targetPort){
   const fixedSerial=`${d.host}:${targetPort}`;
   await adb(["connect",fixedSerial],15000);
   await adb(["-s",fixedSerial,"get-state"],7000);
-  const updated=STORE.upsertDevice({...d,port:targetPort,serial:fixedSerial,persistentAdb:{enabled:true,targetPort,bootRestore:true,bootstrapAt:new Date().toISOString()},lastStatus:{online:true,source:"persistent-adb-bootstrap",checkedAt:new Date().toISOString()}});
+  const updated=STORE.updateDevice(d,{port:targetPort,serial:fixedSerial,persistentAdb:{enabled:true,targetPort,bootRestore:true,bootstrapAt:new Date().toISOString()},lastStatus:{online:true,source:"persistent-adb-bootstrap",checkedAt:new Date().toISOString()}});
   return {device:updated,tcpipMessage};
+  });
 }
 
 function installRoutes(app){if(installed)return;installed=true;
   app.get("/android/devices/:id/agent/status",route(async(req,res)=>res.json(await agentStatus(device(req.params.id)))));
   app.post("/android/devices/:id/persistent-adb/bootstrap",route(async(req,res)=>{
-    const targetPort=cleanPort(req.body?.targetPort||5555);
+    const targetPort=requireManagementPort(req.body?.targetPort??5555);
     const result=await bootstrap(device(req.params.id),targetPort);
     res.json({ok:true,targetPort,message:"Persistent wireless debugging boot policy enabled and fixed ADB endpoint configured.",...result,device:publicDevice(result.device)});
   }));
   app.post("/android/devices/:id/persistent-adb/disable",route(async(req,res)=>{
+    await withConfiguration(req.params.id,async()=>{
     let d=await requireOnline(device(req.params.id));
     const targetPort=cleanPort(d.persistentAdb?.targetPort||d.port||5555);
     await broadcastPolicy(d,false,targetPort);
-    d=STORE.upsertDevice({...d,persistentAdb:{enabled:false,targetPort,bootRestore:false,disabledAt:new Date().toISOString()}});
+    d=STORE.updateDevice(d,{persistentAdb:{enabled:false,targetPort,bootRestore:false,disabledAt:new Date().toISOString()}});
     res.json({ok:true,device:publicDevice(d),message:"Persistent ADB boot restoration disabled. Current ADB session was left connected intentionally."});
+    });
   }));
 }
 

@@ -20,9 +20,9 @@ API routes remain unchanged.
 
 | Navigation group | Workspaces |
 | --- | --- |
-| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Lab computers |
+| Room controls | Displays & AV, Lighting, ESPHome devices, Display content, Background music, Weather, Sports, Lab computers |
 | Content library | Presentations, Media library |
-| Planning | Classes, Automation |
+| Planning | Calendar & Timetables, Classes, Automation |
 | Administration | Settings, Diagnostics, Infrastructure & recovery, Managed displays |
 
 Use **Find a workspace** to filter navigation labels. The current workspace opens
@@ -30,12 +30,58 @@ its navigation group automatically. On smaller screens, **Menu** opens the
 navigation drawer; Escape or the backdrop closes it, and choosing a workspace
 moves focus to the main content. The controller also has a skip-to-content link.
 
+Opening My Account or showing the login prompt closes the mobile drawer first.
+Account and login dialogs contain keyboard focus and make the surrounding shell
+inert. Closing My Account clears its password fields and returns focus to its
+visible opener, or to Menu when that opener is inside the closed mobile drawer.
+Session loss hides capability-bound navigation immediately. Repeated expired
+requests keep an unfinished login field focused rather than restarting entry.
+My Account establishes initial focus synchronously when it opens; no delayed
+opening callback may move focus after keyboard navigation or a later reopen.
+
+Weather combines current/seven-day forecasts, after-school/evening details,
+selectable date ranges and editable overlay fields. Preview is local; explicit
+targets are required before sending a full screen. Scheduled screens and shared
+overlays use the reviewed Planning editors. See [Weather workspace](WEATHER-WORKSPACE.md).
+
 Navigation search is presentation only. `public/controller/app.js` retains page
 activation and capability-based visibility; `workspace.js` must never unhide an
 item hidden by authorization. The shared stylesheet explicitly preserves the
 `hidden` attribute. Backend authentication and authorization remain authoritative.
 
 ## Surface behavior
+
+Controller, Veyon and Managed Displays API waits include response-body consumption in
+their deadline. Ordinary reads and Ubuntu requests allow one minute. Ordinary
+mutations and Android management allow ten minutes for existing multi-step work.
+Maintenance mutations, backup inspection, diagnostic bundles and full checks
+allow 45 minutes to preserve the existing long archive/restore paths. A caller's
+shorter cancellation still applies. Timeout releases the pending control and
+reports an unconfirmed mutation outcome; it does not retry or cancel the accepted
+server operation. Refresh status before deciding whether to submit again.
+Read failures preserve existing inventory. Direct downloads, resumable uploads,
+physical renderer requests and durable background jobs retain their own contracts.
+
+Diagnostics distinguishes unconfigured and unchecked integrations from failures.
+Pluto's observed state retains the last response time. Govee reports MQTT publish
+evidence without claiming device acknowledgment. Veyon reports WebAPI reachability
+separately from authentication. Saving integration connections retires earlier
+observations; late responses from those connections cannot replace current status.
+
+Managed Displays also contains an independent Ubuntu computer inventory. Its
+wizard verifies SSH identity, checks readiness, assigns each physical output,
+reviews installation changes and reports asynchronous progress. Computer-level
+maintenance is distinct from per-screen controls; failed ADB probes do not disable
+Ubuntu management. Computer cards include resource health, software versions,
+alerts, history, metadata editing and explicit immediate/scheduled maintenance.
+Polling preserves focused controls and open dialogs. Ubuntu refreshes share one
+pending read and discard responses predating a write. Pending computer commands
+stay disabled across redraws, and their results remain on the originating card.
+Metadata/maintenance completion keeps newer unsaved choices open. A preview can
+be closed while capturing; late captures cannot reopen it or replace a newer one.
+Closing restores focus to its available preview button or the computer search.
+Ubuntu screen cards and
+wizard controls use the shared light/dark contrast tokens. See [Ubuntu managed displays](UBUNTU-MANAGED-DISPLAYS.md).
 
 | Surface | Organization |
 | --- | --- |
@@ -52,12 +98,29 @@ confirmations remain in place. Veyon's custom live and information modal contain
 receive focus containment, Escape-to-close and return-focus handling through
 `public/controller/lab-accessibility.js`; native dialogs retain browser behavior.
 
+Veyon feature and connection-pool dialogs discard replies from an earlier
+computer or a closed dialog. Closing cached connections keeps its confirmation
+and one pending action; a late completion refreshes inventory without closing
+a newer dialog. Escape and return-focus behavior remain available.
+
 ## Refined operator workflow
 
 Today puts the school-day and display summaries first, with integration health in
 one compact strip. Permission-aware shortcuts open display content, lab computers
 and Background Music. Everyday room power controls stay visible; classroom reset
 and display reload operations remain in the maintenance disclosure.
+
+Today loads the room inventory and class information independently of optional AV
+probes. **Refresh status** retains unchanged preview sessions and keyboard focus;
+**Refresh previews** explicitly reloads them. Failed reads show unavailable or
+last-known data rather than an empty room. MQTT reports broker connectivity only.
+Receiver online/offline status does not establish physical TV power or playback.
+
+Mapped TV power remains available when a receiver is offline. Test Image requires
+one enabled receiver uniquely assigned to its AV output and a successful inventory
+read. Missing mappings and command errors are visible. Automation read failures
+appear on Today; Pause requires automation management and Resume requires classroom
+control, matching the existing server guards.
 
 Scheduled Automation uses an inline class-schedule multi-select. Its closed state
 shows the number of linked classes; opening it exposes a scrollable checkbox list
@@ -75,6 +138,32 @@ is visible and clickable. New shortcuts obey the existing authorization state.
 | Veyon computers | Name, hostname, address or user; student/teacher; online/offline/needs attention | Compact, comfortable or list; select visible online computers; hidden selections remain explicitly counted |
 | Windows agent computers | Name, hostname, ID, user or address; online/offline/selected | Compact or comfortable; select visible or visible online; clear selection removes hidden selections too |
 | Managed displays | Name, assignment, profile or address; online/offline or unknown | Comfortable or compact; filter remains applied after inventory redraws |
+
+Windows agent inventory refreshes retain keyboard focus, selections, filters and
+open device details. Failed reads keep the last available inventory with visible
+stale feedback; an initial failed read shows unavailable rather than an empty
+lab. Name/group saves run in accepted order and older reads cannot restore
+previous metadata. Agent command delivery and monitoring permissions are unchanged.
+
+Windows history and saved-screenshot reads belong to the open computer and latest
+filter/refresh request. Closing a monitoring dialog, including Escape, clears
+its sensitive content and invalidates late replies. Changing computers clears
+the previous image before requesting a new capture. Screenshot feedback checks
+command delivery and reports a request, not confirmed capture/save completion;
+the latest available image can predate that request. Saved history remains the
+record of received screenshots. Permissions and retention are unchanged.
+Profile discovery belongs to the computer/dialog independently of filtered row
+reads, so early filter changes cannot remove the User choices. Viewing a saved
+screenshot explicitly restores image visibility after an unsuccessful live
+capture; changing or closing the computer still clears that image.
+
+AI-alert summaries and filtered lists discard older replies. Close/Escape clears
+alert content and cancels delayed refreshes; action responses cannot refill a
+closed dialog. One alert action may be pending at a time, with visible errors
+and no automatic write retry. Current filters refresh after a status change.
+Windows screen refreshes issue no capture requests while the document or embedded
+workspace is hidden and resume on the normal interval when visible. An already
+accepted capture is not cancelled on the workstation.
 
 Inventory filters change presentation only. A selection hidden by a Veyon or
 Windows filter still participates in an explicitly issued bulk command; the
@@ -129,6 +218,21 @@ edits. Command status reserves a line even when empty, so acknowledgement cleari
 does not move an Apply button between pointer down and pointer up. Failed refreshes retain the inventory with an explicit stale-data message.
 Existing Govee endpoints, MQTT payloads and schedule/device identity remain unchanged.
 
+Lighting and the scheduler share inventory read ownership, so an older refresh
+cannot replace newer readings. Late refreshes and command/save replies preserve
+the latest action message. A successful device save followed by a failed refresh
+reports both outcomes and retains the last inventory; newer editor drafts remain
+intact.
+
+Within one controller, device metadata, automatic enrollment and cleanup writes
+run in accepted order. Form values are captured when Save is selected; later
+drafts remain editable. Inventory reads wait for accepted configuration writes,
+and responses predating a newer write refresh before publishing. Discovery
+checkboxes retain the latest pending choice. Setting and cleanup results appear
+inline, including successful writes whose follow-up refresh fails. Failed writes
+release the queue without an automatic mutation retry. This does not serialize
+independent administrators in other browser sessions.
+
 ## Styling ownership
 
 `public/shared/workspace.css` is the operator-only design layer. It is opt-in via
@@ -137,11 +241,21 @@ Existing Govee endpoints, MQTT payloads and schedule/device identity remain unch
 are mapped for compatibility. Runtime brand primary/background/surface/text tokens
 remain inputs. Dark slate surfaces, teal primary controls, explicit status labels,
 visible keyboard focus, restrained borders and reduced-motion rules provide the
-common visual treatment. Light and system brand modes have operator overrides.
+common visual treatment. Light and system brand modes have operator overrides. `--rg-code`, `--rg-warning`
+and `--rg-focus` provide readable semantic text and keyboard outlines in either
+mode; compact brand lockups inherit the operator text color. These corrections
+are scoped to `body.rg-workspace` and do not restyle playback renderers.
+
+The HTML explicitly loads the enrollment and update presentation modules after
+`app.js`. Navigation does not generate credentials or replace feature handlers.
+`app.js` retains the API helper, authorization, update requests and account/login
+lifecycle. Existing feature IDs and inline actions are preserved.
 
 Page-specific layout lives in:
 
-- `public/controller/workspace.css` and `workspace.js` for the main shell;
+- `public/controller/workspace.css` and `workspace.js` for navigation and shell layout;
+- `public/controller/system-updates-workspace.{css,js}` for update presentation;
+- `public/controller/lab-enrollment.js` as the single Windows enrollment UI owner;
 - `public/controller/embedded-workspaces.js` for same-origin lab frame sizing and visible viewport reporting;
 - `public/controller/display-workspace.css` for the content editor;
 - `public/controller/lighting.css` for compact Govee controls;
@@ -201,3 +315,44 @@ commit tag or bypass revision verification. The source and both images must agre
 The native device workspace is described in [ESPHome integration](ESPHOME-INTEGRATION.md).
 Keep forms and expanded entity cards stable across polling, mark cached inventory
 stale after failed reads, and never infer physical confirmation from socket writes.
+
+One controller admits one ESPHome enrollment/management write at a time. Polls
+pause during those writes and discard replies from earlier management or
+permission revisions. Discovery has the same revision checks. A late reply
+cannot repopulate inventory after read access is removed. Management feedback
+survives ordinary polling; current read failures separately mark retained
+inventory stale and disable controls.
+
+Successful enrollment clears only the submitted draft. Newer field edits remain
+and retain the saved device identity for the next verified edit. Submitted API
+keys are cleared from the field and transient payload; a separately typed new
+key remains a new draft until submitted or explicitly cleared by existing
+cancel, navigation, disclosure and permission behavior. No device mutation is
+automatically retried.
+
+## Planning rebuild (Unreleased)
+
+Calendar & Timetables joins Classes and Automations through shared, permission-aware
+Planning tabs. The new page retains `classes` and `schedules` nodes and handlers.
+Class fallback times move into a disclosure; automation editing uses When, Actions
+& targets, and Timer overlay sections. Calendar changes remain drafts until preview
+and a revision-checked save. See [Planning](PLANNING.md) for the cycle model, split segments,
+CSV calendar import, migration and rollback.
+
+Planning now uses compact timetable rows, a searchable class library and focused
+automation/scene dialogs. See [Planning and Scene Studio](PLANNING-STUDIO.md).
+Shared workspace styles remain scoped to `body.rg-workspace`; receiver scenes
+load only their shared scene renderer and existing display layout engine.
+
+## Timer overlays
+
+Timer & advanced includes optional staged timer effects, copied reusable presets
+and a silent receiver-renderer preview. Stages retain the original deadline and
+do not restart content. See [Staged timer overlays](TIMER-EFFECTS.md).
+
+## Background Music Studio
+
+Background Music uses Now playing, Find music, Favorites, Schedule and Outputs & connection tabs. Listening controls and queue stay separate from saved schedule edits. Polling preserves drafts and focused controls. See [Music Studio and recovery](BACKGROUND-MUSIC-STUDIO.md) for recovery, priority and physical acceptance limits.
+
+Sports combines saved team boards, reviewed PDF/CSV rosters, previous/next events,
+approved cached media and administrator-managed sources. See [Sports boards](SPORTS.md).

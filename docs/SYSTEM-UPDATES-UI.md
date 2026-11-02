@@ -1,14 +1,14 @@
 # System updates workspace
 
-RoomGoblin presents its existing semantic-release updater with the same deployment-first operator hierarchy used by LabGoblin while retaining RoomGoblin's appliance-specific update contract.
+RoomGoblin presents the latest merged commit on trusted `main`, its exact published images and the appliance's backup/rollback state. See [Production updates](PRODUCTION-UPDATES.md) for the authoritative deployment contract.
 
 ## Operator layout
 
-The **Update RoomGoblin** disclosure is enhanced at runtime by `public/controller/workspace.js` into a **System updates** workspace with:
+The **Update RoomGoblin** disclosure is enhanced at runtime by `public/controller/system-updates-workspace.js` into a **System updates** workspace with:
 
-1. **Deployment** — trusted repository, current version, available release, rollback-point availability, and the existing Check GitHub / Install Available Release / Revert Last Upgrade controls.
+1. **Deployment** — trusted repository, current version/commit, available main commit, rollback-point availability, and the existing Check GitHub / Install Available Release / Revert Last Upgrade controls.
 2. **Update status** — the existing raw updater status output, retained in a collapsible diagnostic section.
-3. **Automatic update settings** — the existing repository/channel/token/check-interval/maintenance-window settings and automatic-install opt-in, with Save Settings and Clear Stored Token preserved.
+3. **Automatic update settings** — the existing repository/token/check-interval/maintenance-window settings and fixed main source and automatic-install opt-in, with Save Settings and Clear Stored Token preserved.
 4. **Latest operation & history** — the existing updater history table.
 
 The workspace summary parses only already-rendered updater status text. If a version cannot be safely derived from that text, the summary says **See update status** rather than inventing state.
@@ -17,9 +17,9 @@ The workspace summary parses only already-rendered updater status text. If a ver
 
 This redesign is presentation-only. It must not change:
 
-- semantic-version GitHub release selection;
+- latest-merged trusted-main commit selection;
 - trusted repository restrictions;
-- release-channel approval logic;
+- exact immutable Hub/maintenance image verification before source mutation;
 - optional GitHub read-token handling;
 - automatic-update opt-in or maintenance windows;
 - operational backup creation;
@@ -32,11 +32,11 @@ Existing controller element IDs and inline handlers remain intact and are moved,
 
 ## Compatibility and accessibility
 
-The enhancement uses existing native `details`/`summary` controls for status, settings, and history. It is scoped to the operator workspace stylesheet and does not load into physical display rendering.
+The enhancement uses existing native `details`/`summary` controls for status, settings, and history. Its styles live in `public/controller/system-updates-workspace.css` and are scoped to the operator workspace and does not load into physical display rendering.
 
 At phone widths, deployment details and settings collapse to one column and action buttons wrap. Destructive rollback remains visually separated and continues to use its existing confirmation behavior.
 
-If the update controls are absent, renamed, or unauthorized, the enhancement returns without altering the page. This fail-soft behavior preserves the legacy updater UI rather than breaking administration access.
+If required repository/status/history controls are absent, the enhancement returns. Administrator visibility and access remain owned by `app.js` and the backend guards; layout enhancement does not authorize a page or an operation.
 
 ## Verification
 
@@ -50,7 +50,7 @@ npm test
 Also verify in a browser that:
 
 - current and available versions follow the updater output;
-- Install remains disabled when no approved release is available;
+- Install remains disabled when no verified main update is selected;
 - Revert remains disabled when no rollback point exists;
 - changing automatic-update settings still saves through the existing handler;
 - clearing a stored token still uses the existing handler;

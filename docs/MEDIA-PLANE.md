@@ -8,6 +8,20 @@ The control plane remains on the normal RoomGoblin listener (default `3000`). Up
 
 ## Runtime model
 
+New video commands without an explicit session ID use their normalized command
+ID for both dispatch and saved replay. Caller/automation session IDs stay intact;
+old saved states are not rewritten. See [default session identity](audits/roomgoblin-modernization/media-default-session.md).
+
+Live video volume, mute and playback rate are saved on the existing receiver
+session for reconnect replay. Positive volume unmutes; zero volume preserves
+mute intent. Control values must be finite. Playback operations and position
+remain receiver-owned; reconnect snapshots do not replay seeks or restarts.
+See [the reconnect review](audits/roomgoblin-modernization/media-reconnect-settings.md)
+for qualification. Receiver video identity uses the validated source and session
+ID, so renewed asset tokens do not replace healthy playback. Failed sources may
+use a newer authorized URL with the same element and saved position, bounded to
+three consecutive attempts. See [token continuity](audits/roomgoblin-modernization/media-token-continuity.md).
+
 - Control plane: `http://<hub>:3000`
   - controller UI
   - REST API
@@ -19,7 +33,15 @@ The control plane remains on the normal RoomGoblin listener (default `3000`). Up
   - byte-range delivery for browser video/audio
   - no controller/API routes
 
-`tools/start-roomgoblin.sh` supervises both processes. If either process exits, the other is terminated so Docker restarts a converged pair rather than leaving half of the appliance running.
+`tools/start-roomgoblin.sh` execs the same Node bootstrap used by `npm start`.
+`src/media-plane-process.js` supervises the media child while the Hub remains
+PID 1. Unexpected child exit fails the application; normal shutdown waits for
+the child's exit, escalating a stuck child after six seconds within the Hub's
+ten-second deadline. Nonzero/signal exits, signaling errors and forced termination
+fail shutdown; accepted Hub writes still drain before SQLite closes. A signal
+error retains child ownership until exit. An abrupt owner exit kills the child
+synchronously. See
+[application lifecycle](APPLICATION-LIFECYCLE.md) for ownership and drain limits.
 
 ## Asset authorization
 
@@ -66,6 +88,35 @@ the uploaded file size plus the assembled file size during finalization, so keep
 at least twice the largest expected upload free beneath the persistent data root.
 
 ## Range transport
+
+Completion retains an owner-isolated receipt for the existing session TTL
+(24 hours by default). A retry recovers the same registered library item after
+a lost reply; completed receipts do not recreate deleted media. Reclaimed
+receipts no longer reserve active-upload quota. Expiry/cancellation removes
+receipt metadata without deleting published media. See [completion receipts](audits/roomgoblin-modernization/upload-completion-receipts.md).
+
+Upload assembly retains its session lock and verified chunks through library
+registration. Failed registration permits an explicit retry; later cleanup or
+response errors preserve an already registered file. See [registration ownership](audits/roomgoblin-modernization/upload-registration-ownership.md).
+
+Completion and legacy multipart upload share at most 12 authorized requests per minute across the appliance
+and returns HTTP 429 with Retry-After when exhausted. Rejected callers do not
+consume the budget. Chunk transfers, resume status and cancellation are unaffected.
+
+Conversion and deletion share per-file operation ownership and a separate
+30-per-minute authorized-request budget. Deletion waits for conversion and
+removes its generated PDF, while other files remain independent. Upload-linked
+deletion saves a private marker before removing files so retries cannot recreate
+them. See [media-library ownership](audits/roomgoblin-modernization/media-library-ownership.md).
+
+Upload resume/cancel errors retain the browser's session ID. A confirmed missing
+session permits a fresh upload; confirmed cancellation forgets only its own ID.
+Same-page startup/cancel sequencing and controller operation ownership preserve
+current progress and retry controls. See [upload browser ownership](audits/roomgoblin-modernization/upload-client-ownership.md).
+
+Resumable-upload expiry skips sessions with accepted or queued chunk, assembly
+or cancel operations. Idle expired sessions are reclaimed after their final
+operation releases ownership. See [the upload cleanup review](audits/roomgoblin-modernization/upload-cleanup-ownership.md).
 
 Browser MP4 playback requires efficient random access. The media plane implements:
 
@@ -169,6 +220,21 @@ do not deploy an unvalidated source-only change. After an authorized upgrade,
 verify both health endpoints, authorized and rejected media requests, and receiver
 play/pause/seek/stop while the controller remains responsive. Stop testing and use
 the documented updater rollback if health, authorization, or playback regresses.
+
+## Controller library behavior
+
+Controller library cards dispatch through the media-library API so PDFs and
+converted documents use their viewer. Multi-receiver selection and explicit
+image/video options remain intact. Library refreshes retain the newest result
+across controller and scheduler consumers; Refresh Media List fetches new data.
+These changes have their own current qualification record in
+[the modernization audit](audits/roomgoblin-modernization/media-library-controller.md).
+
+Cancelling an upload removes its temporary session. If its file already reached
+the library, the controller reports that it was saved and refreshes the library.
+If the receipt is missing or its identity cannot be verified, the controller asks
+the operator to check the library rather than claiming the file was cancelled.
+Saved media is removed only through the library's explicit Delete action.
 
 ## Production acceptance — 2026-09-18
 

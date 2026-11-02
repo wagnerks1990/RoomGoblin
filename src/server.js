@@ -3,6 +3,7 @@
 const express = require("express");
 const {registerLearning,restrictedStudentGate}=require("./learning");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
+const {UbuntuDisplays,registerUbuntuDisplayRoutes}=require("./ubuntu-displays");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
 const {serviceUrl, serviceHost, validPort, localHttpUrl} = require("./network");
@@ -12,12 +13,17 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const net = require("net");
+const {performance}=require("node:perf_hooks");
+const {setTimeout:plutoAbortableDelay}=require("node:timers/promises");
+const {createPlutoStatusReader,readPlutoResponse,STATUS_BUDGET_MS:PLUTO_STATUS_BUDGET_MS}=require("./pluto-transport");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const execFileAsync = promisify(execFile);
 const scryptAsync = promisify(crypto.scrypt);
 const multer = require("multer");
 const {ResumableUploadStore,ownerKey,inspectUpload,DEFAULT_CHUNK_BYTES}=require("./resumable-upload");
+const {contentDirectory,contentFile}=require("./content-permissions");
+const {cleanupPresentationStaging}=require("./presentation-staging");
 const mqtt = require("mqtt");
 const { WebSocketServer, WebSocket } = require("ws");
 const {rateLimit}=require("express-rate-limit");
@@ -29,8 +35,18 @@ const {ROOMGOBLIN_IDENTITY}=require("./brand-identity");
 const {applicationVersion}=require("./version");
 const {secureTokenEqual,capabilitiesFor,hasCapability:profileHasCapability}=require("./security");
 const {recoveryTransportAllowed,validRecoveryId,boundedRecoveryStatus}=require("./recovery-transport-policy");
-const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,validTime}=require("./school-schedule");
-const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,assertAdapterResults,SchedulerClock,occurrenceId,makeLedger}=require("./automation-runtime");
+const {defaultSchoolScheduleProfile,legacySchoolScheduleProfile,normalizeSchoolScheduleProfile,effectiveTimesForRule,groupForCycleDay,specialDayRuleForDate,validTime}=require("./school-schedule");
+const {actionResourceDomain,normalizeIntegerMinutes,expandDisplayTargets,expandTvTargets,tvPowerIntent,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,automationOccurrenceKey,occurrenceId,makeLedger}=require("./automation-runtime");
+const planningEngine=require("./planning");
+const planningMigration=require("./planning-migration");
+const planningStudio=require("./planning-studio");
+const displayAudio=require("./display-audio");
+const displayMedia=require("./display-media");
+const timerEffects=require("../public/shared/timer-effects");
+const {PlaybackRecovery,mediaSelection,sleepDeadline}=require("./background-music");
+const {musicAssistantTokenConfigured,closeMusicAssistantReadiness}=require("./music-assistant-readiness");
+const {stopMediaPlane}=require("./media-plane-process");
+const planningWeather=require("./planning-weather").createWeatherCache();
 const automationSchema=require("./automation-schema");
 const {AUTOMATION_SCHEMA_VERSION,automationActionSequence,actionEligibleOnPass,sequenceHasEligibleActions,sequenceNeedsAnotherPass,sequenceHasContinuousActions}=automationSchema;
 const normalizeSequenceAction=automationSchema["normalize"+"AutomationAction"];
@@ -77,6 +93,9 @@ const LOGIN_MAX_ATTEMPTS = environmentInteger("LOGIN_MAX_ATTEMPTS",5,3,20);
 const LOGIN_WINDOW_MS = environmentInteger("LOGIN_WINDOW_MS",15*60*1000,60000,24*60*60*1000);
 const LOGIN_LOCK_MS = environmentInteger("LOGIN_LOCK_MS",15*60*1000,60000,24*60*60*1000);
 const fullExportFreeze={requested:false,active:false,token:null,activeHttpMutations:0,activeWsMutations:0,activeAsyncMutations:0,startedAt:null,leaseTimer:null};
+const {trackApplicationHandlers,waitUntilDrained,closeWebSockets}=require("./application-drain");
+const {installApplicationBridges}=require("./application-bridges");
+let shutdownRequested=false,shuttingDown=false;
 function trackFullExportMutation(task){
   fullExportFreeze.activeAsyncMutations++;
   return Promise.resolve(task).finally(()=>{fullExportFreeze.activeAsyncMutations=Math.max(0,fullExportFreeze.activeAsyncMutations-1)});
@@ -177,19 +196,22 @@ const SESSION_EFFECT_DURATION_MS = environmentInteger("SESSION_EFFECT_DURATION_M
 const SESSION_CLEAR_GAP_MS = environmentInteger("SESSION_CLEAR_GAP_MS",1200,0,30000);
 const SESSION_SPOTLIGHT_ROTATE_MS = environmentInteger("SESSION_SPOTLIGHT_ROTATE_MS",9000,1000,600000);
 
-fs.mkdirSync(MEDIA_DIR, { recursive: true });
-fs.mkdirSync(MEDIA_UPLOAD_SESSION_DIR,{recursive:true });
-fs.mkdirSync(PRESENTATIONS_DIR, { recursive: true });
+contentDirectory(MEDIA_DIR);
+contentDirectory(MEDIA_UPLOAD_SESSION_DIR);
+contentDirectory(PRESENTATIONS_DIR);
 fs.mkdirSync(PRESENTATION_UPLOAD_TMP, { recursive: true });
+const presentationStagingRecovery=cleanupPresentationStaging(PRESENTATION_UPLOAD_TMP);
+if(presentationStagingRecovery.removed)console.log(`Reclaimed ${presentationStagingRecovery.removed} interrupted presentation render directories`);
+if(presentationStagingRecovery.skipped||presentationStagingRecovery.errors||presentationStagingRecovery.limited)console.warn("Presentation staging cleanup left unsafe, unreadable or over-budget entries for inspection");
 
 const DATABASE_FILE = String(process.env.DATABASE_FILE || path.join(DATA_DIR,"classroom-control-hub.db"));
 const MASTER_KEY_FILE = String(process.env.MASTER_KEY_FILE || "/run/secrets/classroom-control-hub-master-key");
 const LEGACY_JSON_MIRROR = String(process.env.LEGACY_JSON_MIRROR || "false").toLowerCase()==="true";
-const dbStore = new ClassroomHubStorage({dataDir:DATA_DIR,dbFile:DATABASE_FILE,masterKeyFile:MASTER_KEY_FILE,legacyMirror:LEGACY_JSON_MIRROR});
+const dbStore = new ClassroomHubStorage({dataDir:DATA_DIR,dbFile:DATABASE_FILE,masterKeyFile:MASTER_KEY_FILE,legacyMirror:LEGACY_JSON_MIRROR,canMaintainAuth:()=>!fullExportFreeze.requested&&!shutdownRequested});
 const schedulerClock=new SchedulerClock({timezone:SCHEDULER_TIMEZONE});
 const automationRunLedger=makeLedger(dbStore);
 let automationSchedulerEnabled=(dbStore.getPreference("automation.scheduler",{enabled:true})||{}).enabled!==false;
-function setAutomationSchedulerEnabled(value){automationSchedulerEnabled=!!value;dbStore.setPreference("automation.scheduler",{enabled:automationSchedulerEnabled,updatedAt:new Date().toISOString()});return automationSchedulerEnabled}
+function setAutomationSchedulerEnabled(value){const enabled=!!value;dbStore.setPreference("automation.scheduler",{enabled,updatedAt:new Date().toISOString()});automationSchedulerEnabled=enabled;return enabled}
 function automationControlStatus(){const clock=schedulerClock.status(),ledger=automationRunLedger.read();return {enabled:automationSchedulerEnabled,clock,runningOccurrences:typeof automationRunningOccurrences!=="undefined"?automationRunningOccurrences.size:0,recentRuns:ledger.runs.slice(-25).reverse()}}
 
 function normalizedTimezone(value){
@@ -286,8 +308,9 @@ if(!goveeDiscovery || typeof goveeDiscovery!=="object")goveeDiscovery={version:1
 if(!goveeDiscovery.devices || typeof goveeDiscovery.devices!=="object")goveeDiscovery.devices={};
 if(goveeDiscovery.autoAdd===undefined)goveeDiscovery.autoAdd=true;
 
-function persistGoveeDiscovery(){
-  persistJson(GOVEE_DISCOVERY_FILE,goveeDiscovery);
+function persistGoveeDiscovery(next=goveeDiscovery){
+  persistJson(GOVEE_DISCOVERY_FILE,next);
+  goveeDiscovery=next;
 }
 function goveeAliasForId(deviceId){
   const id=normalizeGoveePhysicalId(deviceId);
@@ -368,32 +391,43 @@ function purgeGoveeAlias(alias){
   }
 }
 function migrateGoveeDiscoveryRegistry(){
-  let removed=0;
+  const aliases=[];
   for(const [key,entry] of Object.entries({...goveeDiscovery.devices})){
     const id=String(entry?.id||"");
     if(entry?.discovered && isSyntheticGoveeEntity(id,entry)){
-      purgeGoveeAlias(cleanId(entry.alias||key)); removed++;
+      aliases.push(cleanId(entry.alias||key));
     }
   }
-  if(removed){persistGoveeDiscovery();audit({kind:"govee.discovery.migrate",removedSynthetic:removed});}
+  const removed=aliases.length;
+  if(removed){removeGoveeAliases(aliases);audit({kind:"govee.discovery.migrate",removedSynthetic:removed});}
   return removed;
+}
+function removeGoveeAliases(aliases){
+  const removed=new Set(aliases);
+  const devices=Object.fromEntries(Object.entries(goveeDiscovery.devices).filter(([key,entry])=>!removed.has(key)&&!removed.has(cleanId(entry?.alias||key))));
+  persistGoveeDiscovery({...goveeDiscovery,devices});
+  for(const alias of removed)purgeGoveeAlias(alias);
 }
 function reconcileGoveeDiscovery(nowMs=Date.now(),options={}){
   const force=!!options.force;
-  let removed=0,offline=0;
+  const aliases=[],offlineUpdates=[];
+  let removedSynthetic=0;
   for(const [key,entry] of Object.entries({...goveeDiscovery.devices})){
     if(!entry?.discovered)continue;
     const alias=cleanId(entry.alias||key);
     const id=String(entry.id||"");
-    if(isSyntheticGoveeEntity(id,entry)){purgeGoveeAlias(alias);removed++;continue;}
+    if(isSyntheticGoveeEntity(id,entry)){aliases.push(alias);removedSynthetic++;continue;}
     const seen=Date.parse(goveePresence[id]?.lastSeen||entry.lastSeen||0);
     if(!Number.isFinite(seen)||seen<=0)continue;
     const age=nowMs-seen;
-    if((force&&age>60000)||(!force&&age>GOVEE_RECONCILE_GRACE_MS)){purgeGoveeAlias(alias);removed++;}
-    else if(age>60000){goveePresence[id]={status:"offline",lastSeen:new Date(seen).toISOString()};offline++;}
+    if((force&&age>60000)||(!force&&age>GOVEE_RECONCILE_GRACE_MS))aliases.push(alias);
+    else if(age>60000)offlineUpdates.push([id,{status:"offline",lastSeen:new Date(seen).toISOString()}]);
   }
-  if(removed){persistGoveeDiscovery();audit({kind:"govee.discovery.reconcile",removed,offline,force});broadcastControllers({type:"govee.inventory",reason:force?"manual-reconcile":"reconcile",removed});}
-  return {removed,offline,force};
+  const removed=aliases.length,offline=offlineUpdates.length;
+  if(removed)removeGoveeAliases(aliases);
+  for(const [id,presence] of offlineUpdates)goveePresence[id]=presence;
+  if(removed){audit({kind:"govee.discovery.reconcile",removed,offline,force});broadcastControllers({type:"govee.inventory",reason:force?"manual-reconcile":"reconcile",removed});}
+  return {removed,offline,force,removedSynthetic};
 }
 function applyGoveeRegistryEntry(entry){
   if(!entry?.id||!entry?.alias)return;
@@ -414,7 +448,7 @@ function applyGoveeRegistryEntry(entry){
   for(const group of Array.isArray(entry.groups)?entry.groups:[]){
     const gid=cleanId(group);
     if(!gid||gid==="all")continue;
-    if(!Array.isArray(goveeGroups[gid]))goveeGroups[gid]=[];
+    if(!Object.hasOwn(goveeGroups,gid)||!Array.isArray(goveeGroups[gid]))Object.defineProperty(goveeGroups,gid,{value:[],writable:true,enumerable:true,configurable:true});
     if(!goveeGroups[gid].includes(alias))goveeGroups[gid].push(alias);
   }
 }
@@ -433,7 +467,6 @@ function bootstrapGoveeDiscovery(){
   for(const entry of Object.values(goveeDiscovery.devices))applyGoveeRegistryEntry(entry);
 }
 bootstrapGoveeDiscovery();
-migrateGoveeDiscoveryRegistry();
 
 function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
   const id=normalizeGoveePhysicalId(deviceId);
@@ -442,8 +475,10 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
   const meta=goveeExtractMeta(id,cfg);
   const configuredAlias=goveeConfiguredAliasById(id);
   let alias=configuredAlias||goveeAliasForId(id);
-  let entry=Object.values(goveeDiscovery.devices).find(x=>normalizeGoveePhysicalId(x?.id)===id);
+  const existing=Object.entries(goveeDiscovery.devices).find(([,entry])=>normalizeGoveePhysicalId(entry?.id)===id);
+  let entry=existing?{...existing[1]}:null;
   const newDevice=!entry&&!configuredAlias;
+  if(goveeDiscovery.autoAdd===false)return configuredAlias||(entry?cleanId(entry.alias||alias):null);
 
   // Existing hardware.json devices are known already; create a registry overlay only
   // when we need discovery metadata or user-editable overrides.
@@ -457,7 +492,6 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
       discovered:!configuredAlias,
       firstSeen:now,lastSeen:now,source
     };
-    goveeDiscovery.devices[alias]=entry;
   }else{
     alias=cleanId(entry.alias||alias);
     entry.alias=alias;
@@ -468,13 +502,10 @@ function enrollGoveeDevice(deviceId,cfg={},source="mqtt"){
     if(!entry.ip&&meta.ip)entry.ip=meta.ip;
   }
 
-  if(goveeDiscovery.autoAdd!==false){
-    applyGoveeRegistryEntry(entry);
-    goveeDiscovery.lastDiscoveryAt=now;
-    persistGoveeDiscovery();
-    audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice});
-    broadcastControllers({type:"govee.discovery",deviceId:id,alias,device:goveeDevices[alias]});
-  }
+  persistGoveeDiscovery({...goveeDiscovery,devices:{...goveeDiscovery.devices,[existing?existing[0]:alias]:entry},lastDiscoveryAt:now});
+  applyGoveeRegistryEntry(entry);
+  audit({kind:"govee.discovery",deviceId:id,alias,name:entry.name,source,newDevice});
+  broadcastControllers({type:"govee.discovery",deviceId:id,alias,device:goveeDevices[alias]});
   return alias;
 }
 function touchGoveePresence(deviceId,status="online"){
@@ -499,33 +530,34 @@ function goveeDeviceOnline(deviceId){
 function updateGoveeDevice(alias,input={}){
   alias=cleanId(alias);
   const d=goveeDevices[alias];
-  if(!d)throw new Error("Unknown Govee device");
-  let entry=Object.values(goveeDiscovery.devices).find(x=>x?.id===String(d.id));
-  if(!entry){
-    entry={id:String(d.id),alias,name:d.name||alias,sku:d.sku||"",ip:d.ip||"",groups:[],discovered:false,firstSeen:new Date().toISOString(),lastSeen:null,source:"configured"};
-    goveeDiscovery.devices[alias]=entry;
-  }
+  if(!Object.hasOwn(goveeDevices,alias)||!d)throw new Error("Unknown Govee device");
+  const existing=Object.entries(goveeDiscovery.devices).find(([,entry])=>entry?.id===String(d.id));
+  const entry=existing?{...existing[1]}:{id:String(d.id),alias,name:d.name||alias,sku:d.sku||"",ip:d.ip||"",groups:[],discovered:false,firstSeen:new Date().toISOString(),lastSeen:null,source:"configured"};
+  const nextGroups={...goveeGroups};
   if(input.name!==undefined){
     const name=String(input.name||"").trim().slice(0,100);
     if(!name)throw new Error("Name cannot be blank");
-    entry.name=name;d.name=name;
+    entry.name=name;
   }
   if(Array.isArray(input.groups)){
     const groups=[...new Set(input.groups.map(cleanId).filter(x=>x&&x!=="all"))];
     // Remove the alias from all editable groups, then add requested groups.
     for(const [gid,members] of Object.entries(goveeGroups)){
       if(gid==="all"||!Array.isArray(members))continue;
-      goveeGroups[gid]=members.filter(x=>x!==alias);
-      if(!goveeGroups[gid].length && !Object.values(goveeDiscovery.devices).some(x=>(x.groups||[]).includes(gid)))delete goveeGroups[gid];
+      nextGroups[gid]=members.filter(x=>x!==alias);
+      if(!nextGroups[gid].length && !Object.values(goveeDiscovery.devices).some(x=>(x.groups||[]).includes(gid)))delete nextGroups[gid];
     }
     entry.groups=groups;
     for(const gid of groups){
-      if(!Array.isArray(goveeGroups[gid]))goveeGroups[gid]=[];
-      if(!goveeGroups[gid].includes(alias))goveeGroups[gid].push(alias);
+      const members=Array.isArray(nextGroups[gid])?nextGroups[gid]:[];
+      Object.defineProperty(nextGroups,gid,{value:members.includes(alias)?members:[...members,alias],writable:true,enumerable:true,configurable:true});
     }
   }
+  const next={...goveeDiscovery,devices:{...goveeDiscovery.devices,[existing?existing[0]:alias]:entry}};
+  persistGoveeDiscovery(next);
+  for(const gid of Object.keys(goveeGroups))if(!Object.hasOwn(nextGroups,gid))delete goveeGroups[gid];
+  for(const [gid,members] of Object.entries(nextGroups))Object.defineProperty(goveeGroups,gid,{value:members,writable:true,enumerable:true,configurable:true});
   applyGoveeRegistryEntry(entry);
-  persistGoveeDiscovery();
   return {alias,device:goveeDevices[alias],groups:entry.groups||[]};
 }
 
@@ -567,6 +599,17 @@ if(!mediaLibrary.files || typeof mediaLibrary.files!=="object")mediaLibrary.file
 
 function persistMediaLibrary(){
   persistJson(MEDIA_LIBRARY_FILE,mediaLibrary);
+}
+function commitMediaLibraryRecord(name,record){
+  const files={...mediaLibrary.files};if(record===null)delete files[name];else files[name]=record;
+  const next={...mediaLibrary,files};persistJson(MEDIA_LIBRARY_FILE,next);mediaLibrary=next;
+}
+const mediaFileWrites=new Map();
+async function withMediaFileWrite(name,task){
+  name=safeStoredName(name);
+  const previous=mediaFileWrites.get(name)||Promise.resolve(),run=previous.catch(()=>{}).then(task);
+  mediaFileWrites.set(name,run);
+  try{return await run}finally{if(mediaFileWrites.get(name)===run)mediaFileWrites.delete(name)}
 }
 
 let classroomAutomations=readJson(AUTOMATIONS_FILE,{version:1,events:[]});
@@ -691,7 +734,7 @@ function normalizeMorningAnnouncements(input={},existing={}){
     enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,
     streamUrl, startTime, endTime,
     volumePercent:finite(input.volumePercent??existing.volumePercent,100,0,100),
-    targets:Array.isArray(input.targets)&&input.targets.length?[...new Set(input.targets.map(cleanId).filter(Boolean))]:(Array.isArray(existing.targets)&&existing.targets.length?existing.targets:["all"]),
+    targets:Array.isArray(input.targets)&&input.targets.length?[...new Set(input.targets.map(value=>String(value||"").trim()).filter(Boolean))]:(Array.isArray(existing.targets)&&existing.targets.length?existing.targets:["all"]),
     checkIntervalSeconds:finite(input.checkIntervalSeconds??existing.checkIntervalSeconds,15,10,120),
     offlineConfirmations:finite(input.offlineConfirmations??existing.offlineConfirmations,2,1,8),
     updatedAt:new Date().toISOString()
@@ -712,37 +755,56 @@ catch(error){
 function publicMorningAnnouncementsConfig(){
   return {...morningAnnouncements,streamUrl:morningAnnouncements.streamUrl?REDACTED_CONFIG_VALUE:"",streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
 }
-function persistMorningAnnouncements(){
-  if(morningAnnouncements.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,morningAnnouncements.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
-  else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
-  const {streamUrl:_secret,...stored}=morningAnnouncements;
-  const persisted={...stored,streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)};
-  persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
-  // readJson imports legacy files into SQLite but intentionally leaves their
-  // source in place. Atomically scrub this one after the encrypted write wins.
-  if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
-    const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${process.pid}`;
-    fs.writeFileSync(staged,JSON.stringify(persisted,null,2),{mode:0o600});
-    fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);
-  }
+function persistMorningAnnouncements(next=morningAnnouncements){
+  const {streamUrl:_secret,...stored}=next;
+  const persisted={...stored,streamUrlConfigured:Boolean(next.streamUrl)};
+  const staged=`${MORNING_ANNOUNCEMENTS_FILE}.redacted-${crypto.randomUUID()}`;
+  let ownsStaged=false;
+  try{
+    dbStore.tx(()=>{
+      if(next.streamUrl)dbStore.putSecret(MORNING_ANNOUNCEMENTS_URL_SECRET,next.streamUrl,{type:"automation-stream-url",automation:"morning-announcements"});
+      else dbStore.deleteSecret(MORNING_ANNOUNCEMENTS_URL_SECRET);
+      persistJson(MORNING_ANNOUNCEMENTS_FILE,persisted);
+      // SQLite owns configuration and its secret as one transaction. Legacy
+      // files are only redacted migration remnants, never the live authority.
+      if(fs.existsSync(MORNING_ANNOUNCEMENTS_FILE)){
+        const fd=fs.openSync(staged,"wx",0o600);ownsStaged=true;
+        try{fs.writeFileSync(fd,JSON.stringify(persisted,null,2))}finally{fs.closeSync(fd)}
+        fs.renameSync(staged,MORNING_ANNOUNCEMENTS_FILE);ownsStaged=false;
+      }
+    });
+  }finally{if(ownsStaged)fs.rmSync(staged,{force:true})}
 }
 // Migrate legacy plaintext/environment configuration into the encrypted store
 // and remove it from the ordinary database-backed JSON object.
 persistMorningAnnouncements();
 const morningAnnouncementsRuntime={live:false,active:false,mode:null,targets:[],lastCheck:null,lastWatcherTick:null,lastLiveAt:null,lastEndedAt:null,lastError:null,probe:null,probeStatus:null,probeDurationMs:null,offlineCount:0,lastAssertAt:0,releaseReconcilePending:false};
 let morningAnnouncementsTimer=null;
+let morningAnnouncementsWatcherGeneration=0;
 let morningAnnouncementsReleaseRetryTimer=null;
+const morningAnnouncementsPriorityTargets=new Set();
+const morningAnnouncementsReleaseTargets=new Map();
 let morningAnnouncementsLifecycle=Promise.resolve();
 let morningAnnouncementsLifecycleBusy=0;
 function serializeMorningAnnouncementsLifecycle(task){
-  const invoke=async()=>{morningAnnouncementsLifecycleBusy++;try{return await task()}finally{morningAnnouncementsLifecycleBusy=Math.max(0,morningAnnouncementsLifecycleBusy-1)}};
+  morningAnnouncementsLifecycleBusy++;
+  const invoke=async()=>{try{return await task()}finally{morningAnnouncementsLifecycleBusy=Math.max(0,morningAnnouncementsLifecycleBusy-1)}};
   const run=morningAnnouncementsLifecycle.then(invoke,invoke);
   morningAnnouncementsLifecycle=run.catch(()=>{});
   return run;
 }
 function restartMorningAnnouncementsWatcher(){
+  const generation=++morningAnnouncementsWatcherGeneration;
   if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
-  const run=async()=>{try{await serializeMorningAnnouncementsLifecycle(()=>morningAnnouncementsTick())}finally{morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}};
+  morningAnnouncementsTimer=null;
+  if(shutdownRequested)return;
+  const ownsWatcher=()=>!shutdownRequested&&generation===morningAnnouncementsWatcherGeneration;
+  const run=async()=>{
+    if(!ownsWatcher())return;
+    morningAnnouncementsTimer=null;
+    try{await serializeMorningAnnouncementsLifecycle(()=>ownsWatcher()?morningAnnouncementsTick():undefined)}
+    finally{if(ownsWatcher()){morningAnnouncementsTimer=setTimeout(run,Math.max(10000,Number(morningAnnouncements.checkIntervalSeconds||15)*1000));morningAnnouncementsTimer.unref()}}
+  };
   morningAnnouncementsTimer=setTimeout(run,2500);morningAnnouncementsTimer.unref();
 }
 const deferredAnnouncementAutomations=new Map();
@@ -809,14 +871,27 @@ async function fetchWithDeadline(url,options={},timeoutMs=3500){
     let current=validateDisplayGatewayTarget(url,MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS);
     for(let redirects=0;redirects<=3;redirects++){
       const response=await fetch(current,{...options,redirect:"manual",signal:ctrl.signal,headers:{"cache-control":"no-cache",...(options.headers||{})}});
-      if(![301,302,303,307,308].includes(response.status))return response;
+      if(![301,302,303,307,308].includes(response.status)){
+        // Keep the same deadline through playlist consumption. A publisher that
+        // sends headers but stalls its body must not pin the lifecycle queue.
+        if(!response.ok){await response.body?.cancel();return new Response(null,{status:response.status,headers:response.headers})}
+        const maxBytes=512*1024,chunks=[];let size=0;
+        if(Number(response.headers.get("content-length"))>maxBytes)throw Error("Morning Announcements playlist exceeds size limit");
+        if(response.body)for await(const chunk of response.body){
+          size+=chunk.byteLength;
+          if(size>maxBytes)throw Error("Morning Announcements playlist exceeds size limit");
+          chunks.push(Buffer.from(chunk));
+        }
+        return new Response([204,205].includes(response.status)?null:Buffer.concat(chunks),{status:response.status,headers:response.headers});
+      }
+      await response.body?.cancel();
       const location=response.headers.get("location");
       if(!location)throw Error("Morning Announcements probe redirect is missing a location");
       if(redirects===3)throw Error("Morning Announcements probe exceeded the redirect limit");
       current=validateDisplayGatewayTarget(new URL(location,current),MORNING_ANNOUNCEMENTS_ALLOWED_HOSTS);
     }
     throw Error("Morning Announcements probe redirect failed");
-  }finally{clearTimeout(timer)}
+  }finally{ctrl.abort();clearTimeout(timer)}
 }
 async function probeMorningAnnouncementsLive(){
   const c=announcementsCoordinates();
@@ -867,35 +942,49 @@ function morningAnnouncementsSchoolDay(now=new Date()){
 }
 function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
 function scheduleAnnouncementAudioRetries(targets){
+  // Content identity belongs to one receiver takeover. Adding another receiver
+  // must not cancel retries still needed by unchanged announcement playback.
+  const expectedDisplayContent=new Map((targets||[]).map(id=>[id,[persistentState.displays[id]?.audioContentId]]).filter(([,ids])=>ids[0]));
   for(const delay of [1500,4500,10000,20000])setTimeout(()=>{
-    if(fullExportFreeze.requested)return;
+    if(shutdownRequested||fullExportFreeze.requested)return;
     if(!morningAnnouncementsRuntime.active)return;
     if(morningAnnouncementsRuntime.mode!=="manual"&&!morningAnnouncementsRuntime.live)return;
-    trackFullExportMutation(executeCommand({type:"display.web.audio",target:targets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements")).catch(()=>{});
+    const activeTargets=[...expectedDisplayContent.keys()].filter(id=>(morningAnnouncementsRuntime.targets||[]).includes(id)&&expectedDisplayContent.get(id).includes(persistentState.displays[id]?.audioContentId));
+    if(!activeTargets.length)return;
+    trackFullExportMutation(executeCommand({type:"display.web.audio",target:activeTargets,payload:{unmute:Number(morningAnnouncements.volumePercent??100)>0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),reload:false,contentKind:"morning-announcements"}},"morning-announcements",{expectedDisplayContent})).catch(()=>{});
   },delay);
 }
 async function applyMorningAnnouncementVolume(){
   if(!morningAnnouncementsRuntime.active)return {active:false,applied:false,targets:[]};
-  const targets=[...(morningAnnouncementsRuntime.targets||[])];
+  const targets=(morningAnnouncementsRuntime.targets||[]).filter(id=>persistentState.displays[id]?.media?.contentKind==="morning-announcements"&&persistentState.displays[id]?.audioContentId);
   if(!targets.length)return {active:true,applied:false,targets:[]};
   const volume=Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100));
-  await executeCommand({type:"display.web.audio",target:targets,payload:{unmute:volume>0,volume,reload:false,contentKind:"morning-announcements"}},"morning-announcements");
-  audit({kind:"automation.morning-announcements.volume",targets,volumePercent:morningAnnouncements.volumePercent});
-  return {active:true,applied:true,targets};
+  const expectedDisplayContent=new Map(targets.map(id=>[id,[persistentState.displays[id].audioContentId]]));
+  const result=await executeCommand({type:"display.web.audio",target:targets,payload:{unmute:volume>0,volume,reload:false,contentKind:"morning-announcements"}},"morning-announcements",{expectedDisplayContent});
+  const appliedTargets=result?.skipped?[]:(result?.command?.target||targets);
+  audit({kind:"automation.morning-announcements.volume",targets:appliedTargets,volumePercent:morningAnnouncements.volumePercent});
+  return {active:true,applied:appliedTargets.length>0,targets:appliedTargets};
 }
 async function setMorningAnnouncementPriorityTargets(targets,active){
-  for(const id of targets||[]){if(active)backgroundMusicPriorityTargets.add(id);else backgroundMusicPriorityTargets.delete(id)}
+  for(const id of targets||[]){if(active)morningAnnouncementsPriorityTargets.add(id);else morningAnnouncementsPriorityTargets.delete(id)}
   // Morning Announcements are non-optional priority audio even when ordinary
   // automation audio pausing has been disabled in the Background Music policy.
   await backgroundMusicReconcilePriority({force:true});
 }
 async function assertMorningAnnouncements({mode="automatic",targetsOverride=null,urlOverride=null}={}){
-  const targets=Array.isArray(targetsOverride)&&targetsOverride.length?automationDisplayTargets(targetsOverride):announcementTargets();if(!targets.length)return;
+  const explicitTargets=targetsOverride!==null;
+  const targets=explicitTargets?(Array.isArray(targetsOverride)?automationDisplayTargets(targetsOverride):[]):announcementTargets();
+  if(!targets.length){if(explicitTargets)throw Error("No enabled display targets selected for Morning Announcements");return}
   const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
+  const clearId=commandId(),contentId=commandId();
+  const previous={active:morningAnnouncementsRuntime.active,mode:morningAnnouncementsRuntime.mode,targets:morningAnnouncementsRuntime.targets,lastAssertAt:morningAnnouncementsRuntime.lastAssertAt,lastLiveAt:morningAnnouncementsRuntime.lastLiveAt};
+  const previousContent=new Map((previous.targets||[]).map(id=>[id,persistentState.displays[id]?.audioContentId]));
   // Acquire both the display and audio priority state before sending any
   // takeover commands. Otherwise a scheduler tick can overwrite the display,
   // or Music Assistant can remain audible, while takeover is in flight.
-  morningAnnouncementsRuntime.active=true;morningAnnouncementsRuntime.mode=mode;morningAnnouncementsRuntime.targets=[...targets];morningAnnouncementsRuntime.lastAssertAt=Date.now();morningAnnouncementsRuntime.lastLiveAt=new Date().toISOString();
+  // A selected start leaves other active receivers playing. Keep them owned by
+  // the global announcement lifecycle so Stop/automatic release can finish all.
+  morningAnnouncementsRuntime.active=true;morningAnnouncementsRuntime.mode=mode;morningAnnouncementsRuntime.targets=[...new Set([...(previous.active?previous.targets||[]:[]),...targets])];morningAnnouncementsRuntime.lastAssertAt=Date.now();morningAnnouncementsRuntime.lastLiveAt=new Date().toISOString();
   // Start the potentially network-bound Music Assistant pause concurrently so
   // an unavailable audio service cannot delay urgent announcement video.
   const priorityTask=setMorningAnnouncementPriorityTargets(targets,true);
@@ -904,20 +993,35 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
   // display content; do not invoke the master classroom clear because that would
   // pause lesson/session queues beyond the announcement window.
   try{
-    await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
-    await executeCommand({type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
+    await executeCommand({id:clearId,type:"display.clear",target:targets,payload:{reason:"morning-announcements-takeover"}},"morning-announcements");
+    await executeCommand({id:contentId,type:"display.web",target:targets,payload:{url,fit:"cover",opacity:1,localDirect:true,forceAudio:true,autoplay:true,muted:Number(morningAnnouncements.volumePercent??100)<=0,volume:Math.max(0,Math.min(1,Number(morningAnnouncements.volumePercent??100)/100)),contentKind:"morning-announcements"}},"morning-announcements");
     await priorityTask;
   }catch(error){
     await priorityTask.catch(()=>{});
-    morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0;
-    await setMorningAnnouncementPriorityTargets(targets,false);
+    // Dispatch can fail after publishing state or some transports. Keep those
+    // owned changes under the normal conditional release/reconciliation path.
+    // Unchanged or superseding content must never become cleanup targets.
+    const owned=targets.filter(id=>[clearId,contentId].includes(persistentState.displays[id]?.audioContentId));
+    const restorePrevious=previous.active&&!owned.length&&[...previousContent].every(([id,content])=>persistentState.displays[id]?.audioContentId===content);
+    // A prior announcement remains active until Stop, normal release or Resume.
+    // Account for partial additions too, without replaying old content or letting
+    // a retired audio-retry identity control the changed session.
+    if(previous.active)Object.assign(morningAnnouncementsRuntime,previous,{targets:restorePrevious?previous.targets:[...new Set([...(previous.targets||[]),...owned])]});
+    else{morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastAssertAt=0}
+    if(owned.length)queueMorningAnnouncementsReleaseTargets(owned);
+    if(morningAnnouncementsReleaseTargets.size){
+      morningAnnouncementsRuntime.releaseReconcilePending=true;
+      scheduleMorningAnnouncementsReleaseRetry([...morningAnnouncementsReleaseTargets.keys()],"start-failed");
+    }
+    try{await setMorningAnnouncementPriorityTargets(targets.filter(id=>!morningAnnouncementsReleaseTargets.has(id)&&!(previous.active&&previousContent.has(id))),false)}
+    catch(cleanupError){diagnosticError(cleanupError,{component:"automation",operation:"morning-announcements-start-cleanup"})}
     throw error;
   }
   scheduleAnnouncementAudioRetries(targets);
   audit({kind:"automation.morning-announcements.start",mode,targets,url,clearedFirst:true});
 }
 function queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes){
-  const occurrenceKey=event.classId||"manual",key=`${storedEvent.id}:${occurrenceKey}:${scheduledMinuteKey}`;
+  const occurrenceKey=automationOccurrenceKey(event),key=`${storedEvent.id}:${occurrenceKey}:${scheduledMinuteKey}`;
   if(!deferredAnnouncementAutomations.has(key))deferredAnnouncementAutomations.set(key,{key,storedEventId:storedEvent.id,event:{...event},occurrenceKey,scheduledMinuteKey,dateKey,deltaMinutes,queuedAt:new Date().toISOString()});
   storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,ok:true,deferred:true,message:"Deferred while Morning Announcements have priority"};
   return key;
@@ -950,23 +1054,34 @@ function automationOccurrenceScheduledMinutes(event){
   return (Number.isFinite(h)?h:0)*60+(Number.isFinite(m)?m:0);
 }
 function automationOccurrenceIsCurrentlyApplicable(event,now=new Date()){
-  if(!event||!automationMatchesDate(event,now).match)return false;
+  if(!event||(event._sourceDateMatched?isAutomationSuppressed(now).blocked:!automationMatchesDate(event,now).match))return false;
   const scheduled=automationOccurrenceScheduledMinutes(event),current=localMinutesNow(now);
   if(scheduled>current)return false;
   if(event._class){
-    const start=Number(event._classStartAt),end=Number(event._classEndAt),stamp=now.getTime();
-    if(Number.isFinite(start)&&stamp<start)return false;
+    const end=Number(event._classEndAt),stamp=now.getTime();
     if(Number.isFinite(end)&&stamp>=end)return false;
   }
   return automationDeferredDisplayTargets(event).size>0;
 }
-function currentAutomationDisplayWinners(now=new Date()){
+function automationDueActionSequence(event,now=schedulerClock.now()){
+  const sequence=automationActionSequence(event);
+  const elapsed=now.getHours()*3600+now.getMinutes()*60+now.getSeconds()+now.getMilliseconds()/1000-automationOccurrenceScheduledMinutes(event)*60;
+  const steps=firstPassDueActions(sequence,elapsed);
+  return {steps,timerDue:elapsed>=0&&(steps.length>0||sequence.length===0)};
+}
+function currentAutomationDisplayWinners(now=schedulerClock.now(),{forRecoveryOwnership=false}={}){
   const candidates=[];
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
-    for(const event of resolveAutomationOccurrences(storedEvent,now)){
+    for(const event of resolveScheduledAutomationOccurrences(storedEvent,now)){
       if(!automationOccurrenceIsCurrentlyApplicable(event,now))continue;
-      const targets=[...automationDeferredDisplayTargets(event)];
+      let intent=event;
+      if(!forRecoveryOwnership){
+        const due=automationDueActionSequence(event,now);
+        if(!due.steps.length)continue;
+        intent={...event,actionSequence:due.steps,timerOverlay:due.timerDue?event.timerOverlay:null};
+      }
+      const targets=[...automationDeferredDisplayTargets(intent)];
       if(!targets.length)continue;
       candidates.push({storedEvent,event,targets,scheduledMinutes:automationOccurrenceScheduledMinutes(event)});
     }
@@ -977,14 +1092,14 @@ function currentAutomationDisplayWinners(now=new Date()){
       const prior=winnersByTarget.get(id);
       const cp=Number(candidate.storedEvent.priority||0),pp=Number(prior?.storedEvent?.priority||0);
       if(!prior||cp>pp||(cp===pp&&candidate.scheduledMinutes>prior.scheduledMinutes)||
-        (cp===pp&&candidate.scheduledMinutes===prior.scheduledMinutes&&String(candidate.storedEvent.id||"").localeCompare(String(prior.storedEvent.id||""))>0)){
+        (cp===pp&&candidate.scheduledMinutes===prior.scheduledMinutes&&(String(candidate.storedEvent.id||"").localeCompare(String(prior.storedEvent.id||""))>0||candidate.storedEvent.id===prior.storedEvent.id&&candidate.event._planningBlockId&&prior.event._planningBlockId))){
         winnersByTarget.set(id,candidate);
       }
     }
   }
   const unique=new Map();
   for(const [target,candidate] of winnersByTarget){
-    const key=`${candidate.storedEvent.id}:${candidate.event.classId||"manual"}:${candidate.event.time}`;
+    const key=`${candidate.storedEvent.id}:${automationOccurrenceKey(candidate.event)}:${candidate.event.time}`;
     if(!unique.has(key))unique.set(key,{...candidate,winningTargets:[]});
     unique.get(key).winningTargets.push(target);
   }
@@ -992,10 +1107,13 @@ function currentAutomationDisplayWinners(now=new Date()){
 }
 
 async function runDisplayAutomationResync(event,winningTargets){
+  assertAutomationCommandsAllowed(schedulerClock);
   event={...event,timerOverlay:normalizeTimerOverlay(event.timerOverlay,event.timerOverlay||null)};
-  const allowed=new Set(winningTargets||[]),steps=automationActionSequence(event),first=steps[0]||{};
-  const results=[];
-  if(allowed.size)results.push(await executeCommand({type:"display.clear",target:[...allowed],payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
+  const now=schedulerClock.now(),due=automationDueActionSequence(event,now);
+  const allowed=new Set(winningTargets||[]),steps=due.steps,first=steps[0]||{},dispatches=[];
+  const timerOccurrence=[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":");
+  const priorTimer=typeof persistentState!=="undefined"?[...allowed].map(id=>persistentState.displays[id]?.timer).find(t=>t?.automationId===event.id&&t.automationOccurrence===timerOccurrence&&Number(t.endAt)>0):null;
+  const durationDeadline=event.timerOverlay?.source==="duration"?(priorTimer?new Date(Number(priorTimer.endAt)):new Date(new Date(`${localDateKey(now)}T${event.time}:00`).getTime()+Number(event.timerOverlay.durationSeconds||0)*1000)):null;
   for(let i=0;i<steps.length;i++){
     const step=steps[i]||{},action=step.action,domain=automationTargetDomain(action);
     if(!["display-content","display-overlay"].includes(domain))continue;
@@ -1007,43 +1125,66 @@ async function runDisplayAutomationResync(event,winningTargets){
     else rawTargets=["all"];
     const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
     if(!targets.length)continue;
-    const output=await runSingleAutomationAction({...event,action,targets,payload:{...(step.payload||{}),...(action==="display.media"?{loop:step.executionMode==="loop"}:{})},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
-    results.push(...(output.results||[]));
+    dispatches.push({step,action,targets});
   }
-  const timer=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
+  const timer=due.timerDue&&event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
+  let timerTargets=[];
   if(timer?.enabled){
     const rawTargets=(event.useClassTargets!==false&&Array.isArray(event._classDefaultTargets)&&event._classDefaultTargets.length)
       ? event._classDefaultTargets
       : (timer.useEventTargets!==false?(first.targets||event.targets):(Array.isArray(timer.targets)&&timer.targets.length?timer.targets:(first.targets||event.targets)));
-    const targets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
-    if(targets.length){
-      const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync"});
-      if(timerResult?.result)results.push(timerResult.result);
-    }
+    timerTargets=automationDisplayTargets(rawTargets).filter(id=>allowed.has(id));
+  }
+  // Plan before clearing: future content/overlays must not clear a target whose
+  // current state still belongs to another occurrence. Preserve due composition.
+  const clearTargets=[...new Set([...dispatches.flatMap(row=>row.targets),...timerTargets])],results=[];
+  if(!clearTargets.length)return {ok:true,skipped:true,reason:"no-actions-due",results};
+  assertAutomationCommandsAllowed(schedulerClock);
+  results.push(await executeCommand({type:"display.clear",target:clearTargets,payload:{reason:"morning-announcements-resync"}},"morning-announcements-resync"));
+  for(const {step,action,targets} of dispatches){
+    const output=await runSingleAutomationAction({...event,_sceneEndAt:durationDeadline?.getTime()||(event.timerOverlay?.source==="end-time"?new Date(`${localDateKey(now)}T${event.timerOverlay.endTime}:00`).getTime():event._classEndAt),action,targets,payload:{...(step.payload||{}),...(action==="display.media"?{loop:step.executionMode==="loop"}:{})},timerOverlay:null},{manual:false,skipOverlay:true,skipAudit:true,commandSource:"morning-announcements-resync"});
+    results.push(...(output.results||[]));
+  }
+  if(timerTargets.length){
+    const timerResult=await runAutomationTimerOverlay({...event,useClassTargets:false,targets:timerTargets,timerOverlay:{...timer,useEventTargets:true}},{manual:false,commandSource:"morning-announcements-resync",endAtOverride:durationDeadline});
+    if(timerResult?.result)results.push(timerResult.result);
   }
   return {ok:true,results};
 }
 function consumeDeferredAnnouncementAutomations(){
-  const queued=[...deferredAnnouncementAutomations.values()];
-  deferredAnnouncementAutomations.clear();
-  for(const item of queued){
-    const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
-    storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-    storedEvent.lastExecByClass[item.occurrenceKey]=item.scheduledMinuteKey;
-    storedEvent.lastExec=item.scheduledMinuteKey;
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
-    storedEvent.updatedAt=new Date().toISOString();
+  const queued=[...deferredAnnouncementAutomations.entries()],previous=new Map();
+  const fields=["lastExecByClass","lastExec","lastRun","updatedAt"];
+  try{
+    for(const [,item] of queued){
+      const storedEvent=classroomAutomations.events.find(x=>x.id===item.storedEventId);if(!storedEvent)continue;
+      if(!previous.has(storedEvent))previous.set(storedEvent,fields.map(key=>({key,present:Object.prototype.hasOwnProperty.call(storedEvent,key),value:storedEvent[key]})));
+      storedEvent.lastExecByClass={...(storedEvent.lastExecByClass||{}),[item.occurrenceKey]:item.scheduledMinuteKey};
+      storedEvent.lastExec=item.scheduledMinuteKey;
+      storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${item.dateKey} ${item.event.time}`,resolvedClassId:item.event.classId||null,ok:true,deferred:true,resynced:true,message:"Consumed by post-announcement scheduler resync"};
+      storedEvent.updatedAt=new Date().toISOString();
+    }
+    if(queued.length)persistAutomations();
+  }catch(error){
+    for(const [event,values] of previous)for(const {key,present,value} of values){if(present)event[key]=value;else delete event[key]}
+    throw error;
   }
-  if(queued.length)persistAutomations();
+  for(const [key,item] of queued)if(deferredAnnouncementAutomations.get(key)===item)deferredAnnouncementAutomations.delete(key);
   return queued.length;
 }
 async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-ended"){
-  const now=new Date(),winners=currentAutomationDisplayWinners(now),results=[];
+  if(!schedulerClock.commandsAllowed())return {winnerCount:0,results:[],skipped:true,reason:"test-clock-dry-run"};
+  const now=schedulerClock.now(),winners=currentAutomationDisplayWinners(now),results=[];
+  let skipped=false;
   for(const candidate of winners){
-    const occurrenceKey=candidate.event.classId||"manual";
+    if(!schedulerClock.commandsAllowed()){skipped=true;break}
+    const occurrenceKey=automationOccurrenceKey(candidate.event);
     const scheduledMinuteKey=`${localDateKey(now)} ${candidate.event.time}`;
     try{
       const result=await runDisplayAutomationResync(candidate.event,candidate.winningTargets);
+      if(result.skipped){
+        results.push({automationId:candidate.storedEvent.id,name:candidate.storedEvent.name,classId:candidate.event.classId||null,time:candidate.event.time,targets:candidate.winningTargets,ok:true,skipped:true,reason:result.reason});
+        continue;
+      }
       candidate.storedEvent.lastExecByClass=candidate.storedEvent.lastExecByClass||{};
       candidate.storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;
       candidate.storedEvent.lastExec=scheduledMinuteKey;
@@ -1057,17 +1198,45 @@ async function resyncCurrentDisplayAutomationsAfterAnnouncements(reason="stream-
   }
   if(winners.length)persistAutomations();
   audit({kind:"automation.morning-announcements.resync",reason,at:now.toISOString(),winnerCount:winners.length,results});
-  return {winnerCount:winners.length,results};
+  return {winnerCount:winners.length,results,...(skipped?{skipped:true,reason:"test-clock-dry-run"}:{})};
+}
+function queueMorningAnnouncementsReleaseTargets(targets){
+  const clearId=commandId();
+  for(const id of targets)morningAnnouncementsReleaseTargets.set(id,{contentId:persistentState.displays[id]?.audioContentId||"",clearId,cleared:false});
+}
+async function clearMorningAnnouncementsReleaseTargets(){
+  const groups=new Map();
+  for(const [id,entry] of morningAnnouncementsReleaseTargets){
+    if(entry.cleared)continue;
+    const current=persistentState.displays[id]?.audioContentId||"";
+    if(!resolveDisplayTargets([id]).includes(id)||(current!==entry.contentId&&current!==entry.clearId)){entry.cleared=true;continue}
+    if(!groups.has(entry.clearId))groups.set(entry.clearId,[]);
+    groups.get(entry.clearId).push({id,entry});
+  }
+  let failure=null;
+  for(const [clearId,entries] of groups){
+    try{
+      const expectedDisplayContent=new Map(entries.map(({id,entry})=>[id,[entry.contentId,entry.clearId]]));
+      await executeCommand({id:clearId,type:"display.clear",target:entries.map(({id})=>id),payload:{reason:"morning-announcements-release"}},"morning-announcements",{expectedDisplayContent});
+      for(const {id,entry} of entries)if(morningAnnouncementsReleaseTargets.get(id)===entry)entry.cleared=true;
+    }catch(error){failure=failure||error}
+  }
+  if(failure)throw failure;
 }
 function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
-  if(morningAnnouncementsReleaseRetryTimer)return;
+  if(shutdownRequested||morningAnnouncementsReleaseRetryTimer)return;
   morningAnnouncementsReleaseRetryTimer=setTimeout(()=>{
     morningAnnouncementsReleaseRetryTimer=null;
+    if(shutdownRequested)return;
     if(fullExportFreeze.requested){scheduleMorningAnnouncementsReleaseRetry(targets,reason);return}
     serializeMorningAnnouncementsLifecycle(async()=>{
-      if(morningAnnouncementsRuntime.active)return;
+      if(morningAnnouncementsRuntime.active||!morningAnnouncementsReleaseTargets.size)return;
+      await clearMorningAnnouncementsReleaseTargets();
+      consumeDeferredAnnouncementAutomations();
       const retry=await resyncCurrentDisplayAutomationsAfterAnnouncements(`${reason}-retry`);
       if(retry.results.some(item=>item.ok===false))throw new Error("Post-announcement display reconciliation is still incomplete");
+      targets=[...morningAnnouncementsReleaseTargets.keys()];
+      morningAnnouncementsReleaseTargets.clear();
       morningAnnouncementsRuntime.releaseReconcilePending=false;
       await setMorningAnnouncementPriorityTargets(targets,false);
       await backgroundMusicTick();
@@ -1080,9 +1249,10 @@ function scheduleMorningAnnouncementsReleaseRetry(targets,reason){
 }
 async function releaseMorningAnnouncements(reason="stream-ended"){
   if(!morningAnnouncementsRuntime.active)return;
-  const targets=morningAnnouncementsRuntime.targets?.length?[...morningAnnouncementsRuntime.targets]:announcementTargets();
+  queueMorningAnnouncementsReleaseTargets(morningAnnouncementsRuntime.targets?.length?[...morningAnnouncementsRuntime.targets]:announcementTargets());
+  const targets=[...morningAnnouncementsReleaseTargets.keys()];
   let deferredConsumed=0,resync={winnerCount:0,results:[]},releaseError=null;
-  try{if(targets.length)await executeCommand({type:"display.clear",target:targets,payload:{reason:"morning-announcements-release"}},"morning-announcements")}catch(error){releaseError=error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-clear",data:{reason}})}
+  try{await clearMorningAnnouncementsReleaseTargets()}catch(error){releaseError=error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-clear",data:{reason}})}
   try{deferredConsumed=consumeDeferredAnnouncementAutomations()}catch(error){releaseError=releaseError||error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-bookkeeping",data:{reason}})}
   try{resync=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason)}catch(error){releaseError=releaseError||error;diagnosticError(error,{component:"automation",operation:"morning-announcements-release-resync",data:{reason}})}
   const resyncComplete=!releaseError&&!resync.results.some(item=>item.ok===false);
@@ -1091,7 +1261,7 @@ async function releaseMorningAnnouncements(reason="stream-ended"){
     // emitted by the resync must not release audio priority early, but a failed
     // persistence/audit step must never leave the lock stuck forever.
     morningAnnouncementsRuntime.active=false;morningAnnouncementsRuntime.mode=null;morningAnnouncementsRuntime.targets=[];morningAnnouncementsRuntime.lastEndedAt=new Date().toISOString();morningAnnouncementsRuntime.lastAssertAt=0;
-    if(resyncComplete){morningAnnouncementsRuntime.releaseReconcilePending=false;await setMorningAnnouncementPriorityTargets(targets,false);await backgroundMusicTick()}
+    if(resyncComplete){morningAnnouncementsReleaseTargets.clear();morningAnnouncementsRuntime.releaseReconcilePending=false;await setMorningAnnouncementPriorityTargets(targets,false);await backgroundMusicTick()}
     else{morningAnnouncementsRuntime.releaseReconcilePending=true;scheduleMorningAnnouncementsReleaseRetry(targets,reason)}
   }catch(error){releaseError=releaseError||error}
   audit({kind:"automation.morning-announcements.stop",reason,targets,deferredConsumed,resyncWinnerCount:resync.winnerCount,resyncResults:resync.results});
@@ -1099,8 +1269,9 @@ async function releaseMorningAnnouncements(reason="stream-ended"){
 }
 let morningAnnouncementsTickBusy=false;
 async function morningAnnouncementsTick(){
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if(morningAnnouncementsTickBusy)return;morningAnnouncementsTickBusy=true;
+  const config=morningAnnouncements;
   try{
     const now=new Date();morningAnnouncementsRuntime.lastWatcherTick=now.toISOString();
     // Manual announcements are operator-controlled and remain locked until Stop / Clear.
@@ -1111,6 +1282,7 @@ async function morningAnnouncementsTick(){
       return;
     }
     const probe=await probeMorningAnnouncementsLive();
+    if(morningAnnouncements!==config)return;
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();morningAnnouncementsRuntime.probe=probe.probe;morningAnnouncementsRuntime.probeStatus=probe.status||null;morningAnnouncementsRuntime.probeDurationMs=probe.durationMs??null;morningAnnouncementsRuntime.lastError=probe.error||null;
     if(probe.live===true){
       morningAnnouncementsRuntime.live=true;morningAnnouncementsRuntime.offlineCount=0;
@@ -1121,15 +1293,27 @@ async function morningAnnouncementsTick(){
       morningAnnouncementsRuntime.live=false;morningAnnouncementsRuntime.offlineCount++;
       if(morningAnnouncementsRuntime.active&&morningAnnouncementsRuntime.offlineCount>=morningAnnouncements.offlineConfirmations)await releaseMorningAnnouncements("stream-ended");
     }else{
+      morningAnnouncementsRuntime.offlineCount=0;
       morningAnnouncementsRuntime.lastError=probe.error||"HLS probe unavailable";
     }
-  }catch(err){morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}
+  }catch(err){if(morningAnnouncements===config){morningAnnouncementsRuntime.offlineCount=0;morningAnnouncementsRuntime.lastError=err.message;diagnosticError?.(err,{component:"automation",operation:"morning-announcements-watch"})}}
   finally{morningAnnouncementsTickBusy=false}
 }
 function calendarRuleForDate(date=new Date()){
   const key=localDateKey(date);
+  if(schoolScheduleProfile.planning?.enabled){
+    const status=planningEngine.schoolStatus(schoolScheduleProfile,schedulerCalendar,key);
+    if(status==='no-school')return {type:'no-school',date:key,label:'No school'};
+    if(status==='remote')return {type:'remote',date:key,label:'Remote learning'};
+    const table=planningEngine.timetableForDate(schoolScheduleProfile,schedulerCalendar,key);
+    if(table)return {type:`planning:${table.id}`,date:key,label:table.name,special:!!schoolScheduleProfile.planning.dates[key]?.timetableId};
+    // Explicit school-day overrides can reopen dates in the older calendar.
+    if(schoolScheduleProfile.planning.dates[key]?.status==='school')return {type:'normal',date:key,label:'School day'};
+  }
   if((schedulerCalendar.noSchoolDates||schedulerCalendar.excludedDates||[]).includes(key))return {type:'no-school',date:key,label:'District No-School'};
   if((schedulerCalendar.remoteDates||[]).includes(key))return {type:'remote',date:key,label:'Remote Day'};
+  const special=specialDayRuleForDate(schoolScheduleProfile,key);
+  if(special)return special;
   if((schedulerCalendar.halfDayDates||[]).includes(key))return {type:'half-day',date:key,label:'Half Day'};
   if((schedulerCalendar.twoHourDelayDates||[]).includes(key))return {type:'2-hour-delay',date:key,label:'2-Hour Delay'};
   if((schedulerCalendar.oneHourDelayDates||[]).includes(key))return {type:'1-hour-delay',date:key,label:'1-Hour Delay'};
@@ -1170,6 +1354,7 @@ function normalizedDayType(value,fallback="Any"){const allowed=new Set(["Any","M
 
 function schoolCycleForDate(date=new Date()){
   const key=localDateKey(date);
+  if(schoolScheduleProfile.planning?.enabled)return planningEngine.cycleForDate(schoolScheduleProfile,schedulerCalendar,key);
   const dow=date.getDay();
   const blocked=isCalendarBlocked(date);
   const isStudentSchoolDay=dow!==0&&dow!==6&&!blocked.blocked;
@@ -1218,6 +1403,7 @@ function automationMatchesDate(event,date){
   const blocked=isAutomationSuppressed(date);
   if(blocked.blocked)return {match:false,reason:blocked.reason};
   const key=localDateKey(date);
+  if(!planningStudio.inWindow(event.scheduleWindow,key))return {match:false,reason:"Outside active dates or excluded date"};
   const mode=String(event.scheduleMode||"weekly");
 
   if(mode==="dates"){
@@ -1263,7 +1449,8 @@ function normalizeTimerOverlay(input,existing=null){
   const merged={...prior,...value};
   return {
     enabled:merged.enabled!==false,
-    source:String(merged.source||"duration")==="class-end"?"class-end":"duration",
+    source:["class-end","duration","end-time"].includes(merged.source)?merged.source:"duration",
+    endTime:merged.source==="end-time"?(validTime(merged.endTime)?String(merged.endTime):(()=>{throw Error("Choose a valid timer end time")})()):"",
     classId:cleanId(merged.classId||""),
     durationSeconds:finiteTimerOverlayNumber(merged.durationSeconds,{name:"duration",fallback:600,min:0,max:86400}),
     position:["top","center","bottom"].includes(String(merged.position||"bottom"))?String(merged.position||"bottom"):"bottom",
@@ -1276,9 +1463,10 @@ function normalizeTimerOverlay(input,existing=null){
     background:String(merged.background||"rgba(0,0,0,.35)").slice(0,120),
     useEventTargets:merged.useEventTargets!==false,
     coverage:String(merged.coverage||"all-display-actions")==="action-1-only"?"action-1-only":"all-display-actions",
-    targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(cleanId).filter(Boolean))]:[],
+    targets:Array.isArray(merged.targets)?[...new Set(merged.targets.map(value=>String(value||"").trim()).filter(Boolean))]:[],
     followLinkedClasses:merged.followLinkedClasses!==false,
-    followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120})
+    followGapMinutes:finiteTimerOverlayNumber(merged.followGapMinutes,{name:"continuation gap",fallback:15,min:0,max:120}),
+    ...(merged.effects===undefined?{}:{effects:timerEffects.normalize(merged.effects)})
   };
 }
 function normalizeAutomation(input={},existing={}){
@@ -1296,9 +1484,15 @@ function normalizeAutomation(input={},existing={}){
   const anchorDate=anchorRaw?String(anchorRaw):"";
   const offsetValue=normalizeIntegerMinutes(input.classTimeOffsetMinutes??existing.classTimeOffsetMinutes??0,{name:"Class time offset",fallback:0,min:-720,max:720});
   const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
+  const scheduleWindow=planningStudio.windowRule(input.scheduleWindow??existing.scheduleWindow??{});
+  const linkedClasses=Array.isArray(input.classIds)?input.classIds:(input.classId!==undefined?[input.classId].filter(Boolean):automationClassIds(existing));
+  const blockIds=input.blockIds??existing.blockIds??[];if(!Array.isArray(blockIds)||blockIds.length>200||blockIds.some(id=>!/^[-\w]{1,100}$/.test(String(id))))throw Error("Choose valid timetable blocks");
+  if(blockIds.length&&linkedClasses.length)throw Error("Choose classes or timetable blocks, not both");
+  if(scheduleWindow.repeatEveryMinutes&&(linkedClasses.length||blockIds.length))throw Error("Interval schedules use a fixed clock time; class-linked schedules follow each class segment");
+  planningStudio.times({time,scheduleWindow});
   const primaryAction=String(input.action??existing.action??input.actionSequence?.[0]?.action??existing.actionSequence?.[0]?.action??"display.clear").trim();
   if(!AUTOMATION_ACTIONS.has(primaryAction))throw new Error(`Unsupported automation action: ${primaryAction||"(blank)"}`);
-  const primaryTargets=Array.isArray(input.targets)?input.targets.map(cleanId).filter(Boolean):
+  const primaryTargets=Array.isArray(input.targets)?input.targets.map(value=>String(value||"").trim()).filter(Boolean):
     (Array.isArray(existing.targets)?existing.targets:["tv1"]);
   const primaryPayload=(input.payload&&typeof input.payload==="object")?input.payload:(existing.payload||{});
 
@@ -1321,7 +1515,7 @@ function normalizeAutomation(input={},existing={}){
     actionId=cleanId(actionId).slice(0,100);
     if(!actionId||usedIds.has(actionId))actionId=cleanId(`${id.slice(0,60)}-action-${index+1}`).slice(0,100);
     usedIds.add(actionId);
-    const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(cleanId).filter(Boolean))]:[];
+    const selected=Array.isArray(item?.targets)?[...new Set(item.targets.map(value=>String(value||"").trim()).filter(Boolean))]:[];
     const normalized=normalizeSequenceAction({
       ...item,
       id:actionId,
@@ -1329,6 +1523,7 @@ function normalizeAutomation(input={},existing={}){
       targets:selected.length||item?.useEventTargets!==false?selected:defaultAutomationActionTargets(stepAction),
       useEventTargets:index===0?false:item?.useEventTargets!==false
     },index,{primaryTargets});
+    if(stepAction==="display.text"&&normalized.payload.scene)normalized.payload.scene=planningStudio.scene.normalize(normalized.payload.scene);
     return normalized;
   });
   if(!actionSequence.length)throw new Error("Automation requires at least one action");
@@ -1343,11 +1538,15 @@ function normalizeAutomation(input={},existing={}){
     alternatePhase,
     anchorDate,
     includeDates,
+    scheduleWindow,
+    blockIds:[...new Set(blockIds.map(String))],
+    overlayPolicy:["inherit","off","selected"].includes(input.overlayPolicy??existing.overlayPolicy)?(input.overlayPolicy??existing.overlayPolicy):"inherit",
+    overlayIds:(()=>{const ids=input.overlayIds??existing.overlayIds??[];if(!Array.isArray(ids)||ids.length>12)throw Error("Choose up to 12 shared layers");return [...new Set(ids.map(String))]})(),
     dayType:normalizedDayType(input.dayType??existing.dayType??"Any"),
     cycleDays:normalizeCycleDays(input.cycleDays===undefined?existing.cycleDays:input.cycleDays),
     period:String(input.period??existing.period??"").trim().slice(0,40),
-    classIds:[...new Set((Array.isArray(input.classIds)?input.classIds:(Array.isArray(existing.classIds)?existing.classIds:[input.classId??existing.classId].filter(Boolean))).map(String).filter(Boolean))],
-    classId:String((Array.isArray(input.classIds)&&input.classIds.length?input.classIds[0]:(input.classId??existing.classId??""))),
+    classIds:[...new Set(linkedClasses.map(String).filter(Boolean))],
+    classId:String(linkedClasses[0]||""),
     classTimeReference:String(input.classTimeReference??existing.classTimeReference??"start")==="end"?"end":"start",
     classTimeOffsetMinutes:offsetValue,
     useClassTargets:input.useClassTargets===undefined?(existing.useClassTargets!==false):!!input.useClassTargets,
@@ -1431,7 +1630,16 @@ function expandAutomationPayload(value,event,date=schedulerClock.now()){
   if(value&&typeof value==="object"){const o={};for(const [k,v] of Object.entries(value))o[k]=expandAutomationPayload(v,event,date);return o}
   return expandAutomationVariables(value,event,date);
 }
+function automationScene(value,event,now=schedulerClock.now()){
+  const scene=planningStudio.scene.normalize(value),cycle=schoolCycleForDate(now),weather=planningWeather.read(planningStudioConfig.weather);
+  const cls=event._class||activeAutomationClassAt(event,now)||classScheduleById(event.classId)||activeClassAt(now);
+  scene.data={className:cls?.name||"",cycleDay:cycle.cycleDay||"",dayGroup:cycle.dayColor||"",timezone:SCHEDULER_TIMEZONE,
+    startAt:Number(event._classStartAt)||(cls?classStartDate(cls,now).getTime():0),endAt:Number(event._sceneEndAt)||Number(event._classEndAt)||(cls?classEndDate(cls,now).getTime():0),weather:weather?.text||"",weatherWidgets:weather?.widgets||{},weatherSource:weather?.source||"",weatherUpdatedAt:weather?.updatedAt||0};
+  return scene;
+}
 async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,skipAudit=false,commandSource="automation",tvTargetsOverride=null,bypassAnnouncementPriority=false}={}){
+  assertAutomationCommandsAllowed(schedulerClock,{manual});
+  const dispatchAction=(callback,...args)=>{assertAutomationCommandsAllowed(schedulerClock,{manual});return callback(...args)};
   const p=expandAutomationPayload(event.payload||{},event,schedulerClock.now());
   const action=event.action;
   if(!AUTOMATION_ACTIONS.has(action))throw new Error(`Unsupported automation action: ${action||"(blank)"}`);
@@ -1455,14 +1663,14 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     // target deduplication must still protect its original physical output.
     if(initialLocks.length)broadcastAction=null;
     if(broadcastAction){
-      outputs.results.push(await directPluto({action:broadcastAction,index:on?0:1}));
+      outputs.results.push(await dispatchAction(directPluto,{action:broadcastAction,index:on?0:1}));
     }else{
       const deferred=new Set();
       for(const target of tvTargets){
         const locks=bypassAnnouncementPriority?[]:announcementLockedDisplayTargets(["all"]);
         const blocked=automationTvPowerPhysicalLocks(target,locks);
         if(blocked.length){for(const id of blocked)deferred.add(id);continue}
-        outputs.results.push(await directPluto({action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
+        outputs.results.push(await dispatchAction(directPluto,{action:"cecOutput",output:target.output,connection:target.connection,index:on?0:1}));
       }
       if(deferred.size){
         outputs.deferred=true;outputs.lockedTargets=[...deferred];
@@ -1474,12 +1682,12 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
   }else if(action==="display.timer.class-end"){
     const ts=automationDisplayTargets(event.targets),cls=event._class||activeAutomationClassAt(event,new Date())||classScheduleById(event.classId)||activeClassAt(new Date());
     if(!cls)throw new Error("No class schedule is available for the class-end timer");
-    const now=new Date();if(!manual&&!classScheduleMatchesDate(cls,now))throw new Error(`${cls.name} is not scheduled today`);
+    const now=new Date();if(!manual&&!event._planningBlockId&&!classScheduleMatchesDate(cls,resolvedClassReferenceDate(event,now)))throw new Error(`${cls.name} is not scheduled on the resolved class date`);
     const chain=timerLinkedClassChain(event,cls,now,{followLinkedClasses:true,followGapMinutes:15});
     const endAt=chain.endAt||resolvedOccurrenceEndDate(event,cls,now),remaining=Math.max(0,Math.floor((endAt-Date.now())/1000));
     if(remaining<=0)throw new Error(`${cls.name} has already ended`);
     const labelClass=chain.finalClass||cls;
-    outputs.results.push(await executeCommand({type:"display.timer",target:ts,payload:{
+    outputs.results.push(await dispatchAction(executeCommand,{type:"display.timer",target:ts,payload:{
       visible:true,running:true,mode:"countdown",timerInstanceId:commandId(),durationSeconds:remaining,remainingSeconds:remaining,endAt:endAt.getTime(),startedAt:null,
       label:String(p.label||`${cls.shortName||cls.name} • Class Ends`),position:p.position||"bottom",fontSize:Number(p.fontSize||64),
       textColor:p.textColor||"#ffffff",borderColor:p.borderColor||"#ffffff",borderWidth:Number(p.borderWidth??4),borderRadius:Number(p.borderRadius??18),
@@ -1487,25 +1695,30 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     }},commandSource));
   }else if(action==="display.clear"){
     const ts=requireAutomationTargets(event.targets,"Display clear");
-    outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
+    outputs.results.push(await dispatchAction(executeCommand,{type:"display.clear",target:ts,payload:{}},commandSource));
   }else if(action==="display.text"){
     const ts=requireAutomationTargets(event.targets,"Display text");
-    if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
-    if(p.background)outputs.results.push(await executeCommand({type:"display.background",target:ts,payload:{color:p.background}},commandSource));
-    if(p.title)outputs.results.push(await executeCommand({type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
-    if(p.subtitle)outputs.results.push(await executeCommand({type:"display.subtitle",target:ts,payload:{text:String(p.subtitle),color:p.subtitleColor||"#ffffff",size:Number(p.subtitleSize||40)}},commandSource));
-    outputs.results.push(await executeCommand({type:"display.text",target:ts,payload:{
+    if(p.clearBefore!==false)outputs.results.push(await dispatchAction(executeCommand,{type:"display.clear",target:ts,payload:{}},commandSource));
+    if(p.background)outputs.results.push(await dispatchAction(executeCommand,{type:"display.background",target:ts,payload:{color:p.background}},commandSource));
+    if(p.scene){
+      outputs.results.push(await dispatchAction(executeCommand,{type:"display.text",target:ts,payload:{text:String(p.text||p.title||""),scene:automationScene(p.scene,event)}},commandSource));
+    }else{
+    if(p.title)outputs.results.push(await dispatchAction(executeCommand,{type:"display.title",target:ts,payload:{text:String(p.title),color:p.titleColor||"#ffffff",size:Number(p.titleSize||72)}},commandSource));
+    if(p.subtitle)outputs.results.push(await dispatchAction(executeCommand,{type:"display.subtitle",target:ts,payload:{text:String(p.subtitle),color:p.subtitleColor||"#ffffff",size:Number(p.subtitleSize||40)}},commandSource));
+    outputs.results.push(await dispatchAction(executeCommand,{type:"display.text",target:ts,payload:{
       text:String(p.text||""),color:p.color||"#ffffff",size:Number(p.size||54),position:p.position||"center"
     }},commandSource));
+    }
   }else if(action==="display.url"){
     const ts=requireAutomationTargets(event.targets,"Display URL");
-    if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
+    if(p.clearBefore!==false)outputs.results.push(await dispatchAction(executeCommand,{type:"display.clear",target:ts,payload:{}},commandSource));
     const url=String(p.url||"").trim();
     if(!url)throw new Error("URL is required");
-    outputs.results.push(await executeCommand({type:"display.web",target:ts,payload:{url,localDirect:p.localDirect!==false}},commandSource));
+    const audio=p.volume!==undefined||p.muted!==undefined?{volume:p.volume??1,muted:p.muted===true,forceAudio:p.muted!==true&&Number(p.volume??1)>0}:{};
+    outputs.results.push(await dispatchAction(executeCommand,{type:"display.web",target:ts,payload:{url,localDirect:p.localDirect!==false,...audio}},commandSource));
   }else if(action==="display.media"){
     const ts=requireAutomationTargets(event.targets,"Display media");
-    if(p.clearBefore!==false)outputs.results.push(await executeCommand({type:"display.clear",target:ts,payload:{}},commandSource));
+    if(p.clearBefore!==false)outputs.results.push(await dispatchAction(executeCommand,{type:"display.clear",target:ts,payload:{}},commandSource));
     const name=resolveAutomationMediaName(p);
     const full=path.join(MEDIA_DIR,name);
     const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
@@ -1520,14 +1733,14 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     const sourceUrl=automationMediaUrl(name);
     outputs.media={storedName:name,originalName:rec.originalName||name,type,size:fs.statSync(full).size,url:sourceUrl};
     if(type==="image"){
-      outputs.results.push(await executeCommand({type:"display.image",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",retry:true}},commandSource));
+      outputs.results.push(await dispatchAction(executeCommand,{type:"display.image",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",retry:true}},commandSource));
     }else if(type==="video"){
-      outputs.results.push(await executeCommand({type:"display.video",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",autoplay:true,muted:!!p.muted,loop:!!p.loop,...mediaSession}},commandSource));
+      outputs.results.push(await dispatchAction(executeCommand,{type:"display.video",target:ts,payload:{url:sourceUrl,fit:p.fit||"contain",autoplay:true,muted:!!p.muted,loop:!!p.loop,...mediaSession}},commandSource));
     }else if(type==="pdf"){
-      outputs.results.push(await executeCommand({type:"display.pdf",target:ts,payload:{url:documentViewerUrl(name,p),sourceUrl:mediaUrl(name)}},commandSource));
+      outputs.results.push(await dispatchAction(executeCommand,{type:"display.pdf",target:ts,payload:{url:documentViewerUrl(name,p),sourceUrl:mediaUrl(name)}},commandSource));
     }else if(type==="presentation"||type==="document"){
       if(!rec.generatedPdf||!fs.existsSync(path.join(MEDIA_DIR,rec.generatedPdf)))throw new Error("Document conversion is not ready");
-      outputs.results.push(await executeCommand({type:"display.document",target:ts,payload:{
+      outputs.results.push(await dispatchAction(executeCommand,{type:"display.document",target:ts,payload:{
         url:documentViewerUrl(rec.generatedPdf,p),sourceUrl:mediaUrl(name),pdfUrl:mediaUrl(rec.generatedPdf),originalName:rec.originalName||name
       }},commandSource));
     }else throw new Error(`Media type ${type} cannot be displayed`);
@@ -1535,63 +1748,25 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
     const map={power:null,color:"color",brightness:"brightness",temp:"temp",scene:"scene"};
     const kind=action.split(".")[1];
     for(const target of event.targets||[]){
-      if(kind==="power")outputs.results.push(await directGoveeCommand(target,String(p.state||"on").toLowerCase()==="on"?"on":"off",p));
-      else outputs.results.push(await directGoveeCommand(target,map[kind],p));
+      if(kind==="power")outputs.results.push(await dispatchAction(directGoveeCommand,target,String(p.state||"on").toLowerCase()==="on"?"on":"off",p));
+      else outputs.results.push(await dispatchAction(directGoveeCommand,target,map[kind],p));
     }
   }
 
 
-  // Optional scheduled timer overlay addon.
-  // This runs in addition to the event's primary action.
-  const timerOverlay=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
-  if(!skipOverlay&&timerOverlay?.enabled){
-    const timerTargets=automationDisplayTargets(
-      timerOverlay.useEventTargets!==false
-        ? event.targets
-        : (Array.isArray(timerOverlay.targets)?timerOverlay.targets:event.targets)
-    );
-
-    const now=new Date();
-    let remainingSeconds=0;
-    let endAt=null;
-
-    if(timerOverlay.source==="class-end"){
-      const cls=event._class||activeAutomationClassAt(event,now)||classScheduleById(event.classId)||activeClassAt(now);
-      if(cls&&classScheduleMatchesDate(cls,now)){
-        endAt=resolvedOccurrenceEndDate(event,cls,now);
-        remainingSeconds=endAt?Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000)):0;
-      }
-    }else{
-      remainingSeconds=Math.max(0,Number(timerOverlay.durationSeconds??600));
-      endAt=new Date(Date.now()+remainingSeconds*1000);
-    }
-
-    if(remainingSeconds>0){
-      outputs.results.push(await executeCommand({
-        type:"display.timer",
-        target:timerTargets,
-        payload:{
-          visible:true,
-          running:true,
-          mode:"countdown",
-          timerInstanceId:commandId(),
-          durationSeconds:remainingSeconds,
-          remainingSeconds,
-          endAt:endAt.getTime(),
-          startedAt:null,
-          label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),event,now),
-          position:timerOverlay.position||"bottom",
-          fontSize:Number(timerOverlay.fontSize||64),
-          textColor:timerOverlay.textColor||"#ffffff",
-          borderColor:timerOverlay.borderColor||"#ffffff",
-          borderWidth:Number(timerOverlay.borderWidth??4),
-          borderRadius:Number(timerOverlay.borderRadius??18),
-          background:timerOverlay.background||"rgba(0,0,0,.35)"
-        }
-      },"automation"));
-    }
+  // Use the same deadline and block-resolution logic as sequence execution and resync.
+  if(!skipOverlay&&event.timerOverlay?.enabled){
+    const overlay=await runAutomationTimerOverlay(event,{manual,commandSource});
+    if(overlay.result)outputs.results.push(overlay.result);
   }
 
+  if(["display.text","display.url","display.media","display.clear"].includes(action)){
+    const now=schedulerClock.now(),key=localDateKey(now),cycle=schoolCycleForDate(now);
+    const rules=planningStudio.matchingOverlays(planningStudioConfig,event,{dateKey:key,weekday:now.getDay(),time:`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`,cycleDay:cycle.cycleDay});
+    const layers=rules.map(rule=>{const until=rule.endTime?new Date(`${key}T${rule.endTime}:00`).getTime():new Date(`${key}T23:59:59`).getTime();return {id:rule.id,scene:automationScene(expandAutomationPayload(rule.scene,event,now),event,now),expiresAt:Math.min(until,Number(event._classEndAt)||until)}});
+    const ts=requireAutomationTargets(event.targets,"Shared display layers").filter(id=>!announcementLockedDisplayTargets([id]).length);
+    if(ts.length&&(layers.length||ts.some(id=>persistentState.displays[id]?.layers?.length)))outputs.results.push(await dispatchAction(executeCommand,{type:"display.layers",target:ts,payload:{layers}},commandSource));
+  }
   if(!skipAudit)audit({kind:"automation.run",automationId:event.id,name:event.name,manual,action:event.action,targets:event.targets,ok:true});
   return {ok:true,eventId:event.id,name:event.name,manual,...outputs};
 }
@@ -1600,7 +1775,7 @@ async function runSingleAutomationAction(event,{manual=false,skipOverlay=false,s
 function automationTvPowerPhysicalLocks(target,lockedReceivers){
   const blocked=[];
   for(const rawId of lockedReceivers){
-    const id=cleanId(rawId),receiver=devices[id];
+    const requested=String(rawId||"").trim(),id=configuredDisplayId(requested)||requested,receiver=Object.hasOwn(devices,id)?devices[id]:null;
     const explicit=receiver&&Object.prototype.hasOwnProperty.call(receiver,"avOutput");
     const value=explicit?receiver.avOutput:(/^tv[1-8]$/.test(id)?id.slice(2):null);
     const output=(typeof value==="number"||typeof value==="string"&&value.trim()!=="")?Number(value):NaN;
@@ -1613,6 +1788,7 @@ function automationTvPowerPhysicalLocks(target,lockedReceivers){
 
 function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   if(!baseClass)return {classes:[],endAt:null,finalClass:null};
+  const referenceDate=resolvedClassReferenceDate(event,now);
 
   // Transition pseudo-classes are already the gap being counted. They must end at
   // their own resolved boundary (for example 13:05 -> 13:13) and must not be
@@ -1634,7 +1810,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   const selected=[...new Set(ids)]
     .map(classScheduleById)
     .filter(Boolean)
-    .filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,now));
+    .filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,referenceDate));
 
   if(!selected.some(c=>c.id===baseClass.id))selected.push(baseClass);
 
@@ -1642,7 +1818,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   const follow=timerOverlay.followLinkedClasses!==false;
   const chain=[baseClass];
   const used=new Set([baseClass.id]);
-  const baseTimes=effectiveClassTimes(baseClass,now);
+  const baseTimes=effectiveClassTimes(baseClass,referenceDate);
   let cursorEnd=timeToMinutes(baseTimes?.endTime||baseClass.endTime);
 
   if(follow){
@@ -1652,7 +1828,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
     while(true){
       const next=selected
         .filter(c=>!used.has(c.id))
-        .map(c=>{const t=effectiveClassTimes(c,now);return t?{c,start:timeToMinutes(t.startTime),end:timeToMinutes(t.endTime)}:null})
+        .map(c=>{const t=effectiveClassTimes(c,referenceDate);return t?{c,start:timeToMinutes(t.startTime),end:timeToMinutes(t.endTime)}:null})
         .filter(Boolean)
         .filter(x=>x.start>=cursorEnd&&x.start-cursorEnd<=maxGap)
         .filter(x=>isValidTimerContinuation(chain[chain.length-1],x.c))
@@ -1667,7 +1843,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
   const final=chain[chain.length-1]||baseClass;
   return {
     classes:chain,
-    endAt:final.id===baseClass.id?resolvedOccurrenceEndDate(event,final,now):classEndDate(final,now),
+    endAt:final.id===baseClass.id?resolvedOccurrenceEndDate(event,final,now):classEndDate(final,referenceDate),
     finalClass:final,
     gapMinutes:maxGap,
     linked:chain.length>1
@@ -1677,6 +1853,7 @@ function timerLinkedClassChain(event,baseClass,now=new Date(),timerOverlay={}){
 async function runAutomationTimerOverlay(event,{manual=false,commandSource="automation",targetsOverride=null,endAtOverride=null}={}){
   const timerOverlay=event.timerOverlay&&typeof event.timerOverlay==="object"?event.timerOverlay:null;
   if(!timerOverlay?.enabled)return {ok:true,skipped:true,reason:"disabled"};
+  assertAutomationCommandsAllowed(schedulerClock,{manual});
 
   const timerTargetSource=Array.isArray(targetsOverride)&&targetsOverride.length
     ? targetsOverride
@@ -1689,6 +1866,11 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
   if(!timerTargets.length)throw new Error("Timer overlay has no display targets");
 
   const now=new Date();
+  const effectPayload=context=>{
+    if(!timerOverlay.effects)return {};
+    const effects=timerEffects.normalize(timerOverlay.effects),expand=v=>expandAutomationVariables(v,context,now).slice(0,200);
+    return {effects:{...effects,stages:effects.stages.map(s=>({...s,label:expand(s.label),message:expand(s.message)})),finish:{...effects.finish,label:expand(effects.finish.label),message:expand(effects.finish.message)}}};
+  };
   let remainingSeconds=0,endAt=null,cls=null;
 
   if(timerOverlay.source==="class-end"){
@@ -1705,8 +1887,8 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
     if(!cls){
       throw new Error("Timer overlay is set to Linked Class End Time, but no timer class is selected, the event is not linked to a class, and no class is currently active.");
     }
-    if(!manual&&!classScheduleMatchesDate(cls,now)){
-      throw new Error(`Timer class "${cls.name}" is not scheduled today.`);
+    if(!manual&&!classScheduleMatchesDate(cls,resolvedClassReferenceDate(event,now))){
+      if(!event._planningBlockId)throw new Error(`Timer class "${cls.name}" is not scheduled on the resolved class date.`);
     }
 
     const chain=timerLinkedClassChain(event,cls,now,timerOverlay);
@@ -1724,6 +1906,8 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
         payload:{
           visible:true,running:false,mode:"countdown",
           timerInstanceId:commandId(),
+          automationId:event.id,automationOccurrence:[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":"),
+          ...effectPayload({...event,_class:cls}),effectsEndAt:endAt.getTime(),effectsStartAt:Number(event._classStartAt)||classStartDate(cls,now)?.getTime()||now.getTime(),
           durationSeconds:0,remainingSeconds:0,endAt:null,startedAt:null,
           label:expandAutomationVariables(String(timerOverlay.label||"Time Remaining"),{...event,_class:cls},now),
           position:timerOverlay.position||"bottom",
@@ -1737,8 +1921,11 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
       },commandSource);
       return {ok:true,atZero:true,classId:cls.id,className:cls.name,result};
     }
+  }else if(timerOverlay.source==="end-time"){
+    endAt=new Date(`${localDateKey(now)}T${timerOverlay.endTime}:00`);
+    remainingSeconds=Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000));
   }else{
-    endAt=endAtOverride instanceof Date?new Date(endAtOverride.getTime()):(Number.isFinite(Number(endAtOverride))?new Date(Number(endAtOverride)):new Date(Date.now()+Math.max(0,Number(timerOverlay.durationSeconds??600))*1000));
+    endAt=endAtOverride instanceof Date?new Date(endAtOverride.getTime()):(endAtOverride!=null&&Number.isFinite(Number(endAtOverride))?new Date(Number(endAtOverride)):new Date(Date.now()+Math.max(0,Number(timerOverlay.durationSeconds??600))*1000));
     remainingSeconds=Math.max(0,Math.floor((endAt.getTime()-Date.now())/1000));
   }
 
@@ -1748,7 +1935,8 @@ async function runAutomationTimerOverlay(event,{manual=false,commandSource="auto
     target:timerTargets,
     payload:{
       visible:true,running:true,mode:"countdown",
-      timerInstanceId:commandId(),
+      timerInstanceId:commandId(),automationId:event.id,automationOccurrence:[event.id,event._scheduledDateKey||localDateKey(now),event.classId||event._planningBlockId||"clock",event.time].join(":"),
+      ...effectPayload(contextEvent),effectsEndAt:endAt.getTime(),effectsStartAt:timerOverlay.source==="class-end"?(Number(event._classStartAt)||classStartDate(cls,now)?.getTime()||now.getTime()):timerOverlay.source==="duration"?endAt.getTime()-Number(timerOverlay.durationSeconds||0)*1000:new Date(`${localDateKey(now)}T${event.time}:00`).getTime(),
       durationSeconds:remainingSeconds,
       remainingSeconds,
       endAt:endAt.getTime(),
@@ -1787,19 +1975,25 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   let overlayApplied=false;
   const overlayCoverage=event.timerOverlay?.coverage==="action-1-only"?"action-1-only":"all-display-actions";
   const manualOverlayEndAt=event.timerOverlay?.enabled&&event.timerOverlay?.source!=="class-end"
-    ? new Date(Date.now()+Math.max(0,Number(event.timerOverlay.durationSeconds??600))*1000)
+    ? (event.timerOverlay.source==="end-time"?new Date(`${localDateKey(new Date())}T${event.timerOverlay.endTime}:00`):new Date(Date.now()+Math.max(0,Number(event.timerOverlay.durationSeconds??600))*1000))
     : null;
 
+  event._sceneEndAt=manualOverlayEndAt?.getTime()||Number(event._classEndAt)||0;
   function windowOpen(){
     if(manual)return true;
     const end=Number(event._classEndAt);
     return !Number.isFinite(end)||schedulerClock.now().getTime()<end;
+  }
+  function assertSimulationAllowsRun(){
+    if(!manual&&!schedulerClock.commandsAllowed())throw Object.assign(new Error("Scheduled automation stopped because the test clock is dry-run only"),{code:"AUTOMATION_SIMULATION_DRY_RUN"});
   }
   function assertRunActive(){
     if(event._occurrenceId&&automationCancelledOccurrences.has(event._occurrenceId)){
       const reason=automationCancellationReasons.get(event._occurrenceId)||"cancelled";
       throw Object.assign(new Error(`Automation run ${reason}`),{code:"AUTOMATION_CANCELLED",reason});
     }
+    if(shuttingDown)throw Object.assign(new Error("Automation interrupted by application shutdown"),{code:"AUTOMATION_INTERRUPTED",reason:"server-shutdown"});
+    assertSimulationAllowsRun();
     if(!manual&&!automationSchedulerEnabled)throw Object.assign(new Error("Automation scheduler paused"),{code:"AUTOMATION_SCHEDULER_PAUSED"});
     if(!manual&&isAutomationSuppressed(schedulerClock.now()).blocked)throw Object.assign(new Error("Automation suppressed by current school calendar state"),{code:"AUTOMATION_SUPPRESSED"});
     if(!manual&&event.id){
@@ -1808,17 +2002,18 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
   }
   async function waitSeconds(seconds){
-    const deadline=Date.now()+Math.max(0,Number(seconds||0))*1000;
-    while(Date.now()<deadline){
+    const deadline=performance.now()+Math.max(0,Number(seconds||0))*1000;
+    while(performance.now()<deadline){
       assertRunActive();
       if(!windowOpen())return false;
-      await new Promise(r=>setTimeout(r,Math.min(500,Math.max(1,deadline-Date.now()))));
+      await new Promise(r=>setTimeout(r,Math.min(500,Math.max(1,deadline-performance.now()))));
     }
     return windowOpen();
   }
   async function applyTimerOverlay({targetsOverride=null,force=false}={}){
     if(!event.timerOverlay?.enabled)return;
     if(overlayApplied&&!force)return;
+    assertRunActive();
     overlayApplied=true;
     try{
       const sourceTargets=Array.isArray(targetsOverride)&&targetsOverride.length
@@ -1852,9 +2047,11 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
   // Action 1 only while at least two actions remain eligible, or while
   // an explicit finite repeat still has passes remaining.
   let pass=1,aborted=false;
+  assertRunActive();
   while(sequenceHasEligibleActions(steps,pass)){
     if(!windowOpen()){combined.endedReason="class-ended";break}
     if(boundedMaxPasses&&pass>boundedMaxPasses)break;
+    const passStartedAt=performance.now();
     let executed=0;
     for(let i=0;i<steps.length;i++){
       const step=steps[i]||{};
@@ -1945,8 +2142,15 @@ async function runClassroomAutomation(event,{manual=false,bypassAnnouncementPrio
     }
     combined.passes=pass;
     if(aborted||!sequenceNeedsAnotherPass(steps,pass+1))break;
-    pass++;
+    if(boundedMaxPasses&&pass>=boundedMaxPasses)break;
     if(continuous&&executed===0)break;
+    // Yield even when fast/blocked actions contain no explicit delays. Count
+    // action time and configured waits toward the floor, without extending a
+    // slow pass or delaying a sequence that has already finished.
+    const cycleWait=continuous?Math.max(0,1000-(performance.now()-passStartedAt)):0;
+    if(cycleWait&&!(await waitSeconds(cycleWait/1000))){combined.endedReason="class-ended";break}
+    if(continuous&&!cycleWait)await new Promise(resolve=>setTimeout(resolve,0));
+    pass++;
   }
 
   await applyTimerOverlay();
@@ -2004,6 +2208,7 @@ async function convertOfficeToPdf(storedName){
     if(!candidates.length)throw new Error("LibreOffice did not create a PDF");
     const staged=`${generatedPath}.${crypto.randomUUID()}.tmp`;
     fs.copyFileSync(path.join(tmpDir,candidates[0]),staged);
+    contentFile(MEDIA_DIR,staged);
     fs.renameSync(staged,generatedPath);
     return generatedName;
   }finally{
@@ -2183,7 +2388,9 @@ async function buildPresentationSlidesUnlocked(id){
   if(!rec)throw new Error("Presentation not found");
   const dir=presentationDir(id);
   const original=path.join(dir,rec.originalFile);
-  const renderTmp=path.join(dir,`render-${crypto.randomUUID()}`);
+  // Keep partial converter output outside the operational-backup tree. Publish
+  // only complete, group-readable assets; never relax the private process umask.
+  const renderTmp=path.join(PRESENTATION_UPLOAD_TMP,`render-${crypto.randomUUID()}`);
   const slidesDir=path.join(dir,"slides");
   const stagedSlides=path.join(renderTmp,"slides");
   fs.mkdirSync(renderTmp,{recursive:true});
@@ -2202,6 +2409,7 @@ async function buildPresentationSlidesUnlocked(id){
       if(!candidates.length)throw new Error("LibreOffice did not create a presentation PDF");
       fs.copyFileSync(path.join(convertDir,candidates[0]),stagedPdf);
     }
+    contentFile(PRESENTATION_UPLOAD_TMP,stagedPdf);
 
     await execFileAsync("pdftoppm",[
       "-jpeg","-r","144","-jpegopt","quality=90",stagedPdf,path.join(stagedSlides,"raw")
@@ -2212,7 +2420,8 @@ async function buildPresentationSlidesUnlocked(id){
     .sort((a,b)=>Number(a.match(/(\d+)/)?.[1])-Number(b.match(/(\d+)/)?.[1]));
     if(!generated.length)throw new Error("No slide images were rendered");
 
-    generated.forEach((name,i)=>fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`)));
+    contentDirectory(PRESENTATION_UPLOAD_TMP,stagedSlides);
+    generated.forEach((name,i)=>{contentFile(PRESENTATION_UPLOAD_TMP,path.join(stagedSlides,name));fs.renameSync(path.join(stagedSlides,name),path.join(stagedSlides,`slide-${String(i+1).padStart(3,"0")}.jpg`))});
     const oldSlides=path.join(dir,`slides-old-${crypto.randomUUID()}`),finalPdf=path.join(dir,"presentation.pdf"),oldPdf=path.join(dir,`presentation-old-${crypto.randomUUID()}.pdf`);
     let movedSlides=false,movedPdf=false;
     try{
@@ -2293,34 +2502,45 @@ function recordCurrentSlideTiming(){
   const key=String(presentationState.slide||1);
   presentationState.timings[key]=Number(presentationState.timings[key]||0)+elapsed;
 }
+// Start, live controls and removal share one session owner. Keep callers' returned
+// promises pending so HTTP and automatic-advance lifecycle tracking can drain it.
+let presentationSessionWrite=Promise.resolve();
+function withPresentationSession(task){
+  const run=presentationSessionWrite.then(task);presentationSessionWrite=run.catch(()=>{});return run;
+}
 async function sendPresentationSlide({clear=false}={}){
-  const rec=presentationLibrary.presentations[presentationState.presentationId];
-  if(!rec||!presentationState.active)return;
-  const url=presentationSlideUrl(rec.id,presentationState.slide);
-  const priorityError=announcementPriorityError(presentationState.targets);
+  const state=presentationState,rec=presentationLibrary.presentations[state.presentationId];
+  if(!rec||!state.active)return;
+  const slide=state.slide,targets=[...state.targets],sessionId=state.sessionId,black=state.black;
+  const ownsSession=()=>presentationState===state&&presentationState.active&&presentationState.sessionId===sessionId&&presentationState.slide===slide&&presentationState.black===black;
+  const assertOwner=()=>{if(!ownsSession())throw Object.assign(Error("Presentation session changed"),{status:409})};
+  const url=presentationSlideUrl(rec.id,slide);
+  const priorityError=announcementPriorityError(targets);
   if(priorityError)throw priorityError;
   // Clear overlays through the established command understood by older receivers.
-  if(clear)await executeCommand({type:"display.clear",target:presentationState.targets,payload:{presentation:true}},"presentation");
+  if(clear)await executeCommand({type:"display.clear",target:targets,payload:{presentation:true}},"presentation");
+  assertOwner();
   await executeCommand({
     // Use the established display.image command so already-open TV receivers
     // from earlier Hub versions can present slides without requiring a reload.
     type:"display.image",
-    target:presentationState.targets,
+    target:targets,
     payload:{
       presentationId:rec.id,
       presentation:true,
       name:rec.name,
-      slide:presentationState.slide,
+      slide,
       slideCount:rec.slideCount,
       url,
       fit:"contain",
       opacity:1
     }
   },"presentation");
-  if(presentationState.black){
+  assertOwner();
+  if(black){
     await executeCommand({
       type:"display.clear",
-      target:presentationState.targets,
+      target:targets,
       payload:{presentation:true,black:true}
     },"presentation");
   }
@@ -2352,7 +2572,21 @@ async function stopPresentation({clear=true}={}){
   broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
   return presentationStatePublic();
 }
-async function controlPresentation(action,body={}){
+function controlPresentation(action,body={}, {automatic=false}={}){
+  const sessionId=body.sessionId??presentationState.sessionId,slide=presentationState.slide,startedAt=presentationState.slideStartedAt;
+  return withPresentationSession(async()=>{
+    if(presentationState.sessionId!==sessionId){
+      if(automatic)return presentationStatePublic();
+      throw Object.assign(Error("Presentation session changed; refresh before sending another control"),{status:409});
+    }
+    if(automatic){
+      const seconds=Number(presentationState.autoAdvanceSeconds||0);
+      if(!presentationState.active||presentationState.paused||presentationState.slide!==slide||presentationState.slideStartedAt!==startedAt||seconds<=0||presentationElapsedSeconds(startedAt)<seconds)return presentationStatePublic();
+    }
+    return controlPresentationUnlocked(action,body);
+  });
+}
+async function controlPresentationUnlocked(action,body={}){
   action=String(action||"").toLowerCase();
   if(action==="stop")return stopPresentation({clear:body.clear!==false});
   if(!presentationState.active)throw new Error("No active presentation");
@@ -2424,14 +2658,14 @@ async function controlPresentation(action,body={}){
 
 let presentationAutoAdvanceBusy=false;
 const presentationAutoAdvanceTimer=setInterval(async()=>{
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if(presentationAutoAdvanceBusy)return;presentationAutoAdvanceBusy=true;
   try{
     if(!presentationState.active||presentationState.paused)return;
     const seconds=Number(presentationState.autoAdvanceSeconds||0);
     if(seconds<=0)return;
     if(presentationElapsedSeconds(presentationState.slideStartedAt)>=seconds){
-      await controlPresentation("next",{});
+      await controlPresentation("next",{}, {automatic:true});
     }
   }catch(err){
     audit({kind:"presentation.auto.error",error:err.message});
@@ -2453,6 +2687,11 @@ function defaultClassSchedules(){return {version:1,classes:[]}}
 let classScheduleStore=readJson(CLASS_SCHEDULES_FILE,defaultClassSchedules());
 if(!classScheduleStore||typeof classScheduleStore!=="object")classScheduleStore=defaultClassSchedules();
 if(!Array.isArray(classScheduleStore.classes))classScheduleStore.classes=[];
+// Import after legacy JSON/SQLite identities are reconciled and classes are loaded,
+// before listeners or scheduler ticks can accept work. Retain the active resolver.
+const planningStartupMigration=planningMigration.migrateLegacyPlanning({store:dbStore,profile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,events:classroomAutomations.events||[]});
+schoolScheduleProfile=planningStartupMigration.profile;
+let planningStudioConfig=planningStudio.normalize(dbStore.getPreference(planningStudio.KEY,{overlays:[]}));
 
 function persistClassSchedules(){persistJson(CLASS_SCHEDULES_FILE,classScheduleStore)}
 function commitClassSchedules(next){persistJson(CLASS_SCHEDULES_FILE,next);classScheduleStore=next;return next}
@@ -2465,7 +2704,7 @@ function normalizeClassSchedule(input={},existing={}){
   if(!validTime(startTime)||!validTime(endTime))throw new Error("Class times must be valid HH:MM values");
   if(timeToMinutes(startTime)>=timeToMinutes(endTime))throw new Error("Class end time must be after its start time");
   const days=(Array.isArray(input.days)?input.days:(existing.days||[1,2,3,4,5])).map(Number).filter(x=>Number.isInteger(x)&&x>=0&&x<=6);
-  const scheduleMode=["weekly","alternating","schoolcycle"].includes(String(input.scheduleMode??existing.scheduleMode??"schoolcycle"))?String(input.scheduleMode??existing.scheduleMode??"schoolcycle"):"schoolcycle";
+  const scheduleMode=["weekly","alternating","schoolcycle","dates"].includes(String(input.scheduleMode??existing.scheduleMode??"schoolcycle"))?String(input.scheduleMode??existing.scheduleMode??"schoolcycle"):"schoolcycle";
   const alternatePhase=String(input.alternatePhase??existing.alternatePhase??"A").toUpperCase()==="B"?"B":"A";
   const period=String(input.period??existing.period??"").trim().slice(0,40);
   const cycleDays=normalizeCycleDays(input.cycleDays===undefined?existing.cycleDays:input.cycleDays,periodDefaultCycleDays(period));
@@ -2474,13 +2713,14 @@ function normalizeClassSchedule(input={},existing={}){
   const anchorRaw=(input.anchorDate??existing.anchorDate??(scheduleMode==="alternating"?schoolCycleAnchor():""));const anchorDate=validDateKey(anchorRaw)?String(anchorRaw):"";
   const includeDates=uniqueDateKeys(input.includeDates===undefined?existing.includeDates:input.includeDates);
   const excludedDates=uniqueDateKeys(input.excludedDates===undefined?existing.excludedDates:input.excludedDates);
-  const defaultTargets=(Array.isArray(input.defaultTargets)?input.defaultTargets:(existing.defaultTargets||["all"])).map(cleanId).filter(Boolean);
+  const defaultTargets=(Array.isArray(input.defaultTargets)?input.defaultTargets:(existing.defaultTargets||["all"])).map(value=>String(value||"").trim()).filter(Boolean);
   const continuationOf=String(input.continuationOf??existing.continuationOf??"").trim().slice(0,80);
-  return {...existing,id,name,shortName,startTime,endTime,days:[...new Set(days)],scheduleMode,alternatePhase,anchorDate,includeDates,excludedDates,period,cycleDays,dayType,continuationOf,phaseALabel:String(input.phaseALabel??existing.phaseALabel??alternateGroupLabel("A")).trim().slice(0,30)||alternateGroupLabel("A"),phaseBLabel:String(input.phaseBLabel??existing.phaseBLabel??alternateGroupLabel("B")).trim().slice(0,30)||alternateGroupLabel("B"),defaultTargets:[...new Set(defaultTargets)],enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,notes:String(input.notes??existing.notes??"").slice(0,500),createdAt:existing.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+  return {...existing,id,name,shortName,startTime,endTime,scheduleWindow:planningStudio.windowRule(input.scheduleWindow??existing.scheduleWindow??{}),days:[...new Set(days)],scheduleMode,alternatePhase,anchorDate,includeDates,excludedDates,period,cycleDays,dayType,continuationOf,phaseALabel:String(input.phaseALabel??existing.phaseALabel??alternateGroupLabel("A")).trim().slice(0,30)||alternateGroupLabel("A"),phaseBLabel:String(input.phaseBLabel??existing.phaseBLabel??alternateGroupLabel("B")).trim().slice(0,30)||alternateGroupLabel("B"),defaultTargets:[...new Set(defaultTargets)],enabled:input.enabled===undefined?(existing.enabled!==false):!!input.enabled,notes:String(input.notes??existing.notes??"").slice(0,500),createdAt:existing.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
 }
 function classScheduleById(id){return classScheduleStore.classes.find(c=>c.id===String(id||""))||null}
 
 function classAlternatingPhaseForDate(anchorDate,date=new Date()){
+  if(schoolScheduleProfile.planning?.enabled)return planningEngine.alternateCycle(schoolScheduleProfile,schedulerCalendar,anchorDate,localDateKey(date));
   const status=schoolCycleForDate(date);
   if(!status.isStudentSchoolDay)return null;
   const anchor=dateFromKey(validDateKey(anchorDate)?anchorDate:schoolCycleAnchor());
@@ -2491,10 +2731,13 @@ function classAlternatingPhaseForDate(anchorDate,date=new Date()){
 
 function classScheduleMatchesDate(cls,date=new Date()){
   const key=localDateKey(date);
-  if(calendarRuleForDate(date).type==='half-day'&&!effectiveClassTimes(cls,date))return false;
+  if(!planningStudio.inWindow(cls.scheduleWindow,key))return false;
+  if(schoolScheduleProfile.planning?.enabled)return planningEngine.classMatches(schoolScheduleProfile,schedulerCalendar,cls,key)&&effectiveClassSegments(cls,date).length>0;
+  if(!effectiveClassTimes(cls,date))return false;
   if(isCalendarBlocked(date).blocked)return false;
   if((cls.excludedDates||[]).includes(key))return false;
   if((cls.includeDates||[]).includes(key))return true;
+  if(cls.scheduleMode==="dates")return false;
 
   if(cls.scheduleMode==="schoolcycle"){
     const cycleDays=normalizeCycleDays(cls.cycleDays,periodDefaultCycleDays(cls.period));
@@ -2513,14 +2756,21 @@ function classPeriodNumber(cls){
   return named?Number(named[1]):null;
 }
 function minutesToHHMM(mins){mins=Math.max(0,Math.min(1439,Math.round(mins)));return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`}
-function effectiveClassTimes(cls,date=new Date()){
-  if(!cls)return null;
+function effectiveClassSegments(cls,date=new Date()){
+  if(!cls)return [];
+  const planned=planningEngine.classSegments(schoolScheduleProfile,schedulerCalendar,cls,localDateKey(date));
   const rule=calendarRuleForDate(date);
+  if(planned!==null)return planned.map(segment=>({...segment,rule}));
   const effective=effectiveTimesForRule(schoolScheduleProfile,cls,rule.type);
-  return effective?{...effective,rule}:null;
+  return effective&&validTime(effective.startTime)&&validTime(effective.endTime)?[{...effective,rule}]:[];
 }
-function classStartDate(cls,date=new Date()){const t=effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.startTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
-function classEndDate(cls,date=new Date()){const t=effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.endTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
+function effectiveClassTimes(cls,date=new Date()){
+  const segments=effectiveClassSegments(cls,date),now=localMinutesNow(date);
+  return segments.find(segment=>timeToMinutes(segment.endTime)>now)||segments.at(-1)||null;
+}
+function classStartDate(cls,date=new Date(),times=null){const t=times||effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.startTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
+function classEndDate(cls,date=new Date(),times=null){const t=times||effectiveClassTimes(cls,date);if(!t)return null;const [h,m]=t.endTime.split(":").map(Number),d=new Date(date);d.setHours(h,m,0,0);return d}
+
 function isTransitionClass(cls){
   return /transition/i.test(String(cls?.name||"")) || /transition/i.test(String(cls?.shortName||"")) || String(cls?.kind||"").toLowerCase()==="transition";
 }
@@ -2547,13 +2797,18 @@ function isValidTimerContinuation(current,next){
   const a=classBasePeriodNumber(current),b=classBasePeriodNumber(next);
   return Number.isInteger(a)&&Number.isInteger(b)&&a===b;
 }
+function resolvedClassReferenceDate(event,date=new Date()){
+  const stamp=Number(event?._classStartAt);
+  return event?._sourceDateMatched&&event._class&&Number.isFinite(stamp)&&stamp>0?new Date(stamp):date;
+}
 function resolvedOccurrenceEndDate(event,cls,date=new Date()){
+  const referenceDate=resolvedClassReferenceDate(event,date);
   const stamp=Number(event?._classEndAt);
   if(Number.isFinite(stamp)&&stamp>0){
     const d=new Date(stamp);
-    if(localDateKey(d)===localDateKey(date))return d;
+    if(localDateKey(d)===localDateKey(referenceDate))return d;
   }
-  return classEndDate(cls,date);
+  return classEndDate(cls,referenceDate);
 }
 function activeClassAt(date=new Date()){return classScheduleStore.classes.filter(c=>c.enabled!==false&&classScheduleMatchesDate(c,date)).find(c=>{const a=classStartDate(c,date),b=classEndDate(c,date);return a&&b&&a<=date&&date<b})||null}
 function activeAutomationClassAt(event,date=new Date()){
@@ -2574,7 +2829,10 @@ function nextClassAfter(date=new Date()){
     const d=new Date(date);d.setDate(d.getDate()+off);d.setHours(12,0,0,0);
     for(const c of classScheduleStore.classes){
       if(c.enabled===false||!classScheduleMatchesDate(c,d))continue;
-      const start=classStartDate(c,d),end=classEndDate(c,d);if(start&&end&&start>date)found.push({...c,startTime:effectiveClassTimes(c,d)?.startTime||c.startTime,endTime:effectiveClassTimes(c,d)?.endTime||c.endTime,nextStartAt:start.toISOString(),nextEndAt:end.toISOString()});
+      for(const segment of effectiveClassSegments(c,d)){
+        const start=classStartDate(c,d,segment),end=classEndDate(c,d,segment);
+        if(start&&end&&start>date)found.push({...c,startTime:segment.startTime,endTime:segment.endTime,nextStartAt:start.toISOString(),nextEndAt:end.toISOString()});
+      }
     }
   }
   return found.sort((a,b)=>new Date(a.nextStartAt)-new Date(b.nextStartAt))[0]||null;
@@ -2589,24 +2847,32 @@ function automationClassIds(event){
   if(!ids.length&&event.classId)ids.push(event.classId);
   return [...new Set(ids.map(String))];
 }
-function resolveAutomationForClass(event,classId,date=new Date()){
+function resolveAutomationForClass(event,classId,date=new Date(),segment=null){
   if(!classId)return event;
+  if(!planningStudio.inWindow(event.scheduleWindow,localDateKey(date)))return null;
   const cls=classScheduleById(classId);if(!cls||cls.enabled===false)return null;
   if(!classScheduleMatchesDate(cls,date))return null;
-  const effective=effectiveClassTimes(cls,date);if(!effective)return null;
+  const effective=segment||effectiveClassTimes(cls,date);if(!effective)return null;
   const base=event.classTimeReference==="end"?effective.endTime:effective.startTime;
   const [h,m]=base.split(":").map(Number),rawMinutes=h*60+m+Number(event.classTimeOffsetMinutes||0);
   const dayOffset=Math.floor(rawMinutes/1440),mins=((rawMinutes%1440)+1440)%1440;
   const scheduledDate=new Date(date);scheduledDate.setDate(scheduledDate.getDate()+dayOffset);
-  const occurrenceStart=classStartDate(cls,date),occurrenceEnd=classEndDate(cls,date);
+  const occurrenceStart=classStartDate(cls,date,effective),occurrenceEnd=classEndDate(cls,date,effective);
   return {...event,classId:cls.id,time:`${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`,days:[...(cls.days||[])],scheduleMode:cls.scheduleMode||"schoolcycle",alternatePhase:cls.alternatePhase||"A",anchorDate:cls.anchorDate||schoolCycleAnchor(),dayType:cls.dayType||"Any",cycleDays:[...(cls.cycleDays||periodDefaultCycleDays(cls.period))],period:cls.period||"",includeDates:[...(cls.includeDates||[])],targets:(event.useClassTargets!==false&&["display-content","display-overlay"].includes(automationTargetDomain(event.action))&&cls.defaultTargets?.length)?[...cls.defaultTargets]:(event.targets||[]),_class:cls,_classDefaultTargets:[...(cls.defaultTargets||[])],_automationClassIds:automationClassIds(event),_classStartAt:occurrenceStart?.getTime()||null,_classEndAt:occurrenceEnd?.getTime()||null,_classIsTransition:isTransitionClass(cls),_sourceDateMatched:true,_scheduledDateKey:localDateKey(scheduledDate)};
 }
 function resolveAutomationOccurrences(event,date=new Date()){
+  if(event.blockIds?.length)return planningStudio.blockOccurrences(schoolScheduleProfile,schedulerCalendar,event,localDateKey(date));
   const ids=automationClassIds(event);
-  if(!ids.length)return [event];
-  return ids.map(id=>resolveAutomationForClass(event,id,date)).filter(Boolean);
+  if(!ids.length)return planningStudio.times(event).map(time=>({...event,time}));
+  return ids.flatMap(id=>effectiveClassSegments(classScheduleById(id),date).map(segment=>resolveAutomationForClass(event,id,date,segment))).filter(Boolean);
+}
+function resolveScheduledAutomationOccurrences(event,date=new Date()){
+  if(!event.classIds?.length&&!event.classId&&!event.blockIds?.length)return resolveAutomationOccurrences(event,date);
+  const dateKey=localDateKey(date),referenceDates=[-1,0,1].map(offset=>{const d=new Date(date);d.setDate(d.getDate()+offset);return d});
+  return referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(event,referenceDate)).filter(event=>event._scheduledDateKey===dateKey);
 }
 function resolveAutomationFromClass(event,date=new Date()){
+  if(event.blockIds?.length){const runs=resolveAutomationOccurrences(event,date);if(!runs.length)throw Error("The selected timetable blocks are not scheduled on this date");return runs.find(e=>e._classStartAt<=date.getTime()&&e._classEndAt>date.getTime())||runs.find(e=>e._classStartAt>date.getTime())||runs[0]}
   // Manual/Test Now execution must follow the selected class occurrence that is
   // actually active now. Falling straight to the first configured class makes
   // multi-class automations resolve an already-ended period and yields 00:00.
@@ -2702,7 +2968,10 @@ async function veyonCloseIdleConnections(){
     if(!rec.active&&now-Number(rec.lastUsed||0)>45000)await veyonCloseConnection(host,rec);
   }
 }
-const veyonPoolTimer=setInterval(()=>veyonCloseIdleConnections().catch(()=>{}),15000);
+const veyonPoolTimer=setInterval(()=>{
+  if(shutdownRequested||fullExportFreeze.requested)return;
+  trackFullExportMutation(veyonCloseIdleConnections()).catch(()=>{});
+},15000);
 veyonPoolTimer.unref?.();
 
 async function veyonAuthenticateInternal(host){
@@ -2842,7 +3111,7 @@ const veyonCommandQueue=new VeyonCommandQueue({
   authorize:owner=>{if(owner==="legacy-control")return !dbStore.authEnabled()&&!!CONTROL_TOKEN;const user=dbStore.listUsers().find(u=>u.id===owner&&u.enabled);return !!user&&hasCapability(user,"lab.control")},
   readJournal:()=>dbStore.getPreference("veyon.lock-ownership",[]),
   writeJournal:value=>dbStore.setPreference("veyon.lock-ownership",value),
-  canRun:()=>!fullExportFreeze.requested&&!shuttingDown,
+  canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,
   begin:()=>{fullExportFreeze.activeAsyncMutations++},
   end:()=>{fullExportFreeze.activeAsyncMutations=Math.max(0,fullExportFreeze.activeAsyncMutations-1)},
   safeError:error=>error.reason?safeVeyonFailure(error).error:"Veyon command could not be confirmed."
@@ -2897,6 +3166,7 @@ if(!Array.isArray(labAiRulesStore.excludeDomains))labAiRulesStore.excludeDomains
 if(!labHistoryStore||typeof labHistoryStore!=="object")labHistoryStore={version:1,computers:{}};
 if(!labHistoryStore.computers||typeof labHistoryStore.computers!=="object")labHistoryStore.computers={};
 const labAgentSockets=new Map();
+let labDisconnectPersistencePending=false;
 const LAB_ALLOWED_ACTIONS=new Set(["message","restart","shutdown","cancel-shutdown","logoff","lock","refresh-history","screenshot","run-preset","update-agent","instructor-lock","instructor-unlock","app-lock","app-unlock"]);
 
 function cleanLabAgentId(v){
@@ -2904,7 +3174,13 @@ function cleanLabAgentId(v){
   if(!id)throw new Error("Invalid lab agent ID");
   return id.slice(0,120);
 }
-function persistLabComputers(){persistJson(LAB_COMPUTERS_FILE,labComputerStore)}
+function persistLabComputers(){persistJson(LAB_COMPUTERS_FILE,labComputerStore);labDisconnectPersistencePending=false}
+function flushLabDisconnects(){
+  if(labDisconnectPersistencePending&&!fullExportFreeze.requested){
+    try{persistLabComputers()}catch(error){diagnosticError(error,{component:"lab-agent",operation:"persist-disconnect"})}
+  }
+  return !labDisconnectPersistencePending;
+}
 function persistLabHistory(){persistJson(LAB_HISTORY_FILE,labHistoryStore)}
 function persistLabAiAlerts(){persistJson(LAB_AI_ALERTS_FILE,labAiAlertsStore)}
 function persistLabAiRules(){persistJson(LAB_AI_RULES_FILE,labAiRulesStore)}
@@ -3106,8 +3382,9 @@ function sendLabAgentCommand(targets,action,payload={}){
 }
 function markLabSocketDisconnected(ws){
   if(ws.role!=="lab-agent"||!ws.labAgentId)return;
-  const id=ws.labAgentId;if(labAgentSockets.get(id)===ws)labAgentSockets.delete(id);
-  const rec=labComputerStore.computers[id];if(rec){rec.disconnectedAt=new Date().toISOString();persistLabComputers()}
+  const id=ws.labAgentId;if(labAgentSockets.get(id)!==ws)return;
+  labAgentSockets.delete(id);
+  const rec=labComputerStore.computers[id];if(rec){rec.disconnectedAt=new Date().toISOString();labDisconnectPersistencePending=true;flushLabDisconnects()}
   broadcastControllers({type:"lab.status",computer:publicLabComputer(id)});audit({kind:"lab.disconnected",id});
 }
 
@@ -3154,8 +3431,8 @@ function pruneStudentData(policy=privacyRetentionPolicy()){
   dbStore.db.prepare("DELETE FROM audit_events WHERE at < ?").run(auditCutoff);
 }
 
-const studentDataPruneTimer=setInterval(()=>{if(fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"periodic-prune"})}},10*60*1000);studentDataPruneTimer.unref();
-setTimeout(()=>{if(fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"startup-prune"})}},5000).unref();
+const studentDataPruneTimer=setInterval(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"periodic-prune"})}},10*60*1000);studentDataPruneTimer.unref();
+const studentDataPruneStartupTimer=setTimeout(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{pruneStudentData()}catch(error){diagnosticError(error,{component:"privacy-retention",operation:"startup-prune"})}},5000);studentDataPruneStartupTimer.unref();
 
 const baseDeviceConfig = readJson(DEVICE_CONFIG_FILE, {
   room: ROOM_NAME,
@@ -3462,7 +3739,7 @@ let sessionEffectBusy = false;
 const sessionLastSpotlightAt = new Map();
 
 async function nextSessionEffect() {
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if (sessionEffectBusy) return;
 
   const sessions = Object.values(classroomSessions).filter(x => !x.paused);
@@ -3683,6 +3960,8 @@ function diagnosticError(error,context={}){
     context:diagnosticSanitize(context.data||{})
   });
 }
+// Discovery cleanup needs the initialized audit owner and must not block the Hub.
+try{migrateGoveeDiscoveryRegistry()}catch(error){diagnosticError(error,{component:"govee",operation:"startup-migration"})}
 process.on("unhandledRejection",reason=>diagnosticError(reason instanceof Error?reason:new Error(String(reason)),{component:"node",operation:"unhandledRejection"}));
 process.on("uncaughtException",err=>{diagnosticError(err,{component:"node",operation:"uncaughtException"});process.exitCode=1;const timer=setTimeout(()=>process.exit(1),100);timer.unref()});
 
@@ -3764,6 +4043,14 @@ function cleanId(value) {
     .slice(0, 80);
 }
 
+function configuredDisplayId(value) {
+  const id=String(value??"").trim();
+  if(!/^[a-zA-Z0-9._-]{1,80}$/.test(id))return "";
+  if(Object.hasOwn(devices,id))return id;
+  const matches=Object.keys(devices).filter(key=>key.toLowerCase()===id.toLowerCase());
+  return matches.length===1?matches[0]:"";
+}
+
 function cookieValue(req,name){
   const raw=String(req.headers?.cookie||"");
   for(const part of raw.split(";")){const i=part.indexOf("=");if(i<0)continue;const k=part.slice(0,i).trim();if(k===name)return decodeURIComponent(part.slice(i+1).trim())}
@@ -3788,9 +4075,11 @@ function publicUser(user){return user?{id:user.id,username:user.username,display
 function authenticationUnavailable(res){
   return res.status(503).json({ok:false,error:"Secure setup is required before this operation is available",setupRequired:dbStore.userCount()===0});
 }
+function controlAccessAllowed(req){return dbStore.authEnabled()?hasCapability(requestUser(req),"classroom.control"):!!CONTROL_TOKEN&&secureTokenEqual(req.get("x-control-token")||"",CONTROL_TOKEN)}
+function capabilityAccessAllowed(req,capability){return dbStore.authEnabled()?hasCapability(requestUser(req),capability):controlAccessAllowed(req)}
 function requireControl(req, res, next) {
   if(dbStore.authEnabled()){
-    const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});if(!hasCapability(user,"classroom.control"))return res.status(403).json({ok:false,error:"Permission required: classroom.control"});return next();
+    const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});if(!controlAccessAllowed(req))return res.status(403).json({ok:false,error:"Permission required: classroom.control"});return next();
   }
   if(!CONTROL_TOKEN)return authenticationUnavailable(res);
   const token=req.get("x-control-token")||"";
@@ -3816,7 +4105,7 @@ function requireAuthenticated(req,res,next){
 function requireCapability(capability){return (req,res,next)=>{
   if(!dbStore.authEnabled())return requireControl(req,res,next);
   const user=requestUser(req);if(!user)return res.status(401).json({ok:false,error:"Authentication required",authRequired:true});
-  if(!hasCapability(user,capability))return res.status(403).json({ok:false,error:`Permission required: ${capability}`});
+  if(!capabilityAccessAllowed(req,capability))return res.status(403).json({ok:false,error:`Permission required: ${capability}`});
   next();
 }}
 function requireClassroomRead(req,res,next){return requireCapability("classroom.read")(req,res,next)}
@@ -3832,13 +4121,14 @@ function resolveDisplayTargets(target) {
     return [...new Set(target.flatMap(resolveDisplayTargets))];
   }
 
-  const t = cleanId(target || "all");
-  if (devices[t] && devices[t].enabled !== false) return [t];
+  const value=String(target || "all").trim(),id=configuredDisplayId(value);
+  if(id)return devices[id].enabled!==false?[id]:[];
+  if(Object.keys(devices).some(key=>key.toLowerCase()===value.toLowerCase()))return [];
+  const aliases=Object.keys(displayGroups).filter(key=>key.toLowerCase()===value.toLowerCase());
+  const t=Object.hasOwn(displayGroups,value)?value:aliases.length===1?aliases[0]:"";
 
   if (Array.isArray(displayGroups[t])) {
-    return displayGroups[t].filter(
-      (id) => devices[id] && devices[id].enabled !== false
-    );
+    return [...new Set(displayGroups[t].map(configuredDisplayId).filter(id=>id&&devices[id].enabled!==false))];
   }
 
   return [];
@@ -3887,9 +4177,21 @@ function updateStateFromCommand(command, targets) {
   const p = command.payload;
 
   for (const id of targets) {
+    if(["display.text","display.layers","display.video","display.web","display.image","display.pdf","display.document","display.presentation","display.clear"].includes(command.type))setDisplayState(id,{audioContentId:command.id});
     switch (command.type) {
+      case "display.audio.control":
+        setDisplayState(id,displayAudio.apply(persistentState.displays[id],p));
+        break;
+      case "display.media.control": {
+        const media=displayMedia.applySettings(persistentState.displays[id]?.media,p);
+        if(media)setDisplayState(id,{media});
+        break;
+      }
       case "display.text":
         setDisplayState(id, { text: p.text ?? "", textOptions: p });
+        break;
+      case "display.layers":
+        setDisplayState(id,{layers:p.layers});
         break;
       case "display.title":
         setDisplayState(id, { title: p.text ?? "", titleOptions: p });
@@ -3936,6 +4238,7 @@ function updateStateFromCommand(command, targets) {
           subtitle: "",
           subtitleOptions: { text: "" },
           media: null,
+          layers:[],
           background: { color: "#000000" },
           identify: null,
           presentationBlack: false,
@@ -3968,8 +4271,17 @@ function safeMediaUrl(value) {
 
 const URL_BEARING_DISPLAY_COMMANDS=new Set(["display.image","display.video","display.web","display.pdf","display.document","display.ppt","display.presentation"]);
 function validateCommandForDispatch(command){
+  if(command.type==="display.audio.control")command.payload=displayAudio.validate(command.payload);
+  if(command.type==="display.media.control")command.payload=displayMedia.validate(command.payload);
+  if(command.type==="display.text"&&command.payload?.scene)command.payload={...command.payload,scene:planningStudio.scene.normalize(command.payload.scene)};
+  if(command.type==="display.layers"){
+    const rows=command.payload?.layers;
+    if(!Array.isArray(rows)||rows.length>12)throw Error("Invalid shared layer collection");
+    command.payload={layers:rows.map(row=>{const expiresAt=Number(row.expiresAt);if(!Number.isFinite(expiresAt)||expiresAt<=0)throw Error("Shared layers require an expiration");return {id:cleanId(row.id),expiresAt,scene:planningStudio.scene.normalize({...row.scene,transparent:true})}})};
+  }
   if(URL_BEARING_DISPLAY_COMMANDS.has(command.type)){
     const payload={...(command.payload||{}),url:safeMediaUrl(command.payload?.url)};
+    if(command.type==="display.video"&&!payload.sessionId)payload.sessionId=command.id;
     for(const [name,min,max] of [["opacity",0,1],["volume",0,1],["playbackRate",0.25,4],["startAtSeconds",0,86400],["endAtSeconds",0,86400]])if(payload[name]!==undefined&&payload[name]!==null){const n=Number(payload[name]);if(!Number.isFinite(n)||n<min||n>max)throw new Error(`${name} must be a finite number from ${min} to ${max}`);payload[name]=n}
     if(Number(payload.endAtSeconds)>0&&Number(payload.endAtSeconds)<=Number(payload.startAtSeconds||0))throw new Error("endAtSeconds must be greater than startAtSeconds");
     command.payload=payload;
@@ -4062,19 +4374,32 @@ function toLegacyCommand(command) {
 // -----------------------------------------------------------------------------
 
 let mqttClient = null;
+const pendingMqttPublishes = new Set();
+
+function rejectMqttPublishes(client, reason) {
+  for (const pending of [...pendingMqttPublishes]) {
+    if (pending.client === client) pending.finish(new Error(`${reason}; command delivery is unconfirmed`));
+  }
+}
 
 function mqttPublish(topic, payload, options = {}) {
   return new Promise((resolve, reject) => {
-    if (!mqttClient || !runtime.mqtt.connected) {
+    const client = mqttClient;
+    if (!client || !client.connected || client.disconnecting || !runtime.mqtt.connected) {
       return reject(new Error("MQTT is not connected"));
     }
-
-    mqttClient.publish(
-      topic,
-      typeof payload === "string" ? payload : JSON.stringify(payload),
-      { qos: 0, retain: false, ...options },
-      (err) => (err ? reject(err) : resolve())
-    );
+    const message = typeof payload === "string" ? payload : JSON.stringify(payload);
+    let settled = false;
+    const pending = {client, finish(err) {
+      if (settled) return;
+      settled = true; clearTimeout(timer); pendingMqttPublishes.delete(pending);
+      err ? reject(err) : resolve();
+    }};
+    const timer = setTimeout(() => pending.finish(new Error("MQTT command timed out; delivery is unconfirmed")), 5000);
+    pendingMqttPublishes.add(pending);
+    try {
+      client.publish(topic, message, {qos: 0, retain: false, ...options}, pending.finish);
+    } catch (err) { pending.finish(err); }
   });
 }
 
@@ -4091,21 +4416,24 @@ function connectMqtt() {
     clientId: "classroom-hub-" + crypto.randomBytes(4).toString("hex"),
     reconnectPeriod: 2000,
     connectTimeout: 10000,
+    queueQoSZero: false,
     clean: true
   };
 
   if (MQTT_USERNAME) options.username = MQTT_USERNAME;
   if (MQTT_PASSWORD) options.password = MQTT_PASSWORD;
 
-  mqttClient = mqtt.connect(MQTT_URL, options);
+  const client = mqtt.connect(MQTT_URL, options);
+  mqttClient = client;
 
-  mqttClient.on("connect", () => {
+  client.on("connect", () => {
+    if(shutdownRequested || mqttClient !== client)return;
     runtime.mqtt.connected = true;
     runtime.mqtt.lastError = null;
     runtime.mqtt.lastConnectAt = new Date().toISOString();
     console.log("MQTT connected:", endpointForLog(MQTT_URL));
 
-    mqttClient.subscribe(
+    client.subscribe(
       [
         "classroom/v2/display/+/state",
         "classroom/v2/display/+/presence",
@@ -4121,38 +4449,44 @@ function connectMqtt() {
     audit({ kind: "mqtt.connected", url: runtime.mqtt.url });
   });
 
-  mqttClient.on("reconnect", () => {
-    runtime.mqtt.connected = false;
+  client.on("reconnect", () => {
+    rejectMqttPublishes(client, "MQTT is reconnecting");
+    if (mqttClient === client) runtime.mqtt.connected = false;
   });
 
-  mqttClient.on("close", () => {
-    runtime.mqtt.connected = false;
+  client.on("close", () => {
+    rejectMqttPublishes(client, "MQTT connection closed");
+    if (mqttClient === client) runtime.mqtt.connected = false;
   });
 
-  mqttClient.on("offline", () => {
-    runtime.mqtt.connected = false;
+  client.on("offline", () => {
+    rejectMqttPublishes(client, "MQTT is offline");
+    if (mqttClient === client) runtime.mqtt.connected = false;
   });
 
-  mqttClient.on("error", (err) => {
+  client.on("error", (err) => {
+    rejectMqttPublishes(client, "MQTT connection error");
+    if (mqttClient !== client) return;
     runtime.mqtt.lastError = err.message;
     console.error("MQTT error:", err.message);
   });
 
-  mqttClient.on("message", (topic, payloadBuffer) => {
-    if(fullExportFreeze.requested)return;
+  client.on("message", (topic, payloadBuffer) => {
+    if(mqttClient!==client||shutdownRequested||fullExportFreeze.requested)return;
     const payloadText = payloadBuffer.toString();
     let payload;
     try { payload = JSON.parse(payloadText); } catch { payload = {raw:payloadText}; }
 
     const dm = topic.match(/^classroom\/v2\/display\/([^/]+)\/(state|presence)$/);
     if (dm) {
-      const id=cleanId(dm[1]);
+      const id=configuredDisplayId(dm[1]);
       if (!devices[id]) return;
       runtime.displays[id]={...(runtime.displays[id]||{}),lastSeen:new Date().toISOString(),source:"mqtt",[dm[2]]:payload};
       broadcastControllers({type:"device.status",deviceId:id,status:publicDisplayStatus(id)});
       return;
     }
 
+    try{
     const cm=topic.match(/^homeassistant\/light\/gv2mqtt-([^/]+)\/config$/);
     if(cm){
       const deviceId=normalizeGoveePhysicalId(cm[1]);
@@ -4218,12 +4552,15 @@ function connectMqtt() {
       if(alias)broadcastControllers({type:"govee.inventory",reason:"status-attributes",alias});
       return;
     }
+    }catch(error){diagnosticError(error,{component:"govee",operation:"mqtt-discovery"})}
   });
 }
 
 function reconnectMqtt(){
-  if(mqttClient){mqttClient.removeAllListeners();mqttClient.end(true);mqttClient=null}
+  const client=mqttClient;
+  mqttClient=null;
   runtime.mqtt.connected=false;
+  if(client){rejectMqttPublishes(client,"MQTT connection changed");client.removeAllListeners();client.on("error",()=>{});client.end(true)}
   connectMqtt();
 }
 
@@ -4246,51 +4583,62 @@ function colorParts(payload) {
 
 function goveeTargets(target){
   const t=cleanId(target);
-  if(goveeDevices[t]) return [t];
-  if(Array.isArray(goveeGroups[t])) return [...goveeGroups[t]];
+  if(Object.hasOwn(goveeDevices,t)&&goveeDevices[t]) return [t];
+  if(Object.hasOwn(goveeGroups,t)&&Array.isArray(goveeGroups[t])) return [...new Set(goveeGroups[t])];
   throw new Error(`Unknown Govee device/group: ${t}`);
 }
 
 async function goveeUdpTemperature(device,kelvin){
   return new Promise((resolve,reject)=>{
+    const ip=device.ip;
     const sock=dgram.createSocket("udp4");
     const packet=Buffer.from(JSON.stringify({msg:{cmd:"colorwc",data:{color:{r:0,g:0,b:0},colorTemInKelvin:kelvin}}}));
-    const done=(err)=>{try{sock.close()}catch{};err?reject(err):resolve({method:"native-udp",ip:device.ip,port:4003})};
-    sock.send(packet,4003,device.ip,done);
+    let settled=false;
+    const done=(err)=>{if(settled)return;settled=true;clearTimeout(timer);try{sock.close()}catch{};err?reject(err):resolve({method:"native-udp",ip,port:4003})};
+    const timer=setTimeout(()=>done(new Error("Govee UDP command timed out; delivery is unconfirmed")),5000);
+    sock.on("error",done);
+    try{sock.send(packet,4003,ip,done)}catch(err){done(err)}
   });
 }
 
-async function goveePublish(alias,payload){
-  const d=goveeDevices[alias];
-  if(!d) throw new Error(`Unknown Govee device ${alias}`);
-  const started=Date.now();
+async function goveePublish(alias,payload,device){
+  const d=device||(Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null);
+  if(!d||typeof d.id!=="string"||!d.id.trim()) throw new Error(`Unknown Govee device ${alias}`);
+  const started=Date.now(),observation=runtime.hardware.govee;
   try{
     await mqttPublish(`gv2mqtt/light/${d.id}/command`,payload);
-    runtime.hardware.govee.lastError=null;
-    runtime.hardware.govee.lastSuccessAt=new Date().toISOString();
+    observation.lastError=null;
+    observation.lastSuccessAt=new Date().toISOString();
     audit({kind:"service.action",component:"govee",operation:"mqttPublish",device:alias,durationMs:Date.now()-started,ok:true});
     return {device:alias,name:d.name,payload};
   }catch(err){
-    runtime.hardware.govee.lastError=err.message;
+    observation.lastError=err.message;
     diagnosticError(err,{component:"govee",operation:"mqttPublish",data:{device:alias}});
     throw err;
   }
 }
 
 async function directGoveeCommand(target,action,p={}){
+  p={...p};
   const aliases=validateGoveeCommand(target,action,p);
+  const targets=aliases.map(alias=>({alias,device:{...goveeDevices[alias]}}));
   const results=[];
-  for(const alias of aliases){
-    const d=goveeDevices[alias];
-    if(action==="on") results.push(await goveePublish(alias,{state:"ON"}));
-    else if(action==="off") results.push(await goveePublish(alias,{state:"OFF"}));
+  for(const {alias,device:d} of targets){
+    const current=Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null;
+    const nativeTemp=action==="temp"&&d.sku==="H618G"&&!!d.ip;
+    const currentNativeTemp=action==="temp"&&current?.sku==="H618G"&&!!current?.ip;
+    if(!current||current.id!==d.id||nativeTemp!==currentNativeTemp||(nativeTemp&&current.ip!==d.ip)){
+      throw new Error(`Govee device ${alias} changed or was removed; remaining commands were not sent. Earlier command delivery may be unconfirmed.`);
+    }
+    if(action==="on") results.push(await goveePublish(alias,{state:"ON"},d));
+    else if(action==="off") results.push(await goveePublish(alias,{state:"OFF"},d));
     else if(action==="brightness"){
       const level=Math.round(Number(p.level));
       if(!Number.isFinite(level)||level<1||level>100) throw new Error("Brightness must be 1-100");
-      results.push(await goveePublish(alias,{state:"ON",brightness:level}));
+      results.push(await goveePublish(alias,{state:"ON",brightness:level},d));
     } else if(action==="color"){
       const [r,g,b]=colorParts(p);
-      results.push(await goveePublish(alias,{state:"ON",color:{r,g,b}}));
+      results.push(await goveePublish(alias,{state:"ON",color:{r,g,b}},d));
     } else if(action==="temp"){
       const kelvin=Math.round(Number(p.kelvin));
       if(!Number.isFinite(kelvin)||kelvin<2000||kelvin>9000) throw new Error("Kelvin must be 2000-9000");
@@ -4298,19 +4646,31 @@ async function directGoveeCommand(target,action,p={}){
         results.push({device:alias,name:d.name,kelvin,...await goveeUdpTemperature(d,kelvin)});
       }else{
         const mired=Math.round(1000000/kelvin);
-        results.push(await goveePublish(alias,{state:"ON",color_temp:mired}));
+        results.push(await goveePublish(alias,{state:"ON",color_temp:mired},d));
       }
     } else if(action==="scene"){
       const scene=String(p.scene||"").trim();
       if(!scene) throw new Error("Scene is required");
-      results.push(await goveePublish(alias,{state:"ON",effect:scene}));
+      results.push(await goveePublish(alias,{state:"ON",effect:scene},d));
     } else throw new Error(`Unsupported Govee action ${action}`);
   }
   audit({kind:"govee.command",target,action,count:aliases.length});
   return {ok:true,target,action,count:aliases.length,results};
 }
 
-function validateGoveeCommand(target,action,p={}){const aliases=goveeTargets(target);if(action==="brightness"){const n=Number(p.level);if(!Number.isFinite(n)||n<1||n>100)throw new Error("Brightness must be 1-100")}else if(action==="color")colorParts(p);else if(action==="temp"){const n=Number(p.kelvin);if(!Number.isFinite(n)||n<2000||n>9000)throw new Error("Kelvin must be 2000-9000")}else if(action==="scene"){if(!String(p.scene||"").trim())throw new Error("Scene is required")}else if(!["on","off"].includes(action))throw new Error(`Unsupported Govee action ${action}`);return aliases}
+function validateGoveeCommand(target,action,p={}){
+  const aliases=goveeTargets(target);
+  for(const alias of aliases){
+    const d=Object.hasOwn(goveeDevices,alias)?goveeDevices[alias]:null;
+    if(!d||typeof d.id!=="string"||!d.id.trim())throw new Error(`Unknown Govee device ${alias}`);
+  }
+  if(action==="brightness"){const n=Number(p.level);if(!Number.isFinite(n)||n<1||n>100)throw new Error("Brightness must be 1-100")}
+  else if(action==="color")colorParts(p);
+  else if(action==="temp"){const n=Number(p.kelvin);if(!Number.isFinite(n)||n<2000||n>9000)throw new Error("Kelvin must be 2000-9000")}
+  else if(action==="scene"){if(!String(p.scene||"").trim())throw new Error("Scene is required")}
+  else if(!["on","off"].includes(action))throw new Error(`Unsupported Govee action ${action}`);
+  return aliases;
+}
 
 function goveeInventory(){
   const states={},presence={},meta={};
@@ -4330,7 +4690,7 @@ function goveeInventory(){
 }
 
 function goveeScenes(alias){
-  const d=goveeDevices[cleanId(alias)];
+  const d=Object.hasOwn(goveeDevices,cleanId(alias))?goveeDevices[cleanId(alias)]:null;
   if(!d) throw new Error("Unknown Govee device");
   const cfg=goveeLiveConfigs[d.id]||{};
   const live=Array.isArray(cfg.effect_list)?cfg.effect_list:[];
@@ -4385,13 +4745,12 @@ function plutoBuild(action){
   return {body,expected,readOnly,meta:p};
 }
 
-async function plutoPostRaw(body){
+async function plutoPostRaw(body,{signal}={}){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PLUTO_TIMEOUT_MS),started=Date.now();
   try{
-    const r=await fetch(PLUTO_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:controller.signal});
-    const text=await r.text();
-    let data;try{data=JSON.parse(text)}catch{throw new Error(`Pluto returned non-JSON: ${text.slice(0,300)}`)}
-    if(!r.ok)throw new Error(`Pluto HTTP ${r.status}`);
+    signal?.throwIfAborted();
+    const r=await fetch(PLUTO_URL,{method:"POST",redirect:"error",headers:{"Content-Type":"application/x-www-form-urlencoded","Connection":"close"},body:JSON.stringify(body),signal:signal?AbortSignal.any([signal,controller.signal]):controller.signal});
+    const data=await readPlutoResponse(r);
     audit({kind:"service.action",component:"pluto",operation:String(body?.comhead||"request"),durationMs:Date.now()-started,status:r.status,ok:true});
     return data;
   }catch(err){
@@ -4400,32 +4759,44 @@ async function plutoPostRaw(body){
   }finally{clearTimeout(timer)}
 }
 
-async function directPluto(action){
+async function directPluto(action,{signal}={}){
   const req=plutoBuild(action);
+  if(!PLUTO_URL)throw new Error("Pluto matrix is not configured");
+  const readController=req.readOnly&&!signal?new AbortController():null;
+  const readTimer=readController?setTimeout(()=>readController.abort(new Error(`Matrix read exceeded its ${PLUTO_STATUS_BUDGET_MS} ms budget`)),PLUTO_STATUS_BUDGET_MS):null;
+  if(!req.readOnly)plutoStatusReader.invalidate();
+  try{return await performPlutoRequest(action,req,{signal:signal||readController?.signal})}
+  finally{if(readTimer)clearTimeout(readTimer);if(!req.readOnly)plutoStatusReader.invalidate()}
+}
+async function performPlutoRequest(action,req,{signal}={}){
+  const observation=runtime.hardware.pluto;
   let last;
   const attempts=req.readOnly?Math.max(1,PLUTO_READ_RETRIES+1):1;
   const delays=[0,120,250,500,900];
   for(let n=0;n<attempts;n++){
-    if(n && delays[Math.min(n,delays.length-1)]) await new Promise(r=>setTimeout(r,delays[Math.min(n,delays.length-1)]));
     try{
-      const raw=await plutoPostRaw(req.body);last=raw;
+      signal?.throwIfAborted();
+      if(n && delays[Math.min(n,delays.length-1)]) await plutoAbortableDelay(delays[Math.min(n,delays.length-1)],undefined,{signal});
+      const raw=await plutoPostRaw(req.body,{signal});last=raw;
       if(raw?.comhead===req.expected){
-        runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
+        observation.lastError=null;observation.lastSuccessAt=new Date().toISOString();
         if(req.readOnly)return {type:action.action,data:raw,retries:n};
         if(action.action==="raw")return {type:"raw",data:raw};
         return {type:"ack",action:action.action,result:raw.result,ok:Number(raw.result)===1,raw};
       }
       if(!req.readOnly){
-        runtime.hardware.pluto.lastError=null;runtime.hardware.pluto.lastSuccessAt=new Date().toISOString();
+        observation.lastError=null;observation.lastSuccessAt=new Date().toISOString();
         return {type:"ack",action:action.action,ok:true,pendingVerify:true,message:`Write sent; Pluto returned stale ${raw?.comhead||"response"}. Verify on refresh.`,raw};
       }
     }catch(err){
-      runtime.hardware.pluto.lastError=err.name==="AbortError"?`Timeout after ${PLUTO_TIMEOUT_MS} ms`:err.message;
+      if(signal?.aborted){observation.lastError=signal.reason.message;throw signal.reason}
+      observation.lastError=err.name==="AbortError"?`Timeout after ${PLUTO_TIMEOUT_MS} ms`:err.message;
       if(!req.readOnly||n===attempts-1)throw err;
     }
   }
   throw new Error(`Pluto kept returning stale responses. Last: ${last?.comhead||"unknown"}`);
 }
+const plutoStatusReader=createPlutoStatusReader(directPluto);
 
 async function runLightingCommand(command){
   const p=command.payload||{},type=command.type;
@@ -4441,7 +4812,7 @@ async function runLightingCommand(command){
 async function runAvCommand(command){
   return directPluto(plutoActionForCommand(command));
 }
-function plutoActionForCommand(command){const p=command.payload||{};if(command.type==="av.route")return {action:"route",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),input:Number(p.input)};if(command.type==="av.cecOutput")return {action:"cecOutput",output:Number(p.output??devices[cleanId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)};if(command.type==="av.cecAllOutputs")return {action:"cecAllOutputs",index:Number(p.index)};if(command.type==="av.cecAllHdmi")return {action:"cecAllHdmi",index:Number(p.index)};if(command.type==="av.cecAllHdbt")return {action:"cecAllHdbt",index:Number(p.index)};throw new Error(`Unsupported AV command: ${command.type}`)}
+function plutoActionForCommand(command){const p=command.payload||{};if(command.type==="av.route")return {action:"route",output:Number(p.output??devices[configuredDisplayId(command.target)]?.avOutput),input:Number(p.input)};if(command.type==="av.cecOutput")return {action:"cecOutput",output:Number(p.output??devices[configuredDisplayId(command.target)]?.avOutput),connection:p.connection==="hdbt"?"hdbt":"hdmi",index:Number(p.index)};if(command.type==="av.cecAllOutputs")return {action:"cecAllOutputs",index:Number(p.index)};if(command.type==="av.cecAllHdmi")return {action:"cecAllHdmi",index:Number(p.index)};if(command.type==="av.cecAllHdbt")return {action:"cecAllHdbt",index:Number(p.index)};throw new Error(`Unsupported AV command: ${command.type}`)}
 
 // -----------------------------------------------------------------------------
 // WebSocket transport
@@ -4517,10 +4888,28 @@ function markDisplaySeen(ws, extra = {}) {
 // Core command router
 // -----------------------------------------------------------------------------
 
-async function executeCommand(input, source = "api") {
+async function executeCommand(input, source = "api", {expectedDisplayContent=null,expectedMusicAssistantGeneration=null} = {}) {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
+  if(expectedMusicAssistantGeneration!==null&&(source!=="music-assistant-bridge"||!["music.assistant.attach","music.assistant.detach"].includes(command.type)))throw Error("Conditional music connection ownership is only supported for TV audio bridge changes");
+  const ownsMusicConnection=()=>expectedMusicAssistantGeneration===null||expectedMusicAssistantGeneration===maApiGeneration;
+  if(expectedDisplayContent&&(source!=="morning-announcements"||!(command.type==="display.clear"||(command.type==="display.web.audio"&&command.payload.contentKind==="morning-announcements"))))throw Error("Conditional display ownership is only supported for announcement release or audio");
+  const ownsConditionalContent=id=>(command.type==="display.clear"?[command.id]:expectedDisplayContent?.get(id))?.includes(persistentState.displays[id]?.audioContentId||"");
+  // Manual whole-screen content replaces the selected receivers' prior scene.
+  // Keep title/subtitle/timer edits and persistent media controls composable.
+  const replacesContent=["http","media-library"].includes(source)&&
+    (URL_BEARING_DISPLAY_COMMANDS.has(command.type)||(command.type==="display.text"&&command.payload.scene));
+  const protectsAnnouncements=source==="automation"||source==="presentation"||command.type==="display.audio.control"||replacesContent||
+    (["http","media-library"].includes(source)&&command.type==="display.clear");
+  if(replacesContent){
+    const targets=resolveDisplayTargets(command.target);
+    if(!targets.length)throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
+    if(URL_BEARING_DISPLAY_COMMANDS.has(command.type)&&!command.payload.url)throw new Error("Media URL is required");
+    const priorityError=announcementPriorityError(targets);
+    if(priorityError)throw priorityError;
+    command.target=targets;
+  }
   const manualPriority=await engageManualMediaPriority(command,source);
   const result = {
     ok: true,
@@ -4547,18 +4936,38 @@ async function executeCommand(input, source = "api") {
     command.type === "legacy.raw";
 
   if (isDisplayCommand) {
-    const targets = resolveDisplayTargets(command.target);
+    if(!ownsMusicConnection())return {...result,skipped:true,reason:"music-connection-changed"};
+    let targets = resolveDisplayTargets(command.target);
     if (!targets.length) {
       throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
     }
     // This final router-level check closes the race where an automation passed
     // its initial check, awaited a delay/network operation, and then attempted
     // to overwrite a display after an announcement had acquired priority.
-    if(source==="automation"||source==="presentation"){
+    if(protectsAnnouncements){
+      const priorityError=announcementPriorityError(targets);
+      if(priorityError)throw priorityError;
+    }
+    if(expectedDisplayContent){
+      targets=targets.filter(id=>expectedDisplayContent.get(id)?.includes(persistentState.displays[id]?.audioContentId||""));
+      if(!targets.length)return {...result,skipped:true,reason:"display-content-changed"};
+      command.target=targets;
+    }
+
+    if(replacesContent){
+      // Use the existing command for open/legacy receivers and persisted replay.
+      // Acquire audio priority first so clearing cannot briefly resume music.
+      const cleared=await executeCommand({type:"display.clear",target:targets,payload:{}},source);
+      result.warnings.push(...cleared.warnings);
       const priorityError=announcementPriorityError(targets);
       if(priorityError)throw priorityError;
     }
 
+    if(command.type==="display.audio.control")for(const id of targets){
+      const audio=displayAudio.describe(persistentState.displays[id]);
+      if(!audio.available)throw Error("This display has no active video, website or Sports audio");
+      if(command.payload.contentKey&&command.payload.contentKey!==audio.contentKey)throw Error("Displayed content changed. Refresh live audio controls.");
+    }
     updateStateFromCommand(command, targets);
 
     const physicalDeliveries=broadcastDisplays(targets, {type:"command",command});
@@ -4571,6 +4980,8 @@ async function executeCommand(input, source = "api") {
 
     if (MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
       for (const id of targets) {
+        if(!ownsMusicConnection())break;
+        if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
         const topic = `classroom/v2/display/${id}/command`;
         await mqttPublish(topic, command);
         result.deliveries.mqttJson.push(topic);
@@ -4580,16 +4991,19 @@ async function executeCommand(input, source = "api") {
     }
 
     const legacy = toLegacyCommand(command);
-    if (MQTT_LEGACY_BRIDGE && legacy) {
+    if (MQTT_LEGACY_BRIDGE && legacy && ownsMusicConnection()) {
       if (runtime.mqtt.connected) {
         const rawTarget = cleanId(command.target);
 
-        if (rawTarget === "all") {
+        if (rawTarget === "all" && !expectedDisplayContent) {
           await mqttPublish("classroom/all", legacy);
           result.deliveries.mqttLegacy.push("classroom/all");
         } else {
           for (const id of targets) {
+            if(!ownsMusicConnection())break;
+            if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
             const topic = devices[id]?.legacyTopic || `classroom/${id}`;
+            if(expectedDisplayContent&&topic==="classroom/all")throw Error("Announcement command cannot safely target a shared legacy broadcast topic");
             await mqttPublish(topic, legacy);
             result.deliveries.mqttLegacy.push(topic);
           }
@@ -4612,7 +5026,10 @@ async function executeCommand(input, source = "api") {
     throw new Error(`Unsupported command type: ${command.type}`);
   }
 
-  backgroundMusicObserveDisplayCommand(command, source);
+  if(expectedDisplayContent){
+    const owned=resolveDisplayTargets(command.target).filter(ownsConditionalContent);
+    if(owned.length)backgroundMusicObserveDisplayCommand({...command,target:owned},source);
+  }else if(ownsMusicConnection())backgroundMusicObserveDisplayCommand(command, source);
 
   audit({
     kind: "command",
@@ -4642,15 +5059,28 @@ async function executeCommand(input, source = "api") {
 // HTTP API
 // -----------------------------------------------------------------------------
 
+function fullExportHttpMutation(req){
+  // Veyon reads may initialize identity/key stores, persist discovered hostnames
+  // or remember authenticated keys. Count the returned handler through its
+  // final write and pause new reads; never project an unpersisted stable ID.
+  // Express GET routes also accept HEAD, case variants and a trailing slash.
+  const veyonRead=['GET','HEAD'].includes(req.method)&&(
+    /^\/api\/v1\/veyon\//i.test(req.path)||
+    /^\/api\/v1\/admin\/(?:config|veyon-keys)\/?$/i.test(req.path)||
+    /^\/api\/v1\/internal\/maintenance\/veyon\/computers\/?$/i.test(req.path)
+  );
+  if(veyonRead)return true;
+  const freezeControl=req.path==="/api/v1/internal/maintenance/export-freeze"||req.path==="/api/v1/internal/maintenance/export-thaw";
+  const exportProxy=req.path==="/api/v1/maintenance/backup/create";
+  return !['GET','HEAD','OPTIONS'].includes(req.method)&&!freezeControl&&!exportProxy;
+}
 const app = express();
-let shuttingDown=false;
+const httpHandlers=trackApplicationHandlers(app,{isStopping:()=>shutdownRequested||fullExportFreeze.requested,isMutation:fullExportHttpMutation});
+installApplicationBridges(app);
 app.disable("x-powered-by");
 app.set("trust proxy", TRUST_PROXY_HOPS);
 app.use((req,res,next)=>{
-  const mutating=!['GET','HEAD','OPTIONS'].includes(req.method);
-  const freezeControl=req.path==="/api/v1/internal/maintenance/export-freeze"||req.path==="/api/v1/internal/maintenance/export-thaw";
-  const exportProxy=req.path==="/api/v1/maintenance/backup/create";
-  if(!mutating||freezeControl||exportProxy)return next();
+  if(!fullExportHttpMutation(req))return next();
   if(fullExportFreeze.requested)return res.status(423).json({ok:false,error:"A Full Recovery Export is creating a consistent appliance snapshot; changes are temporarily locked"});
   fullExportFreeze.activeHttpMutations++;
   let released=false;const release=()=>{if(released)return;released=true;fullExportFreeze.activeHttpMutations=Math.max(0,fullExportFreeze.activeHttpMutations-1)};
@@ -4796,6 +5226,7 @@ app.get("/api/v1/internal/maintenance/status",requireMaintenanceAgent,(_req,res)
 function clearFullExportFreeze({forced=false}={}){
   if(fullExportFreeze.leaseTimer)clearTimeout(fullExportFreeze.leaseTimer);
   fullExportFreeze.requested=false;fullExportFreeze.active=false;fullExportFreeze.token=null;fullExportFreeze.startedAt=null;fullExportFreeze.leaseTimer=null;
+  flushLabDisconnects();
   audit({kind:forced?"recovery.full-export.freeze-expired":"recovery.full-export.thaw",forced});
 }
 app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,async(req,res)=>{
@@ -4804,8 +5235,9 @@ app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,as
   const token=crypto.randomBytes(32).toString("base64url"),started=Date.now();
   fullExportFreeze.requested=true;fullExportFreeze.startedAt=new Date(started).toISOString();
   try{
-    const drained=()=>fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0&&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy;
-    while(!drained()&&Date.now()-started<30000)await new Promise(resolve=>setTimeout(resolve,25));
+    const drained=()=>httpHandlers.pendingMutations===0&&fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0&&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy;
+    while(!shutdownRequested&&!drained()&&Date.now()-started<30000)await new Promise(resolve=>setTimeout(resolve,25));
+    if(shutdownRequested)throw new Error("Application shutdown interrupted Full Recovery Export freeze acquisition");
     if(!drained())throw new Error("Timed out waiting for active application mutations to finish");
     dbStore.db.exec("PRAGMA wal_checkpoint(PASSIVE)");
     fullExportFreeze.active=true;fullExportFreeze.token=token;
@@ -4814,6 +5246,7 @@ app.post("/api/v1/internal/maintenance/export-freeze",requireMaintenanceAgent,as
     return res.json({ok:true,freezeToken:token,startedAt:fullExportFreeze.startedAt,leaseSeconds:1800});
   }catch(error){
     fullExportFreeze.requested=false;fullExportFreeze.active=false;fullExportFreeze.token=null;fullExportFreeze.startedAt=null;
+    flushLabDisconnects();
     audit({kind:"recovery.full-export.freeze-failed",error:error.message});
     return res.status(503).json({ok:false,error:error.message});
   }
@@ -4946,7 +5379,8 @@ app.get("/api/v1/recovery-status/:recoveryId",async(req,res)=>{
     return res.json(status);
   }catch{return res.status(503).json({ok:false,error:"Recovery status is temporarily unavailable"})}
 });
-function recordUpdateJob(job){if(!job?.phase||job.phase==="idle")return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",targetCommit:job.targetCommit||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",activeCommit:job.activeCommit||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
+// Status remains readable during export; the next unfrozen poll records history.
+function recordUpdateJob(job){if(fullExportFreeze.requested||!job?.phase||job.phase==="idle")return;const history=dbStore.getPreference("updates.history",[])||[],key=[job.updatedAt,job.phase,job.targetCommit].join(":");if(history.some(x=>x.key===key))return;history.unshift({key,at:job.updatedAt||new Date().toISOString(),phase:job.phase,ok:job.ok??null,message:job.message||"",action:job.action||"",targetRef:job.targetRef||"",targetCommit:job.targetCommit||"",previousVersion:job.previousVersion||"",activeVersion:job.activeVersion||"",activeCommit:job.activeCommit||"",backupName:job.backupName||"",rollback:job.rollback??false});dbStore.setPreference("updates.history",history.slice(0,100))}
 const appUpdateReadLimit=rateLimit({
   skip:req=>!administratorAccessAllowed(req),
   windowMs:60_000,limit:120,keyGenerator:()=>"app-update-read",
@@ -4960,7 +5394,7 @@ const appUpdateMutationLimit=rateLimit({
   message:{ok:false,error:"Application update operation limit reached; retry later"}
 });
 app.get("/api/v1/admin/app-updates/settings",appUpdateReadLimit,requireAdmin,async(_req,res)=>{try{const source=await maintenanceAgentApi("GET","/app-updates/source",null,30000).catch(()=>({}));res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token"),currentVersion:APPLICATION_VERSION,currentCommit:source.commit||null,currentBranch:source.branch||null,history:dbStore.getPreference("updates.history",[])||[]})}catch(e){res.status(502).json({ok:false,error:e.message})}});
-app.put("/api/v1/admin/app-updates/settings",appUpdateMutationLimit,requireAdmin,(req,res)=>{try{const current=updatePolicy(),repository=String(req.body?.repository||current.repository).trim();if(!validUpdateRepository(repository))throw Error(`Updates are restricted to the trusted repository ${TRUSTED_UPDATE_REPOSITORY}`);const next={...current,repository:TRUSTED_UPDATE_REPOSITORY,source:"main",branch:TRUSTED_UPDATE_BRANCH,automatic:req.body?.automatic===true,checkIntervalHours:Math.max(1,Math.min(168,Number(req.body?.checkIntervalHours)||24)),maintenanceStart:String(req.body?.maintenanceStart||current.maintenanceStart),maintenanceEnd:String(req.body?.maintenanceEnd||current.maintenanceEnd)};if(!validTime(next.maintenanceStart)||!validTime(next.maintenanceEnd))throw Error("Maintenance window times must use valid HH:MM values");dbStore.setPreference("updates.policy",next);if(req.body?.clearToken===true)dbStore.deleteSecret("github.update.token");else if(req.body?.token)dbStore.putSecret("github.update.token",String(req.body.token),{type:"github-main-read-token",repository:TRUSTED_UPDATE_REPOSITORY});audit({kind:"admin.updates.settings",repository:TRUSTED_UPDATE_REPOSITORY,source:"main",automatic:next.automatic,tokenCleared:req.body?.clearToken===true});res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token")})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+app.put("/api/v1/admin/app-updates/settings",appUpdateMutationLimit,requireAdmin,(req,res)=>{try{const current=updatePolicy(),repository=String(req.body?.repository||current.repository).trim();if(!validUpdateRepository(repository))throw Error(`Updates are restricted to the trusted repository ${TRUSTED_UPDATE_REPOSITORY}`);const next={...current,repository:TRUSTED_UPDATE_REPOSITORY,source:"main",branch:TRUSTED_UPDATE_BRANCH,automatic:req.body?.automatic===true,checkIntervalHours:Math.max(1,Math.min(168,Number(req.body?.checkIntervalHours)||24)),maintenanceStart:String(req.body?.maintenanceStart||current.maintenanceStart),maintenanceEnd:String(req.body?.maintenanceEnd||current.maintenanceEnd)};if(!validTime(next.maintenanceStart)||!validTime(next.maintenanceEnd))throw Error("Maintenance window times must use valid HH:MM values");dbStore.tx(()=>{dbStore.setPreference("updates.policy",next);if(req.body?.clearToken===true)dbStore.deleteSecret("github.update.token");else if(req.body?.token)dbStore.putSecret("github.update.token",String(req.body.token),{type:"github-main-read-token",repository:TRUSTED_UPDATE_REPOSITORY});});audit({kind:"admin.updates.settings",repository:TRUSTED_UPDATE_REPOSITORY,source:"main",automatic:next.automatic,tokenCleared:req.body?.clearToken===true});res.json({ok:true,settings:updatePolicy(),tokenConfigured:dbStore.hasSecret("github.update.token")})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 app.post("/api/v1/admin/app-updates/check",appUpdateReadLimit,requireAdmin,async(_req,res)=>{try{res.json(await githubMainCheck())}catch(e){res.status(502).json({ok:false,error:e.message})}});
 app.get("/api/v1/admin/app-updates/job",appUpdateReadLimit,requireAdmin,async(_req,res)=>{try{const job=await maintenanceAgentApi("GET","/app-updates/job",null,30000);recordUpdateJob(job);res.json({...job,history:dbStore.getPreference("updates.history",[])||[]})}catch(e){res.status(502).json({ok:false,error:e.message})}});
 app.post("/api/v1/admin/app-updates/install",appUpdateMutationLimit,requireAdmin,async(req,res)=>{try{const check=await githubMainCheck();const selected=String(req.body?.commit||"").toLowerCase();if(!check.available||check.available.commit!==selected)return res.status(409).json({ok:false,error:"Selected main commit is no longer the current approved update"});const result=await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:selected,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"admin.updates.start",source:"main",commit:selected});res.status(202).json(result)}catch(e){res.status(502).json({ok:false,error:e.message})}});
@@ -4968,11 +5402,11 @@ app.post("/api/v1/admin/app-updates/revert",appUpdateMutationLimit,requireAdmin,
 
 function withinUpdateWindow(policy,date=new Date()){const minutes=s=>{const [h,m]=s.split(":").map(Number);return h*60+m},now=date.getHours()*60+date.getMinutes(),start=minutes(policy.maintenanceStart),end=minutes(policy.maintenanceEnd);return start===end||start<end?(now>=start&&now<end):(now>=start||now<end)}
 let automaticUpdateBusy=false;
-async function automaticUpdateTick(){if(fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubMainCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:check.available.commit,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"updates.automatic.start",source:"main",commit:check.available.commit})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
-const automaticUpdateTimer=setInterval(()=>automaticUpdateTick(),15*60*1000);automaticUpdateTimer.unref();setTimeout(()=>automaticUpdateTick(),60*1000).unref();
+async function automaticUpdateTick(){if(shutdownRequested||fullExportFreeze.requested||automaticUpdateBusy)return;automaticUpdateBusy=true;try{const policy=updatePolicy();if(!policy.automatic||!withinUpdateWindow(policy))return;const last=policy.lastCheckedAt?Date.parse(policy.lastCheckedAt):0;if(Date.now()-last<policy.checkIntervalHours*3600000)return;try{const job=await maintenanceAgentApi("GET","/app-updates/job");if(job.running)return;const check=await githubMainCheck();if(check.available){await maintenanceAgentApi("POST","/app-updates/start",{action:"published",targetCommit:check.available.commit,githubToken:String(dbStore.getSecret("github.update.token")||""),confirm:"INSTALL_MAIN"},30000);audit({kind:"updates.automatic.start",source:"main",commit:check.available.commit})}}catch(e){audit({kind:"updates.automatic.error",error:e.message})}}finally{automaticUpdateBusy=false}}
+const automaticUpdateTimer=setInterval(()=>automaticUpdateTick(),15*60*1000);automaticUpdateTimer.unref();const automaticUpdateStartupTimer=setTimeout(()=>automaticUpdateTick(),60*1000);automaticUpdateStartupTimer.unref();
 let updateJobSyncBusy=false;
-async function synchronizeUpdateJob(){if(fullExportFreeze.requested||updateJobSyncBusy)return;updateJobSyncBusy=true;try{recordUpdateJob(await maintenanceAgentApi("GET","/app-updates/job"))}catch{}finally{updateJobSyncBusy=false}}
-const updateJobSyncTimer=setInterval(()=>synchronizeUpdateJob(),60*1000);updateJobSyncTimer.unref();setTimeout(()=>synchronizeUpdateJob(),15*1000).unref();
+async function synchronizeUpdateJob(){if(shutdownRequested||fullExportFreeze.requested||updateJobSyncBusy)return;updateJobSyncBusy=true;try{recordUpdateJob(await maintenanceAgentApi("GET","/app-updates/job"))}catch{}finally{updateJobSyncBusy=false}}
+const updateJobSyncTimer=setInterval(()=>synchronizeUpdateJob(),60*1000);updateJobSyncTimer.unref();const updateJobSyncStartupTimer=setTimeout(()=>synchronizeUpdateJob(),15*1000);updateJobSyncStartupTimer.unref();
 app.use("/api/v1/maintenance", requireAdmin, requireFullRecoveryTransport, (req,res)=>{
   if(!MAINTENANCE_PROXY_ENABLED)return res.status(503).json({ok:false,error:"Privileged maintenance proxy is disabled during stabilization"});
   if(!MAINTENANCE_TOKEN)return res.status(503).json({ok:false,error:"Maintenance agent is not configured"});
@@ -5027,9 +5461,29 @@ function persistentAssetAccessKey(){
   }catch(error){diagnosticError(error,{component:"asset-access",operation:"key-load"});return crypto.randomBytes(32)}
 }
 const assetAccessKey=persistentAssetAccessKey();
-function issueAssetAccessToken(deviceId,credentialId="",ttlSeconds=900){const expires=Math.floor(Date.now()/1000)+ttlSeconds,credential=String(credentialId||"legacy").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,80)||"legacy",payload=`${cleanId(deviceId)}.${expires}.${credential}`,signature=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");return `${payload}.${signature}`}
-function validAssetAccessToken(token){const parts=String(token||"").split(".");if(parts.length!==4||!/^\d+$/.test(parts[1])||Number(parts[1])<Math.floor(Date.now()/1000))return false;const payload=`${parts[0]}.${parts[1]}.${parts[2]}`,expected=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");if(!secureTokenEqual(parts[3],expected)||!devices[cleanId(parts[0])]?.enabled)return false;const policy=dbStore.displayCredentialPolicy();if(parts[2]==="direct")return !policy.authenticationRequired;if(parts[2]==="legacy")return policy.legacySharedTokenAllowed;return dbStore.listDisplayCredentials().credentials.some(item=>item.id===parts[2]&&item.displayId===parts[0]&&!item.revokedAt)}
-function requireAssetAccess(req,res,next){if(requestUser(req)||validAssetAccessToken(req.query.access_token))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
+function issueAssetAccessToken(deviceId,credentialId="",ttlSeconds=900){
+  const id=configuredDisplayId(deviceId);
+  if(!id)throw Error("Unknown display");
+  const expires=Math.floor(Date.now()/1000)+ttlSeconds;
+  const credential=String(credentialId||"legacy").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,80)||"legacy";
+  const payload=`${id}.${expires}.${credential}`;
+  const signature=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+function validAssetAccessToken(token){
+  // Read the fixed suffix from the right; legacy receiver IDs may contain dots.
+  const matched=String(token||"").match(/^([a-zA-Z0-9._-]{1,80})\.(\d{1,12})\.([a-zA-Z0-9_-]{1,80})\.([a-zA-Z0-9_-]{43})$/),parts=matched?.slice(1);
+  if(!parts||Number(parts[1])<Math.floor(Date.now()/1000))return false;
+  const payload=`${parts[0]}.${parts[1]}.${parts[2]}`;
+  const expected=crypto.createHmac("sha256",assetAccessKey).update(payload).digest("base64url");
+  if(!secureTokenEqual(parts[3],expected)||!Object.hasOwn(devices,parts[0])||devices[parts[0]].enabled===false)return false;
+  const policy=dbStore.displayCredentialPolicy();
+  if(parts[2]==="direct")return !policy.authenticationRequired;
+  if(parts[2]==="legacy")return policy.legacySharedTokenAllowed;
+  return dbStore.listDisplayCredentials().credentials.some(item=>item.id===parts[2]&&item.displayId===parts[0]&&!item.revokedAt);
+}
+function assetAccessAllowed(req){return !!requestUser(req)||validAssetAccessToken(req.query.access_token)}
+function requireAssetAccess(req,res,next){if(assetAccessAllowed(req))return next();return res.status(401).json({ok:false,error:"Authenticated or enrolled-display asset access required"})}
 app.use("/media",requireAssetAccess,(req,res,next)=>path.extname(req.path).toLowerCase()===".svg"?res.status(415).json({ok:false,error:"Active SVG media is not served from the application origin"}):next(),express.static(MEDIA_DIR,{fallthrough:false}));
 app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fallthrough:false}));
 // Keep PDF.js and its worker on the same upstream compatibility build for kiosk browsers.
@@ -5067,7 +5521,7 @@ app.get("/display/:id", (req, res) => {
   res.setHeader("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma","no-cache");
   res.setHeader("Expires","0");
-  const id = cleanId(req.params.id);
+  const id = configuredDisplayId(req.params.id);
   if (!devices[id]) {
     return res.status(404).type("text/plain").send("Unknown display");
   }
@@ -5096,7 +5550,7 @@ app.get("/health", (_req, res) => {
     try{normalizeTimerOverlay(item.timerOverlay,item.timerOverlay||null);return false}catch{return true}
   }).map(item=>item.id);
   const scheduler={ok:invalidClasses.length===0&&invalidAutomations.length===0,timezone:SCHEDULER_TIMEZONE,invalidClasses,invalidAutomations};
-  const ready=!shuttingDown&&database.ok&&scheduler.ok;
+  const ready=!shutdownRequested&&database.ok&&scheduler.ok;
   res.status(ready?200:503).json({
     ok: ready,
     ready,
@@ -5119,7 +5573,13 @@ app.get("/api/v1/lab-agent/manifest",(_req,res)=>{
   catch(error){res.status(500).json({ok:false,error:"Lab agent package is unavailable"})}
 });
 
-function publicDeviceConfig(config={}){return {name:String(config.name||""),enabled:config.enabled!==false,avOutput:Number.isInteger(Number(config.avOutput))?Number(config.avOutput):null,lightingAlias:config.lightingAlias?cleanId(config.lightingAlias):null,tags:Array.isArray(config.tags)?config.tags.map(cleanId).filter(Boolean).slice(0,100):[]}}
+function normalizeDisplayAudioScope(value){
+  if(value===undefined)return "room";
+  if(!["room","independent"].includes(value))throw Error("Display audio must be room or independent");
+  return value;
+}
+function displaySharesRoomAudio(id){return devices[id]?.audioScope!=="independent"}
+function publicDeviceConfig(config={}){return {name:String(config.name||""),enabled:config.enabled!==false,avOutput:Number.isInteger(Number(config.avOutput))?Number(config.avOutput):null,lightingAlias:config.lightingAlias?cleanId(config.lightingAlias):null,tags:Array.isArray(config.tags)?config.tags.map(cleanId).filter(Boolean).slice(0,100):[],audioScope:config.audioScope==="independent"?"independent":"room"}}
 function publicDeviceConfigs(){return Object.fromEntries(Object.entries(devices).map(([id,config])=>[id,publicDeviceConfig(config)]))}
 app.get("/api/v1/devices",requireClassroomRead, (_req, res) => {
   res.json({
@@ -5131,7 +5591,7 @@ app.get("/api/v1/devices",requireClassroomRead, (_req, res) => {
 });
 
 app.get("/api/v1/devices/:id",requireClassroomRead, (req, res) => {
-  const id = cleanId(req.params.id);
+  const id = configuredDisplayId(req.params.id);
   if (!devices[id]) {
     return res.status(404).json({ ok: false, error: "Unknown device" });
   }
@@ -5170,11 +5630,26 @@ app.post("/api/v1/commands", requireControl, async (req, res) => {
 
 // Optional native ESPHome connections share the unprivileged application identity.
 // Registry/key writes and asynchronous enrollment/commands participate in export drain.
-const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shuttingDown});
+require("./daily-signin").registerDailySignInRoutes(app,{storage:dbStore,requireAdmin,isAdmin:administratorAccessAllowed,
+  canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,audit,trustProxyHops:TRUST_PROXY_HOPS});
+const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested});
 registerESPHomeRoutes(app,{manager:esphomeManager,requireRead:requireClassroomRead,
   requireControl:requireCapability("integrations.control"),requireAdmin,
-  isAdmin:req=>!dbStore.authEnabled()||(hasRole(requestUser(req),"admin")&&hasCapability(requestUser(req),"*")),
+  canRead:req=>capabilityAccessAllowed(req,"classroom.read"),canControl:req=>capabilityAccessAllowed(req,"integrations.control"),isAdmin:administratorAccessAllowed,
   owner:req=>requestUser(req)?.id||"control-token",track:trackFullExportMutation,audit});
+
+const ubuntuDisplays=new UbuntuDisplays({storage:dbStore,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,
+  allowDisruption:device=>!announcementLockedDisplayTargets(device.config.screens.map(s=>s.receiverId)).length,
+  receivers:()=>publicDeviceConfigs(),
+  receiverOnline:id=>[...wsClients].some(ws=>ws.role==="display"&&ws.deviceId===id&&ws.readyState===WebSocket.OPEN),
+  ensureReceivers:screens=>{
+    const next={...devices};
+    for(const screen of screens)if(!next[screen.receiverId])next[screen.receiverId]={name:screen.name,enabled:true,audioScope:"independent"};
+    dbStore.writeNormalized("devices",{room:deviceConfig.room||ROOM_NAME,devices:next,displayGroups,lightingGroups:[...lightingGroups]});
+    devices=next;deviceConfig.devices=devices;
+  },track:trackFullExportMutation,audit});
+registerUbuntuDisplayRoutes(app,{manager:ubuntuDisplays,requireAdmin,isAdmin:administratorAccessAllowed,
+  track:trackFullExportMutation,audit,trustProxyHops:Number(process.env.TRUST_PROXY_HOPS||0)});
 
 app.get("/api/v1/integrations/check",requireCapability("integrations.control"), async (_req,res)=>{
   const out={ok:true,mqtt:{configured:runtime.mqtt.configured,connected:runtime.mqtt.connected,lastError:runtime.mqtt.lastError},
@@ -5215,15 +5690,15 @@ app.post("/api/v1/integrations/pluto/status",requireCapability("integrations.con
 // v0.8 direct Govee APIs
 app.get("/api/v1/govee",requireClassroomRead,(_req,res)=>res.json(goveeInventory()));
 app.put("/api/v1/govee/discovery",requireControl,(req,res)=>{
-  if(req.body?.autoAdd!==undefined)goveeDiscovery.autoAdd=!!req.body.autoAdd;
-  persistGoveeDiscovery();
+  const next={...goveeDiscovery};
+  if(req.body?.autoAdd!==undefined)next.autoAdd=!!req.body.autoAdd;
+  persistGoveeDiscovery(next);
   res.json({ok:true,discovery:goveeInventory().discovery});
 });
 app.post("/api/v1/govee/discovery/reconcile",requireControl,(req,res)=>{
-  const migrated=migrateGoveeDiscoveryRegistry();
   const force=req.body?.force!==false;
-  const result=reconcileGoveeDiscovery(Date.now(),{force});
-  res.json({ok:true,migrated,...result,inventory:goveeInventory()});
+  const {removedSynthetic:migrated,...result}=reconcileGoveeDiscovery(Date.now(),{force});
+  res.json({ok:true,migrated,...result,removed:result.removed-migrated,inventory:goveeInventory()});
 });
 app.put("/api/v1/govee/device/:target",requireControl,(req,res)=>{
   try{res.json({ok:true,...updateGoveeDevice(req.params.target,req.body||{})})}
@@ -5231,7 +5706,7 @@ app.put("/api/v1/govee/device/:target",requireControl,(req,res)=>{
 });
 app.get("/api/v1/govee/:target/status",requireClassroomRead,(req,res)=>{
   const alias=cleanId(req.params.target),d=goveeDevices[alias];
-  if(!d)return res.status(404).json({ok:false,error:"Unknown Govee device"});
+  if(!Object.hasOwn(goveeDevices,alias)||!d)return res.status(404).json({ok:false,error:"Unknown Govee device"});
   res.json({ok:true,device:alias,meta:d,state:goveeStates[d.id]||null});
 });
 app.get("/api/v1/govee/:target/scenes",requireClassroomRead,(req,res)=>{try{res.json(goveeScenes(req.params.target))}catch(e){res.status(400).json({ok:false,error:e.message})}});
@@ -5242,10 +5717,7 @@ app.post("/api/v1/govee/:target/:action",requireControl,async(req,res)=>{
 // v0.8 direct Pluto APIs
 app.post("/api/v1/pluto",requireControl,async(req,res)=>{try{res.json(await directPluto(req.body||{}))}catch(e){res.status(502).json({ok:false,error:e.message})}});
 app.get("/api/v1/pluto/status",requireClassroomRead,async(_req,res)=>{
-  const out={ok:true,labels:avLabels};
-  for(const a of ["videoStatus","outputStatus","inputStatus","cecStatus","systemStatus","networkStatus"]){
-    try{out[a]=(await directPluto({action:a})).data}catch(e){out.ok=false;out[a]={error:e.message}}
-  }
+  const out={...await plutoStatusReader.status(),labels:avLabels};
   res.status(out.ok?200:207).json(out);
 });
 app.get("/api/v1/pluto/labels",requireClassroomRead,(_req,res)=>res.json({ok:true,labels:avLabels}));
@@ -5274,15 +5746,18 @@ app.get("/api/v1/automations/morning-announcements",requireClassroomRead,(_req,r
 app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),async(req,res)=>{
   try{
     const applyLiveVolume=Object.hasOwn(req.body||{},"volumePercent");
-    morningAnnouncements=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);persistMorningAnnouncements();restartMorningAnnouncementsWatcher();
+    const next=normalizeMorningAnnouncements(req.body||{},morningAnnouncements);
+    persistMorningAnnouncements(next);morningAnnouncements=next;restartMorningAnnouncementsWatcher();
     const liveVolume=applyLiveVolume?await serializeMorningAnnouncementsLifecycle(()=>applyMorningAnnouncementVolume()):null;
     res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime),...(liveVolume?{liveVolume}:{})});
   }
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
 app.post("/api/v1/automations/morning-announcements/check",requireControl,async(_req,res)=>{
+  const config=morningAnnouncements;
   try{
     const probe=await probeMorningAnnouncementsLive();
+    if(morningAnnouncements!==config)return res.status(409).json({ok:false,error:"Morning Announcement settings changed. Check again."});
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
     morningAnnouncementsRuntime.probe=probe.probe||null;
     morningAnnouncementsRuntime.probeStatus=probe.status||null;
@@ -5294,11 +5769,12 @@ app.post("/api/v1/automations/morning-announcements/check",requireControl,async(
       morningAnnouncementsRuntime.lastLiveAt=morningAnnouncementsRuntime.lastCheck;
     }else if(probe.live===false){
       morningAnnouncementsRuntime.live=false;
-      if(morningAnnouncementsRuntime.active)morningAnnouncementsRuntime.offlineCount++;
-      else morningAnnouncementsRuntime.offlineCount=0;
-    }
+      // Diagnostic requests must not accelerate the periodic release threshold.
+    }else morningAnnouncementsRuntime.offlineCount=0;
     res.json(publicProjection({ok:true,...probe,config:publicMorningAnnouncementsConfig(),runtime:morningAnnouncementsRuntime}));
   }catch(err){
+    if(morningAnnouncements!==config)return res.status(409).json({ok:false,error:"Morning Announcement settings changed. Check again."});
+    morningAnnouncementsRuntime.offlineCount=0;
     morningAnnouncementsRuntime.lastCheck=new Date().toISOString();
     morningAnnouncementsRuntime.lastError=err.message;
     res.status(500).json({ok:false,error:err.message,runtime:morningAnnouncementsRuntime});
@@ -5383,6 +5859,133 @@ const schedulerMutationLimit=rateLimit({
   message:{ok:false,error:"Scheduler configuration or command limit reached; retry later"}
 });
 
+const sportsRuntime=require("./sports-routes").registerSportsRoutes(app,{
+ store:dbStore,readGuard:requireControl,writeGuard:[requireCapability("schedule.manage"),requireCapability("automation.manage")],adminGuard:requireAdmin,
+ canRead:controlAccessAllowed,canWrite:req=>capabilityAccessAllowed(req,"schedule.manage")&&capabilityAccessAllowed(req,"automation.manage"),canReadAssets:assetAccessAllowed,
+ canManageSources:administratorAccessAllowed,assetGuard:requireAssetAccess,rateLimit,multer,
+ ingestMedia:require("./sports-media-cache").createSportsMediaCache({root:MEDIA_DIR,register:registerUploadedMedia}),
+ weather:()=>planningWeather.read(planningStudioConfig.weather),audit,canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,track:trackFullExportMutation
+});
+
+const weatherReadLimit=rateLimit({windowMs:60_000,limit:240,keyGenerator:()=>"weather-read",skip:req=>req.route?.path==="/api/v1/weather/display"?!assetAccessAllowed(req):!controlAccessAllowed(req),standardHeaders:"draft-8",legacyHeaders:false});
+const weatherWriteLimit=rateLimit({windowMs:60_000,limit:20,keyGenerator:()=>"weather-write",skip:req=>!capabilityAccessAllowed(req,"schedule.manage")||!capabilityAccessAllowed(req,"automation.manage"),standardHeaders:"draft-8",legacyHeaders:false});
+app.get("/api/v1/weather",weatherReadLimit,requireControl,async(_req,res)=>{
+  planningWeather.read(planningStudioConfig.weather);await planningWeather.settled();
+  const weather=planningWeather.read(planningStudioConfig.weather);
+  res.json({ok:true,config:planningStudioConfig.weather,weather,status:planningWeather.status(),stale:!!weather&&Date.now()-weather.updatedAt>3600000});
+});
+app.get("/api/v1/weather/display",weatherReadLimit,requireAssetAccess,(_req,res)=>{
+  const w=planningWeather.read(planningStudioConfig.weather);res.json({ok:true,weather:w?{text:w.text,widgets:w.widgets,updatedAt:w.updatedAt,source:w.source}:null});
+});
+app.get("/api/v1/weather/locations",weatherReadLimit,requireControl,async(req,res)=>{
+  try{const query=String(req.query.q||"").trim();if(query.length<2||query.length>80)throw Error("Enter 2–80 characters for a city or postal location");
+    const url=new URL("https://geocoding-api.open-meteo.com/v1/search");url.search=new URLSearchParams({name:query,count:"10",language:"en",format:"json"});
+    const data=await require("./planning-weather").boundedJson(await fetch(url,{signal:AbortSignal.timeout(4000),redirect:"error"}),65536);
+    res.json({ok:true,locations:(Array.isArray(data.results)?data.results:[]).slice(0,10).filter(r=>typeof r.latitude==="number"&&typeof r.longitude==="number"&&Math.abs(r.latitude)<=90&&Math.abs(r.longitude)<=180).map(r=>({label:[r.name,r.admin1,r.country].filter(Boolean).join(", ").slice(0,200),latitude:r.latitude,longitude:r.longitude}))});
+  }catch{res.status(400).json({ok:false,error:"Location search unavailable or invalid; enter coordinates instead"})}
+});
+app.put("/api/v1/weather/config",weatherWriteLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(req,res)=>{
+  try{const weather=require("./planning-weather").normalizeWeather(req.body||{}),next=planningStudio.normalize({...planningStudioConfig,weather,updatedAt:new Date().toISOString()});dbStore.setPreference(planningStudio.KEY,next);planningStudioConfig=next;planningWeather.read(weather);audit({kind:"weather.config.save",enabled:weather.enabled,unit:weather.unit,alertsEnabled:weather.alertsEnabled});res.json({ok:true,config:weather})}
+  catch{res.status(400).json({ok:false,error:"Choose valid weather coordinates and temperature units"})}
+});
+app.post("/api/v1/weather/scene",weatherReadLimit,requireControl,async(req,res)=>{
+  try{planningWeather.read(planningStudioConfig.weather);await planningWeather.settled();const weather=planningWeather.read(planningStudioConfig.weather);if(!weather)throw Error("Configure weather and wait for a valid forecast before creating a screen");res.json({ok:true,scene:require("./weather-scene").weatherScene(weather,req.body||{})})}
+  catch(error){res.status(400).json({ok:false,error:error.message})}
+});
+
+function planningClassesForProfile(profile){
+  const same=(a,b)=>JSON.stringify([...(a||[])].sort())===JSON.stringify([...(b||[])].sort());
+  return classScheduleStore.classes.map(cls=>{
+    if(cls.scheduleMode!=="schoolcycle")return cls;
+    let next=cls;
+    const oldDays=schoolScheduleProfile.periodCycleDays[cls.period],newDays=profile.periodCycleDays[cls.period];
+    if(oldDays&&newDays&&same(cls.cycleDays,oldDays)&&!same(oldDays,newDays))next={...next,cycleDays:[...newDays]};
+    const oldGroup=schoolScheduleProfile.dayGroups.find(group=>group.label===cls.dayType);
+    if(oldGroup){const group=profile.dayGroups.find(group=>(next.cycleDays||[]).length&&(next.cycleDays||[]).every(day=>group.cycleDays.includes(day)));if(group&&group.label!==cls.dayType)next={...next,dayType:group.label}}
+    return next;
+  });
+}
+function planningDraft(body={}){
+  const input=body.scheduleProfile||{};
+  const profile=normalizeSchoolScheduleProfile(input,schoolScheduleProfile);
+  if(profile.planning.enabled&&!validDateKey(profile.anchorDate))throw new Error("Set a cycle anchor before enabling Planning");
+  const hash=crypto.createHash("sha256").update(JSON.stringify({profile,revision:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore,events:classroomAutomations.events})).digest("hex");
+  return {profile,hash};
+}
+function planningDayPayload(profile,key){
+  return planningEngine.resolveDay(profile,schedulerCalendar,planningClassesForProfile(profile),classroomAutomations.events,key);
+}
+function validatePlanningClassReferences(profile){
+  const classes=new Set(classScheduleStore.classes.map(cls=>cls.id));
+  for(const table of profile.planning.timetables){
+    for(const block of table.blocks)if(block.classId&&!classes.has(block.classId))throw new Error(`${table.name}: class "${block.classId}" no longer exists. Choose a saved class or remove its reference.`);
+  }
+}
+app.get("/api/v1/planning",schedulerReadLimit,requireCapability("schedule.manage"),(_req,res)=>{
+  res.json({ok:true,scheduleProfile:schoolScheduleProfile,calendar:schedulerCalendar,classes:classScheduleStore.classes,preset:planningEngine.cyclePreset(),migration:planningMigration.publicMigrationReport(planningStartupMigration.report),today:localDateKey(schedulerClock.now())});
+});
+function planningMonthPayload(profile,month){
+  const cursor=dateFromKey(`${month}-01`),days=[];
+  for(let n=0;n<31&&localDateKey(cursor).startsWith(month);n++,cursor.setDate(cursor.getDate()+1)){
+    const day=planningDayPayload(profile,localDateKey(cursor));days.push({date:day.date,status:day.status,cycle:day.cycle.cycleDay,group:day.cycle.dayColor,timetable:day.timetable,note:day.note});
+  }
+  return days;
+}
+app.get("/api/v1/planning/month",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{
+    const month=String(req.query.month||"");if(!/^\d{4}-\d{2}$/.test(month)||!validDateKey(`${month}-01`))throw Error("Choose a valid month");
+    res.json({ok:true,days:planningMonthPayload(schoolScheduleProfile,month)});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+function studioReview(input){const config=planningStudio.normalize(input);return {config,hash:crypto.createHash("sha256").update(JSON.stringify({config,saved:planningStudioConfig,events:classroomAutomations.events,classes:classScheduleStore.classes})).digest("hex")}}
+app.get("/api/v1/planning/studio",schedulerReadLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(_req,res)=>res.json({ok:true,config:planningStudioConfig}));
+app.post("/api/v1/planning/studio/preview",schedulerReadLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(req,res)=>{
+  try{const {config,hash}=studioReview(req.body?.config),dateKey=String(req.body?.date||localDateKey(schedulerClock.now()));if(!validDateKey(dateKey))throw Error("Choose a valid date");
+    const date=dateFromKey(dateKey),cycle=schoolCycleForDate(date),time=String(req.body?.time||"12:00");if(!validTime(time))throw Error("Choose a valid time");
+    const matches=classroomAutomations.events.map(event=>{
+      const eligible=event.enabled!==false&&!isAutomationSuppressed(date).blocked&&resolveAutomationOccurrences(event,date).some(run=>run._sourceDateMatched||automationMatchesDate(run,date).match);
+      return {id:event.id,name:event.name,layers:eligible?planningStudio.matchingOverlays(config,event,{dateKey,weekday:date.getDay(),time,cycleDay:cycle.cycleDay}).map(o=>o.name):[]};
+    });
+    res.json({ok:true,previewHash:hash,matches});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.put("/api/v1/planning/studio",schedulerMutationLimit,requireCapability("schedule.manage"),requireCapability("automation.manage"),(req,res)=>{
+  try{const {config,hash}=studioReview(req.body?.config);if(req.body?.previewHash!==hash)return res.status(409).json({ok:false,error:"Shared layers changed. Preview again before saving."});
+    config.updatedAt=new Date().toISOString();dbStore.setPreference(planningStudio.KEY,config);planningStudioConfig=config;audit({kind:"planning.shared-layers.save",count:config.overlays.length});res.json({ok:true,config});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.get("/api/v1/planning/day",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{const key=String(req.query.date||localDateKey(schedulerClock.now()));if(!validDateKey(key))throw new Error("Choose a valid planning date");res.json({ok:true,day:planningDayPayload(schoolScheduleProfile,key)})}
+  catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.post("/api/v1/planning/preview",schedulerReadLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{
+    const key=String(req.body?.date||localDateKey(schedulerClock.now()));
+    if(!validDateKey(key))throw new Error("Choose a valid planning date");
+    const {profile,hash}=planningDraft(req.body);validatePlanningClassReferences(profile);
+    const day=planningDayPayload(profile,key),changes=[];
+    for(let offset=0;offset<14;offset++){
+      const date=dateFromKey(key);date.setDate(date.getDate()+offset);const target=localDateKey(date);
+      const before=planningDayPayload(schoolScheduleProfile,target),after=planningDayPayload(profile,target);
+      if(JSON.stringify(before)!==JSON.stringify(after))changes.push({date:target,before:{status:before.status,cycle:before.cycle.cycleDay,timetable:before.timetable?.name||"Existing class times"},after:{status:after.status,cycle:after.cycle.cycleDay,timetable:after.timetable?.name||"Existing class times"}});
+    }
+    res.json({ok:true,day,changes,...(req.body?.includeMonth?{monthDays:planningMonthPayload(profile,key.slice(0,7))}:{}),previewHash:hash,revision:schoolScheduleProfile.updatedAt,horizonDays:14});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+app.put("/api/v1/planning",schedulerMutationLimit,requireCapability("schedule.manage"),(req,res)=>{
+  try{
+    const {profile,hash}=planningDraft(req.body);
+    if(req.body?.expectedUpdatedAt!==schoolScheduleProfile.updatedAt||req.body?.previewHash!==hash)return res.status(409).json({ok:false,error:"Planning or its linked classes/automations changed. Review a fresh preview before saving."});
+    validatePlanningClassReferences(profile);
+    profile.updatedAt=new Date().toISOString();
+    const classes=planningClassesForProfile(profile),nextClasses={...classScheduleStore,classes};
+    dbStore.tx(()=>{dbStore.setPreference("school.schedule.profile",profile);persistJson(CLASS_SCHEDULES_FILE,nextClasses)});
+    schoolScheduleProfile=profile;classScheduleStore=nextClasses;
+    audit({kind:"planning.update",enabled:profile.planning.enabled,timetables:profile.planning.timetables.length,dateCount:Object.keys(profile.planning.dates).length});
+    res.json({ok:true,scheduleProfile:schoolScheduleProfile});
+  }catch(err){res.status(400).json({ok:false,error:err.message})}
+});
+
 app.get("/api/v1/school-cycle",schedulerReadLimit,requireClassroomRead,(req,res)=>{
   const date=req.query.date&&validDateKey(req.query.date)?new Date(`${req.query.date}T12:00:00`):new Date();
   res.json({ok:true,...schoolCycleForDate(date),calendarRule:calendarRuleForDate(date),automationSuppressed:isAutomationSuppressed(date).blocked,cycle:schoolCycleLetters(),dayGroups:schoolScheduleProfile.dayGroups,scheduleProfileId:schoolScheduleProfile.id});
@@ -5403,11 +6006,15 @@ function classScheduleConflicts(candidate,classes,{horizonDays=370,startDate=new
   for(let offset=0;offset<horizonDays&&conflicts.length<20;offset++){
     const day=new Date(start);day.setDate(day.getDate()+offset);
     if(!classScheduleMatchesDate(candidate,day))continue;
-    const aStart=classStartDate(candidate,day),aEnd=classEndDate(candidate,day);if(!aStart||!aEnd)continue;
-    for(const other of classes||[]){
-      if(!other||other.id===candidate.id||other.enabled===false||!classScheduleMatchesDate(other,day))continue;
-      const bStart=classStartDate(other,day),bEnd=classEndDate(other,day);if(!bStart||!bEnd)continue;
-      if(aStart<bEnd&&bStart<aEnd)conflicts.push({date:localDateKey(day),candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,start:new Date(Math.max(aStart,bStart)).toISOString(),end:new Date(Math.min(aEnd,bEnd)).toISOString()});
+    for(const a of effectiveClassSegments(candidate,day)){
+      const aStart=classStartDate(candidate,day,a),aEnd=classEndDate(candidate,day,a);
+      for(const other of classes||[]){
+        if(!other||other.id===candidate.id||other.enabled===false||!classScheduleMatchesDate(other,day))continue;
+        for(const b of effectiveClassSegments(other,day)){
+          const bStart=classStartDate(other,day,b),bEnd=classEndDate(other,day,b);
+          if(aStart<bEnd&&bStart<aEnd)conflicts.push({date:localDateKey(day),candidateId:candidate.id,candidateName:candidate.name,otherId:other.id,otherName:other.name,start:new Date(Math.max(aStart,bStart)).toISOString(),end:new Date(Math.min(aEnd,bEnd)).toISOString()});
+        }
+      }
     }
   }
   return conflicts;
@@ -5447,7 +6054,10 @@ app.delete("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapabilit
   const references=classroomAutomations.events.filter(event=>automationClassIds(event).includes(req.params.id)||String(event.timerOverlay?.classId||"")===req.params.id).map(event=>({type:"automation",id:event.id,name:event.name}));
   const continuations=classScheduleStore.classes.filter(item=>String(item.continuationOf||"")===req.params.id).map(item=>({type:"continuation",id:item.id,name:item.name}));
   references.push(...continuations);
-  if(references.length)return res.status(409).json({ok:false,error:"Class is referenced by automations, timers, or continuation classes",references});
+  for(const table of schoolScheduleProfile.planning?.timetables||[]){
+    if(table.blocks.some(block=>block.classId===req.params.id))references.push({type:"timetable",id:table.id,name:table.name});
+  }
+  if(references.length)return res.status(409).json({ok:false,error:"Class is referenced by automations, timers, continuation classes, or timetable blocks",references});
   try{const classes=[...classScheduleStore.classes],removed=classes.splice(i,1)[0];commitClassSchedules({...classScheduleStore,classes});res.json({ok:true,removed})}
   catch(err){res.status(400).json({ok:false,error:err.message})}
 });
@@ -5455,7 +6065,7 @@ app.delete("/api/v1/class-schedules/:id",schedulerMutationLimit,requireCapabilit
 function evaluateAutomationAt(now=schedulerClock.now()){
   const suppression=isAutomationSuppressed(now),dateKey=localDateKey(now),items=[];
   for(const stored of classroomAutomations.events){
-    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored];
+    const occurrences=resolveScheduledAutomationOccurrences(stored,now);
     for(const event of occurrences){
       const match=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
       items.push({automationId:stored.id,name:stored.name,enabled:stored.enabled!==false,time:event.time,classId:event.classId||null,match:!!match.match,suppressed:!!suppression.blocked,reason:suppression.blocked?suppression.reason:(match.reason||null),targets:event.targets||[],actions:automationActionSequence(event).map(step=>step.action)});
@@ -5463,37 +6073,52 @@ function evaluateAutomationAt(now=schedulerClock.now()){
   }
   return {observedAt:new Date().toISOString(),schedulerTime:now.toISOString(),schoolCycle:schoolCycleForDate(now),suppression,items};
 }
-function currentAutomationNonDisplayWinners(now=schedulerClock.now()){
+function currentAutomationNonDisplayWinners(now=schedulerClock.now(),{forRecoveryOwnership=false}={}){
   const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes(),winners=new Map();
+  const nowSeconds=nowMinutes*60+now.getSeconds()+now.getMilliseconds()/1000;
   for(const stored of classroomAutomations.events){
     if(stored?.enabled===false)continue;
-    const occurrences=automationClassIds(stored).length?resolveAutomationOccurrences(stored,now):[stored].filter(event=>automationMatchesDate(event,now).match);
+    const occurrences=resolveScheduledAutomationOccurrences(stored,now).filter(event=>event._sourceDateMatched?!isAutomationSuppressed(now).blocked:automationMatchesDate(event,now).match);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       const [h,m]=String(event.time||"00:00").split(":").map(Number),scheduled=h*60+m;
       if(scheduled>nowMinutes)continue;
+      const end=Number(event._classEndAt),scheduledAt=new Date(`${dateKey}T${event.time}:00`).getTime();
+      if(Number.isFinite(end)&&scheduledAt>=end)continue;
       const steps=automationActionSequence(event),first=steps[0]||{},eventDomain=automationTargetDomain(first.action);
       let elapsed=0;
       for(let index=0;index<steps.length;index++){
         const step=steps[index]||{};
-        elapsed+=Math.max(0,Number(step.delaySeconds||0));
+        // First-pass recovery must respect all prior action dwells, including
+        // other domains, and must not round a pre-action delay into the past.
+        elapsed+=Math.max(0,Number(steps[index-1]?.repeatDelaySeconds||0))+Math.max(0,Number(step.delaySeconds||0));
         const domain=automationTargetDomain(step.action);
         if(!["tv-power","lighting"].includes(domain))continue;
-        const effectiveMinute=scheduled+Math.floor(elapsed/60);
-        if(effectiveMinute>nowMinutes)continue;
+        // A started sequence reserves its whole intended resource set even
+        // while waiting. Pending/later steps cannot age an older run into a
+        // newer owner; only state projection uses the action's effective time.
+        const effectiveMinute=forRecoveryOwnership?scheduled:scheduled+Math.floor(elapsed/60);
+        if(!forRecoveryOwnership&&(scheduled*60+elapsed>nowSeconds||Number.isFinite(end)&&scheduledAt+elapsed*1000>=end))continue;
         let targets=[];
         if(index>0&&step.useEventTargets!==false&&domain===eventDomain)targets=first.targets||event.targets||[];
         else if(Array.isArray(step.targets)&&step.targets.length)targets=step.targets;
         else targets=defaultAutomationActionTargets(step.action);
-        const tvTargets=domain==="tv-power"?expandTvTargets(targets,{devices,connection:step.payload?.connection||"hdbt"}):null;
-        const resolved=tvTargets?tvTargets.map(item=>item.id):targets;
+        const powerIntent=domain==="tv-power"?tvPowerIntent(targets,{devices,payload:step.payload||{}}):null;
+        const resolved=powerIntent?powerIntent.resolvedTargets:[...new Set(targets.flatMap(target=>{
+          const id=cleanId(target);
+          return goveeDevices[id]||Array.isArray(goveeGroups[id])?goveeTargets(id).map(cleanId):[id];
+        }))];
         // Shared in-process identity connects winners from this exact step and
         // occurrence. Do not replace the existing per-target precedence model.
-        const tvPowerIntent=tvTargets?{targets:[...targets],resolvedTargets:tvTargets}:null;
-        for(const target of resolved){
-          const key=`${domain}:${target}`,prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
-          if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&score[2]>prior.score[2])){
-            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},score,automationId:stored.id,name:stored.name,domain,target,...(tvPowerIntent?{tvPowerIntent}:{})});
+        for(const resource of resolved){
+          const target=powerIntent?resource.id:resource;
+          const key=powerIntent?`tv-power:${resource.connection}:${resource.output}`:`lighting:${target}`;
+          const prior=winners.get(key),priority=Number(stored.priority||0),score=[effectiveMinute,priority,String(stored.id)];
+          // Preserve minute/priority/event precedence between occurrences;
+          // within one occurrence the later eligible action is its final state.
+          const sameOccurrence=prior&&score[2]===prior.score[2]&&event.classId===prior.event.classId&&event.time===prior.event.time;
+          if(!prior||score[0]>prior.score[0]||(score[0]===prior.score[0]&&score[1]>prior.score[1])||(score[0]===prior.score[0]&&score[1]===prior.score[1]&&(score[2]>prior.score[2]||sameOccurrence))){
+            winners.set(key,{event:{...event,action:step.action,targets:[target],payload:step.payload||{}},occurrence:event,score,automationId:stored.id,name:stored.name,domain,target,...(powerIntent?{tvPowerIntent:powerIntent,tvPowerTarget:resource}:{})});
           }
         }
       }
@@ -5512,11 +6137,10 @@ function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
   // per-target; never broadcast first and try to repair overridden TVs later.
   const complete=Boolean(selector&&intent?.resolvedTargets?.length&&
     tvWinners.every(winner=>winner.tvPowerIntent===intent)&&
-    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.target===target.id)));
+    intent.resolvedTargets.every(target=>tvWinners.some(winner=>winner.tvPowerTarget===target)));
   let emitted=false;
   return winners.flatMap(winner=>{
     if(winner.domain!=="tv-power")return [winner];
-    if(locked.has(winner.target))return [{...winner,deferred:true}];
     const metadata=winner.tvPowerIntent,payload={...(winner.event.payload||{})};
     if((metadata?.targets||[]).some(id=>["all","hdmi-all","hdbt-all"].includes(cleanId(id))))delete payload.output;
     if(complete&&!locked.size){
@@ -5524,7 +6148,7 @@ function planAutomationNonDisplayDispatches(winners,{lockedTargets=[]}={}){
       emitted=true;
       return [{...winner,target:selector,event:{...winner.event,targets:[selector],payload},tvTargetsOverride:intent.resolvedTargets}];
     }
-    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:metadata?.resolvedTargets?.filter(target=>target.id===winner.target)}];
+    return [{...winner,event:{...winner.event,payload},tvTargetsOverride:[winner.tvPowerTarget]}];
   });
 }
 function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerClock.now()){
@@ -5534,42 +6158,58 @@ function automationOccurrenceIsActiveForContinuousRecovery(event,now=schedulerCl
   const scheduled=automationOccurrenceScheduledMinutes(event),current=localMinutesNow(now);
   if(scheduled>current)return false;
   if(event._class){
-    const start=Number(event._classStartAt),end=Number(event._classEndAt),stamp=now.getTime();
-    if(Number.isFinite(start)&&stamp<start)return false;
+    const end=Number(event._classEndAt),stamp=now.getTime();
     if(Number.isFinite(end)&&stamp>=end)return false;
   }
   return sequenceHasContinuousActions(automationActionSequence(event));
 }
 function automationOccurrenceIdentity(storedEvent,event){
-  return `${storedEvent?.id||event?.id||""}|${event?.classId||"manual"}|${event?.time||""}`;
+  return `${storedEvent?.id||event?.id||""}|${automationOccurrenceKey(event)}|${event?.time||""}`;
 }
 function currentContinuousRecoveryWinnerIdentities(now=schedulerClock.now()){
-  const winners=new Set();
-  for(const candidate of currentAutomationDisplayWinners(now)){
-    winners.add(automationOccurrenceIdentity(candidate.storedEvent,candidate.event));
+  const owners=new Map();
+  const resourceKey=key=>key.replace(/^display-(?:content|overlay):/,"display:");
+  function recordOwnership(storedEvent,event,keys){
+    const identity=automationOccurrenceIdentity(storedEvent,event);
+    if(!owners.has(identity)){
+      const required=new Set(automationResourceKeys(event).map(resourceKey));
+      // An event-level timer may target displays outside its action sequence.
+      if(event.timerOverlay?.enabled)for(const id of automationDeferredDisplayTargets(event))required.add(`display:${id}`);
+      owners.set(identity,{required,owned:new Set()});
+    }
+    for(const key of keys)owners.get(identity).owned.add(key);
   }
-  for(const candidate of currentAutomationNonDisplayWinners(now)){
+  for(const candidate of currentAutomationDisplayWinners(now,{forRecoveryOwnership:true})){
+    recordOwnership(candidate.storedEvent,candidate.event,candidate.winningTargets.map(id=>`display:${id}`));
+  }
+  for(const candidate of currentAutomationNonDisplayWinners(now,{forRecoveryOwnership:true})){
     const storedEvent=classroomAutomations.events.find(item=>item.id===candidate.automationId);
-    if(storedEvent)winners.add(automationOccurrenceIdentity(storedEvent,candidate.event));
+    if(!storedEvent)continue;
+    const target=candidate.tvPowerTarget;
+    const key=target?`tv-power:${target.connection}:${target.output}`:`${candidate.domain}:${candidate.target}`;
+    recordOwnership(storedEvent,candidate.occurrence||candidate.event,[key]);
   }
-  return winners;
+  // The runner restarts an entire occurrence. A partial winner cannot safely
+  // resume its full sequence against resources owned by another occurrence.
+  return new Set([...owners].filter(([,owner])=>owner.required.size&&[...owner.required].every(key=>owner.owned.has(key))).map(([identity])=>identity));
 }
 async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery"){
   if(!automationSchedulerEnabled||schedulerClock.status().active&&!schedulerClock.commandsAllowed())return {started:0,skipped:true,reason:"scheduler-disabled-or-dry-run"};
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
   const winnerIdentities=currentContinuousRecoveryWinnerIdentities(now);
-  const dateKey=localDateKey(now),candidates=[];
+  const dateKey=localDateKey(now),candidates=[],cancelled=automationRunLedger.cancelledOccurrenceIds();
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
-    const occurrences=automationClassIds(storedEvent).length?resolveAutomationOccurrences(storedEvent,now):[storedEvent];
+    const occurrences=resolveScheduledAutomationOccurrences(storedEvent,now);
     for(const event of occurrences){
       if(event._scheduledDateKey&&event._scheduledDateKey!==dateKey)continue;
       if(!automationOccurrenceIsActiveForContinuousRecovery(event,now))continue;
       if(!winnerIdentities.has(automationOccurrenceIdentity(storedEvent,event)))continue;
       const id=occurrenceId(event,dateKey,event.time);
-      const latest=[...automationRunLedger.read().runs].reverse().find(run=>run.occurrenceId===id);
-      if(latest?.status==="cancelled")continue;
+      // A saved Stop is terminal for this occurrence, including a crash before
+      // its checkpoint or a later running/interrupted diagnostic record.
+      if(cancelled.has(id)||event._planningBlockId&&cancelled.has(occurrenceId({...event,_planningBlockId:null},dateKey,event.time)))continue;
       candidates.push({storedEvent,event});
     }
   }
@@ -5578,12 +6218,11 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
   for(const {storedEvent,event} of candidates){
     const id=occurrenceId(event,dateKey,event.time);
     if(automationRunningOccurrences.has(id))continue;
-    supersedeOverlappingAutomationRuns(event,id);
-    automationRunningOccurrenceMeta.set(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),recovered:true,reason});
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:"recovered-running",schedulerTime:now.toISOString(),reason});
-    const occurrenceKey=event.classId||"manual",scheduledMinuteKey=`${dateKey} ${event.time}`,deltaMinutes=Math.max(0,localMinutesNow(now)-automationOccurrenceScheduledMinutes(event));
-    const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
-    automationRunningOccurrences.set(id,task);task.catch(()=>{});
+    supersedeOverlappingAutomationRuns(event,id);
+    const occurrenceKey=automationOccurrenceKey(event),scheduledMinuteKey=`${dateKey} ${event.time}`,deltaMinutes=Math.max(0,localMinutesNow(now)-automationOccurrenceScheduledMinutes(event));
+    startOwnedAutomationOccurrence(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),recovered:true,reason},
+      ()=>executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
     started++;
   }
   if(started)audit({kind:"automation.continuous.recover",reason,started,schedulerTime:now.toISOString()});
@@ -5592,6 +6231,7 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
 
 async function reconcileScheduledAutomationState(reason="operator-resume"){
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
+  if(!schedulerClock.commandsAllowed())return {ok:true,skipped:true,reason:"test-clock-dry-run",schedulerTime:now.toISOString()};
   if(suppression.blocked)return {ok:true,skipped:true,reason:suppression.reason,schedulerTime:now.toISOString()};
   if(morningAnnouncementsRuntime.active){
     const targets=[...(morningAnnouncementsRuntime.targets||[])];
@@ -5599,12 +6239,16 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
     return {ok:true,announcementResumed:true,reason:"Morning Announcements restored because they have priority",targets,schedulerTime:now.toISOString()};
   }
   const display=await resyncCurrentDisplayAutomationsAfterAnnouncements(reason),resourceResults=[];
+  const skipDryRun=()=>({ok:!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false),skipped:true,reason:"test-clock-dry-run",schedulerTime:now.toISOString(),display,resources:resourceResults});
+  if(!schedulerClock.commandsAllowed())return skipDryRun();
   const nonDisplayWinners=currentAutomationNonDisplayWinners(now);
   for(const winner of planAutomationNonDisplayDispatches(nonDisplayWinners,{lockedTargets:announcementLockedDisplayTargets(["all"])})){
+    if(!schedulerClock.commandsAllowed())return skipDryRun();
     if(winner.deferred){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,deferred:true,lockedTargets:[winner.target]});continue}
     try{const result=await runSingleAutomationAction(winner.event,{manual:false,skipOverlay:true,skipAudit:true,tvTargetsOverride:winner.tvTargetsOverride});resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,ok:true,result,...(result.deferred?{deferred:true,lockedTargets:result.lockedTargets}: {})})}
     catch(error){resourceResults.push({automationId:winner.automationId,name:winner.name,domain:winner.domain,target:winner.target,...(error.code==="ANNOUNCEMENTS_PRIORITY_ACTIVE"?{ok:true,deferred:true,lockedTargets:error.targets||[]}:{ok:false,error:error.message})})}
   }
+  if(!schedulerClock.commandsAllowed())return skipDryRun();
   await backgroundMusicTick();
   const ok=!display.results?.some(item=>item.ok===false)&&!resourceResults.some(item=>item.ok===false);
   audit({kind:"automation.reconcile",reason,schedulerTime:now.toISOString(),displayWinners:display.winnerCount||0,resourceWinners:nonDisplayWinners.length,resourceDispatches:resourceResults.length,ok});
@@ -5612,7 +6256,7 @@ async function reconcileScheduledAutomationState(reason="operator-resume"){
 }
 app.get("/api/v1/automation-control",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...automationControlStatus()}));
 app.put("/api/v1/automation-control",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{const enabled=setAutomationSchedulerEnabled(req.body?.enabled!==false);audit({kind:"automation.scheduler.toggle",enabled});res.json({ok:true,...automationControlStatus()})});
-app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"operator-cancelled");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"operator-cancelled"});audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
+app.post("/api/v1/automation-control/runs/:occurrenceId/cancel",schedulerMutationLimit,requireControl,(req,res)=>{const id=String(req.params.occurrenceId||"");if(!automationRunningOccurrences.has(id))return res.status(404).json({ok:false,error:"Automation run is not active"});requestAutomationRunCancellation([id],"operator-cancelled");audit({kind:"automation.run.cancel",occurrenceId:id});res.json({ok:true,occurrenceId:id,message:"Cancellation requested. Already-dispatched hardware actions are not undone."})});
 app.post("/api/v1/automation-control/resume",schedulerMutationLimit,requireControl,async(_req,res)=>{try{const manualMediaPriority=await releaseManualMediaPriority("schedule-resumed");const cancelledManualRuns=await cancelActiveManualAutomationRuns("schedule-resumed"),result=await serializeMorningAnnouncementsLifecycle(()=>reconcileScheduledAutomationState("operator-resume")),continuousRecovery=await recoverContinuousAutomationOccurrences("operator-resume");res.json({...result,continuousRecovery,cancelledManualRuns,manualMediaPriority})}catch(error){res.status(500).json({ok:false,error:error.message})}});
 app.post("/api/v1/automation-control/simulation",schedulerMutationLimit,requireCapability("automation.manage"),(req,res)=>{try{if(req.body?.active===false)schedulerClock.clearSimulation();else schedulerClock.setSimulation(req.body?.schedulerTime);if(req.body?.liveCommands===true)schedulerClock.enableLiveCommands(req.body?.liveMinutes||15);audit({kind:"automation.simulation",active:schedulerClock.status().active,liveCommands:schedulerClock.status().liveCommands,schedulerTime:schedulerClock.status().schedulerTime});res.json({ok:true,...automationControlStatus(),evaluation:evaluateAutomationAt(schedulerClock.now())})}catch(error){res.status(400).json({ok:false,error:error.message})}});
 app.get("/api/v1/automation-control/evaluate",schedulerReadLimit,requireClassroomRead,(_req,res)=>res.json({ok:true,...evaluateAutomationAt(schedulerClock.now())}));
@@ -5622,11 +6266,16 @@ function automationResourceKeys(event){
   for(const step of steps){
     const action=step.action,domain=automationTargetDomain(action);let targets=[];
     if(step!==steps[0]&&step.useEventTargets!==false&&domain===automationTargetDomain(steps[0]?.action))targets=steps[0]?.targets||event.targets||[];
-    else if(Array.isArray(step.targets))targets=step.targets;
+    else targets=Array.isArray(step.targets)&&step.targets.length?step.targets:defaultAutomationActionTargets(action);
     if((domain==="display-content"||domain==="display-overlay")&&event.useClassTargets!==false&&event._classDefaultTargets?.length)targets=event._classDefaultTargets;
     if(domain==="display-content"||domain==="display-overlay")for(const id of automationDisplayTargets(targets))keys.push(`${domain}:${id}`);
-    else if(domain==="tv-power")for(const target of expandTvTargets(targets,{devices}))keys.push(`tv-power:${target.connection}:${target.output}`);
-    else if(domain==="lighting")for(const id of targets)keys.push(`lighting:${cleanId(id)}`);
+    else if(domain==="tv-power"){
+      for(const target of tvPowerIntent(targets,{devices,payload:step.payload||{}}).resolvedTargets)keys.push(`tv-power:${target.connection}:${target.output}`);
+    }else if(domain==="lighting")for(const target of targets){
+      const id=cleanId(target);
+      const aliases=goveeDevices[id]||Array.isArray(goveeGroups[id])?goveeTargets(id):[id];
+      for(const alias of aliases)keys.push(`lighting:${cleanId(alias)}`);
+    }
   }
   return [...new Set(keys)];
 }
@@ -5636,15 +6285,15 @@ function automationConflictDiagnostics(candidate,events,{horizonDays=90,startDat
   for(let off=0;off<horizonDays&&conflicts.length<20;off++){
     const day=new Date(start);day.setDate(day.getDate()+off);
     if(isAutomationSuppressed(day).blocked)continue;
-    const rule=calendarRuleForDate(day),special=["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
+    const rule=calendarRuleForDate(day),special=(rule.type.startsWith("planning:")&&rule.special)||rule.type.startsWith("special:")||["half-day","1-hour-delay","2-hour-delay"].includes(rule.type);
     if(calendarScope==="normal"&&special||calendarScope==="special"&&!special)continue;
-    const candidateOccurrences=automationClassIds(candidate).length?resolveAutomationOccurrences(candidate,day):[candidate].filter(event=>automationMatchesDate(event,day).match);
+    const candidateOccurrences=resolveAutomationOccurrences(candidate,day).filter(event=>automationMatchesDate(event,day).match);
     for(const occurrence of candidateOccurrences){
       if(!occurrence||occurrence._scheduledDateKey&&occurrence._scheduledDateKey!==localDateKey(day))continue;
       const cKeys=new Set(automationResourceKeys(occurrence));if(!cKeys.size)continue;
       for(const other of events||[]){
         if(!other||other.id===candidate.id||other.enabled===false)continue;
-        const otherOccurrences=automationClassIds(other).length?resolveAutomationOccurrences(other,day):[other].filter(event=>automationMatchesDate(event,day).match);
+        const otherOccurrences=resolveAutomationOccurrences(other,day).filter(event=>automationMatchesDate(event,day).match);
         for(const o of otherOccurrences){
           if(!o||String(o.time)!==String(occurrence.time))continue;
           const shared=automationResourceKeys(o).filter(key=>cKeys.has(key));
@@ -5686,33 +6335,42 @@ app.post("/api/v1/automations/draft/simulate",schedulerReadLimit,requireClassroo
   }catch(error){res.status(400).json({ok:false,dryRun:true,error:error.message,conflicts:error.conflicts||[]})}
 });
 app.get("/api/v1/displays/:id/media/status",schedulerReadLimit,requireControl,(req,res)=>{
-  const id=cleanId(req.params.id);
+  const id=configuredDisplayId(req.params.id);
   if(!id||!devices[id]||devices[id].enabled===false)return res.status(404).json({ok:false,error:"Unknown display"});
   res.json({ok:true,status:runtime.displays[id]?.mediaSession||null});
 });
 
 app.post("/api/v1/displays/:id/media/control",schedulerMutationLimit,requireControl,async(req,res)=>{
   try{
-    const id=cleanId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
-    const action=String(req.body?.action||"").trim().toLowerCase();
-    if(!["play","pause","stop","restart","seek","volume","mute","rate"].includes(action))throw new Error("Unsupported media control action");
-    const payload={action};
-    if(action==="seek")payload.positionSeconds=Math.max(0,Number(req.body?.positionSeconds||0));
-    if(action==="volume")payload.volume=Math.max(0,Math.min(1,Number(req.body?.volume??1)));
-    if(action==="mute")payload.muted=req.body?.muted!==false;
-    if(action==="rate")payload.playbackRate=Math.max(.25,Math.min(4,Number(req.body?.playbackRate||1)));
+    const id=configuredDisplayId(req.params.id);if(!id||!devices[id]||devices[id].enabled===false)throw new Error("Unknown display");
+    const payload=displayMedia.validate(req.body),action=payload.action;
     const result=await executeCommand({type:"display.media.control",target:[id],payload},"controller");
     audit({kind:"display.media.control",deviceId:id,action});
     res.json({ok:true,result});
   }catch(error){res.status(400).json({ok:false,error:error.message})}
 });
 
+app.get("/api/v1/displays/audio",schedulerReadLimit,requireControl,(req,res)=>{
+  res.json({ok:true,displays:Object.entries(devices).filter(([,device])=>device.enabled!==false).map(([id,device])=>({
+    id,name:device.name||id,...displayAudio.describe(persistentState.displays[id]),
+    locked:!!announcementPriorityError([id]),online:publicDisplayStatus(id).online
+  }))});
+});
+app.post("/api/v1/displays/:id/audio",schedulerMutationLimit,requireControl,async(req,res)=>{
+  try{
+    const id=configuredDisplayId(req.params.id);
+    if(!id||!devices[id]||devices[id].enabled===false)throw Error("Unknown display");
+    const result=await executeCommand({type:"display.audio.control",target:[id],payload:req.body},"controller");
+    audit({kind:"display.audio.control",deviceId:id});
+    res.json({ok:true,result,audio:displayAudio.describe(persistentState.displays[id])});
+  }catch(error){res.status(error.statusCode||400).json({ok:false,error:error.message})}
+});
+
 function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
   const id=`manual-${cleanId(event.id||"draft")||"draft"}-${crypto.randomUUID()}`;
-  supersedeOverlappingAutomationRuns(event,id);
-  automationRunningOccurrenceMeta.set(id,{automationId:event.id||null,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),manual:true,draft});
   automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:"manual-running",schedulerTime:schedulerClock.now().toISOString(),draft});
-  const task=trackFullExportMutation((async()=>{
+  supersedeOverlappingAutomationRuns(event,id);
+  startOwnedAutomationOccurrence(id,{automationId:event.id||null,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString(),manual:true,draft},async()=>{
     try{
       const runResult=await runClassroomAutomation({...event,_occurrenceId:id},{manual:true});
       if(storedEvent){
@@ -5720,17 +6378,15 @@ function startManagedManualAutomation(event,{storedEvent=null,draft=false}={}){
       }
       automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult),draft});
     }catch(err){
-      const cancelled=err.code==="AUTOMATION_CANCELLED";
-      const reason=cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
-      if(storedEvent)storedEvent.lastRun={at:new Date().toISOString(),ok:cancelled,manual:true,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:{})};
-      automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:cancelled?"cancelled":"failed",schedulerTime:schedulerClock.now().toISOString(),draft,...(cancelled?{reason}:{error:err.message})});
-      if(!cancelled)diagnosticError(err,{component:"automation",operation:"manual-continuous-run",data:{automationId:event.id||null,draft}});
+      const cancelled=err.code==="AUTOMATION_CANCELLED",interrupted=err.code==="AUTOMATION_INTERRUPTED";
+      const reason=interrupted?"server-shutdown":cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
+      if(storedEvent)storedEvent.lastRun={at:new Date().toISOString(),ok:cancelled,manual:true,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:interrupted?{interrupted:true,reason}:{})};
+      automationRunLedger.record({occurrenceId:id,automationId:event.id||null,classId:event.classId||null,status:cancelled?"cancelled":interrupted?"interrupted":"failed",schedulerTime:schedulerClock.now().toISOString(),draft,...(cancelled||interrupted?{reason}:{error:err.message})});
+      if(!cancelled&&!interrupted)diagnosticError(err,{component:"automation",operation:"manual-continuous-run",data:{automationId:event.id||null,draft}});
     }finally{
       if(storedEvent){storedEvent.updatedAt=new Date().toISOString();persistAutomations()}
-      automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
     }
-  })());
-  automationRunningOccurrences.set(id,task);task.catch(()=>{});
+  });
   audit({kind:"automation.manual.started",automationId:event.id||null,name:event.name,occurrenceId:id,draft,actions:automationActionSequence(event).map(step=>step.action)});
   return {ok:true,started:true,continuous:true,manual:true,draft,occurrenceId:id,eventId:event.id||null,name:event.name,message:"Continuous automation started. Use Stop Run to cancel it."};
 }
@@ -5827,9 +6483,11 @@ app.post("/api/v1/automations/:id/run",schedulerMutationLimit,requireControl,asy
 app.get("/api/v1/config",requireClassroomRead,(_req,res)=>res.json({ok:true,room:deviceConfig.room||ROOM_NAME,devices:publicDeviceConfigs(),displayGroups,lightingGroups:[...lightingGroups]}));
 
 app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
+ const id=configuredDisplayId(req.params.id);if(!devices[id])return res.status(404).json({ok:false,error:"Unknown device"});
  const cur=devices[id],b=req.body||{};
+ let audioScope;try{audioScope=normalizeDisplayAudioScope(b.audioScope===undefined?cur.audioScope:b.audioScope)}catch(e){return res.status(400).json({ok:false,error:e.message})}
  devices[id]={...cur,
+  audioScope,
   name:b.name!==undefined?String(b.name).slice(0,100):cur.name,
   enabled:b.enabled!==undefined?!!b.enabled:cur.enabled,
   avOutput:b.avOutput!==undefined?Number(b.avOutput):cur.avOutput,
@@ -5840,7 +6498,7 @@ app.post("/api/v1/config/devices/:id",requireControl,(req,res)=>{
 });
 
 app.post("/api/v1/config/groups/:id",requireControl,(req,res)=>{
- const id=cleanId(req.params.id),members=Array.isArray(req.body?.members)?req.body.members.map(cleanId).filter(x=>devices[x]):[];
+ const requested=String(req.params.id||"").trim(),id=Object.hasOwn(displayGroups,requested)?requested:cleanId(requested),members=Array.isArray(req.body?.members)?req.body.members.map(configuredDisplayId).filter(Boolean):[];
  if(!id)return res.status(400).json({ok:false,error:"Group id required"});
  displayGroups[id]=[...new Set(members)];deviceConfig.displayGroups=displayGroups;persistRuntimeConfig();res.json({ok:true,id,members:displayGroups[id]});
 });
@@ -5848,6 +6506,13 @@ app.post("/api/v1/config/groups/:id",requireControl,(req,res)=>{
 async function buildDiagnosticsSnapshot(){
   const r=publicRuntime();
   const now=new Date();
+  const observedHardware=(state,configured,verification)=>{
+    const status=!configured?"not-configured":state.lastError?"error":state.lastSuccessAt?"observed":"not-observed";
+    return {...diagnosticSanitize(state),configured,status,verification,ok:status==="observed"?true:status==="error"?false:null};
+  };
+  const pluto=observedHardware(runtime.hardware.pluto,Boolean(PLUTO_URL),"last-request");
+  const govee=observedHardware(runtime.hardware.govee,Object.keys(goveeDevices).length>0,"mqtt-publish");
+  if(govee.status==="observed"&&!runtime.mqtt.connected){govee.ok=false;govee.status="disconnected"}
   let veyonWebApi={ok:false};
   try{
     const response=await veyonFetch("/",{timeoutMs:2500});
@@ -5890,9 +6555,9 @@ async function buildDiagnosticsSnapshot(){
     services:{
       classroomHub:{ok:true,startedAt:runtime.startedAt,room:deviceConfig.room||ROOM_NAME},
       mqtt:{ok:!!runtime.mqtt.connected,...diagnosticSanitize(runtime.mqtt)},
-      pluto:{ok:!runtime.hardware.pluto.lastError,...diagnosticSanitize(runtime.hardware.pluto)},
-      govee:{ok:!runtime.hardware.govee.lastError,...diagnosticSanitize(runtime.hardware.govee),configuredDevices:Object.keys(goveeDevices).length},
-      veyon:{...veyonWebApi,pool:{size:veyonConnectionCache.size,max:VEYON_POOL_MAX,connections:veyonPool}},
+      pluto,
+      govee:{...govee,configuredDevices:Object.keys(goveeDevices).length},
+      veyon:{...diagnosticSanitize(veyonWebApi),pool:{size:veyonConnectionCache.size,max:VEYON_POOL_MAX,connections:veyonPool}},
       websocket:{ok:true,clients:runtime.websocketClients},
       displays:{
         ok:Object.values(r.displays).some(x=>x.online),
@@ -5903,7 +6568,7 @@ async function buildDiagnosticsSnapshot(){
       scheduler:{ok:true,...schedulerStatus()},
       database:{ok:true,...dbStore.databaseInfo()}
     },
-    configuration:{
+    configuration:diagnosticSanitize({
       room:deviceConfig.room||ROOM_NAME,
       mqtt:{url:MQTT_URL,jsonBridge:MQTT_JSON_BRIDGE,legacyBridge:MQTT_LEGACY_BRIDGE},
       pluto:{configured:Boolean(PLUTO_URL),url:PLUTO_URL,timeoutMs:PLUTO_TIMEOUT_MS,readRetries:PLUTO_READ_RETRIES},
@@ -5911,7 +6576,7 @@ async function buildDiagnosticsSnapshot(){
       scheduler:schedulerStatus(),
       displayGroups,
       lightingGroups:[...lightingGroups]
-    },
+    }),
     data:{
       classes:classScheduleStore.classes.length,
       automations:classroomAutomations.events.length,
@@ -6020,6 +6685,10 @@ app.put("/api/v1/admin/displays",requireAdmin,(req,res)=>{
     for(const [id,d] of Object.entries(nextDevices)){if(!/^[a-z0-9_-]{1,40}$/i.test(id))throw Error(`Invalid display id: ${id}`);if(!d||typeof d!=="object")throw Error(`Invalid display definition: ${id}`)}
     for(const [name,members] of Object.entries(nextGroups)){if(!Array.isArray(members))throw Error(`Group ${name} members must be an array`);for(const id of members)if(!nextDevices[id])throw Error(`Group ${name} references unknown display ${id}`)}
     const committedDevices=JSON.parse(JSON.stringify(nextDevices)),committedGroups=JSON.parse(JSON.stringify(nextGroups));
+    for(const [id,d] of Object.entries(committedDevices)){
+      const scope=d.audioScope===undefined?devices[id]?.audioScope:d.audioScope;
+      if(scope!==undefined)d.audioScope=normalizeDisplayAudioScope(scope);
+    }
     dbStore.writeNormalized("devices",{room:deviceConfig.room||ROOM_NAME,devices:committedDevices,displayGroups:committedGroups,lightingGroups:[...lightingGroups]});
     devices=committedDevices;displayGroups=committedGroups;deviceConfig.devices=devices;deviceConfig.displayGroups=displayGroups;
     const disconnected=[];for(const ws of wsClients){if(ws.role!=="display"||ws.readyState!==WebSocket.OPEN)continue;const id=String(ws.deviceId||"");if(!devices[id]||devices[id].enabled===false){disconnected.push(id);ws.close(1008,"Display removed or disabled")}}
@@ -6036,10 +6705,16 @@ function displayCredentialAdminView(){
 }
 function disconnectRevokedDisplayCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="display"&&set.has(String(ws.displayCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display credential revoked")}
 function disconnectRevokedLabAgentCredentials(ids){const set=new Set([].concat(ids||[]).map(String));for(const ws of wsClients)if(ws.role==="lab-agent"&&set.has(String(ws.labAgentCredentialId||""))&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Lab agent credential revoked")}
+const displayEnrollmentMutationLimit=rateLimit({
+  skip:req=>!administratorAccessAllowed(req),
+  windowMs:60_000,limit:120,keyGenerator:()=>"display-enrollment-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Display enrollment operation limit reached; retry later"}
+});
 app.get("/api/v1/admin/display-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...displayCredentialAdminView()}));
 app.put("/api/v1/admin/display-credentials/policy",requireAdmin,(req,res)=>{try{const state=displayCredentialAdminView();if(req.body?.authenticationRequired===true&&state.coverage.unenrolled.length&&req.body?.confirmEnableWithoutFullEnrollment!==true)return res.status(409).json({ok:false,error:`Enroll every enabled display before requiring credentials. Missing: ${state.coverage.unenrolled.join(", ")}`,unenrolled:state.coverage.unenrolled});const policy=dbStore.setDisplayCredentialPolicy(req.body||{});if(policy.authenticationRequired)for(const ws of wsClients)if(ws.role==="display"&&ws.displayAuthMode==="configured-display"&&ws.readyState===WebSocket.OPEN)ws.close(1008,"Display authentication is now required");audit({kind:"admin.display-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.post("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{try{const displayId=cleanId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
-app.delete("/api/v1/admin/displays/:id/enrollment",requireAdmin,(req,res)=>{const displayId=cleanId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
+app.post("/api/v1/admin/displays/:id/enrollment",displayEnrollmentMutationLimit,requireAdmin,(req,res)=>{try{const displayId=configuredDisplayId(req.params.id),issued=dbStore.createDisplayEnrollment(displayId,{ttlMinutes:req.body?.ttlMinutes});if(req.body?.revokeExisting===true){const active=dbStore.listDisplayCredentials().credentials.filter(x=>x.displayId===displayId&&!x.revokedAt).map(x=>x.id);dbStore.revokeDisplayCredentials(displayId);disconnectRevokedDisplayCredentials(active)}const url=`/display/${encodeURIComponent(displayId)}#enrollmentToken=${encodeURIComponent(issued.token)}`;audit({kind:"admin.display-enrollment.issue",displayId,expiresAt:issued.expiresAt,revokeExisting:req.body?.revokeExisting===true});res.status(201).json({ok:true,enrollment:{id:issued.id,displayId,displayName:issued.displayName,expiresAt:issued.expiresAt,url}})}catch(err){res.status(400).json({ok:false,error:err.message})}});
+app.delete("/api/v1/admin/displays/:id/enrollment",displayEnrollmentMutationLimit,requireAdmin,(req,res)=>{const displayId=configuredDisplayId(req.params.id),cancelled=dbStore.cancelDisplayEnrollments(displayId);audit({kind:"admin.display-enrollment.cancel",displayId,cancelled});res.json({ok:true,cancelled})});
 app.delete("/api/v1/admin/display-credentials/:id",requireAdmin,(req,res)=>{const id=String(req.params.id||""),revoked=dbStore.revokeDisplayCredential(id);if(revoked)disconnectRevokedDisplayCredentials([id]);audit({kind:"admin.display-credential.revoke",credentialId:id,revoked});res.status(revoked?200:404).json({ok:revoked,error:revoked?undefined:"Active credential not found"})});
 app.get("/api/v1/admin/lab-agent-credentials",requireAdmin,(_req,res)=>res.json({ok:true,...dbStore.listLabAgentCredentials()}));
 app.put("/api/v1/admin/lab-agent-credentials/policy",requireAdmin,(req,res)=>{try{const policy=dbStore.setLabAgentCredentialPolicy(req.body||{});audit({kind:"admin.lab-agent-credentials.policy",policy});res.json({ok:true,policy})}catch(err){res.status(400).json({ok:false,error:err.message})}});
@@ -6072,15 +6747,17 @@ app.put("/api/v1/admin/hardware",requireAdmin,(req,res)=>{
 app.put("/api/v1/admin/integration-connections",requireAdmin,async(req,res)=>{
   try{
     const body=req.body||{},next=normalizedIntegrationConnections(body,currentIntegrationConnections());
-    if(body.mqtt?.password){dbStore.putSecret("integration.mqtt.password",String(body.mqtt.password),{type:"integration-password",integration:"mqtt"})}
-    if(body.veyon?.privateKey){
-      const key=String(body.veyon.privateKey).trim();
-      if(!key.includes("BEGIN")||!key.includes("PRIVATE KEY"))throw Error("Veyon private key must be PEM-formatted private-key material");
-      dbStore.putSecret("veyon.private-key",key,{type:"private-key",integration:"veyon",keyName:next.veyon.keyName});
-    }
-    dbStore.setPreference("integrations.connections",next);
+    const privateKey=body.veyon?.privateKey?String(body.veyon.privateKey).trim():null;
+    if(privateKey!==null&&(!privateKey.includes("BEGIN")||!privateKey.includes("PRIVATE KEY")))throw Error("Veyon private key must be PEM-formatted private-key material");
+    dbStore.tx(()=>{
+      if(body.mqtt?.password)dbStore.putSecret("integration.mqtt.password",String(body.mqtt.password),{type:"integration-password",integration:"mqtt"});
+      if(privateKey!==null)dbStore.putSecret("veyon.private-key",privateKey,{type:"private-key",integration:"veyon",keyName:next.veyon.keyName});
+      dbStore.setPreference("integrations.connections",next);
+    });
+    plutoStatusReader.invalidate();
     applyIntegrationConnections(next);
-    runtime.hardware.pluto={...runtime.hardware.pluto,configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null};
+    runtime.hardware.pluto={...runtime.hardware.pluto,configured:Boolean(PLUTO_URL),url:PLUTO_URL,lastError:null,lastSuccessAt:null};
+    runtime.hardware.govee={...runtime.hardware.govee,lastError:null,lastSuccessAt:null};
     veyonConnectionCache.clear();veyonAuthInFlight.clear();
     reconnectMqtt();
     audit({kind:"admin.integrations.connections",mqttConfigured:Boolean(MQTT_URL),plutoConfigured:Boolean(PLUTO_URL),veyonConfigured:Boolean(VEYON_WEBAPI_URL)});
@@ -6114,22 +6791,111 @@ function musicAssistantConfig(){const p=dbStore.getPreference("musicassistant.co
 function musicAssistantToken(){try{return String(dbStore.getSecret("musicassistant.token")||"")}catch{return ""}}
 
 const MUSIC_ASSISTANT_TV_DEFAULT_VOLUME=20;
-function musicAssistantTvDeviceIdFromPlayerId(playerId){const m=/^classroom-hub-(tv\d+)$/i.exec(String(playerId||""));return m?m[1].toLowerCase():null}
-function musicAssistantTvAudioState(deviceId){const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},saved=all&&typeof all==="object"?all[String(deviceId||"").toLowerCase()]||{}:{};const raw=Number(saved.volume);return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null}}
-function setMusicAssistantTvAudioState(deviceId,patch={}){deviceId=String(deviceId||"").toLowerCase();const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}if(patch.muted!==undefined)next.muted=!!patch.muted;dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next}
+function musicAssistantTvDeviceIdFromPlayerId(playerId){
+  const value=String(playerId||""),prefix="classroom-hub-";
+  if(value!==value.trim()||!value.toLowerCase().startsWith(prefix))return null;
+  const id=configuredDisplayId(value.slice(prefix.length));
+  return id&&devices[id]?.enabled!==false?id:null;
+}
+function musicAssistantTvAudioState(deviceId){
+  const id=configuredDisplayId(deviceId),all=dbStore.getPreference("musicassistant.tvAudioState",{})||{};
+  const legacy=id.toLowerCase(),unique=id&&Object.keys(devices).filter(key=>key.toLowerCase()===legacy).length===1;
+  const saved=all&&typeof all==="object"?(all[id]||(unique?all[legacy]:null)||{}):{};
+  const raw=Number(saved.volume);
+  return {volume:Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,muted:!!saved.muted,updatedAt:saved.updatedAt||null};
+}
+function setMusicAssistantTvAudioState(deviceId,patch={}){
+  deviceId=configuredDisplayId(deviceId);if(!deviceId)throw Error("Unknown display");
+  const all=dbStore.getPreference("musicassistant.tvAudioState",{})||{},current=musicAssistantTvAudioState(deviceId),next={...current,...patch,updatedAt:new Date().toISOString()};
+  if(patch.volume!==undefined){const n=Number(patch.volume);next.volume=Number.isFinite(n)?Math.max(0,Math.min(100,n)):current.volume}
+  if(patch.muted!==undefined)next.muted=!!patch.muted;
+  dbStore.setPreference("musicassistant.tvAudioState",{...(all&&typeof all==="object"?all:{}),[deviceId]:next});return next;
+}
+const musicAssistantTvAudioWrites=new Map();
+function beginMusicAssistantTvAudioWrite(command,args){
+  const field=command==="players/cmd/volume_set"?"volume":command==="players/cmd/volume_mute"?"muted":null;
+  if(!field)return null;
+  const deviceId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);if(!deviceId)return null;
+  const key=JSON.stringify([deviceId,field]),state=musicAssistantTvAudioWrites.get(key)||{next:0,committed:0,pending:0};
+  musicAssistantTvAudioWrites.set(key,state);state.pending++;
+  return {key,state,sequence:++state.next,deviceId,field,value:field==="volume"?args.volume_level:args.muted,generation:maApiGeneration};
+}
+function commitMusicAssistantTvAudioWrite(write){
+  if(!write||write.generation!==maApiGeneration||write.sequence<=write.state.committed||musicAssistantTvDeviceIdFromPlayerId(`classroom-hub-${write.deviceId}`)!==write.deviceId)return false;
+  write.state.committed=write.sequence;
+  setMusicAssistantTvAudioState(write.deviceId,{[write.field]:write.value});return true;
+}
+function releaseMusicAssistantTvAudioWrite(write){
+  if(write&&--write.state.pending===0&&musicAssistantTvAudioWrites.get(write.key)===write.state)musicAssistantTvAudioWrites.delete(write.key);
+}
 function musicAssistantTvAttachPayload(deviceId,issued,extra={}){const audio=musicAssistantTvAudioState(deviceId);return {transport:"authenticated-ma-sendspin-proxy",proxyUrl:musicAssistantProxyPath(issued.ticket),playerId:issued.playerId,sdkVersion:"3.2.1",desiredVolume:audio.volume,desiredMuted:audio.muted,...extra}}
-async function restoreMusicAssistantTvAudioState(deviceId,ws){const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId);for(let attempt=1;attempt<=8;attempt++){if(ws&&ws.readyState!==WebSocket.OPEN)return false;try{await musicAssistantCommand("players/cmd/volume_set",{player_id:playerId,volume_level:desired.volume});await musicAssistantCommand("players/cmd/volume_mute",{player_id:playerId,muted:desired.muted});if(ws)ws.maAudioRestored=true;audit({kind:"musicassistant.tv-audio.restore",deviceId,playerId,volume:desired.volume,muted:desired.muted,attempt});return true}catch(e){if(attempt===8){diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore",deviceId,playerId});return false}await new Promise(r=>setTimeout(r,700))}}return false}
+function resetMusicAssistantTvAudioRestore(ws){
+  ws.maAudioRestoreOperation=null;ws.maAudioRestorePending=false;ws.maAudioRestored=false;ws.maAudioRestoreUncertain=false;
+}
+function confirmMusicAssistantTvAudioRestore(ws,status){
+  if(!ws.maAudioRestoreUncertain||status.protocolActive!==true||ws.readyState!==WebSocket.OPEN||runtime.displays[ws.deviceId]?.connectionId!==ws.connectionId)return;
+  const desired=musicAssistantTvAudioState(ws.deviceId);
+  if(typeof status.volume==="number"&&Number.isFinite(status.volume)&&status.volume===desired.volume&&typeof status.muted==="boolean"&&status.muted===desired.muted){
+    ws.maAudioRestoreUncertain=false;ws.maAudioRestored=true;
+  }
+}
+function scheduleMusicAssistantTvAudioRestore(ws){
+  if(ws.maAudioRestored||ws.maAudioRestorePending||ws.maAudioRestoreUncertain)return false;
+  const operation={};ws.maAudioRestoreOperation=operation;ws.maAudioRestorePending=true;
+  setTimeout(()=>{
+    if(ws.maAudioRestoreOperation!==operation)return;
+    if(shutdownRequested||fullExportFreeze.requested){ws.maAudioRestorePending=false;return}
+    trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws))
+      .catch(error=>{if(ws.maAudioRestoreOperation===operation)diagnosticError(error,{component:"music-assistant",operation:"tv-audio-restore",deviceId:ws.deviceId})})
+      .finally(()=>{if(ws.maAudioRestoreOperation===operation)ws.maAudioRestorePending=false});
+  },250);
+  return true;
+}
+async function restoreMusicAssistantTvAudioState(deviceId,ws){
+  if(ws?.maAudioRestoreUncertain)return false;
+  const playerId=`classroom-hub-${deviceId}`,desired=musicAssistantTvAudioState(deviceId),generation=maApiGeneration,operation=ws?.maAudioRestoreOperation;
+  const current=()=>{
+    if(shutdownRequested||fullExportFreeze.requested||generation!==maApiGeneration)return false;
+    if(ws&&(ws.readyState!==WebSocket.OPEN||runtime.displays[deviceId]?.connectionId!==ws.connectionId||ws.maAudioRestoreOperation!==operation))return false;
+    const latest=musicAssistantTvAudioState(deviceId);
+    return latest.volume===desired.volume&&latest.muted===desired.muted&&latest.updatedAt===desired.updatedAt;
+  };
+  for(let attempt=1;attempt<=8;attempt++){
+    if(!current())return false;
+    try{
+      await musicAssistantCommand("players/cmd/volume_set",{player_id:playerId,volume_level:desired.volume});
+      if(!current())return false;
+      await musicAssistantCommand("players/cmd/volume_mute",{player_id:playerId,muted:desired.muted});
+      if(!current())return false;
+      if(ws)ws.maAudioRestored=true;
+      audit({kind:"musicassistant.tv-audio.restore",deviceId,playerId,volume:desired.volume,muted:desired.muted,attempt});return true;
+    }catch(e){
+      if(!current())return false;
+      if(e.mayHaveExecuted){if(ws)ws.maAudioRestoreUncertain=true;diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore-unconfirmed",deviceId,playerId});return false}
+      if(attempt===8){diagnosticError(e,{component:"music-assistant",operation:"tv-audio-restore",deviceId,playerId});return false}
+      await new Promise(r=>setTimeout(r,700));
+    }
+  }
+  return false;
+}
 
 // Persistent Music Assistant WebSocket API client. Music Assistant's WebSocket API is
 // the authoritative realtime control surface; REST remains a compatibility fallback.
 let maApiSocket=null,maApiConnectPromise=null,maApiAuthenticated=false,maApiServerInfo=null,maApiLastError=null,maApiLastConnectedAt=null;
+let maApiConnectionCancel=null,maApiGeneration=0;
 const maApiPending=new Map();
 function musicAssistantApiWsUrl(){const u=new URL(musicAssistantConfig().url);u.protocol=u.protocol==="https:"?"wss:":"ws:";u.pathname=(u.pathname.replace(/\/$/,"")+"/ws").replace(/\/{2,}/g,"/");u.search="";u.hash="";return u.toString()}
-function rejectMusicAssistantPending(message){const pending=[...maApiPending.values()];maApiPending.clear();for(const p of pending){clearTimeout(p.timer);const error=new Error(message);error.mayHaveExecuted=!!p.command;p.reject(error)}}
-function musicAssistantApiClose(reason="reset"){const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;if(ws){try{ws.close(1000,reason)}catch{}}rejectMusicAssistantPending(`Music Assistant API disconnected: ${reason}`)}
-function musicAssistantApiHandleMessage(raw){let msg;try{msg=JSON.parse(Buffer.isBuffer(raw)?raw.toString("utf8"):String(raw))}catch{return}
+function rejectMusicAssistantPending(message,socket=null){for(const [id,p] of [...maApiPending]){if(socket&&p.socket!==socket)continue;maApiPending.delete(id);clearTimeout(p.timer);const error=new Error(message);error.mayHaveExecuted=!!p.command;p.reject(error)}}
+function musicAssistantApiClose(reason="reset"){
+  maApiGeneration++;
+  const error=new Error(`Music Assistant API disconnected: ${reason}`);error.connectionRetired=true;
+  if(maApiConnectionCancel){maApiConnectionCancel(error,reason);return}
+  const ws=maApiSocket;maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;
+  if(ws){try{ws.close(1000,reason)}catch{}}rejectMusicAssistantPending(error.message);
+}
+function musicAssistantApiHandleMessage(raw,socket=maApiSocket){if(!socket||socket!==maApiSocket)return;let msg;try{msg=JSON.parse(Buffer.isBuffer(raw)?raw.toString("utf8"):String(raw))}catch{return}
   if(msg&&msg.server_id&&msg.schema_version!==undefined&&!msg.message_id){maApiServerInfo=msg;return}
-  const mid=msg?.message_id;if(mid&&maApiPending.has(mid)){const p=maApiPending.get(mid);if(msg.partial){if(Array.isArray(msg.result))p.parts.push(...msg.result);else if(msg.result!==undefined)p.parts.push(msg.result);return}clearTimeout(p.timer);maApiPending.delete(mid);if(msg.error_code!==undefined||msg.error){const detail=msg.details||msg.error?.message||msg.error||`Music Assistant API error ${msg.error_code}`;p.reject(new Error(String(detail)));return}let result=msg.result;if(p.parts.length){if(Array.isArray(result))result=[...p.parts,...result];else if(result!==undefined)result=[...p.parts,result];else result=p.parts}p.resolve(result);return}
+  const mid=msg?.message_id;if(mid&&maApiPending.has(mid)){const p=maApiPending.get(mid);if(p.socket!==socket)return;if(msg.partial){if(Array.isArray(msg.result))p.parts.push(...msg.result);else if(msg.result!==undefined)p.parts.push(msg.result);return}clearTimeout(p.timer);maApiPending.delete(mid);if(msg.error_code!==undefined||msg.error){const detail=msg.details||msg.error?.message||msg.error||`Music Assistant API error ${msg.error_code}`;p.reject(new Error(String(detail)));return}let result=msg.result;if(p.parts.length){if(Array.isArray(result))result=[...p.parts,...result];else if(result!==undefined)result=[...p.parts,result];else result=p.parts}p.resolve(result);return}
   // Events are intentionally not returned to callers. The status endpoint refreshes player
   // inventory through this same persistent socket, while the socket stays alive between calls.
 }
@@ -6138,40 +6904,109 @@ function musicAssistantCommandTimeout(command){
   return ["players/cmd/play","player_queues/play_media"].includes(command)?60000:15000;
 }
 async function musicAssistantApiRawCommand(command,args={},timeoutMs=musicAssistantCommandTimeout(command)){
-  await ensureMusicAssistantApi();
-  if(!maApiSocket||maApiSocket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");
+  const socket=await ensureMusicAssistantApi();
+  if(!socket||socket!==maApiSocket||!maApiAuthenticated){const error=new Error("Music Assistant WebSocket connection changed before dispatch");error.connectionRetired=true;throw error}
+  if(socket.readyState!==WebSocket.OPEN)throw new Error("Music Assistant WebSocket API is not connected");
   const message_id=`hub-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;
   return new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>{
+      if(maApiPending.get(message_id)!==pending)return;
       maApiPending.delete(message_id);
       const error=new Error(`Music Assistant command timed out: ${command}`);
       error.mayHaveExecuted=true;
       reject(error);
     },timeoutMs);
-    maApiPending.set(message_id,{resolve,reject,timer,parts:[],command});
-    try{maApiSocket.send(JSON.stringify({message_id,command,args}))}
+    const pending={resolve,reject,timer,parts:[],command,socket};
+    maApiPending.set(message_id,pending);
+    try{socket.send(JSON.stringify({message_id,command,args}))}
     catch(e){clearTimeout(timer);maApiPending.delete(message_id);reject(e)}
   });
 }
-async function ensureMusicAssistantApi(){if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;if(maApiConnectPromise)return maApiConnectPromise;const token=musicAssistantToken();if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in Classroom Control Hub Music settings.");maApiConnectPromise=new Promise((resolve,reject)=>{let settled=false,helloSeen=false,failed=false;const ws=new WebSocket(musicAssistantApiWsUrl());maApiSocket=ws;const fail=(err)=>{if(failed)return;failed=true;maApiLastError=String(err?.message||err);if(!settled){settled=true;reject(err instanceof Error?err:new Error(String(err)))}musicAssistantApiClose("connection-failed")};const auth=()=>{if(!helloSeen||ws.readyState!==WebSocket.OPEN)return;const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;const timer=setTimeout(()=>{maApiPending.delete(message_id);fail(new Error("Music Assistant authentication timed out"))},10000);maApiPending.set(message_id,{parts:[],timer,resolve:(result)=>{if(!result)return fail(new Error("Music Assistant authentication was rejected"));maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();if(!settled){settled=true;resolve(ws)}},reject:fail});ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))};ws.on("open",()=>{});ws.on("message",data=>{let parsed=null;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{};if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){maApiServerInfo=parsed;helloSeen=true;auth();return}musicAssistantApiHandleMessage(data)});ws.on("error",fail);ws.on("close",(code,reason)=>{maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;maApiLastError=why;rejectMusicAssistantPending(`Music Assistant API ${why}`);if(!settled){settled=true;reject(new Error(`Music Assistant WebSocket API ${why}`))}});setTimeout(()=>{if(!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000)}).finally(()=>{maApiConnectPromise=null});return maApiConnectPromise}
+async function ensureMusicAssistantApi(){
+  if(maApiSocket&&maApiSocket.readyState===WebSocket.OPEN&&maApiAuthenticated)return maApiSocket;
+  if(maApiConnectPromise)return maApiConnectPromise;
+  const token=musicAssistantToken();
+  if(!token)throw new Error("Music Assistant token is not configured. Create a long-lived token in Music Assistant and save it in RoomGoblin Music settings.");
+  if(maApiConnectionCancel){const error=new Error("Music Assistant connection was replaced");error.connectionRetired=true;maApiConnectionCancel(error,"replaced")}
+  const connection=new Promise((resolve,reject)=>{
+    let settled=false,helloSeen=false,retired=false,helloTimer=null;
+    const ws=new WebSocket(musicAssistantApiWsUrl());
+    maApiSocket=ws;maApiAuthenticated=false;maApiServerInfo=null;
+    const current=()=>!retired&&maApiSocket===ws;
+    const retire=(error,reason="connection-failed",close=true)=>{
+      if(retired)return;
+      retired=true;clearTimeout(helloTimer);
+      if(maApiSocket===ws){
+        maApiSocket=null;maApiAuthenticated=false;maApiConnectPromise=null;maApiConnectionCancel=null;
+        maApiLastError=String(error?.message||error);
+      }
+      if(!settled){settled=true;reject(error)}
+      // Only this socket's requests are uncertain. Its delayed events must never
+      // reject a successor's commands or clear a successor's connection promise.
+      rejectMusicAssistantPending(String(error?.message||error),ws);
+      if(close){try{ws.close(1000,reason)}catch{}}
+    };
+    maApiConnectionCancel=retire;
+    const fail=error=>{if(current())retire(error instanceof Error?error:new Error(String(error)))};
+    const auth=()=>{
+      if(!current()||ws.readyState!==WebSocket.OPEN)return;
+      const message_id=`hub-auth-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+      const timer=setTimeout(()=>{if(current()&&maApiPending.has(message_id))fail(new Error("Music Assistant authentication timed out"))},10000);
+      maApiPending.set(message_id,{parts:[],timer,socket:ws,resolve:result=>{
+        if(!current())return;
+        if(!result)return fail(new Error("Music Assistant authentication was rejected"));
+        maApiAuthenticated=true;maApiLastError=null;maApiLastConnectedAt=new Date().toISOString();
+        if(!settled){settled=true;resolve(ws)}
+      },reject:fail});
+      try{ws.send(JSON.stringify({message_id,command:"auth",args:{token}}))}catch(error){fail(error)}
+    };
+    ws.on("message",data=>{
+      if(!current())return;
+      let parsed;try{parsed=JSON.parse(Buffer.isBuffer(data)?data.toString("utf8"):String(data))}catch{return}
+      if(parsed&&parsed.server_id&&parsed.schema_version!==undefined&&!parsed.message_id){
+        if(helloSeen)return;
+        maApiServerInfo=parsed;helloSeen=true;clearTimeout(helloTimer);auth();return;
+      }
+      musicAssistantApiHandleMessage(data,ws);
+    });
+    ws.on("error",fail);
+    ws.on("close",(code,reason)=>{
+      if(!current())return;
+      const why=`closed ${code}${reason?.length?`: ${reason.toString()}`:""}`;
+      retire(new Error(`Music Assistant WebSocket API ${why}`),"connection-closed",false);
+    });
+    helloTimer=setTimeout(()=>{if(current()&&!helloSeen&&!settled)fail(new Error("Music Assistant WebSocket did not provide server information"))},10000);
+  }).finally(()=>{if(maApiConnectPromise===connection)maApiConnectPromise=null});
+  maApiConnectPromise=connection;
+  return connection;
+}
 async function musicAssistantHttpCommand(command,args={}){
   const cfg=musicAssistantConfig(),token=musicAssistantToken();
-  const r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body:JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args}),signal:AbortSignal.timeout(musicAssistantCommandTimeout(command))});
-  const text=await r.text();
-  let j;
-  try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned invalid JSON (HTTP ${r.status})`)}
-  if(!r.ok||j?.error||j?.error_code!==undefined)throw Error(j?.error?.message||j?.error||j?.details||`Music Assistant HTTP ${r.status}`);
+  const body=JSON.stringify({message_id:`hub-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,command,args});
+  let r,j;
+  try{
+    r=await fetch(cfg.url+"/api",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${token}`},body,signal:AbortSignal.timeout(musicAssistantCommandTimeout(command))});
+    const text=await r.text();
+    try{j=JSON.parse(text)}catch{throw Error(`Music Assistant returned invalid JSON (HTTP ${r.status})`)}
+  }catch(error){error.mayHaveExecuted=true;throw error}
+  if(!r.ok||j?.error||j?.error_code!==undefined){
+    const error=Error(j?.error?.message||j?.error||j?.details||`Music Assistant HTTP ${r.status}`);
+    if(!j?.error&&j?.error_code===undefined)error.mayHaveExecuted=true;
+    throw error;
+  }
   // The upstream HTTP API returns the command result directly, including null
   // for successful void commands. Retain wrapped-result compatibility too.
   return j?.result!==undefined?j.result:j;
 }
 async function musicAssistantCommand(command,args={}){
+  const generation=maApiGeneration;
   try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){
     diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});
     // An unanswered command may still be running upstream. Replaying a mutation
     // through HTTP can duplicate playback/queue changes and increase provider load.
-    if(wsErr.mayHaveExecuted&&command!=="players/all")throw wsErr;
-    try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){throw new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`)}
+    if(generation!==maApiGeneration||wsErr.connectionRetired)throw wsErr;
+    if(wsErr.mayHaveExecuted&&!new Set(["players/all","player_queues/all","player_queues/get","player_queues/get_active_queue","player_queues/items","music/search"]).has(command))throw wsErr;
+    try{return await musicAssistantHttpCommand(command,args)}catch(httpErr){const error=new Error(`Music Assistant command failed over WebSocket (${wsErr.message}) and HTTP (${httpErr.message})`);if(httpErr.mayHaveExecuted)error.mayHaveExecuted=true;throw error}
   }
 }
 
@@ -6202,8 +7037,11 @@ const backgroundMusicRuntime={
   lastAction:null,
   lastActionAt:null,
   lastError:null,
-  retryAfter:0
+  retryAfter:0,
+  manualSession:false,activeMedia:null,sleepUntil:null,sessionGeneration:0,recovery:null
 };
+const backgroundMusicRecovery=new PlaybackRecovery();
+let backgroundMusicStartBusy=false,backgroundMusicResumeBusy=false;
 const backgroundMusicPriorityTargets=new Set();
 let backgroundMusicTickBusy=false;
 
@@ -6222,6 +7060,8 @@ function normalizeBackgroundMusicSchedule(input={},existing={}){
     playerId:String(input.playerId===undefined?(existing.playerId||""):input.playerId||"").trim(),
     favoriteId:String(input.favoriteId===undefined?(existing.favoriteId||""):input.favoriteId||"").trim(),
     volume:Math.max(0,Math.min(100,Number(input.volume===undefined?(existing.volume??20):input.volume)||0)),
+    autoRecover:input.autoRecover===undefined?(existing.autoRecover!==false):!!input.autoRecover,
+    stallSeconds:(()=>{const n=Number(input.stallSeconds??existing.stallSeconds??120);if(!Number.isInteger(n)||n<60||n>600)throw Error("Stall detection must be 60–600 seconds");return n})(),
     pauseForPriorityAudio:input.pauseForPriorityAudio===undefined?(existing.pauseForPriorityAudio!==false):!!input.pauseForPriorityAudio
   };
 }
@@ -6245,63 +7085,128 @@ function backgroundMusicWindowKey(cfg,now=new Date()){
   if(a>b&&n<b)d.setDate(d.getDate()-1);
   return `${localDateKey(d)}@${cfg.startTime}`;
 }
-function backgroundMusicPriorityState(){return {active:backgroundMusicPriorityTargets.size>0,targets:[...backgroundMusicPriorityTargets]}}
-let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null};
+function backgroundMusicPriorityState(){
+  // Track all audible scenes so changing a receiver's scope takes effect without
+  // replaying its content. Only room receivers own ordinary classroom priority.
+  // Mandatory announcement holds survive media-ended messages and pending
+  // release reconciliation. Ordinary restored media retains its own hold.
+  const targets=new Set(morningAnnouncementsPriorityTargets),independentTargets=[];
+  for(const id of backgroundMusicPriorityTargets){
+    if(displaySharesRoomAudio(id)||morningAnnouncementsPriorityTargets.has(id)||(manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id)))targets.add(id);
+    else independentTargets.push(id);
+  }
+  return {active:targets.size>0,targets:[...targets],independentTargets};
+}
+let backgroundMusicPlayerProbe={at:0,playerId:null,state:null,error:null,generation:-1};
+let backgroundMusicProbePending=null,backgroundMusicProbeSequence=0;
 async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),force=false){
-  const pid=String(cfg.playerId||"").trim();
+  const pid=String(cfg.playerId||"").trim(),generation=maApiGeneration;
   if(!pid)return null;
+  if(backgroundMusicProbePending?.playerId===pid&&backgroundMusicProbePending.generation===generation)return backgroundMusicProbePending.promise;
   const now=Date.now();
-  if(!force&&backgroundMusicPlayerProbe.playerId===pid&&(now-backgroundMusicPlayerProbe.at)<4000)return backgroundMusicPlayerProbe.state;
-  try{
+  if(!force&&backgroundMusicPlayerProbe.playerId===pid&&backgroundMusicPlayerProbe.generation===generation&&(now-backgroundMusicPlayerProbe.at)<4000)return backgroundMusicPlayerProbe.state;
+  const sequence=++backgroundMusicProbeSequence,owns=()=>generation===maApiGeneration&&sequence===backgroundMusicProbeSequence;
+  const promise=(async()=>{try{
     let players=[];
-    try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}
+    try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch(error){
+      if(generation!==maApiGeneration)return null;
+      players=await musicAssistantCommand("players/all",{});
+    }
+    if(generation!==maApiGeneration)return null;
     players=Array.isArray(players)?players:[];
     const p=players.find(x=>[x?.player_id,x?.playerId,x?.id,x?.provider_id].filter(Boolean).map(String).includes(pid))||null;
     const raw=String(p?.state||p?.playback_state||p?.playbackState||"").toLowerCase();
     const state=p?{found:true,playing:raw==="playing"||p?.is_playing===true||p?.isPlaying===true,paused:raw==="paused",raw,available:p?.available!==false,player:p}: {found:false,playing:false,paused:false,raw:"missing",available:false,player:null};
-    backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null};
+    if(owns())backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null,generation};
     return state;
   }catch(e){
-    backgroundMusicPlayerProbe={at:now,playerId:pid,state:null,error:e.message};
+    if(owns())backgroundMusicPlayerProbe={at:now,playerId:pid,state:null,error:e.message,generation};
     return null;
-  }
+  }})();
+  backgroundMusicProbePending={playerId:pid,generation,promise};
+  try{return await promise}finally{if(backgroundMusicProbePending?.promise===promise)backgroundMusicProbePending=null}
 }
 async function backgroundMusicPause(reason="manual"){
+  const generation=++backgroundMusicRuntime.sessionGeneration;
   const cfg=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
   await musicAssistantCommand("players/cmd/pause",{player_id:playerId});
-  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=true;backgroundMusicRuntime.lastAction=`pause:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
+  if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").trim())return false;
+  backgroundMusicRecovery.awaitingUntil=0;backgroundMusicRecovery.retryAt=0;backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=true;backgroundMusicRuntime.lastAction=`pause:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
 }
 async function backgroundMusicResume(reason="resume"){
+  if(backgroundMusicResumeBusy)return false;
+  if(backgroundMusicPriorityBlocked())throw Error("Music is paused for priority audio");
   const cfg=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
+  const generation=++backgroundMusicRuntime.sessionGeneration;
+  backgroundMusicResumeBusy=true;
+  try{
+  backgroundMusicRecovery.requested();
   await musicAssistantCommand("players/cmd/play",{player_id:playerId});
-  backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.lastAction=`play:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
+  if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked()){
+    if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.paused){await musicAssistantCommand("players/cmd/pause",{player_id:playerId});if(backgroundMusicRuntime.activePlayerId===playerId&&backgroundMusicPriorityBlocked()){backgroundMusicRuntime.paused=true;backgroundMusicRuntime.pausedForPriority=true}}
+    else if(backgroundMusicRuntime.manualStopped||!backgroundMusicRuntime.activePlayerId)await musicAssistantCommand("players/cmd/stop",{player_id:playerId});
+    return false;
+  }
+  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.lastAction=`play:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;return true;
+  }catch(error){if(generation===backgroundMusicRuntime.sessionGeneration){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}throw error}finally{backgroundMusicResumeBusy=false}
 }
+
 async function backgroundMusicStop(reason="manual",playerIdOverride=null){
+  const generation=++backgroundMusicRuntime.sessionGeneration;
   const cfg=backgroundMusicSchedule(),playerId=String(playerIdOverride||backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(playerId)await musicAssistantCommand("players/cmd/stop",{player_id:playerId});
-  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.activePlayerId=null;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.lastAction=`stop:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
+  if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").trim())return false;
+  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.activePlayerId=null;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.activeMedia=null;backgroundMusicRuntime.manualSession=false;backgroundMusicRuntime.sleepUntil=null;backgroundMusicRecovery.reset();backgroundMusicRuntime.lastAction=`stop:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
 }
-async function backgroundMusicStart({favoriteId=null,playerId=null,reason="manual"}={}){
-  const cfg=backgroundMusicSchedule(),pid=String(playerId||cfg.playerId||"").trim(),fav=backgroundMusicFavoriteById(favoriteId||cfg.favoriteId);
-  if(!pid)throw new Error("Select a Background Music player first");
-  if(!fav?.uri)throw new Error("Select a saved Background Music favorite first");
-  await musicAssistantCommand("players/cmd/volume_set",{player_id:pid,volume_level:cfg.volume});
-  await musicAssistantCommand("players/cmd/volume_mute",{player_id:pid,muted:false});
-  await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:fav.uri});
-  backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.manualStopped=false;backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav.id;backgroundMusicRuntime.lastAction=`start:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;
-  return {playerId:pid,favorite:fav};
+function backgroundMusicPriorityBlocked(){
+  const cfg=backgroundMusicSchedule();
+  return morningAnnouncementsPriorityTargets.size>0||(backgroundMusicPriorityState().active&&(cfg.pauseForPriorityAudio||manualMediaPriorityRuntime.active));
 }
+async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name="",mediaType="unknown",reason="manual",recover=false}={}){
+  if(backgroundMusicStartBusy)throw Error("A music change is already in progress");
+  if(backgroundMusicPriorityBlocked())throw Error("Music is paused for priority audio; resume the room schedule after the priority content ends");
+  backgroundMusicStartBusy=true;
+  const generation=++backgroundMusicRuntime.sessionGeneration;
+  const current=()=>{if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked())throw Error("Music playback changed while this request was starting")};
+  try{
+    const cfg=backgroundMusicSchedule(),pid=String(playerId||cfg.playerId||"").trim(),fav=uri?null:backgroundMusicFavoriteById(favoriteId||cfg.favoriteId);
+    const source=mediaSelection(uri?{uri,name,mediaType}:{uri:fav?.uri,name:fav?.name,mediaType:fav?.mediaType||(/:\/\/radio\//.test(fav?.uri||"")?"radio":"unknown")});
+    if(!pid)throw Error("Select a Background Music player first");
+    const actual=await backgroundMusicActualPlayerState({playerId:pid},true);current();
+    if(!actual?.found||actual.available===false)throw Error("The selected music player is unavailable; no playback command was sent");
+    const prior=backgroundMusicRuntime.activePlayerId;
+    if(prior&&prior!==pid){await musicAssistantCommand("players/cmd/stop",{player_id:prior});current()}
+    // Recovery retains the listener's volume/mute; only explicit starts apply defaults.
+    if(!recover){await musicAssistantCommand("players/cmd/volume_set",{player_id:pid,volume_level:cfg.volume});current();await musicAssistantCommand("players/cmd/volume_mute",{player_id:pid,muted:false});current()}
+    backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav?.id||null;backgroundMusicRuntime.activeMedia=source;
+    if(!recover){backgroundMusicRecovery.reset();backgroundMusicRuntime.manualSession=reason==="manual";backgroundMusicRuntime.sleepUntil=null}
+    backgroundMusicRecovery.requested();
+    await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:source.uri});
+    if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked()){
+      if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.paused){await musicAssistantCommand("players/cmd/pause",{player_id:pid});if(backgroundMusicRuntime.activePlayerId===pid&&backgroundMusicPriorityBlocked()){backgroundMusicRuntime.paused=true;backgroundMusicRuntime.pausedForPriority=true}}
+      else if(backgroundMusicRuntime.manualStopped||!backgroundMusicRuntime.activePlayerId)await musicAssistantCommand("players/cmd/stop",{player_id:pid});
+      return {playerId:pid,pending:true};
+    }
+    backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.manualStopped=false;backgroundMusicRuntime.lastAction=`start:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;backgroundMusicPlayerProbe.at=0;
+    return {playerId:pid,favorite:fav,media:source,pending:true};
+  }catch(error){if(generation===backgroundMusicRuntime.sessionGeneration){if(!backgroundMusicRecovery.awaitingUntil)backgroundMusicRecovery.requested();backgroundMusicRecovery.failed(error.mayHaveExecuted===true)}throw error}finally{backgroundMusicStartBusy=false}
+}
+
 async function backgroundMusicReconcilePriority({force=false}={}){
   const cfg=backgroundMusicSchedule();
   if(!force&&!cfg.pauseForPriorityAudio)return;
-  const priority=backgroundMusicPriorityTargets.size>0;
+  let generation=backgroundMusicRuntime.sessionGeneration;
+  const playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"");
+  const priority=backgroundMusicPriorityState().active;
   if(priority&&!backgroundMusicRuntime.playing){
-    const actual=await backgroundMusicActualPlayerState(cfg,true);
-    if(actual?.playing){backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.activePlayerId=String(cfg.playerId||"");backgroundMusicRuntime.activeFavoriteId=String(cfg.favoriteId||"")||null}
+    const actual=await backgroundMusicActualPlayerState({playerId},true);
+    if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"")||!backgroundMusicPriorityState().active)return;
+    if(actual?.playing){backgroundMusicRuntime.playing=true;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.activePlayerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"");backgroundMusicRuntime.activeFavoriteId=backgroundMusicRuntime.activeFavoriteId||String(cfg.favoriteId||"")||null}
   }
   if(priority&&backgroundMusicRuntime.playing){
-    try{await backgroundMusicPause("priority-audio");backgroundMusicRuntime.pausedForPriority=true}catch(e){backgroundMusicRuntime.lastError=e.message}
+    try{const pending=backgroundMusicPause("priority-audio");generation=backgroundMusicRuntime.sessionGeneration;const paused=await pending;if(generation===backgroundMusicRuntime.sessionGeneration&&paused!==false)backgroundMusicRuntime.pausedForPriority=true}catch(e){if(generation===backgroundMusicRuntime.sessionGeneration)backgroundMusicRuntime.lastError=e.message}
   }else if(!priority&&backgroundMusicRuntime.pausedForPriority&&!backgroundMusicRuntime.manualStopped){
-    try{await backgroundMusicResume("priority-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}
+    if(Math.max(backgroundMusicRecovery.retryAt,backgroundMusicRecovery.awaitingUntil)>Date.now())return;
+    try{const pending=backgroundMusicResume("priority-ended");generation=backgroundMusicRuntime.sessionGeneration;await pending}catch(e){if(generation===backgroundMusicRuntime.sessionGeneration)backgroundMusicRuntime.lastError=e.message}
   }
 }
 const manualMediaPriorityRuntime={active:false,targets:new Set(),pausedPlayers:new Set(),schedulerWasEnabled:false,lastStartedAt:null,lastSource:null,lastCommandType:null,lastError:null};
@@ -6315,8 +7220,7 @@ function manualMediaPriorityCommand(command,source="api"){
 }
 function pauseActiveAutomationRunsForManualMedia(){
   const ids=[...automationRunningOccurrences.keys()];
-  for(const id of ids){automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,"manual-media-priority");automationRunLedger.record({occurrenceId:id,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"manual-media-priority"});}
-  return ids;
+  return requestAutomationRunCancellation(ids,"manual-media-priority");
 }
 async function pausePlayingMusicAssistantPlayersForManualMedia(){
   let players=[];try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}
@@ -6329,6 +7233,9 @@ async function pausePlayingMusicAssistantPlayersForManualMedia(){
 async function engageManualMediaPriority(command,source="api"){
   if(!manualMediaPriorityCommand(command,source))return null;
   let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{}
+  targets=targets.filter(displaySharesRoomAudio);
+  // A hallway-only manual command is local playback, not a classroom takeover.
+  if(!targets.length)return null;
   for(const id of targets)manualMediaPriorityRuntime.targets.add(id);
   if(!manualMediaPriorityRuntime.active)manualMediaPriorityRuntime.schedulerWasEnabled=automationSchedulerEnabled;
   manualMediaPriorityRuntime.active=true;manualMediaPriorityRuntime.lastStartedAt=new Date().toISOString();manualMediaPriorityRuntime.lastSource=String(source||"api");manualMediaPriorityRuntime.lastCommandType=String(command?.type||"");manualMediaPriorityRuntime.lastError=null;
@@ -6353,94 +7260,82 @@ async function releaseManualMediaPriority(reason="operator-resume"){
   return {released:true,targets,pausedPlayers,schedulerRestored:schedulerWasEnabled};
 }
 function backgroundMusicObserveDisplayCommand(command,source="api"){
+  if(command.type==="display.audio.control"){
+    for(const id of resolveDisplayTargets(command.target)){
+      if(displayAudio.describe(persistentState.displays[id]).audible)backgroundMusicPriorityTargets.add(id);
+      else if(!manualMediaPriorityRuntime.targets.has(id))backgroundMusicPriorityTargets.delete(id);
+    }
+    trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
+    return;
+  }
   const src=String(source||command?.source||"");
   const p=command?.payload||{},kind=String(p.contentKind||"");
-  const eligible=src==="automation"||kind==="morning-announcements";
+  // Sports video is one persistent scene session. Reserve audio for the board
+  // until replacement; never restart an automation for individual clips.
+  const sportsAudio=p.scene?.layers?.some(l=>l.widget==="sports-board")?require("./sports-audio").commandAudio(command,sportsRuntime.service.read()):null;
+  const eligible=src==="automation"||kind==="morning-announcements"||sportsAudio!==null||p.scene||["display.text","display.clear","display.image","display.pdf","display.document","display.presentation"].includes(command.type);
   if(!eligible)return;
   let targets=[];try{targets=resolveDisplayTargets(command.target)}catch{return}
   const type=String(command.type||"");
   let startsAudio=false,replacesAudio=false;
-  if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true}
-  else if(type==="display.web"){replacesAudio=true;startsAudio=p.forceAudio===true||p.muted===false||kind==="morning-announcements"}
+  if(type==="display.text"){replacesAudio=true;startsAudio=sportsAudio===true}
+  else if(type==="display.video"){replacesAudio=true;startsAudio=p.muted!==true&&Number(p.volume??1)>0}
+  else if(type==="display.web"){replacesAudio=true;startsAudio=(p.forceAudio===true||p.muted===false||kind==="morning-announcements")&&p.muted!==true&&Number(p.volume??1)>0}
   else if(type==="display.web.audio"){startsAudio=p.unmute!==false}
   else if(type.startsWith("voice.")||type.startsWith("sfx.")){startsAudio=true}
   else if(["display.clear","display.image","display.pdf","display.document","display.presentation"].includes(type)){replacesAudio=true}
   if(replacesAudio)for(const id of targets){
-    const announcementOwnsTarget=morningAnnouncementsRuntime.active&&(morningAnnouncementsRuntime.targets||[]).includes(id);
-    if(!announcementOwnsTarget)backgroundMusicPriorityTargets.delete(id);
+    const manualOwnsTarget=manualMediaPriorityRuntime.active&&manualMediaPriorityRuntime.targets.has(id);
+    if(!manualOwnsTarget)backgroundMusicPriorityTargets.delete(id);
   }
   if(startsAudio)for(const id of targets)backgroundMusicPriorityTargets.add(id);
   trackFullExportMutation(backgroundMusicReconcilePriority()).catch(()=>{});
 }
 async function backgroundMusicTick(){
-  if(fullExportFreeze.requested)return;
+  if(shutdownRequested||fullExportFreeze.requested)return;
   if(backgroundMusicTickBusy)return;backgroundMusicTickBusy=true;
+  let generation=backgroundMusicRuntime.sessionGeneration;
+  const owns=()=>generation===backgroundMusicRuntime.sessionGeneration;
   try{
     const cfg=backgroundMusicSchedule(),now=new Date(),active=backgroundMusicWindowActive(cfg,now),key=backgroundMusicWindowKey(cfg,now);
-    if(!active){
-      if(backgroundMusicRuntime.scheduleActive||backgroundMusicRuntime.startedKey){try{await backgroundMusicStop("schedule-ended")}catch(e){backgroundMusicRuntime.lastError=e.message}}
-      backgroundMusicRuntime.scheduleActive=false;backgroundMusicRuntime.manualStopped=false;backgroundMusicRuntime.startedKey=null;return;
+    if(backgroundMusicRuntime.sleepUntil&&Date.now()>=backgroundMusicRuntime.sleepUntil){const pending=backgroundMusicStop("sleep-timer");generation=backgroundMusicRuntime.sessionGeneration;const stopped=await pending;if(owns()&&stopped!==false)backgroundMusicRuntime.manualStopped=true;return}
+    if(!active&&!backgroundMusicRuntime.manualSession){
+      if(backgroundMusicRuntime.scheduleActive||backgroundMusicRuntime.startedKey){try{const pending=backgroundMusicStop("schedule-ended");generation=backgroundMusicRuntime.sessionGeneration;const stopped=await pending;if(!owns()||stopped===false)return}catch(e){if(!owns())return;backgroundMusicRuntime.lastError=e.message}}
+      backgroundMusicRuntime.scheduleActive=false;backgroundMusicRuntime.startedKey=null;return;
     }
-    backgroundMusicRuntime.scheduleActive=true;
-    if(backgroundMusicRuntime.startedKey!==key){backgroundMusicRuntime.startedKey=key;backgroundMusicRuntime.manualStopped=false}
-    if(backgroundMusicRuntime.manualStopped)return;
-    if(cfg.pauseForPriorityAudio&&backgroundMusicPriorityTargets.size){
-      await backgroundMusicReconcilePriority();
-      return;
+    backgroundMusicRuntime.scheduleActive=active;
+    if(active&&backgroundMusicRuntime.startedKey!==key){backgroundMusicRuntime.startedKey=key;backgroundMusicRuntime.manualStopped=false}
+    if(backgroundMusicRuntime.manualStopped||backgroundMusicStartBusy)return;
+    if(backgroundMusicPriorityBlocked()){await backgroundMusicReconcilePriority({force:true});return}
+    const playerId=backgroundMusicRuntime.activePlayerId||cfg.playerId;
+    const actual=await backgroundMusicActualPlayerState({playerId});
+    if(!owns()||String(playerId||"")!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||""))return;
+    if(backgroundMusicPriorityBlocked()){await backgroundMusicReconcilePriority({force:true});return}
+    if(!actual?.found||actual.available===false){
+      backgroundMusicRuntime.playing=false;
+      backgroundMusicRuntime.lastError=actual==null?"Music Assistant player status is unavailable":actual.found?"Background Music player is temporarily unavailable":"Background Music player has not registered yet";
+      backgroundMusicRecovery.observe(actual);return;
     }
-
-    // Reconcile against Music Assistant itself instead of trusting only the
-    // process-local runtime flag. A display/player reconnect can leave MA idle
-    // while Classroom Control Hub still remembers playing=true. This also works when
-    // the configured Background Music player is a MA group rather than the
-    // individual TV player that just reconnected.
-    const actual=await backgroundMusicActualPlayerState(cfg);
-    if(actual?.found){
-      if(actual.playing){
-        backgroundMusicRuntime.playing=true;
-        backgroundMusicRuntime.paused=false;
-        backgroundMusicRuntime.pausedForPriority=false;
-        backgroundMusicRuntime.activePlayerId=String(cfg.playerId||"");
-        backgroundMusicRuntime.activeFavoriteId=String(cfg.favoriteId||"")||null;
-        backgroundMusicRuntime.retryAfter=0;
-        backgroundMusicRuntime.lastError=null;
-      }else if(!backgroundMusicRuntime.manualStopped&&!backgroundMusicRuntime.pausedForPriority){
-        backgroundMusicRuntime.playing=false;
-        backgroundMusicRuntime.paused=false;
+    if(backgroundMusicRuntime.pausedForPriority){if(Math.max(backgroundMusicRecovery.retryAt,backgroundMusicRecovery.awaitingUntil)>Date.now())return;const pending=backgroundMusicResume("priority-ended");generation=backgroundMusicRuntime.sessionGeneration;await pending;if(owns())backgroundMusicPlayerProbe.at=0;return}
+    const decision=backgroundMusicRecovery.observe(actual,{stallSeconds:cfg.stallSeconds||120,finiteTrack:backgroundMusicRuntime.manualSession&&backgroundMusicRuntime.activeMedia?.mediaType==="track"});
+    backgroundMusicRuntime.playing=actual.playing&&backgroundMusicRecovery.state!=="stalled";backgroundMusicRuntime.paused=actual.paused;
+    if(decision.action==="none"){backgroundMusicRuntime.activePlayerId=String(playerId);backgroundMusicRuntime.lastError=null;return}
+    if(decision.action==="complete"){backgroundMusicRuntime.manualStopped=true;backgroundMusicRuntime.manualSession=false;return}
+    if(decision.action==="wait"||cfg.autoRecover===false&&backgroundMusicRuntime.activePlayerId)return;
+    if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.manualStopped)return;
+    try{
+      if(backgroundMusicRuntime.activeMedia&&decision.action==="resume"){
+        const pending=backgroundMusicResume("recover-queue");generation=backgroundMusicRuntime.sessionGeneration;const resumed=await pending;if(!owns()||resumed===false)return;
+        backgroundMusicRuntime.lastAction="recover:resume-queue";
+      }else{
+        const source=backgroundMusicRuntime.activeMedia;
+        const pending=backgroundMusicStart({playerId,...(source?source:{favoriteId:cfg.favoriteId}),recover:!!source,reason:source?"recovery":"schedule-player-idle"});generation=backgroundMusicRuntime.sessionGeneration;await pending;if(!owns())return;
       }
-    }
-
-    // Music Assistant can accept authenticated API calls before a configured
-    // player or media provider has completed startup. Do not hammer volume/play
-    // commands into a known-missing or unavailable player, and back off after a
-    // transient start failure so provider initialization can finish.
-    if(!backgroundMusicRuntime.playing&&!backgroundMusicRuntime.paused){
-      if(!actual?.found||actual.available===false){
-        backgroundMusicRuntime.lastError=actual?.found?"Background Music player is temporarily unavailable":"Background Music player has not registered yet";
-        return;
-      }
-      if(Number(backgroundMusicRuntime.retryAfter||0)>Date.now())return;
-      try{
-        await backgroundMusicStart({reason:"schedule-player-idle"});
-        backgroundMusicRuntime.retryAfter=0;
-      }catch(error){
-        backgroundMusicRuntime.retryAfter=Date.now()+30000;
-        throw error;
-      }
-      backgroundMusicPlayerProbe.at=0;
-    }else if(backgroundMusicRuntime.pausedForPriority){
-      await backgroundMusicResume("priority-ended");
-      backgroundMusicPlayerProbe.at=0;
-    }
-  }catch(e){backgroundMusicRuntime.lastError=e.message;diagnosticError(e,{component:"background-music",operation:"schedule-tick"})}
-  finally{backgroundMusicTickBusy=false}
+      backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicPlayerProbe.at=0;
+    }catch(error){if(owns()){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}}
+  }catch(e){if(owns())backgroundMusicRuntime.lastError=e.message;diagnosticError(e,{component:"background-music",operation:"schedule-tick"})}
+  finally{backgroundMusicRuntime.recovery=backgroundMusicRecovery.snapshot();backgroundMusicRuntime.retryAfter=backgroundMusicRecovery.retryAt;backgroundMusicTickBusy=false}
 }
-
-app.get("/api/v1/music-assistant/background",requireControl,async(_req,res)=>{const cfg=backgroundMusicSchedule();const actualPlayer=await backgroundMusicActualPlayerState(cfg,true).catch(()=>null);res.json({ok:true,schedule:cfg,favorites:backgroundMusicFavorites(),runtime:{...backgroundMusicRuntime,priority:backgroundMusicPriorityState(),actualPlayer,playerProbeError:backgroundMusicPlayerProbe.error}})});
-app.put("/api/v1/music-assistant/background/schedule",requireControl,async(req,res)=>{try{const prior=backgroundMusicSchedule(),cfg=normalizeBackgroundMusicSchedule(req.body||{},prior);dbStore.setPreference("musicassistant.background.schedule",cfg);backgroundMusicRuntime.lastError=null;const identityChanged=prior.playerId!==cfg.playerId||prior.favoriteId!==cfg.favoriteId;if(identityChanged&&(backgroundMusicRuntime.playing||backgroundMusicRuntime.paused)){await backgroundMusicStop("schedule-identity-changed",backgroundMusicRuntime.activePlayerId||prior.playerId);backgroundMusicRuntime.startedKey=null}audit({kind:"musicassistant.background.schedule.update",enabled:cfg.enabled,startTime:cfg.startTime,endTime:cfg.endTime,playerId:cfg.playerId,favoriteId:cfg.favoriteId});await backgroundMusicTick();res.json({ok:true,schedule:cfg})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/music-assistant/background/favorites",requireControl,(req,res)=>{try{const uri=String(req.body?.uri||"").trim(),name=String(req.body?.name||"").trim(),detail=String(req.body?.detail||"").trim();if(!uri||!name)return res.status(400).json({ok:false,error:"Favorite name and media URI are required"});const list=backgroundMusicFavorites(),existing=list.find(x=>x.uri===uri);if(existing){existing.name=name;existing.detail=detail}else list.push({id:`bgm-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,name,uri,detail,createdAt:new Date().toISOString()});dbStore.setPreference("musicassistant.background.favorites",list.slice(-100));res.json({ok:true,favorites:list})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.delete("/api/v1/music-assistant/background/favorites/:id",requireControl,(req,res)=>{const id=String(req.params.id||""),list=backgroundMusicFavorites().filter(x=>String(x.id)!==id);dbStore.setPreference("musicassistant.background.favorites",list);const cfg=backgroundMusicSchedule();if(cfg.favoriteId===id){cfg.favoriteId="";dbStore.setPreference("musicassistant.background.schedule",cfg)}res.json({ok:true,favorites:list})});
-app.post("/api/v1/music-assistant/background/control",requireControl,async(req,res)=>{try{const action=String(req.body?.action||"");if(action==="play"){const r=await backgroundMusicStart({favoriteId:req.body?.favoriteId,playerId:req.body?.playerId,reason:"manual"});return res.json({ok:true,action,...r})}if(action==="pause"){await backgroundMusicPause("manual");backgroundMusicRuntime.manualStopped=true;return res.json({ok:true,action})}if(action==="stop"){await backgroundMusicStop("manual");backgroundMusicRuntime.manualStopped=true;return res.json({ok:true,action})}if(action==="resume"){backgroundMusicRuntime.manualStopped=false;await backgroundMusicResume("manual");return res.json({ok:true,action})}return res.status(400).json({ok:false,error:"Unknown Background Music action"})}catch(e){res.status(502).json({ok:false,error:e.message})}});
 
 // Appliance-wide budgets keep polling separate from configuration/attachment writes.
 // Fixed keys prevent forwarding headers or rotating addresses from multiplying quotas.
@@ -6454,16 +7349,124 @@ const musicAssistantMutationLimit=rateLimit({
   standardHeaders:"draft-8",legacyHeaders:false,
   message:{ok:false,error:"Music Assistant configuration/attachment limit reached; retry later"}
 });
-app.get("/api/v1/music-assistant/status",musicAssistantStatusLimit,requireControl,async(_req,res)=>{const cfg=musicAssistantConfig(),configured=!!musicAssistantToken();try{let players=[];if(configured){try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch{players=await musicAssistantCommand("players/all",{})}}players=Array.isArray(players)?players:[];const playerIds=new Set(players.flatMap(p=>[p?.player_id,p?.id,p?.provider_id].filter(Boolean).map(String)));const bridgeStatus=Object.fromEntries(Object.entries(runtime.displays||{}).map(([id,v])=>{const m=v?.musicAssistant||null;if(!m)return [id,null];const keys=[m.clientId].filter(Boolean).map(String);return [id,{...m,registered:keys.some(k=>playerIds.has(k))}]}));res.json({ok:true,configured,url:cfg.url,browserUrl:cfg.browserUrl,tvBridgeEnabled:cfg.tvBridgeEnabled,sendspinBaseUrl:sendspinEndpoint(cfg).replace(/^ws:/,"http:").replace(/\/sendspin$/,""),sendspinWebSocket:sendspinEndpoint(cfg),upstreamTransport:"dedicated-sendspin",sdkIdentity:"music-assistant-stable-2.9-compatible-sendspin-js-3.2.1",transport:"authenticated-ma-sendspin-proxy",apiTransport:maApiAuthenticated?"persistent-websocket":"http-fallback",apiServerInfo:maApiServerInfo,apiLastConnectedAt:maApiLastConnectedAt,apiLastError:maApiLastError,attachedTargets:dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[],tvDefaultVolume:MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,tvAudioState:dbStore.getPreference("musicassistant.tvAudioState",{})||{},bridgeStatus,online:configured,players})}catch(e){res.json({ok:true,configured,url:cfg.url,browserUrl:cfg.browserUrl,tvBridgeEnabled:cfg.tvBridgeEnabled,online:false,error:e.message,players:[]})}});
-app.put("/api/v1/music-assistant/config",musicAssistantMutationLimit,requireAdmin,(req,res)=>{try{const current=musicAssistantConfig(),url=String(req.body?.url||current.url).trim().replace(/\/$/,""),browserUrl=req.body?.browserUrl===undefined?current.browserUrl:optionalBrowserHttpUrl(req.body.browserUrl,"Music Assistant browser URL");if(!/^https?:\/\//i.test(url))return res.status(400).json({ok:false,error:"Music Assistant URL must begin with http:// or https://"});const parsed=new URL(url);if(parsed.username||parsed.password)return res.status(400).json({ok:false,error:"Music Assistant URL must not contain credentials"});const safeUrl=parsed.toString().replace(/\/$/,""),prior=musicAssistantConfig(),next={url:safeUrl,browserUrl,tvBridgeEnabled:req.body?.tvBridgeEnabled!==false,sendspinHost:String(req.body?.sendspinHost??prior.sendspinHost),sendspinPort:req.body?.sendspinPort??prior.sendspinPort??8927};sendspinEndpoint(next);dbStore.setPreference("musicassistant.config",next);if(req.body?.token)dbStore.putSecret("musicassistant.token",String(req.body.token),{integration:"Music Assistant",type:"long-lived-access-token"});musicAssistantApiClose("configuration-changed");audit({kind:"musicassistant.config.update",url:safeUrl});res.json({ok:true,url:safeUrl,browserUrl,tokenStored:!!musicAssistantToken()})}catch(e){res.status(400).json({ok:false,error:e.message})}});
-app.post("/api/v1/music-assistant/command",requireControl,async(req,res)=>{try{const command=String(req.body?.command||""),args=req.body?.args||{};const allowed=new Set(["players/all","players/cmd/play_pause","players/cmd/play","players/cmd/pause","players/cmd/stop","players/cmd/volume_set","players/cmd/volume_mute","player_queues/all","player_queues/items","player_queues/play_media","music/search","music/recently_played_items"]);if(!allowed.has(command))return res.status(400).json({ok:false,error:"Music Assistant command is not approved by Classroom Control Hub"});const result=await musicAssistantCommand(command,args);const tvId=musicAssistantTvDeviceIdFromPlayerId(args.player_id);if(tvId&&command==="players/cmd/volume_set")setMusicAssistantTvAudioState(tvId,{volume:args.volume_level});if(tvId&&command==="players/cmd/volume_mute")setMusicAssistantTvAudioState(tvId,{muted:args.muted});audit({kind:"musicassistant.command",command});res.json({ok:true,result})}catch(e){res.status(502).json({ok:false,error:e.message})}});
+app.get("/api/v1/music-assistant/background",musicAssistantStatusLimit,requireControl,async(_req,res)=>{
+  const initial=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||initial.playerId||"").trim();
+  const session=backgroundMusicRuntime.sessionGeneration,connection=maApiGeneration;
+  let actualPlayer=await backgroundMusicActualPlayerState({playerId},true).catch(()=>null);
+  const cfg=backgroundMusicSchedule(),currentPlayer=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();
+  const current=session===backgroundMusicRuntime.sessionGeneration&&connection===maApiGeneration&&playerId===currentPlayer;
+  if(!current)actualPlayer=null;
+  const playerProbeError=!current?"Playback changed during status lookup; refresh for current player status.":actualPlayer?null:
+    backgroundMusicPlayerProbe.playerId===playerId&&backgroundMusicPlayerProbe.generation===connection?backgroundMusicPlayerProbe.error:null;
+  res.json({ok:true,schedule:cfg,favorites:backgroundMusicFavorites(),runtime:{...backgroundMusicRuntime,recovery:backgroundMusicRecovery.snapshot(),priority:backgroundMusicPriorityState(),actualPlayer,playerProbeError}});
+});
+let backgroundMusicScheduleWrites=Promise.resolve();
+app.put("/api/v1/music-assistant/background/schedule",musicAssistantMutationLimit,requireControl,(req,res)=>{
+  const save=async()=>{try{
+    const prior=backgroundMusicSchedule(),cfg=normalizeBackgroundMusicSchedule(req.body||{},prior);
+    backgroundMusicRuntime.lastError=null;
+    const identityChanged=prior.playerId!==cfg.playerId||prior.favoriteId!==cfg.favoriteId;
+    let ownsSession=true;
+    if(identityChanged&&(backgroundMusicRuntime.playing||backgroundMusicRuntime.paused||backgroundMusicRuntime.activePlayerId)){
+      backgroundMusicRuntime.manualStopped=true;
+      const pending=backgroundMusicStop("schedule-identity-changed",backgroundMusicRuntime.activePlayerId||prior.playerId);
+      const generation=backgroundMusicRuntime.sessionGeneration,stopped=await pending;
+      ownsSession=generation===backgroundMusicRuntime.sessionGeneration&&stopped!==false;
+      if(ownsSession)backgroundMusicRuntime.startedKey=null;
+    }
+    dbStore.setPreference("musicassistant.background.schedule",cfg);
+    if(identityChanged&&ownsSession)backgroundMusicRuntime.manualStopped=false;
+    audit({kind:"musicassistant.background.schedule.update",enabled:cfg.enabled,startTime:cfg.startTime,endTime:cfg.endTime,playerId:cfg.playerId,favoriteId:cfg.favoriteId});
+    await backgroundMusicTick();res.json({ok:true,schedule:cfg});
+  }catch(e){res.status(400).json({ok:false,error:e.message})}};
+  const pending=backgroundMusicScheduleWrites.then(save,save);
+  backgroundMusicScheduleWrites=pending.catch(()=>{});
+  return pending;
+});
+app.post("/api/v1/music-assistant/background/favorites",musicAssistantMutationLimit,requireControl,(req,res)=>{try{const uri=String(req.body?.uri||"").trim(),name=String(req.body?.name||"").trim(),detail=String(req.body?.detail||"").trim();if(!uri||!name)return res.status(400).json({ok:false,error:"Favorite name and media URI are required"});mediaSelection({uri,name});const list=backgroundMusicFavorites(),existing=list.find(x=>x.uri===uri);if(existing){existing.name=name;existing.detail=detail;existing.mediaType=String(req.body?.mediaType||existing.mediaType||"unknown").slice(0,30)}else list.push({mediaType:String(req.body?.mediaType||"unknown").slice(0,30),id:`bgm-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,name,uri,detail,createdAt:new Date().toISOString()});dbStore.setPreference("musicassistant.background.favorites",list.slice(-100));res.json({ok:true,favorites:list})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+app.delete("/api/v1/music-assistant/background/favorites/:id",musicAssistantMutationLimit,requireControl,(req,res)=>{const id=String(req.params.id||""),list=backgroundMusicFavorites().filter(x=>String(x.id)!==id);dbStore.setPreference("musicassistant.background.favorites",list);const cfg=backgroundMusicSchedule();if(cfg.favoriteId===id){cfg.favoriteId="";dbStore.setPreference("musicassistant.background.schedule",cfg)}res.json({ok:true,favorites:list})});
+app.post("/api/v1/music-assistant/background/control",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const action=String(req.body?.action||"");if(action==="play"){const r=await backgroundMusicStart({favoriteId:req.body?.favoriteId,playerId:req.body?.playerId,uri:req.body?.uri,name:req.body?.name,mediaType:req.body?.mediaType,reason:"manual"});return res.json({ok:true,action,...r})}if(action==="sleep"){if(!backgroundMusicRuntime.activePlayerId)throw Error("Start Background Music before setting its sleep timer");backgroundMusicRuntime.sleepUntil=sleepDeadline(req.body?.minutes);return res.json({ok:true,action,until:backgroundMusicRuntime.sleepUntil})}if(action==="retry"){const source=backgroundMusicRuntime.activeMedia;if(!source)throw Error("Start a managed source before recovering playback");await backgroundMusicStart({...source,playerId:backgroundMusicRuntime.activePlayerId,recover:true,reason:"manual-repair"});return res.json({ok:true,action})}if(action==="pause"){backgroundMusicRuntime.manualStopped=true;await backgroundMusicPause("manual");return res.json({ok:true,action})}if(action==="stop"){backgroundMusicRuntime.manualStopped=true;await backgroundMusicStop("manual");return res.json({ok:true,action})}if(action==="resume"){backgroundMusicRuntime.manualStopped=false;await backgroundMusicResume("manual");return res.json({ok:true,action})}return res.status(400).json({ok:false,error:"Unknown Background Music action"})}catch(e){res.status(502).json({ok:false,error:e.message})}});
+
+app.get("/api/v1/music-assistant/status",musicAssistantStatusLimit,requireControl,async(_req,res)=>{const cfg=musicAssistantConfig(),configured=!!musicAssistantToken(),generation=maApiGeneration;const changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh to check the current connection."});try{let players=[];if(configured){try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch(error){if(generation!==maApiGeneration)return changed();players=await musicAssistantCommand("players/all",{})}}if(generation!==maApiGeneration)return changed();players=Array.isArray(players)?players:[];const playerIds=new Set(players.flatMap(p=>[p?.player_id,p?.id,p?.provider_id].filter(Boolean).map(String)));const bridgeStatus=Object.fromEntries(Object.entries(runtime.displays||{}).map(([id,v])=>{const m=v?.musicAssistant||null;if(!m)return [id,null];const keys=[m.clientId].filter(Boolean).map(String);return [id,{...m,registered:keys.some(k=>playerIds.has(k))}]}));res.json({ok:true,configured,url:cfg.url,browserUrl:cfg.browserUrl,tvBridgeEnabled:cfg.tvBridgeEnabled,sendspinBaseUrl:sendspinEndpoint(cfg).replace(/^ws:/,"http:").replace(/\/sendspin$/,""),sendspinWebSocket:sendspinEndpoint(cfg),upstreamTransport:"dedicated-sendspin",sdkIdentity:"music-assistant-stable-2.9-compatible-sendspin-js-3.2.1",transport:"authenticated-ma-sendspin-proxy",apiTransport:maApiAuthenticated?"persistent-websocket":"http-fallback",apiServerInfo:maApiServerInfo,apiLastConnectedAt:maApiLastConnectedAt,apiLastError:maApiLastError,attachedTargets:dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[],tvDefaultVolume:MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,tvAudioState:dbStore.getPreference("musicassistant.tvAudioState",{})||{},bridgeStatus,online:configured,players})}catch(e){if(generation!==maApiGeneration)return changed();res.json({ok:true,configured,url:cfg.url,browserUrl:cfg.browserUrl,tvBridgeEnabled:cfg.tvBridgeEnabled,online:false,error:e.message,players:[]})}});
+app.put("/api/v1/music-assistant/config",musicAssistantMutationLimit,requireAdmin,(req,res)=>{try{const current=musicAssistantConfig(),url=String(req.body?.url||current.url).trim().replace(/\/$/,""),browserUrl=req.body?.browserUrl===undefined?current.browserUrl:optionalBrowserHttpUrl(req.body.browserUrl,"Music Assistant browser URL");if(!/^https?:\/\//i.test(url))return res.status(400).json({ok:false,error:"Music Assistant URL must begin with http:// or https://"});const parsed=new URL(url);if(parsed.username||parsed.password)return res.status(400).json({ok:false,error:"Music Assistant URL must not contain credentials"});const safeUrl=parsed.toString().replace(/\/$/,""),prior=musicAssistantConfig(),next={url:safeUrl,browserUrl,tvBridgeEnabled:req.body?.tvBridgeEnabled!==false,sendspinHost:String(req.body?.sendspinHost??prior.sendspinHost),sendspinPort:req.body?.sendspinPort??prior.sendspinPort??8927};sendspinEndpoint(next);dbStore.tx(()=>{dbStore.setPreference("musicassistant.config",next);if(req.body?.token)dbStore.putSecret("musicassistant.token",String(req.body.token),{integration:"Music Assistant",type:"long-lived-access-token"});});musicAssistantApiClose("configuration-changed");audit({kind:"musicassistant.config.update",url:safeUrl});res.json({ok:true,url:safeUrl,browserUrl,tokenStored:!!musicAssistantToken()})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+app.get("/api/v1/music-assistant/background/queue",musicAssistantStatusLimit,requireControl,async(req,res)=>{
+  try{
+    const playerId=String(req.query.playerId||backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").slice(0,200);
+    if(!playerId)throw Error("Choose a listening output");
+    const q=await musicAssistantCommand("player_queues/get_active_queue",{player_id:playerId});
+    if(!q)return res.json({ok:true,queue:null,items:[]});
+    const rows=await musicAssistantCommand("player_queues/items",{queue_id:q.queue_id,offset:Math.max(0,Number(q.current_index)||0),limit:50});
+    const item=x=>x?{id:String(x.queue_item_id||""),name:String(x.name||x.media_item?.name||"Music item").slice(0,300),duration:Number(x.duration)||0,uri:String(x.media_item?.uri||"").slice(0,2000)}:null;
+    res.json({ok:true,queue:{id:q.queue_id,state:q.state,name:q.display_name,currentIndex:q.current_index,elapsed:Number(q.elapsed_time)||0,shuffle:!!q.shuffle_enabled,repeat:q.repeat_mode,current:item(q.current_item)},items:(Array.isArray(rows)?rows:rows?.items||[]).slice(0,50).map(item)});
+  }catch(error){res.status(502).json({ok:false,error:error.message})}
+});
+app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireControl,async(req,res)=>{
+  const generation=maApiGeneration,changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh before sending another command."});let audioWrite=null;
+  try{
+    const command=String(req.body?.command||""),args=req.body?.args||{};
+    const allowed=new Set(["players/all","players/cmd/play_pause","players/cmd/play","players/cmd/pause","players/cmd/stop","players/cmd/volume_set","players/cmd/volume_mute","player_queues/all","player_queues/items","player_queues/get","player_queues/get_active_queue","player_queues/next","player_queues/previous","player_queues/shuffle","player_queues/repeat","player_queues/seek","player_queues/play_index","player_queues/play_media","music/search","music/recently_played_items"]);
+    if(!allowed.has(command))return res.status(400).json({ok:false,error:"Music Assistant command is not approved by RoomGoblin"});
+    const startsPlayback=["players/cmd/play","players/cmd/play_pause","player_queues/next","player_queues/previous","player_queues/play_index","player_queues/play_media"].includes(command);
+    if(backgroundMusicPriorityBlocked()&&startsPlayback)return res.status(409).json({ok:false,error:"Music is paused for priority audio"});
+    audioWrite=beginMusicAssistantTvAudioWrite(command,args);
+    const owned=String(args.player_id||"")===String(backgroundMusicRuntime.activePlayerId||"")&&!!backgroundMusicRuntime.activePlayerId;
+    let result;
+    if(owned&&["players/cmd/pause","players/cmd/stop","players/cmd/play_pause"].includes(command)){
+      const pause=command!=="players/cmd/stop"&&(command==="players/cmd/pause"||backgroundMusicRuntime.playing);
+      if(pause||command==="players/cmd/stop")backgroundMusicRuntime.manualStopped=true;
+      if(command==="players/cmd/stop")result=await backgroundMusicStop("manual");
+      else if(pause)result=await backgroundMusicPause("manual");
+      else{backgroundMusicRuntime.manualStopped=false;result=await backgroundMusicResume("manual")}
+    }else result=await musicAssistantCommand(command,args);
+    if(generation!==maApiGeneration)return changed();
+    if(startsPlayback&&backgroundMusicPriorityBlocked()&&(args.player_id||args.queue_id))await musicAssistantCommand("players/cmd/pause",{player_id:args.player_id||args.queue_id});
+    if(generation!==maApiGeneration)return changed();
+    commitMusicAssistantTvAudioWrite(audioWrite);
+    audit({kind:"musicassistant.command",command});res.json({ok:true,result});
+  }catch(e){if(generation!==maApiGeneration)return changed();res.status(502).json({ok:false,error:e.message})}
+  finally{releaseMusicAssistantTvAudioWrite(audioWrite)}
+});
+
 const musicAssistantProxyTickets=new Map();
 const musicAssistantProxyTicketByDevice=new Map(),MUSIC_ASSISTANT_PROXY_TICKET_MAX=256;
 function pruneMusicAssistantProxyTickets(now=Date.now()){for(const [ticket,item] of musicAssistantProxyTickets){if(item.expiresAt<=now){musicAssistantProxyTickets.delete(ticket);if(musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId)}}while(musicAssistantProxyTickets.size>=MUSIC_ASSISTANT_PROXY_TICKET_MAX){const [ticket,item]=musicAssistantProxyTickets.entries().next().value;musicAssistantProxyTickets.delete(ticket);if(musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId)}}
-function issueMusicAssistantProxyTicket(deviceId){pruneMusicAssistantProxyTickets();deviceId=cleanId(deviceId);const prior=musicAssistantProxyTicketByDevice.get(deviceId);if(prior)musicAssistantProxyTickets.delete(prior);const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${deviceId}`;musicAssistantProxyTickets.set(ticket,{deviceId,playerId,expiresAt:Date.now()+60000});musicAssistantProxyTicketByDevice.set(deviceId,ticket);return {ticket,playerId}}
+function issueMusicAssistantProxyTicket(deviceId){pruneMusicAssistantProxyTickets();deviceId=configuredDisplayId(deviceId);if(!deviceId)throw Error("Unknown display");const prior=musicAssistantProxyTicketByDevice.get(deviceId);if(prior)musicAssistantProxyTickets.delete(prior);const ticket=crypto.randomBytes(24).toString("base64url"),playerId=`classroom-hub-${deviceId}`;musicAssistantProxyTickets.set(ticket,{deviceId,playerId,expiresAt:Date.now()+60000});musicAssistantProxyTicketByDevice.set(deviceId,ticket);return {ticket,playerId}}
 function consumeMusicAssistantProxyTicket(ticket){ticket=String(ticket||"");pruneMusicAssistantProxyTickets();const item=musicAssistantProxyTickets.get(ticket);musicAssistantProxyTickets.delete(ticket);if(item&&musicAssistantProxyTicketByDevice.get(item.deviceId)===ticket)musicAssistantProxyTicketByDevice.delete(item.deviceId);return item||null}
 function musicAssistantProxyPath(ticket){return `/music-assistant/sendspin-proxy?ticket=${encodeURIComponent(ticket)}`}
-app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const cfg=musicAssistantConfig(),token=musicAssistantToken();if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);const action=String(req.body?.action||"attach");let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];dbStore.setPreference("musicassistant.tvBridgeTargets",attached);const deliveries=[];if(action==="detach"){const result=await executeCommand({type:"music.assistant.detach",target:targets,payload:{}},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}else{for(const target of targets){const issued=issueMusicAssistantProxyTicket(target);const result=await executeCommand({type:"music.assistant.attach",target,payload:musicAssistantTvAttachPayload(target,issued)},"music-assistant-bridge");deliveries.push(...(result.deliveries?.websocket||[]))}}res.json({ok:true,action,attachedTargets:attached,deliveries,musicAssistantUrl:cfg.url,note:"Ticketed Hub bridge: the backend relays raw Sendspin to the dedicated configured endpoint (normally port 8927). The long-lived token is used only by the separate Music Assistant control API."})}catch(e){res.status(400).json({ok:false,error:e.message})}});
+let musicAssistantTvBridgeWrites=Promise.resolve();
+app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,requireControl,(req,res)=>{
+  const action=String(req.body?.action??"attach");
+  if(!["attach","detach"].includes(action))return res.status(400).json({ok:false,error:"Choose attach or detach for the TV audio bridge."});
+  const generation=maApiGeneration,changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh before changing display audio bridges."});
+  const run=musicAssistantTvBridgeWrites.then(async()=>{
+    try{
+      if(generation!==maApiGeneration)return changed();
+      const cfg=musicAssistantConfig(),token=musicAssistantToken();
+      if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});
+      const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);
+      let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];
+      if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];
+      dbStore.setPreference("musicassistant.tvBridgeTargets",attached);
+      const deliveries=[],options={expectedMusicAssistantGeneration:generation};
+      if(action==="detach"){
+        const result=await executeCommand({type:"music.assistant.detach",target:targets,payload:{}},"music-assistant-bridge",options);
+        if(generation!==maApiGeneration)return changed();
+        deliveries.push(...(result.deliveries?.websocket||[]));
+      }else{
+        for(const target of targets){
+          if(generation!==maApiGeneration)return changed();
+          const issued=issueMusicAssistantProxyTicket(target);
+          const result=await executeCommand({type:"music.assistant.attach",target,payload:musicAssistantTvAttachPayload(target,issued)},"music-assistant-bridge",options);
+          if(generation!==maApiGeneration)return changed();
+          deliveries.push(...(result.deliveries?.websocket||[]));
+        }
+      }
+      return res.json({ok:true,action,attachedTargets:attached,deliveries,musicAssistantUrl:cfg.url,note:"Ticketed Hub bridge: the backend relays raw Sendspin to the dedicated configured endpoint (normally port 8927). The long-lived token is used only by the separate Music Assistant control API."});
+    }catch(e){if(generation!==maApiGeneration)return changed();return res.status(400).json({ok:false,error:e.message})}
+  });
+  musicAssistantTvBridgeWrites=run.catch(()=>{});
+  return run;
+});
 app.get("/api/v1/database/status",requireAdmin,(_req,res)=>{res.json({ok:true,database:dbStore.databaseInfo(),secrets:dbStore.listSecrets(),certificates:dbStore.listCertificates()})});
 app.get("/api/v1/database/schema",requireAdmin,(_req,res)=>{const info=dbStore.databaseInfo();res.json({ok:true,schemaVersion:info.schemaVersion,normalized:info.normalized,migrations:dbStore.db.prepare("SELECT version,name,applied_at appliedAt FROM schema_migrations ORDER BY version").all()})});
 app.get("/api/v1/database/telemetry",requireAdmin,(req,res)=>{const limit=Math.max(1,Math.min(5000,Number(req.query.limit||500)));res.json({ok:true,count:dbStore.databaseInfo().telemetry||0,telemetry:dbStore.telemetryState(limit)})});
@@ -6858,7 +7861,7 @@ app.post("/api/v1/veyon/computers/role",requireCapability("lab.control"),(req,re
 app.delete("/api/v1/veyon/computers/:id",requireCapability("lab.control"),(req,res)=>{
   const id=veyonComputerId(req.params.id),rec=veyonComputerStore.computers[id];
   if(!rec)return res.status(404).json({ok:false,error:"Computer not found"});
-  delete veyonComputerStore.computers[id];veyonCloseConnection(rec.ip).catch(()=>{});persistVeyonComputers();
+  delete veyonComputerStore.computers[id];trackFullExportMutation(veyonCloseConnection(rec.ip)).catch(()=>{});persistVeyonComputers();
   res.json({ok:true,id});
 });
 app.get("/api/v1/veyon/computers/:id/info",requireCapability("lab.read"),async(req,res)=>{
@@ -7270,6 +8273,12 @@ const presentationUpload=multer({
   }
 });
 
+const presentationSessionMutationLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:30,keyGenerator:()=>"presentation-session-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Presentation start/removal limit reached; retry later"}
+});
 app.get("/api/v1/presentations",requireClassroomRead,(_req,res)=>{
   res.json({
     ok:true,
@@ -7306,29 +8315,35 @@ app.put("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(r
     res.json({ok:true,folder});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/presentations/folders/:id",requireCapability("media.manage"),(req,res)=>{
+app.delete("/api/v1/presentations/folders/:id",presentationSessionMutationLimit,requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id);
     if(id==="root"||!presentationLibrary.folders[id])return res.status(400).json({ok:false,error:"Root folder cannot be deleted"});
     const recursive=String(req.query.recursive||"0")==="1";
-    const folders=presentationDescendantFolderIds(id);
-    const pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
+    let folders=presentationDescendantFolderIds(id);
+    let pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
     if(!recursive&&(folders.size>1||pres.length))return res.status(409).json({ok:false,error:"Folder is not empty; use recursive delete"});
+    if(presentationState.active&&pres.some(p=>p.id===presentationState.presentationId))await stopPresentation({clear:true});
+    // Library uploads and moves can finish while the selected live session stops.
+    // Commit against current membership, preserving decks moved out of the folder.
+    folders=presentationDescendantFolderIds(id);
+    pres=Object.values(presentationLibrary.presentations).filter(p=>folders.has(p.folderId));
     for(const p of pres)deletePresentationRecord(p.id);
     for(const fid of folders)delete presentationLibrary.folders[fid];
     persistPresentationLibrary();
     res.json({ok:true,removedFolders:[...folders],removedPresentations:pres.map(p=>p.id)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
+}));
 
 app.post("/api/v1/presentations/upload",requireCapability("media.manage"),presentationUpload.single("presentation"),async(req,res)=>{
   if(!req.file)return res.status(400).json({ok:false,error:"No presentation uploaded"});
   const id=presentationId();
   const dir=path.join(PRESENTATIONS_DIR,id);
-  fs.mkdirSync(dir,{recursive:true});
+  contentDirectory(PRESENTATIONS_DIR,dir);
   try{
     const ext=path.extname(req.file.originalname||"").toLowerCase();
     const originalFile=`original${ext}`;
+    contentFile(PRESENTATION_UPLOAD_TMP,req.file.path);
     fs.renameSync(req.file.path,path.join(dir,originalFile));
     const now=new Date().toISOString();
     const rec={
@@ -7369,6 +8384,7 @@ app.post("/api/v1/presentations/:id/rebuild",requireCapability("media.manage"),a
   try{
     const id=String(req.params.id);rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
+    if(presentationBuilds.has(id))return res.status(409).json({ok:false,error:"Presentation rendering is already in progress"});
     prior={conversionStatus:rec.conversionStatus,conversionError:rec.conversionError};
     rec.conversionStatus="converting";rec.conversionError=null;persistPresentationLibrary();
     await buildPresentationSlides(id);
@@ -7385,7 +8401,7 @@ app.put("/api/v1/presentations/:id",requireCapability("media.manage"),(req,res)=
     res.json({ok:true,presentation:presentationPublicRecord(rec)});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(req,res)=>{
+app.delete("/api/v1/presentations/:id",presentationSessionMutationLimit,requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id);
     if(!presentationLibrary.presentations[id])return res.status(404).json({ok:false,error:"Presentation not found"});
@@ -7394,13 +8410,13 @@ app.delete("/api/v1/presentations/:id",requireCapability("media.manage"),async(r
     audit({kind:"presentation.delete",id});
     res.json({ok:true,id});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
-app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),async(req,res)=>{
+}));
+app.post("/api/v1/presentations/:id/start",presentationSessionMutationLimit,requireCapability("media.manage"),async(req,res)=>withPresentationSession(async()=>{
   try{
     const id=String(req.params.id),rec=presentationLibrary.presentations[id];
     if(!rec)return res.status(404).json({ok:false,error:"Presentation not found"});
     if(rec.conversionStatus!=="ready"||!rec.slideCount)return res.status(409).json({ok:false,error:"Presentation rendering is not ready"});
-    const targets=resolveDisplayTargets(req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
+    const targets=resolveDisplayTargets(Array.isArray(req.body?.targets)||req.body?.targets?.length?req.body.targets:(req.body?.target||"all"));
     if(!targets.length)throw new Error("Select at least one display");
     const priorityError=announcementPriorityError(targets);
     if(priorityError)throw priorityError;
@@ -7424,15 +8440,16 @@ app.post("/api/v1/presentations/:id/start",requireCapability("media.manage"),asy
     broadcastControllers({type:"presentation.state",state:presentationStatePublic()});
     res.json({ok:true,state:presentationStatePublic()});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
-});
+}));
 app.post("/api/v1/presentations/control",requireCapability("media.manage"),async(req,res)=>{
   try{res.json({ok:true,state:await controlPresentation(req.body?.action,req.body||{})})}
-  catch(err){res.status(400).json({ok:false,error:err.message})}
+  catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 
 // Media Library uploads / documents
 const resumableUploads=new ResumableUploadStore({
   root:MEDIA_UPLOAD_SESSION_DIR,
+  destinationRoot:MEDIA_DIR,
   maxFileBytes:MAX_UPLOAD_MB*1024*1024,
   chunkBytes:DEFAULT_CHUNK_BYTES,
   ttlMs:UPLOAD_SESSION_TTL_HOURS*60*60*1000,
@@ -7440,6 +8457,7 @@ const resumableUploads=new ResumableUploadStore({
   minFreeBytes:UPLOAD_MIN_FREE_GB*1024*1024*1024
 });
 const uploadCleanupTimer=setInterval(()=>{
+  if(shutdownRequested)return;
   try{const removed=resumableUploads.cleanup();if(removed)audit({kind:"media.upload.cleanup",removed})}
   catch(err){diagnosticError(err,{component:"media-upload",operation:"cleanup"})}
 },60*60*1000);uploadCleanupTimer.unref?.();
@@ -7450,20 +8468,26 @@ function mediaStoredName(originalName){
   const base=path.basename(originalName||"media",ext).replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100);
   return `${crypto.randomUUID()}-${base}${ext}`;
 }
-async function registerUploadedMedia({stored,originalName,mime,size}){
-  const type=classifyMedia(stored,mime),rec={
+async function registerUploadedMedia({stored,originalName,mime,size,uploadSessionId,uploadDigest}){
+ return withMediaFileWrite(stored,async()=>{
+  contentFile(MEDIA_DIR,path.join(MEDIA_DIR,safeStoredName(stored)));
+  const type=classifyMedia(stored,mime);let rec={
     originalName,storedName:stored,mime,type,uploadedAt:new Date().toISOString(),
     generatedPdf:null,conversionStatus:null,conversionError:null
   };
-  mediaLibrary.files[stored]=rec;persistMediaLibrary();
+  if(uploadSessionId){rec.uploadSessionId=uploadSessionId;rec.uploadDigest=uploadDigest}
+  // Publish cache identity only after SQLite accepts the registration. A retry
+  // must not mistake an uncommitted in-memory record for a completed upload.
+  commitMediaLibraryRecord(stored,rec);
   if(officeConvertible(stored)){
-    rec.conversionStatus="converting";persistMediaLibrary();
-    try{rec.generatedPdf=await convertOfficeToPdf(stored);rec.conversionStatus="ready";rec.conversionError=null}
-    catch(err){rec.conversionStatus="failed";rec.conversionError=err.message}
-    persistMediaLibrary();
+    rec={...rec,conversionStatus:"converting"};commitMediaLibraryRecord(stored,rec);
+    try{rec={...rec,generatedPdf:await convertOfficeToPdf(stored),conversionStatus:"ready",conversionError:null}}
+    catch(err){rec={...rec,conversionStatus:"failed",conversionError:err.message}}
+    commitMediaLibraryRecord(stored,rec);
   }
   audit({kind:"media.upload",name:originalName,stored,mime,size,type,generatedPdf:rec.generatedPdf});
   return libraryRecordFromDisk(stored);
+ });
 }
 
 const storage = multer.diskStorage({
@@ -7495,13 +8519,22 @@ const upload = multer({
   }
 });
 
-app.post("/api/v1/media",requireCapability("media.manage"),upload.single("media"),async(req,res)=>{
+const mediaUploadCompletionLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:12,keyGenerator:()=>"media-upload-completion",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Upload completion limit reached; retry later"}
+});
+app.post("/api/v1/media",mediaUploadCompletionLimit,requireCapability("media.manage"),upload.single("media"),async(req,res)=>{
   if(!req.file)return res.status(400).json({ok:false,error:"No file uploaded"});
   try{
     inspectUpload(req.file.path,req.file.originalname);
     const file=await registerUploadedMedia({stored:req.file.filename,originalName:req.file.originalname,mime:req.file.mimetype,size:req.file.size});
     res.json({ok:true,file});
-  }catch(err){fs.rmSync(req.file.path,{force:true});throw err}
+  }catch(err){
+    const stored=safeStoredName(req.file.filename);
+    await withMediaFileWrite(stored,async()=>{if(!mediaLibrary.files[stored])fs.rmSync(path.join(MEDIA_DIR,stored),{force:true})});throw err;
+  }
 });
 
 app.post("/api/v1/media/uploads",requireCapability("media.manage"),(req,res)=>{
@@ -7520,45 +8553,88 @@ app.put("/api/v1/media/uploads/:id/chunks/:index",requireCapability("media.manag
     res.json({ok:true,upload});
   }catch(err){if(!req.readableEnded)req.resume();res.status(err.status||400).json({ok:false,error:err.message})}
 });
-app.post("/api/v1/media/uploads/:id/complete",requireCapability("media.manage"),async(req,res)=>{
-  let destination="";
+app.post("/api/v1/media/uploads/:id/complete",mediaUploadCompletionLimit,requireCapability("media.manage"),async(req,res)=>{
+  let file;
   try{
-    const session=resumableUploads.owned(req.params.id,ownerKey(req)),stored=mediaStoredName(session.name);
-    destination=path.join(MEDIA_DIR,stored);
-    const meta=await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination});
-    const file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size});
+    const session=resumableUploads.owned(req.params.id,ownerKey(req));
+    const destination=path.join(MEDIA_DIR,mediaStoredName(session.name));
+    await resumableUploads.assemble({id:session.id,owner:ownerKey(req),digest:req.body?.sha256,destination,register:async meta=>{
+      const stored=meta.completion.storedName;
+      file=await registerUploadedMedia({stored,originalName:meta.name,mime:meta.mime,size:meta.size,uploadSessionId:meta.id,uploadDigest:meta.completion.digest});
+      if(!file)throw Error("Uploaded file is unavailable after registration");
+    },replay:async meta=>withMediaFileWrite(meta.completion.storedName,async()=>{
+      const stored=meta.completion.storedName,record=mediaLibrary.files[stored];
+      if(record&&(record.uploadSessionId!==meta.id||record.uploadDigest!==meta.completion.digest))throw Object.assign(new Error("Upload completion identity conflict"),{status:409});
+      if(!record)return false;
+      file=libraryRecordFromDisk(stored);
+      if(!file)return false;
+      if(file.size!==meta.size)throw Object.assign(new Error("Completed upload size changed"),{status:409});
+      return true;
+    }),discard:async(meta,failedDestination)=>withMediaFileWrite(meta.completion.storedName,async()=>{
+      // A committed library item survives conversion/receipt/cleanup errors.
+      // This runs inside the session owner, before another retry can assemble.
+      if(!mediaLibrary.files[meta.completion.storedName])fs.rmSync(failedDestination,{force:true});
+    })});
     res.json({ok:true,file});
-  }catch(err){if(destination)fs.rmSync(destination,{force:true});res.status(err.status||400).json({ok:false,error:err.message})}
+  }catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
-app.delete("/api/v1/media/uploads/:id",requireCapability("media.manage"),async(req,res)=>{
-  try{await resumableUploads.cancel(req.params.id,ownerKey(req));audit({kind:"media.upload.cancelled",uploadId:req.params.id});res.json({ok:true})}
+const mediaUploadCancelLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:30,keyGenerator:()=>"media-upload-cancel",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Upload cancellation limit reached; retry later"}
+});
+app.delete("/api/v1/media/uploads/:id",mediaUploadCancelLimit,requireCapability("media.manage"),async(req,res)=>{
+  try{
+    const meta=await resumableUploads.cancel(req.params.id,ownerKey(req));let outcome={completed:false};
+    if(meta.completion?.storedName){
+      const stored=safeStoredName(meta.completion.storedName);
+      outcome=await withMediaFileWrite(stored,async()=>{
+        const record=mediaLibrary.files[stored];
+        if(!record)return {completed:false};
+        if(record.uploadSessionId!==meta.id||record.uploadDigest!==meta.completion.digest)return {completed:null};
+        const file=libraryRecordFromDisk(stored);if(!file)return {completed:false};
+        return file.size===meta.size?{completed:true,file}:{completed:null};
+      });
+    }
+    audit({kind:"media.upload.cancelled",uploadId:req.params.id,completed:outcome.completed});res.json({ok:true,...outcome});
+  }
   catch(err){res.status(err.status||400).json({ok:false,error:err.message})}
 });
 
-app.post("/api/v1/media/:name/convert",requireCapability("media.manage"),async(req,res)=>{
-  let rec=null,prior=null,name="";
+const mediaLibraryMutationLimit=rateLimit({
+  skip:req=>!capabilityAccessAllowed(req,"media.manage"),
+  windowMs:60_000,limit:30,keyGenerator:()=>"media-library-mutations",
+  standardHeaders:"draft-8",legacyHeaders:false,
+  message:{ok:false,error:"Media library operation limit reached; retry later"}
+});
+app.post("/api/v1/media/:name/convert",mediaLibraryMutationLimit,requireCapability("media.manage"),async(req,res)=>{
   try{
-    name=safeStoredName(req.params.name);rec=mediaLibrary.files[name]||{};
-    if(!fs.existsSync(path.join(MEDIA_DIR,name)))return res.status(404).json({ok:false,error:"File not found"});
-    if(!officeConvertible(name))return res.status(400).json({ok:false,error:"Only Word/PowerPoint/OpenDocument files require conversion"});
-    prior={generatedPdf:rec.generatedPdf,conversionStatus:rec.conversionStatus,conversionError:rec.conversionError};rec.originalName=rec.originalName||name;rec.storedName=name;rec.type=classifyMedia(name);rec.conversionStatus="converting";rec.conversionError=null;
-    mediaLibrary.files[name]=rec;persistMediaLibrary();
-    rec.generatedPdf=await convertOfficeToPdf(name);rec.conversionStatus="ready";persistMediaLibrary();
-    res.json({ok:true,file:libraryRecordFromDisk(name)});
-  }catch(err){if(rec&&name){rec.generatedPdf=prior?.generatedPdf||null;rec.conversionStatus=prior?.generatedPdf?"ready":"failed";rec.conversionError=err.message;mediaLibrary.files[name]=rec;persistMediaLibrary()}res.status(500).json({ok:false,error:err.message})}
+    const name=safeStoredName(req.params.name),file=await withMediaFileWrite(name,async()=>{
+      const prior=mediaLibrary.files[name]||{};
+      if(!fs.existsSync(path.join(MEDIA_DIR,name)))throw Object.assign(Error("File not found"),{status:404});
+      if(!officeConvertible(name))throw Object.assign(Error("Only Word/PowerPoint/OpenDocument files require conversion"),{status:400});
+      let rec={...prior,originalName:prior.originalName||name,storedName:name,type:classifyMedia(name),conversionStatus:"converting",conversionError:null};
+      commitMediaLibraryRecord(name,rec);
+      try{rec={...rec,generatedPdf:await convertOfficeToPdf(name),conversionStatus:"ready"}}
+      catch(err){commitMediaLibraryRecord(name,{...prior,conversionStatus:prior.generatedPdf?"ready":"failed",conversionError:err.message});throw err}
+      commitMediaLibraryRecord(name,rec);return libraryRecordFromDisk(name);
+    });res.json({ok:true,file});
+  }catch(err){res.status(err.status||500).json({ok:false,error:err.message})}
 });
 
-app.delete("/api/v1/media/:name",requireCapability("media.manage"),(req,res)=>{
+app.delete("/api/v1/media/:name",mediaLibraryMutationLimit,requireCapability("media.manage"),async(req,res)=>{
   try{
-    const name=safeStoredName(req.params.name),rec=mediaLibrary.files[name]||{};
-    const removed=[];
-    for(const n of [name,rec.generatedPdf].filter(Boolean)){
-      const full=path.join(MEDIA_DIR,safeStoredName(n));
-      if(fs.existsSync(full)){fs.rmSync(full,{force:true});removed.push(n)}
-    }
-    delete mediaLibrary.files[name];
-    persistMediaLibrary();
-    audit({kind:"media.delete",name,removed});
+    const name=safeStoredName(req.params.name),removed=await withMediaFileWrite(name,async()=>{
+      const rec=mediaLibrary.files[name]||{};
+      if(rec.uploadSessionId)resumableUploads.retire(rec.uploadSessionId,name,rec.uploadDigest);
+      const removed=[];
+      for(const n of [name,rec.generatedPdf].filter(Boolean)){
+        const full=path.join(MEDIA_DIR,safeStoredName(n));
+        if(fs.existsSync(full)){fs.rmSync(full,{force:true});removed.push(n)}
+      }
+      commitMediaLibraryRecord(name,null);audit({kind:"media.delete",name,removed});return removed;
+    });
     res.json({ok:true,removed});
   }catch(err){res.status(400).json({ok:false,error:err.message})}
 });
@@ -7568,12 +8644,14 @@ app.post("/api/v1/media/:name/display",requireCapability("media.manage"),async(r
     const name=safeStoredName(req.params.name),full=path.join(MEDIA_DIR,name);
     if(!fs.existsSync(full))return res.status(404).json({ok:false,error:"File not found"});
     const rec=mediaLibrary.files[name]||{},type=rec.type||classifyMedia(name,rec.mime||"");
-    const target=cleanId(req.body?.target||"tv1");
+    const target=req.body?.target||"tv1";
     const payload=req.body||{};
+    const appearance={fit:payload.fit||"contain"};
+    for(const key of ["opacity","localDirect"])if(Object.hasOwn(payload,key))appearance[key]=payload[key];
     let command;
 
-    if(type==="image")command={type:"display.image",target,payload:{url:mediaUrl(name),fit:payload.fit||"contain"}};
-    else if(type==="video")command={type:"display.video",target,payload:{url:mediaUrl(name),fit:payload.fit||"contain",autoplay:true,muted:!!payload.muted,loop:!!payload.loop}};
+    if(type==="image")command={type:"display.image",target,payload:{url:mediaUrl(name),...appearance}};
+    else if(type==="video")command={type:"display.video",target,payload:{url:mediaUrl(name),...appearance,autoplay:payload.autoplay!==false,muted:!!payload.muted,loop:!!payload.loop}};
     else if(type==="pdf"){
       const viewer=documentViewerUrl(name,payload);
       command={type:"display.pdf",target,payload:{url:viewer,sourceUrl:mediaUrl(name)}};
@@ -7600,7 +8678,17 @@ app.use((err, _req, res, _next) => {
 // HTTP server + WebSocket server
 // -----------------------------------------------------------------------------
 
-const server = http.createServer(app);
+const server = http.createServer((req,res)=>{
+  // Gate before Express, including the display-gateway preload's middleware.
+  // Keep the authenticated one-use thaw reachable while an export owns its
+  // freeze; its ordinary route still enforces both credentials and freeze token.
+  const thaw=req.method==="POST"&&String(req.url||"").split("?",1)[0]==="/api/v1/internal/maintenance/export-thaw";
+  if(shutdownRequested&&!thaw){
+    res.writeHead(503,{"Content-Type":"application/json","Connection":"close","Retry-After":"5"});
+    return res.end(JSON.stringify({ok:false,error:"RoomGoblin is shutting down"}));
+  }
+  app(req,res);
+});
 const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
 const WS_MAX_CONNECTIONS=Math.max(25,Math.min(5000,Number(process.env.WS_MAX_CONNECTIONS||500)));
 const WS_MAX_CONNECTIONS_PER_IP=Math.max(5,Math.min(250,Number(process.env.WS_MAX_CONNECTIONS_PER_IP||40)));
@@ -7622,6 +8710,7 @@ function websocketMessageAllowed(ws){
   return ws.messageWindowCount<=maxMessages;
 }
 server.on("upgrade",(req,socket,head)=>{
+  if(shutdownRequested){socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");return}
   let pathname="";try{pathname=new URL(req.url||"/","http://classroom-hub.local").pathname}catch{}
   const target=pathname==="/ws"?wss:pathname==="/music-assistant/sendspin-proxy"?maSendspinProxyWss:null;
   if(!target){socket.destroy();return}
@@ -7662,11 +8751,13 @@ wss.on("connection", (ws, req) => {
   runtime.websocketClients = wsClients.size;
 
   ws.on("pong", () => {
+    if(shutdownRequested)return;
     ws.isAlive = true;
     if (ws.role === "display") markDisplaySeen(ws);
   });
 
   ws.on("message", async (raw) => {
+    if(shutdownRequested)return;
     if(!websocketMessageAllowed(ws)){ws.close(1008,"Message rate limit exceeded");return}
     let msg;
     try {
@@ -7715,7 +8806,7 @@ wss.on("connection", (ws, req) => {
             const user=requestUser(req);if(!hasCapability(user,"classroom.read"))throw new Error("Permission required: classroom.read");
             ws.authUser=user;ws.sessionToken=cookieValue(req,"classroom_hub_session");
           }else if(!CONTROL_TOKEN||!secureTokenEqual(msg.token,CONTROL_TOKEN))throw new Error("Unauthorized preview");
-          const deviceId = cleanId(msg.deviceId);
+          const deviceId = configuredDisplayId(msg.deviceId);
           if (!devices[deviceId] || devices[deviceId].enabled === false) {
             throw new Error("Unknown or disabled preview display");
           }
@@ -7738,7 +8829,7 @@ wss.on("connection", (ws, req) => {
         }
 
         if (role === "display") {
-          const deviceId = cleanId(msg.deviceId);
+          const deviceId = configuredDisplayId(msg.deviceId);
           if (!devices[deviceId] || devices[deviceId].enabled === false) {
             throw new Error("Unknown or disabled display");
           }
@@ -7760,8 +8851,7 @@ wss.on("connection", (ws, req) => {
           ws.displayCredentialId=displayCredential?.id||"";
           ws.displayAuthMode=authMode;
           clearTimeout(ws.helloTimer);
-          ws.maAudioRestored = false;
-          ws.maAudioRestorePending = false;
+          resetMusicAssistantTvAudioRestore(ws);
           markDisplaySeen(ws, {
             userAgent: req.headers["user-agent"] || "",
             meta: boundedWsObject(msg.meta,"Display metadata")
@@ -7787,7 +8877,7 @@ wss.on("connection", (ws, req) => {
             const maTargets=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
             if(Array.isArray(maTargets)&&maTargets.includes(deviceId)){
               const maToken=musicAssistantToken();
-              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
+              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!shutdownRequested&&!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
             }
           }catch{}
 
@@ -7799,7 +8889,7 @@ wss.on("connection", (ws, req) => {
           if(clientVersion!==APPLICATION_VERSION) {
             audit({kind:"display.renderer.refresh-required",deviceId,clientVersion:clientVersion||null,serverVersion:APPLICATION_VERSION});
             setTimeout(()=>{
-              if(!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN){
+              if(!shutdownRequested&&!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN){
                 wsSend(ws,{type:"command",command:{type:"display.reload",target:deviceId,payload:{reason:"renderer-version-mismatch",serverVersion:APPLICATION_VERSION}}});
               }
             },700);
@@ -7852,9 +8942,10 @@ wss.on("connection", (ws, req) => {
 
       if (msg.type === "music.assistant.status" && ws.role === "display") {
         const previous=runtime.displays[ws.deviceId]||{},status=boundedWsObject(msg.status,"Music Assistant status");
-        runtime.displays[ws.deviceId]={...previous,musicAssistant:{...status,desiredAudio:musicAssistantTvAudioState(ws.deviceId),updatedAt:new Date().toISOString()}};
+        confirmMusicAssistantTvAudioRestore(ws,status);
+        runtime.displays[ws.deviceId]={...previous,musicAssistant:{...status,audioRestoreUnconfirmed:!!ws.maAudioRestoreUncertain,desiredAudio:musicAssistantTvAudioState(ws.deviceId),updatedAt:new Date().toISOString()}};
         broadcastControllers({type:"device.status",deviceId:ws.deviceId,status:publicDisplayStatus(ws.deviceId)});
-        if(status.protocolActive===true&&!ws.maAudioRestored&&!ws.maAudioRestorePending){ws.maAudioRestorePending=true;setTimeout(()=>{if(fullExportFreeze.requested){ws.maAudioRestorePending=false;return}trackFullExportMutation(restoreMusicAssistantTvAudioState(ws.deviceId,ws)).finally(()=>{ws.maAudioRestorePending=false})},250)}
+        if(status.protocolActive===true)scheduleMusicAssistantTvAudioRestore(ws);
         if(ws.maAudioRestored){const desired=musicAssistantTvAudioState(ws.deviceId),patch={};const n=Number(status.volume);if(Number.isFinite(n)&&Math.max(0,Math.min(100,n))!==desired.volume)patch.volume=n;if(status.muted!==undefined&&!!status.muted!==desired.muted)patch.muted=!!status.muted;if(Object.keys(patch).length)setMusicAssistantTvAudioState(ws.deviceId,patch)}
 
         // Reconcile scheduled Background Music after a display's persistent
@@ -7865,11 +8956,11 @@ wss.on("connection", (ws, req) => {
           try{
             const bgCfg=backgroundMusicSchedule();
             const reportedPlayer=String(status.clientId||status.playerId||`classroom-hub-${ws.deviceId}`);
-            if(bgCfg.enabled&&String(bgCfg.playerId||'')===reportedPlayer&&!backgroundMusicRuntime.manualStopped&&!backgroundMusicPriorityTargets.size&&status.isPlaying!==true){
+            if(bgCfg.enabled&&String(bgCfg.playerId||'')===reportedPlayer&&!backgroundMusicRuntime.manualStopped&&!backgroundMusicPriorityState().active&&status.isPlaying!==true){
               backgroundMusicRuntime.playing=false;
               if(!backgroundMusicRuntime.pausedForPriority)backgroundMusicRuntime.paused=false;
             }
-            setTimeout(()=>backgroundMusicTick().catch(()=>{}),500);
+            setTimeout(()=>scheduledBackgroundMusicTick().catch(()=>{}),500);
           }catch{}
         }
         return;
@@ -7878,7 +8969,7 @@ wss.on("connection", (ws, req) => {
       if (msg.type === "music.assistant.reconnect.request" && ws.role === "display") {
         const attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
         if(Array.isArray(attached)&&attached.includes(ws.deviceId)&&musicAssistantToken()){
-          ws.maAudioRestored=false;ws.maAudioRestorePending=false;
+          resetMusicAssistantTvAudioRestore(ws);
           const issued=issueMusicAssistantProxyTicket(ws.deviceId);
           wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:ws.deviceId,payload:musicAssistantTvAttachPayload(ws.deviceId,issued,{reconnect:true})}});
           audit({kind:"musicassistant.sendspin.reconnect-issued",deviceId:ws.deviceId});
@@ -8080,8 +9171,12 @@ server.on("close", () => clearInterval(heartbeatTimer));
 restartMorningAnnouncementsWatcher();
 
 // Background Music has its own scheduler and is intentionally independent of Classroom Automation.
-const backgroundMusicTimer=setInterval(()=>backgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-tick"})),5000);backgroundMusicTimer.unref();
-const backgroundMusicStartupTimer=setTimeout(()=>backgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-startup"})),3500);backgroundMusicStartupTimer.unref();
+async function scheduledBackgroundMusicTick(){
+  if(shutdownRequested||fullExportFreeze.requested||!musicAssistantTokenConfigured())return;
+  await backgroundMusicTick();
+}
+const backgroundMusicTimer=setInterval(()=>scheduledBackgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-tick"})),5000);backgroundMusicTimer.unref();
+const backgroundMusicStartupTimer=setTimeout(()=>scheduledBackgroundMusicTick().catch(error=>diagnosticError(error,{component:"music-assistant",operation:"background-music-startup"})),3500);backgroundMusicStartupTimer.unref();
 
 // Unified Classroom Automation scheduler
 // Discovery is short/non-blocking. Each due occurrence is durably claimed before
@@ -8091,6 +9186,42 @@ const automationRunningOccurrences=new Map();
 const automationRunningOccurrenceMeta=new Map();
 const automationCancelledOccurrences=new Set();
 const automationCancellationReasons=new Map();
+function requestAutomationRunCancellation(ids,reason){
+  const selected=[...new Set(ids)],schedulerTime=schedulerClock.now().toISOString();
+  const entries=selected.map(id=>{
+    const meta=automationRunningOccurrenceMeta.get(id);
+    return {occurrenceId:id,automationId:meta?.automationId||null,classId:meta?.classId||null,status:"cancel-requested",schedulerTime,reason};
+  });
+  // The preference upsert is atomic. Keep every selected owner unchanged if
+  // persistence fails, instead of cancelling a partially saved selection.
+  automationRunLedger.recordMany(entries);
+  for(const id of selected){automationCancelledOccurrences.add(id);automationCancellationReasons.set(id,reason)}
+  return selected;
+}
+function startOwnedAutomationOccurrence(id,meta,execute){
+  if(automationRunningOccurrences.has(id))throw new Error("Automation occurrence is already running");
+  const resources=new Set(meta.resources||[]);
+  const predecessors=[...automationRunningOccurrenceMeta]
+    .filter(([,prior])=>(prior.resources||[]).some(key=>resources.has(key)))
+    .map(([priorId])=>automationRunningOccurrences.get(priorId)).filter(Boolean);
+  automationRunningOccurrenceMeta.set(id,meta);
+  // Defer execution until both registries and the recovery drain own the task.
+  // Even a synchronous ledger failure must settle through this finalizer.
+  const task=trackFullExportMutation(Promise.resolve().then(async()=>{
+    // Cancellation cannot undo a command already accepted by an adapter. Keep
+    // discovery free, but let every older overlapping owner settle before send.
+    if(predecessors.length)await Promise.allSettled(predecessors);
+    return execute();
+  }).catch(error=>{
+    diagnosticError(error,{component:"automation",operation:"occurrence-task",data:{automationId:meta.automationId||null,occurrenceId:id}});
+    throw error;
+  }).finally(()=>{
+    automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);
+    automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
+  }));
+  automationRunningOccurrences.set(id,task);task.catch(()=>{});
+  return task;
+}
 function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
   const resources=new Set(automationResourceKeys(event));
   if(!resources.size)return [];
@@ -8098,10 +9229,9 @@ function supersedeOverlappingAutomationRuns(event,newOccurrenceId){
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(runningId===newOccurrenceId)continue;
     if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
-    automationCancelledOccurrences.add(runningId);automationCancellationReasons.set(runningId,"superseded");
-    automationRunLedger.record({occurrenceId:runningId,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason:"superseded"});
     cancelled.push(runningId);
   }
+  requestAutomationRunCancellation(cancelled,"superseded");
   if(cancelled.length)audit({kind:"automation.run.supersede",automationId:event.id,occurrenceId:newOccurrenceId,cancelled});
   return cancelled;
 }
@@ -8110,13 +9240,11 @@ async function cancelActiveManualAutomationRuns(reason="schedule-resumed"){
   const tasks=[];
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(!meta?.manual)continue;
-    automationCancelledOccurrences.add(runningId);
-    automationCancellationReasons.set(runningId,reason);
-    automationRunLedger.record({occurrenceId:runningId,automationId:meta.automationId||null,classId:meta.classId||null,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason});
     ids.push(runningId);
     const task=automationRunningOccurrences.get(runningId);
     if(task)tasks.push(Promise.resolve(task));
   }
+  requestAutomationRunCancellation(ids,reason);
   if(ids.length){
     audit({kind:"automation.manual.cancel-for-resume",reason,cancelled:ids});
     // Manual continuous runs check cancellation at every action boundary and
@@ -8134,13 +9262,11 @@ async function cancelOverlappingManualAutomationRuns(event,reason="manual-run-re
   for(const [runningId,meta] of automationRunningOccurrenceMeta){
     if(!meta?.manual)continue;
     if(!(meta.resources||[]).some(key=>resources.has(key)))continue;
-    automationCancelledOccurrences.add(runningId);
-    automationCancellationReasons.set(runningId,reason);
-    automationRunLedger.record({occurrenceId:runningId,automationId:meta.automationId||null,classId:meta.classId||null,status:"cancel-requested",schedulerTime:schedulerClock.now().toISOString(),reason});
     ids.push(runningId);
     const task=automationRunningOccurrences.get(runningId);
     if(task)tasks.push(Promise.resolve(task));
   }
+  requestAutomationRunCancellation(ids,reason);
   if(ids.length){
     audit({kind:"automation.manual.replace",automationId:event.id||null,reason,cancelled:ids});
     await Promise.allSettled(tasks);
@@ -8155,17 +9281,17 @@ async function executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,s
     storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:runResult.ok!==false,message:runResult.ok===false?"Completed with action errors":(deltaMinutes>0?`Completed (${deltaMinutes} min catch-up)`:"Completed"),resultSummary:{action:event.action,actions:automationActionSequence(event).map(x=>x.action),targets:event.targets,failures:automationRunFailures(runResult)}};
     automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:runResult.ok===false?"failed":"succeeded",schedulerTime:schedulerClock.now().toISOString(),failures:automationRunFailures(runResult)});
   }catch(err){
-    const cancelled=err.code==="AUTOMATION_CANCELLED";
-    const reason=cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
-    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:cancelled,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:{})};
-    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:cancelled?"cancelled":"failed",schedulerTime:schedulerClock.now().toISOString(),...(cancelled?{reason}:{error:err.message})});
-    audit({kind:cancelled?"automation.cancelled":"automation.error",automationId:storedEvent.id,name:storedEvent.name,...(cancelled?{reason}:{error:err.message})});
+    const cancelled=err.code==="AUTOMATION_CANCELLED",interrupted=err.code==="AUTOMATION_INTERRUPTED";
+    const reason=interrupted?"server-shutdown":cancelled?(err.reason||automationCancellationReasons.get(id)||"cancelled"):null;
+    storedEvent.lastRun={at:new Date().toISOString(),scheduledFor:`${dateKey} ${event.time}`,resolvedClassId:event.classId||null,delayMinutes:deltaMinutes,ok:cancelled,message:cancelled?`Stopped: ${reason}`:err.message,...(cancelled?{cancelled:true,reason}:interrupted?{interrupted:true,reason}:{})};
+    automationRunLedger.record({occurrenceId:id,automationId:storedEvent.id,classId:event.classId||null,status:cancelled?"cancelled":interrupted?"interrupted":"failed",schedulerTime:schedulerClock.now().toISOString(),...(cancelled||interrupted?{reason}:{error:err.message})});
+    audit({kind:cancelled?"automation.cancelled":interrupted?"automation.interrupted":"automation.error",automationId:storedEvent.id,name:storedEvent.name,...(cancelled||interrupted?{reason}:{error:err.message})});
   }finally{
-    storedEvent.updatedAt=new Date().toISOString();persistAutomations();automationRunningOccurrences.delete(id);automationRunningOccurrenceMeta.delete(id);automationCancelledOccurrences.delete(id);automationCancellationReasons.delete(id);
+    storedEvent.updatedAt=new Date().toISOString();persistAutomations();
   }
 }
 async function automationSchedulerTick(){
-  if(fullExportFreeze.requested||automationSchedulerBusy||!automationSchedulerEnabled)return;
+  if(shutdownRequested||fullExportFreeze.requested||automationSchedulerBusy||!automationSchedulerEnabled)return;
   const clockStatus=schedulerClock.status();
   if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
   automationSchedulerBusy=true;
@@ -8175,63 +9301,81 @@ async function automationSchedulerTick(){
     const dateKey=localDateKey(now),nowMinutes=now.getHours()*60+now.getMinutes();
     for(const storedEvent of classroomAutomations.events){
       if(!storedEvent?.enabled)continue;
-      const referenceDates=[-1,0,1].map(offset=>{const d=new Date(now);d.setDate(d.getDate()+offset);return d});
-      const occurrences=automationClassIds(storedEvent).length
-        ? referenceDates.flatMap(referenceDate=>resolveAutomationOccurrences(storedEvent,referenceDate)).filter(event=>event._scheduledDateKey===dateKey)
-        : [storedEvent];
+      const occurrences=resolveScheduledAutomationOccurrences(storedEvent,now);
       for(const event of occurrences){
         const dateMatch=event._sourceDateMatched?{match:true,reason:"Class occurrence"}:automationMatchesDate(event,now);
         if(!dateMatch.match||isAutomationSuppressed(now).blocked)continue;
         const [eventHour,eventMinute]=String(event.time||"00:00").split(":").map(Number);
         const scheduledMinutes=eventHour*60+eventMinute,deltaMinutes=nowMinutes-scheduledMinutes;
         if(deltaMinutes<0||deltaMinutes>SCHEDULER_CATCHUP_MINUTES)continue;
-        const occurrenceKey=event.classId||"manual",scheduledMinuteKey=`${dateKey} ${event.time}`;
+        const occurrenceKey=automationOccurrenceKey(event),scheduledMinuteKey=`${dateKey} ${event.time}`;
         storedEvent.lastExecByClass=storedEvent.lastExecByClass||{};
-        if(storedEvent.lastExecByClass[occurrenceKey]===scheduledMinuteKey)continue;
+        if(storedEvent.lastExecByClass[occurrenceKey]===scheduledMinuteKey||event._planningBlockId&&storedEvent.lastExecByClass.manual===scheduledMinuteKey)continue;
         const id=occurrenceId(event,dateKey,event.time);
-        const claim=automationRunLedger.claim(id,{automationId:storedEvent.id,classId:event.classId||null,schedulerTime:now.toISOString()});
+        const claim=automationRunLedger.claim(id,{automationId:storedEvent.id,classId:event.classId||null,schedulerTime:now.toISOString()},{legacyIds:event._planningBlockId?[occurrenceId({...event,_planningBlockId:null},dateKey,event.time)]:[]});
         if(!claim.claimed)continue;
         if(morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([...automationDeferredDisplayTargets(event)]).length)queueAutomationDuringAnnouncements(storedEvent,event,dateKey,scheduledMinuteKey,deltaMinutes);
         storedEvent.lastExecByClass[occurrenceKey]=scheduledMinuteKey;storedEvent.lastExec=scheduledMinuteKey;storedEvent.updatedAt=new Date().toISOString();persistAutomations();
         supersedeOverlappingAutomationRuns(event,id);
-        automationRunningOccurrenceMeta.set(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString()});
-        const task=trackFullExportMutation(executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
-        automationRunningOccurrences.set(id,task);task.catch(()=>{});
+        startOwnedAutomationOccurrence(id,{automationId:storedEvent.id,classId:event.classId||null,resources:automationResourceKeys(event),startedAt:new Date().toISOString()},
+          ()=>executeScheduledAutomationOccurrence(storedEvent,event,{dateKey,scheduledMinuteKey,deltaMinutes,occurrenceKey}));
       }
     }
   }catch(error){diagnosticError(error,{component:"automation",operation:"scheduler-tick"})}
   finally{automationSchedulerBusy=false}
 }
-const automationSchedulerTimer=setInterval(()=>automationSchedulerTick(),15000);automationSchedulerTimer.unref();
-const automationStartupReconcileTimer=setTimeout(()=>{if(automationSchedulerEnabled&&!schedulerClock.status().active)trackFullExportMutation((async()=>{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")})()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}))},5000);automationStartupReconcileTimer.unref();
+let automationStartupReconcilePending=true;
+function reconcileAutomationStartup(){
+  if(!automationStartupReconcilePending||shutdownRequested||fullExportFreeze.requested||automationSchedulerBusy)return;
+  automationStartupReconcilePending=false;
+  if(!automationSchedulerEnabled||schedulerClock.status().active)return;
+  automationSchedulerBusy=true;
+  return trackFullExportMutation((async()=>{
+    try{await reconcileScheduledAutomationState("startup-reconcile");await recoverContinuousAutomationOccurrences("startup-reconcile")}
+    finally{automationSchedulerBusy=false}
+  })()).catch(error=>diagnosticError(error,{component:"automation",operation:"startup-reconcile"}));
+}
+const automationSchedulerTimer=setInterval(()=>{if(automationStartupReconcilePending)reconcileAutomationStartup();else automationSchedulerTick()},15000);automationSchedulerTimer.unref();
+const automationStartupReconcileTimer=setTimeout(reconcileAutomationStartup,5000);automationStartupReconcileTimer.unref();
 
 // Legacy per-output Pluto schedules retained for migration/backward compatibility.
 // They share the same scheduler policy and Morning Announcements power reservation.
 let legacyPlutoSchedulerBusy=false;
-const legacyPlutoSchedulerTimer=setInterval(async()=>{
-  if(fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
+async function legacyPlutoSchedulerTick(){
+  if(shutdownRequested||fullExportFreeze.requested||legacyPlutoSchedulerBusy||!automationSchedulerEnabled)return;
   const clockStatus=schedulerClock.status();if(clockStatus.active&&!schedulerClock.commandsAllowed())return;
   legacyPlutoSchedulerBusy=true;
   try{
     const now=schedulerClock.now(),hhmm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
     const day=now.getDay(),minuteKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")} ${hhmm}`;
     let changed=false;if(isAutomationSuppressed(now).blocked)return;
-    for(const sch of Object.values(plutoSchedules)){
+    schedules: for(const sch of Object.values(plutoSchedules)){
       if(!sch?.enabled||!Array.isArray(sch.days)||!sch.days.map(Number).includes(day))continue;
       sch.lastExec=sch.lastExec||{};sch.lastRun=sch.lastRun||{};
       for(const [kind,time,index] of [["on",sch.onTime,0],["off",sch.offTime,1]]){
         if(time!==hhmm||sch.lastExec[kind]===minuteKey)continue;
-        const displayId=Object.keys(devices).find(id=>Number(devices[id]?.avOutput)===Number(sch.index));
-        if(displayId&&morningAnnouncementsRuntime.active&&announcementLockedDisplayTargets([displayId]).length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${displayId}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
+        if(!schedulerClock.commandsAllowed())break schedules;
+        const locked=automationTvPowerPhysicalLocks({output:Number(sch.index)},announcementLockedDisplayTargets(["all"]));
+        if(locked.length){sch.lastRun={text:`Deferred ${kind} while Morning Announcements own ${locked.join(", ")}`,stamp:Date.now(),ok:true,deferred:true};changed=true;continue}
+        const previousExec=sch.lastExec[kind],previousRun=sch.lastRun;
         sch.lastExec[kind]=minuteKey;
+        sch.lastRun={text:`${kind==="on"?"On":"Off"} requested ${now.toLocaleString()}; delivery not confirmed`,stamp:Date.now(),ok:null,pending:true};
+        // Claim before sending. A restart must not replay an uncertain CEC write.
+        try{persistPlutoSchedules()}
+        catch(error){
+          if(previousExec===undefined)delete sch.lastExec[kind];else sch.lastExec[kind]=previousExec;
+          sch.lastRun=previousRun;throw error;
+        }
         try{const result=await directPluto({action:"cecOutput",output:Number(sch.index),connection:sch.type,index});assertAdapterResults([result],{action:"Legacy TV power"});sch.lastRun={text:`${kind==="on"?"On":"Off"} ${now.toLocaleString()}`,stamp:Date.now(),ok:true}}
         catch(e){sch.lastRun={text:`ERROR ${now.toLocaleString()}: ${e.message}`,stamp:Date.now(),ok:false}}
         changed=true;
       }
     }
     if(changed)persistPlutoSchedules();
-  }finally{legacyPlutoSchedulerBusy=false}
-},15000);legacyPlutoSchedulerTimer.unref();
+  }catch(error){diagnosticError(error,{component:"automation",operation:"legacy-tv-scheduler"})}
+  finally{legacyPlutoSchedulerBusy=false}
+}
+const legacyPlutoSchedulerTimer=setInterval(legacyPlutoSchedulerTick,15000);legacyPlutoSchedulerTimer.unref();
 
 connectMqtt();
 
@@ -8247,15 +9391,59 @@ server.listen(PORT, BIND_ADDRESS, () => {
   console.log(`MQTT: ${endpointForLog(MQTT_URL) || "disabled"}`);
   console.log("Node-RED: not required (v0.8 direct hardware mode)");
 });
-const goveeReconcileTimer=setInterval(()=>{if(!fullExportFreeze.requested)reconcileGoveeDiscovery()},60000);
-function gracefulShutdown(signal){
-  if(shuttingDown)return;shuttingDown=true;console.log(`${signal} received; draining Classroom Control Hub`);
-  veyonCommandQueue.stop();
-  esphomeManager.close();
-  clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
-  for(const ws of wsClients)try{ws.close(1001,"Server shutting down")}catch{};
-  try{wss.close()}catch{};try{maSendspinProxyWss.close()}catch{};try{musicAssistantApiClose("server shutdown")}catch{};try{if(mqttClient)mqttClient.end(true)}catch{};
-  const force=setTimeout(()=>process.exit(1),10000);force.unref();
-  server.close(async()=>{while(veyonCommandQueue.running>0)await new Promise(resolve=>setTimeout(resolve,25));try{dbStore.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");dbStore.db.close()}catch{};clearTimeout(force);process.exit(0)});
+const goveeReconcileTimer=setInterval(()=>{
+  if(shutdownRequested||fullExportFreeze.requested)return;
+  try{reconcileGoveeDiscovery()}catch(error){diagnosticError(error,{component:"govee",operation:"periodic-reconcile"})}
+},60000);
+function applicationWritersDrained(){
+  return httpHandlers.pending===0&&fullExportFreeze.activeHttpMutations===0&&fullExportFreeze.activeWsMutations===0&&fullExportFreeze.activeAsyncMutations===0
+    &&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy&&!presentationAutoAdvanceBusy&&presentationBuilds.size===0
+    &&!sessionEffectBusy&&!backgroundMusicTickBusy&&!automationSchedulerBusy&&!legacyPlutoSchedulerBusy&&!automaticUpdateBusy&&!updateJobSyncBusy
+    &&automationRunningOccurrences.size===0&&veyonCommandQueue.running===0;
+}
+async function gracefulShutdown(signal){
+  if(shutdownRequested)return;
+  shutdownRequested=true;console.log(`${signal} received; draining RoomGoblin`);
+  const force=setTimeout(()=>{console.error("RoomGoblin shutdown exceeded its ten-second drain deadline; pending work was not confirmed complete");process.exit(1)},10000);
+  try{
+    // The export owns its writer freeze. Leave its authenticated thaw route
+    // listening and do not emit shutdown ledger writes while that freeze is held.
+    await waitUntilDrained(()=>!fullExportFreeze.requested);
+    shuttingDown=true;
+    veyonCommandQueue.stop();
+    esphomeManager.close();
+    ubuntuDisplays.close();
+    sportsRuntime.close();
+    clearInterval(backgroundMusicTimer);clearTimeout(backgroundMusicStartupTimer);
+    clearInterval(presentationAutoAdvanceTimer);clearInterval(uploadCleanupTimer);clearInterval(loginAttemptCleanupTimer);
+    clearTimeout(studentDataPruneStartupTimer);clearTimeout(automaticUpdateStartupTimer);clearTimeout(updateJobSyncStartupTimer);
+    clearTimeout(morningAnnouncementsReleaseRetryTimer);
+    clearInterval(heartbeatTimer);clearInterval(veyonPoolTimer);clearInterval(goveeReconcileTimer);clearInterval(automationSchedulerTimer);clearInterval(legacyPlutoSchedulerTimer);clearTimeout(automationStartupReconcileTimer);clearInterval(automaticUpdateTimer);clearInterval(updateJobSyncTimer);clearInterval(studentDataPruneTimer);if(morningAnnouncementsTimer)clearTimeout(morningAnnouncementsTimer);
+    musicAssistantApiClose("server shutdown");
+    // Close callbacks may write disconnect/status records. Await them along
+    // with handlers whose client already disconnected and background owners.
+    const closeResults=await Promise.allSettled([
+      new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve())),
+      closeWebSockets(wss),closeWebSockets(maSendspinProxyWss),stopMediaPlane(),
+      mqttClient?new Promise(resolve=>mqttClient.end(true,{},resolve)):Promise.resolve()
+    ]);
+    await waitUntilDrained(applicationWritersDrained);
+    closeMusicAssistantReadiness();
+    const closeFailure=closeResults.find(result=>result.status==="rejected");
+    if(!flushLabDisconnects())throw new Error("Shutdown lab disconnect writes are still pending");
+    audit({kind:"application.shutdown",signal});
+    if(pendingAuditWrites.length)throw new Error("Shutdown audit writes are still pending");
+    dbStore.db.exec("PRAGMA busy_timeout=0");
+    const checkpoint=dbStore.db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").all();
+    if(checkpoint.some(row=>row.busy))throw new Error("SQLite checkpoint is busy");
+    dbStore.db.close();
+    // A failed child/listener still gets the same writer drain. Report the
+    // failure only after accepted work and SQLite cleanup have completed.
+    if(closeFailure)throw closeFailure.reason;
+    clearTimeout(force);process.exit(0);
+  }catch(error){
+    console.error(`RoomGoblin shutdown failed: ${error.message}`);
+    process.exit(1);
+  }
 }
 process.once("SIGTERM",()=>gracefulShutdown("SIGTERM"));process.once("SIGINT",()=>gracefulShutdown("SIGINT"));

@@ -17,15 +17,101 @@ live -> sustained confirmed offline : release once
 
 Current deployment intent is 15-second health checks and about 90 seconds of sustained confirmed-offline evidence before release. Unknown/time-out errors must remain distinguishable from authoritative offline results.
 
+Only periodic watcher observations advance the consecutive-offline count.
+Unknown results and probe errors break that streak; manual diagnostic checks
+cannot accelerate automatic release. Manual live/unknown results also reset the
+streak. A settings replacement retires earlier automatic/diagnostic results;
+obsolete diagnostics return 409 and must be checked again. Each watcher restart
+owns one generation, so a retired callback queued behind a lifecycle operation
+cannot probe or create another timer chain. Preserve normal interval bounds,
+shutdown drain and manual announcement ownership.
+
+## Configuration persistence
+
+Save normalized configuration and its encrypted stream URL in one SQLite
+transaction before replacing the live configuration or restarting the watcher.
+The same rule applies to explicit URL deletion. A failed legacy-file scrub must
+roll back the database writes and leave live settings unchanged; clean up only
+the exclusively created staging file. Startup still scrubs legacy plaintext.
+SQLite remains authoritative: a commit failure after legacy-file replacement may
+leave that migration remnant redacted, but cannot commit partial database state.
+Live volume dispatch follows persistence and has its own observable outcome.
+
+Delayed audio retries belong to each receiver's captured announcement content ID
+and require current active-target membership. An added receiver must not cancel
+needed retries for continuing unchanged playback. Changed content, a new takeover
+on the same receiver, or release retires those earlier retries. Preserve the
+latest saved volume, bounded timing and freeze/shutdown guards. Live volume
+selects only current announcement media. Both paths use internal conditional
+router ownership after async admission and between transport writes; audio must
+not replace its content ID or control newer content, and never broadcasts through
+a shared legacy alias. Report unapplied volume when all targets changed.
+
 ## Receiver-side safety net
 
 `public/shared/attribution.js` installs a narrow receiver guard before the display module's WebSocket handler is assigned. During rollout it suppresses duplicate identical Morning Announcements `display.web` assertions and duplicate `morning-announcements-takeover` clears while the same session is already active. It must always allow an explicit `morning-announcements-release` clear.
 
 This is a defense-in-depth guard, not permission to keep a server-side periodic reassert forever. Prefer fixing the lifecycle owner rather than expanding interception to unrelated commands.
 
+Mandatory announcement audio holds have their own target set, separate from
+ordinary media and manual takeover ownership. Media-ended observations and
+replacement commands may update ordinary priority while the mandatory hold
+remains. Release removes only the announcement hold after reconciliation;
+restored audible content keeps its own priority. Pending reconciliation retains
+mandatory hallway priority even after active runtime targets have cleared.
+
 The server owns the hard priority boundary. It serializes announcement start/stop transitions and rechecks the lock at every automation display delivery, including work that already passed an earlier check and then awaited a delay or network operation. Only display targets owned by the active announcement are deferred; lighting and other non-display work continues. If post-release display reconciliation fails, retain the Background Music priority hold and retry before resuming.
 
+Consume deferred occurrences only after their execution markers persist. On
+failure, retain the queue and restore the previous in-memory markers, including
+absent fields and existing event identities. Release retries must persist that
+bookkeeping before display reconciliation or music release; do not replay the
+deferred commands themselves.
+
+Keep pending release targets independently of the current announcement. A
+successor release must finish older pending targets too; obsolete timers must
+not run another resync after completion. Retry a clear only while the receiver's
+content identity matches that release or its own clear ID. The internal router
+guard is not a command payload/API field: recheck after async admission, between
+MQTT writes and before audio observation. Never clear or drop the audio marker
+of newer content, and never turn a selected retry into a legacy broadcast.
+Freeze/shutdown admission and serialized lifecycle ownership still apply.
+
+Failed starts must retain conditional cleanup for content carrying that attempt's
+clear/player command IDs. Preserve older pending release holds; exclude unchanged
+or newer content. Use the existing release retry before releasing music and
+report the original start failure even if secondary priority cleanup also fails.
+
+Explicit start targets must resolve enabled receivers; an empty selection must
+not fall back to configured/all targets. If replacement fails without owning
+changed content and all prior content identities remain unchanged, preserve the
+prior runtime target-array identity and mandatory holds. Do not restore a stale
+session over a partially dispatched replacement.
+
+Starting selected receivers extends the active target set while dispatching only
+to that selection. Global Stop/automatic release must finish every active receiver.
+A partial failed replacement retains prior active ownership plus its newly owned
+receivers, with a fresh target-array identity; never restore old content or retries
+for changed content. Unchanged receivers retain their content-owned audio retries.
+Pending conditional cleanup waits until release while the session stays
+active. Explicit Resume repairs all tracked targets. Fresh failed starts retain
+the inactive retry path; fully unchanged failures retain the original identity.
+
 The Live Watch announcement-volume slider is a live control as well as persisted configuration. While an announcement owns targets, a volume update must send `display.web.audio` to those runtime-owned targets with `reload:false`; it must not clear, reload, or recreate the player. When no announcement is active, the value is saved for the next takeover.
+
+Live Watch form reads and saves own their submitted draft revisions. Preserve
+newer URL/time/target edits and the focused target checkbox. Settings saves and
+live-volume writes share one serialized queue; coalesce pending slider intent,
+prevent duplicate full saves and recheck capability before each queued dispatch.
+Only matching successful revisions become clean. Keep save, volume and probe
+feedback separate so polling cannot erase an unsaved draft or volume error.
+
+Manual Live Watch checks retain a single pending promise and unavailable-button
+marker through capability refresh. Advance read ownership at check start and
+skip ordinary reads while it owns status; old poll success/errors must not
+overwrite CHECKING or its result. A settings write retires the check response
+with UNKNOWN/check-again feedback. Preserve current errors/retry, permission
+admission and the saved-configuration diagnostic boundary.
 
 An operator can deliberately clear or reload display content while the announcement lifecycle still owns its targets. **Resume Schedule** / **Resume Scheduled State** is the explicit recovery action: when Morning Announcements remain active, it must reassert that priority takeover on the runtime-owned targets instead of returning only a deferred result. This operator-triggered repair is distinct from periodic live probes, which must remain observe-only while active.
 
@@ -53,6 +139,15 @@ the query string and fragment before `postMessage`, diagnostics events, or displ
 heartbeat metadata, and never expose the receiver's internal full-URL comparison
 key. The manual display controller must load the saved stream URL without writing
 configuration during page initialization and must fail closed when no URL exists.
+
+## Bounded HLS probes
+
+Each primary/adaptive request has one 3.5-second deadline covering redirects,
+headers and complete body consumption. Successful playlists are bounded to
+512 KiB of declared and streamed bytes. Cancel redirect/error bodies, preserve
+allowlist validation for every redirect and abort the transport on all outcomes.
+Timeouts and oversized playlists are UNKNOWN, never authoritative offline
+evidence. Buffered response data remains usable after transport cleanup.
 
 ## Future replacement monitoring
 

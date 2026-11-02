@@ -3,7 +3,8 @@
   const root=document.getElementById("devices");
   if(!root)return;
 
-  function terminal(title,value){
+  function terminal(title,value,owner){
+    if(!terminalOutputCurrent(owner)){terminalOutputSuperseded(owner);return}
     const shell=document.getElementById("remoteShell");if(shell)shell.open=true;
     const el=document.getElementById("terminal");if(el)el.textContent=`${title}\n${typeof value==='string'?value:JSON.stringify(value,null,2)}`;
   }
@@ -17,7 +18,7 @@
       b.dataset.deviceAdminRemove="1";
       b.textContent="Remove Device Admin";
       b.title="Opens Android's Device Administrator screen for the active RoomGoblin/Classroom Hub package so you can deactivate it safely.";
-      box.appendChild(b);
+      box.appendChild(b);setDeviceControlDisabled(b,false);
     }
   }
 
@@ -26,18 +27,18 @@
     if(!button)return;
     event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
     const card=button.closest(".card[data-id]");
-    const id=card?.dataset.id;if(!id)return;
+    const id=card?.dataset.id;if(!id||deviceOperations.has(String(id)))return;
     if(!window.confirm("Open Android Device Administrator controls on this TV so RoomGoblin/Classroom Hub Device Admin can be deactivated? Android still requires confirmation on the TV."))return;
-    button.disabled=true;
+    const operation=beginDeviceOperation(id,button.textContent);if(!operation)return;const outputOwner=beginTerminalOutput(id);
     try{
       const r=await fetch(`/api/v1/maintenance/android/devices/${encodeURIComponent(id)}/agent/v2/device-admin/deactivate`,{
         method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:"{}"
       });
       const text=await r.text();let json={};try{json=JSON.parse(text)}catch{throw Error(text||`HTTP ${r.status}`)}
       if(!r.ok||json.ok===false)throw Error(json.error||`HTTP ${r.status}`);
-      terminal("Device Admin deactivation",json);
+      terminal("Device Admin deactivation",json,outputOwner);
       window.alert("RoomGoblin opened Android's Device Administrator controls on the TV. Deactivate the listed RoomGoblin/Classroom Hub administrator, then retry the agent install.");
-    }catch(error){window.alert(`Device Admin removal: ${error.message}`)}finally{button.disabled=false}
+    }catch(error){deviceMessage(id,`Device Admin removal: ${error.message}`);window.alert(`Device Admin removal: ${error.message}`)}finally{endDeviceOperation(id,operation)}
   },true);
 
   new MutationObserver(decorate).observe(root,{childList:true});

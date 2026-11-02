@@ -1,0 +1,4 @@
+LIBRARY RoomGoblinCredentialProvider
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

@@ -58,3 +58,13 @@ html[data-product="roomgoblin"] .rg-workspace a{color:var(--rg-link)}
 .rg-workspace .pill:is(.ok,.good){color:var(--rg-good);background:var(--rg-surface)}
 .rg-workspace .pill.bad{color:var(--rg-danger-text);background:var(--rg-danger-bg);border-color:var(--rg-danger-line)}
 .rg-workspace .pill.warn{color:var(--rg-text);background:var(--rg-surface);border-color:#b7791f}
+
+/* Operator state text and keyboard focus must remain legible in either theme. */
+html[data-brand-surface="operator"] body.rg-workspace{color:var(--rg-text);background:var(--rg-bg)}
+body.rg-workspace{--rg-code:#d1fae5;--rg-warning:#f7c66a;--rg-focus:#4ade80}
+html[data-brand-mode="light"] body.rg-workspace{--rg-code:#0f766e;--rg-warning:#854d0e;--rg-focus:#15803d}
+@media(prefers-color-scheme:light){html[data-brand-mode="system"] body.rg-workspace{--rg-code:#0f766e;--rg-warning:#854d0e;--rg-focus:#15803d}}
+html[data-product="roomgoblin"] body.rg-workspace code{color:var(--rg-code)}
+body.rg-workspace [data-brand-lockup]{color:var(--rg-text)}
+html[data-product="roomgoblin"] body.rg-workspace :focus-visible{outline:3px solid var(--rg-focus)!important;outline-offset:3px}
+body.rg-workspace #hubToast{color:var(--rg-text);background:var(--rg-surface)!important}

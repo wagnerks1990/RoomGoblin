@@ -67,10 +67,28 @@ deferred CEC writes.
 
 ## Startup and Resume Scheduled State
 
-Recovery first computes the existing per-target winners using scheduled time,
+First-pass recovery candidates become eligible only after their pre-action delay
+and all preceding action dwells have elapsed, including display/lighting dwells.
+Sub-minute and fractional delays keep their exact eligibility boundary. The
+existing minute/priority/event-ID ordering between occurrences is preserved;
+within one occurrence, a later eligible step wins an otherwise equal score.
+This is configured first-pass timing, not reconstruction of adapter latency or
+later loop phases.
+
+Continuous-loop restart admission includes a started occurrence's pending targets
+and ranks ownership by occurrence start, priority and event ID. It does not use
+later action times to promote an older loop. This internal mode does not dispatch
+commands; the normal owned runner retains its delays and cancellation checkpoints.
+
+Recovery first computes physical connection/output winners using scheduled time,
 priority and event identity. Each TV winner retains a shared, in-process marker
 for its original step/occurrence and that step's requested selectors and typed
-output/connection rows. This marker is not persisted and does not change scores.
+output/connection rows. This marker is not persisted and does not change time,
+priority or event-identity scores. The shared `tvPowerIntent` helper also supplies
+conflict/replacement keys. All TVs includes eight HDMI and eight HDBT outputs;
+transport-only selectors remain independent. Individual output overrides take
+part in physical identity. Partial recovery retains the complete winning physical
+scope even when receiver mappings omit or duplicate a port.
 
 Only an explicit aggregate that owns every current TV winner and its complete
 resolved target scope can become one broadcast. Any competing TV winner keeps
@@ -81,7 +99,7 @@ Explicit individual selections never become a broadcast merely by covering all
 outputs. Full Morning Announcements restoration keeps its existing early return;
 remaining receiver locks also prohibit broadcasts and defer locked TV writes.
 
-Reconciliation audit keeps the logical `resourceWinners` count and adds
+Reconciliation audit counts physical command targets in `resourceWinners` and keeps
 `resourceDispatches` for the potentially smaller command/result count. A broadcast
 result remains an acknowledgement, not eight physical-state measurements.
 
@@ -146,3 +164,42 @@ The updater owns operational backup, health checking and automatic rollback on
 deployment failure. Preserve its saved source/database/environment and image
 identity together when reverting; do not reset the database or recreate device
 credentials to undo this source-only repair.
+
+
+## Legacy per-output schedules
+
+Existing HDMI/HDBT per-output schedules use the same physical announcement-lock
+helper as canonical automation TV power. Every locked receiver is considered,
+including multiple receiver IDs sharing an output. Unmapped or invalid named
+receiver locks defer power without guessing a port; known physical locks protect
+both transports. Locks are rechecked before each output write.
+
+Each due on/off occurrence saves its exact-minute claim and an unconfirmed
+outcome before sending CEC. If that save fails, nothing is sent; a later tick may
+retry admission for the still-due unsent occurrence. Once a command may have been
+sent, its saved claim prevents replay after restart, even if the final result
+could not be saved. An unconfirmed result needs operator verification; it is not
+physical power-state confirmation. Rejected/uncertain writes remain single-attempt.
+
+Persistence errors are recorded inside scheduler ownership, and the busy flag is
+released on every outcome. Accepted writes remain part of the existing Full
+Recovery/shutdown drain. Pause, calendar/day/time eligibility, dry simulation,
+transport selection and the 15-second timer remain unchanged. No saved schedule,
+receiver identity or database-schema migration is required.
+
+
+## Physical resources during recovery
+
+Startup and Resume compare lighting group members as individual devices. Only
+winning members are restored, so an older group cannot overwrite a newer device
+state. Unknown targets still report errors. TV recovery uses physical connection
+and output identity, including valid individual output overrides. HDMI and HDBT
+remain independent; All TVs covers eight outputs on both transports. Conflict,
+replacement and recovery share the same TV command-target calculation.
+
+A complete uncontested All selection keeps its single broadcast. Partial winners
+use their exact physical targets and preserve announcement locks on both
+transports. Ports without receiver aliases use transport/port diagnostic labels;
+these labels do not create receivers or change mappings. Recovery counts now
+represent actual devices and physical command targets. An acknowledgement is not
+proof of physical TV power state.

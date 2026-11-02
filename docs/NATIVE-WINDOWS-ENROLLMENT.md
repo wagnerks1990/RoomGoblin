@@ -21,6 +21,13 @@ Issue #142 tracks the remaining signing/native-library-extraction hardening.
 
 ## Administrator workflow
 
+The controller admits one issuance request at a time and captures its computer
+ID and lifetime. Later form edits remain drafts. Starting another issuance clears
+the previous generated package; authentication changes clear it and invalidate
+late responses and old download handlers. A failed request permits an explicit
+retry and is never automatically replayed. Backend expiry and one-time credential
+exchange remain authoritative.
+
 In the controller's Windows Lab Agent enrollment panel:
 
 1. enter the stable computer ID;
@@ -47,6 +54,11 @@ When managed Cloudflare HTTPS is recorded, newly issued enrollment artifacts pre
 After an authenticated handshake, an updated agent may accept a server-advertised preferred Hub origin only when it is HTTPS. Before promoting it, the agent preserves its current origin as fallback. Reconnect and native self-update both try the preferred origin first and the fallback second.
 
 HTTP primary or fallback origins require explicit insecure-LAN acknowledgement during bootstrap. Existing agents therefore retain a local path when Cloudflare or the Internet is unavailable.
+
+Primary and fallback URLs must not contain embedded usernames or passwords.
+Bootstrap rejects them before changing configuration or ACLs. The primary HTTP
+acknowledgement does not also authorize an HTTP fallback; each requires its own
+explicit option. Valid origins retain their configured scheme, host and port.
 
 Cloudflare Access on the main RoomGoblin hostname can require interactive browser authentication. Do not assume unattended agents can satisfy that challenge; use an Access-compatible machine policy before combining those features.
 

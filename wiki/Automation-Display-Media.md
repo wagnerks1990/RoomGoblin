@@ -35,6 +35,50 @@ The Media workspace includes a live playback panel for the selected receiver wit
 
 Receivers report bounded `display.media.status` telemetry containing session ID, position, duration, volume, mute, loop and playback-rate state. This telemetry is operational state only; it does not replace persisted automation configuration.
 
+### Live audio controls
+
+Open **Planning > Automation > Live audio**, choose the display, then use
+**Volume down**, **Volume up**, the **Live volume (%)** slider, **Mute** or
+**Unmute**. Sports provides the same panel filtered to the selected board.
+Each button changes volume by ten percentage points. Mute retains the volume;
+Unmute restores sound at that level (0% remains silent).
+
+Controls affect the current video, compatible website player and Sports widgets
+on that receiver, including scheduled content. They do not rerun the automation,
+reset a countdown, seek a video or restart a Sports rotation. Requested settings
+survive receiver reconnects and Sports clip/page changes. The next content action
+uses its saved settings; change an automation's action to set future-run audio.
+The action editor exposes percentage volume and mute for video, website and
+Sports scenes. Existing website actions retain their previous behavior until
+audio is explicitly configured.
+
+The panel reports requested settings, not proof of audible output. Offline
+receivers retain the setting for reconnect and delivery warnings remain visible.
+Cross-origin websites must support the existing audio messaging protocol;
+RoomGoblin cannot control every embedded player. Previews stay silent.
+
+`GET /api/v1/displays/audio` returns bounded audio summaries and opaque content
+identities, without media URLs. `POST /api/v1/displays/:id/audio` accepts `volume`
+(0–1), `muted` (boolean) and optional `contentKey`. Both require classroom control
+permission and existing scheduler rate limits. The controller always supplies
+the identity; a changed screen rejects stale controls. `display.audio.control`
+updates persisted receiver state and active playback in place. The command router
+rechecks Morning Announcements after asynchronous work, including generic command
+API/WebSocket callers. The announcement volume control remains separate.
+
+Muting scheduled classroom audio releases its Background Music priority;
+unmuting reacquires it. Independent hallway receivers retain their audio scope.
+Manual takeover, explicit Background Music Stop and announcement release
+reconciliation keep their existing rules.
+
+Regression coverage: `test/display-audio.test.js`,
+`test/hallway-audio-priority.test.js` and `test/browser/test_audio_controls.py`.
+Browser fixtures cover operator controls, stable video/iframe/widget instances,
+replay and Sports clip changes; they do not verify physical sound output.
+No database migration is required. Deploy through the guarded updater after CI
+and exact-image publication, reload controllers and receivers, and verify sound
+on a selected physical display. Roll back with the normal previous-deployment path.
+
 ### Safety and priority invariants
 
 - Morning Announcements remain the highest-priority display/audio owner.
@@ -159,3 +203,185 @@ physical port blocks both transports conservatively. Individual payload output
 overrides are checked too, and locks are rechecked between individual writes.
 Deferral is surfaced as priority ownership, not an adapter failure. Do not weaken
 this boundary to an ID-only filter or automatically retry deferred CEC writes.
+
+## Planning and Scene Studio
+
+See [Planning and Scene Studio](Planning-Studio) for temporary and block-based
+schedules, the visual editor, widgets, shared layers and countdown deadlines.
+Existing canonical action sequences and native receiver media sessions remain.
+
+
+## Legacy per-output schedules
+
+Existing HDMI/HDBT per-output schedules use the same physical announcement-lock
+helper as canonical automation TV power. Every locked receiver is considered,
+including multiple receiver IDs sharing an output. Unmapped or invalid named
+receiver locks defer power without guessing a port; known physical locks protect
+both transports. Locks are rechecked before each output write.
+
+Each due on/off occurrence saves its exact-minute claim and an unconfirmed
+outcome before sending CEC. If that save fails, nothing is sent; a later tick may
+retry admission for the still-due unsent occurrence. Once a command may have been
+sent, its saved claim prevents replay after restart, even if the final result
+could not be saved. An unconfirmed result needs operator verification; it is not
+physical power-state confirmation. Rejected/uncertain writes remain single-attempt.
+
+Persistence errors are recorded inside scheduler ownership, and the busy flag is
+released on every outcome. Accepted writes remain part of the existing Full
+Recovery/shutdown drain. Pause, calendar/day/time eligibility, dry simulation,
+transport selection and the 15-second timer remain unchanged. No saved schedule,
+receiver identity or database-schema migration is required.
+
+## Continuous sequence timing
+
+Continuing continuous sequences have a minimum one-second pass duration, counting
+action execution and configured waits. Fast passes wait only for the remainder;
+slow passes still yield to timers without another timed delay. Finished runs,
+finite-only repeats and a single remaining continual action get no added cycle
+wait. Cancellation, pause and class boundaries are checked at most 500 ms apart
+during waits. A monotonic clock keeps configured wait durations stable across
+system-clock corrections; class/calendar eligibility uses the scheduler clock.
+Receiver-native media looping and persistent playback controls remain unchanged.
+
+
+Scheduled, recovered and managed manual runs retain task ownership through final
+persistence and error reporting. Failed ledger/save operations release the task
+and cancellation metadata after settlement, so they cannot leave a phantom run
+blocking recovery or shutdown. Failed new manual admission saves preserve existing
+accepted work. Live draft continual runs return a managed run ID; use **Stop Run**
+to cancel them. Finite manual sequences return their completed result.
+
+
+## Scheduled sequence test-clock permission
+
+Editor draft simulation is side-effect free. The scheduler test clock is dry by
+default and has a separate bounded live-command option. Scheduled sequences
+recheck that permission before actions, during waits and before a new timer
+overlay. Expiry or a switch to dry mode stops the sequence with a recorded error.
+An already accepted action may finish; its effects are not undone. Explicit
+manual Run Now and live draft tests remain available.
+
+## Automation resource identity
+
+Conflict checks and replacement use the action's dispatch intent. Empty primary
+targets use normal defaults; lighting groups resolve to member devices. Individual
+TV power follows its configured connection and valid legacy output override.
+All-TV broadcasts reserve all eight ports on both transports; HDMI/HDBT broadcasts
+reserve their chosen transport independently of receiver aliases. Announcement
+deferral does not shrink the intended resource set. Class display defaults remain
+separate from lighting/TV domains. Unknown lighting targets retain their diagnostic
+identity and normal dispatch error. No saved mappings or command payloads change.
+
+## Replacement command ordering
+
+Scheduled, recovered and managed manual replacements register immediately and
+wait inside task ownership for older overlapping tasks to settle. Already accepted
+adapter work finishes before replacement dispatch. Discovery and unrelated
+resources remain available; a newer run can cancel an already waiting replacement.
+Execution rechecks cancellation and shutdown before class-window decisions or
+overlays. Predecessor failure does not poison the replacement. A hung predecessor
+keeps overlapping work waiting under the unchanged lifecycle failure deadline.
+
+## TV and lighting recovery timing
+
+TV/lighting recovery respects first-pass pre-action delays and every preceding
+dwell across action domains, with exact-second eligibility. Later eligible steps
+in the same occurrence replace earlier state; the existing minute/priority/event-ID
+precedence between occurrences remains intact. This does not infer adapter latency
+or later loop phases.
+
+Restart admission separately keeps a started TV/lighting sequence's pending scope.
+It uses occurrence start, priority and event ID, then filters saved Stops. A delayed
+winner can recover without sending its future state early or reviving an older loop.
+
+## Cancellation persistence
+
+Stop requests save the complete selected set before changing run cancellation
+flags. A save failure leaves that set running. Replacement, Resume and manual-media
+run cancellation share this rule; already accepted hardware actions can finish.
+Continuous recovery honors retained cancellation requests, including requests
+saved just before a restart or followed by a running/interrupted diagnostic row.
+Shutdown interruption without Stop remains recoverable. The history retains 500
+rows; larger cancellation batches fail before changes. Other manual-media
+priority/pause state is a separate boundary.
+
+Scheduled Stop identities survive diagnostic-row eviction in the same atomic
+preference. Real local date cleanup retains yesterday, today and future dates;
+simulated time cannot purge them. The protected set is bounded to 5,000 identities
+and one MiB of UTF-8 JSON. Invalid state or exhausted capacity fails before a Stop
+is accepted or recovery starts. Legacy rows migrate on a successful write; manual
+IDs retain ordinary history behavior. Older source versions restore their earlier
+history-only retention guarantee after rollback.
+
+## Scheduled dispatch permission
+
+The test clock's live permission is checked before each new command in a scheduled
+action, timer overlays, reconciliation and later legacy TV writes. If permission
+ends during accepted work, that work may finish, but subsequent dispatch stops.
+Dry reconciliation reports a skipped result. Explicit manual actions and overlays
+remain available. Independent schedulers and manual-media release keep their own
+policies. Failed scheduler pause/resume saves preserve the prior runtime flag.
+
+## Physical resources during recovery
+
+Startup and Resume compare lighting group members as individual devices. Only
+winning members are restored, so an older group cannot overwrite a newer device
+state. Unknown targets still report errors. TV recovery uses physical connection
+and output identity, including valid individual output overrides. HDMI and HDBT
+remain independent; All TVs covers eight outputs on both transports. Conflict,
+replacement and recovery share the same TV command-target calculation.
+
+A complete uncontested All selection keeps its single broadcast. Partial winners
+use their exact physical targets and preserve announcement locks on both
+transports. Ports without receiver aliases use transport/port diagnostic labels;
+these labels do not create receivers or change mappings. Recovery counts now
+represent actual devices and physical command targets. An acknowledgement is not
+proof of physical TV power state.
+
+## Complete loop ownership on recovery
+
+Recovery restarts a whole sequence only while that occurrence owns every intended
+display, lighting device and physical TV target, including explicit event-level
+timer displays. Owning part of a group is insufficient: the whole older loop
+could otherwise overwrite a newer winner. Desired-state reconciliation can still
+restore its winning pieces without restarting that loop. Delayed complete owners
+and independent loops remain recoverable; a retained Stop remains terminal.
+No saved sequence is split, and no cancellation record is created by this check.
+
+## Display recovery timing
+
+Display reconciliation uses the scheduler clock and only the currently due
+prefix of the configured first pass, including pre-action delays and dwell in
+all action domains. Future content or timers cannot take a target or clear its
+current content. Due composed actions retain their order and class/inherited
+target rules. Timer recovery preserves an owned deadline before clearing and
+retains the original scheduled-deadline fallback. A resync with no due output
+sends nothing and does not mark the occurrence executed.
+
+Continuous-run recovery uses the full current occurrence's intended targets,
+including pending actions, so the normal runner can recover a delayed owner.
+Stopped winners do not cause an older owner to restart. This first-pass state
+projection does not reconstruct later loop phases or adapter execution latency.
+Existing announcement priority and dry/live test-clock guards remain in force.
+
+## Class offsets across calendar dates
+
+The live tick, diagnostics and recovery resolve class/block occurrences from the
+current date and its neighboring dates, then retain only occurrences scheduled
+for the selected scheduler date. A negative offset may therefore prepare a
+next-day class before midnight. Its source class/calendar eligibility remains
+authoritative, and the current date's closure/remote suppression still applies.
+Pre-class display and continuous recovery begin at the scheduled offset, while
+the existing resolved class-end cutoff still stops scheduled execution.
+
+TV/lighting recovery does not project a first-pass action whose configured delay
+would reach or pass that cutoff. A state that was already due before class end
+can remain the winner afterward; recovery does not invent the later action that
+the runner would have skipped. Ownership precedence, saved Stop, announcement
+priority and the explicit first-pass/adapter-latency limits remain unchanged.
+
+Class-end actions, overlays and explicit continuation chains use the resolved
+class's source date. A pre-midnight action keeps the next day's deadline instead
+of selecting an already-ended deadline on the dispatch date. Unresolved timers
+still validate their current class date. Adjacent ordinary classes never become
+continuations merely because their times touch; transition blocks remain terminal.

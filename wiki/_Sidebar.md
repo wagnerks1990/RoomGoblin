@@ -27,6 +27,8 @@
 - [Device Agent v2](Device-Agent-v2)
 - [Android Agent Artifact Pipeline](Android-Agent-Artifact-Pipeline)
 - [Image Permissions Recovery](Image-Permissions-Recovery)
+- [Planning](Planning)
+- [Special-Day Schedules](Special-Day-Schedules)
 - [Automation Display Media](Automation-Display-Media)
 - [Veyon and Music Assistant](Veyon-and-Music-Assistant)
 - [Veyon OEM policy](Veyon-OEM-Policy)
@@ -43,3 +45,10 @@
 - [Securly Pass Kiosk](Securly-Kiosk)
 - [Windows Lab Agent](Windows-Lab-Agent)
 - [Release and Upgrade Process](Release-and-Upgrade-Process)
+
+- [Planning and Scene Studio](Planning-Studio)
+
+- [Background Music Studio](Background-Music-Studio)
+- [Weather Workspace](Weather-Workspace)
+- [Sports Boards](Sports)
+- [Sports Research and Design](Sports-Design)

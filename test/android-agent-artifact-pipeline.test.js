@@ -7,6 +7,17 @@ const path=require("node:path");
 const {spawnSync}=require("node:child_process");
 const read=p=>fs.readFileSync(path.join(__dirname,"..",p),"utf8");
 
+test("maintenance image includes each Android module's relative dependencies",()=>{
+  const copied=new Set([...read("maintenance-agent/Dockerfile").matchAll(/^COPY maintenance-agent\/(\S+\.js) \.\/$/gm)].map(match=>match[1]));
+  for(const file of copied){
+    if(!file.startsWith("android-tv-"))continue;
+    for(const match of read("maintenance-agent/"+file).matchAll(/require\(["'](\.\/[^"']+)["']\)/g)){
+      const dependency=path.posix.normalize(path.posix.join(path.posix.dirname(file),match[1])).replace(/\.js$/,"")+".js";
+      assert.ok(copied.has(dependency),`${file} requires ${dependency}, which is absent from the maintenance image`);
+    }
+  }
+});
+
 test("maintenance image builds the current Android agent from repository source",()=>{
   const docker=read("maintenance-agent/Dockerfile");
   assert.match(docker,/FROM eclipse-temurin:17-jdk-jammy AS android-agent-build/);

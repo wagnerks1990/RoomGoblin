@@ -20,3 +20,4 @@
 .rg-workspace .cards[data-density=compact] .card details{margin-top:10px;padding-top:4px}
 .rg-workspace .card-head>div{min-width:0;overflow-wrap:anywhere}
 @media(max-width:480px){.rg-workspace .inventory-toolbar label{flex:1 1 120px}.rg-workspace .inventory-toolbar .inventory-search{flex-basis:100%}}
+.rg-workspace #shot{padding:16px}.rg-workspace #shotStatus{overflow-wrap:anywhere}.rg-workspace #shotImage{max-width:100%;margin:12px auto 0}.rg-workspace #shotImage:not([src]){display:none}
