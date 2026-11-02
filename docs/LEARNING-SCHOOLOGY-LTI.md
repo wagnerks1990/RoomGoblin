@@ -50,7 +50,9 @@ integration would require separate platform registration and qualification.
 The original posted due/cutoff rules still apply. Configure actual times rather
 than inventing them from the lesson date. Removing a membership or disabling a
 student account denies future launches; signed launches never restore that access.
-Create a new RoomGoblin activity for another course or a copied Schoology material.
+Create a separate RoomGoblin class for another Schoology course. Multiple activities
+within one class must bind to the same platform and course. A copied material in
+that same course needs a new activity because its resource-link identifier changes.
 
 ## Authentication and privacy
 
