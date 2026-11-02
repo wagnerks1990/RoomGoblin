@@ -11,6 +11,8 @@
 - Support native local Ollama structured scoring alongside explicitly selected compatible APIs and OpenAI. Preserve provider-key separation, input/output bounds, grading budgets, and revision checks.
 - Add a companion-window SCORM launcher with checked percentage commits; live Schoology acceptance remains required.
 
+- Learning discussions can use an optional SCORM-provided student name for class posts and replies; missing names keep the assigned display name. Teacher response names are administrator-configured instead of embedded in public source.
+
 ### Other pending changes
 
 - Qualify operational restore with real SQLite settings, encrypted fixture values

@@ -51,7 +51,7 @@ class LearningStore{
   settings(user,id,input){const a=this.activity(user,id,true),due=isoDate(input.dueAt),close=isoDate(input.closeAt);if(due&&close&&Date.parse(close)<=Date.parse(due))fail(400,"Close time must follow due time.");this.db.prepare("UPDATE learning_activities SET open=?,due_at=?,close_at=? WHERE id=?").run(input.open===true?1:0,due,close,a.id);this.event(user,id,"activity.settings",id,{open:input.open===true,due,close});}
   posts(user,id){
     const a=this.activity(user,id);const rows=this.db.prepare("SELECT p.*,m.alias,m.role FROM learning_posts p JOIN learning_members m ON m.user_id=p.user_id AND m.class_id=? WHERE p.activity_id=? ORDER BY p.created_at,p.id LIMIT 1000").all(a.class_id,id);
-    return rows.filter(p=>a.member.role==="teacher"||!p.hidden&&(!p.parent_id||!rows.find(x=>x.id===p.parent_id)?.hidden)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?"Mr. Wagner":p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
+    return rows.filter(p=>a.member.role==="teacher"||!p.hidden&&(!p.parent_id||!rows.find(x=>x.id===p.parent_id)?.hidden)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?this.store.getPreference("learning.responseLabel","Teacher"):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
   }
   post(user,id,input){
     const a=this.activity(user,id);this.writable(a);const teacher=a.member.role==="teacher";
@@ -120,17 +120,30 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post(api+"/classes/:id/activities",requireTeacher,wrap((req,res)=>res.json({ok:true,id:learning.createActivity(req.learner,req.params.id,req.body)})));
   app.get(api+"/accounts",requireAdministrator,wrap((_req,res)=>res.json({ok:true,users:store.listUsers().filter(u=>u.enabled&&(u.profileId==="learning-student"||teacher(u))).map(u=>({id:u.id,username:u.username,enabled:u.enabled,role:u.profileId==="learning-student"?"student":"teacher"}))})));
   app.post(api+"/accounts",requireAdministrator,wrap((req,res)=>{if(store.listUsers().some(u=>u.username.toLowerCase()===String(req.body.username).toLowerCase()))fail(409,"Account already exists. Assign it to the class instead.");const u=store.putUser({username:text(req.body.username,80),displayName:text(req.body.alias,40),role:"viewer",profileId:"learning-student"},{password:req.body.password});res.json({ok:true,user:{id:u.id,username:u.username}});}));
-  app.get(api+"/settings",requireAdministrator,wrap((_req,res)=>res.json({ok:true,ai:store.getPreference("learning.ai",{}),keyConfigured:store.hasSecret("learning.openai.key"),localKeyConfigured:store.hasSecret("learning.local.key"),bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+"/settings",requireAdministrator,wrap((_req,res)=>res.json({ok:true,ai:store.getPreference("learning.ai",{}),responseLabel:store.getPreference("learning.responseLabel","Teacher"),keyConfigured:store.hasSecret("learning.openai.key"),localKeyConfigured:store.hasSecret("learning.local.key"),bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
   app.put(api+"/settings",requireAdministrator,wrap((req,res)=>{
+    const responseLabel=req.body.responseLabel===undefined?store.getPreference("learning.responseLabel","Teacher"):text(req.body.responseLabel,40);
     const provider=req.body.provider||"openai";if(!["openai","local","ollama"].includes(provider))fail(400,"Choose ollama, local, or openai.");let baseURL=null;if(provider!=="openai"){try{baseURL=localBaseURL(req.body.baseURL,provider);}catch(e){fail(400,e.message);}}
     const model=text(req.body.model,150);if(!/^[a-zA-Z0-9._:/-]+$/.test(model))fail(400,"Enter a model ID.");
     const origins=req.body.bridgeOrigins;if(!Array.isArray(origins)||origins.length>10)fail(400,"Enter up to ten exact LMS origins.");const checked=origins.map(origin);
     const dailyLimit=Number(req.body.dailyLimit);if(!Number.isInteger(dailyLimit)||dailyLimit<1||dailyLimit>1000)fail(400,"Daily grading limit must be 1–1000.");
     if(req.body.apiKey){const key=text(req.body.apiKey,500);if(/[\r\n]/.test(key))fail(400,"Invalid key.");store.putSecret(provider!=="openai"?"learning.local.key":"learning.openai.key",key,{purpose:"learning-grading"});}
     if(req.body.enabled===true&&provider==="openai"&&!store.hasSecret("learning.openai.key"))fail(400,"Configure the server-side grading key first.");
-    store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);res.json({ok:true});
+    store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);store.setPreference("learning.responseLabel",responseLabel);res.json({ok:true});
   }));
   app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:CASE},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id)});}));
+  // LMS names are optional display data, never an authentication or enrollment claim.
+  app.put(api+"/activities/:id/lms-name",wrap((req,res)=>{
+    const a=learning.activity(req.learner,req.params.id);
+    if(a.member.role!=="student")fail(403,"Only your student display name can be updated.");
+    const launcher=origin(req.body.launcherOrigin);
+    if(!store.getPreference("learning.bridgeOrigins",[]).includes(launcher))fail(403,"The LMS launcher origin is not configured.");
+    const supplied=text(req.body.name,255);
+    if(/[<>\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(supplied))fail(400,"The LMS name contains unsupported characters.");
+    const name=supplied.replace(/\s+/gu," ");
+    if(name!==a.member.alias)store.tx(()=>{learning.db.prepare("UPDATE learning_members SET alias=? WHERE class_id=? AND user_id=? AND role='student'").run(name,a.class_id,req.learner.id);learning.event(req.learner,a.id,"member.lms-name",req.learner.id);});
+    res.json({ok:true,name});
+  }));
   app.put(api+"/activities/:id",requireTeacher,wrap((req,res)=>{learning.settings(req.learner,req.params.id,req.body);res.json({ok:true});}));
   app.post(api+"/activities/:id/posts",wrap(async(req,res)=>{
     const id=learning.post(req.learner,req.params.id,req.body);

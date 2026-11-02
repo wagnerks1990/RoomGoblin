@@ -15,8 +15,8 @@ queries. Normal native login, password security, CSRF protections, and recovery
 writer drain remain in effect. Only `/learn` relaxes COOP to retain a companion
 window opener; controller headers and frame restrictions remain unchanged.
 
-The owner authorized automatic replies displayed as Mr. Wagner and automatic
-rubric publication. Directions disclose automatic processing; teacher provenance
+Automatic replies use the administrator-configured public response name,
+with automatic rubric publication when enabled. Never hardcode a deployment identity. Directions disclose automatic processing; teacher provenance
 and correction remain available. Do not invent personal teacher observations or
 claim the model has tested network devices. Keep scoring separate from misconduct,
 authorship, disability, and writing dialect. Public response generation must not
@@ -40,3 +40,9 @@ full reasoning credit needs a verbatim limitation quote from the initial writing
 Keep this separation and evidence validation. Treat the calibration report as
 version-specific evidence, not a guarantee. Inference tests were paused after a
 94 C GPU reading; final full-model qualification remains incomplete.
+
+Optional SCORM names update only the authenticated student's class alias.
+Check popup source, exact allowlisted origin, nonce and activity; keep names out
+of URLs, model prompts and audit details. Names are untrusted display data, never
+authentication, account matching, roster enrollment or permission evidence.
+Unsupported names must not block participation.

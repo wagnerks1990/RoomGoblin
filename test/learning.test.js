@@ -6,6 +6,46 @@ const {capabilitiesFor}=require('../src/security');
 const initial='The claim is incorrect. Address .65 is in 192.168.20.64/26 with broadcast .127. Address .129 is in 192.168.20.128/26 with broadcast .191. The host sends remote traffic through a reachable local router. These calculations do not prove the router or return path works.';
 async function run(t,opts={}){const f=await fixture(opts);t.after(f.close);return f;}
 const route=f=>'/api/v1/learning/activities/'+f.activityId;
+
+test('LMS name updates only the signed-in class member without changing access or leaking names to grading',async t=>{
+  let sent;const f=await run(t,{grader:async input=>{sent=input;return good();}}),url=route(f)+'/lms-name';
+  const input={name:'Example, Alex',launcherOrigin:'https://lms.example.edu',userId:f.b.id,role:'teacher'};
+  assert.equal((await f.request(f.a,url,'PUT',input)).status,403);
+  f.store.setPreference('learning.bridgeOrigins',[input.launcherOrigin]);
+  assert.equal((await f.request(null,url,'PUT',input)).status,401);
+  assert.equal((await f.request(f.outside,url,'PUT',input)).status,404);
+  assert.equal((await f.request(f.admin,url,'PUT',input)).status,403);
+  for(const name of ['', 'x'.repeat(256), '<img src=x>', 'Name\nOther', '\u202eName'])assert.equal((await f.request(f.a,url,'PUT',{...input,name})).status,400);
+  assert.equal((await f.request(f.a,url,'PUT',{...input,launcherOrigin:'https://unassigned.example.edu'})).status,403);
+  assert.equal((await f.request(f.a,url,'PUT',input, {origin:'https://foreign.example.edu'})).status,403);
+  f.freeze(true);assert.equal((await f.request(f.a,url,'PUT',input)).status,423);f.freeze(false);
+  assert.equal((await f.request(f.a,url,'PUT',input)).status,200);
+  assert.equal(f.learning.membership(f.a,f.classId).alias,input.name);
+  assert.equal(f.learning.membership(f.a,f.classId).role,'student');
+  assert.equal(f.learning.membership(f.b,f.classId).alias,'Investigator B');
+  assert.equal((await f.request(f.a,'/api/v1/diagnostics')).status,403);
+  await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});
+  assert.equal((await f.request(f.b,route(f))).body.posts.find(p=>p.kind==='initial').alias,input.name);
+  assert(!JSON.stringify(sent).includes(input.name));
+  const audit=f.store.db.prepare("SELECT details_json FROM learning_events WHERE kind='member.lms-name'").all();
+  assert.equal(audit.length,1);assert(!JSON.stringify(audit).includes(input.name));
+  await f.request(f.a,url,'PUT',input);
+  assert.equal(f.store.db.prepare("SELECT COUNT(*) n FROM learning_events WHERE kind='member.lms-name'").get().n,1);
+});
+
+test('public response name is administrator configured and student changes are rejected',async t=>{
+  const f=await run(t),url='/api/v1/learning/settings';
+  const settings={enabled:true,provider:'ollama',baseURL:'http://127.0.0.1:11434/api',model:'fixture',dailyLimit:50,autonomous:true,bridgeOrigins:[],responseLabel:'Dr. Example'};
+  assert.equal((await f.request(f.a,url,'PUT',settings)).status,403);
+  assert.equal((await f.request(f.admin,url,'PUT',{...settings,responseLabel:'x'.repeat(41)})).status,400);
+  assert.equal((await f.request(f.admin,url,'PUT',settings)).status,200);
+  assert.equal((await f.request(f.admin,url)).body.responseLabel,'Dr. Example');
+  await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});
+  assert.equal((await f.request(f.a,route(f))).body.posts.find(p=>p.kind==='ai').alias,'Dr. Example');
+  const {responseLabel,...oldClient}=settings;
+  assert.equal((await f.request(f.admin,url,'PUT',oldClient)).status,200);
+  assert.equal((await f.request(f.admin,url)).body.responseLabel,'Dr. Example');
+});
 test('native Ollama uses bounded context and schema, omits thinking, and rejects truncation',async()=>{
   const {SCHEMA,localBaseURL}=require('../src/learning-grader');const opts={provider:'ollama',model:'qwen3.5:9b',baseURL:'http://127.0.0.1:11434/api',initial};
   assert.equal(localBaseURL(opts.baseURL,'ollama'),opts.baseURL);
@@ -61,7 +101,7 @@ test('restart preserves posts and grades while interrupted requests become unava
 });
 test('restricted student profile cannot gain appliance capabilities by profile edits',()=>{assert.deepEqual(capabilitiesFor({role:'viewer',profileId:'learning-student'},{enabled:true,config:{capabilities:['*']}}),['learning.participate']);assert.deepEqual(capabilitiesFor({role:'viewer',profileId:'learning-student'},{enabled:false,config:{capabilities:['*']}}),[]);});
 test('assigned class authorization, student admin denial, no unauthenticated access, no control access',async t=>{const f=await run(t);assert.equal((await f.request(null,route(f))).status,401);assert.equal((await f.request(f.outside,route(f))).status,404);assert.equal((await f.request(f.a,'/api/v1/learning/settings')).status,403);assert.equal((await f.request(f.a,'/api/v1/diagnostics')).status,403);assert.equal((await f.request(f.a,'/api/v1/learning/classes','POST',{title:'Injected'})).status,403);});
-test('posting automatically scores writing and publishes Mr. Wagner feedback without human approval',async t=>{let calls=0;const f=await run(t,{grader:async()=>{calls++;return good();}});const r=await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial,userId:f.b.id,role:'teacher',score:20});assert.equal(r.status,200);assert.equal(calls,1);const view=(await f.request(f.a,route(f))).body;assert.equal(view.review.status,'approved');assert.equal(view.review.final.total,17);assert.equal(view.review.final.source,'ai');assert.equal(view.posts.find(x=>x.kind==='ai').alias,'Mr. Wagner');assert(!view.posts.some(x=>'userId'in x));assert.equal((await f.request(f.a,route(f)+'/receipt')).body.raw,85);});
+test('posting automatically scores writing and publishes Ms. Rivera feedback without human approval',async t=>{let calls=0;const f=await run(t,{grader:async()=>{calls++;return good();}});const r=await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial,userId:f.b.id,role:'teacher',score:20});assert.equal(r.status,200);assert.equal(calls,1);const view=(await f.request(f.a,route(f))).body;assert.equal(view.review.status,'approved');assert.equal(view.review.final.total,17);assert.equal(view.review.final.source,'ai');assert.equal(view.posts.find(x=>x.kind==='ai').alias,'Ms. Rivera');assert(!view.posts.some(x=>'userId'in x));assert.equal((await f.request(f.a,route(f)+'/receipt')).body.raw,85);});
 test('real peer reply increases score; teacher can respond; idempotent grading does not duplicate calls',async t=>{let calls=0;const f=await run(t,{grader:async()=>{calls++;return good();}});await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});const peer=await f.request(f.b,route(f)+'/posts','POST',{kind:'initial',body:initial});const reply=await f.request(f.a,route(f)+'/posts','POST',{kind:'reply',parentId:peer.body.id,body:'Your boundaries are sound. Verify that the proposed next hop is the actual reachable router before declaring success.'});assert.equal(reply.body.review.final.total,20);assert.equal(calls,3);await f.request(f.a,route(f)+'/submit','POST',{replyId:reply.body.id});assert.equal(calls,3);const teacher=await f.request(f.admin,route(f)+'/posts','POST',{parentId:peer.body.id,body:'Show me the usable range for each network.'});assert.equal(teacher.status,200);assert.equal(calls,3);const feed=(await f.request(f.a,route(f))).body.posts;assert(feed.some(x=>x.role==='teacher'));});
 test('independent critique only when no peer is available; own and cross-class replies rejected',async t=>{const f=await run(t);const p=await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});assert.equal((await f.request(f.a,route(f)+'/posts','POST',{kind:'reply',parentId:p.body.id,body:'Self response.'})).status,400);assert.equal((await f.request(f.a,route(f)+'/posts','POST',{kind:'critique',body:'An address ending in .1 is not sufficient. Verify that it is an actual reachable local router interface.'})).status,200);await f.request(f.b,route(f)+'/posts','POST',{kind:'initial',body:initial});assert.equal((await f.request(f.a,route(f)+'/posts','POST',{kind:'critique',body:'Another critique.'})).status,409);});
 test('teacher override preserves rubric tiers, applies late adjustment exactly once and publishes corrected grade',async t=>{const f=await run(t);f.learning.settings(f.admin,f.activityId,{open:true,dueAt:'2020-01-01T00:00:00Z'});await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});let r=(await f.request(f.a,route(f))).body.review;assert.equal(r.final.total,8.5);const g=good();g.criteria.reply.points=0;g.criteria.claim.points=3;const override=await f.request(f.admin,route(f)+`/reviews/${r.id}/approve`,'POST',{criteria:g.criteria,summary:'Teacher correction after review.'});assert.equal(override.body.grade.total,7);assert.equal(override.body.grade.earned,14);const invalid=await f.request(f.admin,route(f)+`/reviews/${r.id}/approve`,'POST',{criteria:{...g.criteria,claim:{points:5,feedback:'Not an allowed tier.'}},summary:'Override'});assert.equal(invalid.status,400);assert.equal((await f.request(f.a,route(f)+'/receipt')).body.raw,35);});

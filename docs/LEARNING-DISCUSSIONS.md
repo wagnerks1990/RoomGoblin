@@ -9,14 +9,14 @@ grade bridge, not the discussion database. No production deployment is implied.
 ## Classroom workflow
 
 1. Sign in at `/learn/` with an existing administrator account. Create a class,
-   restricted student accounts, and class memberships. Use discussion aliases;
+   restricted student accounts, and class memberships. Assign fallback discussion names;
    distribute credentials privately. Students can change their own password.
 2. Add the discussion and set the actual due time and next-class cutoff, including
    timezone. Blank dates do not invent a deadline. Per-member exemptions represent
    the teacher's preapproved exceptions. Closing an activity stops new student work.
 3. Configure the grading service as an administrator. Automatic publication is
    enabled by default when the service is enabled. A student explanation or reply
-   triggers a rubric assessment and a short public response under **Mr. Wagner**.
+   triggers a rubric assessment and a short public response under the administrator-configured **Public response name** (default **Teacher**).
    Directions disclose automatic feedback; no AI Coach persona appears on the board.
 4. Students write a 4–6 sentence explanation and a 2–3 sentence peer reply. When no
    peer initial post is available, the alternate gateway critique is available.
@@ -34,7 +34,7 @@ after the deadline may therefore be late. Teacher overrides can waive the penalt
 
 ## Ollama on the RoomGoblin host
 
-Recommended starting configuration for the owner's RTX 3060 12 GB is
+An initial calibration candidate for a 12 GB GPU is
 `qwen3.5:9b`, subject to actual calibration and concurrent classroom workload tests.
 Open WebUI is optional for administrator experimentation; the discussion service
 connects directly to Ollama, without sending posts through Open WebUI.
@@ -130,6 +130,24 @@ rubric score. Nevertheless SCORM runs in the learner's browser: this is not
 cryptographic grade attestation or an LTI identity binding. Confirm the assigned
 RoomGoblin account and LMS learner match. Live Schoology popup, resume, latest-score,
 grade mapping, and Student View acceptance remain separate required checks.
+
+## Optional Schoology names
+
+The launcher reads `cmi.core.student_name` after SCORM initialization. When the
+LMS supplies a usable name, an origin/source/nonce/activity-checked popup exchange
+updates only the signed-in student's display name in that assigned class. Existing
+and new posts/replies then use that name. It does not create accounts, change
+membership, bind a Schoology identity, or grant permissions. The server only accepts
+this request for a student member and a configured exact launcher origin. A browser
+can alter SCORM data; a display name must never be treated as verified identity.
+
+No student ID is requested. Names are kept out of URLs, SCORM suspend data, metadata
+audit details, and model prompts. Name text stays plain text; invalid values are
+rejected. An empty/unsupported name keeps the assigned discussion name and does not
+block writing or grading. Names are not reformatted based on assumptions about name
+order. Real Schoology name availability requires a student launch test.
+
+Reference: [SCORM runtime data model](https://scorm.com/scorm-explained/technical-scorm/run-time/run-time-reference/).
 
 ## Access, persistence, and failure behavior
 
