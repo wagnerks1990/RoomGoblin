@@ -53,6 +53,14 @@ test('freeze and removal of enrollment prevent queued grading',async t=>{
  f.freeze(true);await f.learning.reviewQueue.drain();assert.equal(calls,1);assert.equal(pending(f).length,1);f.freeze(false);
  f.store.db.prepare('DELETE FROM learning_members WHERE class_id=? AND user_id=?').run(f.classId,f.b.id);await f.learning.reviewQueue.drain();assert.equal(calls,1);assert.equal(pending(f).length,0);
 });
+test('a newly submitted reply prevents the in-flight older selection from publishing',async t=>{
+ let release,calls=0;const f=await setup(t,{grader:()=>++calls===1?new Promise(r=>release=()=>r(good())):Promise.resolve(good())});
+ const first=f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});await until(()=>release);
+ await f.rawRequest(f.a,route(f)+'/posts','POST',{kind:'critique',body:'A gateway must be a usable local router address. Test its forwarding and return path.'});
+ release();await first;assert(!f.learning.posts(f.a,f.activityId).some(p=>p.kind==='ai'));
+ await f.learning.reviewQueue.drain();assert.equal(f.learning.currentReview(f.a,f.activityId).final.total,20);
+ assert.equal(f.learning.posts(f.a,f.activityId).filter(p=>p.kind==='ai').length,1);
+});
 test('temporary service failure retries twice at most and preserves accepted time',async t=>{
  let calls=0;const f=await setup(t,{grader:async()=>{calls++;const error=Error('Temporary fixture failure');error.retryable=true;throw error;}});
  await f.request(f.a,route(f)+'/posts','POST',{kind:'initial',body:initial});const accepted=pending(f)[0].accepted_at;assert.equal(pending(f)[0].attempts,1);

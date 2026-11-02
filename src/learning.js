@@ -264,6 +264,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         const currentCfg=store.getPreference("learning.ai",{});
         if(!currentCfg.enabled||["provider","baseURL","model"].some(key=>currentCfg[key]!==cfg[key]))fail(409,"The grading service changed during this assessment.");
         if(hash(learning.snapshot(user,a.id,snapshot.replyId))!==fingerprint)fail(409,"Writing changed during grading.");
+        const newer=learning.db.prepare('SELECT fingerprint FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,user.id);
+        if(newer&&newer.fingerprint!==fingerprint)fail(409,'A newer reply selection is waiting for assessment.');
         learning.store.tx(()=>{
           const changed=learning.db.prepare("UPDATE learning_reviews SET status='needs_review',ai_json=?,updated_at=? WHERE id=? AND status='grading'").run(JSON.stringify({...validated,proposedResponse:result.coachResponse}),now(),id).changes;
           if(!changed)return;
