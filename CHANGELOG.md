@@ -14,6 +14,11 @@
 - Classify original-source evidence and check numeric calculations before mapping
   rubric points; select checked public wording instead of publishing model prose.
 - Expand synthetic calibration to 13 cases and pace local model requests.
+- Add a lesson-style discussion workspace with the exact rubric, collapsible
+  threads, inline replies, progress markers, and private grade feedback.
+- Share student/teacher conversation replies across the assigned class, including
+  follow-ups to automatic responses. Keep follow-ups out of scored reply selection
+  and hide all descendants when a teacher moderates an ancestor.
 - Add administrator-configured AI chat and media shortcuts to the classroom
   progress page, separate from the signed Schoology student connection.
 

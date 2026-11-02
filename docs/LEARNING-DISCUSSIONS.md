@@ -35,6 +35,33 @@ value. Late work receives half the earned score once; possible points remain 20.
 The server acceptance time is used for the late calculation, even when grading runs later. A revised submission
 after the deadline may therefore be late. Teacher overrides can waive the penalty.
 
+## Shared discussion workspace
+
+The production `/learn/` pages use a lesson header, case and directions, the full
+20-point rubric, initials avatars, timestamps, and collapsible conversation threads.
+Reply opens a composer within the selected thread. Refresh preserves the unsaved
+reply and collapsed threads; a browser reload does not save an unpublished draft.
+Progress markers describe saved work and published feedback, without extra points.
+
+Everyone assigned to the class can read student posts, peer replies, teacher
+responses, and published automatic responses. Students can respond to teacher
+comments, including automatic responses to their own work. Follow-ups show the
+person being answered and remain in the original thread. Private rubric feedback
+and grades are available only to the student and authorized teachers. People
+outside the assigned class cannot read the board. Moderation hides a post and all
+its descendants from students; teachers can restore it.
+
+Only a reply directly to another student's initial post, or the permitted
+independent critique, can satisfy the scored reply criterion. Other conversation
+follow-ups are shared but do not trigger another assessment, replace a scored
+reply, or change the grade. Teachers can continue those exchanges themselves.
+
+Local preview launchers may assign synthetic personas outside the production
+pages. They must remain loopback-only and separate from production accounts,
+Schoology grades, classroom devices, and databases. A preview demonstrates the
+production UI and native discussion code; it does not qualify real LMS identity
+or grade return. Production deployment is deferred while the owner tests the design.
+
 ## Ollama on the RoomGoblin host
 
 An initial calibration candidate for a 12 GB GPU is

@@ -30,3 +30,14 @@ service failures retry twice. Queue delays preserve the original acceptance time
 for late policy. Review mode withholds both replies and grades. The model classifies
 source evidence; the application checks values, assigns rubric points, and selects
 reviewed teacher-style response wording. Teachers retain correction controls.
+
+The lesson-style workspace includes the case, directions, exact rubric, progress
+markers, avatars, timestamps, inline replies, and collapsible discussion threads.
+Everyone in the assigned class can read student posts and public student/teacher
+replies, including automatic replies. Students can answer a teacher response;
+follow-ups stay in the original conversation. Grades and private rubric feedback
+remain visible only to the student and teachers. Moderation hides descendants too.
+Only the designated peer-initial response or permitted independent critique counts
+toward reply points; other follow-ups do not replace that evidence or regrade work.
+The production pages are being tested with a separate local synthetic-account
+launcher before another deployment; a preview does not establish live LMS behavior.

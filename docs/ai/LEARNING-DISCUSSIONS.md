@@ -65,3 +65,15 @@ Check popup source, exact allowlisted origin, nonce and activity; keep names out
 of URLs, model prompts and audit details. Names are untrusted display data, never
 authentication, account matching, roster enrollment or permission evidence.
 Unsupported names must not block participation.
+
+The production discussion frontend groups all descendants into their original
+thread, identifies the direct reply target, and preserves in-page drafts and
+collapsed state during polling. Everyone assigned to a class reads public student,
+teacher, and automatic replies; rubric feedback and grades remain per-student.
+Conversation replies retain the existing `reply` kind and parent relationship.
+Only replies directly to another student's initial post are eligible for scoring;
+follow-ups to teacher/automatic/peer replies must never replace that scored reply
+or queue more inference. Keep that rule in server selection and snapshot checks,
+not only the dropdown. Hide all descendants of moderated ancestors, reject hidden
+or cross-activity reply chains, and keep automatic author identity server-owned.
+The test persona launcher is separate from these actual production pages.
