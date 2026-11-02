@@ -77,3 +77,11 @@ or queue more inference. Keep that rule in server selection and snapshot checks,
 not only the dropdown. Hide all descendants of moderated ancestors, reject hidden
 or cross-activity reply chains, and keep automatic author identity server-owned.
 The test persona launcher is separate from these actual production pages.
+
+The SCORM companion polls the authoritative grade receipt independently of draft
+editing or document visibility. Bind receipt and acknowledgement messages to the
+original activity, nonce, exact origin, and window. A receipt key includes review,
+approval time, and numeric score so same-review teacher corrections resync. The
+launcher acknowledges only successful LMS commits, deduplicates unchanged grades,
+retries pending saves, and stops on pagehide. Never claim a browser SCORM commit
+can occur after its LMS window closes; signed LTI outcomes are the server path.

@@ -155,10 +155,15 @@ The launcher opens the authenticated RoomGoblin activity in a companion window.
 This avoids third-party cookie and iframe restrictions. Allow the exact launcher
 origin shown in the SCORM page in the administrator settings; Schoology content
 may have a different origin from the course page. Wildcards are not allowed.
-Both windows must remain open. The student selects **Send published grade to
-Schoology**, returns to the launcher, and waits for the LMS saved confirmation.
-Failed commits remain retryable. Reopen and sync again after a teacher correction.
-This SCORM route has no background grade passback. The separate signed External
+Both windows must remain open until the LMS confirms saving. The discussion checks
+for published grades automatically, including while it is behind the launcher,
+and sends updated server receipts after grading or teacher corrections. No submit
+or sync click is required. The launcher acknowledges successful `LMSCommit` calls,
+deduplicates unchanged receipts, and retries an unconfirmed save every 15 seconds.
+**Sync grade now** and **Retry grade save** remain available for manual recovery.
+If either window was closed before grading or a correction, reopen the assignment
+to sync the latest published grade. This SCORM route cannot write to the LMS after
+both windows close. The separate signed External
 Tool route returns approved grades directly to the configured LTI outcome service.
 
 The bridge validates popup source, exact origin, random nonce, activity, and score

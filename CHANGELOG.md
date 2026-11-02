@@ -19,6 +19,9 @@
 - Share student/teacher conversation replies across the assigned class, including
   follow-ups to automatic responses. Keep follow-ups out of scored reply selection
   and hide all descendants when a teacher moderates an ancestor.
+- Automatically sync published and corrected discussion grades to an open SCORM
+  launcher, acknowledge confirmed commits, retry temporary save failures, and
+  deduplicate unchanged receipts while preserving manual recovery controls.
 - Add administrator-configured AI chat and media shortcuts to the classroom
   progress page, separate from the signed Schoology student connection.
 

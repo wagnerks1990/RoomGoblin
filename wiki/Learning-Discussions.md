@@ -41,3 +41,10 @@ Only the designated peer-initial response or permitted independent critique coun
 toward reply points; other follow-ups do not replace that evidence or regrade work.
 The production pages are being tested with a separate local synthetic-account
 launcher before another deployment; a preview does not establish live LMS behavior.
+
+Published and corrected grades sync automatically to an open SCORM launcher.
+Unconfirmed commits retry, unchanged receipts do not duplicate commits, and manual
+recovery buttons remain available. Reopen the assignment to sync a grade published
+after its windows closed. Signed Schoology External Tool outcomes provide the
+separate server-to-server path for grades and teacher corrections without an open
+student page. Real Schoology gradebook acceptance still needs a live LMS test.
