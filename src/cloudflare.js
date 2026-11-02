@@ -183,6 +183,12 @@ class CloudflareManager{
   }
   async configureTunnel(ctx,settings,tunnel){
     const ingress=[];
+    const student=this.storage.getPreference('learning.publicRoute',null);
+    if(student){
+      const hostname=dnsName(student.hostname,'Student hostname');
+      if(hostname===settings.hostname||hostname===settings.musicAssistantHostname||!hostname.endsWith('.'+settings.zone)||student.service!=='http://127.0.0.1:3030')throw failure('Review the isolated student route before reprovisioning.',409);
+      ingress.push({hostname,service:'http://127.0.0.1:3030'});
+    }
     if(settings.musicAssistantPublicEnabled)ingress.push({hostname:settings.musicAssistantHostname,service:"http://127.0.0.1:8095"});
     ingress.push({hostname:settings.hostname,service:this.originUrl},{service:"http_status:404"});
     await ctx.client.put(`/accounts/${ctx.accountId}/cfd_tunnel/${tunnel.id}/configurations`,{config:{ingress}});

@@ -2,6 +2,10 @@
 
 const crypto=require("node:crypto");
 const {LearningLti,COOKIE:LEARNING_COOKIE,cookie:learningCookie}=require("./learning-lti");
+const {LearningPlatform}=require('./learning-platform');
+const {LearningPresence}=require('./learning-presence');
+const {LearningConnection,COOKIE:FLOW_COOKIE,flowCookie}=require('./learning-connection');
+const {isPublicRequest}=require('./learning-public');
 const {rateLimit}=require("express-rate-limit");
 const {CASE,RUBRIC,validateGrade,gradeWriting,localBaseURL}=require("./learning-grader");
 const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
@@ -48,7 +52,7 @@ class LearningStore{
     this.db.prepare("INSERT INTO learning_members(class_id,user_id,role,alias,exempt) VALUES(?,?,?,?,?) ON CONFLICT(class_id,user_id) DO UPDATE SET alias=excluded.alias,exempt=excluded.exempt,role=excluded.role").run(classId,target.id,role,text(input.alias,40),input.exempt===true?1:0);
     this.event(user,null,"member.assign",target.id,{classId,exempt:input.exempt===true});
   }
-  createActivity(user,classId,input){this.membership(user,classId,true);const id=crypto.randomUUID();this.db.prepare("INSERT INTO learning_activities(id,class_id,title,template_id,created_at) VALUES(?,?,?,?,?)").run(id,classId,text(input.title||CASE.title,120),CASE.id,now());this.event(user,id,"activity.create",id);return id;}
+  createActivity(user,classId,input){this.membership(user,classId,true);const id=crypto.randomUUID(),template=input.templateId||CASE.id;if(![CASE.id,'scorm-connector-v1'].includes(template))fail(400,'Choose an available activity type.');this.db.prepare("INSERT INTO learning_activities(id,class_id,title,template_id,created_at) VALUES(?,?,?,?,?)").run(id,classId,text(input.title||CASE.title,120),template,now());this.event(user,id,"activity.create",id);return id;}
   settings(user,id,input){const a=this.activity(user,id,true),due=isoDate(input.dueAt),close=isoDate(input.closeAt);if(due&&close&&Date.parse(close)<=Date.parse(due))fail(400,"Close time must follow due time.");this.db.prepare("UPDATE learning_activities SET open=?,due_at=?,close_at=? WHERE id=?").run(input.open===true?1:0,due,close,a.id);this.event(user,id,"activity.settings",id,{open:input.open===true,due,close});}
   posts(user,id){
     const a=this.activity(user,id);const rows=this.db.prepare("SELECT p.*,m.alias,m.role FROM learning_posts p JOIN learning_members m ON m.user_id=p.user_id AND m.class_id=? WHERE p.activity_id=? ORDER BY p.created_at,p.id LIMIT 1000").all(a.class_id,id);
@@ -56,6 +60,7 @@ class LearningStore{
   }
   post(user,id,input){
     const a=this.activity(user,id);this.writable(a);const teacher=a.member.role==="teacher";
+    if(a.template_id!==CASE.id)fail(409,'This SCORM connector does not accept discussion posts.');
     const kind=teacher?"teacher":input.kind;
     if(!(teacher?["teacher"]:["initial","reply","critique"]).includes(kind))fail(400,"Choose a post type.");
     const body=text(input.body,kind==="initial"?6000:3000),parentId=input.parentId||null;
@@ -75,6 +80,7 @@ class LearningStore{
   }
   moderate(user,id,postId,hidden){this.activity(user,id,true);const p=this.db.prepare("SELECT * FROM learning_posts WHERE activity_id=? AND id=?").get(id,postId);if(!p)fail(404,"Post not found.");this.db.prepare("UPDATE learning_posts SET hidden=? WHERE id=?").run(hidden?1:0,p.id);this.event(user,id,"post.moderate",p.id,{hidden});}
   snapshot(user,id,replyId){
+    if(this.activity(user,id).template_id!==CASE.id)fail(409,'SCORM scores stay in the original Schoology assignment.');
     const initial=this.db.prepare("SELECT * FROM learning_posts WHERE activity_id=? AND user_id=? AND kind='initial' AND hidden=0").get(id,user.id);if(!initial)fail(400,"Publish your initial explanation first.");
     let reply=null,parent=null;
     if(replyId){reply=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND user_id=? AND kind IN ('reply','critique') AND hidden=0").get(replyId,id,user.id);if(!reply)fail(400,"Choose your own reply or independent critique.");if(reply.parent_id){parent=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind='initial' AND hidden=0").get(reply.parent_id,id);if(!parent)fail(409,"The peer post is no longer available. Choose another reply.");}}
@@ -98,14 +104,39 @@ function restrictedStudentGate(req,res,next){
   return allowed?next():res.status(403).json({ok:false,error:"Student accounts can access assigned learning activities only."});
 }
 
-function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWriting,freezeRequested=()=>false,publicDir,ltiOptions}){
+function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWriting,freezeRequested=()=>false,publicDir,ltiOptions,platformOptions}){
   const learning=new LearningStore(store),busy=new Set(),lti=new LearningLti(learning,ltiOptions);learning.lti=lti;
+  const platform=new LearningPlatform(learning,{available:()=>!freezeRequested(),...platformOptions});learning.platform=platform;
+  const presence=new LearningPresence(platform);platform.presence=presence;
+  const connection=new LearningConnection(platform);platform.connection=connection;
+  const insights=require('./learning-insights').createInsights(platform);
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
+  learning.teacherCapability=teacher;
   const api="/api/v1/learning";
-  const requireLearning=(req,res,next)=>{const u=requestUser(req);if(!store.authEnabled()||!u)return res.status(401).json({ok:false,error:"Sign in to your assigned RoomGoblin account."});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
+  const requireLearning=(req,res,next)=>{const u=requestUser(req);if(!store.authEnabled()||!u||isPublicRequest(req)&&(!u.learningSso||u.profileId!=='learning-student'))return res.status(401).json({ok:false,error:isPublicRequest(req)?'Reopen the signed Schoology connection.':'Sign in to your assigned RoomGoblin account.'});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
   const requireTeacher=(req,res,next)=>teacher(req.learner)?next():res.status(403).json({ok:false,error:"Teacher access required."});
   const requireAdministrator=(req,res,next)=>hasCapability(req.learner,"*")?next():res.status(403).json({ok:false,error:"Administrator access required."});
+  app.post('/learn/connect/start',rateLimit({windowMs:60000,limit:30,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
+    if(freezeRequested())fail(423,'Backup in progress.');
+    if(req.get('x-roomgoblin-learning')!=='1'||req.get('origin')!==`${req.protocol}://${req.get('host')}`)fail(403,'A same-origin connector request is required.');
+    const flow=connection.start(req.body?.activityId,req.body?.parent);
+    res.setHeader('Set-Cookie',`${FLOW_COOKIE}=${flow.id}; Path=/learn/lti; HttpOnly; SameSite=None; Secure; Max-Age=600`);
+    res.setHeader('Cache-Control','no-store');res.json({ok:true,...flow});
+  }));
+  app.get('/learn/connect-info/:id',rateLimit({windowMs:60000,limit:60,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
+    const cfg=platform.config(req.params.id),a=learning.db.prepare('SELECT open FROM learning_activities WHERE id=?').get(req.params.id);if(!cfg||!a?.open)fail(404,'Assignment connector is not available.');
+    res.setHeader('Cache-Control','no-store');res.json({ok:true,launchUrl:cfg.launch_url,bridgeOrigins:store.getPreference('learning.bridgeOrigins',[])});
+  }));
+  app.get('/learn/presence/config',wrap((req,res)=>{
+    if(isPublicRequest(req)||['forwarded','x-forwarded-for','x-forwarded-proto','cf-connecting-ip'].some(k=>req.headers[k]!==undefined)||!require('./learning-platform').classroomRequest(req,platform.settings()))fail(403,'Classroom network required.');
+    res.setHeader('Cache-Control','no-store');res.json({ok:true,publicOrigin:platform.settings().publicOrigin});
+  }));
+  app.post('/learn/presence/attest',rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
+    if(freezeRequested())fail(423,'Backup in progress.');
+    if(isPublicRequest(req)||req.get('x-roomgoblin-presence')!=='1'||req.get('origin')!==`${req.protocol}://${req.get('host')}`)fail(403,'Local presence request required.');
+    res.setHeader('Cache-Control','no-store');res.json({ok:true,...presence.attest(req.body?.id,req)});
+  }));
   app.post('/learn/lti/:id',rateLimit({windowMs:60000,limit:60,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
     res.setHeader('Cache-Control','no-store');
     if(freezeRequested())fail(423,'Backup in progress; reopen the assignment shortly.');
@@ -113,8 +144,10 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const result=lti.launch(req.params.id,req.body,req.get('origin'),`${req.protocol}://${req.get('host')}${req.originalUrl}`);
     if(result.teacher)return res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>RoomGoblin connected</title><h1>Schoology connection ready</h1><p>Students can now open this assignment without a RoomGoblin password. Use your existing teacher account to review the discussion.</p><a href="/learn/">Open teacher desk</a></html>');
     const secure=req.secure?'; Secure':'';
-    res.setHeader('Set-Cookie',`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=28800`);
-    res.redirect(303,'/learn/?lms=1&activity='+encodeURIComponent(req.params.id));
+    connection.signed(result.user,req.params.id,store.sessionUser(result.session.token).sessionId,flowCookie(req));
+    res.setHeader('Set-Cookie',[`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=28800`,`${FLOW_COOKIE}=; Path=/learn/lti; HttpOnly; SameSite=None; Secure; Max-Age=0`]);
+    const activity=learning.activity(result.user,req.params.id);
+    res.redirect(303,activity.template_id==='scorm-connector-v1'?'/learn/connect/?authenticated=1':'/learn/?lms=1&activity='+encodeURIComponent(req.params.id));
   }));
   app.use(api,requireLearning,rateLimit({windowMs:60000,limit:180,keyGenerator:req=>req.learner.id,standardHeaders:true,legacyHeaders:false}),(req,res,next)=>{
     if(["POST","PUT","PATCH","DELETE"].includes(req.method)){
@@ -124,6 +157,23 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     }next();
   });
   app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),case:CASE,aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+'/platform/settings',requireAdministrator,wrap((_req,res)=>res.json({ok:true,settings:platform.settings()})));
+  app.put(api+'/platform/bridge-origins',requireAdministrator,wrap((req,res)=>{const values=req.body.origins;if(!Array.isArray(values)||values.length>10)fail(400,'Use up to ten exact LMS origins.');store.setPreference('learning.bridgeOrigins',values.map(origin));res.json({ok:true});}));
+  app.post(api+'/platform/publish',requireAdministrator,wrap(async(_req,res)=>{if(!platformOptions?.publish)fail(503,'Public publishing is unavailable.');res.json(await platformOptions.publish());}));
+  app.put(api+'/platform/settings',requireAdministrator,wrap((req,res)=>res.json({ok:true,settings:platform.saveSettings(req.learner,req.body)})));
+  app.get(api+'/platform/options',requireTeacher,wrap((_req,res)=>res.json({ok:true,options:platform.options()})));
+  app.use(api+'/platform/activities/:id',(req,res,next)=>{try{if(isPublicRequest(req))connection.authorize(req.learner,req.params.id,req.get('x-roomgoblin-connection'));next();}catch(e){res.status(e.status||403).json({ok:false,error:e.message});}});
+  app.get(api+'/platform/activities/:id/state',wrap((req,res)=>res.json({ok:true,...platform.state(req.learner,req.params.id)})));
+  app.put(api+'/platform/activities/:id/config',requireTeacher,wrap((req,res)=>res.json({ok:true,config:platform.configure(req.learner,req.params.id,req.body)})));
+  app.post(api+'/platform/activities/:id/events',wrap(async(req,res)=>res.json({ok:true,...await platform.record(req.learner,req.params.id,req.body,req)})));
+  app.post(api+'/platform/activities/:id/presence',wrap((req,res)=>res.json({ok:true,...presence.challenge(req.learner,req.params.id,req.body.eventId)})));
+  app.get(api+'/platform/classes/:id',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.session(req.learner,req.params.id),summary:platform.summary(req.learner,req.params.id)})));
+  app.post(api+'/platform/classes/:id/insights',requireTeacher,wrap(async(req,res)=>res.json({ok:true,...await insights(req.learner,req.params.id)})));
+  app.get(api+'/platform/activities/:id/config',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,config:platform.config(req.params.id)});}));
+  app.post(api+'/platform/classes/:id/start',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.start(req.learner,req.params.id,req.body.minutes)})));
+  app.post(api+'/platform/classes/:id/stop',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.stop(req.learner,req.params.id)})));
+  app.put(api+'/platform/classes/:id/attendance',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.admit(req.learner,req.params.id,req.body.userIds)})));
+  app.post(api+'/platform/classes/:id/recipes',requireTeacher,wrap((req,res)=>res.json({ok:true,id:platform.saveRecipe(req.learner,req.params.id,req.body)})));
   app.post(api+'/logout',wrap((req,res)=>{store.deleteSession(learningCookie(req));res.setHeader('Set-Cookie',`${LEARNING_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);res.json({ok:true});}));
   app.get(api+'/activities/:id/lti',requireAdministrator,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,settings:lti.settings(req.params.id)});}));
   app.put(api+'/activities/:id/lti',requireAdministrator,wrap((req,res)=>res.json({ok:true,settings:lti.configure(req.learner,req.params.id,req.body)})));

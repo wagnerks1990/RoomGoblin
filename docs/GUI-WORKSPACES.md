@@ -1,5 +1,15 @@
 # Operator workspaces
 
+## Classroom progress
+
+The Learning teacher desk links to `/learn/platform/`: SCORM connections,
+session timing, explicit attendance, first-name boards, approved effects and
+aggregate Ollama suggestions. Administrator settings manage exact LMS origins,
+private classroom networks and the isolated student publication. All effects
+start disarmed; the teacher must start a session and admit physically present
+students. This workspace is unavailable through the public student gateway.
+
+
 ## Displays & AV
 
 Use the [TV Routing Matrix](TV-ROUTING-MATRIX.md) and its TV/source drawers. Room topology has

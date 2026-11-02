@@ -5,6 +5,21 @@
 
 ## Unreleased
 
+### 1.0.0-alpha.86 · SCORM classroom progress
+
+- Add a separate student gateway, signed Schoology connection flows, retained
+  assignment telemetry, and a reusable credential-free SCORM connector.
+- Keep offsite saves independent of physical effects; require confirmed narrow
+  classroom networks, one-use LAN proofs, teacher sessions and attendance.
+- Add a teacher progress workspace, first-name boards, approved media/light
+  recipes and optional aggregate local Ollama suggestions.
+- Expire native display celebrations after eight seconds without persistence or
+  MQTT replay; protect active media and announcement ownership.
+- Preserve existing administrator Access policies during additive student
+  hostname publication. Real Schoology and classroom-device acceptance remains
+  deployment-specific; writing-grade qualification remains separate.
+
+
 ### Learning discussions (development)
 
 - Require all signed activities in a class to share one LMS course, preventing automatic enrollment from combining separate course rosters.

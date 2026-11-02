@@ -2,6 +2,13 @@
 
 Read `docs/CLOUDFLARE-TUNNEL.md` before changing Cloudflare, public exposure, proxy trust, Full Recovery transport, Setup/Controller Cloudflare UI, or connector installation.
 
+## Student publication
+
+`src/learning-cloudflare.js` provides the reviewed additive student-only
+publication path. It targets fixed loopback 3030, preserves admin Access and
+unrelated ingress, and refuses hostname conflicts. Do not expose the private
+presence endpoint, controller, Ollama or device APIs. See `docs/LEARNING-PLATFORM.md`.
+
 ## Invariants
 
 - Cloudflare is optional and failure-isolated from local classroom operation.

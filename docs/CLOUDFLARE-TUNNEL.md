@@ -9,6 +9,16 @@ before setup and 90 seconds after an explicitly requested Hub recreation. A
 timeout reports failure without printing application logs or credentials. This
 bounded setup check does not add Cloudflare to the Hub health contract.
 
+## Student connector exception
+
+The optional [learning platform](LEARNING-PLATFORM.md) publishes a separate
+student hostname to **127.0.0.1:3030**, never the full control listener. Its
+publication method preserves existing ingress and Access policies, rejects
+conflicting DNS/Access coverage, and checks the isolated listener before writes.
+No wildcard bypass is added. Signed LMS sessions protect student records.
+Local network presence is not forwarded through the tunnel. Full reprovisioning
+retains the recorded student route; public disable immediately returns 503.
+
 ## Managed architecture
 
 ```text

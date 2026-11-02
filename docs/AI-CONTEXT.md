@@ -1,5 +1,12 @@
 # AI Project Context
 
+Learning telemetry uses an isolated loopback student gateway (3030), fresh signed
+LMS connector flows, and per-event LAN presence challenges. SCORM stays in the
+LMS. Retain exact route allowlists, first-name projections, explicit attendance,
+shutdown/export admission, no effect replay, and native transient display expiry.
+Read `docs/LEARNING-PLATFORM.md` before changing this boundary.
+
+
 TV audio bridge writes return their queued handler promises and normalize the
 latest desired targets in accepted order. Validate attach/detach and retain the
 admitted Music Assistant generation through route and router awaits. Conditional
