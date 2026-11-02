@@ -7,11 +7,12 @@
 
 ### Learning discussions (development)
 
-- Add assigned learning classes, restricted student accounts, a 20-point IPv4 discussion, automatic Mr. Wagner responses and rubric scoring, and teacher moderation/corrections.
+- Add assigned learning classes, restricted student accounts, a 20-point IPv4 discussion, configurable teacher responses and rubric scoring, and teacher moderation/corrections.
 - Support native local Ollama structured scoring alongside explicitly selected compatible APIs and OpenAI. Preserve provider-key separation, input/output bounds, grading budgets, and revision checks.
 - Add a companion-window SCORM launcher with checked percentage commits; live Schoology acceptance remains required.
 
 - Learning discussions can use an optional SCORM-provided student name for class posts and replies; missing names keep the assigned display name. Teacher response names are administrator-configured instead of embedded in public source.
+- Add course-bound signed Schoology External Tool launches, automatic restricted student sessions and names, credential-free cartridge downloads, and approved-grade return with isolated cookies, replay protection, bounded outcome transport, and correction ordering. Live LMS acceptance remains required.
 
 ### Other pending changes
 - Preserve uploaded media after an interrupted operational restore when its

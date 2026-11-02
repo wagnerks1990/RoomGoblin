@@ -5,12 +5,15 @@ writing feedback, rubric scores, and teacher corrections. This first activity is
 **Subnet Case Files**, IT II Unit 3 Class 02, worth **20 points**. The server stores
 the discussion in RoomGoblin's existing SQLite database; SCORM is a launcher and
 grade bridge, not the discussion database. No production deployment is implied.
+For automatic student sign-in and names, use the signed Schoology External Tool
+delivery in [Schoology sign-in and grade return](LEARNING-SCHOOLOGY-LTI.md).
 
 ## Classroom workflow
 
-1. Sign in at `/learn/` with an existing administrator account. Create a class,
-   restricted student accounts, and class memberships. Assign fallback discussion names;
-   distribute credentials privately. Students can change their own password.
+1. Sign in at `/learn/` with an existing administrator account. Create a class.
+   Connect the signed Schoology tool for automatic restricted enrollment and names,
+   or assign separate restricted accounts and memberships for the SCORM route.
+   Only separately assigned accounts need privately distributed passwords.
 2. Add the discussion and set the actual due time and next-class cutoff, including
    timezone. Blank dates do not invent a deadline. Per-member exemptions represent
    the teacher's preapproved exceptions. Closing an activity stops new student work.
@@ -108,7 +111,7 @@ continuous surveillance or an autonomous misconduct detector. It does not inspec
 other websites, devices, private messages, or unrelated classes. Teacher moderation
 is available; no automatic safety classification or authorship detection is claimed.
 
-## Schoology setup
+## SCORM delivery (separate RoomGoblin accounts)
 
 Download the configured ZIP from the activity's teacher controls. Import it as
 SCORM 1.2, configure **20 possible points** and a numeric score, and set availability
@@ -122,7 +125,8 @@ may have a different origin from the course page. Wildcards are not allowed.
 Both windows must remain open. The student selects **Send published grade to
 Schoology**, returns to the launcher, and waits for the LMS saved confirmation.
 Failed commits remain retryable. Reopen and sync again after a teacher correction.
-No automatic background SIS or LMS grade passback is implemented.
+This SCORM route has no background grade passback. The separate signed External
+Tool route returns approved grades directly to the configured LTI outcome service.
 
 The bridge validates popup source, exact origin, random nonce, activity, and score
 range. It uses the authenticated user's server receipt, never a browser-submitted

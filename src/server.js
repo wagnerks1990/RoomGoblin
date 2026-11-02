@@ -2,6 +2,7 @@
 
 const express = require("express");
 const {registerLearning,restrictedStudentGate}=require("./learning");
+const {learningSessionUser}=require("./learning-lti");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {UbuntuDisplays,registerUbuntuDisplayRoutes}=require("./ubuntu-displays");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
@@ -4058,6 +4059,8 @@ function cookieValue(req,name){
 }
 function requestUser(req){
   if(req.authUser!==undefined)return req.authUser;
+  const learningUser=learningSessionUser(req,dbStore);
+  if(learningUser!==undefined)return req.authUser=learningUser;
   const token=cookieValue(req,"classroom_hub_session");
   req.authUser=dbStore.sessionUser(token)||null;
   return req.authUser;
@@ -5129,6 +5132,9 @@ function browserWebSocketOriginAllowed(req){
 }
 app.use((req,res,next)=>{
   if(!dbStore.authEnabled()||!["POST","PUT","PATCH","DELETE"].includes(req.method))return next();
+  // This dedicated authentication endpoint verifies its own signed LMS request.
+  // Native sessions never authorize it; all other cookie CSRF checks stay intact.
+  if(req.method==="POST"&&/^\/learn\/lti\/[a-f0-9-]{36}$/.test(req.path))return next();
   if(!cookieValue(req,"classroom_hub_session"))return next();
   const origin=String(req.get("origin")||"").trim();
   if(!origin)return next(); // CLI/native clients do not normally send Origin.

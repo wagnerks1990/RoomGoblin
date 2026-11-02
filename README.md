@@ -344,3 +344,4 @@ Copyright © 2026 [Kyle Wagner](https://github.com/wagnerks1990).
 CI responsibilities and consolidation are documented in [GitHub Actions workflows](docs/CI-WORKFLOWS.md).
 
 See [Learning discussions and SCORM](docs/LEARNING-DISCUSSIONS.md) for the development learning feature, local Ollama grading, and release requirements.
+See [Schoology sign-in and grade return](docs/LEARNING-SCHOOLOGY-LTI.md) for the signed External Tool delivery with automatic student access and names.

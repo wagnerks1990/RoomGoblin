@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto=require("node:crypto");
+const {LearningLti,COOKIE:LEARNING_COOKIE,cookie:learningCookie}=require("./learning-lti");
 const {rateLimit}=require("express-rate-limit");
 const {CASE,RUBRIC,validateGrade,gradeWriting,localBaseURL}=require("./learning-grader");
 const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
@@ -97,14 +98,24 @@ function restrictedStudentGate(req,res,next){
   return allowed?next():res.status(403).json({ok:false,error:"Student accounts can access assigned learning activities only."});
 }
 
-function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWriting,freezeRequested=()=>false,publicDir}){
-  const learning=new LearningStore(store),busy=new Set();
+function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWriting,freezeRequested=()=>false,publicDir,ltiOptions}){
+  const learning=new LearningStore(store),busy=new Set(),lti=new LearningLti(learning,ltiOptions);learning.lti=lti;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   const api="/api/v1/learning";
   const requireLearning=(req,res,next)=>{const u=requestUser(req);if(!store.authEnabled()||!u)return res.status(401).json({ok:false,error:"Sign in to your assigned RoomGoblin account."});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
   const requireTeacher=(req,res,next)=>teacher(req.learner)?next():res.status(403).json({ok:false,error:"Teacher access required."});
   const requireAdministrator=(req,res,next)=>hasCapability(req.learner,"*")?next():res.status(403).json({ok:false,error:"Administrator access required."});
+  app.post('/learn/lti/:id',rateLimit({windowMs:60000,limit:60,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    if(freezeRequested())fail(423,'Backup in progress; reopen the assignment shortly.');
+    if(!req.is('application/x-www-form-urlencoded'))fail(415,'Open this assignment from its Schoology External Tool link.');
+    const result=lti.launch(req.params.id,req.body,req.get('origin'),`${req.protocol}://${req.get('host')}${req.originalUrl}`);
+    if(result.teacher)return res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>RoomGoblin connected</title><h1>Schoology connection ready</h1><p>Students can now open this assignment without a RoomGoblin password. Use your existing teacher account to review the discussion.</p><a href="/learn/">Open teacher desk</a></html>');
+    const secure=req.secure?'; Secure':'';
+    res.setHeader('Set-Cookie',`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=28800`);
+    res.redirect(303,'/learn/?lms=1&activity='+encodeURIComponent(req.params.id));
+  }));
   app.use(api,requireLearning,rateLimit({windowMs:60000,limit:180,keyGenerator:req=>req.learner.id,standardHeaders:true,legacyHeaders:false}),(req,res,next)=>{
     if(["POST","PUT","PATCH","DELETE"].includes(req.method)){
       if(freezeRequested())return res.status(423).json({ok:false,error:"Backup in progress; try again shortly."});
@@ -112,7 +123,12 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       const supplied=req.get("origin");if(supplied){try{if(new URL(supplied).host.toLowerCase()!==String(req.get("host")).toLowerCase())throw Error();}catch{return res.status(403).json({ok:false,error:"Cross-site learning request blocked."});}}
     }next();
   });
-  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{alias:req.learner.displayName,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),case:CASE,aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),case:CASE,aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.post(api+'/logout',wrap((req,res)=>{store.deleteSession(learningCookie(req));res.setHeader('Set-Cookie',`${LEARNING_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);res.json({ok:true});}));
+  app.get(api+'/activities/:id/lti',requireAdministrator,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,settings:lti.settings(req.params.id)});}));
+  app.put(api+'/activities/:id/lti',requireAdministrator,wrap((req,res)=>res.json({ok:true,settings:lti.configure(req.learner,req.params.id,req.body)})));
+  app.get(api+'/activities/:id/lti-package',requireTeacher,wrap((req,res)=>{const activity=learning.activity(req.learner,req.params.id,true);res.setHeader('Content-Disposition','attachment; filename="Subnet-Case-Files-Schoology-LTI.imscc"');res.type('application/zip').send(require('./learning-lti').createLtiPackage(activity,lti.config(activity.id).appOrigin||`${req.protocol}://${req.get('host')}`));}));
+  app.post(api+'/activities/:id/lms-sync',wrap(async(req,res)=>{learning.activity(req.learner,req.params.id);res.json({ok:true,lms:await lti.sync(req.learner,req.params.id)});}));
   app.post(api+"/classes",requireTeacher,wrap((req,res)=>res.json({ok:true,id:learning.createClass(req.learner,req.body.title)})));
   app.get(api+"/classes/:id",wrap((req,res)=>{const m=learning.membership(req.learner,req.params.id);res.json({ok:true,activities:learning.db.prepare("SELECT * FROM learning_activities WHERE class_id=? ORDER BY created_at DESC").all(req.params.id),members:m.role==="teacher"?learning.db.prepare("SELECT m.*,u.username FROM learning_members m JOIN users u ON u.id=m.user_id WHERE m.class_id=?").all(req.params.id):undefined});}));
   app.post(api+"/classes/:id/members",requireTeacher,wrap((req,res)=>{learning.enroll(req.learner,req.params.id,req.body,hasCapability(req.learner,"*"));res.json({ok:true});}));
@@ -131,11 +147,11 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     if(req.body.enabled===true&&provider==="openai"&&!store.hasSecret("learning.openai.key"))fail(400,"Configure the server-side grading key first.");
     store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);store.setPreference("learning.responseLabel",responseLabel);res.json({ok:true});
   }));
-  app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:CASE},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id)});}));
+  app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:CASE},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id),lms:lti.status(req.learner,a.id)});}));
   // LMS names are optional display data, never an authentication or enrollment claim.
   app.put(api+"/activities/:id/lms-name",wrap((req,res)=>{
     const a=learning.activity(req.learner,req.params.id);
-    if(a.member.role!=="student")fail(403,"Only your student display name can be updated.");
+    if(a.member.role!=="student"||req.learner.learningSso)fail(403,"Only an unsigned student display name can be updated.");
     const launcher=origin(req.body.launcherOrigin);
     if(!store.getPreference("learning.bridgeOrigins",[]).includes(launcher))fail(403,"The LMS launcher origin is not configured.");
     const supplied=text(req.body.name,255);
@@ -159,7 +175,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const replyId=req.body.replyId===undefined?learning.db.prepare("SELECT id FROM learning_posts WHERE activity_id=? AND user_id=? AND kind IN ('reply','critique') AND hidden=0 ORDER BY rowid DESC LIMIT 1").get(a.id,user.id)?.id:req.body.replyId;
     const snapshot=learning.snapshot(user,a.id,replyId),fingerprint=hash(snapshot);
     const last=learning.db.prepare("SELECT * FROM learning_reviews WHERE activity_id=? AND user_id=? ORDER BY rowid DESC LIMIT 1").get(a.id,user.id);
-    if(last&&last.fingerprint===fingerprint&&["grading","needs_review","approved"].includes(last.status))return res.json({ok:true,review:learning.projectReview(last)});
+    if(last&&last.fingerprint===fingerprint&&["grading","needs_review","approved"].includes(last.status)){await lti.sync(user,a.id);return res.json({ok:true,review:learning.projectReview(last)});}
     if(busy.size>=2||busy.has(user.id))fail(503,"Grading is busy. Your writing is saved; try again shortly.");
     const since=new Date(Date.now()-86400000).toISOString(),cfg=store.getPreference("learning.ai",{});
     if(learning.db.prepare("SELECT COUNT(*) n FROM learning_reviews WHERE user_id=? AND created_at>?").get(user.id,since).n>=5)fail(429,"Daily grading request limit reached. Ask your teacher to review the saved work.");
@@ -188,11 +204,11 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         });
       }
     }catch{learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=? WHERE id=? AND status='grading'").run(now(),id);}finally{busy.delete(user.id);}
-    res.json({ok:true,review:learning.currentReview(user,a.id)});
+    await lti.sync(user,a.id);res.json({ok:true,review:learning.currentReview(user,a.id)});
   });
   app.post(api+"/activities/:id/submit",submitWriting);
   app.get(api+"/activities/:id/reviews",requireTeacher,wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id,true);res.json({ok:true,reviews:learning.db.prepare("SELECT r.*,m.alias FROM learning_reviews r JOIN learning_members m ON m.user_id=r.user_id AND m.class_id=? WHERE r.activity_id=? AND r.rowid IN (SELECT MAX(rowid) FROM learning_reviews WHERE activity_id=? GROUP BY user_id) ORDER BY r.created_at LIMIT 200").all(a.class_id,a.id,a.id).map(r=>({...learning.projectReview(r),alias:r.alias,snapshot:parse(r.snapshot_json)}))});}));
-  app.post(api+"/activities/:id/reviews/:reviewId/approve",requireTeacher,wrap((req,res)=>res.json({ok:true,grade:learning.approve(req.learner,req.params.id,req.params.reviewId,req.body)})));
+  app.post(api+"/activities/:id/reviews/:reviewId/approve",requireTeacher,wrap(async(req,res)=>{const grade=learning.approve(req.learner,req.params.id,req.params.reviewId,req.body),row=learning.db.prepare("SELECT user_id FROM learning_reviews WHERE id=?").get(req.params.reviewId),user=store.listUsers().find(u=>u.id===row.user_id);await lti.sync(user,req.params.id);res.json({ok:true,grade});}));
   app.get(api+"/activities/:id/receipt",wrap((req,res)=>{const r=learning.currentReview(req.learner,req.params.id);if(!r||r.status!=="approved")fail(409,"A published grade is not available yet.");res.json({ok:true,activityId:req.params.id,reviewId:r.id,score:r.final.total,possible:20,raw:r.final.total*5,approvedAt:r.final.approvedAt});}));
   if(publicDir){app.get(api+"/activities/:id/scorm",requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);const AdmZip=require("adm-zip"),fs=require("node:fs"),path=require("node:path"),zip=new AdmZip();const base=origin(`${req.protocol}://${req.get("host")}`);for(const file of ["index.html","bridge.js","imsmanifest.xml"])zip.addFile(file,fs.readFileSync(path.join(publicDir,"scorm",file)));zip.addFile("config.js",Buffer.from(`window.LEARNING_CONFIG=${JSON.stringify({origin:base,activityId:req.params.id})};`));res.setHeader("Content-Disposition",'attachment; filename="Subnet-Case-Files-SCORM12.zip"');res.type("application/zip").send(zip.toBuffer());}));}
   return learning;

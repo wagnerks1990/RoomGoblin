@@ -30,7 +30,14 @@ Thinking output is neither shown nor persisted. Invalid/overlong/incomplete resu
 leave writing saved without a fabricated grade. Maintain model calibration fixtures.
 
 SCORM is percentage reporting to a separately configured 20-point LMS activity.
-It is not LTI authentication or signed SIS passback. No real learner data belongs
+It is not LTI authentication or signed SIS passback. The separate `learning-lti.js`
+module implements signed External Tool launches and server-to-server outcomes;
+read [its setup and security contract](../LEARNING-SCHOOLOGY-LTI.md). Preserve exact
+Origin/signature checks, persistent nonce rejection, teacher-first course binding,
+restricted learning-only sessions, administrator-approved outcome origins, public
+DNS pinning and serialized current-grade delivery. Never treat a signed instructor
+role as a native administrator session or let stale responses confirm new targets.
+No real learner data belongs
 in repository tests, screenshots, logs, or calibration fixtures. Preserve the
 native Linux suite and focused access/race/provider/browser regressions.
 
