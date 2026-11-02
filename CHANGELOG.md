@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Add administrator-configured AI chat and media shortcuts to the classroom
+  progress page, separate from the signed Schoology student connection.
+
 ### 1.0.0-alpha.86 · SCORM classroom progress
 
 - Add a separate student gateway, signed Schoology connection flows, retained

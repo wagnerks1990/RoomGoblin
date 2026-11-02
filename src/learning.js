@@ -3,6 +3,7 @@
 const crypto=require("node:crypto");
 const {LearningLti,COOKIE:LEARNING_COOKIE,cookie:learningCookie}=require("./learning-lti");
 const {LearningPlatform}=require('./learning-platform');
+const {PREFERENCE:TOOLS_PREFERENCE,normalizeTools,readTools}=require('./learning-tools');
 const {LearningPresence}=require('./learning-presence');
 const {LearningConnection,COOKIE:FLOW_COOKIE,flowCookie}=require('./learning-connection');
 const {isPublicRequest}=require('./learning-public');
@@ -162,6 +163,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post(api+'/platform/publish',requireAdministrator,wrap(async(_req,res)=>{if(!platformOptions?.publish)fail(503,'Public publishing is unavailable.');res.json(await platformOptions.publish());}));
   app.put(api+'/platform/settings',requireAdministrator,wrap((req,res)=>res.json({ok:true,settings:platform.saveSettings(req.learner,req.body)})));
   app.get(api+'/platform/options',requireTeacher,wrap((_req,res)=>res.json({ok:true,options:platform.options()})));
+  app.get(api+'/platform/tools',requireTeacher,wrap((_req,res)=>res.json({ok:true,tools:readTools(store)})));
+  app.put(api+'/platform/tools',requireAdministrator,wrap((req,res)=>{const tools=normalizeTools(req.body);store.setPreference(TOOLS_PREFERENCE,tools);learning.event(req.learner,null,'platform.tools',null);res.json({ok:true,tools});}));
   app.use(api+'/platform/activities/:id',(req,res,next)=>{try{if(isPublicRequest(req))connection.authorize(req.learner,req.params.id,req.get('x-roomgoblin-connection'));next();}catch(e){res.status(e.status||403).json({ok:false,error:e.message});}});
   app.get(api+'/platform/activities/:id/state',wrap((req,res)=>res.json({ok:true,...platform.state(req.learner,req.params.id)})));
   app.put(api+'/platform/activities/:id/config',requireTeacher,wrap((req,res)=>res.json({ok:true,config:platform.configure(req.learner,req.params.id,req.body)})));
