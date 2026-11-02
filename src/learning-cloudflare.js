@@ -29,12 +29,16 @@ async function publishStudentConnector(manager,{probe}={}){
  const rows=await client.get(`/zones/${zone}/dns_records?name=${encodeURIComponent(hostname)}&per_page=100`),target=tunnel+'.cfargotunnel.com';
  if(!Array.isArray(rows)||rows.length>1||rows.some(r=>r.type!=='CNAME'||r.content!==target||r.proxied!==true))fail('The student hostname has a conflicting DNS record.');
  // Save rollback information privately in the encrypted-backup-managed database.
- storage.setPreference('learning.publicRoute.previous',{config:existing.config,hostname,at:new Date().toISOString(),createdDns:false});
+ const previous=storage.getPreference('learning.publicRoute.previous',null);
+ if(previous&&previous.hostname!==hostname)fail('A previous student route has rollback information. Reconcile it before changing hostnames.');
+ const rollback=previous||{config:existing.config,hostname,at:new Date().toISOString(),createdDns:false};
+ storage.setPreference('learning.publicRoute.previous',rollback);
  await client.put(path,{config});
  let record=rows[0];
  if(!record)record=await client.post(`/zones/${zone}/dns_records`,{type:'CNAME',name:hostname,content:target,proxied:true,ttl:1,comment:'RoomGoblin isolated student connector'});
- storage.setPreference(ROUTE,{hostname,dnsId:record.id,createdDns:!rows.length,service:DESTINATION});
- storage.setPreference('learning.publicRoute.previous',{config:existing.config,hostname,at:new Date().toISOString(),createdDns:!rows.length,dnsId:record.id});
+ const createdDns=!rows.length||(rollback.createdDns===true&&rollback.dnsId===record.id);
+ storage.setPreference(ROUTE,{hostname,dnsId:record.id,createdDns,service:DESTINATION});
+ storage.setPreference('learning.publicRoute.previous',{...rollback,createdDns,dnsId:record.id});
  return {ok:true,origin,adminAccessUnchanged:true};
 }
 module.exports={publishStudentConnector,mergeRoute,ROUTE,DESTINATION};

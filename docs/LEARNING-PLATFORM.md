@@ -103,6 +103,8 @@ operational backup and previous-release rollback; do not downgrade/reset the DB.
 ownership information for a reviewed route/DNS rollback. Never delete unrelated
 DNS records or Access applications. Routine tunnel reprovisioning retains the
 recorded student destination at 3030.
+Repeated publication preserves the original rollback snapshot and confirmed DNS
+ownership. A different student hostname requires reconciling that snapshot first.
 
 The SDK retains a bounded retry queue in this tab's session storage, bound to the
 verified learner. Closing the browser before sending may lose unsent telemetry;

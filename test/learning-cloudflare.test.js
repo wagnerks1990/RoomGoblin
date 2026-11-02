@@ -11,3 +11,19 @@ test('publishing makes only an additive route and DNS change, never Access or zo
 test('exact student route takes precedence over existing wildcard ingress',()=>{const next=mergeRoute({ingress:[{hostname:'*.example.test',service:'http://127.0.0.1:3000'},{service:'http_status:404'}]},'learn.example.test');assert.equal(next.ingress[0].hostname,'learn.example.test');assert.equal(next.ingress[0].service,'http://127.0.0.1:3030');assert.equal(next.ingress[1].hostname,'*.example.test');});
 test('new and legacy Access destination fields cannot silently cover the student hostname',async()=>{for(const apps of [[{self_hosted_domains:['learn.example.test/*']}],[{destinations:[{type:'public',uri:'https://learn*.example.test/*'}]}]]){const f=setup({apps});await assert.rejects(()=>publishStudentConnector(f.manager,{probe:f.probe}));assert.equal(f.writes.length,0);}});
 test('unready gateway, covering Access application and conflicting DNS fail before publication',async()=>{for(const options of [{ready:false},{apps:[{domain:'*.example.test'}]},{rows:[{type:'A',content:'192.0.2.1'}]}]){const f=setup(options);await assert.rejects(()=>publishStudentConnector(f.manager,{probe:f.probe}));assert.equal(f.writes.length,0);}});
+test('republishing retains the original rollback and DNS ownership',async()=>{
+ const rows=[],f=setup({rows});await publishStudentConnector(f.manager,{probe:f.probe});
+ const first=structuredClone(f.prefs.get('learning.publicRoute.previous'));
+ rows.push({id:'dns',type:'CNAME',content:'tunnel.cfargotunnel.com',proxied:true});
+ const client=f.manager.client();f.manager.client=()=>({...client,get:async path=>path.endsWith('/configurations')?{config:f.writes[0].body.config}:client.get(path)});
+ await publishStudentConnector(f.manager,{probe:f.probe});
+ assert.deepEqual(f.prefs.get('learning.publicRoute.previous'),first);assert.equal(f.prefs.get('learning.publicRoute').createdDns,true);
+});
+test('partial route publication retains its rollback on retry and rejects hostname drift',async()=>{
+ const f=setup(),client=f.manager.client();let current;f.manager.client=()=>({...client,get:async path=>path.endsWith('/configurations')&&current?{config:current}:client.get(path),put:async(path,body)=>{current=body.config;await client.put(path,body);},post:async()=>{throw Error('uncertain DNS response');}});
+ await assert.rejects(()=>publishStudentConnector(f.manager,{probe:f.probe}));const first=structuredClone(f.prefs.get('learning.publicRoute.previous'));
+ f.manager.client=()=>({...client,get:async path=>path.endsWith('/configurations')?{config:current}:client.get(path)});
+ await publishStudentConnector(f.manager,{probe:f.probe});assert.deepEqual(f.prefs.get('learning.publicRoute.previous').config,first.config);
+ f.prefs.set('learning.platform',{publicEnabled:true,publicOrigin:'https://another.example.test'});const count=f.writes.length;
+ await assert.rejects(()=>publishStudentConnector(f.manager,{probe:f.probe}),/rollback information/);assert.equal(f.writes.length,count);
+});
