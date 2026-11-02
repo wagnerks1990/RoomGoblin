@@ -14,6 +14,8 @@
 - Classify original-source evidence and check numeric calculations before mapping
   rubric points; select checked public wording instead of publishing model prose.
 - Expand synthetic calibration to 13 cases and pace local model requests.
+- Add administrator-configured AI chat and media shortcuts to the classroom
+  progress page, separate from the signed Schoology student connection.
 
 ### 1.0.0-alpha.86 · SCORM classroom progress
 

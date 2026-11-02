@@ -41,6 +41,28 @@ teacher overrides, and signed launches retain their compatibility identifiers.
   Suggestions are teacher-facing; they do not autonomously publish content,
   alter grades or operate devices. Writing-grade qualification remains separate.
 
+## AI tool shortcuts
+
+The teacher progress page can open an existing AI chat service and media studio
+in separate tabs. An administrator saves their HTTPS browser URLs under
+**AI tool links**. Teachers can use the saved links; students and the public
+student gateway cannot read or change this configuration. Blank URLs hide the
+corresponding links. No hostnames are inferred or embedded in source defaults.
+
+Tool links are stored separately in `learning.tools`. They do not change the
+student HTTPS origin, signed Schoology launches, local Ollama summaries, grading,
+classroom presence, or effects. RoomGoblin does not proxy these sites or forward
+student records, prompts, cookies, or credentials. Each destination keeps its own
+sign-in. Review generated content before importing it as approved classroom media.
+
+The student gateway serves only its documented routes. A 404 at its root or at
+`/controller/` is intentional, not a reason to repoint it at the administrative
+listener or an AI service. Verify `/learn/connect/` and a real signed Schoology
+launch instead. Never replace the student HTTPS origin with an AI chat URL.
+
+Rollback: clear the tool URLs to hide the shortcuts. The additive preference can
+remain stored when rolling back application code; no database reset is needed.
+
 ## Setup and daily use
 
 1. Open the Learning teacher desk on the protected administrator site and select
