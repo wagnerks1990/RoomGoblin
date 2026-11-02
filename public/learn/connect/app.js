@@ -25,7 +25,7 @@ window.addEventListener('message',async e=>{
   const input={...message.event,learnerKey:state.learnerKey};
   // An event saved under another account must never be rebound to this session.
   if(message.event.learnerKey!==state.learnerKey)throw Error('Saved work belongs to a different connection. Reopen the assignment.');
-  try{input.presenceId=await presenceFor(input.id);}catch{}
+  if(input.kind!=='checkpoint')try{input.presenceId=await presenceFor(input.id);}catch{}
   const result=await api('/platform/activities/'+flow.activityId+'/events','POST',input);state=result.state;say('Connected. Your progress is saved.');send('roomgoblin.connector.saved',{id:input.id,state,classroom:result.classroom===true});
  }catch(error){send('roomgoblin.connector.error',{id:message.event.id,message:error.message,reconnect:error.status===401});say(error.message);}finally{busy=false;}
 });

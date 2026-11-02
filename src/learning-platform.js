@@ -78,6 +78,7 @@ class LearningPlatform{
  configure(user,id,input){
   const a=this.learning.activity(user,id,true);if(a.template_id!=='scorm-connector-v1')fail(400,'Create a SCORM connector activity first.');
   if(!Number.isInteger(input.points)||input.points<1||input.points>1000)fail(400,'Set 1–1000 possible points.');
+  if(this.config(id)?.points!==input.points&&this.db.prepare('SELECT 1 FROM learning_signals WHERE activity_id=? LIMIT 1').get(id))fail(409,'Create a new connector to change possible points after progress has been saved.');
   let launch='';if(input.launchUrl){try{const u=new URL(input.launchUrl),lti=this.learning.lti.config(id),allowed=[lti.platformOrigin,...this.store.getPreference('learning.bridgeOrigins',[])];if(u.protocol!=='https:'||u.username||u.password||u.hash||!allowed.includes(u.origin)||input.launchUrl.length>1500)throw Error();launch=u.href;}catch{fail(400,'Use this activity’s Schoology External Tool URL.');}}
   this.db.prepare('INSERT INTO learning_connectors VALUES(?,?,?) ON CONFLICT(activity_id) DO UPDATE SET points=excluded.points,launch_url=excluded.launch_url').run(id,input.points,launch);
   this.learning.event(user,id,'connector.configure',id,{points:input.points});return this.config(id);

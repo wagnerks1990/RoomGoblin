@@ -67,6 +67,12 @@ teacher overrides, and signed launches retain their compatibility identifiers.
    `RoomGoblinSCORM.progress(current,total)` supplies step progress. Normal LMS
    operation continues when RoomGoblin is unavailable. The SDK does not introduce
    extra LMS reads or change native method return values.
+   Configuration can also declare `progressTotal` and `locationFormat` (`integer`
+   or `run:step`) to mirror successful lesson-location commits. Explicit
+   `captureResume: true` retains bounded suspend data; review its content before
+   enabling it for another assignment. The three IPv4 packages contain game
+   state and answers, not typed identity fields. Points become immutable after
+   the first retained event so retry receipts remain stable.
 6. Students select **Connect to RoomGoblin**; the companion authenticates through
    the existing Schoology session. Keep it open. In class they also enable the
    local presence window. Browser popup/local-network policy may require consent;

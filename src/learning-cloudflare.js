@@ -24,7 +24,7 @@ async function publishStudentConnector(manager,{probe}={}){
  const existing=await client.get(path),config=mergeRoute(existing?.config,hostname);
  const apps=await client.get(`/accounts/${account}/access/apps?per_page=100`);
  if(!Array.isArray(apps)||apps.length>=100)fail('Review Access coverage before publishing the student hostname.');
- const covered=value=>{const domain=String(value||'').toLowerCase().split('/')[0];return domain===hostname||domain.startsWith('*.')&&hostname.endsWith(domain.slice(1));};
+ const covered=value=>{const domain=String(value||'').toLowerCase().replace(/^https?:\/\//,'').split('/')[0];const pattern=domain.split('*').map(part=>part.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('.*');return !!domain&&new RegExp('^'+pattern+'$').test(hostname);};
  if(apps.some(app=>[app.domain,...(app.self_hosted_domains||[]),...(app.destinations||[]).map(destination=>destination.uri||destination.hostname||'')].some(covered)))fail('An Access application covers the student hostname. Review it without weakening the admin policy.');
  const rows=await client.get(`/zones/${zone}/dns_records?name=${encodeURIComponent(hostname)}&per_page=100`),target=tunnel+'.cfargotunnel.com';
  if(!Array.isArray(rows)||rows.length>1||rows.some(r=>r.type!=='CNAME'||r.content!==target||r.proxied!==true))fail('The student hostname has a conflicting DNS record.');
