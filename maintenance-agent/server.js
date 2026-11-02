@@ -747,7 +747,9 @@ async function recoverInterruptedLegacyRestore(){
     await run("docker",["stop",APP_CONTAINER],{timeout:30000}).catch(()=>null);
     const extracted=await extractRestore(journal.safetyBackup,temp);
     await verifyRestoreSource(extracted.srcRoot,{data:true});
-    await replaceRestoreContent(extracted.srcRoot,{data:true,preserveMedia:false});
+    // Current operational safety archives exclude media; older archives may own it.
+    const preserveMedia=!fs.existsSync(path.join(extracted.srcRoot,"data","media"));
+    await replaceRestoreContent(extracted.srcRoot,{data:true,preserveMedia});
     await run("docker",["start",APP_CONTAINER],{timeout:30000});
     await waitForMainApplication();
     removeDurableFile(LEGACY_RESTORE_JOURNAL);
