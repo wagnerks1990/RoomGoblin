@@ -33,3 +33,5 @@ Distinguish:
 - planned or unimplemented behavior.
 
 Do not turn a single-device observation into model-specific backend logic unless the product intentionally adopts that behavior and supplies compatibility tests. Do not commit site-specific addresses, credentials, streams, school infrastructure, or private topology details into generic examples.
+
+- [Learning discussions](LEARNING-DISCUSSIONS.md) — permissions, grading, provider, persistence, and SCORM boundaries.

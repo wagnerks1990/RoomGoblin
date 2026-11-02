@@ -97,3 +97,5 @@ bash scripts/sync-wiki.sh
 ```
 
 See [WIKI-SYNC.md](WIKI-SYNC.md) for details.
+
+- [Learning discussions and SCORM](LEARNING-DISCUSSIONS.md) — restricted classes, automatic writing feedback, teacher overrides, local Ollama, and 20-point SCORM reporting.

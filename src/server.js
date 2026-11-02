@@ -1,6 +1,7 @@
 "use strict";
 
 const express = require("express");
+const {registerLearning,restrictedStudentGate}=require("./learning");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
 const {VeyonCommandQueue}=require("./veyon-command-queue");
@@ -4706,6 +4707,8 @@ app.use((req,res,next)=>{
   next();
 });
 
+app.use((req,res,next)=>{requestUser(req);return restrictedStudentGate(req,res,next);});
+
 const loginAttempts=new Map();
 const LOGIN_ATTEMPT_CACHE_MAX=10000;
 const LOGIN_DUMMY_SALT=crypto.randomBytes(16);
@@ -5033,6 +5036,10 @@ app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fa
 app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","legacy","build")));
 app.use("/vendor/hls", express.static(path.join(path.resolve(__dirname,".."),"node_modules","hls.js","dist")));
 
+// The isolated learning shell is a top-level SCORM companion window. Keep the
+// existing controller isolation and frame restrictions everywhere else.
+app.use("/learn",(req,res,next)=>{res.setHeader("Cross-Origin-Opener-Policy","unsafe-none");res.setHeader("Referrer-Policy","no-referrer");res.setHeader("Cache-Control","no-store");next();});
+registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,publicDir:path.join(APP_DIR,"public","learn")});
 app.use(express.static(path.join(APP_DIR, "public")));
 
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};

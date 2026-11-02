@@ -321,3 +321,5 @@ RoomGoblin is open-source software licensed under the [MIT License](LICENSE). Yo
 Copyright © 2026 [Kyle Wagner](https://github.com/wagnerks1990).
 
 CI responsibilities and consolidation are documented in [GitHub Actions workflows](docs/CI-WORKFLOWS.md).
+
+See [Learning discussions and SCORM](docs/LEARNING-DISCUSSIONS.md) for the development learning feature, local Ollama grading, and release requirements.

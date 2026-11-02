@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+### Learning discussions (development)
+
+- Add assigned learning classes, restricted student accounts, a 20-point IPv4 discussion, automatic Mr. Wagner responses and rubric scoring, and teacher moderation/corrections.
+- Support native local Ollama structured scoring alongside explicitly selected compatible APIs and OpenAI. Preserve provider-key separation, input/output bounds, grading budgets, and revision checks.
+- Add a companion-window SCORM launcher with checked percentage commits; live Schoology acceptance remains required.
+
 ### Repository convergence follow-up
 
 - Consolidate native Windows artifact qualification into Validate, remove the
