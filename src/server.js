@@ -3,6 +3,8 @@
 const express = require("express");
 const {registerLearning,restrictedStudentGate}=require("./learning");
 const {learningSessionUser}=require("./learning-lti");
+const {createStudentGateway,isPublicRequest}=require('./learning-public');
+const {createEffectAdapter}=require('./learning-effects');
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {UbuntuDisplays,registerUbuntuDisplayRoutes}=require("./ubuntu-displays");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
@@ -4891,10 +4893,13 @@ function markDisplaySeen(ws, extra = {}) {
 // Core command router
 // -----------------------------------------------------------------------------
 
-async function executeCommand(input, source = "api", {expectedDisplayContent=null,expectedMusicAssistantGeneration=null} = {}) {
+async function executeCommand(input, source = "api", {expectedDisplayContent=null,expectedMusicAssistantGeneration=null,admission=null} = {}) {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
+  if(admission!==null&&(source!=='automation'||typeof admission!=='function'))throw Error('Effect admission is an internal automatic-dispatch option');
+  const admitted=()=>admission===null||admission();
+  if(!admitted())return {ok:false,skipped:true,reason:'effect-session-ended'};
   if(expectedMusicAssistantGeneration!==null&&(source!=="music-assistant-bridge"||!["music.assistant.attach","music.assistant.detach"].includes(command.type)))throw Error("Conditional music connection ownership is only supported for TV audio bridge changes");
   const ownsMusicConnection=()=>expectedMusicAssistantGeneration===null||expectedMusicAssistantGeneration===maApiGeneration;
   if(expectedDisplayContent&&(source!=="morning-announcements"||!(command.type==="display.clear"||(command.type==="display.web.audio"&&command.payload.contentKind==="morning-announcements"))))throw Error("Conditional display ownership is only supported for announcement release or audio");
@@ -4914,6 +4919,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
     command.target=targets;
   }
   const manualPriority=await engageManualMediaPriority(command,source);
+  if(!admitted())return {ok:false,skipped:true,reason:'effect-session-ended'};
   const result = {
     ok: true,
     command,
@@ -4971,18 +4977,24 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
       if(!audio.available)throw Error("This display has no active video, website or Sports audio");
       if(command.payload.contentKey&&command.payload.contentKey!==audio.contentKey)throw Error("Displayed content changed. Refresh live audio controls.");
     }
-    updateStateFromCommand(command, targets);
+    if(!admitted())return {...result,ok:false,skipped:true,reason:'effect-session-ended'};
+    if(admission!==null&&targets.some(id=>['video','web','pdf'].includes(persistentState.displays[id]?.media?.type)))return {...result,ok:false,skipped:true,reason:'active-media'};
+    if(admission===null)updateStateFromCommand(command, targets);
 
-    const physicalDeliveries=broadcastDisplays(targets, {type:"command",command});
+    // Learning celebrations use the existing renderer for eight seconds. They
+    // never enter persistent display state or MQTT/legacy replay transports.
+    const physicalDeliveries=admission===null?broadcastDisplays(targets,{type:'command',command}):targets.flatMap(id=>broadcastDisplays([id],{type:'command',command,transient:{expiresAt:Date.now()+8000,previousState:physicalDisplayState(id)||{}}}));
     // Keep dashboard previews visually synchronized, but do not treat them as target
     // receivers and never let the preview selection influence command routing.
-    broadcastDisplayPreviews(targets,{type:"command",command});
+    if(admission===null)broadcastDisplayPreviews(targets,{type:"command",command});
     result.deliveries.websocket = physicalDeliveries;
     const missingPhysical=targets.filter(id=>!physicalDeliveries.includes(id));
+    if(admission!==null&&missingPhysical.length)result.ok=false;
     if(missingPhysical.length)result.warnings.push(`No live physical display WebSocket for: ${missingPhysical.join(', ')}`);
 
-    if (MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
+    if (admission===null && MQTT_JSON_BRIDGE && runtime.mqtt.connected) {
       for (const id of targets) {
+        if(!admitted())break;
         if(!ownsMusicConnection())break;
         if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
         const topic = `classroom/v2/display/${id}/command`;
@@ -4994,7 +5006,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
     }
 
     const legacy = toLegacyCommand(command);
-    if (MQTT_LEGACY_BRIDGE && legacy && ownsMusicConnection()) {
+    if (admission===null && MQTT_LEGACY_BRIDGE && legacy && ownsMusicConnection()) {
       if (runtime.mqtt.connected) {
         const rawTarget = cleanId(command.target);
 
@@ -5003,6 +5015,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
           result.deliveries.mqttLegacy.push("classroom/all");
         } else {
           for (const id of targets) {
+            if(!admitted())break;
             if(!ownsMusicConnection())break;
             if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
             const topic = devices[id]?.legacyTopic || `classroom/${id}`;
@@ -5020,6 +5033,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
       );
     }
   } else if (command.type.startsWith("lighting.")) {
+    if(!admitted())return {...result,ok:false,skipped:true,reason:'effect-session-ended'};
     result.deliveries.hardware = await runLightingCommand(command);
   } else if (command.type.startsWith("av.")) {
     result.deliveries.hardware = await runAvCommand(command);
@@ -5032,7 +5046,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
   if(expectedDisplayContent){
     const owned=resolveDisplayTargets(command.target).filter(ownsConditionalContent);
     if(owned.length)backgroundMusicObserveDisplayCommand({...command,target:owned},source);
-  }else if(ownsMusicConnection())backgroundMusicObserveDisplayCommand(command, source);
+  }else if(admission===null&&ownsMusicConnection())backgroundMusicObserveDisplayCommand(command, source);
 
   audit({
     kind: "command",
@@ -5089,8 +5103,10 @@ app.use((req,res,next)=>{
   let released=false;const release=()=>{if(released)return;released=true;fullExportFreeze.activeHttpMutations=Math.max(0,fullExportFreeze.activeHttpMutations-1)};
   res.once("finish",release);res.once("close",release);next();
 });
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
+const ordinaryJson=express.json({limit:'2mb'}),studentJson=express.json({limit:'32kb'});
+app.use((req,res,next)=>(isPublicRequest(req)?studentJson:ordinaryJson)(req,res,next));
+const ordinaryForm=express.urlencoded({extended:true}),studentForm=express.urlencoded({extended:false,limit:'32kb',parameterLimit:100});
+app.use((req,res,next)=>(isPublicRequest(req)?studentForm:ordinaryForm)(req,res,next));
 
 // alpha.15 browser/API hardening. Keep the application compatible with the
 // Cloudflare Tunnel deployment while protecting authenticated browser sessions.
@@ -5499,7 +5515,17 @@ app.use("/vendor/hls", express.static(path.join(path.resolve(__dirname,".."),"no
 // The isolated learning shell is a top-level SCORM companion window. Keep the
 // existing controller isolation and frame restrictions everywhere else.
 app.use("/learn",(req,res,next)=>{res.setHeader("Cross-Origin-Opener-Policy","unsafe-none");res.setHeader("Referrer-Policy","no-referrer");res.setHeader("Cache-Control","no-store");next();});
-registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,publicDir:path.join(APP_DIR,"public","learn")});
+function learningEffectOptions(){
+  return {displays:Object.entries(devices).filter(([,d])=>d.enabled!==false).map(([id,d])=>({id,label:d.name||id})),
+    lights:Object.entries(goveeDevices).filter(([,d])=>d.enabled!==false).map(([id,d])=>({id,label:d.name||id})),
+    assets:[...listMediaLibrary().filter(file=>['image','video'].includes(file.type)).map(file=>({id:file.storedName,label:file.originalName,kind:file.type,url:file.url})),
+      ...['chime','success','milestone'].map(id=>({id:'learning-'+id,label:id[0].toUpperCase()+id.slice(1),kind:'sound',url:'/learn/effects/'+id+'.wav'}))]};
+}
+const learningEffectsAvailable=()=>!shutdownRequested&&!fullExportFreeze.requested&&morningAnnouncementsPriorityTargets.size===0;
+const learningRuntime=registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,
+  publicDir:path.join(APP_DIR,'public','learn'),platformOptions:{options:learningEffectOptions,available:learningEffectsAvailable,
+    publish:()=>require('./learning-cloudflare').publishStudentConnector(new(require('./cloudflare').CloudflareManager)({storage:dbStore}),{probe:require('./learning-public').probeStudentGateway}),
+    dispatch:createEffectAdapter({catalog:learningEffectOptions,available:learningEffectsAvailable,execute:(command,options)=>executeCommand(command,'automation',options)})}});
 app.use(express.static(path.join(APP_DIR, "public")));
 
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};
@@ -8676,6 +8702,7 @@ app.post("/api/v1/media/:name/display",requireCapability("media.manage"),async(r
 });
 
 app.use((err, _req, res, _next) => {
+  if(isPublicRequest(_req))return res.status(err.status===413?413:400).json({ok:false,error:'Student request could not be accepted.'});
   console.error(err);
   res.status(400).json({ ok: false, error: err.message || "Request failed" });
 });
@@ -8695,6 +8722,9 @@ const server = http.createServer((req,res)=>{
   }
   app(req,res);
 });
+const studentGateway=createStudentGateway({app,store:dbStore,isStopping:()=>shutdownRequested||fullExportFreeze.requested});
+studentGateway.on('error',()=>console.warn('Student gateway unavailable; local classroom control is unaffected.'));
+studentGateway.listen(3030,'127.0.0.1');
 const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
 const WS_MAX_CONNECTIONS=Math.max(25,Math.min(5000,Number(process.env.WS_MAX_CONNECTIONS||500)));
 const WS_MAX_CONNECTIONS_PER_IP=Math.max(5,Math.min(250,Number(process.env.WS_MAX_CONNECTIONS_PER_IP||40)));
@@ -9430,6 +9460,7 @@ async function gracefulShutdown(signal){
     // with handlers whose client already disconnected and background owners.
     const closeResults=await Promise.allSettled([
       new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve())),
+      studentGateway.listening?new Promise((resolve,reject)=>studentGateway.close(error=>error?reject(error):resolve())):Promise.resolve(),
       closeWebSockets(wss),closeWebSockets(maSendspinProxyWss),stopMediaPlane(),
       mqttClient?new Promise(resolve=>mqttClient.end(true,{},resolve)):Promise.resolve()
     ]);

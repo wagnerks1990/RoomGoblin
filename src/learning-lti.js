@@ -34,9 +34,10 @@ const xml=s=>String(s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'
 function outcomeBody(id,sourcedId,score){return `<?xml version="1.0" encoding="UTF-8"?><imsx_POXEnvelopeRequest xmlns="http://www.imsglobal.org/services/ltiv1p1/xsd/imsoms_v1p0"><imsx_POXHeader><imsx_POXRequestHeaderInfo><imsx_version>V1.0</imsx_version><imsx_messageIdentifier>${xml(id)}</imsx_messageIdentifier></imsx_POXRequestHeaderInfo></imsx_POXHeader><imsx_POXBody><replaceResultRequest><resultRecord><sourcedGUID><sourcedId>${xml(sourcedId)}</sourcedId></sourcedGUID><result><resultScore><language>en</language><textString>${score}</textString></resultScore></result></resultRecord></replaceResultRequest></imsx_POXBody></imsx_POXEnvelopeRequest>`;}
 function createLtiPackage(activity,appOrigin){
  const url=exactOrigin(appOrigin)+'/learn/lti/'+encodeURIComponent(activity.id),id=xml(activity.id),title=xml(activity.title);
+ const description=activity.template_id==='scorm-connector-v1'?'Ungraded SCORM identity connection. Enable name sharing and a new-window launch. The original SCORM assignment keeps its grade.':'20-point shared IPv4 discussion. Configure the signed External Tool provider, name sharing, new-window launch and 20 possible points before student use.';
  const zip=new(require('adm-zip'))();
  zip.addFile('imsmanifest.xml',Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><manifest xmlns="http://www.imsglobal.org/xsd/imsccv1p1/imscp_v1p1" identifier="RG-${id}"><metadata><schema>IMS Common Cartridge</schema><schemaversion>1.1.0</schemaversion></metadata><organizations default="ORG"><organization identifier="ORG" structure="rooted-hierarchy"><item identifier="ROOT"><item identifier="ACTIVITY" identifierref="LTI"><title>${title}</title></item></item></organization></organizations><resources><resource identifier="LTI" type="imsbasiclti_xmlv1p0" href="launch.xml"><file href="launch.xml"/></resource></resources></manifest>`));
- zip.addFile('launch.xml',Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"><title>${title}</title><description>20-point shared IPv4 discussion. Configure the signed External Tool provider, name sharing, new-window launch and 20 possible points before student use.</description><launch_url>${xml(url)}</launch_url><secure_launch_url>${xml(url)}</secure_launch_url></cartridge_basiclti_link>`));
+ zip.addFile('launch.xml',Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><cartridge_basiclti_link xmlns="http://www.imsglobal.org/xsd/imsbasiclti_v1p0"><title>${title}</title><description>${xml(description)}</description><launch_url>${xml(url)}</launch_url><secure_launch_url>${xml(url)}</secure_launch_url></cartridge_basiclti_link>`));
  return zip.toBuffer();
 }
 function validateOutcome(body,id){
@@ -127,6 +128,7 @@ class LearningLti{
     // Store signed evidence; network use still requires an exact administrator allowlist.
     this.db.prepare("INSERT INTO learning_lti_results(activity_id,user_id,outcome_url,sourced_id) VALUES(?,?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET sent_fingerprint=CASE WHEN outcome_url=excluded.outcome_url AND sourced_id=excluded.sourced_id THEN sent_fingerprint ELSE NULL END,outcome_url=excluded.outcome_url,sourced_id=excluded.sourced_id").run(id,user.id,raw,sourcedId);
    }
+   this.learning.platform?.signedName(a.class_id,user.id,p.lis_person_name_given);
    this.learning.event(user,id,'lti.launch',user.id);
    return {user,session:this.store.createSession(user,{ttlHours:8})};
   });

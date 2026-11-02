@@ -53,6 +53,15 @@ Cloudflare is an optional remote-access layer, never part of RoomGoblin's local 
 
 Preserve these boundaries: API credentials stay in encrypted SQLite secret storage; tunnel connector tokens stay server-side and ultimately in `/etc/cloudflared/roomgoblin.token` mode 0600; tunnel ingress exposes only the configured RoomGoblin hostname to loopback; `TRUST_PROXY_HOPS=1` is the reviewed topology; same-name tunnel adoption and conflicting DNS takeover require explicit administrator consent; Access requires an explicit Allow selector and never replaces RoomGoblin authentication. Never publish maintenance, Host Agent, Docker, SSH, Veyon, MQTT, Music Assistant, or lab subnets through this feature. Do not make Cloudflare health gate Morning Announcements, scheduler recovery, Background Music reconciliation, display/device stability, updates, recovery, or local administration.
 
+## SCORM student connection
+
+The reviewed student-only exception is a dedicated loopback listener at 3030.
+Read `docs/LEARNING-PLATFORM.md`. Preserve the exact route allowlist, signed LMS
+identity, fresh per-SCO flow, and private direct-network presence attestations.
+Do not route the student hostname to port 3000 or remove administrator Access.
+Learning effects use the native renderer transiently; they must never persist
+or replay on display reconnect. No physical validation without authorization.
+
 ## Docker network deployment contract
 
 RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](HOST-NETWORKING.md) for topology, migration, validation and rollback.
@@ -88,7 +97,7 @@ Do not infer production configuration from public defaults. Site-specific config
 
 ## Current baseline
 
-The current review baseline is `1.0.0-alpha.85`.
+The current review baseline is `1.0.0-alpha.86`.
 
 Verified live-test/recovery behaviors inherited by this baseline include:
 

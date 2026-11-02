@@ -74,4 +74,4 @@ async function gradeWriting(options){
   validated.total=Object.values(validated.criteria).reduce((sum,item)=>sum+item.points,0);
   return {...validated,coachResponse};
 }
-module.exports={CASE,RUBRIC,SCHEMA,REPLY_SCHEMA,validateGrade,gradingRequest,gradeWriting,localBaseURL};
+module.exports={CASE,RUBRIC,SCHEMA,REPLY_SCHEMA,validateGrade,gradingRequest,gradeWriting,localBaseURL,modelJSON};

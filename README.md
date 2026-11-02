@@ -47,7 +47,9 @@ Do not rename these merely for cosmetic consistency. A future internal-identifie
 
 RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](docs/HOST-NETWORKING.md) for topology, migration, validation and rollback.
 
-> **Status:** `1.0.0-alpha.85` — alpha software. Production deployment remains limited to reviewed, backed-up `amd64` installations. Normal administration may use the trusted-LAN HTTP deployment; recovery passphrases require loopback or HTTPS through a same-host proxy.
+> **Status:** `1.0.0-alpha.86` — alpha software. Production deployment remains limited to reviewed, backed-up `amd64` installations. Normal administration may use the trusted-LAN HTTP deployment; recovery passphrases require loopback or HTTPS through a same-host proxy.
+
+SCORM classroom progress uses an isolated student connection and teacher-controlled celebrations. See [Learning platform](docs/LEARNING-PLATFORM.md) for setup, network presence, and acceptance requirements.
 
 ## What it does
 
