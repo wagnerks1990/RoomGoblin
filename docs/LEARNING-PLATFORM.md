@@ -169,8 +169,10 @@ PUT accepts `{enabled, links:[{scheduleId,classId}]}`. Empty class IDs use impor
 or retain an existing mapping. Teacher POST `/platform/classes/:id/resume`
 resumes a paused automatic class. These routes remain unavailable on the public
 student gateway. The additive `learning_schedule_links`,
-`learning_schedule_sessions` and `learning_schedule_pauses` tables are included
-in normal database backups. Disable automatic mode before a feature rollback;
+`learning_schedule_sessions`, `learning_schedule_pauses` and
+`learning_presence_sessions` tables are included in normal database backups.
+Presence bindings use a separate table so the legacy challenge row layout
+remains compatible with source rollback. Disable automatic mode before a feature rollback;
 retain these tables and use the normal exact-commit updater and backup.
 
 ## Rollback and retention

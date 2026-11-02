@@ -77,6 +77,17 @@ test('pause persists through reconciliation and restart but does not require a d
  assert.ok(p.currentSession(f.classId));assert.equal(f.sent.length,0);
 });
 
+test('additive session proof bindings preserve the legacy challenge row shape and expire together',async t=>{
+ const f=await setup(t);f.enable();const event=f.event(1),challenge=f.p.presence.challenge(f.learner,f.id,event.id),db=f.learning.db;
+ assert.ok(db.prepare('SELECT 1 FROM learning_presence_sessions WHERE challenge_id=?').get(challenge.id));
+ db.prepare('DELETE FROM learning_presence_challenges WHERE id=?').run(challenge.id);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM learning_presence_sessions').get().n,0);
+ const legacy=crypto.randomUUID();
+ db.prepare('INSERT INTO learning_presence_challenges VALUES(?,?,?,?,?,?,NULL,NULL,?)').run(legacy,f.a.id,f.learner.sessionId,f.id,event.id,f.initial,'legacy-network');
+ assert.equal(f.p.presence.consume(f.learner,f.id,event.id,legacy),false);
+ new LearningPresence(f.p);assert.equal(db.prepare('SELECT COUNT(*) n FROM learning_presence_challenges').get().n,0);
+});
+
 test('remote days, removed classes, overlap, and revoked teacher access fail closed immediately',async t=>{
  const f=await setup(t);f.enable();f.source.blocked=true;assert.equal(f.p.currentSession(f.classId),null);f.s.reconcile();
  f.source.blocked=false;f.s.reconcile();assert.ok(f.p.currentSession(f.classId));
