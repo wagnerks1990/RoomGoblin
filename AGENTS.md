@@ -61,6 +61,12 @@ identity, fresh per-SCO flow, and private direct-network presence attestations.
 Do not route the student hostname to port 3000 or remove administrator Access.
 Learning effects use the native renderer transiently; they must never persist
 or replay on display reconnect. No physical validation without authorization.
+Automatic classroom mode is an explicit one-time administrator configuration:
+Planning supplies classes/timetable, signed LMS launches supply identity and
+enrollment, and fresh direct-network proofs admit each event. SCORM names never
+authorize attendance. Preserve manual mode, calendar suppression, teacher pauses,
+class/assignment data and per-session proof binding. The metadata timer respects
+shutdown/export freezes and never dispatches hardware or replays progress.
 
 ## Docker network deployment contract
 

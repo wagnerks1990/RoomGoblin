@@ -5,6 +5,7 @@ const {LearningLti,COOKIE:LEARNING_COOKIE,cookie:learningCookie}=require("./lear
 const {LearningPlatform}=require('./learning-platform');
 const {PREFERENCE:TOOLS_PREFERENCE,normalizeTools,readTools}=require('./learning-tools');
 const {LearningPresence}=require('./learning-presence');
+const {LearningSchedule}=require('./learning-schedule');
 const {LearningConnection,COOKIE:FLOW_COOKIE,flowCookie}=require('./learning-connection');
 const {isPublicRequest}=require('./learning-public');
 const {rateLimit}=require("express-rate-limit");
@@ -108,6 +109,7 @@ function restrictedStudentGate(req,res,next){
 function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWriting,freezeRequested=()=>false,publicDir,ltiOptions,platformOptions}){
   const learning=new LearningStore(store),busy=new Set(),lti=new LearningLti(learning,ltiOptions);learning.lti=lti;
   const platform=new LearningPlatform(learning,{available:()=>!freezeRequested(),...platformOptions});learning.platform=platform;
+  const schedule=new LearningSchedule(platform,{source:platformOptions?.scheduleSource,writable:()=>!freezeRequested()&&(platformOptions?.scheduleWritable?.()??true)});platform.schedule=schedule;learning.schedule=schedule;
   const presence=new LearningPresence(platform);platform.presence=presence;
   const connection=new LearningConnection(platform);platform.connection=connection;
   const insights=require('./learning-insights').createInsights(platform);
@@ -157,13 +159,15 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       const supplied=req.get("origin");if(supplied){try{if(new URL(supplied).host.toLowerCase()!==String(req.get("host")).toLowerCase())throw Error();}catch{return res.status(403).json({ok:false,error:"Cross-site learning request blocked."});}}
     }next();
   });
-  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),case:CASE,aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),activeClassId:teacher(req.learner)?schedule.visibleActiveClass(req.learner):null,case:CASE,aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
   app.get(api+'/platform/settings',requireAdministrator,wrap((_req,res)=>res.json({ok:true,settings:platform.settings()})));
   app.put(api+'/platform/bridge-origins',requireAdministrator,wrap((req,res)=>{const values=req.body.origins;if(!Array.isArray(values)||values.length>10)fail(400,'Use up to ten exact LMS origins.');store.setPreference('learning.bridgeOrigins',values.map(origin));res.json({ok:true});}));
   app.post(api+'/platform/publish',requireAdministrator,wrap(async(_req,res)=>{if(!platformOptions?.publish)fail(503,'Public publishing is unavailable.');res.json(await platformOptions.publish());}));
   app.put(api+'/platform/settings',requireAdministrator,wrap((req,res)=>res.json({ok:true,settings:platform.saveSettings(req.learner,req.body)})));
   app.get(api+'/platform/options',requireTeacher,wrap((_req,res)=>res.json({ok:true,options:platform.options()})));
   app.get(api+'/platform/tools',requireTeacher,wrap((_req,res)=>res.json({ok:true,tools:readTools(store)})));
+  app.get(api+'/platform/schedule',requireAdministrator,wrap((req,res)=>res.json({ok:true,schedule:schedule.status(req.learner)})));
+  app.put(api+'/platform/schedule',requireAdministrator,wrap((req,res)=>res.json({ok:true,schedule:schedule.configure(req.learner,req.body)})));
   app.put(api+'/platform/tools',requireAdministrator,wrap((req,res)=>{const tools=normalizeTools(req.body);store.setPreference(TOOLS_PREFERENCE,tools);learning.event(req.learner,null,'platform.tools',null);res.json({ok:true,tools});}));
   app.use(api+'/platform/activities/:id',(req,res,next)=>{try{if(isPublicRequest(req))connection.authorize(req.learner,req.params.id,req.get('x-roomgoblin-connection'));next();}catch(e){res.status(e.status||403).json({ok:false,error:e.message});}});
   app.get(api+'/platform/activities/:id/state',wrap((req,res)=>res.json({ok:true,...platform.state(req.learner,req.params.id)})));
@@ -175,6 +179,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/platform/activities/:id/config',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,config:platform.config(req.params.id)});}));
   app.post(api+'/platform/classes/:id/start',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.start(req.learner,req.params.id,req.body.minutes)})));
   app.post(api+'/platform/classes/:id/stop',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.stop(req.learner,req.params.id)})));
+  app.post(api+'/platform/classes/:id/resume',requireTeacher,wrap((req,res)=>res.json({ok:true,...schedule.resume(req.learner,req.params.id)})));
   app.put(api+'/platform/classes/:id/attendance',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.admit(req.learner,req.params.id,req.body.userIds)})));
   app.post(api+'/platform/classes/:id/recipes',requireTeacher,wrap((req,res)=>res.json({ok:true,id:platform.saveRecipe(req.learner,req.params.id,req.body)})));
   app.post(api+'/logout',wrap((req,res)=>{store.deleteSession(learningCookie(req));res.setHeader('Set-Cookie',`${LEARNING_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);res.json({ok:true});}));

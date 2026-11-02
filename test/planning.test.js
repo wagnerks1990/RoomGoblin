@@ -66,6 +66,21 @@ test("real scheduler emits distinct split occurrences and timers, with no active
   assert.equal(ctx.activeClassAt(new Date(2027,9,18,9,0)),null);
   assert.equal(ctx.activeClassAt(new Date(2027,9,18,9,30)).id,"class-1");
 });
+test("learning sessions use the real planner for split periods, breaks, closures and remote days",()=>{
+ const ctx=runtime();install(ctx,["isAutomationSuppressed","isTransitionClass"]);
+ const resolve=date=>require('../src/learning-schedule-source').resolveLearningSchedule({
+  classes:ctx.classScheduleStore.classes,date,day:ctx.localDateKey(date),suppression:ctx.isAutomationSuppressed(date),
+  matches:ctx.classScheduleMatchesDate,segments:ctx.effectiveClassSegments,start:ctx.classStartDate,end:ctx.classEndDate,isTransition:ctx.isTransitionClass});
+ const first=resolve(new Date(2027,9,18,8,10)),second=resolve(new Date(2027,9,18,9,30));
+ assert.equal(first.active.length,1);assert.equal(first.active[0].scheduleId,'class-1');
+ assert.equal(new Date(first.active[0].endAt).getMinutes(),45);
+ assert.equal(resolve(new Date(2027,9,18,9,0)).active.length,0);
+ assert.equal(second.active.length,1);assert.notEqual(second.active[0].key,first.active[0].key);
+ ctx.schoolScheduleProfile.planning.dates['2027-10-18'].status='remote';
+ assert.equal(resolve(new Date(2027,9,18,8,10)).active.length,0);
+ ctx.schoolScheduleProfile.planning.dates['2027-10-18'].status='no-school';
+ assert.equal(resolve(new Date(2027,9,18,8,10)).active.length,0);
+});
 function routes({store,persist}={}){
   const registered=new Map(),writes=[];
   const context=vm.createContext({planningStudio:require("../src/planning-studio"),planningStudioConfig:{overlays:[]},isAutomationSuppressed:()=>({blocked:false}),resolveAutomationOccurrences:e=>[e],automationMatchesDate:()=>({match:true}),schoolCycleForDate:()=>({cycleDay:"A"}),crypto,Date,JSON,schoolScheduleProfile:profile(),schedulerCalendar:{},classScheduleStore:{classes:classes()},classroomAutomations:{events:[]},planningEngine:engine,normalizeSchoolScheduleProfile:school.normalizeSchoolScheduleProfile,validDateKey:school.validDateKey,validTime:school.validTime,

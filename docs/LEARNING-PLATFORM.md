@@ -21,9 +21,11 @@ teacher overrides, and signed launches retain their compatibility identifiers.
 - The SCO and a first-party companion window exchange messages using checked
   window identity, exact origins, a random channel nonce and an activity ID.
   No API key, password or shared LTI secret belongs in an upload package.
-- A classroom session requires explicit teacher attendance and current network
-  presence. Off-campus events update stored progress but never the active room
-  board or an effect queue. Delayed events do not become effects on reconnection.
+- Manual classroom sessions require explicit teacher attendance and current
+  network presence. Opt-in automatic sessions follow the native RoomGoblin
+  timetable and admit only signed LMS learners with fresh local presence.
+  Off-campus events update stored progress but never the active room board or
+  an effect queue. Delayed events do not become effects on reconnection.
 - The private-subnet presence window receives only a short-lived challenge.
   It does not receive a password, session cookie or student record. Only a direct
   request from an administrator-confirmed classroom network can attest it;
@@ -36,7 +38,9 @@ teacher overrides, and signed launches retain their compatibility identifiers.
   “Student”; full-name aliases are not used as a leaderboard fallback.
 - Automatic effects preserve announcement priority, freeze/shutdown admission,
   bounded dispatch, and existing display/media ownership. Interrupted or uncertain
-  effects are recorded without replay. Live sessions end on restart.
+  effects are recorded without replay. Live sessions end on restart. Automatic
+  mode may start a fresh current-period session with no inherited attendance
+  or presence proofs; it never replays historical progress or effects.
 - AI insights receive aggregate progress, without names, resumes or roster data.
   Suggestions are teacher-facing; they do not autonomously publish content,
   alter grades or operate devices. Writing-grade qualification remains separate.
@@ -100,11 +104,17 @@ remain stored when rolling back application code; no database reset is needed.
    local presence window. Browser popup/local-network policy may require consent;
    it is not a second RoomGoblin login. Cookies and credentials never go to the
    private HTTP presence origin.
-7. Start one timed classroom session, select students physically present, and
-   save attendance. Enable only reviewed recipes with explicit targets. At home,
-   students keep saving normally and their events do not affect the room board.
-   Stop effects at the end of class. Starting another class ends the prior room
-   session; restart, expiry, removal or disabled access revoke effect admission.
+7. Under **Automatic classroom setup**, link any existing learning class to its
+   matching RoomGoblin timetable entry, enable sync, and save once. Unmapped
+   enabled entries import automatically. Multiple entries can share the same
+   learning class without replacing assignments, signed course bindings or work.
+   Students enroll when they launch the signed Schoology connection; SCORM
+   supplies progress, not trusted identity or a whole-course roster.
+8. Save reviewed celebration recipes with explicit targets once. Automatic
+   sessions follow the timetable without daily Start, Stop or attendance clicks.
+   Each new event still needs fresh classroom presence. At home, progress saves
+   normally without affecting the room. If automatic mode is not configured,
+   the existing timed session and explicit attendance controls remain available.
 
 Display celebrations use the existing renderer and restore its prior scene after
 eight seconds. They are not written to persistent display state or sent through
@@ -114,6 +124,54 @@ receiver produces an unconfirmed outcome, not a successful-delivery claim.
 Static light color changes remain until another authorized light command changes
 them. Dispatch is at most once per 15 seconds, never queued for later replay.
 The first enabled recipe for the event is used; disable earlier alternatives.
+
+## Automatic classes and timetable
+
+Automatic setup is off by default. An administrator configures it once under
+`/learn/platform/`; `learning.schedule` records that enabled owner. A background
+15-second reconciliation imports enabled non-transition Planning classes by
+stable source ID. It uses the same calendar, cycles, special days, class windows
+and split-period resolution as RoomGoblin. It never sends device commands.
+Only one unambiguous current period, lasting at most three hours, may open a
+session. Breaks, remote days, no-school dates, invalid/missing periods and overlap
+suppress effects. Event admission checks the actual end time, without waiting
+for the next timer tick. Existing manual sessions are replaced when a scheduled
+class begins. Turning automatic mode off ends its sessions; manual mode remains.
+
+Imported titles follow Planning renames unless the learning title was edited.
+Existing explicitly linked learning titles remain unchanged. Removing, disabling
+or renaming a Planning class never deletes saved learning classes, activities,
+memberships, grades or progress. A removed mapping cannot arm effects. Exact
+unmapped title matches may reuse an existing class owned by the configuring
+teacher; ambiguous titles create a separate class. Review mappings during setup.
+Only that owner's classes are linked; other teachers are not added implicitly.
+Revoking the owner's access prevents automatic session admission.
+
+The teacher page follows the current class and refreshes progress every 15
+seconds. Selecting another class or editing class content stops automatic class
+switching, preserving drafts. **Pause this class today** persists across reloads
+and restarts and expires on the next school day; **Resume automatic mode** can
+end the pause sooner. There is no required daily enable/disable cycle. Assignment
+connections that were closed remain closed until a teacher deliberately opens
+them. Signed provider setup, connection packages and approved recipes remain
+one-time prerequisites; sync does not invent course bindings or change grades.
+
+Signed launches retain the existing automatic enrollment boundary. A student
+appears in the current session after a fresh eligible local event, not simply
+because a SCORM name is present. Stored attendance never substitutes for a new
+network check. Presence proofs bind the restricted login, learner, activity,
+event and classroom session; they cannot cross a pause/resume or restart.
+Timetable failures suppress classroom effects while ordinary progress saves
+continue. Shutdown and Full Recovery Export block reconciliation writes.
+
+Administrator GET/PUT `/api/v1/learning/platform/schedule` reads or saves setup;
+PUT accepts `{enabled, links:[{scheduleId,classId}]}`. Empty class IDs use import
+or retain an existing mapping. Teacher POST `/platform/classes/:id/resume`
+resumes a paused automatic class. These routes remain unavailable on the public
+student gateway. The additive `learning_schedule_links`,
+`learning_schedule_sessions` and `learning_schedule_pauses` tables are included
+in normal database backups. Disable automatic mode before a feature rollback;
+retain these tables and use the normal exact-commit updater and backup.
 
 ## Rollback and retention
 
@@ -139,7 +197,9 @@ work. Keep writing auto-grading disabled until separate rubric calibration passe
 ## Validation
 
 Run `npm run check`, the `test/learning*.test.js` suite, and
-`node test/browser/learning-platform-smoke.cjs`. The existing discussion and LTI
+`node test/browser/learning-platform-smoke.cjs`. Run the browser regressions
+with `python -m unittest discover -s test/browser -p test_learning_schedule.py`;
+CI covers Chromium and Firefox using synthetic local fixtures. The existing discussion and LTI
 browser checks must continue to pass. On Windows run the complete active worktree
 through `py -3.11 C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`.
 
