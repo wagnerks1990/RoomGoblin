@@ -96,6 +96,12 @@ class LearningLti{
   if(!cfg.bound&&!instructor)reject(409,'Your teacher must open this Schoology tool once before students begin.');
   const nonce=digest(p.oauth_nonce);if(this.db.prepare('SELECT 1 FROM learning_lti_nonces WHERE activity_id=? AND nonce_hash=?').get(id,nonce))reject(401,'This launch has already been used. Reopen it in Schoology.');
   return this.store.tx(()=>{
+   // Enrollment belongs to the class, so every signed activity in that class
+   // must share the same LMS course. Recheck under the write transaction.
+   for(const row of this.db.prepare('SELECT id FROM learning_activities WHERE class_id=?').all(a.class_id)){
+    const connected=this.config(row.id);
+    if(connected.bound&&(connected.platformOrigin!==cfg.platformOrigin||connected.contextId!==context))reject(403,'Use a separate RoomGoblin class for another Schoology course.');
+   }
    this.db.prepare('DELETE FROM learning_lti_nonces WHERE expires<?').run(Date.now());
    this.db.prepare('INSERT INTO learning_lti_nonces VALUES(?,?,?)').run(id,nonce,Date.now()+610000);
    if(instructor){if(!cfg.bound)this.store.setPreference(this.key(id),{...cfg,bound:true,contextId:context,resourceId:resource});return {teacher:true};}

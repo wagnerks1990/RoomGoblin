@@ -37,6 +37,8 @@ Origin/signature checks, persistent nonce rejection, teacher-first course bindin
 restricted learning-only sessions, administrator-approved outcome origins, public
 DNS pinning and serialized current-grade delivery. Never treat a signed instructor
 role as a native administrator session or let stale responses confirm new targets.
+Every signed activity in a RoomGoblin class must bind to the same LMS platform and
+course; verify this within the enrollment transaction before granting membership.
 No real learner data belongs
 in repository tests, screenshots, logs, or calibration fixtures. Preserve the
 native Linux suite and focused access/race/provider/browser regressions.

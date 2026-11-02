@@ -57,6 +57,19 @@ test('LTI configuration remains admin-only, encrypted and course-bound',async t=
  const settings=await f.request(f.admin,path);assert.equal(settings.body.settings.secretConfigured,true);assert(!JSON.stringify(settings.body).includes(secret));assert(!JSON.stringify(f.store.getPreference(f.learning.lti.key(f.activityId),{})).includes(secret));
  await f.bind();assert.throws(()=>f.learning.lti.configure(f.admin,f.activityId,{...settings.body.settings,platformOrigin:'https://another.example.edu',sharedSecret:''}),/new activity/);
 });
+test('automatic enrollment cannot combine separate LMS courses or platforms in one class',async t=>{
+ const f=await setup(t);await f.bind();
+ const newActivity=(classId,platformOrigin=platform)=>{const id=f.learning.createActivity(f.admin,classId,{title:'Another synthetic activity'});f.learning.lti.configure(f.admin,id,{...f.learning.lti.config(f.activityId),platformOrigin,sharedSecret:secret});return id;};
+ const launch=(id,changes={},launchOrigin=platform)=>{const url=f.base+'/learn/lti/'+id,p=f.params({roles:'Instructor',resource_link_id:'second-material',...changes});p.oauth_signature=signature('POST',url,Object.entries(p),secret);return f.learning.lti.launch(id,p,launchOrigin,url);};
+ const second=newActivity(f.classId),count=f.store.userCount();
+ assert.throws(()=>launch(second,{context_id:'other-course'}),/separate RoomGoblin class/);assert.equal(f.learning.lti.config(second).bound,undefined);assert.equal(f.store.userCount(),count);
+ assert.equal(launch(second).teacher,true);
+ const third=newActivity(f.classId,'https://other-lms.example.edu');assert.throws(()=>launch(third,{},'https://other-lms.example.edu'),/separate RoomGoblin class/);
+ const separateClass=f.learning.createClass(f.admin,'Separate synthetic course'),separateActivity=newActivity(separateClass);
+ assert.equal(launch(separateActivity,{context_id:'other-course'}).teacher,true);
+ const student=launch(separateActivity,{context_id:'other-course',roles:'Learner',user_id:'separate-learner'}).user;
+ assert.deepEqual(f.learning.classes(student).map(c=>c.id),[separateClass]);assert.throws(()=>f.learning.activity(student,f.activityId),/not found/);
+});
 test('published server grade is sent automatically and teacher corrections replace the prior outcome',async t=>{
  const sent=[];const f=await setup(t,{ltiOptions:{send:async(url,headers,body)=>{sent.push({url,headers,body});return response(body.match(/<imsx_messageIdentifier>([^<]+)</)[1]);}}});await f.bind();
  const r=await f.launch(f.params({lis_outcome_service_url:outcomes+'/grade',lis_result_sourcedid:'synthetic-target<&>'})),cookie=r.headers.get('set-cookie').split(';')[0];

@@ -7,6 +7,7 @@
 
 ### Learning discussions (development)
 
+- Require all signed activities in a class to share one LMS course, preventing automatic enrollment from combining separate course rosters.
 - Add assigned learning classes, restricted student accounts, a 20-point IPv4 discussion, configurable teacher responses and rubric scoring, and teacher moderation/corrections.
 - Support native local Ollama structured scoring alongside explicitly selected compatible APIs and OpenAI. Preserve provider-key separation, input/output bounds, grading budgets, and revision checks.
 - Add a companion-window SCORM launcher with checked percentage commits; live Schoology acceptance remains required.
