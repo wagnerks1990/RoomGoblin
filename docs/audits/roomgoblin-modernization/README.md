@@ -29,6 +29,12 @@ session prerequisite. It adds an isolated restore drill with real SQLite data,
 encrypted fixture values and rollback after failed readiness. Physical acceptance
 remains explicitly separate from those passing fixtures.
 
+The [interrupted-restore acceptance](restore-restart-media.md) extends those
+drills through a real maintenance-process interruption and restart. It reproduces
+and repairs loss of excluded media during startup rollback while retaining
+legacy archived-media recovery and fail-closed handling of a corrupt safety
+database. Its PR records validation and delivery status.
+
 "Delivered" below means the documented fixes passed their recorded checks and
 backed-up delivery. It does not assert a line-by-line audit of every repository
 file or physical acceptance of every device. Full versus targeted source review,

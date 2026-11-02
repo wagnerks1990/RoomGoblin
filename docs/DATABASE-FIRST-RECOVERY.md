@@ -479,6 +479,14 @@ rolled back from that safety backup and health-checked before Maintenance starts
 listening. The journal is retained when rollback or health verification fails,
 so a partial restore is never silently presented as ready.
 
+Current operational safety archives exclude `data/media`. Startup rollback must
+preserve that live directory when the safety archive has no media directory.
+Older safety archives can include media; their archived directory is restored
+as part of rollback, including removal of entries created after that snapshot.
+This selection follows archive contents, not the date or filename of the backup.
+Database integrity and application readiness must pass before the recovery
+journal is removed or the maintenance API starts listening.
+
 ### Service ownership and restart rules
 
 Recovery distinguishes RoomGoblin-owned services from services merely found on
