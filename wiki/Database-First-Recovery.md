@@ -99,6 +99,12 @@ application or mutating data. If interrupted, Maintenance rolls back and
 health-checks the application before listening. A failed rollback retains the
 journal and prevents Maintenance from advertising readiness.
 
+Current operational safety archives exclude `data/media`. Startup rollback
+preserves live media when that directory is absent from the archive. Older
+safety archives that include media restore their archived directory, including
+removal of entries created after the snapshot. Database integrity and application
+readiness still gate journal removal and the maintenance API listener.
+
 ## Service ownership
 
 RoomGoblin recreates a Docker add-on only when saved

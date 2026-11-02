@@ -14,6 +14,8 @@
 - Learning discussions can use an optional SCORM-provided student name for class posts and replies; missing names keep the assigned display name. Teacher response names are administrator-configured instead of embedded in public source.
 
 ### Other pending changes
+- Preserve uploaded media after an interrupted operational restore when its
+  safety archive excludes media; retain older archives' media rollback behavior.
 
 - Qualify operational restore with real SQLite settings, encrypted fixture values
   and safety-backup rollback after a simulated readiness failure.

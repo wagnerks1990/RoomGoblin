@@ -99,6 +99,7 @@ http.request=function(options,callback){
         db=new DatabaseSync(path.join(hub,"data","classroom-control-hub.db"),{readOnly:true});
         assert.equal(db.prepare("PRAGMA quick_check").get().quick_check,"ok");
         const state=JSON.parse(db.prepare("SELECT value_json FROM system_preferences WHERE key=?").get("restore-drill.state").value_json);
+        if(state===drill.holdState){drill.onHeld?.();return}
         if(state===drill.rejectState)throw Error("Simulated post-restore readiness failure");
         const key=Buffer.from(fs.readFileSync(master,"utf8").trim(),"hex");
         for(const row of db.prepare("SELECT cipher_text,iv,auth_tag FROM secret_store").all()){
@@ -112,15 +113,33 @@ http.request=function(options,callback){
     res.end(JSON.stringify({ok:true,database:{file:"/app/data/classroom-control-hub.db",schemaVersion:1}}))})});
   await new Promise((resolve,reject)=>main.listen(mainPort,"127.0.0.1",resolve).once("error",reject));
   const port=await freePort(),token="full-recovery-test-token";
-  const child=spawn(process.execPath,[path.join(ROOT,"maintenance-agent/server.js")],{env:{...process.env,PORT:String(port),MAINTENANCE_TOKEN:token,MANAGED_HUB_ROOT:hub,MANAGED_SERVICES_ROOT:services,MASTER_KEY_FILE:master,ANDROID_AGENT_SIGNING_ROOT:signing,VEYON_RECOVERY_ROOT:veyon,RECOVERY_STAGING_ROOT:staging,RECOVERY_ENVELOPE_MAX_MB:String(envelopeMaxMb),RESTORE_HEALTH_TIMEOUT_MS:"5000",MAINTENANCE_WORK_DIR:path.join(temp,"uploads"),HOST_AGENT_SOCKET:hostSocket,HOST_CALL_LOG:hostCalls,ADB_CALL_LOG:adbCalls,MANAGED_MUSIC_RUNNING:managedMusicRunning?"1":"0",MAIN_APP_URL:`http://127.0.0.1:${mainPort}`,APP_UID:String(process.getuid?.()??10001),APP_GID:String(process.getgid?.()??10001),NODE_OPTIONS:`--require=${hostMock}`,PATH:`${bin}:${process.env.PATH}`},stdio:["ignore","pipe","pipe"]});
-  let output="";child.stdout.on("data",chunk=>output+=chunk);child.stderr.on("data",chunk=>output+=chunk);
-  t.after(()=>{if(child.exitCode==null)child.kill("SIGKILL");main.close();fs.rmSync(temp,{recursive:true,force:true})});
-  const base=`http://127.0.0.1:${port}`;
-  for(let attempt=0;attempt<50;attempt++){
-    try{await fetch(`${base}/backups`,{headers:{"x-maintenance-token":token}});return {base,token,hub,services,signing,staging,veyon,master,bin,hostCalls,mainCalls,adbCalls,drill,output:()=>output}}catch{}
-    await new Promise(resolve=>setTimeout(resolve,20));
+  let child,exited,output="";
+  function launch(){
+    child=spawn(process.execPath,[path.join(ROOT,"maintenance-agent/server.js")],{env:{...process.env,PORT:String(port),MAINTENANCE_TOKEN:token,MANAGED_HUB_ROOT:hub,MANAGED_SERVICES_ROOT:services,MASTER_KEY_FILE:master,ANDROID_AGENT_SIGNING_ROOT:signing,VEYON_RECOVERY_ROOT:veyon,RECOVERY_STAGING_ROOT:staging,RECOVERY_ENVELOPE_MAX_MB:String(envelopeMaxMb),RESTORE_HEALTH_TIMEOUT_MS:"5000",MAINTENANCE_WORK_DIR:path.join(temp,"uploads"),HOST_AGENT_SOCKET:hostSocket,HOST_CALL_LOG:hostCalls,ADB_CALL_LOG:adbCalls,MANAGED_MUSIC_RUNNING:managedMusicRunning?"1":"0",MAIN_APP_URL:`http://127.0.0.1:${mainPort}`,APP_UID:String(process.getuid?.()??10001),APP_GID:String(process.getgid?.()??10001),NODE_OPTIONS:`--require=${hostMock}`,PATH:`${bin}:${process.env.PATH}`},stdio:["ignore","pipe","pipe"]});
+    exited=new Promise((resolve,reject)=>{child.once("error",reject);child.once("exit",(code,signal)=>resolve({code,signal}))});
+    child.stdout.on("data",chunk=>output+=chunk);child.stderr.on("data",chunk=>output+=chunk);
   }
-  throw Error(`maintenance agent did not start: ${output}`);
+  async function stop(){if(child.exitCode==null&&child.signalCode==null)child.kill("SIGKILL");return exited}
+  launch();
+  t.after(async()=>{await stop();main.closeAllConnections();await new Promise(resolve=>main.close(resolve));fs.rmSync(temp,{recursive:true,force:true})});
+  const base=`http://127.0.0.1:${port}`;
+  async function ready(){
+    for(let attempt=0;attempt<200;attempt++){
+      if(child.exitCode!=null||child.signalCode!=null)break;
+      try{const response=await fetch(`${base}/backups`,{headers:{"x-maintenance-token":token},signal:AbortSignal.timeout(1000)});await response.arrayBuffer();if(response.ok)return}catch{}
+      await new Promise(resolve=>setTimeout(resolve,25));
+    }
+    throw Error(`maintenance agent did not start: ${output}`);
+  }
+  async function restart({expectFailure=false}={}){
+    await stop();launch();
+    if(!expectFailure)return ready();
+    let timer;
+    try{return await Promise.race([exited,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error("Recovery did not fail closed")),10000)})])}
+    finally{clearTimeout(timer)}
+  }
+  await ready();
+  return {base,token,hub,services,signing,staging,veyon,master,bin,hostCalls,mainCalls,adbCalls,drill,stop,restart,output:()=>output};
 }
 
 async function request(agent,url,options={}){
@@ -480,6 +499,76 @@ test("isolated restore readiness failure rolls real SQLite data and secrets back
   assert.equal(fs.readFileSync(asset,"utf8"),"current presentation");
   assert.ok(fs.existsSync(path.join(agent.hub,"data","backups",restored.body.safetyBackup)));
   assert.equal(fs.existsSync(path.join(agent.hub,"data","backups",".legacy-restore-transaction.json")),false);
+});
+
+async function interruptRealRestore(t,mode="configuration-data"){
+  const agent=await startAgent(t,{realDatabase:true});
+  const asset=path.join(agent.hub,"data","presentations","lesson.txt"),media=path.join(agent.hub,"data","media","lesson.txt");
+  put(asset,"archived presentation");put(media,"original media");
+  const created=await request(agent,"/backup/create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scope:"operational",confirmSensitiveData:true})});
+  assert.equal(created.status,200,JSON.stringify(created.body));
+  setDrillState(agent,"current");put(asset,"current presentation");put(media,"current media");
+  const key=fs.readFileSync(agent.master),journalFile=path.join(agent.hub,"data","backups",".legacy-restore-transaction.json");
+  let timer;
+  const held=new Promise((resolve,reject)=>{
+    agent.drill.holdState="archived";agent.drill.onHeld=resolve;
+    timer=setTimeout(()=>reject(Error("Restore never reached post-replacement readiness")),10000);
+  });
+  // Handle rejection immediately: SIGKILL must interrupt this real HTTP request.
+  const pending=request(agent,`/backup/${created.body.name}/restore`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({mode,confirm:"RESTORE"})}).then(result=>({result}),error=>({error}));
+  try{await held}finally{clearTimeout(timer)}
+  assertDrillState(agent,"archived");
+  const journal=JSON.parse(fs.readFileSync(journalFile,"utf8"));
+  assert.equal(journal.phase,"mutating");assert.equal(journal.mode,mode);
+  assert.equal(fs.readFileSync(asset,"utf8"),mode==="configuration"?"current presentation":"archived presentation");
+  const stopped=await agent.stop();assert.equal(stopped.signal,"SIGKILL");
+  assert.ok((await pending).error,"process interruption must not acknowledge a completed restore");
+  agent.drill.holdState=null;agent.drill.onHeld=null;
+  return {agent,asset,media,key,journalFile,safety:path.join(agent.hub,"data","backups",journal.safetyBackup)};
+}
+
+test("interrupted real SQLite restores preserve excluded media and recover legacy archived media",async t=>{
+  for(const mode of ["configuration","configuration-data"]){
+    for(const legacyMedia of [false,true])await t.test(`${mode}: ${legacyMedia?"legacy archived":"excluded current"} media`,async t=>{
+      const {agent,asset,media,key,journalFile,safety}=await interruptRealRestore(t,mode);
+      const archive=new AdmZip(safety);
+      assert.equal(archive.getEntries().some(entry=>entry.entryName.startsWith("classroom-hub/data/media/")),false);
+      if(legacyMedia){
+        archive.addFile("classroom-hub/data/media/lesson.txt",Buffer.from("legacy safety media"));archive.writeZip(safety);
+        put(path.join(agent.hub,"data","media","after-snapshot.txt"),"uncommitted media");
+      }
+      const safetyHash=crypto.createHash("sha256").update(fs.readFileSync(safety)).digest("hex");
+      await agent.restart();
+      assertDrillState(agent,"current");
+      assert.deepEqual(fs.readFileSync(agent.master),key);
+      assert.equal(fs.readFileSync(asset,"utf8"),"current presentation");
+      assert.equal(fs.readFileSync(media,"utf8"),legacyMedia?"legacy safety media":"current media");
+      if(legacyMedia)assert.equal(fs.existsSync(path.join(agent.hub,"data","media","after-snapshot.txt")),false);
+      assert.equal(crypto.createHash("sha256").update(fs.readFileSync(safety)).digest("hex"),safetyHash);
+      assert.equal(fs.existsSync(journalFile),false);
+    });
+  }
+});
+
+test("interrupted restore retains its journal when the real safety database fails integrity",async t=>{
+  const {agent,asset,media,journalFile,safety}=await interruptRealRestore(t);
+  const validSafety=fs.readFileSync(safety),archive=new AdmZip(validSafety);
+  archive.updateFile("classroom-hub/data/classroom-control-hub.db",Buffer.from("invalid SQLite snapshot"));archive.writeZip(safety);
+  const journal=fs.readFileSync(journalFile);
+  const failed=await agent.restart({expectFailure:true});
+  assert.equal(failed.code,1);assert.equal(failed.signal,null);
+  await assert.rejects(fetch(agent.base+"/backups",{headers:{"x-maintenance-token":agent.token},signal:AbortSignal.timeout(1000)}));
+  assert.deepEqual(fs.readFileSync(journalFile),journal);
+  assertDrillState(agent,"archived");
+  assert.equal(fs.readFileSync(asset,"utf8"),"archived presentation");
+  assert.equal(fs.readFileSync(media,"utf8"),"current media");
+  // Repair only the isolated test archive, then prove the retained journal recovers.
+  fs.writeFileSync(safety,validSafety);
+  await agent.restart();
+  assertDrillState(agent,"current");
+  assert.equal(fs.readFileSync(asset,"utf8"),"current presentation");
+  assert.equal(fs.readFileSync(media,"utf8"),"current media");
+  assert.equal(fs.existsSync(journalFile),false);
 });
 
 test("operational backup uses ZIP64 streaming writer instead of AdmZip buffering",()=>{
