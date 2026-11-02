@@ -122,3 +122,5 @@ The repository `docs/` directory is the canonical technical documentation set. `
 - [[TV Routing Matrix|TV-Routing-Matrix]] — controls, preserved configuration and validation after topology removal.
 - [[ESPHome devices|ESPHome-Devices]] — encrypted native enrollment and supported controls.
 - [[Android TV Hardware Validation|Android-TV-Hardware-Validation]] — physical managed-display validation and capability-reporting boundaries.
+
+- [[Learning discussions|Learning-Discussions]] — shared writing, local grading, and SCORM.

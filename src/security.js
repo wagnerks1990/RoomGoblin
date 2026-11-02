@@ -12,6 +12,7 @@ function capabilitiesFor(user,profile=null){
   // disabled, deleted, or cannot be resolved, fail closed instead of silently
   // restoring the broader built-in permissions for the user's role.
   if(user.profileId&&(!profile||profile.enabled===false))return [];
+  if(user.profileId==="learning-student")return user.role==="viewer"?["learning.participate"]:[];
   const configured=profile?.config?.capabilities;
   if(profile)return Array.isArray(configured)?configured:[];
   // Role defaults are retained only for legacy users which predate profiles.

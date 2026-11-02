@@ -1,6 +1,8 @@
 "use strict";
 
 const express = require("express");
+const {registerLearning,restrictedStudentGate}=require("./learning");
+const {learningSessionUser}=require("./learning-lti");
 const {ESPHomeManager,registerESPHomeRoutes}=require("./esphome");
 const {UbuntuDisplays,registerUbuntuDisplayRoutes}=require("./ubuntu-displays");
 const {bufferedVeyonFetch,veyonResponseError,readVeyonFrame,safeVeyonFailure}=require("./veyon-transport");
@@ -4057,6 +4059,8 @@ function cookieValue(req,name){
 }
 function requestUser(req){
   if(req.authUser!==undefined)return req.authUser;
+  const learningUser=learningSessionUser(req,dbStore);
+  if(learningUser!==undefined)return req.authUser=learningUser;
   const token=cookieValue(req,"classroom_hub_session");
   req.authUser=dbStore.sessionUser(token)||null;
   return req.authUser;
@@ -5128,6 +5132,9 @@ function browserWebSocketOriginAllowed(req){
 }
 app.use((req,res,next)=>{
   if(!dbStore.authEnabled()||!["POST","PUT","PATCH","DELETE"].includes(req.method))return next();
+  // This dedicated authentication endpoint verifies its own signed LMS request.
+  // Native sessions never authorize it; all other cookie CSRF checks stay intact.
+  if(req.method==="POST"&&/^\/learn\/lti\/[a-f0-9-]{36}$/.test(req.path))return next();
   if(!cookieValue(req,"classroom_hub_session"))return next();
   const origin=String(req.get("origin")||"").trim();
   if(!origin)return next(); // CLI/native clients do not normally send Origin.
@@ -5135,6 +5142,8 @@ app.use((req,res,next)=>{
   catch{ return res.status(403).json({ok:false,error:"Invalid request origin"}) }
   next();
 });
+
+app.use((req,res,next)=>{requestUser(req);return restrictedStudentGate(req,res,next);});
 
 const loginAttempts=new Map();
 const LOGIN_ATTEMPT_CACHE_MAX=10000;
@@ -5487,6 +5496,10 @@ app.use("/presentations",requireAssetAccess,express.static(PRESENTATIONS_DIR,{fa
 app.use("/vendor/pdfjs", express.static(path.join(path.resolve(__dirname,".."),"node_modules","pdfjs-dist","legacy","build")));
 app.use("/vendor/hls", express.static(path.join(path.resolve(__dirname,".."),"node_modules","hls.js","dist")));
 
+// The isolated learning shell is a top-level SCORM companion window. Keep the
+// existing controller isolation and frame restrictions everywhere else.
+app.use("/learn",(req,res,next)=>{res.setHeader("Cross-Origin-Opener-Policy","unsafe-none");res.setHeader("Referrer-Policy","no-referrer");res.setHeader("Cache-Control","no-store");next();});
+registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,publicDir:path.join(APP_DIR,"public","learn")});
 app.use(express.static(path.join(APP_DIR, "public")));
 
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};
