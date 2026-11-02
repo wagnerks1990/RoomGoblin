@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Add one-time automatic classroom setup: sync native Planning classes, follow
+  the calendar and timetable, and admit signed Schoology learners after fresh
+  local presence. Preserve manual mode, paused-day intent, existing assignment
+  bindings and retained work; restarting never replays classroom effects.
+
 - Add administrator-configured AI chat and media shortcuts to the classroom
   progress page, separate from the signed Schoology student connection.
 

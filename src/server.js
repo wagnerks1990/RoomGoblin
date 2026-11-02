@@ -5522,10 +5522,16 @@ function learningEffectOptions(){
       ...['chime','success','milestone'].map(id=>({id:'learning-'+id,label:id[0].toUpperCase()+id.slice(1),kind:'sound',url:'/learn/effects/'+id+'.wav'}))]};
 }
 const learningEffectsAvailable=()=>!shutdownRequested&&!fullExportFreeze.requested&&morningAnnouncementsPriorityTargets.size===0;
+const learningScheduleSource=date=>require('./learning-schedule-source').resolveLearningSchedule({
+  classes:classScheduleStore.classes,date,day:localDateKey(date),suppression:isAutomationSuppressed(date),
+  matches:classScheduleMatchesDate,segments:effectiveClassSegments,start:classStartDate,end:classEndDate,isTransition:isTransitionClass});
 const learningRuntime=registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,
   publicDir:path.join(APP_DIR,'public','learn'),platformOptions:{options:learningEffectOptions,available:learningEffectsAvailable,
+    scheduleSource:learningScheduleSource,scheduleWritable:()=>!shutdownRequested&&!fullExportFreeze.requested,
     publish:()=>require('./learning-cloudflare').publishStudentConnector(new(require('./cloudflare').CloudflareManager)({storage:dbStore}),{probe:require('./learning-public').probeStudentGateway}),
     dispatch:createEffectAdapter({catalog:learningEffectOptions,available:learningEffectsAvailable,execute:(command,options)=>executeCommand(command,'automation',options)})}});
+// Synchronous metadata reconciliation never dispatches hardware or runs AI.
+const learningScheduleTimer=setInterval(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{learningRuntime.schedule.reconcile();}catch(error){diagnosticError(error,{component:'learning',operation:'schedule-sync'});}},15000);learningScheduleTimer.unref();
 app.use(express.static(path.join(APP_DIR, "public")));
 
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};
@@ -9451,6 +9457,7 @@ async function gracefulShutdown(signal){
     ubuntuDisplays.close();
     sportsRuntime.close();
     clearInterval(backgroundMusicTimer);clearTimeout(backgroundMusicStartupTimer);
+    clearInterval(learningScheduleTimer);
     clearInterval(presentationAutoAdvanceTimer);clearInterval(uploadCleanupTimer);clearInterval(loginAttemptCleanupTimer);
     clearTimeout(studentDataPruneStartupTimer);clearTimeout(automaticUpdateStartupTimer);clearTimeout(updateJobSyncStartupTimer);
     clearTimeout(morningAnnouncementsReleaseRetryTimer);

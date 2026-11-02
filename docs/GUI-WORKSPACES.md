@@ -3,11 +3,15 @@
 ## Classroom progress
 
 The Learning teacher desk links to `/learn/platform/`: SCORM connections,
-session timing, explicit attendance, first-name boards, approved effects and
-aggregate Ollama suggestions. Administrator settings manage exact LMS origins,
-private classroom networks and the isolated student publication. All effects
-start disarmed; the teacher must start a session and admit physically present
-students. This workspace is unavailable through the public student gateway.
+automatic or manual session timing, first-name boards, approved effects and
+aggregate Ollama suggestions. Administrator settings manage class mappings, exact
+LMS origins, private classroom networks and the isolated student publication.
+Automatic mode is configured once: Planning supplies classes and timetable;
+signed Schoology launches enroll students and fresh local events admit them.
+Manual mode retains explicit attendance. Neither mode enables unapproved recipes.
+The page can follow the current class; selecting another class or editing content
+protects the teacher draft from automatic switching. This workspace is unavailable
+through the public student gateway. See [Learning platform](LEARNING-PLATFORM.md).
 
 
 ## Displays & AV

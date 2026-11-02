@@ -73,7 +73,11 @@ failure reported. A stuck writer or child still fails at the overall deadline.
 
 Shutdown clears the startup/periodic timers for presentations, Background Music,
 retention, updates, upload cleanup and login cleanup as well as the existing
-scheduler and integration timers. Sports closes its initial and periodic refresh
+scheduler and integration timers. The learning timetable owner reconciles only
+synchronous SQLite metadata every 15 seconds, checks freeze/shutdown admission,
+and clears its timer on shutdown. It never dispatches devices; restart closes
+old sessions and an opted-in schedule starts a fresh current-period session
+without attendance, proofs or effect replay. Sports closes its initial and periodic refresh
 timers. An announcement watcher completing during shutdown cannot re-arm itself
 or schedule a release retry.
 

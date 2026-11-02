@@ -10,8 +10,9 @@ Use [the canonical setup and security guide](https://github.com/wagnerks1990/Roo
 for signed Schoology setup, private-subnet presence, attendance, media/light
 recipes, local Ollama summaries, rollback and acceptance requirements.
 
-Offsite events save without classroom effects. Live sessions end on restart,
-and old events or uncertain deliveries are never replayed. Writing-grade
+Offsite events save without classroom effects. Old sessions close on restart;
+automatic mode can open a fresh current-period session without inherited
+attendance or presence proofs. Old events and uncertain deliveries never replay. Writing-grade
 qualification and actual Schoology/device acceptance remain separate checks.
 
 ## AI tools
@@ -25,3 +26,23 @@ its shortcut. Students cannot read or edit this configuration.
 Keep the student connection separate. Its root and administrator pages
 intentionally return 404; verify the connector and signed Schoology launch.
 An AI chat URL cannot replace the student HTTPS origin.
+
+## Automatic classroom setup
+
+Configure **Automatic classroom setup** once to sync RoomGoblin Planning classes
+and follow their calendar and timetable. Link existing learning classes before
+saving so assignments, signed course bindings and saved work keep their IDs.
+Enabled unmapped classes import by stable source ID; removing a Planning class
+never deletes learning records. Multiple timetable entries can share one class.
+
+Signed Schoology launches enroll students automatically. SCORM supplies progress;
+its names never authorize attendance. Fresh local presence is required for each
+classroom event. There is no daily Start, Stop or attendance checklist in automatic
+mode. Breaks, remote/no-school days, ambiguous periods and revoked teacher access
+suppress effects. Manual mode remains available when automatic setup is off.
+
+The page follows the current class while preserving teacher drafts. **Pause this
+class today** lasts through restarts and clears on the next school day. Existing
+closed assignments remain closed; reviewed recipes and signed connections are
+one-time prerequisites. Timetable failures do not block ordinary progress saves.
+Disable automatic mode before feature rollback and retain the additive tables.
