@@ -5523,6 +5523,7 @@ function learningEffectOptions(){
 }
 const learningEffectsAvailable=()=>!shutdownRequested&&!fullExportFreeze.requested&&morningAnnouncementsPriorityTargets.size===0;
 const learningRuntime=registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,
+  reviewOptions:{track:trackFullExportMutation,isStopping:()=>shutdownRequested},
   publicDir:path.join(APP_DIR,'public','learn'),platformOptions:{options:learningEffectOptions,available:learningEffectsAvailable,
     publish:()=>require('./learning-cloudflare').publishStudentConnector(new(require('./cloudflare').CloudflareManager)({storage:dbStore}),{probe:require('./learning-public').probeStudentGateway}),
     dispatch:createEffectAdapter({catalog:learningEffectOptions,available:learningEffectsAvailable,execute:(command,options)=>executeCommand(command,'automation',options)})}});
@@ -9446,6 +9447,7 @@ async function gracefulShutdown(signal){
     // listening and do not emit shutdown ledger writes while that freeze is held.
     await waitUntilDrained(()=>!fullExportFreeze.requested);
     shuttingDown=true;
+    learningRuntime.reviewQueue.close();
     veyonCommandQueue.stop();
     esphomeManager.close();
     ubuntuDisplays.close();

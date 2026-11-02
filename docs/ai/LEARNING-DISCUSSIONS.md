@@ -3,8 +3,10 @@
 Read [operator documentation](../LEARNING-DISCUSSIONS.md) before modifying learning.
 `src/learning.js` owns additive SQLite tables, class ACLs, moderation, snapshots,
 automatic publication, teacher overrides, budgets, and receipt/download routes.
-`src/learning-grader.js` owns the fixed activity, rubric schema, reference facts,
-prompt, provider transport, deadlines, and validation. `/public/learn/` is isolated
+`src/learning-grader.js` owns the fixed activity, rubric, and provider transport.
+`src/learning-evidence.js` owns source-bound classifications, numeric evidence
+checks, deterministic rubric mapping, and checked public response wording.
+`src/learning-retry-queue.js` owns persisted accepted jobs and bounded retries. `/public/learn/` is isolated
 from the appliance controller; `/public/learn/scorm/` is a credential-free launcher.
 
 Preserve restricted profile denial even if profile configuration contains `*`.
@@ -45,10 +47,18 @@ native Linux suite and focused access/race/provider/browser regressions.
 
 
 The model evaluates initial writing and replies separately. Missing replies are zero;
-full reasoning credit needs a verbatim limitation quote from the initial writing.
-Keep this separation and evidence validation. Treat the calibration report as
-version-specific evidence, not a guarantee. Inference tests were paused after a
-94 C GPU reading; final full-model qualification remains incomplete.
+full reasoning requires an explicit limitation cited by original sentence ID.
+Full calculation credit checks cited numeric subnet values for both hosts.
+Keep source separation and fail closed on malformed or uncertain evidence.
+Treat calibration as version-specific evidence, not a guarantee. Earlier rapid
+model testing exceeded the temperature guard; pace calibration and monitor load.
+
+Save submissions before inference. Preserve accepted_at for late policy and
+started_at for rolling inference budgets; queue delay must not penalize students
+or bypass budgets. Keep one queue drain owner, conditional fingerprint deletion,
+current membership/configuration rechecks, bounded temporary retries, and native
+Full Recovery/shutdown tracking. Restart may resume never-started queued jobs,
+but must not replay interrupted inference. Review mode withholds replies AND grades.
 
 Optional SCORM names update only the authenticated student's class alias.
 Check popup source, exact allowlisted origin, nonce and activity; keep names out

@@ -23,3 +23,10 @@ See `docs/LEARNING-SCHOOLOGY-LTI.md` for the one-time provider configuration,
 teacher-first launch, name sharing, grade-service approval, acceptance and rollback.
 Student password prompts are unnecessary on the signed-launch route; an uploaded
 SCORM ZIP alone does not authenticate a student.
+
+Submissions save immediately and assessments run from a persistent bounded queue,
+even after the student closes the page. Revisions replace pending work; temporary
+service failures retry twice. Queue delays preserve the original acceptance time
+for late policy. Review mode withholds both replies and grades. The model classifies
+source evidence; the application checks values, assigns rubric points, and selects
+reviewed teacher-style response wording. Teachers retain correction controls.

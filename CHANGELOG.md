@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+### Unattended discussion assessment
+
+- Save writing immediately and process grades and replies through a persistent,
+  bounded queue with revision checks, temporary retries, and lifecycle ownership.
+- Preserve submission times for late policy while counting inference budgets at
+  execution time. Review mode withholds both replies and grades until approval.
+- Classify original-source evidence and check numeric calculations before mapping
+  rubric points; select checked public wording instead of publishing model prose.
+- Expand synthetic calibration to 13 cases and pace local model requests.
+
 ### 1.0.0-alpha.86 · SCORM classroom progress
 
 - Add a separate student gateway, signed Schoology connection flows, retained
