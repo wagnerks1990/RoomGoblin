@@ -32,8 +32,35 @@ delivery in [Schoology sign-in and grade return](LEARNING-SCHOOLOGY-LTI.md).
 The rubric is claim **0/3/6**, evidence **0/3/6**, reasoning and limit **0/2/5**,
 and reply **0/1/3**. Missing replies earn zero even if a provider returns another
 value. Late work receives half the earned score once; possible points remain 20.
-The grading request time is used for the late calculation. A revised submission
+The server acceptance time is used for the late calculation, even when grading runs later. A revised submission
 after the deadline may therefore be late. Teacher overrides can waive the penalty.
+
+## Shared discussion workspace
+
+The production `/learn/` pages use a lesson header, case and directions, the full
+20-point rubric, initials avatars, timestamps, and collapsible conversation threads.
+Reply opens a composer within the selected thread. Refresh preserves the unsaved
+reply and collapsed threads; a browser reload does not save an unpublished draft.
+Progress markers describe saved work and published feedback, without extra points.
+
+Everyone assigned to the class can read student posts, peer replies, teacher
+responses, and published automatic responses. Students can respond to teacher
+comments, including automatic responses to their own work. Follow-ups show the
+person being answered and remain in the original thread. Private rubric feedback
+and grades are available only to the student and authorized teachers. People
+outside the assigned class cannot read the board. Moderation hides a post and all
+its descendants from students; teachers can restore it.
+
+Only a reply directly to another student's initial post, or the permitted
+independent critique, can satisfy the scored reply criterion. Other conversation
+follow-ups are shared but do not trigger another assessment, replace a scored
+reply, or change the grade. Teachers can continue those exchanges themselves.
+
+Local preview launchers may assign synthetic personas outside the production
+pages. They must remain loopback-only and separate from production accounts,
+Schoology grades, classroom devices, and databases. A preview demonstrates the
+production UI and native discussion code; it does not qualify real LMS identity
+or grade return. Production deployment is deferred while the owner tests the design.
 
 ## Ollama on the RoomGoblin host
 
@@ -92,19 +119,25 @@ From this checkout, with Ollama reachable on the same host:
 node tools/calibrate-learning.cjs --model qwen3.5:9b --warmup
 ```
 
-This sends six synthetic examples: complete work, no reply, agreement only,
-incorrect reasoning, attempted grading instructions, and missing limitations.
+This sends 13 synthetic examples covering complete work, incomplete calculations,
+agreement-only replies, paraphrases, source separation, incorrect reasoning,
+attempted grading instructions, and missing limitations. Calls are paced 60 seconds
+apart; also monitor host temperature and concurrent classroom performance.
 It prints criterion matches, duration, and the public response. It makes no
 database or gradebook changes. Review both rubric judgments and response wording;
 repeat the calibration and test concurrent load before enabling student use.
 Fixture checks and mocked provider tests do not establish semantic grading quality.
 Changing the model, quantization, prompt, or Ollama version requires recalibration.
 
-The initial explanation and reply are evaluated in separate inference calls, so
-reply quality cannot replace initial-post points. Full reasoning credit also
-requires a literal evidence-limit quote from the initial writing; invented quotes
-are rejected. One graded submission uses one call, or two when it includes a reply.
-This reduces one observed failure mode; it does not prove all judgments correct.
+The initial explanation and reply are evaluated separately. The model classifies
+evidence and cites original sentence IDs; the server maps those classifications
+to rubric points and checked response wording. It does not publish unconstrained
+model prose. Full reasoning requires a cited explicit limitation in the initial
+writing. Full calculation credit also checks the cited numeric subnet values for
+both hosts; a mask alone is partial evidence. Unsupported or conflicting evidence
+stays available for teacher review. Unusual nonnumeric calculation descriptions
+may need teacher correction. One assessment uses one call, or two with a reply.
+These checks reduce observed errors; they do not guarantee every judgment.
 
 Automatic grading is triggered by saved submissions/revisions; this is not
 continuous surveillance or an autonomous misconduct detector. It does not inspect
@@ -122,10 +155,15 @@ The launcher opens the authenticated RoomGoblin activity in a companion window.
 This avoids third-party cookie and iframe restrictions. Allow the exact launcher
 origin shown in the SCORM page in the administrator settings; Schoology content
 may have a different origin from the course page. Wildcards are not allowed.
-Both windows must remain open. The student selects **Send published grade to
-Schoology**, returns to the launcher, and waits for the LMS saved confirmation.
-Failed commits remain retryable. Reopen and sync again after a teacher correction.
-This SCORM route has no background grade passback. The separate signed External
+Both windows must remain open until the LMS confirms saving. The discussion checks
+for published grades automatically, including while it is behind the launcher,
+and sends updated server receipts after grading or teacher corrections. No submit
+or sync click is required. The launcher acknowledges successful `LMSCommit` calls,
+deduplicates unchanged receipts, and retries an unconfirmed save every 15 seconds.
+**Sync grade now** and **Retry grade save** remain available for manual recovery.
+If either window was closed before grading or a correction, reopen the assignment
+to sync the latest published grade. This SCORM route cannot write to the LMS after
+both windows close. The separate signed External
 Tool route returns approved grades directly to the configured LTI outcome service.
 
 The bridge validates popup source, exact origin, random nonce, activity, and score
@@ -167,11 +205,18 @@ Reference: [SCORM runtime data model](https://scorm.com/scorm-explained/technica
   results, teacher overrides, and metadata audit events. Hiding/removing access is
   not deletion. There is no automatic retention purge; agree on school retention
   and backup access before real student data enters this feature.
-- Concurrency is bounded to two grading requests and one per student. Limits are
-  five graded submissions per student per 24 hours plus a configurable deployment
-  budget in submissions (up to two inference calls each). Busy submissions stay saved and retry while the activity remains open
-  in the browser. Service failures and exhausted budgets require a later retry or
-  teacher review. There is no durable unattended background job worker.
+- Publishing saves writing immediately and queues its assessment in SQLite. The
+  worker continues after the browser closes and resumes unstarted jobs on restart.
+  At most 200 students have pending jobs; a newer revision replaces the pending
+  snapshot. One worker drains the queue, with a 60-second pause after local model
+  assessments. Limits remain five attempts per student per rolling 24 hours and
+  the configured deployment budget, measured when inference starts. Budget-limited
+  work remains queued and is rechecked hourly. Temporary transport failures retry
+  twice, at least 60 seconds apart; invalid evidence requires teacher review.
+  Queue saturation preserves writing and reports that teacher review is needed.
+- Automatic publication controls both the public reply and private grade. With it
+  disabled, the proposed response and grade are withheld until a teacher approves.
+  Teachers can edit the proposed response or leave it blank to publish only a grade.
 - Revision fingerprints prevent stale results from grading newer writing. Hidden
   evidence invalidates receipts. A process restart preserves work but marks any
   interrupted request unavailable, avoiding automatic duplicate calls.
@@ -189,7 +234,7 @@ without replacing the database, master key, or model storage. Keep saved learnin
 tables intact. No production database restore or destructive migration is needed
 merely to hide this additive feature.
 
-Local checks: `npm run check`, `node --test test/learning.test.js`,
+Local checks: `npm run check`, `node --test test/learning*.test.js`,
 `node test/browser/learning-smoke.cjs`, and `node tools/calibrate-learning.cjs --check-fixtures`.
 On Windows run the supported full suite through
 `py -3.11 C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py`.

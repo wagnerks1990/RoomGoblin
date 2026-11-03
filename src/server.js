@@ -5526,6 +5526,7 @@ const learningScheduleSource=date=>require('./learning-schedule-source').resolve
   classes:classScheduleStore.classes,date,day:localDateKey(date),suppression:isAutomationSuppressed(date),
   matches:classScheduleMatchesDate,segments:effectiveClassSegments,start:classStartDate,end:classEndDate,isTransition:isTransitionClass});
 const learningRuntime=registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,
+  reviewOptions:{track:trackFullExportMutation,isStopping:()=>shutdownRequested},
   publicDir:path.join(APP_DIR,'public','learn'),platformOptions:{options:learningEffectOptions,available:learningEffectsAvailable,
     scheduleSource:learningScheduleSource,scheduleWritable:()=>!shutdownRequested&&!fullExportFreeze.requested,
     publish:()=>require('./learning-cloudflare').publishStudentConnector(new(require('./cloudflare').CloudflareManager)({storage:dbStore}),{probe:require('./learning-public').probeStudentGateway}),
@@ -9452,6 +9453,7 @@ async function gracefulShutdown(signal){
     // listening and do not emit shutdown ledger writes while that freeze is held.
     await waitUntilDrained(()=>!fullExportFreeze.requested);
     shuttingDown=true;
+    learningRuntime.reviewQueue.close();
     veyonCommandQueue.stop();
     esphomeManager.close();
     ubuntuDisplays.close();

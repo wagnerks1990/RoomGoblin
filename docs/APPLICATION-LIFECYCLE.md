@@ -296,3 +296,12 @@ There is no schema, version, receiver identity, port, authentication or dependen
 migration. Deployment requires the normal validated-main image pair and backed-up
 updater. Rollback uses the existing previous-deployment recovery path. Do not
 deploy a branch, change live displays, or bypass publication checks to test this.
+
+## Learning assessment queue
+
+The learning queue starts only while its grading service is enabled and the
+application is neither freezing nor stopping. Its detached drain promise uses
+the same tracked writer owner as mutating requests. Shutdown closes the queue
+timer before SQLite closes and drains an active assessment. Unstarted persisted
+jobs can resume; an interrupted inference is marked unavailable rather than
+automatically replayed. No classroom device command is part of this worker.

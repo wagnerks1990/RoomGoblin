@@ -5,6 +5,26 @@
 
 ## Unreleased
 
+### Unattended discussion assessment
+
+- Save writing immediately and process grades and replies through a persistent,
+  bounded queue with revision checks, temporary retries, and lifecycle ownership.
+- Preserve submission times for late policy while counting inference budgets at
+  execution time. Review mode withholds both replies and grades until approval.
+- Classify original-source evidence and check numeric calculations before mapping
+  rubric points; select checked public wording instead of publishing model prose.
+- Expand synthetic calibration to 13 cases and pace local model requests.
+- Add a lesson-style discussion workspace with the exact rubric, collapsible
+  threads, inline replies, progress markers, and private grade feedback.
+- Share student/teacher conversation replies across the assigned class, including
+  follow-ups to automatic responses. Keep follow-ups out of scored reply selection
+  and hide all descendants when a teacher moderates an ancestor.
+- Automatically sync published and corrected discussion grades to an open SCORM
+  launcher, acknowledge confirmed commits, retry temporary save failures, and
+  deduplicate unchanged receipts while preserving manual recovery controls.
+
+### Automatic classroom setup
+
 - Add one-time automatic classroom setup: sync native Planning classes, follow
   the calendar and timetable, and admit signed Schoology learners after fresh
   local presence. Preserve manual mode, paused-day intent, existing assignment
