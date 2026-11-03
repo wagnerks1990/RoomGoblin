@@ -73,6 +73,13 @@ attendance or eligibility for lights, sounds and other classroom effects. Existi
 campaigns remain presence-gated until explicitly configured. Keep signed learner
 identity, grade privacy, revision checks and scheduled display ownership intact.
 
+An explicitly enabled dedicated arcade display reserves that receiver's content,
+including exclusion from announcements and music. Read
+`docs/LEARNING-ARCADE-DISPLAY.md`. Keep this opt-in; every other receiver retains
+announcement priority. Do not delete saved schedules, enrollment or AV mappings.
+Dedicated boards follow active mapped classes, wait between sessions and never
+replay learner snapshots after reconnect. Keep maintenance and power controls.
+
 ## Docker network deployment contract
 
 RoomGoblin uses least-privilege networking per service. The core Hub and maintenance containers retain their reviewed host-network contract; host networking is not the default for add-ons. Music Assistant and Govee2MQTT remain host-networked because their upstream LAN discovery/control protocols require it. Mosquitto uses the user-defined `roomgoblin-integrations` bridge with a loopback-only published MQTT listener. Preserve explicit bind addresses, persistent mounts and secrets, never silently recreate adopted containers, and let Docker manage bridge/veth/firewall implementation state. See [Docker networking and migration](HOST-NETWORKING.md) for topology, migration, validation and rollback.

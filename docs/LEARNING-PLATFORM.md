@@ -207,6 +207,9 @@ work. Keep writing auto-grading disabled until separate rubric calibration passe
 
 ## Continuing arcade campaigns
 
+For visual standings and an exclusive receiver that follows the scheduled class,
+see [Dedicated arcade display](LEARNING-ARCADE-DISPLAY.md).
+
 The teacher progress page has **Continuing arcade campaigns**. Create one campaign,
 select its learning classes and short period labels, and choose a verified display
 receiver. Configure each existing SCORM connection above, then choose **Link selected

@@ -6,7 +6,7 @@ const source=fs.readFileSync(require.resolve("../src/server"),"utf8").replace(/\
 function extract(name){const start=source.search(new RegExp(`(?:async )?function ${name}\\(`));assert.ok(start>=0,name);return source.slice(start,source.indexOf("\n}",start)+2)}
 const sports=()=>({textOptions:{scene:{layers:[{id:"board",type:"widget",widget:"sports-board",sportsBoardId:"school",sportsAudio:true,sportsVolume:.6}]}},timer:{remainingSeconds:300}});
 function fixture(){
-  const sent=[],ctx=vm.createContext({displayAudio,Date,JSON,Buffer,path,crypto:require("node:crypto"),deviceConfig:{room:"test"},ROOM_NAME:"test",
+  const sent=[],ctx=vm.createContext({learningDisplayReservations:()=>new Map(),learningDisplayPolicy:require("../src/learning-display-policy"),displayAudio,Date,JSON,Buffer,path,crypto:require("node:crypto"),deviceConfig:{room:"test"},ROOM_NAME:"test",
     devices:{tv1:{},tv2:{}},persistentState:{displays:{tv1:sports(),tv2:sports()}},persistState:()=>{},
     resolveDisplayTargets:t=>Array.isArray(t)?t:[t],announcementPriorityError:()=>null,engageManualMediaPriority:async()=>null,
     backgroundMusicObserveDisplayCommand:()=>{},broadcastDisplays:(targets,message)=>{sent.push({targets,command:message.command});return targets},
@@ -43,7 +43,7 @@ test("audio input rejects invalid values and status never exposes media URLs",()
 
 test("website automation dispatch preserves legacy defaults and carries explicit saved audio",async()=>{
   for(const audio of [{},{volume:.37,muted:true},{volume:.7,muted:false}]){
-    const sent=[],ctx=vm.createContext({assertAutomationCommandsAllowed,expandAutomationPayload:p=>p,schedulerClock:{now:()=>new Date(),commandsAllowed:()=>true},
+    const sent=[],ctx=vm.createContext({learningDisplayReservations:()=>new Map(),learningDisplayPolicy:require("../src/learning-display-policy"),assertAutomationCommandsAllowed,expandAutomationPayload:p=>p,schedulerClock:{now:()=>new Date(),commandsAllowed:()=>true},
       AUTOMATION_ACTIONS:new Set(["display.url"]),requireAutomationTargets:targets=>targets,
       executeCommand:async c=>{sent.push(c);return {ok:true}},localDateKey:()=>"2026-10-26",schoolCycleForDate:()=>({}),
       planningStudio:{matchingOverlays:()=>[]},planningStudioConfig:{},announcementLockedDisplayTargets:()=>[],persistentState:{displays:{}}});

@@ -16,19 +16,35 @@ test('arcade projection sends only names, period, arcade points, level and compl
 });
 test('refreshing a transient board does not flash the scheduled screen between updates',()=>{
  const html=fs.readFileSync(require.resolve('../public/display/index.html'),'utf8'),start=html.indexOf('let transientLearning=null;'),end=html.indexOf('function applyState(s){',start),calls=[];
- const ctx=vm.createContext({Date,setTimeout:()=>1,clearTimeout(){},applyState:s=>calls.push(['restore',s]),handle:c=>calls.push(['command',c])});vm.runInContext(html.slice(start,end),ctx);
+ const ctx=vm.createContext({arcadeBoard:{clear(){},render(){}},Date,setTimeout:()=>1,clearTimeout(){},applyState:s=>calls.push(['restore',s]),handle:c=>calls.push(['command',c])});vm.runInContext(html.slice(start,end),ctx);
  const message={command:{type:'display.text'},transient:{expiresAt:Date.now()+8000,previousState:{text:'Lesson'}}};ctx.receiveDisplayCommand(message);ctx.receiveDisplayCommand(message);assert.deepEqual(calls.map(c=>c[0]),['command','command']);ctx.receiveDisplayCommand({command:{type:'display.title'}});assert.deepEqual(calls.map(c=>c[0]),['command','command','restore','command']);
 });
 test('native receiver expires transient effects and restores before a new command without replay',()=>{
  const html=fs.readFileSync(require.resolve('../public/display/index.html'),'utf8'),start=html.indexOf('let transientLearning=null;'),end=html.indexOf('function applyState(s){',start),calls=[],timers=[];
- const ctx=vm.createContext({Date,setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){},applyState:s=>calls.push(['restore',s]),handle:c=>calls.push(['command',c])});vm.runInContext(html.slice(start,end),ctx);
+ const ctx=vm.createContext({arcadeBoard:{clear(){},render(){}},Date,setTimeout:fn=>{timers.push(fn);return timers.length;},clearTimeout(){},applyState:s=>calls.push(['restore',s]),handle:c=>calls.push(['command',c])});vm.runInContext(html.slice(start,end),ctx);
  const original={text:'Scheduled lesson'};ctx.receiveDisplayCommand({command:{type:'display.video'},transient:{expiresAt:Date.now()+8000,previousState:original}});assert.equal(calls[0][0],'command');timers[0]();assert.equal(calls[1][1],original);
  calls.length=0;ctx.receiveDisplayCommand({command:{type:'display.text'},transient:{expiresAt:Date.now()-1,previousState:original}});assert.equal(calls.length,0);
  ctx.receiveDisplayCommand({command:{type:'display.image'},transient:{expiresAt:Date.now()+8000,previousState:original}});ctx.receiveDisplayCommand({command:{type:'display.title'}});assert.deepEqual(calls.map(c=>c[0]),['command','restore','command']);
 });
 function router(){
  const source=fs.readFileSync(require.resolve('../src/server'),'utf8'),start=source.indexOf('async function executeCommand('),end=source.indexOf('\n}',start)+2,calls=[],displays={screen:{text:'Scheduled lesson'}},control={admitted:true,before:async()=>{}};
- const ctx=vm.createContext({Date,Promise,URL_BEARING_DISPLAY_COMMANDS:new Set(),normalizeCommand:c=>({...c,id:'synthetic',payload:c.payload||{}}),validateCommandForDispatch:c=>c,engageManualMediaPriority:async()=>{await control.before();return null;},resolveDisplayTargets:x=>x,announcementPriorityError:()=>null,persistentState:{displays},physicalDisplayState:id=>displays[id],updateStateFromCommand:()=>calls.push('persist'),broadcastDisplays:(ids,message)=>{calls.push({message});return ids;},broadcastDisplayPreviews:()=>calls.push('preview'),MQTT_JSON_BRIDGE:true,MQTT_LEGACY_BRIDGE:true,runtime:{mqtt:{connected:true}},toLegacyCommand:()=>'',mqttPublish:()=>calls.push('mqtt'),backgroundMusicObserveDisplayCommand:()=>calls.push('music'),audit(){},broadcastControllers(){},diagnosticError(){}});vm.runInContext(source.slice(start,end),ctx);return {ctx,calls,displays,control,run:()=>ctx.executeCommand({type:'display.text',target:['screen'],payload:{text:'Alex · 40 / 50'}},'automation',{admission:()=>control.admitted})};
+ const ctx=vm.createContext({Date,Promise,learningDisplayReservations:()=>new Map(),learningDisplayPolicy:require('../src/learning-display-policy'),URL_BEARING_DISPLAY_COMMANDS:new Set(),normalizeCommand:c=>({...c,id:'synthetic',payload:c.payload||{}}),validateCommandForDispatch:c=>c,engageManualMediaPriority:async()=>{await control.before();return null;},resolveDisplayTargets:x=>x,announcementPriorityError:()=>null,persistentState:{displays},physicalDisplayState:id=>displays[id],updateStateFromCommand:()=>calls.push('persist'),broadcastDisplays:(ids,message)=>{calls.push({message});return ids;},broadcastDisplayPreviews:()=>calls.push('preview'),MQTT_JSON_BRIDGE:true,MQTT_LEGACY_BRIDGE:true,runtime:{mqtt:{connected:true}},toLegacyCommand:()=>'',mqttPublish:()=>calls.push('mqtt'),backgroundMusicObserveDisplayCommand:()=>calls.push('music'),audit(){},broadcastControllers(){},diagnosticError(){}});vm.runInContext(source.slice(start,end),ctx);return {ctx,calls,displays,control,run:()=>ctx.executeCommand({type:'display.text',target:['screen'],payload:{text:'Alex · 40 / 50'}},'automation',{admission:()=>control.admitted})};
 }
 test('native router transmits an expiring effect without persisting state or replaying over MQTT',async()=>{const f=router();assert.equal((await f.run()).ok,true);assert.equal(f.calls.length,1);assert.equal(f.calls[0].message.transient.previousState.text,'Scheduled lesson');assert.ok(f.calls[0].message.transient.expiresAt>Date.now());assert.equal(f.displays.screen.text,'Scheduled lesson');});
 test('native router rechecks admission after await and refuses to interrupt active media',async()=>{const f=router();f.control.before=async()=>{f.control.admitted=false;};assert.equal((await f.run()).skipped,true);assert.equal(f.calls.length,0);f.control.before=async()=>{};f.control.admitted=true;f.displays.screen.media={type:'video'};assert.equal((await f.run()).reason,'active-media');assert.equal(f.calls.length,0);});
+
+test('native router excludes a reserved receiver and accepts only its trusted arcade owner',async()=>{
+ const f=router();f.ctx.learningDisplayReservations=()=>new Map([['screen','campaign']]);
+ assert.equal((await f.run()).reason,'dedicated-leaderboard');assert.equal(f.calls.length,0);
+ const command={type:'display.text',target:['screen'],payload:{arcade:{version:1,rows:[]}}};
+ assert.equal((await f.ctx.executeCommand(command,'http')).reason,'dedicated-leaderboard');
+ await assert.rejects(()=>f.ctx.executeCommand(command,'http',{arcadeCampaignId:'campaign'}),/internal dispatch/);
+ f.displays.screen.media={type:'video'};
+ assert.equal((await f.ctx.executeCommand(command,'automation',{admission:()=>true,arcadeCampaignId:'campaign'})).ok,true);
+ assert.equal(f.calls.length,1);assert.ok(f.calls[0].message.transient);
+});
+
+test('reservation changes during admission prevent a late ordinary display write',async()=>{
+ const f=router();f.control.before=async()=>{f.ctx.learningDisplayReservations=()=>new Map([['screen','campaign']]);};
+ assert.equal((await f.run()).reason,'dedicated-leaderboard');assert.equal(f.calls.length,0);
+});
