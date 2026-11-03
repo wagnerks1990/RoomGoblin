@@ -6,12 +6,12 @@ const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 (async()=>{
  const embedded=process.env.EMBEDDED_SCORM==='1',f=await fixture(),browser=await chromium.launch({channel:'msedge',headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP learn.learning.test 127.0.0.1, MAP lms.school.test 127.0.0.1']});let gateway,tls,files={};
  try{
-  f.app.set('trust proxy',1);const p=f.learning.platform,id=f.activityId,secret='synthetic-written-test-secret-000000000000000';
-  gateway=createStudentGateway({app:f.app,store:f.store});await new Promise(r=>gateway.listen(0,'127.0.0.1',r));tls=await require('../helpers/learning-browser-https.cjs').createBrowserHttps(gateway,renderLms,{learnHost:'learn.learning.test',lmsHost:'lms.school.test'});const {origin,lms}=tls,url=origin+'/learn/lti/'+id;
+  f.app.set('trust proxy',1);const p=f.learning.platform,id=f.activityId,identityId=f.learning.createActivity(f.admin,f.classId,{title:'Existing class sign-in',templateId:'scorm-connector-v1'}),secret='synthetic-written-test-secret-000000000000000';
+  gateway=createStudentGateway({app:f.app,store:f.store});await new Promise(r=>gateway.listen(0,'127.0.0.1',r));tls=await require('../helpers/learning-browser-https.cjs').createBrowserHttps(gateway,renderLms,{learnHost:'learn.learning.test',lmsHost:'lms.school.test'});const {origin,lms}=tls,url=origin+'/learn/lti/'+identityId;
   f.store.setPreference('learning.bridgeOrigins',[lms]);p.saveSettings(f.admin,{publicEnabled:true,publicOrigin:origin,embeddedEnabled:embedded});p.configure(f.admin,id,{points:20,launchUrl:lms+'/launch'});
-  f.learning.lti.configure(f.admin,id,{appOrigin:origin,platformOrigin:lms,consumerKey:'synthetic-written',sharedSecret:secret,enabled:true,outcomeOrigins:[]});
+  f.learning.lti.configure(f.admin,identityId,{appOrigin:origin,platformOrigin:lms,consumerKey:'synthetic-written',sharedSecret:secret,enabled:true,outcomeOrigins:[]});
   function params(role){const v={lti_message_type:'basic-lti-launch-request',lti_version:'LTI-1p0',oauth_consumer_key:'synthetic-written',oauth_signature_method:'HMAC-SHA1',oauth_timestamp:String(Math.floor(Date.now()/1000)),oauth_nonce:crypto.randomUUID(),context_id:'synthetic-course',resource_link_id:'synthetic-written',roles:role,user_id:role==='Instructor'?'teacher':'learner',lis_person_name_given:'Alex',lis_person_name_full:'Alex Example'};v.oauth_signature=signature('POST',url,Object.entries(v),secret);return v;}
-  f.learning.lti.launch(id,params('Instructor'),lms,url);
+  f.learning.lti.launch(identityId,params('Instructor'),lms,url);
   const response=await f.request(f.admin,'/api/v1/learning/activities/'+id+'/scorm');assert.equal(response.status,200);const zip=new(require('adm-zip'))(response.body);for(const e of zip.getEntries())files['/'+e.entryName]=e.getData().toString('utf8');
   assert(files['/config.js'].includes(origin));assert(files['/config.js'].includes('"signedLaunch":true'));assert(!response.body.includes(Buffer.from(secret)));
   function renderLms(path){

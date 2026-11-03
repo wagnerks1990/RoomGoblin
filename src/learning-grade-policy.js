@@ -37,6 +37,20 @@ class LearningGradePolicy{
   else{const date=dateValue(input.creditDate);if(typeof input.reason!=='string'||!input.reason.trim()||input.reason.length>500)fail(400,'Record a short reason for this override.');this.db.prepare('INSERT INTO learning_grade_overrides VALUES(?,?,?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET credit_date=excluded.credit_date,reason=excluded.reason,teacher_id=excluded.teacher_id').run(id,input.userId,date,input.reason.trim(),user.id);}
   this.learning.event(user,id,'grading.override',input.userId);return {ok:true};
  }
+ restoreRecorded(user,id,input){
+  const a=this.learning.activity(user,id,true),cfg=this.p.config(id);
+  if(!cfg||!this.config(id)?.enabled)fail(409,'Configure automatic grading before restoring recorded grades.');
+  if(!Array.isArray(input.records)||!input.records.length||input.records.length>200||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest))fail(400,'Provide up to 200 documented grades and the backup SHA-256.');
+  const seen=new Set(),rows=input.records.map(r=>{
+   if(!r||typeof r.userId!=='string'||seen.has(r.userId)||typeof r.earned!=='number'||!Number.isFinite(r.earned)||r.earned<0||r.earned>cfg.points||r.possible!==cfg.points||typeof r.completed!=='boolean'||typeof r.sourceAssignment!=='string'||!/^\d{1,30}$/.test(r.sourceAssignment))fail(400,'Each restoration needs one student, matching possible points, a valid earned grade, completion evidence and source assignment.');
+   seen.add(r.userId);if(!this.db.prepare("SELECT 1 FROM learning_members WHERE class_id=? AND user_id=? AND role='student'").get(a.class_id,r.userId))fail(404,'Student not found in this class.');
+   return {...r,percent:Math.round(r.earned/cfg.points*10000)/100};
+  });
+  this.store.tx(()=>{for(const r of rows){
+   this.db.prepare('INSERT INTO learning_grade_awards VALUES(?,?,?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET best_percent=MAX(best_percent,excluded.best_percent),completed=MAX(completed,excluded.completed),updated_at=excluded.updated_at').run(id,r.userId,r.percent,r.completed?1:0,this.p.clock());
+   this.learning.event(user,id,'grading.restore',r.userId,{sourceAssignment:r.sourceAssignment,sourceDigest:input.sourceDigest,earned:r.earned,possible:r.possible,completed:r.completed});
+  }});return {ok:true,restored:rows.length};
+ }
  state(user,id){this.learning.activity(user,id);const cfg=this.config(id);if(!cfg)return null;
   const row=this.db.prepare('SELECT * FROM learning_grade_awards WHERE activity_id=? AND user_id=?').get(id,user.id),override=this.db.prepare('SELECT credit_date creditDate FROM learning_grade_overrides WHERE activity_id=? AND user_id=?').get(id,user.id);
   return {enabled:cfg.enabled,...credit(cfg,this.p.clock(),override),bestPercent:row?.best_percent||0,completed:!!row?.completed,recorded:!!row};

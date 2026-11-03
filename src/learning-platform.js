@@ -77,6 +77,7 @@ class LearningPlatform{
  }
  settings(){try{return normalizeSettings(this.store.getPreference(SETTINGS,{}));}catch{return normalizeSettings();}}
  saveSettings(user,input){const cfg=normalizeSettings({...input,embeddedEnabled:input?.embeddedEnabled??this.settings().embeddedEnabled});this.store.setPreference(SETTINGS,cfg);this.learning.event(user,null,'platform.settings',null);return cfg;}
+ signedLaunchConfigured(id){const a=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(id);if(!a||!this.config(id)?.launch_url)return false;return this.learning.lti.config(id).enabled||this.db.prepare('SELECT id FROM learning_activities WHERE class_id=?').all(a.class_id).some(r=>{const c=this.learning.lti.config(r.id);return c.enabled&&c.bound;});}
  signedName(classId,userId,given){
   let first='Student';try{if(given)first=label(given,80);}catch{}
   this.db.prepare('INSERT INTO learning_first_names VALUES(?,?,?) ON CONFLICT(class_id,user_id) DO UPDATE SET first_name=excluded.first_name').run(classId,userId,first);

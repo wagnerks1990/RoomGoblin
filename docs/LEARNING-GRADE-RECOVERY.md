@@ -98,3 +98,27 @@ Deploy via the normal backed-up updater. The three `learning_grade_*` tables are
 additive. Keep the previous image and all records for rollback. Disable dated
 grading and withdraw packages requiring this feature before source rollback;
 never downgrade or reset the database.
+
+
+## Preserve grades before replacing an LMS package
+
+Export the original gradebook to a private local backup before changing used
+assignments. Keep original submissions and items. Record assignment identifiers,
+possible points, student identifiers and grade values, and hash the backup. Match
+students to their signed class identity; do not guess from similar display names.
+
+The teacher-only `POST /platform/activities/:id/grade-restore` accepts a backup
+`sourceDigest` (SHA-256) and up to 200 `records` containing `userId`, `earned`,
+`possible`, `completed` and numeric-string `sourceAssignment`. The entire batch is
+validated before writing. It only raises retained awards and completion, leaves
+writing intact, bypasses late penalties only for documented prior credit, and
+audit-records its source. Public students cannot access it. The teacher UI exposes
+this under Automatic dated grading. Restore the Schoology gradebook independently
+and verify actual values; the server award protects a later writable SCO reopen.
+
+A discussion may reuse an existing signed identity tool in the same class. The
+fresh flow is bound to that class and the requested discussion; after the signed
+launch the connector opens the requested written activity in its existing frame.
+This avoids creating new credentials for every assignment and does not allow
+identity from another course. Reuse an active existing launch URL, never a deleted
+Schoology material URL.

@@ -40,3 +40,17 @@ test('policy and exception routes require teacher access and respect backup free
  const f=await setup(t),base='/api/v1/learning/platform/activities/'+f.id;assert.equal((await f.request(f.a,base+'/grade-policy','PUT',policy)).status,403);assert.equal((await f.request(f.admin,base+'/grade-policy','PUT',policy)).status,200);
  f.freeze(true);assert.equal((await f.request(f.admin,base+'/grade-override','PUT',{userId:f.a.id,creditDate:'2026-11-05',reason:'Extension'})).status,423);
 });
+
+
+test('documented grade restoration preserves higher grades, completion and an audit trail without late penalties',async t=>{
+ const f=await setup(t);f.p.grading.configure(f.admin,f.id,policy);f.setNow('2026-11-05T16:00:00Z');const input={sourceDigest:'a'.repeat(64),records:[{userId:f.a.id,earned:16,possible:20,completed:true,sourceAssignment:'12345'}]};
+ assert.equal(f.p.grading.restoreRecorded(f.admin,f.id,input).restored,1);const audit=f.store.db.prepare("SELECT details_json FROM learning_events WHERE activity_id=? AND kind='grading.restore'").get(f.id);assert.equal(JSON.parse(audit.details_json).sourceDigest,input.sourceDigest);assert.equal(f.p.state(f.a,f.id).grade.bestPercent,80);assert.equal(f.p.state(f.a,f.id).grade.completed,true);
+ input.records[0].earned=4;input.records[0].completed=false;f.p.grading.restoreRecorded(f.admin,f.id,input);assert.equal(f.p.state(f.a,f.id).grade.bestPercent,80);assert.equal(f.p.state(f.a,f.id).grade.completed,true);
+ await f.p.record(f.a,f.id,f.event(1,100),remote);assert.equal(f.p.state(f.a,f.id).grade.bestPercent,80);
+});
+test('restoration validates the full batch before writing and rejects students, wrong courses and wrong points',async t=>{
+ const f=await setup(t);f.p.grading.configure(f.admin,f.id,policy);const row={userId:f.a.id,earned:16,possible:20,completed:true,sourceAssignment:'12345'},input={sourceDigest:'a'.repeat(64),records:[row]};
+ assert.throws(()=>f.p.grading.restoreRecorded(f.a,f.id,input),{status:404});
+ for(const bad of [{...row,userId:f.outside.id},{...row,userId:f.b.id,possible:100},{...row,userId:f.b.id,earned:21},{...row,userId:f.b.id,completed:'true'}]){assert.throws(()=>f.p.grading.restoreRecorded(f.admin,f.id,{...input,records:[row,bad]}));assert.equal(f.p.state(f.a,f.id).grade.recorded,false);}
+ const path='/api/v1/learning/platform/activities/'+f.id+'/grade-restore';assert.equal((await f.request(f.a,path,'POST',input)).status,403);f.freeze(true);assert.equal((await f.request(f.admin,path,'POST',input)).status,423);
+});

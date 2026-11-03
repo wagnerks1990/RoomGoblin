@@ -57,6 +57,7 @@ async function start(){
   // unsigned cookie must never authorize an activity or restore another learner.
   const elapsed=Date.now()-(flow.lastSignIn||0);if(elapsed<30000){setTimeout(reconnect,30000-elapsed);}else await signIn();return;
  }
+ if(config.kind==='discussion'){location.replace('/learn/?lms=1&activity='+encodeURIComponent(flow.activityId));return;}
  config.presenceOrigin=state.presenceOrigin||'';say('Connected, '+state.firstName+'.');$('classroom').hidden=!config.presenceOrigin||state.arcade?.leaderboardAnywhere===true;
  if(state.arcade?.leaderboardAnywhere===true)$('presence-status').textContent='Your arcade score and completion progress update the leaderboard automatically. No room-presence check is needed.';
  if(!channel){$('detail').textContent='Your browser separated the sign-in window. Return to the game and select Connect to RoomGoblin again; your signed-in session is ready.';return;}
