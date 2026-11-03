@@ -140,13 +140,13 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post('/learn/connect/start',rateLimit({windowMs:60000,limit:30,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
     if(freezeRequested())fail(423,'Backup in progress.');
     if(req.get('x-roomgoblin-learning')!=='1'||req.get('origin')!==`${req.protocol}://${req.get('host')}`)fail(403,'A same-origin connector request is required.');
-    const flow=connection.start(req.body?.activityId,req.body?.parent);
-    res.setHeader('Set-Cookie',`${FLOW_COOKIE}=${flow.id}; Path=/learn/lti; HttpOnly; SameSite=None; Secure; Max-Age=600`);
+    const flow=connection.start(req.body?.activityId,req.body?.parent,req.body?.embedded===true);
+    res.setHeader('Set-Cookie',`${FLOW_COOKIE}=${flow.id}; Path=/learn/lti; HttpOnly; SameSite=None; Secure${req.body?.embedded===true?'; Partitioned':''}; Max-Age=600`);
     res.setHeader('Cache-Control','no-store');res.json({ok:true,...flow});
   }));
   app.get('/learn/connect-info/:id',rateLimit({windowMs:60000,limit:60,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
-    const cfg=platform.config(req.params.id),a=learning.db.prepare('SELECT open FROM learning_activities WHERE id=?').get(req.params.id);if(!cfg||!a?.open)fail(404,'Assignment connector is not available.');
-    res.setHeader('Cache-Control','no-store');res.json({ok:true,launchUrl:cfg.launch_url,bridgeOrigins:store.getPreference('learning.bridgeOrigins',[])});
+    const cfg=platform.config(req.params.id),a=learning.db.prepare('SELECT open,template_id FROM learning_activities WHERE id=?').get(req.params.id);if(!cfg||!a?.open)fail(404,'Assignment connector is not available.');
+    res.setHeader('Cache-Control','no-store');res.json({ok:true,launchUrl:cfg.launch_url,kind:a.template_id==='scorm-connector-v1'?'scorm':'discussion',bridgeOrigins:store.getPreference('learning.bridgeOrigins',[])});
   }));
   app.get('/learn/presence/config',wrap((req,res)=>{
     if(isPublicRequest(req)||['forwarded','x-forwarded-for','x-forwarded-proto','cf-connecting-ip'].some(k=>req.headers[k]!==undefined)||!require('./learning-platform').classroomRequest(req,platform.settings()))fail(403,'Classroom network required.');
@@ -163,9 +163,9 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     if(!req.is('application/x-www-form-urlencoded'))fail(415,'Open this assignment from its Schoology External Tool link.');
     const result=lti.launch(req.params.id,req.body,req.get('origin'),`${req.protocol}://${req.get('host')}${req.originalUrl}`);
     if(result.teacher)return res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>RoomGoblin connected</title><h1>Schoology connection ready</h1><p>Students can now open this assignment without a RoomGoblin password. Use your existing teacher account to review the discussion.</p><a href="/learn/">Open teacher desk</a></html>');
-    const secure=req.secure?'; Secure':'';
+    const secure=req.secure?'; Secure':'',embedded=connection.embedded(flowCookie(req));
     connection.signed(result.user,req.params.id,store.sessionUser(result.session.token).sessionId,flowCookie(req));
-    res.setHeader('Set-Cookie',[`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=28800`,`${FLOW_COOKIE}=; Path=/learn/lti; HttpOnly; SameSite=None; Secure; Max-Age=0`]);
+    res.setHeader('Set-Cookie',[`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=${embedded?'None':'Lax'}${secure}${embedded?'; Partitioned':''}; Max-Age=28800`,`${FLOW_COOKIE}=; Path=/learn/lti; HttpOnly; SameSite=None; Secure${embedded?'; Partitioned':''}; Max-Age=0`]);
     const activity=learning.activity(result.user,req.params.id);
     res.redirect(303,activity.template_id==='scorm-connector-v1'?'/learn/connect/?authenticated=1':'/learn/?lms=1&activity='+encodeURIComponent(req.params.id));
   }));
@@ -176,7 +176,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       const supplied=req.get("origin");if(supplied){try{if(new URL(supplied).host.toLowerCase()!==String(req.get("host")).toLowerCase())throw Error();}catch{return res.status(403).json({ok:false,error:"Cross-site learning request blocked."});}}
     }next();
   });
-  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),activeClassId:teacher(req.learner)?schedule.visibleActiveClass(req.learner):null,case:CASE,cases:Object.values(CASES),aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{learnerKey:req.learner.id,alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),activeClassId:teacher(req.learner)?schedule.visibleActiveClass(req.learner):null,case:CASE,cases:Object.values(CASES),aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
   app.get(api+'/platform/settings',requireAdministrator,wrap((_req,res)=>res.json({ok:true,settings:platform.settings()})));
   app.put(api+'/platform/bridge-origins',requireAdministrator,wrap((req,res)=>{const values=req.body.origins;if(!Array.isArray(values)||values.length>10)fail(400,'Use up to ten exact LMS origins.');store.setPreference('learning.bridgeOrigins',values.map(origin));res.json({ok:true});}));
   app.post(api+'/platform/publish',requireAdministrator,wrap(async(_req,res)=>{if(!platformOptions?.publish)fail(503,'Public publishing is unavailable.');res.json(await platformOptions.publish());}));
@@ -191,6 +191,10 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.put(api+'/platform/tools',requireAdministrator,wrap((req,res)=>{const tools=normalizeTools(req.body);store.setPreference(TOOLS_PREFERENCE,tools);learning.event(req.learner,null,'platform.tools',null);res.json({ok:true,tools});}));
   app.use(api+'/platform/activities/:id',(req,res,next)=>{try{if(isPublicRequest(req))connection.authorize(req.learner,req.params.id,req.get('x-roomgoblin-connection'));next();}catch(e){res.status(e.status||403).json({ok:false,error:e.message});}});
   app.get(api+'/platform/activities/:id/state',wrap((req,res)=>res.json({ok:true,...platform.state(req.learner,req.params.id)})));
+  app.get(api+'/platform/activities/:id/grade-policy',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,policy:platform.grading.config(req.params.id)});}));
+  app.put(api+'/platform/activities/:id/grade-policy',requireTeacher,wrap((req,res)=>res.json({ok:true,policy:platform.grading.configure(req.learner,req.params.id,req.body)})));
+  app.put(api+'/platform/activities/:id/grade-override',requireTeacher,wrap((req,res)=>res.json(platform.grading.override(req.learner,req.params.id,req.body))));
+  app.post(api+'/platform/activities/:id/grade-restore',requireTeacher,wrap((req,res)=>res.json(platform.grading.restoreRecorded(req.learner,req.params.id,req.body))));
   app.put(api+'/platform/activities/:id/config',requireTeacher,wrap((req,res)=>res.json({ok:true,config:platform.configure(req.learner,req.params.id,req.body)})));
   app.post(api+'/platform/activities/:id/events',wrap(async(req,res)=>res.json({ok:true,...await platform.record(req.learner,req.params.id,req.body,req)})));
   app.post(api+'/platform/activities/:id/presence',wrap((req,res)=>res.json({ok:true,...presence.challenge(req.learner,req.params.id,req.body.eventId)})));
@@ -202,7 +206,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post(api+'/platform/classes/:id/resume',requireTeacher,wrap((req,res)=>res.json({ok:true,...schedule.resume(req.learner,req.params.id)})));
   app.put(api+'/platform/classes/:id/attendance',requireTeacher,wrap((req,res)=>res.json({ok:true,...platform.admit(req.learner,req.params.id,req.body.userIds)})));
   app.post(api+'/platform/classes/:id/recipes',requireTeacher,wrap((req,res)=>res.json({ok:true,id:platform.saveRecipe(req.learner,req.params.id,req.body)})));
-  app.post(api+'/logout',wrap((req,res)=>{store.deleteSession(learningCookie(req));res.setHeader('Set-Cookie',`${LEARNING_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);res.json({ok:true});}));
+  app.post(api+'/logout',wrap((req,res)=>{store.deleteSession(learningCookie(req));res.setHeader('Set-Cookie',[`${LEARNING_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,`${LEARNING_COOKIE}=; Path=/; HttpOnly; SameSite=None; Secure; Partitioned; Max-Age=0`]);res.json({ok:true});}));
   app.get(api+'/activities/:id/lti',requireAdministrator,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,settings:lti.settings(req.params.id)});}));
   app.put(api+'/activities/:id/lti',requireAdministrator,wrap((req,res)=>res.json({ok:true,settings:lti.configure(req.learner,req.params.id,req.body)})));
   app.get(api+'/activities/:id/lti-package',requireTeacher,wrap((req,res)=>{const activity=learning.activity(req.learner,req.params.id,true);res.setHeader('Content-Disposition','attachment; filename="Subnet-Case-Files-Schoology-LTI.imscc"');res.type('application/zip').send(require('./learning-lti').createLtiPackage(activity,lti.config(activity.id).appOrigin||`${req.protocol}://${req.get('host')}`));}));
@@ -316,7 +320,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+"/activities/:id/reviews",requireTeacher,wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id,true);res.json({ok:true,reviews:learning.db.prepare("SELECT r.*,m.alias FROM learning_reviews r JOIN learning_members m ON m.user_id=r.user_id AND m.class_id=? WHERE r.activity_id=? AND r.rowid IN (SELECT MAX(rowid) FROM learning_reviews WHERE activity_id=? GROUP BY user_id) ORDER BY r.created_at LIMIT 200").all(a.class_id,a.id,a.id).map(r=>({...learning.projectReview(r),alias:r.alias,snapshot:parse(r.snapshot_json)}))});}));
   app.post(api+"/activities/:id/reviews/:reviewId/approve",requireTeacher,wrap(async(req,res)=>{const grade=learning.approve(req.learner,req.params.id,req.params.reviewId,req.body),row=learning.db.prepare("SELECT user_id FROM learning_reviews WHERE id=?").get(req.params.reviewId),user=store.listUsers().find(u=>u.id===row.user_id);await lti.sync(user,req.params.id);res.json({ok:true,grade});}));
   app.get(api+"/activities/:id/receipt",wrap((req,res)=>{const r=learning.currentReview(req.learner,req.params.id);if(!r||r.status!=="approved")fail(409,"A published grade is not available yet.");res.json({ok:true,activityId:req.params.id,reviewId:r.id,score:r.final.total,possible:20,raw:r.final.total*5,approvedAt:r.final.approvedAt});}));
-  if(publicDir){app.get(api+"/activities/:id/scorm",requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);const AdmZip=require("adm-zip"),fs=require("node:fs"),path=require("node:path"),zip=new AdmZip();const base=origin(`${req.protocol}://${req.get("host")}`);for(const file of ["index.html","bridge.js","imsmanifest.xml"])zip.addFile(file,fs.readFileSync(path.join(publicDir,"scorm",file)));zip.addFile("config.js",Buffer.from(`window.LEARNING_CONFIG=${JSON.stringify({origin:base,activityId:req.params.id,title:learning.activity(req.learner,req.params.id).title})};`));res.setHeader("Content-Disposition",'attachment; filename="Subnet-Case-Files-SCORM12.zip"');res.type("application/zip").send(zip.toBuffer());}));}
+  if(publicDir){app.get(api+"/activities/:id/scorm",requireTeacher,wrap((req,res)=>{const activity=learning.activity(req.learner,req.params.id,true);const AdmZip=require("adm-zip"),fs=require("node:fs"),path=require("node:path"),zip=new AdmZip(),signedLaunch=!!platform.signedLaunchConfigured(activity.id);const base=origin(platform.settings().publicOrigin||lti.config(activity.id).appOrigin||`${req.protocol}://${req.get("host")}`);for(const file of ["index.html","bridge.js","imsmanifest.xml"])zip.addFile(file,fs.readFileSync(path.join(publicDir,"scorm",file)));zip.addFile("config.js",Buffer.from(`window.LEARNING_CONFIG=${JSON.stringify({origin:base,activityId:activity.id,title:activity.title,signedLaunch,embedded:signedLaunch&&platform.settings().embeddedEnabled})};`));res.setHeader("Content-Disposition",'attachment; filename="Written-Discussion-SCORM12.zip"');res.type("application/zip").send(zip.toBuffer());}));}
   retryQueue=new(require('./learning-retry-queue').LearningRetryQueue)(learning.db,{
     intervalMs:reviewOptions.intervalMs??5000,
     available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()&&!!store.getPreference('learning.ai',{}).enabled,

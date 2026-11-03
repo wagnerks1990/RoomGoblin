@@ -18,10 +18,25 @@ function signature(method,url,entries,secret,tokenSecret=''){
  return crypto.createHmac('sha1',encode(secret)+'&'+encode(tokenSecret)).update([method.toUpperCase(),u.origin+u.pathname,parameters].map(encode).join('&')).digest('base64');
 }
 function constantEqual(a,b){const x=Buffer.from(String(a)),y=Buffer.from(String(b));return x.length===y.length&&crypto.timingSafeEqual(x,y);}
-function cookie(req){try{const entry=String(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(COOKIE+'='));return entry?decodeURIComponent(entry.slice(COOKIE.length+1)):'';}catch{return '';}}
+function cookie(req,store){
+ try{
+  const tokens=[...new Set(String(req.headers.cookie||'').split(';').map(x=>x.trim()).filter(x=>x.startsWith(COOKIE+'=')).map(x=>decodeURIComponent(x.slice(COOKIE.length+1))))];
+  // A partitioned embedded cookie can coexist with an older unpartitioned one.
+  // Select only the session bound by this SCO's fresh signed launch, never the
+  // first header entry or an account from another open assignment.
+  const flow=req.headers['x-roomgoblin-connection'];
+  if(flow&&store){
+   if(!/^[a-f0-9-]{36}$/.test(flow))return '';
+   const row=store.db.prepare('SELECT session_id FROM learning_bridge_flows WHERE id=? AND expires_at>?').get(flow,Date.now());
+   return row?tokens.find(token=>store.sessionUser(token)?.sessionId===row.session_id)||'':'';
+  }
+  return tokens.length===1?tokens[0]:'';
+ }catch{return '';}
+}
 function learningSessionUser(req,store){
- if(!/^\/(?:learn(?:\/|$)|api\/v1\/learning(?:\/|$))/.test(req.path)||!cookie(req))return undefined;
- const user=store.sessionUser(cookie(req));
+ if(!/^\/(?:learn(?:\/|$)|api\/v1\/learning(?:\/|$))/.test(req.path))return undefined;
+ const token=cookie(req,store);if(!token)return req.headers['x-roomgoblin-connection']?null:undefined;
+ const user=store.sessionUser(token);
  return user?.profileId==='learning-student'&&user.role==='viewer'?{...user,learningSso:true}:null;
 }
 function nameFrom(p){const name=p.lis_person_name_full||[p.lis_person_name_given,p.lis_person_name_family].filter(Boolean).join(' ')||'Student';return value(name,255).trim().replace(/\s+/gu,' ').replace(/[<>\u202a-\u202e\u2066-\u2069]/g,'')||'Student';}

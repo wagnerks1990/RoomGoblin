@@ -26,13 +26,18 @@ function allowedPath(method,raw){
   if(method==='POST')return pathname==='/learn/connect/start'||launches.test(pathname)||learnerWrites.test(pathname);
   return method==='PUT'&&learnerEdits.test(pathname);
 }
-function publicHeaders(res){
+function publicHeaders(res,store){
   res.setHeader('Cache-Control','no-store');
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('Referrer-Policy','no-referrer');
   // A checked postMessage channel connects a Schoology SCO and its companion.
   res.setHeader('Cross-Origin-Opener-Policy','unsafe-none');
-  res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; frame-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'");
+  const configured=store?.getPreference('learning.bridgeOrigins',[]);
+  const origins=store?.getPreference(SETTINGS,{})?.embeddedEnabled===true&&Array.isArray(configured)?configured.filter(value=>{try{const u=new URL(value);return u.protocol==='https:'&&u.origin===value&&!u.username&&!u.password&&!value.includes('*');}catch{return false;}}):[];
+  // Only previously approved LMS origins can contain this student surface.
+  // The administrator/control-plane headers and route boundary are unchanged.
+  if(origins.length)res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy',"default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors "+(origins.length?origins.join(' '):"'none'")+"; frame-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'");
 }
 function isPublicRequest(req){return publicRequests.has(req);}
 async function probeStudentGateway(origin){
@@ -61,7 +66,7 @@ function createStudentGateway({app,store,allowLoopbackHttp=false,isStopping=()=>
     const writeHead=res.writeHead;res.writeHead=function(status,message,headers){
       const supplied=typeof message==='object'?message:headers;
       if(supplied){if(Array.isArray(supplied)){for(let i=0;i<supplied.length;i+=2)this.setHeader(supplied[i],supplied[i+1]);}else for(const [key,value] of Object.entries(supplied))this.setHeader(key,value);}
-      publicHeaders(this);return typeof message==='string'?writeHead.call(this,status,message):writeHead.call(this,status);
+      publicHeaders(this,store);return typeof message==='string'?writeHead.call(this,status,message):writeHead.call(this,status);
     };
     app(req,res);
   });

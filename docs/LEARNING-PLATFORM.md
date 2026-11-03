@@ -1,5 +1,8 @@
 # SCORM activity platform
 
+See [automatic grade recovery](LEARNING-GRADE-RECOVERY.md) for signed written
+SCORM launchers, private date-based awards, exceptions and LMS review limits.
+
 Available in the alpha.86 release candidate. Publication and physical/LMS
 acceptance are separate deployment steps; local validation is not live acceptance.
 
@@ -18,7 +21,8 @@ teacher overrides, and signed launches retain their compatibility identifiers.
 - An authenticated signed Schoology launch supplies student identity. SCORM
   names and IDs never authorize enrollment or access. The student listener
   accepts only restricted learning sessions, never a native administrator cookie.
-- The SCO and a first-party companion window exchange messages using checked
+- The SCO and a first-party connector (companion by default, or an explicitly
+  enabled embedded frame) exchange messages using checked
   window identity, exact origins, a random channel nonce and an activity ID.
   No API key, password or shared LTI secret belongs in an upload package.
 - Manual classroom sessions require explicit teacher attendance and current

@@ -7,13 +7,13 @@
  let origin;try{origin=new URL(cfg.origin);if(origin.protocol!=='https:'||origin.origin!==cfg.origin||!uuid(cfg.activityId))return;}catch{return;}
  const key='roomgoblin.scorm.'+cfg.activityId;
  let popup=null,nonce='',learner=null,sequence=0,queue=[],unbound=[],sending=null,button=null,status=null,lastScore=null,lastProgress='',lastResume='',closed=false;
- let campaign=null;const arcadeWaiters=new Map();
+ let campaign=null,grade=null,connectionFrame=null,lastContact=0,reconnectAfter=45000;const arcadeWaiters=new Map(),gradeWaiters=new Map();
  const announce=(type,detail)=>{if(typeof root.CustomEvent==='function')root.dispatchEvent(new root.CustomEvent(type,{detail}));};
  const say=text=>{if(status)status.textContent=text;announce('roomgoblin:status',{message:text});};
  const persist=()=>{if(learner)try{root.sessionStorage.setItem(key,JSON.stringify({learner,sequence,queue:queue.slice(-100)}));}catch{say('Keep this assignment open to finish sending progress.');}};
  function emit(kind,data){
   const item={id:root.crypto.randomUUID(),kind,occurredAt:new Date().toISOString(),...data};
-  if(!learner){unbound.push(item);unbound=unbound.slice(-100);return;}
+  if(!learner){unbound.push(item);unbound=unbound.slice(-100);return item.id;}
   queue.push({...item,learnerKey:learner,sequence:++sequence});queue=queue.slice(-100);persist();pump();return item.id;
  }
  function pump(){
@@ -24,29 +24,36 @@
  }
  function connect(){
   const bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);nonce=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
-  learner=null;sending=null;closed=false;
+  learner=null;sending=null;closed=false;lastContact=Date.now();
   const hash=new URLSearchParams({activity:cfg.activityId,nonce,parent:root.location.origin});
-  popup=root.open(origin.origin+'/learn/connect/#'+hash,'roomgoblin-'+cfg.activityId+'-'+nonce,'width=560,height=680');
+  if(cfg.connectionMode==='embedded'){
+   hash.set('embedded','1');if(!connectionFrame){connectionFrame=document.createElement('iframe');connectionFrame.title='Schoology connection';connectionFrame.style.cssText='width:100%;height:150px;border:0;background:white;color:black';document.body.append(connectionFrame);}
+   connectionFrame.hidden=false;connectionFrame.src=origin.origin+'/learn/connect/#'+hash;popup=connectionFrame.contentWindow;
+  }else popup=root.open(origin.origin+'/learn/connect/#'+hash,'roomgoblin-'+cfg.activityId,'width=560,height=680');
   say(popup?'Connecting through Schoology…':'Allow the connection window, then select Connect again.');
   return !!popup;
  }
  root.addEventListener('message',e=>{
   const m=e.data;if(!popup||e.source!==popup||e.origin!==origin.origin||!m||m.nonce!==nonce||m.activityId!==cfg.activityId)return;
+  lastContact=Date.now();
   if(m.type==='roomgoblin.connector.ready'){
+   reconnectAfter=45000;
    if(!uuid(m.state?.learnerKey)||!Number.isInteger(m.state.sequence))return;
    learner=m.state.learnerKey;sequence=m.state.sequence;let stored=null;try{stored=JSON.parse(root.sessionStorage.getItem(key));}catch{}
    // Never carry another learner's queued events across a signed identity change.
    queue=stored?.learner===learner&&Array.isArray(stored.queue)?stored.queue.filter(x=>uuid(x.id)&&x.learnerKey===learner&&Number.isInteger(x.sequence)).slice(-100):[];
    sequence=Math.max(sequence,...queue.map(x=>x.sequence),0);
    for(const item of unbound)queue.push({...item,learnerKey:learner,sequence:++sequence});unbound=[];persist();
-   campaign=m.state.arcade||null;
-   say('Connected, '+String(m.state.firstName||'Student')+'.');if(button)button.textContent='Reconnect';sending=null;pump();announce('roomgoblin:ready',{arcade:campaign,firstName:m.state.firstName||'Student'});
+   campaign=m.state.arcade||null;grade=m.state.grade||null;if(connectionFrame)connectionFrame.hidden=true;
+   say('Connected, '+String(m.state.firstName||'Student')+'.');if(button)button.textContent='Reconnect';sending=null;pump();announce('roomgoblin:ready',{arcade:campaign,firstName:m.state.firstName||'Student',progress:m.state.progress||{},grade});
   }else if(m.type==='roomgoblin.connector.saved'&&sending?.id===m.id){
+   if(queue.find(item=>item.id===m.id)?.kind==='assessment'){grade=m.state?.grade||null;const waiter=gradeWaiters.get(m.id);if(waiter){clearTimeout(waiter.timer);gradeWaiters.delete(m.id);grade?waiter.resolve(grade):waiter.reject(Error('Automatic grading needs teacher setup.'));}if(grade)announce('roomgoblin:grade',{grade});}
    campaign=m.state?.arcade||campaign;const waiter=arcadeWaiters.get(m.id);if(waiter){clearTimeout(waiter.timer);arcadeWaiters.delete(m.id);waiter.resolve(campaign);}
    queue=queue.filter(item=>item.id!==m.id);sending=null;persist();say(queue.length?'Sending saved progress…':'Progress saved to RoomGoblin.');pump();
   }else if(m.type==='roomgoblin.connector.error'&&sending?.id===m.id){
    say(String(m.message||'RoomGoblin is unavailable. Schoology saving continues.'));
    const waiter=arcadeWaiters.get(m.id);if(waiter){clearTimeout(waiter.timer);arcadeWaiters.delete(m.id);waiter.reject(Error(String(m.message||'Campaign save was not confirmed.')));}
+   const gradeWaiter=gradeWaiters.get(m.id);if(gradeWaiter){clearTimeout(gradeWaiter.timer);gradeWaiters.delete(m.id);gradeWaiter.reject(Error(String(m.message||'Grade save is pending.')));}
    if(m.conflict&&queue.find(item=>item.id===m.id)?.kind==='arcade'){queue=queue.filter(item=>item.id!==m.id);sending=null;campaign=null;persist();announce('roomgoblin:conflict',{});}
    if(m.reconnect){learner=null;sending=null;}
   }
@@ -87,12 +94,18 @@
   button=document.createElement('button');button.type='button';button.textContent='Connect to RoomGoblin';button.style.cssText='border:0;border-radius:6px;padding:8px;background:#a3f5d0;color:#10232f;cursor:pointer;font-weight:bold';button.onclick=connect;
   status=document.createElement('p');status.style.margin='6px 0 0';status.setAttribute('role','status');status.textContent='Schoology saves your grade. Connect for classroom progress.';panel.append(button,status);document.body.prepend(panel);if(!installed)install();
  }
- root.RoomGoblinSCORM={connect,connected:()=>!!learner&&!!popup&&!popup.closed,connecting:()=>!learner&&!!popup&&!popup.closed,campaign:()=>campaign,arcade(data){
+ root.RoomGoblinSCORM={connect,connected:()=>!!learner&&!!popup&&!popup.closed,connecting:()=>!learner&&!!popup&&!popup.closed,campaign:()=>campaign,grade:()=>grade,assessment(data){
+  if(!Number.isFinite(data.raw)||data.raw<0||data.raw>100||!Number.isInteger(data.current)||!Number.isInteger(data.total)||data.total<1||data.current<0||data.current>data.total)return Promise.reject(Error('Invalid assessment result.'));
+  const existing=queue.concat(unbound).find(item=>item.kind==='assessment'&&item.raw===data.raw&&item.current===data.current&&item.total===data.total);
+  if(existing)return Promise.reject(Error('Grade save is already queued and will retry automatically.'));
+  const id=emit('assessment',data);return new Promise((resolve,reject)=>{const timer=root.setTimeout(()=>{gradeWaiters.delete(id);reject(Error('Grade save is queued; reconnecting automatically.'));},20000);gradeWaiters.set(id,{resolve,reject,timer});});
+ },arcade(data){
   if(!learner||!campaign)return Promise.reject(Error('Connect through Schoology before saving a continuing campaign.'));
   if(arcadeWaiters.size||queue.some(item=>item.kind==='arcade'))return Promise.reject(Error('A campaign save is still pending. Reconnect and wait for confirmation before playing in another assignment.'));
   const id=emit('arcade',{...data,revision:campaign.revision});
   return new Promise((resolve,reject)=>{const timer=root.setTimeout(()=>{arcadeWaiters.delete(id);reject(Error('Campaign save is still pending. Reconnect before playing in another assignment.'));},20000);arcadeWaiters.set(id,{resolve,reject,timer});});
  },progress(current,total){if(!Number.isInteger(current)||!Number.isInteger(total)||total<1||current<0||current>total||total>10000)return;const signature=current+'/'+total;if(signature===lastProgress)return;lastProgress=signature;emit('progress',{current,total});}};
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
- root.setInterval(pump,3000);root.addEventListener('pagehide',()=>{persist();closed=true;});
+ function maintain(){if(cfg.connectionMode==='embedded'&&!closed&&popup&&(!learner||queue.length)&&Date.now()-lastContact>=reconnectAfter){reconnectAfter=Math.min(120000,reconnectAfter*2);connect();}pump();}
+ root.setInterval(maintain,3000);root.addEventListener('online',()=>{if(cfg.connectionMode==='embedded'&&!closed&&popup&&(!learner||queue.length)){connect();}else pump();});root.addEventListener('pagehide',()=>{persist();closed=true;});
 })(window);

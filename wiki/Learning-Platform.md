@@ -1,5 +1,11 @@
 # SCORM classroom progress
 
+Written discussions can use a graded SCORM launcher with the same signed LMS
+identity and approved AI receipts. Automatic commits retry; review-only launches
+remain read-only. Optional server date policies preserve prior higher assessment
+awards and support teacher exceptions. See the repository's
+`docs/LEARNING-GRADE-RECOVERY.md` for setup, rollback and live acceptance limits.
+
 The [dedicated arcade display](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/LEARNING-ARCADE-DISPLAY.md)
 adds original gorilla artwork, ranked points, level badges, progress and recent-save
 status. Teachers can explicitly reserve a receiver for the scheduled class's board,
@@ -62,3 +68,14 @@ class today** lasts through restarts and clears on the next school day. Existing
 closed assignments remain closed; reviewed recipes and signed connections are
 one-time prerequisites. Timetable failures do not block ordinary progress saves.
 Disable automatic mode before feature rollback and retain the additive tables.
+
+
+## Single-window SCORM and grade recovery
+
+The administrator can explicitly permit signed student connections inside exact
+approved LMS origins. Updated SCORM packages then authenticate and reconnect
+inside the assignment, including written discussions and automatic approved-grade
+return. Existing companion packages remain compatible. Review launches stay
+read-only and a native commit does not itself prove gradebook publication.
+See [the canonical recovery guide](../docs/LEARNING-GRADE-RECOVERY.md) for setup,
+partitioned-cookie boundaries, dated assessment credit, tests and rollback.

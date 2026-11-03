@@ -19,6 +19,16 @@ test('embedded connection UI preserves SDK lifecycle and native grade saving',()
  f.api.LMSSetValue('cmi.core.score.raw','80');assert.equal(f.api.LMSCommit(''),'true');assert.equal(f.messages[0].message.event.raw,80);
 });
 
+test('assessment grading waits for the authenticated server award and preserves native LMS behavior',async()=>{
+ const f=setup(),sdk=f.root.RoomGoblinSCORM;f.ready();const saved=sdk.assessment({raw:80,current:4,total:5}),event=f.messages.at(-1).message.event;
+ assert.equal(event.kind,'assessment');assert.equal(event.raw,80);
+ f.send({type:'roomgoblin.connector.saved',id:event.id,state:{grade:{enabled:true,bestPercent:40}}},{origin:'https://wrong.example.test'});assert.equal(sdk.grade(),null);
+ f.send({type:'roomgoblin.connector.saved',id:event.id,state:{grade:{enabled:true,bestPercent:40}}});assert.equal((await saved).bestPercent,40);assert.equal(f.native.length,0);
+});
+test('assessment queued before connection is bound to signed learner and not duplicated',async()=>{
+ const f=setup(),sdk=f.root.RoomGoblinSCORM;const saved=sdk.assessment({raw:0,current:0,total:5});await assert.rejects(sdk.assessment({raw:0,current:0,total:5}),/already queued/);assert.equal(f.messages.length,0);f.ready();const event=f.messages.at(-1).message.event;assert.equal(event.learnerKey,f.learner);f.send({type:'roomgoblin.connector.saved',id:event.id,state:{grade:{enabled:true,bestPercent:0}}});assert.equal((await saved).bestPercent,0);
+});
+
 test('SCORM telemetry preserves native return values and this, waits for success, and makes no extra LMS calls',()=>{
  const f=setup();f.ready();assert.equal(f.api.LMSSetValue('cmi.core.score.raw','40'),'true');f.api.LMSSetValue('cmi.core.score.min','0');f.api.LMSSetValue('cmi.core.score.max','50');assert.equal(f.api.LMSCommit(''),'true');
  assert.equal(f.messages.length,1);assert.equal(f.messages[0].message.event.raw,80);assert.equal(f.messages[0].origin,'https://learn.example.test');assert.ok(f.native.every(x=>x[1]));
