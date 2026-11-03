@@ -8,9 +8,16 @@ do not establish audible playback on a physical receiver.
 Open **Background music**. **Now playing** shows the selected output, current
 title, transport, listening volume, quick favorite stations, queue and sleep
 timer. Select a physical player or a Music Assistant group. Selecting an output
-does not start it; choose a source or press Play. Starting managed music on a
-different output stops the previously owned session first. RoomGoblin manages
+does not start it. Play/Resume continues the selected output's existing queue
+without replacing it with the scheduled favorite or changing its volume. Choose
+a favorite or search result explicitly to start a different source. Starting
+managed music on a different output stops the previously owned session first. RoomGoblin manages
 one output/group at a time; use Music Assistant groups for synchronized rooms.
+
+While a listening command is pending, live transport inputs and queue buttons
+remain disabled through the status refresh. Volume, position, repeat, sleep and
+output selection cannot silently accept a change that will be discarded. Saved
+schedule and connection drafts remain independently editable.
 
 Playback status belongs to the current managed session. Late pause/stop results,
 player probes or recovery errors from an earlier session cannot replace the new
@@ -216,7 +223,9 @@ the recovery monitor: unavailable players, command confirmation/backoff, raw
 timestamp anchors across multiple stall windows, frozen-position reports,
 progress stalls, track completion, manual Stop, priority races, sleep and safe
 queue projections. Browser fixtures cover search/play identity, sleep, responsive
-layout, unsaved drafts and stable focused controls. Run the active-worktree Linux
+layout, unsaved drafts and stable focused controls. Transport regressions verify
+that Play resumes the selected queue, favorites stay explicit, and pending or
+failed commands cannot leave live inputs accepting discarded changes. Run the active-worktree Linux
 runner and the Chromium/Firefox browser gate before release.
 
 Physical acceptance must include Apollo Cast and managed browser display audio,

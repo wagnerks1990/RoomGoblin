@@ -59,6 +59,9 @@
 - Add course-bound signed Schoology External Tool launches, automatic restricted student sessions and names, credential-free cartridge downloads, and approved-grade return with isolated cookies, replay protection, bounded outcome transport, and correction ordering. Live LMS acceptance remains required.
 
 ### Other pending changes
+- Make Music Studio Play/Resume continue the selected queue without replacing it
+  with the scheduled favorite or resetting its volume. Disable live listening
+  inputs while a command and its status refresh are pending.
 - Preserve uploaded media after an interrupted operational restore when its
   safety archive excludes media; retain older archives' media rollback behavior.
 
