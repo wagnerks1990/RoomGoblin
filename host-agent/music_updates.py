@@ -78,6 +78,7 @@ class MusicUpdates:
         self.journal = self.root / "job.json"
         self.guard = threading.Lock()
         self.thread = None
+        self.blocked_lock = None
         self.catalog = None
         self.catalog_at = 0
         self.checking = False
@@ -289,6 +290,7 @@ class MusicUpdates:
         raise RuntimeError("Music Assistant did not become healthy at the selected image and version")
 
     def execute(self, job, handle):
+        blocked = False
         try:
             if release()["version"] != job["version"]:
                 raise RuntimeError("Selected stable release changed")
@@ -333,9 +335,13 @@ class MusicUpdates:
             try:
                 self.rollback(job)
             except Exception:
+                blocked = True
                 self.save(job, "rollback-required", error="Automatic rollback could not finish. The cold snapshot is retained; administrator recovery is required.")
         finally:
-            handle.close()
+            if blocked:
+                self.blocked_lock = handle
+            else:
+                handle.close()
 
     def rollback(self, job):
         stage = job["stage"]
@@ -377,5 +383,8 @@ class MusicUpdates:
         handle = self.lock()
         try:
             self.rollback(job)
-        finally:
+        except BaseException:
+            self.blocked_lock = handle
+            raise
+        else:
             handle.close()

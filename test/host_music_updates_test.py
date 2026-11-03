@@ -109,6 +109,17 @@ class HostMusicUpdatesTests(unittest.TestCase):
         self.assertEqual(self.manager.read()["stage"], "failed")
         self.assertFalse(any(command[:2] == ["docker", "stop"] for command in self.commands))
 
+    def test_failed_rollback_retains_the_native_appliance_lock(self):
+        handle = self.manager.lock()
+        self.addCleanup(handle.close)
+        self.manager.healthy = lambda *_: (_ for _ in ()).throw(RuntimeError("health failure"))
+        with patch.object(module, "release", return_value={"version": "2.10.9"}):
+            self.manager.execute(self.job(), handle)
+        self.assertEqual(self.manager.read()["stage"], "rollback-required")
+        self.assertFalse(handle.closed)
+        with self.assertRaisesRegex(RuntimeError, "Another appliance"):
+            self.manager.lock()
+
     def test_foreign_mount_image_network_and_lan_gate_fail_closed(self):
         for key, value in [("Image", "other/image:2.10.8"), ("Entrypoint", ["other"]), ("Env", [])]:
             original = self.item["Config"][key]
