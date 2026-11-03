@@ -7,11 +7,12 @@ const vm=require("node:vm");
 const root=path.resolve(__dirname,"..");
 const read=file=>fs.readFileSync(path.join(root,file),"utf8");
 
-test("Morning Announcements controller loads the saved URL without mutating configuration",()=>{
+test("Morning Announcements controller loads saved-stream availability without mutating configuration or copying a secret placeholder",()=>{
   const source=read("public/controller/display.html");
-  assert.match(source,/if\(!raw\)throw new Error\('Configure a Morning Announcements stream URL/);
+  assert.match(source,/throw new Error\('Configure a Morning Announcements stream URL/);
   const loader=source.slice(source.indexOf("async function loadMorningAnnouncementSettings"),source.indexOf("setTimeout(loadMorningAnnouncementSettings"));
-  assert.match(loader,/x\.config\?\.streamUrl\|\|x\.playbackUrl/);
+  assert.match(loader,/x\.config\?\.streamUrlConfigured===true/);
+  assert.doesNotMatch(loader,/\.value=String\(x\.config\?\.streamUrl/);
   assert.match(loader,/paintMorningAnnouncementVolume\(v\)/);
   assert.doesNotMatch(loader,/method:'PUT'/);
   assert.doesNotMatch(source,/loadMorningAnnouncementVolume/);

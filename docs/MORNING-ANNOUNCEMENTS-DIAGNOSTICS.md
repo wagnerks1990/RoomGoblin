@@ -8,6 +8,17 @@ This document is the operational contract for diagnosing stream start, playback,
 
 ## Stability contract
 
+Administrators can see and edit the actual saved stream URL in **Planning →
+Automation → Morning Announcements Live Watch**. The playback page uses that
+saved stream when its optional URL override is blank. Enter a complete approved
+HTTP(S) address only to override it for that start. Loading the page does not
+save settings, and a missing stream cannot take display or music priority.
+
+Saved URLs may contain stream credentials. Only the administrator settings
+response exposes the address; ordinary status, previews and logs remain redacted.
+Playback starts and receiver progress are separate from physical audio/video
+acceptance, which still requires an observed live broadcast on the receiver.
+
 An already-playing announcement must not be cleared and recreated merely because another health probe succeeds. Reasserting the same `display.web` takeover every 30 seconds caused visible feed interruptions because the receiver was explicitly blanked and the HLS player was rebuilt.
 
 The intended lifecycle is:

@@ -4,6 +4,17 @@ Morning Announcements is a priority live-stream workflow. A confirmed live trans
 
 ## Intended monitoring behavior
 
+Administrators can see and edit the actual saved stream URL in **Planning →
+Automation → Morning Announcements Live Watch**. The playback page uses that
+saved stream when its optional URL override is blank. Enter a complete approved
+HTTP(S) address only to override it for that start. Loading the page does not
+save settings, and a missing stream cannot take display or music priority.
+
+Saved URLs may contain stream credentials. Only the administrator settings
+response exposes the address; ordinary status, previews and logs remain redacted.
+Playback starts and receiver progress are separate from physical audio/video
+acceptance, which still requires an observed live broadcast on the receiver.
+
 ```text
 OFFLINE -> confirmed LIVE -> START once
 PLAYING + successful probe -> no player change
