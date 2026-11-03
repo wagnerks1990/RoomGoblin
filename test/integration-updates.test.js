@@ -13,6 +13,14 @@ test("Apollo catalog requires pinned project, stable channel and matching native
   for(const change of [d=>d.online=false,d=>d.enabled=false,d=>d.info.project_name="other",d=>d.info.model="other",d=>d.states["select:0:2"].state="Beta",d=>d.info.project_version="different",d=>d.entities.push({...d.entities[0]})]){const d=device();change(d);assert.equal(apolloCandidate(d),null)}
   assert.equal(newer("26.10.1.1","26.9.30.1"),true);assert.equal(newer("26.9.1.1","26.10.1.1"),false);
 });
+test("prototype property names cannot become firmware journal keys",async()=>{
+  for(const id of ["__proto__","constructor","prototype"]){
+    const h=fixture();h.devices[0].id=id;
+    await assert.rejects(h.manager.install("apollo",id,"26.10.30.1"),error=>error.status===400);
+    assert.equal(h.values.has(STATE),false);assert.equal(h.calls.length,0);
+  }
+  assert.equal(Object.prototype.stage,undefined);
+});
 test("automatic policies default off and only accept enrolled Apollo devices",async()=>{
   const h=fixture();assert.deepEqual(h.manager.policy(),{musicAssistant:false,recoverMusicAssistant:false,apollo:[]});
   assert.throws(()=>h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:["other"]}));

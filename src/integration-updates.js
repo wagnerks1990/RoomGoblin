@@ -63,6 +63,7 @@ class IntegrationUpdates{
     if(!this.canRun()||this.closed)throw fail("Maintenance is paused for appliance recovery.",423);
   }
   async install(kind,id,version,{automatic=false}={}){
+    if(id==="__proto__"||id==="constructor"||id==="prototype")throw fail("Invalid device identity.",400);
     if(this.active())throw fail("Integration maintenance is already active.");
     this.busy=true;
     try{
