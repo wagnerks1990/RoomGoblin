@@ -20,7 +20,7 @@ function classChoices(){
  if($('follow-current').checked&&!editing&&items.some(c=>c.id===me.activeClassId))$('class').value=me.activeClassId;
 }
 function showActivities(data){
- const activities=data.activities.filter(a=>a.template_id==='scorm-connector-v1'),signature=JSON.stringify([classId,activities]);
+ const activities=data.activities,signature=JSON.stringify([classId,activities]);
  if(signature===activitySignature)return;activitySignature=signature;
  $('activities').replaceChildren(...activities.map(a=>{const p=el('div',a.title+' · '+(a.open?'open':'closed')+' ');p.className='connection';p.append(btn('Configure',()=>configure(a)));return p;}));
 }
@@ -50,6 +50,16 @@ async function refresh(){
  $('summary').textContent=r.summary.attempts+' saved activity records · '+r.summary.completed+' completed · '+(r.summary.meanReportedPercent??'—')+'% mean reported score.';
 }
 async function loadClass(){const selected=$('class').value;if(selected!==classId){attendanceDirty=false;activityId=null;$('activity-config').replaceChildren();}classId=selected;if(!classId)return;const data=await api('/classes/'+selected);if(selected!==classId)return;roster=data.members||[];showActivities(data);await refresh();}
+async function gradePolicy(a,box){
+ const {policy}=await api('/platform/activities/'+a.id+'/grade-policy');const form=el('form'),heading=el('h4','Automatic dated grading'),enabled=el('input');enabled.type='checkbox';enabled.checked=policy?.enabled===true;
+ const check=el('label','Use server time: full credit on the class date, half the next day, zero starting day two. Keep higher earlier grades.');check.className='check';check.prepend(enabled);
+ const dateLabel=el('label','Class date from assignment title'),date=el('input');date.type='date';const match=/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?=\s|$)/.exec(a.title);date.value=policy?.assignmentDate||(match?match[3]+'-'+match[1].padStart(2,'0')+'-'+match[2].padStart(2,'0'):'');dateLabel.append(date);
+ const zoneLabel=el('label','School time zone'),zone=el('input');zone.value=policy?.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone;zoneLabel.append(zone);
+ form.append(heading,check,dateLabel,zoneLabel,el('button','Save automatic grading policy'));form.onsubmit=task(async()=>{await api('/platform/activities/'+a.id+'/grade-policy','PUT',{enabled:enabled.checked,assignmentDate:date.value,timeZone:zone.value});notice('Grading policy saved. Previously earned higher grades remain protected.');});box.append(form);
+ const override=el('form'),student=el('select'),studentLabel=el('label','Student override');choose(student,roster.filter(r=>r.role==='student').map(r=>({id:r.user_id,label:r.alias})));studentLabel.append(student);
+ const until=el('input');until.type='date';const untilLabel=el('label','Full-credit date for this student');untilLabel.append(until);const reason=el('input'),reasonLabel=el('label','Override reason');reason.maxLength=500;reasonLabel.append(reason);
+ override.append(el('h4','Teacher exception'),studentLabel,untilLabel,reasonLabel,el('button','Save student exception'),btn('Remove selected exception',async()=>{await api('/platform/activities/'+a.id+'/grade-override','PUT',{userId:student.value,creditDate:null});notice('Exception removed. Earned grades remain unchanged.');}));override.onsubmit=task(async()=>{await api('/platform/activities/'+a.id+'/grade-override','PUT',{userId:student.value,creditDate:until.value,reason:reason.value});notice('Student exception saved.');});box.append(override);
+}
 async function configure(a){
  $('follow-current').checked=false;const selected=classId;activityId=a.id;const {config}=await api('/platform/activities/'+a.id+'/config');if(selected!==classId)return;const box=$('activity-config');box.replaceChildren(el('h3',a.title));
  const form=el('form'),label=el('label','Schoology ungraded External Tool material URL'),input=el('input');input.type='url';input.value=config?.launch_url||'';label.append(input);const pointsLabel=el('label','Possible points'),points=el('input');points.type='number';points.min=1;points.max=1000;points.value=config?.points||50;pointsLabel.append(points);const save=el('button','Save assignment connection');form.append(label,pointsLabel,save);form.onsubmit=task(async()=>{await api('/platform/activities/'+a.id+'/config','PUT',{points:Number(points.value),launchUrl:input.value});notice('Assignment connection saved.');});box.append(form);
@@ -57,6 +67,7 @@ async function configure(a){
  if(me.user.admin){const {settings:lti}=await api('/activities/'+a.id+'/lti');const detail=el('details');detail.append(el('summary','Signed Schoology provider settings'));const f=el('form'),fields={};for(const [key,title,value] of [['appOrigin','Student HTTPS origin',lti.appOrigin||settings.publicOrigin||''],['platformOrigin','Schoology origin',lti.platformOrigin||''],['consumerKey','Consumer key',lti.consumerKey||''],['sharedSecret','Shared secret · leave blank to keep existing','']]){const l=el('label',title),i=el('input');i.type=key==='sharedSecret'?'password':'text';i.value=value;fields[key]=i;l.append(i);f.append(l);}const enabled=el('input');enabled.type='checkbox';enabled.checked=lti.enabled===true;const l=el('label','Enable signed launches');l.className='check';l.prepend(enabled);f.append(l,el('button','Save provider settings'));f.onsubmit=task(async()=>{const body=Object.fromEntries(Object.entries(fields).map(([k,i])=>[k,i.value]));body.enabled=enabled.checked;body.outcomeOrigins=[];await api('/activities/'+a.id+'/lti','PUT',body);fields.sharedSecret.value='';notice('Signed launch settings saved.');});detail.append(f);box.append(detail);}
  box.append(el('p','Package configuration (contains no credential):'),el('pre','window.ROOMGOBLIN_SCORM = '+JSON.stringify({origin:settings.publicOrigin||'https://learn.example.org',activityId:a.id},null,2)+';'),link('Download the SCORM connector script','/learn/sdk/roomgoblin-scorm.js'));
  await loadCampaigns();
+ await gradePolicy(a,box);
  box.append(btn(a.open?'Close assignment connection':'Open assignment connection',async()=>{await api('/activities/'+a.id,'PUT',{open:!a.open,dueAt:a.due_at,closeAt:a.close_at});await loadClass();await configure({...a,open:!a.open});}));
 }
 function effectFields(){const kind=$('effect-kind').value;choose($('target'),kind==='lights'?options.lights:options.displays);choose($('asset'),options.assets.filter(a=>a.kind===kind));$('asset-label').hidden=!['image','video','sound'].includes(kind);$('color-label').hidden=kind!=='lights';$('volume-label').hidden=!['sound','video'].includes(kind);}

@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Support signed written-discussion SCORM launchers and automatic grade receipt
+  recovery. Add opt-in server calendar-day assessment credit with retained best
+  grades and teacher exceptions; preserve LMS review and identity boundaries.
+
 - Allow teachers to accept continuing arcade leaderboard updates from signed
   Schoology learners anywhere, without the extra presence window. Keep existing
   campaigns opt-in and preserve presence checks for attendance and room effects.

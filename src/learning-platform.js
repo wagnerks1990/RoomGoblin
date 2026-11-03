@@ -2,6 +2,7 @@
 const crypto=require('node:crypto'),net=require('node:net');
 const {LearningArcade,normalizeArcade}=require('./learning-arcade');
 const {SETTINGS}=require('./learning-public');
+const {LearningGradePolicy}=require('./learning-grade-policy');
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
 const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
 const plain=v=>v&&typeof v==='object'&&!Array.isArray(v);
@@ -43,13 +44,14 @@ function normalizeSettings(input={}){
 }
 function normalizeEvent(input,points){
  if(!plain(input)||!uuid(input.id)||!Number.isInteger(input.sequence)||input.sequence<1||input.sequence>2147483647)fail(400,'A unique event ID and increasing sequence are required.');
- if(!['progress','score','completed','checkpoint','arcade'].includes(input.kind))fail(400,'Unsupported assignment event.');
+ if(!['progress','score','completed','checkpoint','arcade','assessment'].includes(input.kind))fail(400,'Unsupported assignment event.');
  const occurred=Date.parse(input.occurredAt);if(typeof input.occurredAt!=='string'||input.occurredAt.length>40||!Number.isFinite(occurred)||!/(Z|[+-]\d\d:\d\d)$/.test(input.occurredAt))fail(400,'An event timestamp with timezone is required.');
  const data={};
  if(input.kind==='arcade')Object.assign(data,normalizeArcade(input));
  if(input.kind==='progress'){if(!Number.isInteger(input.current)||!Number.isInteger(input.total)||input.total<1||input.total>10000||input.current<0||input.current>input.total)fail(400,'Invalid assignment progress.');data.current=input.current;data.total=input.total;}
  if(['score','completed'].includes(input.kind)){if(!finite(input.raw,0,100))fail(400,'SCORM scores must be percentages from 0 to 100.');data.raw=input.raw;data.earned=Math.round(input.raw*points)/100;data.possible=points;}
  if(input.kind==='checkpoint'){if(typeof input.state!=='string'||Buffer.byteLength(input.state)>4096)fail(400,'Resume data must be a string of at most 4096 bytes.');data.state=input.state;}
+ if(input.kind==='assessment'){if(!finite(input.raw,0,100)||!Number.isInteger(input.current)||!Number.isInteger(input.total)||input.total<1||input.total>10000||input.current<0||input.current>input.total)fail(400,'Invalid assessment progress.');Object.assign(data,{raw:input.raw,current:input.current,total:input.total});}
  return {id:input.id,sequence:input.sequence,kind:input.kind,occurredAt:new Date(occurred).toISOString(),data};
 }
 class LearningPlatform{
@@ -71,6 +73,7 @@ class LearningPlatform{
   this.db.prepare('UPDATE learning_live_sessions SET ended_at=? WHERE ended_at IS NULL').run(this.clock());
   this.db.prepare("UPDATE learning_effect_runs SET status='interrupted',finished_at=? WHERE status='dispatching'").run(this.clock());
   this.arcade=new LearningArcade(this);
+  this.grading=new LearningGradePolicy(this);
  }
  settings(){try{return normalizeSettings(this.store.getPreference(SETTINGS,{}));}catch{return normalizeSettings();}}
  saveSettings(user,input){const cfg=normalizeSettings(input);this.store.setPreference(SETTINGS,cfg);this.learning.event(user,null,'platform.settings',null);return cfg;}
@@ -79,7 +82,8 @@ class LearningPlatform{
   this.db.prepare('INSERT INTO learning_first_names VALUES(?,?,?) ON CONFLICT(class_id,user_id) DO UPDATE SET first_name=excluded.first_name').run(classId,userId,first);
  }
  configure(user,id,input){
-  const a=this.learning.activity(user,id,true);if(a.template_id!=='scorm-connector-v1')fail(400,'Create a SCORM connector activity first.');
+  const a=this.learning.activity(user,id,true);if(a.template_id!=='scorm-connector-v1'&&!Object.hasOwn(require('./learning-grader').CASES,a.template_id))fail(400,'Create a supported assignment first.');
+  if(a.template_id!=='scorm-connector-v1'&&input.points!==20)fail(400,'Written discussions use 20 possible points.');
   if(!Number.isInteger(input.points)||input.points<1||input.points>1000)fail(400,'Set 1–1000 possible points.');
   if(this.config(id)?.points!==input.points&&this.db.prepare('SELECT 1 FROM learning_signals WHERE activity_id=? LIMIT 1').get(id))fail(409,'Create a new connector to change possible points after progress has been saved.');
   let launch='';if(input.launchUrl){try{const u=new URL(input.launchUrl),lti=this.learning.lti.config(id),allowed=[lti.platformOrigin,...this.store.getPreference('learning.bridgeOrigins',[])];if(u.protocol!=='https:'||u.username||u.password||u.hash||!allowed.includes(u.origin)||input.launchUrl.length>1500)throw Error();launch=u.href;}catch{fail(400,'Use this activity’s Schoology External Tool URL.');}}
@@ -91,7 +95,12 @@ class LearningPlatform{
   const a=this.learning.activity(user,id),cfg=this.config(id);if(!cfg)fail(404,'Assignment connector not configured.');
   const row=this.db.prepare('SELECT * FROM learning_progress WHERE activity_id=? AND user_id=?').get(id,user.id);
   const firstName=this.db.prepare('SELECT first_name FROM learning_first_names WHERE class_id=? AND user_id=?').get(a.class_id,user.id)?.first_name||'Student';
-  return {activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress:row?objectJson(row.data_json):{},open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
+  const progress=row?objectJson(row.data_json):{};
+  // Historical completed events retain the best result even when an older SCO
+  // subsequently reports a lower replay. This stays private to the learner.
+  const best=this.db.prepare("SELECT MAX(CAST(json_extract(data_json,'$.raw') AS REAL)) best FROM learning_signals WHERE activity_id=? AND user_id=? AND kind='completed'").get(id,user.id).best;
+  if(best!==null)progress.bestRaw=best;
+  return {activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress,grade:this.grading.state(user,id),open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
  }
  currentSession(classId){const session=this.db.prepare('SELECT * FROM learning_live_sessions WHERE class_id=? AND ended_at IS NULL AND expires_at>? ORDER BY started_at DESC LIMIT 1').get(classId,this.clock())||null;return session&&this.schedule&&!this.schedule.valid(session)?null:session;}
  start(user,classId,minutes){
@@ -136,6 +145,7 @@ class LearningPlatform{
   const classroom=latest&&fresh&&(classroomRequest(req,this.settings())||presenceValid())&&this.eligible(user,a,session);
   const progress={...prior.progress,...event.data,...(event.kind==='completed'?{completed:true}:{})};let signalId;
   this.store.tx(()=>{
+   if(event.kind==='assessment')this.grading.award(user,a,event.data);
    if(event.kind==='arcade'){
     if(!latest)fail(409,'A newer assignment checkpoint is already saved. Reconnect before continuing.');
     this.arcade.save(user,a,event.data,classroom);

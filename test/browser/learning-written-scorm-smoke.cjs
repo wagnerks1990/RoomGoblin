@@ -1,0 +1,32 @@
+'use strict';
+// Synthetic local HTTPS test: actual signed launch, written AI receipt and SCO commit.
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs');
+const {fixture}=require('../helpers/learning-fixture'),{signature}=require('../../src/learning-lti'),{createStudentGateway}=require('../../src/learning-public');
+const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+(async()=>{
+ const f=await fixture(),browser=await chromium.launch({channel:'msedge',headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP learn.example.test 127.0.0.1, MAP lms.example.test 127.0.0.1']});let gateway,tls,files={};
+ try{
+  f.app.set('trust proxy',1);const p=f.learning.platform,id=f.activityId,secret='synthetic-written-test-secret-000000000000000';
+  gateway=createStudentGateway({app:f.app,store:f.store});await new Promise(r=>gateway.listen(0,'127.0.0.1',r));tls=await require('../helpers/learning-browser-https.cjs').createBrowserHttps(gateway,renderLms);const {origin,lms}=tls,url=origin+'/learn/lti/'+id;
+  f.store.setPreference('learning.bridgeOrigins',[lms]);p.saveSettings(f.admin,{publicEnabled:true,publicOrigin:origin});p.configure(f.admin,id,{points:20,launchUrl:lms+'/launch'});
+  f.learning.lti.configure(f.admin,id,{appOrigin:origin,platformOrigin:lms,consumerKey:'synthetic-written',sharedSecret:secret,enabled:true,outcomeOrigins:[]});
+  function params(role){const v={lti_message_type:'basic-lti-launch-request',lti_version:'LTI-1p0',oauth_consumer_key:'synthetic-written',oauth_signature_method:'HMAC-SHA1',oauth_timestamp:String(Math.floor(Date.now()/1000)),oauth_nonce:crypto.randomUUID(),context_id:'synthetic-course',resource_link_id:'synthetic-written',roles:role,user_id:role==='Instructor'?'teacher':'learner',lis_person_name_given:'Alex',lis_person_name_full:'Alex Example'};v.oauth_signature=signature('POST',url,Object.entries(v),secret);return v;}
+  f.learning.lti.launch(id,params('Instructor'),lms,url);
+  const response=await f.request(f.admin,'/api/v1/learning/activities/'+id+'/scorm');assert.equal(response.status,200);const zip=new(require('adm-zip'))(response.body);for(const e of zip.getEntries())files['/'+e.entryName]=e.getData().toString('utf8');
+  assert(files['/config.js'].includes(origin));assert(files['/config.js'].includes('"signedLaunch":true'));assert(!response.body.includes(Buffer.from(secret)));
+  function renderLms(path){
+   if(path==='/launch')return {contentType:'text/html',body:`<form method="post" action="${url}">${Object.entries(params('Learner')).map(([n,v])=>`<input type="hidden" name="${n}" value="${escape(v)}">`).join('')}</form><script>document.forms[0].submit()</script>`};
+   if(path==='/')return {contentType:'text/html',body:`<script>window.values={};window.commits=0;window.failCommit=false;window.API={LMSInitialize:()=>true,LMSGetValue:k=>k==='cmi.core.lesson_mode'?'normal':'',LMSGetLastError:()=>0,LMSSetValue:(k,v)=>(values[k]=v,true),LMSCommit:()=>{if(failCommit)return false;commits++;return true},LMSFinish:()=>true};</script>`+files['/index.html']};
+   return {contentType:path.endsWith('.js')?'application/javascript':'text/html',body:files[path]||''};
+  }
+  const context=await browser.newContext({ignoreHTTPSErrors:true}),errors=[];context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));const page=await context.newPage();await page.goto(lms+'/');
+  const popup=page.waitForEvent('popup');await page.locator('#open').click();const discussion=await popup;await discussion.locator('#initial').waitFor({state:'visible'});assert.equal(await discussion.locator('#identity').innerText(),'Alex Example');assert.equal(await discussion.locator('#sync').isVisible(),false);
+  console.log('PASS written SCORM ZIP uses configured public origin and signed Schoology identity without a second password');
+  await page.evaluate(()=>{failCommit=true;});
+  await discussion.locator('#initial').fill('The claim is incorrect. Address .65 is in 192.168.20.64/26 with broadcast .127. Address .129 is in 192.168.20.128/26 with broadcast .191. The host sends remote traffic through a reachable local router. These calculations do not prove the router or return path works.');await discussion.locator('#publish').click();
+  await discussion.getByRole('heading',{name:'Grade published',exact:true}).waitFor();await page.getByText('Schoology save is not confirmed. Retrying automatically; keep this page open.',{exact:true}).waitFor({timeout:35000});assert.equal(await page.evaluate(()=>commits),0);
+  await page.evaluate(()=>{failCommit=false;});await page.getByText('Saved to the LMS: 17/20. Check the Schoology gradebook after exiting.',{exact:true}).waitFor({timeout:35000});await discussion.getByText('Schoology confirmed the SCORM save. Revised grades will sync automatically.',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>values['cmi.core.score.raw']),'85');console.log('PASS AI-approved written grade automatically reaches native SCORM and retries a rejected commit');
+  await discussion.reload();await discussion.getByRole('heading',{name:'Grade published',exact:true}).waitFor();assert.equal(await discussion.locator('#identity').innerText(),'Alex Example');assert.equal(await discussion.locator('#sync').isVisible(),false);assert.deepEqual(errors,[]);console.log('PASS signed discussion reload preserves the approved SCORM channel and saved writing');
+ }finally{await browser.close();if(tls)await tls.close();if(gateway)await new Promise(r=>gateway.close(r));await f.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

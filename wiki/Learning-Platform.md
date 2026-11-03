@@ -1,5 +1,11 @@
 # SCORM classroom progress
 
+Written discussions can use a graded SCORM launcher with the same signed LMS
+identity and approved AI receipts. Automatic commits retry; review-only launches
+remain read-only. Optional server date policies preserve prior higher assessment
+awards and support teacher exceptions. See the repository's
+`docs/LEARNING-GRADE-RECOVERY.md` for setup, rollback and live acceptance limits.
+
 SCORM games stay in Schoology and keep their original gradebook behavior.
 RoomGoblin can retain signed student progress through a separate restricted
 student connection, then show first-name boards and approved celebrations during

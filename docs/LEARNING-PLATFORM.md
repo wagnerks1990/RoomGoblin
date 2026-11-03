@@ -1,5 +1,8 @@
 # SCORM activity platform
 
+See [automatic grade recovery](LEARNING-GRADE-RECOVERY.md) for signed written
+SCORM launchers, private date-based awards, exceptions and LMS review limits.
+
 Available in the alpha.86 release candidate. Publication and physical/LMS
 acceptance are separate deployment steps; local validation is not live acceptance.
 
