@@ -22,7 +22,7 @@
   schedule.querySelector(".toolbar > .toolbar")?.remove();
   const controls=el("div",undefined,"musicTransport"),output=label(controls,"Listening output",el("select"));output.id="musicOutput";
   output.addEventListener("change",()=>{selectedOutput=output.value;MA_SELECTED_PLAYER=output.value;queue=null;renderNow();loadQueue()});
-  button(controls,"Previous",()=>queueCommand("previous"));const play=button(controls,"Play",()=>control(bg?.runtime?.paused?"resume":"play"),"primary");
+  button(controls,"Previous",()=>queueCommand("previous"));const play=button(controls,"Play",()=>control("resume"),"primary");
   button(controls,"Pause",()=>control("pause"));button(controls,"Stop",()=>control("stop"));button(controls,"Next",()=>queueCommand("next"));
   const volume=label(controls,"Listening volume",el("input"));volume.type="range";volume.min="0";volume.max="100";volume.step="1";volume.value="20";
   volume.addEventListener("change",()=>task(()=>maApi("players/cmd/volume_set",{player_id:output.value,volume_level:Number(volume.value)})));
@@ -62,15 +62,17 @@
   function permissions(){
     for(const input of connection.querySelectorAll("#maUrl,#maBrowserUrl,#maToken"))input.disabled=!userCan("admin");
     for(const b of page.querySelectorAll('[data-music-control="true"]'))b.disabled=busy||!userCan("classroom.control");
+    for(const input of [output,volume,sleep,repeat,seek])input.disabled=busy||!userCan("classroom.control");
     connection.querySelector('button[onclick*="saveMusicAssistantConfig"]').disabled=connectionSaving||!userCan("admin");
     schedule.querySelector('button[onclick*="saveBackgroundMusicSchedule"]').disabled=scheduleSaving||!userCan("classroom.control");
     reloadSchedule.disabled=busy||scheduleSaving||!userCan("classroom.control");
   }
-  async function task(fn){if(busy)return;busy=true;permissions();try{const result=await fn();message("Request accepted. Checking the player…");return result}catch(error){message(error.message,true)}finally{busy=false;permissions();loadMusicAssistant()}}
+  async function task(fn){if(busy)return;busy=true;permissions();try{const result=await fn();message("Request accepted. Checking the player…");return result}catch(error){message(error.message,true)}finally{await loadMusicAssistant();busy=false;permissions()}}
   async function control(action){
+    if(!output.value)throw Error("Choose a listening output first");
+    if(action==="play")action="resume";
     if(["pause","stop","resume"].includes(action)&&output.value!==bg?.runtime?.activePlayerId)return task(()=>maApi(`players/cmd/${action==="resume"?"play":action}`,{player_id:output.value}));
     if(action==="retry"&&output.value!==bg?.runtime?.activePlayerId)throw Error("Start Background Music on this output before recovering it");
-    if(action==="play"){const favorite=bg?.favorites?.find(f=>f.id===(bgmFavorite.value||bg?.schedule?.favoriteId));if(!favorite)throw Error("Choose a favorite or find music first");return playItem(favorite)}
     return task(()=>send("/api/v1/music-assistant/background/control",{action,playerId:output.value}));
   }
   async function playItem(item){if(!output.value)throw Error("Choose a listening output first");return task(()=>send("/api/v1/music-assistant/background/control",{action:"play",playerId:output.value,uri:item.uri,name:item.name,mediaType:item.mediaType||"unknown"}));}
@@ -82,7 +84,7 @@
       shuffle.textContent=queue?.shuffle?"Shuffle on":"Shuffle off";repeat.value=queue?.repeat||"off";seek.closest("label").hidden=!(queue?.current?.duration>0);if(document.activeElement!==seek){seek.max=String(queue?.current?.duration||1);seek.value=String(Math.max(0,queue?.elapsed||0))}
       for(const [index,item]of (data.items||[]).entries()){const row=el("li"),text=el("span",item.name);row.append(text);button(row,index===0?"Play current":"Play this",()=>queueCommand("play_index",{index:item.id||index+(queue?.currentIndex||0)}));queueRows.append(row)}
       if(!data.items?.length)queueRows.append(el("li","No queued items. Live stations may not have an upcoming track list."));
-    }catch(error){if(generation===queueGeneration&&pid===output.value)queueRows.replaceChildren(el("li",error.message))}
+    }catch(error){if(generation===queueGeneration&&pid===output.value)queueRows.replaceChildren(el("li",error.message))}finally{permissions()}
   }
   function cards(parent,items,{saved=false}={}){
     const key=JSON.stringify(items);if(parent.dataset.key===key)return;parent.dataset.key=key;parent.replaceChildren();for(const item of items){const card=el("article",undefined,"musicItem"),content=el("div");content.append(el("h3",item.name),el("p",item.detail||item.mediaType||"Music"));card.append(content);const actions=el("div",undefined,"toolbar");button(actions,"Play",()=>playItem(item),"primary");
