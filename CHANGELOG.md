@@ -10,6 +10,11 @@
   arcade/completion board that excludes academic grades. Refresh transient boards
   without briefly restoring the scheduled screen between updates.
 
+- Start Morning Announcements from the server's saved stream instead of treating
+  its redacted placeholder as a playback URL. Administrators can view and edit
+  the actual saved address in Live Watch; ordinary status and logs stay private.
+  Reject missing streams before changing display or music priority.
+
 - Keep queues resumed in Music Studio under announcement priority and sleep
   controls on the selected output. Preserve queue contents and volume; observe
   existing queues without automatically replacing them with a scheduled favorite.

@@ -8,11 +8,13 @@ class MorningWatchBrowserTests(unittest.TestCase):
  def setup_page(self,width=1440):
   held=[];control={'hold_get':False,'hold_put':False};config={'enabled':True,'streamUrl':'https://stream.example.test/play','startTime':'07:00','endTime':'08:30','volumePercent':100,'targets':['all'],'offlineConfirmations':2,'checkIntervalSeconds':15}
   def transport(route,target):
-   if target!='/api/v1/automations/morning-announcements':return False
+   if target not in ('/api/v1/automations/morning-announcements','/api/v1/automations/morning-announcements/settings'):return False
    if control['hold_'+route.request.method.lower()]:held.append(route)
    else:
     if route.request.method=='PUT':config.update(route.request.post_data_json)
-    route.fulfill(json={'ok':True,'config':config,'runtime':{}})
+    projected={**config,'streamUrlConfigured':bool(config['streamUrl'])}
+    if target!='/api/v1/automations/morning-announcements/settings':projected['streamUrl']='••••••••' if config['streamUrl'] else ''
+    route.fulfill(json={'ok':True,'config':projected,'runtime':{}})
    return True
   devices={'screen':{'id':'screen','name':'Classroom display','enabled':True}}
   page,errors=self.page('/controller/',width,transport=transport,devices=devices,overrides={'/api/v1/devices':{'devices':devices,'status':{},'groups':{}}})
@@ -24,6 +26,20 @@ class MorningWatchBrowserTests(unittest.TestCase):
   until=time.monotonic()+5
   while len(held)<count and time.monotonic()<until:page.wait_for_timeout(10)
   self.assertGreaterEqual(len(held),count)
+ def test_administrator_sees_and_saves_actual_stream_address(self):
+  p,e,h,c,cfg=self.setup_page();self.assertEqual(p.locator('#morningWatchUrl').input_value(),cfg['streamUrl'])
+  p.locator('#morningWatchUrl').fill('https://stream.example.test/changed?id=fixture');p.evaluate('saveMorningWatch()')
+  self.assertEqual(cfg['streamUrl'],'https://stream.example.test/changed?id=fixture');self.assertEqual(p.locator('#morningWatchUrl').input_value(),cfg['streamUrl']);p.evaluate('loadMorningWatch()');self.assertEqual(p.locator('#morningWatchUrl').input_value(),cfg['streamUrl']);self.assertFalse(e,e)
+ def test_redacted_response_preserves_saved_url_during_other_settings_changes(self):
+  p,e,h,c,cfg=self.setup_page();saved=cfg['streamUrl'];p.evaluate("()=>{AUTH_STATUS.user.role='teacher';AUTH_STATUS.user.capabilities=['classroom.read','automation.manage'];enforceCapabilityControls()}");p.evaluate('loadMorningWatch()')
+  self.assertEqual(p.locator('#morningWatchUrl').input_value(),'');self.assertIn('Saved stream',p.locator('#morningWatchUrl').get_attribute('placeholder'));p.locator('#morningWatchStart').fill('09:00');c['hold_put']=True;p.evaluate('()=>{window.__watchSave=saveMorningWatch()}');self.captured(p,h)
+  self.assertNotIn('streamUrl',h[0].request.post_data_json);h[0].fulfill(json={'ok':True,'config':{**cfg,'streamUrl':'••••••••','streamUrlConfigured':True}});p.evaluate('window.__watchSave');self.assertEqual(cfg['streamUrl'],saved);self.assertEqual(p.locator('#morningWatchUrl').input_value(),'');self.assertFalse(e,e)
+ def test_explicit_url_clear_is_saved(self):
+  p,e,h,c,cfg=self.setup_page();p.locator('#morningWatchUrl').fill('');p.evaluate('saveMorningWatch()');self.assertEqual(cfg['streamUrl'],'');self.assertEqual(p.locator('#morningWatchUrl').input_value(),'');self.assertEqual(p.locator('#morningWatchUrl').get_attribute('data-saved'),'false');self.assertFalse(e,e)
+ def test_late_admin_read_cannot_replace_a_new_url_draft(self):
+  p,e,h,c,cfg=self.setup_page();c['hold_get']=True;p.evaluate('()=>{window.__watchRead=loadMorningWatch()}');self.captured(p,h);p.locator('#morningWatchUrl').fill('https://stream.example.test/new-draft');h[0].fulfill(json={'ok':True,'config':cfg,'runtime':{}});p.evaluate('window.__watchRead');self.assertEqual(p.locator('#morningWatchUrl').input_value(),'https://stream.example.test/new-draft');self.assertFalse(e,e)
+ def test_late_admin_read_rechecks_administrator_access(self):
+  p,e,h,c,cfg=self.setup_page();c['hold_get']=True;p.evaluate('()=>{window.__watchRead=loadMorningWatch()}');self.captured(p,h);p.evaluate("()=>{morningWatchUrl.value='';AUTH_STATUS.user.role='viewer';AUTH_STATUS.user.capabilities=['classroom.read']}");h[0].fulfill(json={'ok':True,'config':cfg,'runtime':{}});p.evaluate('window.__watchRead');self.assertEqual(p.locator('#morningWatchUrl').input_value(),'');self.assertFalse(e,e)
  def test_old_load_preserves_new_draft(self):
   p,e,h,c,cfg=self.setup_page();c['hold_get']=True;p.evaluate('()=>{window.__watchRead=loadMorningWatch()}');self.captured(p,h)
   p.locator('#morningWatchStart').fill('09:15');h[0].fulfill(json={'ok':True,'config':cfg,'runtime':{}});p.evaluate('window.__watchRead')

@@ -2059,7 +2059,7 @@ async function loadAutomationScenes(alias){
     autoScene.innerHTML=j.scenes.map(x=>`<option>${esc(x)}</option>`).join('');
   }catch(e){autoEditorMsg.textContent=e.message}
 }
-let morningWatchDraftRevision=0,morningWatchDraftDirty=false,morningWatchVolumeRevision=0,morningWatchVolumeDirty=false;
+let morningWatchDraftRevision=0,morningWatchDraftDirty=false,morningWatchVolumeRevision=0,morningWatchVolumeDirty=false,morningWatchUrlEdited=false;
 let morningWatchReadGeneration=0,morningWatchWriteEpoch=0,morningWatchPendingWrites=0;
 let morningWatchSavePromise=null,morningWatchWriteTail=Promise.resolve(),morningWatchVolumeWorker=null,morningWatchCheckPromise=null;
 let morningWatchVolumeTimer=null,morningWatchPendingVolume=null;
@@ -2069,6 +2069,7 @@ function ensureMorningWatchDraftTracking(){
   panel.dataset.draftTracking='true';
   const edited=event=>{
     if(event.target.id==='morningWatchVolume'||!event.target.matches('input,select'))return;
+    if(event.target.id==='morningWatchUrl')morningWatchUrlEdited=true;
     morningWatchDraftRevision++;morningWatchDraftDirty=true;
     morningWatchDraftMsg.textContent='Unsaved changes';
   };
@@ -2076,7 +2077,12 @@ function ensureMorningWatchDraftTracking(){
 }
 function paintMorningWatchConfig(c,{settings=true,volume=true}={}){
   if(settings){
-    morningWatchEnabled.value=c.enabled===false?'0':'1';morningWatchUrl.value=c.streamUrl||'';morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';
+    morningWatchEnabled.value=c.enabled===false?'0':'1';
+    morningWatchUrl.value=c.streamUrl==='••••••••'?'':c.streamUrl||'';
+    morningWatchUrl.dataset.saved=String(c.streamUrlConfigured===true||!!c.streamUrl);
+    morningWatchUrl.placeholder=morningWatchUrl.dataset.saved==='true'?'Saved stream (administrator can view the address)':'https://stream.example.edu/play.html';
+    morningWatchUrlEdited=false;
+    morningWatchStart.value=c.startTime||'07:00';morningWatchEnd.value=c.endTime||'08:30';
     morningWatchOfflineConfirmations.value=String(c.offlineConfirmations??2);morningWatchCheckInterval.value=String(c.checkIntervalSeconds??15);
     const html=configuredDisplayTargets(false).map(([id,name])=>`<label class="pill"><input type="checkbox" data-morning-target="${esc(id)}" ${(c.targets||['all']).includes('all')||(c.targets||[]).includes(id)?'checked':''}> ${esc(name)}</label>`).join('');
     if(morningWatchTargets.dataset.renderedChoices!==html){morningWatchTargets.innerHTML=html;morningWatchTargets.dataset.renderedChoices=html}
@@ -2097,8 +2103,10 @@ async function loadMorningWatch(){
   ensureMorningWatchDraftTracking();
   if(morningWatchCheckPromise)return;
   const generation=++morningWatchReadGeneration,revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision,epoch=morningWatchWriteEpoch,pending=morningWatchPendingWrites>0;
+  const privateSettings=userCan('admin')&&userCan('*');
   try{
-    const x=await api('/api/v1/automations/morning-announcements');
+    const x=await api('/api/v1/automations/morning-announcements'+(privateSettings?'/settings':''));
+    if(privateSettings&&(!userCan('admin')||!userCan('*')))return;
     if(generation!==morningWatchReadGeneration||epoch!==morningWatchWriteEpoch||pending||morningWatchPendingWrites)return;
     paintMorningWatchConfig(x.config||{},{settings:!morningWatchDraftDirty&&revision===morningWatchDraftRevision,volume:!morningWatchVolumeDirty&&volumeRevision===morningWatchVolumeRevision});
     paintMorningWatchRuntime(x.runtime||{});
@@ -2143,6 +2151,7 @@ async function saveMorningWatch(){
   ensureMorningWatchDraftTracking();if(morningWatchSavePromise)return morningWatchSavePromise;if(!userCan('automation.manage'))return;
   const revision=morningWatchDraftRevision,volumeRevision=morningWatchVolumeRevision;
   const body={enabled:morningWatchEnabled.value==='1',streamUrl:morningWatchUrl.value.trim(),startTime:morningWatchStart.value,endTime:morningWatchEnd.value,volumePercent:Number(morningWatchVolume.value),targets:[...morningWatchTargets.querySelectorAll('[data-morning-target]:checked')].map(x=>x.dataset.morningTarget),offlineConfirmations:Number(morningWatchOfflineConfirmations.value||2),checkIntervalSeconds:Number(morningWatchCheckInterval.value||15)};
+  if(!morningWatchUrlEdited&&!body.streamUrl&&morningWatchUrl.dataset.saved==='true')delete body.streamUrl;
   if(morningWatchVolumeTimer){clearTimeout(morningWatchVolumeTimer);morningWatchVolumeTimer=null}
   morningWatchPendingVolume=null;
   morningWatchDraftMsg.textContent='Saving…';
@@ -2150,7 +2159,7 @@ async function saveMorningWatch(){
     try{
       const x=await writeMorningWatch(body),settings=revision===morningWatchDraftRevision,volume=volumeRevision===morningWatchVolumeRevision;
       if(settings)morningWatchDraftDirty=false;if(volume)morningWatchVolumeDirty=false;
-      if(x.config)paintMorningWatchConfig(x.config,{settings,volume});
+      if(x.config)paintMorningWatchConfig({...x.config,...(Object.hasOwn(body,'streamUrl')?{streamUrl:body.streamUrl}:{})},{settings,volume});
       morningWatchDraftMsg.textContent=settings?'Saved':'Saved earlier changes; newer edits are unsaved.';
       return x;
     }catch(e){morningWatchDraftMsg.textContent=`Save failed: ${e.message}`}

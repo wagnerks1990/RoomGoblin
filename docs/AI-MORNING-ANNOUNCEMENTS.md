@@ -28,6 +28,19 @@ shutdown drain and manual announcement ownership.
 
 ## Configuration persistence
 
+Manual playback sends selected targets and omits `url` to use the server-owned
+saved stream. Never copy the public configuration's redaction sentinel into a
+URL input or resolve it against the Hub origin. Explicit overrides require an
+absolute HTTP(S) URL and the existing server allowlist. Reject a missing saved
+stream before taking priority or clearing receivers.
+
+The actual URL is editable through the administrator-only `/settings` read
+under the Morning Announcements API, with `Cache-Control: no-store`. Ordinary
+configuration, status, audit and preview projections remain redacted. Live Watch
+must preserve newer drafts, keep the submitted URL after a redacted save reply,
+and omit an unchanged hidden URL on other settings saves. Never send masking
+characters as a new address; retain legacy sentinel handling for older clients.
+
 Save normalized configuration and its encrypted stream URL in one SQLite
 transaction before replacing the live configuration or restarting the watcher.
 The same rule applies to explicit URL deletion. A failed legacy-file scrub must

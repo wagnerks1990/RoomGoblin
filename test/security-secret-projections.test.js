@@ -9,6 +9,7 @@ const net=require("node:net");
 const {spawn}=require("node:child_process");
 const {DatabaseSync}=require("node:sqlite");
 const {WebSocket}=require("ws");
+const vm=require("node:vm");
 
 const root=path.resolve(__dirname,"..");
 let child,base,wsBase,temp,cookie,viewerCookie,logs="";
@@ -52,12 +53,39 @@ test("announcement bearer URL is encrypted, redacted from browser projections, a
   let result=await request("/api/v1/automations/morning-announcements",{method:"PUT",body:{enabled:true,streamUrl,startTime:"07:00",endTime:"08:30",targets:["all"]}});
   assert.equal(result.response.status,200,result.text);assert.equal(result.json.config.streamUrl,"••••••••");assert.equal(result.json.config.streamUrlConfigured,true);assert.doesNotMatch(result.text,new RegExp(`${token}|${subscriber}`));
 
+  const editor=await request("/api/v1/automations/morning-announcements/settings");
+  assert.equal(editor.response.status,200,editor.text);assert.equal(editor.json.config.streamUrl,streamUrl);assert.equal(editor.response.headers.get("cache-control"),"no-store");
+  for(const session of ["",viewerCookie]){
+    const denied=await request("/api/v1/automations/morning-announcements/settings",{session});
+    assert.equal(denied.response.status,403);assert.doesNotMatch(denied.text,new RegExp(`${token}|${subscriber}`));
+  }
+
   // Saving the redacted sentinel must preserve the encrypted URL.
   result=await request("/api/v1/automations/morning-announcements",{method:"PUT",body:{...result.json.config,volumePercent:67}});assert.equal(result.response.status,200,result.text);
   const display=await displayConnection(),controller=(await browserConnection("controller",cookie)).ws;const delivered=nextWebCommand(display),controllerEvent=nextControllerCommand(controller);
-  result=await request("/api/v1/automations/morning-announcements/start",{method:"POST",body:{targets:["secure-tv"]}});assert.equal(result.response.status,200,result.text);assert.doesNotMatch(result.text,new RegExp(`${token}|${subscriber}`));
-  const command=await delivered;assert.match(command.payload.url,new RegExp(token));assert.match(command.payload.url,new RegExp(subscriber));
-  const event=await controllerEvent;assert.doesNotMatch(JSON.stringify(event),new RegExp(`${token}|${subscriber}`));controller.close();display.close();
+  // Exercise the real controller against the real redacted API: the previous
+  // loader turned the secret placeholder into a relative Hub URL on Start.
+  const source=fs.readFileSync(path.join(root,"public/controller/display.html"),"utf8"),elements={},calls=[],summaries=[];
+  const ctx=vm.createContext({URL,location:{href:base+"/controller/display.html"},window:{},setTimeout(){},el:id=>elements[id]??=( {value:"",textContent:""} ),targetArg:()=>["secure-tv"],setResultSummary:(...args)=>summaries.push(args),api:async(url,options={})=>{
+    calls.push({url,method:options.method||"GET",body:options.body&&JSON.parse(options.body)});
+    result=await request(url,{method:options.method||"GET",body:options.body&&JSON.parse(options.body)});
+    if(!result.response.ok)throw Error(result.json.error||result.text);return result.json;
+  }});
+  vm.runInContext(source.slice(source.indexOf("const DEFAULT_ANNOUNCEMENTS_URL="),source.indexOf("window.stopMorningAnnouncements=")),ctx);
+  await ctx.loadMorningAnnouncementSettings();
+  await ctx.window.startMorningAnnouncements();
+  // Observe both socket promises even on a regression so teardown stays clean.
+  const [delivery,observed]=await Promise.allSettled([delivered,controllerEvent]);controller.close();display.close();
+  assert.equal(summaries.at(-1)?.[1],true,JSON.stringify(summaries));
+  assert.deepEqual(calls.map(call=>[call.method,call.url]),[["GET","/api/v1/automations/morning-announcements"],["POST","/api/v1/automations/morning-announcements/start"]]);
+  assert.deepEqual(calls[1].body,{targets:["secure-tv"]});
+  assert.equal(elements.announcementsUrl.value,"");assert.equal(elements.mediaUrl?.value||"","");
+  assert.doesNotMatch(JSON.stringify(elements),new RegExp(`${token}|${subscriber}|••••`));
+  assert.equal(result.response.status,200,result.text);assert.doesNotMatch(result.text,new RegExp(`${token}|${subscriber}`));
+  assert.equal(delivery.status,"fulfilled",String(delivery.reason));assert.equal(observed.status,"fulfilled",String(observed.reason));
+  const command=delivery.value;assert.match(command.payload.url,new RegExp(token));assert.match(command.payload.url,new RegExp(subscriber));
+  assert.deepEqual(command.target,["secure-tv"]);
+  const event=observed.value;assert.doesNotMatch(JSON.stringify(event),new RegExp(`${token}|${subscriber}`));
 
   const preview=await browserConnection("preview",viewerCookie);assert.doesNotMatch(JSON.stringify(preview.ack),new RegExp(`${token}|${subscriber}`));preview.ws.close();
 

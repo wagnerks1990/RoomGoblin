@@ -344,8 +344,9 @@ hr{border:0;border-top:1px solid #e4e8ec;margin:12px 0}
               </div>
               <span style="font-size:11px;border:1px solid rgba(42,168,102,.52);border-radius:999px;padding:5px 9px;color:#a9f0c7">AUDIO ON</span>
             </div>
-            <label style="margin-top:10px">Stream URL</label>
-            <input id="announcementsUrl" aria-label="Morning Announcements stream URL" type="url" value="">
+            <label style="margin-top:10px" for="announcementsUrl">Stream URL override (optional)</label>
+            <input id="announcementsUrl" aria-label="Morning Announcements stream URL" aria-describedby="announcementsStreamStatus" type="url" value="" placeholder="Use saved stream">
+            <div id="announcementsStreamStatus" class="muted" role="status">Loading saved stream settings…</div>
             <div class="toolbar" style="margin-top:10px;align-items:center">
               <label style="margin:0;min-width:160px">Announcement Volume</label>
               <input id="announcementsVolume" aria-label="Morning Announcements volume" type="range" min="0" max="100" value="100" style="flex:1;min-width:220px" oninput="announcementsVolumeValue.textContent=this.value+'%'" onchange="setMorningAnnouncementsVolume(this.value,true)">
@@ -833,10 +834,16 @@ setTimeout(paintControllerTimer,0);
 
 window.identifySelected=()=>cmd('display.identify',targetArg(),{durationMs:8000});
 const DEFAULT_ANNOUNCEMENTS_URL='';
+let savedAnnouncementsConfigured=false;
 function announcementsUrl(){
   const raw=(el('announcementsUrl')?.value||DEFAULT_ANNOUNCEMENTS_URL).trim();
-  if(!raw)throw new Error('Configure a Morning Announcements stream URL before starting playback.');
-  const u=new URL(raw,location.href);
+  if(!raw){
+    if(savedAnnouncementsConfigured)return null;
+    throw new Error('Configure a Morning Announcements stream URL before starting playback.');
+  }
+  let u;
+  try{u=new URL(raw);if(!['http:','https:'].includes(u.protocol))throw new Error()}
+  catch{throw new Error('Enter a complete http:// or https:// stream URL, or leave it blank to use the saved stream.')}
   u.searchParams.set('autoplay','true');
   u.searchParams.set('mute','false');
   if(!u.searchParams.get('playOrder'))u.searchParams.set('playOrder','webrtc,hls');
@@ -859,15 +866,16 @@ async function loadMorningAnnouncementSettings(){
     const x=await api('/api/v1/automations/morning-announcements');
     const v=Number.isFinite(Number(x.config?.volumePercent))?Number(x.config.volumePercent):100;
     paintMorningAnnouncementVolume(v);
-    if(el('announcementsUrl'))el('announcementsUrl').value=String(x.config?.streamUrl||x.playbackUrl||'');
-  }catch{}
+    savedAnnouncementsConfigured=x.config?.streamUrlConfigured===true;
+    el('announcementsStreamStatus').textContent=savedAnnouncementsConfigured?'Saved stream ready. Leave the override blank to use it. Edit the saved address in Planning → Automation → Morning Announcements Live Watch.':'No saved stream. Enter a stream URL here or configure Morning Announcements Live Watch.';
+  }catch{el('announcementsStreamStatus').textContent='Saved stream settings could not be loaded. Reload this page or enter a stream URL.'}
 }
 setTimeout(loadMorningAnnouncementSettings,0);
 window.startMorningAnnouncements=async()=>{
   try{
     const url=announcementsUrl(),target=targetArg();
-    const j=await api('/api/v1/automations/morning-announcements/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets:target,url})});
-    el('mediaUrl').value=url;
+    const j=await api('/api/v1/automations/morning-announcements/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targets:target,...(url?{url}:{})})});
+    if(url)el('mediaUrl').value=url;
     setResultSummary('✓ Morning Announcements priority takeover started • automations locked • Background Music paused',true,j);
   }catch(e){setResultSummary('✕ Morning Announcements failed: '+e.message,false,{error:e.message})}
 };

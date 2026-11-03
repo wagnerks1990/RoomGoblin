@@ -979,6 +979,7 @@ async function assertMorningAnnouncements({mode="automatic",targetsOverride=null
   const targets=explicitTargets?(Array.isArray(targetsOverride)?automationDisplayTargets(targetsOverride):[]):announcementTargets();
   if(!targets.length){if(explicitTargets)throw Error("No enabled display targets selected for Morning Announcements");return}
   const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
+  if(!url)throw Error("Configure a Morning Announcements stream URL before starting playback.");
   const clearId=commandId(),contentId=commandId();
   const previous={active:morningAnnouncementsRuntime.active,mode:morningAnnouncementsRuntime.mode,targets:morningAnnouncementsRuntime.targets,lastAssertAt:morningAnnouncementsRuntime.lastAssertAt,lastLiveAt:morningAnnouncementsRuntime.lastLiveAt};
   const previousContent=new Map((previous.targets||[]).map(id=>[id,persistentState.displays[id]?.audioContentId]));
@@ -5784,6 +5785,12 @@ app.post("/api/v1/pluto/schedules",requireControl,(req,res)=>{
 // v0.10 unified classroom automations
 app.get("/api/v1/automations/morning-announcements",requireClassroomRead,(_req,res)=>{
   res.json({ok:true,config:publicMorningAnnouncementsConfig(),runtime:publicProjection(morningAnnouncementsRuntime)});
+});
+// Only the administrator's settings editor receives the saved address. Ordinary
+// status, command, preview and audit projections must keep bearer URLs private.
+app.get("/api/v1/automations/morning-announcements/settings",requireAdmin,(_req,res)=>{
+  res.set("Cache-Control","no-store");
+  res.json({ok:true,config:{...morningAnnouncements,streamUrlConfigured:Boolean(morningAnnouncements.streamUrl)},runtime:publicProjection(morningAnnouncementsRuntime)});
 });
 app.put("/api/v1/automations/morning-announcements",requireCapability("automation.manage"),async(req,res)=>{
   try{
