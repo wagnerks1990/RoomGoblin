@@ -48,3 +48,10 @@ No release or production configuration is implied by this source change. Rollbac
 close new OS activities before restoring prior application code, retain all
 activity/post/review tables, and use the native exact-commit updater with its
 backup. Do not reset or downgrade the database.
+
+Validation on November 3: seven synthetic samples matched all four rubric criteria
+against the configured local model after correcting a vocabulary false positive.
+See [calibration result](learning-os-calibration-result.json). Reproduce with
+`node tools/calibrate-learning.cjs --case it1-u03-c01-os-selection-v1`; use
+`--check-fixtures` for offline fixture validation. These examples are not a
+guarantee for arbitrary student writing.

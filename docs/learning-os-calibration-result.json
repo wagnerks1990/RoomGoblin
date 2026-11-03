@@ -1,0 +1,117 @@
+{
+  "date": "2026-11-03",
+  "templateId": "it1-u03-c01-os-selection-v1",
+  "model": "qwen3.5:9b",
+  "provider": "ollama",
+  "evidenceSourceSha256": "480e4f2c973bc36a255348f4ad1fd004053a12569acc93e1ba14cc32150aa58b",
+  "passed": 7,
+  "failed": 0,
+  "tests": [
+    {
+      "id": "supported-pro",
+      "expected": [
+        8,
+        4,
+        3,
+        5
+      ],
+      "actual": [
+        8,
+        4,
+        3,
+        5
+      ]
+    },
+    {
+      "id": "supported-education",
+      "expected": [
+        8,
+        4,
+        3,
+        5
+      ],
+      "actual": [
+        8,
+        4,
+        3,
+        5
+      ]
+    },
+    {
+      "id": "incorrect-certainty",
+      "expected": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "instruction-injection",
+      "expected": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "actual": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "missing-reply",
+      "expected": [
+        8,
+        4,
+        3,
+        0
+      ],
+      "actual": [
+        8,
+        4,
+        3,
+        0
+      ]
+    },
+    {
+      "id": "agreement-only",
+      "expected": [
+        8,
+        4,
+        3,
+        0
+      ],
+      "actual": [
+        8,
+        4,
+        3,
+        0
+      ]
+    },
+    {
+      "id": "incomplete-improvement",
+      "expected": [
+        8,
+        4,
+        3,
+        2
+      ],
+      "actual": [
+        8,
+        4,
+        3,
+        2
+      ]
+    }
+  ],
+  "limitations": "Seven synthetic samples only; no student records, gradebook writes, live Schoology acceptance or presence validation. Corrected a vocabulary false positive before this run. Invalid model evidence remains subject to teacher review."
+}
