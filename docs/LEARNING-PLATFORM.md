@@ -196,7 +196,48 @@ normal operational backup. Current aggregate summaries are available to teachers
 Ollama suggestions are optional and requested individually, not continuous GPU
 work. Keep writing auto-grading disabled until separate rubric calibration passes.
 
-## Validation
+## Continuing arcade campaigns
+
+The teacher progress page has **Continuing arcade campaigns**. Create one campaign,
+select its learning classes and short period labels, and choose a verified display
+receiver. Configure each existing SCORM connection above, then choose **Link selected
+assignment** in the campaign. Campaign membership is derived from these teacher-owned
+bindings and the signed learner identity; a package's period picker cannot enroll a
+student or select another student's checkpoint. Multiple timetable entries, including
+Bison meetings, can map to the same learning class using the existing schedule settings.
+
+The SDK's `arcade(data)` saves the game's checkpoint, arcade score, level, board and
+question completion. `campaign()` and `roomgoblin:ready` expose only that learner's
+latest campaign. The server uses a campaign revision to reject stale concurrent tabs;
+the client must reconnect before playing further. Acknowledgements are idempotent.
+Checkpoints are capped at 16 KB and checked against the supported game's memory.
+These are game-reported motivational scores, not tournament anti-cheat evidence.
+The current adapter supports the pinned Donkey Kong engine checkpoint format;
+game assets and ROMs are not shipped in RoomGoblin.
+
+Private campaign state survives changing assignments, class meetings and restarts.
+The public snapshot changes only on fresh, classroom-attested game events. Offsite
+progress remains private until a later qualifying checkpoint. TV projections contain
+signed first name, teacher period label, arcade score, level/board and question
+completion; they exclude academic scores, answers, identities and checkpoint data.
+Replaying an assessment can reduce its current completion count; official grades
+still follow the original SCORM implementation.
+
+An enabled campaign displays during an active session in any selected class, combining
+previous classroom snapshots from all its classes. Eight rows rotate every 15 seconds.
+Only one enabled campaign can own a receiver. Refreshes expire after eight seconds
+without a new update and restore the scheduled display; they do not change persistent
+display state or preempt announcements/active media. Disable the board to stop new
+dispatches. No campaign automatically resets daily. Start a new campaign for a new
+unit when desired; existing saved data is retained.
+
+Use a normal database backup before deployment. The schema adds campaign, binding,
+private-player and public-snapshot tables. Roll back code using the prior exact image
+pair, retaining the database and additive tables; never downgrade/reset the database.
+After deployment verify signed launch, cross-assignment resume, each period/Bison
+schedule mapping, a real target display, and restoration when its session ends.
+
+## Validation commands
 
 Run `npm run check`, the `test/learning*.test.js` suite, and
 `node test/browser/learning-platform-smoke.cjs`. Run the browser regressions

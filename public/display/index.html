@@ -135,13 +135,13 @@ function applyTimer(p={}){const incomingInstance=p.timerInstanceId||null,current
 let transientLearning=null;
 function endTransientLearning(restore=true){if(!transientLearning)return;const old=transientLearning;transientLearning=null;clearTimeout(old.timer);if(restore)applyState(old.previousState);}
 function receiveDisplayCommand(message){
-  endTransientLearning(true);
   const effect=message.transient;
   if(effect){
     const remaining=Number(effect.expiresAt)-Date.now();
     if(!Number.isFinite(remaining)||remaining<=0||remaining>8500||!effect.previousState)return;
+    endTransientLearning(false);
     transientLearning={previousState:effect.previousState,timer:setTimeout(()=>endTransientLearning(true),remaining)};
-  }
+  }else endTransientLearning(true);
   handle(message.command);
 }
 function applyState(s){if(!s)return;renderSharedLayers(s.layers||[]);stage.style.background=s.background?.color||'#000';text.textContent=s.text??'';applyTextOptions(s.textOptions||{});applyTitle({...s.titleOptions,text:s.title??''});applySubtitle({...s.subtitleOptions,text:s.subtitle??''});renderMedia(s.media||null);applyTimer(s.timer||{visible:false,running:false});presentationBlack.style.display=s.presentationBlack?'block':'none';requestDisplayLayout();}

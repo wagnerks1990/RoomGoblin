@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Add teacher-owned continuing arcade campaigns across classes and SCORM assignments,
+  with persistent private checkpoints, stale-tab protection and a classroom-only
+  arcade/completion board that excludes academic grades. Refresh transient boards
+  without briefly restoring the scheduled screen between updates.
+
 - Start Morning Announcements from the server's saved stream instead of treating
   its redacted placeholder as a playback URL. Administrators can view and edit
   the actual saved address in Live Watch; ordinary status and logs stay private.

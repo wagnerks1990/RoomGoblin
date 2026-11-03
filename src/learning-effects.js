@@ -7,7 +7,11 @@ function createEffectAdapter({catalog,execute,available}){
   const options=catalog(),targets=action.targets||[],known=action.kind==='lights'?options.lights:options.displays;
   if(!targets.length||targets.some(id=>!known.some(item=>item.id===id)))return {ok:false};
   let type,payload;
-  if(action.kind==='leaderboard'){
+  if(action.kind==='arcade-board'){
+   // An allowlisted projection, never a grade, response, user ID, or resume blob.
+   const rows=context.board||[];
+   type='display.text';payload={text:[context.title||'ARCADE CAMPAIGN','RANK  •  PLAYER / PERIOD  •  ARCADE SCORE  •  LEVEL  •  PROGRESS',...rows.map((r,i)=>`${(context.offset||0)+i+1}. ${r.firstName} / ${r.period}  ·  ${r.arcadeScore.toLocaleString('en-US')}  ·  L${r.level} / B${r.board}  ·  ${r.answered}/${r.total} questions`),rows.length?`${context.count} players · Arcade scores only · Assignment grades stay private`:'Complete a question checkpoint to join the campaign.'].join('\n'),color:'#f8fafc',background:'#102b38',align:'left',size:42,autoFit:true};
+  }else if(action.kind==='leaderboard'){
    type='display.text';payload={text:['CLASSROOM PROGRESS',...context.board.slice(0,10).map((row,index)=>`${index+1}. ${row.firstName} — ${Number.isFinite(row.earned)?`${row.earned} / ${row.possible}`:`${row.current||0} / ${row.total||0} steps`}`),'Game points · '+context.board.length+' active entries'].join('\n'),color:'#ffffff',background:'#102b38',align:'center',size:48};
   }else if(action.kind==='lights'){type='lighting.color';payload={color:action.color};}
   else{

@@ -15,7 +15,17 @@ automatic mode can open a fresh current-period session without inherited
 attendance or presence proofs. Old events and uncertain deliveries never replay. Writing-grade
 qualification and actual Schoology/device acceptance remain separate checks.
 
-## AI tools
+## Continuing arcade campaigns
+
+Teachers can link several SCORM assignments and periods to one continuing game.
+The student keeps their arcade score, level and checkpoint between assignments and
+class meetings. The combined classroom board shows first names, period labels,
+arcade scores and completion only; academic grades remain private. Offsite saves
+remain private until the next classroom-attested checkpoint. Select and verify the
+receiver in the teacher setup; no display is selected automatically. See the
+canonical guide above for setup, Bison mappings, stale-tab protection and rollback.
+
+## AI tool shortcuts
 
 Administrators can add existing AI chat and media studio HTTPS browser addresses
 under **AI tool links** on the teacher progress page. Teachers open these in
