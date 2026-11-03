@@ -8,6 +8,11 @@
 - Link Apollo playback health explicitly to its Music Assistant output. Require
   sustained native speaker-idle evidence for a playing-state stall; cached
   Sendspin timestamps remain valid during healthy audible playback.
+
+- Keep concurrently open SCORM assignments connected after fresh signed LMS
+  launches by retaining the same verified learner's unexpired browser session.
+  Preserve separate signed flows, account isolation, revocation and expiry.
+
 - Support signed written-discussion SCORM launchers and automatic grade receipt
   recovery. Add opt-in server calendar-day assessment credit with retained best
   grades and teacher exceptions; preserve LMS review and identity boundaries.
