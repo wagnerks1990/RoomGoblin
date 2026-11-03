@@ -1,5 +1,6 @@
 """Exercise cold snapshot rollback with real SQLite and a fake Docker boundary."""
 import importlib.util
+import ast
 import json
 from pathlib import Path
 import sqlite3
@@ -7,6 +8,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+import urllib.parse
 
 SPEC = importlib.util.spec_from_file_location("music_updates", Path(__file__).resolve().parents[1] / "host-agent/music_updates.py")
 module = importlib.util.module_from_spec(SPEC)
@@ -142,6 +144,30 @@ class HostMusicUpdatesTests(unittest.TestCase):
         module.atomic_json(self.manager.root / "recovery.json", {"attempts": [int(module.time.time())]})
         with self.assertRaisesRegex(RuntimeError, "cooling down"):
             self.manager.recover({"confirm": "RECOVER_MUSIC_ASSISTANT"})
+
+    def host_handler(self, running=False, pending=False):
+        source = ast.parse((Path(__file__).resolve().parents[1] / "host-agent/server.py").read_text())
+        handler = next(node for node in source.body if isinstance(node, ast.ClassDef) and node.name == "Handler")
+        method = next(node for node in handler.body if isinstance(node, ast.FunctionDef) and node.name == "do_POST")
+        context = {"urllib": urllib, "STARTUP_RECOVERY_ACTIVE": False,
+                   "MUSIC_UPDATES": SimpleNamespace(status=lambda: {"running": running}),
+                   "APP_UPDATE_REQUEST_FILE": SimpleNamespace(exists=lambda: pending),
+                   "release_export_freeze": lambda *_: True}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), "host-dispatch", "exec"), context)
+        result = []
+        fake = SimpleNamespace(path="", auth=lambda: True, body=lambda: {"freezeToken": "fixture"}, send_json=lambda code, body: result.append((code, body)))
+        return lambda path: (setattr(fake, "path", path), context["do_POST"](fake), result[-1])[-1]
+
+    def test_unfinished_music_job_blocks_host_mutations_but_allows_export_thaw(self):
+        invoke = self.host_handler(running=True)
+        for path in ("/docker/exec", "/app-updates/start", "/recovery/full/start", "/recovery/export/freeze", "/service/example/restart"):
+            self.assertEqual(invoke(path)[0], 423)
+        self.assertEqual(invoke("/recovery/export/thaw")[0], 200)
+
+    def test_pending_application_journal_prevents_new_music_jobs(self):
+        invoke = self.host_handler(pending=True)
+        for path in ("/music-updates/start", "/music-updates/recover"):
+            self.assertEqual(invoke(path)[0], 423)
 
 
 if __name__ == "__main__":

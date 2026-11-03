@@ -644,6 +644,10 @@ class Handler(BaseHTTPRequestHandler):
         if STARTUP_RECOVERY_ACTIVE:
             return self.send_json(423,{"ok":False,"error":"Interrupted full recovery is being resolved; host mutations are locked"})
         try:
+            if path!='/recovery/export/thaw' and MUSIC_UPDATES.status()['running']:
+                return self.send_json(423,{"ok":False,"error":"Music Assistant maintenance or rollback recovery holds host mutations"})
+            if path in ('/music-updates/start','/music-updates/recover') and APP_UPDATE_REQUEST_FILE.exists():
+                return self.send_json(423,{"ok":False,"error":"An application update journal must finish before music maintenance"})
             if path=='/recovery/export/freeze':
                 body=self.body()
                 if str(body.get('confirm') or '')!='FREEZE_FULL_EXPORT': return self.send_json(400,{"ok":False,"error":"Explicit FREEZE_FULL_EXPORT confirmation required"})
