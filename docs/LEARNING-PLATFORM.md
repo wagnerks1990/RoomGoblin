@@ -91,6 +91,14 @@ remain stored when rolling back application code; no database reset is needed.
    in the same class can use this one identity bootstrap; each new SCO connection
    still needs a fresh signed launch. There is no passwordless identity fallback
    based on a SCORM name or an old browser cookie.
+   Concurrent assignments retain an existing browser session only after each
+   fresh signed launch verifies the same learner. The same-origin start retains
+   a server-side session ID candidate because the Lax cookie is absent on the
+   cross-site LTI POST. It does not authenticate the new flow, store a bearer
+   token, extend the session, or authorize another learner. Signed flows still
+   bind their exact activity and session. Expired/revoked candidates are rejected.
+   The additive `learning_bridge_candidates` table holds only pending candidates
+   and is cleaned with expired flows; older releases can ignore it on rollback.
 5. Bundle `public/learn/sdk/roomgoblin-scorm.js` in a configured copy of the SCO.
    Load a local configuration script defining `window.ROOMGOBLIN_SCORM` with
    `{origin, activityId}`, then the SDK, before the game's scripts. Add both files

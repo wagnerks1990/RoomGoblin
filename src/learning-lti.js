@@ -93,7 +93,7 @@ class LearningLti{
   return this.settings(id);
  }
  settings(id){const observedOutcomeOrigins=[...new Set(this.db.prepare('SELECT DISTINCT outcome_url FROM learning_lti_results WHERE activity_id=?').all(id).flatMap(r=>{try{return [outcomeUrl(r.outcome_url,[new URL(r.outcome_url).origin]).origin];}catch{return [];}}))];return {...this.config(id),secretConfigured:this.store.hasSecret(this.key(id)),observedOutcomeOrigins};}
- launch(id,p,requestOrigin,requestUrl){
+ launch(id,p,requestOrigin,requestUrl,{candidateSessionId=null}={}){
   const cfg=this.config(id),a=this.db.prepare('SELECT * FROM learning_activities WHERE id=?').get(id);
   if(!this.store.authEnabled()||!cfg.enabled||!a)reject(401,'This Schoology launch is not enabled.');
   if(!p||Object.keys(p).length>100||Buffer.byteLength(JSON.stringify(p))>32768||Object.entries(p).some(([k,v])=>typeof v!=='string'||!k||k.length>100))reject(400,'Invalid launch parameters.');
@@ -145,6 +145,13 @@ class LearningLti{
    }
    this.learning.platform?.signedName(a.class_id,user.id,p.lis_person_name_given);
    this.learning.event(user,id,'lti.launch',user.id);
+   // Only after signature, course, membership and account validation may a
+   // same-origin start's existing session survive this fresh signed launch.
+   // Do not rotate a shared browser cookie and disconnect other open SCOs.
+   // Reuse neither another learner's session nor an expired/revoked session,
+   // and never extend the existing session's expiration here.
+   const retained=candidateSessionId&&this.db.prepare('SELECT id sessionId,expires_at expiresAt FROM user_sessions WHERE id=? AND user_id=? AND expires_at>?').get(candidateSessionId,user.id,new Date().toISOString());
+   if(retained)return {user,session:retained};
    return {user,session:this.store.createSession(user,{ttlHours:8})};
   });
  }

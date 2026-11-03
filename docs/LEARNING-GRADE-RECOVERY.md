@@ -122,3 +122,29 @@ launch the connector opens the requested written activity in its existing frame.
 This avoids creating new credentials for every assignment and does not allow
 identity from another course. Reuse an active existing launch URL, never a deleted
 Schoology material URL.
+
+## Concurrent assignment connections
+
+Previously each fresh signed launch replaced the shared browser cookie with a
+new session. Opening Discussion could therefore invalidate the flow in an open
+Do Now, and automatic reconnects could invalidate each other in turn. A saved
+server award could coexist with a pending SCORM receipt on the learner's screen.
+
+The same-origin connector start now retains an existing restricted learning
+session ID as an unauthenticated candidate. After the fresh signed launch has
+validated identity, course and membership, an unexpired session for that exact
+learner is reused without changing the browser cookie or extending its lifetime.
+The flow stays unsigned until that launch; account changes, revocation and expiry
+cannot inherit the other learner's authorization. No token is returned to SCORM.
+
+Regression: `node --test test/learning-concurrent-sessions.test.js` exercises
+multiple activities, unsigned flows, different learners, revoked/expired sessions,
+disabled accounts, original expiry, simultaneous starts and candidate cleanup.
+Browser acceptance should keep Do Now and written Discussion open together,
+complete the last question, submit writing, then reopen and retry. Confirm both
+native Schoology scores separately; local test adapters do not establish that.
+
+Deployment requires the normal reviewed, backed-up server release. The added
+candidate table is transient and additive; rollback retains all grade awards,
+writing, memberships and signed identities. Do not delete assignments or reset
+the database. No package replacement is necessary for this connection fix.

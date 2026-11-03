@@ -140,7 +140,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post('/learn/connect/start',rateLimit({windowMs:60000,limit:30,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
     if(freezeRequested())fail(423,'Backup in progress.');
     if(req.get('x-roomgoblin-learning')!=='1'||req.get('origin')!==`${req.protocol}://${req.get('host')}`)fail(403,'A same-origin connector request is required.');
-    const flow=connection.start(req.body?.activityId,req.body?.parent,req.body?.embedded===true);
+    const flow=connection.start(req.body?.activityId,req.body?.parent,req.body?.embedded===true,requestUser(req));
     res.setHeader('Set-Cookie',`${FLOW_COOKIE}=${flow.id}; Path=/learn/lti; HttpOnly; SameSite=None; Secure${req.body?.embedded===true?'; Partitioned':''}; Max-Age=600`);
     res.setHeader('Cache-Control','no-store');res.json({ok:true,...flow});
   }));
@@ -161,11 +161,13 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     res.setHeader('Cache-Control','no-store');
     if(freezeRequested())fail(423,'Backup in progress; reopen the assignment shortly.');
     if(!req.is('application/x-www-form-urlencoded'))fail(415,'Open this assignment from its Schoology External Tool link.');
-    const result=lti.launch(req.params.id,req.body,req.get('origin'),`${req.protocol}://${req.get('host')}${req.originalUrl}`);
+    const result=lti.launch(req.params.id,req.body,req.get('origin'),`${req.protocol}://${req.get('host')}${req.originalUrl}`,{candidateSessionId:connection.candidate(flowCookie(req),req.params.id)});
     if(result.teacher)return res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>RoomGoblin connected</title><h1>Schoology connection ready</h1><p>Students can now open this assignment without a RoomGoblin password. Use your existing teacher account to review the discussion.</p><a href="/learn/">Open teacher desk</a></html>');
     const secure=req.secure?'; Secure':'',embedded=connection.embedded(flowCookie(req));
-    connection.signed(result.user,req.params.id,store.sessionUser(result.session.token).sessionId,flowCookie(req));
-    res.setHeader('Set-Cookie',[`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=${embedded?'None':'Lax'}${secure}${embedded?'; Partitioned':''}; Max-Age=28800`,`${FLOW_COOKIE}=; Path=/learn/lti; HttpOnly; SameSite=None; Secure${embedded?'; Partitioned':''}; Max-Age=0`]);
+    connection.signed(result.user,req.params.id,result.session.sessionId||store.sessionUser(result.session.token).sessionId,flowCookie(req));
+    const cookies=[`${FLOW_COOKIE}=; Path=/learn/lti; HttpOnly; SameSite=None; Secure${embedded?'; Partitioned':''}; Max-Age=0`];
+    if(result.session.token)cookies.unshift(`${LEARNING_COOKIE}=${result.session.token}; Path=/; HttpOnly; SameSite=${embedded?'None':'Lax'}${secure}${embedded?'; Partitioned':''}; Max-Age=28800`);
+    res.setHeader('Set-Cookie',cookies);
     const activity=learning.activity(result.user,req.params.id);
     res.redirect(303,activity.template_id==='scorm-connector-v1'?'/learn/connect/?authenticated=1':'/learn/?lms=1&activity='+encodeURIComponent(req.params.id));
   }));
