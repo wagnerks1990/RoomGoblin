@@ -25,17 +25,26 @@ class LearningArcade{
    CREATE TABLE IF NOT EXISTS learning_arcade_players(campaign_id TEXT NOT NULL,user_id TEXT NOT NULL,revision INTEGER NOT NULL,data_json TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(campaign_id,user_id));
    CREATE TABLE IF NOT EXISTS learning_arcade_public(campaign_id TEXT NOT NULL,user_id TEXT NOT NULL,class_id TEXT NOT NULL,data_json TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(campaign_id,user_id));
    CREATE TABLE IF NOT EXISTS learning_arcade_visibility(campaign_id TEXT PRIMARY KEY,anywhere INTEGER NOT NULL DEFAULT 0);
+   CREATE TABLE IF NOT EXISTS learning_arcade_displays(campaign_id TEXT PRIMARY KEY,dedicated INTEGER NOT NULL DEFAULT 0);
   `);
  }
  owned(user,id){const c=this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE id=? AND owner_id=?').get(id,user.id);if(!c||!this.authorized(user,c.id))fail(404,'Campaign not found.');return c;}
  authorized(user,id){return this.classes(id).every(c=>{try{this.learning.membership(user,c.classId,true);return true;}catch{return false;}});}
  classes(id){return this.db.prepare('SELECT class_id classId,label FROM learning_arcade_classes WHERE campaign_id=? ORDER BY label').all(id);}
  anywhere(id){return this.db.prepare('SELECT anywhere FROM learning_arcade_visibility WHERE campaign_id=?').get(id)?.anywhere===1;}
- list(user){return this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE owner_id=? ORDER BY created_at').all(user.id).filter(c=>this.authorized(user,c.id)).map(c=>({id:c.id,title:c.title,enabled:!!c.enabled,leaderboardAnywhere:this.anywhere(c.id),targets:parse(c.targets_json,[]),classes:this.classes(c.id),board:this.board(c.id)}));}
+ dedicated(id){return this.db.prepare('SELECT dedicated FROM learning_arcade_displays WHERE campaign_id=?').get(id)?.dedicated===1;}
+ dedicatedTargets(){
+  const result=new Map();for(const c of this.db.prepare('SELECT c.* FROM learning_arcade_campaigns c JOIN learning_arcade_displays d ON d.campaign_id=c.id WHERE c.enabled=1 AND d.dedicated=1').all()){
+   const owner=this.store.listUsers().find(u=>u.id===c.owner_id&&u.enabled);
+   if(owner&&this.authorized(owner,c.id)&&(!this.learning.teacherCapability||this.learning.teacherCapability(owner)))for(const target of parse(c.targets_json,[]))result.set(target,c.id);
+  }return result;
+ }
+ list(user){return this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE owner_id=? ORDER BY created_at').all(user.id).filter(c=>this.authorized(user,c.id)).map(c=>({id:c.id,title:c.title,enabled:!!c.enabled,leaderboardAnywhere:this.anywhere(c.id),dedicatedDisplay:this.dedicated(c.id),targets:parse(c.targets_json,[]),classes:this.classes(c.id),board:this.board(c.id)}));}
  configure(user,input){
   const id=input.id||crypto.randomUUID();if(!uuid(id))fail(400,'Invalid campaign ID.');
   const old=this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE id=?').get(id);if(old)this.owned(user,id);
   if(input.leaderboardAnywhere!==undefined&&typeof input.leaderboardAnywhere!=='boolean')fail(400,'Choose whether the leaderboard accepts work from any location.');
+  if(input.dedicatedDisplay!==undefined&&typeof input.dedicatedDisplay!=='boolean')fail(400,'Choose whether the display is dedicated to this leaderboard.');
   const title=text(input.title),classes=input.classes,targets=input.targets;
   if(!Array.isArray(classes)||!classes.length||classes.length>16||classes.some(c=>!c||typeof c!=='object')||new Set(classes.map(c=>c.classId)).size!==classes.length)fail(400,'Select one to sixteen distinct classes.');
   for(const c of classes){if(!uuid(c.classId))fail(400,'Invalid class.');this.learning.membership(user,c.classId,true);text(c.label,30);}
@@ -47,6 +56,7 @@ class LearningArcade{
   if(used.some(a=>!classes.some(c=>c.classId===a.class_id)))fail(409,'A class with linked assignments cannot be removed from this campaign.');
   this.store.tx(()=>{this.db.prepare('INSERT INTO learning_arcade_campaigns VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,enabled=excluded.enabled,targets_json=excluded.targets_json').run(id,user.id,title,input.enabled===true?1:0,JSON.stringify([...new Set(targets)]),this.clock());this.db.prepare('DELETE FROM learning_arcade_classes WHERE campaign_id=?').run(id);for(const c of classes)this.db.prepare('INSERT INTO learning_arcade_classes VALUES(?,?,?)').run(id,c.classId,text(c.label,30));
    if(input.leaderboardAnywhere!==undefined)this.db.prepare('INSERT INTO learning_arcade_visibility VALUES(?,?) ON CONFLICT(campaign_id) DO UPDATE SET anywhere=excluded.anywhere').run(id,input.leaderboardAnywhere?1:0);
+   if(input.dedicatedDisplay!==undefined)this.db.prepare('INSERT INTO learning_arcade_displays VALUES(?,?) ON CONFLICT(campaign_id) DO UPDATE SET dedicated=excluded.dedicated').run(id,input.dedicatedDisplay?1:0);
   });
   this.learning.event(user,null,'arcade.configure',id);return this.list(user).find(c=>c.id===id);
  }
@@ -77,20 +87,23 @@ class LearningArcade{
    this.db.prepare('INSERT INTO learning_arcade_public VALUES(?,?,?,?,?) ON CONFLICT(campaign_id,user_id) DO UPDATE SET class_id=excluded.class_id,data_json=excluded.data_json,updated_at=excluded.updated_at').run(prior.campaignId,user.id,a.class_id,JSON.stringify(visible),this.clock());
   }
  }
- board(id){
+ board(id,classIds=null){
   const c=this.db.prepare('SELECT owner_id FROM learning_arcade_campaigns WHERE id=?').get(id),owner=this.store.listUsers().find(u=>u.id===c?.owner_id&&u.enabled);
   if(!owner||!this.authorized(owner,id)||this.learning.teacherCapability&&!this.learning.teacherCapability(owner))return [];
-  const rows=this.db.prepare(`SELECT p.data_json,n.first_name,c.label FROM learning_arcade_public p JOIN learning_arcade_classes c ON c.campaign_id=p.campaign_id AND c.class_id=p.class_id JOIN learning_members m ON m.class_id=p.class_id AND m.user_id=p.user_id JOIN users u ON u.id=p.user_id LEFT JOIN learning_first_names n ON n.class_id=p.class_id AND n.user_id=p.user_id WHERE p.campaign_id=? AND m.role='student' AND u.enabled=1`).all(id);
-  return rows.map(r=>{const d=parse(r.data_json);return {firstName:r.first_name||'Student',period:r.label,arcadeScore:d.arcadeScore||0,level:d.level||1,board:d.board||1,answered:d.answered||0,total:d.total||0,completed:d.completed||0,assignments:d.assignments||0};}).sort((a,b)=>b.arcadeScore-a.arcadeScore||b.level-a.level||a.firstName.localeCompare(b.firstName)).slice(0,100);
+  const rows=this.db.prepare(`SELECT p.class_id,p.data_json,p.updated_at,n.first_name,c.label FROM learning_arcade_public p JOIN learning_arcade_classes c ON c.campaign_id=p.campaign_id AND c.class_id=p.class_id JOIN learning_members m ON m.class_id=p.class_id AND m.user_id=p.user_id JOIN users u ON u.id=p.user_id LEFT JOIN learning_first_names n ON n.class_id=p.class_id AND n.user_id=p.user_id WHERE p.campaign_id=? AND m.role='student' AND u.enabled=1`).all(id);
+  return rows.filter(r=>classIds===null||classIds.includes(r.class_id)).map(r=>{const d=parse(r.data_json);return {firstName:r.first_name||'Student',period:r.label,lastActivityAt:r.updated_at,arcadeScore:d.arcadeScore||0,level:d.level||1,board:d.board||1,answered:d.answered||0,total:d.total||0,completed:d.completed||0,assignments:d.assignments||0};}).sort((a,b)=>b.arcadeScore-a.arcadeScore||b.level-a.level||a.firstName.localeCompare(b.firstName)).slice(0,100);
  }
  async tick(){
-  if(this.busy||!this.p.available())return;this.busy=true;
+  if(this.busy||!this.p.arcadeAvailable())return;this.busy=true;
   try{for(const c of this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE enabled=1 ORDER BY created_at').all()){
    const owner=this.store.listUsers().find(u=>u.id===c.owner_id&&u.enabled);if(!owner||this.learning.teacherCapability&&!this.learning.teacherCapability(owner))continue;
-   const active=()=>{const current=this.db.prepare('SELECT enabled FROM learning_arcade_campaigns WHERE id=?').get(c.id),actor=this.store.listUsers().find(u=>u.id===c.owner_id&&u.enabled);return current?.enabled===1&&actor&&(!this.learning.teacherCapability||this.learning.teacherCapability(actor))&&this.p.available()&&this.classes(c.id).some(row=>{try{this.learning.membership(actor,row.classId,true);const s=this.p.currentSession(row.classId);return s&&s.teacher_id===actor.id;}catch{return false;}});};
+   const activeClasses=()=>this.classes(c.id).filter(row=>{try{this.learning.membership(owner,row.classId,true);const session=this.p.currentSession(row.classId);return session&&session.teacher_id===owner.id;}catch{return false;}});
+   const active=()=>{const current=this.db.prepare('SELECT enabled,targets_json FROM learning_arcade_campaigns WHERE id=?').get(c.id),actor=this.store.listUsers().find(u=>u.id===c.owner_id&&u.enabled);return current?.enabled===1&&current.targets_json===c.targets_json&&actor&&this.authorized(actor,c.id)&&(!this.learning.teacherCapability||this.learning.teacherCapability(actor))&&this.p.arcadeAvailable()&&(this.dedicated(c.id)||activeClasses().length>0);};
    if(!active())continue;const targets=parse(c.targets_json,[]);if(!targets.length||targets.some(id=>!this.p.options().displays.some(d=>d.id===id)))continue;
-   const rows=this.board(c.id),page=Math.floor(this.clock()/15000)%Math.max(1,Math.ceil(rows.length/8));
-   const board=rows.slice(page*8,page*8+8);const result=await this.p.dispatch({kind:'arcade-board',targets},{title:c.title,board,offset:page*8,count:rows.length,admitted:active});
+   const selected=activeClasses(),labels=selected.map(row=>row.label),dedicated=this.dedicated(c.id);
+   const rows=this.board(c.id,dedicated?selected.map(row=>row.classId):null);
+   const page=Math.floor(this.clock()/15000)%Math.max(1,Math.ceil(rows.length/8)),board=rows.slice(page*8,page*8+8);
+   const result=await this.p.dispatch({kind:'arcade-board',targets},{campaignId:c.id,title:c.title,period:labels.join(' / '),waiting:dedicated&&!selected.length,dedicated,leader:rows[0]||null,board,offset:page*8,count:rows.length,generatedAt:this.clock(),admitted:active});
    this.lastDispatch.set(c.id,{at:this.clock(),status:result?.ok===true?'sent':'unconfirmed'});
   }}finally{this.busy=false;}
  }

@@ -77,6 +77,24 @@ test('teacher campaign routes reject students, cross-owner access and export fre
  const f=await setup(t),base='/api/v1/learning/platform/campaigns';assert.equal((await f.request(f.a,base)).status,403);assert.equal((await f.request(f.admin,base)).body.campaigns.length,1);assert.equal((await f.request(f.a,base+'/'+f.c.id+'/activities/'+f.activities[0][0],'PUT',{})).status,403);
  f.freeze(true);assert.equal((await f.request(f.admin,base,'POST',{...f.c,title:'Changed'})).status,423);assert.equal(f.p.arcade.list(f.admin)[0].title,'Continuing arcade');
 });
+
+test('dedicated board follows active class and waits between classes without resetting history',async t=>{
+ const f=await setup(t);f.p.arcade.configure(f.admin,{...f.c,dedicatedDisplay:true});
+ assert.equal(f.p.arcade.dedicatedTargets().get('screen-a'),f.c.id);
+ assert.equal(f.p.arcade.list(f.admin)[0].dedicatedDisplay,true);
+ for(const [i,u] of [f.a,f.b].entries()){f.start(i,u);await f.p.record(u,f.activities[i][0],f.event(u,1,0,1200+i*100),campus);f.p.stop(f.admin,f.classes[i]);}
+ await f.p.arcade.tick();assert.equal(f.sent.at(-1).context.waiting,true);assert.deepEqual(f.sent.at(-1).context.board,[]);
+ f.start(1,f.b);await f.p.arcade.tick();const live=f.sent.at(-1).context;assert.equal(live.period,'P3');assert.equal(live.board.length,1);assert.equal(live.board[0].firstName,'Blair');assert.ok(live.board[0].lastActivityAt>0);
+ assert.equal(f.p.arcade.board(f.c.id).length,2);
+ f.p.arcade.configure(f.admin,{...f.c,enabled:false});assert.equal(f.p.arcade.dedicatedTargets().size,0);assert.equal(live.admitted(),false);
+});
+
+test('dedicated preference survives older saves and restart, rejects invalid values and revoked owners',async t=>{
+ const f=await setup(t);f.p.arcade.configure(f.admin,{...f.c,dedicatedDisplay:true});const legacy={...f.c};delete legacy.dedicatedDisplay;f.p.arcade.configure(f.admin,legacy);
+ const p=new LearningPlatform(f.learning,{options});assert.equal(p.arcade.dedicatedTargets().size,1);
+ assert.throws(()=>f.p.arcade.configure(f.admin,{...f.c,dedicatedDisplay:'true'}),{status:400});
+ f.p.db.prepare('DELETE FROM learning_members WHERE class_id=? AND user_id=?').run(f.classId,f.admin.id);assert.equal(f.p.arcade.dedicatedTargets().size,0);
+});
 test('campaign validation rejects bad targets, class changes and a second enabled board on the same receiver',async t=>{
  const f=await setup(t);assert.throws(()=>f.p.arcade.configure(f.admin,{...f.c,targets:['unknown']}),{status:400});assert.throws(()=>f.p.arcade.configure(f.admin,{...f.c,classes:f.c.classes.slice(1)}),{status:409});assert.throws(()=>f.p.arcade.configure(f.admin,{...f.c,id:undefined}),{status:409});
  assert.throws(()=>f.p.arcade.bind(f.admin,f.activityId,f.c.id),{status:400});

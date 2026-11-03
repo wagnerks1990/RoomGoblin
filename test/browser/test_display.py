@@ -151,7 +151,7 @@ class DisplayBrowserTests(unittest.TestCase):
             file = ROOT/'public'/path.lstrip('/')
             if not file.is_file():
                 return req.fulfill(status=404, body='not found')
-            mime = {'.mjs':'text/javascript','.js':'text/javascript','.css':'text/css','.html':'text/html','.ttf':'font/ttf'}.get(file.suffix,'text/plain')
+            mime = {'.mjs':'text/javascript','.js':'text/javascript','.css':'text/css','.html':'text/html','.ttf':'font/ttf','.svg':'image/svg+xml'}.get(file.suffix,'text/plain')
             return req.fulfill(content_type=mime, body=file.read_bytes())
         page.route('**/*', route)
         self.open_renderer(page)

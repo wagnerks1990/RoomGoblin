@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 360" role="img" aria-label="Original arcade gorilla illustration">
+ <defs><linearGradient id="fur" x2="0" y2="1"><stop stop-color="#b07540"/><stop offset="1" stop-color="#5e3529"/></linearGradient><linearGradient id="barrel" x2="1" y2="0"><stop stop-color="#c77f34"/><stop offset=".5" stop-color="#f4bd64"/><stop offset="1" stop-color="#ac672d"/></linearGradient></defs>
+ <g fill="none" stroke="#2e6c78" stroke-width="9" opacity=".65"><path d="M12 310h376M30 335h340M40 55h320"/><path d="m15 309 25 26 25-26 25 26 25-26 25 26 25-26 25 26 25-26 25 26 25-26 25 26 25-26 25 26 25-26"/></g>
+ <g stroke="#251e24" stroke-width="7" stroke-linejoin="round">
+ <path fill="url(#fur)" d="M82 261q-49-13-43-62l19-53q10-28 53-22l23-22h120l25 21q46-1 61 34l15 49q9 46-49 63l-17-28-11 60H115l-15-60z"/>
+ <path fill="#cf985e" d="M144 156q53-38 107 2l21 93-30 47h-83l-35-46z"/>
+ <path fill="url(#fur)" d="m126 130-8-41 17-33 36-11 12-21 22 14 25-5 18 22 24 12 16 39-15 37-34 23h-78z"/>
+ <path fill="#e5b47c" d="m139 92 38-15 27 10 26-9 33 14-7 33 17 13-9 32-37 17-50-6-35-22-4-24 13-11z"/>
+ <path fill="#fff9da" d="m148 96 28-5 19 11-4 19h-37zm62 6 20-11 25 5-4 25h-36z"/>
+ <path fill="#211d26" d="m173 99 10 2v16h-10zm45 2 10-2v18h-10z" stroke="none"/>
+ <path fill="#6c402b" d="m182 126 33-1 9 12-21 10-25-8z"/>
+ <path d="M168 156q38 24 72-1" fill="none"/>
+ <path fill="#d5454d" d="m173 183 31 13 29-13-17 30 14 55-26 20-27-24 15-51z"/>
+ <path d="m194 237 18-2-9 24" stroke="#ffe49a" stroke-width="5" fill="none"/>
+ <path fill="#e4b07a" d="m46 211 14-13 29 4 18 25-12 28-32 3-21-21zm257-8 29-5 19 16-1 27-24 16-29-11-10-25z"/>
+ <path fill="url(#fur)" d="m117 279-15 28-10 8 6 17h73l6-32m64-21 6 24 19 9-4 20h-71l-5-31"/>
+ </g>
+ <g transform="translate(297 262) rotate(12)" stroke="#3e2a25" stroke-width="5"><rect x="-25" y="-37" width="70" height="77" rx="28" fill="url(#barrel)"/><path d="M-16-27v54M31-27v54M7-33v67" fill="none"/><path d="M-24-19h68M-25 22h69" stroke="#c2d1ce" stroke-width="10"/></g>
+ <g fill="#ffe294"><path d="m42 89 6-15 6 15 15 6-15 6-6 15-6-15-15-6zM338 73l4-11 5 11 11 5-11 4-5 11-4-11-11-4z"/></g>
+</svg>
