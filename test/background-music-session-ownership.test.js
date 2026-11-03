@@ -99,6 +99,32 @@ test("resuming the current managed source preserves recovery identity and sleep"
  assert.equal(h.calls.filter(x=>x.command).length,1);
 });
 
+test("explicit recovery restarts the current queue item instead of an ignored Play",async()=>{
+ const h=fixture();h.r.activeMedia=null;h.r.queueOnly=true;
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});if(command==="player_queues/get_active_queue")return {queue_id:"A",current_item:{queue_item_id:"retained-item",duration:180},elapsed_time:29};};
+ await h.ctx.backgroundMusicResume("manual-repair","A");
+ assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(x=>x.command))),[
+  {command:"player_queues/get_active_queue",args:{player_id:"A"}},
+  {command:"player_queues/play_index",args:{queue_id:"A",index:"retained-item",seek_position:29}}
+ ]);
+ assert.equal(h.r.queueOnly,true);assert.equal(h.r.activeMedia,null);
+});
+
+test("recovery adopts an observed but unowned output after a Hub restart",async()=>{
+ const h=fixture();h.r.activeMedia=null;h.r.queueOnly=false;h.r.manualSession=false;
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});if(command==="player_queues/get_active_queue")return {queue_id:"A",current_item:{queue_item_id:"radio",duration:0},elapsed_time:900};};
+ await h.ctx.backgroundMusicResume("manual-repair","A");
+ assert.equal(h.r.queueOnly,true);assert.equal(h.r.manualSession,true);
+ assert.equal(h.calls.find(x=>x.command==="player_queues/play_index").args.seek_position,0);
+ assert.equal(h.calls.some(x=>x.command==="players/cmd/volume_set"||x.command==="player_queues/play_media"),false);
+});
+
+test("an empty recovery queue leaves the previous owner untouched",async()=>{
+ const h=fixture();h.ctx.musicAssistantCommand=async command=>command==="player_queues/get_active_queue"?{queue_id:"B",current_item:null}:h.calls.push(command);
+ await assert.rejects(h.ctx.backgroundMusicResume("manual-repair","B"),/queue item/i);
+ assert.equal(h.r.activePlayerId,"A");assert.equal(h.calls.length,0);
+});
+
 for(const actual of [null,{found:false},{found:true,available:false}])test(`unavailable selected queue preserves the prior managed output: ${JSON.stringify(actual)}`,async()=>{
  const h=fixture();h.ctx.backgroundMusicActualPlayerState=async()=>actual;
  await assert.rejects(h.ctx.backgroundMusicResume("manual","B"),/unavailable/);
@@ -159,13 +185,33 @@ test("the real control route selects queue ownership and retries only its existi
  const result={},res={status(code){result.status=code;return this},json(body){result.body=body;return this}};
  await handler({body:{action:"resume",playerId:"B"}},res);
  assert.equal(result.body.ok,true);assert.equal(h.r.activePlayerId,"B");assert.equal(h.r.queueOnly,true);
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});if(command==="player_queues/get_active_queue")return {queue_id:"B",current_item:{queue_item_id:"kept",duration:0}}};
  h.r.manualStopped=true;h.calls.length=0;await handler({body:{action:"retry"}},res);
  assert.equal(result.body.ok,true);assert.equal(h.r.manualStopped,false);
- assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(x=>x.command))),[{command:"players/cmd/play",args:{player_id:"B"}}]);
+ assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(x=>x.command))),[{command:"player_queues/get_active_queue",args:{player_id:"B"}},{command:"player_queues/play_index",args:{queue_id:"B",index:"kept",seek_position:0}}]);
  h.r.manualStopped=true;h.ctx.backgroundMusicActualPlayerState=async()=>null;h.calls.length=0;
  await handler({body:{action:"resume",playerId:"C"}},res);
- assert.equal(result.status,502);assert.equal(result.body.ok,false);assert.equal(h.r.manualStopped,true);assert.equal(h.r.activePlayerId,"B");
+ assert.equal(result.status,409);assert.equal(result.body.ok,false);assert.equal(h.r.manualStopped,true);assert.equal(h.r.activePlayerId,"B");
  assert.equal(h.calls.some(x=>x.command),false);
+ h.ctx.backgroundMusicActualPlayerState=async()=>({found:true,available:true});
+ h.ctx.musicAssistantCommand=async()=>{throw Error("Provider authentication unavailable")};
+ await handler({body:{action:"retry",playerId:"B"}},res);
+ assert.equal(result.status,503);assert.match(result.body.error,/Provider authentication/);
+});
+
+test("Sendspin queue repair resumes at the last reported audio frame, not extrapolated silence",async()=>{
+ const h=fixture();Object.assign(h.r,{activeMedia:null,queueOnly:true});
+ h.ctx.backgroundMusicActualPlayerState=async()=>({found:true,available:true,progressReportsExpected:true,player:{elapsed_time:31.5}});
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});if(command==="player_queues/get_active_queue")return {queue_id:"A",current_item:{queue_item_id:"kept",duration:180},elapsed_time:160}};
+ await h.ctx.backgroundMusicResume("manual-repair","A");
+ const play=h.calls.find(c=>c.command==="player_queues/play_index");assert.equal(play.args.seek_position,31);
+ assert.equal(h.calls.some(c=>c.command==="players/cmd/stop"),false);
+});
+test("repair does not skip through a queue item already marked unavailable",async()=>{
+ const h=fixture();Object.assign(h.r,{activeMedia:null,queueOnly:true});
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});return {queue_id:"A",current_item:{queue_item_id:"failed",available:false}}};
+ await assert.rejects(h.ctx.backgroundMusicResume("manual-repair","A"),error=>error.status===409&&/Favorites/.test(error.message));
+ assert.equal(h.calls.filter(c=>c.command).length,1);assert.equal(h.r.activePlayerId,"A");
 });
 
 test("a track boundary in an existing queue retains priority ownership without replay",async()=>{

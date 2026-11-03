@@ -13,6 +13,14 @@
 - Preserve documented prior grades through audited, teacher-only restoration and
   reuse existing signed class identity links for written SCORM activities.
 
+- Add opt-in stable Music Assistant and Apollo CAST-1 updates with maintenance
+  windows, persistent attempt tracking, cold Music Assistant rollback and bounded
+  service recovery. Verify Apollo firmware by pinned-device reconnection.
+- Repair stalled Sendspin audio from its current queue, including queues observed
+  after a Hub restart. Preserve queue contents, volume and announcement priority.
+- Separate ESPHome entity identities by domain so firmware buttons cannot hide
+  firmware update state. See [Music maintenance](docs/MUSIC-MAINTENANCE.md).
+
 - Add a native arcade leaderboard with original gorilla artwork, levels, points,
   progress and recent-save status. A teacher can explicitly dedicate its receiver
   to scheduled-class standings, excluding other content and announcements there

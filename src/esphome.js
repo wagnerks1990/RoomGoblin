@@ -54,6 +54,7 @@ function validateCommand(entity,command,admin=false){
 class ESPHomeManager{
   constructor({storage,spawnProcess=spawn,python=process.env.ESPHOME_PYTHON||"/opt/esphome/bin/python",canRun=()=>true,autostart=true,now=Date.now,restartBaseMs=1000,restartMaxMs=30000}){
     this.storage=storage;this.spawnProcess=spawnProcess;this.python=python;this.canRun=canRun;
+    this.deviceMaintenance=()=>false;
     this.child=null;this.pending=new Map();this.live=new Map();this.busy=new Set();this.commands=new Map();
     this.closed=false;this.configHash="";this.syncing=null;this.saving=false;this.lastError="";this.sequence=0;this.lastWorkerAt=0;
     this.now=now;this.restartBaseMs=restartBaseMs;this.restartMaxMs=restartMaxMs;this.workerFailures=0;this.nextWorkerAt=0;
@@ -191,6 +192,7 @@ class ESPHomeManager{
     this.syncing=work().finally(()=>{this.syncing=null});return this.syncing;
   }
   async save(id,input){
+    if(id&&this.deviceMaintenance(id))throw failure("Apollo firmware maintenance is active.",423);
     this.checkRun();if(this.saving||(id&&this.busy.has(id)))throw failure("Another device change is in progress.",409);
     this.saving=true;
     try{
@@ -216,6 +218,7 @@ class ESPHomeManager{
     }finally{this.saving=false}
   }
   async change(id,{remove=false,enabled}={}){
+    if(this.deviceMaintenance(id))throw failure("Apollo firmware maintenance is active.",423);
     this.checkRun();if(this.saving||this.busy.has(id))throw failure("Device is busy; retry after the current operation.",409);
     const device=this.record(id);if(!device)throw failure("Unknown ESPHome device.",404);
     if(!remove&&typeof enabled!=="boolean")throw failure("Enabled must be true or false.");
@@ -231,6 +234,7 @@ class ESPHomeManager{
     }finally{this.saving=false}
   }
   async command(id,entityId,input,{admin=false,owner=""}={}){
+    if(this.deviceMaintenance(id))throw failure("Apollo firmware maintenance is active.",423);
     this.checkRun();if(this.saving)throw failure("A device configuration change is in progress.",409);
     const record=this.record(id),live=this.live.get(id);
     if(!record)throw failure("Unknown ESPHome device.",404);
@@ -248,6 +252,13 @@ class ESPHomeManager{
     const promise=this.rpc("command",{deviceId:id,entityId,command,admin,generation:record.generation},6000).finally(()=>this.busy.delete(id));
     this.commands.set(key,{fingerprint,promise,expires:Date.now()+300000});
     return promise;
+  }
+  async firmwareUpdate(id,version){
+    this.checkRun();
+    const record=this.record(id),live=this.live.get(id);
+    if(this.saving||this.busy.has(id)||!record||record.enabled===false||!live?.online||live.generation!==record.generation)throw failure("Apollo is not ready for a firmware update.",409);
+    this.busy.add(id);
+    try{return await this.rpc("apollo_update",{deviceId:id,generation:record.generation,version,admin:true},6000)}finally{this.busy.delete(id)}
   }
   close(){this.closed=true;clearInterval(this.timer);if(this.child)this.failWorker(this.child)}
 }

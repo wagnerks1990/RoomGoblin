@@ -72,7 +72,6 @@
     if(!output.value)throw Error("Choose a listening output first");
     if(action==="play")action="resume";
     if(["pause","stop"].includes(action)&&output.value!==bg?.runtime?.activePlayerId)return task(()=>maApi(`players/cmd/${action}`,{player_id:output.value}));
-    if(action==="retry"&&output.value!==bg?.runtime?.activePlayerId)throw Error("Start Background Music on this output before recovering it");
     return task(()=>send("/api/v1/music-assistant/background/control",{action,playerId:output.value}));
   }
   async function playItem(item){if(!output.value)throw Error("Choose a listening output first");return task(()=>send("/api/v1/music-assistant/background/control",{action:"play",playerId:output.value,uri:item.uri,name:item.name,mediaType:item.mediaType||"unknown"}));}

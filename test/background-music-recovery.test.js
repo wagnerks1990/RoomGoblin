@@ -39,6 +39,23 @@ test("unchanged Music Assistant position anchors keep playing beyond the stall t
  assert.match(recovery.reason,/estimated/);
 });
 
+test("Sendspin audio stops progressing when its server stops committing audio frames",()=>{
+ let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
+ const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),progressReportsExpected:true};
+ recovery.observe(actual);now+=121000;
+ assert.equal(recovery.observe(actual).action,"resume");assert.equal(recovery.state,"stalled");
+ recovery.requested();now+=21000;
+ assert.equal(recovery.observe(actual).action,"reload");
+ actual.player.elapsed_time=13;actual.player.elapsed_time_last_updated=now/1000;
+ assert.equal(recovery.observe(actual).action,"none");
+});
+
+test("fresh Sendspin frame progress remains healthy and absent telemetry is not a stall",()=>{
+ let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
+ for(let i=0;i<100;i++){now+=5000;assert.equal(recovery.observe({...player(i*5,"playing",{elapsed_time_last_updated:now/1000}),progressReportsExpected:true}).action,"none")}
+ now+=600000;assert.equal(recovery.observe({...player(null),progressReportsExpected:true}).action,"none");
+});
+
 test("fresh timestamps reporting a frozen position still trigger bounded recovery",()=>{
  let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
  const actual=()=>player(30,"playing",{elapsed_time_last_updated:now/1000});

@@ -28,14 +28,19 @@ class PlaybackRecovery {
         this.lastElapsed=position;this.lastReportedElapsed=elapsed;this.mediaKey=key;
       }
       // No telemetry means unknown audible progress, not proof of a stall.
-      const stalled=Number.isFinite(position)&&this.lastPositionAt>0&&now-this.lastPositionAt>=stallSeconds*1000;
+      // Sendspin's MA queue writer stamps elapsed time as it commits audio
+      // frames. If that writer fails, the group can retain "playing" forever.
+      // Only explicitly identified frame-reporting transports use this test;
+      // ordinary timestamp anchors retain their interpolation contract.
+      const stoppedFrames=actual.progressReportsExpected===true&&estimated&&Number.isFinite(elapsed)&&now/1000-anchor>=stallSeconds;
+      const stalled=stoppedFrames||(Number.isFinite(position)&&this.lastPositionAt>0&&now-this.lastPositionAt>=stallSeconds*1000);
       if(!stalled){
         this.state="playing";this.reason=progress?"Playback progress confirmed":estimated&&Number.isFinite(position)?"Player reports playing; position is estimated":"Player reports playing";
         if(!this.healthySince)this.healthySince=now;
         if(now-this.healthySince>=30000){this.attempts=0;this.retryAt=0}
         this.awaitingUntil=0;return {action:"none"};
       }
-      this.healthySince=0;this.state="stalled";this.reason="Player reports playing, but progress has stopped";
+      this.healthySince=0;this.state="stalled";this.reason=stoppedFrames?"Sendspin stopped reporting audio progress; the source may have stalled":"Player reports playing, but progress has stopped";
     }else{
       this.healthySince=0;
       const duration=Number(media.duration)||this.lastDuration;

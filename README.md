@@ -1,5 +1,8 @@
 # RoomGoblin
 
+[Music maintenance](docs/MUSIC-MAINTENANCE.md) covers stable Music Assistant and
+Apollo CAST-1 updates, cold rollback, bounded service recovery and playback repair.
+
 [Veyon OEM-only integration policy](docs/VEYON-OEM-POLICY.md) defines the supported Veyon boundary: upstream/OEM Veyon configuration and upstream/OEM add-ons only; RoomGoblin does not ship custom Veyon plugin pilots or experimental browser tools.
 
 ## Displays & AV
