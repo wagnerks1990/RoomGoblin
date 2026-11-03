@@ -35,7 +35,8 @@ secret or learner identifier is embedded in a package. The default companion
 mode is retained for existing installations; embedded mode never falls back to
 a popup silently.
 
-Expired sessions reconnect in the same frame. Written drafts survive a confirmed
+Expired sessions reconnect in the same frame. An unresponsive connection frame
+reloads with bounded backoff, and an online event resumes pending delivery. Written drafts survive a confirmed
 401 response, are restored only for the same newly authenticated learner, and
 only a write rejected with 401 is retried automatically. Uncertain network writes
 are not replayed. Rejected native SCORM commits retry without repeating writing.
