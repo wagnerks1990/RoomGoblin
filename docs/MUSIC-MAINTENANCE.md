@@ -10,6 +10,9 @@ time zone and wait for announcements, priority audio and every Music Assistant
 player to be idle. A paused queue is retained. Music commands managed by
 Background Music wait while integration maintenance is active. Updates do not
 change the selected source, volume, provider credentials or device encryption.
+Transient connection-check warnings clear after polling succeeds again. Failed
+playback or maintenance commands remain visible until another operator action;
+successful polling never implies that a failed command was retried or completed.
 
 ## Music Assistant
 

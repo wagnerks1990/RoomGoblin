@@ -8,7 +8,8 @@
   const nav=el("div",undefined,"musicTabs"),sections={};page.querySelector(".top").after(nav);
   function button(parent,text,fn,cls=""){const b=el("button",text,cls);b.type="button";b.dataset.musicControl="true";b.addEventListener("click",async()=>{try{await fn()}catch(error){message(error.message,true)}});parent.append(b);return b}
   function label(parent,text,input){const wrap=el("label",text);input.setAttribute("aria-label",text);wrap.append(input);parent.append(wrap);return input}
-  function message(text,error=false){notice.textContent=text;notice.classList.toggle("bad",error)}
+  let noticeOwner="",noticeRevision=0;
+  function message(text,error=false,owner="action"){noticeOwner=owner;noticeRevision++;notice.textContent=text;notice.classList.toggle("bad",error)}
   for(const [key,title]of [["listen","Now playing"],["discover","Find music"],["favorites","Favorites"],["schedule","Schedule"],["outputs","Outputs & connection"]]){
     const pane=el("section",undefined,"musicPane");pane.hidden=key!==selected;sections[key]=pane;
     const tab=button(nav,title,()=>{selected=key;for(const [id,p]of Object.entries(sections))p.hidden=id!==key;for(const b of nav.children)b.setAttribute("aria-pressed",String(b===tab));if(key==="listen")loadQueue()});tab.dataset.musicControl="false";tab.setAttribute("aria-pressed",String(key===selected));page.append(pane);
@@ -116,11 +117,12 @@
     if(loadPromise){refreshPending=true;return loadPromise}
     window.musicStudioLoading=true;
     loadPromise=(async()=>{do{
-      refreshPending=false;const generation=loadGeneration;
+      refreshPending=false;const generation=loadGeneration,noticeAtStart=noticeRevision;
     try{
       const data=await Promise.all([api("/api/v1/music-assistant/status"),api("/api/v1/music-assistant/background")]);
       if(generation!==loadGeneration||scheduleSaving||connectionSaving)continue;
       status=data[0];bg=data[1];MA_PLAYERS=status.players||[];
+      if(noticeOwner==="poll")message("",false,"poll");
       if(!initialized&&!dirty){classicSchedule(bg);auto.checked=bg.schedule.autoRecover!==false;stall.value=String(bg.schedule.stallSeconds||120);initialized=true}
       BGM_FAVORITES=bg.favorites||[];BGM_SCHEDULE=bg.schedule||{};
       options(output,[["","Choose output…"],...MA_PLAYERS.map(p=>[playerId(p),`${p.display_name||p.name||playerId(p)}${p.available===false?" · offline":""}`])],selectedOutput||bg.runtime?.activePlayerId||bg.schedule.playerId||"");selectedOutput=output.value;
@@ -136,7 +138,7 @@
       for(const [id,state]of bridgeRows){const input=[...maTvTargets.querySelectorAll("input")].find(n=>n.value===id);if(input?.parentElement.firstChild?.nodeType===3)input.parentElement.firstChild.textContent=`${id} · ${state?.state||"detached"}${state?.audioRestoreUnconfirmed?" · Audio settings unconfirmed; reconnect the display to retry":""}`}
       renderBgmFavorites();renderMaPlayers();renderNow();
       if(selected==="listen"&&(!queue||Date.now()-lastQueueLoad>15000))loadQueue();
-    }catch(error){if(generation===loadGeneration)message(error.message,true)}
+    }catch(error){if(generation===loadGeneration&&noticeAtStart===noticeRevision&&(!notice.classList.contains("bad")||noticeOwner==="poll"))message(`Connection check failed: ${error.message}. Retrying…`,true,"poll")}
     }while(refreshPending&&!scheduleSaving&&!connectionSaving)})().finally(()=>{loadPromise=null;window.musicStudioLoading=false});
     return loadPromise;
   };

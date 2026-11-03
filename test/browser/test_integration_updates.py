@@ -58,10 +58,29 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
         panel.get_by_role('button', name='Update firmware now', exact=True).click()
         panel.get_by_text('Playback is active; wait until idle.', exact=True).wait_for()
         self.assertEqual(requests[-1], {'kind': 'apollo', 'deviceId': 'test-apollo', 'version': '26.10.30.1'})
+        panel.locator('summary').click()
+        with page.expect_response('**/api/v1/admin/music-maintenance'):
+            panel.locator('summary').click()
         panel.get_by_text('Playback is active; wait until idle.', exact=True).wait_for()
         self.evidence(page, errors, 'integration-maintenance-desktop')
         page.evaluate("AUTH_STATUS.user.role='viewer'; AUTH_STATUS.user.capabilities=[]; dispatchEvent(new Event('roomgoblin:authchange'))")
         self.assertFalse(panel.is_visible())
+
+    def test_healthy_poll_clears_transient_gateway_warning_without_losing_draft(self):
+        page, errors, panel, requests = self.open_panel()
+        panel.get_by_label('Automatically update Test Apollo').check()
+        endpoint = '**/api/v1/admin/music-maintenance'
+        page.route(endpoint, lambda route: route.fulfill(status=502, body='Bad gateway'))
+        panel.locator('summary').click()
+        panel.locator('summary').click()
+        panel.get_by_text('Connection check failed: HTTP 502. Retrying…', exact=True).wait_for()
+        page.unroute(endpoint)
+        panel.locator('summary').click()
+        with page.expect_response(endpoint):
+            panel.locator('summary').click()
+        page.wait_for_function("!document.querySelector('#esphome details [role=status]').textContent.includes('502')")
+        self.assertTrue(panel.get_by_label('Automatically update Test Apollo').is_checked())
+        self.assertFalse(errors, errors)
 
 
 if __name__ == '__main__':
