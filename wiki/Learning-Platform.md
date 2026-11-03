@@ -68,3 +68,14 @@ class today** lasts through restarts and clears on the next school day. Existing
 closed assignments remain closed; reviewed recipes and signed connections are
 one-time prerequisites. Timetable failures do not block ordinary progress saves.
 Disable automatic mode before feature rollback and retain the additive tables.
+
+
+## Single-window SCORM and grade recovery
+
+The administrator can explicitly permit signed student connections inside exact
+approved LMS origins. Updated SCORM packages then authenticate and reconnect
+inside the assignment, including written discussions and automatic approved-grade
+return. Existing companion packages remain compatible. Review launches stay
+read-only and a native commit does not itself prove gradebook publication.
+See [the canonical recovery guide](../docs/LEARNING-GRADE-RECOVERY.md) for setup,
+partitioned-cookie boundaries, dated assessment credit, tests and rollback.

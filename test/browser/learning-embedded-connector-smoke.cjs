@@ -1,0 +1,29 @@
+'use strict';
+const {chromium}=require('playwright'),assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs');
+const {fixture}=require('../helpers/learning-fixture'),{signature}=require('../../src/learning-lti'),{createStudentGateway}=require('../../src/learning-public');
+const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+(async()=>{const f=await fixture(),browser=await chromium.launch({channel:'msedge',headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP learn.learning.test 127.0.0.1, MAP lms.school.test 127.0.0.1, MAP scorm.content.test 127.0.0.1']});let gateway,tls,cookieSameSite='None';
+ try{
+  f.app.set('trust proxy',1);const p=f.learning.platform,id=f.learning.createActivity(f.admin,f.classId,{title:'11/03/2026 · Embedded assessment',templateId:'scorm-connector-v1'}),secret='synthetic-embedded-secret-00000000000000000000';
+  gateway=createStudentGateway({app:f.app,store:f.store});await new Promise(r=>gateway.listen(0,'127.0.0.1',r));tls=await require('../helpers/learning-browser-https.cjs').createBrowserHttps(gateway,render,{learnHost:'learn.learning.test',lmsHost:'lms.school.test',scormHost:'scorm.content.test'});const {origin,lms}=tls,sco=lms.replace('lms.school','scorm.content'),url=origin+'/learn/lti/'+id;
+  f.store.setPreference('learning.bridgeOrigins',[lms,sco]);p.saveSettings(f.admin,{publicEnabled:true,publicOrigin:origin,embeddedEnabled:true});p.configure(f.admin,id,{points:20,launchUrl:lms+'/launch'});p.grading.configure(f.admin,id,{enabled:true,assignmentDate:'2099-01-01',timeZone:'America/New_York'});
+  f.learning.lti.configure(f.admin,id,{appOrigin:origin,platformOrigin:lms,consumerKey:'synthetic-key',sharedSecret:secret,enabled:true,outcomeOrigins:[]});
+  function params(role){const v={lti_message_type:'basic-lti-launch-request',lti_version:'LTI-1p0',oauth_consumer_key:'synthetic-key',oauth_signature_method:'HMAC-SHA1',oauth_timestamp:String(Math.floor(Date.now()/1000)),oauth_nonce:crypto.randomUUID(),context_id:'synthetic-course',resource_link_id:'synthetic-resource',roles:role,user_id:role==='Instructor'?'teacher':'learner',lis_person_name_given:'Alex',lis_person_name_full:'Alex Example'};v.oauth_signature=signature('POST',url,Object.entries(v),secret);return v;}
+  f.learning.lti.launch(id,params('Instructor'),lms,url);
+  function render(path,req){
+   if(path==='/course')return {contentType:'text/html',body:`<script>document.cookie='lms_session=fixture; Path=/; SameSite=${cookieSameSite}; Secure';</script><iframe id="sco" title="SCORM assignment" src="${sco}/game" style="width:100%;height:800px"></iframe>`};
+   if(path==='/launch'){
+    if(!String(req.headers.cookie).includes('lms_session=fixture'))return {status:401,contentType:'text/html',body:'LMS sign-in cookie unavailable inside this frame.'};
+    return {contentType:'text/html',body:`<form method="post" action="${url}">${Object.entries(params('Learner')).map(([n,v])=>`<input type="hidden" name="${n}" value="${escape(v)}">`).join('')}</form><script>document.forms[0].submit()</script>`};
+   }
+   if(path==='/sdk.js')return {contentType:'application/javascript',body:fs.readFileSync(require.resolve('../../public/learn/sdk/roomgoblin-scorm.js'),'utf8')};
+   return {contentType:'text/html',body:`<h1>Embedded SCORM assessment</h1><p id="state"></p><script>window.ROOMGOBLIN_SCORM=${JSON.stringify({origin,activityId:id,connectionMode:'embedded',connectionUi:'embedded'})};addEventListener('roomgoblin:ready',()=>document.querySelector('#state').textContent='Signed connection ready');</script><script src="/sdk.js"></script><script>RoomGoblinSCORM.connect()</script>`};
+  }
+  const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(lms+'/course');const game=page.frameLocator('#sco');
+  await game.getByText('Signed connection ready',{exact:true}).waitFor({timeout:20000});assert.equal(context.pages().length,1);console.log('PASS nested LMS to SCORM to signed connector authenticates automatically without opening another window');
+  const frame=page.frames().find(x=>x.url()===sco+'/game'),award=await frame.evaluate(()=>RoomGoblinSCORM.assessment({raw:80,current:5,total:5}));assert.equal(award.bestPercent,80);console.log('PASS private server grade returns through the embedded message channel');
+  f.store.db.prepare('UPDATE learning_bridge_flows SET expires_at=0').run();await frame.evaluate(()=>RoomGoblinSCORM.progress(5,5));await frame.waitForFunction(()=>!RoomGoblinSCORM.connected());await frame.waitForFunction(()=>RoomGoblinSCORM.connected(),null,{timeout:45000});
+  assert.equal(context.pages().length,1);const user=f.store.listUsers().find(u=>u.displayName==='Alex Example');assert.equal(p.state(user,id).grade.bestPercent,80);assert.deepEqual(errors,[]);console.log('PASS expired embedded connection signs in again automatically and preserves the award without a popup');
+  await context.close();cookieSameSite='Lax';const restricted=await browser.newContext({ignoreHTTPSErrors:true}),blocked=await restricted.newPage();await blocked.goto(lms+'/course');await blocked.frameLocator('#sco').frameLocator('iframe[title="Schoology connection"]').getByText('LMS sign-in cookie unavailable inside this frame.',{exact:true}).waitFor();assert.equal(restricted.pages().length,1);assert.equal(await blocked.frames().find(x=>x.url()===sco+'/game').evaluate(()=>RoomGoblinSCORM.connected()),false);console.log('PASS incompatible LMS cookie policy fails closed inside the frame without a popup or unsigned identity');
+ }finally{await browser.close();if(tls)await tls.close();if(gateway)await new Promise(r=>gateway.close(r));await f.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -40,7 +40,7 @@ function normalizeSettings(input={}){
  if(input.publicEnabled===true&&!publicOrigin)fail(400,'Set the student HTTPS origin first.');
  let presenceOrigin='';if(input.presenceOrigin){try{const u=new URL(input.presenceOrigin),parts=u.hostname.split('.').map(Number),privateAddress=net.isIP(u.hostname)===4&&(parts[0]===10||parts[0]===172&&parts[1]>=16&&parts[1]<=31||parts[0]===192&&parts[1]===168);if(!privateAddress||u.protocol!=='http:'||u.origin!==input.presenceOrigin||u.username||u.password)throw Error();presenceOrigin=u.origin;}catch{fail(400,'Use the RoomGoblin private IPv4 HTTP origin for presence only.');}}
  const networks=input.classroomNetworks||[];if(!Array.isArray(networks)||networks.length>16)fail(400,'Use up to sixteen classroom networks.');
- return {publicOrigin,presenceOrigin,publicEnabled:input.publicEnabled===true,classroomNetworks:[...new Set(networks.map(v=>cidr(v).value))],networksConfirmed:input.networksConfirmed===true,insightsEnabled:input.insightsEnabled===true};
+ return {publicOrigin,presenceOrigin,embeddedEnabled:input.embeddedEnabled===true,publicEnabled:input.publicEnabled===true,classroomNetworks:[...new Set(networks.map(v=>cidr(v).value))],networksConfirmed:input.networksConfirmed===true,insightsEnabled:input.insightsEnabled===true};
 }
 function normalizeEvent(input,points){
  if(!plain(input)||!uuid(input.id)||!Number.isInteger(input.sequence)||input.sequence<1||input.sequence>2147483647)fail(400,'A unique event ID and increasing sequence are required.');
@@ -76,7 +76,7 @@ class LearningPlatform{
   this.grading=new LearningGradePolicy(this);
  }
  settings(){try{return normalizeSettings(this.store.getPreference(SETTINGS,{}));}catch{return normalizeSettings();}}
- saveSettings(user,input){const cfg=normalizeSettings(input);this.store.setPreference(SETTINGS,cfg);this.learning.event(user,null,'platform.settings',null);return cfg;}
+ saveSettings(user,input){const cfg=normalizeSettings({...input,embeddedEnabled:input?.embeddedEnabled??this.settings().embeddedEnabled});this.store.setPreference(SETTINGS,cfg);this.learning.event(user,null,'platform.settings',null);return cfg;}
  signedName(classId,userId,given){
   let first='Student';try{if(given)first=label(given,80);}catch{}
   this.db.prepare('INSERT INTO learning_first_names VALUES(?,?,?) ON CONFLICT(class_id,user_id) DO UPDATE SET first_name=excluded.first_name').run(classId,userId,first);

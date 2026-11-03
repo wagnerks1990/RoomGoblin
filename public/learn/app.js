@@ -3,26 +3,47 @@ const $=id=>document.getElementById(id),API='/api/v1/learning';
 let lastBackgroundRefresh=0,replyComposerOpen=false;
 const threadState=new Map(),expandedPosts=new Set(),replySlots=new Map();
 let me=null,classId=null,activityId=new URL(location.href).searchParams.get('activity'),data=null,editing=null,pendingGrade=false,retryingGrade=false;
+let reconnecting=false;
+function reconnectWritten(url,method,body){
+ if(reconnecting||new URL(location.href).searchParams.get('lms')!=='1')return false;
+ let flow;try{flow=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));}catch{return false;}
+ if(flow?.activityId!==activityId||!flow.launched||!flow.connectionId||!bridgeHost)return false;
+ if(me?.user.learnerKey){
+  const allowed=new RegExp('^/activities/'+activityId+'/(posts(?:/[a-f0-9-]{36})?|submit)$');
+  const pending=['POST','PUT'].includes(method)&&allowed.test(url)?{url,method,body}:null;
+  try{sessionStorage.setItem('roomgoblin.writing.'+activityId,JSON.stringify({learnerKey:me.user.learnerKey,initial:$('initial').value,reply:$('reply').value,target:$('reply-target').value,editing:editing?.id||null,pending}));}catch{notice('The connection expired. Your draft is still on this page; browser storage is unavailable.',true);return false;}
+ }
+ reconnecting=true;location.replace('/learn/connect/');return true;
+}
+async function restoreWrittenDraft(){
+ let draft;const key='roomgoblin.writing.'+activityId;try{draft=JSON.parse(sessionStorage.getItem(key));sessionStorage.removeItem(key);}catch{return;}
+ if(!draft||draft.learnerKey!==me?.user.learnerKey||data?.activity.member.role!=='student')return;
+ if(typeof draft.initial==='string')$('initial').value=draft.initial.slice(0,6000);if(typeof draft.reply==='string')$('reply').value=draft.reply.slice(0,3000);
+ if([...$('reply-target').options].some(o=>o.value===draft.target))$('reply-target').value=draft.target;
+ const post=data.posts.find(p=>p.id===draft.editing&&p.mine);if(post){editing=post;$('post-form').hidden=false;$('cancel-edit').hidden=false;$('publish').disabled=false;}
+ if(draft.pending){const {url,method,body}=draft.pending,allowed=new RegExp('^/activities/'+activityId+'/(posts(?:/[a-f0-9-]{36})?|submit)$');if(allowed.test(url)&&['POST','PUT'].includes(method)){await api(url,method,body);$('initial').value='';$('reply').value='';editing=null;await refresh();notice('Reconnected. Your writing was saved automatically.');}}
+}
+const bridgeHost=window.opener||(window.parent!==window?window.parent:null);
 const fragment=new URLSearchParams(location.hash.slice(1)),bridge={nonce:fragment.get('bridge'),parent:fragment.get('parent'),activityId};
 // A configured discussion SCORM launcher returns here after a fresh signed LMS
 // launch. Restore only its matching, recent, approved-origin message channel.
-if(!bridge.nonce&&window.opener){try{const flow=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));if(flow?.activityId===activityId&&flow.launched&&flow.connectionId&&Date.now()-flow.created>=0&&Date.now()-flow.created<28800000){bridge.nonce=flow.nonce;bridge.parent=flow.parent;}}catch{}}
+if(!bridge.nonce&&bridgeHost){try{const flow=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));if(flow?.activityId===activityId&&flow.launched&&flow.connectionId&&Date.now()-flow.created>=0&&Date.now()-flow.created<28800000){bridge.nonce=flow.nonce;bridge.parent=flow.parent;}}catch{}}
 const scormSync={checking:false,lastCheck:0,sentAt:0,sentKey:null,confirmedKey:null,message:''};
 const receiptKey=r=>[r.reviewId,r.approvedAt,r.raw].join('|');
 let nameRequest=null;
-function validBridge(){return !!(window.opener&&!window.opener.closed&&activityId===bridge.activityId&&bridge.nonce&&/^[a-f0-9]{32}$/.test(bridge.nonce)&&me?.bridgeOrigins.includes(bridge.parent));}
+function validBridge(){return !!(bridgeHost&&!bridgeHost.closed&&activityId===bridge.activityId&&bridge.nonce&&/^[a-f0-9]{32}$/.test(bridge.nonce)&&me?.bridgeOrigins.includes(bridge.parent));}
 async function syncPublishedGrade(force=false){
  if(!validBridge()||data?.activity.member.role!=='student'||scormSync.checking||!force&&Date.now()-scormSync.lastCheck<15000)return;
  scormSync.checking=true;scormSync.lastCheck=Date.now();const id=activityId;
  try{const receipt=await api(`/activities/${id}/receipt`);if(activityId!==id||!validBridge())return;const key=receiptKey(receipt);
   if(!force&&(key===scormSync.confirmedKey||key===scormSync.sentKey&&Date.now()-scormSync.sentAt<30000))return;
   scormSync.sentKey=key;scormSync.sentAt=Date.now();scormSync.message='Saving your published grade to Schoology…';
-  window.opener.postMessage({type:'roomgoblin.grade',nonce:bridge.nonce,...receipt},bridge.parent);
+  bridgeHost.postMessage({type:'roomgoblin.grade',nonce:bridge.nonce,...receipt},bridge.parent);
  }catch(e){scormSync.message=e.status===409?'Your grade will sync automatically after it is published.':'Your saved grade will retry syncing when the connection is available.';if(force)throw e;}
  finally{scormSync.checking=false;if(activityId===id)$('lms-status').textContent=scormSync.message;}
 }
 window.addEventListener('message',e=>{
- const d=e.data;if(!validBridge()||e.source!==window.opener||e.origin!==bridge.parent||!d||d.type!=='roomgoblin.grade.result'||d.nonce!==bridge.nonce||d.activityId!==activityId||receiptKey(d)!==scormSync.sentKey)return;
+ const d=e.data;if(!validBridge()||e.source!==bridgeHost||e.origin!==bridge.parent||!d||d.type!=='roomgoblin.grade.result'||d.nonce!==bridge.nonce||d.activityId!==activityId||receiptKey(d)!==scormSync.sentKey)return;
  if(d.saved===true){scormSync.confirmedKey=scormSync.sentKey;scormSync.message='Schoology confirmed the SCORM save. Revised grades will sync automatically.';}
  else if(d.saved===false)scormSync.message='Your grade is saved here. Schoology saving is pending and will retry while the launcher stays open.';
  $('lms-status').textContent=scormSync.message;
@@ -31,11 +52,11 @@ setInterval(()=>{syncPublishedGrade().catch(()=>{});},5000);
 function requestLmsName(){
  if(!validBridge()||me.user.lms||data?.activity.member.role!=='student')return;
  nameRequest={activityId,user:me.user.alias};
- window.opener.postMessage({type:'roomgoblin.learner.request',nonce:bridge.nonce,activityId},bridge.parent);
+ bridgeHost.postMessage({type:'roomgoblin.learner.request',nonce:bridge.nonce,activityId},bridge.parent);
 }
 window.addEventListener('message',async e=>{
  const d=e.data,pending=nameRequest;
- if(!pending||!validBridge()||e.source!==window.opener||e.origin!==bridge.parent||!d||d.type!=='roomgoblin.learner'||d.nonce!==bridge.nonce||d.activityId!==pending.activityId||activityId!==pending.activityId||me.user.alias!==pending.user||data?.activity.member.role!=='student')return;
+ if(!pending||!validBridge()||e.source!==bridgeHost||e.origin!==bridge.parent||!d||d.type!=='roomgoblin.learner'||d.nonce!==bridge.nonce||d.activityId!==pending.activityId||activityId!==pending.activityId||me.user.alias!==pending.user||data?.activity.member.role!=='student')return;
  nameRequest=null;
  if(typeof d.name!=='string'||!d.name.trim()||d.name.length>255)return;
  try{const result=await api(`/activities/${pending.activityId}/lms-name`,'PUT',{name:d.name,launcherOrigin:bridge.parent});if(activityId===pending.activityId){$('identity').textContent=result.name;await refresh();}}
@@ -46,7 +67,7 @@ function notice(message,error=false){$('notice').textContent=message;$('notice')
 function el(tag,content,cls){const n=document.createElement(tag);if(content!==undefined)n.textContent=content;if(cls)n.className=cls;return n;}
 function button(label,fn){const b=el('button',label);b.type='button';b.onclick=()=>task(b,fn);return b;}
 async function task(b,fn){b.disabled=true;try{await fn();}catch(e){notice(e.message,true);}finally{b.disabled=b.id==="publish"&&!editing&&!!data?.posts.some(p=>p.mine&&p.kind==="initial");}}
-async function api(url='',method='GET',body){const r=await fetch(API+url,{method,headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1'},credentials:'same-origin',body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json();if(!r.ok||j.ok===false)throw Object.assign(Error(j.error||'Request did not complete.'),{status:r.status});return j;}
+async function api(url='',method='GET',body){let connection='';try{const f=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));if(f?.activityId===activityId&&f.launched&&new URL(location.href).searchParams.get('lms')==='1')connection=f.connectionId||'';}catch{}const r=await fetch(API+url,{method,headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1',...(connection?{'x-roomgoblin-connection':connection}:{})},credentials:'same-origin',body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json();if(r.status===401)reconnectWritten(url,method,body);if(!r.ok||j.ok===false)throw Object.assign(Error(j.error||'Request did not complete.'),{status:r.status});return j;}
 function field(label,type='text',value=''){const l=el('label',label),i=el(type==='textarea'?'textarea':'input');if(type!=='textarea')i.type=type;i.value=value;l.append(i);return {label:l,input:i};}
 async function openLtiSettings(){
  const {settings:s}=await api(`/activities/${activityId}/lti`);
@@ -60,7 +81,7 @@ function formAt(title,fields,submit){const host=$('teacher-form');host.replaceCh
 async function boot(){
  try{me=await api('/me');$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('password-change').hidden=me.user.lms;$('enroll').hidden=!me.user.admin;$('identity').textContent=me.user.alias;$('teacher-tools').hidden=!me.user.teacher;$('new-account').hidden=!me.user.admin;$('ai-settings').hidden=!me.user.admin;
  $('classes').replaceChildren(...me.classes.map(c=>button(c.title,()=>selectClass(c.id))));
- if(activityId){data=await api('/activities/'+activityId);classId=data.activity.class_id;await selectClass(classId,false);await loadActivity(activityId);}else if(me.classes.length)await selectClass(me.classes[0].id);
+ if(activityId){data=await api('/activities/'+activityId);classId=data.activity.class_id;await selectClass(classId,false);await loadActivity(activityId);await restoreWrittenDraft().catch(e=>notice(e.message,true));}else if(me.classes.length)await selectClass(me.classes[0].id);
  else notice(me.user.teacher?'Create a class to start.':'No classes are assigned yet. Ask your teacher.');
  }catch(e){const sso=new URL(location.href).searchParams.get('lms')==='1';$('login').hidden=sso;$('workspace').hidden=true;notice(sso?'Reopen this assignment from Schoology to continue.':e.message,true);}
 }

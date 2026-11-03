@@ -17,7 +17,38 @@ Approved AI or teacher receipts return to that exact SCO window, activity, origi
 and nonce. Native commits retry automatically, and the discussion distinguishes
 SCORM confirmation from the independent LTI outcome status. Revised approved
 writing grades remain authoritative; the writing rubric and moderation rules
-are unchanged. A companion window remains necessary in this implementation.
+are unchanged.
+
+## Single-window signed connections
+
+An administrator can enable **Allow signed student connections inside approved
+Schoology frames** in connection settings. Keep the exact Schoology course origin
+and SCORM player origin in the approved list. The student gateway then permits
+only those HTTPS frame ancestors; administrative routes remain unavailable.
+
+New written SCORM downloads automatically open the signed discussion inside the
+SCO. Game packages set `connectionMode: 'embedded'` and call the SDK connection
+at launch. Identity is still supplied by a fresh signed LMS launch. Session and
+flow cookies use Secure, HttpOnly, SameSite=None and Partitioned for this mode.
+Origin, source-window, nonce, activity and learner checks remain required. No
+secret or learner identifier is embedded in a package. The default companion
+mode is retained for existing installations; embedded mode never falls back to
+a popup silently.
+
+Expired sessions reconnect in the same frame. Written drafts survive a confirmed
+401 response, are restored only for the same newly authenticated learner, and
+only a write rejected with 401 is retried automatically. Uncertain network writes
+are not replayed. Rejected native SCORM commits retry without repeating writing.
+For leaderboard-only campaigns, enable signed updates from anywhere so private
+LAN presence is unnecessary; classroom effects still require their own proof.
+
+The LMS and browser must allow the signed launch to load inside this frame.
+In a cross-site ancestor chain the LMS authentication cookie must support that
+context; a SameSite=Lax-only LMS cookie is deliberately not bypassed.
+Local browser fixtures verify nested origins and partitioned sessions, but are
+not evidence of Schoology policy or student-device acceptance. A blocked LMS
+frame must be resolved through supported LMS settings; do not weaken origin or
+identity checks. Disable embedded mode and retain existing records for rollback.
 
 ## Optional dated assessment policy
 

@@ -7,7 +7,7 @@
  let origin;try{origin=new URL(cfg.origin);if(origin.protocol!=='https:'||origin.origin!==cfg.origin||!uuid(cfg.activityId))return;}catch{return;}
  const key='roomgoblin.scorm.'+cfg.activityId;
  let popup=null,nonce='',learner=null,sequence=0,queue=[],unbound=[],sending=null,button=null,status=null,lastScore=null,lastProgress='',lastResume='',closed=false;
- let campaign=null,grade=null;const arcadeWaiters=new Map(),gradeWaiters=new Map();
+ let campaign=null,grade=null,connectionFrame=null;const arcadeWaiters=new Map(),gradeWaiters=new Map();
  const announce=(type,detail)=>{if(typeof root.CustomEvent==='function')root.dispatchEvent(new root.CustomEvent(type,{detail}));};
  const say=text=>{if(status)status.textContent=text;announce('roomgoblin:status',{message:text});};
  const persist=()=>{if(learner)try{root.sessionStorage.setItem(key,JSON.stringify({learner,sequence,queue:queue.slice(-100)}));}catch{say('Keep this assignment open to finish sending progress.');}};
@@ -26,7 +26,10 @@
   const bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);nonce=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
   learner=null;sending=null;closed=false;
   const hash=new URLSearchParams({activity:cfg.activityId,nonce,parent:root.location.origin});
-  popup=root.open(origin.origin+'/learn/connect/#'+hash,'roomgoblin-'+cfg.activityId,'width=560,height=680');
+  if(cfg.connectionMode==='embedded'){
+   hash.set('embedded','1');if(!connectionFrame){connectionFrame=document.createElement('iframe');connectionFrame.title='Schoology connection';connectionFrame.style.cssText='width:100%;height:150px;border:0;background:white;color:black';document.body.append(connectionFrame);}
+   connectionFrame.hidden=false;connectionFrame.src=origin.origin+'/learn/connect/#'+hash;popup=connectionFrame.contentWindow;
+  }else popup=root.open(origin.origin+'/learn/connect/#'+hash,'roomgoblin-'+cfg.activityId,'width=560,height=680');
   say(popup?'Connecting through Schoology…':'Allow the connection window, then select Connect again.');
   return !!popup;
  }
@@ -39,7 +42,7 @@
    queue=stored?.learner===learner&&Array.isArray(stored.queue)?stored.queue.filter(x=>uuid(x.id)&&x.learnerKey===learner&&Number.isInteger(x.sequence)).slice(-100):[];
    sequence=Math.max(sequence,...queue.map(x=>x.sequence),0);
    for(const item of unbound)queue.push({...item,learnerKey:learner,sequence:++sequence});unbound=[];persist();
-   campaign=m.state.arcade||null;grade=m.state.grade||null;
+   campaign=m.state.arcade||null;grade=m.state.grade||null;if(connectionFrame)connectionFrame.hidden=true;
    say('Connected, '+String(m.state.firstName||'Student')+'.');if(button)button.textContent='Reconnect';sending=null;pump();announce('roomgoblin:ready',{arcade:campaign,firstName:m.state.firstName||'Student',progress:m.state.progress||{},grade});
   }else if(m.type==='roomgoblin.connector.saved'&&sending?.id===m.id){
    if(queue.find(item=>item.id===m.id)?.kind==='assessment'){grade=m.state?.grade||null;const waiter=gradeWaiters.get(m.id);if(waiter){clearTimeout(waiter.timer);gradeWaiters.delete(m.id);grade?waiter.resolve(grade):waiter.reject(Error('Automatic grading needs teacher setup.'));}if(grade)announce('roomgoblin:grade',{grade});}

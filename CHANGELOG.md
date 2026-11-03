@@ -8,6 +8,8 @@
 - Support signed written-discussion SCORM launchers and automatic grade receipt
   recovery. Add opt-in server calendar-day assessment credit with retained best
   grades and teacher exceptions; preserve LMS review and identity boundaries.
+- Add opt-in embedded signed SCORM connections, automatic same-frame reconnect
+  and identity-bound written draft recovery without companion windows.
 
 - Add a native arcade leaderboard with original gorilla artwork, levels, points,
   progress and recent-save status. A teacher can explicitly dedicate its receiver
