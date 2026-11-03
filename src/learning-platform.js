@@ -1,5 +1,6 @@
 "use strict";
 const crypto=require('node:crypto'),net=require('node:net');
+const {LearningArcade,normalizeArcade}=require('./learning-arcade');
 const {SETTINGS}=require('./learning-public');
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
 const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
@@ -42,9 +43,10 @@ function normalizeSettings(input={}){
 }
 function normalizeEvent(input,points){
  if(!plain(input)||!uuid(input.id)||!Number.isInteger(input.sequence)||input.sequence<1||input.sequence>2147483647)fail(400,'A unique event ID and increasing sequence are required.');
- if(!['progress','score','completed','checkpoint'].includes(input.kind))fail(400,'Unsupported assignment event.');
+ if(!['progress','score','completed','checkpoint','arcade'].includes(input.kind))fail(400,'Unsupported assignment event.');
  const occurred=Date.parse(input.occurredAt);if(typeof input.occurredAt!=='string'||input.occurredAt.length>40||!Number.isFinite(occurred)||!/(Z|[+-]\d\d:\d\d)$/.test(input.occurredAt))fail(400,'An event timestamp with timezone is required.');
  const data={};
+ if(input.kind==='arcade')Object.assign(data,normalizeArcade(input));
  if(input.kind==='progress'){if(!Number.isInteger(input.current)||!Number.isInteger(input.total)||input.total<1||input.total>10000||input.current<0||input.current>input.total)fail(400,'Invalid assignment progress.');data.current=input.current;data.total=input.total;}
  if(['score','completed'].includes(input.kind)){if(!finite(input.raw,0,100))fail(400,'SCORM scores must be percentages from 0 to 100.');data.raw=input.raw;data.earned=Math.round(input.raw*points)/100;data.possible=points;}
  if(input.kind==='checkpoint'){if(typeof input.state!=='string'||Buffer.byteLength(input.state)>4096)fail(400,'Resume data must be a string of at most 4096 bytes.');data.state=input.state;}
@@ -68,6 +70,7 @@ class LearningPlatform{
   // Saved progress survives; permission to operate physical hardware does not.
   this.db.prepare('UPDATE learning_live_sessions SET ended_at=? WHERE ended_at IS NULL').run(this.clock());
   this.db.prepare("UPDATE learning_effect_runs SET status='interrupted',finished_at=? WHERE status='dispatching'").run(this.clock());
+  this.arcade=new LearningArcade(this);
  }
  settings(){try{return normalizeSettings(this.store.getPreference(SETTINGS,{}));}catch{return normalizeSettings();}}
  saveSettings(user,input){const cfg=normalizeSettings(input);this.store.setPreference(SETTINGS,cfg);this.learning.event(user,null,'platform.settings',null);return cfg;}
@@ -88,7 +91,7 @@ class LearningPlatform{
   const a=this.learning.activity(user,id),cfg=this.config(id);if(!cfg)fail(404,'Assignment connector not configured.');
   const row=this.db.prepare('SELECT * FROM learning_progress WHERE activity_id=? AND user_id=?').get(id,user.id);
   const firstName=this.db.prepare('SELECT first_name FROM learning_first_names WHERE class_id=? AND user_id=?').get(a.class_id,user.id)?.first_name||'Student';
-  return {activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress:row?objectJson(row.data_json):{},open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id)};
+  return {activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress:row?objectJson(row.data_json):{},open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
  }
  currentSession(classId){const session=this.db.prepare('SELECT * FROM learning_live_sessions WHERE class_id=? AND ended_at IS NULL AND expires_at>? ORDER BY started_at DESC LIMIT 1').get(classId,this.clock())||null;return session&&this.schedule&&!this.schedule.valid(session)?null:session;}
  start(user,classId,minutes){
@@ -133,6 +136,10 @@ class LearningPlatform{
   const classroom=latest&&fresh&&(classroomRequest(req,this.settings())||presenceValid())&&this.eligible(user,a,session);
   const progress={...prior.progress,...event.data,...(event.kind==='completed'?{completed:true}:{})};let signalId;
   this.store.tx(()=>{
+   if(event.kind==='arcade'){
+    if(!latest)fail(409,'A newer assignment checkpoint is already saved. Reconnect before continuing.');
+    this.arcade.save(user,a,event.data,classroom);
+   }
    if(classroom&&this.schedule?.automatic(session))this.db.prepare('INSERT OR IGNORE INTO learning_live_attendance VALUES(?,?)').run(session.id,user.id);
    signalId=Number(this.db.prepare('INSERT INTO learning_signals(activity_id,user_id,client_id,fingerprint,kind,sequence,occurred_at,received_at,data_json,classroom) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,user.id,event.id,fingerprint,event.kind,event.sequence,event.occurredAt,now,JSON.stringify(event.data),classroom?1:0).lastInsertRowid);
    if(latest)this.db.prepare('INSERT INTO learning_progress VALUES(?,?,?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET sequence=excluded.sequence,data_json=excluded.data_json,updated_at=excluded.updated_at').run(id,user.id,event.sequence,JSON.stringify(progress),now);

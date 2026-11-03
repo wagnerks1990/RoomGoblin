@@ -5533,6 +5533,9 @@ const learningRuntime=registerLearning(app,{store:dbStore,requestUser,hasCapabil
     dispatch:createEffectAdapter({catalog:learningEffectOptions,available:learningEffectsAvailable,execute:(command,options)=>executeCommand(command,'automation',options)})}});
 // Synchronous metadata reconciliation never dispatches hardware or runs AI.
 const learningScheduleTimer=setInterval(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{learningRuntime.schedule.reconcile();}catch(error){diagnosticError(error,{component:'learning',operation:'schedule-sync'});}},15000);learningScheduleTimer.unref();
+// Campaign history persists, while physical presentation follows a currently
+// authorized class session and expires on the receiver if heartbeats stop.
+const learningArcadeTimer=setInterval(()=>{if(!learningEffectsAvailable())return;learningRuntime.platform.arcade.tick().catch(error=>diagnosticError(error,{component:'learning',operation:'arcade-board'}));},5000);learningArcadeTimer.unref();
 app.use(express.static(path.join(APP_DIR, "public")));
 
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};

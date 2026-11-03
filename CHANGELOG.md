@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Add teacher-owned continuing arcade campaigns across classes and SCORM assignments,
+  with persistent private checkpoints, stale-tab protection and a classroom-only
+  arcade/completion board that excludes academic grades. Refresh transient boards
+  without briefly restoring the scheduled screen between updates.
+
 - Keep queues resumed in Music Studio under announcement priority and sleep
   controls on the selected output. Preserve queue contents and volume; observe
   existing queues without automatically replacing them with a scheduled favorite.
