@@ -4,11 +4,15 @@
 // dispatches commands; the owner checks priority and session identity first.
 class PlaybackRecovery {
   constructor({now=Date.now}={}){this.now=now;this.reset()}
-  reset(){this.attempts=0;this.retryAt=0;this.awaitingUntil=0;this.lastProgressAt=0;this.lastPositionAt=0;this.lastElapsed=null;this.lastReportedElapsed=null;this.lastDuration=0;this.mediaKey="";this.idleSince=0;this.healthySince=0;this.state="idle";this.reason=""}
+  reset(){this.attempts=0;this.retryAt=0;this.awaitingUntil=0;this.lastProgressAt=0;this.lastPositionAt=0;this.lastElapsed=null;this.lastReportedElapsed=null;this.lastDuration=0;this.mediaKey="";this.idleSince=0;this.outputIdleSince=0;this.outputEvidenceKey="";this.healthySince=0;this.state="idle";this.reason=""}
   requested(){const now=this.now();this.attempts++;this.awaitingUntil=now+20000;this.retryAt=now+Math.min(300000,15000*2**Math.min(this.attempts-1,5));this.state="starting";this.reason="Waiting for the player to confirm playback"}
   failed(uncertain=false){this.awaitingUntil=uncertain?this.now()+30000:0;this.state="retrying";this.reason=uncertain?"Command response lost; checking the player before retrying":"Playback failed; retry scheduled"}
   observe(actual,{stallSeconds=120,finiteTrack=false}={}){
     const now=this.now();
+    const evidence=actual?.playing&&actual?.available!==false?actual.outputEvidence:null;
+    if(evidence?.state!=="idle"||evidence.key!==this.outputEvidenceKey)this.outputIdleSince=0;
+    this.outputEvidenceKey=evidence?.key||"";
+    if(evidence?.state==="idle"&&!this.outputIdleSince)this.outputIdleSince=now;
     if(!actual){this.state="unknown";this.reason="Player status is unavailable";return {action:"wait"}}
     if(!actual.found||actual.available===false){this.state="waiting";this.reason=actual.found?"Player is temporarily unavailable":"Waiting for player registration";this.healthySince=0;return {action:"wait"}}
     const p=actual.player||{},media=p.current_media||{},elapsed=p.elapsed_time==null?NaN:Number(p.elapsed_time),key=String(media.uri||media.media_id||media.title||"");
@@ -28,19 +32,18 @@ class PlaybackRecovery {
         this.lastElapsed=position;this.lastReportedElapsed=elapsed;this.mediaKey=key;
       }
       // No telemetry means unknown audible progress, not proof of a stall.
-      // Sendspin's MA queue writer stamps elapsed time as it commits audio
-      // frames. If that writer fails, the group can retain "playing" forever.
-      // Only explicitly identified frame-reporting transports use this test;
-      // ordinary timestamp anchors retain their interpolation contract.
-      const stoppedFrames=actual.progressReportsExpected===true&&estimated&&Number.isFinite(elapsed)&&now/1000-anchor>=stallSeconds;
-      const stalled=stoppedFrames||(Number.isFinite(position)&&this.lastPositionAt>0&&now-this.lastPositionAt>=stallSeconds*1000);
+      // MA suppresses ordinary anchor changes even for Sendspin. An old API
+      // timestamp is not a frame heartbeat. Only a separately bound physical
+      // output reporting idle continuously can contradict its playing state.
+      const outputStopped=this.outputIdleSince>0&&now-this.outputIdleSince>=stallSeconds*1000;
+      const stalled=outputStopped||(Number.isFinite(position)&&this.lastPositionAt>0&&now-this.lastPositionAt>=stallSeconds*1000);
       if(!stalled){
         this.state="playing";this.reason=progress?"Playback progress confirmed":estimated&&Number.isFinite(position)?"Player reports playing; position is estimated":"Player reports playing";
         if(!this.healthySince)this.healthySince=now;
         if(now-this.healthySince>=30000){this.attempts=0;this.retryAt=0}
         this.awaitingUntil=0;return {action:"none"};
       }
-      this.healthySince=0;this.state="stalled";this.reason=stoppedFrames?"Sendspin stopped reporting audio progress; the source may have stalled":"Player reports playing, but progress has stopped";
+      this.healthySince=0;this.state="stalled";this.reason=outputStopped?"Apollo reports idle while Music Assistant reports playing":"Player reports playing, but progress has stopped";
     }else{
       this.healthySince=0;
       const duration=Number(media.duration)||this.lastDuration;

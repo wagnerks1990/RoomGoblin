@@ -73,11 +73,20 @@ The existing ESPHome worker reconnects with bounded backoff, pins the device MAC
 and restarts after worker failure. It never replays a hardware command. Automatic
 device power cycling or factory reset is not part of recovery.
 
-Background Music detects stale **Sendspin audio-frame reports** separately from
-normal Music Assistant timestamp extrapolation. Recover playback can reopen the
+Music Assistant caches position anchors, including Sendspin anchors, during
+healthy playback. An old timestamp cannot establish an audio stall. In Updates &
+recovery, explicitly select the **Playback health output** connected to each
+Apollo. RoomGoblin pins this link to the Music Assistant server and native
+enrollment identity; it never guesses matching MAC addresses or friendly names.
+The physical Apollo speaker must report idle continuously for the configured
+stall interval while Music Assistant reports playing before this evidence can
+trigger recovery. Offline, stale, replaced or ambiguous native observations are
+ignored. This reports device playback state, not proof of audible sound.
+
+Recover playback can reopen the
 current queue item after a stream fails while its group still says playing. It
-preserves the queue, repeat/shuffle and volume, and uses the current finite-track
-position (radio restarts at its live edge). An idle/completed existing queue is
+preserves the queue, repeat/shuffle and volume, and uses Music Assistant's
+estimated finite-track queue position (radio restarts at its live edge). An idle/completed existing queue is
 not automatically replayed. Repair uses the selected output, including a queue
 observed after Hub restart, and preserves announcement priority and bounded retry.
 If Music Assistant has already marked the item unavailable, repair reports that

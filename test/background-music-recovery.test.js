@@ -39,21 +39,30 @@ test("unchanged Music Assistant position anchors keep playing beyond the stall t
  assert.match(recovery.reason,/estimated/);
 });
 
-test("Sendspin audio stops progressing when its server stops committing audio frames",()=>{
+test("a bound physical output must remain idle before contradicting MA playing",()=>{
  let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
- const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),progressReportsExpected:true};
+ const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),outputEvidence:{key:"pinned-output",state:"idle"}};
  recovery.observe(actual);now+=121000;
  assert.equal(recovery.observe(actual).action,"resume");assert.equal(recovery.state,"stalled");
  recovery.requested();now+=21000;
  assert.equal(recovery.observe(actual).action,"reload");
- actual.player.elapsed_time=13;actual.player.elapsed_time_last_updated=now/1000;
+ actual.outputEvidence.state="playing";
  assert.equal(recovery.observe(actual).action,"none");
 });
 
-test("fresh Sendspin frame progress remains healthy and absent telemetry is not a stall",()=>{
+test("cached Sendspin anchors are not heartbeats, including with a playing physical output",()=>{
  let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
- for(let i=0;i<100;i++){now+=5000;assert.equal(recovery.observe({...player(i*5,"playing",{elapsed_time_last_updated:now/1000}),progressReportsExpected:true}).action,"none")}
- now+=600000;assert.equal(recovery.observe({...player(null),progressReportsExpected:true}).action,"none");
+ const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),progressReportsExpected:true,outputEvidence:{key:"pinned-output",state:"playing"}};
+ for(let i=0;i<100;i++){now+=5000;assert.equal(recovery.observe(actual).action,"none")}
+ actual.outputEvidence=null;now+=600000;assert.equal(recovery.observe(actual).action,"none");
+});
+
+test("lost or changed physical evidence restarts the continuous-idle grace period",()=>{
+ let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
+ const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),outputEvidence:{key:"first",state:"idle"}};
+ recovery.observe(actual);now+=119000;actual.outputEvidence=null;assert.equal(recovery.observe(actual).action,"none");
+ actual.outputEvidence={key:"first",state:"idle"};recovery.observe(actual);now+=119000;actual.outputEvidence.key="second";assert.equal(recovery.observe(actual).action,"none");
+ now+=119000;assert.equal(recovery.observe(actual).action,"none");now+=2000;assert.equal(recovery.observe(actual).action,"resume");
 });
 
 test("fresh timestamps reporting a frozen position still trigger bounded recovery",()=>{

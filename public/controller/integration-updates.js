@@ -14,7 +14,7 @@
     for(const input of [ma,recover])input.parentElement.style.display="block";
     const view={page,panel,status,info,devices,ma,recover,host,rows:new Map(),dirty:false};
     content.addEventListener("change",()=>{view.dirty=true});
-    action(toolbar,"Save maintenance policy",()=>mutate(endpoint,{musicAssistant:ma.checked,recoverMusicAssistant:recover.checked,apollo:[...view.rows].filter(([,row])=>row.auto.checked).map(([id])=>id)},"PUT",()=>{view.dirty=false},"Maintenance policy saved."));
+    action(toolbar,"Save maintenance policy",()=>mutate(endpoint,{musicAssistant:ma.checked,recoverMusicAssistant:recover.checked,apollo:[...view.rows].filter(([,row])=>row.auto.checked).map(([id])=>id),playbackOutputs:Object.fromEntries([...view.rows].map(([id,row])=>[id,row.output.value]))},"PUT",()=>{view.dirty=false},"Maintenance policy saved."));
     action(toolbar,"Check stable updates",()=>mutate(endpoint+"/check",{},"POST",()=>{checking=true},"Stable release check requested."));
     view.install=action(toolbar,"Update Music Assistant now",()=>install("musicAssistant",null,state?.catalog?.musicAssistant?.latestVersion));
     content.append(info,host,devices,toolbar,status);panel.append(summary,content);
@@ -27,7 +27,7 @@
       v.panel.hidden=!admin();
       if(!state||!admin()){for(const input of v.panel.querySelectorAll("input,button"))input.disabled=true;continue}
       if(!v.dirty){v.ma.checked=state.policy.musicAssistant;v.recover.checked=state.policy.recoverMusicAssistant}
-      v.info.textContent=`Automatic updates wait for idle playback during ${state.window.start}–${state.window.end} in the appliance time zone. Recovery is limited to three service restarts per day. Apollo reconnects automatically; firmware delivery is never blindly repeated.`;
+      v.info.textContent=`Automatic updates wait for idle playback during ${state.window.start}–${state.window.end} in the appliance time zone. Recovery is limited to three service restarts per day. Link each Apollo to its music output for physical playback checks. Apollo reconnects automatically; firmware delivery is never blindly repeated.`;
       const ma=state.catalog?.musicAssistant,job=state.hostJob;
       v.host.textContent=[ma?.currentVersion?`Music Assistant ${ma.currentVersion}; latest stable ${ma.latestVersion}.`:"Check stable updates to load Music Assistant versions.",ma?.checking?"Checking…":"",ma?.error||"",job?`Last service operation: ${job.stage}${job.version?" · "+job.version:""}. ${job.error||""}`:""].filter(Boolean).join(" ");
       const ids=new Set();
@@ -35,9 +35,12 @@
         ids.add(device.id);let row=v.rows.get(device.id);
         if(!row){
           const root=el("div"),auto=checkbox(root,`Automatically update ${device.name}`),detail=el("p"),button=action(root,"Update firmware now",()=>install("apollo",device.id,state?.catalog?.apollo?.version));
-          root.append(detail);v.devices.append(root);row={root,auto,detail,button};v.rows.set(device.id,row);
+          const label=el("label",`Playback health output for ${device.name} `),output=el("select");label.append(output);root.append(detail,label);v.devices.append(root);row={root,auto,detail,button,output};v.rows.set(device.id,row);
         }
         if(!v.dirty)row.auto.checked=state.policy.apollo.includes(device.id);
+        const selected=v.dirty?row.output.value:state.policy.outputBindings?.[device.id]?.playerId||"",outputs=[{id:"",name:"Not linked"},...(state.outputs||[])];
+        if(selected&&!outputs.some(p=>p.id===selected))outputs.push({id:selected,name:`Saved output (${selected})`});
+        const optionsKey=JSON.stringify(outputs);if(row.optionsKey!==optionsKey){row.output.replaceChildren(...outputs.map(p=>{const option=el("option",p.name);option.value=p.id;return option}));row.optionsKey=optionsKey}row.output.value=selected;
         row.detail.textContent=`${device.name}: ${device.online?"connected":"offline"}, firmware ${device.version||"unknown"}. ${device.candidate?"Stable update: "+device.candidate.latestVersion+".":"Stable update information is unavailable."} ${device.job?"Last update: "+device.job.stage+".":""}`;
         row.button.disabled=busy||state.busy||!device.candidate?.available||device.candidate.latestVersion!==state.catalog?.apollo?.version||["issued","unconfirmed"].includes(device.job?.stage);
       }
@@ -45,7 +48,7 @@
       v.status.textContent=message||state.error||"";
       for(const button of v.panel.querySelectorAll(".toolbar button"))button.disabled=busy;
       v.install.disabled=busy||state.busy||!ma?.available||ma.checking;
-      for(const input of v.panel.querySelectorAll("input"))input.disabled=busy;
+      for(const input of v.panel.querySelectorAll("input,select"))input.disabled=busy;
     }
   }
   async function mutate(url,body,method,done=()=>{},success=""){

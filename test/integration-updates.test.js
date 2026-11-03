@@ -22,13 +22,42 @@ test("prototype property names cannot become firmware journal keys",async()=>{
   assert.equal(Object.prototype.stage,undefined);
 });
 test("automatic policies default off and only accept enrolled Apollo devices",async()=>{
-  const h=fixture();assert.deepEqual(h.manager.policy(),{musicAssistant:false,recoverMusicAssistant:false,apollo:[]});
+  const h=fixture();assert.deepEqual(h.manager.policy(),{musicAssistant:false,recoverMusicAssistant:false,apollo:[],outputBindings:{}});
   assert.throws(()=>h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:["other"]}));
   await h.manager.check();h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:["apollo-1","apollo-1"]});assert.deepEqual(h.values.get(POLICY).apollo,["apollo-1"]);
   h.allow(false);assert.throws(()=>h.manager.configure({musicAssistant:false,recoverMusicAssistant:false,apollo:[]}));
 });
 test("disabled optional maintenance makes no host or player probes",async()=>{
   const h=fixture();h.manager.idle=async()=>{throw Error("must not probe")};await h.manager.tick();assert.deepEqual(h.calls,[]);assert.equal(h.manager.error,"");
+});
+
+async function boundOutput(){
+  const h=fixture(),device=h.devices[0];device.receivedAt=100000000;
+  device.entities.push({id:"mediaplayer:0:3",domain:"media_player",name:"Player"});device.states["mediaplayer:0:3"]={state:1};
+  await h.manager.check();h.manager.checkedConnection.outputs=[{id:"speaker",name:"Test speaker"}];
+  h.manager.configure({musicAssistant:false,recoverMusicAssistant:false,apollo:[],playbackOutputs:{"apollo-1":"speaker"}});
+  return h;
+}
+
+test("physical playback evidence requires an explicit persisted output binding",async()=>{
+  const h=await boundOutput();assert.equal(h.manager.playbackEvidence("speaker").state,"idle");
+  h.manager.checkedConnection=null;assert.equal(h.manager.playbackEvidence("speaker").state,"idle","saved binding survives catalog loss");
+  h.devices[0].states["mediaplayer:0:3"].state=2;assert.equal(h.manager.playbackEvidence("speaker").state,"playing");
+  assert.equal(h.manager.playbackEvidence("other"),null);h.values.delete(POLICY);assert.equal(h.manager.playbackEvidence("speaker"),null);
+});
+
+test("physical evidence fails closed on stale, offline, replaced and ambiguous outputs",async()=>{
+  for(const mutate of [h=>h.devices[0].online=false,h=>h.devices[0].enabled=false,h=>h.devices[0].generation="replacement",h=>h.devices[0].mac="different",h=>h.devices[0].info.project_name="other",h=>h.advance(90001),h=>h.devices[0].states["mediaplayer:0:3"].state=3,h=>h.devices[0].entities.push({...h.devices[0].entities.at(-1)}),h=>h.manager.currentConnection=()=>({url:"http://other",serverId:"local-server"}),h=>h.manager.currentConnection=()=>({url:"http://local.test",serverId:"replacement"}),h=>h.manager.hostRunning=true]){
+    const h=await boundOutput();mutate(h);assert.equal(h.manager.playbackEvidence("speaker"),null);
+  }
+});
+
+test("output binding rejects unknown outputs, devices and prototype keys",async()=>{
+  const h=await boundOutput();
+  for(const playbackOutputs of [{"apollo-1":"other"},{unknown:"speaker"},JSON.parse('{"__proto__":"speaker"}'),[],null]){
+    assert.throws(()=>h.manager.configure({musicAssistant:false,recoverMusicAssistant:false,apollo:[],playbackOutputs}));
+  }
+  assert.equal(h.manager.playbackEvidence("speaker").state,"idle","rejected writes preserve binding");
 });
 test("firmware claim is durable before dispatch and exact reconnect establishes success",async()=>{
   const h=fixture();h.manager.esp.firmwareUpdate=async()=>assert.equal(h.values.get(STATE).apollo["apollo-1"].stage,"issued");

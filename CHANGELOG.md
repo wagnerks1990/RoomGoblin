@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Link Apollo playback health explicitly to its Music Assistant output. Require
+  sustained native speaker-idle evidence for a playing-state stall; cached
+  Sendspin timestamps remain valid during healthy audible playback.
 - Support signed written-discussion SCORM launchers and automatic grade receipt
   recovery. Add opt-in server calendar-day assessment credit with retained best
   grades and teacher exceptions; preserve LMS review and identity boundaries.

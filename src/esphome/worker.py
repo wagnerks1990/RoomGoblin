@@ -24,7 +24,7 @@ MAX_LINE = 1024 * 1024
 DOMAINS = {"SensorInfo": "sensor", "BinarySensorInfo": "binary_sensor",
            "TextSensorInfo": "text_sensor", "SwitchInfo": "switch",
            "LightInfo": "light", "NumberInfo": "number", "SelectInfo": "select",
-           "ButtonInfo": "button", "UpdateInfo": "update"}
+           "ButtonInfo": "button", "UpdateInfo": "update", "MediaPlayerInfo": "media_player"}
 PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
 

@@ -26,13 +26,13 @@ class IntegrationUpdates{
     Object.assign(this,{storage,esp,host,canRun,idle,connection,currentConnection,allowRecovery,window,track,catalog,now});
     this.busy=false;this.hostRunning=false;this.hostKnown=false;this.checkedAt=0;this.checking=null;this.catalogData=null;this.error="";this.closed=false;
   }
-  policy(){return {musicAssistant:false,recoverMusicAssistant:false,apollo:[],...this.storage.getPreference(POLICY,{})}}
+  policy(){return {musicAssistant:false,recoverMusicAssistant:false,apollo:[],outputBindings:{},...this.storage.getPreference(POLICY,{})}}
   state(){return {apollo:{},attempts:{},...this.storage.getPreference(STATE,{})}}
   saveState(value){if(!this.canRun()||this.closed)throw fail("Maintenance is paused for appliance recovery.",423);this.storage.setPreference(STATE,value)}
   active(){return this.busy||this.hostRunning||Object.values(this.state().apollo).some(j=>j.stage==="issued"&&this.now()-j.startedAt<10*60000)}
   status(){
     const devices=this.esp.list().devices.filter(d=>d.info?.project_name==="ApolloAutomation.CAST-1").map(d=>({id:d.id,name:d.name,online:d.online,version:d.info.project_version,candidate:apolloCandidate(d),job:this.state().apollo[d.id]||null}));
-    return {ok:true,policy:this.policy(),window:this.window(),busy:this.active(),devices,catalog:this.catalogData,hostJob:this.hostJob||null,error:this.error};
+    return {ok:true,policy:this.policy(),outputs:this.checkedConnection?.outputs||[],window:this.window(),busy:this.active(),devices,catalog:this.catalogData,hostJob:this.hostJob||null,error:this.error};
   }
   configure(input){
     if(!this.canRun()||this.closed)throw fail("Maintenance is paused for appliance recovery.",423);
@@ -40,13 +40,37 @@ class IntegrationUpdates{
     const devices=this.esp.list().devices;
     if(input.apollo.some(id=>!devices.some(d=>d.id===id&&d.enabled&&d.info?.project_name==="ApolloAutomation.CAST-1")))throw fail("Select an enrolled, enabled Apollo CAST-1.",400);
     const target=input.musicAssistant||input.recoverMusicAssistant?this.localTarget():null;
-    this.storage.setPreference(POLICY,{musicAssistant:input.musicAssistant,recoverMusicAssistant:input.recoverMusicAssistant,apollo:[...new Set(input.apollo)],...(target?{target}:{})});
+    let outputBindings=this.policy().outputBindings;
+    if(input.playbackOutputs!==undefined){
+      if(!input.playbackOutputs||Array.isArray(input.playbackOutputs)||typeof input.playbackOutputs!=="object"||Object.keys(input.playbackOutputs).length>64)throw fail("Invalid playback output bindings.",400);
+      outputBindings={};const used=new Set();
+      for(const [id,playerId] of Object.entries(input.playbackOutputs)){
+        if(id==="__proto__"||id==="constructor"||id==="prototype"||typeof playerId!=="string")throw fail("Invalid playback output binding.",400);
+        if(!playerId)continue;
+        const device=devices.find(d=>d.id===id&&d.enabled&&d.info?.project_name==="ApolloAutomation.CAST-1"&&d.info?.model==="esp32-s3");
+        if(!device||used.has(playerId)||!this.checkedConnection?.outputs?.some(p=>p.id===playerId))throw fail("Check stable updates and select a unique Music Assistant output for each Apollo.");
+        outputBindings[id]={playerId,mac:device.mac,generation:device.generation,...this.localTarget()};used.add(playerId);
+      }
+    }
+    this.storage.setPreference(POLICY,{musicAssistant:input.musicAssistant,recoverMusicAssistant:input.recoverMusicAssistant,apollo:[...new Set(input.apollo)],outputBindings,...(target?{target}:{})});
     return this.status();
+  }
+  playbackEvidence(playerId){
+    const bindings=Object.entries(this.policy().outputBindings).filter(([,b])=>b.playerId===playerId);
+    if(bindings.length!==1||this.active())return null;
+    const [id,binding]=bindings[0],current=this.currentConnection();
+    if(current?.url!==binding.url||current.serverId!==binding.serverId)return null;
+    const device=this.esp.list().devices.find(d=>d.id===id);
+    if(!device?.online||!device.enabled||device.mac!==binding.mac||device.generation!==binding.generation||device.info?.project_name!=="ApolloAutomation.CAST-1"||device.info?.model!=="esp32-s3"||!device.receivedAt||this.now()-device.receivedAt>90000)return null;
+    const speakers=device.entities.filter(e=>e.domain==="media_player"&&e.name==="Player"&&!e.disabledByDefault);
+    if(speakers.length!==1)return null;
+    const state=device.states[speakers[0].id]?.state;
+    return state===1||state===2?{key:`${id}:${device.generation}:${speakers[0].id}`,state:state===1?"idle":"playing"}:null;
   }
   localTarget(){
     const target=this.checkedConnection,current=this.currentConnection();
     if(!target?.serverId||target.serverId!==this.catalogData?.musicAssistant?.serverId||current?.url!==target.url||(current.serverId&&current.serverId!==target.serverId))throw fail("Check stable updates to verify that RoomGoblin is connected to this appliance's Music Assistant before enabling maintenance.");
-    return target;
+    return {url:target.url,serverId:target.serverId};
   }
   async check(){
     if(this.checking)return this.checking;

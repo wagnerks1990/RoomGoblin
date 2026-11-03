@@ -199,12 +199,12 @@ test("the real control route selects queue ownership and retries only its existi
  assert.equal(result.status,503);assert.match(result.body.error,/Provider authentication/);
 });
 
-test("Sendspin queue repair resumes at the last reported audio frame, not extrapolated silence",async()=>{
+test("queue repair uses MA queue position rather than a cached Sendspin state anchor",async()=>{
  const h=fixture();Object.assign(h.r,{activeMedia:null,queueOnly:true});
  h.ctx.backgroundMusicActualPlayerState=async()=>({found:true,available:true,progressReportsExpected:true,player:{elapsed_time:31.5}});
  h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});if(command==="player_queues/get_active_queue")return {queue_id:"A",current_item:{queue_item_id:"kept",duration:180},elapsed_time:160}};
  await h.ctx.backgroundMusicResume("manual-repair","A");
- const play=h.calls.find(c=>c.command==="player_queues/play_index");assert.equal(play.args.seek_position,31);
+ const play=h.calls.find(c=>c.command==="player_queues/play_index");assert.equal(play.args.seek_position,160);
  assert.equal(h.calls.some(c=>c.command==="players/cmd/stop"),false);
 });
 test("repair does not skip through a queue item already marked unavailable",async()=>{
