@@ -22,6 +22,14 @@
 - Automatically sync published and corrected discussion grades to an open SCORM
   launcher, acknowledge confirmed commits, retry temporary save failures, and
   deduplicate unchanged receipts while preserving manual recovery controls.
+
+### Automatic classroom setup
+
+- Add one-time automatic classroom setup: sync native Planning classes, follow
+  the calendar and timetable, and admit signed Schoology learners after fresh
+  local presence. Preserve manual mode, paused-day intent, existing assignment
+  bindings and retained work; restarting never replays classroom effects.
+
 - Add administrator-configured AI chat and media shortcuts to the classroom
   progress page, separate from the signed Schoology student connection.
 

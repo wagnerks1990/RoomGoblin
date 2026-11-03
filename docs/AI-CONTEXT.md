@@ -2,7 +2,9 @@
 
 Learning telemetry uses an isolated loopback student gateway (3030), fresh signed
 LMS connector flows, and per-event LAN presence challenges. SCORM stays in the
-LMS. Retain exact route allowlists, first-name projections, explicit attendance,
+LMS. Retain exact route allowlists, first-name projections, explicit attendance
+in manual mode, and signed identity plus fresh LAN presence in opt-in automatic
+mode. Local Planning owns automatic class timing; preserve
 shutdown/export admission, no effect replay, and native transient display expiry.
 Read `docs/LEARNING-PLATFORM.md` before changing this boundary.
 

@@ -90,20 +90,22 @@ class LearningPlatform{
   const firstName=this.db.prepare('SELECT first_name FROM learning_first_names WHERE class_id=? AND user_id=?').get(a.class_id,user.id)?.first_name||'Student';
   return {activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress:row?objectJson(row.data_json):{},open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id)};
  }
- currentSession(classId){return this.db.prepare('SELECT * FROM learning_live_sessions WHERE class_id=? AND ended_at IS NULL AND expires_at>? ORDER BY started_at DESC LIMIT 1').get(classId,this.clock())||null;}
+ currentSession(classId){const session=this.db.prepare('SELECT * FROM learning_live_sessions WHERE class_id=? AND ended_at IS NULL AND expires_at>? ORDER BY started_at DESC LIMIT 1').get(classId,this.clock())||null;return session&&this.schedule&&!this.schedule.valid(session)?null:session;}
  start(user,classId,minutes){
   this.learning.membership(user,classId,true);if(!Number.isInteger(minutes)||minutes<1||minutes>180)fail(400,'Choose a classroom session from 1 to 180 minutes.');
+  if(this.schedule?.classStatus(classId).automatic)fail(409,'This class follows the RoomGoblin timetable automatically.');
   const id=crypto.randomUUID(),now=this.clock();this.store.tx(()=>{this.db.prepare('UPDATE learning_live_sessions SET ended_at=? WHERE ended_at IS NULL').run(now);this.db.prepare('INSERT INTO learning_live_sessions VALUES(?,?,?,?,?,NULL)').run(id,classId,user.id,now,now+minutes*60000);});this.learning.event(user,null,'classroom.start',id,{classId,minutes});return this.session(user,classId);
  }
- stop(user,classId){this.learning.membership(user,classId,true);this.db.prepare('UPDATE learning_live_sessions SET ended_at=? WHERE class_id=? AND ended_at IS NULL').run(this.clock(),classId);this.learning.event(user,null,'classroom.stop',classId);return this.session(user,classId);}
+ stop(user,classId){this.learning.membership(user,classId,true);this.store.tx(()=>{this.schedule?.pause(user,classId);this.db.prepare('UPDATE learning_live_sessions SET ended_at=? WHERE class_id=? AND ended_at IS NULL').run(this.clock(),classId);this.learning.event(user,null,'classroom.stop',classId);});return this.session(user,classId);}
  admit(user,classId,userIds){
   this.learning.membership(user,classId,true);const session=this.currentSession(classId);if(!session)fail(409,'Start a classroom session first.');
+  if(this.schedule?.automatic(session))fail(409,'Students join automatically through signed Schoology launches and fresh classroom presence.');
   if(!Array.isArray(userIds)||userIds.length>500||userIds.some(id=>!uuid(id)))fail(400,'Select the students physically present.');
   for(const id of userIds){const m=this.db.prepare("SELECT 1 FROM learning_members m JOIN users u ON u.id=m.user_id WHERE m.class_id=? AND m.user_id=? AND m.role='student' AND u.enabled=1").get(classId,id);if(!m)fail(400,'Attendance includes an unavailable student.');}
   this.store.tx(()=>{this.db.prepare('DELETE FROM learning_live_attendance WHERE session_id=?').run(session.id);for(const id of new Set(userIds))this.db.prepare('INSERT INTO learning_live_attendance VALUES(?,?)').run(session.id,id);});this.learning.event(user,null,'classroom.attendance',session.id,{count:userIds.length});return this.session(user,classId);
  }
  session(user,classId){
-  this.learning.membership(user,classId,true);const session=this.currentSession(classId);return {session,attending:session?this.db.prepare('SELECT user_id FROM learning_live_attendance WHERE session_id=?').all(session.id).map(r=>r.user_id):[],board:session?this.board(session.id):[],recipes:this.db.prepare('SELECT * FROM learning_effect_recipes WHERE class_id=? ORDER BY rowid LIMIT 20').all(classId).map(r=>({...r,config:objectJson(r.config_json),config_json:undefined})),recentEffects:session?this.db.prepare('SELECT status,created_at,finished_at FROM learning_effect_runs WHERE session_id=? ORDER BY rowid DESC LIMIT 20').all(session.id):[]};
+  this.learning.membership(user,classId,true);const session=this.currentSession(classId);return {session,automation:this.schedule?.classStatus(classId)||{automatic:false},attending:session?this.db.prepare('SELECT user_id FROM learning_live_attendance WHERE session_id=?').all(session.id).map(r=>r.user_id):[],board:session?this.board(session.id):[],recipes:this.db.prepare('SELECT * FROM learning_effect_recipes WHERE class_id=? ORDER BY rowid LIMIT 20').all(classId).map(r=>({...r,config:objectJson(r.config_json),config_json:undefined})),recentEffects:session?this.db.prepare('SELECT status,created_at,finished_at FROM learning_effect_runs WHERE session_id=? ORDER BY rowid DESC LIMIT 20').all(session.id):[]};
  }
  board(sessionId){
   return this.db.prepare('SELECT p.user_id,p.data_json,n.first_name,activity.title activity_title FROM learning_live_scores p JOIN learning_activities activity ON activity.id=p.activity_id JOIN learning_live_sessions s ON s.id=p.session_id JOIN learning_live_attendance a ON a.session_id=s.id AND a.user_id=p.user_id JOIN learning_members m ON m.class_id=s.class_id AND m.user_id=p.user_id LEFT JOIN learning_first_names n ON n.class_id=s.class_id AND n.user_id=p.user_id WHERE p.session_id=?').all(sessionId).map(r=>({...objectJson(r.data_json),firstName:r.first_name||'Student',activityTitle:r.activity_title})).sort((a,b)=>(b.raw||0)-(a.raw||0)).slice(0,50);
@@ -113,11 +115,13 @@ class LearningPlatform{
   const owner=this.store.listUsers().find(u=>u.id===session.teacher_id&&u.enabled);
   if(!owner||this.learning.teacherCapability&&!this.learning.teacherCapability(owner))return false;
   try{this.learning.membership(owner,a.class_id,true);this.learning.writable(this.learning.activity(user,a.id));}catch{return false;}
-  return !!(this.db.prepare('SELECT 1 FROM learning_live_attendance WHERE session_id=? AND user_id=?').get(session.id,user.id)&&this.db.prepare("SELECT 1 FROM learning_members m JOIN users u ON u.id=m.user_id WHERE m.class_id=? AND m.user_id=? AND m.role='student' AND u.enabled=1").get(a.class_id,user.id));
+  const admitted=this.schedule?.automatic(session)?user.learningSso===true&&user.profileId==='learning-student'&&!!user.sessionId:this.db.prepare('SELECT 1 FROM learning_live_attendance WHERE session_id=? AND user_id=?').get(session.id,user.id);
+  return !!(admitted&&this.db.prepare("SELECT 1 FROM learning_members m JOIN users u ON u.id=m.user_id WHERE m.class_id=? AND m.user_id=? AND m.role='student' AND u.enabled=1").get(a.class_id,user.id));
  }
  async record(user,id,input,req){
   const a=this.learning.activity(user,id);this.learning.writable(a);if(a.member.role!=='student')fail(403,'Only the signed-in student can send assignment progress.');
   const cfg=this.config(id);if(!cfg)fail(404,'Assignment connector not configured.');if(input.learnerKey!==user.id)fail(409,'The connected learner changed. Reconnect before sending saved events.');
+  this.schedule?.reconcile();
   const event=normalizeEvent(input,cfg.points),fingerprint=digest(event),old=this.db.prepare('SELECT fingerprint FROM learning_signals WHERE activity_id=? AND user_id=? AND client_id=?').get(id,user.id,event.id);
   if(old){if(old.fingerprint!==fingerprint)fail(409,'This event ID was already used for different data.');return {duplicate:true,state:this.state(user,id)};}
   const now=this.clock();if(Date.parse(event.occurredAt)>now+300000)fail(400,'Event timestamp is in the future.');
@@ -129,6 +133,7 @@ class LearningPlatform{
   const classroom=latest&&fresh&&(classroomRequest(req,this.settings())||presenceValid())&&this.eligible(user,a,session);
   const progress={...prior.progress,...event.data,...(event.kind==='completed'?{completed:true}:{})};let signalId;
   this.store.tx(()=>{
+   if(classroom&&this.schedule?.automatic(session))this.db.prepare('INSERT OR IGNORE INTO learning_live_attendance VALUES(?,?)').run(session.id,user.id);
    signalId=Number(this.db.prepare('INSERT INTO learning_signals(activity_id,user_id,client_id,fingerprint,kind,sequence,occurred_at,received_at,data_json,classroom) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,user.id,event.id,fingerprint,event.kind,event.sequence,event.occurredAt,now,JSON.stringify(event.data),classroom?1:0).lastInsertRowid);
    if(latest)this.db.prepare('INSERT INTO learning_progress VALUES(?,?,?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET sequence=excluded.sequence,data_json=excluded.data_json,updated_at=excluded.updated_at').run(id,user.id,event.sequence,JSON.stringify(progress),now);
    if(classroom&&['score','completed','progress'].includes(event.kind)){const previous=this.db.prepare('SELECT data_json FROM learning_live_scores WHERE session_id=? AND activity_id=? AND user_id=?').get(session.id,id,user.id);const visible={...objectJson(previous?.data_json),...event.data,...(event.kind==='completed'?{completed:true}:{})};delete visible.state;this.db.prepare('INSERT INTO learning_live_scores VALUES(?,?,?,?) ON CONFLICT(session_id,activity_id,user_id) DO UPDATE SET data_json=excluded.data_json').run(session.id,id,user.id,JSON.stringify(visible));}
