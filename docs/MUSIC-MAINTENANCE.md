@@ -77,6 +77,10 @@ preserves the queue, repeat/shuffle and volume, and uses the current finite-trac
 position (radio restarts at its live edge). An idle/completed existing queue is
 not automatically replayed. Repair uses the selected output, including a queue
 observed after Hub restart, and preserves announcement priority and bounded retry.
+If Music Assistant has already marked the item unavailable, repair reports that
+condition without skipping the queue. Start the station again from Favorites or
+choose another source after the provider is available. During a reload, Music
+Assistant retains its own fallback behavior for newly discovered unplayable media.
 
 Optional service recovery requires three failed Music Assistant reads, no active
 announcement/priority audio, and an independent failed host-local health check.

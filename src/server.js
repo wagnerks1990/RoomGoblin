@@ -7238,6 +7238,7 @@ async function backgroundMusicResume(reason="resume",playerIdOverride=null){
     repairState=actual;
     queue=await musicAssistantCommand("player_queues/get_active_queue",{player_id:playerId});current();
     if(!queue?.queue_id||!queue.current_item?.queue_item_id)throw Object.assign(Error("There is no current queue item to recover. Choose a station or song."),{status:409});
+    if(queue.current_item.available===false)throw Object.assign(Error("Music Assistant marked this queue item unavailable. Start the station again from Favorites or choose another source."),{status:409});
   }
   if(playerId!==backgroundMusicRuntime.activePlayerId||((repair||reason==="manual")&&!backgroundMusicRuntime.activeMedia&&!backgroundMusicRuntime.queueOnly)){
     const actual=await backgroundMusicActualPlayerState({playerId},true);current();

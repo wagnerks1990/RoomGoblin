@@ -207,6 +207,12 @@ test("Sendspin queue repair resumes at the last reported audio frame, not extrap
  const play=h.calls.find(c=>c.command==="player_queues/play_index");assert.equal(play.args.seek_position,31);
  assert.equal(h.calls.some(c=>c.command==="players/cmd/stop"),false);
 });
+test("repair does not skip through a queue item already marked unavailable",async()=>{
+ const h=fixture();Object.assign(h.r,{activeMedia:null,queueOnly:true});
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});return {queue_id:"A",current_item:{queue_item_id:"failed",available:false}}};
+ await assert.rejects(h.ctx.backgroundMusicResume("manual-repair","A"),error=>error.status===409&&/Favorites/.test(error.message));
+ assert.equal(h.calls.filter(c=>c.command).length,1);assert.equal(h.r.activePlayerId,"A");
+});
 
 test("a track boundary in an existing queue retains priority ownership without replay",async()=>{
  const h=fixture();let now=10000,playing=true,elapsed=99;
