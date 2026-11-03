@@ -24,8 +24,10 @@ teacher overrides, and signed launches retain their compatibility identifiers.
 - Manual classroom sessions require explicit teacher attendance and current
   network presence. Opt-in automatic sessions follow the native RoomGoblin
   timetable and admit only signed LMS learners with fresh local presence.
-  Off-campus events update stored progress but never the active room board or
-  an effect queue. Delayed events do not become effects on reconnection.
+  Off-campus events update stored progress but never the live-session board or
+  an effect queue. A teacher may separately opt a continuing arcade campaign into
+  signed leaderboard updates from any location. Delayed events do not become
+  effects on reconnection.
 - The private-subnet presence window receives only a short-lived challenge.
   It does not receive a password, session cookie or student record. Only a direct
   request from an administrator-confirmed classroom network can attest it;
@@ -104,6 +106,13 @@ remain stored when rolling back application code; no database reset is needed.
    local presence window. Browser popup/local-network policy may require consent;
    it is not a second RoomGoblin login. Cookies and credentials never go to the
    private HTTP presence origin.
+   A reviewed SCO may use `connectionUi: 'embedded'` and call `connect()` directly
+   from its normal Start button, with an accessible retry if the browser blocks
+   the window. `connected()` and `connecting()` avoid duplicate starts. Bind the
+   package to its course-specific activity instead of asking students to choose a
+   period. Preview/review modes must not start a student connection. Browser user
+   activation and signed LMS authentication are still required; do not synthesize
+   identity from SCORM names or claim JavaScript bypasses popup policy.
 7. Under **Automatic classroom setup**, link any existing learning class to its
    matching RoomGoblin timetable entry, enable sync, and save once. Unmapped
    enabled entries import automatically. Multiple entries can share the same
@@ -216,8 +225,14 @@ The current adapter supports the pinned Donkey Kong engine checkpoint format;
 game assets and ROMs are not shipped in RoomGoblin.
 
 Private campaign state survives changing assignments, class meetings and restarts.
-The public snapshot changes only on fresh, classroom-attested game events. Offsite
-progress remains private until a later qualifying checkpoint. TV projections contain
+By default its public snapshot changes only on fresh, classroom-attested game events.
+The teacher can enable **Update this leaderboard from signed assignments anywhere**
+once per campaign. Then a signed, restricted Schoology learner can update only the
+arcade/completion snapshot without a presence window or active session. Native login
+alone does not qualify. This option never admits attendance or enables room effects;
+other campaigns retain their existing behavior. The companion hides the unnecessary
+presence button for these campaigns. Disabling the option affects future updates and
+retains previously saved scores. TV projections contain
 signed first name, teacher period label, arcade score, level/board and question
 completion; they exclude academic scores, answers, identities and checkpoint data.
 Replaying an assessment can reduce its current completion count; official grades
@@ -232,7 +247,7 @@ dispatches. No campaign automatically resets daily. Start a new campaign for a n
 unit when desired; existing saved data is retained.
 
 Use a normal database backup before deployment. The schema adds campaign, binding,
-private-player and public-snapshot tables. Roll back code using the prior exact image
+private-player, public-snapshot and opt-in visibility tables. Roll back code using the prior exact image
 pair, retaining the database and additive tables; never downgrade/reset the database.
 After deployment verify signed launch, cross-assignment resume, each period/Bison
 schedule mapping, a real target display, and restoration when its session ends.

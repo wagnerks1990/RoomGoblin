@@ -6,6 +6,8 @@ async function loadCampaigns(){
   const row=el('div');row.className='connection';row.append(el('h3',c.title),el('p',c.classes.map(x=>x.label).join(' / ')+' · '+(c.enabled?'Board enabled':'Board off')));
   const board=el('ol');for(const r of c.board)board.append(el('li',r.firstName+' · '+r.period+' · '+r.arcadeScore+' arcade points · level '+r.level+', board '+r.board+' · '+r.completed+'/'+r.assignments+' assignments'));
   row.append(board,btn(c.enabled?'Disable board':'Enable board',async()=>{await api('/platform/campaigns','POST',{...c,enabled:!c.enabled});await loadCampaigns();}));
+  const anywhereLabel=el('label','Update this leaderboard from signed assignments anywhere'),anywhere=el('input');anywhere.type='checkbox';anywhere.checked=c.leaderboardAnywhere===true;anywhereLabel.className='check';anywhereLabel.prepend(anywhere);row.append(anywhereLabel,el('p','No room-presence check is needed for these arcade scores. Classroom effects and attendance keep their separate presence checks.'));
+  anywhere.onchange=task(async()=>{try{await api('/platform/campaigns','POST',{...c,leaderboardAnywhere:anywhere.checked});await loadCampaigns();notice('Leaderboard location preference saved.');}catch(error){anywhere.checked=c.leaderboardAnywhere===true;throw error;}});
   if(activityId&&c.classes.some(x=>x.classId===classId))row.append(btn('Link selected assignment',async()=>{await api('/platform/campaigns/'+c.id+'/activities/'+activityId,'PUT',{});notice('Selected assignment now continues this campaign.');}));
   host.append(row);
  }

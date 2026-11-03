@@ -53,7 +53,8 @@ async function start(){
   say('Connecting through Schoology…');$('connect-schoology').hidden=!config.launchUrl;
   $('detail').textContent=config.launchUrl?'Continue through your existing Schoology session.':'Your teacher needs to configure the signed Schoology connection first. Your SCORM game can still save its normal Schoology grade.';return;
  }
- config.presenceOrigin=state.presenceOrigin||'';say('Connected, '+state.firstName+'.');$('classroom').hidden=!config.presenceOrigin;
+ config.presenceOrigin=state.presenceOrigin||'';say('Connected, '+state.firstName+'.');$('classroom').hidden=!config.presenceOrigin||state.arcade?.leaderboardAnywhere===true;
+ if(state.arcade?.leaderboardAnywhere===true)$('presence-status').textContent='Your arcade score and completion progress update the leaderboard automatically. No room-presence check is needed.';
  if(!window.opener){$('detail').textContent='Your browser separated the sign-in window. Return to the game and select Connect to RoomGoblin again; your signed-in session is ready.';return;}
  ready();
 }
