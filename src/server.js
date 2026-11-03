@@ -5695,7 +5695,7 @@ const {IntegrationUpdates,registerIntegrationUpdates}=require("./integration-upd
 const integrationUpdates=new IntegrationUpdates({storage:dbStore,esp:esphomeManager,
   host:(method,route,body)=>maintenanceAgentApi(method,route,body,65000),
   currentConnection:()=>({url:musicAssistantConfig().url,serverId:maApiServerInfo?.server_id||null}),
-  connection:async()=>{await musicAssistantCommand("players/all",{});return {url:musicAssistantConfig().url,serverId:maApiServerInfo?.server_id||null}},
+  connection:async()=>{const players=await musicAssistantCommand("players/all",{});return {url:musicAssistantConfig().url,serverId:maApiServerInfo?.server_id||null,outputs:Array.isArray(players)?players.filter(p=>p.type!=="protocol"&&p.output_protocols?.some(o=>o.protocol_domain==="sendspin")).map(p=>({id:p.player_id,name:p.display_name||p.name||p.player_id})):[]}},
   canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,
   allowRecovery:()=>!backgroundMusicPriorityBlocked()&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy,
   idle:async()=>{
@@ -7202,8 +7202,7 @@ async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),fo
     const protocol=p?.output_protocols?.find(item=>item.output_protocol_id===p.active_output_protocol&&item.protocol_domain==="sendspin");
     const transport=p?.provider==="sendspin"?p:protocol?players.find(item=>item.player_id===protocol.output_protocol_id&&item.provider==="sendspin"):null;
     if(transport?.available===false){state.available=false;state.playing=false;state.raw="unavailable"}
-    state.progressReportsExpected=!!transport&&p.active_source===pid;
-    if(state.progressReportsExpected)state.player={...p,elapsed_time:transport.elapsed_time,elapsed_time_last_updated:transport.elapsed_time_last_updated};
+    if(transport&&p.active_source===pid&&typeof integrationUpdates!=="undefined")state.outputEvidence=integrationUpdates.playbackEvidence(pid);
     if(owns())backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null,generation};
     return state;
   }catch(e){
@@ -7231,11 +7230,10 @@ async function backgroundMusicResume(reason="resume",playerIdOverride=null){
   backgroundMusicResumeBusy=true;
   try{
   const repair=reason==="manual-repair"||reason==="recover-existing-queue";
-  let queue=null,repairState=null;
+  let queue=null;
   if(repair){
     const actual=await backgroundMusicActualPlayerState({playerId},true);current();
     if(!actual?.found||actual.available===false)throw Object.assign(Error("The selected music player is unavailable; no playback command was sent"),{status:409});
-    repairState=actual;
     queue=await musicAssistantCommand("player_queues/get_active_queue",{player_id:playerId});current();
     if(!queue?.queue_id||!queue.current_item?.queue_item_id)throw Object.assign(Error("There is no current queue item to recover. Choose a station or song."),{status:409});
     if(queue.current_item.available===false)throw Object.assign(Error("Music Assistant marked this queue item unavailable. Start the station again from Favorites or choose another source."),{status:409});
@@ -7256,8 +7254,7 @@ async function backgroundMusicResume(reason="resume",playerIdOverride=null){
   requested=true;
   backgroundMusicRecovery.requested();
   if(repair){
-    const framePosition=repairState?.progressReportsExpected?repairState.player?.elapsed_time:null;
-    const duration=Number(queue.current_item.duration)||0,position=Math.max(0,Math.floor(typeof framePosition==="number"&&Number.isFinite(framePosition)?framePosition:Number(queue.elapsed_time)||0));
+    const duration=Number(queue.current_item.duration)||0,position=Math.max(0,Math.floor(Number(queue.elapsed_time)||0));
     // Explicitly replay this retained item: MA ignores ordinary Play while a
     // failed Sendspin stream still claims to be playing. Keep queue and volume.
     await musicAssistantCommand("player_queues/play_index",{queue_id:queue.queue_id,index:queue.current_item.queue_item_id,seek_position:duration>0?Math.min(position,Math.max(0,Math.floor(duration)-1)):0});
@@ -7444,7 +7441,7 @@ async function backgroundMusicTick(){
     if(decision.action==="none"){backgroundMusicRuntime.activePlayerId=String(playerId);backgroundMusicRuntime.lastError=null;return}
     if(decision.action==="complete"){backgroundMusicRuntime.manualStopped=true;backgroundMusicRuntime.manualSession=false;return}
     if(decision.action==="wait")return;
-    if(backgroundMusicRuntime.queueOnly&&!(cfg.autoRecover!==false&&actual.playing&&actual.progressReportsExpected&&backgroundMusicRecovery.state==="stalled")){
+    if(backgroundMusicRuntime.queueOnly&&!(cfg.autoRecover!==false&&actual.playing&&actual.outputEvidence?.state==="idle"&&backgroundMusicRecovery.state==="stalled")){
       // An idle existing queue may have finished naturally. Observe it without
       // replaying its items or replacing it with the scheduled favorite.
       backgroundMusicRecovery.retryAt=0;backgroundMusicRecovery.state=actual.playing?"stalled":actual.paused?"paused":"idle";

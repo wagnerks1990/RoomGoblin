@@ -384,7 +384,11 @@ Timer chaining is allowed only for the matching continuation of the same underly
 Read `docs/MUSIC-MAINTENANCE.md` before changing integration updates or recovery.
 Preserve opt-in stable updates, idle/announcement gates, native appliance locking,
 cold Music Assistant image/data rollback and persisted restart budgets. Apollo
-updates require the pinned CAST-1 identity and Stable channel; claim before send,
+playback recovery requires an explicit output binding and sustained native speaker
+idle evidence. Music Assistant caches Sendspin position anchors during healthy
+playback; their age is never a frame-heartbeat or stall signal. Preserve pinned
+server/MAC/enrollment identity and reject stale or ambiguous speaker observations.
+Apollo updates require the pinned CAST-1 identity and Stable channel; claim before send,
 verify the exact version after reconnect, and never replay uncertain flashing.
 Keep native ESPHome domain/subdevice/key entity identities distinct. Existing
 unencrypted native API enrollments remain supported without changing their keys.

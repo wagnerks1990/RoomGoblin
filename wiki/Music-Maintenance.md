@@ -4,6 +4,10 @@ Open **Updates & recovery** in Background music → Outputs & connection or ESPH
 devices. Administrators can opt into stable Music Assistant updates, per-device
 Apollo CAST-1 firmware updates and bounded service recovery.
 
+Select each Apollo's **Playback health output** to enable physical speaker-state
+checks. Cached Music Assistant position timestamps are never treated as stalled
+audio. The link is explicit and tied to the enrolled device and server identity.
+
 Updates wait for idle playback in the System Updates maintenance window. Music
 Assistant takes a cold rollback snapshot. Apollo success requires the same
 enrolled device to reconnect with the selected firmware version. Unconfirmed

@@ -137,6 +137,11 @@ class ModelTests(unittest.TestCase):
         self.assertNotEqual(entity_id(button), entity_id(update))
         self.assertEqual(entity_id(update), entity_id(state))
         self.assertEqual(entity_id(MediaPlayerInfo(key=42)), entity_id(MediaPlayerEntityState(key=42)))
+        speaker = entity_view(MediaPlayerInfo(key=42, name="Player"), APIVersion(1, 10))
+        self.assertEqual(speaker["domain"], "media_player")
+        self.assertFalse(speaker["writable"])
+        with self.assertRaisesRegex(ValueError, "read-only-entity"):
+            command_args(speaker, {"state": "idle"})
 
     def test_upstream_errors_never_expose_details(self):
         self.assertNotIn(KEY, safe_error(RuntimeError("connection key "+KEY)))

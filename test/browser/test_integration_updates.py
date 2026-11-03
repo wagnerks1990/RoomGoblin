@@ -11,7 +11,7 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
 
     def open_panel(self, width=1440):
         state = {"ok": True, "policy": {"musicAssistant": False, "recoverMusicAssistant": False, "apollo": []},
-                 "window": {"start": "02:00", "end": "04:00"}, "busy": False,
+                 "window": {"start": "02:00", "end": "04:00"}, "busy": False, "outputs": [{"id": "speaker", "name": "Test speaker"}],
                  "devices": [{"id": "test-apollo", "name": "Test Apollo", "online": True, "version": "26.9.21.1",
                               "candidate": {"available": True, "latestVersion": "26.10.30.1"}}],
                  "catalog": {"musicAssistant": {"available": True, "currentVersion": "2.10.8", "latestVersion": "2.10.9"}, "apollo": {"version": "26.10.30.1"}}}
@@ -20,7 +20,8 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
             if target.startswith('/api/v1/admin/music-maintenance'):
                 if route.request.method == 'PUT':
                     requests.append(route.request.post_data_json)
-                    state['policy'] = route.request.post_data_json
+                    state['policy'] = dict(route.request.post_data_json)
+                    state['policy']['outputBindings'] = {key: {'playerId': value} for key, value in state['policy'].get('playbackOutputs', {}).items() if value}
                 if target.endswith('/install'):
                     requests.append(route.request.post_data_json)
                     route.fulfill(status=409, json={'ok': False, 'error': 'Playback is active; wait until idle.'})
@@ -40,12 +41,14 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
         page, errors, panel, requests = self.open_panel(390)
         panel.get_by_label('Automatically update Music Assistant to stable releases').check()
         panel.get_by_label('Automatically update Test Apollo').check()
+        panel.get_by_label('Playback health output for Test Apollo').select_option('speaker')
         panel.get_by_role('button', name='Check stable updates', exact=True).click()
         page.wait_for_function("[...document.querySelectorAll('#esphome details p')].some(p=>p.textContent.includes('Stable release check requested.'))")
         self.assertTrue(panel.get_by_label('Automatically update Test Apollo').is_checked())
         panel.get_by_role('button', name='Save maintenance policy', exact=True).click()
         page.wait_for_function("[...document.querySelectorAll('#esphome details p')].some(p=>p.textContent==='Maintenance policy saved.')")
-        self.assertEqual(requests[-1], {'musicAssistant': True, 'recoverMusicAssistant': False, 'apollo': ['test-apollo']})
+        self.assertEqual(requests[-1], {'musicAssistant': True, 'recoverMusicAssistant': False, 'apollo': ['test-apollo'], 'playbackOutputs': {'test-apollo': 'speaker'}})
+        self.assertEqual(panel.get_by_label('Playback health output for Test Apollo').input_value(), 'speaker')
         self.evidence(page, errors, 'integration-maintenance-mobile')
 
     def test_update_error_survives_poll_and_non_admin_controls_are_hidden(self):
