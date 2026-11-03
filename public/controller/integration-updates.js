@@ -3,7 +3,7 @@
   const endpoint="/api/v1/admin/music-maintenance",views=[];
   const el=(tag,text)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node};
   const admin=()=>userCan("admin")&&userCan("*");
-  let state=null,busy=false,loading=false,revision=0,auth=0,message="",checking=false;
+  let state=null,busy=false,loading=false,revision=0,auth=0,message="",messageError=false,pollError="",checking=false;
   function action(parent,label,fn){const button=el("button",label);button.type="button";button.addEventListener("click",fn);parent.append(button);return button}
   function checkbox(parent,label){const wrap=el("label"),input=el("input");input.type="checkbox";wrap.append(input,document.createTextNode(" "+label));parent.append(wrap);return input}
   for(const id of ["music","esphome"]){
@@ -45,7 +45,7 @@
         row.button.disabled=busy||state.busy||!device.candidate?.available||device.candidate.latestVersion!==state.catalog?.apollo?.version||["issued","unconfirmed"].includes(device.job?.stage);
       }
       for(const [id,row]of v.rows)if(!ids.has(id)){row.root.remove();v.rows.delete(id)}
-      v.status.textContent=message||state.error||"";
+      v.status.textContent=(messageError?message:pollError||message)||state.error||"";
       for(const button of v.panel.querySelectorAll(".toolbar button"))button.disabled=busy;
       v.install.disabled=busy||state.busy||!ma?.available||ma.checking;
       for(const input of v.panel.querySelectorAll("input,select"))input.disabled=busy;
@@ -53,8 +53,8 @@
   }
   async function mutate(url,body,method,done=()=>{},success=""){
     if(busy||!admin())return;busy=true;const owner=auth;revision++;render();
-    try{const result=await api(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(owner!==auth||!admin())return;if(result.policy)state=result;done();message=success}
-    catch(error){if(owner===auth&&admin())message=error.message}
+    try{const result=await api(url,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(owner!==auth||!admin())return;if(result.policy)state=result;done();message=success;messageError=false;pollError=""}
+    catch(error){if(owner===auth&&admin()){message=error.message;messageError=true}}
     finally{busy=false;render();refresh()}
   }
   function install(kind,deviceId,version){
@@ -66,10 +66,10 @@
     try{
       const result=await api(checking?endpoint+"/check":endpoint,checking?{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}:undefined);
       if(owner!==auth||readRevision!==revision||!admin())return;
-      state=result;checking=!!result.catalog?.musicAssistant?.checking;
-    }catch(error){if(owner===auth&&admin())message=error.message}finally{loading=false;render()}
+      state=result;pollError="";checking=!!result.catalog?.musicAssistant?.checking;
+    }catch(error){if(owner===auth&&readRevision===revision&&admin())pollError=`Connection check failed: ${error.message}. Retrying…`}finally{loading=false;render()}
   }
-  window.addEventListener("roomgoblin:authchange",()=>{auth++;revision++;state=null;message="";checking=false;for(const v of views){v.dirty=false;v.devices.replaceChildren();v.rows.clear();v.host.textContent="";v.status.textContent=""}render();refresh()});
+  window.addEventListener("roomgoblin:authchange",()=>{auth++;revision++;state=null;message="";messageError=false;pollError="";checking=false;for(const v of views){v.dirty=false;v.devices.replaceChildren();v.rows.clear();v.host.textContent="";v.status.textContent=""}render();refresh()});
   new MutationObserver(()=>{render();refresh()}).observe(document.querySelector("main")||document.body,{attributes:true,attributeFilter:["class"],subtree:true});
   setInterval(refresh,10000);render();
 })();

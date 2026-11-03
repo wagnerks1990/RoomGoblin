@@ -73,6 +73,27 @@ class MusicStudioBrowserTests(unittest.TestCase):
         self.assertTrue(any(row.get('action') == 'sleep' and row.get('minutes') == 30 for row in requests))
         self.evidence(page, errors, 'music-studio-desktop')
 
+    def test_recovered_poll_clears_warning_but_preserves_playback_errors(self):
+        page, errors, requests = music_page(self)
+        status = '**/api/v1/music-assistant/status'
+        page.route(status, lambda route: route.fulfill(status=502, body='Bad gateway'))
+        page.evaluate('loadMusicAssistant()')
+        self.assertIn('Connection check failed: HTTP 502', page.locator('.musicNotice').inner_text())
+        page.unroute(status)
+        page.evaluate('loadMusicAssistant()')
+        self.assertNotIn('502', page.locator('.musicNotice').inner_text())
+        self.assertFalse(page.locator('.musicNotice').evaluate("el=>el.classList.contains('bad')"))
+        page.route('**/api/v1/music-assistant/background/control', lambda route: route.fulfill(status=409, json={'error': 'Player is offline; no command sent.'}))
+        page.get_by_role('button', name='Recover playback', exact=True).click()
+        page.get_by_text('Player is offline; no command sent.', exact=True).wait_for()
+        page.evaluate('loadMusicAssistant()')
+        page.route(status, lambda route: route.fulfill(status=502, body='Bad gateway'))
+        page.evaluate('loadMusicAssistant()')
+        page.unroute(status)
+        page.evaluate('loadMusicAssistant()')
+        self.assertEqual(page.locator('.musicNotice').inner_text(), 'Player is offline; no command sent.')
+        self.assertFalse(errors, errors)
+
 
     def test_music_mobile_schedule_draft_and_focused_player_volume_survive_refresh(self):
         page, errors, requests = music_page(self, 390)

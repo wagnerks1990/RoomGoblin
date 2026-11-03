@@ -4,6 +4,7 @@ Only an explicitly selected existing Compose deployment is supported. No caller
 supplies Docker arguments, a repository, a data path, or a download URL.
 """
 import fcntl
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -256,7 +257,10 @@ class MusicUpdates:
         for path in data.glob("*.db"):
             if path.is_symlink():
                 raise RuntimeError("Database symlinks are not supported")
-            with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as connection:
+            # A connection's context manager only ends its transaction; it does
+            # not close the handle. Release WAL reader locks before copying or
+            # starting the service, including when the integrity check fails.
+            with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as connection:
                 if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
                     raise RuntimeError("Music Assistant database integrity check failed")
 
