@@ -190,10 +190,14 @@ class MusicUpdates:
     def check_now(self):
         current = self.inspect()
         latest = release()
+        info = public_json("http://127.0.0.1:8095/info")
+        server_id = info.get("server_id")
+        if not isinstance(server_id, str) or not 1 <= len(server_id) <= 200:
+            raise RuntimeError("Music Assistant did not report a server identity")
         version = current["image"].split(":", 1)[1].split("@", 1)[0]
         available = tuple(map(int, latest["version"].split("."))) > tuple(map(int, version.split(".")))
         return {"ok": True, "currentVersion": version, "latestVersion": latest["version"],
-                "releaseUrl": latest["url"], "available": available, "running": current["running"]}
+                "releaseUrl": latest["url"], "available": available, "running": current["running"], "serverId": server_id}
 
     def check(self):
         # Keep the single socket listener available for health while the public

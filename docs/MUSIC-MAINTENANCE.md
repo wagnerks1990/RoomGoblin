@@ -26,6 +26,9 @@ Compose deployments, YAML image interpolation and missing compatibility gates
 fail closed. Adoption alone does not permit upgrades: enabling this policy or
 requesting Update now explicitly authorizes recreation of that existing service.
 New managed deployments still use the separate reviewed deployment image policy.
+Before enabling service maintenance, Check stable updates verifies that the Hub
+and native updater see the same Music Assistant server identity. Changing the
+Hub connection suspends the policy until the local identity is checked again.
 
 The native worker holds the appliance mutation lock, journals each phase under
 `/var/lib/classroom-hub/music-updates`, preserves a cold SQLite-checked snapshot,

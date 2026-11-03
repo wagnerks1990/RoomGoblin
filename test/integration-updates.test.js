@@ -5,7 +5,7 @@ function device(){return {id:"apollo-1",name:"Test Apollo",generation:"one",mac:
 function fixture(){
   const values=new Map(),devices=[device()],calls=[];let now=100000000,allowed=true,idle=true,failed=false;
   const storage={getPreference:(key,fallback)=>structuredClone(values.get(key)??fallback),setPreference:(key,value)=>values.set(key,structuredClone(value))};
-  const manager=new IntegrationUpdates({storage,esp:{list:()=>({devices}),firmwareUpdate:async(id,version)=>{calls.push(["firmware",id,version]);if(failed)throw Error("lost")}},host:async(method,path,body)=>{calls.push([method,path,body]);if(path.endsWith("/check"))return {available:true,currentVersion:"2.10.8",latestVersion:"2.10.9"};if(path.endsWith("/job"))return {running:false,job:null};return {running:true}},canRun:()=>allowed,idle:async()=>{if(idle instanceof Error)throw idle;return idle},allowRecovery:()=>allowed,window:()=>({active:true,start:"02:00",end:"04:00"}),catalog:async()=>({version:"26.10.30.1"}),now:()=>now});
+  const manager=new IntegrationUpdates({storage,esp:{list:()=>({devices}),firmwareUpdate:async(id,version)=>{calls.push(["firmware",id,version]);if(failed)throw Error("lost")}},host:async(method,path,body)=>{calls.push([method,path,body]);if(path.endsWith("/check"))return {available:true,currentVersion:"2.10.8",latestVersion:"2.10.9",serverId:"local-server"};if(path.endsWith("/job"))return {running:false,job:null};return {running:true}},currentConnection:()=>({url:"http://local.test",serverId:"local-server"}),connection:async()=>({url:"http://local.test",serverId:"local-server"}),canRun:()=>allowed,idle:async()=>{if(idle instanceof Error)throw idle;return idle},allowRecovery:()=>allowed,window:()=>({active:true,start:"02:00",end:"04:00"}),catalog:async()=>({version:"26.10.30.1"}),now:()=>now});
   return {manager,values,devices,calls,allow:value=>allowed=value,idle:value=>idle=value,fail:()=>failed=true,advance:ms=>now+=ms};
 }
 test("Apollo catalog requires pinned project, stable channel and matching native version",()=>{
@@ -13,10 +13,10 @@ test("Apollo catalog requires pinned project, stable channel and matching native
   for(const change of [d=>d.online=false,d=>d.enabled=false,d=>d.info.project_name="other",d=>d.info.model="other",d=>d.states["select:0:2"].state="Beta",d=>d.info.project_version="different",d=>d.entities.push({...d.entities[0]})]){const d=device();change(d);assert.equal(apolloCandidate(d),null)}
   assert.equal(newer("26.10.1.1","26.9.30.1"),true);assert.equal(newer("26.9.1.1","26.10.1.1"),false);
 });
-test("automatic policies default off and only accept enrolled Apollo devices",()=>{
+test("automatic policies default off and only accept enrolled Apollo devices",async()=>{
   const h=fixture();assert.deepEqual(h.manager.policy(),{musicAssistant:false,recoverMusicAssistant:false,apollo:[]});
   assert.throws(()=>h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:["other"]}));
-  h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:["apollo-1","apollo-1"]});assert.deepEqual(h.values.get(POLICY).apollo,["apollo-1"]);
+  await h.manager.check();h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:["apollo-1","apollo-1"]});assert.deepEqual(h.values.get(POLICY).apollo,["apollo-1"]);
   h.allow(false);assert.throws(()=>h.manager.configure({musicAssistant:false,recoverMusicAssistant:false,apollo:[]}));
 });
 test("disabled optional maintenance makes no host or player probes",async()=>{
@@ -47,11 +47,20 @@ test("a priority change during release discovery is rechecked before dispatch",a
   const h=fixture();h.manager.catalog=async()=>{h.idle(false);return {version:"26.10.30.1"}};await assert.rejects(h.manager.install("apollo","apollo-1","26.10.30.1"));assert.equal(h.calls.filter(c=>c[0]==="firmware").length,0);
 });
 test("automatic Music Assistant updates claim a release once",async()=>{
-  const h=fixture();h.manager.configure({musicAssistant:true,recoverMusicAssistant:false,apollo:[]});await h.manager.tick();h.manager.hostRunning=false;await h.manager.tick();assert.equal(h.calls.filter(c=>c[1]==="/music-updates/start").length,1);
+  const h=fixture();await h.manager.check();h.manager.configure({musicAssistant:true,recoverMusicAssistant:false,apollo:[]});await h.manager.tick();h.manager.hostRunning=false;await h.manager.tick();assert.equal(h.calls.filter(c=>c[1]==="/music-updates/start").length,1);
 });
 test("service recovery needs three failed reads and observes cooldown",async()=>{
-  const h=fixture();h.manager.configure({musicAssistant:false,recoverMusicAssistant:true,apollo:[]});h.idle(Error("unavailable"));
+  const h=fixture();await h.manager.check();h.manager.configure({musicAssistant:false,recoverMusicAssistant:true,apollo:[]});h.idle(Error("unavailable"));
   await h.manager.tick();await h.manager.tick();assert.equal(h.calls.filter(c=>c[1]==="/music-updates/recover").length,0);await h.manager.tick();assert.equal(h.calls.filter(c=>c[1]==="/music-updates/recover").length,1);h.manager.hostRunning=false;await h.manager.tick();assert.equal(h.calls.filter(c=>c[1]==="/music-updates/recover").length,1);
+});
+test("local maintenance rejects a different server and suspends after connection changes",async()=>{
+  const h=fixture();await assert.rejects(h.manager.install("musicAssistant",null,"9.0.0"));
+  await h.manager.check();h.manager.checkedConnection.serverId="remote-server";
+  assert.throws(()=>h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:[]}),/this appliance/);
+  await h.manager.check();h.manager.configure({musicAssistant:true,recoverMusicAssistant:true,apollo:[]});h.calls.length=0;
+  h.manager.currentConnection=()=>({url:"http://another.test",serverId:null});h.idle(Error("unavailable"));
+  for(let i=0;i<4;i++)await h.manager.tick();
+  assert.match(h.manager.error,/connection changed/);assert.equal(h.calls.some(c=>c[1]==="/music-updates/start"||c[1]==="/music-updates/recover"),false);
 });
 test("firmware status writes stop during Full Recovery freeze",async()=>{
   const h=fixture();await h.manager.install("apollo","apollo-1","26.10.30.1");h.devices[0].info.project_version="26.10.30.1";h.allow(false);h.manager.reconcile();assert.equal(h.values.get(STATE).apollo["apollo-1"].stage,"issued");h.allow(true);h.manager.reconcile();assert.equal(h.values.get(STATE).apollo["apollo-1"].stage,"succeeded");

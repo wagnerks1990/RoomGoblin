@@ -22,8 +22,8 @@ function apolloCandidate(device){
   return {currentVersion:state.current_version,latestVersion:state.latest_version,available:newer(state.latest_version,state.current_version)};
 }
 class IntegrationUpdates{
-  constructor({storage,esp,host,canRun,idle,allowRecovery=()=>false,window,track=task=>task,catalog=apolloRelease,now=Date.now}){
-    Object.assign(this,{storage,esp,host,canRun,idle,allowRecovery,window,track,catalog,now});
+  constructor({storage,esp,host,canRun,idle,connection=async()=>null,currentConnection=()=>null,allowRecovery=()=>false,window,track=task=>task,catalog=apolloRelease,now=Date.now}){
+    Object.assign(this,{storage,esp,host,canRun,idle,connection,currentConnection,allowRecovery,window,track,catalog,now});
     this.busy=false;this.hostRunning=false;this.hostKnown=false;this.checkedAt=0;this.checking=null;this.catalogData=null;this.error="";this.closed=false;
   }
   policy(){return {musicAssistant:false,recoverMusicAssistant:false,apollo:[],...this.storage.getPreference(POLICY,{})}}
@@ -39,13 +39,20 @@ class IntegrationUpdates{
     if(typeof input.musicAssistant!=="boolean"||typeof input.recoverMusicAssistant!=="boolean"||!Array.isArray(input.apollo)||input.apollo.length>64||input.apollo.some(id=>typeof id!=="string"))throw fail("Invalid automatic maintenance policy.",400);
     const devices=this.esp.list().devices;
     if(input.apollo.some(id=>!devices.some(d=>d.id===id&&d.enabled&&d.info?.project_name==="ApolloAutomation.CAST-1")))throw fail("Select an enrolled, enabled Apollo CAST-1.",400);
-    this.storage.setPreference(POLICY,{musicAssistant:input.musicAssistant,recoverMusicAssistant:input.recoverMusicAssistant,apollo:[...new Set(input.apollo)]});
+    const target=input.musicAssistant||input.recoverMusicAssistant?this.localTarget():null;
+    this.storage.setPreference(POLICY,{musicAssistant:input.musicAssistant,recoverMusicAssistant:input.recoverMusicAssistant,apollo:[...new Set(input.apollo)],...(target?{target}:{})});
     return this.status();
+  }
+  localTarget(){
+    const target=this.checkedConnection,current=this.currentConnection();
+    if(!target?.serverId||target.serverId!==this.catalogData?.musicAssistant?.serverId||current?.url!==target.url||(current.serverId&&current.serverId!==target.serverId))throw fail("Check stable updates to verify that RoomGoblin is connected to this appliance's Music Assistant before enabling maintenance.");
+    return target;
   }
   async check(){
     if(this.checking)return this.checking;
     this.checking=(async()=>{
-      const [ma,apollo]=await Promise.allSettled([this.host("GET","/music-updates/check"),this.catalog()]);
+      const [ma,apollo,connection]=await Promise.allSettled([this.host("GET","/music-updates/check"),this.catalog(),this.connection()]);
+      this.checkedConnection=connection.status==="fulfilled"?connection.value:null;
       this.catalogData={musicAssistant:ma.status==="fulfilled"?ma.value:{error:ma.reason.message},apollo:apollo.status==="fulfilled"?apollo.value:{error:apollo.reason.message}};
       this.checkedAt=this.now();return this.status();
     })().finally(()=>{this.checking=null});return this.checking;
@@ -64,6 +71,7 @@ class IntegrationUpdates{
       const saved=this.state(),key=kind==="apollo"?`apollo:${id}`:kind;
       if(automatic&&saved.attempts[key]===version)return {ok:true,deferred:"This release was already attempted; review its result before retrying."};
       if(kind==="musicAssistant"){
+        this.localTarget();
         const release=this.catalogData.musicAssistant;
         if(!release.available||release.latestVersion!==version)throw fail("Check again and select the current stable Music Assistant update.");
         await this.assertIdle();saved.attempts[key]=version;this.saveState(saved);
@@ -104,6 +112,10 @@ class IntegrationUpdates{
       }
       if(this.active())return;
       if(!policy.musicAssistant&&!policy.apollo.length&&!policy.recoverMusicAssistant)return;
+      if(policy.musicAssistant||policy.recoverMusicAssistant){
+        const connection=this.currentConnection();
+        if(!policy.target||connection?.url!==policy.target.url||(connection.serverId&&connection.serverId!==policy.target.serverId))throw fail("Music Assistant connection changed. Check the local server identity and save the maintenance policy again.");
+      }
       let idle;
       try{idle=await this.idle();this.failures=0}catch(error){
         this.failures=(this.failures||0)+1;

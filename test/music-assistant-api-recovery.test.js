@@ -38,6 +38,18 @@ test("HTTP compatibility accepts real null, array, scalar and wrapped command re
   await assert.rejects(f.context.musicAssistantHttpCommand("players/all"),e=>/HTTP 502/.test(e.message)&&!e.message.includes(body));
 });
 
+test("integration maintenance rejects new playback writes before transport dispatch",async()=>{
+  const f=fixture({integrationUpdates:{active:()=>true}});
+  for(const command of ["players/cmd/play","players/cmd/volume_set","player_queues/play_index","player_queues/seek"]){
+    await assert.rejects(f.context.musicAssistantCommand(command,{}),error=>error.status===503);
+  }
+  assert.equal(f.sent.length,0);assert.equal(f.requests.length,0);
+  const paused=f.context.musicAssistantCommand("players/cmd/pause",{player_id:"player"});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.sent.length,1);
+  f.context.musicAssistantApiHandleMessage(JSON.stringify({message_id:f.sent[0].message_id,result:null}),f.socket);await paused;
+});
+
 test("playback waits through provider backoff without replaying an uncertain command",async()=>{
   const f=fixture();
   const request=f.context.musicAssistantCommand("player_queues/play_media",{queue_id:"fixture",media:"fixture://track"});

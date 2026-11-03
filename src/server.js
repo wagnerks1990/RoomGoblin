@@ -5694,6 +5694,8 @@ const esphomeManager=new ESPHomeManager({storage:dbStore,canRun:()=>!fullExportF
 const {IntegrationUpdates,registerIntegrationUpdates}=require("./integration-updates");
 const integrationUpdates=new IntegrationUpdates({storage:dbStore,esp:esphomeManager,
   host:(method,route,body)=>maintenanceAgentApi(method,route,body,65000),
+  currentConnection:()=>({url:musicAssistantConfig().url,serverId:maApiServerInfo?.server_id||null}),
+  connection:async()=>{await musicAssistantCommand("players/all",{});return {url:musicAssistantConfig().url,serverId:maApiServerInfo?.server_id||null}},
   canRun:()=>!fullExportFreeze.requested&&!shutdownRequested,
   allowRecovery:()=>!backgroundMusicPriorityBlocked()&&!morningAnnouncementsLifecycleBusy&&!morningAnnouncementsTickBusy,
   idle:async()=>{
@@ -7078,6 +7080,7 @@ async function musicAssistantHttpCommand(command,args={}){
   return j?.result!==undefined?j.result:j;
 }
 async function musicAssistantCommand(command,args={}){
+  if(typeof integrationUpdates!=="undefined"&&integrationUpdates.active()&&!new Set(["players/all","player_queues/all","player_queues/get","player_queues/get_active_queue","player_queues/items","music/search","music/recently_played_items","players/cmd/pause","players/cmd/stop"]).has(command))throw Object.assign(Error("Music integration maintenance is active; wait for it to finish."),{status:503});
   const generation=maApiGeneration;
   try{return await musicAssistantApiRawCommand(command,args)}catch(wsErr){
     diagnosticError(wsErr,{component:"music-assistant",operation:"websocket-api",command});
@@ -7551,7 +7554,7 @@ app.post("/api/v1/music-assistant/command",musicAssistantMutationLimit,requireCo
     if(generation!==maApiGeneration)return changed();
     commitMusicAssistantTvAudioWrite(audioWrite);
     audit({kind:"musicassistant.command",command});res.json({ok:true,result});
-  }catch(e){if(generation!==maApiGeneration)return changed();res.status(502).json({ok:false,error:e.message})}
+  }catch(e){if(generation!==maApiGeneration)return changed();res.status(e.status===503?503:502).json({ok:false,error:e.message})}
   finally{releaseMusicAssistantTvAudioWrite(audioWrite)}
 });
 
