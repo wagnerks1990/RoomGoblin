@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- Support signed written-discussion SCORM launchers and automatic grade receipt
+  recovery. Add opt-in server calendar-day assessment credit with retained best
+  grades and teacher exceptions; preserve LMS review and identity boundaries.
+- Add opt-in embedded signed SCORM connections, automatic same-frame reconnect
+  and identity-bound written draft recovery without companion windows.
+- Preserve documented prior grades through audited, teacher-only restoration and
+  reuse existing signed class identity links for written SCORM activities.
+
 - Add a native arcade leaderboard with original gorilla artwork, levels, points,
   progress and recent-save status. A teacher can explicitly dedicate its receiver
   to scheduled-class standings, excluding other content and announcements there
@@ -60,7 +68,7 @@
 - Add administrator-configured AI chat and media shortcuts to the classroom
   progress page, separate from the signed Schoology student connection.
 
-### 1.0.0-alpha.86 · SCORM classroom progress
+### 1.0.0-alpha.86 Â· SCORM classroom progress
 
 - Add a separate student gateway, signed Schoology connection flows, retained
   assignment telemetry, and a reusable credential-free SCORM connector.
@@ -676,7 +684,7 @@
 ### Planning calendar and timetable rebuild
 
 - Connect Calendar & Timetables, Classes and Automations with capability-aware Planning navigation and progressive editors.
-- Add opt-in school-year/weekday rules, explicit date overrides, reviewed CSV calendar import and the configurable A–H / Green / White / Bison preset.
+- Add opt-in school-year/weekday rules, explicit date overrides, reviewed CSV calendar import and the configurable Aâ€“H / Green / White / Bison preset.
 - Resolve period timing from reusable timetables, including multiple teaching segments for one class and separate class-end deadlines around lunch.
 - Preview date plans, fixed/class-linked automation times, overlaps and 14-day changes before a stale-protected transactional save.
 - Preserve legacy timing, identifiers, classes, automation action sequences and device priority; document setup, migration, import and rollback.
@@ -842,7 +850,7 @@
 
 - Fix a live Chromium/TV false-containment regression where full-width flex child geometry caused title, subtitle, and body text to collapse to 1px despite their painted glyphs fitting the allocated dynamic regions.
 - Keep scroll/offset, independent natural-size, and painted glyph rectangle containment checks; stop treating the full-width child border box as painted content.
-- Add the exact TV8 1548×1273 classroom scene as a browser regression and bump renderer/cache revision to `dynamic-fit-20260922-10`.
+- Add the exact TV8 1548Ã—1273 classroom scene as a browser regression and bump renderer/cache revision to `dynamic-fit-20260922-10`.
 
 ### Resume scheduled state cancels manual tests
 
@@ -1538,7 +1546,7 @@
 - SHA-256 manifests for Windows lab-agent installation and in-place agent updates.
 - Unit coverage for generic schedule normalization, exception transforms, and legacy-profile isolation.
 - Automatic GitHub Release creation after both tagged container images publish successfully.
-- A one-click Caddy HTTPS gateway with an appliance-owned CA; fresh installs bind the backend’s maintenance port to loopback.
+- A one-click Caddy HTTPS gateway with an appliance-owned CA; fresh installs bind the backendâ€™s maintenance port to loopback.
 
 ### Changed
 

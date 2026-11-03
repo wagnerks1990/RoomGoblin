@@ -31,3 +31,24 @@ test('connector setup rejects closed activities, wrong launch class and unapprov
  assert.equal(c.signed(f.user,other,f.user.sessionId,flow.id),false);f.learning.settings(f.admin,f.id,{open:false});assert.throws(()=>c.start(f.id,'https://lms.example.test'));
  assert.equal(flowCookie({headers:{cookie:'other=1; roomgoblin_bridge_flow='+flow.id}}),flow.id);assert.equal(flowCookie({headers:{cookie:'roomgoblin_bridge_flow=invalid'}}),null);
 });
+
+
+test('embedded connections require opt-in and approved origins while retaining fresh signed session binding',async t=>{
+ const f=await setup(t),c=f.p.connection;assert.throws(()=>c.start(f.id,'https://lms.example.test',true),{status:409});
+ f.p.saveSettings(f.admin,{embeddedEnabled:true});f.p.saveSettings(f.admin,{insightsEnabled:true});assert.equal(f.p.settings().embeddedEnabled,true);
+ assert.throws(()=>c.start(f.id,'https://unapproved.example.test',true),{status:409});
+ const flow=c.start(f.id,'https://lms.example.test',true);assert.equal(c.embedded(flow.id),true);assert.throws(()=>c.authorize(f.user,f.id,flow.id),{status:401});
+ assert.equal(c.signed(f.user,f.id,f.user.sessionId,flow.id),true);assert.doesNotThrow(()=>c.authorize(f.user,f.id,flow.id));
+ f.p.saveSettings(f.admin,{embeddedEnabled:false});assert.throws(()=>c.start(f.id,'https://lms.example.test',true),{status:409});const legacy=c.start(f.id,'https://lms.example.test');assert.equal(c.embedded(legacy.id),false);
+ f.advance(28800001);c.start(f.id,'https://lms.example.test');assert.equal(c.embedded(flow.id),false);
+});
+
+
+test('duplicate partitioned and legacy cookies select only the freshly signed flow session',async t=>{
+ const f=await setup(t),c=f.p.connection,{learningSessionUser}=require('../src/learning-lti');
+ const first=f.store.createSession(f.a),second=f.store.createSession(f.b),flow=c.start(f.id,'https://lms.example.test');c.signed(f.user,f.id,f.store.sessionUser(second.token).sessionId,flow.id);
+ const req={path:'/api/v1/learning/me',headers:{cookie:'roomgoblin_learning_session='+first.token+'; roomgoblin_learning_session='+second.token,'x-roomgoblin-connection':flow.id}};
+ assert.equal(learningSessionUser(req,f.store).id,f.b.id);
+ req.headers['x-roomgoblin-connection']=crypto.randomUUID();assert.equal(learningSessionUser(req,f.store),null);
+ delete req.headers['x-roomgoblin-connection'];assert.equal(learningSessionUser(req,f.store),undefined);
+});

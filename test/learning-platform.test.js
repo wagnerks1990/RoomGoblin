@@ -10,6 +10,20 @@ async function setup(t,dispatch){let now=Date.now();const sent=[];const f=await 
  const event=(sequence,extra={})=>({id:crypto.randomUUID(),sequence,learnerKey:f.a.id,kind:'score',raw:80,occurredAt:new Date(now).toISOString(),...extra});
  return {...f,p,id,sent,event,advance:ms=>now+=ms};}
 function start(f){f.p.start(f.admin,f.classId,60);f.p.admit(f.admin,f.classId,[f.a.id]);f.p.saveRecipe(f.admin,f.classId,{label:'Scoreboard',eventKind:'score',enabled:true,actions:[{kind:'leaderboard',targets:['screen-a']}]});}
+
+test('private best completed score survives lower replays and ignores draft scores',async t=>{
+ const f=await setup(t);
+ await f.p.record(f.a,f.id,f.event(1,{kind:'completed',raw:80}),remote);
+ await f.p.record(f.a,f.id,f.event(2,{kind:'completed',raw:20}),remote);
+ await f.p.record(f.a,f.id,f.event(3,{kind:'score',raw:100}),remote);
+ assert.equal(f.p.state(f.a,f.id).progress.bestRaw,80);
+ assert.equal(f.p.state(f.b,f.id).progress.bestRaw,undefined);
+ const other=f.learning.createActivity(f.admin,f.classId,{title:'Separate assignment',templateId:'scorm-connector-v1'});f.p.configure(f.admin,other,{points:50});
+ assert.equal(f.p.state(f.a,other).progress.bestRaw,undefined);
+ const p=new LearningPlatform(f.learning,{options});assert.equal(p.state(f.a,f.id).progress.bestRaw,80);
+ await f.p.record(f.a,f.id,f.event(4,{kind:'completed',raw:100}),remote);assert.equal(f.p.state(f.a,f.id).progress.bestRaw,100);
+ assert.equal(f.sent.length,0);
+});
 test('off-campus work is retained without touching an active classroom board or effect',async t=>{
  const f=await setup(t);start(f);await f.p.record(f.a,f.id,f.event(1),campus);assert.equal(f.sent.length,1);
  const r=await f.p.record(f.a,f.id,f.event(2,{raw:100}),remote);assert.equal(r.state.progress.earned,50);assert.equal(r.classroom,false);assert.equal(f.sent.length,1);assert.equal(f.p.session(f.admin,f.classId).board[0].earned,40);
