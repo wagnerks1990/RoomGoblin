@@ -19,6 +19,12 @@ function fixture(){
  return {ctx,state,holds,pending,displays,timers,calls,controls,async fire(){assert.ok(timers.length);timers.shift().fn();await ctx.morningAnnouncementsLifecycle;await Promise.resolve()},async successor(id="new"){displays[id]={audioContentId:"announcement-b"};state.active=true;state.targets=[id];await ctx.setMorningAnnouncementPriorityTargets([id],true)}};
 }
 function fresh(){const h=fixture();h.state.active=false;h.state.mode=null;h.state.targets=[];h.holds.clear();h.displays.old.audioContentId="original-video";return h}
+
+for(const active of [false,true])test("missing saved stream is rejected before changing "+(active?"existing":"new")+" announcement ownership",async()=>{
+ const h=active?fixture():fresh(),targets=h.state.targets,content=h.displays.old.audioContentId,holds=[...h.holds];h.ctx.announcementsPlaybackUrl=()=>"";
+ await assert.rejects(h.ctx.assertMorningAnnouncements({mode:"manual",targetsOverride:["old"]}),/configure.*stream URL/i);
+ assert.equal(h.calls.length,0);assert.equal(h.state.active,active);assert.equal(h.state.targets,targets);assert.equal(h.displays.old.audioContentId,content);assert.deepEqual([...h.holds],holds);assert.equal(h.pending.size,0);
+});
 test("an explicit empty target override never falls back to configured receivers",async()=>{
  const h=fresh();await assert.rejects(h.ctx.assertMorningAnnouncements({targetsOverride:[]}),/target/i);assert.equal(h.calls.length,0);assert.equal(h.state.active,false);
 });
