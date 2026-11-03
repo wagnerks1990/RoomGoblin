@@ -9,7 +9,7 @@
  let popup=null,nonce='',learner=null,sequence=0,queue=[],unbound=[],sending=null,button=null,status=null,lastScore=null,lastProgress='',lastResume='',closed=false;
  let campaign=null;const arcadeWaiters=new Map();
  const announce=(type,detail)=>{if(typeof root.CustomEvent==='function')root.dispatchEvent(new root.CustomEvent(type,{detail}));};
- const say=text=>{if(status)status.textContent=text;};
+ const say=text=>{if(status)status.textContent=text;announce('roomgoblin:status',{message:text});};
  const persist=()=>{if(learner)try{root.sessionStorage.setItem(key,JSON.stringify({learner,sequence,queue:queue.slice(-100)}));}catch{say('Keep this assignment open to finish sending progress.');}};
  function emit(kind,data){
   const item={id:root.crypto.randomUUID(),kind,occurredAt:new Date().toISOString(),...data};
