@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Reuse written discussions for the IT I OS-selection case with its original
+  8/4/3/5 rubric, separate AI evidence schema, shared replies and private grades.
+  Preserve existing IPv4 cases and allow case-specific teacher corrections.
+
 - Add teacher-owned continuing arcade campaigns across classes and SCORM assignments,
   with persistent private checkpoints, stale-tab protection and a classroom-only
   arcade/completion board that excludes academic grades. Refresh transient boards

@@ -8,6 +8,10 @@ grade bridge, not the discussion database. No production deployment is implied.
 For automatic student sign-in and names, use the signed Schoology External Tool
 delivery in [Schoology sign-in and grade return](LEARNING-SCHOOLOGY-LTI.md).
 
+The additional [IT I OS-selection case](LEARNING-OS-DISCUSSION.md) uses the same
+written workspace with its original 8/4/3/5 rubric. Choose the case when creating
+an activity; existing IPv4 activities retain their rubric and records.
+
 ## Classroom workflow
 
 1. Sign in at `/learn/` with an existing administrator account. Create a class.
