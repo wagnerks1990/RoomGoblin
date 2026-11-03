@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Add a native arcade leaderboard with original gorilla artwork, levels, points,
+  progress and recent-save status. A teacher can explicitly dedicate its receiver
+  to scheduled-class standings, excluding other content and announcements there
+  while retaining announcement priority on all other receivers.
+
 - Allow teachers to accept continuing arcade leaderboard updates from signed
   Schoology learners anywhere, without the extra presence window. Keep existing
   campaigns opt-in and preserve presence checks for attendance and room effects.

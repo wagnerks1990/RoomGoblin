@@ -1,0 +1,33 @@
+.arcade-board{position:absolute;inset:0;z-index:35;overflow:hidden;background:radial-gradient(ellipse at 16% 40%,#193c51 0,transparent 45%),#080e1a;color:#f3fafb;padding:52px 62px 30px;display:grid;grid-template-rows:126px 1fr 64px;gap:24px;font-family:system-ui,sans-serif}
+.arcade-board[hidden]{display:none}
+.arcade-board:before{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(transparent 97%,#3ddac50a 97%);background-size:100% 6px}
+.arcade-header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #284554;padding-bottom:24px;gap:32px}
+.arcade-heading{min-width:0}.arcade-eyebrow{color:#59dfca;font-size:20px;letter-spacing:4px;font-weight:800}
+.arcade-heading h1{font-size:44px;line-height:1.08;margin:10px 0 0;max-width:1120px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.arcade-live{flex-shrink:0;padding:17px 24px;border:2px solid #52d9a6;border-radius:40px;color:#a6f8c3;background:#15382d;font-size:21px;font-weight:850;letter-spacing:1px}
+.arcade-main{display:grid;grid-template-columns:440px 1fr;gap:44px;min-height:0}
+.arcade-feature{position:relative;border:2px solid #3b6e76;border-radius:24px;background:linear-gradient(155deg,#173c4a,#10212e 62%);padding:20px 30px 30px;text-align:center;overflow:hidden;display:flex;flex-direction:column;justify-content:center;align-items:center}
+.arcade-gorilla{width:340px;height:315px;object-fit:contain;animation:arcade-bob 6s ease-in-out infinite;filter:drop-shadow(0 18px 16px #0006)}
+.arcade-feature .arcade-eyebrow{font-size:17px;color:#ffd378;letter-spacing:3px;margin-top:18px}
+.arcade-leader{font-size:48px;margin:12px 0 0;max-width:100%;overflow-wrap:anywhere;line-height:1.1}
+.arcade-hero-score{font-size:66px;font-weight:950;line-height:1.2;color:#ffe192;letter-spacing:-2px;font-variant-numeric:tabular-nums}
+.arcade-feature-caption{font-size:17px;letter-spacing:2px;font-weight:800;color:#ffcb67}
+.arcade-feature-note{font-size:22px;line-height:1.4;color:#c1d9df;margin:24px 0 0}
+.arcade-ladder{min-width:0;display:flex;flex-direction:column;gap:14px}
+.arcade-columns,.arcade-row{display:grid;grid-template-columns:minmax(280px,1.35fr) minmax(210px,.9fr) 140px minmax(230px,1fr);gap:20px;align-items:center}
+.arcade-columns{height:32px;font-size:15px;font-weight:800;letter-spacing:1.8px;color:#8caab9;padding:0 20px}
+.arcade-rows{list-style:none;margin:0;padding:0;display:grid;grid-auto-rows:80px;gap:10px}
+.arcade-row{position:relative;padding:12px 20px;background:#152435;border:1px solid #2b4153;border-left:5px solid #3b8b91;border-radius:12px;min-width:0}
+.arcade-row:first-child{border-left-color:#e8b75e}.arcade-who{display:flex;gap:18px;align-items:center;min-width:0}
+.arcade-rank{font-size:29px;font-weight:850;color:#6bcfc5;font-variant-numeric:tabular-nums;min-width:42px}.arcade-person{display:flex;flex-direction:column;gap:5px;min-width:0}
+.arcade-person strong{font-size:29px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.arcade-person span{font-size:15px;color:#b8cbd6;white-space:nowrap}
+.arcade-points{font-size:35px;font-variant-numeric:tabular-nums;color:#ffe192;letter-spacing:-1px}
+.arcade-level{display:flex;flex-direction:column;gap:3px}.arcade-level strong{font-size:28px;color:#a3f9e4}.arcade-level span{font-size:13px;color:#a2bac9;letter-spacing:2px}
+.arcade-progress{display:flex;flex-direction:column;gap:4px;min-width:0}.arcade-progress strong{font-size:18px;font-variant-numeric:tabular-nums}.arcade-progress span{font-size:12px;color:#b8cbd6}
+.arcade-progress-track{height:7px;border-radius:4px;background:#304658;overflow:hidden}.arcade-progress-fill{height:100%;background:linear-gradient(90deg,#45c9b4,#a8e87a);border-radius:4px;transition:width .5s}
+.arcade-empty{white-space:pre-line;flex:1;display:grid;place-content:center;text-align:center;line-height:1.6;font-size:33px;color:#b6d3dc;border:2px dashed #355666;border-radius:18px}
+.arcade-footer{display:flex;justify-content:space-between;align-items:center;border-top:2px solid #284554;font-size:17px;letter-spacing:1.5px;color:#a6c2d2;font-weight:750;gap:24px}
+.arcade-ticker{color:#a1f5d7}.arcade-score-up{animation:arcade-earned 1.4s ease-out}
+@keyframes arcade-earned{0%{border-color:#ffda78;background:#4b4327}100%{border-color:#2b4153;background:#152435}}
+@keyframes arcade-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@media(prefers-reduced-motion:reduce){.arcade-board *{animation:none!important;transition:none!important}}

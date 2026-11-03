@@ -943,7 +943,9 @@ function morningAnnouncementsSchoolDay(now=new Date()){
   if(isAutomationSuppressed(now).blocked)return false;
   return schoolCycleForDate(now).isStudentSchoolDay;
 }
-function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"])}
+let learningDisplayReservations=()=>new Map();
+const learningDisplayPolicy=require('./learning-display-policy');
+function announcementTargets(){return automationDisplayTargets(morningAnnouncements.targets?.length?morningAnnouncements.targets:["all"]).filter(id=>!learningDisplayReservations().has(id))}
 function scheduleAnnouncementAudioRetries(targets){
   // Content identity belongs to one receiver takeover. Adding another receiver
   // must not cancel retries still needed by unchanged announcement playback.
@@ -976,7 +978,7 @@ async function setMorningAnnouncementPriorityTargets(targets,active){
 }
 async function assertMorningAnnouncements({mode="automatic",targetsOverride=null,urlOverride=null}={}){
   const explicitTargets=targetsOverride!==null;
-  const targets=explicitTargets?(Array.isArray(targetsOverride)?automationDisplayTargets(targetsOverride):[]):announcementTargets();
+  const targets=(explicitTargets?(Array.isArray(targetsOverride)?automationDisplayTargets(targetsOverride):[]):announcementTargets()).filter(id=>!learningDisplayReservations().has(id));
   if(!targets.length){if(explicitTargets)throw Error("No enabled display targets selected for Morning Announcements");return}
   const url=validateMorningAnnouncementsUrl(String(urlOverride||announcementsPlaybackUrl()));
   if(!url)throw Error("Configure a Morning Announcements stream URL before starting playback.");
@@ -4005,6 +4007,7 @@ function publicDisplayStatus(id) {
 }
 function publicPersistentState(){return publicProjection(persistentState)}
 function physicalDisplayState(id){
+  if(learningDisplayReservations().has(id))return learningDisplayPolicy.waitingState();
   const state=structuredClone(persistentState.displays[id]||null);
   if(state?.media?.protectedUrl==="morning-announcements")state.media.url=announcementsPlaybackUrl();
   return state;
@@ -4894,12 +4897,20 @@ function markDisplaySeen(ws, extra = {}) {
 // Core command router
 // -----------------------------------------------------------------------------
 
-async function executeCommand(input, source = "api", {expectedDisplayContent=null,expectedMusicAssistantGeneration=null,admission=null} = {}) {
+async function executeCommand(input, source = "api", {expectedDisplayContent=null,expectedMusicAssistantGeneration=null,admission=null,arcadeCampaignId=null} = {}) {
   const commandStart=Date.now();
   try {
   const command = validateCommandForDispatch(normalizeCommand(input, source));
   if(admission!==null&&(source!=='automation'||typeof admission!=='function'))throw Error('Effect admission is an internal automatic-dispatch option');
   const admitted=()=>admission===null||admission();
+  if(arcadeCampaignId!==null&&(source!=='automation'||typeof admission!=='function'||command.type!=='display.text'||command.payload?.arcade?.version!==1))throw Error('Arcade display ownership is an internal dispatch option');
+  const filterReserved=targets=>learningDisplayPolicy.allowedTargets(command,targets,learningDisplayReservations(),arcadeCampaignId);
+  if(learningDisplayPolicy.contentCommand(command.type)){
+    const resolved=resolveDisplayTargets(command.target),filtered=filterReserved(resolved);
+    if(resolved.length&&!filtered.length)return {ok:false,skipped:true,reason:'dedicated-leaderboard',warnings:['Display is reserved for its classroom leaderboard.'],deliveries:{websocket:[],mqttJson:[],mqttLegacy:[],hardware:null}};
+    if(filtered.length&&filtered.length!==resolved.length)command.target=filtered;
+  }
+
   if(!admitted())return {ok:false,skipped:true,reason:'effect-session-ended'};
   if(expectedMusicAssistantGeneration!==null&&(source!=="music-assistant-bridge"||!["music.assistant.attach","music.assistant.detach"].includes(command.type)))throw Error("Conditional music connection ownership is only supported for TV audio bridge changes");
   const ownsMusicConnection=()=>expectedMusicAssistantGeneration===null||expectedMusicAssistantGeneration===maApiGeneration;
@@ -4947,10 +4958,10 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
 
   if (isDisplayCommand) {
     if(!ownsMusicConnection())return {...result,skipped:true,reason:"music-connection-changed"};
-    let targets = resolveDisplayTargets(command.target);
-    if (!targets.length) {
-      throw new Error(`No display targets resolved from ${JSON.stringify(command.target)}`);
-    }
+    const resolvedTargets=resolveDisplayTargets(command.target);
+    let targets = filterReserved(resolvedTargets);
+    if(targets.length!==resolvedTargets.length)command.target=targets;
+    if (!targets.length) return {...result,ok:false,skipped:true,reason:"dedicated-leaderboard"};
     // This final router-level check closes the race where an automation passed
     // its initial check, awaited a delay/network operation, and then attempted
     // to overwrite a display after an announcement had acquired priority.
@@ -4979,7 +4990,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
       if(command.payload.contentKey&&command.payload.contentKey!==audio.contentKey)throw Error("Displayed content changed. Refresh live audio controls.");
     }
     if(!admitted())return {...result,ok:false,skipped:true,reason:'effect-session-ended'};
-    if(admission!==null&&targets.some(id=>['video','web','pdf'].includes(persistentState.displays[id]?.media?.type)))return {...result,ok:false,skipped:true,reason:'active-media'};
+    if(admission!==null&&targets.some(id=>learningDisplayReservations().get(id)!==arcadeCampaignId&&['video','web','pdf'].includes(persistentState.displays[id]?.media?.type)))return {...result,ok:false,skipped:true,reason:'active-media'};
     if(admission===null)updateStateFromCommand(command, targets);
 
     // Learning celebrations use the existing renderer for eight seconds. They
@@ -4998,6 +5009,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
         if(!admitted())break;
         if(!ownsMusicConnection())break;
         if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
+        if(!filterReserved([id]).length)continue;
         const topic = `classroom/v2/display/${id}/command`;
         await mqttPublish(topic, command);
         result.deliveries.mqttJson.push(topic);
@@ -5011,7 +5023,7 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
       if (runtime.mqtt.connected) {
         const rawTarget = cleanId(command.target);
 
-        if (rawTarget === "all" && !expectedDisplayContent) {
+        if (rawTarget === "all" && !expectedDisplayContent && learningDisplayReservations().size===0) {
           await mqttPublish("classroom/all", legacy);
           result.deliveries.mqttLegacy.push("classroom/all");
         } else {
@@ -5019,8 +5031,9 @@ async function executeCommand(input, source = "api", {expectedDisplayContent=nul
             if(!admitted())break;
             if(!ownsMusicConnection())break;
             if(expectedDisplayContent&&!ownsConditionalContent(id))continue;
+        if(!filterReserved([id]).length)continue;
             const topic = devices[id]?.legacyTopic || `classroom/${id}`;
-            if(expectedDisplayContent&&topic==="classroom/all")throw Error("Announcement command cannot safely target a shared legacy broadcast topic");
+            if((expectedDisplayContent||learningDisplayReservations().size)&&topic==="classroom/all")throw Error("Command cannot safely target a shared legacy broadcast topic");
             await mqttPublish(topic, legacy);
             result.deliveries.mqttLegacy.push(topic);
           }
@@ -5522,21 +5535,23 @@ function learningEffectOptions(){
     assets:[...listMediaLibrary().filter(file=>['image','video'].includes(file.type)).map(file=>({id:file.storedName,label:file.originalName,kind:file.type,url:file.url})),
       ...['chime','success','milestone'].map(id=>({id:'learning-'+id,label:id[0].toUpperCase()+id.slice(1),kind:'sound',url:'/learn/effects/'+id+'.wav'}))]};
 }
+const learningArcadeAvailable=()=>!shutdownRequested&&!fullExportFreeze.requested;
 const learningEffectsAvailable=()=>!shutdownRequested&&!fullExportFreeze.requested&&morningAnnouncementsPriorityTargets.size===0;
 const learningScheduleSource=date=>require('./learning-schedule-source').resolveLearningSchedule({
   classes:classScheduleStore.classes,date,day:localDateKey(date),suppression:isAutomationSuppressed(date),
   matches:classScheduleMatchesDate,segments:effectiveClassSegments,start:classStartDate,end:classEndDate,isTransition:isTransitionClass});
 const learningRuntime=registerLearning(app,{store:dbStore,requestUser,hasCapability,freezeRequested:()=>fullExportFreeze.requested,
   reviewOptions:{track:trackFullExportMutation,isStopping:()=>shutdownRequested},
-  publicDir:path.join(APP_DIR,'public','learn'),platformOptions:{options:learningEffectOptions,available:learningEffectsAvailable,
+  publicDir:path.join(APP_DIR,'public','learn'),platformOptions:{options:learningEffectOptions,available:learningEffectsAvailable,arcadeAvailable:learningArcadeAvailable,
     scheduleSource:learningScheduleSource,scheduleWritable:()=>!shutdownRequested&&!fullExportFreeze.requested,
     publish:()=>require('./learning-cloudflare').publishStudentConnector(new(require('./cloudflare').CloudflareManager)({storage:dbStore}),{probe:require('./learning-public').probeStudentGateway}),
-    dispatch:createEffectAdapter({catalog:learningEffectOptions,available:learningEffectsAvailable,execute:(command,options)=>executeCommand(command,'automation',options)})}});
+    dispatch:createEffectAdapter({catalog:learningEffectOptions,available:action=>action.kind==='arcade-board'?learningArcadeAvailable():learningEffectsAvailable(),execute:(command,options)=>executeCommand(command,'automation',options)})}});
+learningDisplayReservations=()=>learningRuntime.platform.arcade.dedicatedTargets();
 // Synchronous metadata reconciliation never dispatches hardware or runs AI.
 const learningScheduleTimer=setInterval(()=>{if(shutdownRequested||fullExportFreeze.requested)return;try{learningRuntime.schedule.reconcile();}catch(error){diagnosticError(error,{component:'learning',operation:'schedule-sync'});}},15000);learningScheduleTimer.unref();
 // Campaign history persists, while physical presentation follows a currently
 // authorized class session and expires on the receiver if heartbeats stop.
-const learningArcadeTimer=setInterval(()=>{if(!learningEffectsAvailable())return;learningRuntime.platform.arcade.tick().catch(error=>diagnosticError(error,{component:'learning',operation:'arcade-board'}));},5000);learningArcadeTimer.unref();
+const learningArcadeTimer=setInterval(()=>{if(!learningArcadeAvailable())return;learningRuntime.platform.arcade.tick().catch(error=>diagnosticError(error,{component:'learning',operation:'arcade-board'}));},5000);learningArcadeTimer.unref();
 app.use(express.static(path.join(APP_DIR, "public")));
 
 const BRAND_THEME_DEFAULTS={mode:"dark",primary:"#2aa866",accent:"#1b7a49",background:"#040705",surface:"#121923",text:"#eef4f8"};
@@ -7515,7 +7530,9 @@ app.post("/api/v1/music-assistant/tv-bridge",musicAssistantMutationLimit,require
       if(generation!==maApiGeneration)return changed();
       const cfg=musicAssistantConfig(),token=musicAssistantToken();
       if(!token)return res.status(409).json({ok:false,error:"Configure the Music Assistant token first"});
-      const targets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);
+      const requestedTargets=resolveDisplayTargets(req.body?.targets||req.body?.target||[]);
+      const targets=action==='attach'?requestedTargets.filter(id=>!learningDisplayReservations().has(id)):requestedTargets;
+      if(requestedTargets.length&&!targets.length)return res.status(409).json({ok:false,error:'Selected display is dedicated to its classroom leaderboard.'});
       let attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];attached=Array.isArray(attached)?attached:[];
       if(action==="detach")attached=attached.filter(x=>!targets.includes(x));else attached=[...new Set([...attached,...targets])];
       dbStore.setPreference("musicassistant.tvBridgeTargets",attached);
@@ -8951,9 +8968,9 @@ wss.on("connection", (ws, req) => {
           // Re-attach persistent Music Assistant browser player bridge after display reconnect/reload.
           try{
             const maTargets=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
-            if(Array.isArray(maTargets)&&maTargets.includes(deviceId)){
+            if(Array.isArray(maTargets)&&maTargets.includes(deviceId)&&!learningDisplayReservations().has(deviceId)){
               const maToken=musicAssistantToken();
-              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!shutdownRequested&&!fullExportFreeze.requested&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
+              if(maToken){const issued=issueMusicAssistantProxyTicket(deviceId);setTimeout(()=>{if(!shutdownRequested&&!fullExportFreeze.requested&&!learningDisplayReservations().has(deviceId)&&ws.readyState===WebSocket.OPEN)wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:deviceId,payload:musicAssistantTvAttachPayload(deviceId,issued)}})},1200)};
             }
           }catch{}
 
@@ -9044,7 +9061,7 @@ wss.on("connection", (ws, req) => {
 
       if (msg.type === "music.assistant.reconnect.request" && ws.role === "display") {
         const attached=dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[];
-        if(Array.isArray(attached)&&attached.includes(ws.deviceId)&&musicAssistantToken()){
+        if(Array.isArray(attached)&&attached.includes(ws.deviceId)&&!learningDisplayReservations().has(ws.deviceId)&&musicAssistantToken()){
           resetMusicAssistantTvAudioRestore(ws);
           const issued=issueMusicAssistantProxyTicket(ws.deviceId);
           wsSend(ws,{type:"command",command:{type:"music.assistant.attach",target:ws.deviceId,payload:musicAssistantTvAttachPayload(ws.deviceId,issued,{reconnect:true})}});
