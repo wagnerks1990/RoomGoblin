@@ -34,6 +34,36 @@ test('offsite and delayed checkpoints save privately without updating the TV pro
  const f=await setup(t),id=f.activities[0][0];f.start(0,f.a);await f.p.record(f.a,id,f.event(f.a,1),campus);await f.p.record(f.a,id,f.event(f.a,2,1,5000),remote);assert.equal(f.p.arcade.board(f.c.id)[0].arcadeScore,1200);
  const e=f.event(f.a,3,2,6000);f.advance(31000);await f.p.record(f.a,id,e,campus);assert.equal(f.p.arcade.board(f.c.id)[0].arcadeScore,1200);assert.equal(f.p.state(f.a,id).arcade.arcadeScore,6000);
 });
+test('opt-in signed leaderboard updates need no presence or active room session and dispatch no effects',async t=>{
+ const f=await setup(t),id=f.activities[0][0],user={...f.a,learningSso:true,profileId:'learning-student',sessionId:crypto.randomUUID()};
+ f.p.arcade.configure(f.admin,{...f.c,leaderboardAnywhere:true});f.p.signedName(f.classId,user.id,'Alex');
+ const result=await f.p.record(user,id,f.event(user,1),remote);
+ assert.equal(result.classroom,false);assert.equal(result.effect.status,'not-in-classroom');assert.equal(f.p.currentSession(f.classId),null);assert.equal(f.sent.length,0);
+ assert.equal(f.p.arcade.board(f.c.id)[0].arcadeScore,1200);assert.equal(result.state.arcade.leaderboardAnywhere,true);
+ assert.equal(f.p.db.prepare('SELECT COUNT(*) n FROM learning_live_attendance').get().n,0);
+ const p=new LearningPlatform(f.learning,{options});assert.equal(p.arcade.list(f.admin)[0].leaderboardAnywhere,true);assert.equal(p.arcade.board(f.c.id)[0].arcadeScore,1200);
+});
+
+test('anywhere leaderboard still rejects unsigned identity, wrong membership and learner-key spoofing',async t=>{
+ const f=await setup(t),id=f.activities[0][0];f.p.arcade.configure(f.admin,{...f.c,leaderboardAnywhere:true});
+ await f.p.record(f.a,id,f.event(f.a,1),remote);assert.equal(f.p.arcade.board(f.c.id).length,0);
+ const user={...f.a,learningSso:true,profileId:'learning-student',sessionId:crypto.randomUUID()};
+ await assert.rejects(()=>f.p.record(user,f.activities[1][0],f.event(user,1,1),remote),{status:404});
+ await assert.rejects(()=>f.p.record(user,id,f.event(f.b,2,1),remote),{status:409});assert.equal(f.p.arcade.board(f.c.id).length,0);
+});
+
+test('anywhere leaderboard preserves revisions, grade privacy and the setting on older-client saves',async t=>{
+ const f=await setup(t),[a,b]=f.activities[0],user={...f.a,learningSso:true,profileId:'learning-student',sessionId:crypto.randomUUID()};
+ f.p.arcade.configure(f.admin,{...f.c,leaderboardAnywhere:true});const legacy={...f.c};delete legacy.leaderboardAnywhere;f.p.arcade.configure(f.admin,legacy);
+ assert.equal(f.p.arcade.list(f.admin)[0].leaderboardAnywhere,true);
+ await f.p.record(user,a,f.event(user,1,0,1200,{current:5}),remote);await f.p.record(user,b,f.event(user,1,1,1300,{current:10,total:50}),remote);
+ await assert.rejects(()=>f.p.record(user,a,f.event(user,2,1,9000),remote),{status:409});
+ const row=f.p.arcade.board(f.c.id)[0];assert.equal(row.answered,15);assert.equal(row.completed,1);assert.equal(row.arcadeScore,1300);
+ for(const key of ['checkpoint','ram','raw','earned',user.id])assert.ok(!JSON.stringify(row).includes(key));
+ f.p.arcade.configure(f.admin,{...f.c,leaderboardAnywhere:false});await f.p.record(user,b,f.event(user,2,2,1400),remote);assert.equal(f.p.arcade.board(f.c.id)[0].arcadeScore,1300);
+ assert.throws(()=>f.p.arcade.configure(f.admin,{...f.c,leaderboardAnywhere:'true'}),{status:400});
+});
+
 test('question completion combines assignments; academic scores do not affect arcade rank',async t=>{
  const f=await setup(t),[a,b]=f.activities[0];f.start(0,f.a);await f.p.record(f.a,a,f.event(f.a,1,0,1200,{current:5}),campus);await f.p.record(f.a,b,f.event(f.a,1,1,1300,{current:12,total:50}),campus);
  const row=f.p.arcade.board(f.c.id)[0];assert.equal(row.completed,1);assert.equal(row.assignments,2);assert.equal(row.answered,17);assert.equal(row.total,55);

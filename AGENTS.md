@@ -67,6 +67,11 @@ enrollment, and fresh direct-network proofs admit each event. SCORM names never
 authorize attendance. Preserve manual mode, calendar suppression, teacher pauses,
 class/assignment data and per-session proof binding. The metadata timer respects
 shutdown/export freezes and never dispatches hardware or replays progress.
+Teachers may opt a continuing arcade campaign into signed leaderboard updates
+from any location. This changes only its arcade/completion snapshot, never room
+attendance or eligibility for lights, sounds and other classroom effects. Existing
+campaigns remain presence-gated until explicitly configured. Keep signed learner
+identity, grade privacy, revision checks and scheduled display ownership intact.
 
 ## Docker network deployment contract
 

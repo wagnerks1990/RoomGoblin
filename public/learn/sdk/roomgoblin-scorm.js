@@ -9,7 +9,7 @@
  let popup=null,nonce='',learner=null,sequence=0,queue=[],unbound=[],sending=null,button=null,status=null,lastScore=null,lastProgress='',lastResume='',closed=false;
  let campaign=null;const arcadeWaiters=new Map();
  const announce=(type,detail)=>{if(typeof root.CustomEvent==='function')root.dispatchEvent(new root.CustomEvent(type,{detail}));};
- const say=text=>{if(status)status.textContent=text;};
+ const say=text=>{if(status)status.textContent=text;announce('roomgoblin:status',{message:text});};
  const persist=()=>{if(learner)try{root.sessionStorage.setItem(key,JSON.stringify({learner,sequence,queue:queue.slice(-100)}));}catch{say('Keep this assignment open to finish sending progress.');}};
  function emit(kind,data){
   const item={id:root.crypto.randomUUID(),kind,occurredAt:new Date().toISOString(),...data};
@@ -28,6 +28,7 @@
   const hash=new URLSearchParams({activity:cfg.activityId,nonce,parent:root.location.origin});
   popup=root.open(origin.origin+'/learn/connect/#'+hash,'roomgoblin-'+cfg.activityId+'-'+nonce,'width=560,height=680');
   say(popup?'Connecting through Schoology…':'Allow the connection window, then select Connect again.');
+  return !!popup;
  }
  root.addEventListener('message',e=>{
   const m=e.data;if(!popup||e.source!==popup||e.origin!==origin.origin||!m||m.nonce!==nonce||m.activityId!==cfg.activityId)return;
@@ -80,12 +81,13 @@
  }
  const installed=install();
  function mount(){
+  if(cfg.connectionUi==='embedded'){if(!installed)install();return;}
   if(!findApi())return;const panel=document.createElement('aside');panel.setAttribute('aria-label','RoomGoblin connection');
   panel.style.cssText='display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:10px;padding:10px;border:1px solid #63e6be;border-radius:12px;background:#10232f;color:white;font:13px/1.4 system-ui;box-shadow:0 4px 24px #0006';
   button=document.createElement('button');button.type='button';button.textContent='Connect to RoomGoblin';button.style.cssText='border:0;border-radius:6px;padding:8px;background:#a3f5d0;color:#10232f;cursor:pointer;font-weight:bold';button.onclick=connect;
   status=document.createElement('p');status.style.margin='6px 0 0';status.setAttribute('role','status');status.textContent='Schoology saves your grade. Connect for classroom progress.';panel.append(button,status);document.body.prepend(panel);if(!installed)install();
  }
- root.RoomGoblinSCORM={connect,campaign:()=>campaign,arcade(data){
+ root.RoomGoblinSCORM={connect,connected:()=>!!learner&&!!popup&&!popup.closed,connecting:()=>!learner&&!!popup&&!popup.closed,campaign:()=>campaign,arcade(data){
   if(!learner||!campaign)return Promise.reject(Error('Connect through Schoology before saving a continuing campaign.'));
   if(arcadeWaiters.size||queue.some(item=>item.kind==='arcade'))return Promise.reject(Error('A campaign save is still pending. Reconnect and wait for confirmation before playing in another assignment.'));
   const id=emit('arcade',{...data,revision:campaign.revision});

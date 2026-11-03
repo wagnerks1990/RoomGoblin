@@ -1,6 +1,7 @@
 "use strict";
 (()=>{
  const $=id=>document.getElementById(id),cfg=window.LEARNING_CONFIG;let api=null,popup=null,nonce=null,pending=null,finished=false,savedKey=null;
+ if(typeof cfg?.title==='string'){$('discussion-title').textContent=cfg.title;document.title=cfg.title+' - 20 points';}
  const receiptKey=r=>[r.reviewId,r.approvedAt,r.raw].join('|');
  function confirm(saved){if(pending&&popup)popup.postMessage({type:'roomgoblin.grade.result',nonce,activityId:cfg.activityId,reviewId:pending.reviewId,approvedAt:pending.approvedAt,raw:pending.raw,saved},cfg.origin);}
  function find(w){for(let i=0;i<15&&w;i++){try{if(w.API)return w.API;if(w.parent===w)break;w=w.parent;}catch{break;}}return null;}

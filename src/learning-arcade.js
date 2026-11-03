@@ -24,15 +24,18 @@ class LearningArcade{
    CREATE TABLE IF NOT EXISTS learning_arcade_bindings(activity_id TEXT PRIMARY KEY,campaign_id TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS learning_arcade_players(campaign_id TEXT NOT NULL,user_id TEXT NOT NULL,revision INTEGER NOT NULL,data_json TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(campaign_id,user_id));
    CREATE TABLE IF NOT EXISTS learning_arcade_public(campaign_id TEXT NOT NULL,user_id TEXT NOT NULL,class_id TEXT NOT NULL,data_json TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(campaign_id,user_id));
+   CREATE TABLE IF NOT EXISTS learning_arcade_visibility(campaign_id TEXT PRIMARY KEY,anywhere INTEGER NOT NULL DEFAULT 0);
   `);
  }
  owned(user,id){const c=this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE id=? AND owner_id=?').get(id,user.id);if(!c||!this.authorized(user,c.id))fail(404,'Campaign not found.');return c;}
  authorized(user,id){return this.classes(id).every(c=>{try{this.learning.membership(user,c.classId,true);return true;}catch{return false;}});}
  classes(id){return this.db.prepare('SELECT class_id classId,label FROM learning_arcade_classes WHERE campaign_id=? ORDER BY label').all(id);}
- list(user){return this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE owner_id=? ORDER BY created_at').all(user.id).filter(c=>this.authorized(user,c.id)).map(c=>({id:c.id,title:c.title,enabled:!!c.enabled,targets:parse(c.targets_json,[]),classes:this.classes(c.id),board:this.board(c.id)}));}
+ anywhere(id){return this.db.prepare('SELECT anywhere FROM learning_arcade_visibility WHERE campaign_id=?').get(id)?.anywhere===1;}
+ list(user){return this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE owner_id=? ORDER BY created_at').all(user.id).filter(c=>this.authorized(user,c.id)).map(c=>({id:c.id,title:c.title,enabled:!!c.enabled,leaderboardAnywhere:this.anywhere(c.id),targets:parse(c.targets_json,[]),classes:this.classes(c.id),board:this.board(c.id)}));}
  configure(user,input){
   const id=input.id||crypto.randomUUID();if(!uuid(id))fail(400,'Invalid campaign ID.');
   const old=this.db.prepare('SELECT * FROM learning_arcade_campaigns WHERE id=?').get(id);if(old)this.owned(user,id);
+  if(input.leaderboardAnywhere!==undefined&&typeof input.leaderboardAnywhere!=='boolean')fail(400,'Choose whether the leaderboard accepts work from any location.');
   const title=text(input.title),classes=input.classes,targets=input.targets;
   if(!Array.isArray(classes)||!classes.length||classes.length>16||classes.some(c=>!c||typeof c!=='object')||new Set(classes.map(c=>c.classId)).size!==classes.length)fail(400,'Select one to sixteen distinct classes.');
   for(const c of classes){if(!uuid(c.classId))fail(400,'Invalid class.');this.learning.membership(user,c.classId,true);text(c.label,30);}
@@ -42,7 +45,9 @@ class LearningArcade{
   // Never strand an assignment or silently move already saved player history.
   const used=this.db.prepare('SELECT DISTINCT a.class_id FROM learning_arcade_bindings b JOIN learning_activities a ON a.id=b.activity_id WHERE b.campaign_id=?').all(id);
   if(used.some(a=>!classes.some(c=>c.classId===a.class_id)))fail(409,'A class with linked assignments cannot be removed from this campaign.');
-  this.store.tx(()=>{this.db.prepare('INSERT INTO learning_arcade_campaigns VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,enabled=excluded.enabled,targets_json=excluded.targets_json').run(id,user.id,title,input.enabled===true?1:0,JSON.stringify([...new Set(targets)]),this.clock());this.db.prepare('DELETE FROM learning_arcade_classes WHERE campaign_id=?').run(id);for(const c of classes)this.db.prepare('INSERT INTO learning_arcade_classes VALUES(?,?,?)').run(id,c.classId,text(c.label,30));});
+  this.store.tx(()=>{this.db.prepare('INSERT INTO learning_arcade_campaigns VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,enabled=excluded.enabled,targets_json=excluded.targets_json').run(id,user.id,title,input.enabled===true?1:0,JSON.stringify([...new Set(targets)]),this.clock());this.db.prepare('DELETE FROM learning_arcade_classes WHERE campaign_id=?').run(id);for(const c of classes)this.db.prepare('INSERT INTO learning_arcade_classes VALUES(?,?,?)').run(id,c.classId,text(c.label,30));
+   if(input.leaderboardAnywhere!==undefined)this.db.prepare('INSERT INTO learning_arcade_visibility VALUES(?,?) ON CONFLICT(campaign_id) DO UPDATE SET anywhere=excluded.anywhere').run(id,input.leaderboardAnywhere?1:0);
+  });
   this.learning.event(user,null,'arcade.configure',id);return this.list(user).find(c=>c.id===id);
  }
  bind(user,activityId,campaignId){
@@ -57,15 +62,15 @@ class LearningArcade{
   const owner=this.store.listUsers().find(u=>u.id===binding.owner_id&&u.enabled);if(!owner||this.learning.teacherCapability&&!this.learning.teacherCapability(owner))return null;
   try{this.learning.membership(owner,a.class_id,true);}catch{return null;}
   const row=this.db.prepare('SELECT * FROM learning_arcade_players WHERE campaign_id=? AND user_id=?').get(binding.id,user.id);
-  return {campaignId:binding.id,title:binding.title,revision:row?.revision||0,...parse(row?.data_json)};
+  return {campaignId:binding.id,title:binding.title,revision:row?.revision||0,...parse(row?.data_json),leaderboardAnywhere:this.anywhere(binding.id)};
  }
  save(user,a,data,classroom){
   const prior=this.state(user,a.id);if(!prior)fail(409,'This assignment needs a campaign connection.');
   if(prior.revision!==data.revision)fail(409,'Campaign changed in another assignment. Reconnect to load its latest checkpoint.');
   const {revision,...saved}=data;
   this.db.prepare('INSERT INTO learning_arcade_players VALUES(?,?,?,?,?) ON CONFLICT(campaign_id,user_id) DO UPDATE SET revision=excluded.revision,data_json=excluded.data_json,updated_at=excluded.updated_at').run(prior.campaignId,user.id,revision+1,JSON.stringify(saved),this.clock());
-  if(classroom){
-   // Off-campus updates stay private until this learner next confirms classroom presence.
+  if(classroom||prior.leaderboardAnywhere&&user.learningSso===true&&user.profileId==='learning-student'&&!!user.sessionId){
+   // Opt-in signed leaderboard updates do not confer attendance or room-effect eligibility.
    const progress=this.db.prepare('SELECT a.id,p.data_json FROM learning_arcade_bindings b JOIN learning_activities a ON a.id=b.activity_id LEFT JOIN learning_progress p ON p.activity_id=a.id AND p.user_id=? WHERE b.campaign_id=? AND a.class_id=?').all(user.id,prior.campaignId,a.class_id);
    let answered=0,total=0,completed=0;for(const row of progress){const d=row.id===a.id?saved:parse(row.data_json);answered+=Number.isInteger(d.current)?d.current:0;total+=Number.isInteger(d.total)?d.total:0;if(d.completed||d.current===d.total&&d.total>0)completed++;}
    const visible={arcadeScore:saved.arcadeScore,level:saved.level,board:saved.board,answered,total,completed,assignments:progress.length};

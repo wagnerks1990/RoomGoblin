@@ -10,11 +10,16 @@ const CASE = Object.freeze({
   rubric:{claim:"Technical claim: 6 accurate judgment; 3 relevant judgment with omission; 0 missing/unrelated/incorrect/invented evidence.",evidence:"Evidence/example: 6 accurate specific calculation; 3 relevant incomplete calculation; 0 absent/incorrect/invented.",reasoning:"Reasoning and limit: 5 explains connection and an appropriate limit; 2 partially sound but incomplete; 0 absent/incorrect/invented.",reply:"Peer reply or independent critique: 3 justified correction/test/extension; 1 relevant response without support; 0 absent/unrelated/incorrect/agreement only."}
 });
 const {INITIAL_SCHEMA:SCHEMA,REPLY_SCHEMA,initialRequest,assessWriting}=require('./learning-evidence');
-function validateGrade(value){
+const osCase=require('./learning-os-case');
+const CASES=Object.freeze({[CASE.id]:CASE,[osCase.CASE.id]:osCase.CASE});
+function caseFor(id=CASE.id){const item=Object.prototype.hasOwnProperty.call(CASES,id)&&CASES[id];if(!item)throw Error('Unknown discussion template');return item;}
+function rubricFor(id=CASE.id){return id===CASE.id?RUBRIC:caseFor(id).scoreLevels;}
+function validateGrade(value,templateId=CASE.id){
+  const rubric=rubricFor(templateId);
   if(!value||Object.keys(value).sort().join()!=="criteria,summary"||typeof value.summary!=="string"||!value.summary.trim()||value.summary.length>2000)throw Error("Invalid grading response");
-  if(!value.criteria||Object.keys(value.criteria).sort().join()!==Object.keys(RUBRIC).sort().join())throw Error("Invalid grading criteria");
+  if(!value.criteria||Object.keys(value.criteria).sort().join()!==Object.keys(rubric).sort().join())throw Error("Invalid grading criteria");
   let total=0;
-  for(const [key,allowed] of Object.entries(RUBRIC)){
+  for(const [key,allowed] of Object.entries(rubric)){
     const v=value.criteria[key];
     if(!v||Object.keys(v).sort().join()!=="feedback,points"||!allowed.includes(v.points)||typeof v.feedback!=="string"||!v.feedback.trim()||v.feedback.length>1600)throw Error("Invalid rubric score");
     total+=v.points;
@@ -49,5 +54,5 @@ async function modelJSON({apiKey,provider='openai',baseURL,fetchImpl=fetch},requ
   else{if(data.status!=="completed")throw Error("AI response incomplete");const parts=(data.output||[]).flatMap(x=>x.type==="message"?x.content||[]:[]);if(parts.some(x=>x.type==="refusal"))throw Error("AI response requires teacher review");output=parts.filter(x=>x.type==="output_text").map(x=>x.text).join("");}
   return JSON.parse(output);
 }
-async function gradeWriting(options){return assessWriting(options,modelJSON);}
-module.exports={CASE,RUBRIC,SCHEMA,REPLY_SCHEMA,validateGrade,gradingRequest,gradeWriting,localBaseURL,modelJSON};
+async function gradeWriting(options){const selected=caseFor(options.templateId);return (selected.id===CASE.id?assessWriting:require('./learning-os-evidence').assessWriting)(options,modelJSON);}
+module.exports={CASE,CASES,caseFor,rubricFor,RUBRIC,SCHEMA,REPLY_SCHEMA,validateGrade,gradingRequest,gradeWriting,localBaseURL,modelJSON};

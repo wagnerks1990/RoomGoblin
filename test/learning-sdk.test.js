@@ -13,6 +13,12 @@ function setup({opener=false,config={}}={}){
  const ready=(id=learner,seq=0,arcade=null)=>send({type:'roomgoblin.connector.ready',state:{learnerKey:id,firstName:'Alex',sequence:seq,arcade}});
  return {root,api,native,messages,ready,send,learner,saved,activityId,failCommit:()=>commit='false'};
 }
+test('embedded connection UI preserves SDK lifecycle and native grade saving',()=>{
+ const f=setup({config:{connectionUi:'embedded'}}),sdk=f.root.RoomGoblinSCORM;
+ assert.equal(sdk.connected(),false);assert.equal(sdk.connecting(),true);f.ready();assert.equal(sdk.connected(),true);assert.equal(sdk.connecting(),false);
+ f.api.LMSSetValue('cmi.core.score.raw','80');assert.equal(f.api.LMSCommit(''),'true');assert.equal(f.messages[0].message.event.raw,80);
+});
+
 test('SCORM telemetry preserves native return values and this, waits for success, and makes no extra LMS calls',()=>{
  const f=setup();f.ready();assert.equal(f.api.LMSSetValue('cmi.core.score.raw','40'),'true');f.api.LMSSetValue('cmi.core.score.min','0');f.api.LMSSetValue('cmi.core.score.max','50');assert.equal(f.api.LMSCommit(''),'true');
  assert.equal(f.messages.length,1);assert.equal(f.messages[0].message.event.raw,80);assert.equal(f.messages[0].origin,'https://learn.example.test');assert.ok(f.native.every(x=>x[1]));
