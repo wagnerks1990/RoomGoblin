@@ -3,6 +3,8 @@
 Unreleased development work. UI/browser fixtures and player-reported progress
 do not establish audible playback on a physical receiver.
 
+See [Music maintenance](MUSIC-MAINTENANCE.md) for stable updates, service recovery and Sendspin queue repair.
+
 ## Everyday listening
 
 Open **Background music**. **Now playing** shows the selected output, current

@@ -5,6 +5,14 @@
 
 ## Unreleased
 
+- Add opt-in stable Music Assistant and Apollo CAST-1 updates with maintenance
+  windows, persistent attempt tracking, cold Music Assistant rollback and bounded
+  service recovery. Verify Apollo firmware by pinned-device reconnection.
+- Repair stalled Sendspin audio from its current queue, including queues observed
+  after a Hub restart. Preserve queue contents, volume and announcement priority.
+- Separate ESPHome entity identities by domain so firmware buttons cannot hide
+  firmware update state. See [Music maintenance](docs/MUSIC-MAINTENANCE.md).
+
 - Allow teachers to accept continuing arcade leaderboard updates from signed
   Schoology learners anywhere, without the extra presence window. Keep existing
   campaigns opt-in and preserve presence checks for attendance and room effects.

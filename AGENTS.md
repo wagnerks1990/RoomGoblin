@@ -374,6 +374,14 @@ Timer chaining is allowed only for the matching continuation of the same underly
 
 ### Background Music
 
+Read `docs/MUSIC-MAINTENANCE.md` before changing integration updates or recovery.
+Preserve opt-in stable updates, idle/announcement gates, native appliance locking,
+cold Music Assistant image/data rollback and persisted restart budgets. Apollo
+updates require the pinned CAST-1 identity and Stable channel; claim before send,
+verify the exact version after reconnect, and never replay uncertain flashing.
+Keep native ESPHome domain/subdevice/key entity identities distinct. Existing
+unencrypted native API enrollments remain supported without changing their keys.
+
 Normal visual automations do not disturb Background Music. Unmuted priority video/stream/audio pauses it. It resumes only after priority audio ends and display automation reconciliation has completed. Remote days suppress scheduled Background Music while manual controls remain available.
 
 ### Display authentication

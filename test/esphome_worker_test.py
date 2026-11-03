@@ -10,8 +10,10 @@ import unittest
 
 from aioesphomeapi import APIClient
 from aioesphomeapi.model import (APIVersion, DeviceInfo, EntityCategory, LightInfo,
-                                NumberInfo, SelectInfo, SwitchInfo, SwitchState, ButtonInfo)
-from src.esphome.worker import Worker, command_args, entity_view, safe_error, valid_target
+                                NumberInfo, SelectInfo, SwitchInfo, SwitchState, ButtonInfo,
+                                UpdateInfo, UpdateState, MediaPlayerInfo, MediaPlayerEntityState)
+from src.esphome.worker import Worker, Node, command_args, entity_view, entity_id, safe_error, valid_target
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 KEY = base64.b64encode(bytes(range(32))).decode()
@@ -99,11 +101,12 @@ class ModelTests(unittest.TestCase):
     def test_model_projection_and_dispatch_validation(self):
         api_version = APIVersion(1, 15)
         entity = entity_view(SwitchInfo(key=42, device_id=7, name="Relay"), api_version)
-        self.assertEqual(entity["id"], "7:42")
+        self.assertEqual(entity["id"], "switch:7:42")
         self.assertEqual(command_args(entity, {"state": False}), {"state": False})
         for command in ({"state": "OFF"}, {"state": 1}, {"toggle": True}, {"state": True, "service": "restart"}):
             with self.assertRaises(ValueError):
                 command_args(entity, command)
+
         maintenance = entity_view(ButtonInfo(key=1, name="Restart"), api_version)
         self.assertTrue(maintenance["adminOnly"])
         with self.assertRaises(ValueError):
@@ -127,9 +130,43 @@ class ModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             command_args(light, {"brightness": 4})
 
+    def test_cross_domain_keys_do_not_overwrite_firmware_controls(self):
+        button = ButtonInfo(key=42, name="Firmware Update")
+        update = UpdateInfo(key=42, name="Firmware Update")
+        state = UpdateState(key=42)
+        self.assertNotEqual(entity_id(button), entity_id(update))
+        self.assertEqual(entity_id(update), entity_id(state))
+        self.assertEqual(entity_id(MediaPlayerInfo(key=42)), entity_id(MediaPlayerEntityState(key=42)))
+
     def test_upstream_errors_never_expose_details(self):
         self.assertNotIn(KEY, safe_error(RuntimeError("connection key "+KEY)))
         self.assertEqual(safe_error(ValueError("identity-mismatch")), "identity-mismatch")
+
+    def test_apollo_update_validates_project_channel_and_exact_release(self):
+        calls = []
+        def update(**kwargs):
+            inspect.signature(APIClient.update_command).bind(None, **kwargs)
+            calls.append(kwargs)
+        node = object.__new__(Node)
+        node.online, node.busy = True, False
+        node.client = SimpleNamespace(update_command=update)
+        node.info = {"project_name": "ApolloAutomation.CAST-1", "model": "esp32-s3", "project_version": "26.9.21.1"}
+        node.entities = {"select:0:2": entity_view(SelectInfo(key=2, name="Firmware Channel", options=["Stable", "Beta"]), APIVersion(1, 15)),
+                         "update:0:3": entity_view(UpdateInfo(key=3, name="Firmware Update"), APIVersion(1, 15))}
+        node.states = {"select:0:2": {"state": "Stable"}, "update:0:3": {"current_version": "26.9.21.1", "latest_version": "26.10.30.1"}}
+        self.assertFalse(node.firmware_update("26.10.30.1")["confirmed"])
+        self.assertEqual(calls[0]["key"], 3)
+        for version in ("26.9.21.1", "https://example.test/update", "26.10.31.1", None):
+            with self.assertRaises(ValueError):
+                node.firmware_update(version)
+        node.states["select:0:2"]["state"] = "Beta"
+        with self.assertRaises(ValueError):
+            node.firmware_update("26.10.30.1")
+        node.states["select:0:2"]["state"] = "Stable"
+        node.info["project_name"] = "other"
+        with self.assertRaises(ValueError):
+            node.firmware_update("26.10.30.1")
+        self.assertEqual(len(calls), 1)
 
     def test_real_worker_ipc_startup_and_eof(self):
         result = subprocess.run([sys.executable, "-u", str(ROOT / "src/esphome/worker.py")],
@@ -163,7 +200,7 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(FakeClient.peak, 6)
         self.assertEqual(len(FakeClient.seen), 20)
         node = self.worker.nodes["0"]
-        self.assertFalse(node.states["7:42"]["state"])
+        self.assertFalse(node.states["switch:7:42"]["state"])
         self.assertEqual(node.client.kwargs["expected_mac"], MAC.replace(":", ""))
         self.assertFalse(node.client.kwargs["provide_time"])
         before = node.client
@@ -192,24 +229,24 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         await self.worker.configure([config()])
         node = self.worker.nodes["fixture"]
         await self.until(lambda: node.online)
-        result = await node.command("7:42", {"state": True})
+        result = await node.command("switch:7:42", {"state": True})
         self.assertTrue(result["confirmed"])
         self.assertEqual(node.client.commands, [("switch", {"key": 42, "device_id": 7, "state": True})])
         node.client.callback = None
-        result = await node.command("7:42", {"state": False})
+        result = await node.command("switch:7:42", {"state": False})
         self.assertFalse(result["confirmed"])
         self.assertEqual(len(node.client.commands), 2)
         await node.client.stopped(False)
         with self.assertRaises(ValueError):
-            await node.command("7:42", {"state": True})
+            await node.command("switch:7:42", {"state": True})
 
     async def test_button_and_stale_generation_authorization_checked_at_dispatch(self):
         await self.worker.configure([config()])
         node = self.worker.nodes["fixture"]
         await self.until(lambda: node.online)
-        node.entities["0:9"] = entity_view(ButtonInfo(key=9, name="Fixture button"), node.client.api_version)
+        node.entities["button:0:9"] = entity_view(ButtonInfo(key=9, name="Fixture button"), node.client.api_version)
         request = {"op": "command", "requestId": "1", "deviceId": "fixture", "generation": "fixture-generation",
-                   "entityId": "0:9", "command": {"press": True, "confirm": True}, "admin": False}
+                   "entityId": "button:0:9", "command": {"press": True, "confirm": True}, "admin": False}
         await self.worker.handle(request)
         self.assertFalse(self.events[-1]["ok"])
         self.assertFalse(node.client.commands)

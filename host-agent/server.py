@@ -195,6 +195,9 @@ _HOST_AGENT_DIR=str(Path(__file__).resolve().parent)
 if _HOST_AGENT_DIR not in sys.path: sys.path.insert(0,_HOST_AGENT_DIR)
 from full_recovery import FullRecoveryManager
 FULL_RECOVERY = FullRecoveryManager(run, hub_root=HUB_ROOT, services_root=SERVICES_ROOT)
+from music_updates import MusicUpdates
+from types import SimpleNamespace
+MUSIC_UPDATES = MusicUpdates(SimpleNamespace(run=run, APPLIANCE_MUTATION_LOCK=APPLIANCE_MUTATION_LOCK))
 STARTUP_RECOVERY_ACTIVE = False
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 REQUEST_READ_TIMEOUT_SECONDS = 10
@@ -629,6 +632,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/app-updates/job': return self.send_json(200,{"ok":True,**app_update_job_status(True)})
             if path=='/app-updates/source': return self.send_json(200,{"ok":True,**app_update_source_status()})
             if path=='/recovery/full/job': return self.send_json(200,{"ok":True,**FULL_RECOVERY.status()})
+            if path=='/music-updates/job': return self.send_json(200,MUSIC_UPDATES.status())
+            if path=='/music-updates/check': return self.send_json(200,MUSIC_UPDATES.check())
             if path=='/cleanup/migration-snapshots':
                 items=migration_snapshots(); return self.send_json(200,{"ok":True,"items":items,"count":len(items)})
             return self.send_json(404,{"ok":False,"error":"Not found"})
@@ -654,6 +659,10 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/veyon/update':
                 body=self.body()
                 return self.send_json(202,start_veyon_release_job(body))
+            if path=='/music-updates/start':
+                return self.send_json(202,MUSIC_UPDATES.start(self.body()))
+            if path=='/music-updates/recover':
+                return self.send_json(202,MUSIC_UPDATES.recover(self.body()))
             if path in ('/updates/apply','/updates/start'):
                 body=self.body()
                 if str(body.get('confirm') or '')!='INSTALL_UPDATES': return self.send_json(400,{"ok":False,"error":"Explicit INSTALL_UPDATES confirmation required"})
@@ -756,8 +765,14 @@ def serve():
     serving.start()
     try:
         FULL_RECOVERY.startup_recover()
-        STARTUP_RECOVERY_ACTIVE=False
-        if APP_UPDATE_REQUEST_FILE.exists():
+        try:
+            MUSIC_UPDATES.startup_recover()
+            STARTUP_RECOVERY_ACTIVE=False
+        except Exception:
+            # Continue authenticated health/status service while a failed cold
+            # rollback keeps mutations locked for administrator recovery.
+            STARTUP_RECOVERY_ACTIVE=True
+        if not STARTUP_RECOVERY_ACTIVE and APP_UPDATE_REQUEST_FILE.exists():
             threading.Timer(2.0,resume_interrupted_app_update).start()
         serving.join()
     finally:

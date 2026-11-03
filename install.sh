@@ -321,7 +321,7 @@ sed -i "s#^Environment=HOST_SERVICES_DIR=.*#Environment=HOST_SERVICES_DIR=$SERVI
 sed -i "s#^Environment=HOST_BACKUP_DIR=.*#Environment=HOST_BACKUP_DIR=$BACKUP_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^Environment=DOCKER_VOLUMES_ROOT=.*#Environment=DOCKER_VOLUMES_ROOT=$DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
 sed -i "s#^ReadWritePaths=.*#ReadWritePaths=/run/classroom-control-hub $TARGET $SERVICES $BACKUP_ROOT /etc/classroom-control-hub /etc/cloudflared /etc/systemd/system/cloudflared-roomgoblin.service /var/lib/classroom-hub $DOCKER_VOLUMES_ROOT#" /etc/systemd/system/classroom-hub-host-agent.service
-python3 -m py_compile "$TARGET/host-agent/server.py" "$TARGET/host-agent/start.py" "$TARGET/host-agent/full_recovery.py"
+python3 -m py_compile "$TARGET/host-agent/server.py" "$TARGET/host-agent/start.py" "$TARGET/host-agent/full_recovery.py" "$TARGET/host-agent/music_updates.py"
 # Older migrations installed the source-unit filename directly. The canonical
 # installed unit is classroom-hub-host-agent.service; retire the stale alias so
 # only one Host Agent can own the Unix socket or appliance mutation lifecycle.

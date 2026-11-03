@@ -1,7 +1,7 @@
 """Unprivileged ESPHome native API worker. Private JSON-lines IPC, never HTTP.
 
-Credentials arrive over stdin, not argv/environment. No firmware, HA actions,
-user services, logs, camera streams, or arbitrary method execution are exposed.
+Credentials arrive over stdin, not argv/environment. Only the pinned Apollo
+stable update entity is exposed for firmware; no arbitrary firmware or methods.
 """
 import asyncio
 import base64
@@ -16,7 +16,7 @@ import sys
 import time
 from contextlib import suppress
 
-from aioesphomeapi import APIClient
+from aioesphomeapi import APIClient, UpdateCommand
 
 MAX_DEVICES = 64
 MAX_ENTITIES = 128
@@ -24,7 +24,7 @@ MAX_LINE = 1024 * 1024
 DOMAINS = {"SensorInfo": "sensor", "BinarySensorInfo": "binary_sensor",
            "TextSensorInfo": "text_sensor", "SwitchInfo": "switch",
            "LightInfo": "light", "NumberInfo": "number", "SelectInfo": "select",
-           "ButtonInfo": "button"}
+           "ButtonInfo": "button", "UpdateInfo": "update"}
 PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
 
@@ -58,12 +58,15 @@ def scalar(value):
 
 
 def entity_id(entity):
-    return f"{entity.device_id}:{entity.key}"
+    # ESPHome keys are unique within a domain, not across the entire node.
+    # CAST-1 exposes both a button and an update entity named Firmware Update.
+    kind = re.sub(r"(?:Entity)?(?:Info|State)$", "", type(entity).__name__).lower()
+    return f"{kind}:{entity.device_id}:{entity.key}"
 
 
 def info_view(info):
     result = {k: text(getattr(info, k, "")) for k in
-              ("name", "friendly_name", "mac_address", "model", "manufacturer", "esphome_version")}
+              ("name", "friendly_name", "mac_address", "model", "manufacturer", "esphome_version", "project_name", "project_version")}
     result["mac_address"] = result["mac_address"].lower()
     if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", result["mac_address"]):
         raise ValueError("invalid-device-identity")
@@ -172,7 +175,7 @@ class Node:
         if key not in self.entities:
             return
         self.states[key] = {field: scalar(getattr(state, field)) for field in
-                            ("state", "brightness", "missing_state") if hasattr(state, field)}
+                            ("state", "brightness", "missing_state", "current_version", "latest_version", "has_progress", "progress") if hasattr(state, field)}
         self.states[key]["updatedAt"] = int(time.time() * 1000)
         self.versions[key] = self.versions.get(key, 0) + 1
         self.dirty = True
@@ -198,6 +201,10 @@ class Node:
                         if len(entities) > MAX_ENTITIES:
                             raise ValueError("too-many-entities")
                         self.entities = {entity_id(e): entity_view(e, self.client.api_version) for e in entities}
+                        if self.info.get("project_name") == "ApolloAutomation.CAST-1":
+                            for entity in self.entities.values():
+                                if entity["domain"] == "button" and entity["name"] == "Firmware Update":
+                                    entity["writable"] = False  # Dedicated, journaled stable-update path.
                         self.states = {}
                         self.versions = {}
                         self.client.subscribe_states(self.state)
@@ -229,6 +236,25 @@ class Node:
         self.task.cancel()
         with suppress(asyncio.CancelledError):
             await self.task
+
+    def firmware_update(self, version):
+        """Send once to the vendor's stable update entity; reconnection verifies it."""
+        if not self.online or not self.client or self.busy:
+            raise ValueError("offline")
+        if self.info.get("project_name") != "ApolloAutomation.CAST-1" or self.info.get("model") != "esp32-s3":
+            raise ValueError("identity-mismatch")
+        if not isinstance(version, str) or not re.fullmatch(r"\d{2}\.\d{1,2}\.\d{1,2}\.\d+", version):
+            raise ValueError("invalid-command")
+        channels = [e for e in self.entities.values() if e["domain"] == "select" and e["name"] == "Firmware Channel"]
+        updates = [e for e in self.entities.values() if e["domain"] == "update" and e["name"] == "Firmware Update" and not e["disabledByDefault"]]
+        if len(channels) != 1 or self.states.get(channels[0]["id"], {}).get("state") != "Stable" or len(updates) != 1:
+            raise ValueError("invalid-command")
+        entity = updates[0]
+        state = self.states.get(entity["id"], {})
+        if state.get("latest_version") != version or state.get("current_version") != self.info.get("project_version") or state.get("current_version") == version:
+            raise ValueError("invalid-command")
+        self.client.update_command(key=entity["key"], device_id=entity["deviceId"], command=UpdateCommand.INSTALL)
+        return {"status": "sent-unconfirmed", "confirmed": False}
 
     async def command(self, key, command):
         if not self.online or not self.client:
@@ -321,6 +347,11 @@ class Worker:
                 value = await self.configure(request["devices"])
             elif op == "probe":
                 value = await self.probe(request["device"])
+            elif op == "apollo_update":
+                node = self.nodes.get(request.get("deviceId"))
+                if not node or node.config["generation"] != request.get("generation") or request.get("admin") is not True:
+                    raise ValueError("identity-mismatch")
+                value = node.firmware_update(request.get("version"))
             elif op == "command":
                 node = self.nodes.get(request.get("deviceId"))
                 if not node:

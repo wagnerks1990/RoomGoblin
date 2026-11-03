@@ -2,7 +2,7 @@
 
 **Status: Unreleased.** RoomGoblin manages already-flashed ESPHome devices through the native API and can discover ESPHome native-API advertisements on the classroom network. Home Assistant, MQTT, and a separately deployed ESPHome dashboard are not required for discovery or control.
 
-RoomGoblin does **not** currently compile, flash, or OTA-update ESPHome firmware. It also does not recover or bypass a lost API encryption key.
+RoomGoblin supports the enrolled Apollo CAST-1 official stable update entity. See [Music maintenance](../docs/MUSIC-MAINTENANCE.md). Custom firmware and lost-key recovery remain outside this integration.
 
 ## Discovery and adoption
 
@@ -131,7 +131,7 @@ The following are separate follow-up work and must not be claimed as current cap
 
 - firmware compilation/building;
 - USB/serial flashing;
-- ESPHome OTA firmware/configuration management;
+- arbitrary ESPHome OTA firmware/configuration management;
 - automatic recovery/replacement of unknown encryption keys;
 - hostname or IPv6 control endpoints (discovery can display them);
 - sensor-triggered RoomGoblin automation rules;
