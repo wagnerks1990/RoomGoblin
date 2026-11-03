@@ -37,6 +37,9 @@ interruption restores the previous image with its matching data, retaining the
 migrated data separately for investigation. It never downgrades a migrated
 database in place. Host Agent startup serves health before recovery. An unresolved
 rollback keeps host mutations locked and reports `rollback-required`.
+Snapshot completion and deployment mutation claims are persisted separately from
+error status. Interrupted copies never replace live data, even if restarting the
+original service also fails and recovery must continue after a host restart.
 
 Snapshots remain on the appliance for administrator recovery. They include
 credentials and are private to root. Insufficient space fails before the service

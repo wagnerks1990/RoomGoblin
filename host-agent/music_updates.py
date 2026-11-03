@@ -298,7 +298,8 @@ class MusicUpdates:
             previous = identity["image"].split(":", 1)[1].split("@", 1)[0]
             if not identity["running"] or tuple(map(int, job["version"].split("."))) <= tuple(map(int, previous.split("."))):
                 raise RuntimeError("Only a running older deployment may be upgraded")
-            self.save(job, "preparing", **identity, previousVersion=previous)
+            self.save(job, "preparing", **identity, previousVersion=previous,
+                      stopClaimed=False, snapshotComplete=False, deploymentChangeClaimed=False)
             tag = IMAGE + ":" + job["version"]
             self.run(["docker", "pull", tag], 600)
             image = json.loads(self.run(["docker", "image", "inspect", tag], 15))[0]
@@ -316,15 +317,16 @@ class MusicUpdates:
             backup = self.root / job["id"]
             backup.mkdir(mode=0o700)
             shutil.copy2(compose, backup / "compose")
-            self.save(job, "stopping", newImage=tag + "@" + digests[0].split("@", 1)[1], newImageId=image["Id"])
+            self.save(job, "stopping", stopClaimed=True,
+                      newImage=tag + "@" + digests[0].split("@", 1)[1], newImageId=image["Id"])
             self.run(["docker", "stop", "--time", "30", "music-assistant-server"], 60)
             self.check_databases(data)
             copy_data(data, backup / "data")
             self.check_databases(backup / "data")
             self.run(["sync", "-f", str(backup)], 60)
-            self.save(job, "backed-up")
+            self.save(job, "backed-up", snapshotComplete=True)
             new_source = replace_image((backup / "compose").read_text(), job["image"], job["newImage"])
-            self.save(job, "applying")
+            self.save(job, "applying", deploymentChangeClaimed=True)
             self.write_compose(compose, new_source)
             self.run(self.compose(job) + ["up", "-d", "--no-deps", "--force-recreate", job["service"]], 120)
             self.save(job, "verifying")
@@ -345,12 +347,18 @@ class MusicUpdates:
 
     def rollback(self, job):
         stage = job["stage"]
-        if stage == "preparing":
+        if stage == "preparing" and not job.get("stopClaimed"):
             self.save(job, "failed", error="Update preflight failed; the running deployment was preserved.")
             return
-        if stage in ("stopping", "backed-up"):
+        # Error stages cannot establish snapshot completeness. These durable
+        # claims survive rollback-required and repeated Host Agent restarts.
+        if job.get("stopClaimed") is not True:
+            raise RuntimeError("Update mutation claims are missing; preserve live data")
+        if not job.get("deploymentChangeClaimed"):
             self.run(["docker", "start", "music-assistant-server"], 30)
         else:
+            if job.get("snapshotComplete") is not True:
+                raise RuntimeError("A complete cold snapshot is required before restoring data")
             backup, data = self.root / job["id"], Path(job["data"])
             self.check_databases(backup / "data")
             self.save(job, "restoring")

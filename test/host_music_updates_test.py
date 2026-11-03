@@ -120,6 +120,41 @@ class HostMusicUpdatesTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Another appliance"):
             self.manager.lock()
 
+    def test_partial_snapshot_and_failed_restart_never_replace_live_data(self):
+        original = self.compose.read_bytes()
+        def partial_copy(source, destination):
+            destination.mkdir()
+            (destination / "partial.json").write_text("{}")
+            raise OSError("snapshot interrupted")
+        actual_run = self.core.run
+        def fail_start(args, timeout, check):
+            if args[:2] == ["docker", "start"]:
+                return SimpleNamespace(returncode=1, stdout="")
+            return actual_run(args, timeout, check)
+        with patch.object(module, "copy_data", side_effect=partial_copy), patch.object(self.core, "run", side_effect=fail_start):
+            self.execute(lambda *_: None)
+        self.assertEqual(self.manager.read()["stage"], "rollback-required")
+        self.assertFalse((self.manager.root / "123/data/queue.json").exists())
+        restarted = module.MusicUpdates(self.core, self.manager.root)
+        restarted.healthy = lambda *_: None
+        restarted.startup_recover()
+        self.assertEqual(restarted.read()["stage"], "rolled-back")
+        self.assertEqual(self.compose.read_bytes(), original)
+        self.assertEqual(json.loads((self.data / "queue.json").read_text()), ["preserved-item"])
+        with sqlite3.connect(self.data / "library.db") as db:
+            self.assertEqual(db.execute("SELECT name FROM saved").fetchone()[0], "original")
+        self.assertFalse((self.data / "partial.json").exists())
+        self.assertFalse(any(command[:2] == ["docker", "compose"] for command in self.commands))
+
+    def test_restore_without_snapshot_completion_fails_closed(self):
+        job = self.job()
+        self.manager.save(job, "rollback-required", stopClaimed=True, deploymentChangeClaimed=True, snapshotComplete=False)
+        before = len(self.commands)
+        with self.assertRaisesRegex(RuntimeError, "complete cold snapshot"):
+            self.manager.rollback(job)
+        self.assertEqual(len(self.commands), before)
+        self.assertEqual(json.loads((self.data / "queue.json").read_text()), ["preserved-item"])
+
     def test_foreign_mount_image_network_and_lan_gate_fail_closed(self):
         for key, value in [("Image", "other/image:2.10.8"), ("Entrypoint", ["other"]), ("Env", [])]:
             original = self.item["Config"][key]
