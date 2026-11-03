@@ -4,7 +4,7 @@ const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8").rep
 const flush=()=>new Promise(setImmediate);
 function fixture(){
  let route,token="fixture",failWrite=false;const calls=[],prefs=new Map(),tickets=[];
- const c=vm.createContext({app:{post:(_p,...args)=>route=args.at(-1)},musicAssistantMutationLimit(){},requireControl(){},maApiGeneration:0,musicAssistantConfig:()=>({url:"http://fixture.invalid"}),musicAssistantToken:()=>token,resolveDisplayTargets:v=>Array.isArray(v)?v:[v],
+ const c=vm.createContext({learningDisplayReservations:()=>new Map(),app:{post:(_p,...args)=>route=args.at(-1)},musicAssistantMutationLimit(){},requireControl(){},maApiGeneration:0,musicAssistantConfig:()=>({url:"http://fixture.invalid"}),musicAssistantToken:()=>token,resolveDisplayTargets:v=>Array.isArray(v)?v:[v],
  dbStore:{getPreference:(k,f)=>prefs.has(k)?prefs.get(k):f,setPreference:(k,v)=>{if(failWrite)throw Error("storage unavailable");prefs.set(k,v)}},
  executeCommand:(command,source,options)=>new Promise((resolve,reject)=>calls.push({command,source,options,resolve:()=>resolve({deliveries:{websocket:Array.isArray(command.target)?command.target:[command.target]}}),reject})),
  issueMusicAssistantProxyTicket:id=>{tickets.push(id);return {playerId:"classroom-hub-"+id,ticket:"fixture-ticket"}},musicAssistantTvAttachPayload:(_id,issued)=>({playerId:issued.playerId})});
@@ -19,6 +19,12 @@ test("overlapping attach and detach retain accepted command and preference order
 });
 test("queued attachments merge against the latest committed desired targets",async()=>{
  const h=fixture(),p=h.send("attach",["tv1"]),q=h.send("attach",["front-screen"]);await flush();h.calls[0].resolve();await p;await flush();h.calls[1].resolve();await q;assert.deepEqual(h.attached(),["tv1","front-screen"]);
+});
+
+test('dedicated board rejects new audio attachment but permits explicit detach',async()=>{
+ const h=fixture();h.c.learningDisplayReservations=()=>new Map([['tv1','campaign']]);
+ assert.equal((await h.send('attach',['tv1'])).status,409);assert.equal(h.calls.length,0);assert.equal(h.tickets.length,0);
+ h.prefs.set('musicassistant.tvBridgeTargets',['tv1']);const p=h.send('detach',['tv1']);await flush();h.calls[0].resolve();assert.equal((await p).status,200);assert.deepEqual(h.attached(),[]);
 });
 test("unknown action is rejected without preference writes or dispatch",async()=>{
  const h=fixture(),r=await h.send("unexpected",["tv1"]);assert.equal(r.status,400);assert.equal(h.calls.length,0);assert.equal(h.prefs.size,0);assert.equal(h.tickets.length,0);

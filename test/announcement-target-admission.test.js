@@ -4,7 +4,7 @@ const source=fs.readFileSync(require.resolve("../src/server"),"utf8");
 function extract(name){const a=source.search(new RegExp("(?:async )?function "+name+"\\(")),b=source.indexOf("\n}",a);assert.ok(a>0&&b>a,name);return source.slice(a,b+2)}
 function fixture(){
  const state={active:true,mode:"automatic",targets:["old"]},holds=new Set(["old"]),pending=new Map(),displays={old:{audioContentId:"announcement-a"}},timers=[],calls=[],controls={resyncFailure:false,clearFailure:false,failAfterState:false,beforeDispatch:null,afterBroadcast:null,publish:null,priorityFailure:false,failType:"display.clear"};let serial=0;
- const ctx=vm.createContext({Date,Map,Set,Promise,morningAnnouncements:{volumePercent:50},announcementTargets:()=>["old"],automationDisplayTargets:ids=>ids,announcementsPlaybackUrl:()=>"https://stream.example.test/play",validateMorningAnnouncementsUrl:value=>value,scheduleAnnouncementAudioRetries:()=>calls.push({type:"audioRetry"}),URL_BEARING_DISPLAY_COMMANDS:new Set(),morningAnnouncementsRuntime:state,morningAnnouncementsPriorityTargets:holds,morningAnnouncementsReleaseTargets:pending,
+ const ctx=vm.createContext({learningDisplayReservations:()=>new Map(),learningDisplayPolicy:require("../src/learning-display-policy"),Date,Map,Set,Promise,morningAnnouncements:{volumePercent:50},announcementTargets:()=>["old"],automationDisplayTargets:ids=>ids,announcementsPlaybackUrl:()=>"https://stream.example.test/play",validateMorningAnnouncementsUrl:value=>value,scheduleAnnouncementAudioRetries:()=>calls.push({type:"audioRetry"}),URL_BEARING_DISPLAY_COMMANDS:new Set(),morningAnnouncementsRuntime:state,morningAnnouncementsPriorityTargets:holds,morningAnnouncementsReleaseTargets:pending,
   persistentState:{displays},shutdownRequested:false,fullExportFreeze:{requested:false},morningAnnouncementsReleaseRetryTimer:null,morningAnnouncementsLifecycle:Promise.resolve(),morningAnnouncementsLifecycleBusy:0,
   commandId:()=>"clear-"+(++serial),setTimeout:fn=>{const t={fn,unref(){}};timers.push(t);return t},
   normalizeCommand:(command,source)=>({...command,source,payload:command.payload||{},id:command.id||"command-"+(++serial)}),validateCommandForDispatch:value=>value,
@@ -19,6 +19,13 @@ function fixture(){
  return {ctx,state,holds,pending,displays,timers,calls,controls,async fire(){assert.ok(timers.length);timers.shift().fn();await ctx.morningAnnouncementsLifecycle;await Promise.resolve()},async successor(id="new"){displays[id]={audioContentId:"announcement-b"};state.active=true;state.targets=[id];await ctx.setMorningAnnouncementPriorityTargets([id],true)}};
 }
 function fresh(){const h=fixture();h.state.active=false;h.state.mode=null;h.state.targets=[];h.holds.clear();h.displays.old.audioContentId="original-video";return h}
+
+test('explicit announcement selection excludes a dedicated leaderboard before taking priority',async()=>{
+ const h=fresh();h.displays.board={audioContentId:'arcade'};h.ctx.learningDisplayReservations=()=>new Map([['board','campaign']]);
+ await h.ctx.assertMorningAnnouncements({mode:'manual',targetsOverride:['old','board']});
+ assert.deepEqual([...h.state.targets],['old']);assert.equal(h.holds.has('board'),false);assert.equal(h.displays.board.audioContentId,'arcade');
+ assert.ok(h.calls.filter(c=>c.ids).every(c=>!c.ids.includes('board')));
+});
 
 for(const active of [false,true])test("missing saved stream is rejected before changing "+(active?"existing":"new")+" announcement ownership",async()=>{
  const h=active?fixture():fresh(),targets=h.state.targets,content=h.displays.old.audioContentId,holds=[...h.holds];h.ctx.announcementsPlaybackUrl=()=>"";

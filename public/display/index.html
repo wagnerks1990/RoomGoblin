@@ -30,6 +30,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 #badge{position:fixed;right:8px;bottom:8px;background:#0009;color:#fff;font-size:11px;padding:5px 7px;border-radius:6px;opacity:.35;z-index:60}
 </style>
 <link rel="stylesheet" href="/display/layout.css?v=dynamic-fit-20261027-1">
+<link rel="stylesheet" href="/display/arcade-board.css?v=1">
 </head>
 <body>
 <div id="stage"><div id="media"></div>
@@ -48,6 +49,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#000;dis
 <script src="/shared/timer-effects.js"></script>
 <link rel="stylesheet" href="/display/timer-effects.css">
 <script type="module">
+import {createArcadeBoard} from '/display/arcade-board.mjs?v=1';
 import {createTimerEffects} from '/display/timer-effects.mjs';
 import {createDisplayLayout,fitElement,bounded} from '/display/layout.mjs?v=dynamic-fit-20261027-1';
 import {authorizeMediaUrl,musicAssistantProxyUrl,identifyDuration,setDisplayGatewayHosts} from '/display/security.mjs?v=single-fit-20260909-4';
@@ -132,6 +134,7 @@ function formatTimerSeconds(total){total=Math.floor(bounded(total,0,0,Number.MAX
 function timerSecondsNow(){const now=Date.now();if(timerState.mode==='countup'){if(timerState.running&&timerState.startedAt)return Number(timerState.elapsedSeconds||0)+Math.max(0,(now-Number(timerState.startedAt))/1000);return Number(timerState.elapsedSeconds||0)}if(timerState.running&&timerState.endAt)return Math.max(0,(Number(timerState.endAt)-now)/1000);return Math.max(0,Number(timerState.remainingSeconds??timerState.durationSeconds??0))}
 function paintTimer({refit=false}={}){if(refit){timerVisualState=null;timerOverlay.style.display=timerState.visible?'block':'none';timerLabel.textContent=timerState.label||'';timerLabel.style.display=timerState.label?'block':'none';timerOverlay.style.color=timerState.textColor||'#fff';timerOverlay.style.borderColor=timerState.borderColor||'#fff';timerOverlay.style.borderRadius=`${bounded(timerState.borderRadius,18,0,100)}px`;timerOverlay.style.background=timerState.background||'rgba(0,0,0,.35)';requestDisplayLayout();}if(!timerState.visible){timerPresenter.clear();return}const seconds=timerSecondsNow(),formatted=formatTimerSeconds(seconds);timerVisualState=timerPresenter.paint(timerState,seconds);if(!timerVisualState?.effectsGeometry&&timerValue.textContent!==formatted)timerValue.textContent=formatted;if(timerState.mode==='countdown'&&timerState.running&&seconds<=0){timerState.running=false;timerState.remainingSeconds=0;timerState.endAt=null;if(timerTick){clearInterval(timerTick);timerTick=null}}}
 function applyTimer(p={}){const incomingInstance=p.timerInstanceId||null,currentInstance=timerState.timerInstanceId||null,freshInstance=!!incomingInstance&&incomingInstance!==currentInstance;if(timerTick){clearInterval(timerTick);timerTick=null}if(freshInstance)timerState={visible:false,running:false,mode:'countdown',durationSeconds:0,remainingSeconds:0,startedAt:null,endAt:null,...p};else timerState={...timerState,...p};if(timerState.effects?.enabled&&timerState.endAt)timerState.effectsEndAt=timerState.endAt;if(timerState.mode==='countdown'&&timerState.endAt&&Number(timerState.endAt)<=Date.now()){timerState.running=false;timerState.remainingSeconds=0;timerState.endAt=null}paintTimer({refit:true});if(timerState.visible&&timerState.running)timerTick=setInterval(()=>paintTimer({refit:false}),1000);}
+const arcadeBoard=createArcadeBoard(stage);
 let transientLearning=null;
 function endTransientLearning(restore=true){if(!transientLearning)return;const old=transientLearning;transientLearning=null;clearTimeout(old.timer);if(restore)applyState(old.previousState);}
 function receiveDisplayCommand(message){
@@ -142,9 +145,11 @@ function receiveDisplayCommand(message){
     endTransientLearning(false);
     transientLearning={previousState:effect.previousState,timer:setTimeout(()=>endTransientLearning(true),remaining)};
   }else endTransientLearning(true);
+  if(effect&&message.command?.type==='display.text'&&message.command.payload?.arcade){clearMediaPlayback();if(message.command.payload.arcade.dedicated)detachMusicAssistant();applyTimer({visible:false,running:false});arcadeBoard.render(message.command.payload.arcade);return;}
+  arcadeBoard.clear();
   handle(message.command);
 }
-function applyState(s){if(!s)return;renderSharedLayers(s.layers||[]);stage.style.background=s.background?.color||'#000';text.textContent=s.text??'';applyTextOptions(s.textOptions||{});applyTitle({...s.titleOptions,text:s.title??''});applySubtitle({...s.subtitleOptions,text:s.subtitle??''});renderMedia(s.media||null);applyTimer(s.timer||{visible:false,running:false});presentationBlack.style.display=s.presentationBlack?'block':'none';requestDisplayLayout();}
+function applyState(s){if(!s)return;arcadeBoard.clear();renderSharedLayers(s.layers||[]);stage.style.background=s.background?.color||'#000';text.textContent=s.text??'';applyTextOptions(s.textOptions||{});applyTitle({...s.titleOptions,text:s.title??''});applySubtitle({...s.subtitleOptions,text:s.subtitle??''});renderMedia(s.media||null);applyTimer(s.timer||{visible:false,running:false});presentationBlack.style.display=s.presentationBlack?'block':'none';requestDisplayLayout();}
 if(preview)window.addEventListener('message',event=>{
   if(event.origin!==location.origin||event.source!==window.parent)return;
   const message=event.data;

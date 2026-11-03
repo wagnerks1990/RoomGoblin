@@ -2,7 +2,7 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path"),vm=require("node:vm");
 const source=fs.readFileSync(path.join(__dirname,"../src/server.js"),"utf8"),a=source.indexOf("async function executeCommand("),b=source.indexOf("\n}",a);assert.ok(a>0&&b>a);
 function fixture(){
- const calls=[],controls={admit:null,broadcast:null,publish:null},ctx=vm.createContext({Date,maApiGeneration:0,
+ const calls=[],controls={admit:null,broadcast:null,publish:null},ctx=vm.createContext({learningDisplayReservations:()=>new Map(),learningDisplayPolicy:require("../src/learning-display-policy"),Date,maApiGeneration:0,
  normalizeCommand:(c,s)=>({...c,source:s,id:"fixture-command",payload:c.payload||{}}),validateCommandForDispatch:c=>c,URL_BEARING_DISPLAY_COMMANDS:new Set(),
  engageManualMediaPriority:async()=>{await controls.admit?.();return null},resolveDisplayTargets:t=>Array.isArray(t)?t:[t],announcementPriorityError:()=>null,
  updateStateFromCommand:()=>calls.push("state"),broadcastDisplays:ids=>{calls.push("websocket");controls.broadcast?.();return ids},broadcastDisplayPreviews:()=>{},broadcastControllers:()=>{},

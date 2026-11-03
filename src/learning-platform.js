@@ -55,8 +55,8 @@ function normalizeEvent(input,points){
  return {id:input.id,sequence:input.sequence,kind:input.kind,occurredAt:new Date(occurred).toISOString(),data};
 }
 class LearningPlatform{
- constructor(learning,{clock=Date.now,dispatch=async()=>{throw Error('Classroom adapter unavailable');},options=()=>({displays:[],lights:[],assets:[]}),available=()=>true}={}){
-  this.learning=learning;this.store=learning.store;this.db=learning.db;this.clock=clock;this.dispatch=dispatch;this.options=options;this.available=available;this.effectBusy=false;this.lastEffect=-Infinity;
+ constructor(learning,{clock=Date.now,dispatch=async()=>{throw Error('Classroom adapter unavailable');},options=()=>({displays:[],lights:[],assets:[]}),available=()=>true,arcadeAvailable=available}={}){
+  this.learning=learning;this.store=learning.store;this.db=learning.db;this.clock=clock;this.dispatch=dispatch;this.options=options;this.available=available;this.arcadeAvailable=arcadeAvailable;this.effectBusy=false;this.lastEffect=-Infinity;
   this.db.exec(`
    CREATE TABLE IF NOT EXISTS learning_connectors(activity_id TEXT PRIMARY KEY REFERENCES learning_activities(id),points INTEGER NOT NULL,launch_url TEXT NOT NULL DEFAULT '');
    CREATE TABLE IF NOT EXISTS learning_first_names(class_id TEXT NOT NULL,user_id TEXT NOT NULL,first_name TEXT NOT NULL,PRIMARY KEY(class_id,user_id));

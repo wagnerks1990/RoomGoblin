@@ -6,6 +6,12 @@ remain read-only. Optional server date policies preserve prior higher assessment
 awards and support teacher exceptions. See the repository's
 `docs/LEARNING-GRADE-RECOVERY.md` for setup, rollback and live acceptance limits.
 
+The [dedicated arcade display](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/LEARNING-ARCADE-DISPLAY.md)
+adds original gorilla artwork, ranked points, level badges, progress and recent-save
+status. Teachers can explicitly reserve a receiver for the scheduled class's board,
+including exclusion from announcements and other content on that receiver. Saved
+campaign history persists between classes; other TVs keep their usual priority.
+
 SCORM games stay in Schoology and keep their original gradebook behavior.
 RoomGoblin can retain signed student progress through a separate restricted
 student connection, then show first-name boards and approved celebrations during
