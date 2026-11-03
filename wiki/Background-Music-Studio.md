@@ -14,6 +14,15 @@ a favorite or search result explicitly to start a different source. Starting
 managed music on a different output stops the previously owned session first. RoomGoblin manages
 one output/group at a time; use Music Assistant groups for synchronized rooms.
 
+Play/Resume also brings an existing queue under Background Music's announcement
+priority and sleep controls, even when that output differs from the saved
+schedule. An unavailable selection leaves the previously managed output alone.
+For an existing queue, the watchdog observes playback without replaying finished
+items or substituting the scheduled favorite. **Recover playback** explicitly
+resumes that queue. Selecting a favorite or search result retains the source-based
+automatic recovery behavior. This queue ownership is process-local, like other
+manual listening sessions; it is not restored across a Hub restart.
+
 While a listening command is pending, live transport inputs and queue buttons
 remain disabled through the status refresh. Volume, position, repeat, sleep and
 output selection cannot silently accept a change that will be discarded. Saved

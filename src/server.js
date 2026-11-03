@@ -7077,7 +7077,7 @@ const backgroundMusicRuntime={
   lastActionAt:null,
   lastError:null,
   retryAfter:0,
-  manualSession:false,activeMedia:null,sleepUntil:null,sessionGeneration:0,recovery:null
+  manualSession:false,activeMedia:null,queueOnly:false,sleepUntil:null,sessionGeneration:0,recovery:null
 };
 const backgroundMusicRecovery=new PlaybackRecovery();
 let backgroundMusicStartBusy=false,backgroundMusicResumeBusy=false;
@@ -7172,13 +7172,29 @@ async function backgroundMusicPause(reason="manual"){
   if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").trim())return false;
   backgroundMusicRecovery.awaitingUntil=0;backgroundMusicRecovery.retryAt=0;backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=true;backgroundMusicRuntime.lastAction=`pause:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
 }
-async function backgroundMusicResume(reason="resume"){
+async function backgroundMusicResume(reason="resume",playerIdOverride=null){
   if(backgroundMusicResumeBusy)return false;
   if(backgroundMusicPriorityBlocked())throw Error("Music is paused for priority audio");
-  const cfg=backgroundMusicSchedule(),playerId=String(backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
+  const cfg=backgroundMusicSchedule(),playerId=String(playerIdOverride||backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(!playerId)return false;
   const generation=++backgroundMusicRuntime.sessionGeneration;
+  const current=()=>{if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked())throw Error("Music playback changed while this request was starting")};
+  let requested=false;
   backgroundMusicResumeBusy=true;
   try{
+  if(playerId!==backgroundMusicRuntime.activePlayerId){
+    const actual=await backgroundMusicActualPlayerState({playerId},true);current();
+    if(!actual?.found||actual.available===false)throw Error("The selected music player is unavailable; no playback command was sent");
+    const prior=backgroundMusicRuntime.activePlayerId;
+    if(prior){await musicAssistantCommand("players/cmd/stop",{player_id:prior});current()}
+    // Adopt the existing queue for priority/sleep ownership. Its contents and
+    // volume remain upstream-owned; recovery must never substitute a favorite.
+    backgroundMusicRuntime.activePlayerId=playerId;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.activeMedia=null;
+    backgroundMusicRuntime.queueOnly=true;backgroundMusicRuntime.manualSession=true;backgroundMusicRuntime.sleepUntil=null;
+    backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;
+    backgroundMusicRecovery.reset();
+  }
+  if(reason==="manual"||reason==="manual-repair")backgroundMusicRuntime.manualStopped=false;
+  requested=true;
   backgroundMusicRecovery.requested();
   await musicAssistantCommand("players/cmd/play",{player_id:playerId});
   if(generation!==backgroundMusicRuntime.sessionGeneration||backgroundMusicPriorityBlocked()){
@@ -7187,14 +7203,14 @@ async function backgroundMusicResume(reason="resume"){
     return false;
   }
   backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.lastAction=`play:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();backgroundMusicRuntime.lastError=null;return true;
-  }catch(error){if(generation===backgroundMusicRuntime.sessionGeneration){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}throw error}finally{backgroundMusicResumeBusy=false}
+  }catch(error){if(requested&&generation===backgroundMusicRuntime.sessionGeneration){backgroundMusicRecovery.failed(error.mayHaveExecuted===true);backgroundMusicRuntime.lastError=error.message}throw error}finally{backgroundMusicResumeBusy=false}
 }
 
 async function backgroundMusicStop(reason="manual",playerIdOverride=null){
   const generation=++backgroundMusicRuntime.sessionGeneration;
   const cfg=backgroundMusicSchedule(),playerId=String(playerIdOverride||backgroundMusicRuntime.activePlayerId||cfg.playerId||"").trim();if(playerId)await musicAssistantCommand("players/cmd/stop",{player_id:playerId});
   if(generation!==backgroundMusicRuntime.sessionGeneration||playerId!==String(backgroundMusicRuntime.activePlayerId||backgroundMusicSchedule().playerId||"").trim())return false;
-  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.activePlayerId=null;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.activeMedia=null;backgroundMusicRuntime.manualSession=false;backgroundMusicRuntime.sleepUntil=null;backgroundMusicRecovery.reset();backgroundMusicRuntime.lastAction=`stop:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
+  backgroundMusicRuntime.playing=false;backgroundMusicRuntime.paused=false;backgroundMusicRuntime.pausedForPriority=false;backgroundMusicRuntime.activePlayerId=null;backgroundMusicRuntime.activeFavoriteId=null;backgroundMusicRuntime.activeMedia=null;backgroundMusicRuntime.queueOnly=false;backgroundMusicRuntime.manualSession=false;backgroundMusicRuntime.sleepUntil=null;backgroundMusicRecovery.reset();backgroundMusicRuntime.lastAction=`stop:${reason}`;backgroundMusicRuntime.lastActionAt=new Date().toISOString();return true;
 }
 function backgroundMusicPriorityBlocked(){
   const cfg=backgroundMusicSchedule();
@@ -7216,7 +7232,7 @@ async function backgroundMusicStart({favoriteId=null,playerId=null,uri=null,name
     if(prior&&prior!==pid){await musicAssistantCommand("players/cmd/stop",{player_id:prior});current()}
     // Recovery retains the listener's volume/mute; only explicit starts apply defaults.
     if(!recover){await musicAssistantCommand("players/cmd/volume_set",{player_id:pid,volume_level:cfg.volume});current();await musicAssistantCommand("players/cmd/volume_mute",{player_id:pid,muted:false});current()}
-    backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav?.id||null;backgroundMusicRuntime.activeMedia=source;
+    backgroundMusicRuntime.activePlayerId=pid;backgroundMusicRuntime.activeFavoriteId=fav?.id||null;backgroundMusicRuntime.activeMedia=source;backgroundMusicRuntime.queueOnly=false;
     if(!recover){backgroundMusicRecovery.reset();backgroundMusicRuntime.manualSession=reason==="manual";backgroundMusicRuntime.sleepUntil=null}
     backgroundMusicRecovery.requested();
     await musicAssistantCommand("player_queues/play_media",{queue_id:pid,media:source.uri});
@@ -7360,7 +7376,14 @@ async function backgroundMusicTick(){
     backgroundMusicRuntime.playing=actual.playing&&backgroundMusicRecovery.state!=="stalled";backgroundMusicRuntime.paused=actual.paused;
     if(decision.action==="none"){backgroundMusicRuntime.activePlayerId=String(playerId);backgroundMusicRuntime.lastError=null;return}
     if(decision.action==="complete"){backgroundMusicRuntime.manualStopped=true;backgroundMusicRuntime.manualSession=false;return}
-    if(decision.action==="wait"||cfg.autoRecover===false&&backgroundMusicRuntime.activePlayerId)return;
+    if(decision.action==="wait")return;
+    if(backgroundMusicRuntime.queueOnly){
+      // An idle existing queue may have finished naturally. Observe it without
+      // replaying its items or replacing it with the scheduled favorite.
+      backgroundMusicRecovery.retryAt=0;backgroundMusicRecovery.state=actual.playing?"stalled":actual.paused?"paused":"idle";
+      backgroundMusicRecovery.reason="Existing queue retained. Use Play or Recover playback to resume it.";return;
+    }
+    if(cfg.autoRecover===false&&backgroundMusicRuntime.activePlayerId)return;
     if(backgroundMusicPriorityBlocked()||backgroundMusicRuntime.manualStopped)return;
     try{
       if(backgroundMusicRuntime.activeMedia&&decision.action==="resume"){
@@ -7424,7 +7447,7 @@ app.put("/api/v1/music-assistant/background/schedule",musicAssistantMutationLimi
 });
 app.post("/api/v1/music-assistant/background/favorites",musicAssistantMutationLimit,requireControl,(req,res)=>{try{const uri=String(req.body?.uri||"").trim(),name=String(req.body?.name||"").trim(),detail=String(req.body?.detail||"").trim();if(!uri||!name)return res.status(400).json({ok:false,error:"Favorite name and media URI are required"});mediaSelection({uri,name});const list=backgroundMusicFavorites(),existing=list.find(x=>x.uri===uri);if(existing){existing.name=name;existing.detail=detail;existing.mediaType=String(req.body?.mediaType||existing.mediaType||"unknown").slice(0,30)}else list.push({mediaType:String(req.body?.mediaType||"unknown").slice(0,30),id:`bgm-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,name,uri,detail,createdAt:new Date().toISOString()});dbStore.setPreference("musicassistant.background.favorites",list.slice(-100));res.json({ok:true,favorites:list})}catch(e){res.status(400).json({ok:false,error:e.message})}});
 app.delete("/api/v1/music-assistant/background/favorites/:id",musicAssistantMutationLimit,requireControl,(req,res)=>{const id=String(req.params.id||""),list=backgroundMusicFavorites().filter(x=>String(x.id)!==id);dbStore.setPreference("musicassistant.background.favorites",list);const cfg=backgroundMusicSchedule();if(cfg.favoriteId===id){cfg.favoriteId="";dbStore.setPreference("musicassistant.background.schedule",cfg)}res.json({ok:true,favorites:list})});
-app.post("/api/v1/music-assistant/background/control",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const action=String(req.body?.action||"");if(action==="play"){const r=await backgroundMusicStart({favoriteId:req.body?.favoriteId,playerId:req.body?.playerId,uri:req.body?.uri,name:req.body?.name,mediaType:req.body?.mediaType,reason:"manual"});return res.json({ok:true,action,...r})}if(action==="sleep"){if(!backgroundMusicRuntime.activePlayerId)throw Error("Start Background Music before setting its sleep timer");backgroundMusicRuntime.sleepUntil=sleepDeadline(req.body?.minutes);return res.json({ok:true,action,until:backgroundMusicRuntime.sleepUntil})}if(action==="retry"){const source=backgroundMusicRuntime.activeMedia;if(!source)throw Error("Start a managed source before recovering playback");await backgroundMusicStart({...source,playerId:backgroundMusicRuntime.activePlayerId,recover:true,reason:"manual-repair"});return res.json({ok:true,action})}if(action==="pause"){backgroundMusicRuntime.manualStopped=true;await backgroundMusicPause("manual");return res.json({ok:true,action})}if(action==="stop"){backgroundMusicRuntime.manualStopped=true;await backgroundMusicStop("manual");return res.json({ok:true,action})}if(action==="resume"){backgroundMusicRuntime.manualStopped=false;await backgroundMusicResume("manual");return res.json({ok:true,action})}return res.status(400).json({ok:false,error:"Unknown Background Music action"})}catch(e){res.status(502).json({ok:false,error:e.message})}});
+app.post("/api/v1/music-assistant/background/control",musicAssistantMutationLimit,requireControl,async(req,res)=>{try{const action=String(req.body?.action||"");if(action==="play"){const r=await backgroundMusicStart({favoriteId:req.body?.favoriteId,playerId:req.body?.playerId,uri:req.body?.uri,name:req.body?.name,mediaType:req.body?.mediaType,reason:"manual"});return res.json({ok:true,action,...r})}if(action==="sleep"){if(!backgroundMusicRuntime.activePlayerId)throw Error("Start Background Music before setting its sleep timer");backgroundMusicRuntime.sleepUntil=sleepDeadline(req.body?.minutes);return res.json({ok:true,action,until:backgroundMusicRuntime.sleepUntil})}if(action==="retry"){if(backgroundMusicRuntime.queueOnly){await backgroundMusicResume("manual-repair");return res.json({ok:true,action})}const source=backgroundMusicRuntime.activeMedia;if(!source)throw Error("Start a managed source before recovering playback");await backgroundMusicStart({...source,playerId:backgroundMusicRuntime.activePlayerId,recover:true,reason:"manual-repair"});return res.json({ok:true,action})}if(action==="pause"){backgroundMusicRuntime.manualStopped=true;await backgroundMusicPause("manual");return res.json({ok:true,action})}if(action==="stop"){backgroundMusicRuntime.manualStopped=true;await backgroundMusicStop("manual");return res.json({ok:true,action})}if(action==="resume"){await backgroundMusicResume("manual",req.body?.playerId);return res.json({ok:true,action})}return res.status(400).json({ok:false,error:"Unknown Background Music action"})}catch(e){res.status(502).json({ok:false,error:e.message})}});
 
 app.get("/api/v1/music-assistant/status",musicAssistantStatusLimit,requireControl,async(_req,res)=>{const cfg=musicAssistantConfig(),configured=!!musicAssistantToken(),generation=maApiGeneration;const changed=()=>res.status(409).json({ok:false,error:"Music Assistant settings changed. Refresh to check the current connection."});try{let players=[];if(configured){try{players=await musicAssistantCommand("players/all",{return_protocol_players:true})}catch(error){if(generation!==maApiGeneration)return changed();players=await musicAssistantCommand("players/all",{})}}if(generation!==maApiGeneration)return changed();players=Array.isArray(players)?players:[];const playerIds=new Set(players.flatMap(p=>[p?.player_id,p?.id,p?.provider_id].filter(Boolean).map(String)));const bridgeStatus=Object.fromEntries(Object.entries(runtime.displays||{}).map(([id,v])=>{const m=v?.musicAssistant||null;if(!m)return [id,null];const keys=[m.clientId].filter(Boolean).map(String);return [id,{...m,registered:keys.some(k=>playerIds.has(k))}]}));res.json({ok:true,configured,url:cfg.url,browserUrl:cfg.browserUrl,tvBridgeEnabled:cfg.tvBridgeEnabled,sendspinBaseUrl:sendspinEndpoint(cfg).replace(/^ws:/,"http:").replace(/\/sendspin$/,""),sendspinWebSocket:sendspinEndpoint(cfg),upstreamTransport:"dedicated-sendspin",sdkIdentity:"music-assistant-stable-2.9-compatible-sendspin-js-3.2.1",transport:"authenticated-ma-sendspin-proxy",apiTransport:maApiAuthenticated?"persistent-websocket":"http-fallback",apiServerInfo:maApiServerInfo,apiLastConnectedAt:maApiLastConnectedAt,apiLastError:maApiLastError,attachedTargets:dbStore.getPreference("musicassistant.tvBridgeTargets",[])||[],tvDefaultVolume:MUSIC_ASSISTANT_TV_DEFAULT_VOLUME,tvAudioState:dbStore.getPreference("musicassistant.tvAudioState",{})||{},bridgeStatus,online:configured,players})}catch(e){if(generation!==maApiGeneration)return changed();res.json({ok:true,configured,url:cfg.url,browserUrl:cfg.browserUrl,tvBridgeEnabled:cfg.tvBridgeEnabled,online:false,error:e.message,players:[]})}});
 app.put("/api/v1/music-assistant/config",musicAssistantMutationLimit,requireAdmin,(req,res)=>{try{const current=musicAssistantConfig(),url=String(req.body?.url||current.url).trim().replace(/\/$/,""),browserUrl=req.body?.browserUrl===undefined?current.browserUrl:optionalBrowserHttpUrl(req.body.browserUrl,"Music Assistant browser URL");if(!/^https?:\/\//i.test(url))return res.status(400).json({ok:false,error:"Music Assistant URL must begin with http:// or https://"});const parsed=new URL(url);if(parsed.username||parsed.password)return res.status(400).json({ok:false,error:"Music Assistant URL must not contain credentials"});const safeUrl=parsed.toString().replace(/\/$/,""),prior=musicAssistantConfig(),next={url:safeUrl,browserUrl,tvBridgeEnabled:req.body?.tvBridgeEnabled!==false,sendspinHost:String(req.body?.sendspinHost??prior.sendspinHost),sendspinPort:req.body?.sendspinPort??prior.sendspinPort??8927};sendspinEndpoint(next);dbStore.tx(()=>{dbStore.setPreference("musicassistant.config",next);if(req.body?.token)dbStore.putSecret("musicassistant.token",String(req.body.token),{integration:"Music Assistant",type:"long-lived-access-token"});});musicAssistantApiClose("configuration-changed");audit({kind:"musicassistant.config.update",url:safeUrl});res.json({ok:true,url:safeUrl,browserUrl,tokenStored:!!musicAssistantToken()})}catch(e){res.status(400).json({ok:false,error:e.message})}});

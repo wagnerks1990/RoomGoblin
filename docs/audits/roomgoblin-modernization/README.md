@@ -7,7 +7,7 @@ preserves the original running notes, including statements that were accurate
 before later merges. Individual findings identify their baseline and validation
 scope; their historical "pending" text does not override a later delivery receipt.
 
-The final runtime batch is verified at alpha.85 main `fab0e5f`:
+The earlier final runtime batch was verified at alpha.85 main `fab0e5f`:
 [PR #346](https://github.com/wagnerks1990/RoomGoblin/pull/346) records passing
 required CI, exact image publication and backed-up production acceptance,
 including retention PR #343, publication retry PR #344 and request deadlines
@@ -34,6 +34,12 @@ drills through a real maintenance-process interruption and restart. It reproduce
 and repairs loss of excluded media during startup rollback while retaining
 legacy archived-media recovery and fail-closed handling of a corrupt safety
 database. Its PR records validation and delivery status.
+
+The [music queue priority follow-up](music-queue-priority.md) records alpha.86
+PR #358's deployed queue-preserving transport, the subsequent live pause/resume
+check, and a separate priority-ownership gap for newly resumed outputs. Its
+associated PR records checked-source delivery and later live acceptance; do not
+infer announcement playback from a transport acknowledgement.
 
 "Delivered" below means the documented fixes passed their recorded checks and
 backed-up delivery. It does not assert a line-by-line audit of every repository

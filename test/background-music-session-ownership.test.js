@@ -68,3 +68,113 @@ test("late recovery resume cannot overwrite the successor action",async()=>{
 test("late recovery start failure cannot change the successor error or backoff",async()=>{
  const h=fixture(),d=deferred(),entered=deferred();h.recovery.observe=()=>({action:"reload"});h.ctx.musicAssistantCommand=async c=>{if(c==="player_queues/play_media"){entered.resolve();return d.promise}};const p=h.ctx.backgroundMusicTick();await entered.promise;h.successor();h.calls.length=0;d.reject(Error("old recovery failed"));await p;assert.equal(h.r.lastError,null);assert.equal(h.calls.includes("recovery-failed"),false);
 });
+
+test("resuming a selected queue transfers priority ownership without changing its media or volume",async()=>{
+ const h=fixture();h.r.sleepUntil=123;
+ await h.ctx.backgroundMusicResume("manual","B");
+ assert.equal(h.r.activePlayerId,"B");assert.equal(h.r.queueOnly,true);assert.equal(h.r.manualSession,true);
+ assert.equal(h.r.activeMedia,null);assert.equal(h.r.activeFavoriteId,null);assert.equal(h.r.sleepUntil,null);
+ assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(x=>x.command))),[
+  {command:"players/cmd/stop",args:{player_id:"A"}}, {command:"players/cmd/play",args:{player_id:"B"}}
+ ]);
+ h.calls.length=0;h.ctx.backgroundMusicPriorityState=()=>({active:true});h.ctx.backgroundMusicPriorityBlocked=()=>true;
+ await h.ctx.backgroundMusicReconcilePriority({force:true});
+ assert.equal(h.calls[0].args.player_id,"B");assert.equal(h.calls[0].command,"players/cmd/pause");assert.equal(h.r.pausedForPriority,true);
+ h.calls.length=0;h.ctx.backgroundMusicPriorityState=()=>({active:false});h.ctx.backgroundMusicPriorityBlocked=()=>false;
+ await h.ctx.backgroundMusicReconcilePriority({force:true});
+ assert.equal(h.calls.at(-1).args.player_id,"B");assert.equal(h.calls.at(-1).command,"players/cmd/play");assert.equal(h.r.queueOnly,true);
+});
+
+test("resuming an unowned configured output adopts its queue without stopping another player",async()=>{
+ const h=fixture();Object.assign(h.r,{activePlayerId:null,manualSession:false,manualStopped:true});
+ await h.ctx.backgroundMusicResume("manual","A");
+ assert.equal(h.r.activePlayerId,"A");assert.equal(h.r.queueOnly,true);assert.equal(h.r.manualStopped,false);
+ assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(x=>x.command))),[{command:"players/cmd/play",args:{player_id:"A"}}]);
+});
+
+test("resuming the current managed source preserves recovery identity and sleep",async()=>{
+ const h=fixture();h.r.sleepUntil=123;const media=h.r.activeMedia;
+ await h.ctx.backgroundMusicResume("manual","A");
+ assert.equal(h.r.activeMedia,media);assert.equal(h.r.sleepUntil,123);assert.notEqual(h.r.queueOnly,true);
+ assert.equal(h.calls.filter(x=>x.command).length,1);
+});
+
+for(const actual of [null,{found:false},{found:true,available:false}])test(`unavailable selected queue preserves the prior managed output: ${JSON.stringify(actual)}`,async()=>{
+ const h=fixture();h.ctx.backgroundMusicActualPlayerState=async()=>actual;
+ await assert.rejects(h.ctx.backgroundMusicResume("manual","B"),/unavailable/);
+ assert.equal(h.r.activePlayerId,"A");assert.equal(h.calls.some(x=>x.command),false);assert.equal(h.calls.includes("recovery-failed"),false);
+});
+
+for(const change of ["stop","priority","successor"])test(`queue adoption rechecks ${change} after player lookup`,async()=>{
+ const h=fixture(),d=deferred();h.ctx.backgroundMusicActualPlayerState=()=>d.promise;
+ const pending=h.ctx.backgroundMusicResume("manual","B"),rejected=assert.rejects(pending,/playback changed/);
+ if(change==="stop"){h.r.manualStopped=true;await h.ctx.backgroundMusicStop()}
+ if(change==="priority")h.ctx.backgroundMusicPriorityBlocked=()=>true;
+ if(change==="successor")h.successor("C");
+ const expected=JSON.stringify(h.r);h.calls.length=0;d.resolve({found:true,available:true});await rejected;
+ assert.equal(JSON.stringify(h.r),expected);assert.equal(h.calls.some(x=>x.command),false);assert.equal(h.calls.includes("recovery-failed"),false);
+});
+
+test("late queue Play acknowledges an intervening manual Stop with another Stop",async()=>{
+ const h=fixture(),d=deferred(),entered=deferred();
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});if(command==="players/cmd/play"){entered.resolve();await d.promise}};
+ const pending=h.ctx.backgroundMusicResume("manual","B");await entered.promise;
+ h.r.manualStopped=true;await h.ctx.backgroundMusicStop();d.resolve();await pending;
+ assert.equal(h.r.activePlayerId,null);assert.equal(h.calls.at(-1).command,"players/cmd/stop");assert.equal(h.calls.at(-1).args.player_id,"B");
+});
+
+for(const action of ["resume","reload"])test(`existing queue watchdog never replaces or replays media on ${action}`,async()=>{
+ const h=fixture();Object.assign(h.r,{queueOnly:true,activeMedia:null});h.recovery.observe=()=>({action});
+ h.ctx.backgroundMusicActualPlayerState=async()=>({found:true,available:true,playing:false,paused:false});
+ await h.ctx.backgroundMusicTick();
+ assert.equal(h.calls.some(x=>x.command),false);assert.equal(h.r.activePlayerId,"A");assert.equal(h.recovery.state,"idle");
+ assert.match(h.recovery.reason,/queue/i);
+});
+
+for(const helper of ["backgroundMusicStop","backgroundMusicStart"])test(`${helper} clears existing-queue mode`,async()=>{
+ const h=fixture();h.r.queueOnly=true;await h.ctx[helper]();assert.equal(h.r.queueOnly,false);
+});
+
+test("a successor while the old output stops prevents queue adoption",async()=>{
+ const h=fixture(),d=deferred(),entered=deferred();
+ h.ctx.musicAssistantCommand=async(command,args)=>{h.calls.push({command,args});entered.resolve();await d.promise};
+ const pending=h.ctx.backgroundMusicResume("manual","B"),rejected=assert.rejects(pending,/playback changed/);
+ await entered.promise;h.successor("C");const expected=JSON.stringify(h.r);d.resolve();await rejected;
+ assert.equal(JSON.stringify(h.r),expected);assert.equal(h.calls.filter(x=>x.command).length,1);
+});
+
+test("an uncertain queue resume remains owned for priority and is not replayed by the watchdog",async()=>{
+ const h=fixture();h.ctx.musicAssistantCommand=async command=>{if(command==="players/cmd/play"){const e=Error("Response lost");e.mayHaveExecuted=true;throw e}};
+ await assert.rejects(h.ctx.backgroundMusicResume("manual","B"),/Response lost/);
+ assert.equal(h.r.activePlayerId,"B");assert.equal(h.r.queueOnly,true);assert.equal(h.r.lastError,"Response lost");
+ h.recovery.observe=()=>({action:"reload"});h.ctx.backgroundMusicActualPlayerState=async()=>({found:true,available:true,playing:false});
+ h.calls.length=0;await h.ctx.backgroundMusicTick();assert.equal(h.calls.some(x=>x.command),false);
+});
+
+test("the real control route selects queue ownership and retries only its existing queue",async()=>{
+ const h=fixture();let handler;
+ Object.assign(h.ctx,{app:{post(path,...handlers){assert.equal(path,"/api/v1/music-assistant/background/control");handler=handlers.at(-1)}},musicAssistantMutationLimit(){},requireControl(){}});
+ const start=source.indexOf('app.post("/api/v1/music-assistant/background/control"'),end=source.indexOf('app.get("/api/v1/music-assistant/status"',start);assert.ok(end>start);
+ vm.runInContext(source.slice(start,end),h.ctx);
+ const result={},res={status(code){result.status=code;return this},json(body){result.body=body;return this}};
+ await handler({body:{action:"resume",playerId:"B"}},res);
+ assert.equal(result.body.ok,true);assert.equal(h.r.activePlayerId,"B");assert.equal(h.r.queueOnly,true);
+ h.r.manualStopped=true;h.calls.length=0;await handler({body:{action:"retry"}},res);
+ assert.equal(result.body.ok,true);assert.equal(h.r.manualStopped,false);
+ assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(x=>x.command))),[{command:"players/cmd/play",args:{player_id:"B"}}]);
+ h.r.manualStopped=true;h.ctx.backgroundMusicActualPlayerState=async()=>null;h.calls.length=0;
+ await handler({body:{action:"resume",playerId:"C"}},res);
+ assert.equal(result.status,502);assert.equal(result.body.ok,false);assert.equal(h.r.manualStopped,true);assert.equal(h.r.activePlayerId,"B");
+ assert.equal(h.calls.some(x=>x.command),false);
+});
+
+test("a track boundary in an existing queue retains priority ownership without replay",async()=>{
+ const h=fixture();let now=10000,playing=true,elapsed=99;
+ h.ctx.backgroundMusicRecovery=new (require("../src/background-music").PlaybackRecovery)({now:()=>now});
+ Object.assign(h.r,{queueOnly:true,activeMedia:null});
+ h.ctx.backgroundMusicActualPlayerState=async()=>({found:true,available:true,playing,player:{elapsed_time:elapsed,current_media:{uri:"demo://track/1",duration:100}}});
+ await h.ctx.backgroundMusicTick();playing=false;elapsed=100;now+=10000;await h.ctx.backgroundMusicTick();now+=10000;await h.ctx.backgroundMusicTick();
+ assert.equal(h.r.manualStopped,false);assert.equal(h.r.manualSession,true);assert.equal(h.r.activePlayerId,"A");
+ assert.equal(h.calls.some(x=>x.command),false);
+ playing=true;elapsed=1;now+=10000;await h.ctx.backgroundMusicTick();assert.equal(h.r.playing,true);assert.equal(h.r.queueOnly,true);
+});

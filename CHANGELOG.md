@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Keep queues resumed in Music Studio under announcement priority and sleep
+  controls on the selected output. Preserve queue contents and volume; observe
+  existing queues without automatically replacing them with a scheduled favorite.
+
 ### Unattended discussion assessment
 
 - Save writing immediately and process grades and replies through a persistent,

@@ -23,7 +23,7 @@ class MusicTransportBrowserTests(unittest.TestCase):
                 page.get_by_role('button', name='Play', exact=True).click()
                 self.wait_request(page, requests)
                 page.wait_for_function('!window.musicStudioLoading')
-                self.assertEqual(requests, [{'command': 'players/cmd/play', 'args': {'player_id': 'classroom-hub-tv1'}}])
+                self.assertEqual(requests, [{'action': 'resume', 'playerId': 'classroom-hub-tv1'}])
                 self.assertEqual(page.get_by_label('Listening volume', exact=True).input_value(), '10')
                 self.assertEqual(errors, [])
                 page.close()
