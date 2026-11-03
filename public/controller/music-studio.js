@@ -71,7 +71,7 @@
   async function control(action){
     if(!output.value)throw Error("Choose a listening output first");
     if(action==="play")action="resume";
-    if(["pause","stop","resume"].includes(action)&&output.value!==bg?.runtime?.activePlayerId)return task(()=>maApi(`players/cmd/${action==="resume"?"play":action}`,{player_id:output.value}));
+    if(["pause","stop"].includes(action)&&output.value!==bg?.runtime?.activePlayerId)return task(()=>maApi(`players/cmd/${action}`,{player_id:output.value}));
     if(action==="retry"&&output.value!==bg?.runtime?.activePlayerId)throw Error("Start Background Music on this output before recovering it");
     return task(()=>send("/api/v1/music-assistant/background/control",{action,playerId:output.value}));
   }
