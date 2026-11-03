@@ -40,6 +40,10 @@ rollback keeps host mutations locked and reports `rollback-required`.
 Snapshot completion and deployment mutation claims are persisted separately from
 error status. Interrupted copies never replace live data, even if restarting the
 original service also fails and recovery must continue after a host restart.
+Integrity probes explicitly close every SQLite connection before copying data
+or starting the service. Ending a Python connection context alone does not
+release its WAL reader locks; update and rollback must not depend on garbage
+collection to make the restored database usable.
 
 Snapshots remain on the appliance for administrator recovery. They include
 credentials and are private to root. Insufficient space fails before the service

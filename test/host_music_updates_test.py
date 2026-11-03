@@ -1,9 +1,13 @@
 """Exercise cold snapshot rollback with real SQLite and a fake Docker boundary."""
 import importlib.util
 import ast
+from contextlib import closing
+import gc
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -86,6 +90,52 @@ class HostMusicUpdatesTests(unittest.TestCase):
         self.assertFalse((self.data / "new-schema.json").exists())
         self.assertEqual(json.loads((self.data / "queue.json").read_text()), ["preserved-item"])
         self.assertTrue((self.deployment / "data.roomgoblin-failed-123/new-schema.json").exists())
+
+    def test_integrity_probe_releases_sqlite_locks_before_service_start(self):
+        data = self.root / "wal-probe"
+        data.mkdir()
+        database = data / "library.db"
+        with closing(sqlite3.connect(database)) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("CREATE TABLE saved (name TEXT)")
+            db.commit()
+        # SQLite connections have cycles. Production must not depend on a later
+        # garbage collection to release the native reader locks.
+        enabled = gc.isenabled()
+        gc.disable()
+        try:
+            self.manager.check_databases(data)
+            result = subprocess.run([sys.executable, "-c", """
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1], timeout=0.1)
+db.execute('PRAGMA journal_mode=WAL')
+db.execute('INSERT INTO saved VALUES (?)', ('service started',))
+db.commit()
+db.execute('PRAGMA journal_mode=DELETE')
+db.close()
+""", str(database)], capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        finally:
+            if enabled:
+                gc.enable()
+            gc.collect()
+
+    def test_failed_integrity_probe_closes_its_connection(self):
+        data = self.root / "invalid-probe"
+        data.mkdir()
+        (data / "broken.db").write_bytes(b"not a SQLite database")
+        connect = sqlite3.connect
+        opened = []
+        def record(*args, **kwargs):
+            connection = connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+        with patch.object(module.sqlite3, "connect", side_effect=record):
+            with self.assertRaises(sqlite3.DatabaseError):
+                self.manager.check_databases(data)
+        self.assertEqual(len(opened), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            opened[0].execute("SELECT 1")
 
     def test_success_pins_digest_and_retains_cold_snapshot(self):
         self.execute(lambda *_: None)

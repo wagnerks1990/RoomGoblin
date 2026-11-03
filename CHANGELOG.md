@@ -5,6 +5,8 @@
 
 ## Unreleased
 
+- Close Music Assistant integrity-check connections before snapshot and restart
+  so retained SQLite reader locks cannot block upgrades or cold rollback.
 - Link Apollo playback health explicitly to its Music Assistant output. Require
   sustained native speaker-idle evidence for a playing-state stall; cached
   Sendspin timestamps remain valid during healthy audible playback.
