@@ -133,6 +133,17 @@ This moves large socket send queues away from port `3000`, preserving clear/stop
 
 ## Receiver behavior
 
+Buffering and seeking may emit repeated `canplay` events. Once a video session
+has requested playback, these events retain its current audio and playback
+operation rather than repeating the muted autoplay startup. Initial playback,
+explicit Play/Restart and authenticated source renewal retain their startup and
+muted-fallback behavior. Operator pauses and intentional mute remain respected.
+`test/display-video-audio-recovery.test.js` covers these event sequences with
+the receiver functions and a simulated media element. The browser readiness
+regression in `test/browser/test_display.py` exercises the receiver DOM with
+simulated playback methods; neither test measures physical TV sound. Physical
+TV acceptance is still required.
+
 Physical RoomGoblin display pages transparently rewrite same-origin `/media/*` video/audio sources from the control-plane origin to port `3020`. The signed query string is preserved.
 
 The rewrite is currently enabled for HTTP classroom deployments. If the media listener is unavailable, the receiver performs a one-time fallback to the original control-plane URL so existing installations fail gracefully. Persistent fallback should be treated as a media-plane health problem, not the normal operating mode.

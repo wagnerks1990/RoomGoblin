@@ -328,6 +328,25 @@ class DisplayBrowserTests(unittest.TestCase):
         self.assertEqual(page.evaluate('__playCount'), 2)
         self.assertFalse(self.errors)
 
+    def test_buffer_readiness_preserves_playing_video_audio(self):
+        page = self.page()
+        self.command(page, 'display.video', {'url': '/media/buffering.mp4', 'sessionId': 'buffering', 'volume': .7})
+        page.evaluate("""() => {
+          const video=window.__video=document.querySelector('#media video');
+          window.__playCount=0;window.__paused=true;
+          Object.defineProperty(video,'paused',{get:()=>window.__paused});
+          video.play=()=>{window.__paused=false;window.__playCount++;return Promise.resolve()};
+          video.oncanplay();
+        }""")
+        page.wait_for_function('__playCount===1 && !__video.muted')
+        page.wait_for_timeout(160)
+        result = page.evaluate("""() => {
+          for(let i=0;i<5;i++)__video.dispatchEvent(new Event('canplay'));
+          return {muted:__video.muted,plays:__playCount,volume:__video.volume};
+        }""")
+        self.assertEqual(result, {'muted': False, 'plays': 1, 'volume': .7})
+        self.assertFalse(self.errors)
+
     def test_pause_wins_over_pending_video_start(self):
         page = self.page()
         self.command(page, 'display.video', {'url': '/media/pending.mp4', 'sessionId': 'pending', 'autoplay': True})
