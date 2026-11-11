@@ -256,7 +256,16 @@ function configureVideoSession(video,m){
   for(const event of ['play','playing','pause','ratechange','volumechange'])video.addEventListener(event,()=>{if(ownsSession())reportMediaStatus(event)});
   video.addEventListener('error',()=>{if(!ownsSession())return;reportMediaStatus('media-error');if(!renewVideoAccess(video))badge.textContent=`${id} video load error`});
   video.addEventListener('loadedmetadata',()=>{if(!ownsSession())return;const current=activeMediaSession.spec,currentStart=activeMediaSession.tokenRecovery?.position??Math.max(0,Number(current.startAtSeconds||0)),wanted=Math.min(Number.isFinite(video.duration)?video.duration:currentStart,currentStart);if(Math.abs(video.currentTime-wanted)>.2)video.currentTime=wanted;reportMediaStatus('loadedmetadata')});
-  video.oncanplay=()=>{if(!ownsSession())return;const recovery=activeMediaSession.tokenRecovery;activeMediaSession.tokenRecovery=null;if(!recovery||recovery.resume){startVideoPlayback(video,activeMediaSession.spec,recovery?'token-refresh':'canplay',!!recovery&&!activeMediaSession.operatorPaused).catch(()=>{})}reportMediaStatus('canplay')};
+  video.oncanplay=()=>{
+    if(!ownsSession())return;
+    const session=activeMediaSession,recovery=session.tokenRecovery;session.tokenRecovery=null;
+    // Buffering and seeking can emit canplay repeatedly. The browser resumes
+    // the existing playback; rerunning muted startup here interrupts TV audio.
+    if(recovery?recovery.resume:!session.playbackRequested){
+      startVideoPlayback(video,session.spec,recovery?'token-refresh':'canplay',!!recovery&&!session.operatorPaused).catch(()=>{});
+    }
+    reportMediaStatus('canplay');
+  };
   video.addEventListener('playing',()=>{if(ownsSession())activeMediaSession.tokenRefreshCount=0});
   video.onended=()=>{if(!ownsSession())return;const current=activeMediaSession.spec;reportMediaStatus('ended');if(!video.loop&&ws&&ws.readyState===1){try{ws.send(JSON.stringify({type:'display.media.ended',mediaType:'video',sessionId:current.sessionId||null}))}catch{}}};
 }
