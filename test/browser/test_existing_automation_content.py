@@ -30,13 +30,13 @@ class ExistingAutomationContentTests(unittest.TestCase):
     page = harness.WorkspaceBrowserTests.page
     evidence = harness.WorkspaceBrowserTests.evidence
 
-    def workspace(self, kind='sports', event=None, width=1440):
+    def workspace(self, kind='sports', event=None, width=1440, class_targets=None):
         event = copy.deepcopy(event or routine())
         weather = test_weather_workspace.forecast()
         sports = test_sports.data()
         requests = []
         profile = {'anchorDate': '2027-10-18', 'cycleDays': ['A', 'B'], 'dayGroups': []}
-        classes = [{'id': 'class-one', 'name': 'Example class', 'startTime': '10:30', 'endTime': '11:30'}]
+        classes = [{'id': 'class-one', 'name': 'Example class', 'startTime': '10:30', 'endTime': '11:30', 'defaultTargets': ['tv1'] if class_targets is None else class_targets}]
 
         def transport(route, target):
             method = route.request.method
@@ -228,5 +228,17 @@ class ExistingAutomationContentTests(unittest.TestCase):
         page.evaluate("window.AUTH_STATUS = {authEnabled:true,user:{id:'restricted',role:'viewer',capabilities:[]}}")
         picker.get_by_role('button', name='Open automation draft', exact=True).click()
         picker.get_by_text('Schedule and automation permissions are required', exact=True).wait_for()
+        self.assertFalse(requests)
+        self.assertEqual(errors, [])
+
+    def test_empty_class_defaults_do_not_authorize_implicit_display_targets(self):
+        event = routine()
+        event['useClassTargets'] = True
+        event['actionSequence'][1]['targets'] = []
+        page, errors, requests, event, picker = self.workspace(event=event, class_targets=[])
+        picker.get_by_role('button', name='Open automation draft', exact=True).click()
+        draft = page.get_by_role('dialog', name='Edit ' + event['name'], exact=True)
+        draft.get_by_role('button', name='Preview & validate', exact=True).click()
+        draft.get_by_text('Choose explicit targets for action 2; it controls a different device type', exact=True).wait_for()
         self.assertFalse(requests)
         self.assertEqual(errors, [])
