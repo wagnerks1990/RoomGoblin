@@ -14,7 +14,7 @@
 
 ## Not passed or not executed
 
-- Real-network Chromium integration test was attempted but the authoring environment's managed URL-block policy rejected localhost navigation. The policy was not altered. This is an environment-blocked test, not a claim of browser transport success for v9.
+- The original authoring environment blocked localhost Chromium navigation. A 2026-11-11 rerun in WSL passed the synthetic localhost HTTP/browser suite without changing browser policy; this does not establish live Schoology acceptance.
 - V9 has not been installed on the user's Ubuntu server.
 - V9 exports have not been imported into a live Schoology teacher or student session.
 - No Safari/iPhone v9 run, real Internet outage, device shutdown, full power-loss recovery, or real student authentication was tested.
@@ -22,3 +22,17 @@
 - No gradebook passback, AI correctness grading, SSO or production privacy/security certification is claimed.
 
 The successful v6/v8 live tests documented by the user establish the prior connection path, not automatic acceptance of this new implementation.
+
+## Repository convergence verification — 2026-11-11
+
+All 37 Python tests passed, including configured-origin control-character rejection
+and exact CORS matching. Response headers use the configured allowlist entry,
+not the request Origin value. Runtime JavaScript and installer syntax checks pass.
+Both Chromium smoke suites passed: offline DOM tests and real localhost HTTP with
+temporary synthetic databases, SCORM export, outbox reload/retry, rubric review,
+peer replies, moderation, scoped commands and aggregate displays. Responsive widths
+320/390/768/1440 passed with no browser exceptions. Screenshot destinations are
+portable and configurable through `PORTAL_TEST_OUTPUT`.
+
+No production install, real learners, live Schoology, Safari, or appliance
+power-loss qualification was performed. The existing deployment limits still apply.

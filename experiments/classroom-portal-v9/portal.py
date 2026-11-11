@@ -83,6 +83,8 @@ def boolean(value, name: str) -> bool:
 
 
 def origin(value: str, allow_http: bool = False) -> str:
+    if not isinstance(value, str) or any(ord(c) <= 32 or ord(c) == 127 for c in value):
+        raise ValueError("Origin must not contain whitespace or control characters.")
     p = urlsplit(value)
     if p.scheme not in (("https", "http") if allow_http else ("https",)) or not p.hostname or p.username or p.password or p.path not in ("", "/") or p.query or p.fragment:
         raise ValueError("Use an exact HTTPS origin, without a path or credentials.")
@@ -567,8 +569,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; connect-src 'self'")
         path = urlsplit(self.path).path
         req_origin = self.headers.get("Origin", "")
-        if path.startswith(PREFIX + "/learner/") and req_origin in self.app.allowed:
-            self.send_header("Access-Control-Allow-Origin", req_origin)
+        configured_origin = next((allowed for allowed in self.app.allowed if allowed == req_origin), None)
+        if path.startswith(PREFIX + "/learner/") and configured_origin is not None:
+            self.send_header("Access-Control-Allow-Origin", configured_origin)
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Headers", "Authorization,Content-Type")
             self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")

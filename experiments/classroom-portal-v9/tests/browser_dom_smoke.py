@@ -5,6 +5,8 @@ from playwright.sync_api import sync_playwright,expect
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from portal import seed_definition
 ROOT=Path(__file__).resolve().parents[1]
+OUTPUT=Path(os.getenv('PORTAL_TEST_OUTPUT', str(ROOT/'test-results')))
+OUTPUT.mkdir(parents=True,exist_ok=True)
 
 def run():
  d=seed_definition();assignment={'id':'storage-plans','course_id':'demo-class','revision':1,'definition':d,'locked':False}
@@ -30,10 +32,10 @@ def run():
   review.locator('[data-publish]').check();review.locator('button.primary').click();expect(review.locator('.reviewResult')).to_contain_text('Saved 20/20')
   teacher.locator('[data-tab="controls"]').click();teacher.locator('#paused').check();teacher.locator('#hint').fill('Scoped hint');teacher.locator('#stage').fill('3');teacher.locator('#commandForm button').click();expect(teacher.locator('#cmdResult')).to_contain_text('revision 1')
   sent=teacher.evaluate('window.calls.filter(c=>c.path==="/command" && c.data.assignment_id).pop()');assert sent['data']['assignment_id']=='storage-plans'
-  teacher.locator('[data-tab="overview"]').click();teacher.screenshot(path='/mnt/data/v9_work/portal-desktop.png',full_page=True)
+  teacher.locator('[data-tab="overview"]').click();teacher.screenshot(path=str(OUTPUT/'portal-desktop.png'),full_page=True)
   for w in [320,390,768,1440]:
    teacher.set_viewport_size({'width':w,'height':900});assert teacher.evaluate('document.documentElement.scrollWidth <= innerWidth+1'),w
-  teacher.set_viewport_size({'width':390,'height':844});teacher.screenshot(path='/mnt/data/v9_work/portal-mobile.png',full_page=True)
+  teacher.set_viewport_size({'width':390,'height':844});teacher.screenshot(path=str(OUTPUT/'portal-mobile.png'),full_page=True)
   # Local learner UI: true outbox logic with a fake transport and fake LMS runtime.
   config={'apiOrigin':'https://portal.example.test','token':'synthetic-scoped-test-token','assignment':assignment,'participant':{'id':'grant-a','label':'Synthetic A'},'synthetic':True,'version':'9.0.0-pilot.1'}
   learner=b.new_page(viewport={'width':390,'height':844});learner.on('pageerror',lambda e:errors.append(str(e)))
@@ -51,7 +53,7 @@ def run():
   learner.locator('#save').click();assert learner.evaluate('scormCalls.every(c=>!c[0].includes("score"))')
   for w in [320,390,768,1440]:
    learner.set_viewport_size({'width':w,'height':900});assert learner.evaluate('document.documentElement.scrollWidth <= innerWidth+1'),w
-  learner.set_viewport_size({'width':390,'height':844});learner.screenshot(path='/mnt/data/v9_work/learner-mobile.png',full_page=True)
+  learner.set_viewport_size({'width':390,'height':844});learner.screenshot(path=str(OUTPUT/'learner-mobile.png'),full_page=True)
   assert not errors,errors
   b.close()
  print('PASS: offline Chromium DOM checks: sign-in, class creation, rubric editor, draft preservation, criterion review, scoped command payload, learner queue/retry, fail-open simulated pause, no score writes in preview, responsive 320/390/768/1440, no JS exceptions. Fetch/LMS mocked; no live LMS/network assertion.')

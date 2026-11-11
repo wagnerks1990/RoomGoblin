@@ -67,7 +67,7 @@ def run():
     teacher.locator('#displayLink').click();expect(teacher.locator('#displayResult a')).to_be_visible();board=browser.new_page();board.goto(teacher.locator('#displayResult a').get_attribute('href'));expect(board.locator('#submitted')).to_have_text('1')
     assert 'Synthetic B' not in board.locator('body').inner_text()
     teacher.locator('[data-tab="overview"]').click();teacher.locator('#refresh').click();expect(teacher.locator('#status')).to_contain_text('Connected')
-    screenshots=Path('/mnt/data/v9_work');screenshots.mkdir(exist_ok=True)
+    screenshots=Path(os.getenv('PORTAL_TEST_OUTPUT', str(Path(__file__).resolve().parents[1]/'test-results')));screenshots.mkdir(parents=True,exist_ok=True)
     teacher.screenshot(path=str(screenshots/'portal-desktop.png'),full_page=True)
     for width in [320,390,768,1440]:
      teacher.set_viewport_size({'width':width,'height':900});teacher.wait_for_timeout(60)

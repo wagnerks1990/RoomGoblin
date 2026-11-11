@@ -16,10 +16,25 @@ from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from portal import App, LimitedServer, Problem, PREFIX, VERSION, seed_definition
+from portal import App, LimitedServer, Problem, PREFIX, VERSION, seed_definition, origin
 
 TOKEN='unit-test-only-'+'x'*32
 class PortalTests(unittest.TestCase):
+    def test_origin_rejects_header_controls_before_url_normalization(self):
+        for value in ['https://allowed.example\r\nX-Injected: yes', 'https://allowed.example\t', 'https://allowed.example\x7f', ' https://allowed.example']:
+            with self.subTest(value=repr(value)), self.assertRaises(ValueError):
+                origin(value)
+
+    def test_cors_uses_only_the_exact_configured_origin(self):
+        path = '/learner/state'
+        for value in ['http://localhost:9999', 'http://localhost:9999.evil.example', 'null']:
+            with self.subTest(origin=value):
+                _, _, headers = self.request(path, 'OPTIONS', headers={'Origin': value})
+                if value == 'http://localhost:9999':
+                    self.assertEqual(headers.get('Access-Control-Allow-Origin'), value)
+                else:
+                    self.assertNotIn('Access-Control-Allow-Origin', headers)
+
     @classmethod
     def setUpClass(cls):
         cls.tmp=tempfile.TemporaryDirectory()

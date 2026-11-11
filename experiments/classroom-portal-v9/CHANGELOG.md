@@ -9,3 +9,8 @@
 - Added transactional idempotency, conflict detection and visible durable outbox behavior. Preserved teacher form drafts instead of overwriting them during refresh.
 - Added root-private SQLite-safe backups, reversible versioned service cutover and optional exact-match legacy INSERT compatibility repair.
 - Retained explicit limitations: synthetic identities, no AI grading, no native Schoology API access and no gradebook passback.
+
+## Repository convergence — 2026-11-11
+
+- Reject whitespace/control characters before origin parsing and emit CORS headers only from configured origins.
+- Make browser evidence paths portable; verify 37 Python tests plus both synthetic Chromium suites. Live LMS and deployment acceptance remain pending.

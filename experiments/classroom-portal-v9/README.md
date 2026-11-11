@@ -103,7 +103,7 @@ bash -n install.sh install-remote.sh
 
 Optional Playwright tests:
 - `tests/browser_dom_smoke.py` renders the real UI in Chromium with in-memory fetch/LMS stubs. It checks controls, editing, responsive widths, queues, preview write boundaries, and simulated outage behavior. It is not a real network/LMS test.
-- `tests/browser_network_smoke.py` exercises HTTP plus browser behavior in an unrestricted local test environment. It was blocked in the authoring environment by Chromium's managed URL policy; it was not counted as passing. Do not disable organizational browser policy to run it.
+- `tests/browser_network_smoke.py` exercises HTTP plus browser behavior in an unrestricted local test environment. It passed in WSL on 2026-11-11 using temporary synthetic data and localhost HTTP. It does not establish live Schoology or appliance acceptance. Do not disable organizational browser policy to run it. Set `CHROMIUM_PATH` when needed and `PORTAL_TEST_OUTPUT` to select a screenshot directory.
 
 See `VALIDATION.md` for the actual delivered test evidence and untested deployment boundaries.
 
