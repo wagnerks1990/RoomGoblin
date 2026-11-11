@@ -153,3 +153,67 @@ test("real operational ZIP writer reads content as a different uid in the shared
   // Reproduce the old failure with the identical writer and reader identity.
   fs.chmodSync(deck,0o700);const blocked=spawnSync(process.execPath,["-e",script],{encoding:"utf8"});assert.notEqual(blocked.status,0);assert.match(blocked.stderr,/EACCES/);
 });
+
+
+function operationalContext(root,{linkError,failZip=false,denyCopy=false}={}){
+  const hub=path.join(root,'classroom-hub'),work=path.join(root,'work'),services=path.join(root,'services');
+  for(const dir of [path.join(hub,'data'),work,services])fs.mkdirSync(dir,{recursive:true,mode:0o700});
+  const snapshot=path.join(work,'snapshot.db'),dest=path.join(root,'backup.zip');
+  const {DatabaseSync}=require('node:sqlite'),db=new DatabaseSync(snapshot);db.exec("CREATE TABLE fixture(value); INSERT INTO fixture VALUES('verified snapshot')");db.close();fs.chmodSync(snapshot,0o600);
+  fs.writeFileSync(path.join(hub,'data','classroom-control-hub.db'),'LIVE_DATABASE_MUST_NOT_BE_ARCHIVED');
+  fs.writeFileSync(path.join(hub,'.env'),'PRIVATE_CONFIG_MUST_NOT_BE_ARCHIVED');
+  let copies=0,links=0,sameInode=false;
+  const limitedFs=Object.create(fs);
+  limitedFs.copyFileSync=(...args)=>{copies++;if(denyCopy)throw Object.assign(Error('No capacity for another database allocation'),{code:'ENOSPC'});return fs.copyFileSync(...args);};
+  limitedFs.linkSync=(...args)=>{links++;if(linkError)throw Object.assign(Error('Synthetic link failure'),{code:linkError});return fs.linkSync(...args);};
+  const ctx={fs:limitedFs,path,process,HUB_ROOT:hub,Classroom_ROOT:services,UPLOAD_DIR:work,
+    run:async(cmd,args,opts)=>{
+      const staged=fs.readdirSync(work).find(x=>x.startsWith('operational-zip-'));
+      const file=path.join(work,staged,'classroom-hub','data','classroom-control-hub.db');
+      const a=fs.statSync(snapshot),b=fs.statSync(file);sameInode=a.ino===b.ino&&a.dev===b.dev;
+      assert.equal(mode(file),0o600);
+      if(failZip)throw Error('Synthetic ZIP failure');
+      return promisify(execFile)(cmd,args,opts);
+    }};
+  vm.createContext(ctx);vm.runInContext(section(maintenance,'function backupFilter(','async function createFullRecoveryExport(')+section(maintenance,'async function writeOperationalZipStreaming(','function writeJsonAtomic('),ctx);
+  return {ctx,snapshot,dest,work,counts:()=>({copies,links,sameInode})};
+}
+function verifyOperationalSnapshot(item){
+  const zip=new(require('adm-zip'))(item.dest);assert(zip.test());
+  assert.deepEqual(zip.readFile('classroom-hub/data/classroom-control-hub.db'),fs.readFileSync(item.snapshot));
+  assert.equal(zip.getEntry('classroom-hub/.env'),null);assert.equal(mode(item.dest),0o600);
+  assert.equal(fs.statSync(item.snapshot).nlink,1);assert.deepEqual(fs.readdirSync(item.work),['snapshot.db']);
+}
+
+test('operational ZIP reuses one private snapshot allocation and archives its exact bytes',linux,async t=>{
+  const item=operationalContext(fixture(t),{denyCopy:true});
+  await item.ctx.writeOperationalZipStreaming(item.dest,item.snapshot,{version:4,scope:'operational',databaseSnapshot:true});
+  assert.deepEqual(item.counts(),{copies:0,links:1,sameInode:true});verifyOperationalSnapshot(item);
+});
+
+test('operational ZIP link fallback preserves private modes and independent snapshot ownership',linux,async t=>{
+  for(const linkError of ['EXDEV','ENOTSUP','EPERM']){
+    const item=operationalContext(fixture(t),{linkError});
+    await item.ctx.writeOperationalZipStreaming(item.dest,item.snapshot,{version:4,scope:'operational'});
+    assert.deepEqual(item.counts(),{copies:1,links:1,sameInode:false});verifyOperationalSnapshot(item);
+  }
+  const item=operationalContext(fixture(t));fs.chmodSync(item.snapshot,0o640);
+  await item.ctx.writeOperationalZipStreaming(item.dest,item.snapshot,{version:4,scope:'operational'});
+  assert.deepEqual(item.counts(),{copies:1,links:0,sameInode:false});assert.equal(mode(item.snapshot),0o640);verifyOperationalSnapshot(item);
+});
+
+test('operational ZIP failures release temporary links and never hide storage errors',linux,async t=>{
+  for(const options of [{failZip:true},{linkError:'EIO'},{linkError:'EXDEV',denyCopy:true}]){
+    const item=operationalContext(fixture(t),options);
+    await assert.rejects(item.ctx.writeOperationalZipStreaming(item.dest,item.snapshot,{version:4,scope:'operational'}));
+    assert.equal(fs.existsSync(item.dest),false);assert.equal(fs.statSync(item.snapshot).nlink,1);assert.deepEqual(fs.readdirSync(item.work),['snapshot.db']);
+    if(options.linkError==='EIO')assert.equal(item.counts().copies,0);
+  }
+});
+
+test('operational snapshot staging rejects symlinks and shared inode inputs',linux,t=>{
+  const root=fixture(t),item=operationalContext(root),alias=path.join(root,'alias.db'),target=path.join(root,'stage.db');
+  fs.symlinkSync(item.snapshot,alias);assert.throws(()=>item.ctx.stageOperationalSnapshot(alias,target),/regular, private/);
+  fs.unlinkSync(alias);fs.linkSync(item.snapshot,alias);assert.throws(()=>item.ctx.stageOperationalSnapshot(item.snapshot,target),/regular, private/);
+  assert.equal(fs.existsSync(target),false);
+});

@@ -102,7 +102,7 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
     const isTopLevelDatabase=rel=>path.posix.dirname(rel)==="classroom-hub/data"&&/\.db(?:-wal|-shm)?$/.test(path.posix.basename(rel));
     const baseFilter=backupFilter("operational"),filter=(full,rel,ent)=>{if(isTopLevelDatabase(rel))return false;return baseFilter(full,rel,ent)};
     validateTree(HUB_ROOT,"classroom-hub",filter);validateTree(Classroom_ROOT,"services",filter);
-    fs.mkdirSync(dbStageDir,{recursive:true,mode:0o700});fs.copyFileSync(dbSnapshot,dbStage);fs.chmodSync(dbStage,0o600);
+    fs.mkdirSync(dbStageDir,{recursive:true,mode:0o700});stageOperationalSnapshot(dbSnapshot,dbStage);fs.chmodSync(dbStage,0o600);
     fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2),{mode:0o600});
     // Info-ZIP streams file contents directly to the destination and supports
     // ZIP64, avoiding Node/AdmZip's ~2 GiB Buffer ceiling on real appliances.
@@ -123,6 +123,21 @@ async function writeOperationalZipStreaming(dest,dbSnapshot,manifest){
     await run("/usr/bin/zip",["-q","-r",partial,"classroom-hub","backup-manifest.json"],{timeout:120000,cwd:stage,maxBuffer:1024*1024});
     fs.chmodSync(partial,0o600);fs.renameSync(partial,dest);fs.chmodSync(dest,0o600);
   }finally{fs.rmSync(partial,{force:true});fs.rmSync(stage,{recursive:true,force:true})}
+}
+function stageOperationalSnapshot(snapshot,destination){
+  const stat=fs.lstatSync(snapshot);
+  if(!stat.isFile()||stat.nlink!==1)throw Error("Operational backup requires a regular, private SQLite snapshot.");
+  // Both paths are private temporary files under UPLOAD_DIR. Reuse only this
+  // process's completed 0600 snapshot, never a live database or shared inode.
+  // A second full allocation can exhaust tmpfs before streaming ZIP even starts.
+  if(typeof process.getuid==="function"&&stat.uid===process.getuid()&&(stat.mode&0o777)===0o600){
+    try{fs.linkSync(snapshot,destination);return}catch(error){
+      if(!["EXDEV","ENOTSUP","EOPNOTSUPP","EPERM"].includes(error.code))throw error;
+    }
+  }
+  // Preserve compatibility with work directories that do not support links and
+  // readable snapshots owned by another UID. Capacity errors still fail closed.
+  fs.copyFileSync(snapshot,destination);
 }
 function writeJsonAtomic(dest,value){
   const partial=`${dest}.partial-${process.pid}-${Date.now()}`;
