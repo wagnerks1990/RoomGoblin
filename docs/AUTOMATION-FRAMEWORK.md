@@ -104,6 +104,15 @@ It selects the winners for that later moment, without replaying stale or cancell
 occurrences. An admitted startup pass owns the ordinary writer drain and excludes
 overlapping scheduler ticks; freeze acknowledgment waits for that accepted work.
 
+**Resume Scheduled State** may release a current continuous sequence stopped
+only by a manual-media takeover. Its bounded cancellation disposition survives
+history eviction and restart. Resume drains the old runner, selects complete
+current winners, then durably releases only their proven takeover markers before
+starting replacements. Explicit Stops, supersession and unknown legacy
+cancellations remain terminal, including across Planning block aliases. Startup
+never releases takeover markers. Suppression, dry-run, class boundaries,
+announcement priority and Full Recovery writer ownership remain unchanged.
+
 ## Manual execution
 
 Editor draft simulation never dispatches devices. The scheduler test clock is

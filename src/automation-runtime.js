@@ -201,12 +201,21 @@ function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLim
   }
   function readValue(){const value=store.getPreference(key,{version:1,runs:[]})||{};return {...value,runs:Array.isArray(value.runs)?value.runs:[]}}
   function read(){const value=readValue();return {version:1,runs:value.runs}}
-  function readState(){const value=readValue();return {...value,cancelledOccurrences:retainedCancellations(value)}}
+  function readState(){
+    const value=readValue(),cancelledOccurrences=retainedCancellations(value),saved=value.manualMediaOccurrences??[];
+    if(!Array.isArray(saved)||saved.length>5000||saved.some(id=>!occurrenceDate(id)))throw new Error("Automation manual-media cancellation state is invalid");
+    const manual=new Set(saved.filter(id=>cancelledOccurrences.includes(id)));
+    // Unknown legacy Stops remain terminal. A non-media Stop always wins,
+    // even if a later manual takeover also cancels the same occurrence.
+    for(const row of value.runs)if(cancellationStatus(row.status)&&row.reason!=="manual-media-priority")manual.delete(row.occurrenceId);
+    return {...value,cancelledOccurrences,manualMediaOccurrences:[...manual]};
+  }
   function write(value){
     // Migrate legacy history and retain newly requested Stops before truncation,
     // in the same atomic preference write as the diagnostic rows.
     const cancelledOccurrences=retainedCancellations(value);
-    store.setPreference(key,{version:1,runs:value.runs.slice(-limit),cancelledOccurrences});
+    const retained=new Set(cancelledOccurrences);
+    store.setPreference(key,{version:1,runs:value.runs.slice(-limit),cancelledOccurrences,manualMediaOccurrences:(value.manualMediaOccurrences||[]).filter(id=>retained.has(id))});
   }
   function cancelledOccurrenceIds(){
     const state=readState();
@@ -216,8 +225,13 @@ function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLim
     if(!entries.length)return entries;
     // Never acknowledge a batch after dropping some of its own new records.
     if(entries.length>limit)throw new Error("Automation ledger batch exceeds its history limit");
-    const state=readState(),observedAt=new Date().toISOString();
-    write({...state,runs:[...state.runs,...entries.map(entry=>({...entry,observedAt}))]});
+    const state=readState(),observedAt=new Date().toISOString(),cancelled=new Set(state.cancelledOccurrences),manual=new Set(state.manualMediaOccurrences);
+    for(const entry of entries)if(cancellationStatus(entry.status)){
+      if(entry.reason==="manual-media-priority"&&occurrenceDate(entry.occurrenceId)&&!cancelled.has(entry.occurrenceId))manual.add(entry.occurrenceId);
+      else if(entry.reason!=="manual-media-priority")manual.delete(entry.occurrenceId);
+      cancelled.add(entry.occurrenceId);
+    }
+    write({...state,manualMediaOccurrences:[...manual],runs:[...state.runs,...entries.map(entry=>({...entry,observedAt}))]});
     return entries;
   }
   function record(entry){recordMany([entry]);return entry}
@@ -229,7 +243,18 @@ function makeLedger(store,{key="automation.run-ledger",limit=500,cancellationLim
     if(existing)return {claimed:false,existing};
     const row={occurrenceId:id,status:"claimed",...details};write({...state,runs:[...state.runs,{...row,observedAt:new Date().toISOString()}]});return {claimed:true,row};
   }
-  return {read,record,recordMany,claim,cancelledOccurrenceIds};
+  function manualMediaOccurrenceIds(){return new Set(readState().manualMediaOccurrences)}
+  function releaseManualMediaOccurrences(ids){
+    const state=readState(),requested=new Set(ids),released=new Set(state.manualMediaOccurrences.filter(id=>requested.has(id)));
+    if(!released.size)return released;
+    // Remove only proven takeover markers in one durable write before dispatch.
+    // Retaining them in diagnostic history would recreate the cancellation.
+    write({...state,cancelledOccurrences:state.cancelledOccurrences.filter(id=>!released.has(id)),
+      manualMediaOccurrences:state.manualMediaOccurrences.filter(id=>!released.has(id)),
+      runs:state.runs.filter(row=>!released.has(row.occurrenceId)||!cancellationStatus(row.status))});
+    return released;
+  }
+  return {read,record,recordMany,claim,cancelledOccurrenceIds,manualMediaOccurrenceIds,releaseManualMediaOccurrences};
 }
 
 module.exports={actionResourceDomain,isDisplayContentAction,normalizeIntegerMinutes,expandDisplayTargets,normalizeTvInventory,expandTvTargets,tvPowerIntent,summarizeAdapterResult,assertAdapterResults,SchedulerClock,assertAutomationCommandsAllowed,firstPassDueActions,automationOccurrenceKey,occurrenceId,makeLedger};

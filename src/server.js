@@ -6275,11 +6275,16 @@ function currentContinuousRecoveryWinnerIdentities(now=schedulerClock.now()){
   return new Set([...owners].filter(([,owner])=>owner.required.size&&[...owner.required].every(key=>owner.owned.has(key))).map(([identity])=>identity));
 }
 async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery"){
+  if(reason==="operator-resume"){
+    const interrupted=[...automationRunningOccurrences].filter(([id])=>automationCancellationReasons.get(id)==="manual-media-priority").map(([,task])=>task);
+    if(interrupted.length)await Promise.allSettled(interrupted);
+  }
   if(!automationSchedulerEnabled||schedulerClock.status().active&&!schedulerClock.commandsAllowed())return {started:0,skipped:true,reason:"scheduler-disabled-or-dry-run"};
   const now=schedulerClock.now(),suppression=isAutomationSuppressed(now);
   if(suppression.blocked)return {started:0,skipped:true,reason:suppression.reason};
   const winnerIdentities=currentContinuousRecoveryWinnerIdentities(now);
   const dateKey=localDateKey(now),candidates=[],cancelled=automationRunLedger.cancelledOccurrenceIds();
+  const resumable=reason==="operator-resume"?automationRunLedger.manualMediaOccurrenceIds():new Set();
   for(const storedEvent of classroomAutomations.events){
     if(!storedEvent?.enabled)continue;
     const occurrences=resolveScheduledAutomationOccurrences(storedEvent,now);
@@ -6290,11 +6295,16 @@ async function recoverContinuousAutomationOccurrences(reason="scheduler-recovery
       const id=occurrenceId(event,dateKey,event.time);
       // A saved Stop is terminal for this occurrence, including a crash before
       // its checkpoint or a later running/interrupted diagnostic record.
-      if(cancelled.has(id)||event._planningBlockId&&cancelled.has(occurrenceId({...event,_planningBlockId:null},dateKey,event.time)))continue;
+      const identities=[id,...(event._planningBlockId?[occurrenceId({...event,_planningBlockId:null},dateKey,event.time)]:[])];
+      if(identities.some(identity=>cancelled.has(identity)&&!resumable.has(identity)))continue;
       candidates.push({storedEvent,event});
     }
   }
   candidates.sort((a,b)=>automationOccurrenceScheduledMinutes(a.event)-automationOccurrenceScheduledMinutes(b.event)||Number(a.storedEvent.priority||0)-Number(b.storedEvent.priority||0)||String(a.storedEvent.id).localeCompare(String(b.storedEvent.id)));
+  if(reason==="operator-resume"){
+    const ids=candidates.flatMap(({event})=>[occurrenceId(event,dateKey,event.time),...(event._planningBlockId?[occurrenceId({...event,_planningBlockId:null},dateKey,event.time)]:[])]);
+    automationRunLedger.releaseManualMediaOccurrences(ids);
+  }
   let started=0;
   for(const {storedEvent,event} of candidates){
     const id=occurrenceId(event,dateKey,event.time);
