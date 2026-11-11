@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Reuse the completed private SQLite snapshot when staging an operational ZIP,
+  avoiding a second full database allocation in the bounded maintenance tmpfs.
+  Preserve copy fallback, archive bytes, private permissions and failure cleanup.
+
 - Consolidate learning administration into one teacher portal with shared class
   context, native classroom/accounts/setup views and redirects from older pages.
   Keep assignment setup in place, thread discussions, preserve concurrent drafts,

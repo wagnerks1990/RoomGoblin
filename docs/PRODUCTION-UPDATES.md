@@ -24,6 +24,29 @@ Saving update policy and replacing or clearing its optional GitHub token is one
 database transaction. A credential write or commit failure preserves the previous
 policy, including its automatic-update setting. Omitting the token retains it.
 
+## Operational backup staging capacity
+
+The operational ZIP writer hard-links only its own completed, regular, single-link
+0600 SQLite snapshot into its private staging tree. This reuses its existing
+allocation inside the bounded maintenance work area; it never links the live
+canonical database or changes the SQLite-safe snapshot step. Streaming Info-ZIP,
+ZIP64, exclusions, checksum validation and the mandatory pre-update backup remain.
+Unsupported link filesystems and readable snapshots with different ownership or
+permissions retain copy staging. Other storage failures stop the backup. Cleanup
+removes the temporary link on success and failure, leaving snapshot cleanup with
+its original owner. Regression coverage checks exact archive bytes, no duplicate
+allocation, fallback modes, link/ZIP/capacity failures and unsafe input rejection.
+
+An older installed writer can exhaust temporary space despite ample host disk.
+For an explicitly authorized upgrade, first verify host memory headroom and the
+maintenance process's exact tmpfs mount/flags. A bounded temporary expansion in
+that container's mount namespace can permit the ordinary mandatory backup; record
+the original size and flags privately and preserve all access controls. It ends
+when the native updater recreates maintenance. Do not edit tracked production
+Compose files, skip the backup or delete learner data. Verify another ordinary
+operational backup after upgrading to the allocation fix. If the upgrade aborts,
+restore the original temporary mount limit after backup staging is empty.
+
 ## Normal update
 
 Status polling remains available during a Full Recovery export freeze. It defers
