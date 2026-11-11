@@ -1,7 +1,8 @@
 # AI Project Context
 
 The native teacher entry is `/learn/teacher/`; read `TEACHER-PORTAL.md`. Keep
-portal records class-scoped and teacher-only. Submission reviews are private
+the shared class context, legacy URL redirects, atomic assignment/gateway saves
+and private DOM clearing on session loss. Keep portal records class-scoped and teacher-only. Submission reviews are private
 annotations, not automatic LMS grades. Activity pause blocks student writes;
 hint/stage messages never authorize device commands. Preserve optimistic review
 and command revisions, editable drafts during polling, and formula-safe CSV.

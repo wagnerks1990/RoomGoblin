@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Consolidate learning administration into one teacher portal with shared class
+  context, native classroom/accounts/setup views and redirects from older pages.
+  Keep assignment setup in place, thread discussions, preserve concurrent drafts,
+  clear private content on session loss, and save connectors/gateway settings
+  atomically without dropping approved LMS grade-service origins.
+
 - Integrate the prototype Teacher Portal workflow into RoomGoblin: class-scoped
   overview, assignments, written SCORM submissions, teacher reviews, discussions,
   pause/hint/stage controls, audit and private CSV exports. Replace the teacher

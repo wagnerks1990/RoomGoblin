@@ -1,10 +1,11 @@
 # RoomGoblin teacher portal
 
-The native teacher workspace at `/learn/teacher/` replaces the earlier teacher
-landing experience with the six-tab workflow from the isolated Schoology API
-prototype: Overview, Assignments, Submissions & grading, Discussions, Classroom
-controls, and Audit. A teacher opening `/learn/` without a selected activity is
-sent here. Student assignments still open their own discussion or SCORM package.
+The native workspace at `/learn/teacher/` is the single teacher entry for
+assignments, discussion review, classroom sessions, class accounts and setup.
+`/learn/platform/` redirects to its Classroom view. Teacher visits to
+`/learn/?manage=1` open Classes & accounts; activity bookmarks keep their selected
+class and discussion. Student assignments continue to open their existing signed
+discussion or SCORM package. No stored classes or learner records are deleted.
 
 ## Ownership and implementation
 
@@ -13,7 +14,8 @@ reviews, controls, and exports. `public/learn/teacher/` owns the browser workspa
 The module uses RoomGoblin's existing authenticated learning routes, active SQLite
 database, teacher class membership, mutation freeze and HTTP writer tracking.
 There is no second Python service, database, shared teacher token, or public
-teacher listener. Classroom hardware is outside this portal's command API.
+teacher listener. Assignment pause/hint/stage commands cannot dispatch hardware. The Classroom
+view retains the existing authenticated, presence-gated session/effect APIs.
 
 The reference was a Python/SQLite synthetic-data demonstration, not a qualified
 student service. Its shared demo key, fixed lesson, fake actors, global control
@@ -26,32 +28,48 @@ No prototype database or production credentials are bundled or imported.
 
 ## Daily use
 
-1. Sign in using an enabled RoomGoblin teacher account. Choose an assigned class.
-   **Manage classes & accounts** handles class creation and student membership.
-2. **Overview** shows event/submission/discussion counts and recent signed activity.
-3. **Assignments** lists class assignments and creates SCORM connections or the
-   supported written discussions. **Connections & setup** configures signed LMS
-   launches, networking, optional boards/effects, and the timetable.
-4. **Submissions & grading** displays written SCORM answers and provisional scores.
-   Teachers record a private score and feedback for each submission. These records
-   do not automatically change a Schoology grade. Written discussions instead use
-   the existing rubric, freshness check, approved-grade receipt and LMS sync path.
-5. **Discussions** shows posts/replies and permits teacher replies and moderation.
-6. **Classroom controls** saves pause, stage (1–20), and hint (300 characters maximum)
-   for one assignment. Pause rejects new student writes; it does not stop a game
-   engine, alter another assignment, or send physical device commands. A connected
-   package can react to stage/hint messages as described below. Resume permits
-   retained client work to retry through the normal event admission checks.
-7. **Audit** shows recent actions for the selected class. CSV export contains
-   private class submissions and teacher feedback; keep downloads private.
+1. Sign in with an enabled RoomGoblin teacher account. The shared class selector
+   prefers explicit bookmarks, a remembered class, the active timetable class,
+   then recent activity. Empty imported classes are grouped under Other classes.
+2. **Overview** combines SCORM events and discussion posts in a recent timeline.
+3. **Assignments** creates an assignment and its connector atomically. Expand an
+   assignment for availability, pause/hint/stage, signed launch settings, package
+   downloads, assessment policies, exceptions and continuing-campaign links.
+   Written discussions stay at 20 points. Signed provider settings preserve the
+   approved grade-service origins; a blank secret retains the saved secret.
+4. **Submissions & grading** reviews written SCORM answers privately. These review
+   annotations do not automatically write a Schoology grade. Written discussions
+   use the existing rubric, freshness checks, approved receipt and LMS sync path.
+   Changed writing is shown as superseded until a fresh assessment is available.
+5. **Discussions** groups replies under their parent posts. Filter by assignment
+   for its saved thread (up to 1,000 posts); the all-class view is a recent sample.
+   Teachers can reply, post a class update, moderate and revise teacher responses.
+   Response edits check their revision before saving.
+6. **Classroom** retains manual/automatic sessions, attendance, first-name boards,
+   class-filtered campaigns, approved celebrations and aggregate suggestions.
+   Creating a celebration or campaign requires an explicit configured target.
+   Existing display dedication, signed identity and presence rules are unchanged.
+7. **Classes & accounts** manages classes and student access. Administrators can
+   create restricted student accounts and assign eligible existing accounts.
+8. **Setup** is administrator-only: isolated student connection, timetable mapping,
+   writing-grading service and independent AI/media shortcuts. Connection settings
+   and launcher origins save together. Editing the grading service leaves current
+   launcher origins intact. Secrets stay server-side and clear from forms.
+9. **Audit** shows recent class actions, including membership and class creation.
+   CSV export is in Submissions & grading and contains private class records.
 
-The page refreshes every eight seconds, while visible. Unsaved forms remain open
-and prevent background replacement of editable sections. Switching classes,
-refreshing explicitly, or signing out asks before discarding drafts. Concurrent
-review/control edits return a conflict rather than silently overwriting a newer
-teacher save. Recent lists are bounded (80 events/actions, 100 submissions,
-discussions and written reviews, 200 assignments); CSV exports at most 5,000
-submissions, newest first. CSV cells are quoted and formula prefixes neutralized.
+The page polls every eight seconds while visible. Drafts survive polling, saving
+another form and moving between views. Switching classes, explicit refresh and
+sign-out ask before discarding drafts. Drafts disable automatic class following;
+re-enable Follow timetable after saving/discarding them. Class switches and session
+loss retire pending reads, and sign-out/expiry clears private DOM before another
+account can enter. Concurrent review/control/teacher-response edits conflict
+rather than overwrite a newer save. Read timeouts never retry mutations.
+
+Recent lists are bounded: 80 events/actions, 100 submissions, discussions and
+written reviews, 200 assignments, 500 classes. Review-needed counts reflect the
+recent review sample. CSV exports up to 5,000 submissions, newest first; cells
+are quoted and formula prefixes neutralized. Schoology remains the gradebook.
 
 ## Written SCORM submissions
 
@@ -87,6 +105,9 @@ class membership, and are unavailable through the student listener:
 
 | Method and path | Purpose |
 | --- | --- |
+| `GET /teacher/classes` | Owned class catalog with activity/learner counts |
+| `POST /teacher/classes/:id/assignments` | Atomic assignment and connector creation |
+| `PUT /teacher/connection-settings` | Administrator-only atomic gateway/origin settings |
 | `GET /teacher/classes/:id` | Bounded class overview, assignments, submissions, discussions and audit |
 | `GET /teacher/classes/:id/export` | Private, formula-safe submission CSV |
 | `PUT /teacher/activities/:id/command` | `{version, paused, stage, hint}` with revision conflict detection |
@@ -102,8 +123,13 @@ exact-commit updater with its backup. Older code can ignore the additive records
 ## Verification and deployment
 
 Run `npm run check`, `node --test test/learning-teacher-portal.test.js
-test/learning-sdk.test.js`, and `node test/browser/learning-teacher-portal-smoke.cjs`
-with Playwright and Microsoft Edge available. On Windows run the full supported
+test/learning-sdk.test.js`, and `node test/browser/learning-teacher-portal-smoke.cjs`,
+`node test/browser/learning-platform-smoke.cjs`,
+`node test/browser/learning-workspace-regression.cjs`,
+`node test/browser/learning-smoke.cjs` and
+`node test/browser/learning-os-smoke.cjs` with Playwright and Microsoft Edge
+available. The Python browser suite covers timetable setup, pause/resume and
+draft-protected class following in Chromium and Firefox. On Windows run the full supported
 `py -3.11 C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py` validation too.
 
 GitHub publication is separate from deployment. Live Schoology launches, updated

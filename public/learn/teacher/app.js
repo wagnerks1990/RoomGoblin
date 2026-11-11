@@ -1,98 +1,112 @@
-'use strict';
-const $=id=>document.getElementById(id),API='/api/v1/learning';
-const tabs=['overview','assignments','submissions','discussions','commands','audit'];
-let me=null,classId='',data=null,tab='overview',generation=0,pending=false;
-const dirty=new Set();
-function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node;}
-function notice(message){$('status').textContent=message;}
-async function api(path,method='GET',body){
- const response=await fetch(API+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1'},body:body===undefined?undefined:JSON.stringify(body)});
- const value=await response.json();if(!response.ok){if(response.status===401){$('workspace').hidden=true;$('login').hidden=false;$('logout').hidden=true;$('identity').textContent='';data=null;classId='';generation++;dirty.clear();}throw Error(value.error||'The request could not be completed.');}return value;
-}
-async function run(button,fn){button.disabled=true;try{await fn();}catch(error){notice(error.message);}finally{button.disabled=false;}}
-function action(text,fn){const button=el('button',text);button.type='button';button.onclick=()=>run(button,fn);return button;}
-function field(form,label,type,value,attrs={}){const wrapper=el('label',label),input=el(type==='textarea'?'textarea':type==='select'?'select':'input');if(!['textarea','select'].includes(type))input.type=type;Object.assign(input,attrs);input.value=value??'';wrapper.append(input);form.append(wrapper);return input;}
-function formSave(form,label,fn){const button=el('button',label);form.append(button);form.onsubmit=event=>{event.preventDefault();run(button,async()=>{await fn();dirty.delete(form);await refresh();notice(dirty.size?'Saved. Other unsaved drafts remain open.':'Saved to RoomGoblin.');});};}
-function table(rows,columns){if(!rows.length)return el('p','No records for this class yet.','muted');const table=el('table'),head=el('thead'),tr=el('tr');for(const [label]of columns)tr.append(el('th',label));head.append(tr);table.append(head);const body=el('tbody');for(const row of rows){const line=el('tr');for(const [,value]of columns)line.append(el('td',value(row)));body.append(line);}table.append(body);return table;}
-const when=value=>new Date(value).toLocaleString();
-function selectTab(next){tab=next;for(const id of tabs)$(id).hidden=id!==next;for(const button of document.querySelectorAll('[data-tab]')){if(button.dataset.tab===next)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}}
-for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>selectTab(button.dataset.tab);
-document.addEventListener('input',event=>{const form=event.target.closest('form');if(form&&form.id!=='login-form')dirty.add(form);});
-document.addEventListener('change',event=>{const form=event.target.closest('form');if(form&&form.id!=='login-form')dirty.add(form);});
-window.addEventListener('beforeunload',event=>{if(dirty.size){event.preventDefault();event.returnValue='';}});
-
-function draw(){
- if(!data)return;
- $('stats').replaceChildren(...[['Events',data.counts.events],['Submissions',data.counts.submissions],['Discussion posts',data.counts.discussions],['Reviewed submissions',data.counts.reviewed]].map(([title,count])=>{const card=el('div',title,'card stat');card.append(el('strong',count));return card;}));
- $('activity').replaceChildren(table(data.signals,[['When',r=>when(r.received_at)],['Assignment',r=>r.title],['Learner',r=>r.alias],['Event',r=>r.kind]]));
- $('audit-list').replaceChildren(table(data.events,[['When',r=>when(r.at)],['Assignment',r=>r.title],['Action',r=>r.kind],['Record',r=>r.record_id]]));
- if(dirty.size)return;
- drawAssignments();drawSubmissions();drawWritten();drawDiscussions();drawCommands();
-}
-async function refresh(){
- if(!classId||pending)return;pending=true;const id=classId,owner=generation;
- try{const result=await api('/teacher/classes/'+id);if(owner!==generation||id!==classId)return;data=result;draw();notice(dirty.size?'Updates available. Save your drafts or refresh to discard them.':'Connected · last refreshed '+new Date().toLocaleTimeString());}
- finally{pending=false;}
-}
-function drawAssignments(){
- const node=$('assignment-list');node.replaceChildren();if(!data.activities.length)node.append(el('p','Create your first assignment below.'));
- for(const item of data.activities){const card=el('div',undefined,'card');card.append(el('h3',item.title),el('p',`${item.template_id==='scorm-connector-v1'?'SCORM assignment':'Written discussion'} · ${item.points||20} points · ${item.open?'Open':'Closed'}`));const links=el('div',undefined,'actions'),link=el('a','Open assignment');link.href='/learn/?activity='+encodeURIComponent(item.id);if(item.template_id!=='scorm-connector-v1')links.append(link);const setup=el('a','Configure connection');setup.href='/learn/platform/';links.append(setup);card.append(links);node.append(card);}
-}
-function drawSubmissions(){
- const node=$('submission-list');node.replaceChildren();if(!data.submissions.length)node.append(el('p','No written SCORM submissions yet. Assignments configured to save written responses will appear here. Discussion work appears below.','muted'));
- for(const row of data.submissions){const details=el('details');details.append(el('summary',`${row.alias} · ${row.title} · ${row.score===null?'Needs review':row.score+' / '+row.points+' reviewed'}`),el('p',`${when(row.received_at)} · Provisional score: ${row.payload.earned} / ${row.points}`));for(const [question,answer]of Object.entries(row.payload.answers||{}))details.append(el('h3',question),el('pre',answer));
-  const form=el('form'),score=field(form,'Teacher score','number',row.score??row.payload.earned,{min:0,max:row.points,step:'any',required:true}),feedback=field(form,'Teacher feedback','textarea',row.feedback||'',{maxLength:1000,rows:3});
-  formSave(form,'Save review',()=>api('/teacher/submissions/'+row.id+'/review','PUT',{score:Number(score.value),feedback:feedback.value,revision:row.revision||0}));details.append(form,el('p','This private review does not write a Schoology grade.','muted'));node.append(details);
+"use strict";
+(async()=>{
+ const [{createUI,node,table,dateText,retired},{createAssignments},{createWork},{createClassroom},{createManagement},{createSetup}]=await Promise.all([
+  import('./ui.mjs'),import('./assignments.mjs'),import('./work.mjs'),import('./classroom.mjs'),import('./management.mjs'),import('./setup.mjs')
+ ]);
+ const $=id=>document.getElementById(id),API='/api/v1/learning',views=['overview','assignments','submissions','discussions','classroom','classes','setup','audit'];
+ let me=null,classes=[],current=null,data=null,authEpoch=0,classEpoch=0,view='overview',lastCatalog=0;
+ const requests=new Map(),params=new URLSearchParams(location.search);
+ const notice=message=>{if($('status').textContent!==message)$('status').textContent=message;};
+ const owned=ctx=>!!ctx&&ctx===current&&ctx.authEpoch===authEpoch;
+ const ui=createUI({api,notice,context:()=>current,owned,onSaved:async ctx=>{if(owned(ctx))await refresh({force:true});},onCatalog:catalog,onTools:showTools});
+ const assignments=createAssignments(ui,$('assignment-list'),$('assignment-create'));
+ const work=createWork(ui,{submissions:$('submission-list'),written:$('written-reviews'),discussions:$('discussion-list'),filterHost:$('discussion-filter')});
+ const classroom=createClassroom(ui,$('classroom-content')),management=createManagement(ui,$('management-content')),setup=createSetup(ui,$('setup-content'));
+ function clearPrivate(){
+  authEpoch++;classEpoch++;me=null;current=null;data=null;classes=[];requests.clear();ui.clear();
+  for(const module of [assignments,work,classroom,management,setup])module.reset();
+  for(const id of ['stats','activity','audit-list','class-select','identity','last-refreshed'])$(id).replaceChildren();
+  $('workspace').hidden=true;$('logout').hidden=true;showTools({});document.querySelector('[data-tab="setup"]').hidden=true;
  }
-}
-function drawWritten(){
- const node=$('written-reviews');node.replaceChildren();if(!data.reviews.length)node.append(el('p','Written review requests will appear here after students submit a discussion.','muted'));
- for(const row of data.reviews){const details=el('details');details.append(el('summary',`${row.alias} · ${row.title} · ${row.status} · ${row.final?.total??row.ai?.total??'pending'} / 20`),el('h3','Initial response'),el('pre',row.snapshot.initial),el('h3','Selected reply'),el('pre',row.snapshot.reply||'Not submitted'),el('h3','Peer or alternate context'),el('pre',row.snapshot.parent||'None'));
-  if(['approved','needs_review','unavailable'].includes(row.status))details.append(action('Review rubric',async()=>{
-   const owner=generation,activity=await api('/activities/'+row.activityId);if(owner!==generation||!details.isConnected)return;
-   if(details.querySelector('form'))return;const form=el('form'),grade=row.final||row.ai,criteria={};
-   for(const [key,levels]of Object.entries(activity.activity.case.scoreLevels)){
-    const points=field(form,(activity.activity.case.criterionLabels?.[key]||key)+' points','select','');for(const level of levels)points.add(new Option(String(level),String(level)));points.value=String(grade?.criteria[key]?.points??0);
-    const feedback=field(form,(activity.activity.case.criterionLabels?.[key]||key)+' feedback','textarea',grade?.criteria[key]?.feedback||'',{required:true,maxLength:1600});criteria[key]={points,feedback};
-   }
-   const summary=field(form,'Teacher summary','textarea',grade?.summary||'',{required:true,maxLength:1600}),response=field(form,'Public teacher response (optional)','textarea','',{maxLength:1800}),waive=field(form,'Waive late penalty','checkbox','');waive.parentElement.className='check';
-   formSave(form,row.status==='approved'?'Publish correction':'Publish reviewed grade',()=>api(`/activities/${row.activityId}/reviews/${row.id}/approve`,'POST',{criteria:Object.fromEntries(Object.entries(criteria).map(([key,value])=>[key,{points:Number(value.points.value),feedback:value.feedback.value}])),summary:summary.value,response:response.value,waiveLate:waive.checked}));details.append(form);
-  }));node.append(details);
+ async function api(path,method='GET',body){
+  const epoch=authEpoch;let response;
+  try{response=await fetch(API+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(method==='GET'?60000:600000)});}
+  catch{if(epoch!==authEpoch)throw retired();throw Error(method==='GET'?'The page could not refresh. Your saved data is unchanged.':'The change was not confirmed. Refresh before retrying.');}
+  if(epoch!==authEpoch)throw retired();
+  let value;try{value=await response.json();}catch{if(epoch!==authEpoch)throw retired();throw Error('RoomGoblin returned an unreadable response. Refresh before retrying.');}if(epoch!==authEpoch)throw retired();
+  if(response.status===401){clearPrivate();$('login').hidden=false;notice('Your session ended. Sign in again to continue.');throw retired();}
+  if(!response.ok||value.ok===false)throw Object.assign(Error(value.error||'The request could not be completed.'),{status:response.status});return value;
  }
-}
-function drawDiscussions(){
- const node=$('discussion-list');node.replaceChildren();if(!data.discussions.length)node.append(el('p','No discussion posts for this class yet.','muted'));
- for(const row of data.discussions){const details=el('details');details.append(el('summary',`${row.alias} · ${row.title} · ${row.kind}${row.hidden?' · Hidden':''}`),el('p',when(row.created_at),'muted'),el('pre',row.body));if(row.parent_id)details.append(el('p','Reply to post '+row.parent_id,'muted'));
-  details.append(action(row.hidden?'Show post':'Hide post',async()=>{await api(`/activities/${row.activity_id}/posts/${row.id}/moderation`,'PUT',{hidden:!row.hidden});await refresh();}));
-  if(!row.hidden){const form=el('form'),body=field(form,'Teacher reply','textarea','',{required:true,maxLength:3000,rows:3});formSave(form,'Post reply',()=>api(`/activities/${row.activity_id}/posts`,'POST',{parentId:row.id,body:body.value}));details.append(form);}node.append(details);
+ function remember(){if(!me)return;try{sessionStorage.setItem('roomgoblin.teacher.'+me.user.learnerKey,JSON.stringify({classId:current?.classId||'',follow:$('follow-current').checked}));}catch{}}
+ function remembered(){try{return JSON.parse(sessionStorage.getItem('roomgoblin.teacher.'+me.user.learnerKey))||{};}catch{return {};}}
+ function showTools(tools){for(const [id,key]of [['ai-chat','aiChatUrl'],['media-studio','mediaStudioUrl']]){const link=$(id),value=tools[key];link.hidden=!value;if(value)link.href=value;else link.removeAttribute('href');}}
+ function classChoices(){
+  const select=$('class-select'),selected=current?.classId,groups=[['Classes with assignments or learners',classes.filter(c=>c.assignmentCount||c.studentCount)],['Other classes',classes.filter(c=>!c.assignmentCount&&!c.studentCount)]];
+  select.replaceChildren();for(const [label,rows]of groups){if(!rows.length)continue;const group=node('optgroup');group.label=label;for(const row of rows)group.append(new Option(row.title,row.id));select.append(group);}
+  if(classes.some(c=>c.id===selected))select.value=selected;select.disabled=!classes.length;
  }
-}
-function drawCommands(){
- const node=$('command-list');node.replaceChildren();if(!data.activities.length)node.append(el('p','Add an assignment first.','muted'));
- for(const item of data.activities){const details=el('details');details.append(el('summary',`${item.title} · ${item.command.paused?'Paused':'Accepting submissions'}`));const form=el('form'),paused=field(form,'Pause new submissions','checkbox',''),stage=field(form,'Stage','number',item.command.stage,{min:1,max:20,required:true}),hint=field(form,'Hint','textarea',item.command.hint,{maxLength:300,rows:2});paused.checked=!!item.command.paused;paused.parentElement.className='check';
-  formSave(form,'Save controls',()=>api('/teacher/activities/'+item.id+'/command','PUT',{paused:paused.checked,stage:Number(stage.value),hint:hint.value,version:item.command.version}));details.append(form);node.append(details);
+ async function catalog(preferred,{follow=false}={}){
+  const epoch=authEpoch,[identity,list]=await Promise.all([api('/me'),api('/teacher/classes')]);if(epoch!==authEpoch)throw retired();
+  if(!identity.user.teacher)throw Error('Teacher access required.');me=identity;classes=list.classes;lastCatalog=Date.now();
+  if(current){current.me=me;current.classes=classes;}
+  const saved=remembered(),valid=id=>classes.some(c=>c.id===id);
+  if(follow)$('follow-current').checked=true;
+  const active=$('follow-current').checked&&valid(me.activeClassId)?me.activeClassId:null;
+  let selected=valid(preferred)?preferred:valid(current?.classId)?current.classId:valid(saved.classId)?saved.classId:active;
+  if(follow&&active)selected=active;
+  if(!selected)selected=[...classes].sort((a,b)=>(b.lastActivityAt||0)-(a.lastActivityAt||0)||b.studentCount-a.studentCount||a.title.localeCompare(b.title))[0]?.id||'';
+  if(current&&selected!==current.classId&&ui.dirty.size)selected=current.classId;
+  classChoices();if(!current||selected!==current.classId)await chooseClass(selected);else $('class-select').value=selected;
+  remember();return classes;
  }
-}
-$('class-select').onchange=async()=>{
- const next=$('class-select').value;if(dirty.size&&!confirm('Discard unsaved drafts and switch classes?')){$('class-select').value=classId;return;}
- dirty.clear();generation++;classId=next;data=null;for(const id of ['activity','assignment-list','submission-list','written-reviews','discussion-list','command-list','audit-list','stats'])$(id).replaceChildren();
- // An older request may still be finishing; its generation cannot render here.
- while(pending)await new Promise(resolve=>setTimeout(resolve,25));refresh().catch(error=>notice(error.message));
-};
-$('refresh').onclick=()=>run($('refresh'),async()=>{if(dirty.size&&!confirm('Discard unsaved drafts and refresh?'))return;dirty.clear();await refresh();});
-$('export').onclick=()=>{if(classId)location.href=API+'/teacher/classes/'+encodeURIComponent(classId)+'/export';};
-$('new-assignment').onsubmit=event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');run(button,async()=>{
- const selected=classId,fields=new FormData(form),templateId=fields.get('templateId'),points=Number(fields.get('points'));
- const result=await api('/classes/'+selected+'/activities','POST',{title:fields.get('title'),templateId});
- if(templateId==='scorm-connector-v1')await api('/platform/activities/'+result.id+'/config','PUT',{points});
- form.reset();dirty.delete(form);await refresh();notice('Assignment created. Configure its signed Schoology connection under Connections & setup.');
-});};
-async function start(){
- me=await api('/me');if(!me.user.teacher)throw Error('This workspace requires teacher access.');$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('identity').textContent=me.user.alias;
- const classes=me.classes.filter(item=>item.role==='teacher');$('class-select').replaceChildren(...classes.map(item=>new Option(item.title,item.id)));classId=classes[0]?.id||'';generation++;$('refresh').disabled=!classId;$('export').disabled=!classId;$('new-assignment').querySelector('button').disabled=!classId;
- if(classId)await refresh();else notice('No assigned classes yet. Open Manage classes & accounts to create a class.');
-}
-$('login-form').onsubmit=event=>{event.preventDefault();run(event.currentTarget.querySelector('button'),async()=>{try{const response=await fetch('/api/v1/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('username').value,password:$('password').value})});if(!response.ok)throw Error('Sign-in failed. Check your username and password.');await start();}finally{$('password').value='';}});};
-$('logout').onclick=()=>run($('logout'),async()=>{if(dirty.size&&!confirm('Discard unsaved drafts and sign out?'))return;const response=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});if(!response.ok)throw Error('Sign-out was not confirmed. Try again.');dirty.clear();location.reload();});
-setInterval(()=>{if(!document.hidden&&classId)refresh().catch(error=>notice(error.message));},8000);
-start().catch(error=>notice(error.message));
+ async function chooseClass(id){
+  if(current?.classId===id)return;
+  ui.clear();data=null;classEpoch++;current={classId:id,epoch:classEpoch,authEpoch,me,classes,connectionOrigin:''};
+  for(const module of [assignments,work,classroom,management,setup])module.reset();for(const name of ['stats','activity','audit-list'])$(name).replaceChildren();
+  $('class-select').value=id;$('export').disabled=!id;remember();syncURL();
+  if(id)await refresh({force:true});else{notice('Create a class under Classes & accounts to get started.');$('activity').replaceChildren(node('p','No assigned classes yet.','muted'));}
+  await showView(view,{load:true});
+ }
+ function syncURL(){const next=new URL(location.href);if(current?.classId)next.searchParams.set('class',current.classId);else next.searchParams.delete('class');next.searchParams.delete('manage');next.searchParams.set('view',view);history.replaceState(null,'',next.pathname+next.search);}
+ function label(kind){const map={'discussion.initial':'Initial post','discussion.reply':'Discussion reply','discussion.teacher':'Teacher response','discussion.ai':'Automatic response','discussion.critique':'Independent critique',score:'SCORM score',progress:'SCORM progress',completed:'Assignment completed',submission:'Written SCORM response',checkpoint:'Progress checkpoint',arcade:'Arcade checkpoint',assessment:'Assessment saved'};return map[kind]||kind.replace(/[._]/g,' ');}
+ function draw({force=false}={}){
+  if(!data||!current)return;
+  $('stats').replaceChildren(...[['Activity events',data.counts.events],['SCORM responses',data.counts.submissions],['Discussion posts',data.counts.discussions],['Reviews saved',data.counts.reviewed],['Needs review',data.counts.pending]].map(([title,count])=>{const card=node('div',title,'card stat');card.append(node('strong',count));return card;}));
+  $('activity').replaceChildren(table(data.recentActivity,[['When',r=>dateText(r.at)],['Assignment',r=>r.title],['Learner',r=>r.alias],['Activity',r=>label(r.kind)]]));
+  $('audit-list').replaceChildren(table(data.events,[['When',r=>dateText(r.at)],['Assignment',r=>r.title||'Class setup'],['Action',r=>label(r.kind)]]));
+  current.connectionOrigin=data.connectionOrigin||'';assignments.render(data,current,{force});work.render(data,current,{force});
+ }
+ async function refresh({force=false}={}){
+  const selected=current;if(!selected?.classId)return;
+  const key=selected.authEpoch+':'+selected.epoch;if(requests.has(key))return requests.get(key);
+  const request=(async()=>{const result=await api('/teacher/classes/'+selected.classId);ui.assert(selected);data=result;draw({force});$('last-refreshed').dateTime=new Date().toISOString();$('last-refreshed').textContent='Updated '+new Date().toLocaleTimeString();})();requests.set(key,request);
+  try{await request;}finally{if(requests.get(key)===request)requests.delete(key);}
+ }
+ async function showView(next,{load=true}={}){
+  if(!views.includes(next))next='overview';if(next==='setup'&&!me?.user.admin)next='overview';view=next;
+  for(const name of views)$(name).hidden=name!==view;for(const button of document.querySelectorAll('[data-tab]')){if(button.dataset.tab===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}syncURL();
+  if(!current||!load)return;
+  if(view==='classroom')await classroom.load(current,{force:true});if(view==='classes')await management.load(current,{force:true});if(view==='setup')await setup.load(current,{force:true});
+ }
+ async function start(){
+  const identity=await api('/me');if(!identity.user.teacher){clearPrivate();$('login').hidden=false;notice('This workspace requires a teacher account. Open your assigned learning activity instead.');return;}
+  clearPrivate();me=identity;const epoch=authEpoch;const saved=remembered();$('follow-current').checked=saved.follow!==false;
+  view=views.includes(params.get('view'))?params.get('view'):location.hash==='#classes'?'classes':location.hash==='#classroom'?'classroom':'overview';
+  if(view==='setup'&&!me.user.admin)view='overview';$('login').hidden=true;$('identity').textContent=me.user.alias;$('logout').hidden=false;document.querySelector('[data-tab="setup"]').hidden=!me.user.admin;
+  let preferred=params.get('class');
+  if(params.get('activity')){const result=await api('/activities/'+encodeURIComponent(params.get('activity')));if(epoch!==authEpoch)throw retired();preferred=result.activity.class_id;if(!views.includes(params.get('view')))view='discussions';}
+  await catalog(preferred);if(params.get('activity'))await work.selectActivity(params.get('activity'));if(epoch!==authEpoch)throw retired();$('workspace').hidden=false;notice('Connected to RoomGoblin.');
+  api('/platform/tools').then(result=>{if(epoch===authEpoch)showTools(result.tools);}).catch(()=>{});
+ }
+ for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>ui.run(button,()=>showView(button.dataset.tab));
+ $('class-select').onchange=async()=>{const next=$('class-select').value;if(!ui.canLeave()){$('class-select').value=current?.classId||'';return;}$('follow-current').checked=false;try{await chooseClass(next);}catch(error){if(!error.retired)notice(error.message);}};
+ $('follow-current').onchange=()=>{remember();if($('follow-current').checked&&!ui.dirty.size&&me?.activeClassId&&classes.some(c=>c.id===me.activeClassId))chooseClass(me.activeClassId).catch(error=>{if(!error.retired)notice(error.message);});};
+ $('workspace').addEventListener('input',event=>{if(event.target.closest('form')){$('follow-current').checked=false;remember();}});
+ $('refresh').onclick=()=>ui.run($('refresh'),async()=>{if(!ui.canLeave())return;ui.clear();await catalog();await refresh({force:true});await showView(view);notice('Refreshed from RoomGoblin.');});
+ $('export').onclick=()=>ui.run($('export'),async()=>{
+  const selected=current;ui.assert(selected);let response;try{response=await fetch(`${API}/teacher/classes/${selected.classId}/export`,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(60000)});}catch{throw Error('The export could not be downloaded. Your drafts are unchanged.');}
+  ui.assert(selected);if(!response.ok)throw Error('Export was not available. Sign in again if your session ended.');const blob=await response.blob();ui.assert(selected);const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='RoomGoblin-submissions.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);
+ });
+ $('login-form').onsubmit=event=>{event.preventDefault();ui.run(event.submitter,async()=>{try{const result=await fetch('/api/v1/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('username').value,password:$('password').value})});if(!result.ok)throw Error('Sign-in failed. Check your username and password.');await start();}finally{$('password').value='';}});};
+ $('logout').onclick=()=>ui.run($('logout'),async()=>{if(!ui.canLeave())return;const result=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});if(!result.ok)throw Error('Sign-out was not confirmed. Try again.');clearPrivate();$('login').hidden=false;notice('Signed out.');});
+ let polling=false;setInterval(async()=>{
+  if(polling||document.hidden||!current)return;polling=true;
+  try{
+   if(Date.now()-lastCatalog>30000)await catalog();
+   if($('follow-current').checked&&['overview','classroom'].includes(view)&&!ui.dirty.size&&!document.activeElement?.matches('input,textarea,select')&&me.activeClassId&&classes.some(c=>c.id===me.activeClassId)&&current.classId!==me.activeClassId)await chooseClass(me.activeClassId);
+   if(view==='classroom')await classroom.refresh();else if(!['classes','setup'].includes(view))await refresh();
+   if(view==='discussions')await work.refresh();
+  }catch(error){if(!error.retired)notice(error.message);}finally{polling=false;}
+ },8000);
+ try{await start();}catch(error){if(!error.retired){$('login').hidden=false;notice(error.message);}}
+})().catch(()=>{document.getElementById('status').textContent='The teacher workspace could not start. Refresh to try again.';});

@@ -46,7 +46,7 @@ class LearningStore{
   activity(user,id,teacher=false){const row=this.db.prepare("SELECT * FROM learning_activities WHERE id=?").get(id);if(!row)fail(404,"Assigned activity not found.");return {...row,member:this.membership(user,row.class_id,teacher)};}
   writable(a,at=Date.now()){if(a.member.role==='student'&&this.portal?.command(a.id).paused)fail(409,'Your teacher has paused this activity. Your saved work is retained.');if(a.member.role==="student"&&(!a.open||a.close_at&&at>=Date.parse(a.close_at)&&!a.member.exempt))fail(409,"This activity is closed. Ask your teacher about an approved exception.");}
   classes(user){return this.db.prepare("SELECT c.*,m.role,m.alias FROM learning_classes c JOIN learning_members m ON m.class_id=c.id WHERE m.user_id=? ORDER BY c.created_at DESC").all(user.id);}
-  createClass(user,title){const id=crypto.randomUUID();this.store.tx(()=>{this.db.prepare("INSERT INTO learning_classes VALUES(?,?,?)").run(id,text(title,100),now());this.db.prepare("INSERT INTO learning_members(class_id,user_id,role,alias) VALUES(?,?,?,?)").run(id,user.id,"teacher",text(user.displayName||"Teacher",40));});return id;}
+  createClass(user,title){const id=crypto.randomUUID();this.store.tx(()=>{this.db.prepare("INSERT INTO learning_classes VALUES(?,?,?)").run(id,text(title,100),now());this.db.prepare("INSERT INTO learning_members(class_id,user_id,role,alias) VALUES(?,?,?,?)").run(id,user.id,"teacher",text(user.displayName||"Teacher",40));this.event(user,null,"class.create",id,{classId:id});});return id;}
   enroll(user,classId,input,allowTeacher=false){
     this.membership(user,classId,true);const target=this.store.listUsers().find(x=>x.id===input.userId&&x.enabled);
     if(!target)fail(400,"Enabled account not found.");
@@ -179,6 +179,16 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       const supplied=req.get("origin");if(supplied){try{if(new URL(supplied).host.toLowerCase()!==String(req.get("host")).toLowerCase())throw Error();}catch{return res.status(403).json({ok:false,error:"Cross-site learning request blocked."});}}
     }next();
   });
+  app.get(api+'/teacher/classes',requireTeacher,wrap((req,res)=>res.json({ok:true,classes:portal.catalog(req.learner)})));
+  app.post(api+'/teacher/classes/:id/assignments',requireTeacher,wrap((req,res)=>res.json({ok:true,id:portal.createAssignment(req.learner,req.params.id,req.body)})));
+  app.put(api+'/teacher/connection-settings',requireAdministrator,wrap((req,res)=>{
+    if(!req.body||!req.body.settings||typeof req.body.settings!=='object'||Array.isArray(req.body.settings))fail(400,'Load and enter the connection settings first.');
+    const settings=require('./learning-platform').normalizeSettings(req.body.settings);
+    const values=req.body.origins;if(!Array.isArray(values)||values.length>10)fail(400,'Use up to ten exact LMS origins.');
+    const origins=values.map(origin);
+    store.tx(()=>{platform.saveSettings(req.learner,settings);store.setPreference('learning.bridgeOrigins',origins);});
+    res.json({ok:true,settings,origins});
+  }));
   app.get(api+'/teacher/classes/:id',requireTeacher,wrap((req,res)=>res.json({ok:true,...portal.overview(req.learner,req.params.id)})));
   app.get(api+'/teacher/classes/:id/export',requireTeacher,wrap((req,res)=>{const data=portal.export(req.learner,req.params.id);res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-submissions.csv"');res.type('text/csv').send(data);}));
   app.put(api+'/teacher/activities/:id/command',requireTeacher,wrap((req,res)=>res.json({ok:true,command:portal.saveCommand(req.learner,req.params.id,req.body)})));
@@ -230,11 +240,12 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const responseLabel=req.body.responseLabel===undefined?store.getPreference("learning.responseLabel","Teacher"):text(req.body.responseLabel,40);
     const provider=req.body.provider||"openai";if(!["openai","local","ollama"].includes(provider))fail(400,"Choose ollama, local, or openai.");let baseURL=null;if(provider!=="openai"){try{baseURL=localBaseURL(req.body.baseURL,provider);}catch(e){fail(400,e.message);}}
     const model=text(req.body.model,150);if(!/^[a-zA-Z0-9._:/-]+$/.test(model))fail(400,"Enter a model ID.");
-    const origins=req.body.bridgeOrigins;if(!Array.isArray(origins)||origins.length>10)fail(400,"Enter up to ten exact LMS origins.");const checked=origins.map(origin);
+    const origins=req.body.bridgeOrigins===undefined?store.getPreference('learning.bridgeOrigins',[]):req.body.bridgeOrigins;if(!Array.isArray(origins)||origins.length>10)fail(400,"Enter up to ten exact LMS origins.");const checked=origins.map(origin);
     const dailyLimit=Number(req.body.dailyLimit);if(!Number.isInteger(dailyLimit)||dailyLimit<1||dailyLimit>1000)fail(400,"Daily grading limit must be 1–1000.");
+    store.tx(()=>{
     if(req.body.apiKey){const key=text(req.body.apiKey,500);if(/[\r\n]/.test(key))fail(400,"Invalid key.");store.putSecret(provider!=="openai"?"learning.local.key":"learning.openai.key",key,{purpose:"learning-grading"});}
     if(req.body.enabled===true&&provider==="openai"&&!store.hasSecret("learning.openai.key"))fail(400,"Configure the server-side grading key first.");
-    store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);store.setPreference("learning.responseLabel",responseLabel);res.json({ok:true});
+    store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);store.setPreference("learning.responseLabel",responseLabel);learning.event(req.learner,null,"grading.settings",null,{provider,enabled:req.body.enabled===true});});res.json({ok:true});
   }));
   app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:CASES[a.template_id]?{...caseFor(a.template_id),scoreLevels:rubricFor(a.template_id)}:null},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id),gradingQueued:!!learning.db.prepare('SELECT 1 FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,req.learner.id),lms:lti.status(req.learner,a.id)});}));
   // LMS names are optional display data, never an authentication or enrollment claim.
@@ -258,7 +269,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   }));
   app.put(api+"/activities/:id/posts/:postId",wrap(async(req,res)=>{learning.edit(req.learner,req.params.id,req.params.postId,req.body);if(!learning.isScoredPost(req.learner,req.params.id,req.params.postId))return res.json({ok:true});const reply=learning.latestScoredReply(req.learner,req.params.id);await acceptWriting({...req,body:{replyId:reply?.id||null}}, {json:value=>res.json(value),status:status=>({json:value=>res.json({ok:true,gradingPending:status===503,retryable:status===503,gradingMessage:value.error})})});}));
   app.put(api+"/activities/:id/posts/:postId/moderation",requireTeacher,wrap((req,res)=>{learning.moderate(req.learner,req.params.id,req.params.postId,req.body.hidden===true);res.json({ok:true});}));
-  app.put(api+"/activities/:id/posts/:postId/teacher-edit",requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);const p=learning.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind IN ('ai','teacher')").get(req.params.postId,req.params.id);if(!p)fail(404,"Teacher response not found.");learning.db.prepare("UPDATE learning_posts SET body=?,revision=revision+1,updated_at=? WHERE id=?").run(text(req.body.body,3000),now(),p.id);learning.event(req.learner,req.params.id,"coach.teacher-edit",p.id);res.json({ok:true});}));
+  app.put(api+"/activities/:id/posts/:postId/teacher-edit",requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);const p=learning.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind IN ('ai','teacher')").get(req.params.postId,req.params.id);if(!p)fail(404,"Teacher response not found.");if(req.body.revision!==undefined&&req.body.revision!==p.revision)fail(409,"This response changed. Refresh before editing.");learning.db.prepare("UPDATE learning_posts SET body=?,revision=revision+1,updated_at=? WHERE id=?").run(text(req.body.body,3000),now(),p.id);learning.event(req.learner,req.params.id,"coach.teacher-edit",p.id);res.json({ok:true});}));
   const submitWriting=wrap(async(req,res)=>{
     const user=req.learner,a=learning.activity(user,req.params.id);learning.writable(a,req[queued]?Date.parse(req[queued].acceptedAt):Date.now());if(a.member.role!=="student")fail(403,"Only a student can submit for grading.");
     const replyId=req.body.replyId===undefined?learning.latestScoredReply(user,a.id)?.id:req.body.replyId;

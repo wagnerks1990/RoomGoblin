@@ -2,17 +2,14 @@
 
 ## Classroom progress
 
-The Learning teacher desk links to `/learn/platform/`: SCORM connections,
-automatic or manual session timing, first-name boards, approved effects and
-aggregate Ollama suggestions. Administrator settings manage class mappings, exact
-LMS origins, private classroom networks and the isolated student publication.
-Automatic mode is configured once: Planning supplies classes and timetable;
-signed Schoology launches enroll students and fresh local events admit them.
-Manual mode retains explicit attendance. Neither mode enables unapproved recipes.
-The page can follow the current class; selecting another class or editing content
-protects the teacher draft from automatic switching. This workspace is unavailable
-through the public student gateway. See [Learning platform](LEARNING-PLATFORM.md).
-
+The [Teacher portal](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/TEACHER-PORTAL.md)
+at `/learn/teacher/` provides one shared class selection for assignments, review,
+discussions, classroom sessions, accounts, administrator setup and audit. Legacy
+`/learn/platform/` and teacher `/learn/?manage=1` entries redirect here. Assignment
+setup stays beside the selected assignment. Drafts survive polling and view
+changes; session loss clears private content before another account signs in.
+Existing signed learner identity, presence, grade privacy and hardware priority
+remain authoritative. See [Learning platform](Learning-Platform).
 
 ## Displays & AV
 
