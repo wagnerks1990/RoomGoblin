@@ -394,4 +394,3 @@ starting replacements. Explicit Stops, supersession and unknown legacy
 cancellations remain terminal, including across Planning block aliases. Startup
 never releases takeover markers. Suppression, dry-run, class boundaries,
 announcement priority and Full Recovery writer ownership remain unchanged.
-
