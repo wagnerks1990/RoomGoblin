@@ -196,3 +196,37 @@ class ExistingAutomationContentTests(unittest.TestCase):
         picker.get_by_role('button', name='Close', exact=True).click()
         self.assertFalse(requests)
         self.assertEqual(errors, [])
+
+    def test_class_linked_mixed_routine_keeps_class_display_targets(self):
+        event = routine()
+        event['useClassTargets'] = True
+        event['actionSequence'][1]['targets'] = []
+        page, errors, requests, event, picker = self.workspace(event=event)
+        picker.get_by_role('button', name='Open automation draft', exact=True).click()
+        self.save_draft(page, event['name'])
+        saved = next(b for t, b in requests if t.endswith('/saved-routine'))
+        self.assertTrue(saved['useClassTargets'])
+        self.assertEqual(saved['classIds'], event['classIds'])
+        self.assertEqual(saved['actionSequence'][-1]['targets'], [])
+        self.assertEqual(errors, [])
+
+    def test_replacement_scene_resets_finite_repeat(self):
+        event = routine()
+        event['actionSequence'][1].update(executionMode='repeat', repeatCount=4)
+        page, errors, requests, event, picker = self.workspace(event=event)
+        picker.get_by_label('Apply as', exact=True).select_option('replace')
+        picker.get_by_label('Display action to replace', exact=True).select_option('content')
+        picker.get_by_role('button', name='Open automation draft', exact=True).click()
+        self.save_draft(page, event['name'])
+        saved = next(b for t, b in requests if t.endswith('/saved-routine'))
+        self.assertEqual(saved['actionSequence'][1]['executionMode'], 'once')
+        self.assertEqual(saved['actionSequence'][1]['repeatCount'], 1)
+        self.assertEqual(errors, [])
+
+    def test_revoked_permission_cannot_open_a_draft_from_existing_picker(self):
+        page, errors, requests, event, picker = self.workspace()
+        page.evaluate("window.AUTH_STATUS = {authEnabled:true,user:{id:'restricted',role:'viewer',capabilities:[]}}")
+        picker.get_by_role('button', name='Open automation draft', exact=True).click()
+        picker.get_by_text('Schedule and automation permissions are required', exact=True).wait_for()
+        self.assertFalse(requests)
+        self.assertEqual(errors, [])
