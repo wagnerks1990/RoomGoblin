@@ -44,7 +44,7 @@ class LearningStore{
     if(!row||row.role==="teacher"&&(user.profileId==="learning-student"||user.role==="viewer")||teacher&&row.role!=="teacher")fail(404,"Assigned class not found.");return row;
   }
   activity(user,id,teacher=false){const row=this.db.prepare("SELECT * FROM learning_activities WHERE id=?").get(id);if(!row)fail(404,"Assigned activity not found.");return {...row,member:this.membership(user,row.class_id,teacher)};}
-  writable(a,at=Date.now()){if(a.member.role==="student"&&(!a.open||a.close_at&&at>=Date.parse(a.close_at)&&!a.member.exempt))fail(409,"This activity is closed. Ask your teacher about an approved exception.");}
+  writable(a,at=Date.now()){if(a.member.role==='student'&&this.portal?.command(a.id).paused)fail(409,'Your teacher has paused this activity. Your saved work is retained.');if(a.member.role==="student"&&(!a.open||a.close_at&&at>=Date.parse(a.close_at)&&!a.member.exempt))fail(409,"This activity is closed. Ask your teacher about an approved exception.");}
   classes(user){return this.db.prepare("SELECT c.*,m.role,m.alias FROM learning_classes c JOIN learning_members m ON m.class_id=c.id WHERE m.user_id=? ORDER BY c.created_at DESC").all(user.id);}
   createClass(user,title){const id=crypto.randomUUID();this.store.tx(()=>{this.db.prepare("INSERT INTO learning_classes VALUES(?,?,?)").run(id,text(title,100),now());this.db.prepare("INSERT INTO learning_members(class_id,user_id,role,alias) VALUES(?,?,?,?)").run(id,user.id,"teacher",text(user.displayName||"Teacher",40));});return id;}
   enroll(user,classId,input,allowTeacher=false){
@@ -130,6 +130,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const presence=new LearningPresence(platform);platform.presence=presence;
   const connection=new LearningConnection(platform);platform.connection=connection;
   const insights=require('./learning-insights').createInsights(platform);
+  const portal=new(require('./learning-teacher-portal').LearningTeacherPortal)(learning);learning.portal=portal;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
@@ -178,6 +179,10 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       const supplied=req.get("origin");if(supplied){try{if(new URL(supplied).host.toLowerCase()!==String(req.get("host")).toLowerCase())throw Error();}catch{return res.status(403).json({ok:false,error:"Cross-site learning request blocked."});}}
     }next();
   });
+  app.get(api+'/teacher/classes/:id',requireTeacher,wrap((req,res)=>res.json({ok:true,...portal.overview(req.learner,req.params.id)})));
+  app.get(api+'/teacher/classes/:id/export',requireTeacher,wrap((req,res)=>{const data=portal.export(req.learner,req.params.id);res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-submissions.csv"');res.type('text/csv').send(data);}));
+  app.put(api+'/teacher/activities/:id/command',requireTeacher,wrap((req,res)=>res.json({ok:true,command:portal.saveCommand(req.learner,req.params.id,req.body)})));
+  app.put(api+'/teacher/submissions/:id/review',requireTeacher,wrap((req,res)=>res.json({ok:true,review:portal.review(req.learner,Number(req.params.id),req.body)})));
   app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{learnerKey:req.learner.id,alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),activeClassId:teacher(req.learner)?schedule.visibleActiveClass(req.learner):null,case:CASE,cases:Object.values(CASES),aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
   app.get(api+'/platform/settings',requireAdministrator,wrap((_req,res)=>res.json({ok:true,settings:platform.settings()})));
   app.put(api+'/platform/bridge-origins',requireAdministrator,wrap((req,res)=>{const values=req.body.origins;if(!Array.isArray(values)||values.length>10)fail(400,'Use up to ten exact LMS origins.');store.setPreference('learning.bridgeOrigins',values.map(origin));res.json({ok:true});}));

@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Integrate the prototype Teacher Portal workflow into RoomGoblin: class-scoped
+  overview, assignments, written SCORM submissions, teacher reviews, discussions,
+  pause/hint/stage controls, audit and private CSV exports. Replace the teacher
+  landing page with the native portal while keeping signed student authentication.
+
 - Add Weather and Sports scenes to an existing automation through a reviewed
   draft while preserving schedules, targets, timers and device actions.
 

@@ -2,6 +2,11 @@
 
 ## Classroom progress
 
+The primary [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` provides six
+tabs for overview, assignments, submissions/grading, discussions, activity controls
+and audit. Teacher visits to `/learn/` open this portal. Connection and classroom
+setup remain available from the portal header.
+
 The Learning teacher desk links to `/learn/platform/`: SCORM connections,
 automatic or manual session timing, first-name boards, approved effects and
 aggregate Ollama suggestions. Administrator settings manage class mappings, exact

@@ -44,9 +44,15 @@ function normalizeSettings(input={}){
 }
 function normalizeEvent(input,points){
  if(!plain(input)||!uuid(input.id)||!Number.isInteger(input.sequence)||input.sequence<1||input.sequence>2147483647)fail(400,'A unique event ID and increasing sequence are required.');
- if(!['progress','score','completed','checkpoint','arcade','assessment'].includes(input.kind))fail(400,'Unsupported assignment event.');
+ if(!['progress','score','completed','checkpoint','arcade','assessment','submission'].includes(input.kind))fail(400,'Unsupported assignment event.');
  const occurred=Date.parse(input.occurredAt);if(typeof input.occurredAt!=='string'||input.occurredAt.length>40||!Number.isFinite(occurred)||!/(Z|[+-]\d\d:\d\d)$/.test(input.occurredAt))fail(400,'An event timestamp with timezone is required.');
  const data={};
+ if(input.kind==='submission'){
+  if(!finite(input.raw,0,100)||!plain(input.answers)||Object.keys(input.answers).length<1||Object.keys(input.answers).length>12)fail(400,'Use a provisional percentage and up to twelve written answers.');
+  const answers=Object.entries(input.answers);
+  if(answers.some(([key,value])=>!key.trim()||key.length>80||/[\u0000-\u001f]/.test(key)||typeof value!=='string'||value.length>2000)||Buffer.byteLength(JSON.stringify(input.answers))>16000)fail(400,'Written answers exceed the submission limit.');
+  Object.assign(data,{answers:input.answers,raw:input.raw,earned:Math.round(input.raw*points)/100,possible:points});
+ }
  if(input.kind==='arcade')Object.assign(data,normalizeArcade(input));
  if(input.kind==='progress'){if(!Number.isInteger(input.current)||!Number.isInteger(input.total)||input.total<1||input.total>10000||input.current<0||input.current>input.total)fail(400,'Invalid assignment progress.');data.current=input.current;data.total=input.total;}
  if(['score','completed'].includes(input.kind)){if(!finite(input.raw,0,100))fail(400,'SCORM scores must be percentages from 0 to 100.');data.raw=input.raw;data.earned=Math.round(input.raw*points)/100;data.possible=points;}
@@ -101,7 +107,7 @@ class LearningPlatform{
   // subsequently reports a lower replay. This stays private to the learner.
   const best=this.db.prepare("SELECT MAX(CAST(json_extract(data_json,'$.raw') AS REAL)) best FROM learning_signals WHERE activity_id=? AND user_id=? AND kind='completed'").get(id,user.id).best;
   if(best!==null)progress.bestRaw=best;
-  return {activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress,grade:this.grading.state(user,id),open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
+  return {command:this.learning.portal?.command(id)||{version:0,paused:0,hint:'',stage:1},activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress,grade:this.grading.state(user,id),open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
  }
  currentSession(classId){const session=this.db.prepare('SELECT * FROM learning_live_sessions WHERE class_id=? AND ended_at IS NULL AND expires_at>? ORDER BY started_at DESC LIMIT 1').get(classId,this.clock())||null;return session&&this.schedule&&!this.schedule.valid(session)?null:session;}
  start(user,classId,minutes){

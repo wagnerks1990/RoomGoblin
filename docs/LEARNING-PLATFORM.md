@@ -1,5 +1,10 @@
 # SCORM activity platform
 
+The primary [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` brings the
+prototype overview, assignments, submissions/review, discussions, activity controls
+and audit workflow into native RoomGoblin authentication and storage. Use
+`/learn/platform/` for signed connections and classroom setup.
+
 See [automatic grade recovery](LEARNING-GRADE-RECOVERY.md) for signed written
 SCORM launchers, private date-based awards, exceptions and LMS review limits.
 

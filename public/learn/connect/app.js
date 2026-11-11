@@ -66,3 +66,13 @@ async function start(){
 let reconnectDelay=2000;
 function reconnect(){start().then(()=>{reconnectDelay=2000;}).catch(error=>{say((error.message||'The connection is unavailable.')+' Retrying automatically.');setTimeout(reconnect,reconnectDelay);reconnectDelay=Math.min(30000,reconnectDelay*2);});}
 reconnect();
+
+// Poll only the signed activity's own state; no teacher endpoints or credentials.
+let controlPending=false,controlVersion=-1;
+setInterval(async()=>{
+ if(!flow?.connectionId||!state||controlPending||document.hidden)return;
+ controlPending=true;
+ try{const next=await api('/platform/activities/'+flow.activityId+'/state');if(next.command&&next.command.version!==controlVersion){controlVersion=next.command.version;send('roomgoblin.connector.control',{command:next.command});}}
+ catch(error){if(error.status===401){state=null;reconnect();}}
+ finally{controlPending=false;}
+},8000);

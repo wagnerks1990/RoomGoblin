@@ -7,8 +7,9 @@
  let origin;try{origin=new URL(cfg.origin);if(origin.protocol!=='https:'||origin.origin!==cfg.origin||!uuid(cfg.activityId))return;}catch{return;}
  const key='roomgoblin.scorm.'+cfg.activityId;
  let popup=null,nonce='',learner=null,sequence=0,queue=[],unbound=[],sending=null,button=null,status=null,lastScore=null,lastProgress='',lastResume='',closed=false;
- let campaign=null,grade=null,connectionFrame=null,lastContact=0,reconnectAfter=45000;const arcadeWaiters=new Map(),gradeWaiters=new Map();
+ let campaign=null,grade=null,connectionFrame=null,lastContact=0,reconnectAfter=45000,controlVersion=-1;const arcadeWaiters=new Map(),gradeWaiters=new Map();
  const announce=(type,detail)=>{if(typeof root.CustomEvent==='function')root.dispatchEvent(new root.CustomEvent(type,{detail}));};
+ function control(command){if(!command||!Number.isInteger(command.version)||command.version===controlVersion||![0,1,false,true].includes(command.paused)||!Number.isInteger(command.stage)||command.stage<1||command.stage>20||typeof command.hint!=='string'||command.hint.length>300)return;controlVersion=command.version;announce('roomgoblin:control',command);}
  const say=text=>{if(status)status.textContent=text;announce('roomgoblin:status',{message:text});};
  const persist=()=>{if(learner)try{root.sessionStorage.setItem(key,JSON.stringify({learner,sequence,queue:queue.slice(-100)}));}catch{say('Keep this assignment open to finish sending progress.');}};
  function emit(kind,data){
@@ -36,8 +37,9 @@
  root.addEventListener('message',e=>{
   const m=e.data;if(!popup||e.source!==popup||e.origin!==origin.origin||!m||m.nonce!==nonce||m.activityId!==cfg.activityId)return;
   lastContact=Date.now();
+  if(m.type==='roomgoblin.connector.control'){control(m.command);return;}
   if(m.type==='roomgoblin.connector.ready'){
-   reconnectAfter=45000;
+   reconnectAfter=45000;controlVersion=-1;control(m.state?.command);
    if(!uuid(m.state?.learnerKey)||!Number.isInteger(m.state.sequence))return;
    learner=m.state.learnerKey;sequence=m.state.sequence;let stored=null;try{stored=JSON.parse(root.sessionStorage.getItem(key));}catch{}
    // Never carry another learner's queued events across a signed identity change.
@@ -94,7 +96,11 @@
   button=document.createElement('button');button.type='button';button.textContent='Connect to RoomGoblin';button.style.cssText='border:0;border-radius:6px;padding:8px;background:#a3f5d0;color:#10232f;cursor:pointer;font-weight:bold';button.onclick=connect;
   status=document.createElement('p');status.style.margin='6px 0 0';status.setAttribute('role','status');status.textContent='Schoology saves your grade. Connect for classroom progress.';panel.append(button,status);document.body.prepend(panel);if(!installed)install();
  }
- root.RoomGoblinSCORM={connect,connected:()=>!!learner&&!!popup&&!popup.closed,connecting:()=>!learner&&!!popup&&!popup.closed,campaign:()=>campaign,grade:()=>grade,assessment(data){
+ root.RoomGoblinSCORM={submit(answers,raw){
+  if(!Number.isFinite(raw)||raw<0||raw>100||!answers||typeof answers!=='object'||Array.isArray(answers))throw Error('Use written answers and a provisional percentage.');
+  const entries=Object.entries(answers);if(entries.length<1||entries.length>12||entries.some(([key,value])=>!key.trim()||key.length>80||/[\u0000-\u001f]/.test(key)||typeof value!=='string'||value.length>2000)||new TextEncoder().encode(JSON.stringify(answers)).length>16000)throw Error('Written answers exceed the submission limit.');
+  return emit('submission',{answers,raw});
+ },connect,connected:()=>!!learner&&!!popup&&!popup.closed,connecting:()=>!learner&&!!popup&&!popup.closed,campaign:()=>campaign,grade:()=>grade,assessment(data){
   if(!Number.isFinite(data.raw)||data.raw<0||data.raw>100||!Number.isInteger(data.current)||!Number.isInteger(data.total)||data.total<1||data.current<0||data.current>data.total)return Promise.reject(Error('Invalid assessment result.'));
   const existing=queue.concat(unbound).find(item=>item.kind==='assessment'&&item.raw===data.raw&&item.current===data.current&&item.total===data.total);
   if(existing)return Promise.reject(Error('Grade save is already queued and will retry automatically.'));

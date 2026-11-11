@@ -1,5 +1,11 @@
 # SCORM classroom progress
 
+The native [Teacher portal](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/TEACHER-PORTAL.md)
+replaces the teacher landing experience with Overview, Assignments, Submissions &
+grading, Discussions, Classroom controls and Audit. It uses RoomGoblin teacher
+sign-in and class membership, not the isolated prototype shared demo token.
+Written submission reviews remain separate from official Schoology grade updates.
+
 Written discussions can use a graded SCORM launcher with the same signed LMS
 identity and approved AI receipts. Automatic commits retry; review-only launches
 remain read-only. Optional server date policies preserve prior higher assessment
