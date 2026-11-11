@@ -2,8 +2,8 @@
 
 The primary [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` brings the
 prototype overview, assignments, submissions/review, discussions, activity controls
-and audit workflow into native RoomGoblin authentication and storage. Use
-`/learn/platform/` for signed connections and classroom setup.
+and audit workflow into native RoomGoblin authentication and storage. Assignment connections and classroom setup now live in the same portal.
+`/learn/platform/` remains a context-preserving compatibility redirect.
 
 See [automatic grade recovery](LEARNING-GRADE-RECOVERY.md) for signed written
 SCORM launchers, private date-based awards, exceptions and LMS review limits.
@@ -80,8 +80,9 @@ remain stored when rolling back application code; no database reset is needed.
 
 ## Setup and daily use
 
-1. Open the Learning teacher desk on the protected administrator site and select
-   **Classroom progress and celebrations** (`/learn/platform/`). Choose a class.
+1. Open the **Teacher portal** (`/learn/teacher/`) on the protected administrator
+   site. Choose a class; use Assignments for its connection, Classroom for sessions
+   and boards, or administrator Setup for the student gateway and timetable.
 2. In administrator settings enter a separate exact student HTTPS origin, the
    private HTTP origin of this RoomGoblin appliance, and the confirmed classroom
    subnet(s). Do not substitute public-IP Access bypass rules for private-subnet

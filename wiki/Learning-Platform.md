@@ -85,3 +85,12 @@ return. Existing companion packages remain compatible. Review launches stay
 read-only and a native commit does not itself prove gradebook publication.
 See [the canonical recovery guide](../docs/LEARNING-GRADE-RECOVERY.md) for setup,
 partitioned-cookie boundaries, dated assessment credit, tests and rollback.
+
+
+## Consolidated teacher workspace
+
+Use `/learn/teacher/` for assignment connections, grading, discussions, classroom
+sessions, class accounts, setup and audit. The former `/learn/platform/` and
+teacher `/learn/?manage=1` URLs redirect into this shared workspace. See the
+[teacher portal contract](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/TEACHER-PORTAL.md)
+for draft protection, privacy boundaries and regression validation.

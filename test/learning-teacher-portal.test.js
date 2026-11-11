@@ -64,3 +64,49 @@ test('CSV export quotes private responses, neutralizes spreadsheet formulas and 
  const response=await f.request(f.admin,'/api/v1/learning/teacher/classes/'+f.classId+'/export');assert.equal(response.status,200);
  const csv=response.body.toString();assert.match(csv,/'=HYPERLINK/);assert.match(csv,/' \+SUM/);assert.match(csv,/answers_json/);assert.match(csv,/quoted/);assert.equal((await f.request(f.b,'/api/v1/learning/teacher/classes/'+f.classId+'/export')).status,403);
 });
+
+
+test('teacher catalog groups only owned classes with meaningful activity and class audit',async t=>{
+ const f=await setup(t),other=f.store.putUser({username:'catalog-other',role:'operator',profileId:'teacher'},{password:'synthetic-test-password'});
+ const privateId=f.learning.createClass(other,'PRIVATE CLASS');
+ f.learning.post(f.a,f.activityId,{kind:'initial',body:'Verify the network boundary before making changes.'});
+ const result=await f.request(f.admin,'/api/v1/learning/teacher/classes');assert.equal(result.status,200);
+ assert(!result.body.classes.some(c=>c.id===privateId));const item=result.body.classes.find(c=>c.id===f.classId);assert.equal(item.studentCount,2);assert.equal(item.assignmentCount,2);assert(item.lastActivityAt>0);
+ const report=f.learning.portal.overview(f.admin,f.classId);assert.equal(report.counts.events,1);assert.equal(report.recentActivity[0].kind,'discussion.initial');assert(report.events.some(e=>e.kind==='class.create'));
+ assert.equal((await f.request(f.a,'/api/v1/learning/teacher/classes')).status,403);
+});
+
+test('assignment creation configures atomically, preserves written points and honors freeze',async t=>{
+ const f=await setup(t),url='/api/v1/learning/teacher/classes/'+f.classId+'/assignments';
+ assert.equal((await f.request(f.admin,url,'POST',[])).status,400);
+ const count=()=>f.store.db.prepare('SELECT COUNT(*) n FROM learning_activities').get().n,before=count();
+ assert.equal((await f.request(f.admin,url,'POST',{title:'Invalid',points:0})).status,400);assert.equal(count(),before);
+ const configure=f.learning.platform.configure;f.learning.platform.configure=()=>{throw Object.assign(Error('Synthetic configure failure'),{status:400});};
+ assert.equal((await f.request(f.admin,url,'POST',{title:'Rolled back',points:50})).status,400);assert.equal(count(),before);f.learning.platform.configure=configure;
+ const result=await f.request(f.admin,url,'POST',{title:'Native assignment',points:50});assert.equal(result.status,200);assert.equal(f.learning.platform.config(result.body.id).points,50);
+ const written=await f.request(f.admin,url,'POST',{title:'Writing',templateId:'it1-u03-c01-os-selection-v1',points:999});assert.equal(written.status,200);assert.equal(f.learning.platform.config(written.body.id).points,20);
+ assert.equal((await f.request(f.a,url,'POST',{points:50})).status,403);f.freeze(true);assert.equal((await f.request(f.admin,url,'POST',{points:50})).status,423);
+});
+
+test('connection settings save atomically and grading edits retain concurrent launcher origins',async t=>{
+ const f=await setup(t),url='/api/v1/learning/teacher/connection-settings',before=f.learning.platform.settings(),body={settings:{...before,publicOrigin:'https://learn.example.test'},origins:['https://lms.example.test']};
+ assert.equal((await f.request(f.a,url,'PUT',body)).status,403);
+ assert.equal((await f.request(f.admin,url,'PUT',{...body,origins:['https://lms.example.test/path']})).status,400);assert.deepEqual(f.learning.platform.settings(),before);
+ const set=f.store.setPreference;f.store.setPreference=function(key,...args){if(key==='learning.bridgeOrigins')throw Object.assign(Error('Synthetic storage failure'),{status:400});return set.call(this,key,...args);};
+ assert.equal((await f.request(f.admin,url,'PUT',body)).status,400);f.store.setPreference=set;assert.deepEqual(f.learning.platform.settings(),before);
+ assert.equal((await f.request(f.admin,url,'PUT',body)).status,200);
+ assert.equal((await f.request(f.admin,'/api/v1/learning/settings','PUT',{provider:'openai',model:'synthetic-model',dailyLimit:100,enabled:false})).status,200);assert.deepEqual(f.store.getPreference('learning.bridgeOrigins'),body.origins);
+ f.freeze(true);assert.equal((await f.request(f.admin,url,'PUT',body)).status,423);
+ for(const path of [url,'/api/v1/learning/teacher/classes','/learn/teacher/setup.mjs'])assert.equal(allowedPath('GET',path),false);
+});
+
+test('portal marks changed writing superseded and teacher response edits reject stale revisions',async t=>{
+ const f=await setup(t);const post=f.learning.post(f.a,f.activityId,{kind:'initial',body:'Use the subnet mask to establish the boundary.'});
+ await f.request(f.a,`/api/v1/learning/activities/${f.activityId}/submit`,'POST',{});
+ assert.equal(f.learning.portal.overview(f.admin,f.classId).reviews[0].status,'approved');
+ f.store.db.prepare('UPDATE learning_posts SET body=?,revision=revision+1 WHERE id=?').run('Revised boundary evidence with a specific test.',post);
+ assert.equal(f.learning.portal.overview(f.admin,f.classId).reviews[0].status,'superseded');
+ const response=f.learning.post(f.admin,f.activityId,{body:'Explain your test.'}),url=`/api/v1/learning/activities/${f.activityId}/posts/${response}/teacher-edit`;
+ const revision=f.store.db.prepare('SELECT revision FROM learning_posts WHERE id=?').get(response).revision;
+ assert.equal((await f.request(f.admin,url,'PUT',{body:'Include the subnet mask.',revision})).status,200);assert.equal((await f.request(f.admin,url,'PUT',{body:'Stale overwrite',revision})).status,409);
+});

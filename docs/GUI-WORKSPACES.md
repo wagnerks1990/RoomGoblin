@@ -2,22 +2,19 @@
 
 ## Classroom progress
 
-The primary [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` provides six
-tabs for overview, assignments, submissions/grading, discussions, activity controls
-and audit. Teacher visits to `/learn/` open this portal. Connection and classroom
-setup remain available from the portal header.
+The [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` owns teacher
+navigation and one shared class selection: Overview, Assignments, Submissions &
+grading, Discussions, Classroom, Classes & accounts, administrator Setup and Audit.
+Assignment configuration stays beside its assignment. Classroom includes sessions,
+attendance, class-filtered campaigns, approved effects and aggregate suggestions.
+The legacy `/learn/platform/` and teacher `/learn/?manage=1` entries redirect here.
+Student discussions retain their signed flow and do not include teacher editors.
 
-The Learning teacher desk links to `/learn/platform/`: SCORM connections,
-automatic or manual session timing, first-name boards, approved effects and
-aggregate Ollama suggestions. Administrator settings manage class mappings, exact
-LMS origins, private classroom networks and the isolated student publication.
-Automatic mode is configured once: Planning supplies classes and timetable;
-signed Schoology launches enroll students and fresh local events admit them.
-Manual mode retains explicit attendance. Neither mode enables unapproved recipes.
-The page can follow the current class; selecting another class or editing content
-protects the teacher draft from automatic switching. This workspace is unavailable
-through the public student gateway. See [Learning platform](LEARNING-PLATFORM.md).
-
+Follow timetable changes the class only without drafts or focused inputs.
+Switching views retains drafts; saving one form cannot erase another. Session loss
+clears private content and retires pending reads before a different account signs
+in. Setup remains capability-hidden and backend-authorized; teacher surfaces stay
+off the isolated student gateway. See [Learning platform](LEARNING-PLATFORM.md).
 
 ## Displays & AV
 
