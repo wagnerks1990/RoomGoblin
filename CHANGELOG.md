@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Resume current continuous automation sequences after manual media while
+  preserving durable explicit Stops, current winners and Planning block identity.
+
 - Preserve TV video audio across repeated buffering/seek readiness events instead
   of rerunning muted autoplay startup on an already active media session.
 
