@@ -385,3 +385,12 @@ class's source date. A pre-midnight action keeps the next day's deadline instead
 of selecting an already-ended deadline on the dispatch date. Unresolved timers
 still validate their current class date. Adjacent ordinary classes never become
 continuations merely because their times touch; transition blocks remain terminal.
+
+**Resume Scheduled State** may release a current continuous sequence stopped
+only by a manual-media takeover. Its bounded cancellation disposition survives
+history eviction and restart. Resume drains the old runner, selects complete
+current winners, then durably releases only their proven takeover markers before
+starting replacements. Explicit Stops, supersession and unknown legacy
+cancellations remain terminal, including across Planning block aliases. Startup
+never releases takeover markers. Suppression, dry-run, class boundaries,
+announcement priority and Full Recovery writer ownership remain unchanged.
