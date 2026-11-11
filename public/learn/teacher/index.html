@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoomGoblin — Teacher portal</title>
+<link rel="icon" href="/brand/roomgoblin_app_32x32.png">
+<link rel="stylesheet" href="/shared/workspace.css"><link rel="stylesheet" href="style.css">
+<script defer src="app.js"></script></head>
+<body class="rg-workspace teacher-portal">
+<a class="skip" href="#main">Skip to teacher workspace</a>
+<header><div class="brand"><img src="/brand/roomgoblin_app_192x192.png" alt="" width="48" height="48"><div><p class="eyebrow">ROOMGOBLIN</p><h1>Teacher portal</h1></div></div><div class="header-actions"><a href="/controller/">Room controls</a><a href="/learn/platform/">Connections & setup</a><span id="identity"></span><button id="logout" hidden>Sign out</button></div></header>
+<main id="main"><p id="status" role="status" aria-live="polite">Connecting to RoomGoblin…</p>
+<section id="login" class="card" hidden><h2>Teacher sign-in</h2><form id="login-form"><label>Username<input id="username" autocomplete="username" required></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form></section>
+<div id="workspace" hidden>
+<div class="toolbar"><label>Class<select id="class-select" aria-label="Class"></select></label><button id="refresh">Refresh</button><button id="export">Export submissions CSV</button><a href="/learn/?manage=1">Manage classes & accounts</a></div>
+<p class="privacy">Private teacher workspace. SCORM provisional scores and teacher submission reviews are separate from Schoology gradebook updates. Written grades use the reviewed rubric.</p>
+<nav aria-label="Teacher workspace"><button data-tab="overview" aria-current="page">Overview</button><button data-tab="assignments">Assignments</button><button data-tab="submissions">Submissions & grading</button><button data-tab="discussions">Discussions</button><button data-tab="commands">Classroom controls</button><button data-tab="audit">Audit</button></nav>
+<section id="overview"><div id="stats" class="stats"></div><div class="card"><h2>Recent activity</h2><div id="activity" class="tablewrap"></div></div></section>
+<section id="assignments" hidden><div class="card"><h2>Assignments</h2><div id="assignment-list"></div></div><div class="card"><h2>Add an assignment</h2><form id="new-assignment"><label>Title<input name="title" required maxlength="120"></label><label>Type<select name="templateId"><option value="scorm-connector-v1">SCORM assignment connection</option><option value="it2-u03-c02-ipv4-v1">Subnet discussion</option><option value="it1-u03-c01-os-selection-v1">Operating system selection discussion</option></select></label><label>SCORM possible points<input name="points" type="number" min="1" max="1000" value="20" required></label><button>Create assignment</button></form></div></section>
+<section id="submissions" hidden><div class="card"><h2>Assignment submissions</h2><p>Review each saved response and its provisional score. A new submission keeps its own review history.</p><div id="submission-list"></div></div><div class="card"><h2>Written discussion grading</h2><div id="written-reviews"></div></div></section>
+<section id="discussions" hidden><div class="card"><h2>Discussion threads</h2><div id="discussion-list"></div></div></section>
+<section id="commands" hidden><div class="card"><h2>Activity controls</h2><p>Pause new submissions, choose a stage, and send a hint for one assignment. These controls do not operate classroom hardware. Hint and stage changes appear in assignments that support teacher controls.</p><div id="command-list"></div></div></section>
+<section id="audit" hidden><div class="card"><h2>Recent teacher actions</h2><div id="audit-list" class="tablewrap"></div></div></section>
+</div></main><footer>RoomGoblin · Run the room. Manage the lab.<br>Created by Kyle Wagner</footer></body></html>

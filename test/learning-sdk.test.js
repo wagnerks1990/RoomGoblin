@@ -19,6 +19,24 @@ test('embedded connection UI preserves SDK lifecycle and native grade saving',()
  f.api.LMSSetValue('cmi.core.score.raw','80');assert.equal(f.api.LMSCommit(''),'true');assert.equal(f.messages[0].message.event.raw,80);
 });
 
+test('written submissions reject invalid drafts before queueing and keep signed actor binding',()=>{
+ const f=setup(),sdk=f.root.RoomGoblinSCORM;f.ready();
+ for(const answers of [null,[],{}, {answer:'x'.repeat(2001)}])assert.throws(()=>sdk.submit(answers,75));
+ assert.throws(()=>sdk.submit({answer:'A plan'},101));assert.equal(f.messages.length,0);
+ const id=sdk.submit({answer:'A justified storage plan'},75),event=f.messages.at(-1).message.event;
+ assert.equal(event.id,id);assert.equal(event.kind,'submission');assert.equal(event.learnerKey,f.learner);assert.equal(event.raw,75);
+ f.send({type:'roomgoblin.connector.saved',id,state:{}});assert.equal(JSON.parse([...f.saved.values()][0]).queue.length,0);
+});
+
+test('teacher hints require the exact connected message channel and a bounded control payload',()=>{
+ const f=setup(),events=[];f.root.CustomEvent=function(type,options){this.type=type;this.detail=options.detail;};f.root.dispatchEvent=event=>events.push(event);f.ready();events.length=0;
+ const command={version:1,paused:1,stage:3,hint:'Explain your evidence.'};
+ f.send({type:'roomgoblin.connector.control',command},{origin:'https://forged.example.test'});
+ f.send({type:'roomgoblin.connector.control',command:{...command,stage:99}});assert.equal(events.length,0);
+ f.send({type:'roomgoblin.connector.control',command});assert.equal(events.length,1);assert.equal(events[0].type,'roomgoblin:control');assert.equal(events[0].detail.hint,command.hint);
+ f.send({type:'roomgoblin.connector.control',command});assert.equal(events.length,1);
+});
+
 test('assessment grading waits for the authenticated server award and preserves native LMS behavior',async()=>{
  const f=setup(),sdk=f.root.RoomGoblinSCORM;f.ready();const saved=sdk.assessment({raw:80,current:4,total:5}),event=f.messages.at(-1).message.event;
  assert.equal(event.kind,'assessment');assert.equal(event.raw,80);
