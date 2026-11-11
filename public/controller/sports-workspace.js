@@ -80,6 +80,7 @@
    }finally{generating=false}
   }
   button(actions,'Preview board',generate,true).dataset.control='true';button(actions,'Schedule board',async()=>{const scene=await generate();startSportsAutomation(scene)});
+  button(actions,'Add to existing automation',async()=>{const scene=await generate();await applySceneToExistingAutomation(scene,{name:b.name})});
   const targets=el('fieldset');targets.append(el('legend','Display targets'));body.append(targets);api('/api/v1/devices').then(r=>{if(!targets.isConnected)return;for(const [key,d]of Object.entries(r.devices||{})){if(d.enabled===false)continue;const n=input(targets,d.name||key,false,'checkbox');n.value=key}}).catch(()=>{});
   button(actions,'Send to selected displays',async()=>{const scene=await generate(),target=Array.from(targets.querySelectorAll('input:checked')).map(n=>n.value);if(!target.length)throw Error('Select at least one display');await request('/api/v1/commands',{type:'display.text',target,payload:{text:'',scene}});notice.textContent='Sports sent to the selected displays.'}).dataset.control='true';
   const resize=new ResizeObserver(()=>{if(canvas.isConnected)canvas.style.transform=`scale(${frame.clientWidth/1920})`;else resize.disconnect()});resize.observe(frame);

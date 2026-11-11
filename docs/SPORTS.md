@@ -23,6 +23,16 @@ a continuous roster, a clock and optional school weather. Prepared by Kyle Wagne
    never dispatches and never starts another video decoder. Sending requires
    explicitly checked displays. Schedule opens the existing automation editor.
 
+**Add to existing automation** offers a saved-routine picker. Append the board as
+a screen after the existing actions, or replace one selected display action.
+The existing automation opens as an unsaved draft with its ID, revision, schedule,
+receiver targets, timers and other actions retained. Review execution modes:
+an earlier continual action may keep a later screen from running. A replacement
+canvas is one persistent display action, rather than a restarted media loop.
+Mixed power/lighting routines require explicit display targets if none existed;
+the picker never borrows lighting targets or sends live commands. Preview and
+Save remain required. Existing scene-studio and shared-layer options still work.
+
 The display uses the existing 1920x1080 scene/layout engine and contains images
 and video without cropping. Roster rows enter from below after a two-second pause,
 scroll continuously and loop. Page duration grows to allow the complete roster

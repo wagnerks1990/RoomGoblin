@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Add Weather and Sports scenes to an existing automation through a reviewed
+  draft while preserving schedules, targets, timers and device actions.
+
 - Preserve TV video audio across repeated buffering/seek readiness events instead
   of rerunning muted autoplay startup on an already active media session.
 

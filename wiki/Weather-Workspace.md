@@ -33,6 +33,14 @@ priority. **Schedule this screen** opens the normal automation editor. **Create
 shared weather overlay** opens the shared-rule editor: select automations/dates/
 times and preview before saving. An overlay preserves underlying media sessions.
 
+**Add to existing automation** reuses a saved routine. For full-screen weather,
+append a screen or replace one selected display action, then review the existing
+automation and save normally. Other actions, schedule, targets and timer settings
+remain in the draft. For an overlay, the shared-layer editor opens with only the
+chosen automation selected. Custom shared-layer opt-outs/selection policies are
+not overridden: change that routine's policy to inherit before attaching a new
+shared rule. The picker, cancel and draft navigation never save or dispatch.
+
 ## Sources, refresh and privacy
 
 The Hub uses fixed-origin Open-Meteo forecasts (16 daily and 48 hourly entries),
