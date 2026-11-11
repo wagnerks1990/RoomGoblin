@@ -1,0 +1,4 @@
+'use strict';
+let token=location.hash.slice(1);try{if(token)sessionStorage.setItem('rg-display-token',token);else token=sessionStorage.getItem('rg-display-token')||'';}catch(e){}history.replaceState(null,'',location.pathname);let busy=false;
+async function refresh(){if(busy)return;busy=true;const c=new AbortController(),t=setTimeout(()=>c.abort(),8000);try{const r=await fetch('/portal/api/v9/display/state',{headers:{Authorization:'Bearer '+token},credentials:'omit',signal:c.signal,cache:'no-store'});if(!r.ok)throw Error('Display access unavailable (HTTP '+r.status+').');const d=await r.json();for(const k of ['title','submitted','posts','stage'])document.getElementById(k).textContent=d[k];document.getElementById('status').textContent='Updated '+new Date().toLocaleTimeString();}catch(e){document.getElementById('status').textContent=e.message+' · Last received values may be stale.';}finally{clearTimeout(t);busy=false;}}
+refresh();setInterval(refresh,5000);

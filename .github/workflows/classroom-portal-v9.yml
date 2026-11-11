@@ -1,0 +1,38 @@
+name: Classroom portal pilot
+
+on:
+  pull_request:
+    paths:
+      - 'experiments/classroom-portal-v9/**'
+      - '.github/workflows/classroom-portal-v9.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'experiments/classroom-portal-v9/**'
+      - '.github/workflows/classroom-portal-v9.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22'
+      - name: Synthetic API and reversible deployment regressions
+        working-directory: experiments/classroom-portal-v9
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Runtime and installer syntax
+        working-directory: experiments/classroom-portal-v9
+        run: |
+          python3 -m py_compile portal.py deploy.py
+          node --check static/app.js
+          node --check static/board.js
+          node --check scorm/learner.js
+          bash -n install.sh install-remote.sh
