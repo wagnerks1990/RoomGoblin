@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Preserve TV video audio across repeated buffering/seek readiness events instead
+  of rerunning muted autoplay startup on an already active media session.
+
 - Close Music Assistant integrity-check connections before snapshot and restart
   so retained SQLite reader locks cannot block upgrades or cold rollback.
 - Clear recovered music polling warnings after transient connection failures,
