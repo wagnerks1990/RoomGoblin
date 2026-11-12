@@ -55,6 +55,17 @@ Preserve these boundaries: API credentials stay in encrypted SQLite secret stora
 
 ## SCORM student connection
 
+New direct API delivery is explicitly approved: read
+`docs/DIRECT-ASSIGNMENT-API.md`. It needs no preapproved roster, signed launch or
+companion window. An assignment enrollment-only capability creates an isolated
+participant with a separate private bearer; reported SCORM names/IDs never claim
+an existing private record or authorize physical attendance. Keep exact route
+allowlists, cookie-free CORS, manual attendance plus fresh event-bound private
+network proof, server-owned rubric grading jobs and teacher corrections. Tokens
+never go to the LAN attester. Preserve the signed-LMS contracts below for legacy
+signed delivery; do not require that handshake for direct assignment data.
+
+
 The reviewed student-only exception is a dedicated loopback listener at 3030.
 Read `docs/LEARNING-PLATFORM.md`. Preserve the exact route allowlist, signed LMS
 identity, fresh per-SCO flow, and private direct-network presence attestations.

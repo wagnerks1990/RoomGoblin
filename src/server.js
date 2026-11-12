@@ -5474,6 +5474,9 @@ app.use("/api/v1/maintenance", requireAdmin, requireFullRecoveryTransport, (req,
 // Closed-lab HTTP application. No HSTS/TLS assumptions.
 app.use((req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
+  // The bearer-only assignment data plane owns its narrow CORS/preflight policy.
+  // Native controller/cookie routes retain the administrator origin allowlist.
+  if(req.path===require('./learning-direct').presencePath||require('./learning-direct').route(req.method==='OPTIONS'?req.get('Access-Control-Request-Method'):req.method,req.path))return next();
   const origin=String(req.get("origin")||"");
   if(origin&&CORS_ALLOWED_ORIGINS.has(origin)){
     res.setHeader("Access-Control-Allow-Origin",origin);

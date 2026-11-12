@@ -22,6 +22,7 @@ function allowedPath(method,raw){
   const pathname=raw.split('?')[0];
   // Reject encodings and dot segments before Express can reinterpret a route.
   if(pathname.includes('%')||pathname.split('/').includes('..')||pathname.split('/').includes('.'))return false;
+  const direct=require('./learning-direct');if(pathname.startsWith('/api/v1/learning/direct/'))return method==='OPTIONS'?['GET','POST','PUT'].some(m=>direct.route(m,pathname)):!!direct.route(method,pathname);
   if(method==='GET'||method==='HEAD')return staticPaths.has(pathname)||learnerReads.test(pathname)||new RegExp(`^/learn/connect-info/${UUID}$`).test(pathname);
   if(method==='POST')return pathname==='/learn/connect/start'||launches.test(pathname)||learnerWrites.test(pathname);
   return method==='PUT'&&learnerEdits.test(pathname);

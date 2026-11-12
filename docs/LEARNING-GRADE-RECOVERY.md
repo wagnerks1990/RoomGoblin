@@ -1,5 +1,12 @@
 # Automatic SCORM grade recovery
 
+New [direct API packages](DIRECT-ASSIGNMENT-API.md) queue AI responses/grading on
+the server and retrieve private feedback without a companion window. Jobs finish
+after the learner closes the assignment. Their native SCORM attempt saves the
+approved score when open or reopened. The signed bridge instructions below apply
+to legacy delivery, not a prerequisite for the direct data API.
+
+
 SCORM owns the LMS score channel. The signed student connector carries private
 progress and optional server-awarded grades; it cannot write an existing native
 Schoology SCORM grade item through the separate identity External Tool.

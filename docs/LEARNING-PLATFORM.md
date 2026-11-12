@@ -1,5 +1,12 @@
 # SCORM activity platform
 
+**Current delivery: [Direct assignment API](DIRECT-ASSIGNMENT-API.md).** New
+packages report activity and receive classroom state, AI responses and grading
+without a preapproved learner roster, signed launch or companion window. The API
+is the data channel; Schoology REST is not required. The signed connection and
+window setup described later remains a compatibility path for existing packages.
+
+
 The primary [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` brings the
 prototype overview, assignments, submissions/review, discussions, activity controls
 and audit workflow into native RoomGoblin authentication and storage. Assignment connections and classroom setup now live in the same portal.

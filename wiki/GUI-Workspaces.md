@@ -304,3 +304,6 @@ Weather and Sports include **Add to existing automation**. Choose a saved routin
 and append a screen or replace a selected display action. Weather overlays open
 a shared-layer draft scoped to that routine. Selection only prepares a draft;
 the standard validation/save flow and capability checks remain required.
+
+
+New SCORM delivery uses the [direct assignment data API](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/DIRECT-ASSIGNMENT-API.md): automatic participant registration, API classroom state and server-side AI feedback/grading, without roster preapproval or a companion window. Existing signed packages remain compatible.

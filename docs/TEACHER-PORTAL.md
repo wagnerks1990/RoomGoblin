@@ -26,6 +26,15 @@ its commands table gained a fifth column. Native portal persistence uses named
 columns, no startup seed insert, and regression coverage for an extended schema.
 No prototype database or production credentials are bundled or imported.
 
+## Direct assignment reporting
+
+Use [Direct assignment API](DIRECT-ASSIGNMENT-API.md) for new SCORM assignments.
+Learners register automatically; reports, pause/hint/stage, automatic responses
+and AI grading use API calls. No preapproved roster, signed launch or companion
+window is needed. Written discussions keep the existing rubric. Other written
+submissions use a teacher-configured AI rubric, with private server-side feedback
+and teacher correction. Signed-LTI setup below is compatibility for older packages.
+
 ## Daily use
 
 1. Sign in with an enabled RoomGoblin teacher account. The shared class selector
@@ -33,12 +42,15 @@ No prototype database or production credentials are bundled or imported.
    then recent activity. Empty imported classes are grouped under Other classes.
 2. **Overview** combines SCORM events and discussion posts in a recent timeline.
 3. **Assignments** creates an assignment and its connector atomically. Expand an
-   assignment for availability, pause/hint/stage, signed launch settings, package
+   assignment for direct API packages, AI rubrics, availability, pause/hint/stage,
+   optional legacy signed launch settings, package
    downloads, assessment policies, exceptions and continuing-campaign links.
    Written discussions stay at 20 points. Signed provider settings preserve the
    approved grade-service origins; a blank secret retains the saved secret.
 4. **Submissions & grading** reviews written SCORM answers privately. These review
-   annotations do not automatically write a Schoology grade. Written discussions
+   annotations are returned privately to direct API packages; their native SCORM
+   attempt applies the saved score. Legacy review annotations do not independently
+   call the Schoology gradebook. Written discussions
    use the existing rubric, freshness checks, approved receipt and LMS sync path.
    Changed writing is shown as superseded until a fresh assessment is available.
 5. **Discussions** groups replies under their parent posts. Filter by assignment

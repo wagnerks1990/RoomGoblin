@@ -1,5 +1,14 @@
 # AI Project Context
 
+New learning packages use the [direct assignment data API](DIRECT-ASSIGNMENT-API.md):
+no preapproved roster, signed launch, companion window or cookie dependency.
+Reported SCORM names/IDs are attribution, not identity authorization. Keep private
+participant bearers scoped to one assignment, token-free private-network presence,
+manual attendance, generic teacher rubrics, server-owned AI jobs and grade privacy.
+Never turn an enrollment-only package key into access to existing private records.
+The signed-LMS contracts below remain authoritative for legacy signed delivery.
+
+
 The native teacher entry is `/learn/teacher/`; read `TEACHER-PORTAL.md`. Keep
 the shared class context, legacy URL redirects, atomic assignment/gateway saves
 and private DOM clearing on session loss. Keep portal records class-scoped and teacher-only. Submission reviews are private

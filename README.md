@@ -52,6 +52,10 @@ RoomGoblin uses least-privilege networking per service. The core Hub and mainten
 
 > **Status:** `1.0.0-alpha.86` — alpha software. Production deployment remains limited to reviewed, backed-up `amd64` installations. Normal administration may use the trusted-LAN HTTP deployment; recovery passphrases require loopback or HTTPS through a same-host proxy.
 
+The [direct assignment API](docs/DIRECT-ASSIGNMENT-API.md) reports SCORM activity
+and returns controls, automatic responses and rubric-based AI grades without
+preapproved rosters or companion windows.
+
 The native [Teacher portal](docs/TEACHER-PORTAL.md) brings assignments, submissions, teacher review, discussions, activity controls, classroom sessions, class accounts, setup and audit
 into one class-scoped workspace. Older learning management URLs redirect here. SCORM classroom progress uses an isolated student connection and teacher-controlled celebrations. See [Learning platform](docs/LEARNING-PLATFORM.md) for setup, network presence, and acceptance requirements.
 
