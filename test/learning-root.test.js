@@ -13,6 +13,9 @@ test('the root learning workspace serves directly and removed app paths do not r
  }
  for(const path of ['/learn','/learn/','/learn/index.html','/learn/app.js','/learn/style.css','/learn/setup.mjs'])assert.equal(allowedPath('GET',path),false,path);
  assert.equal(allowedPath('GET','/learn/sdk/roomgoblin-scorm.js'),true);
+ for(let i=0;i<117;i++)assert.equal((await f.request(null,'/learn')).status,200);
+ assert.equal((await f.request(null,'/learn')).status,429);
+ assert.equal((await f.request(null,'/learn/sdk/roomgoblin-scorm.js')).status,200);
 });
 test('offline fresh-start reset clears learning records and credentials while retaining unrelated state and working connections',async t=>{
  const f=await fixture({reviewOptions:{intervalMs:0}});t.after(f.close);const db=f.store.db;

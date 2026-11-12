@@ -137,7 +137,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   learning.teacherCapability=teacher;
   const api="/api/v1/learning";
   // The single operator workspace is served directly, without a directory redirect.
-  if(publicDir)app.get(['/learn','/learn/','/learn/index.html'],(req,res)=>res.sendFile(require('node:path').join(publicDir,'index.html')));
+  if(publicDir)app.get(['/learn','/learn/','/learn/index.html'],rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>isPublicRequest(req)?res.sendStatus(404):res.sendFile(require('node:path').join(publicDir,'index.html')));
   const requireLearning=(req,res,next)=>{const u=req.directLearner||requestUser(req);if(!store.authEnabled()||!u||isPublicRequest(req)&&!req.directLearner&&(!u.learningSso||u.profileId!=='learning-student'))return res.status(401).json({ok:false,error:isPublicRequest(req)?'Reopen the signed Schoology connection.':'Sign in to your assigned RoomGoblin account.'});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
   const requireTeacher=(req,res,next)=>teacher(req.learner)?next():res.status(403).json({ok:false,error:"Teacher access required."});
   const requireAdministrator=(req,res,next)=>hasCapability(req.learner,"*")?next():res.status(403).json({ok:false,error:"Administrator access required."});
