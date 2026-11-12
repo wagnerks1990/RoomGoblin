@@ -14,8 +14,8 @@ const osCase=require('./learning-os-case');
 const CASES=Object.freeze({[CASE.id]:CASE,[osCase.CASE.id]:osCase.CASE});
 function caseFor(id=CASE.id){const item=Object.prototype.hasOwnProperty.call(CASES,id)&&CASES[id];if(!item)throw Error('Unknown discussion template');return item;}
 function rubricFor(id=CASE.id){return id===CASE.id?RUBRIC:caseFor(id).scoreLevels;}
-function validateGrade(value,templateId=CASE.id){
-  const rubric=rubricFor(templateId);
+function validateGrade(value,templateId=CASE.id,definition){
+  const rubric=definition?Object.fromEntries(definition.criteria.map(c=>[c.id,c.levels])):rubricFor(templateId);
   if(!value||Object.keys(value).sort().join()!=="criteria,summary"||typeof value.summary!=="string"||!value.summary.trim()||value.summary.length>2000)throw Error("Invalid grading response");
   if(!value.criteria||Object.keys(value.criteria).sort().join()!==Object.keys(rubric).sort().join())throw Error("Invalid grading criteria");
   let total=0;
@@ -54,5 +54,5 @@ async function modelJSON({apiKey,provider='openai',baseURL,fetchImpl=fetch},requ
   else{if(data.status!=="completed")throw Error("AI response incomplete");const parts=(data.output||[]).flatMap(x=>x.type==="message"?x.content||[]:[]);if(parts.some(x=>x.type==="refusal"))throw Error("AI response requires teacher review");output=parts.filter(x=>x.type==="output_text").map(x=>x.text).join("");}
   return JSON.parse(output);
 }
-async function gradeWriting(options){const selected=caseFor(options.templateId);return (selected.id===CASE.id?assessWriting:require('./learning-os-evidence').assessWriting)(options,modelJSON);}
+async function gradeWriting(options){if(options.definition)return require('./learning-assignment-definition').assessWriting(options,modelJSON);const selected=caseFor(options.templateId);return (selected.id===CASE.id?assessWriting:require('./learning-os-evidence').assessWriting)(options,modelJSON);}
 module.exports={CASE,CASES,caseFor,rubricFor,RUBRIC,SCHEMA,REPLY_SCHEMA,validateGrade,gradingRequest,gradeWriting,localBaseURL,modelJSON};

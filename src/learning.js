@@ -9,6 +9,7 @@ const {LearningSchedule}=require('./learning-schedule');
 const {LearningConnection,COOKIE:FLOW_COOKIE,flowCookie}=require('./learning-connection');
 const {isPublicRequest}=require('./learning-public');
 const {rateLimit}=require("express-rate-limit");
+const {AssignmentDefinitions,TEMPLATE:DEFINED_DISCUSSION,toCase}=require('./learning-assignment-definition');
 const {CASE,CASES,caseFor,rubricFor,validateGrade,gradeWriting,localBaseURL}=require("./learning-grader");
 const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
 const text=(v,max=6000)=>{if(typeof v!=="string"||!v.trim()||v.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v))fail(400,"Enter text within the displayed length limit.");return v.trim();};
@@ -32,6 +33,7 @@ class LearningStore{
       CREATE INDEX IF NOT EXISTS learning_review_user ON learning_reviews(activity_id,user_id,created_at);
       CREATE TABLE IF NOT EXISTS learning_events(id INTEGER PRIMARY KEY,at TEXT NOT NULL,actor_id TEXT,activity_id TEXT,kind TEXT NOT NULL,record_id TEXT,details_json TEXT NOT NULL);
     `);
+    this.definitions=new AssignmentDefinitions(this);
     if(!this.db.prepare('PRAGMA table_info(learning_reviews)').all().some(c=>c.name==='started_at'))this.db.exec('ALTER TABLE learning_reviews ADD COLUMN started_at TEXT');
     // This profile can never grant appliance access, even if its config is edited.
     this.db.prepare("INSERT OR IGNORE INTO access_profiles(id,name,role,enabled,config_json,updated_at) VALUES(?,?,?,?,?,?)").run("learning-student","Learning student","viewer",1,JSON.stringify({description:"Assigned learning activities only",capabilities:["learning.participate"]}),now());
@@ -46,6 +48,7 @@ class LearningStore{
   activity(user,id,teacher=false){const row=this.db.prepare("SELECT * FROM learning_activities WHERE id=?").get(id);if(!row)fail(404,"Assigned activity not found.");const participant=this.direct?.db.prepare('SELECT activity_id FROM learning_direct_participants WHERE user_id=?').get(user.id);if(participant&&participant.activity_id!==id)fail(404,'Assigned activity not found.');return {...row,member:this.membership(user,row.class_id,teacher)};}
   writable(a,at=Date.now()){if(a.member.role==='student'&&this.portal?.command(a.id).paused)fail(409,'Your teacher has paused this activity. Your saved work is retained.');if(a.member.role==="student"&&(!a.open||a.close_at&&at>=Date.parse(a.close_at)&&!a.member.exempt))fail(409,"This activity is closed. Ask your teacher about an approved exception.");}
   classes(user){return this.db.prepare("SELECT c.*,m.role,m.alias FROM learning_classes c JOIN learning_members m ON m.class_id=c.id WHERE m.user_id=? ORDER BY c.created_at DESC").all(user.id);}
+  caseForActivity(a,privateFields=false){if(a.template_id===DEFINED_DISCUSSION)return toCase(this.definitions.get(a.id),privateFields);return CASES[a.template_id]?{...caseFor(a.template_id),scoreLevels:rubricFor(a.template_id)}:null;}
   createClass(user,title){const id=crypto.randomUUID();this.store.tx(()=>{this.db.prepare("INSERT INTO learning_classes VALUES(?,?,?)").run(id,text(title,100),now());this.db.prepare("INSERT INTO learning_members(class_id,user_id,role,alias) VALUES(?,?,?,?)").run(id,user.id,"teacher",text(user.displayName||"Teacher",40));this.event(user,null,"class.create",id,{classId:id});});return id;}
   enroll(user,classId,input,allowTeacher=false){
     this.membership(user,classId,true);const target=this.store.listUsers().find(x=>x.id===input.userId&&x.enabled);
@@ -55,19 +58,20 @@ class LearningStore{
     this.db.prepare("INSERT INTO learning_members(class_id,user_id,role,alias,exempt) VALUES(?,?,?,?,?) ON CONFLICT(class_id,user_id) DO UPDATE SET alias=excluded.alias,exempt=excluded.exempt,role=excluded.role").run(classId,target.id,role,text(input.alias,40),input.exempt===true?1:0);
     this.event(user,null,"member.assign",target.id,{classId,exempt:input.exempt===true});
   }
-  createActivity(user,classId,input){this.membership(user,classId,true);const id=crypto.randomUUID(),template=input.templateId||CASE.id;if(!Object.prototype.hasOwnProperty.call(CASES,template)&&template!=='scorm-connector-v1')fail(400,'Choose an available activity type.');this.db.prepare("INSERT INTO learning_activities(id,class_id,title,template_id,created_at) VALUES(?,?,?,?,?)").run(id,classId,text(input.title||(CASES[template]?.title||'SCORM connection'),120),template,now());this.event(user,id,"activity.create",id);return id;}
+  createActivity(user,classId,input){this.membership(user,classId,true);const id=crypto.randomUUID(),template=input.templateId||CASE.id;if(!Object.prototype.hasOwnProperty.call(CASES,template)&&!['scorm-connector-v1',DEFINED_DISCUSSION].includes(template))fail(400,'Choose an available activity type.');this.db.prepare("INSERT INTO learning_activities(id,class_id,title,template_id,created_at) VALUES(?,?,?,?,?)").run(id,classId,text(input.title||(CASES[template]?.title||'SCORM connection'),120),template,now());this.event(user,id,"activity.create",id);return id;}
   settings(user,id,input){const a=this.activity(user,id,true),due=isoDate(input.dueAt),close=isoDate(input.closeAt);if(due&&close&&Date.parse(close)<=Date.parse(due))fail(400,"Close time must follow due time.");this.db.prepare("UPDATE learning_activities SET open=?,due_at=?,close_at=? WHERE id=?").run(input.open===true?1:0,due,close,a.id);this.event(user,id,"activity.settings",id,{open:input.open===true,due,close});}
   posts(user,id){
     const a=this.activity(user,id);const rows=this.db.prepare("SELECT p.*,m.alias,m.role FROM learning_posts p JOIN learning_members m ON m.user_id=p.user_id AND m.class_id=? WHERE p.activity_id=? ORDER BY p.created_at,p.id LIMIT 1000").all(a.class_id,id);
     const byId=new Map(rows.map(p=>[p.id,p]));
     const visible=p=>{const seen=new Set();while(p){if(p.hidden||seen.has(p.id))return false;seen.add(p.id);if(!p.parent_id)return true;p=byId.get(p.parent_id);}return false;};
-    return rows.filter(p=>a.member.role==="teacher"||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?this.store.getPreference("learning.responseLabel","Teacher"):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
+    const definition=this.caseForActivity(a);
+    return rows.filter(p=>a.member.role==="teacher"||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?(definition?.responseLabel||this.store.getPreference("learning.responseLabel","Teacher")):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
   }
   latestScoredReply(user,id){return this.db.prepare("SELECT p.id FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.activity_id=? AND p.user_id=? AND p.hidden=0 AND (p.kind='critique' OR (p.kind='reply' AND parent.kind='initial' AND parent.hidden=0 AND parent.user_id<>p.user_id)) ORDER BY p.rowid DESC LIMIT 1").get(id,user.id);}
   isScoredPost(user,id,postId){const p=this.db.prepare("SELECT p.kind,parent.kind parent_kind,parent.user_id parent_user FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.id=? AND p.activity_id=? AND p.user_id=?").get(postId,id,user.id);return !!p&&(['initial','critique'].includes(p.kind)||p.kind==='reply'&&p.parent_kind==='initial'&&p.parent_user!==user.id);}
   post(user,id,input){
     const a=this.activity(user,id);this.writable(a);const teacher=a.member.role==="teacher";
-    if(!Object.prototype.hasOwnProperty.call(CASES,a.template_id))fail(409,'This SCORM connector does not accept discussion posts.');
+    if(!this.caseForActivity(a))fail(409,'This SCORM connector does not accept discussion posts.');
     const kind=teacher?"teacher":input.kind;
     if(!(teacher?["teacher"]:["initial","reply","critique"]).includes(kind))fail(400,"Choose a post type.");
     const body=text(input.body,kind==="initial"?6000:3000),parentId=input.parentId||null;
@@ -87,11 +91,11 @@ class LearningStore{
   }
   moderate(user,id,postId,hidden){this.activity(user,id,true);const p=this.db.prepare("SELECT * FROM learning_posts WHERE activity_id=? AND id=?").get(id,postId);if(!p)fail(404,"Post not found.");this.db.prepare("UPDATE learning_posts SET hidden=? WHERE id=?").run(hidden?1:0,p.id);this.event(user,id,"post.moderate",p.id,{hidden});}
   snapshot(user,id,replyId){
-    const activity=this.activity(user,id);if(!Object.prototype.hasOwnProperty.call(CASES,activity.template_id))fail(409,'SCORM scores stay in the original Schoology assignment.');
+    const activity=this.activity(user,id);if(!this.caseForActivity(activity))fail(409,'SCORM scores stay in the original Schoology assignment.');
     const initial=this.db.prepare("SELECT * FROM learning_posts WHERE activity_id=? AND user_id=? AND kind='initial' AND hidden=0").get(id,user.id);if(!initial)fail(400,"Publish your initial explanation first.");
     let reply=null,parent=null;
     if(replyId){reply=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND user_id=? AND kind IN ('reply','critique') AND hidden=0").get(replyId,id,user.id);if(!reply)fail(400,"Choose your own reply or independent critique.");if(reply.parent_id){parent=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind='initial' AND hidden=0 AND user_id<>?").get(reply.parent_id,id,user.id);if(!parent)fail(409,"For grading, choose a reply to a classmate's initial post. Conversation follow-ups do not replace that reply.");}}
-    return {initial:initial.body,initialId:initial.id,initialRevision:initial.revision,reply:reply?.body||"",replyId:reply?.id||null,replyRevision:reply?.revision||0,parent:parent?.body||(reply?.kind==="critique"?caseFor(activity.template_id).alternate:""),parentId:parent?.id||null,parentRevision:parent?.revision||0};
+    return {initial:initial.body,initialId:initial.id,initialRevision:initial.revision,reply:reply?.body||"",replyId:reply?.id||null,replyRevision:reply?.revision||0,parent:parent?.body||(reply?.kind==="critique"?this.caseForActivity(activity).alternate:""),parentId:parent?.id||null,parentRevision:parent?.revision||0};
   }
   currentReview(user,id){this.activity(user,id);const r=this.db.prepare("SELECT * FROM learning_reviews WHERE activity_id=? AND user_id=? ORDER BY rowid DESC LIMIT 1").get(id,user.id);if(!r)return null;try{if(hash(this.snapshot(user,id,parse(r.snapshot_json).replyId))!==r.fingerprint)return {...this.projectReview(r),status:"superseded",final:null};}catch{return {...this.projectReview(r),status:"superseded",final:null};}return this.projectReview(r);}
   projectReview(r){return {id:r.id,status:r.status,replyId:parse(r.snapshot_json).replyId,automated:!!parse(r.final_json)&&parse(r.final_json).source==="ai",createdAt:r.created_at,updatedAt:r.updated_at,ai:parse(r.ai_json),final:parse(r.final_json)};}
@@ -99,8 +103,8 @@ class LearningStore{
     const a=this.activity(user,id,true),r=this.db.prepare("SELECT * FROM learning_reviews WHERE id=? AND activity_id=?").get(reviewId,id);if(!r)fail(404,"Review not found.");if(!["needs_review","unavailable","approved"].includes(r.status))fail(409,"Refresh and select a pending review.");
     const target=this.store.listUsers().find(x=>x.id===r.user_id&&x.enabled);if(!target)fail(409,"Learner account is disabled.");this.membership(target,a.class_id);
     const snap=parse(r.snapshot_json);if(hash(this.snapshot(target,id,snap.replyId))!==r.fingerprint)fail(409,"The writing changed. Request a fresh review.");
-    let grade;try{grade=validateGrade({criteria:input.criteria,summary:input.summary},a.template_id);}catch{fail(400,"Use the listed rubric scores and feedback limits.");}const member=this.membership(target,a.class_id),late=!!(a.due_at&&Date.parse(r.created_at)>Date.parse(a.due_at)&&!member.exempt&&input.waiveLate!==true);
-    const final={...grade,earned:grade.total,lateMultiplier:late?.5:1,total:grade.total*(late?.5:1),possible:20,approvedAt:now(),source:"teacher"};
+    let grade;try{grade=validateGrade({criteria:input.criteria,summary:input.summary},a.template_id,this.definitions.get(a.id));}catch{fail(400,"Use the listed rubric scores and feedback limits.");}const member=this.membership(target,a.class_id),late=!!(a.due_at&&Date.parse(r.created_at)>Date.parse(a.due_at)&&!member.exempt&&input.waiveLate!==true);
+    const final={...grade,earned:grade.total,lateMultiplier:late?.5:1,total:grade.total*(late?.5:1),possible:this.caseForActivity(a).points,approvedAt:now(),source:"teacher"};
     const response=input.response===undefined?parse(r.ai_json)?.proposedResponse:input.response;
     if(response!==undefined&&typeof response!=='string')fail(400,'Use a text response.');
     if(response?.trim())text(response,1800);
@@ -224,7 +228,9 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/teacher/classes/:id/export',requireTeacher,wrap((req,res)=>{const data=portal.export(req.learner,req.params.id);res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-submissions.csv"');res.type('text/csv').send(data);}));
   app.put(api+'/teacher/activities/:id/command',requireTeacher,wrap((req,res)=>res.json({ok:true,command:portal.saveCommand(req.learner,req.params.id,req.body)})));
   app.put(api+'/teacher/submissions/:id/review',requireTeacher,wrap((req,res)=>res.json({ok:true,review:portal.review(req.learner,Number(req.params.id),req.body)})));
-  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{learnerKey:req.learner.id,alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),activeClassId:teacher(req.learner)?schedule.visibleActiveClass(req.learner):null,case:CASE,cases:Object.values(CASES),aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+"/me",wrap((req,res)=>res.json({ok:true,user:{learnerKey:req.learner.id,alias:req.learner.displayName,lms:!!req.learner.learningSso,teacher:teacher(req.learner),admin:hasCapability(req.learner,"*")},classes:learning.classes(req.learner),activeClassId:teacher(req.learner)?schedule.visibleActiveClass(req.learner):null,case:CASE,cases:Object.values(CASES),assignmentDefinitions:{schemaVersion:1,kinds:['discussion','written']},aiConfigured:!!store.getPreference("learning.ai",{}).enabled,bridgeOrigins:store.getPreference("learning.bridgeOrigins",[])})));
+  app.get(api+'/teacher/activities/:id/definition',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,definition:learning.definitions.get(req.params.id)});}));
+  app.put(api+'/teacher/activities/:id/definition',requireTeacher,wrap((req,res)=>{const definition=store.tx(()=>{const d=learning.definitions.save(req.learner,req.params.id,req.body);if(d.kind==='written')learning.assignmentAI.configure(req.learner,req.params.id,{enabled:true,prompt:d.gradingInstructions,criteria:d.criteria.map(c=>({label:c.label,points:c.points,description:c.description}))});return d;});res.json({ok:true,definition});}));
   app.get(api+'/platform/settings',requireAdministrator,wrap((_req,res)=>res.json({ok:true,settings:platform.settings()})));
   app.put(api+'/platform/bridge-origins',requireAdministrator,wrap((req,res)=>{const values=req.body.origins;if(!Array.isArray(values)||values.length>10)fail(400,'Use up to ten exact LMS origins.');store.setPreference('learning.bridgeOrigins',values.map(origin));res.json({ok:true});}));
   app.post(api+'/platform/publish',requireAdministrator,wrap(async(_req,res)=>{if(!platformOptions?.publish)fail(503,'Public publishing is unavailable.');res.json(await platformOptions.publish());}));
@@ -278,7 +284,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     if(req.body.enabled===true&&provider==="openai"&&!store.hasSecret("learning.openai.key"))fail(400,"Configure the server-side grading key first.");
     store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);store.setPreference("learning.responseLabel",responseLabel);learning.event(req.learner,null,"grading.settings",null,{provider,enabled:req.body.enabled===true});});res.json({ok:true});
   }));
-  app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:CASES[a.template_id]?{...caseFor(a.template_id),scoreLevels:rubricFor(a.template_id)}:null},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id),gradingQueued:!!learning.db.prepare('SELECT 1 FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,req.learner.id),lms:lti.status(req.learner,a.id)});}));
+  app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:learning.caseForActivity(a),definition:toCase(learning.definitions.get(a.id))},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id),gradingQueued:!!learning.db.prepare('SELECT 1 FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,req.learner.id),lms:lti.status(req.learner,a.id)});}));
   // LMS names are optional display data, never an authentication or enrollment claim.
   app.put(api+"/activities/:id/lms-name",wrap((req,res)=>{
     const a=learning.activity(req.learner,req.params.id);
@@ -324,7 +330,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     learning.event(user,a.id,"grade.request",id);busy.add(user.id);
     let retryScheduled=false;
     try{
-      if(enabled){const result=await grade({apiKey:store.getSecret(["local","ollama"].includes(cfg.provider)?"learning.local.key":"learning.openai.key"),provider:cfg.provider||"openai",baseURL:cfg.baseURL,model:cfg.model,templateId:a.template_id,initial:snapshot.initial,reply:snapshot.reply,parent:snapshot.parent});const validated=validateGrade({criteria:result.criteria,summary:result.summary},a.template_id);if(!snapshot.reply){validated.criteria.reply={points:0,feedback:"No reply was submitted."};validated.total=Object.values(validated.criteria).reduce((n,c)=>n+c.points,0);}
+      if(enabled){const definition=learning.definitions.get(a.id);const result=await grade({apiKey:store.getSecret(["local","ollama"].includes(cfg.provider)?"learning.local.key":"learning.openai.key"),provider:cfg.provider||"openai",baseURL:cfg.baseURL,model:cfg.model,templateId:a.template_id,definition,initial:snapshot.initial,reply:snapshot.reply,parent:snapshot.parent});const validated=validateGrade({criteria:result.criteria,summary:result.summary},a.template_id,definition);if(!snapshot.reply){validated.criteria.reply={points:0,feedback:"No reply was submitted."};validated.total=Object.values(validated.criteria).reduce((n,c)=>n+c.points,0);}
         const still=store.listUsers().find(u=>u.id===user.id&&u.enabled);if(!still)fail(409,"Account no longer active.");learning.membership(still,a.class_id);
         const currentCfg=store.getPreference("learning.ai",{});
         if(!currentCfg.enabled||["provider","baseURL","model"].some(key=>currentCfg[key]!==cfg[key]))fail(409,"The grading service changed during this assessment.");
@@ -342,7 +348,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
             learning.event(user,a.id,"coach.automated",coachId,{reviewId:id});
             const currentActivity=learning.activity(user,a.id),member=currentActivity.member;
             const late=!!(currentActivity.due_at&&Date.parse(time)>Date.parse(currentActivity.due_at)&&!member.exempt);
-            const final={...validated,earned:validated.total,lateMultiplier:late?.5:1,total:validated.total*(late?.5:1),possible:20,approvedAt:stamp,source:"ai"};
+            const final={...validated,earned:validated.total,lateMultiplier:late?.5:1,total:validated.total*(late?.5:1),possible:learning.caseForActivity(a).points,approvedAt:stamp,source:"ai"};
             learning.db.prepare("UPDATE learning_reviews SET status='approved',final_json=?,updated_at=? WHERE id=?").run(JSON.stringify(final),stamp,id);
             learning.event(user,a.id,"grade.automated",id,{earned:validated.total,total:final.total});
           }
@@ -368,7 +374,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post(api+"/activities/:id/submit",acceptWriting);
   app.get(api+"/activities/:id/reviews",requireTeacher,wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id,true);res.json({ok:true,reviews:learning.db.prepare("SELECT r.*,m.alias FROM learning_reviews r JOIN learning_members m ON m.user_id=r.user_id AND m.class_id=? WHERE r.activity_id=? AND r.rowid IN (SELECT MAX(rowid) FROM learning_reviews WHERE activity_id=? GROUP BY user_id) ORDER BY r.created_at LIMIT 200").all(a.class_id,a.id,a.id).map(r=>({...learning.projectReview(r),alias:r.alias,snapshot:parse(r.snapshot_json)}))});}));
   app.post(api+"/activities/:id/reviews/:reviewId/approve",requireTeacher,wrap(async(req,res)=>{const grade=learning.approve(req.learner,req.params.id,req.params.reviewId,req.body),row=learning.db.prepare("SELECT user_id FROM learning_reviews WHERE id=?").get(req.params.reviewId),user=store.listUsers().find(u=>u.id===row.user_id);await lti.sync(user,req.params.id);res.json({ok:true,grade});}));
-  app.get(api+"/activities/:id/receipt",wrap((req,res)=>{const r=learning.currentReview(req.learner,req.params.id);if(!r||r.status!=="approved")fail(409,"A published grade is not available yet.");res.json({ok:true,activityId:req.params.id,reviewId:r.id,score:r.final.total,possible:20,raw:r.final.total*5,approvedAt:r.final.approvedAt});}));
+  app.get(api+"/activities/:id/receipt",wrap((req,res)=>{const r=learning.currentReview(req.learner,req.params.id);if(!r||r.status!=="approved")fail(409,"A published grade is not available yet.");res.json({ok:true,activityId:req.params.id,reviewId:r.id,score:r.final.total,possible:r.final.possible,raw:r.final.total*100/r.final.possible,approvedAt:r.final.approvedAt});}));
   const assignmentAI=new(require('./learning-assignment-ai').AssignmentAI)(learning,{available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()&&!!store.getPreference('learning.ai',{}).enabled,track:reviewOptions.track||((p)=>p),busy,modelJSON:reviewOptions.assignmentModelJSON||require('./learning-grader').modelJSON,intervalMs:reviewOptions.intervalMs??5000});learning.assignmentAI=assignmentAI;
   app.get(api+'/teacher/activities/:id/ai-policy',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,policy:assignmentAI.policy(req.params.id)});}));
   app.put(api+'/teacher/activities/:id/ai-policy',requireTeacher,wrap((req,res)=>res.json({ok:true,policy:assignmentAI.configure(req.learner,req.params.id,req.body)})));
@@ -377,7 +383,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       if(!platform.config(activity.id))platform.configure(req.learner,activity.id,{points:activity.template_id==='scorm-connector-v1'?50:20});
       const settings=platform.settings(),base=origin(settings.publicOrigin||`${req.protocol}://${req.get('host')}`);
       if(!['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname)&&(!settings.publicEnabled||!settings.publicOrigin))fail(409,'Publish the student Assignment API before downloading a direct package.');
-      return require('./learning-direct-package').createPackage(activity,{origin:base,enrollmentKey:key,prompt:assignmentAI.policy(activity.id).prompt},publicDir);
+      return require('./learning-direct-package').createPackage(activity,{origin:base,enrollmentKey:key,prompt:assignmentAI.policy(activity.id).prompt},publicDir,learning.definitions.get(activity.id));
     });
     res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-Direct-Assignment.zip"');res.type('application/zip').send(zip);
   }));

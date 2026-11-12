@@ -27,12 +27,15 @@ class LearningTeacherPortal {
  createAssignment(user,classId,input={}){
   if(!input||typeof input!=='object'||Array.isArray(input))fail(400,'Enter assignment settings.');
   this.learning.membership(user,classId,true);
-  const templateId=input.templateId||'scorm-connector-v1';
-  const points=templateId==='scorm-connector-v1'?input.points:20;
+  const definition=input.definition?require('./learning-assignment-definition').normalize(input.definition):null;
+  const templateId=definition?(definition.kind==='discussion'?require('./learning-assignment-definition').TEMPLATE:'scorm-connector-v1'):(input.templateId||'scorm-connector-v1');
+  const points=definition?.points??(templateId==='scorm-connector-v1'?input.points:20);
   if(!Number.isInteger(points)||points<1||points>1000)fail(400,'Set 1–1000 possible points.');
   return this.store.tx(()=>{
-   const id=this.learning.createActivity(user,classId,{title:input.title,templateId});
+   const id=this.learning.createActivity(user,classId,{title:input.title||definition?.title,templateId});
+   if(definition)this.learning.definitions.save(user,id,definition);
    this.learning.platform.configure(user,id,{points});
+   if(definition?.kind==='written')this.learning.assignmentAI.configure(user,id,{enabled:true,prompt:definition.gradingInstructions,criteria:definition.criteria.map(c=>({label:c.label,points:c.points,description:c.description}))});
    return id;
   });
  }

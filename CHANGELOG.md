@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Add reusable teacher-authored assignment definitions and API-only SCORM export,
+  with a password-storage discussion example. Validate rubric points, keep grading
+  references private, ground automatic discussion grading in cited student sentences,
+  support instructor-named responses and assignment-scoped clipboard restrictions.
+  Preserve existing templates, private feedback, teacher overrides and LMS resume.
+
 - Include the offline learning-reset tool in the Hub image and validate it during
   image construction so the documented fresh-start procedure is available.
 
