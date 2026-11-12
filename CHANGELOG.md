@@ -5,6 +5,9 @@
 
 ## Unreleased
 
+- Include the offline learning-reset tool in the Hub image and validate it during
+  image construction so the documented fresh-start procedure is available.
+
 - Make `/learn` the only learning workspace. Remove old teacher/platform,
   standalone discussion, companion and launcher pages without redirects; simplify
   direct API setup and provide an explicit offline, backed-up learning-data reset.
