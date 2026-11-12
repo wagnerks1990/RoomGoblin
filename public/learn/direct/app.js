@@ -1,7 +1,7 @@
 "use strict";
 (()=>{
  const $=id=>document.getElementById(id),cfg=window.ROOMGOBLIN_SCORM,node=(tag,text)=>{const n=document.createElement(tag);n.textContent=text??'';return n;};let api=null,modern=false,ready=false,lastGrade='',refreshing=false,initialId=null,initialRevision=0,responseDirty=false,draft={},lmsInitialized=false,draftTimer=null,paused=false;
- function findApi(){let w=window;for(let i=0;w&&i<32;i++){try{if(w.API)return {api:w.API,modern:false};if(w.API_1484_11)return {api:w.API_1484_11,modern:true};if(w.parent===w)break;w=w.parent;}catch{break;}}return null;}
+ function findApi(){const starts=[window];try{if(window.opener)starts.push(window.opener);}catch{}for(let w of starts)for(let i=0;w&&i<32;i++){try{if(w.API)return {api:w.API,modern:false};if(w.API_1484_11)return {api:w.API_1484_11,modern:true};if(w.parent===w)break;w=w.parent;}catch{break;}}return null;}
  const found=findApi();if(!found){$('status').textContent='Open this assignment from your LMS.';return;}
  api=found.api;modern=found.modern;const get=modern?'GetValue':'LMSGetValue',set=modern?'SetValue':'LMSSetValue',commit=modern?'Commit':'LMSCommit';
  try{lmsInitialized=[true,'true'].includes(api[modern?'Initialize':'LMSInitialize'](''));if(!lmsInitialized&&String(api[get](modern?'cmi.learner_id':'cmi.core.student_id')||''))lmsInitialized=true;draft=JSON.parse(api[get]('cmi.suspend_data')||'{}');}catch{draft={};}
