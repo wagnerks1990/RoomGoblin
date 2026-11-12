@@ -106,6 +106,7 @@ class LearningScheduleBrowserTests(unittest.TestCase):
             self.assertEqual(retired.status, 404, path)
             self.assertNotIn('location', retired.headers)
         self.page.get_by_role('button', name='Classes & accounts', exact=True).click()
+        expect(self.page.locator('#management-content input[type=\"password\"]')).to_have_count(0)
         self.page.get_by_label('Class title', exact=True).fill('Fresh API class')
         self.page.get_by_role('button', name='Create class', exact=True).click()
         expect(self.page.locator('#class-select option:checked')).to_have_text('Fresh API class')

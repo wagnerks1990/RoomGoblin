@@ -37,6 +37,7 @@ test('fresh-start reset rolls back instead of removing unrelated references or p
  db.exec('CREATE TABLE unrelated_owner(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE)');
  db.prepare('INSERT INTO unrelated_owner VALUES(?,?)').run('keep',f.a.id);
  const before=inventory(db);assert.throws(()=>reset(db,{confirm:'RESET_LEARNING_DATA'}),/unrelated/);assert.deepEqual(inventory(db),before);assert.equal(db.prepare('SELECT COUNT(*) n FROM unrelated_owner').get().n,1);
+ db.exec('DROP TABLE unrelated_owner; CREATE TABLE unrelated_owner(id TEXT PRIMARY KEY, username TEXT REFERENCES USERS(username) ON DELETE CASCADE)');db.prepare('INSERT INTO unrelated_owner VALUES(?,?)').run('keep',f.a.username);assert.throws(()=>reset(db,{confirm:'RESET_LEARNING_DATA'}),/unrelated/);assert.deepEqual(inventory(db),before);
  db.exec('DROP TABLE unrelated_owner; CREATE TRIGGER reset_failure BEFORE DELETE ON learning_activities BEGIN SELECT RAISE(ABORT, "synthetic failure"); END');
  assert.throws(()=>reset(db,{confirm:'RESET_LEARNING_DATA'}),/synthetic failure/);assert.deepEqual(inventory(db),before);
 });

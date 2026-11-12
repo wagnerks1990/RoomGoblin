@@ -60,8 +60,8 @@ and teacher correction. New assignments use direct API delivery.
    class-filtered campaigns, approved celebrations and aggregate suggestions.
    Creating a celebration or campaign requires an explicit configured target.
    Existing display dedication, signed identity and presence rules are unchanged.
-7. **Classes & accounts** manages classes and student access. Administrators can
-   create restricted student accounts and assign eligible existing accounts.
+7. **Classes & accounts** manages classes and student access. Participants register automatically through direct assignments; administrators
+   can assign other teachers. Manual student account setup has been removed.
 8. **Setup** is administrator-only: isolated student connection, timetable mapping,
    writing-grading service and independent AI/media shortcuts. Connection settings and the grading service save independently. Secrets stay server-side and clear from forms.
 9. **Audit** shows recent class actions, including membership and class creation.
