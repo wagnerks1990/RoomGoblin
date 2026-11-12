@@ -9,8 +9,8 @@ Never turn an enrollment-only package key into access to existing private record
 The signed-LMS contracts below remain authoritative for legacy signed delivery.
 
 
-The native teacher entry is `/learn/teacher/`; read `TEACHER-PORTAL.md`. Keep
-the shared class context, legacy URL redirects, atomic assignment/gateway saves
+The native teacher entry is `/learn`; read `TEACHER-PORTAL.md`. Keep
+the shared class context, retired-page 404s, atomic assignment/gateway saves
 and private DOM clearing on session loss. Keep portal records class-scoped and teacher-only. Submission reviews are private
 annotations, not automatic LMS grades. Activity pause blocks student writes;
 hint/stage messages never authorize device commands. Preserve optimistic review

@@ -1,3 +1,7 @@
+> Historical reference: the hosted student/companion/launcher apps and old teacher
+> URLs described here have been retired. Use `/learn` and
+> [Direct assignment API](DIRECT-ASSIGNMENT-API.md) for current delivery.
+
 # Learning discussions and SCORM
 
 Development feature: `/learn/` provides a shared discussion board, automatic

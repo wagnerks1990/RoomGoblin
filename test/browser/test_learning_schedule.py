@@ -22,6 +22,7 @@ const {fixture}=require('./test/helpers/learning-fixture');
   classes:[{id:'p7',title:'Planning Period 7',enabled:true},{id:'p8',title:'Planning Period 8',enabled:true}],
   active:[{scheduleId:'p7',key:'period-seven',startAt:now-60000,endAt:now+3600000}]};
  const f=await fixture({platformOptions:{clock:()=>now,scheduleSource:()=>source}});
+ f.app.post('/fixture/fresh-start',(_req,res)=>{require('./tools/reset-learning.cjs').reset(f.store.db,{confirm:'RESET_LEARNING_DATA'});res.json({ok:true});});
  f.app.post('/fixture/next-period',(_req,res)=>{
   now+=3600000;source.active=[{scheduleId:'p8',key:'period-eight',startAt:now,endAt:now+3600000}];
   f.learning.schedule.reconcile();res.json({ok:true});
@@ -86,10 +87,36 @@ class LearningScheduleBrowserTests(unittest.TestCase):
                 self.server.wait(timeout=5)
 
     def open(self):
-        self.page.goto(self.info['base'] + '/learn/platform/')
+        self.page.goto(self.info['base'] + '/learn?view=classroom')
         expect(self.page.locator('#workspace')).to_be_visible()
         self.page.locator('[data-tab="setup"]').click()
         expect(self.page.locator('#schedule-save')).to_be_enabled()
+
+    def test_root_workspace_starts_empty_without_redirects_or_retired_apps(self):
+        self.context.request.post(self.info['base'] + '/fixture/fresh-start')
+        response = self.page.goto(self.info['base'] + '/learn')
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(response.request.redirected_from)
+        expect(self.page.locator('#workspace')).to_be_visible()
+        expect(self.page.locator('h1')).to_have_text('Teacher portal')
+        expect(self.page.locator('#class-select option')).to_have_count(0)
+        for path in ['/learn/teacher', '/learn/teacher/', '/learn/platform/',
+                     '/learn/connect/', '/learn/presence/', '/learn/scorm/bridge.js']:
+            retired = self.context.request.get(self.info['base'] + path, max_redirects=0)
+            self.assertEqual(retired.status, 404, path)
+            self.assertNotIn('location', retired.headers)
+        self.page.get_by_role('button', name='Classes & accounts', exact=True).click()
+        expect(self.page.locator('#management-content input[type=\"password\"]')).to_have_count(0)
+        self.page.get_by_label('Class title', exact=True).fill('Fresh API class')
+        self.page.get_by_role('button', name='Create class', exact=True).click()
+        expect(self.page.locator('#class-select option:checked')).to_have_text('Fresh API class')
+        self.page.get_by_role('button', name='Assignments', exact=True).click()
+        self.page.get_by_text('Add an assignment', exact=True).click()
+        self.page.get_by_label('Assignment title', exact=True).fill('Fresh evidence task')
+        self.page.get_by_role('button', name='Create assignment', exact=True).click()
+        self.page.locator('#assignment-list > details > summary').filter(has_text='Fresh evidence task').click()
+        expect(self.page.get_by_role('button', name='Download direct API starter', exact=True)).to_be_visible()
+        self.assertEqual(len(self.errors), 0, self.errors)
 
     def test_configure_once_sync_pause_resume_and_follow_next_period(self):
         self.open()
@@ -143,7 +170,7 @@ class LearningScheduleBrowserTests(unittest.TestCase):
     def test_optional_sync_failure_keeps_manual_workspace_and_drafts_available(self):
         self.page.route('**/api/v1/learning/platform/schedule',
                         lambda route: route.fulfill(status=503, json={'error': 'Synthetic unavailable source'}))
-        self.page.goto(self.info['base'] + '/learn/platform/')
+        self.page.goto(self.info['base'] + '/learn?view=classroom')
         expect(self.page.locator('#start')).to_be_enabled()
         self.page.locator('[data-tab="setup"]').click()
         expect(self.page.get_by_text('This setting could not be loaded. Existing configuration is unchanged.', exact=True)).to_be_visible()

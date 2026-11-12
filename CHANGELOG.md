@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Make `/learn` the only learning workspace. Remove old teacher/platform,
+  standalone discussion, companion and launcher pages without redirects; simplify
+  direct API setup and provide an explicit offline, backed-up learning-data reset.
+
 - Add a direct assignment data API and SCORM delivery without preapproved rosters,
   signed launches, companion windows or third-party cookies. Report activity,
   receive assignment controls and private AI feedback, and finish rubric-based

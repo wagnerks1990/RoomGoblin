@@ -55,6 +55,14 @@ Preserve these boundaries: API credentials stay in encrypted SQLite secret stora
 
 ## SCORM student connection
 
+The sole learning operator workspace is `/learn`. Retired teacher/platform,
+standalone discussion, companion and old launcher pages return 404, without
+redirects. New LMS packages use the direct API. Read `docs/LEARNING-FRESH-START.md`
+for an explicitly authorized offline data reset; startup and updates must never
+invoke it. Preserve unrelated room/device/media state and working API/AI service
+connections. Backend signed-identity contracts remain separate from retired web
+apps and must never be replaced by trusting reported SCORM names.
+
 New direct API delivery is explicitly approved: read
 `docs/DIRECT-ASSIGNMENT-API.md`. It needs no preapproved roster, signed launch or
 companion window. An assignment enrollment-only capability creates an isolated

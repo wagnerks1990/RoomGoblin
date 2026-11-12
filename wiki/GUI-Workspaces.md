@@ -3,9 +3,9 @@
 ## Classroom progress
 
 The [Teacher portal](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/TEACHER-PORTAL.md)
-at `/learn/teacher/` provides one shared class selection for assignments, review,
+at `/learn` provides one shared class selection for assignments, review,
 discussions, classroom sessions, accounts, administrator setup and audit. Legacy
-`/learn/platform/` and teacher `/learn/?manage=1` entries redirect here. Assignment
+Retired teacher/platform and standalone student pages return 404 without redirects. Assignment
 setup stays beside the selected assignment. Drafts survive polling and view
 changes; session loss clears private content before another account signs in.
 Existing signed learner identity, presence, grade privacy and hardware priority
@@ -306,4 +306,4 @@ a shared-layer draft scoped to that routine. Selection only prepares a draft;
 the standard validation/save flow and capability checks remain required.
 
 
-New SCORM delivery uses the [direct assignment data API](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/DIRECT-ASSIGNMENT-API.md): automatic participant registration, API classroom state and server-side AI feedback/grading, without roster preapproval or a companion window. Existing signed packages remain compatible.
+New SCORM delivery uses the [direct assignment data API](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/DIRECT-ASSIGNMENT-API.md): automatic participant registration, API classroom state and server-side AI feedback/grading, without roster preapproval or a companion window. Retired hosted apps are not current delivery options; create fresh direct packages.

@@ -21,7 +21,7 @@ export function createAssignments(ui,host,createHost){
     card.append(ui.button(item.template_id==='scorm-connector-v1'?'Download direct API starter':'Download direct API assignment',()=>download(item,next)),node('p','Learners connect automatically through the assignment API. No separate login, roster approval or companion window.','muted'));
     if(item.directEnabled)card.append(ui.button('Disable direct API access',()=>ui.api('/teacher/activities/'+item.id+'/direct-settings','PUT',{enabled:false}).then(()=>ui.onSaved(next))));
     if(item.template_id==='scorm-connector-v1')card.append(ui.button('AI grading rubric',()=>rubric(item,card,next)));
-    const configHost=node('div');card.append(ui.button('Connection & grading settings',async()=>{await configure(item,configHost,next);}),configHost);host.append(card);
+    const configHost=node('div');card.append(ui.button('Points & grading settings',async()=>{await configure(item,configHost,next);}),configHost);host.append(card);
    }
   },{force});
   if(changed||!createHost.childElementCount)create(next);
@@ -32,7 +32,7 @@ export function createAssignments(ui,host,createHost){
   choices(type,[{id:'scorm-connector-v1',label:'SCORM assignment connection'},...selected.me.cases.map(c=>({id:c.id,label:c.title}))]);
   type.onchange=()=>{const written=type.value!=='scorm-connector-v1';points.disabled=written;if(written)points.value='20';};
   form.append(node('p','Use one connection for each assignment. Keep the original assignment and gradebook in Schoology.','muted'));
-  const save=ui.save(form,'Create assignment',async()=>{const result=await ui.api(`/teacher/classes/${selected.classId}/assignments`,'POST',{title:title.value,templateId:type.value,points:Number(points.value)});form.reset();type.onchange();await ui.onCatalog();ui.notice('Assignment created. Open its Connection & grading settings to finish setup.');return result;},selected);
+  const save=ui.save(form,'Create assignment',async()=>{const result=await ui.api(`/teacher/classes/${selected.classId}/assignments`,'POST',{title:title.value,templateId:type.value,points:Number(points.value)});form.reset();type.onchange();await ui.onCatalog();ui.notice('Assignment created. Open its Points & grading settings to finish setup.');return result;},selected);
   save.disabled=!selected.classId;createHost.append(form);
  }
  async function download(activity,selected){
@@ -53,36 +53,23 @@ export function createAssignments(ui,host,createHost){
   ui.save(f,'Save AI grading rubric',()=>ui.api('/teacher/activities/'+activity.id+'/ai-policy','PUT',{enabled:enabled.checked,prompt:prompt.value,criteria:editors.map(x=>({label:x.label.value,points:Number(x.points.value),description:x.description.value}))}),selected);d.append(f);card.append(d);
  }
  async function configure(activity,box,selected){
-  const [connection,lms,policy,roster,settings,campaigns]=await Promise.all([
-   ui.api(`/platform/activities/${activity.id}/config`),selected.me.user.admin?ui.api(`/activities/${activity.id}/lti`):Promise.resolve(null),
+  const [connection,policy,roster,campaigns]=await Promise.all([
+   ui.api(`/platform/activities/${activity.id}/config`),
    ui.api(`/platform/activities/${activity.id}/grade-policy`),ui.api('/classes/'+selected.classId),
-   selected.me.user.admin?ui.api('/platform/settings'):Promise.resolve({settings:{publicOrigin:selected.connectionOrigin||''}}),
    activity.template_id==='scorm-connector-v1'?ui.api('/platform/campaigns'):Promise.resolve({campaigns:[]})
   ]);ui.assert(selected);if(!box.isConnected)return;
   if([...ui.dirty].some(f=>box.contains(f))&&!confirm('Discard unsaved connection changes?'))return;
   for(const f of box.querySelectorAll('form'))ui.dirty.delete(f);box.replaceChildren();
-  const cfg=connection.config,form=node('form'),url=field(form,'Schoology ungraded External Tool material URL','url',cfg?.launch_url||'',{maxLength:1500}),points=field(form,'Possible points','number',cfg?.points||(activity.template_id==='scorm-connector-v1'?50:20),{min:1,max:1000,required:true});
+  const cfg=connection.config,form=node('form'),points=field(form,'Possible points','number',cfg?.points||(activity.template_id==='scorm-connector-v1'?50:20),{min:1,max:1000,required:true});
   points.readOnly=activity.template_id!=='scorm-connector-v1';
   form.append(node('p','Possible points become fixed after the first saved progress event.','muted'));
-  ui.save(form,'Save assignment connection',()=>ui.api(`/platform/activities/${activity.id}/config`,'PUT',{points:Number(points.value),launchUrl:url.value}),selected);box.append(form);
-  const downloads=node('div',undefined,'actions');
-  const cartridge=node('a',activity.template_id==='scorm-connector-v1'?'Download ungraded identity connection':'Download Schoology discussion tool');cartridge.href=`/api/v1/learning/activities/${activity.id}/lti-package`;downloads.append(cartridge);
-  if(activity.template_id!=='scorm-connector-v1'){const scorm=node('a','Download written SCORM launcher');scorm.href=`/api/v1/learning/activities/${activity.id}/scorm`;downloads.append(scorm);}box.append(downloads);
-  if(lms)provider(activity,lms.settings,settings.settings,box,selected);
-  const developer=detail('For assignment authors','sdk:'+activity.id);developer.append(node('p','Include the connector in a configured copy of your existing assignment. No password or shared secret belongs in a package.'));
+  ui.save(form,'Save assignment points',()=>ui.api(`/platform/activities/${activity.id}/config`,'PUT',{points:Number(points.value),launchUrl:''}),selected);box.append(form);
+  const developer=detail('For assignment authors','sdk:'+activity.id);developer.append(node('p','Include the connector in a configured copy of your existing assignment.'));
   developer.append(node('p','For direct API reporting, download the API starter above and include its config.js and roomgoblin-scorm.js before your game scripts. The assignment enrollment key is registration-only; each learner receives a separate private data token.','muted'));
-  developer.append(node('pre','Legacy signed connector: window.ROOMGOBLIN_SCORM = '+JSON.stringify({origin:settings.settings.publicOrigin||'https://learn.example.org',activityId:activity.id},null,2)+';'));
   const sdk=node('a','Download SCORM connector');sdk.href='/learn/sdk/roomgoblin-scorm.js';developer.append(sdk);box.append(developer);
   grading(activity,policy.policy,roster.members||[],box,selected);
   const matching=campaigns.campaigns.filter(c=>c.classes.some(x=>x.classId===selected.classId));
   if(matching.length){const f=node('form'),select=field(f,'Continuing arcade campaign','select');choices(select,matching.map(c=>({id:c.id,label:c.title})));ui.save(f,'Link assignment to campaign',()=>ui.api(`/platform/campaigns/${select.value}/activities/${activity.id}`,'PUT',{}),selected);box.append(f);}
- }
- function provider(activity,lti,settings,box,selected){
-  const d=detail('Signed Schoology provider · administrator','provider:'+activity.id),f=node('form');
-  const app=field(f,'Student HTTPS origin','url',lti.appOrigin||settings.publicOrigin||'',{required:true}),platform=field(f,'Schoology origin','url',lti.platformOrigin||'',{required:true}),key=field(f,'Consumer key','text',lti.consumerKey||'',{required:true,maxLength:120}),secret=field(f,'Shared secret · blank keeps the saved value','password','',{autoComplete:'new-password',maxLength:512}),origins=field(f,'Approved HTTPS grade-service origins · one per line','textarea',(lti.outcomeOrigins||[]).join('\n'),{rows:3}),enabled=field(f,'Enable signed launches','checkbox',!!lti.enabled);
-  d.append(node('p',lti.bound?'Schoology course and material are bound.':'Configure the matching Schoology provider, then launch once as the teacher.'),node('p',lti.secretConfigured?'A shared secret is saved. Its value is never returned.':'No shared secret is saved.','muted'));
-  if(lti.observedOutcomeOrigins?.length)d.append(node('p','Observed signed grade services: '+lti.observedOutcomeOrigins.join(', '),'muted'));
-  ui.save(f,'Save signed provider',async()=>{try{await ui.api(`/activities/${activity.id}/lti`,'PUT',{appOrigin:app.value,platformOrigin:platform.value,consumerKey:key.value,sharedSecret:secret.value,outcomeOrigins:lines(origins),enabled:enabled.checked});}finally{secret.value='';}},selected);d.append(f);box.append(d);
  }
  function grading(activity,policy,roster,box,selected){
   const d=detail('Date-based assessment credit & exceptions','policy:'+activity.id),f=node('form');

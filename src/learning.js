@@ -136,6 +136,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
   const api="/api/v1/learning";
+  // The single operator workspace is served directly, without a directory redirect.
+  if(publicDir)app.get(['/learn','/learn/','/learn/index.html'],rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>isPublicRequest(req)?res.sendStatus(404):res.sendFile(require('node:path').join(publicDir,'index.html')));
   const requireLearning=(req,res,next)=>{const u=req.directLearner||requestUser(req);if(!store.authEnabled()||!u||isPublicRequest(req)&&!req.directLearner&&(!u.learningSso||u.profileId!=='learning-student'))return res.status(401).json({ok:false,error:isPublicRequest(req)?'Reopen the signed Schoology connection.':'Sign in to your assigned RoomGoblin account.'});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
   const requireTeacher=(req,res,next)=>teacher(req.learner)?next():res.status(403).json({ok:false,error:"Teacher access required."});
   const requireAdministrator=(req,res,next)=>hasCapability(req.learner,"*")?next():res.status(403).json({ok:false,error:"Administrator access required."});
@@ -379,7 +381,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     });
     res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-Direct-Assignment.zip"');res.type('application/zip').send(zip);
   }));
-  if(publicDir){app.get(api+"/activities/:id/scorm",requireTeacher,wrap((req,res)=>{const activity=learning.activity(req.learner,req.params.id,true);const AdmZip=require("adm-zip"),fs=require("node:fs"),path=require("node:path"),zip=new AdmZip(),signedLaunch=!!platform.signedLaunchConfigured(activity.id);const base=origin(platform.settings().publicOrigin||lti.config(activity.id).appOrigin||`${req.protocol}://${req.get("host")}`);for(const file of ["index.html","bridge.js","imsmanifest.xml"])zip.addFile(file,fs.readFileSync(path.join(publicDir,"scorm",file)));zip.addFile("config.js",Buffer.from(`window.LEARNING_CONFIG=${JSON.stringify({origin:base,activityId:activity.id,title:activity.title,signedLaunch,embedded:signedLaunch&&platform.settings().embeddedEnabled})};`));res.setHeader("Content-Disposition",'attachment; filename="Written-Discussion-SCORM12.zip"');res.type("application/zip").send(zip.toBuffer());}));}
+  app.get(api+"/activities/:id/scorm",requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.status(410).json({ok:false,error:'The old launcher has been removed. Download a direct API package from /learn.'});}));
   retryQueue=new(require('./learning-retry-queue').LearningRetryQueue)(learning.db,{
     intervalMs:reviewOptions.intervalMs??5000,
     available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()&&!!store.getPreference('learning.ai',{}).enabled,
