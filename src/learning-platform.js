@@ -89,8 +89,8 @@ class LearningPlatform{
   this.db.prepare('INSERT INTO learning_first_names VALUES(?,?,?) ON CONFLICT(class_id,user_id) DO UPDATE SET first_name=excluded.first_name').run(classId,userId,first);
  }
  configure(user,id,input){
-  const a=this.learning.activity(user,id,true);if(a.template_id!=='scorm-connector-v1'&&!Object.hasOwn(require('./learning-grader').CASES,a.template_id))fail(400,'Create a supported assignment first.');
-  if(a.template_id!=='scorm-connector-v1'&&input.points!==20)fail(400,'Written discussions use 20 possible points.');
+  const a=this.learning.activity(user,id,true),discussion=this.learning.caseForActivity(a);if(a.template_id!=='scorm-connector-v1'&&!discussion)fail(400,'Create a supported assignment first.');
+  if(discussion&&input.points!==discussion.points)fail(400,'Points must match the discussion definition.');
   if(!Number.isInteger(input.points)||input.points<1||input.points>1000)fail(400,'Set 1–1000 possible points.');
   if(this.config(id)?.points!==input.points&&this.db.prepare('SELECT 1 FROM learning_signals WHERE activity_id=? LIMIT 1').get(id))fail(409,'Create a new connector to change possible points after progress has been saved.');
   let launch='';if(input.launchUrl){try{const u=new URL(input.launchUrl),lti=this.learning.lti.config(id),allowed=[lti.platformOrigin,...this.store.getPreference('learning.bridgeOrigins',[])];if(u.protocol!=='https:'||u.username||u.password||u.hash||!allowed.includes(u.origin)||input.launchUrl.length>1500)throw Error();launch=u.href;}catch{fail(400,'Use this activity’s Schoology External Tool URL.');}}

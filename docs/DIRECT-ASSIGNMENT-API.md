@@ -8,6 +8,9 @@ browser left open. Old hosted learning apps have been retired. Use fresh direct 
 
 ## Teacher workflow
 
+The [password-storage discussion](LEARNING-CRYPTO-DISCUSSION.md) adds an IT III
+8/6/2/4 rubric, instructor-style responses and a case-scoped clipboard restriction.
+
 Open `/learn` → Assignments and expand an assignment. Download its direct
 API assignment (written discussion) or API starter (other SCORM content). Upload
 the written package as SCORM in the LMS. Existing games can include the starter's
@@ -128,3 +131,12 @@ Deploy through checked main and exact published images with the mandatory backup
 Tables and settings are additive; an explicitly authorized reset is separate
 from ordinary deployment. See [Learning fresh start](LEARNING-FRESH-START.md). Retain the operational backup and matching source for rollback. Disable direct access or withdraw packages requiring this transport
 before reverting beyond this API; never reset the database or publish credentials.
+
+## Reusable authored definitions
+
+Teacher API creation accepts a schema-version-1 definition for discussion or
+written assignments. Public prompts and rubric load from the direct API; private
+grading references remain server-side. New lesson content needs no per-lesson
+backend changes. See [data-defined discussions](LEARNING-CRYPTO-DISCUSSION.md)
+and examples/assignments/it3-password-storage.json for the schema, authoring client,
+immutable versions, bounded grading and connected SCORM export.
