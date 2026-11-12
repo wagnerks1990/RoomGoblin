@@ -114,3 +114,14 @@ test('AI cannot publish against possible points changed during inference',async 
  const task=f.learning.assignmentAI.drain();await waiting;f.learning.db.prepare('UPDATE learning_connectors SET points=10 WHERE activity_id=?').run(f.activityId);release();await task;
  assert.equal((await f.call('/platform/activities/'+f.activityId+'/state')).body.assignmentReview.status,'unavailable');assert.equal(f.learning.portal.overview(f.admin,f.classId).submissions[0].score,null);
 });
+
+test('direct authorization is rate-limited without consuming native teacher requests',async t=>{
+ const f=await setup(t);const path='/activities/'+f.activityId;
+ for(let i=0;i<600;i++)assert.equal((await f.call(path)).status,401);
+ assert.equal((await f.call(path)).status,429);assert.equal((await f.request(f.admin,'/api/v1/learning/teacher/classes')).status,200);
+});
+
+test('direct package config escapes script delimiters without changing assignment text',()=>{
+ const title='Evidence <script> and & symbols';const zip=new(require('adm-zip'))(require('../src/learning-direct-package').createPackage({id:crypto.randomUUID(),title,template_id:'scorm-connector-v1'},{origin:'https://learn.example.test',enrollmentKey:'synthetic-only'},require('node:path').resolve(__dirname,'../public/learn')));
+ const config=zip.readAsText('config.js');assert(!config.includes('<'));assert(config.includes('\\u003c'));const context={window:{}};require('node:vm').runInNewContext(config,context);assert.equal(context.window.ROOMGOBLIN_SCORM.title,title);assert(zip.readAsText('imsmanifest.xml').includes('&lt;script&gt;'));
+});

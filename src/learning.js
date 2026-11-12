@@ -141,7 +141,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const requireAdministrator=(req,res,next)=>hasCapability(req.learner,"*")?next():res.status(403).json({ok:false,error:"Administrator access required."});
   // This bearer-only data plane never authenticates a native cookie. Rewrite
   // only the explicit learner allowlist into the existing grading/report handlers.
-  app.use((req,res,next)=>{
+  app.use(rateLimit({windowMs:60000,limit:600,standardHeaders:true,legacyHeaders:false,skip:req=>!req.path.startsWith(api+'/direct/')}),(req,res,next)=>{
     if(!req.path.startsWith(api+'/direct/'))return next();
     const transport=require('./learning-direct');transport.cors(res);
     const target=transport.route(req.method==='OPTIONS'?req.get('Access-Control-Request-Method'):req.method,req.path);
@@ -156,7 +156,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const user=direct.enroll(req.params.id,String(req.get('Authorization')||'').replace(/^RoomGoblin-Assignment /,''),req.body);
     res.json({ok:true,state:platform.state(user,req.params.id),identitySource:'SCORM-reported'});
   }));
-  app.all(require('./learning-direct').presencePath,wrap((req,res)=>{
+  app.all(require('./learning-direct').presencePath,rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),wrap((req,res)=>{
     const transport=require('./learning-direct');transport.cors(res);
     if(isPublicRequest(req)||['forwarded','x-forwarded-for','x-forwarded-proto','cf-connecting-ip'].some(k=>req.headers[k]!==undefined)||!require('./learning-platform').classroomRequest(req,platform.settings()))fail(403,'Direct classroom network required.');
     res.setHeader('Access-Control-Allow-Headers','Content-Type, X-RoomGoblin-Presence');res.setHeader('Access-Control-Allow-Private-Network','true');
