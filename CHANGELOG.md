@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Add a direct assignment data API and SCORM delivery without preapproved rosters,
+  signed launches, companion windows or third-party cookies. Report activity,
+  receive assignment controls and private AI feedback, and finish rubric-based
+  grading on the server after the learner closes the assignment. Preserve native
+  SCORM score saves, private participant scope and existing classroom safety gates.
+
 - Reuse the completed private SQLite snapshot when staging an operational ZIP,
   avoiding a second full database allocation in the bounded maintenance tmpfs.
   Preserve copy fallback, archive bytes, private permissions and failure cleanup.

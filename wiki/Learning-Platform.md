@@ -94,3 +94,6 @@ sessions, class accounts, setup and audit. The former `/learn/platform/` and
 teacher `/learn/?manage=1` URLs redirect into this shared workspace. See the
 [teacher portal contract](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/TEACHER-PORTAL.md)
 for draft protection, privacy boundaries and regression validation.
+
+
+New SCORM delivery uses the [direct assignment data API](https://github.com/wagnerks1990/RoomGoblin/blob/main/docs/DIRECT-ASSIGNMENT-API.md): automatic participant registration, API classroom state and server-side AI feedback/grading, without roster preapproval or a companion window. Existing signed packages remain compatible.

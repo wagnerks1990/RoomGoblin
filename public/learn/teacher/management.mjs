@@ -7,7 +7,7 @@ export function createManagement(ui,host){
   const selected=next,token={};loading=token;
   const [roster,accounts]=await Promise.all([next.classId?ui.api('/classes/'+next.classId):Promise.resolve({members:[]}),next.me.user.admin?ui.api('/accounts'):Promise.resolve(null)]);
   ui.assert(selected);if(loading!==token)return;ctx=selected;
-  host.replaceChildren();
+  host.replaceChildren(node('p','Direct API participants register when their assignment first reports data. Manual accounts are optional for older learning flows.','muted'));
   const create=node('section',undefined,'card');create.append(node('h2','Create a class'));
   const cf=node('form'),title=field(cf,'Class title','text','',{required:true,maxLength:100});
   ui.save(cf,'Create class',async()=>{const result=await ui.api('/classes','POST',{title:title.value});ui.dirty.delete(cf);await ui.onCatalog(result.id);},selected,{refresh:false});create.append(cf);host.append(create);
@@ -15,7 +15,7 @@ export function createManagement(ui,host){
    const members=node('section',undefined,'card');members.append(node('h2','Assigned members'));
    const rows=roster.members||[];
    if(!rows.length)members.append(node('p','No members are assigned.','muted'));
-   for(const member of rows){const line=node('div',undefined,'member-row');line.append(node('span',`${member.alias} · ${member.role}${member.exempt?' · deadline exception':''}`));
+   for(const member of rows){const line=node('div',undefined,'member-row');line.append(node('span',`${member.alias} · ${member.role}${member.identitySource==='API-reported identity'?' · API-reported identity':''}${member.exempt?' · deadline exception':''}`));
     if(member.role==='student')line.append(ui.button('Remove access',async()=>{if(!confirm('Remove this student’s access to the selected class? Saved work will remain.'))return;ui.assert(selected);await ui.api(`/classes/${selected.classId}/members/${member.user_id}`,'DELETE');ui.assert(selected);await load(selected,{force:true});}));
     members.append(line);
    }host.append(members);

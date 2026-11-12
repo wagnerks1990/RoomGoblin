@@ -18,6 +18,9 @@ export function createAssignments(ui,host,createHost){
     const controls=detail('Pause, hint & stage','command:'+item.id),form=node('form'),paused=field(form,'Pause new submissions','checkbox',!!item.command.paused),stage=field(form,'Stage','number',item.command.stage,{min:1,max:20,required:true}),hint=field(form,'Hint','textarea',item.command.hint,{maxLength:300,rows:2});
     controls.append(node('p','Pause is enforced by RoomGoblin. Hints and stages appear in assignments that support teacher controls.','muted'));
     ui.save(form,'Save activity controls',async()=>{const result=await ui.api('/teacher/activities/'+item.id+'/command','PUT',{version:item.command.version,paused:paused.checked,stage:Number(stage.value),hint:hint.value});item.command=result.command;},next);controls.append(form);card.append(controls);
+    card.append(ui.button(item.template_id==='scorm-connector-v1'?'Download direct API starter':'Download direct API assignment',()=>download(item,next)),node('p','Learners connect automatically through the assignment API. No separate login, roster approval or companion window.','muted'));
+    if(item.directEnabled)card.append(ui.button('Disable direct API access',()=>ui.api('/teacher/activities/'+item.id+'/direct-settings','PUT',{enabled:false}).then(()=>ui.onSaved(next))));
+    if(item.template_id==='scorm-connector-v1')card.append(ui.button('AI grading rubric',()=>rubric(item,card,next)));
     const configHost=node('div');card.append(ui.button('Connection & grading settings',async()=>{await configure(item,configHost,next);}),configHost);host.append(card);
    }
   },{force});
@@ -31,6 +34,23 @@ export function createAssignments(ui,host,createHost){
   form.append(node('p','Use one connection for each assignment. Keep the original assignment and gradebook in Schoology.','muted'));
   const save=ui.save(form,'Create assignment',async()=>{const result=await ui.api(`/teacher/classes/${selected.classId}/assignments`,'POST',{title:title.value,templateId:type.value,points:Number(points.value)});form.reset();type.onchange();await ui.onCatalog();ui.notice('Assignment created. Open its Connection & grading settings to finish setup.');return result;},selected);
   save.disabled=!selected.classId;createHost.append(form);
+ }
+ async function download(activity,selected){
+  const r=await fetch('/api/v1/learning/teacher/activities/'+activity.id+'/direct-package',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1'},body:'{}',signal:AbortSignal.timeout(60000)});ui.assert(selected);
+  if(!r.ok){let message='Assignment package could not be downloaded.';try{message=(await r.json()).error||message;}catch{}throw Error(message);}
+  const blob=await r.blob();ui.assert(selected);const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='RoomGoblin-Direct-Assignment.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);ui.notice('API package downloaded. Upload it as SCORM in your LMS. Existing games can include its config.js and connector SDK.');
+ }
+ async function rubric(activity,card,selected){
+  if(card.querySelector('[data-ai-policy]'))return;
+  const result=await ui.api('/teacher/activities/'+activity.id+'/ai-policy');ui.assert(selected);if(!card.isConnected)return;
+  const policy=result.policy,d=detail('AI assignment grading','ai-policy:'+activity.id);d.dataset.aiPolicy='1';d.open=true;
+  const f=node('form'),enabled=field(f,'Grade submitted written evidence automatically','checkbox',policy.enabled),prompt=field(f,'Assignment instructions','textarea',policy.prompt||'',{maxLength:3000,rows:4});
+  const rows=node('div'),editors=[];
+  const add=criterion=>{const line=node('fieldset'),label=field(line,'Criterion name','text',criterion.label||'',{maxLength:100}),points=field(line,'Criterion possible points','number',criterion.points||1,{min:1,max:1000}),description=field(line,'Evidence required for these points','textarea',criterion.description||'',{maxLength:1000,rows:3});const entry={line,label,points,description};editors.push(entry);line.append(ui.button('Remove criterion',()=>{editors.splice(editors.indexOf(entry),1);line.remove();ui.dirty.add(f);}));rows.append(line);};
+  for(const criterion of policy.criteria.length?policy.criteria:[{label:'Assignment evidence',points:activity.points||50,description:''}])add(criterion);
+  f.append(rows,ui.button('Add criterion',()=>{if(editors.length>=8)throw Error('Use up to eight rubric criteria.');add({});ui.dirty.add(f);}));
+  f.append(node('p','Rubric points must equal assignment possible points. Uses the configured server-side AI service and its automatic-publication policy. Student reports never set their AI grade.','muted'));
+  ui.save(f,'Save AI grading rubric',()=>ui.api('/teacher/activities/'+activity.id+'/ai-policy','PUT',{enabled:enabled.checked,prompt:prompt.value,criteria:editors.map(x=>({label:x.label.value,points:Number(x.points.value),description:x.description.value}))}),selected);d.append(f);card.append(d);
  }
  async function configure(activity,box,selected){
   const [connection,lms,policy,roster,settings,campaigns]=await Promise.all([
@@ -50,7 +70,8 @@ export function createAssignments(ui,host,createHost){
   if(activity.template_id!=='scorm-connector-v1'){const scorm=node('a','Download written SCORM launcher');scorm.href=`/api/v1/learning/activities/${activity.id}/scorm`;downloads.append(scorm);}box.append(downloads);
   if(lms)provider(activity,lms.settings,settings.settings,box,selected);
   const developer=detail('For assignment authors','sdk:'+activity.id);developer.append(node('p','Include the connector in a configured copy of your existing assignment. No password or shared secret belongs in a package.'));
-  developer.append(node('pre','window.ROOMGOBLIN_SCORM = '+JSON.stringify({origin:settings.settings.publicOrigin||'https://learn.example.org',activityId:activity.id},null,2)+';'));
+  developer.append(node('p','For direct API reporting, download the API starter above and include its config.js and roomgoblin-scorm.js before your game scripts. The assignment enrollment key is registration-only; each learner receives a separate private data token.','muted'));
+  developer.append(node('pre','Legacy signed connector: window.ROOMGOBLIN_SCORM = '+JSON.stringify({origin:settings.settings.publicOrigin||'https://learn.example.org',activityId:activity.id},null,2)+';'));
   const sdk=node('a','Download SCORM connector');sdk.href='/learn/sdk/roomgoblin-scorm.js';developer.append(sdk);box.append(developer);
   grading(activity,policy.policy,roster.members||[],box,selected);
   const matching=campaigns.campaigns.filter(c=>c.classes.some(x=>x.classId===selected.classId));

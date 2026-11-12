@@ -107,7 +107,7 @@ class LearningPlatform{
   // subsequently reports a lower replay. This stays private to the learner.
   const best=this.db.prepare("SELECT MAX(CAST(json_extract(data_json,'$.raw') AS REAL)) best FROM learning_signals WHERE activity_id=? AND user_id=? AND kind='completed'").get(id,user.id).best;
   if(best!==null)progress.bestRaw=best;
-  return {command:this.learning.portal?.command(id)||{version:0,paused:0,hint:'',stage:1},activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress,grade:this.grading.state(user,id),open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
+  return {submissionReview:this.learning.assignmentAI?.submission(user,id)||null,assignmentReview:this.learning.assignmentAI?.result(user,id)||null,command:this.learning.portal?.command(id)||{version:0,paused:0,hint:'',stage:1},activityId:id,title:a.title,learnerKey:user.id,firstName,points:cfg.points,sequence:row?.sequence||0,progress,grade:this.grading.state(user,id),open:!!a.open,source:'SCORM-reported',presenceOrigin:this.settings().presenceOrigin,classroomSession:!!this.currentSession(a.class_id),arcade:this.arcade?.state(user,id)||null};
  }
  currentSession(classId){const session=this.db.prepare('SELECT * FROM learning_live_sessions WHERE class_id=? AND ended_at IS NULL AND expires_at>? ORDER BY started_at DESC LIMIT 1').get(classId,this.clock())||null;return session&&this.schedule&&!this.schedule.valid(session)?null:session;}
  start(user,classId,minutes){
@@ -159,6 +159,7 @@ class LearningPlatform{
    }
    if(classroom&&this.schedule?.automatic(session))this.db.prepare('INSERT OR IGNORE INTO learning_live_attendance VALUES(?,?)').run(session.id,user.id);
    signalId=Number(this.db.prepare('INSERT INTO learning_signals(activity_id,user_id,client_id,fingerprint,kind,sequence,occurred_at,received_at,data_json,classroom) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,user.id,event.id,fingerprint,event.kind,event.sequence,event.occurredAt,now,JSON.stringify(event.data),classroom?1:0).lastInsertRowid);
+   this.learning.assignmentAI?.enqueue(user,a,event,signalId);
    if(latest)this.db.prepare('INSERT INTO learning_progress VALUES(?,?,?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET sequence=excluded.sequence,data_json=excluded.data_json,updated_at=excluded.updated_at').run(id,user.id,event.sequence,JSON.stringify(progress),now);
    if(classroom&&['score','completed','progress'].includes(event.kind)){const previous=this.db.prepare('SELECT data_json FROM learning_live_scores WHERE session_id=? AND activity_id=? AND user_id=?').get(session.id,id,user.id);const visible={...objectJson(previous?.data_json),...event.data,...(event.kind==='completed'?{completed:true}:{})};delete visible.state;this.db.prepare('INSERT INTO learning_live_scores VALUES(?,?,?,?) ON CONFLICT(session_id,activity_id,user_id) DO UPDATE SET data_json=excluded.data_json').run(session.id,id,user.id,JSON.stringify(visible));}
   });

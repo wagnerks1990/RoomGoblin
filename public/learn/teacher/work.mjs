@@ -9,11 +9,12 @@ export function createWork(ui,{submissions,written,discussions,filterHost}){
   const changed=ctx!==selected;ctx=selected;data=next;if(changed){filter='';filtered=null;request=null;drawFilter(selected);}
   ui.draw(submissions,[selected.classId,next.submissions],()=>{
    submissions.replaceChildren();if(!next.submissions.length)submissions.append(node('p','No written SCORM responses have been submitted. Discussion reviews appear below.','muted'));
-   for(const row of next.submissions){const d=detail(`${row.alias} · ${row.title} · ${row.score===null?'Needs review':row.score+' / '+row.points+' reviewed'}`,'submission:'+row.id);
+   for(const row of next.submissions){const d=detail(`${row.alias} · ${row.title} · ${row.score===null?'Needs review':row.score+' / '+row.points+' reviewed · '+(row.review_source||'Teacher')}`,'submission:'+row.id);
+    if(row.ai_status)d.append(node('p','AI feedback: '+row.ai_status,'muted'));
     d.append(node('p',`${dateText(row.received_at)} · Provisional score: ${row.payload.earned} / ${row.points}`,'muted'));
     for(const [question,answer]of Object.entries(row.payload.answers||{}))d.append(node('h3',question),node('pre',answer));
-    const f=node('form'),score=field(f,'Teacher score','number',row.score??row.payload.earned,{min:0,max:row.points,step:'any',required:true}),feedback=field(f,'Teacher feedback','textarea',row.feedback||'',{maxLength:1000,rows:3});
-    ui.save(f,'Save review',async()=>{const result=await ui.api('/teacher/submissions/'+row.id+'/review','PUT',{score:Number(score.value),feedback:feedback.value,revision:row.revision||0});Object.assign(row,result.review);},selected);d.append(f,node('p','A private submission review does not automatically write a Schoology grade.','muted'));submissions.append(d);
+    const f=node('form'),score=field(f,'Teacher score','number',row.score??row.ai?.total??row.payload.earned,{min:0,max:row.points,step:'any',required:true}),feedback=field(f,'Teacher feedback','textarea',row.feedback||row.ai?.summary||'',{maxLength:1000,rows:3});
+    ui.save(f,'Save review',async()=>{const result=await ui.api('/teacher/submissions/'+row.id+'/review','PUT',{score:Number(score.value),feedback:feedback.value,revision:row.revision||0});Object.assign(row,result.review);},selected);d.append(f,node('p','Direct API packages return this private reviewed score to the participant and save it through the native SCORM attempt.','muted'));submissions.append(d);
    }
   },{force});
   ui.draw(written,[selected.classId,next.reviews],()=>{
