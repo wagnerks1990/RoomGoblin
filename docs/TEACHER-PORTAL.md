@@ -145,3 +145,9 @@ uploaded SDKs, actual student submissions, browser policies and gradebook result
 still require acceptance. This feature does not deploy, stop, or migrate the
 external prototype and does not import its synthetic records. Site-specific
 inventory and source captures remain private local operational records.
+
+
+Discussion comments retain server-side edit history. Edited posts expose View edit
+history in the class discussion panel; teacher corrections keep previous text,
+optimistic revision checks and class-scoped authorization. Histories are paginated.
+See DIRECT-ASSIGNMENT-API.md for visibility, legacy-history limits and retention.

@@ -70,7 +70,8 @@ there is no administrator-origin exemption or wildcard cookie authorization.
 | `POST /activities/:id/enroll` | `RoomGoblin-Assignment <enrollment key>`; body has fresh participantToken, reportedId and name; repeat registration with the same token is idempotent |
 | `GET /activities/:id` | Bearer participantToken; current written prompt, shared posts and own review |
 | `POST /activities/:id/posts` | Own initial response, reply or independent critique; existing background discussion grading |
-| `PUT /activities/:id/posts/:postId` | Own post revision; existing conflict checks |
+| `PUT /activities/:id/posts/:postId` | Own comment edit, revision conflict checks and atomic version retention |
+| `GET /activities/:id/posts/:postId/history` | Visible comment versions, newest first; optional beforeRevision cursor |
 | `POST /activities/:id/submit` | Queue the current written assessment |
 | `GET /activities/:id/receipt` | Own published written-discussion grade |
 | `GET /platform/activities/:id/state` | Own progress, private feedback and pause/hint/stage state |
@@ -140,3 +141,31 @@ grading references remain server-side. New lesson content needs no per-lesson
 backend changes. See [data-defined discussions](LEARNING-CRYPTO-DISCUSSION.md)
 and examples/assignments/it3-password-storage.json for the schema, authoring client,
 immutable versions, bounded grading and connected SCORM export.
+
+
+## Comment editing and retained versions
+
+Discussion packages use inline Edit for their own initial posts, replies and
+independent responses. Edited comments show an Edited marker and View edit history.
+The native teacher workspace retains its teacher-response editor and exposes the
+same history. Students cannot edit other participants or instructor comments.
+Histories are visible to assignment participants who can see the comment; hidden
+comments/ancestors and cross-assignment probes remain inaccessible to students.
+
+Edits save original and replacement text atomically with the post revision and
+audit event. Conflicts retain the browser draft; unchanged saves create no version
+or grading job. Scored writing changes retain existing review invalidation and
+regrading behavior. History returns 50 versions per page with nextBeforeRevision;
+it contains no private grades, credentials or internal account IDs.
+
+History begins with the text available when tracking is enabled. Earlier edits
+already overwritten by the old implementation cannot be reconstructed; the API
+reports historyComplete and historyAvailableFrom instead of inventing content.
+The additive learning_post_versions table is included in SQLite recovery backups
+and follows existing comment/data retention. No normal update resets writing.
+
+The classroom layout preserves chronological conversations without a separate
+older-grading-feedback section. Edit history belongs to the individual comment.
+Confirmed replies clear/close their editor; unconfirmed submissions and failed
+edits retain their text. SCORM identity, native score reporting, clipboard policy,
+private feedback, teacher authorization and publication controls are unchanged.

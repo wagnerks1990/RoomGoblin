@@ -34,6 +34,7 @@ class LearningStore{
       CREATE TABLE IF NOT EXISTS learning_events(id INTEGER PRIMARY KEY,at TEXT NOT NULL,actor_id TEXT,activity_id TEXT,kind TEXT NOT NULL,record_id TEXT,details_json TEXT NOT NULL);
     `);
     this.definitions=new AssignmentDefinitions(this);
+    this.postHistory=new(require('./learning-post-history').PostHistory)(this);
     if(!this.db.prepare('PRAGMA table_info(learning_reviews)').all().some(c=>c.name==='started_at'))this.db.exec('ALTER TABLE learning_reviews ADD COLUMN started_at TEXT');
     // This profile can never grant appliance access, even if its config is edited.
     this.db.prepare("INSERT OR IGNORE INTO access_profiles(id,name,role,enabled,config_json,updated_at) VALUES(?,?,?,?,?,?)").run("learning-student","Learning student","viewer",1,JSON.stringify({description:"Assigned learning activities only",capabilities:["learning.participate"]}),now());
@@ -65,7 +66,7 @@ class LearningStore{
     const byId=new Map(rows.map(p=>[p.id,p]));
     const visible=p=>{const seen=new Set();while(p){if(p.hidden||seen.has(p.id))return false;seen.add(p.id);if(!p.parent_id)return true;p=byId.get(p.parent_id);}return false;};
     const definition=this.caseForActivity(a);
-    return rows.filter(p=>a.member.role==="teacher"||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?(definition?.responseLabel||this.store.getPreference("learning.responseLabel","Teacher")):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
+    return rows.filter(p=>a.member.role==="teacher"||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?(definition?.responseLabel||this.store.getPreference("learning.responseLabel","Teacher")):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,updatedAt:p.updated_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
   }
   latestScoredReply(user,id){return this.db.prepare("SELECT p.id FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.activity_id=? AND p.user_id=? AND p.hidden=0 AND (p.kind='critique' OR (p.kind='reply' AND parent.kind='initial' AND parent.hidden=0 AND parent.user_id<>p.user_id)) ORDER BY p.rowid DESC LIMIT 1").get(id,user.id);}
   isScoredPost(user,id,postId){const p=this.db.prepare("SELECT p.kind,parent.kind parent_kind,parent.user_id parent_user FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.id=? AND p.activity_id=? AND p.user_id=?").get(postId,id,user.id);return !!p&&(['initial','critique'].includes(p.kind)||p.kind==='reply'&&p.parent_kind==='initial'&&p.parent_user!==user.id);}
@@ -83,12 +84,17 @@ class LearningStore{
     if(kind==="initial"&&this.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND user_id=? AND kind='initial'").get(id,user.id))fail(409,"Revise your existing initial post.");
     const postId=crypto.randomUUID(),time=now();this.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").run(postId,id,user.id,parentId,kind,body,time,time);this.event(user,id,"post.create",postId);return postId;
   }
-  edit(user,id,postId,input){
+  edit(user,id,postId,input){return this.store.tx(()=>{
     const a=this.activity(user,id);this.writable(a);const p=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND user_id=? AND hidden=0 AND kind IN ('initial','reply','critique')").get(postId,id,user.id);if(!p)fail(404,"Your editable post was not found.");
     if(input.revision!==p.revision)fail(409,"This post changed. Refresh before editing.");
-    this.db.prepare("UPDATE learning_posts SET body=?,revision=revision+1,updated_at=? WHERE id=?").run(text(input.body,p.kind==="initial"?6000:3000),now(),p.id);
-    if(this.isScoredPost(user,id,postId))this.db.prepare("UPDATE learning_reviews SET status='superseded',updated_at=? WHERE activity_id=? AND user_id=? AND status<>'superseded'").run(now(),id,user.id);this.event(user,id,"post.edit",p.id,{revision:p.revision+1});
-  }
+    if(!this.postHistory.change(p,text(input.body,p.kind==='initial'?6000:3000),user,'author'))return false;
+    if(this.isScoredPost(user,id,postId))this.db.prepare("UPDATE learning_reviews SET status='superseded',updated_at=? WHERE activity_id=? AND user_id=? AND status<>'superseded'").run(now(),id,user.id);this.event(user,id,"post.edit",p.id,{revision:p.revision+1});return true;
+  });}
+  editInstructor(user,id,postId,input){return this.store.tx(()=>{
+    this.activity(user,id,true);const p=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind IN ('ai','teacher')").get(postId,id);if(!p)fail(404,'Teacher response not found.');if(input.revision!==undefined&&input.revision!==p.revision)fail(409,'This response changed. Refresh before editing.');
+    if(!this.postHistory.change(p,text(input.body,3000),user,'teacher'))return false;this.event(user,id,'coach.teacher-edit',p.id,{revision:p.revision+1});
+  });}
+
   moderate(user,id,postId,hidden){this.activity(user,id,true);const p=this.db.prepare("SELECT * FROM learning_posts WHERE activity_id=? AND id=?").get(id,postId);if(!p)fail(404,"Post not found.");this.db.prepare("UPDATE learning_posts SET hidden=? WHERE id=?").run(hidden?1:0,p.id);this.event(user,id,"post.moderate",p.id,{hidden});}
   snapshot(user,id,replyId){
     const activity=this.activity(user,id);if(!this.caseForActivity(activity))fail(409,'SCORM scores stay in the original Schoology assignment.');
@@ -284,7 +290,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     if(req.body.enabled===true&&provider==="openai"&&!store.hasSecret("learning.openai.key"))fail(400,"Configure the server-side grading key first.");
     store.setPreference("learning.ai",{enabled:req.body.enabled===true,provider,baseURL,model,dailyLimit,autonomous:req.body.autonomous!==false});store.setPreference("learning.bridgeOrigins",checked);store.setPreference("learning.responseLabel",responseLabel);learning.event(req.learner,null,"grading.settings",null,{provider,enabled:req.body.enabled===true});});res.json({ok:true});
   }));
-  app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:learning.caseForActivity(a),definition:toCase(learning.definitions.get(a.id))},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id),gradingQueued:!!learning.db.prepare('SELECT 1 FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,req.learner.id),lms:lti.status(req.learner,a.id)});}));
+  app.get(api+"/activities/:id",wrap((req,res)=>{const a=learning.activity(req.learner,req.params.id);res.json({ok:true,activity:{...a,case:learning.caseForActivity(a),definition:toCase(learning.definitions.get(a.id))},posts:learning.posts(req.learner,a.id),review:learning.currentReview(req.learner,a.id),commentHistory:{schemaVersion:1},gradingQueued:!!learning.db.prepare('SELECT 1 FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,req.learner.id),lms:lti.status(req.learner,a.id)});}));
   // LMS names are optional display data, never an authentication or enrollment claim.
   app.put(api+"/activities/:id/lms-name",wrap((req,res)=>{
     const a=learning.activity(req.learner,req.params.id);
@@ -304,9 +310,10 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const reply=learning.latestScoredReply(req.learner,req.params.id);
     await acceptWriting({...req,body:{replyId:reply?.id||null}}, {json:value=>res.json({...value,id}),status:status=>({json:value=>res.json({ok:true,id,gradingPending:status===503,retryable:status===503,gradingMessage:value.error})})});
   }));
-  app.put(api+"/activities/:id/posts/:postId",wrap(async(req,res)=>{learning.edit(req.learner,req.params.id,req.params.postId,req.body);if(!learning.isScoredPost(req.learner,req.params.id,req.params.postId))return res.json({ok:true});const reply=learning.latestScoredReply(req.learner,req.params.id);await acceptWriting({...req,body:{replyId:reply?.id||null}}, {json:value=>res.json(value),status:status=>({json:value=>res.json({ok:true,gradingPending:status===503,retryable:status===503,gradingMessage:value.error})})});}));
+  app.put(api+"/activities/:id/posts/:postId",wrap(async(req,res)=>{const changed=learning.edit(req.learner,req.params.id,req.params.postId,req.body);if(!changed||!learning.isScoredPost(req.learner,req.params.id,req.params.postId))return res.json({ok:true});const reply=learning.latestScoredReply(req.learner,req.params.id);await acceptWriting({...req,body:{replyId:reply?.id||null}}, {json:value=>res.json(value),status:status=>({json:value=>res.json({ok:true,gradingPending:status===503,retryable:status===503,gradingMessage:value.error})})});}));
   app.put(api+"/activities/:id/posts/:postId/moderation",requireTeacher,wrap((req,res)=>{learning.moderate(req.learner,req.params.id,req.params.postId,req.body.hidden===true);res.json({ok:true});}));
-  app.put(api+"/activities/:id/posts/:postId/teacher-edit",requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);const p=learning.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind IN ('ai','teacher')").get(req.params.postId,req.params.id);if(!p)fail(404,"Teacher response not found.");if(req.body.revision!==undefined&&req.body.revision!==p.revision)fail(409,"This response changed. Refresh before editing.");learning.db.prepare("UPDATE learning_posts SET body=?,revision=revision+1,updated_at=? WHERE id=?").run(text(req.body.body,3000),now(),p.id);learning.event(req.learner,req.params.id,"coach.teacher-edit",p.id);res.json({ok:true});}));
+  app.put(api+"/activities/:id/posts/:postId/teacher-edit",requireTeacher,wrap((req,res)=>{learning.editInstructor(req.learner,req.params.id,req.params.postId,req.body);res.json({ok:true});}));
+  app.get(api+'/activities/:id/posts/:postId/history',wrap((req,res)=>res.json({ok:true,...learning.postHistory.list(req.learner,req.params.id,req.params.postId,req.query.beforeRevision)})));
   const submitWriting=wrap(async(req,res)=>{
     const user=req.learner,a=learning.activity(user,req.params.id);learning.writable(a,req[queued]?Date.parse(req[queued].acceptedAt):Date.now());if(a.member.role!=="student")fail(403,"Only a student can submit for grading.");
     const replyId=req.body.replyId===undefined?learning.latestScoredReply(user,a.id)?.id:req.body.replyId;
