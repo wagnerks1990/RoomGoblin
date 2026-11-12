@@ -125,3 +125,11 @@ test('direct package config escapes script delimiters without changing assignmen
  const title='Evidence <script> and & symbols';const zip=new(require('adm-zip'))(require('../src/learning-direct-package').createPackage({id:crypto.randomUUID(),title,template_id:'scorm-connector-v1'},{origin:'https://learn.example.test',enrollmentKey:'synthetic-only'},require('node:path').resolve(__dirname,'../public/learn')));
  const config=zip.readAsText('config.js');assert(!config.includes('<'));assert(config.includes('\\u003c'));const context={window:{}};require('node:vm').runInNewContext(config,context);assert.equal(context.window.ROOMGOBLIN_SCORM.title,title);assert(zip.readAsText('imsmanifest.xml').includes('&lt;script&gt;'));
 });
+
+test('AI response schema bounds feedback before generation while validation rejects oversized output',()=>{
+ const {request,validate}=require('../src/learning-assignment-ai'),policy={criteria:[{id:'1',label:'Evidence',points:20,description:'Concrete verification.'}],prompt:'Evaluate supporting evidence.'};
+ const schema=request('synthetic-model',policy,{evidence:'An isolated restore test.'}).text.format.schema;
+ assert.equal(schema.properties.criteria.items.properties.feedback.maxLength,600);assert.equal(schema.properties.summary.maxLength,1000);
+ assert.throws(()=>validate({criteria:[{id:'1',points:20,feedback:'x'.repeat(1001)}],summary:'Evidence reviewed.'},policy),/Invalid criterion/);
+ assert.throws(()=>validate({criteria:[{id:'1',points:21,feedback:'Evidence reviewed.'}],summary:'Evidence reviewed.'},policy),/Invalid criterion/);
+});
