@@ -97,6 +97,7 @@ COPY public ./public
 COPY --from=native-agent-build /signin/RoomGoblinSignIn.exe ./public/lab-agent/daily-signin/RoomGoblinSignIn.exe
 COPY --from=signin-provider-build /signin/RoomGoblinCredentialProvider.dll ./public/lab-agent/daily-signin/RoomGoblinCredentialProvider.dll
 COPY tools/package-daily-signin.js ./tools/package-daily-signin.js
+COPY tools/reset-learning.cjs ./tools/reset-learning.cjs
 RUN node tools/package-daily-signin.js
 COPY --from=browser-build /build/public/display/sendspin.bundle.js ./public/display/sendspin.bundle.js
 COPY --from=native-agent-build /out/RoomGoblinAgent.exe ./public/lab-agent/native/RoomGoblinAgent.exe
@@ -155,6 +156,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 USER 10001:10001
 # Fail the build, rather than the deployed container, on unreadable source/assets.
-RUN node tools/verify-image-permissions.js && node --check src/server.js && node --check src/media-server.js \
+RUN node tools/verify-image-permissions.js && node --check src/server.js && node --check src/media-server.js && node --check tools/reset-learning.cjs \
  && PYTHONPATH=/app/src/esphome /opt/esphome/bin/python -c "from aioesphomeapi import APIClient; import discovery, worker_entry, ast, os; from zeroconf import ServiceStateChange; names=set(); discovery.service_changed(names, zeroconf=None, service_type=discovery.SERVICE, name='fixture.'+discovery.SERVICE, state_change=ServiceStateChange.Added); assert names; ast.parse(open('src/esphome/worker.py').read()); assert not os.access('/opt/esphome', os.W_OK)"
 CMD ["sh", "tools/start-roomgoblin.sh"]
