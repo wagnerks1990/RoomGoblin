@@ -2,13 +2,13 @@
 
 ## Classroom progress
 
-The [Teacher portal](TEACHER-PORTAL.md) at `/learn/teacher/` owns teacher
+The [Teacher portal](TEACHER-PORTAL.md) at `/learn` owns teacher
 navigation and one shared class selection: Overview, Assignments, Submissions &
 grading, Discussions, Classroom, Classes & accounts, administrator Setup and Audit.
 Assignment configuration stays beside its assignment. Classroom includes sessions,
 attendance, class-filtered campaigns, approved effects and aggregate suggestions.
-The legacy `/learn/platform/` and teacher `/learn/?manage=1` entries redirect here.
-Student discussions retain their signed flow and do not include teacher editors.
+Retired teacher/platform and standalone student pages return 404, without redirects.
+Students use their LMS-hosted direct API assignments.
 
 Follow timetable changes the class only without drafts or focused inputs.
 Switching views retains drafts; saving one form cannot erase another. Session loss

@@ -4,11 +4,11 @@ The API reports assignment activity, returns classroom interaction state, and
 accepts writing for server-side AI feedback and grading. It does not use the
 Schoology REST API. New direct packages need no preapproved learner roster,
 signed External Tool launch, companion window, third-party cookie or teacher
-browser left open. Existing signed packages remain compatible.
+browser left open. Old hosted learning apps have been retired. Use fresh direct API packages.
 
 ## Teacher workflow
 
-Open Teacher portal → Assignments and expand an assignment. Download its direct
+Open `/learn` → Assignments and expand an assignment. Download its direct
 API assignment (written discussion) or API starter (other SCORM content). Upload
 the written package as SCORM in the LMS. Existing games can include the starter's
 `config.js` and `roomgoblin-scorm.js` before their scripts; native LMS calls and
@@ -125,6 +125,6 @@ switching and generic AI completion after the SCO closes. Synthetic tests do not
 establish real Schoology policies, production-model calibration or physical effects.
 
 Deploy through checked main and exact published images with the mandatory backup.
-Tables and settings are additive. Retain old signed packages and records for
-rollback. Disable direct access or withdraw packages requiring this transport
+Tables and settings are additive; an explicitly authorized reset is separate
+from ordinary deployment. See [Learning fresh start](LEARNING-FRESH-START.md). Retain the operational backup and matching source for rollback. Disable direct access or withdraw packages requiring this transport
 before reverting beyond this API; never reset the database or publish credentials.

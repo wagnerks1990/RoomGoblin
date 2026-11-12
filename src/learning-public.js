@@ -7,8 +7,7 @@ const net=require('node:net');
 const publicRequests=new WeakSet();
 const SETTINGS='learning.platform';
 const UUID='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
-const staticPaths=new Set(['/learn/','/learn/index.html','/learn/app.js','/learn/style.css',
-  '/learn/connect/','/learn/connect/index.html','/learn/connect/app.js','/learn/connect/style.css',
+const staticPaths=new Set([
   '/learn/sdk/roomgoblin-scorm.js','/favicon.ico']);
 const learnerReads=new RegExp(`^/api/v1/learning/(?:me|classes/${UUID}|activities/${UUID}(?:/(?:receipt))?|platform/activities/${UUID}/state)$`);
 const learnerWrites=new RegExp(`^/api/v1/learning/(?:logout|activities/${UUID}/(?:posts|submit|lms-sync)|platform/activities/${UUID}/(?:events|presence))$`);
@@ -44,7 +43,7 @@ function isPublicRequest(req){return publicRequests.has(req);}
 async function probeStudentGateway(origin){
  const host=new URL(origin).host;
  const check=path=>new Promise(resolve=>{const request=http.get({host:'127.0.0.1',port:3030,path,headers:{Host:host,'X-Forwarded-Proto':'https'}},response=>{response.resume();response.on('end',()=>resolve(response.statusCode));});request.setTimeout(3000,()=>request.destroy());request.on('error',()=>resolve(0));});
- return await check('/api/v1/learning/me')===401&&await check('/controller/')===404&&await check('/learn/connect/')===200;
+ return await check('/api/v1/learning/me')===401&&await check('/controller/')===404&&await check('/learn/sdk/roomgoblin-scorm.js')===200;
 }
 function createStudentGateway({app,store,allowLoopbackHttp=false,isStopping=()=>false,clock=Date.now}){
   const buckets=new Map();

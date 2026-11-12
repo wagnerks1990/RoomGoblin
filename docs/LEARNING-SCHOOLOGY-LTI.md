@@ -1,3 +1,7 @@
+> Historical reference: the hosted student/companion/launcher apps and old teacher
+> URLs described here have been retired. Use `/learn` and
+> [Direct assignment API](DIRECT-ASSIGNMENT-API.md) for current delivery.
+
 # Schoology sign-in and grade return
 
 The signed launch opens the discussion under the student's LMS name without a

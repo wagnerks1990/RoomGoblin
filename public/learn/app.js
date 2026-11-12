@@ -1,149 +1,112 @@
 "use strict";
-const $=id=>document.getElementById(id),API='/api/v1/learning';
-let lastBackgroundRefresh=0,replyComposerOpen=false;
-const threadState=new Map(),expandedPosts=new Set(),replySlots=new Map();
-let me=null,classId=null,activityId=new URL(location.href).searchParams.get('activity'),data=null,editing=null,pendingGrade=false,retryingGrade=false;
-let reconnecting=false;
-function reconnectWritten(url,method,body){
- if(reconnecting||new URL(location.href).searchParams.get('lms')!=='1')return false;
- let flow;try{flow=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));}catch{return false;}
- if(flow?.activityId!==activityId||!flow.launched||!flow.connectionId||!bridgeHost)return false;
- if(me?.user.learnerKey){
-  const allowed=new RegExp('^/activities/'+activityId+'/(posts(?:/[a-f0-9-]{36})?|submit)$');
-  const pending=['POST','PUT'].includes(method)&&allowed.test(url)?{url,method,body}:null;
-  try{sessionStorage.setItem('roomgoblin.writing.'+activityId,JSON.stringify({learnerKey:me.user.learnerKey,initial:$('initial').value,reply:$('reply').value,target:$('reply-target').value,editing:editing?.id||null,pending}));}catch{notice('The connection expired. Your draft is still on this page; browser storage is unavailable.',true);return false;}
+(async()=>{
+ const [{createUI,node,table,dateText,retired},{createAssignments},{createWork},{createClassroom},{createManagement},{createSetup}]=await Promise.all([
+  import('./ui.mjs'),import('./assignments.mjs'),import('./work.mjs'),import('./classroom.mjs'),import('./management.mjs'),import('./setup.mjs')
+ ]);
+ const $=id=>document.getElementById(id),API='/api/v1/learning',views=['overview','assignments','submissions','discussions','classroom','classes','setup','audit'];
+ let me=null,classes=[],current=null,data=null,authEpoch=0,classEpoch=0,view='overview',lastCatalog=0;
+ const requests=new Map(),params=new URLSearchParams(location.search);
+ const notice=message=>{if($('status').textContent!==message)$('status').textContent=message;};
+ const owned=ctx=>!!ctx&&ctx===current&&ctx.authEpoch===authEpoch;
+ const ui=createUI({api,notice,context:()=>current,owned,onSaved:async ctx=>{if(owned(ctx))await refresh({force:true});},onCatalog:catalog,onTools:showTools});
+ const assignments=createAssignments(ui,$('assignment-list'),$('assignment-create'));
+ const work=createWork(ui,{submissions:$('submission-list'),written:$('written-reviews'),discussions:$('discussion-list'),filterHost:$('discussion-filter')});
+ const classroom=createClassroom(ui,$('classroom-content')),management=createManagement(ui,$('management-content')),setup=createSetup(ui,$('setup-content'));
+ function clearPrivate(){
+  authEpoch++;classEpoch++;me=null;current=null;data=null;classes=[];requests.clear();ui.clear();
+  for(const module of [assignments,work,classroom,management,setup])module.reset();
+  for(const id of ['stats','activity','audit-list','class-select','identity','last-refreshed'])$(id).replaceChildren();
+  $('workspace').hidden=true;$('logout').hidden=true;showTools({});document.querySelector('[data-tab="setup"]').hidden=true;
  }
- reconnecting=true;location.replace('/learn/connect/');return true;
-}
-async function restoreWrittenDraft(){
- let draft;const key='roomgoblin.writing.'+activityId;try{draft=JSON.parse(sessionStorage.getItem(key));sessionStorage.removeItem(key);}catch{return;}
- if(!draft||draft.learnerKey!==me?.user.learnerKey||data?.activity.member.role!=='student')return;
- if(typeof draft.initial==='string')$('initial').value=draft.initial.slice(0,6000);if(typeof draft.reply==='string')$('reply').value=draft.reply.slice(0,3000);
- if([...$('reply-target').options].some(o=>o.value===draft.target))$('reply-target').value=draft.target;
- const post=data.posts.find(p=>p.id===draft.editing&&p.mine);if(post){editing=post;$('post-form').hidden=false;$('cancel-edit').hidden=false;$('publish').disabled=false;}
- if(draft.pending){const {url,method,body}=draft.pending,allowed=new RegExp('^/activities/'+activityId+'/(posts(?:/[a-f0-9-]{36})?|submit)$');if(allowed.test(url)&&['POST','PUT'].includes(method)){await api(url,method,body);$('initial').value='';$('reply').value='';editing=null;await refresh();notice('Reconnected. Your writing was saved automatically.');}}
-}
-const bridgeHost=window.opener||(window.parent!==window?window.parent:null);
-const fragment=new URLSearchParams(location.hash.slice(1)),bridge={nonce:fragment.get('bridge'),parent:fragment.get('parent'),activityId};
-// A configured discussion SCORM launcher returns here after a fresh signed LMS
-// launch. Restore only its matching, recent, approved-origin message channel.
-if(!bridge.nonce&&bridgeHost){try{const flow=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));if(flow?.activityId===activityId&&flow.launched&&flow.connectionId&&Date.now()-flow.created>=0&&Date.now()-flow.created<28800000){bridge.nonce=flow.nonce;bridge.parent=flow.parent;}}catch{}}
-const scormSync={checking:false,lastCheck:0,sentAt:0,sentKey:null,confirmedKey:null,message:''};
-const receiptKey=r=>[r.reviewId,r.approvedAt,r.raw].join('|');
-let nameRequest=null;
-function validBridge(){return !!(bridgeHost&&!bridgeHost.closed&&activityId===bridge.activityId&&bridge.nonce&&/^[a-f0-9]{32}$/.test(bridge.nonce)&&me?.bridgeOrigins.includes(bridge.parent));}
-async function syncPublishedGrade(force=false){
- if(!validBridge()||data?.activity.member.role!=='student'||scormSync.checking||!force&&Date.now()-scormSync.lastCheck<15000)return;
- scormSync.checking=true;scormSync.lastCheck=Date.now();const id=activityId;
- try{const receipt=await api(`/activities/${id}/receipt`);if(activityId!==id||!validBridge())return;const key=receiptKey(receipt);
-  if(!force&&(key===scormSync.confirmedKey||key===scormSync.sentKey&&Date.now()-scormSync.sentAt<30000))return;
-  scormSync.sentKey=key;scormSync.sentAt=Date.now();scormSync.message='Saving your published grade to Schoology…';
-  bridgeHost.postMessage({type:'roomgoblin.grade',nonce:bridge.nonce,...receipt},bridge.parent);
- }catch(e){scormSync.message=e.status===409?'Your grade will sync automatically after it is published.':'Your saved grade will retry syncing when the connection is available.';if(force)throw e;}
- finally{scormSync.checking=false;if(activityId===id)$('lms-status').textContent=scormSync.message;}
-}
-window.addEventListener('message',e=>{
- const d=e.data;if(!validBridge()||e.source!==bridgeHost||e.origin!==bridge.parent||!d||d.type!=='roomgoblin.grade.result'||d.nonce!==bridge.nonce||d.activityId!==activityId||receiptKey(d)!==scormSync.sentKey)return;
- if(d.saved===true){scormSync.confirmedKey=scormSync.sentKey;scormSync.message='Schoology confirmed the SCORM save. Revised grades will sync automatically.';}
- else if(d.saved===false)scormSync.message='Your grade is saved here. Schoology saving is pending and will retry while the launcher stays open.';
- $('lms-status').textContent=scormSync.message;
-});
-setInterval(()=>{syncPublishedGrade().catch(()=>{});},5000);
-function requestLmsName(){
- if(!validBridge()||me.user.lms||data?.activity.member.role!=='student')return;
- nameRequest={activityId,user:me.user.alias};
- bridgeHost.postMessage({type:'roomgoblin.learner.request',nonce:bridge.nonce,activityId},bridge.parent);
-}
-window.addEventListener('message',async e=>{
- const d=e.data,pending=nameRequest;
- if(!pending||!validBridge()||e.source!==bridgeHost||e.origin!==bridge.parent||!d||d.type!=='roomgoblin.learner'||d.nonce!==bridge.nonce||d.activityId!==pending.activityId||activityId!==pending.activityId||me.user.alias!==pending.user||data?.activity.member.role!=='student')return;
- nameRequest=null;
- if(typeof d.name!=='string'||!d.name.trim()||d.name.length>255)return;
- try{const result=await api(`/activities/${pending.activityId}/lms-name`,'PUT',{name:d.name,launcherOrigin:bridge.parent});if(activityId===pending.activityId){$('identity').textContent=result.name;await refresh();}}
- catch{notice('Your assigned discussion name is still in use. Your work can continue.');}
-});
-if(location.hash)history.replaceState(null,'',location.pathname+location.search);
-function notice(message,error=false){$('notice').textContent=message;$('notice').className=error?'error':'';}
-function el(tag,content,cls){const n=document.createElement(tag);if(content!==undefined)n.textContent=content;if(cls)n.className=cls;return n;}
-function button(label,fn){const b=el('button',label);b.type='button';b.onclick=()=>task(b,fn);return b;}
-async function task(b,fn){b.disabled=true;try{await fn();}catch(e){notice(e.message,true);}finally{b.disabled=b.id==="publish"&&!editing&&!!data?.posts.some(p=>p.mine&&p.kind==="initial");}}
-async function api(url='',method='GET',body){let connection='';try{const f=JSON.parse(sessionStorage.getItem('roomgoblin.connector.flow'));if(f?.activityId===activityId&&f.launched&&new URL(location.href).searchParams.get('lms')==='1')connection=f.connectionId||'';}catch{}const r=await fetch(API+url,{method,headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1',...(connection?{'x-roomgoblin-connection':connection}:{})},credentials:'same-origin',body:body===undefined?undefined:JSON.stringify(body)});const j=await r.json();if(r.status===401)reconnectWritten(url,method,body);if(!r.ok||j.ok===false)throw Object.assign(Error(j.error||'Request did not complete.'),{status:r.status});return j;}
-function field(label,type='text',value=''){const l=el('label',label),i=el(type==='textarea'?'textarea':'input');if(type!=='textarea')i.type=type;i.value=value;l.append(i);return {label:l,input:i};}
-async function boot(){
- try{me=await api('/me');if(me.user.teacher){const target=new URL('/learn/teacher/',location.origin);if(activityId)target.searchParams.set('activity',activityId);if(new URL(location.href).searchParams.get('manage')==='1')target.searchParams.set('view','classes');location.replace(target.pathname+target.search);return;}$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('password-change').hidden=me.user.lms;$('identity').textContent=me.user.alias;
- $('classes').replaceChildren(...me.classes.map(c=>button(c.title,()=>selectClass(c.id))));
- if(activityId){data=await api('/activities/'+activityId);classId=data.activity.class_id;await selectClass(classId,false);await loadActivity(activityId);await restoreWrittenDraft().catch(e=>notice(e.message,true));}else if(me.classes.length)await selectClass(me.classes[0].id);
- else notice(me.user.teacher?'Create a class to start.':'No classes are assigned yet. Ask your teacher.');
- }catch(e){const sso=new URL(location.href).searchParams.get('lms')==='1';$('login').hidden=sso;$('workspace').hidden=true;notice(sso?'Reopen this assignment from Schoology to continue.':e.message,true);}
-}
-async function selectClass(id,auto=true){classId=id;const c=await api('/classes/'+id);$('activity-list').replaceChildren(...c.activities.map(a=>button(a.title,()=>loadActivity(a.id))));if(auto){if(c.activities.length)await loadActivity(c.activities[0].id);else{$('mission').hidden=true;activityId=null;}}}
-async function loadActivity(id){if(activityId!==id){pendingGrade=false;replyComposerOpen=false;}activityId=id;data=await api('/activities/'+id);if(data.activity.template_id==='scorm-connector-v1'){$('mission').hidden=true;notice(me.user.teacher?'Manage this SCORM connection in Classroom progress and celebrations.':'Open this SCORM assignment in Schoology.');return;}$('mission').hidden=false;$('activity-title').textContent=data.activity.title;document.title='RoomGoblin - '+data.activity.title;$('course-label').textContent=data.activity.case.courseLabel||'IT II - UNIT 3 - CLASS 02';$('initial-label').textContent=data.activity.template_id==='it1-u03-c01-os-selection-v1'?'Initial post - 3-5 sentences':'Initial post - 4-6 sentences';$('initial').placeholder=data.activity.case.initialPlaceholder||'State your judgment. Show the subnet calculations. Explain the next hop and a limit.';$('alternate-case').textContent=data.activity.case.alternate;$('prompt').textContent=data.activity.case.prompt;$('initial-directions').textContent=data.activity.case.initialDirections;$('reply-directions').textContent=data.activity.case.replyDirections;drawRubric();$('dates').textContent=`${data.activity.open?'Open':'Closed'} · Due: ${data.activity.due_at?new Date(data.activity.due_at).toLocaleString():'follow posted schedule'} · Closes: ${data.activity.close_at?new Date(data.activity.close_at).toLocaleString():'not configured'}`;
- $('sync').hidden=validBridge();$('sync').textContent=me.user.lms?'Check Schoology grade':'Sync grade now';$('identity').textContent=data.activity.member.alias;drawPosts();drawReview();requestLmsName();}
-function drawRubric(){
- const table=el('table',undefined,'rubric-table'),head=el('thead'),tr=el('tr');
- for(const title of ['What is scored','Points']){const th=el('th',title);th.scope='col';tr.append(th);}head.append(tr);table.append(head);
- const body=el('tbody'),labels=data.activity.case.criterionLabels||{claim:'Technical claim and judgment',evidence:'Specific evidence or calculation',reasoning:'Reasoning and evidence limit',reply:'Peer reply or independent critique'},points=Object.fromEntries(Object.entries(data.activity.case.scoreLevels).map(([k,v])=>[k,Math.max(...v)]));
- for(const [key,description]of Object.entries(data.activity.case.rubric)){const row=el('tr'),detail=el('td');detail.append(el('b',labels[key]||key),el('small',description));row.append(detail,el('td',String(points[key])));body.append(row);}table.append(body);$('rubric').replaceChildren(table);
-}
-function placeReplyComposer(focus=false){
- const selected=$('reply-target').value,parent=data.posts.find(p=>p.id===selected);if(focus)replyComposerOpen=true;
- (replySlots.get(selected)||$('reply-home')).append($('reply-form'));$('reply-form').hidden=data.activity.member.role!=='teacher'&&!!parent&&!replyComposerOpen&&!$('reply').value;
- $('reply-composer-heading').textContent=parent?'Reply to '+parent.alias:selected==='teacher'?'Add a class update':'Try the independent critique';
- $('reply-scope').textContent=data.activity.member.role!=='teacher'&&parent&&(parent.kind!=='initial'||parent.mine)?'Shared with the whole class. This follow-up does not replace your scored peer reply.':'Shared with the whole class.';
- if(focus){$('reply').focus();$('reply-form').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});}
-}
-function replyToggleLabel(){const rows=[...$('feed').querySelectorAll('.thread-replies')],closed=rows.some(n=>!n.open);$('toggle-replies').disabled=!rows.length;$('toggle-replies').textContent=closed?'Show all replies':'Hide all replies';}
-function drawPosts(){
- const posts=data.posts,teacher=data.activity.member.role==='teacher',byId=new Map(posts.map(p=>[p.id,p])),canReply=p=>!p.hidden&&(teacher||!p.mine||p.role==='ai');
- const rootOf=p=>{const seen=new Set();while(p.parentId&&byId.has(p.parentId)&&!seen.has(p.id)){seen.add(p.id);p=byId.get(p.parentId);}return p;};
- for(const node of $('feed').querySelectorAll('.thread-replies'))threadState.set(activityId+':'+node.dataset.parent,node.open);
- $('reply-home').append($('reply-form'));replySlots.clear();$('feed').replaceChildren();
- function postCard(p){
-  const n=el('article',undefined,`post ${p.parentId?'reply ':''}${p.role==='ai'?'automated':p.role==='teacher'?'teacher':''}${p.hidden?' hidden-post':''}`);n.dataset.postId=p.id;
-  const top=el('div',undefined,'post-header'),letters=p.alias.trim().split(/\s+/).filter(Boolean).slice(0,2).map(w=>Array.from(w)[0]).join('').toLocaleUpperCase()||'?',tone=[...p.alias].reduce((sum,c)=>sum+c.codePointAt(0),0)%4,avatar=el('span',letters,'avatar tone-'+tone);avatar.setAttribute('aria-hidden','true');
-  const info=el('div',undefined,'author-info'),line=el('div',undefined,'author-line');line.append(el('b',p.alias));
-  if(['ai','teacher'].includes(p.role))line.append(el('span',teacher&&p.role==='ai'?'Automatic reply':'Teacher','role-badge'));
-  const parent=byId.get(p.parentId),kind=p.kind==='critique'?'Independent critique':parent?'Reply to '+parent.alias:p.parentId?'Reply':p.kind==='initial'?'Initial post':'Class update',stamp=new Date(p.createdAt),meta=el('div',undefined,'meta');meta.append(document.createTextNode(kind+(p.hidden?' · Hidden':'')));
-  if(Number.isFinite(stamp.getTime())){const time=el('time',' · '+new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(stamp));time.dateTime=stamp.toISOString();meta.append(time);}info.append(line,meta);top.append(avatar,info);n.append(top);
-  const body=el('p',p.body,'body'),actions=el('div',undefined,'post-actions');n.append(body);
-  if(p.body.length>550){body.classList.add('clamped');body.classList.toggle('is-expanded',expandedPosts.has(p.id));const more=button(expandedPosts.has(p.id)?'Show less':'Show more',()=>{const expanded=!expandedPosts.has(p.id);if(expanded)expandedPosts.add(p.id);else expandedPosts.delete(p.id);body.classList.toggle('is-expanded',expanded);more.textContent=expanded?'Show less':'Show more';more.setAttribute('aria-expanded',String(expanded));});more.setAttribute('aria-expanded',String(expandedPosts.has(p.id)));actions.append(more);}
-  if(canReply(p))actions.append(button('Reply',()=>{$('reply-target').value=p.id;placeReplyComposer(true);}));
-  if(p.mine&&p.kind==='initial'&&!p.hidden&&!teacher)actions.append(button('Revise explanation',()=>{editing=p;$('post-form').hidden=false;$('initial').value=p.body;$('publish').textContent='Save revision';$('cancel-edit').hidden=false;$('publish').disabled=false;$('initial').focus();}));
-  if(actions.children.length)n.append(actions);return n;
+ async function api(path,method='GET',body){
+  const epoch=authEpoch;let response;
+  try{response=await fetch(API+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(method==='GET'?60000:600000)});}
+  catch{if(epoch!==authEpoch)throw retired();throw Error(method==='GET'?'The page could not refresh. Your saved data is unchanged.':'The change was not confirmed. Refresh before retrying.');}
+  if(epoch!==authEpoch)throw retired();
+  let value;try{value=await response.json();}catch{if(epoch!==authEpoch)throw retired();throw Error('RoomGoblin returned an unreadable response. Refresh before retrying.');}if(epoch!==authEpoch)throw retired();
+  if(response.status===401){clearPrivate();$('login').hidden=false;notice('Your session ended. Sign in again to continue.');throw retired();}
+  if(!response.ok||value.ok===false)throw Object.assign(Error(value.error||'The request could not be completed.'),{status:response.status});return value;
  }
- for(const root of posts.filter(p=>!p.parentId||!byId.has(p.parentId))){
-  const thread=el('section',undefined,'thread');thread.dataset.rootId=root.id;thread.setAttribute('aria-label','Discussion by '+root.alias);thread.append(postCard(root));
-  const replies=posts.filter(p=>p.id!==root.id&&rootOf(p).id===root.id);
-  if(replies.length){const group=el('details',undefined,'thread-replies');group.dataset.parent=root.id;group.open=threadState.get(activityId+':'+root.id)!==false;group.append(el('summary',replies.length+' '+(replies.length===1?'reply':'replies')),...replies.map(postCard));group.ontoggle=replyToggleLabel;thread.append(group);}
-  const targets=[root,...replies].filter(canReply);if(targets.length){const slot=el('div',undefined,'thread-slot');for(const p of targets)replySlots.set(p.id,slot);thread.append(slot);}$('feed').append(thread);
+ function remember(){if(!me)return;try{sessionStorage.setItem('roomgoblin.teacher.'+me.user.learnerKey,JSON.stringify({classId:current?.classId||'',follow:$('follow-current').checked}));}catch{}}
+ function remembered(){try{return JSON.parse(sessionStorage.getItem('roomgoblin.teacher.'+me.user.learnerKey))||{};}catch{return {};}}
+ function showTools(tools){for(const [id,key]of [['ai-chat','aiChatUrl'],['media-studio','mediaStudioUrl']]){const link=$(id),value=tools[key];link.hidden=!value;if(value)link.href=value;else link.removeAttribute('href');}}
+ function classChoices(){
+  const select=$('class-select'),selected=current?.classId,groups=[['Classes with assignments or learners',classes.filter(c=>c.assignmentCount||c.studentCount)],['Other classes',classes.filter(c=>!c.assignmentCount&&!c.studentCount)]];
+  select.replaceChildren();for(const [label,rows]of groups){if(!rows.length)continue;const group=node('optgroup');group.label=label;for(const row of rows)group.append(new Option(row.title,row.id));select.append(group);}
+  if(classes.some(c=>c.id===selected))select.value=selected;select.disabled=!classes.length;
  }
- if(!posts.length){const empty=el('div',undefined,'empty-board');empty.append(el('strong','The conversation starts with your evidence.'),el('p','Publish your explanation, then help a classmate strengthen theirs.'));$('feed').append(empty);}
- const initialCount=posts.filter(p=>p.kind==='initial'&&!p.hidden).length,replyCount=posts.filter(p=>p.parentId&&!p.hidden).length;
- $('post-count').textContent=initialCount+' '+(initialCount===1?'discussion':'discussions')+' · '+replyCount+' '+(replyCount===1?'reply':'replies');replyToggleLabel();
- const peers=posts.filter(p=>p.kind==='initial'&&!p.mine&&!p.hidden),target=$('reply-target'),old=target.value;target.replaceChildren();
- if(teacher)target.add(new Option('Whole-class teacher response','teacher'));
- for(const p of posts.filter(canReply))target.add(new Option(`${p.alias}: ${p.body.slice(0,90)}`,p.id));
- if(!peers.length&&!teacher)target.add(new Option(data.activity.case.alternateLabel||'Independent critique: Any .1 can be my gateway','critique'));
- if([...target.options].some(o=>o.value===old))target.value=old;else if(!teacher&&!peers.length)target.value='critique';placeReplyComposer();
- const own=posts.filter(p=>p.mine&&!p.hidden&&(p.kind==='critique'||p.kind==='reply'&&byId.get(p.parentId)?.kind==='initial'&&!byId.get(p.parentId)?.mine)),select=$('scored-reply'),selected=data.review?.replyId||select.value;select.replaceChildren(new Option('No reply yet (0 of '+Math.max(...data.activity.case.scoreLevels.reply)+' reply points)',''));
- for(const p of own)select.add(new Option(`${p.kind==='critique'?'Independent critique':'Peer reply'}: ${p.body.slice(0,90)}`,p.id));if(own.some(p=>p.id===selected))select.value=selected;else if(own.length)select.value=own.at(-1).id;
- $('step-post').className=posts.some(p=>p.mine&&p.kind==='initial')?'done':'';$('step-reply').className=own.length?'done':'';
- if(!editing){const existing=posts.find(p=>p.mine&&p.kind==='initial');$('post-form').hidden=teacher||!!existing;$('publish').disabled=!!existing;$('explanation-card').classList.toggle('submitted',!!existing);$('composer-title').textContent=existing?'Your explanation is on the board.':'Add your explanation';$('draft-note').textContent=existing?'Use Revise explanation on your post to make changes. Grading continues after you close the page.':'Wait for the saved confirmation. Your feedback can arrive after you close the page.';}
-}
-$('reply-target').onchange=()=>{replyComposerOpen=true;placeReplyComposer();};
-$('toggle-replies').onclick=()=>{const rows=[...$('feed').querySelectorAll('.thread-replies')],expand=rows.some(n=>!n.open);for(const node of rows){node.open=expand;threadState.set(activityId+':'+node.dataset.parent,expand);}replyToggleLabel();};
-function drawReview(){if($('lms-status'))$('lms-status').textContent=validBridge()?scormSync.message:me.user.lms?(data.lms?.state==='sent'?'Grade confirmed in Schoology.':data.review?.status==='approved'?'Your published grade is saved here; Schoology confirmation is pending.':'Schoology will receive your score after grading.'):scormSync.message;syncPublishedGrade().catch(()=>{});const r=data.review;$('mission-status').textContent=data.activity.member.role==='teacher'?'Follow the class conversation.':data.gradingQueued?'Feedback is on its way.':r?.status==='approved'?(r.final.total===20?'Case complete. Strong evidence.':'Your feedback is ready.'):'Ready to build your case.';$('review').replaceChildren();if(data.gradingQueued)$('review').append(el('p','Writing saved. Automatic grading is queued and continues after you close this page.'));$('score').textContent=r?.status==='approved'?String(r.final.total):r?.ai?String(r.ai.total)+'*':'—';$('step-grade').className=r?.status==='approved'?'done':'';if(!r)return;
- const labels={approved:'Grade published',needs_review:'Provisional score · waiting for teacher review',grading:'Scoring your writing…',unavailable:data.gradingQueued?'Writing saved · automatic retry queued':'Writing saved · automatic scoring is unavailable; retry later or ask your teacher',superseded:data.gradingQueued?'Revised writing saved · assessment queued':'Writing changed · submit your revised case for a new grade'};
- $('review').append(el('h3',labels[r.status]||r.status));const g=r.status==='approved'?r.final:r.ai;if(g){for(const [key,c]of Object.entries(g.criteria))$('review').append(el('p',`${data.activity.case.criterionLabels?.[key]||key}: ${c.points} — ${c.feedback}`));$('review').append(el('p',g.summary));if(g.lateMultiplier===.5)$('review').append(el('p',`Late adjustment applied once: ${g.earned}/20 → ${g.total}/20.`));}}
-async function refresh(){if(!activityId)return;data=await api('/activities/'+activityId);drawPosts();drawReview();}
-$('login-form').onsubmit=e=>{e.preventDefault();task(e.submitter,async()=>{const r=await fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('username').value,password:$('password').value})});const j=await r.json();$('password').value='';if(!r.ok)throw Error(j.error);notice('Signed in.');await boot();});};
-$('logout').onclick=()=>task($('logout'),async()=>{if(me.user.lms)await api('/logout','POST',{});else await fetch('/api/v1/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'}});location.reload();});
-$('post-form').onsubmit=e=>{e.preventDefault();task(e.submitter,async()=>{let saved;if(editing)saved=await api(`/activities/${activityId}/posts/${editing.id}`,'PUT',{body:$('initial').value,revision:editing.revision});else saved=await api(`/activities/${activityId}/posts`,'POST',{kind:'initial',body:$('initial').value});pendingGrade=!!saved.retryable;editing=null;$('initial').value='';$('cancel-edit').hidden=true;notice('Explanation saved to the class board.'+(saved.gradingMessage?' '+saved.gradingMessage:''));await refresh();});};
-$('cancel-edit').onclick=()=>{editing=null;$('initial').value='';$('publish').textContent='Publish explanation';$('cancel-edit').hidden=true;drawPosts();};
-$('reply-form').onsubmit=e=>{e.preventDefault();task(e.submitter,async()=>{const target=$('reply-target').value;const saved=await api(`/activities/${activityId}/posts`,'POST',{kind:target==='critique'?'critique':'reply',parentId:['critique','teacher'].includes(target)?null:target,body:$('reply').value});pendingGrade=!!saved.retryable;replyComposerOpen=false;$('reply').value='';notice('Response saved.'+(saved.gradingMessage?' '+saved.gradingMessage:''));await refresh();});};
-$('submit').onclick=()=>task($('submit'),async()=>{notice('Writing saved. Automatic grading will continue in the background.');await api(`/activities/${activityId}/submit`,'POST',{replyId:$('scored-reply').value||null});await refresh();notice('Submission processed. Check your feedback and grade status below.');});
-$('refresh').onclick=()=>task($('refresh'),refresh);
-$('sync').onclick=()=>task($('sync'),async()=>{if(me.user.lms&&!validBridge()){const result=await api(`/activities/${activityId}/lms-sync`,'POST',{});await refresh();notice(result.lms?.state==='sent'?'Grade confirmed in Schoology.':'Your grade is saved here. Schoology confirmation is pending.');return;}if(!validBridge())throw Error('Open this activity using its Schoology SCORM launcher. Ask your teacher to configure the exact launcher origin if needed.');await syncPublishedGrade(true);notice('Grade synchronization checked. See the Schoology save status below.');});
-setInterval(async()=>{if(pendingGrade&&!retryingGrade&&activityId&&!document.hidden){retryingGrade=true;try{await api(`/activities/${activityId}/submit`,'POST',{});pendingGrade=false;await refresh();}catch(e){pendingGrade=e.status===503;notice(pendingGrade?'Writing saved. Waiting for the grading service.':e.message,!pendingGrade);}finally{retryingGrade=false;}return;}if((data?.gradingQueued||data?.review?.status==='grading'||Date.now()-lastBackgroundRefresh>=15000)&&activityId&&!document.hidden&&!editing&&!$('initial').value&&!$('reply').value&&data?.activity.member.role!=='teacher'&&!['TEXTAREA','INPUT','SELECT'].includes(document.activeElement.tagName)){lastBackgroundRefresh=Date.now();refresh().catch(()=>notice('Refresh unavailable. Your last confirmed posts remain saved.',true));}},2500);
-$('password-change').onclick=()=>{const host=$('account-form');host.hidden=false;host.replaceChildren(el('h2','Change your password'));const f=el('form'),current=field('Current password','password'),next=field('New password (at least 10 characters)','password');current.input.autocomplete='current-password';next.input.autocomplete='new-password';next.input.minLength=10;current.input.required=true;next.input.required=true;const b=el('button','Save password','primary');f.append(current.label,next.label,b,button('Cancel',()=>{host.replaceChildren();host.hidden=true;}));f.onsubmit=e=>{e.preventDefault();task(b,async()=>{const r=await fetch('/api/v1/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:current.input.value,newPassword:next.input.value})});const j=await r.json();if(!r.ok)throw Error(j.error||'Password could not be changed.');host.replaceChildren();host.hidden=true;notice('Password changed. Other sessions have been signed out.');});};host.append(f);};
-boot();
+ async function catalog(preferred,{follow=false}={}){
+  const epoch=authEpoch,[identity,list]=await Promise.all([api('/me'),api('/teacher/classes')]);if(epoch!==authEpoch)throw retired();
+  if(!identity.user.teacher)throw Error('Teacher access required.');me=identity;classes=list.classes;lastCatalog=Date.now();
+  if(current){current.me=me;current.classes=classes;}
+  const saved=remembered(),valid=id=>classes.some(c=>c.id===id);
+  if(follow)$('follow-current').checked=true;
+  const active=$('follow-current').checked&&valid(me.activeClassId)?me.activeClassId:null;
+  let selected=valid(preferred)?preferred:valid(current?.classId)?current.classId:valid(saved.classId)?saved.classId:active;
+  if(follow&&active)selected=active;
+  if(!selected)selected=[...classes].sort((a,b)=>(b.lastActivityAt||0)-(a.lastActivityAt||0)||b.studentCount-a.studentCount||a.title.localeCompare(b.title))[0]?.id||'';
+  if(current&&selected!==current.classId&&ui.dirty.size)selected=current.classId;
+  classChoices();if(!current||selected!==current.classId)await chooseClass(selected);else $('class-select').value=selected;
+  remember();return classes;
+ }
+ async function chooseClass(id){
+  if(current?.classId===id)return;
+  ui.clear();data=null;classEpoch++;current={classId:id,epoch:classEpoch,authEpoch,me,classes,connectionOrigin:''};
+  for(const module of [assignments,work,classroom,management,setup])module.reset();for(const name of ['stats','activity','audit-list'])$(name).replaceChildren();
+  $('class-select').value=id;$('export').disabled=!id;remember();syncURL();
+  if(id)await refresh({force:true});else{notice('Create a class under Classes & accounts to get started.');$('activity').replaceChildren(node('p','No assigned classes yet.','muted'));}
+  await showView(view,{load:true});
+ }
+ function syncURL(){const next=new URL(location.href);next.pathname='/learn';if(current?.classId)next.searchParams.set('class',current.classId);else next.searchParams.delete('class');next.searchParams.delete('manage');next.searchParams.set('view',view);history.replaceState(null,'',next.pathname+next.search);}
+ function label(kind){const map={'discussion.initial':'Initial post','discussion.reply':'Discussion reply','discussion.teacher':'Teacher response','discussion.ai':'Automatic response','discussion.critique':'Independent critique',score:'SCORM score',progress:'SCORM progress',completed:'Assignment completed',submission:'Written SCORM response',checkpoint:'Progress checkpoint',arcade:'Arcade checkpoint',assessment:'Assessment saved'};return map[kind]||kind.replace(/[._]/g,' ');}
+ function draw({force=false}={}){
+  if(!data||!current)return;
+  $('stats').replaceChildren(...[['Activity events',data.counts.events],['SCORM responses',data.counts.submissions],['Discussion posts',data.counts.discussions],['Reviews saved',data.counts.reviewed],['Needs review',data.counts.pending]].map(([title,count])=>{const card=node('div',title,'card stat');card.append(node('strong',count));return card;}));
+  $('activity').replaceChildren(table(data.recentActivity,[['When',r=>dateText(r.at)],['Assignment',r=>r.title],['Learner',r=>r.alias],['Activity',r=>label(r.kind)]]));
+  $('audit-list').replaceChildren(table(data.events,[['When',r=>dateText(r.at)],['Assignment',r=>r.title||'Class setup'],['Action',r=>label(r.kind)]]));
+  current.connectionOrigin=data.connectionOrigin||'';assignments.render(data,current,{force});work.render(data,current,{force});
+ }
+ async function refresh({force=false}={}){
+  const selected=current;if(!selected?.classId)return;
+  const key=selected.authEpoch+':'+selected.epoch;if(requests.has(key))return requests.get(key);
+  const request=(async()=>{const result=await api('/teacher/classes/'+selected.classId);ui.assert(selected);data=result;draw({force});$('last-refreshed').dateTime=new Date().toISOString();$('last-refreshed').textContent='Updated '+new Date().toLocaleTimeString();})();requests.set(key,request);
+  try{await request;}finally{if(requests.get(key)===request)requests.delete(key);}
+ }
+ async function showView(next,{load=true}={}){
+  if(!views.includes(next))next='overview';if(next==='setup'&&!me?.user.admin)next='overview';view=next;
+  for(const name of views)$(name).hidden=name!==view;for(const button of document.querySelectorAll('[data-tab]')){if(button.dataset.tab===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}syncURL();
+  if(!current||!load)return;
+  if(view==='classroom')await classroom.load(current,{force:true});if(view==='classes')await management.load(current,{force:true});if(view==='setup')await setup.load(current,{force:true});
+ }
+ async function start(){
+  const identity=await api('/me');if(!identity.user.teacher){clearPrivate();$('login').hidden=false;notice('This workspace requires a teacher account. Open your assigned learning activity instead.');return;}
+  clearPrivate();me=identity;const epoch=authEpoch;const saved=remembered();$('follow-current').checked=saved.follow!==false;
+  view=views.includes(params.get('view'))?params.get('view'):location.hash==='#classes'?'classes':location.hash==='#classroom'?'classroom':'overview';
+  if(view==='setup'&&!me.user.admin)view='overview';$('login').hidden=true;$('identity').textContent=me.user.alias;$('logout').hidden=false;document.querySelector('[data-tab="setup"]').hidden=!me.user.admin;
+  let preferred=params.get('class');
+  if(params.get('activity')){const result=await api('/activities/'+encodeURIComponent(params.get('activity')));if(epoch!==authEpoch)throw retired();preferred=result.activity.class_id;if(!views.includes(params.get('view')))view='discussions';}
+  await catalog(preferred);if(params.get('activity'))await work.selectActivity(params.get('activity'));if(epoch!==authEpoch)throw retired();$('workspace').hidden=false;notice('Connected to RoomGoblin.');
+  api('/platform/tools').then(result=>{if(epoch===authEpoch)showTools(result.tools);}).catch(()=>{});
+ }
+ for(const button of document.querySelectorAll('[data-tab]'))button.onclick=()=>ui.run(button,()=>showView(button.dataset.tab));
+ $('class-select').onchange=async()=>{const next=$('class-select').value;if(!ui.canLeave()){$('class-select').value=current?.classId||'';return;}$('follow-current').checked=false;try{await chooseClass(next);}catch(error){if(!error.retired)notice(error.message);}};
+ $('follow-current').onchange=()=>{remember();if($('follow-current').checked&&!ui.dirty.size&&me?.activeClassId&&classes.some(c=>c.id===me.activeClassId))chooseClass(me.activeClassId).catch(error=>{if(!error.retired)notice(error.message);});};
+ $('workspace').addEventListener('input',event=>{if(event.target.closest('form')){$('follow-current').checked=false;remember();}});
+ $('refresh').onclick=()=>ui.run($('refresh'),async()=>{if(!ui.canLeave())return;ui.clear();await catalog();await refresh({force:true});await showView(view);notice('Refreshed from RoomGoblin.');});
+ $('export').onclick=()=>ui.run($('export'),async()=>{
+  const selected=current;ui.assert(selected);let response;try{response=await fetch(`${API}/teacher/classes/${selected.classId}/export`,{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(60000)});}catch{throw Error('The export could not be downloaded. Your drafts are unchanged.');}
+  ui.assert(selected);if(!response.ok)throw Error('Export was not available. Sign in again if your session ended.');const blob=await response.blob();ui.assert(selected);const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='RoomGoblin-submissions.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);
+ });
+ $('login-form').onsubmit=event=>{event.preventDefault();ui.run(event.submitter,async()=>{try{const result=await fetch('/api/v1/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('username').value,password:$('password').value})});if(!result.ok)throw Error('Sign-in failed. Check your username and password.');await start();}finally{$('password').value='';}});};
+ $('logout').onclick=()=>ui.run($('logout'),async()=>{if(!ui.canLeave())return;const result=await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});if(!result.ok)throw Error('Sign-out was not confirmed. Try again.');clearPrivate();$('login').hidden=false;notice('Signed out.');});
+ let polling=false;setInterval(async()=>{
+  if(polling||document.hidden||!current)return;polling=true;
+  try{
+   if(Date.now()-lastCatalog>30000)await catalog();
+   if($('follow-current').checked&&['overview','classroom'].includes(view)&&!ui.dirty.size&&!document.activeElement?.matches('input,textarea,select')&&me.activeClassId&&classes.some(c=>c.id===me.activeClassId)&&current.classId!==me.activeClassId)await chooseClass(me.activeClassId);
+   if(view==='classroom')await classroom.refresh();else if(!['classes','setup'].includes(view))await refresh();
+   if(view==='discussions')await work.refresh();
+  }catch(error){if(!error.retired)notice(error.message);}finally{polling=false;}
+ },8000);
+ try{await start();}catch(error){if(!error.retired){$('login').hidden=false;notice(error.message);}}
+})().catch(()=>{document.getElementById('status').textContent='The teacher workspace could not start. Refresh to try again.';});

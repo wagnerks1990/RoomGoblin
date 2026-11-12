@@ -1,16 +1,17 @@
 # RoomGoblin teacher portal
 
-The native workspace at `/learn/teacher/` is the single teacher entry for
+The native workspace at `/learn` is the single teacher entry for
 assignments, discussion review, classroom sessions, class accounts and setup.
-`/learn/platform/` redirects to its Classroom view. Teacher visits to
-`/learn/?manage=1` open Classes & accounts; activity bookmarks keep their selected
-class and discussion. Student assignments continue to open their existing signed
-discussion or SCORM package. No stored classes or learner records are deleted.
+The retired `/learn/teacher`, `/learn/platform`, student discussion, companion and
+old SCORM launcher pages return 404. They do not redirect. Students use the
+[direct API package](DIRECT-ASSIGNMENT-API.md) inside their LMS. An explicitly
+authorized [fresh start](LEARNING-FRESH-START.md) removes obsolete learning data;
+normal updates never reset records.
 
 ## Ownership and implementation
 
 `src/learning-teacher-portal.js` supplies class-scoped API projections, submission
-reviews, controls, and exports. `public/learn/teacher/` owns the browser workspace.
+reviews, controls, and exports. `public/learn` owns the browser workspace.
 The module uses RoomGoblin's existing authenticated learning routes, active SQLite
 database, teacher class membership, mutation freeze and HTTP writer tracking.
 There is no second Python service, database, shared teacher token, or public
@@ -20,7 +21,7 @@ view retains the existing authenticated, presence-gated session/effect APIs.
 The reference was a Python/SQLite synthetic-data demonstration, not a qualified
 student service. Its shared demo key, fixed lesson, fake actors, global control
 row, and keyword-based demonstration grading are deliberately replaced by native
-signed learner identity, selectable classes/assignments, and teacher review.
+private participant capabilities, selectable classes/assignments, and teacher review.
 The prototype's restart failure came from a positional four-value insert after
 its commands table gained a fifth column. Native portal persistence uses named
 columns, no startup seed insert, and regression coverage for an extended schema.
@@ -33,7 +34,7 @@ Learners register automatically; reports, pause/hint/stage, automatic responses
 and AI grading use API calls. No preapproved roster, signed launch or companion
 window is needed. Written discussions keep the existing rubric. Other written
 submissions use a teacher-configured AI rubric, with private server-side feedback
-and teacher correction. Signed-LTI setup below is compatibility for older packages.
+and teacher correction. New assignments use direct API delivery.
 
 ## Daily use
 
@@ -43,10 +44,8 @@ and teacher correction. Signed-LTI setup below is compatibility for older packag
 2. **Overview** combines SCORM events and discussion posts in a recent timeline.
 3. **Assignments** creates an assignment and its connector atomically. Expand an
    assignment for direct API packages, AI rubrics, availability, pause/hint/stage,
-   optional legacy signed launch settings, package
-   downloads, assessment policies, exceptions and continuing-campaign links.
-   Written discussions stay at 20 points. Signed provider settings preserve the
-   approved grade-service origins; a blank secret retains the saved secret.
+   possible points, package downloads, assessment policies, exceptions and continuing-campaign links.
+   Written discussions stay at 20 points. Participant access is assignment-scoped and enrollment is automatic.
 4. **Submissions & grading** reviews written SCORM answers privately. These review
    annotations are returned privately to direct API packages; their native SCORM
    attempt applies the saved score. Legacy review annotations do not independently
@@ -64,9 +63,7 @@ and teacher correction. Signed-LTI setup below is compatibility for older packag
 7. **Classes & accounts** manages classes and student access. Administrators can
    create restricted student accounts and assign eligible existing accounts.
 8. **Setup** is administrator-only: isolated student connection, timetable mapping,
-   writing-grading service and independent AI/media shortcuts. Connection settings
-   and launcher origins save together. Editing the grading service leaves current
-   launcher origins intact. Secrets stay server-side and clear from forms.
+   writing-grading service and independent AI/media shortcuts. Connection settings and the grading service save independently. Secrets stay server-side and clear from forms.
 9. **Audit** shows recent class actions, including membership and class creation.
    CSV export is in Submissions & grading and contains private class records.
 
@@ -85,7 +82,7 @@ are quoted and formula prefixes neutralized. Schoology remains the gradebook.
 
 ## Written SCORM submissions
 
-After configuring the normal signed connector, an assignment may explicitly send:
+After including its direct API config and SDK, an assignment may explicitly send:
 
 ```js
 RoomGoblinSCORM.submit({
@@ -105,7 +102,7 @@ learner-bound, idempotent retry queue; it does not write another LMS score or
 invent identity from a SCORM name. An uploaded package must include the updated
 SDK to use these additions. Existing packages do not automatically send answers.
 
-The signed companion polls only the current learner's allowed activity state.
+The direct SDK polls only the current participant's allowed activity state.
 Control messages retain exact-origin, source-window, nonce and activity checks.
 No teacher endpoint is added to the public student gateway. Pausing admission is
 server-enforced even if the package ignores the optional browser control event.
@@ -138,8 +135,7 @@ Run `npm run check`, `node --test test/learning-teacher-portal.test.js
 test/learning-sdk.test.js`, and `node test/browser/learning-teacher-portal-smoke.cjs`,
 `node test/browser/learning-platform-smoke.cjs`,
 `node test/browser/learning-workspace-regression.cjs`,
-`node test/browser/learning-smoke.cjs` and
-`node test/browser/learning-os-smoke.cjs` with Playwright and Microsoft Edge
+`node test/browser/learning-direct-smoke.cjs` with Playwright and Microsoft Edge
 available. The Python browser suite covers timetable setup, pause/resume and
 draft-protected class following in Chromium and Firefox. On Windows run the full supported
 `py -3.11 C:\ChatGPT\Workspace\Tools\RoomGoblin-LinuxTests.py` validation too.
