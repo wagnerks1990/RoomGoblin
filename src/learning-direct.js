@@ -3,11 +3,11 @@ const crypto=require('node:crypto');
 const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
 const uuid='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
-const directPath=new RegExp(`^/api/v1/learning/direct/(?:activities/(${uuid})(?:/(posts(?:/${uuid})?|submit|receipt|enroll))?|platform/activities/(${uuid})/(state|events|presence))$`);
+const directPath=new RegExp(`^/api/v1/learning/direct/(?:activities/(${uuid})(?:/(posts(?:/${uuid}(?:/history)?)?|submit|receipt|enroll))?|platform/activities/(${uuid})/(state|events|presence))$`);
 function route(method,path){
  const m=directPath.exec(path);if(!m)return null;
  const id=m[1]||m[3],part=m[2]||m[4]||'activity';
- const allowed=part==='enroll'?['POST']:['activity','state','receipt'].includes(part)?['GET']:part==='posts'?['POST']:part.startsWith('posts/')?['PUT']:['POST'];
+ const allowed=part==='enroll'?['POST']:(['activity','state','receipt'].includes(part)||part.endsWith('/history'))?['GET']:part==='posts'?['POST']:part.startsWith('posts/')?['PUT']:['POST'];
  return allowed.includes(method)?{id,part}:null;
 }
 class LearningDirect{

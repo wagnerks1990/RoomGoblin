@@ -16,3 +16,10 @@ reported attribution. LMS score saves require the SCO to be open or reopened.
 See docs/LEARNING-CRYPTO-DISCUSSION.md and examples/assignments/it3-password-storage.json
 for authoring, API routes, testing and rollback. Fixture ZIPs are local tests only.
 Export a live package after authorized deployment and check Schoology Student View.
+
+
+The classroom layout includes inline replies, private grade feedback, own-comment
+editing, Edited markers and per-comment View edit history. Chronological threads
+do not have a separate older-grading-feedback archive. Server versions retain the
+original text from the first tracked edit; overwritten pre-feature edits cannot
+be recovered. See docs/DIRECT-ASSIGNMENT-API.md for permissions and pagination.

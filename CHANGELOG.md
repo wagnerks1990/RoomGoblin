@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Add comment editing with server-retained version history, conflict protection and
+  a classroom-style discussion layout. Preserve chronological conversations, private
+  grade feedback and reply drafts; clear confirmed replies to prevent accidental repeats.
+
 - Add reusable teacher-authored assignment definitions and API-only SCORM export,
   with a password-storage discussion example. Validate rubric points, keep grading
   references private, ground automatic discussion grading in cited student sentences,
