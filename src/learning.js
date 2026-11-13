@@ -27,7 +27,8 @@ class LearningStore{
       CREATE TABLE IF NOT EXISTS learning_members(class_id TEXT NOT NULL REFERENCES learning_classes(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,role TEXT NOT NULL CHECK(role IN ('teacher','student')),alias TEXT NOT NULL,exempt INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(class_id,user_id));
       CREATE TABLE IF NOT EXISTS learning_activities(id TEXT PRIMARY KEY,class_id TEXT NOT NULL REFERENCES learning_classes(id) ON DELETE CASCADE,title TEXT NOT NULL,template_id TEXT NOT NULL,open INTEGER NOT NULL DEFAULT 1,due_at TEXT,close_at TEXT,created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS learning_posts(id TEXT PRIMARY KEY,activity_id TEXT NOT NULL REFERENCES learning_activities(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,parent_id TEXT REFERENCES learning_posts(id),kind TEXT NOT NULL CHECK(kind IN ('initial','reply','critique','teacher','ai')),body TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,hidden INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
-      CREATE UNIQUE INDEX IF NOT EXISTS learning_one_initial ON learning_posts(activity_id,user_id) WHERE kind='initial';
+      DROP INDEX IF EXISTS learning_one_initial;
+      CREATE INDEX IF NOT EXISTS learning_initial_posts ON learning_posts(activity_id,user_id) WHERE kind='initial';
       CREATE INDEX IF NOT EXISTS learning_post_feed ON learning_posts(activity_id,created_at);
       CREATE TABLE IF NOT EXISTS learning_reviews(id TEXT PRIMARY KEY,activity_id TEXT NOT NULL REFERENCES learning_activities(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,snapshot_json TEXT NOT NULL,status TEXT NOT NULL,ai_json TEXT,final_json TEXT,reviewer_id TEXT REFERENCES users(id),model TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS learning_review_user ON learning_reviews(activity_id,user_id,created_at);
@@ -69,7 +70,7 @@ class LearningStore{
     return rows.filter(p=>a.member.role==="teacher"||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?(definition?.responseLabel||this.store.getPreference("learning.responseLabel","Teacher")):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,updatedAt:p.updated_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
   }
   latestScoredReply(user,id){return this.db.prepare("SELECT p.id FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.activity_id=? AND p.user_id=? AND p.hidden=0 AND (p.kind='critique' OR (p.kind='reply' AND parent.kind='initial' AND parent.hidden=0 AND parent.user_id<>p.user_id)) ORDER BY p.rowid DESC LIMIT 1").get(id,user.id);}
-  isScoredPost(user,id,postId){const p=this.db.prepare("SELECT p.kind,parent.kind parent_kind,parent.user_id parent_user FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.id=? AND p.activity_id=? AND p.user_id=?").get(postId,id,user.id);return !!p&&(['initial','critique'].includes(p.kind)||p.kind==='reply'&&p.parent_kind==='initial'&&p.parent_user!==user.id);}
+  isScoredPost(user,id,postId){const p=this.db.prepare("SELECT p.kind,parent.kind parent_kind,parent.user_id parent_user FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.id=? AND p.activity_id=? AND p.user_id=?").get(postId,id,user.id);return !!p&&(['initial','critique'].includes(p.kind)||p.kind==='reply'&&(this.definitions.get(id)?.kind==='discussion'||p.parent_kind==='initial'&&p.parent_user!==user.id));}
   post(user,id,input){
     const a=this.activity(user,id);this.writable(a);const teacher=a.member.role==="teacher";
     if(!this.caseForActivity(a))fail(409,'This SCORM connector does not accept discussion posts.');
@@ -81,10 +82,11 @@ class LearningStore{
     if(["initial","critique"].includes(kind)&&parentId)fail(400,"This post type cannot have a parent.");
     if(kind==="critique"&&this.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND kind='initial' AND hidden=0 AND user_id<>?").get(id,user.id))fail(409,"A peer post is available. Respond to a classmate.");
     if(this.db.prepare("SELECT COUNT(*) n FROM learning_posts WHERE activity_id=? AND user_id=?").get(id,user.id).n>=30)fail(429,"Post limit reached. Revise an existing post or ask your teacher.");
-    if(kind==="initial"&&this.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND user_id=? AND kind='initial'").get(id,user.id))fail(409,"Revise your existing initial post.");
+    if(kind==="initial"&&!this.definitions.get(id)&&this.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND user_id=? AND kind='initial'").get(id,user.id))fail(409,"Revise your existing initial post.");
     const postId=crypto.randomUUID(),time=now();this.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").run(postId,id,user.id,parentId,kind,body,time,time);this.event(user,id,"post.create",postId);return postId;
   }
   edit(user,id,postId,input){return this.store.tx(()=>{
+    this.activity(user,id);if(this.definitions.get(id)?.kind==='discussion')fail(409,'Posts cannot be edited. Add a new post or reply with your correction.');
     const a=this.activity(user,id);this.writable(a);const p=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND user_id=? AND hidden=0 AND kind IN ('initial','reply','critique')").get(postId,id,user.id);if(!p)fail(404,"Your editable post was not found.");
     if(input.revision!==p.revision)fail(409,"This post changed. Refresh before editing.");
     if(!this.postHistory.change(p,text(input.body,p.kind==='initial'?6000:3000),user,'author'))return false;
@@ -101,7 +103,23 @@ class LearningStore{
     const initial=this.db.prepare("SELECT * FROM learning_posts WHERE activity_id=? AND user_id=? AND kind='initial' AND hidden=0").get(id,user.id);if(!initial)fail(400,"Publish your initial explanation first.");
     let reply=null,parent=null;
     if(replyId){reply=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND user_id=? AND kind IN ('reply','critique') AND hidden=0").get(replyId,id,user.id);if(!reply)fail(400,"Choose your own reply or independent critique.");if(reply.parent_id){parent=this.db.prepare("SELECT * FROM learning_posts WHERE id=? AND activity_id=? AND kind='initial' AND hidden=0 AND user_id<>?").get(reply.parent_id,id,user.id);if(!parent)fail(409,"For grading, choose a reply to a classmate's initial post. Conversation follow-ups do not replace that reply.");}}
-    return {initial:initial.body,initialId:initial.id,initialRevision:initial.revision,reply:reply?.body||"",replyId:reply?.id||null,replyRevision:reply?.revision||0,parent:parent?.body||(reply?.kind==="critique"?this.caseForActivity(activity).alternate:""),parentId:parent?.id||null,parentRevision:parent?.revision||0};
+    const snapshot={initial:initial.body,initialId:initial.id,initialRevision:initial.revision,reply:reply?.body||"",replyId:reply?.id||null,replyRevision:reply?.revision||0,parent:parent?.body||(reply?.kind==="critique"?this.caseForActivity(activity).alternate:""),parentId:parent?.id||null,parentRevision:parent?.revision||0};
+    if(this.definitions.get(id)?.kind==='discussion'){
+      const contributions=this.db.prepare(`WITH RECURSIVE visible AS (
+        SELECT *,0 depth FROM learning_posts WHERE activity_id=? AND parent_id IS NULL AND hidden=0
+        UNION ALL SELECT p.*,v.depth+1 FROM learning_posts p JOIN visible v ON p.parent_id=v.id AND p.activity_id=v.activity_id WHERE p.hidden=0 AND v.depth<30
+      ) SELECT v.*,parent.kind parent_kind,parent.user_id parent_user,parent.body parent_body,parent.revision parent_revision
+        FROM visible v LEFT JOIN learning_posts parent ON parent.id=v.parent_id
+        WHERE v.user_id=? AND v.kind IN ('initial','reply','critique') ORDER BY v.created_at,v.id`).all(id,user.id);
+      // Only this learner's writing counts as evidence. Other authors are context.
+      snapshot.initial=contributions.map(p=>p.body).join('\n\n');
+      const peer=contributions.filter(p=>p.kind==='critique'||p.kind==='reply'&&p.parent_kind==='initial'&&p.parent_user!==user.id);
+      snapshot.reply=peer.map(p=>p.body).join('\n\n');
+      snapshot.parent=peer.map(p=>p.kind==='critique'?this.caseForActivity(activity).alternate:p.parent_body).join('\n\n');
+      snapshot.contributions=contributions.map(p=>({id:p.id,revision:p.revision,parentId:p.parent_id,parentRevision:p.parent_revision}));
+      snapshot.mainPostIds=contributions.filter(p=>p.kind==='initial').map(p=>p.id);
+    }
+    return snapshot;
   }
   currentReview(user,id){this.activity(user,id);const r=this.db.prepare("SELECT * FROM learning_reviews WHERE activity_id=? AND user_id=? ORDER BY rowid DESC LIMIT 1").get(id,user.id);if(!r)return null;try{if(hash(this.snapshot(user,id,parse(r.snapshot_json).replyId))!==r.fingerprint)return {...this.projectReview(r),status:"superseded",final:null};}catch{return {...this.projectReview(r),status:"superseded",final:null};}return this.projectReview(r);}
   projectReview(r){return {id:r.id,status:r.status,replyId:parse(r.snapshot_json).replyId,automated:!!parse(r.final_json)&&parse(r.final_json).source==="ai",createdAt:r.created_at,updatedAt:r.updated_at,ai:parse(r.ai_json),final:parse(r.final_json)};}
@@ -337,7 +355,9 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     learning.event(user,a.id,"grade.request",id);busy.add(user.id);
     let retryScheduled=false;
     try{
-      if(enabled){const definition=learning.definitions.get(a.id);const result=await grade({apiKey:store.getSecret(["local","ollama"].includes(cfg.provider)?"learning.local.key":"learning.openai.key"),provider:cfg.provider||"openai",baseURL:cfg.baseURL,model:cfg.model,templateId:a.template_id,definition,initial:snapshot.initial,reply:snapshot.reply,parent:snapshot.parent});const validated=validateGrade({criteria:result.criteria,summary:result.summary},a.template_id,definition);if(!snapshot.reply){validated.criteria.reply={points:0,feedback:"No reply was submitted."};validated.total=Object.values(validated.criteria).reduce((n,c)=>n+c.points,0);}
+      if(enabled){const definition=learning.definitions.get(a.id);
+        const feedbackPosts=definition?.kind==='discussion'?(snapshot.mainPostIds||[]).filter(parentId=>!learning.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND parent_id=? AND kind='ai' UNION ALL SELECT 1 FROM learning_events WHERE activity_id=? AND record_id=? AND kind='coach.skipped' LIMIT 1").get(a.id,parentId,a.id,parentId)).map(postId=>({id:postId,body:learning.db.prepare('SELECT body FROM learning_posts WHERE id=?').get(postId).body})):[];
+        const result=await grade({apiKey:store.getSecret(["local","ollama"].includes(cfg.provider)?"learning.local.key":"learning.openai.key"),provider:cfg.provider||"openai",baseURL:cfg.baseURL,model:cfg.model,templateId:a.template_id,definition,initial:snapshot.initial,reply:snapshot.reply,parent:snapshot.parent,feedbackPosts});const validated=validateGrade({criteria:result.criteria,summary:result.summary},a.template_id,definition);if(!snapshot.reply){validated.criteria.reply={points:0,feedback:"No reply was submitted."};validated.total=Object.values(validated.criteria).reduce((n,c)=>n+c.points,0);}
         const still=store.listUsers().find(u=>u.id===user.id&&u.enabled);if(!still)fail(409,"Account no longer active.");learning.membership(still,a.class_id);
         const currentCfg=store.getPreference("learning.ai",{});
         if(!currentCfg.enabled||["provider","baseURL","model"].some(key=>currentCfg[key]!==cfg[key]))fail(409,"The grading service changed during this assessment.");
@@ -350,9 +370,18 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
           if(typeof result.coachResponse!=="string"||!result.coachResponse.trim()||result.coachResponse.length>1800)throw Error("Invalid coach output");
           const stamp=now();
           if(currentCfg.autonomous!==false){
-            const coachId=crypto.randomUUID();
-            learning.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,'ai',?,?,?)").run(coachId,a.id,user.id,snapshot.initialId,result.coachResponse,stamp,stamp);
-            learning.event(user,a.id,"coach.automated",coachId,{reviewId:id});
+            for(const parentId of snapshot.mainPostIds||[snapshot.initialId]){
+              // Regrading updates private scores, never adds another automatic
+              // comment to the same main post and never comments on replies.
+              if(learning.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND parent_id=? AND kind='ai' LIMIT 1").get(a.id,parentId))continue;
+              if(definition?.kind==='discussion'){
+                if(!feedbackPosts.some(p=>p.id===parentId))continue;
+                if(result.commentDecisions?.[parentId]!=='related'){learning.event(user,a.id,'coach.skipped',parentId,{reviewId:id,reason:'relevance-not-confirmed'});continue;}
+              }
+              const coachId=crypto.randomUUID();
+              learning.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,'ai',?,?,?)").run(coachId,a.id,user.id,parentId,result.coachResponse,stamp,stamp);
+              learning.event(user,a.id,"coach.automated",coachId,{reviewId:id});
+            }
             const currentActivity=learning.activity(user,a.id),member=currentActivity.member;
             const late=!!(currentActivity.due_at&&Date.parse(time)>Date.parse(currentActivity.due_at)&&!member.exempt);
             const final={...validated,earned:validated.total,lateMultiplier:late?.5:1,total:validated.total*(late?.5:1),possible:learning.caseForActivity(a).points,approvedAt:stamp,source:"ai"};
