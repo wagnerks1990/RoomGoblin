@@ -89,6 +89,10 @@ requirements, each at most 500 characters). The teacher editor accepts one per
 line. State one observable requirement per check and include acceptable
 paraphrases. The model extracts exact student quotations for each check; the
 server validates source IDs and quotation substrings before assigning points.
+The scenario, rubric description, private technical reference and bounded peer
+context remain available as context, never as the student's evidence. Each check
+can cite up to four quotations; checked criteria support up to 32 distinct source
+IDs. Legacy classification criteria retain their eight-ID bound.
 No supported checks earn zero, all earn full credit, and some earn intermediate
 bands distributed by the number of supported checks. A two-band criterion
 requires every check for credit. Invalid evidence remains for teacher review.
