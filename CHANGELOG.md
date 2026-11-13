@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Cap discussion provider calls per review and persist per-call daily-budget
+  reservations, including evidence selection and relevance checks. Keep writing
+  available for teacher review when the budget is exhausted. Include criterion
+  labels and scoring context when selecting cumulative evidence.
+
 - Grade long cumulative discussions through bounded, source-grounded evidence
   selection rather than the old single-post length limit. Preserve all writing,
   inspect every source span, and validate final citations against selected text.

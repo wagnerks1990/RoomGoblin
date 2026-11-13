@@ -3,6 +3,10 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {rows,select}=require('../src/learning-cumulative-evidence'),{assessWriting}=require('../src/learning-assignment-definition');
 const d={schemaVersion:1,kind:'discussion',title:'Synthetic long discussion',points:20,prompt:'Explain access and verification.',initialDirections:'Explain least privilege and tests.',replyDirections:'Improve a peer plan.',alternate:'Evaluate Modify for Viewers.',gradingInstructions:'Credit specific evidence; do not infer facts.',criteria:[{id:'access',label:'Access',description:'Explain Editors, Viewers and tests.',points:16,levels:[0,8,16]},{id:'reply',label:'Reply',description:'Justified improvement.',points:4,levels:[0,2,4]}]};
 const initial='EARLY Editors may edit. '+('Unrelated filler sentence. '.repeat(170))+'MIDDLE Viewers may only read. '+('Unrelated filler sentence. '.repeat(170))+'LATE Verify denied writes.';
+test('selection distinguishes criteria whose subject is carried by their label',()=>{
+ const {selectionRequest}=require('../src/learning-cumulative-evidence'),base={...d.criteria[0],description:'Explain two with concrete examples.'};
+ const a=selectionRequest('synthetic',d,{...base,id:'advantages',label:'Advantages'},[{id:1,text:'Evidence.'}]);const b=selectionRequest('synthetic',d,{...base,id:'disadvantages',label:'Disadvantages'},[{id:1,text:'Evidence.'}]);assert.notEqual(a.instructions,b.instructions);assert(a.instructions.includes('Advantages'));assert(b.instructions.includes('Disadvantages'));assert(a.instructions.includes('"levels":[0,8,16]'));
+});
 test('cumulative span IDs preserve every character beyond the old single-post limit',()=>{const spans=rows(initial);assert(initial.length>6000);assert.equal(spans.map(r=>r.text).join(''),initial);assert(spans.every(r=>Buffer.byteLength(r.text)<=150));assert.deepEqual(spans.map(r=>r.id),spans.map((_,i)=>i+1));assert.throws(()=>rows('x'.repeat(180101)),/budget/);});
 test('all cumulative text is examined in bounded requests; early, middle and late evidence can combine',async()=>{
  const examined=new Set();let selections=0;

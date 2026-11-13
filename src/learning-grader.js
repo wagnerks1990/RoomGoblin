@@ -54,5 +54,5 @@ async function modelJSON({apiKey,provider='openai',baseURL,fetchImpl=fetch},requ
   else{if(data.status!=="completed")throw Error("AI response incomplete");const parts=(data.output||[]).flatMap(x=>x.type==="message"?x.content||[]:[]);if(parts.some(x=>x.type==="refusal"))throw Error("AI response requires teacher review");output=parts.filter(x=>x.type==="output_text").map(x=>x.text).join("");}
   return JSON.parse(output);
 }
-async function gradeWriting(options){if(options.definition)return require('./learning-assignment-definition').assessWriting(options,modelJSON);const selected=caseFor(options.templateId);return (selected.id===CASE.id?assessWriting:require('./learning-os-evidence').assessWriting)(options,modelJSON);}
+async function gradeWriting(options){const model=require('./learning-model-budget').boundedModel(options,modelJSON);if(options.definition)return require('./learning-assignment-definition').assessWriting(options,model);const selected=caseFor(options.templateId);return (selected.id===CASE.id?assessWriting:require('./learning-os-evidence').assessWriting)(options,model);}
 module.exports={CASE,CASES,caseFor,rubricFor,RUBRIC,SCHEMA,REPLY_SCHEMA,validateGrade,gradingRequest,gradeWriting,localBaseURL,modelJSON};
