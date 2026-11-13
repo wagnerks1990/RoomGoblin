@@ -53,7 +53,7 @@ export function createDiscussionAuthoring(form,ui){
   const points=field(row,'Criterion possible points','number',seed.points||1,{min:1,max:1000,required:true});
   const levels=field(row,'Allowed scores Â· comma separated','text',seed.levels||'0, 1',{maxLength:80,required:true});
   const description=field(row,'Evidence and scoring expectations','textarea','',{maxLength:800,rows:3,required:true});
-  const evidenceChecks=field(row,'Private evidence checks · optional, one per line','textarea','',{maxLength:4007,rows:4});
+  const evidenceChecks=field(row,'Private evidence checks - optional, one per line','textarea','',{maxLength:4007,rows:4});
   row.append(node('p','List the separate requirements for full credit. Each supported check needs an exact quote from the student. All checks earn full credit; some earn partial credit; none earn zero. These checks stay private.','muted'));
   const entry={id,row,label,source,points,levels,description,evidenceChecks};editors.push(entry);
   row.append(ui.button('Remove criterion',()=>{editors.splice(editors.indexOf(entry),1);row.remove();ui.dirty.add(form);updateTotal();}));

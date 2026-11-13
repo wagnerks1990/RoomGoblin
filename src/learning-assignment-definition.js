@@ -4,7 +4,7 @@ const {rows:sentences,select:selectEvidence}=require('./learning-cumulative-evid
 const TEMPLATE='api-discussion-v1';
 const fail=(message)=>{throw Object.assign(Error(message),{status:400});};
 function string(value,max,optional=false){if(optional&&(value===undefined||value===''))return '';if(typeof value!=='string'||!value.trim()||value.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))fail('Assignment text is missing or too long.');return value.trim();}
-function normalizeChecks(value){if(!Array.isArray(value)||value.length<1||value.length>8)fail('Use 1–8 evidence checks.');return value.map(v=>string(v,500));}
+function normalizeChecks(value){if(!Array.isArray(value)||value.length<1||value.length>8)fail('Use 1-8 evidence checks.');return value.map(v=>string(v,500));}
 function normalize(input){
  if(!input||input.schemaVersion!==1||!['discussion','written'].includes(input.kind))fail('Use assignment definition schemaVersion 1 and discussion or written kind.');
  const criteria=input.criteria;if(!Array.isArray(criteria)||criteria.length<1||criteria.length>8)fail('Use 1â€“8 rubric criteria.');
