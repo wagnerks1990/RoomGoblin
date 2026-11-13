@@ -24,3 +24,10 @@ test('preview rejects remote insecure origins and resumes uncertain setup withou
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rg-preview-'));let p;
  try{fs.writeFileSync(path.join(dir,'creation-checkpoint.json'),'{}');p=await createPreview({origin:'https://example.com',definition,outdir:dir});assert.equal((await(await fetch(p.url+'/status')).json()).uncertain,true);}finally{await p?.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('local helper bounds sign-in attempts before another native authentication request',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rg-preview-rate-'));let p,calls=0;
+ try{p=await createPreview({origin:'https://example.com',definition,outdir:dir,fetchImpl:async()=>{calls++;return new Response('{}',{status:401});}});const headers={'content-type':'application/json',origin:p.url,'x-roomgoblin-preview':'1'};
+  for(let i=0;i<5;i++)assert.equal((await fetch(p.url+'/connect',{method:'POST',headers,body:JSON.stringify({username:'synthetic',password:'synthetic-invalid'})})).status,400);
+  assert.equal((await fetch(p.url+'/connect',{method:'POST',headers,body:JSON.stringify({username:'synthetic',password:'synthetic-invalid'})})).status,429);assert.equal(calls,5);
+ }finally{await p?.close();fs.rmSync(dir,{recursive:true,force:true});}
+});

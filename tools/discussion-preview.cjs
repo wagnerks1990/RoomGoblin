@@ -1,6 +1,7 @@
 'use strict';
 // Local operator test harness, never mounted by the Hub or student gateway.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),express=require('express'),AdmZip=require('adm-zip');
+const {rateLimit}=require('express-rate-limit');
 const {normalize}=require('../src/learning-assignment-definition');
 const digest=v=>crypto.createHash('sha256').update(v).digest('hex');
 function originURL(value){const u=new URL(value);if(u.pathname!=='/'||u.search||u.hash||u.username||u.password||!(u.protocol==='https:'||u.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(u.hostname)))throw Error('Use the native RoomGoblin HTTPS origin or an isolated loopback test origin.');return u.origin;}
@@ -16,9 +17,11 @@ async function createPreview({origin,definition,outdir,port=0,fetchImpl=fetch}){
  if(!zip&&fs.existsSync(path.join(outdir,'creation-checkpoint.json')))uncertain=true;
  app.use((req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');if(req.get('host')!==new URL(base).host)return res.status(403).end();if(req.method==='POST'&&(req.get('origin')!==base||req.get('x-roomgoblin-preview')!=='1'))return res.status(403).json({error:'Use the local preview page.'});next();});
  app.use(express.json({limit:'16kb'}));
- app.get('/',(_req,res)=>res.sendFile(path.join(__dirname,'discussion-preview/index.html')));
+ const reads=rateLimit({windowMs:60000,limit:120,standardHeaders:'draft-8',legacyHeaders:false});
+ const connects=rateLimit({windowMs:15*60000,limit:5,standardHeaders:'draft-8',legacyHeaders:false});
+ app.get('/',reads,(_req,res)=>res.sendFile(path.join(__dirname,'discussion-preview/index.html')));
  app.get('/status',(_req,res)=>res.json({ready:!!zip,busy,uncertain,origin,title:definition.title,points:definition.points,storageKey:definitionHash,aiConfigured:receipt?.aiConfigured??null,testOnly:true}));
- app.post('/connect',async(req,res)=>{
+ app.post('/connect',connects,async(req,res)=>{
   if(zip)return res.json({ready:true});
   if(busy||uncertain)return res.status(409).json({error:uncertain?'A creation result is unconfirmed. Inspect the test class in RoomGoblin before starting another test.':'Connection is already in progress.'});
   const {username,password}=req.body||{};
@@ -57,7 +60,7 @@ async function createPreview({origin,definition,outdir,port=0,fetchImpl=fetch}){
   const entry=zip.getEntry(filename);if(!entry||entry.isDirectory)return res.status(404).end();
   const ext=path.extname(filename);res.type(ext==='.js'?'application/javascript':ext==='.css'?'text/css':ext==='.xml'?'application/xml':'text/html');res.send(zip.readFile(entry));
  });
- app.get('/download',(_req,res)=>{if(!zip)return res.status(409).end();res.download(zipPath,'Discussion-TEST-ONLY.zip');});
+ app.get('/download',reads,(_req,res)=>{if(!zip)return res.status(409).end();res.download(zipPath,'Discussion-TEST-ONLY.zip');});
  app.post('/stop',(_req,res)=>{res.json({ok:true});setImmediate(()=>server.close());});
  app.use((error,_req,res,_next)=>res.status(400).json({error:'The local request could not be processed.'}));
  server=await new Promise((resolve,reject)=>{const s=app.listen(port,'127.0.0.1',()=>resolve(s));s.once('error',reject);});base='http://127.0.0.1:'+server.address().port;
