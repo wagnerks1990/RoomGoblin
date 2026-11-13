@@ -8,6 +8,45 @@ browser left open. Old hosted learning apps have been retired. Use fresh direct 
 
 ## Teacher workflow
 
+Choose **Custom discussion** under Add an assignment in `/learn` to author a
+scenario, directions, independent case, instructor response name and rubric.
+The private grading reference stays server-side. Preview directions before
+creation; set actual due/close times separately after creation.
+
+Authored discussions accept new main posts and replies, rather than student
+edits. Assessment uses the learner's visible contributions together, including
+follow-ups to the instructor. Only their own writing is evidence; instructor and
+peer words are context. Instructor follow-ups do not satisfy peer-reply credit.
+New relevant evidence can improve the rubric score; extra length or unrelated
+writing does not guarantee points. Existing daily grading budgets still apply.
+
+Each main post receives at most one automatic public comment. A separate model
+check compares that post with the actual scenario/directions before publication.
+Unrelated or uncertain posts receive no automatic comment; a private audit event
+records the skip. Replies are graded as appropriate but never receive automatic
+comments. Reassessment updates the private grade, without adding another public
+comment to an already handled main post. Existing historical duplicates are retained.
+
+Discussion fields block copy, cut, paste and text drop. This is a browser
+deterrent, not authorship proof or a security boundary. Teacher accommodations
+and review remain necessary. Teacher corrections and old comment history remain
+available; the student append-only rule applies to authored discussions.
+
+The student package must be re-exported/replaced for changed interface behavior.
+The server change replaces the old one-initial-post unique index with an ordinary
+index without deleting records. Before production rollout, take the normal
+application/database backup. Roll back code and its matching backup together:
+older code cannot recreate that unique index after multiple main posts exist.
+
+For a local operator test, run `node tools/discussion-preview.cjs --origin
+https://YOUR-ROOMGOBLIN --definition /private/discussion.json --out /private/test`.
+The loopback helper creates a separate TEST class using an explicitly entered
+native teacher sign-in, exports the real assignment, signs out that temporary
+session and serves a local SCORM player with synthetic learner identities.
+Credentials are not persisted. Keep exported capabilities and learner resume
+private. Test grades do not write to an actual LMS. An uncertain setup is not
+automatically replayed; inspect the saved creation checkpoint first.
+
 The [password-storage discussion](LEARNING-CRYPTO-DISCUSSION.md) adds an IT III
 8/6/2/4 rubric, instructor-style responses and a case-scoped clipboard restriction.
 

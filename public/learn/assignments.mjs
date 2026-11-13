@@ -1,4 +1,5 @@
 import {node,field,choices,detail} from './ui.mjs';
+import {createDiscussionAuthoring} from './discussion-authoring.mjs';
 const lines=input=>input.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 const localDate=value=>{if(!value)return '';const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
 const iso=value=>value?new Date(value).toISOString():null;
@@ -29,10 +30,12 @@ export function createAssignments(ui,host,createHost){
  function create(selected){
   createHost.replaceChildren();const form=node('form');form.id='new-assignment';
   const title=field(form,'Assignment title','text','',{name:'title',required:true,maxLength:120}),type=field(form,'Assignment type','select','',{name:'templateId'}),points=field(form,'Possible points','number',50,{name:'points',min:1,max:1000,required:true});
-  choices(type,[{id:'scorm-connector-v1',label:'SCORM assignment connection'},...selected.me.cases.map(c=>({id:c.id,label:c.title}))]);
-  type.onchange=()=>{const written=type.value!=='scorm-connector-v1';points.disabled=written;if(written)points.value='20';};
+  const canAuthor=selected.me.assignmentDefinitions?.schemaVersion===1&&selected.me.assignmentDefinitions.kinds?.includes('discussion');
+  choices(type,[{id:'scorm-connector-v1',label:'SCORM assignment connection'},...(canAuthor?[{id:'custom-discussion',label:'Custom discussion'}]:[]),...selected.me.cases.map(c=>({id:c.id,label:c.title}))]);
+  const author=canAuthor?createDiscussionAuthoring(form,ui):null;
+  type.onchange=()=>{const custom=type.value==='custom-discussion',written=type.value!=='scorm-connector-v1';points.disabled=written&&!custom;if(written)points.value='20';author?.setEnabled(custom);};
   form.append(node('p','Use one connection for each assignment. Keep the original assignment and gradebook in Schoology.','muted'));
-  const save=ui.save(form,'Create assignment',async()=>{const result=await ui.api(`/teacher/classes/${selected.classId}/assignments`,'POST',{title:title.value,templateId:type.value,points:Number(points.value)});form.reset();type.onchange();await ui.onCatalog();ui.notice('Assignment created. Open its Points & grading settings to finish setup.');return result;},selected);
+  const save=ui.save(form,'Create assignment',async()=>{const custom=type.value==='custom-discussion',body=custom?{definition:author.read(title.value,points.value)}:{title:title.value,templateId:type.value,points:Number(points.value)};const result=await ui.api(`/teacher/classes/${selected.classId}/assignments`,'POST',body);form.reset();type.onchange();create(selected);await ui.onCatalog();ui.notice('Assignment created. Open its Points & grading settings to finish setup.');return result;},selected);
   save.disabled=!selected.classId;createHost.append(form);
  }
  async function download(activity,selected){

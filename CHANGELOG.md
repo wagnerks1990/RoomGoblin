@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+- Add custom discussion authoring in `/learn` and a local SCORM test helper.
+  Authored discussions use new posts instead of student edits and assess the
+  learner's visible contributions together. Check main-post relevance before
+  posting at most one automatic comment; never automatically comment on replies.
+  Block discussion clipboard operations while preserving private grades,
+  teacher review, historical records and existing grading budgets.
+
 - Add comment editing with server-retained version history, conflict protection and
   a classroom-style discussion layout. Preserve chronological conversations, private
   grade feedback and reply drafts; clear confirmed replies to prevent accidental repeats.
