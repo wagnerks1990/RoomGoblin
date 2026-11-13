@@ -31,3 +31,10 @@ test('local helper bounds sign-in attempts before another native authentication 
   assert.equal((await fetch(p.url+'/connect',{method:'POST',headers,body:JSON.stringify({username:'synthetic',password:'synthetic-invalid'})})).status,429);assert.equal(calls,5);
  }finally{await p?.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('a lost class-create response leaves a durable pending checkpoint before restart',async()=>{
+ const f=await fixture(),dir=fs.mkdtempSync(path.join(os.tmpdir(),'rg-preview-lost-'));let p,creates=0;
+ try{p=await createPreview({origin:f.base,definition,outdir:dir,fetchImpl:async(url,options)=>{const response=await fetch(url,options);if(url.endsWith('/learning/classes')&&options.method==='POST'){creates++;await response.body.cancel();throw Error('Synthetic response loss');}return response;}});
+  const response=await fetch(p.url+'/connect',{method:'POST',headers:{'content-type':'application/json',origin:p.url,'x-roomgoblin-preview':'1'},body:JSON.stringify({username:'teacher-test',password:'synthetic-test-password'})});assert.equal(response.status,400);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'creation-checkpoint.json'))).status,'class-create-pending');
+  await p.close();p=await createPreview({origin:f.base,definition,outdir:dir});assert((await(await fetch(p.url+'/status')).json()).uncertain);assert.equal(creates,1);
+ }finally{await p?.close();await f.close();fs.rmSync(dir,{recursive:true,force:true});}
+});

@@ -9,7 +9,7 @@
 <p id="grade" role="status">No published test grade yet.</p><p>Instructor comments use the authored response name. Private grading feedback stays with the selected test learner.</p>
 <iframe id="assignment" title="Live RoomGoblin SCORM discussion"></iframe></section>
 <section><h2>About this test</h2><p>The discussion, comments and grading run in RoomGoblin. This page supplies a local SCORM test player, not a scripted grading simulation. The private learner resume is kept in this browser on this computer. Keep the local helper running while testing. A test package belongs to its TEST class; export separate packages for actual class sections.</p><button id="stop">Stop the local test server</button></section>
-</main><script>
+<footer>RoomGoblin · Created by Kyle Wagner.</footer></main><script>
 'use strict';
 const $=id=>document.getElementById(id);let actor=new URL(location.href).searchParams.get('learner')==='b'?'b':'a',ready=false,storageError=false,possiblePoints=20,storageKey="pending";
 const values={};let initialized=false;

@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Grade long cumulative discussions through bounded, source-grounded evidence
+  selection rather than the old single-post length limit. Preserve all writing,
+  inspect every source span, and validate final citations against selected text.
+  Persist preview creation intent before an uncertain mutation and include the
+  required attribution on the standalone preview page.
+
 - Add custom discussion authoring in `/learn` and a local SCORM test helper.
   Authored discussions use new posts instead of student edits and assess the
   learner's visible contributions together. Check main-post relevance before

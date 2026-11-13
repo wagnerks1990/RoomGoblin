@@ -365,7 +365,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         const newer=learning.db.prepare('SELECT fingerprint FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,user.id);
         if(newer&&newer.fingerprint!==fingerprint)fail(409,'A newer reply selection is waiting for assessment.');
         learning.store.tx(()=>{
-          const changed=learning.db.prepare("UPDATE learning_reviews SET status='needs_review',ai_json=?,updated_at=? WHERE id=? AND status='grading'").run(JSON.stringify({...validated,proposedResponse:result.coachResponse}),now(),id).changes;
+          const changed=learning.db.prepare("UPDATE learning_reviews SET status='needs_review',ai_json=?,updated_at=? WHERE id=? AND status='grading'").run(JSON.stringify({...validated,proposedResponse:result.coachResponse,evidenceSelection:result.evidenceSelection}),now(),id).changes;
           if(!changed)return;
           if(typeof result.coachResponse!=="string"||!result.coachResponse.trim()||result.coachResponse.length>1800)throw Error("Invalid coach output");
           const stamp=now();
