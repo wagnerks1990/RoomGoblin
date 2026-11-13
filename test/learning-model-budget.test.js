@@ -9,6 +9,7 @@ test('each provider subrequest is charged and a review cannot dispatch beyond it
 function review(f,user){const id=crypto.randomUUID(),stamp=new Date().toISOString();f.learning.db.prepare("INSERT INTO learning_reviews(id,activity_id,user_id,fingerprint,snapshot_json,status,model,created_at,updated_at,started_at) VALUES(?,?,?,?,?,'grading','synthetic',?,?,?)").run(id,f.activityId,user.id,id,'{}',stamp,stamp,stamp);return id;}
 test('daily reservations persist, count each subrequest, and refuse another learner before dispatch',async t=>{
  const f=await fixture();t.after(f.close);const budget=f.learning.modelBudget,id=review(f,f.a),since=new Date(Date.now()-86400000).toISOString();
+ for(const limit of [NaN,Infinity,0,1001,'100',null])assert.throws(()=>budget.reserve(id,f.a.id,limit),e=>e.code==='LEARNING_MODEL_BUDGET');
  budget.reserve(id,f.a.id,2);budget.reserve(id,f.a.id,2);assert.equal(budget.usedSince(since),2);
  assert.throws(()=>budget.reserve(id,f.a.id,2),e=>e.code==='LEARNING_MODEL_BUDGET');const other=review(f,f.b);assert.throws(()=>budget.reserve(other,f.b.id,2),e=>e.code==='LEARNING_MODEL_BUDGET');
  assert.equal(f.learning.db.prepare('SELECT COUNT(*) n FROM learning_model_requests').get().n,2);

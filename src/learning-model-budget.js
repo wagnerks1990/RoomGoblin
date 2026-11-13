@@ -10,6 +10,7 @@ class LearningModelBudget{
   return calls+legacy+(this.learning.assignmentAI?.startedSince(since)||0);
  }
  reserve(reviewId,userId,limit){return this.learning.store.tx(()=>{
+  if(!Number.isInteger(limit)||limit<1||limit>1000)throw exhausted();
   const since=new Date(Date.now()-86400000).toISOString();if(this.usedSince(since,reviewId)>=limit)throw exhausted();
   this.db.prepare('INSERT INTO learning_model_requests(review_id,user_id,started_at) VALUES(?,?,?)').run(reviewId,userId,new Date().toISOString());
  });}
