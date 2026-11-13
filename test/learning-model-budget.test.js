@@ -35,3 +35,9 @@ test('upgrading the original ledger preserves reservations and changes deletion 
  const budget=new(require('../src/learning-model-budget').LearningModelBudget)(f.learning);assert.equal(f.learning.db.prepare('SELECT COUNT(*) n FROM learning_model_requests').get().n,1);assert(f.learning.db.prepare('PRAGMA foreign_key_list(learning_model_requests)').all().every(k=>k.on_delete==='SET NULL'));
  assert.equal(f.store.deleteUser(f.a.id),1);assert.equal(budget.usedSince(new Date(Date.now()-86400000).toISOString()),1);assert.deepEqual(f.learning.db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+test('a failed ledger migration restores the original records and constraints',async t=>{
+ const f=await fixture();t.after(f.close);const id=review(f,f.a);f.learning.db.exec('DROP TABLE learning_model_requests; CREATE TABLE learning_model_requests(id INTEGER PRIMARY KEY,review_id TEXT NOT NULL REFERENCES learning_reviews(id),user_id TEXT NOT NULL REFERENCES users(id),started_at TEXT NOT NULL);');f.learning.db.prepare('INSERT INTO learning_model_requests VALUES(1,?,?,?)').run(id,f.a.id,new Date().toISOString());
+ const original=f.store.tx;f.store.tx=function(fn){return original.call(this,()=>{fn();throw Error('Synthetic migration failure before commit');});};
+ try{assert.throws(()=>new(require('../src/learning-model-budget').LearningModelBudget)(f.learning),/Synthetic migration failure/);}finally{f.store.tx=original;}
+ assert.equal(f.learning.db.prepare('SELECT review_id FROM learning_model_requests').get().review_id,id);assert(f.learning.db.prepare('PRAGMA foreign_key_list(learning_model_requests)').all().every(k=>k.on_delete==='NO ACTION'));assert.equal(f.learning.db.prepare("SELECT name FROM sqlite_master WHERE name='learning_model_requests_v2'").get(),undefined);
+});
