@@ -20,6 +20,16 @@ peer words are context. Instructor follow-ups do not satisfy peer-reply credit.
 New relevant evidence can improve the rubric score; extra length or unrelated
 writing does not guarantee points. Existing daily grading budgets still apply.
 
+When cumulative writing exceeds the old 6,000-character single-post budget, the
+grader examines all source spans in bounded selection requests. It carries up to
+eight verbatim relevant spans per criterion, including corrections and conflicting
+claims, into the final assessment. Every span is inspected; it does not truncate
+the submission to a prefix. Peer context is selected separately and cannot become
+learner evidence. Citation IDs must belong to the supplied selected spans. Private
+review metadata records coverage and selected IDs. This adds bounded model calls
+for long discussions; provider context limits, saved writing and teacher review
+remain authoritative.
+
 Each main post receives at most one automatic public comment. A separate model
 check compares that post with the actual scenario/directions before publication.
 Unrelated or uncertain posts receive no automatic comment; a private audit event

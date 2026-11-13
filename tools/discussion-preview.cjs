@@ -42,6 +42,7 @@ async function createPreview({origin,definition,outdir,port=0,fetchImpl=fetch}){
    const me=await request('learning/me');if(!me.user?.teacher||me.assignmentDefinitions?.schemaVersion!==1)throw Error('This account needs teacher access to the reusable discussion API.');
    // Never retry an uncertain create. These identifiers contain no credentials.
    uncertain=true;
+   fs.writeFileSync(path.join(outdir,'creation-checkpoint.json'),JSON.stringify({origin,definitionHash,status:'class-create-pending'},null,2),{mode:0o600});
    const c=await request('learning/classes','POST',{title:('TEST - '+definition.title).slice(0,100)});createdClass=c.id;
    fs.writeFileSync(path.join(outdir,'creation-checkpoint.json'),JSON.stringify({origin,classId:createdClass,definitionHash,status:'class-created'},null,2),{mode:0o600});
    const a=await request('learning/teacher/classes/'+createdClass+'/assignments','POST',{definition});createdActivity=a.id;
