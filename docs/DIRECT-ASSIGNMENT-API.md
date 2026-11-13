@@ -38,6 +38,10 @@ one-unit legacy allowance. Exhausted reviews preserve all posts for instructor
 review and do not publish a partial automatic score or comment. No budget is
 automatically increased for long writing.
 
+Deleting a learner or review clears the reservation's identifying references
+without refunding spent quota. Startup upgrades the original restrictive ledger
+foreign keys transactionally, preserving request timestamps and accounting units.
+
 Each main post receives at most one automatic public comment. A separate model
 check compares that post with the actual scenario/directions before publication.
 Unrelated or uncertain posts receive no automatic comment; a private audit event

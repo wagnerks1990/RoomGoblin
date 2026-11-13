@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Preserve learner-account deletion after grading by anonymizing model-request
+  references. Migrate existing ledgers transactionally and retain spent daily
+  quota when an account or review is deleted.
+
 - Cap discussion provider calls per review and persist per-call daily-budget
   reservations, including evidence selection and relevance checks. Keep writing
   available for teacher review when the budget is exhausted. Include criterion
