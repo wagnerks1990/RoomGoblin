@@ -30,6 +30,14 @@ review metadata records coverage and selected IDs. This adds bounded model calls
 for long discussions; provider context limits, saved writing and teacher review
 remain authoritative.
 
+Discussion assessments are capped at 24 provider calls per review. Each grading,
+evidence-selection and relevance request reserves one unit of the configured
+daily budget before dispatch; reservations persist across failures and restarts.
+Historical discussion reviews and other assignment jobs retain a conservative
+one-unit legacy allowance. Exhausted reviews preserve all posts for instructor
+review and do not publish a partial automatic score or comment. No budget is
+automatically increased for long writing.
+
 Each main post receives at most one automatic public comment. A separate model
 check compares that post with the actual scenario/directions before publication.
 Unrelated or uncertain posts receive no automatic comment; a private audit event

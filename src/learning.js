@@ -35,6 +35,7 @@ class LearningStore{
       CREATE TABLE IF NOT EXISTS learning_events(id INTEGER PRIMARY KEY,at TEXT NOT NULL,actor_id TEXT,activity_id TEXT,kind TEXT NOT NULL,record_id TEXT,details_json TEXT NOT NULL);
     `);
     this.definitions=new AssignmentDefinitions(this);
+    this.modelBudget=new(require('./learning-model-budget').LearningModelBudget)(this);
     this.postHistory=new(require('./learning-post-history').PostHistory)(this);
     if(!this.db.prepare('PRAGMA table_info(learning_reviews)').all().some(c=>c.name==='started_at'))this.db.exec('ALTER TABLE learning_reviews ADD COLUMN started_at TEXT');
     // This profile can never grant appliance access, even if its config is edited.
@@ -348,7 +349,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     }
     const since=new Date(Date.now()-86400000).toISOString();
     if(learning.db.prepare("SELECT COUNT(*) n FROM learning_reviews WHERE user_id=? AND COALESCE(started_at,created_at)>?").get(user.id,since).n+(learning.assignmentAI?.startedSince(since,user.id)||0)>=5)fail(429,"Daily grading request limit reached. Ask your teacher to review the saved work.");
-    if(learning.db.prepare("SELECT COUNT(*) n FROM learning_reviews WHERE model IS NOT NULL AND COALESCE(started_at,created_at)>?").get(since).n+(learning.assignmentAI?.startedSince(since)||0)>=(cfg.dailyLimit||100))fail(429,"The automatic grading budget is reached. Your teacher can review the saved work.");
+    if(learning.modelBudget.usedSince(since)>=(cfg.dailyLimit||100))fail(429,"The automatic grading budget is reached. Your teacher can review the saved work.");
     const id=crypto.randomUUID(),time=acceptedAt,enabled=cfg.enabled&&(["local","ollama"].includes(cfg.provider)||store.hasSecret("learning.openai.key"));
     learning.db.prepare("INSERT INTO learning_reviews(id,activity_id,user_id,fingerprint,snapshot_json,status,model,created_at,updated_at,started_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(id,a.id,user.id,fingerprint,JSON.stringify(snapshot),enabled?"grading":"unavailable",enabled?cfg.model:null,time,now(),now());
     retryQueue.remove({activityId:a.id,userId:user.id,fingerprint});
@@ -357,7 +358,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     try{
       if(enabled){const definition=learning.definitions.get(a.id);
         const feedbackPosts=definition?.kind==='discussion'?(snapshot.mainPostIds||[]).filter(parentId=>!learning.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND parent_id=? AND kind='ai' UNION ALL SELECT 1 FROM learning_events WHERE activity_id=? AND record_id=? AND kind='coach.skipped' LIMIT 1").get(a.id,parentId,a.id,parentId)).map(postId=>({id:postId,body:learning.db.prepare('SELECT body FROM learning_posts WHERE id=?').get(postId).body})):[];
-        const result=await grade({apiKey:store.getSecret(["local","ollama"].includes(cfg.provider)?"learning.local.key":"learning.openai.key"),provider:cfg.provider||"openai",baseURL:cfg.baseURL,model:cfg.model,templateId:a.template_id,definition,initial:snapshot.initial,reply:snapshot.reply,parent:snapshot.parent,feedbackPosts});const validated=validateGrade({criteria:result.criteria,summary:result.summary},a.template_id,definition);if(!snapshot.reply){validated.criteria.reply={points:0,feedback:"No reply was submitted."};validated.total=Object.values(validated.criteria).reduce((n,c)=>n+c.points,0);}
+        const result=await grade({apiKey:store.getSecret(["local","ollama"].includes(cfg.provider)?"learning.local.key":"learning.openai.key"),provider:cfg.provider||"openai",baseURL:cfg.baseURL,model:cfg.model,templateId:a.template_id,definition,initial:snapshot.initial,reply:snapshot.reply,parent:snapshot.parent,feedbackPosts,consumeModelBudget:()=>{const current=store.getPreference("learning.ai",{});if(!current.enabled||["provider","baseURL","model"].some(k=>current[k]!==cfg[k]))throw Error("The grading service changed during assessment.");learning.modelBudget.reserve(id,user.id,current.dailyLimit??100);}});const validated=validateGrade({criteria:result.criteria,summary:result.summary},a.template_id,definition);if(!snapshot.reply){validated.criteria.reply={points:0,feedback:"No reply was submitted."};validated.total=Object.values(validated.criteria).reduce((n,c)=>n+c.points,0);}
         const still=store.listUsers().find(u=>u.id===user.id&&u.enabled);if(!still)fail(409,"Account no longer active.");learning.membership(still,a.class_id);
         const currentCfg=store.getPreference("learning.ai",{});
         if(!currentCfg.enabled||["provider","baseURL","model"].some(key=>currentCfg[key]!==cfg[key]))fail(409,"The grading service changed during this assessment.");
@@ -391,7 +392,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         });
       }
     }catch(error){
-      learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=? WHERE id=? AND status='grading'").run(now(),id);
+      learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=?,ai_json=COALESCE(?,ai_json) WHERE id=? AND status='grading'").run(now(),error.code==='LEARNING_MODEL_BUDGET'?JSON.stringify({budgetExceeded:true}):null,id);
       const attempts=req[queued]?.attempts||0;
       if(error.retryable===true&&attempts<2&&store.getPreference('learning.ai',{}).enabled)retryScheduled=retryQueue.enqueue({activityId:a.id,userId:user.id,fingerprint,replyId,acceptedAt,attempts:attempts+1,delayMs:60000});
     }finally{busy.delete(user.id);if(local)nextLocalReviewAt=Date.now()+(reviewOptions.cooldownMs??60000);}

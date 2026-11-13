@@ -37,7 +37,7 @@ class AssignmentAI{
  async run(job){
   const cfg=this.store.getPreference('learning.ai',{}),policy=this.policy(job.activity_id),since=new Date(Date.now()-86400000).toISOString();
   if(!cfg.enabled)return;
-  const count=this.db.prepare('SELECT COUNT(*) n FROM learning_reviews WHERE model IS NOT NULL AND COALESCE(started_at,created_at)>=?').get(since).n+this.startedSince(since);
+  const count=this.learning.modelBudget.usedSince(since);
   const personal=this.db.prepare('SELECT COUNT(*) n FROM learning_reviews WHERE user_id=? AND COALESCE(started_at,created_at)>=?').get(job.user_id,since).n+this.startedSince(since,job.user_id);
   if(!job.started_at&&(count>=(cfg.dailyLimit||100)||personal>=5)){this.db.prepare('UPDATE learning_assignment_ai_jobs SET ready_at=? WHERE signal_id=?').run(Date.now()+3600000,job.signal_id);return;}
   if(!policy.enabled||digest(policy)!==job.policy_hash||policy.criteria.reduce((n,c)=>n+c.points,0)!==this.learning.platform.config(job.activity_id)?.points){this.db.prepare("UPDATE learning_assignment_ai_jobs SET status='needs_review' WHERE signal_id=?").run(job.signal_id);return;}
