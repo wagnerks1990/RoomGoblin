@@ -108,6 +108,13 @@ Qualify both zero and partial credit as well as full answers using the actual
 configured provider. Quote validation establishes that text exists, not that a
 model's interpretation is infallible. Teacher corrections remain authoritative.
 
+A positive, quotation-validated check also establishes relevance for a main post
+containing that checked source span. Earlier credited writing does not approve
+unrelated new posts. Other posts still use conservative semantic relevance
+triage; legacy classifications without checked quotations cannot bypass it.
+This permits feedback on incomplete but demonstrably on-topic attempts without
+requiring a second model to agree with its own rubric evidence.
+
 Run npm run check, node --test test/learning-assignment-definition.test.js,
 the supported active-worktree Linux runner, and, with Playwright available,
 node test/browser/learning-crypto-scorm-smoke.cjs. CRYPTO_QA_OUTPUT selects a private
