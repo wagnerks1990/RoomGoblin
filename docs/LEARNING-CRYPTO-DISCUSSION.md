@@ -82,6 +82,28 @@ extensions or browser-code changes. Provide an approved accommodation route.
 
 ## Validation and release
 
+### Explicit evidence checks
+
+Discussion criteria may include private `evidenceChecks` (1-8 plain-language
+requirements, each at most 500 characters). The teacher editor accepts one per
+line. State one observable requirement per check and include acceptable
+paraphrases. The model extracts exact student quotations for each check; the
+server validates source IDs and quotation substrings before assigning points.
+No supported checks earn zero, all earn full credit, and some earn intermediate
+bands distributed by the number of supported checks. A two-band criterion
+requires every check for credit. Invalid evidence remains for teacher review.
+
+This avoids giving a strong answer credit for a different, missing criterion.
+Checks are private, do not appear in student SCORM packages, and use the existing
+per-request budget. Long-writing selection receives the checks as well as the
+posted rubric. Written-response jobs do not support this option. Existing
+definitions retain their previous grading path; once writing exists, create a
+new assignment version to adopt checks. Do not rewrite historical submissions.
+
+Qualify both zero and partial credit as well as full answers using the actual
+configured provider. Quote validation establishes that text exists, not that a
+model's interpretation is infallible. Teacher corrections remain authoritative.
+
 Run npm run check, node --test test/learning-assignment-definition.test.js,
 the supported active-worktree Linux runner, and, with Playwright available,
 node test/browser/learning-crypto-scorm-smoke.cjs. CRYPTO_QA_OUTPUT selects a private

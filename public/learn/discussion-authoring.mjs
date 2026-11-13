@@ -14,7 +14,8 @@ export function discussionDefinition(draft){
   const parts=String(c.levels||'').split(',').map(v=>v.trim());
   const levels=parts.map(Number);
   if(parts.some(v=>!/^\d+$/.test(v))||levels.length<2||levels.length>8||levels[0]!==0||levels.at(-1)!==points||levels.some((n,i)=>!Number.isInteger(n)||n<0||n>points||i>0&&n<=levels[i-1]))throw Error('Score levels must increase from 0 to that criterion’s points, for example 0, 4, 8.');
-  return {id,label:required(c.label,'a criterion name',100),description:required(c.description,'the evidence required for each criterion',800),points,levels};
+  const evidenceChecks=String(c.evidenceChecks||'').split('\n').map(v=>v.trim()).filter(Boolean);if(evidenceChecks.length>8||evidenceChecks.some(v=>v.length>500))throw Error('Use up to eight evidence checks, at most 500 characters each.');
+  return {...(evidenceChecks.length?{evidenceChecks}:{}),id,label:required(c.label,'a criterion name',100),description:required(c.description,'the evidence required for each criterion',800),points,levels};
  });
  const points=Number(draft.points);
  if(!Number.isInteger(points)||points<1||points>1000||criteria.reduce((sum,c)=>sum+c.points,0)!==points)throw Error('Rubric points must equal the assignment’s possible points.');
@@ -52,7 +53,9 @@ export function createDiscussionAuthoring(form,ui){
   const points=field(row,'Criterion possible points','number',seed.points||1,{min:1,max:1000,required:true});
   const levels=field(row,'Allowed scores · comma separated','text',seed.levels||'0, 1',{maxLength:80,required:true});
   const description=field(row,'Evidence and scoring expectations','textarea','',{maxLength:800,rows:3,required:true});
-  const entry={id,row,label,source,points,levels,description};editors.push(entry);
+  const evidenceChecks=field(row,'Private evidence checks � optional, one per line','textarea','',{maxLength:4007,rows:4});
+  row.append(node('p','List the separate requirements for full credit. Each supported check needs an exact quote from the student. All checks earn full credit; some earn partial credit; none earn zero. These checks stay private.','muted'));
+  const entry={id,row,label,source,points,levels,description,evidenceChecks};editors.push(entry);
   row.append(ui.button('Remove criterion',()=>{editors.splice(editors.indexOf(entry),1);row.remove();ui.dirty.add(form);updateTotal();}));
   points.addEventListener('input',updateTotal);rows.append(row);updateTotal();
  }
@@ -66,7 +69,7 @@ export function createDiscussionAuthoring(form,ui){
   if(d.latePolicy)preview.append(node('p',d.latePolicy));preview.open=true;
  }),preview);
  form.append(host);
- function read(title,points){return discussionDefinition({title,points,courseLabel:courseLabel.value,prompt:prompt.value,initialDirections:initialDirections.value,replyDirections:replyDirections.value,alternate:alternate.value,responseLabel:responseLabel.value,latePolicy:latePolicy.value,gradingInstructions:gradingInstructions.value,criteria:editors.map(c=>({id:c.id,label:c.label.value,source:c.source.value,points:c.points.value,levels:c.levels.value,description:c.description.value}))});}
+ function read(title,points){return discussionDefinition({title,points,courseLabel:courseLabel.value,prompt:prompt.value,initialDirections:initialDirections.value,replyDirections:replyDirections.value,alternate:alternate.value,responseLabel:responseLabel.value,latePolicy:latePolicy.value,gradingInstructions:gradingInstructions.value,criteria:editors.map(c=>({id:c.id,label:c.label.value,source:c.source.value,points:c.points.value,levels:c.levels.value,description:c.description.value,evidenceChecks:c.evidenceChecks.value}))});}
  function setEnabled(enabled){host.hidden=!enabled;for(const input of host.querySelectorAll('input,select,textarea,button'))input.disabled=!enabled;}
  setEnabled(false);
  return {read,setEnabled};
