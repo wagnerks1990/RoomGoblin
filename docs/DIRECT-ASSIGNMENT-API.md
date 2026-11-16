@@ -230,3 +230,30 @@ older-grading-feedback section. Edit history belongs to the individual comment.
 Confirmed replies clear/close their editor; unconfirmed submissions and failed
 edits retain their text. SCORM identity, native score reporting, clipboard policy,
 private feedback, teacher authorization and publication controls are unchanged.
+
+
+### Composer readiness and draft recovery
+
+Direct-package response and reply editors start read only in the HTML. The page
+unlocks editors and submit buttons together after the SDK connects and required
+instructions finish rendering. A failed fetch or partial render retries without
+requiring reload. Teacher pause, preview/review mode, identity changes and pending
+submissions continue to block writing/posting. Control and polling events must
+not unlock a pending form. Existing editor contents survive retries and pauses.
+
+Input immediately updates a sessionStorage backup scoped to activity and reported
+LMS learner; LMS suspend-data commits remain debounced. The backup holds full
+response/reply text without copying participant credentials. A newer backup is
+restored on refresh in the same browser tab, even when an LMS save fails or a
+long draft exceeds the 3900-byte LMS budget. Storage restrictions can prevent
+this backup; the UI warns to keep the activity open until posting is confirmed.
+A confirmed submission clears its submitted draft through the normal save path;
+an unconfirmed/failed post leaves the text available. Another learner does not
+inherit the backup. Closing the tab, clearing storage or changing content origin
+may lose it; this is not server-side draft saving or a migration of old packages.
+
+Regression: `node test/browser/learning-composer-readiness-smoke.cjs` covers delayed
+connection/instructions, failed fetch/render recovery, failed LMS writes, long
+drafts across refresh, pause/resume, failed/pending posting, learner isolation
+and review mode. Actual exported-package discussion and direct API browser
+smokes remain required. These local checks do not establish Schoology acceptance.

@@ -134,3 +134,33 @@ Deploy through the reviewed native update path with a verified backup and explic
 authorization. For rollback withdraw affected packages/disable direct enrollment,
 retain learning tables/submissions and restore the prior reviewed image/source.
 This addition does not authorize a reset, deployment, LMS upload or grade change.
+
+
+## Evidence validation recovery
+
+Teacher-authored evidence checks still require cited student-source quotations
+and consistent support flags. Straight/curly single and double quotation marks
+may differ in an otherwise verbatim quote; words, case, spacing, negation and
+source sentence IDs remain exact. Requirements stay in the listed order, and
+one sentence may support multiple requirements.
+
+A structurally invalid result or a quote not found in its stated source gets
+one fresh model attempt for that criterion, charged to the existing per-review
+and daily model-call budget. The new request retains the original student
+source/reference boundaries, includes only the bounded validation reason, and
+does not echo invalid generated output. It must pass the same validator.
+Repeated invalid output remains unavailable for teacher review. Provider failures
+keep the existing bounded queue retry; budget errors receive no extra repair call.
+No scores or support flags are silently corrected.
+
+Unavailable reviews retain only a bounded failure category in private ai_json:
+invalid_rubric_evidence (check_count, support_shape or quote_source),
+provider_temporarily_unavailable, assessment_unavailable, or the existing
+budgetExceeded marker. Exception text, student writing, and generated output
+are excluded. Earlier failures do not gain a retrospective explanation.
+
+Automatic comments remain conditional on relevance and are created at most once
+per main post. Correctly rejected unrelated/uncertain posts do not require a
+forced reply. A failed overall assessment does not publish partial grades or
+comments. These changes improve handling of malformed evidence; they do not
+establish model accuracy or authorize regrading existing student records.

@@ -392,7 +392,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         });
       }
     }catch(error){
-      learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=?,ai_json=COALESCE(?,ai_json) WHERE id=? AND status='grading'").run(now(),error.code==='LEARNING_MODEL_BUDGET'?JSON.stringify({budgetExceeded:true}):null,id);
+      learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=?,ai_json=COALESCE(?,ai_json) WHERE id=? AND status='grading'").run(now(),JSON.stringify(error.code==='LEARNING_MODEL_BUDGET'?{budgetExceeded:true}:error.code==='LEARNING_RUBRIC_EVIDENCE'?{failureCode:'invalid_rubric_evidence',failureReason:['check_count','support_shape','quote_source'].includes(error.reason)?error.reason:'unknown'}:{failureCode:error.retryable===true?'provider_temporarily_unavailable':'assessment_unavailable'}),id);
       const attempts=req[queued]?.attempts||0;
       if(error.retryable===true&&attempts<2&&store.getPreference('learning.ai',{}).enabled)retryScheduled=retryQueue.enqueue({activityId:a.id,userId:user.id,fingerprint,replyId,acceptedAt,attempts:attempts+1,delayMs:60000});
     }finally{busy.delete(user.id);if(local)nextLocalReviewAt=Date.now()+(reviewOptions.cooldownMs??60000);}

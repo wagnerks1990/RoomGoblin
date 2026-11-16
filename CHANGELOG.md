@@ -5,6 +5,16 @@
 
 ## Unreleased
 
+- Keep direct SCORM response editors read only until connection and instructions
+  are ready, reconcile submit readiness after retries/pause/posting, and keep
+  full activity/learner-scoped drafts in tab-local storage across refresh when
+  storage permits. Existing uploaded packages require an interface update.
+- Retry malformed rubric evidence once within the existing model-call budget;
+  validate the fresh output without changing support flags or inventing evidence.
+  Accept only typographic quotation-mark variants in otherwise verbatim quotes
+  and retain bounded failure categories without model/student text. Actual-model
+  scoring/relevance qualification remains outstanding.
+
 - Surface invalid Background Music playback-monitoring links after speaker
   enrollment or Music Assistant identity changes. Keep relinking explicit and
   reload confirmed physical-idle stalls directly, retaining retry backoff,
