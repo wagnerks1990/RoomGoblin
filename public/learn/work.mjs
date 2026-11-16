@@ -20,7 +20,7 @@ export function createWork(ui,{submissions,written,discussions,filterHost}){
   ui.draw(written,[selected.classId,next.reviews],()=>{
    written.replaceChildren();if(!next.reviews.length)written.append(node('p','Discussion reviews appear after a learner submits written work.','muted'));
    for(const row of next.reviews){const d=detail(`${row.alias} · ${row.title} · ${reviewLabels[row.status]||row.status} · ${row.final?.total??row.ai?.total??'pending'} / 20`,'review:'+row.id);
-    d.className='review-card';d.append(node('h3','Initial response'),node('pre',row.snapshot.initial),node('h3','Selected reply'),node('pre',row.snapshot.reply||'Not submitted'),node('h3','Peer or alternate context'),node('pre',row.snapshot.parent||'None'));
+    d.className='review-card';if(row.ai?.reviewRequired&&row.status!=='approved')d.append(node('p','Partial or disputed evidence needs review. The proposed score has not been published; review the rubric against the saved writing.','muted'));d.append(node('h3','Initial response'),node('pre',row.snapshot.initial),node('h3','Selected reply'),node('pre',row.snapshot.reply||'Not submitted'),node('h3','Peer or alternate context'),node('pre',row.snapshot.parent||'None'));
     if(['approved','needs_review','unavailable'].includes(row.status))d.append(ui.button('Review rubric',async()=>{
      const result=await ui.api('/activities/'+row.activityId);ui.assert(selected);if(!d.isConnected||d.querySelector('form'))return;
      const f=node('form'),grade=row.final||row.ai,criteria={};

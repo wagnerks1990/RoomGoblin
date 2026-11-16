@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {runCalibration}=require('../tools/learning-calibration.cjs');
+const definition=require('../examples/assignments/it3-password-storage.json');
+const criteria=Object.fromEntries(definition.criteria.map(c=>[c.id,0]));
+const sample={name:'synthetic-zero',initial:'Synthetic source, never an actual student.',reply:'',expected:{criteria,relevance:'unrelated'}};
+const options={definition,cases:[sample],model:'synthetic',baseURL:'http://127.0.0.1:11434/api',syntheticOnly:true};
+const result=points=>({criteria:Object.fromEntries(Object.entries(points).map(([id,points])=>[id,{points}])),total:Object.values(points).reduce((a,b)=>a+b,0),commentDecisions:{'calibration-main':'unrelated'}});
+test('calibration compares every criterion and relevance without exposing source writing',async()=>{const report=await runCalibration({...options,grade:async o=>{o.consumeModelBudget();return result(criteria);}});assert.equal(report.passed,1);assert.equal(report.failed,0);assert.equal(report.providerCalls,1);assert.equal(report.productionModified,false);assert(!JSON.stringify(report).includes(sample.initial));});
+test('matching totals cannot hide misplaced credit and correct scores cannot hide wrong relevance',async()=>{const expected={...criteria,claim:4},actual={...criteria,reply:4};const wrongPoints=await runCalibration({...options,cases:[{...sample,expected:{criteria:expected,relevance:'unrelated'}}],grade:async()=>result(actual)});assert.equal(wrongPoints.failed,1);assert.equal(wrongPoints.results[0].actual.total,4);const wrongTopic=await runCalibration({...options,cases:[{...sample,expected:{criteria,relevance:'related'}}],grade:async()=>result(criteria)});assert.equal(wrongTopic.failed,1);});
+test('explicit synthetic input, complete expected rubric and loopback provider are required',async()=>{for(const change of [{syntheticOnly:false},{baseURL:'https://external.example/api'},{cases:[{...sample,expected:{criteria:{},relevance:'unrelated'}}]},{callBudget:0}])await assert.rejects(runCalibration({...options,...change}));});
+test('calibration calls are bounded and failure output excludes exception/student text',async()=>{const report=await runCalibration({...options,callBudget:1,grade:async o=>{o.consumeModelBudget();o.consumeModelBudget();throw Error('PRIVATE source');}});assert.equal(report.failed,1);assert.equal(report.providerCalls,1);assert.equal(report.results[0].code,'budget_exhausted');assert(!JSON.stringify(report).includes('PRIVATE'));});

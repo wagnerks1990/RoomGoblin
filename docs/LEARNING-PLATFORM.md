@@ -55,6 +55,12 @@ this is not Schoology REST gradebook access.
 
 ## Fresh start and recovery
 
+Direct SCORM packages also support automatic shared preview in browse/review
+mode. The explicit GET direct activity preview route requires the assignment
+capability; it exposes no private assessment, creates no participant and makes
+no LMS writes. Mode is never teacher authorization. Existing saved participant
+credentials retain their own read-only review. See DIRECT-ASSIGNMENT-API.md.
+
 [Learning fresh start](LEARNING-FRESH-START.md) is a separately authorized offline
 operation with a verified snapshot and rollback. Startup and ordinary upgrades
 never reset learning records. The reset clears learning data, restricted learners

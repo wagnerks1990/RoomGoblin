@@ -1,5 +1,9 @@
 # RoomGoblin
 
+[Discussion reliability](docs/LEARNING-DISCUSSION-RELIABILITY.md) documents SCORM
+readiness, draft recovery, bounded assessment retries and the remaining model/LMS
+qualification requirements.
+
 [Music maintenance](docs/MUSIC-MAINTENANCE.md) covers stable Music Assistant and
 Apollo CAST-1 updates, cold rollback, bounded service recovery and playback repair.
 

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "kind": "discussion",
+  "title": "Synthetic transport-encryption calibration",
+  "points": 20,
+  "prompt": "A fictional lab team uses key agreement and AES-GCM but skips all peer-identity checks and repeats the same key/nonce pair. A manager says encryption alone proves the intended remote supplier identity. Evaluate the claim and propose authorized checks.",
+  "initialDirections": "Explain agreement versus authentication, assess the manager claim and intermediary risk, explain GCM nonce reuse, propose identity and local encryption checks, and state scope and limits.",
+  "replyDirections": "Address a specific peer claim or the independent claim with a justified correction or check.",
+  "alternate": "Independent claim: a successful local encryption test proves the remote supplier identity.",
+  "gradingInstructions": "Key agreement establishes shared material; authentication verifies the intended peer. Encryption by itself does not verify that peer. An active intermediary can create separate encrypted sessions. GCM nonces must be unique under a given key; reuse can undermine confidentiality and authentication. Expected-name/certificate-chain/handshake verification addresses identity. Authorized isolated synthetic-data checks can test byte recovery and altered-ciphertext rejection. Local success does not prove remote identity or whole-protocol security. Incorrect, absent or merely repeated vocabulary is not supporting evidence.",
+  "criteria": [
+    {
+      "id": "identity",
+      "label": "Agreement and identity",
+      "points": 4,
+      "levels": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "Explain shared secrets, intended identity, the unsupported claim and intermediary risk.",
+      "evidenceChecks": [
+        "Explains that key agreement establishes shared secret material.",
+        "Explains that peer authentication verifies the intended party.",
+        "Rejects the claim that encryption alone proves the intended peer identity.",
+        "Explains a concrete impostor or intermediary risk when identity checks are absent."
+      ]
+    },
+    {
+      "id": "checks",
+      "label": "Nonce and proposed checks",
+      "points": 4,
+      "levels": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "Explain GCM reuse risks and uniqueness, then propose identity and safe encryption checks.",
+      "evidenceChecks": [
+        "Explains that repeating a GCM key/nonce pair can break confidentiality or authentication.",
+        "Requires nonce uniqueness for each encryption under a GCM key without claiming nonce secrecy.",
+        "Proposes checking the authenticated expected peer identity, beyond merely decrypting.",
+        "Proposes a concrete safe local encryption check, such as byte-for-byte recovery or rejecting altered ciphertext."
+      ]
+    },
+    {
+      "id": "reasoning",
+      "label": "Scenario reasoning",
+      "points": 6,
+      "levels": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "description": "Connect two supplied facts to the risk or recommendation.",
+      "evidenceChecks": [
+        "Uses the missing identity checks as evidence for the conclusion.",
+        "Uses another supplied fact, such as the manager claim or repeated key/nonce, to justify a conclusion.",
+        "Explains how a supplied fact causes a risk or motivates a recommendation."
+      ]
+    },
+    {
+      "id": "limits",
+      "label": "Scope and limits",
+      "points": 2,
+      "levels": [
+        0,
+        1,
+        2
+      ],
+      "description": "Distinguish local checks from remote identity and propose authorized isolated testing.",
+      "evidenceChecks": [
+        "Explains that a local encryption check does not establish remote peer identity or complete protocol security.",
+        "Scopes proposed tests to authorized isolated work with synthetic data or supplied records."
+      ]
+    },
+    {
+      "id": "reply",
+      "label": "Independent reply",
+      "points": 4,
+      "levels": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "Address the independent claim with a justified check, correction or limitation.",
+      "evidenceChecks": [
+        "Addresses the specific peer or independent claim in the writer own response.",
+        "Uses an accurate relevant concept or scenario fact in that response.",
+        "Adds an accurate specific check, correction or limit beyond agreement.",
+        "Explains why the addition matters to the claim."
+      ]
+    }
+  ]
+}

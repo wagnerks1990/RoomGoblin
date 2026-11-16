@@ -63,12 +63,12 @@ class LearningStore{
   }
   createActivity(user,classId,input){this.membership(user,classId,true);const id=crypto.randomUUID(),template=input.templateId||CASE.id;if(!Object.prototype.hasOwnProperty.call(CASES,template)&&!['scorm-connector-v1',DEFINED_DISCUSSION].includes(template))fail(400,'Choose an available activity type.');this.db.prepare("INSERT INTO learning_activities(id,class_id,title,template_id,created_at) VALUES(?,?,?,?,?)").run(id,classId,text(input.title||(CASES[template]?.title||'SCORM connection'),120),template,now());this.event(user,id,"activity.create",id);return id;}
   settings(user,id,input){const a=this.activity(user,id,true),due=isoDate(input.dueAt),close=isoDate(input.closeAt);if(due&&close&&Date.parse(close)<=Date.parse(due))fail(400,"Close time must follow due time.");this.db.prepare("UPDATE learning_activities SET open=?,due_at=?,close_at=? WHERE id=?").run(input.open===true?1:0,due,close,a.id);this.event(user,id,"activity.settings",id,{open:input.open===true,due,close});}
-  posts(user,id){
+  posts(user,id,{sharedOnly=false}={}){
     const a=this.activity(user,id);const rows=this.db.prepare("SELECT p.*,m.alias,m.role FROM learning_posts p JOIN learning_members m ON m.user_id=p.user_id AND m.class_id=? WHERE p.activity_id=? ORDER BY p.created_at,p.id LIMIT 1000").all(a.class_id,id);
     const byId=new Map(rows.map(p=>[p.id,p]));
     const visible=p=>{const seen=new Set();while(p){if(p.hidden||seen.has(p.id))return false;seen.add(p.id);if(!p.parent_id)return true;p=byId.get(p.parent_id);}return false;};
     const definition=this.caseForActivity(a);
-    return rows.filter(p=>a.member.role==="teacher"||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?(definition?.responseLabel||this.store.getPreference("learning.responseLabel","Teacher")):p.alias,role:p.kind==="ai"?"ai":p.role,mine:p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,updatedAt:p.updated_at,...(a.member.role==="teacher"?{userId:p.user_id}:{})}));
+    return rows.filter(p=>a.member.role==="teacher"&&!sharedOnly||visible(p)).map(p=>({id:p.id,parentId:p.parent_id,kind:p.kind,body:p.body,alias:p.kind==="ai"?(definition?.responseLabel||this.store.getPreference("learning.responseLabel","Teacher")):p.alias,role:p.kind==="ai"?"ai":p.role,mine:!sharedOnly&&p.user_id===user.id,revision:p.revision,hidden:!!p.hidden,createdAt:p.created_at,updatedAt:p.updated_at,...(!sharedOnly&&a.member.role==="teacher"?{userId:p.user_id}:{})}));
   }
   latestScoredReply(user,id){return this.db.prepare("SELECT p.id FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.activity_id=? AND p.user_id=? AND p.hidden=0 AND (p.kind='critique' OR (p.kind='reply' AND parent.kind='initial' AND parent.hidden=0 AND parent.user_id<>p.user_id)) ORDER BY p.rowid DESC LIMIT 1").get(id,user.id);}
   isScoredPost(user,id,postId){const p=this.db.prepare("SELECT p.kind,parent.kind parent_kind,parent.user_id parent_user FROM learning_posts p LEFT JOIN learning_posts parent ON parent.id=p.parent_id AND parent.activity_id=p.activity_id WHERE p.id=? AND p.activity_id=? AND p.user_id=?").get(postId,id,user.id);return !!p&&(['initial','critique'].includes(p.kind)||p.kind==='reply'&&(this.definitions.get(id)?.kind==='discussion'||p.parent_kind==='initial'&&p.parent_user!==user.id));}
@@ -180,6 +180,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     if(req.method==='OPTIONS')return res.sendStatus(204);
     if(freezeRequested()&&req.method!=='GET')return res.status(423).json({ok:false,error:'Backup in progress. Try again shortly.'});
     if(req.get('x-roomgoblin-learning')!=='1')return res.status(403).json({ok:false,error:'Assignment request header required.'});
+    if(target.part==='preview'){try{return res.json({ok:true,...direct.preview(target.id,String(req.get('Authorization')||'').replace(/^RoomGoblin-Assignment /,''))});}catch(error){return res.status(error.status||500).json({ok:false,error:error.status?error.message:'Assignment preview is unavailable.'});}}
     if(target.part==='enroll')return next();
     try{req.directLearner=direct.authorize(target.id,String(req.get('Authorization')||'').replace(/^Bearer /,''));req.url=req.url.replace('/learning/direct/','/learning/');next();}catch(error){res.status(error.status||500).json({ok:false,error:error.status?error.message:'Assignment connection failed.'});}
   });
@@ -366,7 +367,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         const newer=learning.db.prepare('SELECT fingerprint FROM learning_grading_pending WHERE activity_id=? AND user_id=?').get(a.id,user.id);
         if(newer&&newer.fingerprint!==fingerprint)fail(409,'A newer reply selection is waiting for assessment.');
         learning.store.tx(()=>{
-          const changed=learning.db.prepare("UPDATE learning_reviews SET status='needs_review',ai_json=?,updated_at=? WHERE id=? AND status='grading'").run(JSON.stringify({...validated,proposedResponse:result.coachResponse,evidenceSelection:result.evidenceSelection}),now(),id).changes;
+          const changed=learning.db.prepare("UPDATE learning_reviews SET status='needs_review',ai_json=?,updated_at=? WHERE id=? AND status='grading'").run(JSON.stringify({...validated,proposedResponse:result.coachResponse,evidenceSelection:result.evidenceSelection,reviewRequired:result.reviewRequired===true}),now(),id).changes;
           if(!changed)return;
           if(typeof result.coachResponse!=="string"||!result.coachResponse.trim()||result.coachResponse.length>1800)throw Error("Invalid coach output");
           const stamp=now();
@@ -383,6 +384,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
               learning.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,'ai',?,?,?)").run(coachId,a.id,user.id,parentId,result.coachResponse,stamp,stamp);
               learning.event(user,a.id,"coach.automated",coachId,{reviewId:id});
             }
+            if(result.reviewRequired===true){learning.event(user,a.id,'grade.review_required',id,{reason:'partial-or-disputed-evidence'});return;}
             const currentActivity=learning.activity(user,a.id),member=currentActivity.member;
             const late=!!(currentActivity.due_at&&Date.parse(time)>Date.parse(currentActivity.due_at)&&!member.exempt);
             const final={...validated,earned:validated.total,lateMultiplier:late?.5:1,total:validated.total*(late?.5:1),possible:learning.caseForActivity(a).points,approvedAt:stamp,source:"ai"};
@@ -392,7 +394,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
         });
       }
     }catch(error){
-      learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=?,ai_json=COALESCE(?,ai_json) WHERE id=? AND status='grading'").run(now(),error.code==='LEARNING_MODEL_BUDGET'?JSON.stringify({budgetExceeded:true}):null,id);
+      learning.db.prepare("UPDATE learning_reviews SET status='unavailable',updated_at=?,ai_json=COALESCE(?,ai_json) WHERE id=? AND status='grading'").run(now(),JSON.stringify(error.code==='LEARNING_MODEL_BUDGET'?{budgetExceeded:true}:error.code==='LEARNING_RUBRIC_EVIDENCE'?{failureCode:'invalid_rubric_evidence',failureReason:['check_count','support_shape','quote_source'].includes(error.reason)?error.reason:'unknown'}:{failureCode:error.retryable===true?'provider_temporarily_unavailable':'assessment_unavailable'}),id);
       const attempts=req[queued]?.attempts||0;
       if(error.retryable===true&&attempts<2&&store.getPreference('learning.ai',{}).enabled)retryScheduled=retryQueue.enqueue({activityId:a.id,userId:user.id,fingerprint,replyId,acceptedAt,attempts:attempts+1,delayMs:60000});
     }finally{busy.delete(user.id);if(local)nextLocalReviewAt=Date.now()+(reviewOptions.cooldownMs??60000);}
@@ -420,7 +422,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       if(!platform.config(activity.id))platform.configure(req.learner,activity.id,{points:activity.template_id==='scorm-connector-v1'?50:20});
       const settings=platform.settings(),base=origin(settings.publicOrigin||`${req.protocol}://${req.get('host')}`);
       if(!['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname)&&(!settings.publicEnabled||!settings.publicOrigin))fail(409,'Publish the student Assignment API before downloading a direct package.');
-      return require('./learning-direct-package').createPackage(activity,{origin:base,enrollmentKey:key,prompt:assignmentAI.policy(activity.id).prompt},publicDir,learning.definitions.get(activity.id));
+      return require('./learning-direct-package').createPackage(activity,{origin:base,teacherOrigin:origin(`${req.protocol}://${req.get('host')}`),enrollmentKey:key,prompt:assignmentAI.policy(activity.id).prompt},publicDir,learning.definitions.get(activity.id));
     });
     res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-Direct-Assignment.zip"');res.type('application/zip').send(zip);
   }));

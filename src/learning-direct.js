@@ -3,11 +3,11 @@ const crypto=require('node:crypto');
 const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
 const uuid='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
-const directPath=new RegExp(`^/api/v1/learning/direct/(?:activities/(${uuid})(?:/(posts(?:/${uuid}(?:/history)?)?|submit|receipt|enroll))?|platform/activities/(${uuid})/(state|events|presence))$`);
+const directPath=new RegExp(`^/api/v1/learning/direct/(?:activities/(${uuid})(?:/(posts(?:/${uuid}(?:/history)?)?|submit|receipt|enroll|preview))?|platform/activities/(${uuid})/(state|events|presence))$`);
 function route(method,path){
  const m=directPath.exec(path);if(!m)return null;
  const id=m[1]||m[3],part=m[2]||m[4]||'activity';
- const allowed=part==='enroll'?['POST']:(['activity','state','receipt'].includes(part)||part.endsWith('/history'))?['GET']:part==='posts'?['POST']:part.startsWith('posts/')?['PUT']:['POST'];
+ const allowed=part==='enroll'?['POST']:(['activity','state','receipt','preview'].includes(part)||part.endsWith('/history'))?['GET']:part==='posts'?['POST']:part.startsWith('posts/')?['PUT']:['POST'];
  return allowed.includes(method)?{id,part}:null;
 }
 class LearningDirect{
@@ -22,9 +22,18 @@ class LearningDirect{
   this.learning.activity(user,id,true);
   return this.store.tx(()=>{let key=this.store.getSecret(this.key(id));if(!key){key=crypto.randomBytes(32).toString('hex');this.store.putSecret(this.key(id),key,{purpose:'assignment-enrollment-only'});}this.store.setPreference(this.key(id),{enabled:true,ownerId:user.id});this.learning.event(user,id,'direct.package',id);return key;});
  }
- enroll(id,key,input){
+ enrollmentActivity(id,key){
   const a=this.db.prepare('SELECT * FROM learning_activities WHERE id=?').get(id),saved=this.store.getSecret(this.key(id));
   if(!this.store.authEnabled()||!a||!this.available(id)||typeof key!=='string'||!saved||!crypto.timingSafeEqual(Buffer.from(hash(key)),Buffer.from(hash(saved))))fail(401,'Assignment connection is unavailable.');
+  return a;
+ }
+ preview(id,key){
+  const a=this.enrollmentActivity(id,key);if(!a.open||a.close_at&&Date.now()>=Date.parse(a.close_at))fail(409,'This assignment is closed. Use the teacher workspace to review it.');
+  const owner=this.store.listUsers().find(u=>u.id===this.settings(id).ownerId&&u.enabled);
+  return {activity:{id:a.id,title:a.title,case:this.learning.caseForActivity(a)},posts:this.learning.posts(owner,id,{sharedOnly:true})};
+ }
+ enroll(id,key,input){
+  const a=this.enrollmentActivity(id,key);
   if(!a.open||this.learning.portal.command(id).paused)fail(409,'The teacher has closed or paused this assignment.');
   if(!input||typeof input!=='object'||!/^[a-f0-9]{64}$/.test(input.participantToken||'')||typeof input.reportedId!=='string'||!input.reportedId.trim()||input.reportedId.length>255||typeof input.name!=='string'||!input.name.trim()||input.name.length>255||/[<>\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(input.name))fail(400,'Use an assignment participant token and a reported SCORM learner identity.');
   const tokenHash=hash(input.participantToken),reportedHash=hash(input.reportedId),prior=this.db.prepare('SELECT * FROM learning_direct_participants WHERE token_hash=?').get(tokenHash);

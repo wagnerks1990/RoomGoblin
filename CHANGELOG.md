@@ -5,6 +5,29 @@
 
 ## Unreleased
 
+- Hold mixed or disputed rubric evidence for teacher review before publishing a
+  new score; retain saved writing and eligible automatic coaching.
+
+- Bind model evidence to named requirement groups, enforce supported/empty
+  citation alternatives in the schema, and separate substantive message kind
+  from correctness when deciding automatic replies. Add an opt-in synthetic-only
+  calibration tool that checks every criterion and relevance result.
+
+- Automatically show live shared discussion preview and page-local ungraded
+  practice for SCORM browse/review launches, without a participant, separate
+  preview login, private assessment access or LMS writes. Preserve native teacher
+  authorization; add the bounded shared-preview read to the assignment capability.
+
+- Keep direct SCORM response editors read only until connection and instructions
+  are ready, reconcile submit readiness after retries/pause/posting, and keep
+  full activity/learner-scoped drafts in tab-local storage across refresh when
+  storage permits. Existing uploaded packages require an interface update.
+- Retry malformed rubric evidence once within the existing model-call budget;
+  validate the fresh output without changing support flags or inventing evidence.
+  Accept only typographic quotation-mark variants in otherwise verbatim quotes
+  and retain bounded failure categories without model/student text. Actual-model
+  scoring/relevance qualification remains outstanding.
+
 - Surface invalid Background Music playback-monitoring links after speaker
   enrollment or Music Assistant identity changes. Keep relinking explicit and
   reload confirmed physical-idle stalls directly, retaining retry backoff,
@@ -1672,6 +1695,9 @@
 - Began incremental modularization with dedicated version and security modules and expanded regression coverage for lab enrollment and capability isolation.
 
 ## Unreleased
+
+- Hold mixed or disputed rubric evidence for teacher review before publishing a
+  new score; retain saved writing and eligible automatic coaching.
 
 ### Individually enrolled classroom displays
 - Replaced the normal shared display-token workflow with one-time, expiring enrollment links and a unique revocable credential for each display browser.
