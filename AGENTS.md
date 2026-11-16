@@ -73,6 +73,14 @@ network proof, server-owned rubric grading jobs and teacher corrections. Tokens
 never go to the LAN attester. Preserve the signed-LMS contracts below for legacy
 signed delivery; do not require that handshake for direct assignment data.
 
+Direct-package browse/review preview is a narrow shared-read extension: GET
+`/api/v1/learning/direct/activities/:id/preview` requires the exact assignment
+capability and returns only public instructions and visible shared posts. It
+creates no participant and exposes no private assessment or teacher authority.
+Keep the explicit method/path allowlist and existing private bearer boundaries.
+Mixed or disputed rubric evidence stays in teacher review before publication;
+eligible coaching may still post once. See the direct API and reliability docs.
+
 
 The reviewed student-only exception is a dedicated loopback listener at 3030.
 Read `docs/LEARNING-PLATFORM.md`. Preserve the exact route allowlist, signed LMS

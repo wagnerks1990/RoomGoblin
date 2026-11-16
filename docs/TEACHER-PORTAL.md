@@ -151,3 +151,13 @@ Discussion comments retain server-side edit history. Edited posts expose View ed
 history in the class discussion panel; teacher corrections keep previous text,
 optimistic revision checks and class-scoped authorization. Histories are paginated.
 See DIRECT-ASSIGNMENT-API.md for visibility, legacy-history limits and retention.
+
+
+### Schoology browse/review preview
+
+The connected written SCO can show public instructions, the visible shared
+thread and local ungraded practice automatically in browse/review mode without
+a RoomGoblin sign-in. This creates no student/preview account and exposes no
+private assessments or teacher actions. The teacher-workspace link opens the
+existing authorized /learn discussion. Preview mode is not a teacher credential.
+See DIRECT-ASSIGNMENT-API.md for capability scope and package-update limits.

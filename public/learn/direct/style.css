@@ -2,3 +2,5 @@
 .replies .replies .replies{margin-left:0;padding-left:0;border-left:0}.replies .replies .replies article.post{padding:10px 0}
 
 #comment-edit-form{padding:18px;margin-top:12px;background:#f0f6fb;border:1px solid #bccfe0;border-radius:7px}.edited-marker{font-size:.74rem;color:#66778a}.edit-history{margin:10px 0 10px 45px;font-size:.84rem}.edit-history summary{cursor:pointer;color:#305780}.edit-version{border-left:2px solid #cfdae4;padding:10px 14px;margin:12px 0;background:#f7f9fb}.edit-version p{font-size:.76rem;color:#66778a;margin:4px 0}.edit-version pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:9px 0 0}.replies .edit-history{margin-left:0}@media(max-width:760px){.edit-history{margin-left:0}}
+
+.preview-banner{border-left:4px solid #20a599}.preview-banner a{display:inline-block;margin-right:14px}.preview-banner button,.preview-practice button{margin:8px 8px 8px 0}.preview-practice article{border-top:1px solid #d2dce6;padding-top:14px;margin-top:14px}.preview-mode .post-actions{display:none}.preview-practice textarea{margin-top:8px}

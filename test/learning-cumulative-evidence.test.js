@@ -35,7 +35,7 @@ test('long peer context remains separate from own evidence during bounded select
 test('two valid main posts beyond 6000 total characters receive an approved cumulative grade',async t=>{
  const {fixture}=require('./helpers/learning-fixture');
  const f=await fixture({grader:o=>assessWriting(o,async(_o,r)=>{
-  if(r.text.format.name==='discussion_post_relevance')return {relevance:'related'};
+  if(r.text.format.name==='discussion_post_relevance')return {postType:'substantive_answer'};
   const input=JSON.parse(r.input);if(r.text.format.name==='cumulative_evidence_selection')return {evidence:input.SOURCE.slice(-2).map(row=>row.id)};
   return {access:{level:'full',sentences:[input.STUDENT_SOURCE[0].id]}};
  })});t.after(f.close);

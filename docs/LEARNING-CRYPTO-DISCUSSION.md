@@ -145,7 +145,7 @@ source sentence IDs remain exact. Requirements stay in the listed order, and
 one sentence may support multiple requirements.
 
 A structurally invalid result or a quote not found in its stated source gets
-one fresh model attempt for that criterion, charged to the existing per-review
+one fresh model attempt for that requirement group, charged to the existing per-review
 and daily model-call budget. The new request retains the original student
 source/reference boundaries, includes only the bounded validation reason, and
 does not echo invalid generated output. It must pass the same validator.
@@ -164,3 +164,80 @@ per main post. Correctly rejected unrelated/uncertain posts do not require a
 forced reply. A failed overall assessment does not publish partial grades or
 comments. These changes improve handling of malformed evidence; they do not
 establish model accuracy or authorize regrading existing student records.
+
+
+### Named requirement groups and message-kind relevance
+
+Evidence output uses named check_1/check_2/etc. fields bound to the supplied
+requirements, rather than an unlabelled array that can shift credit between
+requirements. JSON schema couples true support with at least one citation and
+false support with empty evidence. Source/quote validation remains exact apart
+from the documented typographic quotation variants. Positional model output is
+rejected; the server assembles groups for deterministic final point mapping.
+
+Most assessments use groups of two requirements. When the planned criterion
+requests would exceed 16, groups of four leave more room under the unchanged
+24-call hard cap for evidence selection, relevance and bounded repair. Large
+writing or retries can still exhaust that cap and remain for teacher review.
+Do not increase the provider budget silently. Check call use and capacity before
+classroom release; this path can use more provider calls than one batch per
+criterion. Existing user and daily limits remain in force.
+
+The model must demonstrate the action a requirement asks for. Merely omitting
+unsafe behavior does not demonstrate safe scope for a test that was not proposed.
+Admitting unfinished work does not satisfy a different requirement to explain or
+propose a test. This prevents credit for the absence of a mistake.
+
+Relevance now classifies the kind of message: substantive answer, agreement only,
+greeting, off topic, instruction attack or uncertain. A substantive technical
+attempt remains related even when all its claims are wrong. This is separate
+from rubric correctness; it cannot grant score credit or teacher authority.
+
+### Reproducible actual-provider calibration
+
+Use tools/learning-calibration.cjs with an explicit local Ollama model, loopback
+API URL, synthetic-only acknowledgement, definition JSON and case JSON. Each case
+must provide expected scores for every criterion and expected relevance; matching
+totals alone cannot hide misplaced points. The report contains result summaries
+and input hashes, not source writing or private references. It never opens a
+database, publishes a grade, writes an LMS score or changes provider settings.
+
+Example (run only on a machine with the explicitly selected local model):
+
+    node tools/learning-calibration.cjs --synthetic-only --definition examples/calibration/discussion-transport-definition.json --cases examples/calibration/discussion-transport-cases.json --model YOUR-LOCAL-MODEL --base-url http://127.0.0.1:11434/api --report /private/calibration-report.json
+
+The calibration has its own bounded call budget, default 100, hard maximum 256.
+It is an opt-in test, not a production grading job. Do not use actual student work
+as calibration examples. Failed cases exit nonzero and do not establish release
+qualification. Actual-provider evidence is separate from mocked CI/browser checks.
+
+
+### Canonical source citations and partial-evidence confirmation
+
+The model selects IDs from server-provided verbatim source spans instead of
+retyping quotation text. The server maps those IDs back to the exact original
+sentence/quote and runs the existing source validator. Unknown/duplicate span
+IDs, wrong shapes or unsupported claims with evidence still fail closed. Spans
+cover every selected character, preserve sentence mapping and split at no more
+than 500 UTF-16 code units without splitting surrogate pairs. No words or
+negation are normalized away. This removes invented/paraphrased quote failures
+without replacing source evidence with a model assertion.
+
+A criterion with a mixture of positive and negative checks receives a bounded
+independent confirmation of its proposed positive evidence. The confirmation
+sees the entire original sentences surrounding selected fragments. It can reject
+a proposed positive check but cannot add points or invent a new supporting span.
+Malformed verification stays unavailable. Final support/source-ID decisions are
+retained with the private evidence-selection metadata. Full or zero-support
+criteria do not need that extra request. All confirmations consume the existing
+provider and 24-call review budgets. No quota or publication setting is changed.
+
+Mixed-support criteria require teacher review even when the independent check
+agrees. Disputed evidence also requires review. The proposal and saved writing
+remain available privately, and eligible automatic coaching can still post once.
+No new final score/receipt is published until teacher approval; clear full/zero
+assessments retain the configured automatic path. Actual-provider calibration
+passed six controlled lesson cases, but a separately worded public rubric passed
+five of six: one partial answer scored 7 rather than 10. The failed partial case
+was rechecked with the guard and marked reviewRequired. This prevents publication
+of that proposal; it does not make its incorrect score a passing calibration.

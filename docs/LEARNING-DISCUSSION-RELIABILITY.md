@@ -34,17 +34,43 @@ model output or student writing. Earlier unavailable records do not acquire a
 retrospective explanation. Teacher corrections, relevance gating, one automatic
 comment per main post, native score reporting and authorization remain intact.
 
+## Automatic preview and saved learner review
+
+Browse/review launches without a saved participant credential automatically load
+public instructions and the visible shared thread without sign-in. The narrow
+GET preview endpoint validates the assignment capability, excludes hidden
+branches/private assessments and creates no participant, grading job or LMS
+write. Page-local practice never posts to the real discussion. A returning
+learner with a saved credential keeps read-only access to their own feedback.
+The existing private teacher workspace remains the route for grade correction
+and moderation; runtime mode does not grant teacher authorization.
+
 ## Qualification and release limits
 
-Actual-provider calibration still under-credits a complete synthetic answer and
-can classify a relevant incorrect answer as unrelated. These changes improve
-failure handling; they do not establish reliable grading or relevance accuracy.
-Keep this work in draft review until the remaining qualification is addressed.
-Existing scores and provider/publication settings are not changed or replayed.
+Earlier actual-provider calibration under-credited a complete answer and
+misclassified a relevant incorrect attempt. The revised path binds named checks
+to server-provided verbatim spans, independently confirms mixed positive
+support, and classifies message kind separately from technical correctness.
+The configured local provider passed six controlled lesson cases with exact
+criterion/relevance expectations: complete, initial-only, partial, incorrect,
+agreement-only and injection. This is sample calibration, not a guarantee for
+all writing or providers. A separately worded public synthetic rubric passed
+five of six cases; its partial answer scored 7 instead of the expected 10.
+The case remains a failed calibration, even though the review hold prevents
+its publication. Keep teacher review available and qualify the actual
+rubric/model before release. Mixed-support criteria, including independently confirmed partial evidence,
+now keep the whole assessment in needs_review. Eligible coaching still posts
+once; no new final grade or LMS receipt is published until teacher approval.
+Clear full/zero-support assessments retain the configured automatic path.
+This guard is not a guarantee that every remaining model decision is correct.
+Existing scores and provider/publication settings
+are not changed or replayed. Call use increased in some paths; class-size budget
+and provider capacity must be checked before rollout.
 
-Automatic teacher/non-student views and teacher authentication inside an LMS
-package are not included. Browse/review mode does not grant access to private
-teacher data. The separate manual-approval prototype is not part of this change.
+The shared preview is automatic and requires no extra login. Private teacher
+authentication inside an LMS package is not included; browse/review mode does
+not authorize private teacher data. The rejected manual-approval prototype is
+not part of this change.
 
 Existing uploaded packages are immutable client artifacts: a server deployment
 cannot rewrite them. Before any authorized rollout, take a verified normal
@@ -60,8 +86,13 @@ unverified.
 - Supported active-worktree Linux runner: application checks and Node tests.
 - `node --test test/learning-rubric-checks.test.js`
 - `node test/browser/learning-composer-readiness-smoke.cjs`
+- `node test/browser/learning-preview-smoke.cjs`
 - `node test/browser/learning-direct-smoke.cjs`
 - `node test/browser/learning-cumulative-discussion-smoke.cjs`
 
 Browser fixtures use synthetic records and synthetic grading. They do not write
 classroom data or establish production-model or Schoology gradebook acceptance.
+
+See LEARNING-CRYPTO-DISCUSSION.md and tools/learning-calibration.cjs for
+reproducible synthetic-only provider calibration. The reports omit writing and
+private references. No automatic regrading or student-record migration occurs.

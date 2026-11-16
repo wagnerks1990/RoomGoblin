@@ -257,3 +257,33 @@ connection/instructions, failed fetch/render recovery, failed LMS writes, long
 drafts across refresh, pause/resume, failed/pending posting, learner isolation
 and review mode. Actual exported-package discussion and direct API browser
 smokes remain required. These local checks do not establish Schoology acceptance.
+
+
+### Automatic browse/review preview
+
+Written packages automatically use a separate no-login shared preview in LMS
+browse/review mode when no saved private participant credential is available.
+A returning learner with a saved credential instead retains the existing
+read-only review of their own private feedback, with posting/LMS writes blocked. This is UI selection, not verification that the viewer is a
+teacher. Preview reads the public assignment and the same visible shared thread
+that a newly admitted participant could read, using the assignment capability
+in an Authorization header. The new GET /direct/activities/:id/preview does not
+create a participant, enqueue grading, save practice, read private assessments
+or update SCORM suspend/score/completion fields. Hidden posts and descendants,
+private references, participant IDs, review records and credentials are excluded.
+Closed/revoked assignments cannot be opened through this route. Pausing writes
+does not prevent the read-only preview. Native teacher authorization and all
+private data endpoints remain unchanged.
+
+The legacy enrollment-only capability also authorizes this limited shared
+preview; it still cannot claim existing private records or grant teacher roles.
+Normal launches keep the existing participant/credential workflow. The export
+adds preview.mjs and a public teacher-workspace link without changing assignment
+or SCO identifiers. A server deployment and an updated client package are both
+required; older uploaded packages are not rewritten.
+
+Preview refreshes shared posts automatically. Local practice controls never
+post into the real discussion or call the grading provider. Practice text stays
+in the page and is cleared on close/reload. No repeated sign-in is required for
+this view. Private grade corrections and moderation stay in the existing
+authorized /learn workspace; the link uses its normal session when available.

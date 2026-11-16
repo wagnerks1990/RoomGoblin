@@ -6,7 +6,7 @@ const initial='File hashing checks exact bytes efficiently against a trusted ref
 const reply='Unique salts do not prevent guesses against a stolen record. Keep a suitable password KDF to make each offline guess more expensive; online rate limiting addresses a separate login path.';
 const root=process.env.CRYPTO_QA_OUTPUT;const checks=[];const pass=label=>{checks.push(label);console.log('PASS '+label);};
 (async()=>{
- const f=await fixture({grader:options=>evidence.assessWriting(options,async(_options,request)=>{if(request.text.format.name==='discussion_post_relevance')return {relevance:'related'};const id=request.text.format.schema.required[0],ids={claim:[1,2,3],evidence:[3,4],reasoning:[5],reply:[1,2]};return {[id]:{level:'full',sentences:ids[id]}};})}),browser=await chromium.launch({channel:'msedge',headless:true});let server;
+ const f=await fixture({grader:options=>evidence.assessWriting(options,async(_options,request)=>{if(request.text.format.name==='discussion_post_relevance')return {postType:'substantive_answer'};const id=request.text.format.schema.required[0],ids={claim:[1,2,3],evidence:[3,4],reasoning:[5],reply:[1,2]};return {[id]:{level:'full',sentences:ids[id]}};})}),browser=await chromium.launch({channel:'msedge',headless:true});let server;
  try{
   const created=await f.request(f.admin,'/api/v1/learning/classes','POST',{title:'Synthetic IT III Period 6'});assert.equal(created.status,200);const classId=created.body.id;
   const assignment=await f.request(f.admin,'/api/v1/learning/teacher/classes/'+classId+'/assignments','POST',{title:'11/12/2026 — Discussion — Should the Salt Be Secret?',definition});assert.equal(assignment.status,200);const id=assignment.body.id;
