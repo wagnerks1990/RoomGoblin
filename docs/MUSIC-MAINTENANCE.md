@@ -90,6 +90,23 @@ stall interval while Music Assistant reports playing before this evidence can
 trigger recovery. Offline, stale, replaced or ambiguous native observations are
 ignored. This reports device playback state, not proof of audible sound.
 
+Editing or re-enabling an ESPHome enrollment changes its connection identity.
+Its previous playback health link then fails closed even if the same output is
+still selected. Background Music and Updates & recovery now report that the link
+needs relinking. Use **Check stable updates**, verify the selected **Playback
+health output**, then **Save maintenance policy** to bind the current enrollment.
+Polling never silently adopts a changed speaker or Music Assistant identity.
+Offline or stale speaker readings are reported as waiting, separately from a
+link that needs repair. An absent link is reported as unlinked.
+
+After the linked speaker reports idle continuously for the configured stall
+interval, recovery reloads the owned source directly rather than first sending
+Play to a Music Assistant player that still claims to be playing. Existing queues
+retain their current-item recovery path. Retry backoff, uncertainty observation,
+manual Stop, sleep, maintenance and announcement priority remain in force.
+If both Music Assistant and the physical speaker continue reporting playing,
+these state reports alone cannot establish that audio has stopped.
+
 Recover playback can reopen the
 current queue item after a stream fails while its group still says playing. It
 preserves the queue, repeat/shuffle and volume, and uses Music Assistant's

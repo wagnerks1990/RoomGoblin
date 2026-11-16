@@ -53,7 +53,9 @@ class PlaybackRecovery {
       if(now-this.idleSince<8000&&!this.attempts)return {action:"wait"};
     }
     if(now<this.awaitingUntil||now<this.retryAt)return {action:"wait"};
-    return {action:this.attempts===0?"resume":"reload"};
+    // Play is a no-op when MA still reports playing after its stream failed.
+    // Confirmed physical idle needs a reload, under the same retry budget.
+    return {action:this.state==="stalled"&&evidence?.state==="idle"?"reload":this.attempts===0?"resume":"reload"};
   }
   snapshot(){return {state:this.state,reason:this.reason,attempts:this.attempts,retryAt:this.retryAt||null,confirmBy:this.awaitingUntil||null,lastProgressAt:this.lastProgressAt||null}}
 }

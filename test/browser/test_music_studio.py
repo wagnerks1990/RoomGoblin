@@ -4,14 +4,15 @@ import time
 import test_workspaces as workspaces
 
 
-def music_page(self, width=1440):
+def music_page(self, width=1440, output_health=None):
     requests = []
     schedule = {'enabled': True, 'playerId': 'speaker', 'favoriteId': 'station', 'volume': 25,
                 'startTime': '07:00', 'endTime': '15:00', 'days': [1, 2, 3, 4, 5],
                 'schoolDaysOnly': True, 'pauseForPriorityAudio': True, 'autoRecover': True, 'stallSeconds': 120}
     background = {'schedule': schedule, 'favorites': [{'id': 'station', 'uri': 'demo://radio/1', 'name': 'Station', 'mediaType': 'radio'}],
                   'runtime': {'playing': True, 'activePlayerId': 'speaker', 'activeMedia': {'name': 'Station'},
-                              'recovery': {'state': 'playing', 'reason': 'Playback progress confirmed'}}}
+                              'recovery': {'state': 'playing', 'reason': 'Playback progress confirmed'},
+                              'actualPlayer': {'outputHealth': output_health}}}
     players = [{'player_id': 'speaker', 'display_name': 'Classroom speaker', 'provider': 'sendspin', 'state': 'playing',
                 'available': True, 'volume_level': 25, 'current_media': {'title': 'Current song', 'artist': 'Artist'}},
                {'player_id': 'classroom-hub-tv1', 'display_name': 'TV 1', 'state': 'idle', 'available': True, 'volume_level': 10}]
@@ -54,6 +55,16 @@ class MusicStudioBrowserTests(unittest.TestCase):
     evidence = workspaces.WorkspaceBrowserTests.evidence
 
 
+
+    def test_invalid_monitoring_link_is_visible_without_opening_recovery_details(self):
+        warning = 'Playback monitoring needs relinking. Check stable updates, select the correct playback health output and save the maintenance policy.'
+        page, errors, requests = music_page(self, output_health={'state': 'relink-required', 'message': warning})
+        page.get_by_text(warning, exact=True).wait_for()
+        self.assertFalse(page.locator('.musicReliability').get_attribute('open'))
+        page.get_by_label('Listening output', exact=True).select_option('classroom-hub-tv1')
+        self.assertFalse(page.get_by_text(warning, exact=True).is_visible())
+        self.assertEqual(requests, [])
+        self.assertEqual(errors, [])
 
     def test_music_search_play_tracks_identity_and_sleep(self):
         page, errors, requests = music_page(self)

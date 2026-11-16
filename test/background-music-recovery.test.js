@@ -43,7 +43,7 @@ test("a bound physical output must remain idle before contradicting MA playing",
  let now=1800000000000;const recovery=new PlaybackRecovery({now:()=>now});
  const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),outputEvidence:{key:"pinned-output",state:"idle"}};
  recovery.observe(actual);now+=121000;
- assert.equal(recovery.observe(actual).action,"resume");assert.equal(recovery.state,"stalled");
+ assert.equal(recovery.observe(actual).action,"reload");assert.equal(recovery.state,"stalled");
  recovery.requested();now+=21000;
  assert.equal(recovery.observe(actual).action,"reload");
  actual.outputEvidence.state="playing";
@@ -62,7 +62,7 @@ test("lost or changed physical evidence restarts the continuous-idle grace perio
  const actual={...player(12,"playing",{elapsed_time_last_updated:now/1000}),outputEvidence:{key:"first",state:"idle"}};
  recovery.observe(actual);now+=119000;actual.outputEvidence=null;assert.equal(recovery.observe(actual).action,"none");
  actual.outputEvidence={key:"first",state:"idle"};recovery.observe(actual);now+=119000;actual.outputEvidence.key="second";assert.equal(recovery.observe(actual).action,"none");
- now+=119000;assert.equal(recovery.observe(actual).action,"none");now+=2000;assert.equal(recovery.observe(actual).action,"resume");
+ now+=119000;assert.equal(recovery.observe(actual).action,"none");now+=2000;assert.equal(recovery.observe(actual).action,"reload");
 });
 
 test("fresh timestamps reporting a frozen position still trigger bounded recovery",()=>{
@@ -152,6 +152,18 @@ test("real tick never resumes or reloads healthy timestamp-anchored playback",as
  ctx.backgroundMusicStart=async()=>commands.push({command:"reload"});
  for(let i=0;i<=120;i++){now=started+i*8000;await ctx.backgroundMusicTick()}
  assert.equal(commands.length,0);assert.equal(r.playing,true);assert.equal(r.recovery.state,"playing");
+});
+
+test("real tick reloads a confirmed physical stall without a no-op Play command",async()=>{
+ let now=1800000000000;const {ctx,r,commands}=runtime();
+ ctx.backgroundMusicRecovery=new PlaybackRecovery({now:()=>now});
+ ctx.backgroundMusicActualPlayerState=async()=>({...player(12,"playing",{elapsed_time_last_updated:1800000000}),outputEvidence:{key:"speaker",state:"idle"}});
+ ctx.backgroundMusicResume=async()=>commands.push({command:"resume"});
+ ctx.backgroundMusicStart=async args=>commands.push({command:"reload",args});
+ await ctx.backgroundMusicTick();now+=121000;await ctx.backgroundMusicTick();
+ assert.equal(commands.length,1);assert.equal(commands[0].command,"reload");
+ assert.equal(commands[0].args.recover,true);assert.equal(commands[0].args.playerId,"apollo");
+ assert.equal(r.playing,false);
 });
 test("real tick never recovers after manual stop or during priority audio",async()=>{
  const {ctx,r,commands}=runtime();r.manualStopped=true;await ctx.backgroundMusicTick();assert.equal(commands.length,0);

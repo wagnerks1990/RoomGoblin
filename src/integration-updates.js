@@ -31,7 +31,7 @@ class IntegrationUpdates{
   saveState(value){if(!this.canRun()||this.closed)throw fail("Maintenance is paused for appliance recovery.",423);this.storage.setPreference(STATE,value)}
   active(){return this.busy||this.hostRunning||Object.values(this.state().apollo).some(j=>j.stage==="issued"&&this.now()-j.startedAt<10*60000)}
   status(){
-    const devices=this.esp.list().devices.filter(d=>d.info?.project_name==="ApolloAutomation.CAST-1").map(d=>({id:d.id,name:d.name,online:d.online,version:d.info.project_version,candidate:apolloCandidate(d),job:this.state().apollo[d.id]||null}));
+    const devices=this.esp.list().devices.filter(d=>d.info?.project_name==="ApolloAutomation.CAST-1").map(d=>({id:d.id,name:d.name,online:d.online,version:d.info.project_version,candidate:apolloCandidate(d),job:this.state().apollo[d.id]||null,playbackHealth:this.playbackHealth(this.policy().outputBindings[d.id]?.playerId,d.id)}));
     return {ok:true,policy:this.policy(),outputs:this.checkedConnection?.outputs||[],window:this.window(),busy:this.active(),devices,catalog:this.catalogData,hostJob:this.hostJob||null,error:this.error};
   }
   configure(input){
@@ -55,17 +55,23 @@ class IntegrationUpdates{
     this.storage.setPreference(POLICY,{musicAssistant:input.musicAssistant,recoverMusicAssistant:input.recoverMusicAssistant,apollo:[...new Set(input.apollo)],outputBindings,...(target?{target}:{})});
     return this.status();
   }
-  playbackEvidence(playerId){
+  playbackHealth(playerId,deviceId=null){
+    const result=(state,message,evidence=null)=>({state,message,evidence});
+    if(!playerId)return result("unlinked","Physical playback monitoring is not linked to an output.");
     const bindings=Object.entries(this.policy().outputBindings).filter(([,b])=>b.playerId===playerId);
-    if(bindings.length!==1||this.active())return null;
+    if(!bindings.length)return result("unlinked","Physical playback monitoring is not linked to an output.");
+    if(bindings.length!==1||(deviceId&&bindings[0][0]!==deviceId))return result("relink-required","Playback monitoring needs relinking. Check stable updates, select the correct playback health output and save the maintenance policy.");
     const [id,binding]=bindings[0],current=this.currentConnection();
-    if(current?.url!==binding.url||current.serverId!==binding.serverId)return null;
     const device=this.esp.list().devices.find(d=>d.id===id);
-    if(!device?.online||!device.enabled||device.mac!==binding.mac||device.generation!==binding.generation||device.info?.project_name!=="ApolloAutomation.CAST-1"||device.info?.model!=="esp32-s3"||!device.receivedAt||this.now()-device.receivedAt>90000)return null;
+    if(!device||device.mac!==binding.mac||device.generation!==binding.generation||device.info?.project_name!=="ApolloAutomation.CAST-1"||device.info?.model!=="esp32-s3"||current?.url!==binding.url||(current.serverId&&current.serverId!==binding.serverId))return result("relink-required","Playback monitoring needs relinking. Check stable updates, select the correct playback health output and save the maintenance policy.");
+    if(!current.serverId||this.active()||!device.online||!device.enabled||!device.receivedAt||this.now()-device.receivedAt>90000)return result("waiting","Physical playback monitoring is waiting for a fresh speaker connection.");
     const speakers=device.entities.filter(e=>e.domain==="media_player"&&e.name==="Player"&&!e.disabledByDefault);
-    if(speakers.length!==1)return null;
+    if(speakers.length!==1)return result("waiting","Physical playback monitoring is waiting for an unambiguous speaker state.");
     const state=device.states[speakers[0].id]?.state;
-    return state===1||state===2?{key:`${id}:${device.generation}:${speakers[0].id}`,state:state===1?"idle":"playing"}:null;
+    return state===1||state===2?result("ready","Physical playback monitoring is active.",{key:`${id}:${device.generation}:${speakers[0].id}`,state:state===1?"idle":"playing"}):result("waiting","Physical playback monitoring is waiting for a speaker playback report.");
+  }
+  playbackEvidence(playerId){
+    return this.playbackHealth(playerId).evidence;
   }
   localTarget(){
     const target=this.checkedConnection,current=this.currentConnection();

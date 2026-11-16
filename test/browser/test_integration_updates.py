@@ -9,11 +9,11 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
     page = workspaces.WorkspaceBrowserTests.page
     evidence = workspaces.WorkspaceBrowserTests.evidence
 
-    def open_panel(self, width=1440):
+    def open_panel(self, width=1440, playback_health=None):
         state = {"ok": True, "policy": {"musicAssistant": False, "recoverMusicAssistant": False, "apollo": []},
                  "window": {"start": "02:00", "end": "04:00"}, "busy": False, "outputs": [{"id": "speaker", "name": "Test speaker"}],
                  "devices": [{"id": "test-apollo", "name": "Test Apollo", "online": True, "version": "26.9.21.1",
-                              "candidate": {"available": True, "latestVersion": "26.10.30.1"}}],
+                              "candidate": {"available": True, "latestVersion": "26.10.30.1"}, "playbackHealth": playback_health}],
                  "catalog": {"musicAssistant": {"available": True, "currentVersion": "2.10.8", "latestVersion": "2.10.9"}, "apollo": {"version": "26.10.30.1"}}}
         requests = []
         def transport(route, target):
@@ -21,6 +21,7 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
                 if route.request.method == 'PUT':
                     requests.append(route.request.post_data_json)
                     state['policy'] = dict(route.request.post_data_json)
+                    state['devices'][0]['playbackHealth'] = {'state': 'ready', 'message': 'Physical playback monitoring is active.'}
                     state['policy']['outputBindings'] = {key: {'playerId': value} for key, value in state['policy'].get('playbackOutputs', {}).items() if value}
                 if target.endswith('/install'):
                     requests.append(route.request.post_data_json)
@@ -36,6 +37,20 @@ class IntegrationUpdateBrowserTests(unittest.TestCase):
         panel.locator('summary').click()
         panel.get_by_text('Music Assistant 2.10.8;', exact=False).wait_for()
         return page, errors, panel, requests
+
+    def test_stale_monitoring_warning_survives_poll_and_clears_only_after_relink(self):
+        warning = 'Playback monitoring needs relinking. Check stable updates, select the correct playback health output and save the maintenance policy.'
+        page, errors, panel, requests = self.open_panel(playback_health={'state': 'relink-required', 'message': warning})
+        panel.get_by_text(warning, exact=True).wait_for()
+        panel.get_by_label('Playback health output for Test Apollo').select_option('speaker')
+        panel.get_by_role('button', name='Check stable updates', exact=True).click()
+        panel.get_by_text('Stable release check requested.', exact=True).wait_for()
+        self.assertTrue(panel.get_by_text(warning, exact=True).is_visible())
+        panel.get_by_role('button', name='Save maintenance policy', exact=True).click()
+        panel.get_by_text('Physical playback monitoring is active.', exact=True).wait_for()
+        self.assertEqual(requests[-1]['playbackOutputs'], {'test-apollo': 'speaker'})
+        self.assertFalse(panel.get_by_text(warning, exact=True).count())
+        self.evidence(page, errors, 'music-monitoring-relinked')
 
     def test_policy_draft_survives_refresh_and_saves_selected_device(self):
         page, errors, panel, requests = self.open_panel(390)
