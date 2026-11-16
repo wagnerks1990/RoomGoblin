@@ -20,7 +20,7 @@ body.rg-workspace .musicItem>div{min-width:0;overflow-wrap:anywhere}
 body.rg-workspace .musicItem .toolbar{flex-shrink:0}
 body.rg-workspace .musicQueue ol{padding:0;list-style:none}
 body.rg-workspace .musicQueue li{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)}
-body.rg-workspace .musicNotice:not(:empty){padding:10px 14px;border-left:3px solid var(--accent,#0f766e);margin:10px 0}
+body.rg-workspace .musicNotice:not(:empty),body.rg-workspace .musicMonitoringWarning:not(:empty){padding:10px 14px;border-left:3px solid var(--accent,#0f766e);margin:10px 0}
 body.rg-workspace .musicReliability{padding:16px;border:1px solid var(--border);border-radius:12px;overflow-wrap:anywhere}
 body.rg-workspace .musicPane #maSearch{min-width:0!important}
 body.rg-workspace .musicPane #bgmRuntime{margin-top:8px}

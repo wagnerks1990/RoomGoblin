@@ -35,13 +35,15 @@
         ids.add(device.id);let row=v.rows.get(device.id);
         if(!row){
           const root=el("div"),auto=checkbox(root,`Automatically update ${device.name}`),detail=el("p"),button=action(root,"Update firmware now",()=>install("apollo",device.id,state?.catalog?.apollo?.version));
-          const label=el("label",`Playback health output for ${device.name} `),output=el("select");label.append(output);root.append(detail,label);v.devices.append(root);row={root,auto,detail,button,output};v.rows.set(device.id,row);
+          const label=el("label",`Playback health output for ${device.name} `),output=el("select"),health=el("p");health.setAttribute("aria-live","polite");label.append(output);root.append(detail,label,health);v.devices.append(root);row={root,auto,detail,button,output,health};v.rows.set(device.id,row);
         }
         if(!v.dirty)row.auto.checked=state.policy.apollo.includes(device.id);
         const selected=v.dirty?row.output.value:state.policy.outputBindings?.[device.id]?.playerId||"",outputs=[{id:"",name:"Not linked"},...(state.outputs||[])];
         if(selected&&!outputs.some(p=>p.id===selected))outputs.push({id:selected,name:`Saved output (${selected})`});
         const optionsKey=JSON.stringify(outputs);if(row.optionsKey!==optionsKey){row.output.replaceChildren(...outputs.map(p=>{const option=el("option",p.name);option.value=p.id;return option}));row.optionsKey=optionsKey}row.output.value=selected;
         row.detail.textContent=`${device.name}: ${device.online?"connected":"offline"}, firmware ${device.version||"unknown"}. ${device.candidate?"Stable update: "+device.candidate.latestVersion+".":"Stable update information is unavailable."} ${device.job?"Last update: "+device.job.stage+".":""}`;
+        row.health.textContent=device.playbackHealth?.message||"";
+        row.health.classList.toggle("bad",device.playbackHealth?.state==="relink-required");
         row.button.disabled=busy||state.busy||!device.candidate?.available||device.candidate.latestVersion!==state.catalog?.apollo?.version||["issued","unconfirmed"].includes(device.job?.stage);
       }
       for(const [id,row]of v.rows)if(!ids.has(id)){row.root.remove();v.rows.delete(id)}

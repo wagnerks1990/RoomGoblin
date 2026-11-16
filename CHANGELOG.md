@@ -5,6 +5,11 @@
 
 ## Unreleased
 
+- Surface invalid Background Music playback-monitoring links after speaker
+  enrollment or Music Assistant identity changes. Keep relinking explicit and
+  reload confirmed physical-idle stalls directly, retaining retry backoff,
+  queue ownership, volume and classroom priority.
+
 - Preserve learner-account deletion after grading by anonymizing model-request
   references. Migrate existing ledgers transactionally and retain spent daily
   quota when an account or review is deleted.

@@ -61,7 +61,7 @@ test("an empty output does not issue a player request",async()=>{
 test("only the explicitly linked active Sendspin output uses physical playback evidence",async()=>{
  for(const linked of [true,false]){
   const h=fixture(),p=h.read("A");
-  h.ctx.integrationUpdates={playbackEvidence:id=>({key:id,state:"idle"})};
+  h.ctx.integrationUpdates={playbackHealth:id=>({state:"ready",evidence:{key:id,state:"idle"}})};
   h.calls[0].resolve([{player_id:"A",provider:"universal_player",state:"playing",active_source:"A",active_output_protocol:"transport",output_protocols:linked?[{output_protocol_id:"transport",protocol_domain:"sendspin"}]:[]},{player_id:"transport",provider:"sendspin",state:"playing",elapsed_time:12,elapsed_time_last_updated:95}]);
   assert.equal((await p).outputEvidence?.state,linked?"idle":undefined);
  }

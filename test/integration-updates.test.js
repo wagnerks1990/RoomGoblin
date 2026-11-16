@@ -46,6 +46,42 @@ test("physical playback evidence requires an explicit persisted output binding",
   assert.equal(h.manager.playbackEvidence("other"),null);h.values.delete(POLICY);assert.equal(h.manager.playbackEvidence("speaker"),null);
 });
 
+test("stale enrollment links are visible and require an explicit verified relink",async()=>{
+  const h=await boundOutput();
+  assert.equal(h.manager.status().devices[0].playbackHealth.state,"ready");
+  h.devices[0].generation="new-enrollment";
+  const health=h.manager.status().devices[0].playbackHealth;
+  assert.equal(health.state,"relink-required");assert.match(health.message,/Check stable updates/);
+  assert.equal(h.manager.playbackEvidence("speaker"),null);
+  assert.equal(h.values.get(POLICY).outputBindings["apollo-1"].generation,"one","status must not adopt a changed enrollment");
+  h.manager.configure({musicAssistant:false,recoverMusicAssistant:false,apollo:[],playbackOutputs:{"apollo-1":"speaker"}});
+  assert.equal(h.manager.status().devices[0].playbackHealth.state,"ready");
+  assert.equal(h.manager.playbackEvidence("speaker").state,"idle");
+  h.manager.currentConnection=()=>({url:"http://local.test",serverId:"replacement"});
+  assert.equal(h.manager.playbackHealth("speaker").state,"relink-required");
+});
+
+test("monitoring distinguishes a missing link, a pending connection and stale physical reports",async()=>{
+  const h=await boundOutput();
+  h.manager.currentConnection=()=>({url:"http://local.test",serverId:null});
+  assert.equal(h.manager.playbackHealth("speaker").state,"waiting");assert.equal(h.manager.playbackEvidence("speaker"),null);
+  h.manager.currentConnection=()=>({url:"http://local.test",serverId:"local-server"});
+  h.advance(90001);assert.equal(h.manager.status().devices[0].playbackHealth.state,"waiting");
+  h.values.delete(POLICY);assert.equal(h.manager.status().devices[0].playbackHealth.state,"unlinked");
+});
+
+test("a relinked physical speaker detects sustained silent playback despite advancing estimates",async()=>{
+  const {PlaybackRecovery}=require("../src/background-music"),h=await boundOutput();let now=100000000;
+  const monitor=new PlaybackRecovery({now:()=>now});
+  const actual=()=>({found:true,available:true,playing:true,player:{elapsed_time:10,elapsed_time_last_updated:100000},outputEvidence:h.manager.playbackEvidence("speaker")});
+  assert.equal(monitor.observe(actual()).action,"none");
+  let decision;for(let i=0;i<24;i++){h.advance(5000);now+=5000;h.devices[0].receivedAt=now;decision=monitor.observe(actual())}
+  assert.equal(decision.action,"reload");assert.match(monitor.reason,/Apollo reports idle/);
+  monitor.requested();assert.equal(monitor.observe(actual()).action,"wait");
+  h.devices[0].states["mediaplayer:0:3"].state=2;
+  assert.equal(monitor.observe(actual()).action,"none");
+});
+
 test("physical evidence fails closed on stale, offline, replaced and ambiguous outputs",async()=>{
   for(const mutate of [h=>h.devices[0].online=false,h=>h.devices[0].enabled=false,h=>h.devices[0].generation="replacement",h=>h.devices[0].mac="different",h=>h.devices[0].info.project_name="other",h=>h.advance(90001),h=>h.devices[0].states["mediaplayer:0:3"].state=3,h=>h.devices[0].entities.push({...h.devices[0].entities.at(-1)}),h=>h.manager.currentConnection=()=>({url:"http://other",serverId:"local-server"}),h=>h.manager.currentConnection=()=>({url:"http://local.test",serverId:"replacement"}),h=>h.manager.hostRunning=true]){
     const h=await boundOutput();mutate(h);assert.equal(h.manager.playbackEvidence("speaker"),null);

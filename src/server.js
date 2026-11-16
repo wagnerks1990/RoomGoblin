@@ -7215,7 +7215,10 @@ async function backgroundMusicActualPlayerState(cfg=backgroundMusicSchedule(),fo
     const protocol=p?.output_protocols?.find(item=>item.output_protocol_id===p.active_output_protocol&&item.protocol_domain==="sendspin");
     const transport=p?.provider==="sendspin"?p:protocol?players.find(item=>item.player_id===protocol.output_protocol_id&&item.provider==="sendspin"):null;
     if(transport?.available===false){state.available=false;state.playing=false;state.raw="unavailable"}
-    if(transport&&p.active_source===pid&&typeof integrationUpdates!=="undefined")state.outputEvidence=integrationUpdates.playbackEvidence(pid);
+    if(transport&&p.active_source===pid&&typeof integrationUpdates!=="undefined"){
+      state.outputHealth=integrationUpdates.playbackHealth(pid);
+      state.outputEvidence=state.outputHealth.evidence;
+    }
     if(owns())backgroundMusicPlayerProbe={at:now,playerId:pid,state,error:null,generation};
     return state;
   }catch(e){

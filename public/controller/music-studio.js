@@ -17,6 +17,7 @@
   sections.schedule.append(schedule);sections.favorites.append(favorites);sections.discover.append(search);sections.outputs.append(outputs,connection);connection.addEventListener("input",event=>{connectionDirty=true;connectionRevision++;if(event.target.id==="maToken")tokenRevision++});
   for(const grid of page.querySelectorAll(":scope > .grid2"))if(!grid.querySelector(".panel"))grid.remove();
   const notice=el("div",undefined,"musicNotice");notice.setAttribute("role","status");nav.after(notice);
+  const monitoring=el("div",undefined,"musicMonitoringWarning bad");monitoring.setAttribute("role","status");monitoring.hidden=true;notice.after(monitoring);
   page.querySelector(".top .muted").textContent="Your music, your outputs, one clear view. Music gives way to classroom priority audio and recovers afterward.";
   const hero=el("article",undefined,"musicHero"),disc=el("div","♫","musicDisc"),info=el("div",undefined,"musicTrackInfo"),eyebrow=el("span","BACKGROUND MUSIC","musicEyebrow"),title=el("h2","Choose what plays next"),detail=el("p","Play a saved station or find a song.");
   const runtime=document.getElementById("bgmRuntime");info.append(eyebrow,title,detail,runtime);hero.append(disc,info);sections.listen.append(hero);
@@ -53,6 +54,9 @@
     const state=owned?(r.manualStopped?(r.paused?"Paused by you":String(p?.playback_state||p?.state||"")==="playing"?"Stop requested; player still reports playing":"Stopped by you"):r.pausedForPriority?"Paused for priority audio":recovery.state||"idle"):String(p?.playback_state||p?.state||"idle");
     runtime.textContent=state==="playing"?"Player reports playing":state.replaceAll("-"," ");runtime.dataset.state=state;
     disc.classList.toggle("playing",state==="playing");play.textContent=owned&&r.paused?"Resume":"Play";
+    const outputHealth=r.actualPlayer?.outputHealth;
+    monitoring.hidden=!owned||outputHealth?.state!=="relink-required";
+    monitoring.textContent=monitoring.hidden?"":outputHealth.message;
     if(document.activeElement!==volume)volume.value=String(p?.volume_level??20);mute.textContent=(p?.volume_muted??p?.muted)?"Unmute":"Mute";
     health.textContent=[recovery.reason,r.lastError,r.playerProbeError,recovery.lastProgressAt?`Last progress ${new Date(recovery.lastProgressAt).toLocaleTimeString()}`:"",recovery.retryAt>Date.now()?`Next recovery ${new Date(recovery.retryAt).toLocaleTimeString()}`:"",r.sleepUntil?`Sleep ends ${new Date(r.sleepUntil).toLocaleTimeString()}`:""].filter(Boolean).join(" · ")||"No recovery events. Player status does not prove audible output.";
     if(document.activeElement!==sleep){const remaining=Math.max(0,(Number(r.sleepUntil)||0)-Date.now())/60000;sleep.value=String(remaining?[15,30,60,120].find(n=>n>=remaining)||120:0)}
