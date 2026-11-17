@@ -48,3 +48,11 @@ recovery buttons remain available. Reopen the assignment to sync a grade publish
 after its windows closed. Signed Schoology External Tool outcomes provide the
 separate server-to-server path for grades and teacher corrections without an open
 student page. Real Schoology gradebook acceptance still needs a live LMS test.
+
+Authored discussion comments now quote the individual main post and ask a specific
+next-step question generated from its public assignment context. Generic fallback
+comments are not published when generation fails. Missing comments remain pending;
+validated nonzero grades are independent of comment generation. All-zero authored
+assessments and disputed/mixed support require teacher review. Existing comment
+limits, private feedback, budgets and teacher edit history remain authoritative.
+See `docs/DIRECT-ASSIGNMENT-API.md` for the current contract.

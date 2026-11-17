@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Generate grounded, post-specific automatic discussion comments instead of sharing
+  a generic weak-criterion prompt; retain grades when comment generation fails and
+  hold all-zero authored assessments for teacher review.
+
 - Hold mixed or disputed rubric evidence for teacher review before publishing a
   new score; retain saved writing and eligible automatic coaching.
 

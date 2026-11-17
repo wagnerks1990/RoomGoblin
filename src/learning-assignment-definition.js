@@ -63,10 +63,21 @@ async function assessWriting(options,modelJSON){const d=normalize(options.defini
  evidenceSelection[c.id]={sourceLength:source.length,chunks:selected.chunks,selectedIds:selected.rows.map(r=>r.id)};
  if(c.id==='reply'&&options.parent?.length>6000){const context=await selectEvidence(options,d,c,options.parent,modelJSON,true);input.PEER_CONTEXT=context.rows.map(r=>r.text).join('\n[separate peer-context excerpt]\n');evidenceSelection[c.id].contextChunks=context.chunks;}
  assessmentRequest.input=JSON.stringify(input);assessmentRequest.instructions+='\nAssess the accumulated student contributions together. Selected spans are verbatim; nonconsecutive IDs indicate omitted text. Never join nonadjacent spans into a continuous statement or infer missing facts. Award partial credit only for evidence specific to this criterion, never for evidence of a different criterion. Missing criterion evidence is zero. Respect any explicit zero-credit condition such as agreement only. More words, repetition, or unrelated content do not earn credit. A clear later correction can resolve an earlier mistake; do not silently resolve an unexplained contradiction.';const value=c.evidenceChecks?await require('./learning-rubric-checks').assess({...options,onEvidence:(checks,verification)=>{evidenceSelection[c.id].checks=checks;evidenceSelection[c.id].verification=verification;}},c,selected.rows,modelJSON,{prompt:d.prompt,gradingInstructions:d.gradingInstructions,peer:c.id==='reply'?input.PEER_CONTEXT:''}):await modelJSON(options,assessmentRequest);if(!value||Object.keys(value).join()!==c.id||!Array.isArray(value[c.id]?.sentences)||value[c.id].sentences.some(id=>!selected.rows.some(r=>r.id===id)))throw Error('Invalid criterion response.');result[c.id]=value[c.id];if(c.evidenceChecks&&value[c.id].level!=='zero')for(const id of value[c.id].sentences)groundedSource.add(selected.rows.find(r=>r.id===id).text.trim());}
- const assessment=score(result,d,options.initial,options.reply),commentDecisions={};
+ const assessment=score(result,d,options.initial,options.reply),commentDecisions={},coachResponses={},commentFailures={};
+ // An independent public-rubric check can dispute a zero from stricter private
+ // requirements. Keep the proposal for teacher review; never silently award it.
+ if(assessment.total>0)for(const c of d.criteria.filter(c=>c.id!=='reply'&&assessment.criteria[c.id].points===0)){
+  const source=options.initial,selectedIds=evidenceSelection[c.id]?.selectedIds||[];if(!source?.trim())continue;
+  try{const verify=request(options.model,d,source,options.reply,options.parent,c.id);verify.input=JSON.stringify({STUDENT_SOURCE:sentences(source).filter(r=>selectedIds.includes(r.id))});const candidate=await modelJSON(options,verify);if(!candidate||Object.keys(candidate).join()!==c.id||!Array.isArray(candidate[c.id]?.sentences)||candidate[c.id].sentences.some(id=>!selectedIds.includes(id)))throw Error('Invalid zero verification');const checked=score({...result,...candidate},d,source,options.reply);evidenceSelection[c.id].zeroVerification={disputed:checked.criteria[c.id].points>0};}
+  catch{evidenceSelection[c.id].zeroVerification={disputed:true,unavailable:true};}
+ }
  // Checked spans already match the assignment rubric. Scope that proof to
  // the containing main post; earlier credit cannot approve unrelated new posts.
- for(const post of options.feedbackPosts||[]){if([...groundedSource].some(text=>text&&post.body.includes(text))){commentDecisions[post.id]='related';continue;}const value=await modelJSON(options,relevanceRequest(options.model,d,post.body));commentDecisions[post.id]=relevanceDecision(value);}
- return {...assessment,commentDecisions,evidenceSelection,reviewRequired:Object.values(evidenceSelection).some(e=>e.verification?.partialSupport===true||e.verification?.disputedChecks?.length>0)};
+ for(const post of options.feedbackPosts||[]){
+  if(![...groundedSource].some(text=>text&&post.body.includes(text))){const value=await modelJSON(options,relevanceRequest(options.model,d,post.body));commentDecisions[post.id]=relevanceDecision(value);if(commentDecisions[post.id]!=='related')continue;}
+  try{const feedback=await require('./learning-discussion-feedback').generate(options,d,post.body,modelJSON);commentDecisions[post.id]=feedback.decision;if(feedback.body)coachResponses[post.id]=feedback.body;}
+  catch{commentDecisions[post.id]='pending';commentFailures[post.id]='feedback_unavailable';}
+ }
+ return {...assessment,commentDecisions,coachResponses,commentFailures,evidenceSelection,reviewRequired:(d.kind==='discussion'&&assessment.total===0)||Object.values(evidenceSelection).some(e=>e.verification?.partialSupport===true||e.verification?.disputedChecks?.length>0||e.zeroVerification?.disputed===true)};
 }
 module.exports={TEMPLATE,normalize,toCase,AssignmentDefinitions,request,score,assessWriting,relevanceRequest,relevanceDecision};

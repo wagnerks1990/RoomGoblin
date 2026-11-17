@@ -378,10 +378,12 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
               if(learning.db.prepare("SELECT 1 FROM learning_posts WHERE activity_id=? AND parent_id=? AND kind='ai' LIMIT 1").get(a.id,parentId))continue;
               if(definition?.kind==='discussion'){
                 if(!feedbackPosts.some(p=>p.id===parentId))continue;
-                if(result.commentDecisions?.[parentId]!=='related'){learning.event(user,a.id,'coach.skipped',parentId,{reviewId:id,reason:'relevance-not-confirmed'});continue;}
+                if(result.commentDecisions?.[parentId]!=='related'){learning.event(user,a.id,result.commentDecisions?.[parentId]==='pending'?'coach.pending':'coach.skipped',parentId,{reviewId:id,reason:result.commentDecisions?.[parentId]==='pending'?'feedback-unavailable':'relevance-not-confirmed'});continue;}
               }
+              const response=definition?.kind==='discussion'&&result.coachResponses!==undefined?result.coachResponses[parentId]:result.coachResponse;
+              if(typeof response!=='string'||!response.trim()||response.length>1800){learning.event(user,a.id,'coach.pending',parentId,{reviewId:id,reason:'feedback-unavailable'});continue;}
               const coachId=crypto.randomUUID();
-              learning.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,'ai',?,?,?)").run(coachId,a.id,user.id,parentId,result.coachResponse,stamp,stamp);
+              learning.db.prepare("INSERT INTO learning_posts(id,activity_id,user_id,parent_id,kind,body,created_at,updated_at) VALUES(?,?,?,?,'ai',?,?,?)").run(coachId,a.id,user.id,parentId,response,stamp,stamp);
               learning.event(user,a.id,"coach.automated",coachId,{reviewId:id});
             }
             if(result.reviewRequired===true){learning.event(user,a.id,'grade.review_required',id,{reason:'partial-or-disputed-evidence'});return;}
