@@ -287,3 +287,31 @@ post into the real discussion or call the grading provider. Practice text stays
 in the page and is cleared on close/reload. No repeated sign-in is required for
 this view. Private grade corrections and moderation stay in the existing
 authorized /learn workspace; the link uses its normal session when available.
+
+## Post-specific automatic coaching
+
+Authored discussion coaching is generated separately for each eligible main post.
+The model receives that post plus the public scenario/directions/rubric, without
+learner identity, private grades or the private teacher reference. A public reply
+must anchor a verbatim excerpt from that same post and select a focused next-step
+question. The model selects an evidence-use, expected-result, check-before-change
+or reconsideration focus; server-owned wording prevents invented technical causes. Invented anchors, stock fallback prompts and numeric grade
+announcements are rejected. Validated grades remain available if public feedback
+fails; `coach.pending` retains eligibility for a later assessment instead of posting
+a generic comment or marking the post permanently skipped. Existing one-comment
+and no-comments-on-replies rules remain unchanged. Calls use the existing per-review
+and daily model budgets; neither allowance increases automatically.
+
+All-zero authored discussion assessments now require teacher review, as do existing
+mixed/disputed evidence results. This prevents automatic publication of an unverified
+blanket zero while retaining the proposed score and evidence for review. It does
+not change rubric bands or automatically regrade historical work. Teacher edits to
+existing comments use the normal revision/history endpoint; retain a scoped private
+backup before a batch repair and do not change student writing or grades as part of it.
+
+When a nonzero assessment contains an own-contribution criterion scored zero,
+an independent public-rubric classification checks that zero against the same
+selected learner spans. Conflicting positive evidence or an unavailable verification
+holds the proposed assessment for teacher review rather than silently awarding or
+publishing an unsupported score. Rubric wording is not a required student phrase;
+accurate paraphrases and explicitly stated case facts may span several sentences.
