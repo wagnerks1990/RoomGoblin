@@ -270,6 +270,10 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const activityId=chess.teacherActivity(req.learner,req.params.id);
     res.json({ok:true,match:chess.join(req.learner,activityId,req.params.matchId,{teacher:true})});
   }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/leave',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,match:chess.leave(req.learner,activityId,req.params.matchId,req.body?.revision,{teacher:true})});
+  }));
   app.post(api+'/teacher/classes/:id/chess/matches/:matchId/move',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
     res.json({ok:true,match:chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
@@ -280,6 +284,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer'})})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/leave',wrap((req,res)=>res.json({ok:true,match:chess.leave(req.learner,req.params.id,req.params.matchId,req.body?.revision)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/move',wrap((req,res)=>res.json({ok:true,match:chess.move(req.learner,req.params.id,req.params.matchId,req.body?.move,req.body?.revision)})));
   app.get(api+'/teacher/classes',requireTeacher,wrap((req,res)=>res.json({ok:true,classes:portal.catalog(req.learner)})));
   app.post(api+'/teacher/classes/:id/assignments',requireTeacher,wrap((req,res)=>res.json({ok:true,id:portal.createAssignment(req.learner,req.params.id,req.body)})));
