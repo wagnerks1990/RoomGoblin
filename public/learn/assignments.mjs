@@ -44,6 +44,11 @@ export function createAssignments(ui,host,createHost){
   if(!r.ok){let message='Assignment package could not be downloaded.';try{message=(await r.json()).error||message;}catch{}throw Error(message);}
   const blob=await r.blob();ui.assert(selected);const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='RoomGoblin-Direct-Assignment.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);ui.notice('API package downloaded. Upload it as SCORM in your LMS. Existing games can include its config.js and connector SDK.');
  }
+ async function downloadChess(activity,selected){
+  const r=await fetch('/api/v1/learning/teacher/activities/'+activity.id+'/chess-package',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','x-roomgoblin-learning':'1'},body:'{}',signal:AbortSignal.timeout(60000)});ui.assert(selected);
+  if(!r.ok){let message='Chess SCORM package could not be downloaded.';try{message=(await r.json()).error||message;}catch{}throw Error(message);}
+  const blob=await r.blob();ui.assert(selected);const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download='RoomGoblin-Chess-SCORM.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);ui.notice('Chess SCORM package downloaded. Upload it to Schoology as SCORM 1.2.');
+ }
  async function rubric(activity,card,selected){
   if(card.querySelector('[data-ai-policy]'))return;
   const result=await ui.api('/teacher/activities/'+activity.id+'/ai-policy');ui.assert(selected);if(!card.isConnected)return;
