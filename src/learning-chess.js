@@ -124,6 +124,11 @@ class ChessMatches {
   return {white:{id:m.white_id,name:label(m.white_id,'white',m.activity_id)},
    black:m.mode==='computer'?{id:'computer',name:'Computer'}:m.mode==='solo'?{id:m.white_id,name:'Practice (Black)'}:m.black_id?{id:m.black_id,name:label(m.black_id,'black',m.black_activity_id||m.activity_id)}:null};
  }
+ seatClass(user,m){
+  const activityId=m.white_id===user.id?m.activity_id:m.black_id===user.id?(m.black_activity_id||m.activity_id):null;
+  if(!activityId)return null;
+  return this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(activityId)?.class_id||null;
+ }
  alias(userId,activityId){
   const row=this.db.prepare('SELECT m.alias FROM learning_members m JOIN learning_activities a ON a.class_id=m.class_id WHERE a.id=? AND m.user_id=?').get(activityId,userId);
   if(row?.alias)return row.alias;
@@ -137,7 +142,7 @@ class ChessMatches {
    myColor:m.white_id===viewer.id?'white':m.black_id===viewer.id?'black':null,
    canJoin:m.status==='waiting'&&m.white_id!==viewer.id,
    // Activity identifiers stay private to the teacher operator API.
-   ...(this.teacher(viewer)?{activityId:m.activity_id}:{}),
+   ...(this.teacher(viewer)?{activityId:m.activity_id,seatClassId:this.seatClass(viewer,m)}:{}),
   };
  }
  get(user,activityId,matchId,{teacher=false}={}){
