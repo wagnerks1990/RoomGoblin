@@ -257,6 +257,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   });
   app.put(api+'/teacher/activities/:id/direct-settings',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);if(typeof req.body.enabled!=='boolean'||req.body.enabled&&!store.hasSecret(direct.key(req.params.id)))fail(400,'Download an API package before enabling this connection.');store.tx(()=>{store.setPreference(direct.key(req.params.id),{...direct.settings(req.params.id),enabled:req.body.enabled});learning.event(req.learner,req.params.id,'direct.settings',req.params.id,{enabled:req.body.enabled});});res.json({ok:true});}));
   // The chess queue is global, while each move uses the caller's own assignment.
+  app.get(api+'/teacher/chess/leaderboard',requireTeacher,wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,null,{teacher:true})})));
   app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>res.json({ok:true,matches:chess.teacherList(req.learner),connected:chess.connected(req.learner)})));
   app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
@@ -279,6 +280,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     res.json({ok:true,match:chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
   }));
   // SCORM authentication still uses each package's own scoped bearer.
+  app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer'})})));
