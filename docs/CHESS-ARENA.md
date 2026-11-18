@@ -17,6 +17,14 @@ The existing direct-SCORM SDK reads `cmi.core.student_id` and `cmi.core.student_
 
 The stored full name is available only through teacher-class-authorized projections; cross-class lobby viewers receive a first name and last initial, and never other students' user IDs. Use school-approved privacy procedures before encouraging students across classes to participate. A downloaded ZIP contains a *registration-only* enrollment key, not a teacher token.
 
+## Universal leaderboard and identity scope
+
+The Chess Arena leaderboard is visible in both the SCORM student UI and `/learn/chess`. It is calculated from authoritative SQLite match records instead of client-supplied statistics. One completed multiplayer game contributes at most one result per participating account; retries and page refreshes do not grant additional wins. Win/loss/draw standings count only finished real multiplayer games with at least four half-moves, and exclude expired queues and inactive games. Solo and computer games appear as **practice counts only**; they cannot increase multiplayer ranking. The display shows up to 100 player entries, with the total number of participating player accounts reported separately.
+
+Other students see opaque, stable per-account labels (not names or account IDs) on leaderboard rows. Authorized teachers may see an LMS-reported full name only for a participant belonging to one of their assigned classes. Schoology names are still shown in the match lobby as a limited first name and initial. This distinction is intentional.
+
+**Identity limit:** The existing direct-SCORM flow creates a private participant account for each distinct assignment package/credential. The leaderboard aggregates matches across classes but may show multiple entries when the same human launches different assignments. It is therefore an *account leaderboard*, not a verified unique-person leaderboard. Do not auto-merge accounts by reported name, as names are unverified and not unique. A later verified identity/consent design is required for verified person rankings.
+
 ## Data and security architecture
 
 `src/learning-chess.js` owns rules, persistent SQLite match state, turn authorization, join conflicts and game outcome. `learning_chess_matches` records moves in UCI format, match revisions, source assignment, second player's source assignment, and mode. `learning_chess_presence` tracks last-seen heartbeats. Matchmaking across classes never grants a second assignment's data access.
