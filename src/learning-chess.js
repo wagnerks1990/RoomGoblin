@@ -83,7 +83,8 @@ class ChessMatches {
    status TEXT NOT NULL CHECK(status IN ('waiting','active','finished')),
    result TEXT,reason TEXT,moves_json TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 0,
    created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
-   CREATE INDEX IF NOT EXISTS learning_chess_activity ON learning_chess_matches(activity_id,updated_at);\n   CREATE TABLE IF NOT EXISTS learning_chess_presence(activity_id TEXT NOT NULL,user_id TEXT NOT NULL,last_seen INTEGER NOT NULL,PRIMARY KEY(activity_id,user_id));
+   CREATE INDEX IF NOT EXISTS learning_chess_activity ON learning_chess_matches(activity_id,updated_at);
+   CREATE TABLE IF NOT EXISTS learning_chess_presence(activity_id TEXT NOT NULL,user_id TEXT NOT NULL,last_seen INTEGER NOT NULL,PRIMARY KEY(activity_id,user_id));
   `);
  }
  activity(user,id,write=false){const a=this.learning.activity(user,id);if(write)this.learning.writable(a);return a;}
@@ -104,7 +105,9 @@ class ChessMatches {
   const rows=this.db.prepare('SELECT * FROM learning_chess_matches WHERE activity_id=? ORDER BY updated_at DESC LIMIT 100').all(activityId);
   return rows.filter(m=>teacher||m.status==='waiting'||m.white_id===user.id||m.black_id===user.id).map(m=>this.render(m));
  }
- heartbeat(user,id){const a=this.activity(user,id);if(a.member.role!=='student')error(403,'Student participation required.');this.db.prepare('INSERT INTO learning_chess_presence(activity_id,user_id,last_seen) VALUES(?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET last_seen=excluded.last_seen').run(id,user.id,Date.now());return {connected:true};}\n connected(classId){return this.db.prepare('SELECT p.activity_id,p.user_id,m.alias,p.last_seen FROM learning_chess_presence p JOIN learning_activities a ON a.id=p.activity_id JOIN learning_members m ON m.class_id=a.class_id AND m.user_id=p.user_id WHERE a.class_id=? AND p.last_seen>=? ORDER BY p.last_seen DESC LIMIT 200').all(classId,Date.now()-35000).map(r=>({activityId:r.activity_id,name:r.alias,lastSeen:r.last_seen}));}\n create(user,id){
+ heartbeat(user,id){const a=this.activity(user,id);if(a.member.role!=='student')error(403,'Student participation required.');this.db.prepare('INSERT INTO learning_chess_presence(activity_id,user_id,last_seen) VALUES(?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET last_seen=excluded.last_seen').run(id,user.id,Date.now());return {connected:true};}
+ connected(classId){return this.db.prepare('SELECT p.activity_id,p.user_id,m.alias,p.last_seen FROM learning_chess_presence p JOIN learning_activities a ON a.id=p.activity_id JOIN learning_members m ON m.class_id=a.class_id AND m.user_id=p.user_id WHERE a.class_id=? AND p.last_seen>=? ORDER BY p.last_seen DESC LIMIT 200').all(classId,Date.now()-35000).map(r=>({activityId:r.activity_id,name:r.alias,lastSeen:r.last_seen}));}
+ create(user,id){
   const a=this.activity(user,id,true);
   if(a.member.role!=='student')error(403,'Student participation required.');
   const count=this.db.prepare("SELECT COUNT(*) n FROM learning_chess_matches WHERE activity_id=? AND status IN ('waiting','active')").get(id).n;
