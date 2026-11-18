@@ -196,6 +196,15 @@ class ChessMatches {
    if(mode==='multiplayer'){
     const prior=this.db.prepare("SELECT * FROM learning_chess_matches WHERE white_id=? AND mode='multiplayer' AND status='waiting' LIMIT 1").get(user.id);
     if(prior)return this.render(prior,user);
+    // First-come, first-served across all enrolled classes and teacher clients.
+    const available=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode='multiplayer' AND status='waiting' AND white_id<>? ORDER BY created_at,id LIMIT 1").get(user.id);
+    if(available){
+     const time=new Date().toISOString();
+     const changed=this.db.prepare("UPDATE learning_chess_matches SET black_id=?,black_activity_id=?,status='active',revision=revision+1,updated_at=? WHERE id=? AND status='waiting' AND black_id IS NULL").run(user.id,activityId,time,available.id);
+     if(!changed.changes)error(409,'Match queue changed. Try again.');
+     this.learning.event(user,activityId,'chess.join',available.id,{matchedFromQueue:true});
+     return this.render(this.row(available.id),user);
+    }
    }
    const id=crypto.randomUUID(),stamp=new Date().toISOString(),status=mode==='multiplayer'?'waiting':'active';
    this.db.prepare('INSERT INTO learning_chess_matches(id,activity_id,white_id,black_id,status,moves_json,created_at,updated_at,mode) VALUES(?,?,?,?,?,?,?,?,?)')
