@@ -32,6 +32,8 @@ function renderBoard(m){
   b.append(cell);
  }
  $('moves').textContent=m.moves.map((move,i)=>(i%2===0?Math.floor(i/2)+1+'. ':'')+move).join(' ');
+ $('leave').disabled=!m.myColor||m.status==='finished'||review||paused;
+ $('leave').onclick=()=>action('/matches/'+m.id+'/leave','POST',{revision:m.revision});
  const count=ownMoves(m);$('grade').textContent=Math.min(5,count)+' / 5 moves';$('progress').textContent='Your validated moves: '+Math.min(5,count)+' / 5';reportScore(count);
 }
 function render(){
@@ -40,7 +42,7 @@ function render(){
  for(const m of matches){const own=!!m.myColor;const b=el('button',m.white.name+' vs '+(m.black?.name||'Waiting')+' · '+m.status);b.className='match';
   b.onclick=async()=>{if(m.status==='waiting'&&!own){await action('/matches/'+m.id+'/join','POST');return;}selected=m.id;originSquare='';render();};b.disabled=!own&&m.status!=='waiting'||review||paused&&!own;lobby.append(b);
  }
- const current=matches.find(m=>m.id===selected);if(current)renderBoard(current);else{$('board').replaceChildren();$('turn').textContent='Select or create a match.';}
+ const current=matches.find(m=>m.id===selected);if(current)renderBoard(current);else{$('board').replaceChildren();$('turn').textContent='Select or create a match.';$('leave').disabled=true;}
 }
 async function pull(){if(!ready||busy||retired||document.hidden||!sameActor())return;busy=true;try{const data=await sdk.request('/activities/'+cfg.activityId+'/chess');if(retired)return;userId=data.userId;matches=data.matches;if(!selected){selected=matches.find(m=>m.myColor&&m.status!=='finished')?.id||'';}render();$('status').textContent='Connected. Match state updated '+new Date().toLocaleTimeString();}catch(e){$('status').textContent=e.message;}finally{busy=false;}}
 async function action(path,method,body){if(!ready||review||paused||!sameActor())return;try{const r=await sdk.request('/activities/'+cfg.activityId+'/chess'+path,method,body);if(r.match)selected=r.match.id;await pull();}catch(e){$('status').textContent=e.message;await pull();}}
