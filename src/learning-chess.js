@@ -167,6 +167,78 @@ class ChessMatches {
   const rows=this.db.prepare('SELECT * FROM learning_chess_matches ORDER BY updated_at DESC LIMIT 200').all();
   return rows.map(m=>this.render(m,user));
  }
+ leaderboard(viewer,activityId=null,{teacher=false}={}){
+  if(teacher){
+   if(!this.teacher(viewer))error(403,'Teacher access required.');
+  }else this.authorize(viewer,activityId,false);
+  // The game server is the sole authority for results. Exclude abandoned queues,
+  // inactive games, and practice games from player-v-player rankings.
+  // Four half-moves minimum prevents immediate resign/rejoin from counting.
+  const rows=this.db.prepare(`
+   SELECT user_id,source_activity_id,
+          SUM(games) games,SUM(wins) wins,SUM(losses) losses,SUM(draws) draws
+   FROM (
+     SELECT white_id user_id,activity_id source_activity_id,1 games,
+       CASE WHEN result='white' THEN 1 ELSE 0 END wins,
+       CASE WHEN result='black' THEN 1 ELSE 0 END losses,
+       CASE WHEN result='draw' THEN 1 ELSE 0 END draws
+     FROM learning_chess_matches
+     WHERE status='finished' AND mode='multiplayer'
+       AND result IN ('white','black','draw')
+       AND reason NOT IN ('queue cancelled','inactive game','queue expired')
+       AND json_array_length(moves_json)>=4 AND black_id IS NOT NULL
+     UNION ALL
+     SELECT black_id user_id,COALESCE(black_activity_id,activity_id) source_activity_id,1 games,
+       CASE WHEN result='black' THEN 1 ELSE 0 END wins,
+       CASE WHEN result='white' THEN 1 ELSE 0 END losses,
+       CASE WHEN result='draw' THEN 1 ELSE 0 END draws
+     FROM learning_chess_matches
+     WHERE status='finished' AND mode='multiplayer'
+       AND result IN ('white','black','draw')
+       AND reason NOT IN ('queue cancelled','inactive game','queue expired')
+       AND json_array_length(moves_json)>=4 AND black_id IS NOT NULL
+   ) totals GROUP BY user_id,source_activity_id
+  `).all();
+  const players=new Map();
+  for(const row of rows){
+   const prior=players.get(row.user_id)||{id:row.user_id,sourceActivityId:row.source_activity_id,games:0,wins:0,losses:0,draws:0};
+   for(const key of ['games','wins','losses','draws'])prior[key]+=row[key];
+   players.set(row.user_id,prior);
+  }
+  const practices=this.db.prepare(`
+    SELECT white_id user_id,COUNT(*) games,
+           SUM(CASE WHEN mode='computer' THEN 1 ELSE 0 END) computer,
+           SUM(CASE WHEN mode='solo' THEN 1 ELSE 0 END) solo
+    FROM learning_chess_matches WHERE mode IN ('computer','solo')
+    AND json_array_length(moves_json)>0
+    GROUP BY white_id
+  `).all();
+  for(const row of practices){
+   const p=players.get(row.user_id)||{id:row.user_id,sourceActivityId:null,games:0,wins:0,losses:0,draws:0};
+   p.practice=row.games;p.computer=row.computer;p.solo=row.solo;players.set(row.user_id,p);
+  }
+  const result=[...players.values()].map(p=>{
+   const publicId='Player-'+crypto.createHash('sha256').update(p.id).digest('hex').slice(0,8).toUpperCase();
+   let label=p.id===viewer.id?'You':publicId;
+   // Only a teacher with explicit class membership may see the full LMS-reported alias.
+   if(teacher&&p.id!==viewer.id){
+    const activities=this.db.prepare('SELECT activity_id,COALESCE(black_activity_id,activity_id) black_activity_id FROM learning_chess_matches WHERE white_id=? OR black_id=? LIMIT 100').all(p.id,p.id);
+    for(const a of activities){
+     const classId=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(a.activity_id)?.class_id;
+     if(classId){try{this.learning.membership(viewer,classId,true);label=this.alias(p.id,a.activity_id);break;}catch{}}
+     const otherClass=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(a.black_activity_id)?.class_id;
+     if(otherClass){try{this.learning.membership(viewer,otherClass,true);label=this.alias(p.id,a.black_activity_id);break;}catch{}}
+    }
+   }
+   return {label,me:p.id===viewer.id,games:p.games,wins:p.wins,losses:p.losses,draws:p.draws,
+     winRate:p.games?Math.round(100*p.wins/p.games):0,practice:p.practice||0,
+     computer:p.computer||0,solo:p.solo||0};
+  }).sort((a,b)=>b.wins-a.wins||b.games-a.games||b.winRate-a.winRate||a.label.localeCompare(b.label));
+  return {players:result.slice(0,100).map((p,i)=>({rank:i+1,...p})),
+    totalPlayers:result.length,
+    rules:'Only completed multiplayer matches with at least four half-moves count toward wins, losses, and draws. Computer and solo games appear separately as practice.',
+    identity:'SCORM accounts represent unverified assignment participants, not guaranteed unique people.'};
+ }
  heartbeat(user,activityId,{teacher=false}={}){
   this.authorize(user,activityId,false,{teacher});
   this.db.prepare('INSERT INTO learning_chess_presence(activity_id,user_id,last_seen) VALUES(?,?,?) ON CONFLICT(activity_id,user_id) DO UPDATE SET last_seen=excluded.last_seen').run(activityId,user.id,Date.now());
