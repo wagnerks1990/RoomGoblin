@@ -145,3 +145,63 @@ test('queue action automatically matches a player from a different class',async(
   assert.equal(whiteView.body.matches.find(m=>m.id===first.body.match.id).status,'active');
  }finally{await f.close();}
 });
+
+test('global leaderboard derives results once, separates practice, and masks other classes',async()=>{
+ const f=await fixture();
+ try{
+  const class2=f.learning.createClass(f.admin,'Synthetic chess second class');
+  f.learning.enroll(f.admin,class2,{userId:f.outside.id,alias:'Second Student'});
+  const a=f.learning.createActivity(f.admin,f.classId,{title:'Chess ranking A',templateId:'scorm-connector-v1'});
+  const b=f.learning.createActivity(f.admin,class2,{title:'Chess ranking B',templateId:'scorm-connector-v1'});
+  const aUrl='/api/v1/learning/activities/'+a+'/chess',bUrl='/api/v1/learning/activities/'+b+'/chess';
+  const created=await f.request(f.a,aUrl,'POST',{mode:'multiplayer'});
+  const id=created.body.match.id;
+  const paired=await f.request(f.outside,bUrl,'POST',{mode:'multiplayer'});
+  assert.equal(paired.body.match.id,id);
+  let revision=paired.body.match.revision;
+  for(const [user,url,move] of [[f.a,aUrl,'e2e4'],[f.outside,bUrl,'e7e5'],[f.a,aUrl,'g1f3'],[f.outside,bUrl,'b8c6']]){
+   const r=await f.request(user,url+'/matches/'+id+'/move','POST',{move,revision});
+   assert.equal(r.status,200);revision=r.body.match.revision;
+  }
+  // The 4-half-move match counts once. A resignation cannot be resubmitted.
+  const resignation=await f.request(f.a,aUrl+'/matches/'+id+'/leave','POST',{revision});
+  assert.equal(resignation.status,200);
+  assert.equal((await f.request(f.a,aUrl+'/matches/'+id+'/leave','POST',{revision})).status,409);
+  const practice=await f.request(f.a,aUrl,'POST',{mode:'computer'});
+  const practiceMove=await f.request(f.a,aUrl+'/matches/'+practice.body.match.id+'/move','POST',{move:'d2d4',revision:0});
+  assert.equal(practiceMove.status,200);
+  const publicResult=await f.request(f.outside,bUrl+'/leaderboard');
+  assert.equal(publicResult.status,200);
+  const items=publicResult.body.players;
+  assert.equal(items.length,2);
+  const winner=items.find(p=>p.me),loser=items.find(p=>!p.me);
+  assert.equal(winner.wins,1);assert.equal(winner.games,1);
+  assert.equal(winner.losses,0);assert.equal(winner.practice,0);
+  assert.equal(loser.games,1);assert.equal(loser.losses,1);assert.equal(loser.wins,0);
+  assert.equal(loser.practice,1);assert.equal(loser.computer,1);
+  assert.match(loser.label,/^Player-[A-F0-9]{8}$/);
+  assert.ok(!JSON.stringify(publicResult.body).includes('Investigator'));
+  assert.ok(!JSON.stringify(publicResult.body).includes(f.a.id));
+  const teacherBoard=await f.request(f.admin,'/api/v1/learning/teacher/chess/leaderboard');
+  assert.equal(teacherBoard.status,200);
+  assert.ok(teacherBoard.body.players.some(p=>p.label==='Investigator A'));
+  assert.ok(teacherBoard.body.players.some(p=>p.label==='Second Student'));
+  assert.equal((await f.request(f.a,'/api/v1/learning/teacher/chess/leaderboard')).status,403);
+  assert.equal((await f.request(f.outside,aUrl+'/leaderboard')).status,404);
+ }finally{await f.close();}
+});
+
+test('leaderboard excludes cancelled queues and unplayed forfeits',async()=>{
+ const f=await fixture();
+ try{
+  const a=f.learning.createActivity(f.admin,f.classId,{title:'Chess queue only',templateId:'scorm-connector-v1'});
+  const url='/api/v1/learning/activities/'+a+'/chess';
+  const match=(await f.request(f.a,url,'POST',{mode:'multiplayer'})).body.match;
+  const cancelled=await f.request(f.a,url+'/matches/'+match.id+'/leave','POST',{revision:match.revision});
+  assert.equal(cancelled.status,200);
+  const leaderboard=await f.request(f.a,url+'/leaderboard');
+  assert.equal(leaderboard.status,200);
+  assert.equal(leaderboard.body.totalPlayers,0);
+  assert.deepEqual(leaderboard.body.players,[]);
+ }finally{await f.close();}
+});
