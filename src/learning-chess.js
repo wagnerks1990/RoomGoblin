@@ -111,7 +111,8 @@ class ChessMatches {
  isSeat(m,user){return m.white_id===user.id||m.black_id===user.id;}
  row(id){return this.db.prepare('SELECT * FROM learning_chess_matches WHERE id=?').get(id);}
  names(m,viewer){
-  // Learners see nicknames with no cross-class identity or roster details.
+  // The SCO sends the LMS-reported name on enrollment, not proof of identity.
+  // Teachers see full aliases only for their authorized classes.
   const label=(id,role,activityId)=>{
    if(!id)return null;
    if(id===viewer.id)return 'You';
@@ -119,10 +120,15 @@ class ChessMatches {
     const a=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(activityId);
     try{if(a){this.learning.membership(viewer,a.class_id,true);return this.alias(id,activityId);}}catch{}
    }
-   return role==='white'?'Player White':'Player Black';
+   return this.publicName(id,activityId,role);
   };
   return {white:{id:m.white_id===viewer.id?viewer.id:null,name:label(m.white_id,'white',m.activity_id)},
    black:m.mode==='computer'?{id:'computer',name:'Computer'}:m.mode==='solo'?{id:m.white_id===viewer.id?viewer.id:null,name:'Practice (Black)'}:m.black_id?{id:m.black_id===viewer.id?viewer.id:null,name:label(m.black_id,'black',m.black_activity_id||m.activity_id)}:null};
+ }
+ publicName(userId,activityId,role){
+  const parts=this.alias(userId,activityId).trim().replace(/\\s+/gu,' ').split(' ').filter(Boolean);
+  if(!parts.length)return role==='white'?'Player White':'Player Black';
+  return parts[0].slice(0,32)+(parts.length>1?' '+Array.from(parts.at(-1))[0].toUpperCase()+'.':'');
  }
  seatClass(user,m){
   const activityId=m.white_id===user.id?m.activity_id:m.black_id===user.id?(m.black_activity_id||m.activity_id):null;
@@ -170,7 +176,7 @@ class ChessMatches {
   if(!this.teacher(user))error(403,'Teacher access required.');
   const rows=this.db.prepare('SELECT p.activity_id,p.user_id,p.last_seen,a.class_id FROM learning_chess_presence p JOIN learning_activities a ON a.id=p.activity_id WHERE p.last_seen>=? ORDER BY p.last_seen DESC LIMIT 200').all(Date.now()-35000);
   return rows.map(r=>{
-   let name='Student (other class)';
+   let name=this.publicName(r.user_id,r.activity_id,'white')+' (other class)';
    if(r.user_id===user.id)name='You';
    else try{this.learning.membership(user,r.class_id,true);name=this.alias(r.user_id,r.activity_id);}catch{}
    return {name,lastSeen:r.last_seen};
