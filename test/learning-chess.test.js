@@ -108,3 +108,23 @@ test('SCORM bearer enrolls passwordlessly and reaches global chess lobby without
   assert.equal(teacherList.body.matches.find(m=>m.id===created.body.match.id).white.name,'Synthetic Guest');
  }finally{await f.close();}
 });
+
+test('chess SCORM ZIP contains offline assets and direct API configuration',async()=>{
+ const f=await fixture();
+ try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Chess SCORM package test',templateId:'scorm-connector-v1'});
+  const key=f.learning.direct.issue(f.admin,id),activity=f.learning.activity(f.admin,id,true);
+  const {createChessPackage}=require('../src/learning-chess-package');
+  const AdmZip=require('adm-zip');
+  const zip=new AdmZip(createChessPackage(activity,{origin:'https://synthetic-learning.example',enrollmentKey:key},require('node:path').join(__dirname,'../public/learn')));
+  const names=zip.getEntries().map(e=>e.entryName);
+  for(const filename of ['index.html','app.js','style.css','config.js','roomgoblin-scorm.js','imsmanifest.xml'])assert.ok(names.includes(filename),filename);
+  const manifest=zip.readAsText('imsmanifest.xml');
+  assert.ok(manifest.includes('<schemaversion>1.2</schemaversion>'));
+  assert.ok(manifest.includes('href="index.html"'));
+  const config=zip.readAsText('config.js');
+  assert.ok(config.includes('"transport":"direct"'));
+  assert.ok(config.includes('enrollmentKey'));
+  assert.ok(!config.includes('password'));
+ }finally{await f.close();}
+});
