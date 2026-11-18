@@ -20,6 +20,7 @@ export function createAssignments(ui,host,createHost){
     controls.append(node('p','Pause is enforced by RoomGoblin. Hints and stages appear in assignments that support teacher controls.','muted'));
     ui.save(form,'Save activity controls',async()=>{const result=await ui.api('/teacher/activities/'+item.id+'/command','PUT',{version:item.command.version,paused:paused.checked,stage:Number(stage.value),hint:hint.value});item.command=result.command;},next);controls.append(form);card.append(controls);
     card.append(ui.button(item.template_id==='scorm-connector-v1'?'Download direct API starter':'Download direct API assignment',()=>download(item,next)),node('p','Learners connect automatically through the assignment API. No separate login, roster approval or companion window.','muted'));
+    if(item.template_id==='scorm-connector-v1')card.append(ui.button('Download Chess SCORM package',()=>downloadChess(item,next)),node('p','Chess package includes the multiplayer game, assignment overlay, and direct API connector.','muted'));
     if(item.directEnabled)card.append(ui.button('Disable direct API access',()=>ui.api('/teacher/activities/'+item.id+'/direct-settings','PUT',{enabled:false}).then(()=>ui.onSaved(next))));
     if(item.template_id==='scorm-connector-v1')card.append(ui.button('AI grading rubric',()=>rubric(item,card,next)));
     const configHost=node('div');card.append(ui.button('Points & grading settings',async()=>{await configure(item,configHost,next);}),configHost);host.append(card);
