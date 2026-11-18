@@ -180,6 +180,11 @@ class ChessMatches {
   this.authorize(user,activityId,true,{teacher});
   if(!['multiplayer','computer','solo'].includes(mode))error(400,'Choose multiplayer, computer, or solo practice.');
   return this.store.tx(()=>{
+   const cutoff=new Date(Date.now()-30*60*1000).toISOString();
+   const abandoned=new Date(Date.now()-7*24*60*60*1000).toISOString();
+   // Bounded cleanup on creation, not a scheduler that can affect other services.
+   this.db.prepare("UPDATE learning_chess_matches SET status='finished',result='draw',reason='queue expired',revision=revision+1 WHERE status='waiting' AND updated_at<?").run(cutoff);
+   this.db.prepare("UPDATE learning_chess_matches SET status='finished',result='draw',reason='inactive game',revision=revision+1 WHERE status='active' AND updated_at<?").run(abandoned);
    if(this.db.prepare("SELECT COUNT(*) n FROM learning_chess_matches WHERE status IN ('waiting','active')").get().n>=250)error(429,'Chess service is at capacity.');
    // One waiting queue slot per user, globally, including across SCORM classes.
    if(mode==='multiplayer'){
@@ -215,7 +220,7 @@ class ChessMatches {
   this.authorize(user,activityId,true,{teacher});
   return this.store.tx(()=>{
    const row=this.row(matchId);
-   if(!row||row.status!=='waiting'||row.mode!=='multiplayer'||row.white_id===user.id)error(409,'Match unavailable.');
+   if(!row||row.status!=='waiting'||row.mode!=='multiplayer'||row.white_id===user.id||Date.now()-Date.parse(row.updated_at)>30*60*1000)error(409,'Match unavailable.');
    const stamp=new Date().toISOString();
    const change=this.db.prepare("UPDATE learning_chess_matches SET black_id=?,black_activity_id=?,status='active',revision=revision+1,updated_at=? WHERE id=? AND status='waiting' AND black_id IS NULL").run(user.id,activityId,stamp,matchId);
    if(!change.changes)error(409,'Another player joined first.');
