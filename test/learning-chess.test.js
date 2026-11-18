@@ -128,3 +128,20 @@ test('chess SCORM ZIP contains offline assets and direct API configuration',asyn
   assert.ok(!config.includes('password'));
  }finally{await f.close();}
 });
+
+test('queue action automatically matches a player from a different class',async()=>{
+ const f=await fixture();
+ try{
+  const class2=f.learning.createClass(f.admin,'Second period');
+  f.learning.enroll(f.admin,class2,{userId:f.outside.id,alias:'Second Period Student'});
+  const a=f.learning.createActivity(f.admin,f.classId,{title:'First chess connection',templateId:'scorm-connector-v1'});
+  const b=f.learning.createActivity(f.admin,class2,{title:'Second chess connection',templateId:'scorm-connector-v1'});
+  const first=await f.request(f.a,'/api/v1/learning/activities/'+a+'/chess','POST',{mode:'multiplayer'});
+  assert.equal(first.status,200);assert.equal(first.body.match.status,'waiting');
+  const paired=await f.request(f.outside,'/api/v1/learning/activities/'+b+'/chess','POST',{mode:'multiplayer'});
+  assert.equal(paired.status,200);assert.equal(paired.body.match.id,first.body.match.id);
+  assert.equal(paired.body.match.status,'active');assert.equal(paired.body.match.myColor,'black');
+  const whiteView=await f.request(f.a,'/api/v1/learning/activities/'+a+'/chess');
+  assert.equal(whiteView.body.matches.find(m=>m.id===first.body.match.id).status,'active');
+ }finally{await f.close();}
+});
