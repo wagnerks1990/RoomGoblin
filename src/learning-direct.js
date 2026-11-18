@@ -9,7 +9,7 @@ function route(method,path){
  if(leaderboard)return method==='GET'?{id:leaderboard[1],part:'chess'}:null;
  const heartbeat=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess/heartbeat$').exec(path);
  if(heartbeat)return method==='POST'?{id:heartbeat[1],part:'chess'}:null;
- const chess=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess(?:/matches/('+uuid+')(?:/(join|move|leave))?)?$').exec(path);
+ const chess=new RegExp('^/api/v1/learning/direct/activities/('+uuid+')/chess(?:/matches/('+uuid+')(?:/(join|move|leave|draw))?)?$').exec(path);
  if(chess){
   const suffix=chess[3]||(!chess[2]?'lobby':'match');
   const allowed=suffix==='lobby'?['GET','POST'].includes(method):suffix==='match'?method==='GET':method==='POST';

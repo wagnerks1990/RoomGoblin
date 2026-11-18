@@ -3,3 +3,7 @@
 
 /* Keep all 64 squares equal, independent of button defaults or occupancy. */
 .board{grid-template-rows:repeat(8,minmax(0,1fr))}.board .sq{margin:0;padding:0;min-height:0;border:0;border-radius:0}.board .sq:disabled{opacity:1}
+
+.layout{grid-template-columns:minmax(180px,.7fr) minmax(320px,2.5fr) minmax(180px,.7fr)}.board{width:100%}.level-label{display:grid;gap:6px;margin:12px 0}.layout>article{padding:16px}.board-tools button{font-size:.85rem}.rg-chess-board .piece{font-size:clamp(24px,8.6cqw,92px)}@media(max-width:1000px){.layout{grid-template-columns:1fr}.layout>article{grid-row:1}.layout>aside{padding:16px}.level-label{max-width:240px}}
+
+.match span{display:block;font-size:.8rem;opacity:.8;margin-top:6px}.match[aria-pressed=true]{border-color:#22c55e;background:#123a32}.leaderboard-table{overflow-x:auto}.leaderboard-table th{white-space:nowrap}.is-me{background:#123a32} aside select{max-width:100%}

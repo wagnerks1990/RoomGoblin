@@ -1,79 +1,90 @@
-# RoomGoblin Chess Arena — MVP (feature branch)
+# RoomGoblin Chess Arena
 
-## Scope and status
+Teachers monitor and play at `/learn/chess`. Create a SCORM assignment in `/learn`
+and download its Chess SCORM package. Schoology supplies the reported learner
+name and ID automatically; no separate student password is required. Enrollment
+creates an isolated participant with a private bearer saved in LMS suspend data.
+Reported names never verify identity, authorize attendance or merge accounts.
+Different assignments can therefore give one human separate leaderboard entries.
 
-The universal Chess Arena is a first-release prototype for the existing RoomGoblin learning platform. It is **not production or Schoology-qualified** until the Node integration tests, browser smoke tests, genuine Schoology SCORM 1.2 launch/grade/resume verification, and backup/rollback checks pass. Never deploy this branch directly to the classroom appliance.
+## Play, resume and clocks
 
-- Teacher workspace: `/learn/chess` uses the existing RoomGoblin teacher login and teacher APIs. It can observe the global lobby, view active matches and recently connected student clients, and join the queue to play.
-- Student launch: Create a 20-point SCORM connection in `/learn` and select **Download Chess SCORM package**. Upload the ZIP as a SCORM 1.2 package into Schoology. No independent student RoomGoblin password or roster import is required.
-- All packages on this RoomGoblin instance share the same waiting-match lobby, regardless of their original class or assignment.
-- Modes: peer-to-peer multiplayer, self-play, and a deterministic beginner computer opponent. No external services/CDNs, separate databases, or additional publicly accessible ports are added.
-- MVP grading: five validated player moves across this assignment’s games count 4 points each, max 20. Winning is **not** a requirement. This measures participation, not strategy. Schoology remains authoritative for its LMS grades; a SCORM runtime and successful commit are required.
-- Dashboard updates are *polling* approximately every 3 seconds (not WebSockets). Student heartbeats are sent about every 10 seconds while visible. Connected means recently seen by the app, not attendance or verified physical presence.
+The shared board supports dragging, native touch, tap and keyboard play, with the
+player's color at the bottom. Solo follows the active color. Teacher controls
+resize, flip and focus the board. Last moves, check and game endings have distinct
+cues. Sound defaults off and reduced motion is respected. Polling preserves nodes
+and interactions. Optional 3D uses original articulated stone warriors, local
+Three.js, lighting, shadows and capture effects. It remains stylized prototype
+art, not film-quality realism. GPU failure falls back to 2D. See
+[cinematic design and asset licensing](CHESS-CINEMATIC-PLAN.md).
 
-## Student identity and privacy
+All classes share matchmaking. Each seat retains its original assignment and
+private bearer scope. Both must retain access before matching or moving. Up to
+12 waiting/active games per account are saved, with an instance limit of 250.
+Untimed games do not expire through inactivity. Unique persisted creation request
+IDs make retries idempotent while allowing multiple games. Legacy clients retain
+resume behavior. Automatic matching uses recently connected waiting players.
+Students can cancel queues, forfeit multiplayer or stop practice; normal chess
+endings also finish games.
 
-The existing direct-SCORM SDK reads `cmi.core.student_id` and `cmi.core.student_name` (or SCORM 2004 equivalents) and submits the **reported** ID and name automatically to the assignment enrollment endpoint. Each session receives a private, random participant bearer bound to its own assignment, independent of the visible name. No additional password form is added. SCORM-reported identity is **not cryptographic identity verification** and must not be treated as verified attendance, discipline evidence, or proof of work by a particular person.
+Clocks: untimed, 3+0, 5+0, 5+3, 10+0 and 15+10; solo is untimed. The server owns
+remaining time, increments and flag results. Browser countdowns are estimates and
+never declare wins. Timed games continue while disconnected. Assignment pauses
+or closure suspend clocks when reconciled. Clock processing respects writer
+freezes and shutdown admission; failures remain visible. Server downtime is
+charged from stored wall-clock anchors on restart; reliable system time matters.
+Beginner, Standard and Advanced computer levels use bounded worker-thread search,
+not rated strength claims. Participation grading remains five validated player
+moves at four points each, capped at 20; winning is never required.
 
-The stored full name is available only through teacher-class-authorized projections; cross-class lobby viewers receive a first name and last initial, and never other students' user IDs. Use school-approved privacy procedures before encouraging students across classes to participate. A downloaded ZIP contains a *registration-only* enrollment key, not a teacher token.
+## Rules and statistics
 
-## Universal leaderboard and identity scope
+Server legal moves cover king safety, castling, en passant, four promotions,
+checkmate and stalemate. Threefold repetition and 50 moves require claims, including
+an optional legal intended move. Fivefold and 75 moves are automatic; mate takes
+precedence. Players can agree a draw after both have moved. Forfeit/timeout use
+supported mating-possibility checks. See [the rules audit](CHESS-RULES.md) for
+coverage, perft evidence and conservative dead-position limitations. This is not
+certification of every composed position or over-the-board tournament procedure.
 
-The Chess Arena leaderboard is visible in both the SCORM student UI and `/learn/chess`. It is calculated from authoritative SQLite match records instead of client-supplied statistics. One completed multiplayer game contributes at most one result per participating account; retries and page refreshes do not grant additional wins. Win/loss/draw standings count only finished real multiplayer games with at least four half-moves, and exclude expired queues and inactive games. Solo and computer results have independent completed games, wins/losses/draws and win rate; they cannot increase multiplayer ranking. Practice counters also distinguish started, active and stopped games. Stopping practice or expiring an inactive game is not a competitive draw. Solo wins/losses describe the White side, since the same participant controls both colors. The display shows up to 100 player entries, with the total number of participating player accounts reported separately.
+SQLite results drive games, wins, losses, draws, win rate, separate checkmate,
+forfeit and timeout outcomes, own-move averages, fastest completed mate and win
+streaks. Early forfeits are visible results, never disguised as checkmates.
+Ranking prioritizes checkmate wins, then total wins and tie breakers. Computer and
+solo statistics are separate. Cancelled queues/stopped practice are not competitive
+draws. No speculative mate-in-N prediction is shown. Existing native deletion
+contracts remove related matches and derived statistics.
 
-Other students see opaque, stable per-account labels (not names or account IDs) on leaderboard rows. Authorized teachers may see an LMS-reported full name only for a participant belonging to one of their assigned classes. Schoology names are still shown in the match lobby as a limited first name and initial. This distinction is intentional.
+Student and TV standings show first name and last initial with opaque stable row
+keys. Full names require teacher membership in that student's class. Private IDs,
+grades, assignment IDs and credentials never belong in public standings.
 
-**Identity limit:** The existing direct-SCORM flow creates a private participant account for each distinct assignment package/credential. The leaderboard aggregates matches across classes but may show multiple entries when the same human launches different assignments. It is therefore an *account leaderboard*, not a verified unique-person leaderboard. Do not auto-merge accounts by reported name, as names are unverified and not unique. A later verified identity/consent design is required for verified person rankings.
+## TV display and isolation
 
-## Data and security architecture
+Use the local RoomGoblin URL ending in `/chess/leaderboard` as an HTML TV source.
+It polls the narrow read-only `/api/v1/chess/leaderboard` projection and rotates
+statistics/pages without reloads. It requires an initialized appliance, no teacher
+session, and is unavailable through the public student gateway/public transport.
+No receiver is automatically reserved; announcement/music/scheduling priority is
+unchanged. Operators must apply their school's name-display policy.
 
-`src/learning-chess.js` owns rules, persistent SQLite match state, turn authorization, join conflicts and game outcome. `learning_chess_matches` records moves in UCI format, match revisions, source assignment, second player's source assignment, and mode. `learning_chess_presence` tracks last-seen heartbeats. Matchmaking across classes never grants a second assignment's data access.
+The exact isolated learner gateway method/path allowlist includes scoped chess
+and draw actions, never teacher pages/APIs, teacher assets or TV routes. Cookies
+are not participant authority. Server revisions, assignment availability and
+private bearers remain mandatory. Computer HTTP promises participate in shutdown
+and Full Recovery writer draining. No film footage or unlicensed reference assets
+are distributed.
 
-Existing student-only gateway at loopback `3030` remains the only public student backend. Exact `/api/v1/learning/direct/activities/:id/chess` routes use the existing assignment-scoped bearer and are rewritten into the standard learning API. The SCORM SDK accepts only its configured activity ID and the defined chess subroutes. Authentication on `/learn/chess` continues through the normal RoomGoblin teacher session. The gateway must never serve the teacher dashboard, the underlying administration assets, or the teacher APIs.
+## Validation and release
 
-The service validates legal moves on the server including castling, en passant, promotion, king safety, checkmate, stalemate and automatic draws; clients provide UCI moves and the most recent revision. It does not use a client-submitted board position to establish a result. Waiting slots expire after 30 minutes, and inactive games after seven days (opportunistically on match creation). Maximum 250 open/active games and 512 half-moves per game (a still-active game finishes as a server-owned move-limit draw). Queue/create retries resume an existing match rather than creating duplicates. Both seats must retain enabled, unrevoked, open and unpaused assignment access before matching or moving. Leaving remains available to an authorized opponent when the other seat is unavailable. Users can cancel waiting games, resign active multiplayer matches, or stop practice.
+Run `npm run check`, `node --test test/learning-chess*.test.js`, both chess browser
+smoke scripts and direct-assignment browser regressions. Browser scripts use
+separately installed Playwright/local Edge, not a new application dependency.
+On Windows run `py -3.11 C:/ChatGPT/Workspace/Tools/RoomGoblin-LinuxTests.py` from
+the actual worktree for the full native Linux suite.
 
-Teacher participation uses an already-existing SCORM activity in a class to retain authenticated activity/session boundaries. Select a class with a configured SCORM assignment before joining the queue. Existing teacher seats retain their original assignment when another SCORM assignment is created. This is an MVP limitation, not a new teacher password requirement.
-
-## Acceptance checklist
-
-1. Run `node --check` on changed CommonJS and browser JavaScript, followed by `node --test test/learning-chess.test.js` and existing learning API / direct gateway / regression tests.
-2. Use two isolated users enrolled through distinct SCORM packages. Verify both appear in the same queue; one joins, alternating legal turns update both views; illegal, stale, out-of-turn and unassociated-user moves are rejected.
-3. Confirm teacher spectator can watch all games but an unrelated student cannot read another player's in-progress private match through its ID; peer display names are reduced and teacher full names are class-authorized.
-4. Confirm the Schoology runtime supplies a learner name automatically, registers without a RoomGoblin password, and reliably stores the random participant bearer in LMS suspend data. Closing/reopening must resume without creating a second user.
-5. Test solo/computer play, game cancellation, resignation, checkmate, stalemate, promotion and special moves; verify actual SCORM score (0–100%), completion, and gradebook updates.
-6. Confirm 3030 denies `/learn/chess`, `/learn/chess/app.js`, `/api/v1/learning/teacher/chess`, `/controller/`, and all unrelated routes. Validate CORS and browser security policies on actual school network.
-7. Test Schoology browse/review mode read-only, assignment close/pause, backup/mutation freeze, connection revocation, and that source assignment scope is preserved after cross-class joining.
-8. Verify unaffected Morning Announcements, display receivers, scheduled events, Background Music, lab management, and working SCORM assignment exports.
-9. Check the final PR diff, no bundled production secrets, CI security gates, and the published application image before merging.
-
-## Deployment / rollback
-
-No configuration change or migration should be made to a live appliance until acceptance. All changes are additive to the existing SQLite schema. Preserve `/opt/classroom-hub`, class identifiers, enrollment records, learning data, backups, device mappings, and legacy compatibility identifiers. Take a reviewed backup before updating and use the existing main-based, image-verified updater when merging is approved. Roll back code and compatible database backup together when a schema or data rollback is required.
-
-## Future expansion
-
-A second release can add a dedicated verified user identity bridge, optional display names/consent policies, friend invites, chess clocks, Elo/rating, tournaments, more challenging AI, puzzles, teacher-created objectives and rubric-specific scoring. None should be treated as implemented in MVP.
-
-## Automated validation (November 18, 2026)
-
-- `node --test test/learning-chess.test.js`: rules/perft, special moves and draws,
-  authoritative results, practice separation, retry/resume, class privacy, teacher
-  seats, pause/close/export freeze and native account deletion.
-- `node test/browser/learning-chess-smoke.cjs`: real exported assets in two isolated
-  synthetic LMS contexts, cross-class play through the actual student gateway,
-  native SCORM resume/score/completion retries, teacher monitoring/play, read-only
-  review, identity changes and mobile layout. Uses local Edge by default;
-  `CHESS_TEST_BROWSER=chromium` selects a Playwright-installed Chromium.
-- `node test/browser/learning-direct-smoke.cjs`: existing direct assignment browser
-  regressions. These browser scripts require a separately installed Playwright;
-  it is a test tool, not a new application dependency.
-- On Windows run `py -3.11 C:/ChatGPT/Workspace/Tools/RoomGoblin-LinuxTests.py`
-  from the actual chess worktree for syntax checks and the full native Linux suite.
-
-No real Schoology attempt, live gradebook, classroom appliance or physical device
-is exercised by these synthetic tests. Real two-user Schoology launch/resume/grade
-acceptance and a nonproduction deployment/backup/rollback rehearsal remain merge
-prerequisites. Re-export existing chess ZIPs to receive browser changes. Deleting a
-native user or either source assignment removes its chess matches and presence;
-standings are derived and therefore update when their underlying records disappear.
+Synthetic tests do not establish live Schoology launch, gradebook, physical device
+or classroom GPU acceptance. Re-export ZIPs after deployment for new assets; new
+ZIPs require the matching backend. Keep incomplete enhancements in a draft PR.
+Deploy through the reviewed main updater with image checks, mandatory backup and
+rollback. Additive schema changes preserve unrelated learning, media and room data.

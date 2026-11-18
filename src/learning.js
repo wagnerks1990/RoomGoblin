@@ -166,6 +166,16 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
   const api="/api/v1/learning";
+  // Read-only signage projection: names are reduced, no assignment or learner credentials.
+  const chessDisplayLimit=rateLimit({windowMs:60000,limit:180,standardHeaders:true,legacyHeaders:false});
+  app.get('/api/v1/chess/leaderboard',chessDisplayLimit,wrap((req,res)=>{
+    if(isPublicRequest(req)||!store.authEnabled())return res.sendStatus(404);
+    res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');
+    res.json({ok:true,...chess.displayLeaderboard()});
+  }));
+  if(publicDir)for(const [route,file] of [['/chess/leaderboard','index.html'],['/chess/leaderboard/','index.html'],['/chess/leaderboard/app.js','app.js'],['/chess/leaderboard/style.css','style.css']]){
+    app.get(route,chessDisplayLimit,(req,res)=>{if(isPublicRequest(req)||!store.authEnabled())return res.sendStatus(404);res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');res.sendFile(require('node:path').join(publicDir,'../chess/leaderboard',file));});
+  }
   // Teacher-only monitoring UI. The student gateway deliberately does not serve this page.
   // Static file serving decodes/normalizes paths. Reject alternate spellings
   // before they can bypass the teacher prefix below (including on Windows).
@@ -269,7 +279,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>res.json({ok:true,matches:chess.teacherList(req.learner),connected:chess.connected(req.learner)})));
   app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
-    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer'})});
+    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty||'beginner',timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})});
   }));
   app.post(api+'/teacher/classes/:id/chess/heartbeat',requireTeacher,wrap((req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id);
@@ -283,19 +293,21 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);
     res.json({ok:true,match:chess.leave(req.learner,activityId,req.params.matchId,req.body?.revision,{teacher:true})});
   }));
-  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/move',requireTeacher,wrap((req,res)=>{
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/move',requireTeacher,wrap(async(req,res)=>{
     const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);
-    res.json({ok:true,match:chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
+    res.json({ok:true,match:await chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
   }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/draw',requireTeacher,wrap((req,res)=>{const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);res.json({ok:true,match:chess.draw(req.learner,activityId,req.params.matchId,req.body,{teacher:true})});}));
+  app.post(api+'/activities/:id/chess/matches/:matchId/draw',wrap((req,res)=>res.json({ok:true,match:chess.draw(req.learner,req.params.id,req.params.matchId,req.body)})));
   // SCORM authentication still uses each package's own scoped bearer.
   app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,validatedMoves:chess.progress(req.learner,req.params.id),matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
-  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer'})})));
+  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer',difficulty:req.body?.difficulty||'beginner',timeControl:req.body?.timeControl||'none',requestId:req.body?.requestId??null})})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/leave',wrap((req,res)=>res.json({ok:true,match:chess.leave(req.learner,req.params.id,req.params.matchId,req.body?.revision)})));
-  app.post(api+'/activities/:id/chess/matches/:matchId/move',wrap((req,res)=>res.json({ok:true,match:chess.move(req.learner,req.params.id,req.params.matchId,req.body?.move,req.body?.revision)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/move',wrap(async(req,res)=>res.json({ok:true,match:await chess.move(req.learner,req.params.id,req.params.matchId,req.body?.move,req.body?.revision)})));
   app.get(api+'/teacher/classes',requireTeacher,wrap((req,res)=>res.json({ok:true,classes:portal.catalog(req.learner)})));
   app.post(api+'/teacher/classes/:id/assignments',requireTeacher,wrap((req,res)=>res.json({ok:true,id:portal.createAssignment(req.learner,req.params.id,req.body)})));
   app.put(api+'/teacher/connection-settings',requireAdministrator,wrap((req,res)=>{
@@ -508,7 +520,8 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
       return status===503?'busy':status===429?'budget':requeued?'requeued':'done';
     }
   });
-  const writingClose=retryQueue.close.bind(retryQueue),writingDrain=retryQueue.drain.bind(retryQueue);retryQueue.close=()=>{assignmentAI.close();writingClose();};retryQueue.drain=async()=>{await writingDrain();await assignmentAI.drain();};
+  const writingClose=retryQueue.close.bind(retryQueue),writingDrain=retryQueue.drain.bind(retryQueue);retryQueue.close=()=>{chess.close();assignmentAI.close();writingClose();};retryQueue.drain=async()=>{await writingDrain();await assignmentAI.drain();};
+  chess.startClocks(()=>!freezeRequested()&&!reviewOptions.isStopping?.());
   learning.reviewQueue=retryQueue;
   return learning;
 }

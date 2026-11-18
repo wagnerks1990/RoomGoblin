@@ -1,11 +1,19 @@
 For Chess Arena behavior and remaining LMS acceptance, read [Chess Arena](CHESS-ARENA.md).
 Keep server-owned legal moves/results, account-based global multiplayer standings,
-separate computer/solo statistics, opaque public ranking labels and class-authorized
+separate computer/solo statistics, first-name/last-initial public rankings and class-authorized
 teacher aliases. Reported LMS names enroll without passwords but never establish
 verified identity or merge participants across assignments. Each seat retains its
 original assignment. Recheck closed or paused assignments, revoked participants
 and move revisions. Keep teacher chess pages/assets off the learner gateway. Synthetic tests are not live
 Schoology, physical classroom or deployment acceptance.
+
+Chess interaction enhancements add bounded computer worker search, persisted
+creation request IDs, multiple saved games, server clocks and scoped draw actions.
+Preserve returned handler promises and writer-freeze admission. The local TV
+leaderboard is a narrow read-only projection, never a learner-gateway route.
+Optional locally bundled 3D is presentation only; never let animation own results
+or replay skipped revisions. See CHESS-RULES.md and CHESS-CINEMATIC-PLAN.md for
+rules coverage, dead-position limitations and asset licensing.
 
 # AI Project Context
 

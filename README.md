@@ -1,4 +1,4 @@
-Chess MVP: [Universal Chess Arena, Schoology SCORM and teacher monitoring](docs/CHESS-ARENA.md). Student names are read from Schoology's reported SCORM fields without a separate password. Teacher dashboard: `/learn/chess`. This feature is not yet production-qualified.
+Chess Arena: [SCORM play, teacher monitoring and TV standings](docs/CHESS-ARENA.md). Reported Schoology names enroll without a separate password. Teacher workspace: `/learn/chess`; local TV page: `/chess/leaderboard`. Interactive boards, clocks, multiple saved games and optional stone-warrior graphics require the matching backend and freshly exported ZIP. Live Schoology and classroom GPU acceptance remain pending.
 
 # RoomGoblin
 
