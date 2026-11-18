@@ -56,3 +56,8 @@ validated nonzero grades are independent of comment generation. All-zero authore
 assessments and disputed/mixed support require teacher review. Existing comment
 limits, private feedback, budgets and teacher edit history remain authoritative.
 See `docs/DIRECT-ASSIGNMENT-API.md` for the current contract.
+
+Feedback uses an object-root provider schema with server-validated source anchors.
+Failed or budget-exhausted relevance/coaching requests leave comments pending
+without discarding an already validated rubric assessment or earlier comments.
+Teacher-review holds and the configured automatic-publication setting still apply.

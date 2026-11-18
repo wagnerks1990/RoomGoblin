@@ -302,6 +302,14 @@ a generic comment or marking the post permanently skipped. Existing one-comment
 and no-comments-on-replies rules remain unchanged. Calls use the existing per-review
 and daily model budgets; neither allowance increases automatically.
 
+The feedback schema uses an object root compatible with OpenAI Structured Outputs
+and the existing local providers. Server validation still rejects invented anchors
+and inconsistent message/anchor/focus combinations. Both relevance checking and
+coaching are nonfatal after rubric assessment: a provider or budget failure leaves
+that comment pending while preserving the validated score and earlier generated
+comments. This does not publish an unverified comment, increase a request budget,
+or bypass teacher-review holds or the automatic-publication setting.
+
 All-zero authored discussion assessments now require teacher review, as do existing
 mixed/disputed evidence results. This prevents automatic publication of an unverified
 blanket zero while retaining the proposed score and evidence for review. It does
