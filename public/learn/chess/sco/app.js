@@ -8,7 +8,7 @@ function findApi(){for(let w=window,i=0;w&&i<32;i++){try{if(w.API)return {api:w.
 const get=key=>api?.[modern?'GetValue':'LMSGetValue'](key),set=(key,value)=>api?.[modern?'SetValue':'LMSSetValue'](key,String(value)),commit=()=>api?.[modern?'Commit':'LMSCommit']('');
 function sameActor(){return !!actor&&!retired&&String(get(modern?'cmi.learner_id':'cmi.core.student_id')||'')===actor;}
 function saveCredential(){if(review||!sameActor())return;const credential=sdk.credential();if(!credential)return;try{const payload=JSON.stringify({actor,credential});if(payload.length>3900)throw Error('Resume data too large.');if(![true,'true'].includes(set('cmi.suspend_data',payload))||![true,'true'].includes(commit()))throw Error('Schoology did not confirm the resume save.');}catch(e){$('status').textContent=e.message;}}
-function reportScore(own){if(review||!sameActor())return;const score=Math.min(100,own*20);if(score<=lastScore)return;
+function reportScore(own){if(review||!sameActor())return;const prior=Number(get(modern?'cmi.score.raw':'cmi.core.score.raw'));if(Number.isFinite(prior)&&prior>=0&&prior<=100)lastScore=Math.max(lastScore,prior);const score=Math.min(100,own*20);if(score<=lastScore)return;
  try{set(modern?'cmi.score.min':'cmi.core.score.min',0);set(modern?'cmi.score.max':'cmi.core.score.max',100);
   if(![true,'true'].includes(set(modern?'cmi.score.raw':'cmi.core.score.raw',score)))throw Error('Grade write failed.');
   if(own>=5)set(modern?'cmi.completion_status':'cmi.core.lesson_status','completed');
