@@ -5,6 +5,10 @@
 
 ## Unreleased
 
+- Use an OpenAI-compatible object-root schema for post-specific discussion
+  feedback. Keep validated grades and earlier comments when later relevance or
+  coaching requests fail or exhaust the existing model budget.
+
 - Generate grounded, post-specific automatic discussion comments instead of sharing
   a generic weak-criterion prompt; retain grades when comment generation fails and
   hold all-zero authored assessments for teacher review.

@@ -74,8 +74,9 @@ async function assessWriting(options,modelJSON){const d=normalize(options.defini
  // Checked spans already match the assignment rubric. Scope that proof to
  // the containing main post; earlier credit cannot approve unrelated new posts.
  for(const post of options.feedbackPosts||[]){
-  if(![...groundedSource].some(text=>text&&post.body.includes(text))){const value=await modelJSON(options,relevanceRequest(options.model,d,post.body));commentDecisions[post.id]=relevanceDecision(value);if(commentDecisions[post.id]!=='related')continue;}
-  try{const feedback=await require('./learning-discussion-feedback').generate(options,d,post.body,modelJSON);commentDecisions[post.id]=feedback.decision;if(feedback.body)coachResponses[post.id]=feedback.body;}
+  try{
+   if(![...groundedSource].some(text=>text&&post.body.includes(text))){const value=await modelJSON(options,relevanceRequest(options.model,d,post.body));commentDecisions[post.id]=relevanceDecision(value);if(commentDecisions[post.id]!=='related')continue;}
+   const feedback=await require('./learning-discussion-feedback').generate(options,d,post.body,modelJSON);commentDecisions[post.id]=feedback.decision;if(feedback.body)coachResponses[post.id]=feedback.body;}
   catch{commentDecisions[post.id]='pending';commentFailures[post.id]='feedback_unavailable';}
  }
  return {...assessment,commentDecisions,coachResponses,commentFailures,evidenceSelection,reviewRequired:(d.kind==='discussion'&&assessment.total===0)||Object.values(evidenceSelection).some(e=>e.verification?.partialSupport===true||e.verification?.disputedChecks?.length>0||e.zeroVerification?.disputed===true)};
