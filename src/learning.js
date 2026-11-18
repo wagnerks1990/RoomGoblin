@@ -256,17 +256,28 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     }next();
   });
   app.put(api+'/teacher/activities/:id/direct-settings',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);if(typeof req.body.enabled!=='boolean'||req.body.enabled&&!store.hasSecret(direct.key(req.params.id)))fail(400,'Download an API package before enabling this connection.');store.tx(()=>{store.setPreference(direct.key(req.params.id),{...direct.settings(req.params.id),enabled:req.body.enabled});learning.event(req.learner,req.params.id,'direct.settings',req.params.id,{enabled:req.body.enabled});});res.json({ok:true});}));
-  // Teacher can monitor all chess sessions in their assigned class, but not another class.
-  app.get(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
-    learning.membership(req.learner,req.params.id,true);
-    const rows=learning.db.prepare('SELECT c.* FROM learning_chess_matches c JOIN learning_activities a ON a.id=c.activity_id WHERE a.class_id=? ORDER BY c.updated_at DESC LIMIT 200').all(req.params.id);
-    res.json({ok:true,matches:rows.map(row=>chess.render(row)),connected:chess.connected(req.params.id)});
+  // The chess queue is global, while each move uses the caller's own assignment.
+  app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>res.json({ok:true,matches:chess.teacherList(req.learner),connected:chess.connected(req.learner)})));
+  app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer'})});
   }));
-  app.get(api+'/teacher/activities/:id/chess/matches/:matchId',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId,{teacher:true})})));
-  // Direct-SCORM participants are authenticated by the existing assignment-only bearer.
+  app.post(api+'/teacher/classes/:id/chess/heartbeat',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,...chess.heartbeat(req.learner,activityId,{teacher:true})});
+  }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/join',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,match:chess.join(req.learner,activityId,req.params.matchId,{teacher:true})});
+  }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/move',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,match:chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
+  }));
+  // SCORM authentication still uses each package's own scoped bearer.
   app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
-  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id)})));
+  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer'})})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
   app.post(api+'/activities/:id/chess/matches/:matchId/move',wrap((req,res)=>res.json({ok:true,match:chess.move(req.learner,req.params.id,req.params.matchId,req.body?.move,req.body?.revision)})));
