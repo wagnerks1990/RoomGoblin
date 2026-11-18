@@ -449,6 +449,18 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const assignmentAI=new(require('./learning-assignment-ai').AssignmentAI)(learning,{available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()&&!!store.getPreference('learning.ai',{}).enabled,track:reviewOptions.track||((p)=>p),busy,modelJSON:reviewOptions.assignmentModelJSON||require('./learning-grader').modelJSON,intervalMs:reviewOptions.intervalMs??5000});learning.assignmentAI=assignmentAI;
   app.get(api+'/teacher/activities/:id/ai-policy',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,policy:assignmentAI.policy(req.params.id)});}));
   app.put(api+'/teacher/activities/:id/ai-policy',requireTeacher,wrap((req,res)=>res.json({ok:true,policy:assignmentAI.configure(req.learner,req.params.id,req.body)})));
+  if(publicDir)app.post(api+'/teacher/activities/:id/chess-package',requireTeacher,wrap((req,res)=>{
+    const zip=store.tx(()=>{
+      const activity=learning.activity(req.learner,req.params.id,true);
+      if(activity.template_id!=='scorm-connector-v1')fail(409,'Use a SCORM assignment for chess.');
+      const key=direct.issue(req.learner,activity.id);
+      if(!platform.config(activity.id))platform.configure(req.learner,activity.id,{points:20});
+      const settings=platform.settings(),base=origin(settings.publicOrigin||(`${req.protocol}://${req.get('host')}`));
+      if(!['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname)&&(!settings.publicEnabled||!settings.publicOrigin))fail(409,'Publish the student Assignment API before downloading a chess package.');
+      return require('./learning-chess-package').createChessPackage(activity,{origin:base,enrollmentKey:key},publicDir);
+    });
+    res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-Chess-SCORM.zip"');res.type('application/zip').send(zip);
+  }));
   if(publicDir)app.post(api+'/teacher/activities/:id/direct-package',requireTeacher,wrap((req,res)=>{
     const zip=store.tx(()=>{const activity=learning.activity(req.learner,req.params.id,true),key=direct.issue(req.learner,activity.id);
       if(!platform.config(activity.id))platform.configure(req.learner,activity.id,{points:activity.template_id==='scorm-connector-v1'?50:20});
