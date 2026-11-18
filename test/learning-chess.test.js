@@ -41,7 +41,7 @@ test('universal multiplayer across activities preserves authorization and teache
   let visible=await f.request(f.outside,other);
   assert.equal(visible.status,200);
   assert.ok(visible.body.matches.find(m=>m.id===game.id)?.canJoin);
-  assert.equal(visible.body.matches.find(m=>m.id===game.id).white.name,'Player White');
+  assert.equal(visible.body.matches.find(m=>m.id===game.id).white.name,'Investigator A.');
   assert.equal(visible.body.matches.find(m=>m.id===game.id).white.id,null);
   assert.equal((await f.request(f.outside,other+'/matches/'+game.id+'/move','POST',{move:'e7e5',revision:0})).status,404);
   let joined=await f.request(f.outside,other+'/matches/'+game.id+'/join','POST',{});
@@ -102,5 +102,9 @@ test('SCORM bearer enrolls passwordlessly and reaches global chess lobby without
   assert.equal((await f.request(null,entry+'/chess', 'GET',undefined,{Authorization:'Bearer '+crypto.randomBytes(32).toString('hex')})).status,401);
   assert.equal((await f.request(null,'/api/v1/learning/teacher/chess','GET',undefined,h)).status,401);
   assert.equal((await f.request(null,entry+'/chess/heartbeat','POST',{},h)).status,200);
+  const directName=f.learning.chess.alias(f.learning.direct.authorize(id,token).id,id);
+  assert.equal(directName,'Synthetic Guest');
+  const teacherList=await f.request(f.admin,'/api/v1/learning/teacher/chess');
+  assert.equal(teacherList.body.matches.find(m=>m.id===created.body.match.id).white.name,'Synthetic Guest');
  }finally{await f.close();}
 });
