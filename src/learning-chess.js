@@ -222,12 +222,12 @@ class ChessMatches {
    let label=p.id===viewer.id?'You':publicId;
    // Only a teacher with explicit class membership may see the full LMS-reported alias.
    if(teacher&&p.id!==viewer.id){
-    const activities=this.db.prepare('SELECT activity_id,COALESCE(black_activity_id,activity_id) black_activity_id FROM learning_chess_matches WHERE white_id=? OR black_id=? LIMIT 100').all(p.id,p.id);
+    const activities=this.db.prepare(`SELECT CASE WHEN white_id=? THEN activity_id ELSE COALESCE(black_activity_id,activity_id) END seat_activity
+      FROM learning_chess_matches WHERE white_id=? OR black_id=? ORDER BY updated_at DESC LIMIT 50`).all(p.id,p.id,p.id);
     for(const a of activities){
-     const classId=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(a.activity_id)?.class_id;
-     if(classId){try{this.learning.membership(viewer,classId,true);label=this.alias(p.id,a.activity_id);break;}catch{}}
-     const otherClass=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(a.black_activity_id)?.class_id;
-     if(otherClass){try{this.learning.membership(viewer,otherClass,true);label=this.alias(p.id,a.black_activity_id);break;}catch{}}
+     const classId=this.db.prepare('SELECT class_id FROM learning_activities WHERE id=?').get(a.seat_activity)?.class_id;
+     if(!classId)continue;
+     try{this.learning.membership(viewer,classId,true);label=this.alias(p.id,a.seat_activity);break;}catch{}
     }
    }
    return {label,me:p.id===viewer.id,games:p.games,wins:p.wins,losses:p.losses,draws:p.draws,
