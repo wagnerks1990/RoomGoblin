@@ -161,10 +161,34 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const insights=require('./learning-insights').createInsights(platform);
   const direct=new(require('./learning-direct').LearningDirect)(learning);learning.direct=direct;
   const portal=new(require('./learning-teacher-portal').LearningTeacherPortal)(learning);learning.portal=portal;
+  const chess=new(require('./learning-chess').ChessMatches)(learning);learning.chess=chess;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
   const api="/api/v1/learning";
+  // Teacher-only monitoring UI. The student gateway deliberately does not serve this page.
+  // Static file serving decodes/normalizes paths. Reject alternate spellings
+  // before they can bypass the teacher prefix below (including on Windows).
+  if(publicDir)app.use((req,res,next)=>{
+    let normalized;try{normalized=require('node:path').posix.normalize(decodeURIComponent(req.path).replace(/\\/g,'/').replace(/\/{2,}/g,'/'));}catch{return next();}
+    if(/^\/learn\/chess(?:\/|$)/i.test(normalized)&&normalized!==req.path)return res.sendStatus(404);
+    next();
+  });
+  if(publicDir)app.use('/learn/chess',rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res,next)=>{const u=requestUser(req);if(isPublicRequest(req))return res.sendStatus(404);if(!store.authEnabled()||!u||!teacher(u))return res.sendStatus(403);res.setHeader('Cache-Control','no-store');next();});
+  if(publicDir)app.get(['/learn/chess','/learn/chess/'],rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>{
+    const user=requestUser(req);
+    if(isPublicRequest(req))return res.sendStatus(404);
+    if(!store.authEnabled()||!user||!teacher(user))return res.redirect(302,'/learn');
+    res.setHeader('Cache-Control','no-store');
+    res.sendFile(require('node:path').join(publicDir,'chess','index.html'));
+  });
+  if(publicDir)app.get('/learn/chess/app.js',rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>{
+    const user=requestUser(req);
+    if(isPublicRequest(req))return res.sendStatus(404);
+    if(!store.authEnabled()||!user||!teacher(user))return res.sendStatus(403);
+    res.setHeader('Cache-Control','no-store');
+    res.type('application/javascript').sendFile(require('node:path').join(publicDir,'chess','app.js'));
+  });
   // The single operator workspace is served directly, without a directory redirect.
   if(publicDir)app.get(['/learn','/learn/','/learn/index.html'],rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>isPublicRequest(req)?res.sendStatus(404):res.sendFile(require('node:path').join(publicDir,'index.html')));
   const requireLearning=(req,res,next)=>{const u=req.directLearner||requestUser(req);if(!store.authEnabled()||!u||isPublicRequest(req)&&!req.directLearner&&(!u.learningSso||u.profileId!=='learning-student'))return res.status(401).json({ok:false,error:isPublicRequest(req)?'Reopen the signed Schoology connection.':'Sign in to your assigned RoomGoblin account.'});if(!teacher(u)&&!hasCapability(u,"learning.participate"))return res.status(403).json({ok:false,error:"Learning access is not enabled."});req.learner=u;res.setHeader("Cache-Control","no-store");next();};
@@ -240,6 +264,38 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     }next();
   });
   app.put(api+'/teacher/activities/:id/direct-settings',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);if(typeof req.body.enabled!=='boolean'||req.body.enabled&&!store.hasSecret(direct.key(req.params.id)))fail(400,'Download an API package before enabling this connection.');store.tx(()=>{store.setPreference(direct.key(req.params.id),{...direct.settings(req.params.id),enabled:req.body.enabled});learning.event(req.learner,req.params.id,'direct.settings',req.params.id,{enabled:req.body.enabled});});res.json({ok:true});}));
+  // The chess queue is global, while each move uses the caller's own assignment.
+  app.get(api+'/teacher/chess/leaderboard',requireTeacher,wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,null,{teacher:true})})));
+  app.get(api+'/teacher/chess',requireTeacher,wrap((req,res)=>res.json({ok:true,matches:chess.teacherList(req.learner),connected:chess.connected(req.learner)})));
+  app.post(api+'/teacher/classes/:id/chess',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,match:chess.create(req.learner,activityId,{teacher:true,mode:req.body?.mode||'multiplayer'})});
+  }));
+  app.post(api+'/teacher/classes/:id/chess/heartbeat',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,...chess.heartbeat(req.learner,activityId,{teacher:true})});
+  }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/join',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    res.json({ok:true,match:chess.join(req.learner,activityId,req.params.matchId,{teacher:true})});
+  }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/leave',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);
+    res.json({ok:true,match:chess.leave(req.learner,activityId,req.params.matchId,req.body?.revision,{teacher:true})});
+  }));
+  app.post(api+'/teacher/classes/:id/chess/matches/:matchId/move',requireTeacher,wrap((req,res)=>{
+    const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);
+    res.json({ok:true,match:chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
+  }));
+  // SCORM authentication still uses each package's own scoped bearer.
+  app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
+  app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,validatedMoves:chess.progress(req.learner,req.params.id),matches:chess.list(req.learner,req.params.id)})));
+  app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
+  app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer'})})));
+  app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/join',wrap((req,res)=>res.json({ok:true,match:chess.join(req.learner,req.params.id,req.params.matchId)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/leave',wrap((req,res)=>res.json({ok:true,match:chess.leave(req.learner,req.params.id,req.params.matchId,req.body?.revision)})));
+  app.post(api+'/activities/:id/chess/matches/:matchId/move',wrap((req,res)=>res.json({ok:true,match:chess.move(req.learner,req.params.id,req.params.matchId,req.body?.move,req.body?.revision)})));
   app.get(api+'/teacher/classes',requireTeacher,wrap((req,res)=>res.json({ok:true,classes:portal.catalog(req.learner)})));
   app.post(api+'/teacher/classes/:id/assignments',requireTeacher,wrap((req,res)=>res.json({ok:true,id:portal.createAssignment(req.learner,req.params.id,req.body)})));
   app.put(api+'/teacher/connection-settings',requireAdministrator,wrap((req,res)=>{
@@ -419,6 +475,18 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const assignmentAI=new(require('./learning-assignment-ai').AssignmentAI)(learning,{available:()=>!freezeRequested()&&!reviewOptions.isStopping?.()&&!!store.getPreference('learning.ai',{}).enabled,track:reviewOptions.track||((p)=>p),busy,modelJSON:reviewOptions.assignmentModelJSON||require('./learning-grader').modelJSON,intervalMs:reviewOptions.intervalMs??5000});learning.assignmentAI=assignmentAI;
   app.get(api+'/teacher/activities/:id/ai-policy',requireTeacher,wrap((req,res)=>{learning.activity(req.learner,req.params.id,true);res.json({ok:true,policy:assignmentAI.policy(req.params.id)});}));
   app.put(api+'/teacher/activities/:id/ai-policy',requireTeacher,wrap((req,res)=>res.json({ok:true,policy:assignmentAI.configure(req.learner,req.params.id,req.body)})));
+  if(publicDir)app.post(api+'/teacher/activities/:id/chess-package',requireTeacher,wrap((req,res)=>{
+    const zip=store.tx(()=>{
+      const activity=learning.activity(req.learner,req.params.id,true);
+      if(activity.template_id!=='scorm-connector-v1')fail(409,'Use a SCORM assignment for chess.');
+      const key=direct.issue(req.learner,activity.id);
+      if(!platform.config(activity.id))platform.configure(req.learner,activity.id,{points:20});
+      const settings=platform.settings(),base=origin(settings.publicOrigin||(`${req.protocol}://${req.get('host')}`));
+      if(!['localhost','127.0.0.1','[::1]'].includes(new URL(base).hostname)&&(!settings.publicEnabled||!settings.publicOrigin))fail(409,'Publish the student Assignment API before downloading a chess package.');
+      return require('./learning-chess-package').createChessPackage(activity,{origin:base,enrollmentKey:key},publicDir);
+    });
+    res.setHeader('Content-Disposition','attachment; filename="RoomGoblin-Chess-SCORM.zip"');res.type('application/zip').send(zip);
+  }));
   if(publicDir)app.post(api+'/teacher/activities/:id/direct-package',requireTeacher,wrap((req,res)=>{
     const zip=store.tx(()=>{const activity=learning.activity(req.learner,req.params.id,true),key=direct.issue(req.learner,activity.id);
       if(!platform.config(activity.id))platform.configure(req.learner,activity.id,{points:activity.template_id==='scorm-connector-v1'?50:20});

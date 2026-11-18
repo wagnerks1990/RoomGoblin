@@ -5,6 +5,12 @@
 
 ## Unreleased
 
+- Add draft Chess Arena with universal SCORM matchmaking, native teacher monitoring
+  and play, server-authoritative multiplayer standings, independent computer/solo
+  results and passwordless reported-name enrollment. Keep assignment bearer scope,
+  class-limited names, pause/close/revocation and isolated student gateway controls.
+  Real Schoology and nonproduction deployment acceptance remain pending.
+
 - Use an OpenAI-compatible object-root schema for post-specific discussion
   feedback. Keep validated grades and earlier comments when later relevance or
   coaching requests fail or exhaust the existing model budget.
