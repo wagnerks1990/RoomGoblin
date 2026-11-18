@@ -264,7 +264,7 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   }));
   app.get(api+'/teacher/activities/:id/chess/matches/:matchId',requireTeacher,wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId,{teacher:true})})));
   // Direct-SCORM participants are authenticated by the existing assignment-only bearer.
-  app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,matches:chess.list(req.learner,req.params.id)})));
+  app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id)})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));
