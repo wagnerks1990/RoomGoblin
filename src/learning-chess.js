@@ -121,8 +121,8 @@ class ChessMatches {
    }
    return role==='white'?'Player White':'Player Black';
   };
-  return {white:{id:m.white_id,name:label(m.white_id,'white',m.activity_id)},
-   black:m.mode==='computer'?{id:'computer',name:'Computer'}:m.mode==='solo'?{id:m.white_id,name:'Practice (Black)'}:m.black_id?{id:m.black_id,name:label(m.black_id,'black',m.black_activity_id||m.activity_id)}:null};
+  return {white:{id:m.white_id===viewer.id?viewer.id:null,name:label(m.white_id,'white',m.activity_id)},
+   black:m.mode==='computer'?{id:'computer',name:'Computer'}:m.mode==='solo'?{id:m.white_id===viewer.id?viewer.id:null,name:'Practice (Black)'}:m.black_id?{id:m.black_id===viewer.id?viewer.id:null,name:label(m.black_id,'black',m.black_activity_id||m.activity_id)}:null};
  }
  seatClass(user,m){
   const activityId=m.white_id===user.id?m.activity_id:m.black_id===user.id?(m.black_activity_id||m.activity_id):null;
@@ -191,6 +191,24 @@ class ChessMatches {
     .run(id,activityId,user.id,mode==='solo'?user.id:null,status,'[]',stamp,stamp,mode);
    this.learning.event(user,activityId,'chess.create',id,{mode});
    return this.render(this.row(id),user);
+  });
+ }
+ leave(user,activityId,matchId,revision,{teacher=false}={}){
+  this.authorize(user,activityId,true,{teacher});
+  if(!Number.isSafeInteger(revision)||revision<0)error(400,'Current match revision required.');
+  return this.store.tx(()=>{
+   const m=this.row(matchId);
+   if(!m||m.status==='finished'||!this.isSeat(m,user))error(409,'Match is no longer active.');
+   if(m.revision!==revision)error(409,'Match state changed. Refresh before leaving.');
+   const permitted=m.white_id===user.id&&m.activity_id===activityId||
+    m.black_id===user.id&&(m.black_activity_id||m.activity_id)===activityId;
+   if(!permitted)error(403,'Match belongs to another assignment.');
+   const cancel=m.status==='waiting',result=cancel||m.mode!=='multiplayer'?'draw':m.white_id===user.id?'black':'white';
+   const reason=cancel?'queue cancelled':m.mode==='multiplayer'?'resignation':'practice ended';
+   this.db.prepare("UPDATE learning_chess_matches SET status='finished',result=?,reason=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?")
+    .run(result,reason,new Date().toISOString(),matchId,revision);
+   this.learning.event(user,activityId,'chess.leave',matchId,{reason});
+   return this.render(this.row(matchId),user);
   });
  }
  join(user,activityId,matchId,{teacher=false}={}){
