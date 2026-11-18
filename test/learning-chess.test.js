@@ -6,6 +6,145 @@ const {fixture}=require('./helpers/learning-fixture');
 const {START,parse,fen,legal,play}=require('../src/learning-chess');
 const {route}=require('../src/learning-direct');
 
+test('rules match standard perft counts and handle promotion, pins and automatic draws',()=>{
+ const {apply,outcome}=require('../src/learning-chess');
+ const perft=(s,depth)=>depth?legal(s).reduce((n,m)=>n+perft(apply(s,m),depth-1),0):1;
+ assert.equal(perft(parse(),3),8902);
+ const kiwipete=parse('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1');
+ assert.equal(perft(kiwipete,2),2039);
+ assert.match(play('7k/P7/8/8/8/8/8/7K w - - 0 1',[],'a7a8n').fen,/N6k/);
+ assert.throws(()=>play('4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1',[],'e2d2'),{status:409});
+ assert.equal(outcome([parse('7k/5K2/6Q1/8/8/8/8/8 b - - 0 1')]).reason,'stalemate');
+ assert.equal(outcome([parse('7k/8/8/8/8/8/8/K7 w - - 0 1')]).reason,'insufficient material');
+ assert.equal(outcome([parse('7k/8/8/8/8/8/R7/K7 w - - 150 1')]).reason,'automatic draw');
+});
+
+test('teacher seats retain original activity after new assignments and chess assets require teacher access',async()=>{
+ const f=await fixture();try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Original chess',templateId:'scorm-connector-v1'});
+  const base='/api/v1/learning/teacher/classes/'+f.classId+'/chess';
+  const game=(await f.request(f.admin,base,'POST',{mode:'solo'})).body.match;
+  f.learning.createActivity(f.admin,f.classId,{title:'New chess',templateId:'scorm-connector-v1'});
+  assert.equal((await f.request(f.admin,base+'/matches/'+game.id+'/move','POST',{move:'e2e4',revision:0})).status,200);
+  assert.equal(f.learning.chess.row(game.id).activity_id,id);
+  for(const path of ['/learn/chess','/learn/chess/index.html','/learn/chess/app.js','/learn/chess/sco/app.js']){
+   assert.equal((await f.request(null,path)).status,403,path);
+   assert.equal((await f.request(f.a,path)).status,403,path);
+  }
+  assert.equal((await f.request(f.admin,'/learn/chess')).status,200);
+  for(const path of ['/learn//chess/index.html','/learn/%63hess/index.html','/learn/chess%2findex.html'])assert.equal((await f.request(null,path)).status,404,path);
+ }finally{await f.close();}
+});
+
+test('both seats respect assignment pauses, closures and export freeze; queue retries resume',async()=>{
+ const f=await fixture();try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Chess controls',templateId:'scorm-connector-v1'});
+  const base='/api/v1/learning/activities/'+id+'/chess';
+  const game=(await f.request(f.a,base,'POST',{})).body.match;
+  assert.equal((await f.request(f.a,base,'POST',{})).body.match.id,game.id);
+  await f.request(f.admin,'/api/v1/learning/teacher/activities/'+id+'/command','PUT',{paused:true,stage:1,hint:'',version:0});
+  assert.equal((await f.request(f.b,base,'POST',{})).status,409);
+  await f.request(f.admin,'/api/v1/learning/teacher/activities/'+id+'/command','PUT',{paused:false,stage:1,hint:'',version:1});
+  assert.equal((await f.request(f.b,base,'POST',{})).body.match.id,game.id);
+  assert.equal((await f.request(f.b,base,'POST',{})).body.match.id,game.id);
+  f.freeze(true);
+  assert.equal((await f.request(f.a,base+'/matches/'+game.id+'/move','POST',{move:'e2e4',revision:1})).status,423);
+  assert.equal((await f.request(f.a,base+'/heartbeat','POST',{})).status,423);
+  assert.equal((await f.request(f.a,base+'/leaderboard')).status,200);
+  f.freeze(false);
+  f.learning.settings(f.admin,id,{open:false});
+  assert.equal((await f.request(f.a,base+'/matches/'+game.id+'/move','POST',{move:'e2e4',revision:1})).status,409);
+  assert.equal(f.learning.chess.row(game.id).revision,1);
+ }finally{await f.close();}
+});
+
+test('cross-class paused or revoked seats cannot be matched or moved through the other class',async()=>{
+ const f=await fixture();try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Chess A',templateId:'scorm-connector-v1'});
+  const second=f.learning.createClass(f.admin,'Chess B');f.learning.enroll(f.admin,second,{userId:f.outside.id,alias:'Private Family Name'});
+  const other=f.learning.createActivity(f.admin,second,{title:'Chess B',templateId:'scorm-connector-v1'});
+  const a='/api/v1/learning/activities/'+id+'/chess',b='/api/v1/learning/activities/'+other+'/chess';
+  const game=(await f.request(f.a,a,'POST',{})).body.match;
+  f.learning.settings(f.admin,id,{open:false});
+  assert.equal((await f.request(f.outside,b+'/matches/'+game.id+'/join','POST',{})).status,409);
+  f.learning.settings(f.admin,id,{open:true});
+  assert.equal((await f.request(f.outside,b+'/matches/'+game.id+'/join','POST',{})).status,200);
+  f.learning.settings(f.admin,other,{open:false});
+  assert.equal((await f.request(f.a,a+'/matches/'+game.id+'/move','POST',{move:'e2e4',revision:1})).status,409);
+  assert.equal(f.learning.chess.publicName(f.outside.id,other,'white'),'Private N.');
+  assert.equal((await f.request(f.a,'/api/v1/learning/activities/'+f.activityId+'/chess')).status,409);
+ }finally{await f.close();}
+});
+
+test('leaderboard includes authoritative checkmate and repetition draws without mixing practice',async()=>{
+ const f=await fixture();try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Chess outcomes',templateId:'scorm-connector-v1'});
+  const c=f.learning.chess;
+  const finish=(mode,moves)=>{
+   let m=c.create(f.a,id,{mode});if(mode==='multiplayer')m=c.join(f.b,id,m.id);
+   for(const move of moves){const user=mode==='solo'||m.turn==='white'?f.a:f.b;m=c.move(user,id,m.id,move,m.revision);}
+   return m;
+  };
+  const mate=['f2f3','e7e5','g2g4','d8h4'];
+  assert.equal(finish('multiplayer',mate).reason,'checkmate');
+  assert.equal(finish('solo',mate).result,'black');
+  const repeat=Array(4).fill(['g1f3','g8f6','f3g1','f6g8']).flat();
+  assert.equal(finish('multiplayer',repeat).result,'draw');
+  const practice=c.create(f.a,id,{mode:'computer'});c.move(f.a,id,practice.id,'e2e4',0);
+  const board=c.leaderboard(f.a,id),me=board.players.find(p=>p.me);
+  assert.equal(me.games,2);assert.equal(me.losses,1);assert.equal(me.draws,1);assert.equal(me.winRate,0);
+  assert.deepEqual(me.soloStats,{started:1,active:0,games:1,wins:0,losses:1,draws:0,stopped:0,winRate:0});
+  assert.equal(me.computerStats.games,0);assert.equal(me.computerStats.active,1);
+  assert.equal(c.progress(f.a,id),5);
+  const other=c.leaderboard(f.b,id);
+  assert.equal(other.players.find(p=>p.me).winRate,50);
+  assert.equal(board.players.find(p=>p.me).rank,other.players.find(p=>!p.me).rank);
+ }finally{await f.close();}
+});
+
+test('chess records do not prevent native user deletion or retain orphaned presence',async()=>{
+ const f=await fixture();try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Chess cleanup',templateId:'scorm-connector-v1'});
+  const m=f.learning.chess.create(f.a,id,{mode:'solo'});f.learning.chess.heartbeat(f.a,id);
+  assert.equal(f.store.deleteUser(f.a.id),1);
+  assert.equal(f.learning.chess.row(m.id),undefined);
+  assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM learning_chess_presence WHERE user_id=?').get(f.a.id).n,0);
+ }finally{await f.close();}
+});
+
+test('teacher monitoring masks full aliases outside assigned classes and page reads are rate limited',async()=>{
+ const f=await fixture();try{
+  const teacher=f.store.putUser({username:'limited-chess-teacher',displayName:'Limited Teacher',role:'operator',profileId:'teacher'},{password:'synthetic-test-password'});
+  f.learning.createClass(teacher,'Teacher owned class');
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Private chess',templateId:'scorm-connector-v1'});
+  let game=f.learning.chess.create(f.a,id);game=f.learning.chess.join(f.b,id,game.id);
+  for(const move of ['f2f3','e7e5','g2g4','d8h4'])game=f.learning.chess.move(game.turn==='white'?f.a:f.b,id,game.id,move,game.revision);
+  assert.equal(f.learning.chess.teacherList(teacher)[0].white.name,'Investigator A.');
+  assert.ok(f.learning.chess.leaderboard(teacher,null,{teacher:true}).players.every(p=>/^Player-[A-F0-9]{8}$/.test(p.label)));
+  assert.throws(()=>f.learning.chess.teacherActivity(teacher,f.classId),{status:404});
+  for(let i=0;i<120;i++)assert.equal((await f.request(f.admin,'/learn/chess/app.js')).status,200);
+  const limited=await f.request(f.admin,'/learn/chess/app.js');assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
+ }finally{await f.close();}
+});
+
+test('revoked direct participants cannot move and cannot be moved against by an authorized opponent',async()=>{
+ const f=await fixture();try{
+  const id=f.learning.createActivity(f.admin,f.classId,{title:'Revocable chess',templateId:'scorm-connector-v1'});
+  f.learning.platform.configure(f.admin,id,{points:20});
+  const key=f.learning.direct.issue(f.admin,id),token=crypto.randomBytes(32).toString('hex');
+  const user=f.learning.direct.enroll(id,key,{participantToken:token,reportedId:'synthetic-revocation',name:'Synthetic Name'});
+  let game=f.learning.chess.create(f.a,id);game=f.learning.chess.join(user,id,game.id);
+  f.store.db.prepare('UPDATE learning_direct_participants SET revoked=1 WHERE user_id=?').run(user.id);
+  const base='/api/v1/learning/activities/'+id+'/chess';
+  assert.equal((await f.request(f.a,base+'/matches/'+game.id+'/move','POST',{move:'e2e4',revision:game.revision})).status,409);
+  const direct='/api/v1/learning/direct/activities/'+id+'/chess';
+  assert.equal((await f.request(null,direct,'GET',undefined,{Authorization:'Bearer '+token})).status,401);
+  assert.equal(f.learning.chess.row(game.id).moves_json,'[]');
+  // An unavailable opponent does not trap the remaining authorized participant.
+  assert.equal((await f.request(f.a,base+'/matches/'+game.id+'/leave','POST',{revision:game.revision})).status,200);
+ }finally{await f.close();}
+});
+
 test('chess engine enforces legal turns, special moves, and checkmate',()=>{
  assert.equal(legal(parse(START)).length,20);
  const e4=play(START,[],'e2e4');assert.match(e4.fen,/ b KQkq e3 /);
@@ -22,6 +161,8 @@ test('direct student gateway routes remain narrowly permitted',()=>{
   assert.ok(route('GET',path));assert.equal(route('DELETE',path),null);
  }
  for(const path of [prefix,prefix+'/heartbeat',prefix+'/matches/'+match+'/join',prefix+'/matches/'+match+'/move',prefix+'/matches/'+match+'/leave'])assert.ok(route('POST',path),path);
+ assert.equal(route('GET',prefix+'/matches'),null);
+ assert.equal(route('POST',prefix+'/matches'),null);
  assert.equal(route('GET',prefix+'/heartbeat'),null);
  assert.equal(route('GET',prefix+'/matches/'+match+'/move'),null);
  assert.equal(route('GET',prefix+'/matches/'+match+'/teacher'),null);
@@ -57,6 +198,7 @@ test('universal multiplayer across activities preserves authorization and teache
   assert.equal((await f.request(f.b,first+'/matches/'+game.id)).status,404);
   const teacher=await f.request(f.admin,'/api/v1/learning/teacher/chess');
   assert.equal(teacher.status,200);assert.ok(teacher.body.matches.find(m=>m.id===game.id));
+  assert.equal((await f.request(f.a,first+'/matches/'+game.id+'/leave','POST',{revision:3})).status,200);
   const teacherGame=await f.request(f.admin,'/api/v1/learning/teacher/classes/'+f.classId+'/chess','POST',{mode:'multiplayer'});
   assert.equal(teacherGame.status,200);
   assert.equal(teacherGame.body.match.white.id,f.admin.id);
@@ -92,6 +234,7 @@ test('SCORM bearer enrolls passwordlessly and reaches global chess lobby without
  const f=await fixture();
  try{
   const id=f.learning.createActivity(f.admin,f.classId,{title:'Chess SCORM',templateId:'scorm-connector-v1'});
+  f.learning.platform.configure(f.admin,id,{points:20});
   const key=f.learning.direct.issue(f.admin,id),token=crypto.randomBytes(32).toString('hex');
   const entry='/api/v1/learning/direct/activities/'+id;
   const enroll=await f.request(null,entry+'/enroll','POST',{participantToken:token,reportedId:'synthetic-LMS-123',name:'Synthetic Guest'},{Authorization:'RoomGoblin-Assignment '+key});

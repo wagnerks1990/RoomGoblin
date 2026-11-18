@@ -7,25 +7,25 @@
  const msg=v=>$('status').textContent=v;
  async function request(path,method='GET',body){
   const response=await fetch(base+path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-RoomGoblin-Learning':'1'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
-  if(response.status===401||response.status===403){closed=true;location.assign('/learn');throw Error('Teacher login required.');}
+  if(response.status===401||response.status===403){closed=true;latest={matches:[],connected:[]};for(const id of ['board','games','people','leaderboard','moves','game-title'])$(id).replaceChildren();location.assign('/learn');throw Error('Teacher login required.');}
   const data=await response.json();if(!response.ok||data.ok===false)throw Error(data.error||'Chess request was not accepted.');return data;
  }
  function renderLeaderboard(data){
   const root=$('leaderboard');root.replaceChildren();
   $('leaderboard-info').textContent=data.rules+' '+data.identity;
   const table=el('table'),thead=el('thead'),head=el('tr');
-  for(const name of ['Rank','Player','Games','Wins','Losses','Draws','Win %','Practice'])head.append(el('th',name));
+  for(const name of ['Rank','Player','Games','Wins','Losses','Draws','Win %','Computer W/L/D','Computer games','Computer win %','Solo W/L/D','Solo games','Solo win %'])head.append(el('th',name));
   thead.append(head);table.append(thead);
   const tbody=el('tbody');
   for(const p of data.players){const tr=el('tr');if(p.me)tr.style.fontWeight='bold';
-   for(const value of [p.rank,p.label,p.games,p.wins,p.losses,p.draws,p.winRate+'%',p.practice])tr.append(el('td',value));
+   for(const value of [p.rank,p.label,p.games,p.wins,p.losses,p.draws,p.winRate+'%',p.computerStats.wins+'/'+p.computerStats.losses+'/'+p.computerStats.draws,p.computerStats.games,p.computerStats.winRate+'%',p.soloStats.wins+'/'+p.soloStats.losses+'/'+p.soloStats.draws,p.soloStats.games,p.soloStats.winRate+'%'])tr.append(el('td',value));
    tbody.append(tr);}
   table.append(tbody);root.append(table);
   if(!data.players.length)root.append(el('p','No recorded games yet.'));
  }
  async function refreshLeaderboard(){
   if(closed||document.hidden)return;
-  try{renderLeaderboard(await request('/teacher/chess/leaderboard'));}
+  try{const data=await request('/teacher/chess/leaderboard');if(!closed)renderLeaderboard(data);}
   catch(e){$('leaderboard-info').textContent='Leaderboard is unavailable: '+e.message;}
  }
  const mine=m=>!!m.myColor;
@@ -75,7 +75,7 @@
  }
  async function poll(){
   if(busy||closed||document.hidden)return;busy=true;
-  try{latest=await request('/teacher/chess');render();msg('Updated '+new Date().toLocaleTimeString());}catch(e){msg(e.message);}finally{busy=false;}
+  try{const data=await request('/teacher/chess');if(closed)return;latest=data;render();msg('Updated '+new Date().toLocaleTimeString());}catch(e){msg(e.message);}finally{busy=false;}
  }
  async function mutate(path,body={}){
   if(closed||inFlight)return;inFlight=true;

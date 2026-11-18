@@ -91,22 +91,54 @@ class ChessMatches {
   const columns=new Set(this.db.prepare('PRAGMA table_info(learning_chess_matches)').all().map(c=>c.name));
   if(!columns.has('mode'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN mode TEXT NOT NULL DEFAULT 'multiplayer'");
   if(!columns.has('black_activity_id'))this.db.exec("ALTER TABLE learning_chess_matches ADD COLUMN black_activity_id TEXT");
-  this.db.exec('CREATE INDEX IF NOT EXISTS learning_chess_global_status ON learning_chess_matches(status,updated_at)');
+  this.db.exec(`CREATE INDEX IF NOT EXISTS learning_chess_global_status ON learning_chess_matches(status,updated_at);
+   CREATE TRIGGER IF NOT EXISTS learning_chess_user_delete BEFORE DELETE ON users BEGIN
+    DELETE FROM learning_chess_matches WHERE white_id=OLD.id OR black_id=OLD.id;
+    DELETE FROM learning_chess_presence WHERE user_id=OLD.id;
+   END;
+   CREATE TRIGGER IF NOT EXISTS learning_chess_activity_delete BEFORE DELETE ON learning_activities BEGIN
+    DELETE FROM learning_chess_matches WHERE activity_id=OLD.id OR black_activity_id=OLD.id;
+    DELETE FROM learning_chess_presence WHERE activity_id=OLD.id;
+   END;`);
  }
  teacher(user){return !!user&&!user.directParticipant&&user.profileId!=='learning-student'&&this.learning.teacherCapability?.(user);}
  authorize(user,activityId,write=false,{teacher=false}={}){
   const a=this.learning.activity(user,activityId,teacher);
+  if(a.template_id!=='scorm-connector-v1')error(409,'Use a SCORM assignment for chess.');
   if(write)this.learning.writable(a);
   if(!teacher&&a.member.role!=='student')error(403,'Student activity access required.');
   if(teacher&&!this.teacher(user))error(403,'Teacher access required.');
   return a;
  }
- teacherActivity(user,classId){
+ teacherActivity(user,classId,matchId=null){
   if(!this.teacher(user))error(403,'Teacher access required.');
   this.learning.membership(user,classId,true);
+  if(matchId){
+   const match=this.row(matchId);
+   const activityId=match?.white_id===user.id?match.activity_id:match?.black_id===user.id?(match.black_activity_id||match.activity_id):null;
+   const activity=activityId&&this.learning.activity(user,activityId,true);
+   if(!activity||activity.class_id!==classId)error(404,'Your chess seat was not found in this class.');
+   return activityId;
+  }
   const row=this.db.prepare("SELECT id FROM learning_activities WHERE class_id=? AND template_id='scorm-connector-v1' ORDER BY created_at DESC LIMIT 1").get(classId);
   if(!row)error(409,'Create a SCORM assignment for this class before joining chess.');
   return row.id;
+ }
+ seatInActivity(m,user,activityId){return m.white_id===user.id&&m.activity_id===activityId||m.black_id===user.id&&(m.black_activity_id||m.activity_id)===activityId;}
+ seatAvailable(m,color){
+  const id=color==='white'?m.white_id:m.black_id;
+  const activityId=color==='white'?m.activity_id:(m.black_activity_id||m.activity_id);
+  if(!id)return false;
+  const user=this.store.listUsers().find(u=>u.id===id&&u.enabled);
+  if(!user)return false;
+  try{
+   this.authorize(user,activityId,true,{teacher:this.teacher(user)});
+   if(this.learning.direct.isParticipant(id)){
+    if(!this.learning.direct.available(activityId))return false;
+    if(this.db.prepare('SELECT revoked FROM learning_direct_participants WHERE user_id=?').get(id)?.revoked)return false;
+   }
+   return true;
+  }catch{return false;}
  }
  isSeat(m,user){return m.white_id===user.id||m.black_id===user.id;}
  row(id){return this.db.prepare('SELECT * FROM learning_chess_matches WHERE id=?').get(id);}
@@ -132,8 +164,8 @@ class ChessMatches {
   const comma=display.indexOf(',');
   const given=comma>=0?display.slice(comma+1).trim():display;
   const family=comma>=0?display.slice(0,comma).trim():display;
-  const first=given.split(/\\s+/u).filter(Boolean)[0];
-  const surname=comma>=0?family.split(/\\s+/u).filter(Boolean)[0]:given.split(/\\s+/u).filter(Boolean).at(-1);
+  const first=given.split(/\s+/u).filter(Boolean)[0];
+  const surname=comma>=0?family.split(/\s+/u).filter(Boolean)[0]:given.split(/\s+/u).filter(Boolean).at(-1);
   if(!first)return role==='white'?'Player White':'Player Black';
   const initial=surname&&surname!==first?' '+Array.from(surname)[0].toUpperCase()+'.':'';
   return first.slice(0,32)+initial;
@@ -162,18 +194,22 @@ class ChessMatches {
  get(user,activityId,matchId,{teacher=false}={}){
   this.authorize(user,activityId,false,{teacher});
   const m=this.row(matchId);
-  if(!m||!this.isSeat(m,user)&&!teacher)error(404,'Chess match not found.');
+  if(!m||!teacher&&(!this.isSeat(m,user)||!this.seatInActivity(m,user,activityId)))error(404,'Chess match not found.');
   return this.render(m,user);
  }
  list(user,activityId,{teacher=false}={}){
   this.authorize(user,activityId,false,{teacher});
   const rows=this.db.prepare("SELECT * FROM learning_chess_matches WHERE status='waiting' OR white_id=? OR black_id=? ORDER BY updated_at DESC LIMIT 200").all(user.id,user.id);
-  return rows.map(m=>this.render(m,user));
+  return rows.filter(m=>m.status==='waiting'?this.seatAvailable(m,'white'):this.seatInActivity(m,user,activityId)).map(m=>this.render(m,user));
  }
  teacherList(user){
   if(!this.teacher(user))error(403,'Teacher access required.');
   const rows=this.db.prepare('SELECT * FROM learning_chess_matches ORDER BY updated_at DESC LIMIT 200').all();
   return rows.map(m=>this.render(m,user));
+ }
+ progress(user,activityId){
+  const rows=this.db.prepare('SELECT * FROM learning_chess_matches WHERE (white_id=? AND activity_id=?) OR (black_id=? AND COALESCE(black_activity_id,activity_id)=?)').all(user.id,activityId,user.id,activityId);
+  return Math.min(5,rows.reduce((total,m)=>{const n=JSON.parse(m.moves_json).length;return total+(m.mode==='solo'?n:m.white_id===user.id?Math.ceil(n/2):Math.floor(n/2));},0));
  }
  leaderboard(viewer,activityId=null,{teacher=false}={}){
   if(teacher){
@@ -213,17 +249,20 @@ class ChessMatches {
    for(const key of ['games','wins','losses','draws'])prior[key]+=row[key];
    players.set(row.user_id,prior);
   }
-  const practices=this.db.prepare(`
-    SELECT white_id user_id,COUNT(*) games,
-           SUM(CASE WHEN mode='computer' THEN 1 ELSE 0 END) computer,
-           SUM(CASE WHEN mode='solo' THEN 1 ELSE 0 END) solo
-    FROM learning_chess_matches WHERE mode IN ('computer','solo')
-    AND json_array_length(moves_json)>0
-    GROUP BY white_id
-  `).all();
+  const emptyStats=()=>({started:0,active:0,games:0,wins:0,losses:0,draws:0,stopped:0,winRate:0});
+  const practices=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode IN ('computer','solo') AND json_array_length(moves_json)>0").all();
   for(const row of practices){
-   const p=players.get(row.user_id)||{id:row.user_id,sourceActivityId:null,games:0,wins:0,losses:0,draws:0};
-   p.practice=row.games;p.computer=row.computer;p.solo=row.solo;players.set(row.user_id,p);
+   const p=players.get(row.white_id)||{id:row.white_id,games:0,wins:0,losses:0,draws:0};
+   p.practice=(p.practice||0)+1;p[row.mode]=(p[row.mode]||0)+1;
+   const stats=p[row.mode+'Stats']||emptyStats();stats.started++;
+   if(row.status==='active')stats.active++;
+   else if(['practice ended','inactive game'].includes(row.reason))stats.stopped++;
+   else if(row.status==='finished'){
+    stats.games++;
+    stats[row.result==='draw'?'draws':row.result==='white'?'wins':'losses']++;
+   }
+   stats.winRate=stats.games?Math.round(100*stats.wins/stats.games):0;
+   p[row.mode+'Stats']=stats;players.set(row.white_id,p);
   }
   const result=[...players.values()].map(p=>{
    const publicId='Player-'+crypto.createHash('sha256').update(p.id).digest('hex').slice(0,8).toUpperCase();
@@ -238,13 +277,13 @@ class ChessMatches {
      try{this.learning.membership(viewer,classId,true);label=this.alias(p.id,a.seat_activity);break;}catch{}
     }
    }
-   return {label,me:p.id===viewer.id,games:p.games,wins:p.wins,losses:p.losses,draws:p.draws,
+   return {sortKey:publicId,label,me:p.id===viewer.id,games:p.games,wins:p.wins,losses:p.losses,draws:p.draws,
      winRate:p.games?Math.round(100*p.wins/p.games):0,practice:p.practice||0,
-     computer:p.computer||0,solo:p.solo||0};
-  }).sort((a,b)=>b.wins-a.wins||b.games-a.games||b.winRate-a.winRate||a.label.localeCompare(b.label));
-  return {players:result.slice(0,100).map((p,i)=>({rank:i+1,...p})),
+     computer:p.computer||0,solo:p.solo||0,computerStats:p.computerStats||emptyStats(),soloStats:p.soloStats||emptyStats()};
+  }).sort((a,b)=>b.wins-a.wins||b.games-a.games||b.winRate-a.winRate||a.sortKey.localeCompare(b.sortKey));
+  return {players:result.slice(0,100).map(({sortKey,...p},i)=>({rank:i+1,...p})),
     totalPlayers:result.length,
-    rules:'Only completed multiplayer matches with at least four half-moves count toward wins, losses, and draws. Computer and solo games appear separately as practice.',
+    rules:'Only completed multiplayer matches with at least four half-moves count toward wins, losses, and draws. Computer and solo results are separate practice statistics. Stopped practice is not a draw; solo wins and losses refer to White.',
     identity:'SCORM accounts represent unverified assignment participants, not guaranteed unique people.'};
  }
  heartbeat(user,activityId,{teacher=false}={}){
@@ -271,13 +310,14 @@ class ChessMatches {
    // Bounded cleanup on creation, not a scheduler that can affect other services.
    this.db.prepare("UPDATE learning_chess_matches SET status='finished',result='draw',reason='queue expired',revision=revision+1 WHERE status='waiting' AND updated_at<?").run(cutoff);
    this.db.prepare("UPDATE learning_chess_matches SET status='finished',result='draw',reason='inactive game',revision=revision+1 WHERE status='active' AND updated_at<?").run(abandoned);
-   if(this.db.prepare("SELECT COUNT(*) n FROM learning_chess_matches WHERE status IN ('waiting','active')").get().n>=250)error(429,'Chess service is at capacity.');
+   const existing=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode=? AND status IN ('waiting','active') AND ((white_id=? AND activity_id=?) OR (black_id=? AND COALESCE(black_activity_id,activity_id)=?)) LIMIT 1").get(mode,user.id,activityId,user.id,activityId);
+   if(existing)return this.render(existing,user);
    // One waiting queue slot per user, globally, including across SCORM classes.
    if(mode==='multiplayer'){
-    const prior=this.db.prepare("SELECT * FROM learning_chess_matches WHERE white_id=? AND mode='multiplayer' AND status='waiting' LIMIT 1").get(user.id);
-    if(prior)return this.render(prior,user);
+    const prior=this.db.prepare("SELECT * FROM learning_chess_matches WHERE (white_id=? OR black_id=?) AND mode='multiplayer' AND status IN ('waiting','active') LIMIT 1").get(user.id,user.id);
+    if(prior){if(!this.seatInActivity(prior,user,activityId))error(409,'Resume or cancel your existing queue in its original assignment.');return this.render(prior,user);}
     // First-come, first-served across all enrolled classes and teacher clients.
-    const available=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode='multiplayer' AND status='waiting' AND white_id<>? ORDER BY created_at,id LIMIT 1").get(user.id);
+    const available=this.db.prepare("SELECT * FROM learning_chess_matches WHERE mode='multiplayer' AND status='waiting' AND white_id<>? ORDER BY created_at,id").all(user.id).find(m=>this.seatAvailable(m,'white'));
     if(available){
      const time=new Date().toISOString();
      const changed=this.db.prepare("UPDATE learning_chess_matches SET black_id=?,black_activity_id=?,status='active',revision=revision+1,updated_at=? WHERE id=? AND status='waiting' AND black_id IS NULL").run(user.id,activityId,time,available.id);
@@ -286,6 +326,7 @@ class ChessMatches {
      return this.render(this.row(available.id),user);
     }
    }
+   if(this.db.prepare("SELECT COUNT(*) n FROM learning_chess_matches WHERE status IN ('waiting','active')").get().n>=250)error(429,'Chess service is at capacity.');
    const id=crypto.randomUUID(),stamp=new Date().toISOString(),status=mode==='multiplayer'?'waiting':'active';
    this.db.prepare('INSERT INTO learning_chess_matches(id,activity_id,white_id,black_id,status,moves_json,created_at,updated_at,mode) VALUES(?,?,?,?,?,?,?,?,?)')
     .run(id,activityId,user.id,mode==='solo'?user.id:null,status,'[]',stamp,stamp,mode);
@@ -315,7 +356,9 @@ class ChessMatches {
   this.authorize(user,activityId,true,{teacher});
   return this.store.tx(()=>{
    const row=this.row(matchId);
-   if(!row||row.status!=='waiting'||row.mode!=='multiplayer'||row.white_id===user.id||Date.now()-Date.parse(row.updated_at)>30*60*1000)error(409,'Match unavailable.');
+   if(!row||row.status!=='waiting'||row.mode!=='multiplayer'||row.white_id===user.id||Date.now()-Date.parse(row.updated_at)>30*60*1000||!this.seatAvailable(row,'white'))error(409,'Match unavailable.');
+   const existing=this.db.prepare("SELECT 1 FROM learning_chess_matches WHERE mode='multiplayer' AND status IN ('waiting','active') AND (white_id=? OR black_id=?)").get(user.id,user.id);
+   if(existing)error(409,'Resume or leave your existing multiplayer match first.');
    const stamp=new Date().toISOString();
    const change=this.db.prepare("UPDATE learning_chess_matches SET black_id=?,black_activity_id=?,status='active',revision=revision+1,updated_at=? WHERE id=? AND status='waiting' AND black_id IS NULL").run(user.id,activityId,stamp,matchId);
    if(!change.changes)error(409,'Another player joined first.');
@@ -334,6 +377,7 @@ class ChessMatches {
     (m.black_id===user.id&&(m.black_activity_id||m.activity_id)===activityId);
    if(!permitted)error(403,'This match belongs to a different assignment session.');
    if(m.revision!==revision)error(409,'The board changed. Refresh before moving.');
+   if(!this.seatAvailable(m,'white')||m.mode==='multiplayer'&&!this.seatAvailable(m,'black'))error(409,'A player assignment is paused, closed, or unavailable.');
    const prior=JSON.parse(m.moves_json);
    if(prior.length>=512)error(409,'Maximum match length reached.');
    const whiteTurn=prior.length%2===0;
@@ -348,6 +392,7 @@ class ChessMatches {
      +(mv[2]?value[mv[2]]*90:0)+(square(mv[1]).charCodeAt(0)%3)})).sort((a,b)=>b.score-a.score||uci(a.mv).localeCompare(uci(b.mv)));
     state=play(START,moves,uci(ranked[0].mv));moves.push(uci(ranked[0].mv));
    }
+   if(moves.length>=512&&state.outcome.status==='active')state.outcome={status:'finished',result:'draw',reason:'move limit'};
    const stamp=new Date().toISOString();
    const changed=this.db.prepare('UPDATE learning_chess_matches SET moves_json=?,status=?,result=?,reason=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?')
     .run(JSON.stringify(moves),state.outcome.status,state.outcome.result,state.outcome.reason,stamp,matchId,revision);

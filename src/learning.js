@@ -161,20 +161,28 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
   const insights=require('./learning-insights').createInsights(platform);
   const direct=new(require('./learning-direct').LearningDirect)(learning);learning.direct=direct;
   const portal=new(require('./learning-teacher-portal').LearningTeacherPortal)(learning);learning.portal=portal;
-   const chess=new(require('./learning-chess').ChessMatches)(learning);learning.chess=chess;
+  const chess=new(require('./learning-chess').ChessMatches)(learning);learning.chess=chess;
   const wrap=fn=>async(req,res,next)=>{try{await fn(req,res,next);}catch(e){res.status(e.status||500).json({ok:false,error:e.status?e.message:"Learning service could not complete the request."});}};
   const teacher=u=>u.profileId!=="learning-student"&&(hasCapability(u,"*")||hasCapability(u,"classroom.control"));
   learning.teacherCapability=teacher;
   const api="/api/v1/learning";
   // Teacher-only monitoring UI. The student gateway deliberately does not serve this page.
-  if(publicDir)app.get(['/learn/chess','/learn/chess/'],(req,res)=>{
+  // Static file serving decodes/normalizes paths. Reject alternate spellings
+  // before they can bypass the teacher prefix below (including on Windows).
+  if(publicDir)app.use((req,res,next)=>{
+    let normalized;try{normalized=require('node:path').posix.normalize(decodeURIComponent(req.path).replace(/\\/g,'/').replace(/\/{2,}/g,'/'));}catch{return next();}
+    if(/^\/learn\/chess(?:\/|$)/i.test(normalized)&&normalized!==req.path)return res.sendStatus(404);
+    next();
+  });
+  if(publicDir)app.use('/learn/chess',rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res,next)=>{const u=requestUser(req);if(isPublicRequest(req))return res.sendStatus(404);if(!store.authEnabled()||!u||!teacher(u))return res.sendStatus(403);res.setHeader('Cache-Control','no-store');next();});
+  if(publicDir)app.get(['/learn/chess','/learn/chess/'],rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>{
     const user=requestUser(req);
     if(isPublicRequest(req))return res.sendStatus(404);
     if(!store.authEnabled()||!user||!teacher(user))return res.redirect(302,'/learn');
     res.setHeader('Cache-Control','no-store');
     res.sendFile(require('node:path').join(publicDir,'chess','index.html'));
   });
-  if(publicDir)app.get('/learn/chess/app.js',(req,res)=>{
+  if(publicDir)app.get('/learn/chess/app.js',rateLimit({windowMs:60000,limit:120,standardHeaders:true,legacyHeaders:false}),(req,res)=>{
     const user=requestUser(req);
     if(isPublicRequest(req))return res.sendStatus(404);
     if(!store.authEnabled()||!user||!teacher(user))return res.sendStatus(403);
@@ -272,16 +280,16 @@ function registerLearning(app,{store,requestUser,hasCapability,grade=gradeWritin
     res.json({ok:true,match:chess.join(req.learner,activityId,req.params.matchId,{teacher:true})});
   }));
   app.post(api+'/teacher/classes/:id/chess/matches/:matchId/leave',requireTeacher,wrap((req,res)=>{
-    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);
     res.json({ok:true,match:chess.leave(req.learner,activityId,req.params.matchId,req.body?.revision,{teacher:true})});
   }));
   app.post(api+'/teacher/classes/:id/chess/matches/:matchId/move',requireTeacher,wrap((req,res)=>{
-    const activityId=chess.teacherActivity(req.learner,req.params.id);
+    const activityId=chess.teacherActivity(req.learner,req.params.id,req.params.matchId);
     res.json({ok:true,match:chess.move(req.learner,activityId,req.params.matchId,req.body?.move,req.body?.revision,{teacher:true})});
   }));
   // SCORM authentication still uses each package's own scoped bearer.
   app.get(api+'/activities/:id/chess/leaderboard',wrap((req,res)=>res.json({ok:true,...chess.leaderboard(req.learner,req.params.id)})));
-  app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,matches:chess.list(req.learner,req.params.id)})));
+  app.get(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,userId:req.learner.id,validatedMoves:chess.progress(req.learner,req.params.id),matches:chess.list(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess/heartbeat',wrap((req,res)=>res.json({ok:true,...chess.heartbeat(req.learner,req.params.id)})));
   app.post(api+'/activities/:id/chess',wrap((req,res)=>res.json({ok:true,match:chess.create(req.learner,req.params.id,{mode:req.body?.mode||'multiplayer'})})));
   app.get(api+'/activities/:id/chess/matches/:matchId',wrap((req,res)=>res.json({ok:true,match:chess.get(req.learner,req.params.id,req.params.matchId)})));

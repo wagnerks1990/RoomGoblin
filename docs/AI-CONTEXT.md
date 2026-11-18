@@ -1,3 +1,12 @@
+Chess Arena is an unmerged draft feature; read [Chess Arena](CHESS-ARENA.md).
+Keep server-owned legal moves/results, account-based global multiplayer standings,
+separate computer/solo statistics, opaque public ranking labels and class-authorized
+teacher aliases. Reported LMS names enroll without passwords but never establish
+verified identity or merge participants across assignments. Both seats retain their
+original assignment access, pause/close/revocation gates and revision checks. Keep
+teacher chess pages/assets off the learner gateway. Synthetic tests are not live
+Schoology, physical classroom or deployment acceptance.
+
 # AI Project Context
 
 New learning packages use the [direct assignment data API](DIRECT-ASSIGNMENT-API.md):

@@ -8,7 +8,7 @@ The universal Chess Arena is a first-release prototype for the existing RoomGobl
 - Student launch: Create a 20-point SCORM connection in `/learn` and select **Download Chess SCORM package**. Upload the ZIP as a SCORM 1.2 package into Schoology. No independent student RoomGoblin password or roster import is required.
 - All packages on this RoomGoblin instance share the same waiting-match lobby, regardless of their original class or assignment.
 - Modes: peer-to-peer multiplayer, self-play, and a deterministic beginner computer opponent. No external services/CDNs, separate databases, or additional publicly accessible ports are added.
-- MVP grading: five validated player moves count 4 points each, max 20. Winning is **not** a requirement. This measures participation, not strategy. Schoology remains authoritative for its LMS grades; a SCORM runtime and successful commit are required.
+- MVP grading: five validated player moves across this assignment’s games count 4 points each, max 20. Winning is **not** a requirement. This measures participation, not strategy. Schoology remains authoritative for its LMS grades; a SCORM runtime and successful commit are required.
 - Dashboard updates are *polling* approximately every 3 seconds (not WebSockets). Student heartbeats are sent about every 10 seconds while visible. Connected means recently seen by the app, not attendance or verified physical presence.
 
 ## Student identity and privacy
@@ -19,7 +19,7 @@ The stored full name is available only through teacher-class-authorized projecti
 
 ## Universal leaderboard and identity scope
 
-The Chess Arena leaderboard is visible in both the SCORM student UI and `/learn/chess`. It is calculated from authoritative SQLite match records instead of client-supplied statistics. One completed multiplayer game contributes at most one result per participating account; retries and page refreshes do not grant additional wins. Win/loss/draw standings count only finished real multiplayer games with at least four half-moves, and exclude expired queues and inactive games. Solo and computer games appear as **practice counts only**; they cannot increase multiplayer ranking. The display shows up to 100 player entries, with the total number of participating player accounts reported separately.
+The Chess Arena leaderboard is visible in both the SCORM student UI and `/learn/chess`. It is calculated from authoritative SQLite match records instead of client-supplied statistics. One completed multiplayer game contributes at most one result per participating account; retries and page refreshes do not grant additional wins. Win/loss/draw standings count only finished real multiplayer games with at least four half-moves, and exclude expired queues and inactive games. Solo and computer results have independent completed games, wins/losses/draws and win rate; they cannot increase multiplayer ranking. Practice counters also distinguish started, active and stopped games. Stopping practice or expiring an inactive game is not a competitive draw. Solo wins/losses describe the White side, since the same participant controls both colors. The display shows up to 100 player entries, with the total number of participating player accounts reported separately.
 
 Other students see opaque, stable per-account labels (not names or account IDs) on leaderboard rows. Authorized teachers may see an LMS-reported full name only for a participant belonging to one of their assigned classes. Schoology names are still shown in the match lobby as a limited first name and initial. This distinction is intentional.
 
@@ -31,9 +31,9 @@ Other students see opaque, stable per-account labels (not names or account IDs) 
 
 Existing student-only gateway at loopback `3030` remains the only public student backend. Exact `/api/v1/learning/direct/activities/:id/chess` routes use the existing assignment-scoped bearer and are rewritten into the standard learning API. The SCORM SDK accepts only its configured activity ID and the defined chess subroutes. Authentication on `/learn/chess` continues through the normal RoomGoblin teacher session. The gateway must never serve the teacher dashboard, the underlying administration assets, or the teacher APIs.
 
-The service validates legal moves on the server including castling, en passant, promotion, king safety, checkmate, stalemate and automatic draws; clients provide UCI moves and the most recent revision. It does not use a client-submitted board position to establish a result. Waiting slots expire after 30 minutes, and inactive games after seven days (opportunistically on match creation). Maximum 250 open/active games and 512 half-moves per game. Users can cancel waiting games, resign active multiplayer matches, or stop practice.
+The service validates legal moves on the server including castling, en passant, promotion, king safety, checkmate, stalemate and automatic draws; clients provide UCI moves and the most recent revision. It does not use a client-submitted board position to establish a result. Waiting slots expire after 30 minutes, and inactive games after seven days (opportunistically on match creation). Maximum 250 open/active games and 512 half-moves per game (a still-active game finishes as a server-owned move-limit draw). Queue/create retries resume an existing match rather than creating duplicates. Both seats must retain enabled, unrevoked, open and unpaused assignment access before matching or moving. Leaving remains available to an authorized opponent when the other seat is unavailable. Users can cancel waiting games, resign active multiplayer matches, or stop practice.
 
-Teacher participation uses an already-existing SCORM activity in a class to retain authenticated activity/session boundaries. Select a class with a configured SCORM assignment before joining the queue. This is an MVP limitation, not a new teacher password requirement.
+Teacher participation uses an already-existing SCORM activity in a class to retain authenticated activity/session boundaries. Select a class with a configured SCORM assignment before joining the queue. Existing teacher seats retain their original assignment when another SCORM assignment is created. This is an MVP limitation, not a new teacher password requirement.
 
 ## Acceptance checklist
 
@@ -54,3 +54,26 @@ No configuration change or migration should be made to a live appliance until ac
 ## Future expansion
 
 A second release can add a dedicated verified user identity bridge, optional display names/consent policies, friend invites, chess clocks, Elo/rating, tournaments, more challenging AI, puzzles, teacher-created objectives and rubric-specific scoring. None should be treated as implemented in MVP.
+
+## Automated validation (November 18, 2026)
+
+- `node --test test/learning-chess.test.js`: rules/perft, special moves and draws,
+  authoritative results, practice separation, retry/resume, class privacy, teacher
+  seats, pause/close/export freeze and native account deletion.
+- `node test/browser/learning-chess-smoke.cjs`: real exported assets in two isolated
+  synthetic LMS contexts, cross-class play through the actual student gateway,
+  native SCORM resume/score/completion retries, teacher monitoring/play, read-only
+  review, identity changes and mobile layout. Uses local Edge by default;
+  `CHESS_TEST_BROWSER=chromium` selects a Playwright-installed Chromium.
+- `node test/browser/learning-direct-smoke.cjs`: existing direct assignment browser
+  regressions. These browser scripts require a separately installed Playwright;
+  it is a test tool, not a new application dependency.
+- On Windows run `py -3.11 C:/ChatGPT/Workspace/Tools/RoomGoblin-LinuxTests.py`
+  from the actual chess worktree for syntax checks and the full native Linux suite.
+
+No real Schoology attempt, live gradebook, classroom appliance or physical device
+is exercised by these synthetic tests. Real two-user Schoology launch/resume/grade
+acceptance and a nonproduction deployment/backup/rollback rehearsal remain merge
+prerequisites. Re-export existing chess ZIPs to receive browser changes. Deleting a
+native user or either source assignment removes its chess matches and presence;
+standings are derived and therefore update when their underlying records disappear.

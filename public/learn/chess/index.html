@@ -8,12 +8,12 @@ header{justify-content:space-between;align-items:center}a{color:#93c5fd}h1,h2{ma
 .stats .card{flex:1;margin:0}.columns>section{flex:1;min-width:min(350px,100%)}
 button,select{font:inherit;padding:.55em .75em;border:1px solid #64748b;border-radius:7px;color:#f8fafc;background:#334155}
 button{cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #60a5fa}
-table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #475569;padding:8px}
+#leaderboard{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #475569;padding:8px}
 tr[aria-selected="true"]{background:#334155}
-.board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));width:min(100%,560px);aspect-ratio:1}
-.sq{display:grid;place-items:center;font-size:clamp(20px,4.2vw,52px);font-family:"Segoe UI Symbol",serif;line-height:1}
+.board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));width:min(100%,560px);aspect-ratio:1}
+.sq{margin:0;padding:0;min-width:0;min-height:0;border:0;border-radius:0;display:grid;place-items:center;font-size:clamp(20px,4.2vw,52px);font-family:"Segoe UI Symbol",serif;line-height:1}
 .sq.light{background:#f0d9b5;color:#111827}.sq.dark{background:#b58863;color:#111827}
-.muted{color:#cbd5e1}.status{min-height:2em}
+.sq.selected{outline:3px solid #22c55e;outline-offset:-3px}.muted{color:#cbd5e1}.status{min-height:2em}
 </style><script defer src="/learn/chess/app.js"></script></head>
 <body><header><div><p>ROOMGOBLIN / LEARNING</p><h1>Chess Control Center</h1><p class="muted">Teacher-only live match observer and player</p></div><div><a href="/learn">Teacher portal</a> · <a href="/controller/">Room controls</a></div></header>
 <div class="toolbar"><label>Class <select id="class" aria-label="Class"></select></label><button id="refresh">Refresh</button><button id="queue">Join multiplayer queue</button><button id="computer">Play computer</button><button id="solo">Solo practice</button><span id="status" class="status" role="status" aria-live="polite"></span></div>
